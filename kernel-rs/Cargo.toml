@@ -1,0 +1,21 @@
+[package]
+name = "rv6-kernel"
+version = "0.1.0"
+authors = ["Jeehoon Kang <jeehoon.kang@kaist.ac.kr>"]
+edition = "2018"
+
+[lib]
+crate-type = ["staticlib"]
+
+[features]
+default = []
+test = []
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+lto = true
+
+[dependencies]

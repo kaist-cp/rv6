@@ -1,5 +1,9 @@
 K=kernel
 U=user
+KR=kernel-rs
+
+RUST_TARGET=riscv64gc-unknown-none-elfhf
+RUST_MODE=release
 
 OBJS = \
   $K/entry.o \
@@ -28,7 +32,8 @@ OBJS = \
   $K/sysfile.o \
   $K/kernelvec.o \
   $K/plic.o \
-  $K/virtio_disk.o
+  $K/virtio_disk.o \
+  $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a
 
 # riscv64-unknown-elf- or riscv64-linux-gnu-
 # perhaps in /opt/riscv/bin
@@ -81,6 +86,9 @@ $U/initcode: $U/initcode.S
 	$(LD) $(LDFLAGS) -N -e start -Ttext 0 -o $U/initcode.out $U/initcode.o
 	$(OBJCOPY) -S -O binary $U/initcode.out $U/initcode
 	$(OBJDUMP) -S $U/initcode.o > $U/initcode.asm
+
+$(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a: $(shell find $(KR) -type f)
+	cargo xbuild --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json --$(RUST_MODE)
 
 tags: $(OBJS) _init
 	etags *.S *.c
