@@ -43,7 +43,7 @@ mod console;
 // mod file;
 // mod fs;
 mod kalloc;
-// mod kernel_main;
+mod kernel_main;
 // mod log;
 mod panic;
 // mod pipe;

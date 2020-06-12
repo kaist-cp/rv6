@@ -40,7 +40,6 @@ OBJS = \
   $K/start.o \
   $K/printf.o \
   $K/uart.o \
-  $K/main.o \
   $K/vm.o \
   $K/proc.o \
   $K/swtch.o \
