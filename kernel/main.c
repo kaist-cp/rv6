@@ -6,16 +6,10 @@
 
 volatile static int started = 0;
 
-// TODO: remove later
-void hello_rs();
-
 // start() jumps here in supervisor mode on all CPUs.
 void
 main()
 {
-  // TODO: remove later
-  hello_rs();
-
   if(cpuid() == 0){
     consoleinit();
     printfinit();

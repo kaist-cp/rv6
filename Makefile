@@ -35,6 +35,25 @@ OBJS = \
   $K/virtio_disk.o \
   $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a
 
+OBJS = \
+  $K/entry.o \
+  $K/start.o \
+  $K/printf.o \
+  $K/uart.o \
+  $K/main.o \
+  $K/vm.o \
+  $K/proc.o \
+  $K/swtch.o \
+  $K/trampoline.o \
+  $K/fs.o \
+  $K/log.o \
+  $K/file.o \
+  $K/pipe.o \
+  $K/exec.o \
+  $K/kernelvec.o \
+  $K/virtio_disk.o \
+  $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a
+
 # riscv64-unknown-elf- or riscv64-linux-gnu-
 # perhaps in /opt/riscv/bin
 #TOOLPREFIX = 
@@ -146,6 +165,7 @@ fs.img: mkfs/mkfs README $(UPROGS)
 clean: 
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
 	*/*.o */*.d */*.asm */*.sym \
+	$(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a \
 	$U/initcode $U/initcode.out $K/kernel fs.img \
 	mkfs/mkfs .gdbinit \
         $U/usys.S \

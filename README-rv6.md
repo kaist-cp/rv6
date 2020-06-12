@@ -1,3 +1,5 @@
+## Build
+
 - Install toolchain.
 
   ```
@@ -20,3 +22,31 @@
   make qemu
   [to exit, C-A X]
   ```
+
+
+## How we ported xv6 to Rust
+
+- Run [c2rust](https://github.com/immunant/c2rust) to transpile C code to Rust.
+
+  ```
+  # Generate `compile_commands.json`.
+  pip3 install scan-build
+  intercept-build make qemu
+
+  # Remove optimization flags.
+  sed -i "/-O/d" compile_commands.json
+
+  # Transpile.
+  cargo +nightly-2019-12-05 install c2rust
+  c2rust transpile compile_commands.json --emit-modules --emit-no-std --translate-const-macros
+
+  # Move files.
+  mv kernel/*.rs kernel-rs/src
+  ```
+
+- Enable each transpiled Rust code.
+
+    + Add `mod <filename>;` in `kernel-rs/src/lib.rs`, and remove `$K/<filename>.o` from
+      `Makefile`'s `OBJS`.
+      
+    + See if `make qemu` works fine.
