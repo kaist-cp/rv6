@@ -37,7 +37,7 @@ mod libc {
     pub type intptr_t = isize;
 }
 
-mod bio;
+// mod bio;
 mod console;
 // mod exec;
 // mod file;
@@ -48,7 +48,7 @@ mod kernel_main;
 mod panic;
 // mod pipe;
 mod plic;
-// mod printf;
+mod printf;
 // mod proc;
 mod sleeplock;
 mod spinlock;

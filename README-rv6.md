@@ -61,4 +61,4 @@
     + Add `mod <filename>;` in `kernel-rs/src/lib.rs`, and remove `$K/<filename>.o` from
       `Makefile`'s `OBJS`.
       
-    + See if `make qemu` works fine.
+    + See if `rm fs.img && make qemu` and `usertests` inside qemu work fine.

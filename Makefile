@@ -38,12 +38,12 @@ OBJS = \
 OBJS = \
   $K/entry.o \
   $K/start.o \
-  $K/printf.o \
   $K/uart.o \
   $K/vm.o \
   $K/proc.o \
   $K/swtch.o \
   $K/trampoline.o \
+  $K/bio.o \
   $K/fs.o \
   $K/log.o \
   $K/file.o \
