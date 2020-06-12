@@ -49,7 +49,7 @@ mod panic;
 // mod pipe;
 mod plic;
 mod printf;
-// mod proc;
+mod proc;
 mod sleeplock;
 mod spinlock;
 mod start;

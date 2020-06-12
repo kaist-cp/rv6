@@ -230,7 +230,7 @@ unsafe extern "C" fn printint(mut xx: libc::c_int, mut base: libc::c_int, mut si
     }
     if sign != 0 {
         let fresh1 = i;
-        i = i + 1;
+        i += 1;
         buf[fresh1 as usize] = '-' as i32 as libc::c_char
     }
     loop {
