@@ -5,6 +5,8 @@ extern "C" {
     // assembly code in kernelvec.S for machine-mode timer interrupt.
     #[no_mangle]
     fn timervec();
+    #[no_mangle]
+    static mut stack0: [libc::c_char; 32768];
 }
 pub type uint64 = libc::c_ulong;
 // Physical memory layout
@@ -104,9 +106,6 @@ unsafe extern "C" fn w_mscratch(mut x: uint64) {
 unsafe extern "C" fn w_tp(mut x: uint64) {
     llvm_asm!("mv tp, $0" : : "r" (x) : : "volatile");
 }
-// entry.S needs one stack per CPU.
-#[no_mangle]
-pub static mut stack0: [libc::c_char; 32768] = [0; 32768];
 // scratch area for timer interrupt, one per CPU.
 #[no_mangle]
 pub static mut mscratch0: [uint64; 256] = [0; 256];
