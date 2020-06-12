@@ -20,7 +20,7 @@ pub extern "C" fn abort() -> ! {
 
 #[cfg(not(test))]
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo<'_>) -> ! {
+fn panic_handler(_info: &core::panic::PanicInfo<'_>) -> ! {
     // dlog!("Panic: {:?}\n", info);
     abort_impl()
 }
