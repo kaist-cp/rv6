@@ -46,7 +46,7 @@ mod kalloc;
 mod kernel_main;
 // mod log;
 mod panic;
-// mod pipe;
+mod pipe;
 mod plic;
 mod printf;
 mod proc;

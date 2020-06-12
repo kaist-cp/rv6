@@ -47,7 +47,6 @@ OBJS = \
   $K/fs.o \
   $K/log.o \
   $K/file.o \
-  $K/pipe.o \
   $K/exec.o \
   $K/kernelvec.o \
   $K/virtio_disk.o \

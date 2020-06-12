@@ -1,5 +1,5 @@
-use core::ptr;
 use crate::libc;
+use core::ptr;
 extern "C" {
     pub type inode;
     pub type file;

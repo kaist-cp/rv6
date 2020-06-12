@@ -1,4 +1,5 @@
 use crate::libc;
+use core::ptr;
 extern "C" {
     // file.c
     #[no_mangle]
@@ -204,8 +205,8 @@ pub const PIPESIZE: libc::c_int = 512 as libc::c_int;
 // write fd is still open
 #[no_mangle]
 pub unsafe extern "C" fn pipealloc(mut f0: *mut *mut file, mut f1: *mut *mut file) -> libc::c_int {
-    let mut pi: *mut pipe = 0 as *mut pipe;
-    pi = 0 as *mut pipe;
+    let mut pi: *mut pipe = ptr::null_mut();
+    pi = ptr::null_mut();
     *f1 = 0 as *mut file;
     *f0 = *f1;
     *f0 = filealloc();
