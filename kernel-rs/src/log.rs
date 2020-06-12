@@ -26,6 +26,9 @@ extern "C" {
     fn release(_: *mut spinlock);
     #[no_mangle]
     fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: uint) -> *mut libc::c_void;
+
+    #[no_mangle]
+    static mut log: log;
 }
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
@@ -135,23 +138,23 @@ pub const LOGSIZE: libc::c_int = MAXOPBLOCKS * 3 as libc::c_int;
 // Both the kernel and user programs use this header file.
 // root i-number
 pub const BSIZE: libc::c_int = 1024 as libc::c_int;
-#[no_mangle]
-pub static mut log: log = log {
-    lock: spinlock {
-        locked: 0,
-        name: 0 as *const libc::c_char as *mut libc::c_char,
-        cpu: 0 as *const cpu as *mut cpu,
-    },
-    start: 0,
-    size: 0,
-    outstanding: 0,
-    committing: 0,
-    dev: 0,
-    lh: logheader {
-        n: 0,
-        block: [0; 30],
-    },
-};
+// #[no_mangle]
+// pub static mut log: log = log {
+//     lock: spinlock {
+//         locked: 0,
+//         name: 0 as *const libc::c_char as *mut libc::c_char,
+//         cpu: 0 as *const cpu as *mut cpu,
+//     },
+//     start: 0,
+//     size: 0,
+//     outstanding: 0,
+//     committing: 0,
+//     dev: 0,
+//     lh: logheader {
+//         n: 0,
+//         block: [0; 30],
+//     },
+// };
 // log.c
 #[no_mangle]
 pub unsafe extern "C" fn initlog(mut dev: libc::c_int, mut sb: *mut superblock) {

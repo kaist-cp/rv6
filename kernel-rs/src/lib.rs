@@ -44,7 +44,7 @@ mod console;
 // mod fs;
 mod kalloc;
 mod kernel_main;
-// mod log;
+mod log;
 mod panic;
 mod pipe;
 mod plic;
