@@ -204,7 +204,7 @@ pub unsafe extern "C" fn bread(mut dev: uint, mut blockno: uint) -> *mut buf {
         virtio_disk_rw(b, 0 as libc::c_int);
         (*b).valid = 1 as libc::c_int
     }
-    return b;
+    b
 }
 // Write b's contents to disk.  Must be locked.
 #[no_mangle]

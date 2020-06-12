@@ -136,7 +136,7 @@ pub const SSTATUS_SIE: libc::c_long = (1 as libc::c_long) << 1 as libc::c_int;
 unsafe extern "C" fn r_sstatus() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("csrr $0, sstatus" : "=r" (x) : : : "volatile");
-    return x;
+    x
 }
 #[inline]
 unsafe extern "C" fn w_sstatus(mut x: uint64) {
@@ -153,7 +153,7 @@ pub const SIE_SSIE: libc::c_long = (1 as libc::c_long) << 1 as libc::c_int;
 unsafe extern "C" fn r_sie() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("csrr $0, sie" : "=r" (x) : : : "volatile");
-    return x;
+    x
 }
 #[inline]
 unsafe extern "C" fn w_sie(mut x: uint64) {
@@ -176,7 +176,7 @@ unsafe extern "C" fn intr_off() {
 #[inline]
 unsafe extern "C" fn intr_get() -> libc::c_int {
     let mut x: uint64 = r_sstatus();
-    return (x & SSTATUS_SIE as libc::c_ulong != 0 as libc::c_int as libc::c_ulong) as libc::c_int;
+    (x & SSTATUS_SIE as libc::c_ulong != 0 as libc::c_int as libc::c_ulong) as libc::c_int
 }
 // Mutual exclusion spin locks.
 #[no_mangle]
@@ -239,7 +239,7 @@ pub unsafe extern "C" fn holding(mut lk: *mut spinlock) -> libc::c_int {
     push_off();
     r = ((*lk).locked != 0 && (*lk).cpu == mycpu()) as libc::c_int;
     pop_off();
-    return r;
+    r
 }
 // push_off/pop_off are like intr_off()/intr_on() except that they are matched:
 // it takes two pop_off()s to undo two push_off()s.  Also, if interrupts

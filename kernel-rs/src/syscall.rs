@@ -194,7 +194,7 @@ pub unsafe extern "C" fn fetchaddr(mut addr: uint64, mut ip: *mut uint64) -> lib
     {
         return -(1 as libc::c_int);
     }
-    return 0 as libc::c_int;
+    0 as libc::c_int
 }
 // Fetch the nul-terminated string at addr from the current process.
 // Returns length of string, not including nul, or -1 for error.
@@ -209,7 +209,7 @@ pub unsafe extern "C" fn fetchstr(
     if err < 0 as libc::c_int {
         return err;
     }
-    return strlen(buf);
+    strlen(buf)
 }
 unsafe extern "C" fn argraw(mut n: libc::c_int) -> uint64 {
     let mut p: *mut proc_0 = myproc();
@@ -229,7 +229,7 @@ unsafe extern "C" fn argraw(mut n: libc::c_int) -> uint64 {
 #[no_mangle]
 pub unsafe extern "C" fn argint(mut n: libc::c_int, mut ip: *mut libc::c_int) -> libc::c_int {
     *ip = argraw(n) as libc::c_int;
-    return 0 as libc::c_int;
+    0 as libc::c_int
 }
 // Retrieve an argument as a pointer.
 // Doesn't check for legality, since
@@ -237,7 +237,7 @@ pub unsafe extern "C" fn argint(mut n: libc::c_int, mut ip: *mut libc::c_int) ->
 #[no_mangle]
 pub unsafe extern "C" fn argaddr(mut n: libc::c_int, mut ip: *mut uint64) -> libc::c_int {
     *ip = argraw(n);
-    return 0 as libc::c_int;
+    0 as libc::c_int
 }
 // Fetch the nth word-sized system call argument as a null-terminated string.
 // Copies into buf, at most max.
@@ -252,7 +252,7 @@ pub unsafe extern "C" fn argstr(
     if argaddr(n, &mut addr) < 0 as libc::c_int {
         return -(1 as libc::c_int);
     }
-    return fetchstr(addr, buf, max);
+    fetchstr(addr, buf, max)
 }
 static mut syscalls: [Option<unsafe extern "C" fn() -> uint64>; 22] = unsafe {
     [

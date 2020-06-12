@@ -292,7 +292,7 @@ pub unsafe extern "C" fn consolewrite(
         i += 1
     }
     release(&mut cons.lock);
-    return n;
+    n
 }
 //
 // user read()s from the console go here.
@@ -355,7 +355,7 @@ pub unsafe extern "C" fn consoleread(
         }
     }
     release(&mut cons.lock);
-    return target.wrapping_sub(n as libc::c_uint) as libc::c_int;
+    target.wrapping_sub(n as libc::c_uint) as libc::c_int
 }
 //
 // the console input interrupt handler.

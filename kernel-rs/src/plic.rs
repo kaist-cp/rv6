@@ -60,11 +60,9 @@ pub unsafe extern "C" fn plicinithart() {
 // to be served.
 #[no_mangle]
 pub unsafe extern "C" fn plic_pending() -> uint64 {
-    let mut mask: uint64 = 0;
     //mask = *(uint32*)(PLIC + 0x1000);
     //mask |= (uint64)*(uint32*)(PLIC + 0x1004) << 32;
-    mask = *(PLIC_PENDING as *mut uint64);
-    return mask;
+    *(PLIC_PENDING as *mut uint64)
 }
 // ask the PLIC what interrupt we should serve.
 #[no_mangle]
@@ -75,7 +73,7 @@ pub unsafe extern "C" fn plic_claim() -> libc::c_int {
         + 0x201004 as libc::c_int as libc::c_long
         + (hart * 0x2000 as libc::c_int) as libc::c_long)
         as *mut uint32) as libc::c_int;
-    return irq;
+    irq
 }
 // tell the PLIC we've served this IRQ.
 #[no_mangle]

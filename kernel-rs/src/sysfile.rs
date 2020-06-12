@@ -303,7 +303,7 @@ unsafe extern "C" fn argfd(
     if !pf.is_null() {
         *pf = f
     }
-    return 0 as libc::c_int;
+    0 as libc::c_int
 }
 // Allocate a file descriptor for the given file.
 // Takes over file reference from caller on success.
@@ -318,7 +318,7 @@ unsafe extern "C" fn fdalloc(mut f: *mut file) -> libc::c_int {
         }
         fd += 1
     }
-    return -(1 as libc::c_int);
+    -(1 as libc::c_int)
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_dup() -> uint64 {
@@ -332,7 +332,7 @@ pub unsafe extern "C" fn sys_dup() -> uint64 {
         return -(1 as libc::c_int) as uint64;
     }
     filedup(f);
-    return fd as uint64;
+    fd as uint64
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_read() -> uint64 {
@@ -345,7 +345,7 @@ pub unsafe extern "C" fn sys_read() -> uint64 {
     {
         return -(1 as libc::c_int) as uint64;
     }
-    return fileread(f, p, n) as uint64;
+    fileread(f, p, n) as uint64
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_write() -> uint64 {
@@ -358,7 +358,7 @@ pub unsafe extern "C" fn sys_write() -> uint64 {
     {
         return -(1 as libc::c_int) as uint64;
     }
-    return filewrite(f, p, n) as uint64;
+    filewrite(f, p, n) as uint64
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_close() -> uint64 {
@@ -370,7 +370,7 @@ pub unsafe extern "C" fn sys_close() -> uint64 {
     let ref mut fresh0 = (*myproc()).ofile[fd as usize];
     *fresh0 = 0 as *mut file;
     fileclose(f);
-    return 0 as libc::c_int as uint64;
+    0 as libc::c_int as uint64
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_fstat() -> uint64 {
@@ -381,7 +381,7 @@ pub unsafe extern "C" fn sys_fstat() -> uint64 {
     {
         return -(1 as libc::c_int) as uint64;
     }
-    return filestat(f, st) as uint64;
+    filestat(f, st) as uint64
 }
 // Create the path new as a link to the same inode as old.
 #[no_mangle]
@@ -428,7 +428,7 @@ pub unsafe extern "C" fn sys_link() -> uint64 {
     iupdate(ip);
     iunlockput(ip);
     end_op();
-    return -(1 as libc::c_int) as uint64;
+    -(1 as libc::c_int) as uint64
 }
 // Is the directory dp empty except for "." and ".." ?
 unsafe extern "C" fn isdirempty(mut dp: *mut inode) -> libc::c_int {
@@ -459,7 +459,7 @@ unsafe extern "C" fn isdirempty(mut dp: *mut inode) -> libc::c_int {
         off = (off as libc::c_ulong).wrapping_add(::core::mem::size_of::<dirent>() as libc::c_ulong)
             as libc::c_int as libc::c_int
     }
-    return 1 as libc::c_int;
+    1 as libc::c_int
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_unlink() -> uint64 {
@@ -538,7 +538,7 @@ pub unsafe extern "C" fn sys_unlink() -> uint64 {
     }
     iunlockput(dp);
     end_op();
-    return -(1 as libc::c_int) as uint64;
+    -(1 as libc::c_int) as uint64
 }
 unsafe extern "C" fn create(
     mut path: *mut libc::c_char,
@@ -599,7 +599,7 @@ unsafe extern "C" fn create(
         panic(b"create: dirlink\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     iunlockput(dp);
-    return ip;
+    ip
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_open() -> uint64 {
@@ -669,7 +669,7 @@ pub unsafe extern "C" fn sys_open() -> uint64 {
     (*f).writable = (omode & O_WRONLY != 0 || omode & O_RDWR != 0) as libc::c_int as libc::c_char;
     iunlock(ip);
     end_op();
-    return fd as uint64;
+    fd as uint64
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_mkdir() -> uint64 {
@@ -690,7 +690,7 @@ pub unsafe extern "C" fn sys_mkdir() -> uint64 {
     }
     iunlockput(ip);
     end_op();
-    return 0 as libc::c_int as uint64;
+    0 as libc::c_int as uint64
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_mknod() -> uint64 {
@@ -717,7 +717,7 @@ pub unsafe extern "C" fn sys_mknod() -> uint64 {
     }
     iunlockput(ip);
     end_op();
-    return 0 as libc::c_int as uint64;
+    0 as libc::c_int as uint64
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_chdir() -> uint64 {
@@ -742,7 +742,7 @@ pub unsafe extern "C" fn sys_chdir() -> uint64 {
     iput((*p).cwd);
     end_op();
     (*p).cwd = ip;
-    return 0 as libc::c_int as uint64;
+    0 as libc::c_int as uint64
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_exec() -> uint64 {
@@ -812,7 +812,7 @@ pub unsafe extern "C" fn sys_exec() -> uint64 {
                 kfree(argv[i as usize] as *mut libc::c_void);
                 i += 1
             }
-            return -(1 as libc::c_int) as uint64;
+            -(1 as libc::c_int) as uint64
         }
         _ => {
             ret = exec(path.as_mut_ptr(), argv.as_mut_ptr());
@@ -825,9 +825,9 @@ pub unsafe extern "C" fn sys_exec() -> uint64 {
                 kfree(argv[i as usize] as *mut libc::c_void);
                 i += 1
             }
-            return ret as uint64;
+            ret as uint64
         }
-    };
+    }
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_pipe() -> uint64 {
@@ -875,5 +875,5 @@ pub unsafe extern "C" fn sys_pipe() -> uint64 {
         fileclose(wf);
         return -(1 as libc::c_int) as uint64;
     }
-    return 0 as libc::c_int as uint64;
+    0 as libc::c_int as uint64
 }

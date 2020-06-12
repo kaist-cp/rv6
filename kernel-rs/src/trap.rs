@@ -217,7 +217,7 @@ pub const SSTATUS_SIE: libc::c_long = (1 as libc::c_long) << 1 as libc::c_int;
 unsafe extern "C" fn r_sstatus() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("csrr $0, sstatus" : "=r" (x) : : : "volatile");
-    return x;
+    x
 }
 #[inline]
 unsafe extern "C" fn w_sstatus(mut x: uint64) {
@@ -228,7 +228,7 @@ unsafe extern "C" fn w_sstatus(mut x: uint64) {
 unsafe extern "C" fn r_sip() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("csrr $0, sip" : "=r" (x) : : : "volatile");
-    return x;
+    x
 }
 #[inline]
 unsafe extern "C" fn w_sip(mut x: uint64) {
@@ -245,7 +245,7 @@ pub const SIE_SSIE: libc::c_long = (1 as libc::c_long) << 1 as libc::c_int;
 unsafe extern "C" fn r_sie() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("csrr $0, sie" : "=r" (x) : : : "volatile");
-    return x;
+    x
 }
 #[inline]
 unsafe extern "C" fn w_sie(mut x: uint64) {
@@ -262,7 +262,7 @@ unsafe extern "C" fn w_sepc(mut x: uint64) {
 unsafe extern "C" fn r_sepc() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("csrr $0, sepc" : "=r" (x) : : : "volatile");
-    return x;
+    x
 }
 // Supervisor Trap-Vector Base Address
 // low two bits are mode.
@@ -276,21 +276,21 @@ pub const SATP_SV39: libc::c_long = (8 as libc::c_long) << 60 as libc::c_int;
 unsafe extern "C" fn r_satp() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("csrr $0, satp" : "=r" (x) : : : "volatile");
-    return x;
+    x
 }
 // Supervisor Trap Cause
 #[inline]
 unsafe extern "C" fn r_scause() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("csrr $0, scause" : "=r" (x) : : : "volatile");
-    return x;
+    x
 }
 // Supervisor Trap Value
 #[inline]
 unsafe extern "C" fn r_stval() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("csrr $0, stval" : "=r" (x) : : : "volatile");
-    return x;
+    x
 }
 // enable device interrupts
 #[inline]
@@ -309,7 +309,7 @@ unsafe extern "C" fn intr_off() {
 #[inline]
 unsafe extern "C" fn intr_get() -> libc::c_int {
     let mut x: uint64 = r_sstatus();
-    return (x & SSTATUS_SIE as libc::c_ulong != 0 as libc::c_int as libc::c_ulong) as libc::c_int;
+    (x & SSTATUS_SIE as libc::c_ulong != 0 as libc::c_int as libc::c_ulong) as libc::c_int
 }
 // read and write tp, the thread pointer, which holds
 // this core's hartid (core number), the index into cpus[].
@@ -317,7 +317,7 @@ unsafe extern "C" fn intr_get() -> libc::c_int {
 unsafe extern "C" fn r_tp() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("mv $0, tp" : "=r" (x) : : : "volatile");
-    return x;
+    x
 }
 pub const PGSIZE: libc::c_int = 4096 as libc::c_int;
 // bytes per page
@@ -332,8 +332,8 @@ pub const PGSIZE: libc::c_int = 4096 as libc::c_int;
 // Sv39, to avoid having to sign-extend virtual addresses
 // that have the high bit set.
 pub const MAXVA: libc::c_long = (1 as libc::c_long)
-    << 9 as libc::c_int + 9 as libc::c_int + 9 as libc::c_int + 12 as libc::c_int
-        - 1 as libc::c_int;
+    << (9 as libc::c_int + 9 as libc::c_int + 9 as libc::c_int + 12 as libc::c_int
+        - 1 as libc::c_int);
 #[no_mangle]
 pub static mut tickslock: spinlock = spinlock {
     locked: 0,
@@ -550,7 +550,7 @@ pub unsafe extern "C" fn devintr() -> libc::c_int {
             virtio_disk_intr();
         }
         plic_complete(irq);
-        return 1 as libc::c_int;
+        1 as libc::c_int
     } else if scause == 0x8000000000000001 as libc::c_ulong {
         // software interrupt from a machine-mode timer interrupt,
         // forwarded by timervec in kernelvec.S.
@@ -560,8 +560,8 @@ pub unsafe extern "C" fn devintr() -> libc::c_int {
         // acknowledge the software interrupt by clearing
         // the SSIP bit in sip.
         w_sip(r_sip() & !(2 as libc::c_int) as libc::c_ulong);
-        return 2 as libc::c_int;
+        2 as libc::c_int
     } else {
-        return 0 as libc::c_int;
-    };
+        0 as libc::c_int
+    }
 }

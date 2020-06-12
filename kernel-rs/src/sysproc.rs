@@ -157,16 +157,16 @@ pub unsafe extern "C" fn sys_exit() -> uint64 {
         return -(1 as libc::c_int) as uint64;
     }
     exit(n);
-    return 0 as libc::c_int as uint64;
+    0 as libc::c_int as uint64
     // not reached
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_getpid() -> uint64 {
-    return (*myproc()).pid as uint64;
+    (*myproc()).pid as uint64
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_fork() -> uint64 {
-    return fork() as uint64;
+    fork() as uint64
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_wait() -> uint64 {
@@ -174,7 +174,7 @@ pub unsafe extern "C" fn sys_wait() -> uint64 {
     if argaddr(0 as libc::c_int, &mut p) < 0 as libc::c_int {
         return -(1 as libc::c_int) as uint64;
     }
-    return wait(p) as uint64;
+    wait(p) as uint64
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_sbrk() -> uint64 {
@@ -187,7 +187,7 @@ pub unsafe extern "C" fn sys_sbrk() -> uint64 {
     if growproc(n) < 0 as libc::c_int {
         return -(1 as libc::c_int) as uint64;
     }
-    return addr as uint64;
+    addr as uint64
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_sleep() -> uint64 {
@@ -206,7 +206,7 @@ pub unsafe extern "C" fn sys_sleep() -> uint64 {
         sleep(&mut ticks as *mut uint as *mut libc::c_void, &mut tickslock);
     }
     release(&mut tickslock);
-    return 0 as libc::c_int as uint64;
+    0 as libc::c_int as uint64
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_kill() -> uint64 {
@@ -214,7 +214,7 @@ pub unsafe extern "C" fn sys_kill() -> uint64 {
     if argint(0 as libc::c_int, &mut pid) < 0 as libc::c_int {
         return -(1 as libc::c_int) as uint64;
     }
-    return kill(pid) as uint64;
+    kill(pid) as uint64
 }
 // return how many clock tick interrupts have occurred
 // since start.
@@ -224,5 +224,5 @@ pub unsafe extern "C" fn sys_uptime() -> uint64 {
     acquire(&mut tickslock);
     xticks = ticks;
     release(&mut tickslock);
-    return xticks as uint64;
+    xticks as uint64
 }

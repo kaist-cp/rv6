@@ -14,7 +14,7 @@ pub unsafe extern "C" fn memset(
         *cdst.offset(i as isize) = c as libc::c_char;
         i += 1
     }
-    return dst;
+    dst
 }
 #[no_mangle]
 pub unsafe extern "C" fn memcmp(
@@ -38,7 +38,7 @@ pub unsafe extern "C" fn memcmp(
         s1 = s1.offset(1);
         s2 = s2.offset(1)
     }
-    return 0 as libc::c_int;
+    0 as libc::c_int
 }
 #[no_mangle]
 pub unsafe extern "C" fn memmove(
@@ -77,7 +77,7 @@ pub unsafe extern "C" fn memmove(
             *fresh4 = *fresh3
         }
     }
-    return dst;
+    dst
 }
 // memcpy exists to placate GCC.  Use memmove.
 #[no_mangle]
@@ -86,7 +86,7 @@ pub unsafe extern "C" fn memcpy(
     mut src: *const libc::c_void,
     mut n: uint,
 ) -> *mut libc::c_void {
-    return memmove(dst, src, n);
+    memmove(dst, src, n)
 }
 #[no_mangle]
 pub unsafe extern "C" fn strncmp(
@@ -105,7 +105,7 @@ pub unsafe extern "C" fn strncmp(
     if n == 0 as libc::c_int as libc::c_uint {
         return 0 as libc::c_int;
     }
-    return *p as uchar as libc::c_int - *q as uchar as libc::c_int;
+    *p as uchar as libc::c_int - *q as uchar as libc::c_int
 }
 #[no_mangle]
 pub unsafe extern "C" fn strncpy(
@@ -139,7 +139,7 @@ pub unsafe extern "C" fn strncpy(
         s = s.offset(1);
         *fresh9 = 0 as libc::c_int as libc::c_char
     }
-    return os;
+    os
 }
 // Like strncpy but guaranteed to NUL-terminate.
 #[no_mangle]
@@ -167,7 +167,7 @@ pub unsafe extern "C" fn safestrcpy(
         }
     }
     *s = 0 as libc::c_int as libc::c_char;
-    return os;
+    os
 }
 #[no_mangle]
 pub unsafe extern "C" fn strlen(mut s: *const libc::c_char) -> libc::c_int {
@@ -176,5 +176,5 @@ pub unsafe extern "C" fn strlen(mut s: *const libc::c_char) -> libc::c_int {
     while *s.offset(n as isize) != 0 {
         n += 1
     }
-    return n;
+    n
 }

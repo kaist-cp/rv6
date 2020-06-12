@@ -142,5 +142,5 @@ pub unsafe extern "C" fn kalloc() -> *mut libc::c_void {
             PGSIZE as uint,
         );
     }
-    return r as *mut libc::c_void;
+    r as *mut libc::c_void
 }

@@ -179,5 +179,5 @@ pub unsafe extern "C" fn holdingsleep(mut lk: *mut sleeplock) -> libc::c_int {
     acquire(&mut (*lk).lk);
     r = ((*lk).locked != 0 && (*lk).pid == (*myproc()).pid) as libc::c_int;
     release(&mut (*lk).lk);
-    return r;
+    r
 }
