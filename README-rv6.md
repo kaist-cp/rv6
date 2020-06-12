@@ -4,7 +4,7 @@
 
   ```
   # Ubuntu 20.04
-  sudo apt install gcc-riscv64-linux-gnu qemu-system-misc
+  sudo apt install gcc-riscv64-linux-gnu qemu-system-misc gdb-multiarch
 
   rustup component add rust-src
   cargo install cargo-xbuild
@@ -21,6 +21,18 @@
   ```
   make qemu
   [to exit, C-A X]
+  ```
+
+- Debug rv6 on qemu.
+
+  ```
+  make qemu-gdb
+  [to exit, C-A X]
+  ```
+
+  (Different shell)
+  ```
+  gdb-multiarch
   ```
 
 
