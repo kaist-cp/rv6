@@ -1,4 +1,5 @@
 use crate::libc;
+use core::ptr;
 extern "C" {
     pub type inode;
     pub type file;
@@ -183,7 +184,7 @@ unsafe extern "C" fn intr_get() -> libc::c_int {
 pub unsafe extern "C" fn initlock(mut lk: *mut spinlock, mut name: *mut libc::c_char) {
     (*lk).name = name;
     (*lk).locked = 0 as libc::c_int as uint;
-    (*lk).cpu = 0 as *mut cpu;
+    (*lk).cpu = ptr::null_mut();
 }
 // spinlock.c
 // Acquire the lock.
@@ -216,7 +217,7 @@ pub unsafe extern "C" fn release(mut lk: *mut spinlock) {
     if holding(lk) == 0 {
         panic(b"release\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    (*lk).cpu = 0 as *mut cpu;
+    (*lk).cpu = ptr::null_mut();
     // Tell the C compiler and the CPU to not move loads or stores
     // past this point, to ensure that all the stores in the critical
     // section are visible to other CPUs before the lock is released.

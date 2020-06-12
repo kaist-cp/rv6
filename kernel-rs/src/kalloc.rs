@@ -1,4 +1,5 @@
 use crate::libc;
+use core::ptr;
 extern "C" {
     pub type cpu;
     #[no_mangle]
@@ -91,7 +92,7 @@ pub unsafe extern "C" fn kinit() {
 // and pipe buffers. Allocates whole 4096-byte pages.
 #[no_mangle]
 pub unsafe extern "C" fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: *mut libc::c_void) {
-    let mut p: *mut libc::c_char = 0 as *mut libc::c_char;
+    let mut p: *mut libc::c_char = ptr::null_mut();
     p = ((pa_start as uint64)
         .wrapping_add(PGSIZE as libc::c_ulong)
         .wrapping_sub(1 as libc::c_int as libc::c_ulong)
@@ -107,7 +108,7 @@ pub unsafe extern "C" fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: 
 // initializing the allocator; see kinit above.)
 #[no_mangle]
 pub unsafe extern "C" fn kfree(mut pa: *mut libc::c_void) {
-    let mut r: *mut run = 0 as *mut run;
+    let mut r: *mut run = ptr::null_mut();
     if (pa as uint64).wrapping_rem(PGSIZE as libc::c_ulong) != 0 as libc::c_int as libc::c_ulong
         || (pa as *mut libc::c_char) < end.as_mut_ptr()
         || pa as uint64 >= PHYSTOP as libc::c_ulong
@@ -128,7 +129,7 @@ pub unsafe extern "C" fn kfree(mut pa: *mut libc::c_void) {
 // Returns 0 if the memory cannot be allocated.
 #[no_mangle]
 pub unsafe extern "C" fn kalloc() -> *mut libc::c_void {
-    let mut r: *mut run = 0 as *mut run; // fill with junk
+    let mut r: *mut run = ptr::null_mut(); // fill with junk
     acquire(&mut kmem.lock);
     r = kmem.freelist;
     if !r.is_null() {

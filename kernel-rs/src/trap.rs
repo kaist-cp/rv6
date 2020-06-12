@@ -402,7 +402,7 @@ pub unsafe extern "C" fn usertrap() {
         syscall();
     } else {
         which_dev = devintr();
-        if !(which_dev != 0 as libc::c_int) {
+        if which_dev == 0 as libc::c_int {
             printf(
                 b"usertrap(): unexpected scause %p pid=%d\n\x00" as *const u8 as *const libc::c_char
                     as *mut libc::c_char,

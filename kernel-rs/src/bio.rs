@@ -1,4 +1,5 @@
 use crate::libc;
+use core::ptr;
 extern "C" {
     pub type cpu;
     #[no_mangle]
@@ -141,7 +142,7 @@ pub static mut bcache: C2RustUnnamed = C2RustUnnamed {
 // bio.c
 #[no_mangle]
 pub unsafe extern "C" fn binit() {
-    let mut b: *mut buf = 0 as *mut buf;
+    let mut b: *mut buf = ptr::null_mut();
     initlock(
         &mut bcache.lock,
         b"bcache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
@@ -166,7 +167,7 @@ pub unsafe extern "C" fn binit() {
 // If not found, allocate a buffer.
 // In either case, return locked buffer.
 unsafe extern "C" fn bget(mut dev: uint, mut blockno: uint) -> *mut buf {
-    let mut b: *mut buf = 0 as *mut buf;
+    let mut b: *mut buf = ptr::null_mut();
     acquire(&mut bcache.lock);
     // Is the block already cached?
     b = bcache.head.next;
@@ -198,7 +199,7 @@ unsafe extern "C" fn bget(mut dev: uint, mut blockno: uint) -> *mut buf {
 // Return a locked buf with the contents of the indicated block.
 #[no_mangle]
 pub unsafe extern "C" fn bread(mut dev: uint, mut blockno: uint) -> *mut buf {
-    let mut b: *mut buf = 0 as *mut buf;
+    let mut b: *mut buf = ptr::null_mut();
     b = bget(dev, blockno);
     if (*b).valid == 0 {
         virtio_disk_rw(b, 0 as libc::c_int);

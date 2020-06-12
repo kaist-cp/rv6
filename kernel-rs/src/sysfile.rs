@@ -1,4 +1,5 @@
 use crate::libc;
+use core::ptr;
 extern "C" {
     pub type pipe;
     // exec.c
@@ -287,7 +288,7 @@ unsafe extern "C" fn argfd(
     mut pf: *mut *mut file,
 ) -> libc::c_int {
     let mut fd: libc::c_int = 0;
-    let mut f: *mut file = 0 as *mut file;
+    let mut f: *mut file = ptr::null_mut();
     if argint(n, &mut fd) < 0 as libc::c_int {
         return -(1 as libc::c_int);
     }
@@ -322,9 +323,9 @@ unsafe extern "C" fn fdalloc(mut f: *mut file) -> libc::c_int {
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_dup() -> uint64 {
-    let mut f: *mut file = 0 as *mut file;
+    let mut f: *mut file = ptr::null_mut();
     let mut fd: libc::c_int = 0;
-    if argfd(0 as libc::c_int, 0 as *mut libc::c_int, &mut f) < 0 as libc::c_int {
+    if argfd(0 as libc::c_int, ptr::null_mut(), &mut f) < 0 as libc::c_int {
         return -(1 as libc::c_int) as uint64;
     }
     fd = fdalloc(f);
@@ -336,10 +337,10 @@ pub unsafe extern "C" fn sys_dup() -> uint64 {
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_read() -> uint64 {
-    let mut f: *mut file = 0 as *mut file;
+    let mut f: *mut file = ptr::null_mut();
     let mut n: libc::c_int = 0;
     let mut p: uint64 = 0;
-    if argfd(0 as libc::c_int, 0 as *mut libc::c_int, &mut f) < 0 as libc::c_int
+    if argfd(0 as libc::c_int, ptr::null_mut(), &mut f) < 0 as libc::c_int
         || argint(2 as libc::c_int, &mut n) < 0 as libc::c_int
         || argaddr(1 as libc::c_int, &mut p) < 0 as libc::c_int
     {
@@ -349,10 +350,10 @@ pub unsafe extern "C" fn sys_read() -> uint64 {
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_write() -> uint64 {
-    let mut f: *mut file = 0 as *mut file;
+    let mut f: *mut file = ptr::null_mut();
     let mut n: libc::c_int = 0;
     let mut p: uint64 = 0;
-    if argfd(0 as libc::c_int, 0 as *mut libc::c_int, &mut f) < 0 as libc::c_int
+    if argfd(0 as libc::c_int, ptr::null_mut(), &mut f) < 0 as libc::c_int
         || argint(2 as libc::c_int, &mut n) < 0 as libc::c_int
         || argaddr(1 as libc::c_int, &mut p) < 0 as libc::c_int
     {
@@ -363,20 +364,20 @@ pub unsafe extern "C" fn sys_write() -> uint64 {
 #[no_mangle]
 pub unsafe extern "C" fn sys_close() -> uint64 {
     let mut fd: libc::c_int = 0;
-    let mut f: *mut file = 0 as *mut file;
+    let mut f: *mut file = ptr::null_mut();
     if argfd(0 as libc::c_int, &mut fd, &mut f) < 0 as libc::c_int {
         return -(1 as libc::c_int) as uint64;
     }
-    let ref mut fresh0 = (*myproc()).ofile[fd as usize];
-    *fresh0 = 0 as *mut file;
+    let fresh0 = &mut (*myproc()).ofile[fd as usize];
+    *fresh0 = ptr::null_mut();
     fileclose(f);
     0 as libc::c_int as uint64
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_fstat() -> uint64 {
-    let mut f: *mut file = 0 as *mut file;
+    let mut f: *mut file = ptr::null_mut();
     let mut st: uint64 = 0;
-    if argfd(0 as libc::c_int, 0 as *mut libc::c_int, &mut f) < 0 as libc::c_int
+    if argfd(0 as libc::c_int, ptr::null_mut(), &mut f) < 0 as libc::c_int
         || argaddr(1 as libc::c_int, &mut st) < 0 as libc::c_int
     {
         return -(1 as libc::c_int) as uint64;
@@ -389,8 +390,8 @@ pub unsafe extern "C" fn sys_link() -> uint64 {
     let mut name: [libc::c_char; 14] = [0; 14];
     let mut new: [libc::c_char; 128] = [0; 128];
     let mut old: [libc::c_char; 128] = [0; 128];
-    let mut dp: *mut inode = 0 as *mut inode;
-    let mut ip: *mut inode = 0 as *mut inode;
+    let mut dp: *mut inode = ptr::null_mut();
+    let mut ip: *mut inode = ptr::null_mut();
     if argstr(0 as libc::c_int, old.as_mut_ptr(), MAXPATH) < 0 as libc::c_int
         || argstr(1 as libc::c_int, new.as_mut_ptr(), MAXPATH) < 0 as libc::c_int
     {
@@ -463,8 +464,8 @@ unsafe extern "C" fn isdirempty(mut dp: *mut inode) -> libc::c_int {
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_unlink() -> uint64 {
-    let mut ip: *mut inode = 0 as *mut inode;
-    let mut dp: *mut inode = 0 as *mut inode;
+    let mut ip: *mut inode = ptr::null_mut();
+    let mut dp: *mut inode = ptr::null_mut();
     let mut de: dirent = dirent {
         inum: 0,
         name: [0; 14],
@@ -546,15 +547,15 @@ unsafe extern "C" fn create(
     mut major: libc::c_short,
     mut minor: libc::c_short,
 ) -> *mut inode {
-    let mut ip: *mut inode = 0 as *mut inode;
-    let mut dp: *mut inode = 0 as *mut inode;
+    let mut ip: *mut inode = ptr::null_mut();
+    let mut dp: *mut inode = ptr::null_mut();
     let mut name: [libc::c_char; 14] = [0; 14];
     dp = nameiparent(path, name.as_mut_ptr());
     if dp.is_null() {
-        return 0 as *mut inode;
+        return ptr::null_mut();
     }
     ilock(dp);
-    ip = dirlookup(dp, name.as_mut_ptr(), 0 as *mut uint);
+    ip = dirlookup(dp, name.as_mut_ptr(), ptr::null_mut());
     if !ip.is_null() {
         iunlockput(dp);
         ilock(ip);
@@ -564,7 +565,7 @@ unsafe extern "C" fn create(
             return ip;
         }
         iunlockput(ip);
-        return 0 as *mut inode;
+        return ptr::null_mut();
     }
     ip = ialloc((*dp).dev, type_0);
     if ip.is_null() {
@@ -606,8 +607,8 @@ pub unsafe extern "C" fn sys_open() -> uint64 {
     let mut path: [libc::c_char; 128] = [0; 128];
     let mut fd: libc::c_int = 0;
     let mut omode: libc::c_int = 0;
-    let mut f: *mut file = 0 as *mut file;
-    let mut ip: *mut inode = 0 as *mut inode;
+    let mut f: *mut file = ptr::null_mut();
+    let mut ip: *mut inode = ptr::null_mut();
     let mut n: libc::c_int = 0;
     n = argstr(0 as libc::c_int, path.as_mut_ptr(), MAXPATH);
     if n < 0 as libc::c_int || argint(1 as libc::c_int, &mut omode) < 0 as libc::c_int {
@@ -674,7 +675,7 @@ pub unsafe extern "C" fn sys_open() -> uint64 {
 #[no_mangle]
 pub unsafe extern "C" fn sys_mkdir() -> uint64 {
     let mut path: [libc::c_char; 128] = [0; 128];
-    let mut ip: *mut inode = 0 as *mut inode;
+    let mut ip: *mut inode = ptr::null_mut();
     begin_op();
     if argstr(0 as libc::c_int, path.as_mut_ptr(), MAXPATH) < 0 as libc::c_int || {
         ip = create(
@@ -694,7 +695,7 @@ pub unsafe extern "C" fn sys_mkdir() -> uint64 {
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_mknod() -> uint64 {
-    let mut ip: *mut inode = 0 as *mut inode;
+    let mut ip: *mut inode = ptr::null_mut();
     let mut path: [libc::c_char; 128] = [0; 128];
     let mut major: libc::c_int = 0;
     let mut minor: libc::c_int = 0;
@@ -722,7 +723,7 @@ pub unsafe extern "C" fn sys_mknod() -> uint64 {
 #[no_mangle]
 pub unsafe extern "C" fn sys_chdir() -> uint64 {
     let mut path: [libc::c_char; 128] = [0; 128];
-    let mut ip: *mut inode = 0 as *mut inode;
+    let mut ip: *mut inode = ptr::null_mut();
     let mut p: *mut proc_0 = myproc();
     begin_op();
     if argstr(0 as libc::c_int, path.as_mut_ptr(), MAXPATH) < 0 as libc::c_int || {
@@ -749,7 +750,7 @@ pub unsafe extern "C" fn sys_exec() -> uint64 {
     let mut ret: libc::c_int = 0;
     let mut current_block: u64;
     let mut path: [libc::c_char; 128] = [0; 128];
-    let mut argv: [*mut libc::c_char; 32] = [0 as *mut libc::c_char; 32];
+    let mut argv: [*mut libc::c_char; 32] = [ptr::null_mut(); 32];
     let mut i: libc::c_int = 0;
     let mut uargv: uint64 = 0;
     let mut uarg: uint64 = 0;
@@ -784,7 +785,7 @@ pub unsafe extern "C" fn sys_exec() -> uint64 {
             break;
         }
         if uarg == 0 as libc::c_int as libc::c_ulong {
-            argv[i as usize] = 0 as *mut libc::c_char;
+            argv[i as usize] = ptr::null_mut();
             current_block = 6009453772311597924;
             break;
         } else {
@@ -832,8 +833,8 @@ pub unsafe extern "C" fn sys_exec() -> uint64 {
 #[no_mangle]
 pub unsafe extern "C" fn sys_pipe() -> uint64 {
     let mut fdarray: uint64 = 0;
-    let mut rf: *mut file = 0 as *mut file;
-    let mut wf: *mut file = 0 as *mut file;
+    let mut rf: *mut file = ptr::null_mut();
+    let mut wf: *mut file = ptr::null_mut();
     let mut fd0: libc::c_int = 0;
     let mut fd1: libc::c_int = 0;
     let mut p: *mut proc_0 = myproc();
@@ -850,7 +851,7 @@ pub unsafe extern "C" fn sys_pipe() -> uint64 {
         (fd1) < 0 as libc::c_int
     } {
         if fd0 >= 0 as libc::c_int {
-            (*p).ofile[fd0 as usize] = 0 as *mut file
+            (*p).ofile[fd0 as usize] = ptr::null_mut()
         }
         fileclose(rf);
         fileclose(wf);
@@ -869,8 +870,8 @@ pub unsafe extern "C" fn sys_pipe() -> uint64 {
             ::core::mem::size_of::<libc::c_int>() as libc::c_ulong,
         ) < 0 as libc::c_int
     {
-        (*p).ofile[fd0 as usize] = 0 as *mut file;
-        (*p).ofile[fd1 as usize] = 0 as *mut file;
+        (*p).ofile[fd0 as usize] = ptr::null_mut();
+        (*p).ofile[fd1 as usize] = ptr::null_mut();
         fileclose(rf);
         fileclose(wf);
         return -(1 as libc::c_int) as uint64;

@@ -426,12 +426,12 @@ pub unsafe extern "C" fn consoleinit() {
     uartinit();
     // connect read and write system calls
     // to consoleread and consolewrite.
-    let ref mut fresh2 = (*devsw.as_mut_ptr().offset(CONSOLE as isize)).read;
+    let fresh2 = &mut (*devsw.as_mut_ptr().offset(CONSOLE as isize)).read;
     *fresh2 = Some(
         consoleread
             as unsafe extern "C" fn(_: libc::c_int, _: uint64, _: libc::c_int) -> libc::c_int,
     );
-    let ref mut fresh3 = (*devsw.as_mut_ptr().offset(CONSOLE as isize)).write;
+    let fresh3 = &mut (*devsw.as_mut_ptr().offset(CONSOLE as isize)).write;
     *fresh3 = Some(
         consolewrite
             as unsafe extern "C" fn(_: libc::c_int, _: uint64, _: libc::c_int) -> libc::c_int,

@@ -1,4 +1,5 @@
 use crate::libc;
+use core::ptr;
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
 #[no_mangle]
@@ -22,14 +23,14 @@ pub unsafe extern "C" fn memcmp(
     mut v2: *const libc::c_void,
     mut n: uint,
 ) -> libc::c_int {
-    let mut s1: *const uchar = 0 as *const uchar;
-    let mut s2: *const uchar = 0 as *const uchar;
+    let mut s1: *const uchar = ptr::null();
+    let mut s2: *const uchar = ptr::null();
     s1 = v1 as *const uchar;
     s2 = v2 as *const uchar;
     loop {
         let fresh0 = n;
         n = n.wrapping_sub(1);
-        if !(fresh0 > 0 as libc::c_int as libc::c_uint) {
+        if fresh0 <= 0 as libc::c_int as libc::c_uint {
             break;
         }
         if *s1 as libc::c_int != *s2 as libc::c_int {
@@ -46,8 +47,8 @@ pub unsafe extern "C" fn memmove(
     mut src: *const libc::c_void,
     mut n: uint,
 ) -> *mut libc::c_void {
-    let mut s: *const libc::c_char = 0 as *const libc::c_char;
-    let mut d: *mut libc::c_char = 0 as *mut libc::c_char;
+    let mut s: *const libc::c_char = ptr::null();
+    let mut d: *mut libc::c_char = ptr::null_mut();
     s = src as *const libc::c_char;
     d = dst as *mut libc::c_char;
     if s < d && s.offset(n as isize) > d {
@@ -56,7 +57,7 @@ pub unsafe extern "C" fn memmove(
         loop {
             let fresh1 = n;
             n = n.wrapping_sub(1);
-            if !(fresh1 > 0 as libc::c_int as libc::c_uint) {
+            if fresh1 <= 0 as libc::c_int as libc::c_uint {
                 break;
             }
             s = s.offset(-1);
@@ -67,7 +68,7 @@ pub unsafe extern "C" fn memmove(
         loop {
             let fresh2 = n;
             n = n.wrapping_sub(1);
-            if !(fresh2 > 0 as libc::c_int as libc::c_uint) {
+            if fresh2 <= 0 as libc::c_int as libc::c_uint {
                 break;
             }
             let fresh3 = s;
@@ -113,11 +114,11 @@ pub unsafe extern "C" fn strncpy(
     mut t: *const libc::c_char,
     mut n: libc::c_int,
 ) -> *mut libc::c_char {
-    let mut os: *mut libc::c_char = 0 as *mut libc::c_char;
+    let mut os: *mut libc::c_char = ptr::null_mut();
     os = s;
     loop {
         let fresh5 = n;
-        n = n - 1;
+        n -= 1;
         if !(fresh5 > 0 as libc::c_int && {
             let fresh6 = t;
             t = t.offset(1);
@@ -131,8 +132,8 @@ pub unsafe extern "C" fn strncpy(
     }
     loop {
         let fresh8 = n;
-        n = n - 1;
-        if !(fresh8 > 0 as libc::c_int) {
+        n -= 1;
+        if fresh8 <= 0 as libc::c_int {
             break;
         }
         let fresh9 = s;
@@ -148,7 +149,7 @@ pub unsafe extern "C" fn safestrcpy(
     mut t: *const libc::c_char,
     mut n: libc::c_int,
 ) -> *mut libc::c_char {
-    let mut os: *mut libc::c_char = 0 as *mut libc::c_char;
+    let mut os: *mut libc::c_char = ptr::null_mut();
     os = s;
     if n <= 0 as libc::c_int {
         return os;
