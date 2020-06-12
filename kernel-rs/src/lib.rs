@@ -3,8 +3,15 @@
 #![no_std]
 #![deny(warnings)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
-#![allow(non_camel_case_types, elided_lifetimes_in_paths, unused_assignments, unused_mut, dead_code, unused_unsafe, non_upper_case_globals)]
-
+#![allow(
+    non_camel_case_types,
+    elided_lifetimes_in_paths,
+    unused_assignments,
+    unused_mut,
+    dead_code,
+    unused_unsafe,
+    non_upper_case_globals
+)]
 #![feature(asm)]
 #![feature(llvm_asm)]
 #![feature(extern_types)]

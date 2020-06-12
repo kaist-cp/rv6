@@ -145,11 +145,11 @@ pub struct sleeplock {
 }
 // Sleeping locks
 #[no_mangle]
-pub unsafe extern "C" fn initsleeplock(mut lk: *mut sleeplock,
-                                       mut name: *mut libc::c_char) {
-    initlock(&mut (*lk).lk,
-             b"sleep lock\x00" as *const u8 as *const libc::c_char as
-                 *mut libc::c_char);
+pub unsafe extern "C" fn initsleeplock(mut lk: *mut sleeplock, mut name: *mut libc::c_char) {
+    initlock(
+        &mut (*lk).lk,
+        b"sleep lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+    );
     (*lk).name = name;
     (*lk).locked = 0 as libc::c_int as uint;
     (*lk).pid = 0 as libc::c_int;
@@ -158,7 +158,9 @@ pub unsafe extern "C" fn initsleeplock(mut lk: *mut sleeplock,
 #[no_mangle]
 pub unsafe extern "C" fn acquiresleep(mut lk: *mut sleeplock) {
     acquire(&mut (*lk).lk);
-    while (*lk).locked != 0 { sleep(lk as *mut libc::c_void, &mut (*lk).lk); }
+    while (*lk).locked != 0 {
+        sleep(lk as *mut libc::c_void, &mut (*lk).lk);
+    }
     (*lk).locked = 1 as libc::c_int as uint;
     (*lk).pid = (*myproc()).pid;
     release(&mut (*lk).lk);

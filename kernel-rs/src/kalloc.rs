@@ -11,8 +11,7 @@ extern "C" {
     #[no_mangle]
     fn release(_: *mut spinlock);
     #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint)
-     -> *mut libc::c_void;
+    fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
     #[no_mangle]
     static mut end: [libc::c_char; 0];
 }
@@ -27,7 +26,7 @@ pub struct spinlock {
     pub cpu: *mut cpu,
 }
 // first address after kernel.
-                   // defined by kernel.ld.
+// defined by kernel.ld.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct run {
@@ -46,8 +45,8 @@ pub struct C2RustUnnamed {
 // 00001000 -- boot ROM, provided by qemu
 // 02000000 -- CLINT
 // 0C000000 -- PLIC
-// 10000000 -- uart0 
-// 10001000 -- virtio disk 
+// 10000000 -- uart0
+// 10001000 -- virtio disk
 // 80000000 -- boot ROM jumps here in machine mode
 //             -kernel loads the kernel here
 // unused RAM after 80000000.
@@ -65,47 +64,42 @@ pub struct C2RustUnnamed {
 // from physical address 0x80000000 to PHYSTOP.
 pub const KERNBASE: libc::c_long = 0x80000000 as libc::c_long;
 pub const PHYSTOP: libc::c_long =
-    KERNBASE +
-        (128 as libc::c_int * 1024 as libc::c_int * 1024 as libc::c_int) as
-            libc::c_long;
+    KERNBASE + (128 as libc::c_int * 1024 as libc::c_int * 1024 as libc::c_int) as libc::c_long;
 pub const PGSIZE: libc::c_int = 4096 as libc::c_int;
 #[no_mangle]
-pub static mut kmem: C2RustUnnamed =
-    C2RustUnnamed{lock:
-                      spinlock{locked: 0,
-                               name:
-                                   0 as *const libc::c_char as
-                                       *mut libc::c_char,
-                               cpu: 0 as *const cpu as *mut cpu,},
-                  freelist: 0 as *const run as *mut run,};
+pub static mut kmem: C2RustUnnamed = C2RustUnnamed {
+    lock: spinlock {
+        locked: 0,
+        name: 0 as *const libc::c_char as *mut libc::c_char,
+        cpu: 0 as *const cpu as *mut cpu,
+    },
+    freelist: 0 as *const run as *mut run,
+};
 #[no_mangle]
 pub unsafe extern "C" fn kinit() {
-    initlock(&mut kmem.lock,
-             b"kmem\x00" as *const u8 as *const libc::c_char as
-                 *mut libc::c_char);
-    freerange(end.as_mut_ptr() as *mut libc::c_void,
-              PHYSTOP as *mut libc::c_void);
+    initlock(
+        &mut kmem.lock,
+        b"kmem\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+    );
+    freerange(
+        end.as_mut_ptr() as *mut libc::c_void,
+        PHYSTOP as *mut libc::c_void,
+    );
 }
 // Physical memory allocator, for user processes,
 // kernel stacks, page-table pages,
 // and pipe buffers. Allocates whole 4096-byte pages.
 #[no_mangle]
-pub unsafe extern "C" fn freerange(mut pa_start: *mut libc::c_void,
-                                   mut pa_end: *mut libc::c_void) {
+pub unsafe extern "C" fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: *mut libc::c_void) {
     let mut p: *mut libc::c_char = 0 as *mut libc::c_char;
-    p =
-        ((pa_start as
-              uint64).wrapping_add(PGSIZE as
-                                       libc::c_ulong).wrapping_sub(1 as
-                                                                       libc::c_int
-                                                                       as
-                                                                       libc::c_ulong)
-             & !(PGSIZE - 1 as libc::c_int) as libc::c_ulong) as
-            *mut libc::c_char;
+    p = ((pa_start as uint64)
+        .wrapping_add(PGSIZE as libc::c_ulong)
+        .wrapping_sub(1 as libc::c_int as libc::c_ulong)
+        & !(PGSIZE - 1 as libc::c_int) as libc::c_ulong) as *mut libc::c_char;
     while p.offset(PGSIZE as isize) <= pa_end as *mut libc::c_char {
         kfree(p as *mut libc::c_void);
         p = p.offset(PGSIZE as isize)
-    };
+    }
 }
 // Free the page of physical memory pointed at by v,
 // which normally should have been returned by a
@@ -114,12 +108,11 @@ pub unsafe extern "C" fn freerange(mut pa_start: *mut libc::c_void,
 #[no_mangle]
 pub unsafe extern "C" fn kfree(mut pa: *mut libc::c_void) {
     let mut r: *mut run = 0 as *mut run;
-    if (pa as uint64).wrapping_rem(PGSIZE as libc::c_ulong) !=
-           0 as libc::c_int as libc::c_ulong ||
-           (pa as *mut libc::c_char) < end.as_mut_ptr() ||
-           pa as uint64 >= PHYSTOP as libc::c_ulong {
-        panic(b"kfree\x00" as *const u8 as *const libc::c_char as
-                  *mut libc::c_char);
+    if (pa as uint64).wrapping_rem(PGSIZE as libc::c_ulong) != 0 as libc::c_int as libc::c_ulong
+        || (pa as *mut libc::c_char) < end.as_mut_ptr()
+        || pa as uint64 >= PHYSTOP as libc::c_ulong
+    {
+        panic(b"kfree\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     // Fill with junk to catch dangling refs.
     memset(pa, 1 as libc::c_int, PGSIZE as uint);
@@ -138,11 +131,16 @@ pub unsafe extern "C" fn kalloc() -> *mut libc::c_void {
     let mut r: *mut run = 0 as *mut run; // fill with junk
     acquire(&mut kmem.lock);
     r = kmem.freelist;
-    if !r.is_null() { kmem.freelist = (*r).next }
+    if !r.is_null() {
+        kmem.freelist = (*r).next
+    }
     release(&mut kmem.lock);
     if !r.is_null() {
-        memset(r as *mut libc::c_char as *mut libc::c_void, 5 as libc::c_int,
-               PGSIZE as uint);
+        memset(
+            r as *mut libc::c_char as *mut libc::c_void,
+            5 as libc::c_int,
+            PGSIZE as uint,
+        );
     }
     return r as *mut libc::c_void;
 }

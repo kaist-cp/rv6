@@ -162,8 +162,9 @@ unsafe extern "C" fn w_sie(mut x: uint64) {
 // enable device interrupts
 #[inline]
 unsafe extern "C" fn intr_on() {
-    w_sie(r_sie() | SIE_SEIE as libc::c_ulong | SIE_STIE as libc::c_ulong |
-              SIE_SSIE as libc::c_ulong);
+    w_sie(
+        r_sie() | SIE_SEIE as libc::c_ulong | SIE_STIE as libc::c_ulong | SIE_SSIE as libc::c_ulong,
+    );
     w_sstatus(r_sstatus() | SSTATUS_SIE as libc::c_ulong);
 }
 // disable device interrupts
@@ -175,13 +176,11 @@ unsafe extern "C" fn intr_off() {
 #[inline]
 unsafe extern "C" fn intr_get() -> libc::c_int {
     let mut x: uint64 = r_sstatus();
-    return (x & SSTATUS_SIE as libc::c_ulong !=
-                0 as libc::c_int as libc::c_ulong) as libc::c_int;
+    return (x & SSTATUS_SIE as libc::c_ulong != 0 as libc::c_int as libc::c_ulong) as libc::c_int;
 }
 // Mutual exclusion spin locks.
 #[no_mangle]
-pub unsafe extern "C" fn initlock(mut lk: *mut spinlock,
-                                  mut name: *mut libc::c_char) {
+pub unsafe extern "C" fn initlock(mut lk: *mut spinlock, mut name: *mut libc::c_char) {
     (*lk).name = name;
     (*lk).locked = 0 as libc::c_int as uint;
     (*lk).cpu = 0 as *mut cpu;
@@ -193,20 +192,20 @@ pub unsafe extern "C" fn initlock(mut lk: *mut spinlock,
 pub unsafe extern "C" fn acquire(mut lk: *mut spinlock) {
     push_off(); // disable interrupts to avoid deadlock.
     if holding(lk) != 0 {
-        panic(b"acquire\x00" as *const u8 as *const libc::c_char as
-                  *mut libc::c_char);
+        panic(b"acquire\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
-  //   a5 = 1
-  //   s1 = &lk->locked
-  //   amoswap.w.aq a5, a5, (s1)
-    while ::core::intrinsics::atomic_xchg_acq(&mut (*lk).locked as *mut uint,
-                                              1 as libc::c_int as uint) !=
-              0 as libc::c_int as libc::c_uint {
-    }
+    //   a5 = 1
+    //   s1 = &lk->locked
+    //   amoswap.w.aq a5, a5, (s1)
+    while ::core::intrinsics::atomic_xchg_acq(
+        &mut (*lk).locked as *mut uint,
+        1 as libc::c_int as uint,
+    ) != 0 as libc::c_int as libc::c_uint
+    {}
     // Tell the C compiler and the processor to not move loads or stores
-  // past this point, to ensure that the critical section's memory
-  // references happen after the lock is acquired.
+    // past this point, to ensure that the critical section's memory
+    // references happen after the lock is acquired.
     ::core::intrinsics::atomic_fence();
     // Record info about lock acquisition for holding() and debugging.
     (*lk).cpu = mycpu();
@@ -215,22 +214,21 @@ pub unsafe extern "C" fn acquire(mut lk: *mut spinlock) {
 #[no_mangle]
 pub unsafe extern "C" fn release(mut lk: *mut spinlock) {
     if holding(lk) == 0 {
-        panic(b"release\x00" as *const u8 as *const libc::c_char as
-                  *mut libc::c_char);
+        panic(b"release\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     (*lk).cpu = 0 as *mut cpu;
     // Tell the C compiler and the CPU to not move loads or stores
-  // past this point, to ensure that all the stores in the critical
-  // section are visible to other CPUs before the lock is released.
-  // On RISC-V, this turns into a fence instruction.
+    // past this point, to ensure that all the stores in the critical
+    // section are visible to other CPUs before the lock is released.
+    // On RISC-V, this turns into a fence instruction.
     ::core::intrinsics::atomic_fence();
     // Release the lock, equivalent to lk->locked = 0.
-  // This code doesn't use a C assignment, since the C standard
-  // implies that an assignment might be implemented with
-  // multiple store instructions.
-  // On RISC-V, sync_lock_release turns into an atomic swap:
-  //   s1 = &lk->locked
-  //   amoswap.w zero, zero, (s1)
+    // This code doesn't use a C assignment, since the C standard
+    // implies that an assignment might be implemented with
+    // multiple store instructions.
+    // On RISC-V, sync_lock_release turns into an atomic swap:
+    //   s1 = &lk->locked
+    //   amoswap.w zero, zero, (s1)
     ::core::intrinsics::atomic_store_rel(&mut (*lk).locked, 0);
     pop_off();
 }
@@ -250,20 +248,24 @@ pub unsafe extern "C" fn holding(mut lk: *mut spinlock) -> libc::c_int {
 pub unsafe extern "C" fn push_off() {
     let mut old: libc::c_int = intr_get();
     intr_off();
-    if (*mycpu()).noff == 0 as libc::c_int { (*mycpu()).intena = old }
+    if (*mycpu()).noff == 0 as libc::c_int {
+        (*mycpu()).intena = old
+    }
     (*mycpu()).noff += 1 as libc::c_int;
 }
 #[no_mangle]
 pub unsafe extern "C" fn pop_off() {
     let mut c: *mut cpu = mycpu();
     if intr_get() != 0 {
-        panic(b"pop_off - interruptible\x00" as *const u8 as
-                  *const libc::c_char as *mut libc::c_char);
+        panic(
+            b"pop_off - interruptible\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        );
     }
     (*c).noff -= 1 as libc::c_int;
     if (*c).noff < 0 as libc::c_int {
-        panic(b"pop_off\x00" as *const u8 as *const libc::c_char as
-                  *mut libc::c_char);
+        panic(b"pop_off\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    if (*c).noff == 0 as libc::c_int && (*c).intena != 0 { intr_on(); };
+    if (*c).noff == 0 as libc::c_int && (*c).intena != 0 {
+        intr_on();
+    };
 }

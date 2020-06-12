@@ -154,7 +154,7 @@ pub struct cpu {
 pub unsafe extern "C" fn sys_exit() -> uint64 {
     let mut n: libc::c_int = 0;
     if argint(0 as libc::c_int, &mut n) < 0 as libc::c_int {
-        return -(1 as libc::c_int) as uint64
+        return -(1 as libc::c_int) as uint64;
     }
     exit(n);
     return 0 as libc::c_int as uint64;
@@ -165,12 +165,14 @@ pub unsafe extern "C" fn sys_getpid() -> uint64 {
     return (*myproc()).pid as uint64;
 }
 #[no_mangle]
-pub unsafe extern "C" fn sys_fork() -> uint64 { return fork() as uint64; }
+pub unsafe extern "C" fn sys_fork() -> uint64 {
+    return fork() as uint64;
+}
 #[no_mangle]
 pub unsafe extern "C" fn sys_wait() -> uint64 {
     let mut p: uint64 = 0;
     if argaddr(0 as libc::c_int, &mut p) < 0 as libc::c_int {
-        return -(1 as libc::c_int) as uint64
+        return -(1 as libc::c_int) as uint64;
     }
     return wait(p) as uint64;
 }
@@ -179,10 +181,12 @@ pub unsafe extern "C" fn sys_sbrk() -> uint64 {
     let mut addr: libc::c_int = 0;
     let mut n: libc::c_int = 0;
     if argint(0 as libc::c_int, &mut n) < 0 as libc::c_int {
-        return -(1 as libc::c_int) as uint64
+        return -(1 as libc::c_int) as uint64;
     }
     addr = (*myproc()).sz as libc::c_int;
-    if growproc(n) < 0 as libc::c_int { return -(1 as libc::c_int) as uint64 }
+    if growproc(n) < 0 as libc::c_int {
+        return -(1 as libc::c_int) as uint64;
+    }
     return addr as uint64;
 }
 #[no_mangle]
@@ -190,14 +194,14 @@ pub unsafe extern "C" fn sys_sleep() -> uint64 {
     let mut n: libc::c_int = 0;
     let mut ticks0: uint = 0;
     if argint(0 as libc::c_int, &mut n) < 0 as libc::c_int {
-        return -(1 as libc::c_int) as uint64
+        return -(1 as libc::c_int) as uint64;
     }
     acquire(&mut tickslock);
     ticks0 = ticks;
     while ticks.wrapping_sub(ticks0) < n as libc::c_uint {
         if (*myproc()).killed != 0 {
             release(&mut tickslock);
-            return -(1 as libc::c_int) as uint64
+            return -(1 as libc::c_int) as uint64;
         }
         sleep(&mut ticks as *mut uint as *mut libc::c_void, &mut tickslock);
     }
@@ -208,7 +212,7 @@ pub unsafe extern "C" fn sys_sleep() -> uint64 {
 pub unsafe extern "C" fn sys_kill() -> uint64 {
     let mut pid: libc::c_int = 0;
     if argint(0 as libc::c_int, &mut pid) < 0 as libc::c_int {
-        return -(1 as libc::c_int) as uint64
+        return -(1 as libc::c_int) as uint64;
     }
     return kill(pid) as uint64;
 }

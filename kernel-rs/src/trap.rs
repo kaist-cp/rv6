@@ -170,8 +170,8 @@ pub const UNUSED: procstate = 0;
 // 00001000 -- boot ROM, provided by qemu
 // 02000000 -- CLINT
 // 0C000000 -- PLIC
-// 10000000 -- uart0 
-// 10001000 -- virtio disk 
+// 10000000 -- uart0
+// 10001000 -- virtio disk
 // 80000000 -- boot ROM jumps here in machine mode
 //             -kernel loads the kernel here
 // unused RAM after 80000000.
@@ -207,8 +207,7 @@ pub const TRAPFRAME: libc::c_long = TRAMPOLINE - PGSIZE as libc::c_long;
 // Supervisor Status Register, sstatus
 pub const SSTATUS_SPP: libc::c_long = (1 as libc::c_long) << 8 as libc::c_int;
 // Previous mode, 1=Supervisor, 0=User
-pub const SSTATUS_SPIE: libc::c_long =
-    (1 as libc::c_long) << 5 as libc::c_int;
+pub const SSTATUS_SPIE: libc::c_long = (1 as libc::c_long) << 5 as libc::c_int;
 // Supervisor Previous Interrupt Enable
 // User Previous Interrupt Enable
 pub const SSTATUS_SIE: libc::c_long = (1 as libc::c_long) << 1 as libc::c_int;
@@ -296,8 +295,9 @@ unsafe extern "C" fn r_stval() -> uint64 {
 // enable device interrupts
 #[inline]
 unsafe extern "C" fn intr_on() {
-    w_sie(r_sie() | SIE_SEIE as libc::c_ulong | SIE_STIE as libc::c_ulong |
-              SIE_SSIE as libc::c_ulong);
+    w_sie(
+        r_sie() | SIE_SEIE as libc::c_ulong | SIE_STIE as libc::c_ulong | SIE_SSIE as libc::c_ulong,
+    );
     w_sstatus(r_sstatus() | SSTATUS_SIE as libc::c_ulong);
 }
 // disable device interrupts
@@ -309,8 +309,7 @@ unsafe extern "C" fn intr_off() {
 #[inline]
 unsafe extern "C" fn intr_get() -> libc::c_int {
     let mut x: uint64 = r_sstatus();
-    return (x & SSTATUS_SIE as libc::c_ulong !=
-                0 as libc::c_int as libc::c_ulong) as libc::c_int;
+    return (x & SSTATUS_SIE as libc::c_ulong != 0 as libc::c_int as libc::c_ulong) as libc::c_int;
 }
 // read and write tp, the thread pointer, which holds
 // this core's hartid (core number), the index into cpus[].
@@ -332,34 +331,35 @@ pub const PGSIZE: libc::c_int = 4096 as libc::c_int;
 // MAXVA is actually one bit less than the max allowed by
 // Sv39, to avoid having to sign-extend virtual addresses
 // that have the high bit set.
-pub const MAXVA: libc::c_long =
-    (1 as libc::c_long) <<
-        9 as libc::c_int + 9 as libc::c_int + 9 as libc::c_int +
-            12 as libc::c_int - 1 as libc::c_int;
+pub const MAXVA: libc::c_long = (1 as libc::c_long)
+    << 9 as libc::c_int + 9 as libc::c_int + 9 as libc::c_int + 12 as libc::c_int
+        - 1 as libc::c_int;
 #[no_mangle]
-pub static mut tickslock: spinlock =
-    spinlock{locked: 0,
-             name: 0 as *const libc::c_char as *mut libc::c_char,
-             cpu: 0 as *const cpu as *mut cpu,};
+pub static mut tickslock: spinlock = spinlock {
+    locked: 0,
+    name: 0 as *const libc::c_char as *mut libc::c_char,
+    cpu: 0 as *const cpu as *mut cpu,
+};
 #[no_mangle]
 pub static mut ticks: uint = 0;
 // trap.c
 #[no_mangle]
 pub unsafe extern "C" fn trapinit() {
-    initlock(&mut tickslock,
-             b"time\x00" as *const u8 as *const libc::c_char as
-                 *mut libc::c_char);
+    initlock(
+        &mut tickslock,
+        b"time\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+    );
 }
 // set up to take exceptions and traps while in the kernel.
 #[no_mangle]
 pub unsafe extern "C" fn trapinithart() {
-    w_stvec(::core::mem::transmute::<Option<unsafe extern "C" fn() -> ()>,
-                                     uint64>(Some(::core::mem::transmute::<unsafe extern "C" fn()
-                                                                               ->
-                                                                                   (),
-                                                                           unsafe extern "C" fn()
-                                                                               ->
-                                                                                   ()>(kernelvec))));
+    w_stvec(::core::mem::transmute::<
+        Option<unsafe extern "C" fn() -> ()>,
+        uint64,
+    >(Some(::core::mem::transmute::<
+        unsafe extern "C" fn() -> (),
+        unsafe extern "C" fn() -> (),
+    >(kernelvec))));
 }
 //
 // handle an interrupt, exception, or system call from user space.
@@ -368,52 +368,63 @@ pub unsafe extern "C" fn trapinithart() {
 #[no_mangle]
 pub unsafe extern "C" fn usertrap() {
     let mut which_dev: libc::c_int = 0 as libc::c_int;
-    if r_sstatus() & SSTATUS_SPP as libc::c_ulong !=
-           0 as libc::c_int as libc::c_ulong {
-        panic(b"usertrap: not from user mode\x00" as *const u8 as
-                  *const libc::c_char as *mut libc::c_char);
+    if r_sstatus() & SSTATUS_SPP as libc::c_ulong != 0 as libc::c_int as libc::c_ulong {
+        panic(
+            b"usertrap: not from user mode\x00" as *const u8 as *const libc::c_char
+                as *mut libc::c_char,
+        );
     }
     // send interrupts and exceptions to kerneltrap(),
-  // since we're now in the kernel.
-    w_stvec(::core::mem::transmute::<Option<unsafe extern "C" fn() -> ()>,
-                                     uint64>(Some(::core::mem::transmute::<unsafe extern "C" fn()
-                                                                               ->
-                                                                                   (),
-                                                                           unsafe extern "C" fn()
-                                                                               ->
-                                                                                   ()>(kernelvec))));
+    // since we're now in the kernel.
+    w_stvec(::core::mem::transmute::<
+        Option<unsafe extern "C" fn() -> ()>,
+        uint64,
+    >(Some(::core::mem::transmute::<
+        unsafe extern "C" fn() -> (),
+        unsafe extern "C" fn() -> (),
+    >(kernelvec))));
     let mut p: *mut proc_0 = myproc();
     // save user program counter.
     (*(*p).tf).epc = r_sepc();
     if r_scause() == 8 as libc::c_int as libc::c_ulong {
         // system call
-        if (*p).killed != 0 { exit(-(1 as libc::c_int)); }
+        if (*p).killed != 0 {
+            exit(-(1 as libc::c_int));
+        }
         // sepc points to the ecall instruction,
-    // but we want to return to the next instruction.
-        (*(*p).tf).epc =
-            ((*(*p).tf).epc as
-                 libc::c_ulong).wrapping_add(4 as libc::c_int as
-                                                 libc::c_ulong) as uint64 as
-                uint64;
+        // but we want to return to the next instruction.
+        (*(*p).tf).epc = ((*(*p).tf).epc as libc::c_ulong)
+            .wrapping_add(4 as libc::c_int as libc::c_ulong) as uint64
+            as uint64;
         // an interrupt will change sstatus &c registers,
-    // so don't enable until done with those registers.
+        // so don't enable until done with those registers.
         intr_on();
         syscall();
     } else {
         which_dev = devintr();
         if !(which_dev != 0 as libc::c_int) {
-            printf(b"usertrap(): unexpected scause %p pid=%d\n\x00" as
-                       *const u8 as *const libc::c_char as *mut libc::c_char,
-                   r_scause(), (*p).pid);
-            printf(b"            sepc=%p stval=%p\n\x00" as *const u8 as
-                       *const libc::c_char as *mut libc::c_char, r_sepc(),
-                   r_stval());
+            printf(
+                b"usertrap(): unexpected scause %p pid=%d\n\x00" as *const u8 as *const libc::c_char
+                    as *mut libc::c_char,
+                r_scause(),
+                (*p).pid,
+            );
+            printf(
+                b"            sepc=%p stval=%p\n\x00" as *const u8 as *const libc::c_char
+                    as *mut libc::c_char,
+                r_sepc(),
+                r_stval(),
+            );
             (*p).killed = 1 as libc::c_int
         }
     }
-    if (*p).killed != 0 { exit(-(1 as libc::c_int)); }
+    if (*p).killed != 0 {
+        exit(-(1 as libc::c_int));
+    }
     // give up the CPU if this is a timer interrupt.
-    if which_dev == 2 as libc::c_int { yield_0(); }
+    if which_dev == 2 as libc::c_int {
+        yield_0();
+    }
     usertrapret();
 }
 //
@@ -423,27 +434,25 @@ pub unsafe extern "C" fn usertrap() {
 pub unsafe extern "C" fn usertrapret() {
     let mut p: *mut proc_0 = myproc();
     // turn off interrupts, since we're switching
-  // now from kerneltrap() to usertrap().
+    // now from kerneltrap() to usertrap().
     intr_off();
     // send syscalls, interrupts, and exceptions to trampoline.S
-    w_stvec((TRAMPOLINE +
-                 uservec.as_mut_ptr().wrapping_offset_from(trampoline.as_mut_ptr())
-                     as libc::c_long) as uint64);
+    w_stvec(
+        (TRAMPOLINE
+            + uservec
+                .as_mut_ptr()
+                .wrapping_offset_from(trampoline.as_mut_ptr()) as libc::c_long) as uint64,
+    );
     // set up trapframe values that uservec will need when
-  // the process next re-enters the kernel.
+    // the process next re-enters the kernel.
     (*(*p).tf).kernel_satp = r_satp(); // kernel page table
-    (*(*p).tf).kernel_sp =
-        (*p).kstack.wrapping_add(PGSIZE as
-                                     libc::c_ulong); // process's kernel stack
-    (*(*p).tf).kernel_trap =
-        ::core::mem::transmute::<Option<unsafe extern "C" fn() -> ()>,
-                                 uint64>(Some(usertrap as
-                                                  unsafe extern "C" fn()
-                                                      ->
-                                                          ())); // hartid for cpuid()
+    (*(*p).tf).kernel_sp = (*p).kstack.wrapping_add(PGSIZE as libc::c_ulong); // process's kernel stack
+    (*(*p).tf).kernel_trap = ::core::mem::transmute::<Option<unsafe extern "C" fn() -> ()>, uint64>(
+        Some(usertrap as unsafe extern "C" fn() -> ()),
+    ); // hartid for cpuid()
     (*(*p).tf).kernel_hartid = r_tp();
     // set up the registers that trampoline.S's sret will use
-  // to get to user space.
+    // to get to user space.
     // set S Previous Privilege mode to User.
     let mut x: libc::c_ulong = r_sstatus(); // clear SPP to 0 for user mode
     x &= !SSTATUS_SPP as libc::c_ulong; // enable interrupts in user mode
@@ -453,23 +462,20 @@ pub unsafe extern "C" fn usertrapret() {
     w_sepc((*(*p).tf).epc);
     // tell trampoline.S the user page table to switch to.
     let mut satp: uint64 =
-        SATP_SV39 as libc::c_ulong |
-            (*p).pagetable as uint64 >> 12 as libc::c_int;
-    // jump to trampoline.S at the top of memory, which 
-  // switches to the user page table, restores user registers,
-  // and switches to user mode with sret.
-    let mut fn_0: uint64 =
-        (TRAMPOLINE +
-             userret.as_mut_ptr().wrapping_offset_from(trampoline.as_mut_ptr())
-                 as libc::c_long) as uint64;
-    ::core::mem::transmute::<libc::intptr_t,
-                             Option<unsafe extern "C" fn(_: uint64, _: uint64)
-                                        ->
-                                            ()>>(fn_0 as
-                                                     libc::intptr_t).expect("non-null function pointer")(TRAPFRAME
-                                                                                                             as
-                                                                                                             uint64,
-                                                                                                         satp);
+        SATP_SV39 as libc::c_ulong | (*p).pagetable as uint64 >> 12 as libc::c_int;
+    // jump to trampoline.S at the top of memory, which
+    // switches to the user page table, restores user registers,
+    // and switches to user mode with sret.
+    let mut fn_0: uint64 = (TRAMPOLINE
+        + userret
+            .as_mut_ptr()
+            .wrapping_offset_from(trampoline.as_mut_ptr()) as libc::c_long)
+        as uint64;
+    ::core::mem::transmute::<
+        libc::intptr_t,
+        Option<unsafe extern "C" fn(_: uint64, _: uint64) -> ()>,
+    >(fn_0 as libc::intptr_t)
+    .expect("non-null function pointer")(TRAPFRAME as uint64, satp);
 }
 // interrupts and exceptions from kernel code go here via kernelvec,
 // on whatever the current kernel stack is.
@@ -480,32 +486,40 @@ pub unsafe extern "C" fn kerneltrap() {
     let mut sepc: uint64 = r_sepc();
     let mut sstatus: uint64 = r_sstatus();
     let mut scause: uint64 = r_scause();
-    if sstatus & SSTATUS_SPP as libc::c_ulong ==
-           0 as libc::c_int as libc::c_ulong {
-        panic(b"kerneltrap: not from supervisor mode\x00" as *const u8 as
-                  *const libc::c_char as *mut libc::c_char);
+    if sstatus & SSTATUS_SPP as libc::c_ulong == 0 as libc::c_int as libc::c_ulong {
+        panic(
+            b"kerneltrap: not from supervisor mode\x00" as *const u8 as *const libc::c_char
+                as *mut libc::c_char,
+        );
     }
     if intr_get() != 0 as libc::c_int {
-        panic(b"kerneltrap: interrupts enabled\x00" as *const u8 as
-                  *const libc::c_char as *mut libc::c_char);
+        panic(
+            b"kerneltrap: interrupts enabled\x00" as *const u8 as *const libc::c_char
+                as *mut libc::c_char,
+        );
     }
     which_dev = devintr();
     if which_dev == 0 as libc::c_int {
-        printf(b"scause %p\n\x00" as *const u8 as *const libc::c_char as
-                   *mut libc::c_char, scause);
-        printf(b"sepc=%p stval=%p\n\x00" as *const u8 as *const libc::c_char
-                   as *mut libc::c_char, r_sepc(), r_stval());
-        panic(b"kerneltrap\x00" as *const u8 as *const libc::c_char as
-                  *mut libc::c_char);
+        printf(
+            b"scause %p\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+            scause,
+        );
+        printf(
+            b"sepc=%p stval=%p\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+            r_sepc(),
+            r_stval(),
+        );
+        panic(b"kerneltrap\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     // give up the CPU if this is a timer interrupt.
-    if which_dev == 2 as libc::c_int && !myproc().is_null() &&
-           (*myproc()).state as libc::c_uint ==
-               RUNNING as libc::c_int as libc::c_uint {
+    if which_dev == 2 as libc::c_int
+        && !myproc().is_null()
+        && (*myproc()).state as libc::c_uint == RUNNING as libc::c_int as libc::c_uint
+    {
         yield_0();
     }
     // the yield() may have caused some traps to occur,
-  // so restore trap registers for use by kernelvec.S's sepc instruction.
+    // so restore trap registers for use by kernelvec.S's sepc instruction.
     w_sepc(sepc);
     w_sstatus(sstatus);
 }
@@ -524,24 +538,30 @@ pub unsafe extern "C" fn clockintr() {
 #[no_mangle]
 pub unsafe extern "C" fn devintr() -> libc::c_int {
     let mut scause: uint64 = r_scause();
-    if scause & 0x8000000000000000 as libc::c_ulong != 0 &&
-           scause & 0xff as libc::c_int as libc::c_ulong ==
-               9 as libc::c_int as libc::c_ulong {
+    if scause & 0x8000000000000000 as libc::c_ulong != 0
+        && scause & 0xff as libc::c_int as libc::c_ulong == 9 as libc::c_int as libc::c_ulong
+    {
         // this is a supervisor external interrupt, via PLIC.
         // irq indicates which device interrupted.
         let mut irq: libc::c_int = plic_claim();
         if irq == UART0_IRQ {
             uartintr();
-        } else if irq == VIRTIO0_IRQ { virtio_disk_intr(); }
+        } else if irq == VIRTIO0_IRQ {
+            virtio_disk_intr();
+        }
         plic_complete(irq);
-        return 1 as libc::c_int
+        return 1 as libc::c_int;
     } else if scause == 0x8000000000000001 as libc::c_ulong {
         // software interrupt from a machine-mode timer interrupt,
-    // forwarded by timervec in kernelvec.S.
-        if cpuid() == 0 as libc::c_int { clockintr(); }
+        // forwarded by timervec in kernelvec.S.
+        if cpuid() == 0 as libc::c_int {
+            clockintr();
+        }
         // acknowledge the software interrupt by clearing
-    // the SSIP bit in sip.
+        // the SSIP bit in sip.
         w_sip(r_sip() & !(2 as libc::c_int) as libc::c_ulong);
-        return 2 as libc::c_int
-    } else { return 0 as libc::c_int };
+        return 2 as libc::c_int;
+    } else {
+        return 0 as libc::c_int;
+    };
 }

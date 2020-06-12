@@ -20,8 +20,7 @@ extern "C" {
     #[no_mangle]
     fn dirlink(_: *mut inode, _: *mut libc::c_char, _: uint) -> libc::c_int;
     #[no_mangle]
-    fn dirlookup(_: *mut inode, _: *mut libc::c_char, _: *mut uint)
-     -> *mut inode;
+    fn dirlookup(_: *mut inode, _: *mut libc::c_char, _: *mut uint) -> *mut inode;
     #[no_mangle]
     fn ialloc(_: uint, _: libc::c_short) -> *mut inode;
     #[no_mangle]
@@ -41,11 +40,9 @@ extern "C" {
     #[no_mangle]
     fn nameiparent(_: *mut libc::c_char, _: *mut libc::c_char) -> *mut inode;
     #[no_mangle]
-    fn readi(_: *mut inode, _: libc::c_int, _: uint64, _: uint, _: uint)
-     -> libc::c_int;
+    fn readi(_: *mut inode, _: libc::c_int, _: uint64, _: uint, _: uint) -> libc::c_int;
     #[no_mangle]
-    fn writei(_: *mut inode, _: libc::c_int, _: uint64, _: uint, _: uint)
-     -> libc::c_int;
+    fn writei(_: *mut inode, _: libc::c_int, _: uint64, _: uint, _: uint) -> libc::c_int;
     // kalloc.c
     #[no_mangle]
     fn kalloc() -> *mut libc::c_void;
@@ -63,24 +60,20 @@ extern "C" {
     #[no_mangle]
     fn myproc() -> *mut proc_0;
     #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint)
-     -> *mut libc::c_void;
+    fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
     // syscall.c
     #[no_mangle]
     fn argint(_: libc::c_int, _: *mut libc::c_int) -> libc::c_int;
     #[no_mangle]
-    fn argstr(_: libc::c_int, _: *mut libc::c_char, _: libc::c_int)
-     -> libc::c_int;
+    fn argstr(_: libc::c_int, _: *mut libc::c_char, _: libc::c_int) -> libc::c_int;
     #[no_mangle]
     fn argaddr(_: libc::c_int, _: *mut uint64) -> libc::c_int;
     #[no_mangle]
-    fn fetchstr(_: uint64, _: *mut libc::c_char, _: libc::c_int)
-     -> libc::c_int;
+    fn fetchstr(_: uint64, _: *mut libc::c_char, _: libc::c_int) -> libc::c_int;
     #[no_mangle]
     fn fetchaddr(_: uint64, _: *mut uint64) -> libc::c_int;
     #[no_mangle]
-    fn copyout(_: pagetable_t, _: uint64, _: *mut libc::c_char, _: uint64)
-     -> libc::c_int;
+    fn copyout(_: pagetable_t, _: uint64, _: *mut libc::c_char, _: uint64) -> libc::c_int;
 }
 pub type uint = libc::c_uint;
 pub type ushort = libc::c_ushort;
@@ -288,17 +281,28 @@ pub const O_CREATE: libc::c_int = 0x200 as libc::c_int;
 //
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
-unsafe extern "C" fn argfd(mut n: libc::c_int, mut pfd: *mut libc::c_int,
-                           mut pf: *mut *mut file) -> libc::c_int {
+unsafe extern "C" fn argfd(
+    mut n: libc::c_int,
+    mut pfd: *mut libc::c_int,
+    mut pf: *mut *mut file,
+) -> libc::c_int {
     let mut fd: libc::c_int = 0;
     let mut f: *mut file = 0 as *mut file;
-    if argint(n, &mut fd) < 0 as libc::c_int { return -(1 as libc::c_int) }
-    if fd < 0 as libc::c_int || fd >= NOFILE ||
-           { f = (*myproc()).ofile[fd as usize]; f.is_null() } {
-        return -(1 as libc::c_int)
+    if argint(n, &mut fd) < 0 as libc::c_int {
+        return -(1 as libc::c_int);
     }
-    if !pfd.is_null() { *pfd = fd }
-    if !pf.is_null() { *pf = f }
+    if fd < 0 as libc::c_int || fd >= NOFILE || {
+        f = (*myproc()).ofile[fd as usize];
+        f.is_null()
+    } {
+        return -(1 as libc::c_int);
+    }
+    if !pfd.is_null() {
+        *pfd = fd
+    }
+    if !pf.is_null() {
+        *pf = f
+    }
     return 0 as libc::c_int;
 }
 // Allocate a file descriptor for the given file.
@@ -310,7 +314,7 @@ unsafe extern "C" fn fdalloc(mut f: *mut file) -> libc::c_int {
     while fd < NOFILE {
         if (*p).ofile[fd as usize].is_null() {
             (*p).ofile[fd as usize] = f;
-            return fd
+            return fd;
         }
         fd += 1
     }
@@ -320,12 +324,13 @@ unsafe extern "C" fn fdalloc(mut f: *mut file) -> libc::c_int {
 pub unsafe extern "C" fn sys_dup() -> uint64 {
     let mut f: *mut file = 0 as *mut file;
     let mut fd: libc::c_int = 0;
-    if argfd(0 as libc::c_int, 0 as *mut libc::c_int, &mut f) <
-           0 as libc::c_int {
-        return -(1 as libc::c_int) as uint64
+    if argfd(0 as libc::c_int, 0 as *mut libc::c_int, &mut f) < 0 as libc::c_int {
+        return -(1 as libc::c_int) as uint64;
     }
     fd = fdalloc(f);
-    if fd < 0 as libc::c_int { return -(1 as libc::c_int) as uint64 }
+    if fd < 0 as libc::c_int {
+        return -(1 as libc::c_int) as uint64;
+    }
     filedup(f);
     return fd as uint64;
 }
@@ -334,11 +339,11 @@ pub unsafe extern "C" fn sys_read() -> uint64 {
     let mut f: *mut file = 0 as *mut file;
     let mut n: libc::c_int = 0;
     let mut p: uint64 = 0;
-    if argfd(0 as libc::c_int, 0 as *mut libc::c_int, &mut f) <
-           0 as libc::c_int ||
-           argint(2 as libc::c_int, &mut n) < 0 as libc::c_int ||
-           argaddr(1 as libc::c_int, &mut p) < 0 as libc::c_int {
-        return -(1 as libc::c_int) as uint64
+    if argfd(0 as libc::c_int, 0 as *mut libc::c_int, &mut f) < 0 as libc::c_int
+        || argint(2 as libc::c_int, &mut n) < 0 as libc::c_int
+        || argaddr(1 as libc::c_int, &mut p) < 0 as libc::c_int
+    {
+        return -(1 as libc::c_int) as uint64;
     }
     return fileread(f, p, n) as uint64;
 }
@@ -347,11 +352,11 @@ pub unsafe extern "C" fn sys_write() -> uint64 {
     let mut f: *mut file = 0 as *mut file;
     let mut n: libc::c_int = 0;
     let mut p: uint64 = 0;
-    if argfd(0 as libc::c_int, 0 as *mut libc::c_int, &mut f) <
-           0 as libc::c_int ||
-           argint(2 as libc::c_int, &mut n) < 0 as libc::c_int ||
-           argaddr(1 as libc::c_int, &mut p) < 0 as libc::c_int {
-        return -(1 as libc::c_int) as uint64
+    if argfd(0 as libc::c_int, 0 as *mut libc::c_int, &mut f) < 0 as libc::c_int
+        || argint(2 as libc::c_int, &mut n) < 0 as libc::c_int
+        || argaddr(1 as libc::c_int, &mut p) < 0 as libc::c_int
+    {
+        return -(1 as libc::c_int) as uint64;
     }
     return filewrite(f, p, n) as uint64;
 }
@@ -360,7 +365,7 @@ pub unsafe extern "C" fn sys_close() -> uint64 {
     let mut fd: libc::c_int = 0;
     let mut f: *mut file = 0 as *mut file;
     if argfd(0 as libc::c_int, &mut fd, &mut f) < 0 as libc::c_int {
-        return -(1 as libc::c_int) as uint64
+        return -(1 as libc::c_int) as uint64;
     }
     let ref mut fresh0 = (*myproc()).ofile[fd as usize];
     *fresh0 = 0 as *mut file;
@@ -371,10 +376,10 @@ pub unsafe extern "C" fn sys_close() -> uint64 {
 pub unsafe extern "C" fn sys_fstat() -> uint64 {
     let mut f: *mut file = 0 as *mut file;
     let mut st: uint64 = 0;
-    if argfd(0 as libc::c_int, 0 as *mut libc::c_int, &mut f) <
-           0 as libc::c_int ||
-           argaddr(1 as libc::c_int, &mut st) < 0 as libc::c_int {
-        return -(1 as libc::c_int) as uint64
+    if argfd(0 as libc::c_int, 0 as *mut libc::c_int, &mut f) < 0 as libc::c_int
+        || argaddr(1 as libc::c_int, &mut st) < 0 as libc::c_int
+    {
+        return -(1 as libc::c_int) as uint64;
     }
     return filestat(f, st) as uint64;
 }
@@ -387,19 +392,21 @@ pub unsafe extern "C" fn sys_link() -> uint64 {
     let mut dp: *mut inode = 0 as *mut inode;
     let mut ip: *mut inode = 0 as *mut inode;
     if argstr(0 as libc::c_int, old.as_mut_ptr(), MAXPATH) < 0 as libc::c_int
-           ||
-           argstr(1 as libc::c_int, new.as_mut_ptr(), MAXPATH) <
-               0 as libc::c_int {
-        return -(1 as libc::c_int) as uint64
+        || argstr(1 as libc::c_int, new.as_mut_ptr(), MAXPATH) < 0 as libc::c_int
+    {
+        return -(1 as libc::c_int) as uint64;
     }
     begin_op();
     ip = namei(old.as_mut_ptr());
-    if ip.is_null() { end_op(); return -(1 as libc::c_int) as uint64 }
+    if ip.is_null() {
+        end_op();
+        return -(1 as libc::c_int) as uint64;
+    }
     ilock(ip);
     if (*ip).type_0 as libc::c_int == T_DIR {
         iunlockput(ip);
         end_op();
-        return -(1 as libc::c_int) as uint64
+        return -(1 as libc::c_int) as uint64;
     }
     (*ip).nlink += 1;
     iupdate(ip);
@@ -407,14 +414,13 @@ pub unsafe extern "C" fn sys_link() -> uint64 {
     dp = nameiparent(new.as_mut_ptr(), name.as_mut_ptr());
     if !dp.is_null() {
         ilock(dp);
-        if (*dp).dev != (*ip).dev ||
-               dirlink(dp, name.as_mut_ptr(), (*ip).inum) < 0 as libc::c_int {
+        if (*dp).dev != (*ip).dev || dirlink(dp, name.as_mut_ptr(), (*ip).inum) < 0 as libc::c_int {
             iunlockput(dp);
         } else {
             iunlockput(dp);
             iput(ip);
             end_op();
-            return 0 as libc::c_int as uint64
+            return 0 as libc::c_int as uint64;
         }
     }
     ilock(ip);
@@ -427,28 +433,31 @@ pub unsafe extern "C" fn sys_link() -> uint64 {
 // Is the directory dp empty except for "." and ".." ?
 unsafe extern "C" fn isdirempty(mut dp: *mut inode) -> libc::c_int {
     let mut off: libc::c_int = 0;
-    let mut de: dirent = dirent{inum: 0, name: [0; 14],};
-    off =
-        (2 as libc::c_int as
-             libc::c_ulong).wrapping_mul(::core::mem::size_of::<dirent>() as
-                                             libc::c_ulong) as libc::c_int;
+    let mut de: dirent = dirent {
+        inum: 0,
+        name: [0; 14],
+    };
+    off = (2 as libc::c_int as libc::c_ulong)
+        .wrapping_mul(::core::mem::size_of::<dirent>() as libc::c_ulong) as libc::c_int;
     while (off as libc::c_uint) < (*dp).size {
-        if readi(dp, 0 as libc::c_int, &mut de as *mut dirent as uint64,
-                 off as uint,
-                 ::core::mem::size_of::<dirent>() as libc::c_ulong as uint) as
-               libc::c_ulong !=
-               ::core::mem::size_of::<dirent>() as libc::c_ulong {
-            panic(b"isdirempty: readi\x00" as *const u8 as *const libc::c_char
-                      as *mut libc::c_char);
+        if readi(
+            dp,
+            0 as libc::c_int,
+            &mut de as *mut dirent as uint64,
+            off as uint,
+            ::core::mem::size_of::<dirent>() as libc::c_ulong as uint,
+        ) as libc::c_ulong
+            != ::core::mem::size_of::<dirent>() as libc::c_ulong
+        {
+            panic(
+                b"isdirempty: readi\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+            );
         }
         if de.inum as libc::c_int != 0 as libc::c_int {
-            return 0 as libc::c_int
+            return 0 as libc::c_int;
         }
-        off =
-            (off as
-                 libc::c_ulong).wrapping_add(::core::mem::size_of::<dirent>()
-                                                 as libc::c_ulong) as
-                libc::c_int as libc::c_int
+        off = (off as libc::c_ulong).wrapping_add(::core::mem::size_of::<dirent>() as libc::c_ulong)
+            as libc::c_int as libc::c_int
     }
     return 1 as libc::c_int;
 }
@@ -456,46 +465,63 @@ unsafe extern "C" fn isdirempty(mut dp: *mut inode) -> libc::c_int {
 pub unsafe extern "C" fn sys_unlink() -> uint64 {
     let mut ip: *mut inode = 0 as *mut inode;
     let mut dp: *mut inode = 0 as *mut inode;
-    let mut de: dirent = dirent{inum: 0, name: [0; 14],};
+    let mut de: dirent = dirent {
+        inum: 0,
+        name: [0; 14],
+    };
     let mut name: [libc::c_char; 14] = [0; 14];
     let mut path: [libc::c_char; 128] = [0; 128];
     let mut off: uint = 0;
-    if argstr(0 as libc::c_int, path.as_mut_ptr(), MAXPATH) < 0 as libc::c_int
-       {
-        return -(1 as libc::c_int) as uint64
+    if argstr(0 as libc::c_int, path.as_mut_ptr(), MAXPATH) < 0 as libc::c_int {
+        return -(1 as libc::c_int) as uint64;
     }
     begin_op();
     dp = nameiparent(path.as_mut_ptr(), name.as_mut_ptr());
-    if dp.is_null() { end_op(); return -(1 as libc::c_int) as uint64 }
+    if dp.is_null() {
+        end_op();
+        return -(1 as libc::c_int) as uint64;
+    }
     ilock(dp);
     // Cannot unlink "." or "..".
-    if !(namecmp(name.as_mut_ptr(),
-                 b".\x00" as *const u8 as *const libc::c_char) ==
-             0 as libc::c_int ||
-             namecmp(name.as_mut_ptr(),
-                     b"..\x00" as *const u8 as *const libc::c_char) ==
-                 0 as libc::c_int) {
+    if !(namecmp(
+        name.as_mut_ptr(),
+        b".\x00" as *const u8 as *const libc::c_char,
+    ) == 0 as libc::c_int
+        || namecmp(
+            name.as_mut_ptr(),
+            b"..\x00" as *const u8 as *const libc::c_char,
+        ) == 0 as libc::c_int)
+    {
         ip = dirlookup(dp, name.as_mut_ptr(), &mut off);
         if !ip.is_null() {
             ilock(ip);
             if ((*ip).nlink as libc::c_int) < 1 as libc::c_int {
-                panic(b"unlink: nlink < 1\x00" as *const u8 as
-                          *const libc::c_char as *mut libc::c_char);
+                panic(
+                    b"unlink: nlink < 1\x00" as *const u8 as *const libc::c_char
+                        as *mut libc::c_char,
+                );
             }
             if (*ip).type_0 as libc::c_int == T_DIR && isdirempty(ip) == 0 {
                 iunlockput(ip);
             } else {
-                memset(&mut de as *mut dirent as *mut libc::c_void,
-                       0 as libc::c_int,
-                       ::core::mem::size_of::<dirent>() as libc::c_ulong as
-                           uint);
-                if writei(dp, 0 as libc::c_int,
-                          &mut de as *mut dirent as uint64, off,
-                          ::core::mem::size_of::<dirent>() as libc::c_ulong as
-                              uint) as libc::c_ulong !=
-                       ::core::mem::size_of::<dirent>() as libc::c_ulong {
-                    panic(b"unlink: writei\x00" as *const u8 as
-                              *const libc::c_char as *mut libc::c_char);
+                memset(
+                    &mut de as *mut dirent as *mut libc::c_void,
+                    0 as libc::c_int,
+                    ::core::mem::size_of::<dirent>() as libc::c_ulong as uint,
+                );
+                if writei(
+                    dp,
+                    0 as libc::c_int,
+                    &mut de as *mut dirent as uint64,
+                    off,
+                    ::core::mem::size_of::<dirent>() as libc::c_ulong as uint,
+                ) as libc::c_ulong
+                    != ::core::mem::size_of::<dirent>() as libc::c_ulong
+                {
+                    panic(
+                        b"unlink: writei\x00" as *const u8 as *const libc::c_char
+                            as *mut libc::c_char,
+                    );
                 }
                 if (*ip).type_0 as libc::c_int == T_DIR {
                     (*dp).nlink -= 1;
@@ -506,7 +532,7 @@ pub unsafe extern "C" fn sys_unlink() -> uint64 {
                 iupdate(ip);
                 iunlockput(ip);
                 end_op();
-                return 0 as libc::c_int as uint64
+                return 0 as libc::c_int as uint64;
             }
         }
     }
@@ -514,32 +540,35 @@ pub unsafe extern "C" fn sys_unlink() -> uint64 {
     end_op();
     return -(1 as libc::c_int) as uint64;
 }
-unsafe extern "C" fn create(mut path: *mut libc::c_char,
-                            mut type_0: libc::c_short,
-                            mut major: libc::c_short,
-                            mut minor: libc::c_short) -> *mut inode {
+unsafe extern "C" fn create(
+    mut path: *mut libc::c_char,
+    mut type_0: libc::c_short,
+    mut major: libc::c_short,
+    mut minor: libc::c_short,
+) -> *mut inode {
     let mut ip: *mut inode = 0 as *mut inode;
     let mut dp: *mut inode = 0 as *mut inode;
     let mut name: [libc::c_char; 14] = [0; 14];
     dp = nameiparent(path, name.as_mut_ptr());
-    if dp.is_null() { return 0 as *mut inode }
+    if dp.is_null() {
+        return 0 as *mut inode;
+    }
     ilock(dp);
     ip = dirlookup(dp, name.as_mut_ptr(), 0 as *mut uint);
     if !ip.is_null() {
         iunlockput(dp);
         ilock(ip);
-        if type_0 as libc::c_int == T_FILE &&
-               ((*ip).type_0 as libc::c_int == T_FILE ||
-                    (*ip).type_0 as libc::c_int == T_DEVICE) {
-            return ip
+        if type_0 as libc::c_int == T_FILE
+            && ((*ip).type_0 as libc::c_int == T_FILE || (*ip).type_0 as libc::c_int == T_DEVICE)
+        {
+            return ip;
         }
         iunlockput(ip);
-        return 0 as *mut inode
+        return 0 as *mut inode;
     }
     ip = ialloc((*dp).dev, type_0);
     if ip.is_null() {
-        panic(b"create: ialloc\x00" as *const u8 as *const libc::c_char as
-                  *mut libc::c_char);
+        panic(b"create: ialloc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     ilock(ip);
     (*ip).major = major;
@@ -551,19 +580,23 @@ unsafe extern "C" fn create(mut path: *mut libc::c_char,
         (*dp).nlink += 1; // for ".."
         iupdate(dp);
         // No ip->nlink++ for ".": avoid cyclic ref count.
-        if dirlink(ip,
-                   b".\x00" as *const u8 as *const libc::c_char as
-                       *mut libc::c_char, (*ip).inum) < 0 as libc::c_int ||
-               dirlink(ip,
-                       b"..\x00" as *const u8 as *const libc::c_char as
-                           *mut libc::c_char, (*dp).inum) < 0 as libc::c_int {
-            panic(b"create dots\x00" as *const u8 as *const libc::c_char as
-                      *mut libc::c_char); // user pointer to array of two integers
+        if dirlink(
+            ip,
+            b".\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+            (*ip).inum,
+        ) < 0 as libc::c_int
+            || dirlink(
+                ip,
+                b"..\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+                (*dp).inum,
+            ) < 0 as libc::c_int
+        {
+            panic(b"create dots\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            // user pointer to array of two integers
         }
     }
     if dirlink(dp, name.as_mut_ptr(), (*ip).inum) < 0 as libc::c_int {
-        panic(b"create: dirlink\x00" as *const u8 as *const libc::c_char as
-                  *mut libc::c_char);
+        panic(b"create: dirlink\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     iunlockput(dp);
     return ip;
@@ -577,50 +610,63 @@ pub unsafe extern "C" fn sys_open() -> uint64 {
     let mut ip: *mut inode = 0 as *mut inode;
     let mut n: libc::c_int = 0;
     n = argstr(0 as libc::c_int, path.as_mut_ptr(), MAXPATH);
-    if n < 0 as libc::c_int ||
-           argint(1 as libc::c_int, &mut omode) < 0 as libc::c_int {
-        return -(1 as libc::c_int) as uint64
+    if n < 0 as libc::c_int || argint(1 as libc::c_int, &mut omode) < 0 as libc::c_int {
+        return -(1 as libc::c_int) as uint64;
     }
     begin_op();
     if omode & O_CREATE != 0 {
-        ip =
-            create(path.as_mut_ptr(), T_FILE as libc::c_short,
-                   0 as libc::c_int as libc::c_short,
-                   0 as libc::c_int as libc::c_short);
-        if ip.is_null() { end_op(); return -(1 as libc::c_int) as uint64 }
+        ip = create(
+            path.as_mut_ptr(),
+            T_FILE as libc::c_short,
+            0 as libc::c_int as libc::c_short,
+            0 as libc::c_int as libc::c_short,
+        );
+        if ip.is_null() {
+            end_op();
+            return -(1 as libc::c_int) as uint64;
+        }
     } else {
         ip = namei(path.as_mut_ptr());
-        if ip.is_null() { end_op(); return -(1 as libc::c_int) as uint64 }
+        if ip.is_null() {
+            end_op();
+            return -(1 as libc::c_int) as uint64;
+        }
         ilock(ip);
         if (*ip).type_0 as libc::c_int == T_DIR && omode != O_RDONLY {
             iunlockput(ip);
             end_op();
-            return -(1 as libc::c_int) as uint64
+            return -(1 as libc::c_int) as uint64;
         }
     }
-    if (*ip).type_0 as libc::c_int == T_DEVICE &&
-           (((*ip).major as libc::c_int) < 0 as libc::c_int ||
-                (*ip).major as libc::c_int >= NDEV) {
+    if (*ip).type_0 as libc::c_int == T_DEVICE
+        && (((*ip).major as libc::c_int) < 0 as libc::c_int || (*ip).major as libc::c_int >= NDEV)
+    {
         iunlockput(ip);
         end_op();
-        return -(1 as libc::c_int) as uint64
+        return -(1 as libc::c_int) as uint64;
     }
     f = filealloc();
-    if f.is_null() || { fd = fdalloc(f); (fd) < 0 as libc::c_int } {
-        if !f.is_null() { fileclose(f); }
+    if f.is_null() || {
+        fd = fdalloc(f);
+        (fd) < 0 as libc::c_int
+    } {
+        if !f.is_null() {
+            fileclose(f);
+        }
         iunlockput(ip);
         end_op();
-        return -(1 as libc::c_int) as uint64
+        return -(1 as libc::c_int) as uint64;
     }
     if (*ip).type_0 as libc::c_int == T_DEVICE {
         (*f).type_0 = FD_DEVICE;
         (*f).major = (*ip).major
-    } else { (*f).type_0 = FD_INODE; (*f).off = 0 as libc::c_int as uint }
+    } else {
+        (*f).type_0 = FD_INODE;
+        (*f).off = 0 as libc::c_int as uint
+    }
     (*f).ip = ip;
     (*f).readable = (omode & O_WRONLY == 0) as libc::c_int as libc::c_char;
-    (*f).writable =
-        (omode & O_WRONLY != 0 || omode & O_RDWR != 0) as libc::c_int as
-            libc::c_char;
+    (*f).writable = (omode & O_WRONLY != 0 || omode & O_RDWR != 0) as libc::c_int as libc::c_char;
     iunlock(ip);
     end_op();
     return fd as uint64;
@@ -630,17 +676,17 @@ pub unsafe extern "C" fn sys_mkdir() -> uint64 {
     let mut path: [libc::c_char; 128] = [0; 128];
     let mut ip: *mut inode = 0 as *mut inode;
     begin_op();
-    if argstr(0 as libc::c_int, path.as_mut_ptr(), MAXPATH) < 0 as libc::c_int
-           ||
-           {
-               ip =
-                   create(path.as_mut_ptr(), T_DIR as libc::c_short,
-                          0 as libc::c_int as libc::c_short,
-                          0 as libc::c_int as libc::c_short);
-               ip.is_null()
-           } {
+    if argstr(0 as libc::c_int, path.as_mut_ptr(), MAXPATH) < 0 as libc::c_int || {
+        ip = create(
+            path.as_mut_ptr(),
+            T_DIR as libc::c_short,
+            0 as libc::c_int as libc::c_short,
+            0 as libc::c_int as libc::c_short,
+        );
+        ip.is_null()
+    } {
         end_op();
-        return -(1 as libc::c_int) as uint64
+        return -(1 as libc::c_int) as uint64;
     }
     iunlockput(ip);
     end_op();
@@ -654,16 +700,20 @@ pub unsafe extern "C" fn sys_mknod() -> uint64 {
     let mut minor: libc::c_int = 0;
     begin_op();
     if argstr(0 as libc::c_int, path.as_mut_ptr(), MAXPATH) < 0 as libc::c_int
-           || argint(1 as libc::c_int, &mut major) < 0 as libc::c_int ||
-           argint(2 as libc::c_int, &mut minor) < 0 as libc::c_int ||
-           {
-               ip =
-                   create(path.as_mut_ptr(), T_DEVICE as libc::c_short,
-                          major as libc::c_short, minor as libc::c_short);
-               ip.is_null()
-           } {
+        || argint(1 as libc::c_int, &mut major) < 0 as libc::c_int
+        || argint(2 as libc::c_int, &mut minor) < 0 as libc::c_int
+        || {
+            ip = create(
+                path.as_mut_ptr(),
+                T_DEVICE as libc::c_short,
+                major as libc::c_short,
+                minor as libc::c_short,
+            );
+            ip.is_null()
+        }
+    {
         end_op();
-        return -(1 as libc::c_int) as uint64
+        return -(1 as libc::c_int) as uint64;
     }
     iunlockput(ip);
     end_op();
@@ -675,16 +725,18 @@ pub unsafe extern "C" fn sys_chdir() -> uint64 {
     let mut ip: *mut inode = 0 as *mut inode;
     let mut p: *mut proc_0 = myproc();
     begin_op();
-    if argstr(0 as libc::c_int, path.as_mut_ptr(), MAXPATH) < 0 as libc::c_int
-           || { ip = namei(path.as_mut_ptr()); ip.is_null() } {
+    if argstr(0 as libc::c_int, path.as_mut_ptr(), MAXPATH) < 0 as libc::c_int || {
+        ip = namei(path.as_mut_ptr());
+        ip.is_null()
+    } {
         end_op();
-        return -(1 as libc::c_int) as uint64
+        return -(1 as libc::c_int) as uint64;
     }
     ilock(ip);
     if (*ip).type_0 as libc::c_int != T_DIR {
         iunlockput(ip);
         end_op();
-        return -(1 as libc::c_int) as uint64
+        return -(1 as libc::c_int) as uint64;
     }
     iunlock(ip);
     iput((*p).cwd);
@@ -702,41 +754,49 @@ pub unsafe extern "C" fn sys_exec() -> uint64 {
     let mut uargv: uint64 = 0;
     let mut uarg: uint64 = 0;
     if argstr(0 as libc::c_int, path.as_mut_ptr(), MAXPATH) < 0 as libc::c_int
-           || argaddr(1 as libc::c_int, &mut uargv) < 0 as libc::c_int {
-        return -(1 as libc::c_int) as uint64
+        || argaddr(1 as libc::c_int, &mut uargv) < 0 as libc::c_int
+    {
+        return -(1 as libc::c_int) as uint64;
     }
-    memset(argv.as_mut_ptr() as *mut libc::c_void, 0 as libc::c_int,
-           ::core::mem::size_of::<[*mut libc::c_char; 32]>() as libc::c_ulong
-               as uint);
+    memset(
+        argv.as_mut_ptr() as *mut libc::c_void,
+        0 as libc::c_int,
+        ::core::mem::size_of::<[*mut libc::c_char; 32]>() as libc::c_ulong as uint,
+    );
     i = 0 as libc::c_int;
-    loop  {
-        if i as libc::c_ulong >=
-               (::core::mem::size_of::<[*mut libc::c_char; 32]>() as
-                    libc::c_ulong).wrapping_div(::core::mem::size_of::<*mut libc::c_char>()
-                                                    as libc::c_ulong) {
+    loop {
+        if i as libc::c_ulong
+            >= (::core::mem::size_of::<[*mut libc::c_char; 32]>() as libc::c_ulong)
+                .wrapping_div(::core::mem::size_of::<*mut libc::c_char>() as libc::c_ulong)
+        {
             current_block = 12646643519710607562;
-            break ;
+            break;
         }
-        if fetchaddr(uargv.wrapping_add((::core::mem::size_of::<uint64>() as
-                                             libc::c_ulong).wrapping_mul(i as
-                                                                             libc::c_ulong)),
-                     &mut uarg as *mut uint64) < 0 as libc::c_int {
+        if fetchaddr(
+            uargv.wrapping_add(
+                (::core::mem::size_of::<uint64>() as libc::c_ulong)
+                    .wrapping_mul(i as libc::c_ulong),
+            ),
+            &mut uarg as *mut uint64,
+        ) < 0 as libc::c_int
+        {
             current_block = 12646643519710607562;
-            break ;
+            break;
         }
         if uarg == 0 as libc::c_int as libc::c_ulong {
             argv[i as usize] = 0 as *mut libc::c_char;
             current_block = 6009453772311597924;
-            break ;
+            break;
         } else {
             argv[i as usize] = kalloc() as *mut libc::c_char;
             if argv[i as usize].is_null() {
-                panic(b"sys_exec kalloc\x00" as *const u8 as
-                          *const libc::c_char as *mut libc::c_char);
+                panic(
+                    b"sys_exec kalloc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+                );
             }
             if fetchstr(uarg, argv[i as usize], PGSIZE) < 0 as libc::c_int {
                 current_block = 12646643519710607562;
-                break ;
+                break;
             }
             i += 1
         }
@@ -744,28 +804,28 @@ pub unsafe extern "C" fn sys_exec() -> uint64 {
     match current_block {
         12646643519710607562 => {
             i = 0 as libc::c_int;
-            while (i as libc::c_ulong) <
-                      (::core::mem::size_of::<[*mut libc::c_char; 32]>() as
-                           libc::c_ulong).wrapping_div(::core::mem::size_of::<*mut libc::c_char>()
-                                                           as libc::c_ulong)
-                      && !argv[i as usize].is_null() {
+            while (i as libc::c_ulong)
+                < (::core::mem::size_of::<[*mut libc::c_char; 32]>() as libc::c_ulong)
+                    .wrapping_div(::core::mem::size_of::<*mut libc::c_char>() as libc::c_ulong)
+                && !argv[i as usize].is_null()
+            {
                 kfree(argv[i as usize] as *mut libc::c_void);
                 i += 1
             }
-            return -(1 as libc::c_int) as uint64
+            return -(1 as libc::c_int) as uint64;
         }
         _ => {
             ret = exec(path.as_mut_ptr(), argv.as_mut_ptr());
             i = 0 as libc::c_int;
-            while (i as libc::c_ulong) <
-                      (::core::mem::size_of::<[*mut libc::c_char; 32]>() as
-                           libc::c_ulong).wrapping_div(::core::mem::size_of::<*mut libc::c_char>()
-                                                           as libc::c_ulong)
-                      && !argv[i as usize].is_null() {
+            while (i as libc::c_ulong)
+                < (::core::mem::size_of::<[*mut libc::c_char; 32]>() as libc::c_ulong)
+                    .wrapping_div(::core::mem::size_of::<*mut libc::c_char>() as libc::c_ulong)
+                && !argv[i as usize].is_null()
+            {
                 kfree(argv[i as usize] as *mut libc::c_void);
                 i += 1
             }
-            return ret as uint64
+            return ret as uint64;
         }
     };
 }
@@ -778,37 +838,42 @@ pub unsafe extern "C" fn sys_pipe() -> uint64 {
     let mut fd1: libc::c_int = 0;
     let mut p: *mut proc_0 = myproc();
     if argaddr(0 as libc::c_int, &mut fdarray) < 0 as libc::c_int {
-        return -(1 as libc::c_int) as uint64
+        return -(1 as libc::c_int) as uint64;
     }
     if pipealloc(&mut rf, &mut wf) < 0 as libc::c_int {
-        return -(1 as libc::c_int) as uint64
+        return -(1 as libc::c_int) as uint64;
     }
     fd0 = -(1 as libc::c_int);
     fd0 = fdalloc(rf);
-    if fd0 < 0 as libc::c_int ||
-           { fd1 = fdalloc(wf); (fd1) < 0 as libc::c_int } {
+    if fd0 < 0 as libc::c_int || {
+        fd1 = fdalloc(wf);
+        (fd1) < 0 as libc::c_int
+    } {
         if fd0 >= 0 as libc::c_int {
             (*p).ofile[fd0 as usize] = 0 as *mut file
         }
         fileclose(rf);
         fileclose(wf);
-        return -(1 as libc::c_int) as uint64
+        return -(1 as libc::c_int) as uint64;
     }
-    if copyout((*p).pagetable, fdarray,
-               &mut fd0 as *mut libc::c_int as *mut libc::c_char,
-               ::core::mem::size_of::<libc::c_int>() as libc::c_ulong) <
-           0 as libc::c_int ||
-           copyout((*p).pagetable,
-                   fdarray.wrapping_add(::core::mem::size_of::<libc::c_int>()
-                                            as libc::c_ulong),
-                   &mut fd1 as *mut libc::c_int as *mut libc::c_char,
-                   ::core::mem::size_of::<libc::c_int>() as libc::c_ulong) <
-               0 as libc::c_int {
+    if copyout(
+        (*p).pagetable,
+        fdarray,
+        &mut fd0 as *mut libc::c_int as *mut libc::c_char,
+        ::core::mem::size_of::<libc::c_int>() as libc::c_ulong,
+    ) < 0 as libc::c_int
+        || copyout(
+            (*p).pagetable,
+            fdarray.wrapping_add(::core::mem::size_of::<libc::c_int>() as libc::c_ulong),
+            &mut fd1 as *mut libc::c_int as *mut libc::c_char,
+            ::core::mem::size_of::<libc::c_int>() as libc::c_ulong,
+        ) < 0 as libc::c_int
+    {
         (*p).ofile[fd0 as usize] = 0 as *mut file;
         (*p).ofile[fd1 as usize] = 0 as *mut file;
         fileclose(rf);
         fileclose(wf);
-        return -(1 as libc::c_int) as uint64
+        return -(1 as libc::c_int) as uint64;
     }
     return 0 as libc::c_int as uint64;
 }

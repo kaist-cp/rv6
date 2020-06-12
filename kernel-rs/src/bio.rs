@@ -89,72 +89,63 @@ pub const MAXOPBLOCKS: libc::c_int = 10 as libc::c_int;
 // max data blocks in on-disk log
 pub const NBUF: libc::c_int = MAXOPBLOCKS * 3 as libc::c_int;
 #[no_mangle]
-pub static mut bcache: C2RustUnnamed =
-    C2RustUnnamed{lock:
-                      spinlock{locked: 0,
-                               name:
-                                   0 as *const libc::c_char as
-                                       *mut libc::c_char,
-                               cpu: 0 as *const cpu as *mut cpu,},
-                  buf:
-                      [buf{valid: 0,
-                           disk: 0,
-                           dev: 0,
-                           blockno: 0,
-                           lock:
-                               sleeplock{locked: 0,
-                                         lk:
-                                             spinlock{locked: 0,
-                                                      name:
-                                                          0 as
-                                                              *const libc::c_char
-                                                              as
-                                                              *mut libc::c_char,
-                                                      cpu:
-                                                          0 as *const cpu as
-                                                              *mut cpu,},
-                                         name:
-                                             0 as *const libc::c_char as
-                                                 *mut libc::c_char,
-                                         pid: 0,},
-                           refcnt: 0,
-                           prev: 0 as *const buf as *mut buf,
-                           next: 0 as *const buf as *mut buf,
-                           qnext: 0 as *const buf as *mut buf,
-                           data: [0; 1024],}; 30],
-                  head:
-                      buf{valid: 0,
-                          disk: 0,
-                          dev: 0,
-                          blockno: 0,
-                          lock:
-                              sleeplock{locked: 0,
-                                        lk:
-                                            spinlock{locked: 0,
-                                                     name:
-                                                         0 as
-                                                             *const libc::c_char
-                                                             as
-                                                             *mut libc::c_char,
-                                                     cpu:
-                                                         0 as *const cpu as
-                                                             *mut cpu,},
-                                        name:
-                                            0 as *const libc::c_char as
-                                                *mut libc::c_char,
-                                        pid: 0,},
-                          refcnt: 0,
-                          prev: 0 as *const buf as *mut buf,
-                          next: 0 as *const buf as *mut buf,
-                          qnext: 0 as *const buf as *mut buf,
-                          data: [0; 1024],},};
+pub static mut bcache: C2RustUnnamed = C2RustUnnamed {
+    lock: spinlock {
+        locked: 0,
+        name: 0 as *const libc::c_char as *mut libc::c_char,
+        cpu: 0 as *const cpu as *mut cpu,
+    },
+    buf: [buf {
+        valid: 0,
+        disk: 0,
+        dev: 0,
+        blockno: 0,
+        lock: sleeplock {
+            locked: 0,
+            lk: spinlock {
+                locked: 0,
+                name: 0 as *const libc::c_char as *mut libc::c_char,
+                cpu: 0 as *const cpu as *mut cpu,
+            },
+            name: 0 as *const libc::c_char as *mut libc::c_char,
+            pid: 0,
+        },
+        refcnt: 0,
+        prev: 0 as *const buf as *mut buf,
+        next: 0 as *const buf as *mut buf,
+        qnext: 0 as *const buf as *mut buf,
+        data: [0; 1024],
+    }; 30],
+    head: buf {
+        valid: 0,
+        disk: 0,
+        dev: 0,
+        blockno: 0,
+        lock: sleeplock {
+            locked: 0,
+            lk: spinlock {
+                locked: 0,
+                name: 0 as *const libc::c_char as *mut libc::c_char,
+                cpu: 0 as *const cpu as *mut cpu,
+            },
+            name: 0 as *const libc::c_char as *mut libc::c_char,
+            pid: 0,
+        },
+        refcnt: 0,
+        prev: 0 as *const buf as *mut buf,
+        next: 0 as *const buf as *mut buf,
+        qnext: 0 as *const buf as *mut buf,
+        data: [0; 1024],
+    },
+};
 // bio.c
 #[no_mangle]
 pub unsafe extern "C" fn binit() {
     let mut b: *mut buf = 0 as *mut buf;
-    initlock(&mut bcache.lock,
-             b"bcache\x00" as *const u8 as *const libc::c_char as
-                 *mut libc::c_char);
+    initlock(
+        &mut bcache.lock,
+        b"bcache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+    );
     // Create linked list of buffers
     bcache.head.prev = &mut bcache.head;
     bcache.head.next = &mut bcache.head;
@@ -162,13 +153,14 @@ pub unsafe extern "C" fn binit() {
     while b < bcache.buf.as_mut_ptr().offset(NBUF as isize) {
         (*b).next = bcache.head.next;
         (*b).prev = &mut bcache.head;
-        initsleeplock(&mut (*b).lock,
-                      b"buffer\x00" as *const u8 as *const libc::c_char as
-                          *mut libc::c_char);
+        initsleeplock(
+            &mut (*b).lock,
+            b"buffer\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        );
         (*bcache.head.next).prev = b;
         bcache.head.next = b;
         b = b.offset(1)
-    };
+    }
 }
 // Look through buffer cache for block on device dev.
 // If not found, allocate a buffer.
@@ -183,7 +175,7 @@ unsafe extern "C" fn bget(mut dev: uint, mut blockno: uint) -> *mut buf {
             (*b).refcnt = (*b).refcnt.wrapping_add(1);
             release(&mut bcache.lock);
             acquiresleep(&mut (*b).lock);
-            return b
+            return b;
         }
         b = (*b).next
     }
@@ -197,12 +189,11 @@ unsafe extern "C" fn bget(mut dev: uint, mut blockno: uint) -> *mut buf {
             (*b).refcnt = 1 as libc::c_int as uint;
             release(&mut bcache.lock);
             acquiresleep(&mut (*b).lock);
-            return b
+            return b;
         }
         b = (*b).prev
     }
-    panic(b"bget: no buffers\x00" as *const u8 as *const libc::c_char as
-              *mut libc::c_char);
+    panic(b"bget: no buffers\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
 // Return a locked buf with the contents of the indicated block.
 #[no_mangle]
@@ -219,8 +210,7 @@ pub unsafe extern "C" fn bread(mut dev: uint, mut blockno: uint) -> *mut buf {
 #[no_mangle]
 pub unsafe extern "C" fn bwrite(mut b: *mut buf) {
     if holdingsleep(&mut (*b).lock) == 0 {
-        panic(b"bwrite\x00" as *const u8 as *const libc::c_char as
-                  *mut libc::c_char);
+        panic(b"bwrite\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     virtio_disk_rw(b, 1 as libc::c_int);
 }
@@ -229,8 +219,7 @@ pub unsafe extern "C" fn bwrite(mut b: *mut buf) {
 #[no_mangle]
 pub unsafe extern "C" fn brelse(mut b: *mut buf) {
     if holdingsleep(&mut (*b).lock) == 0 {
-        panic(b"brelse\x00" as *const u8 as *const libc::c_char as
-                  *mut libc::c_char);
+        panic(b"brelse\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     releasesleep(&mut (*b).lock);
     acquire(&mut bcache.lock);
