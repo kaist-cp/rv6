@@ -52,7 +52,7 @@ mod printf;
 // mod proc;
 mod sleeplock;
 mod spinlock;
-// mod start;
+mod start;
 mod string;
 mod syscall;
 mod sysfile;

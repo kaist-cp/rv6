@@ -46,14 +46,15 @@ extern "C" {
     #[no_mangle]
     fn pop_off();
     #[no_mangle]
-    fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: uint)
-     -> *mut libc::c_void;
+    fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: uint) -> *mut libc::c_void;
     #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint)
-     -> *mut libc::c_void;
+    fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
     #[no_mangle]
-    fn safestrcpy(_: *mut libc::c_char, _: *const libc::c_char,
-                  _: libc::c_int) -> *mut libc::c_char;
+    fn safestrcpy(
+        _: *mut libc::c_char,
+        _: *const libc::c_char,
+        _: libc::c_int,
+    ) -> *mut libc::c_char;
     #[no_mangle]
     fn usertrapret();
     #[no_mangle]
@@ -61,8 +62,7 @@ extern "C" {
     #[no_mangle]
     fn kvmmap(_: uint64, _: uint64, _: uint64, _: libc::c_int);
     #[no_mangle]
-    fn mappages(_: pagetable_t, _: uint64, _: uint64, _: uint64,
-                _: libc::c_int) -> libc::c_int;
+    fn mappages(_: pagetable_t, _: uint64, _: uint64, _: uint64, _: libc::c_int) -> libc::c_int;
     #[no_mangle]
     fn uvmcreate() -> pagetable_t;
     #[no_mangle]
@@ -78,11 +78,9 @@ extern "C" {
     #[no_mangle]
     fn uvmunmap(_: pagetable_t, _: uint64, _: uint64, _: libc::c_int);
     #[no_mangle]
-    fn copyout(_: pagetable_t, _: uint64, _: *mut libc::c_char, _: uint64)
-     -> libc::c_int;
+    fn copyout(_: pagetable_t, _: uint64, _: *mut libc::c_char, _: uint64) -> libc::c_int;
     #[no_mangle]
-    fn copyin(_: pagetable_t, _: *mut libc::c_char, _: uint64, _: uint64)
-     -> libc::c_int;
+    fn copyin(_: pagetable_t, _: *mut libc::c_char, _: uint64, _: uint64) -> libc::c_int;
     #[no_mangle]
     static mut trampoline: [libc::c_char; 0];
 }
@@ -222,8 +220,8 @@ pub const ROOTDEV: libc::c_int = 1 as libc::c_int;
 // 00001000 -- boot ROM, provided by qemu
 // 02000000 -- CLINT
 // 0C000000 -- PLIC
-// 10000000 -- uart0 
-// 10001000 -- virtio disk 
+// 10000000 -- uart0
+// 10001000 -- virtio disk
 // 80000000 -- boot ROM jumps here in machine mode
 //             -kernel loads the kernel here
 // unused RAM after 80000000.
@@ -265,7 +263,7 @@ pub const SSTATUS_SIE: libc::c_long = (1 as libc::c_long) << 1 as libc::c_int;
 unsafe extern "C" fn r_sstatus() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("csrr $0, sstatus" : "=r" (x) : : : "volatile");
-    return x;
+    x
 }
 #[inline]
 unsafe extern "C" fn w_sstatus(mut x: uint64) {
@@ -282,7 +280,7 @@ pub const SIE_SSIE: libc::c_long = (1 as libc::c_long) << 1 as libc::c_int;
 unsafe extern "C" fn r_sie() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("csrr $0, sie" : "=r" (x) : : : "volatile");
-    return x;
+    x
 }
 #[inline]
 unsafe extern "C" fn w_sie(mut x: uint64) {
@@ -291,16 +289,16 @@ unsafe extern "C" fn w_sie(mut x: uint64) {
 // enable device interrupts
 #[inline]
 unsafe extern "C" fn intr_on() {
-    w_sie(r_sie() | SIE_SEIE as libc::c_ulong | SIE_STIE as libc::c_ulong |
-              SIE_SSIE as libc::c_ulong);
+    w_sie(
+        r_sie() | SIE_SEIE as libc::c_ulong | SIE_STIE as libc::c_ulong | SIE_SSIE as libc::c_ulong,
+    );
     w_sstatus(r_sstatus() | SSTATUS_SIE as libc::c_ulong);
 }
 // are device interrupts enabled?
 #[inline]
 unsafe extern "C" fn intr_get() -> libc::c_int {
     let mut x: uint64 = r_sstatus();
-    return (x & SSTATUS_SIE as libc::c_ulong !=
-                0 as libc::c_int as libc::c_ulong) as libc::c_int;
+    (x & SSTATUS_SIE as libc::c_ulong != 0 as libc::c_int as libc::c_ulong) as libc::c_int
 }
 // read and write tp, the thread pointer, which holds
 // this core's hartid (core number), the index into cpus[].
@@ -308,7 +306,7 @@ unsafe extern "C" fn intr_get() -> libc::c_int {
 unsafe extern "C" fn r_tp() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("mv $0, tp" : "=r" (x) : : : "volatile");
-    return x;
+    x
 }
 pub const PGSIZE: libc::c_int = 4096 as libc::c_int;
 // bytes per page
@@ -325,101 +323,110 @@ pub const PTE_X: libc::c_long = (1 as libc::c_long) << 3 as libc::c_int;
 // MAXVA is actually one bit less than the max allowed by
 // Sv39, to avoid having to sign-extend virtual addresses
 // that have the high bit set.
-pub const MAXVA: libc::c_long =
-    (1 as libc::c_long) <<
-        9 as libc::c_int + 9 as libc::c_int + 9 as libc::c_int +
-            12 as libc::c_int - 1 as libc::c_int;
+pub const MAXVA: libc::c_long = (1 as libc::c_long)
+    << (9 as libc::c_int + 9 as libc::c_int + 9 as libc::c_int + 12 as libc::c_int
+        - 1 as libc::c_int);
 #[no_mangle]
-pub static mut cpus: [cpu; 8] =
-    [cpu{proc_0: 0 as *const proc_0 as *mut proc_0,
-         scheduler:
-             context{ra: 0,
-                     sp: 0,
-                     s0: 0,
-                     s1: 0,
-                     s2: 0,
-                     s3: 0,
-                     s4: 0,
-                     s5: 0,
-                     s6: 0,
-                     s7: 0,
-                     s8: 0,
-                     s9: 0,
-                     s10: 0,
-                     s11: 0,},
-         noff: 0,
-         intena: 0,}; 8];
+pub static mut cpus: [cpu; 8] = [cpu {
+    proc_0: 0 as *const proc_0 as *mut proc_0,
+    scheduler: context {
+        ra: 0,
+        sp: 0,
+        s0: 0,
+        s1: 0,
+        s2: 0,
+        s3: 0,
+        s4: 0,
+        s5: 0,
+        s6: 0,
+        s7: 0,
+        s8: 0,
+        s9: 0,
+        s10: 0,
+        s11: 0,
+    },
+    noff: 0,
+    intena: 0,
+}; 8];
 #[export_name = "proc"]
-pub static mut proc_0: [proc_0; 64] =
-    [proc_0{lock:
-                spinlock{locked: 0,
-                         name: 0 as *const libc::c_char as *mut libc::c_char,
-                         cpu: 0 as *const cpu as *mut cpu,},
-            state: UNUSED,
-            parent: 0 as *const proc_0 as *mut proc_0,
-            chan: 0 as *const libc::c_void as *mut libc::c_void,
-            killed: 0,
-            xstate: 0,
-            pid: 0,
-            kstack: 0,
-            sz: 0,
-            pagetable: 0 as *const uint64 as *mut uint64,
-            tf: 0 as *const trapframe as *mut trapframe,
-            context:
-                context{ra: 0,
-                        sp: 0,
-                        s0: 0,
-                        s1: 0,
-                        s2: 0,
-                        s3: 0,
-                        s4: 0,
-                        s5: 0,
-                        s6: 0,
-                        s7: 0,
-                        s8: 0,
-                        s9: 0,
-                        s10: 0,
-                        s11: 0,},
-            ofile: [0 as *const file as *mut file; 16],
-            cwd: 0 as *const inode as *mut inode,
-            name: [0; 16],}; 64];
+pub static mut proc_0: [proc_0; 64] = [proc_0 {
+    lock: spinlock {
+        locked: 0,
+        name: 0 as *const libc::c_char as *mut libc::c_char,
+        cpu: 0 as *const cpu as *mut cpu,
+    },
+    state: UNUSED,
+    parent: 0 as *const proc_0 as *mut proc_0,
+    chan: 0 as *const libc::c_void as *mut libc::c_void,
+    killed: 0,
+    xstate: 0,
+    pid: 0,
+    kstack: 0,
+    sz: 0,
+    pagetable: 0 as *const uint64 as *mut uint64,
+    tf: 0 as *const trapframe as *mut trapframe,
+    context: context {
+        ra: 0,
+        sp: 0,
+        s0: 0,
+        s1: 0,
+        s2: 0,
+        s3: 0,
+        s4: 0,
+        s5: 0,
+        s6: 0,
+        s7: 0,
+        s8: 0,
+        s9: 0,
+        s10: 0,
+        s11: 0,
+    },
+    ofile: [0 as *const file as *mut file; 16],
+    cwd: 0 as *const inode as *mut inode,
+    name: [0; 16],
+}; 64];
 #[no_mangle]
 pub static mut initproc: *mut proc_0 = 0 as *const proc_0 as *mut proc_0;
 #[no_mangle]
 pub static mut nextpid: libc::c_int = 1 as libc::c_int;
 #[no_mangle]
-pub static mut pid_lock: spinlock =
-    spinlock{locked: 0,
-             name: 0 as *const libc::c_char as *mut libc::c_char,
-             cpu: 0 as *const cpu as *mut cpu,};
+pub static mut pid_lock: spinlock = spinlock {
+    locked: 0,
+    name: 0 as *const libc::c_char as *mut libc::c_char,
+    cpu: 0 as *const cpu as *mut cpu,
+};
 // trampoline.S
 #[no_mangle]
 pub unsafe extern "C" fn procinit() {
     let mut p: *mut proc_0 = 0 as *mut proc_0;
-    initlock(&mut pid_lock,
-             b"nextpid\x00" as *const u8 as *const libc::c_char as
-                 *mut libc::c_char);
+    initlock(
+        &mut pid_lock,
+        b"nextpid\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+    );
     p = proc_0.as_mut_ptr();
-    while p < &mut *proc_0.as_mut_ptr().offset(NPROC as isize) as *mut proc_0
-          {
-        initlock(&mut (*p).lock,
-                 b"proc\x00" as *const u8 as *const libc::c_char as
-                     *mut libc::c_char);
+    while p < &mut *proc_0.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
+        initlock(
+            &mut (*p).lock,
+            b"proc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        );
         // Allocate a page for the process's kernel stack.
-      // Map it high in memory, followed by an invalid
-      // guard page.
+        // Map it high in memory, followed by an invalid
+        // guard page.
         let mut pa: *mut libc::c_char = kalloc() as *mut libc::c_char;
         if pa.is_null() {
-            panic(b"kalloc\x00" as *const u8 as *const libc::c_char as
-                      *mut libc::c_char);
+            panic(b"kalloc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
-        let mut va: uint64 =
-            (TRAMPOLINE -
-                 ((p.wrapping_offset_from(proc_0.as_mut_ptr()) as libc::c_long
-                       as libc::c_int + 1 as libc::c_int) * 2 as libc::c_int *
-                      PGSIZE) as libc::c_long) as uint64;
-        kvmmap(va, pa as uint64, PGSIZE as uint64,
-               (PTE_R | PTE_W) as libc::c_int);
+        let mut va: uint64 = (TRAMPOLINE
+            - ((p.wrapping_offset_from(proc_0.as_mut_ptr()) as libc::c_long as libc::c_int
+                + 1 as libc::c_int)
+                * 2 as libc::c_int
+                * PGSIZE) as libc::c_long) as uint64;
+        kvmmap(
+            va,
+            pa as uint64,
+            PGSIZE as uint64,
+            (PTE_R | PTE_W) as libc::c_int,
+        );
         (*p).kstack = va;
         p = p.offset(1)
     }
@@ -432,16 +439,15 @@ pub unsafe extern "C" fn procinit() {
 #[no_mangle]
 pub unsafe extern "C" fn cpuid() -> libc::c_int {
     let mut id: libc::c_int = r_tp() as libc::c_int;
-    return id;
+    id
 }
 // Return this CPU's cpu struct.
 // Interrupts must be disabled.
 #[no_mangle]
 pub unsafe extern "C" fn mycpu() -> *mut cpu {
     let mut id: libc::c_int = cpuid();
-    let mut c: *mut cpu =
-        &mut *cpus.as_mut_ptr().offset(id as isize) as *mut cpu;
-    return c;
+    let mut c: *mut cpu = &mut *cpus.as_mut_ptr().offset(id as isize) as *mut cpu;
+    c
 }
 // Return the current struct proc *, or zero if none.
 #[no_mangle]
@@ -450,7 +456,7 @@ pub unsafe extern "C" fn myproc() -> *mut proc_0 {
     let mut c: *mut cpu = mycpu();
     let mut p: *mut proc_0 = (*c).proc_0;
     pop_off();
-    return p;
+    p
 }
 #[no_mangle]
 pub unsafe extern "C" fn allocpid() -> libc::c_int {
@@ -459,7 +465,7 @@ pub unsafe extern "C" fn allocpid() -> libc::c_int {
     pid = nextpid;
     nextpid = nextpid + 1 as libc::c_int;
     release(&mut pid_lock);
-    return pid;
+    pid
 }
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
@@ -469,56 +475,53 @@ unsafe extern "C" fn allocproc() -> *mut proc_0 {
     let mut current_block: u64;
     let mut p: *mut proc_0 = 0 as *mut proc_0;
     p = proc_0.as_mut_ptr();
-    loop  {
-        if !(p <
-                 &mut *proc_0.as_mut_ptr().offset(NPROC as isize) as
-                     *mut proc_0) {
+    loop {
+        if !(p < &mut *proc_0.as_mut_ptr().offset(NPROC as isize) as *mut proc_0) {
             current_block = 7815301370352969686;
-            break ;
+            break;
         }
         acquire(&mut (*p).lock);
-        if (*p).state as libc::c_uint == UNUSED as libc::c_int as libc::c_uint
-           {
+        if (*p).state as libc::c_uint == UNUSED as libc::c_int as libc::c_uint {
             current_block = 17234009953499979309;
-            break ;
+            break;
         }
         release(&mut (*p).lock);
         p = p.offset(1)
     }
     match current_block {
-        7815301370352969686 => { return 0 as *mut proc_0 }
+        7815301370352969686 => 0 as *mut proc_0,
         _ => {
             (*p).pid = allocpid();
             // Allocate a trapframe page.
             (*p).tf = kalloc() as *mut trapframe;
             if (*p).tf.is_null() {
                 release(&mut (*p).lock);
-                return 0 as *mut proc_0
+                return 0 as *mut proc_0;
             }
             // An empty user page table.
             (*p).pagetable = proc_pagetable(p);
             // Set up new context to start executing at forkret,
-  // which returns to user space.
-            memset(&mut (*p).context as *mut context as *mut libc::c_void,
-                   0 as libc::c_int,
-                   ::core::mem::size_of::<context>() as libc::c_ulong as
-                       uint);
-            (*p).context.ra =
-                ::core::mem::transmute::<Option<unsafe extern "C" fn() -> ()>,
-                                         uint64>(Some(forkret as
-                                                          unsafe extern "C" fn()
-                                                              -> ()));
-            (*p).context.sp =
-                (*p).kstack.wrapping_add(PGSIZE as libc::c_ulong);
-            return p
+            // which returns to user space.
+            memset(
+                &mut (*p).context as *mut context as *mut libc::c_void,
+                0 as libc::c_int,
+                ::core::mem::size_of::<context>() as libc::c_ulong as uint,
+            );
+            (*p).context.ra = ::core::mem::transmute::<Option<unsafe extern "C" fn() -> ()>, uint64>(
+                Some(forkret as unsafe extern "C" fn() -> ()),
+            );
+            (*p).context.sp = (*p).kstack.wrapping_add(PGSIZE as libc::c_ulong);
+            p
         }
-    };
+    }
 }
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
 unsafe extern "C" fn freeproc(mut p: *mut proc_0) {
-    if !(*p).tf.is_null() { kfree((*p).tf as *mut libc::c_void); }
+    if !(*p).tf.is_null() {
+        kfree((*p).tf as *mut libc::c_void);
+    }
     (*p).tf = 0 as *mut trapframe;
     if !(*p).pagetable.is_null() {
         proc_freepagetable((*p).pagetable, (*p).sz);
@@ -541,58 +544,102 @@ pub unsafe extern "C" fn proc_pagetable(mut p: *mut proc_0) -> pagetable_t {
     // An empty page table.
     pagetable = uvmcreate();
     // map the trampoline code (for system call return)
-  // at the highest user virtual address.
-  // only the supervisor uses it, on the way
-  // to/from user space, so not PTE_U.
-    mappages(pagetable, TRAMPOLINE as uint64, PGSIZE as uint64,
-             trampoline.as_mut_ptr() as uint64,
-             (PTE_R | PTE_X) as libc::c_int);
+    // at the highest user virtual address.
+    // only the supervisor uses it, on the way
+    // to/from user space, so not PTE_U.
+    mappages(
+        pagetable,
+        TRAMPOLINE as uint64,
+        PGSIZE as uint64,
+        trampoline.as_mut_ptr() as uint64,
+        (PTE_R | PTE_X) as libc::c_int,
+    );
     // map the trapframe just below TRAMPOLINE, for trampoline.S.
-    mappages(pagetable, TRAPFRAME as uint64, PGSIZE as uint64,
-             (*p).tf as uint64, (PTE_R | PTE_W) as libc::c_int);
-    return pagetable;
+    mappages(
+        pagetable,
+        TRAPFRAME as uint64,
+        PGSIZE as uint64,
+        (*p).tf as uint64,
+        (PTE_R | PTE_W) as libc::c_int,
+    );
+    pagetable
 }
 // Free a process's page table, and free the
 // physical memory it refers to.
 #[no_mangle]
-pub unsafe extern "C" fn proc_freepagetable(mut pagetable: pagetable_t,
-                                            mut sz: uint64) {
-    uvmunmap(pagetable, TRAMPOLINE as uint64, PGSIZE as uint64,
-             0 as libc::c_int);
-    uvmunmap(pagetable, TRAPFRAME as uint64, PGSIZE as uint64,
-             0 as libc::c_int);
-    if sz > 0 as libc::c_int as libc::c_ulong { uvmfree(pagetable, sz); };
+pub unsafe extern "C" fn proc_freepagetable(mut pagetable: pagetable_t, mut sz: uint64) {
+    uvmunmap(
+        pagetable,
+        TRAMPOLINE as uint64,
+        PGSIZE as uint64,
+        0 as libc::c_int,
+    );
+    uvmunmap(
+        pagetable,
+        TRAPFRAME as uint64,
+        PGSIZE as uint64,
+        0 as libc::c_int,
+    );
+    if sz > 0 as libc::c_int as libc::c_ulong {
+        uvmfree(pagetable, sz);
+    };
 }
 // a user program that calls exec("/init")
 // od -t xC initcode
 #[no_mangle]
-pub static mut initcode: [uchar; 51] =
-    [0x17 as libc::c_int as uchar, 0x5 as libc::c_int as uchar,
-     0 as libc::c_int as uchar, 0 as libc::c_int as uchar,
-     0x13 as libc::c_int as uchar, 0x5 as libc::c_int as uchar,
-     0x5 as libc::c_int as uchar, 0x2 as libc::c_int as uchar,
-     0x97 as libc::c_int as uchar, 0x5 as libc::c_int as uchar,
-     0 as libc::c_int as uchar, 0 as libc::c_int as uchar,
-     0x93 as libc::c_int as uchar, 0x85 as libc::c_int as uchar,
-     0x5 as libc::c_int as uchar, 0x2 as libc::c_int as uchar,
-     0x9d as libc::c_int as uchar, 0x48 as libc::c_int as uchar,
-     0x73 as libc::c_int as uchar, 0 as libc::c_int as uchar,
-     0 as libc::c_int as uchar, 0 as libc::c_int as uchar,
-     0x89 as libc::c_int as uchar, 0x48 as libc::c_int as uchar,
-     0x73 as libc::c_int as uchar, 0 as libc::c_int as uchar,
-     0 as libc::c_int as uchar, 0 as libc::c_int as uchar,
-     0xef as libc::c_int as uchar, 0xf0 as libc::c_int as uchar,
-     0xbf as libc::c_int as uchar, 0xff as libc::c_int as uchar,
-     0x2f as libc::c_int as uchar, 0x69 as libc::c_int as uchar,
-     0x6e as libc::c_int as uchar, 0x69 as libc::c_int as uchar,
-     0x74 as libc::c_int as uchar, 0 as libc::c_int as uchar,
-     0 as libc::c_int as uchar, 0x1 as libc::c_int as uchar,
-     0x20 as libc::c_int as uchar, 0 as libc::c_int as uchar,
-     0 as libc::c_int as uchar, 0 as libc::c_int as uchar,
-     0 as libc::c_int as uchar, 0 as libc::c_int as uchar,
-     0 as libc::c_int as uchar, 0 as libc::c_int as uchar,
-     0 as libc::c_int as uchar, 0 as libc::c_int as uchar,
-     0 as libc::c_int as uchar];
+pub static mut initcode: [uchar; 51] = [
+    0x17 as libc::c_int as uchar,
+    0x5 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0x13 as libc::c_int as uchar,
+    0x5 as libc::c_int as uchar,
+    0x5 as libc::c_int as uchar,
+    0x2 as libc::c_int as uchar,
+    0x97 as libc::c_int as uchar,
+    0x5 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0x93 as libc::c_int as uchar,
+    0x85 as libc::c_int as uchar,
+    0x5 as libc::c_int as uchar,
+    0x2 as libc::c_int as uchar,
+    0x9d as libc::c_int as uchar,
+    0x48 as libc::c_int as uchar,
+    0x73 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0x89 as libc::c_int as uchar,
+    0x48 as libc::c_int as uchar,
+    0x73 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0xef as libc::c_int as uchar,
+    0xf0 as libc::c_int as uchar,
+    0xbf as libc::c_int as uchar,
+    0xff as libc::c_int as uchar,
+    0x2f as libc::c_int as uchar,
+    0x69 as libc::c_int as uchar,
+    0x6e as libc::c_int as uchar,
+    0x69 as libc::c_int as uchar,
+    0x74 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0x1 as libc::c_int as uchar,
+    0x20 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+];
 // Set up first user process.
 #[no_mangle]
 pub unsafe extern "C" fn userinit() {
@@ -600,20 +647,22 @@ pub unsafe extern "C" fn userinit() {
     p = allocproc();
     initproc = p;
     // allocate one user page and copy init's instructions
-  // and data into it.
-    uvminit((*p).pagetable, initcode.as_mut_ptr(),
-            ::core::mem::size_of::<[uchar; 51]>() as libc::c_ulong as uint);
+    // and data into it.
+    uvminit(
+        (*p).pagetable,
+        initcode.as_mut_ptr(),
+        ::core::mem::size_of::<[uchar; 51]>() as libc::c_ulong as uint,
+    );
     (*p).sz = PGSIZE as uint64;
     // prepare for the very first "return" from kernel to user.
     (*(*p).tf).epc = 0 as libc::c_int as uint64; // user program counter
     (*(*p).tf).sp = PGSIZE as uint64; // user stack pointer
-    safestrcpy((*p).name.as_mut_ptr(),
-               b"initcode\x00" as *const u8 as *const libc::c_char,
-               ::core::mem::size_of::<[libc::c_char; 16]>() as libc::c_ulong
-                   as libc::c_int);
-    (*p).cwd =
-        namei(b"/\x00" as *const u8 as *const libc::c_char as
-                  *mut libc::c_char);
+    safestrcpy(
+        (*p).name.as_mut_ptr(),
+        b"initcode\x00" as *const u8 as *const libc::c_char,
+        ::core::mem::size_of::<[libc::c_char; 16]>() as libc::c_ulong as libc::c_int,
+    );
+    (*p).cwd = namei(b"/\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     (*p).state = RUNNABLE;
     release(&mut (*p).lock);
 }
@@ -625,19 +674,23 @@ pub unsafe extern "C" fn growproc(mut n: libc::c_int) -> libc::c_int {
     let mut p: *mut proc_0 = myproc();
     sz = (*p).sz as uint;
     if n > 0 as libc::c_int {
-        sz =
-            uvmalloc((*p).pagetable, sz as uint64,
-                     sz.wrapping_add(n as libc::c_uint) as uint64) as uint;
+        sz = uvmalloc(
+            (*p).pagetable,
+            sz as uint64,
+            sz.wrapping_add(n as libc::c_uint) as uint64,
+        ) as uint;
         if sz == 0 as libc::c_int as libc::c_uint {
-            return -(1 as libc::c_int)
+            return -(1 as libc::c_int);
         }
     } else if n < 0 as libc::c_int {
-        sz =
-            uvmdealloc((*p).pagetable, sz as uint64,
-                       sz.wrapping_add(n as libc::c_uint) as uint64) as uint
+        sz = uvmdealloc(
+            (*p).pagetable,
+            sz as uint64,
+            sz.wrapping_add(n as libc::c_uint) as uint64,
+        ) as uint
     }
     (*p).sz = sz as uint64;
-    return 0 as libc::c_int;
+    0 as libc::c_int
 }
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
@@ -649,12 +702,14 @@ pub unsafe extern "C" fn fork() -> libc::c_int {
     let mut p: *mut proc_0 = myproc();
     // Allocate process.
     np = allocproc();
-    if np.is_null() { return -(1 as libc::c_int) }
+    if np.is_null() {
+        return -(1 as libc::c_int);
+    }
     // Copy user memory from parent to child.
     if uvmcopy((*p).pagetable, (*np).pagetable, (*p).sz) < 0 as libc::c_int {
         freeproc(np);
         release(&mut (*np).lock);
-        return -(1 as libc::c_int)
+        return -(1 as libc::c_int);
     }
     (*np).sz = (*p).sz;
     (*np).parent = p;
@@ -671,13 +726,15 @@ pub unsafe extern "C" fn fork() -> libc::c_int {
         i += 1
     }
     (*np).cwd = idup((*p).cwd);
-    safestrcpy((*np).name.as_mut_ptr(), (*p).name.as_mut_ptr(),
-               ::core::mem::size_of::<[libc::c_char; 16]>() as libc::c_ulong
-                   as libc::c_int);
+    safestrcpy(
+        (*np).name.as_mut_ptr(),
+        (*p).name.as_mut_ptr(),
+        ::core::mem::size_of::<[libc::c_char; 16]>() as libc::c_ulong as libc::c_int,
+    );
     pid = (*np).pid;
     (*np).state = RUNNABLE;
     release(&mut (*np).lock);
-    return pid;
+    pid
 }
 // Pass p's abandoned children to init.
 // Caller must hold p->lock.
@@ -685,25 +742,24 @@ pub unsafe extern "C" fn fork() -> libc::c_int {
 pub unsafe extern "C" fn reparent(mut p: *mut proc_0) {
     let mut pp: *mut proc_0 = 0 as *mut proc_0;
     pp = proc_0.as_mut_ptr();
-    while pp < &mut *proc_0.as_mut_ptr().offset(NPROC as isize) as *mut proc_0
-          {
+    while pp < &mut *proc_0.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
         // this code uses pp->parent without holding pp->lock.
-    // acquiring the lock first could cause a deadlock
-    // if pp or a child of pp were also in exit()
-    // and about to try to lock p.
+        // acquiring the lock first could cause a deadlock
+        // if pp or a child of pp were also in exit()
+        // and about to try to lock p.
         if (*pp).parent == p {
             // pp->parent can't change between the check and the acquire()
-      // because only the parent changes it, and we're the parent.
+            // because only the parent changes it, and we're the parent.
             acquire(&mut (*pp).lock);
             (*pp).parent = initproc;
             // we should wake up init here, but that would require
-      // initproc->lock, which would be a deadlock, since we hold
-      // the lock on one of init's children (pp). this is why
-      // exit() always wakes init (before acquiring any locks).
+            // initproc->lock, which would be a deadlock, since we hold
+            // the lock on one of init's children (pp). this is why
+            // exit() always wakes init (before acquiring any locks).
             release(&mut (*pp).lock);
         }
         pp = pp.offset(1)
-    };
+    }
 }
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
@@ -712,8 +768,7 @@ pub unsafe extern "C" fn reparent(mut p: *mut proc_0) {
 pub unsafe extern "C" fn exit(mut status: libc::c_int) {
     let mut p: *mut proc_0 = myproc();
     if p == initproc {
-        panic(b"init exiting\x00" as *const u8 as *const libc::c_char as
-                  *mut libc::c_char);
+        panic(b"init exiting\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     // Close all open files.
     let mut fd: libc::c_int = 0 as libc::c_int;
@@ -730,24 +785,24 @@ pub unsafe extern "C" fn exit(mut status: libc::c_int) {
     end_op();
     (*p).cwd = 0 as *mut inode;
     // we might re-parent a child to init. we can't be precise about
-  // waking up init, since we can't acquire its lock once we've
-  // acquired any other proc lock. so wake up init whether that's
-  // necessary or not. init may miss this wakeup, but that seems
-  // harmless.
+    // waking up init, since we can't acquire its lock once we've
+    // acquired any other proc lock. so wake up init whether that's
+    // necessary or not. init may miss this wakeup, but that seems
+    // harmless.
     acquire(&mut (*initproc).lock);
     wakeup1(initproc);
     release(&mut (*initproc).lock);
     // grab a copy of p->parent, to ensure that we unlock the same
-  // parent we locked. in case our parent gives us away to init while
-  // we're waiting for the parent lock. we may then race with an
-  // exiting parent, but the result will be a harmless spurious wakeup
-  // to a dead or wrong process; proc structs are never re-allocated
-  // as anything else.
+    // parent we locked. in case our parent gives us away to init while
+    // we're waiting for the parent lock. we may then race with an
+    // exiting parent, but the result will be a harmless spurious wakeup
+    // to a dead or wrong process; proc structs are never re-allocated
+    // as anything else.
     acquire(&mut (*p).lock);
     let mut original_parent: *mut proc_0 = (*p).parent;
     release(&mut (*p).lock);
     // we need the parent's lock in order to wake it up from wait().
-  // the parent-then-child rule says we have to lock it first.
+    // the parent-then-child rule says we have to lock it first.
     acquire(&mut (*original_parent).lock);
     acquire(&mut (*p).lock);
     // Give any children to init.
@@ -759,8 +814,7 @@ pub unsafe extern "C" fn exit(mut status: libc::c_int) {
     release(&mut (*original_parent).lock);
     // Jump into the scheduler, never to return.
     sched();
-    panic(b"zombie exit\x00" as *const u8 as *const libc::c_char as
-              *mut libc::c_char);
+    panic(b"zombie exit\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
@@ -771,42 +825,41 @@ pub unsafe extern "C" fn wait(mut addr: uint64) -> libc::c_int {
     let mut pid: libc::c_int = 0;
     let mut p: *mut proc_0 = myproc();
     // hold p->lock for the whole time to avoid lost
-  // wakeups from a child's exit().
+    // wakeups from a child's exit().
     acquire(&mut (*p).lock);
-    loop  {
+    loop {
         // Scan through table looking for exited children.
         havekids = 0 as libc::c_int;
         np = proc_0.as_mut_ptr();
-        while np <
-                  &mut *proc_0.as_mut_ptr().offset(NPROC as isize) as
-                      *mut proc_0 {
+        while np < &mut *proc_0.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
             //DOC: wait-sleep
             // this code uses np->parent without holding np->lock.
-      // acquiring the lock first would cause a deadlock,
-      // since np might be an ancestor, and we already hold p->lock.
+            // acquiring the lock first would cause a deadlock,
+            // since np might be an ancestor, and we already hold p->lock.
             if (*np).parent == p {
                 // np->parent can't change between the check and the acquire()
-        // because only the parent changes it, and we're the parent.
+                // because only the parent changes it, and we're the parent.
                 acquire(&mut (*np).lock);
                 havekids = 1 as libc::c_int;
-                if (*np).state as libc::c_uint ==
-                       ZOMBIE as libc::c_int as libc::c_uint {
+                if (*np).state as libc::c_uint == ZOMBIE as libc::c_int as libc::c_uint {
                     // Found one.
                     pid = (*np).pid;
-                    if addr != 0 as libc::c_int as libc::c_ulong &&
-                           copyout((*p).pagetable, addr,
-                                   &mut (*np).xstate as *mut libc::c_int as
-                                       *mut libc::c_char,
-                                   ::core::mem::size_of::<libc::c_int>() as
-                                       libc::c_ulong) < 0 as libc::c_int {
+                    if addr != 0 as libc::c_int as libc::c_ulong
+                        && copyout(
+                            (*p).pagetable,
+                            addr,
+                            &mut (*np).xstate as *mut libc::c_int as *mut libc::c_char,
+                            ::core::mem::size_of::<libc::c_int>() as libc::c_ulong,
+                        ) < 0 as libc::c_int
+                    {
                         release(&mut (*np).lock);
                         release(&mut (*p).lock);
-                        return -(1 as libc::c_int)
+                        return -(1 as libc::c_int);
                     }
                     freeproc(np);
                     release(&mut (*np).lock);
                     release(&mut (*p).lock);
-                    return pid
+                    return pid;
                 }
                 release(&mut (*np).lock);
             }
@@ -814,10 +867,10 @@ pub unsafe extern "C" fn wait(mut addr: uint64) -> libc::c_int {
         }
         if havekids == 0 || (*p).killed != 0 {
             release(&mut (*p).lock);
-            return -(1 as libc::c_int)
+            return -(1 as libc::c_int);
         }
         sleep(p as *mut libc::c_void, &mut (*p).lock);
-    };
+    }
 }
 // No point waiting if we don't have any children.
 // Wait for a child to exit.
@@ -833,30 +886,27 @@ pub unsafe extern "C" fn scheduler() -> ! {
     let mut p: *mut proc_0 = 0 as *mut proc_0;
     let mut c: *mut cpu = mycpu();
     (*c).proc_0 = 0 as *mut proc_0;
-    loop  {
+    loop {
         // Avoid deadlock by ensuring that devices can interrupt.
         intr_on();
         p = proc_0.as_mut_ptr();
-        while p <
-                  &mut *proc_0.as_mut_ptr().offset(NPROC as isize) as
-                      *mut proc_0 {
+        while p < &mut *proc_0.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
             acquire(&mut (*p).lock);
-            if (*p).state as libc::c_uint ==
-                   RUNNABLE as libc::c_int as libc::c_uint {
+            if (*p).state as libc::c_uint == RUNNABLE as libc::c_int as libc::c_uint {
                 // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
+                // to release its lock and then reacquire it
+                // before jumping back to us.
                 (*p).state = RUNNING;
                 (*c).proc_0 = p;
                 swtch(&mut (*c).scheduler, &mut (*p).context);
                 // Process is done running for now.
-        // It should have changed its p->state before coming back.
+                // It should have changed its p->state before coming back.
                 (*c).proc_0 = 0 as *mut proc_0
             }
             release(&mut (*p).lock);
             p = p.offset(1)
         }
-    };
+    }
 }
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
@@ -870,24 +920,22 @@ pub unsafe extern "C" fn sched() {
     let mut intena: libc::c_int = 0;
     let mut p: *mut proc_0 = myproc();
     if holding(&mut (*p).lock) == 0 {
-        panic(b"sched p->lock\x00" as *const u8 as *const libc::c_char as
-                  *mut libc::c_char);
+        panic(b"sched p->lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     if (*mycpu()).noff != 1 as libc::c_int {
-        panic(b"sched locks\x00" as *const u8 as *const libc::c_char as
-                  *mut libc::c_char);
+        panic(b"sched locks\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     if (*p).state as libc::c_uint == RUNNING as libc::c_int as libc::c_uint {
-        panic(b"sched running\x00" as *const u8 as *const libc::c_char as
-                  *mut libc::c_char);
+        panic(b"sched running\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     if intr_get() != 0 {
-        panic(b"sched interruptible\x00" as *const u8 as *const libc::c_char
-                  as *mut libc::c_char);
+        panic(b"sched interruptible\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     intena = (*mycpu()).intena;
-    swtch(&mut (*p).context,
-          &mut (*(mycpu as unsafe extern "C" fn() -> *mut cpu)()).scheduler);
+    swtch(
+        &mut (*p).context,
+        &mut (*(mycpu as unsafe extern "C" fn() -> *mut cpu)()).scheduler,
+    );
     (*mycpu()).intena = intena;
 }
 // Give up the CPU for one scheduling round.
@@ -908,8 +956,8 @@ pub unsafe extern "C" fn forkret() {
     release(&mut (*(myproc as unsafe extern "C" fn() -> *mut proc_0)()).lock);
     if first != 0 {
         // File system initialization must be run in the context of a
-    // regular process (e.g., because it calls sleep), and thus cannot
-    // be run from main().
+        // regular process (e.g., because it calls sleep), and thus cannot
+        // be run from main().
         first = 0 as libc::c_int;
         fsinit(ROOTDEV);
     }
@@ -918,15 +966,14 @@ pub unsafe extern "C" fn forkret() {
 // Atomically release lock and sleep on chan.
 // Reacquires lock when awakened.
 #[no_mangle]
-pub unsafe extern "C" fn sleep(mut chan: *mut libc::c_void,
-                               mut lk: *mut spinlock) {
+pub unsafe extern "C" fn sleep(mut chan: *mut libc::c_void, mut lk: *mut spinlock) {
     let mut p: *mut proc_0 = myproc();
     // Must acquire p->lock in order to
-  // change p->state and then call sched.
-  // Once we hold p->lock, we can be
-  // guaranteed that we won't miss any wakeup
-  // (wakeup locks p->lock),
-  // so it's okay to release lk.
+    // change p->state and then call sched.
+    // Once we hold p->lock, we can be
+    // guaranteed that we won't miss any wakeup
+    // (wakeup locks p->lock),
+    // so it's okay to release lk.
     if lk != &mut (*p).lock as *mut spinlock {
         //DOC: sleeplock0
         acquire(&mut (*p).lock); //DOC: sleeplock1
@@ -950,27 +997,26 @@ pub unsafe extern "C" fn sleep(mut chan: *mut libc::c_void,
 pub unsafe extern "C" fn wakeup(mut chan: *mut libc::c_void) {
     let mut p: *mut proc_0 = 0 as *mut proc_0;
     p = proc_0.as_mut_ptr();
-    while p < &mut *proc_0.as_mut_ptr().offset(NPROC as isize) as *mut proc_0
-          {
+    while p < &mut *proc_0.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
         acquire(&mut (*p).lock);
-        if (*p).state as libc::c_uint ==
-               SLEEPING as libc::c_int as libc::c_uint && (*p).chan == chan {
+        if (*p).state as libc::c_uint == SLEEPING as libc::c_int as libc::c_uint
+            && (*p).chan == chan
+        {
             (*p).state = RUNNABLE
         }
         release(&mut (*p).lock);
         p = p.offset(1)
-    };
+    }
 }
 // Wake up p if it is sleeping in wait(); used by exit().
 // Caller must hold p->lock.
 unsafe extern "C" fn wakeup1(mut p: *mut proc_0) {
     if holding(&mut (*p).lock) == 0 {
-        panic(b"wakeup1\x00" as *const u8 as *const libc::c_char as
-                  *mut libc::c_char);
+        panic(b"wakeup1\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    if (*p).chan == p as *mut libc::c_void &&
-           (*p).state as libc::c_uint ==
-               SLEEPING as libc::c_int as libc::c_uint {
+    if (*p).chan == p as *mut libc::c_void
+        && (*p).state as libc::c_uint == SLEEPING as libc::c_int as libc::c_uint
+    {
         (*p).state = RUNNABLE
     };
 }
@@ -981,102 +1027,102 @@ unsafe extern "C" fn wakeup1(mut p: *mut proc_0) {
 pub unsafe extern "C" fn kill(mut pid: libc::c_int) -> libc::c_int {
     let mut p: *mut proc_0 = 0 as *mut proc_0;
     p = proc_0.as_mut_ptr();
-    while p < &mut *proc_0.as_mut_ptr().offset(NPROC as isize) as *mut proc_0
-          {
+    while p < &mut *proc_0.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
         acquire(&mut (*p).lock);
         if (*p).pid == pid {
             (*p).killed = 1 as libc::c_int;
-            if (*p).state as libc::c_uint ==
-                   SLEEPING as libc::c_int as libc::c_uint {
+            if (*p).state as libc::c_uint == SLEEPING as libc::c_int as libc::c_uint {
                 // Wake process from sleep().
                 (*p).state = RUNNABLE
             }
             release(&mut (*p).lock);
-            return 0 as libc::c_int
+            return 0 as libc::c_int;
         }
         release(&mut (*p).lock);
         p = p.offset(1)
     }
-    return -(1 as libc::c_int);
+    -(1 as libc::c_int)
 }
 // Copy to either a user address, or kernel address,
 // depending on usr_dst.
 // Returns 0 on success, -1 on error.
 #[no_mangle]
-pub unsafe extern "C" fn either_copyout(mut user_dst: libc::c_int,
-                                        mut dst: uint64,
-                                        mut src: *mut libc::c_void,
-                                        mut len: uint64) -> libc::c_int {
+pub unsafe extern "C" fn either_copyout(
+    mut user_dst: libc::c_int,
+    mut dst: uint64,
+    mut src: *mut libc::c_void,
+    mut len: uint64,
+) -> libc::c_int {
     let mut p: *mut proc_0 = myproc();
     if user_dst != 0 {
-        return copyout((*p).pagetable, dst, src as *mut libc::c_char, len)
+        copyout((*p).pagetable, dst, src as *mut libc::c_char, len)
     } else {
-        memmove(dst as *mut libc::c_char as *mut libc::c_void, src,
-                len as uint);
-        return 0 as libc::c_int
-    };
+        memmove(
+            dst as *mut libc::c_char as *mut libc::c_void,
+            src,
+            len as uint,
+        );
+        0 as libc::c_int
+    }
 }
 // Copy from either a user address, or kernel address,
 // depending on usr_src.
 // Returns 0 on success, -1 on error.
 #[no_mangle]
-pub unsafe extern "C" fn either_copyin(mut dst: *mut libc::c_void,
-                                       mut user_src: libc::c_int,
-                                       mut src: uint64, mut len: uint64)
- -> libc::c_int {
+pub unsafe extern "C" fn either_copyin(
+    mut dst: *mut libc::c_void,
+    mut user_src: libc::c_int,
+    mut src: uint64,
+    mut len: uint64,
+) -> libc::c_int {
     let mut p: *mut proc_0 = myproc();
     if user_src != 0 {
-        return copyin((*p).pagetable, dst as *mut libc::c_char, src, len)
+        copyin((*p).pagetable, dst as *mut libc::c_char, src, len)
     } else {
-        memmove(dst, src as *mut libc::c_char as *const libc::c_void,
-                len as uint);
-        return 0 as libc::c_int
-    };
+        memmove(
+            dst,
+            src as *mut libc::c_char as *const libc::c_void,
+            len as uint,
+        );
+        0 as libc::c_int
+    }
 }
 // Print a process listing to console.  For debugging.
 // Runs when user types ^P on console.
 // No lock to avoid wedging a stuck machine further.
 #[no_mangle]
 pub unsafe extern "C" fn procdump() {
-    static mut states: [*mut libc::c_char; 5] =
-        [b"unused\x00" as *const u8 as *const libc::c_char as
-             *mut libc::c_char,
-         b"sleep \x00" as *const u8 as *const libc::c_char as
-             *mut libc::c_char,
-         b"runble\x00" as *const u8 as *const libc::c_char as
-             *mut libc::c_char,
-         b"run   \x00" as *const u8 as *const libc::c_char as
-             *mut libc::c_char,
-         b"zombie\x00" as *const u8 as *const libc::c_char as
-             *mut libc::c_char];
+    static mut states: [*mut libc::c_char; 5] = [
+        b"unused\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        b"sleep \x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        b"runble\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        b"run   \x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        b"zombie\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+    ];
     let mut p: *mut proc_0 = 0 as *mut proc_0;
     let mut state: *mut libc::c_char = 0 as *mut libc::c_char;
-    printf(b"\n\x00" as *const u8 as *const libc::c_char as
-               *mut libc::c_char);
+    printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     p = proc_0.as_mut_ptr();
-    while p < &mut *proc_0.as_mut_ptr().offset(NPROC as isize) as *mut proc_0
-          {
-        if !((*p).state as libc::c_uint ==
-                 UNUSED as libc::c_int as libc::c_uint) {
+    while p < &mut *proc_0.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
+        if !((*p).state as libc::c_uint == UNUSED as libc::c_int as libc::c_uint) {
             if (*p).state as libc::c_uint >= 0 as libc::c_int as libc::c_uint
-                   &&
-                   ((*p).state as libc::c_ulong) <
-                       (::core::mem::size_of::<[*mut libc::c_char; 5]>() as
-                            libc::c_ulong).wrapping_div(::core::mem::size_of::<*mut libc::c_char>()
-                                                            as libc::c_ulong)
-                   && !states[(*p).state as usize].is_null() {
+                && ((*p).state as libc::c_ulong)
+                    < (::core::mem::size_of::<[*mut libc::c_char; 5]>() as libc::c_ulong)
+                        .wrapping_div(::core::mem::size_of::<*mut libc::c_char>() as libc::c_ulong)
+                && !states[(*p).state as usize].is_null()
+            {
                 state = states[(*p).state as usize]
             } else {
-                state =
-                    b"???\x00" as *const u8 as *const libc::c_char as
-                        *mut libc::c_char
+                state = b"???\x00" as *const u8 as *const libc::c_char as *mut libc::c_char
             }
-            printf(b"%d %s %s\x00" as *const u8 as *const libc::c_char as
-                       *mut libc::c_char, (*p).pid, state,
-                   (*p).name.as_mut_ptr());
-            printf(b"\n\x00" as *const u8 as *const libc::c_char as
-                       *mut libc::c_char);
+            printf(
+                b"%d %s %s\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+                (*p).pid,
+                state,
+                (*p).name.as_mut_ptr(),
+            );
+            printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         p = p.offset(1)
-    };
+    }
 }

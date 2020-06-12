@@ -16,8 +16,8 @@ pub type uint64 = libc::c_ulong;
 // 00001000 -- boot ROM, provided by qemu
 // 02000000 -- CLINT
 // 0C000000 -- PLIC
-// 10000000 -- uart0 
-// 10001000 -- virtio disk 
+// 10000000 -- uart0
+// 10001000 -- virtio disk
 // 80000000 -- boot ROM jumps here in machine mode
 //             -kernel loads the kernel here
 // unused RAM after 80000000.
@@ -29,28 +29,25 @@ pub type uint64 = libc::c_ulong;
 // virtio mmio interface
 // local interrupt controller, which contains the timer.
 pub const CLINT: libc::c_long = 0x2000000 as libc::c_long;
-pub const CLINT_MTIME: libc::c_long =
-    CLINT + 0xbff8 as libc::c_int as libc::c_long;
+pub const CLINT_MTIME: libc::c_long = CLINT + 0xbff8 as libc::c_int as libc::c_long;
 // which hart (core) is this?
 #[inline]
 unsafe extern "C" fn r_mhartid() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("csrr $0, mhartid" : "=r" (x) : : : "volatile");
-    return x;
+    x
 }
 // Machine Status Register, mstatus
-pub const MSTATUS_MPP_MASK: libc::c_long =
-    (3 as libc::c_long) << 11 as libc::c_int;
+pub const MSTATUS_MPP_MASK: libc::c_long = (3 as libc::c_long) << 11 as libc::c_int;
 // previous mode.
-pub const MSTATUS_MPP_S: libc::c_long =
-    (1 as libc::c_long) << 11 as libc::c_int;
+pub const MSTATUS_MPP_S: libc::c_long = (1 as libc::c_long) << 11 as libc::c_int;
 pub const MSTATUS_MIE: libc::c_long = (1 as libc::c_long) << 3 as libc::c_int;
 // machine-mode interrupt enable.
 #[inline]
 unsafe extern "C" fn r_mstatus() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("csrr $0, mstatus" : "=r" (x) : : : "volatile");
-    return x;
+    x
 }
 #[inline]
 unsafe extern "C" fn w_mstatus(mut x: uint64) {
@@ -72,7 +69,7 @@ pub const MIE_MTIE: libc::c_long = (1 as libc::c_long) << 7 as libc::c_int;
 unsafe extern "C" fn r_mie() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("csrr $0, mie" : "=r" (x) : : : "volatile");
-    return x;
+    x
 }
 #[inline]
 unsafe extern "C" fn w_mie(mut x: uint64) {
@@ -118,14 +115,14 @@ pub unsafe extern "C" fn start() {
     x |= MSTATUS_MPP_S as libc::c_ulong;
     w_mstatus(x);
     // set M Exception Program Counter to main, for mret.
-  // requires gcc -mcmodel=medany
-    w_mepc(::core::mem::transmute::<Option<unsafe extern "C" fn() -> ()>,
-                                    uint64>(Some(::core::mem::transmute::<unsafe extern "C" fn()
-                                                                              ->
-                                                                                  (),
-                                                                          unsafe extern "C" fn()
-                                                                              ->
-                                                                                  ()>(main_0))));
+    // requires gcc -mcmodel=medany
+    w_mepc(::core::mem::transmute::<
+        Option<unsafe extern "C" fn() -> ()>,
+        uint64,
+    >(Some(::core::mem::transmute::<
+        unsafe extern "C" fn() -> (),
+        unsafe extern "C" fn() -> (),
+    >(main_0))));
     // disable paging for now.
     w_satp(0 as libc::c_int as uint64);
     // delegate all interrupts and exceptions to supervisor mode.
@@ -148,32 +145,30 @@ pub unsafe extern "C" fn timerinit() {
     // each CPU has a separate source of timer interrupts.
     let mut id: libc::c_int = r_mhartid() as libc::c_int;
     // ask the CLINT for a timer interrupt.
-    let mut interval: libc::c_int =
-        1000000 as libc::c_int; // cycles; about 1/10th second in qemu.
-    *((CLINT + 0x4000 as libc::c_int as libc::c_long +
-           (8 as libc::c_int * id) as libc::c_long) as *mut uint64) =
-        (*(CLINT_MTIME as
-               *mut uint64)).wrapping_add(interval as libc::c_ulong);
+    let mut interval: libc::c_int = 1000000 as libc::c_int; // cycles; about 1/10th second in qemu.
+    *((CLINT + 0x4000 as libc::c_int as libc::c_long + (8 as libc::c_int * id) as libc::c_long)
+        as *mut uint64) = (*(CLINT_MTIME as *mut uint64)).wrapping_add(interval as libc::c_ulong);
     // prepare information in scratch[] for timervec.
-  // scratch[0..3] : space for timervec to save registers.
-  // scratch[4] : address of CLINT MTIMECMP register.
-  // scratch[5] : desired interval (in cycles) between timer interrupts.
-    let mut scratch: *mut uint64 =
-        &mut *mscratch0.as_mut_ptr().offset((32 as libc::c_int * id) as isize)
-            as *mut uint64;
+    // scratch[0..3] : space for timervec to save registers.
+    // scratch[4] : address of CLINT MTIMECMP register.
+    // scratch[5] : desired interval (in cycles) between timer interrupts.
+    let mut scratch: *mut uint64 = &mut *mscratch0
+        .as_mut_ptr()
+        .offset((32 as libc::c_int * id) as isize)
+        as *mut uint64;
     *scratch.offset(4 as libc::c_int as isize) =
-        (CLINT + 0x4000 as libc::c_int as libc::c_long +
-             (8 as libc::c_int * id) as libc::c_long) as uint64;
+        (CLINT + 0x4000 as libc::c_int as libc::c_long + (8 as libc::c_int * id) as libc::c_long)
+            as uint64;
     *scratch.offset(5 as libc::c_int as isize) = interval as uint64;
     w_mscratch(scratch as uint64);
     // set the machine-mode trap handler.
-    w_mtvec(::core::mem::transmute::<Option<unsafe extern "C" fn() -> ()>,
-                                     uint64>(Some(::core::mem::transmute::<unsafe extern "C" fn()
-                                                                               ->
-                                                                                   (),
-                                                                           unsafe extern "C" fn()
-                                                                               ->
-                                                                                   ()>(timervec))));
+    w_mtvec(::core::mem::transmute::<
+        Option<unsafe extern "C" fn() -> ()>,
+        uint64,
+    >(Some(::core::mem::transmute::<
+        unsafe extern "C" fn() -> (),
+        unsafe extern "C" fn() -> (),
+    >(timervec))));
     // enable machine-mode interrupts.
     w_mstatus(r_mstatus() | MSTATUS_MIE as libc::c_ulong);
     // enable machine-mode timer interrupts.

@@ -25,8 +25,7 @@ extern "C" {
     #[no_mangle]
     fn release(_: *mut spinlock);
     #[no_mangle]
-    fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: uint)
-     -> *mut libc::c_void;
+    fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: uint) -> *mut libc::c_void;
 }
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
@@ -137,29 +136,35 @@ pub const LOGSIZE: libc::c_int = MAXOPBLOCKS * 3 as libc::c_int;
 // root i-number
 pub const BSIZE: libc::c_int = 1024 as libc::c_int;
 #[no_mangle]
-pub static mut log: log =
-    log{lock:
-            spinlock{locked: 0,
-                     name: 0 as *const libc::c_char as *mut libc::c_char,
-                     cpu: 0 as *const cpu as *mut cpu,},
-        start: 0,
-        size: 0,
-        outstanding: 0,
-        committing: 0,
-        dev: 0,
-        lh: logheader{n: 0, block: [0; 30],},};
+pub static mut log: log = log {
+    lock: spinlock {
+        locked: 0,
+        name: 0 as *const libc::c_char as *mut libc::c_char,
+        cpu: 0 as *const cpu as *mut cpu,
+    },
+    start: 0,
+    size: 0,
+    outstanding: 0,
+    committing: 0,
+    dev: 0,
+    lh: logheader {
+        n: 0,
+        block: [0; 30],
+    },
+};
 // log.c
 #[no_mangle]
-pub unsafe extern "C" fn initlog(mut dev: libc::c_int,
-                                 mut sb: *mut superblock) {
-    if ::core::mem::size_of::<logheader>() as libc::c_ulong >=
-           BSIZE as libc::c_ulong {
-        panic(b"initlog: too big logheader\x00" as *const u8 as
-                  *const libc::c_char as *mut libc::c_char);
+pub unsafe extern "C" fn initlog(mut dev: libc::c_int, mut sb: *mut superblock) {
+    if ::core::mem::size_of::<logheader>() as libc::c_ulong >= BSIZE as libc::c_ulong {
+        panic(
+            b"initlog: too big logheader\x00" as *const u8 as *const libc::c_char
+                as *mut libc::c_char,
+        );
     }
-    initlock(&mut log.lock,
-             b"log\x00" as *const u8 as *const libc::c_char as
-                 *mut libc::c_char);
+    initlock(
+        &mut log.lock,
+        b"log\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+    );
     log.start = (*sb).logstart as libc::c_int;
     log.size = (*sb).nlog as libc::c_int;
     log.dev = dev;
@@ -170,22 +175,22 @@ unsafe extern "C" fn install_trans() {
     let mut tail: libc::c_int = 0; // read log block
     tail = 0 as libc::c_int; // read dst
     while tail < log.lh.n {
-        let mut lbuf: *mut buf =
-            bread(log.dev as uint,
-                  (log.start + tail + 1 as libc::c_int) as
-                      uint); // copy block to dst
-        let mut dbuf: *mut buf =
-            bread(log.dev as uint,
-                  log.lh.block[tail as usize] as uint); // write dst to disk
-        memmove((*dbuf).data.as_mut_ptr() as *mut libc::c_void,
-                (*lbuf).data.as_mut_ptr() as *const libc::c_void,
-                BSIZE as uint);
+        let mut lbuf: *mut buf = bread(
+            log.dev as uint,
+            (log.start + tail + 1 as libc::c_int) as uint,
+        ); // copy block to dst
+        let mut dbuf: *mut buf = bread(log.dev as uint, log.lh.block[tail as usize] as uint); // write dst to disk
+        memmove(
+            (*dbuf).data.as_mut_ptr() as *mut libc::c_void,
+            (*lbuf).data.as_mut_ptr() as *const libc::c_void,
+            BSIZE as uint,
+        );
         bwrite(dbuf);
         bunpin(dbuf);
         brelse(lbuf);
         brelse(dbuf);
         tail += 1
-    };
+    }
 }
 // Read the log header from disk into the in-memory log header
 unsafe extern "C" fn read_head() {
@@ -204,9 +209,7 @@ unsafe extern "C" fn read_head() {
 // This is the true point at which the
 // current transaction commits.
 unsafe extern "C" fn write_head() {
-    let mut buf: *mut buf =
-        bread(log.dev as uint,
-              log.start as uint); // if committed, copy from log to disk
+    let mut buf: *mut buf = bread(log.dev as uint, log.start as uint); // if committed, copy from log to disk
     let mut hb: *mut logheader = (*buf).data.as_mut_ptr() as *mut logheader;
     let mut i: libc::c_int = 0;
     (*hb).n = log.lh.n;
@@ -229,20 +232,18 @@ unsafe extern "C" fn recover_from_log() {
 #[no_mangle]
 pub unsafe extern "C" fn begin_op() {
     acquire(&mut log.lock);
-    loop  {
+    loop {
         if log.committing != 0 {
             sleep(&mut log as *mut log as *mut libc::c_void, &mut log.lock);
-        } else if log.lh.n +
-                      (log.outstanding + 1 as libc::c_int) * MAXOPBLOCKS >
-                      LOGSIZE {
+        } else if log.lh.n + (log.outstanding + 1 as libc::c_int) * MAXOPBLOCKS > LOGSIZE {
             // this op might exhaust log space; wait for commit.
             sleep(&mut log as *mut log as *mut libc::c_void, &mut log.lock);
         } else {
             log.outstanding += 1 as libc::c_int;
             release(&mut log.lock);
-            break ;
+            break;
         }
-    };
+    }
 }
 // called at the end of each FS system call.
 // commits if this was the last outstanding operation.
@@ -252,22 +253,21 @@ pub unsafe extern "C" fn end_op() {
     acquire(&mut log.lock);
     log.outstanding -= 1 as libc::c_int;
     if log.committing != 0 {
-        panic(b"log.committing\x00" as *const u8 as *const libc::c_char as
-                  *mut libc::c_char);
+        panic(b"log.committing\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     if log.outstanding == 0 as libc::c_int {
         do_commit = 1 as libc::c_int;
         log.committing = 1 as libc::c_int
     } else {
         // begin_op() may be waiting for log space,
-    // and decrementing log.outstanding has decreased
-    // the amount of reserved space.
+        // and decrementing log.outstanding has decreased
+        // the amount of reserved space.
         wakeup(&mut log as *mut log as *mut libc::c_void);
     }
     release(&mut log.lock);
     if do_commit != 0 {
         // call commit w/o holding locks, since not allowed
-    // to sleep with locks.
+        // to sleep with locks.
         commit();
         acquire(&mut log.lock);
         log.committing = 0 as libc::c_int;
@@ -280,22 +280,21 @@ unsafe extern "C" fn write_log() {
     let mut tail: libc::c_int = 0; // log block
     tail = 0 as libc::c_int; // cache block
     while tail < log.lh.n {
-        let mut to: *mut buf =
-            bread(log.dev as uint,
-                  (log.start + tail + 1 as libc::c_int) as
-                      uint); // write the log
-        let mut from: *mut buf =
-            bread(log.dev as uint,
-                  log.lh.block[tail as usize] as
-                      uint); // Write modified blocks from cache to log
-        memmove((*to).data.as_mut_ptr() as *mut libc::c_void,
-                (*from).data.as_mut_ptr() as *const libc::c_void,
-                BSIZE as uint);
+        let mut to: *mut buf = bread(
+            log.dev as uint,
+            (log.start + tail + 1 as libc::c_int) as uint,
+        ); // write the log
+        let mut from: *mut buf = bread(log.dev as uint, log.lh.block[tail as usize] as uint); // Write modified blocks from cache to log
+        memmove(
+            (*to).data.as_mut_ptr() as *mut libc::c_void,
+            (*from).data.as_mut_ptr() as *const libc::c_void,
+            BSIZE as uint,
+        );
         bwrite(to);
         brelse(from);
         brelse(to);
         tail += 1
-    };
+    }
 }
 unsafe extern "C" fn commit() {
     if log.lh.n > 0 as libc::c_int {
@@ -320,18 +319,21 @@ unsafe extern "C" fn commit() {
 pub unsafe extern "C" fn log_write(mut b: *mut buf) {
     let mut i: libc::c_int = 0;
     if log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1 as libc::c_int {
-        panic(b"too big a transaction\x00" as *const u8 as *const libc::c_char
-                  as *mut libc::c_char);
+        panic(
+            b"too big a transaction\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        );
     }
     if log.outstanding < 1 as libc::c_int {
-        panic(b"log_write outside of trans\x00" as *const u8 as
-                  *const libc::c_char as *mut libc::c_char);
+        panic(
+            b"log_write outside of trans\x00" as *const u8 as *const libc::c_char
+                as *mut libc::c_char,
+        );
     }
     acquire(&mut log.lock);
     i = 0 as libc::c_int;
     while i < log.lh.n {
         if log.lh.block[i as usize] as libc::c_uint == (*b).blockno {
-            break ;
+            break;
         }
         i += 1
     }

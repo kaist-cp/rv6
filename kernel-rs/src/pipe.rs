@@ -24,11 +24,9 @@ extern "C" {
     #[no_mangle]
     fn release(_: *mut spinlock);
     #[no_mangle]
-    fn copyout(_: pagetable_t, _: uint64, _: *mut libc::c_char, _: uint64)
-     -> libc::c_int;
+    fn copyout(_: pagetable_t, _: uint64, _: *mut libc::c_char, _: uint64) -> libc::c_int;
     #[no_mangle]
-    fn copyin(_: pagetable_t, _: *mut libc::c_char, _: uint64, _: uint64)
-     -> libc::c_int;
+    fn copyin(_: pagetable_t, _: *mut libc::c_char, _: uint64, _: uint64) -> libc::c_int;
 }
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
@@ -205,23 +203,26 @@ pub const PIPESIZE: libc::c_int = 512 as libc::c_int;
 // pipe.c
 // write fd is still open
 #[no_mangle]
-pub unsafe extern "C" fn pipealloc(mut f0: *mut *mut file,
-                                   mut f1: *mut *mut file) -> libc::c_int {
+pub unsafe extern "C" fn pipealloc(mut f0: *mut *mut file, mut f1: *mut *mut file) -> libc::c_int {
     let mut pi: *mut pipe = 0 as *mut pipe;
     pi = 0 as *mut pipe;
     *f1 = 0 as *mut file;
     *f0 = *f1;
     *f0 = filealloc();
-    if !((*f0).is_null() || { *f1 = filealloc(); (*f1).is_null() }) {
+    if !((*f0).is_null() || {
+        *f1 = filealloc();
+        (*f1).is_null()
+    }) {
         pi = kalloc() as *mut pipe;
         if !pi.is_null() {
             (*pi).readopen = 1 as libc::c_int;
             (*pi).writeopen = 1 as libc::c_int;
             (*pi).nwrite = 0 as libc::c_int as uint;
             (*pi).nread = 0 as libc::c_int as uint;
-            initlock(&mut (*pi).lock,
-                     b"pipe\x00" as *const u8 as *const libc::c_char as
-                         *mut libc::c_char);
+            initlock(
+                &mut (*pi).lock,
+                b"pipe\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+            );
             (**f0).type_0 = FD_PIPE;
             (**f0).readable = 1 as libc::c_int as libc::c_char;
             (**f0).writable = 0 as libc::c_int as libc::c_char;
@@ -230,17 +231,22 @@ pub unsafe extern "C" fn pipealloc(mut f0: *mut *mut file,
             (**f1).readable = 0 as libc::c_int as libc::c_char;
             (**f1).writable = 1 as libc::c_int as libc::c_char;
             (**f1).pipe = pi;
-            return 0 as libc::c_int
+            return 0 as libc::c_int;
         }
     }
-    if !pi.is_null() { kfree(pi as *mut libc::c_char as *mut libc::c_void); }
-    if !(*f0).is_null() { fileclose(*f0); }
-    if !(*f1).is_null() { fileclose(*f1); }
-    return -(1 as libc::c_int);
+    if !pi.is_null() {
+        kfree(pi as *mut libc::c_char as *mut libc::c_void);
+    }
+    if !(*f0).is_null() {
+        fileclose(*f0);
+    }
+    if !(*f1).is_null() {
+        fileclose(*f1);
+    }
+    -(1 as libc::c_int)
 }
 #[no_mangle]
-pub unsafe extern "C" fn pipeclose(mut pi: *mut pipe,
-                                   mut writable: libc::c_int) {
+pub unsafe extern "C" fn pipeclose(mut pi: *mut pipe, mut writable: libc::c_int) {
     acquire(&mut (*pi).lock);
     if writable != 0 {
         (*pi).writeopen = 0 as libc::c_int;
@@ -249,50 +255,61 @@ pub unsafe extern "C" fn pipeclose(mut pi: *mut pipe,
         (*pi).readopen = 0 as libc::c_int;
         wakeup(&mut (*pi).nwrite as *mut uint as *mut libc::c_void);
     }
-    if (*pi).readopen == 0 as libc::c_int &&
-           (*pi).writeopen == 0 as libc::c_int {
+    if (*pi).readopen == 0 as libc::c_int && (*pi).writeopen == 0 as libc::c_int {
         release(&mut (*pi).lock);
         kfree(pi as *mut libc::c_char as *mut libc::c_void);
-    } else { release(&mut (*pi).lock); };
+    } else {
+        release(&mut (*pi).lock);
+    };
 }
 #[no_mangle]
-pub unsafe extern "C" fn pipewrite(mut pi: *mut pipe, mut addr: uint64,
-                                   mut n: libc::c_int) -> libc::c_int {
+pub unsafe extern "C" fn pipewrite(
+    mut pi: *mut pipe,
+    mut addr: uint64,
+    mut n: libc::c_int,
+) -> libc::c_int {
     let mut i: libc::c_int = 0;
     let mut ch: libc::c_char = 0;
     let mut pr: *mut proc_0 = myproc();
     acquire(&mut (*pi).lock);
     i = 0 as libc::c_int;
     while i < n {
-        while (*pi).nwrite ==
-                  (*pi).nread.wrapping_add(PIPESIZE as libc::c_uint) {
+        while (*pi).nwrite == (*pi).nread.wrapping_add(PIPESIZE as libc::c_uint) {
             //DOC: pipewrite-full
             if (*pi).readopen == 0 as libc::c_int || (*myproc()).killed != 0 {
                 release(&mut (*pi).lock);
-                return -(1 as libc::c_int)
+                return -(1 as libc::c_int);
             }
             wakeup(&mut (*pi).nread as *mut uint as *mut libc::c_void);
-            sleep(&mut (*pi).nwrite as *mut uint as *mut libc::c_void,
-                  &mut (*pi).lock);
+            sleep(
+                &mut (*pi).nwrite as *mut uint as *mut libc::c_void,
+                &mut (*pi).lock,
+            );
         }
-        if copyin((*pr).pagetable, &mut ch,
-                  addr.wrapping_add(i as libc::c_ulong),
-                  1 as libc::c_int as uint64) == -(1 as libc::c_int) {
-            break ;
+        if copyin(
+            (*pr).pagetable,
+            &mut ch,
+            addr.wrapping_add(i as libc::c_ulong),
+            1 as libc::c_int as uint64,
+        ) == -(1 as libc::c_int)
+        {
+            break;
         }
         let fresh0 = (*pi).nwrite;
         (*pi).nwrite = (*pi).nwrite.wrapping_add(1);
-        (*pi).data[fresh0.wrapping_rem(PIPESIZE as libc::c_uint) as usize] =
-            ch;
+        (*pi).data[fresh0.wrapping_rem(PIPESIZE as libc::c_uint) as usize] = ch;
         i += 1
     }
     wakeup(&mut (*pi).nread as *mut uint as *mut libc::c_void);
     release(&mut (*pi).lock);
-    return n;
+    n
 }
 #[no_mangle]
-pub unsafe extern "C" fn piperead(mut pi: *mut pipe, mut addr: uint64,
-                                  mut n: libc::c_int) -> libc::c_int {
+pub unsafe extern "C" fn piperead(
+    mut pi: *mut pipe,
+    mut addr: uint64,
+    mut n: libc::c_int,
+) -> libc::c_int {
     let mut i: libc::c_int = 0;
     let mut pr: *mut proc_0 = myproc();
     let mut ch: libc::c_char = 0;
@@ -301,31 +318,35 @@ pub unsafe extern "C" fn piperead(mut pi: *mut pipe, mut addr: uint64,
         //DOC: pipe-empty
         if (*myproc()).killed != 0 {
             release(&mut (*pi).lock);
-            return -(1 as libc::c_int)
+            return -(1 as libc::c_int);
         }
-        sleep(&mut (*pi).nread as *mut uint as *mut libc::c_void,
-              &mut (*pi).lock);
+        sleep(
+            &mut (*pi).nread as *mut uint as *mut libc::c_void,
+            &mut (*pi).lock,
+        );
         //DOC: piperead-sleep
     }
     i = 0 as libc::c_int;
     while i < n {
         //DOC: piperead-copy
         if (*pi).nread == (*pi).nwrite {
-            break ; //DOC: piperead-wakeup
+            break; //DOC: piperead-wakeup
         }
         let fresh1 = (*pi).nread;
         (*pi).nread = (*pi).nread.wrapping_add(1);
-        ch =
-            (*pi).data[fresh1.wrapping_rem(PIPESIZE as libc::c_uint) as
-                           usize];
-        if copyout((*pr).pagetable, addr.wrapping_add(i as libc::c_ulong),
-                   &mut ch, 1 as libc::c_int as uint64) == -(1 as libc::c_int)
-           {
-            break ;
+        ch = (*pi).data[fresh1.wrapping_rem(PIPESIZE as libc::c_uint) as usize];
+        if copyout(
+            (*pr).pagetable,
+            addr.wrapping_add(i as libc::c_ulong),
+            &mut ch,
+            1 as libc::c_int as uint64,
+        ) == -(1 as libc::c_int)
+        {
+            break;
         }
         i += 1
     }
     wakeup(&mut (*pi).nwrite as *mut uint as *mut libc::c_void);
     release(&mut (*pi).lock);
-    return i;
+    i
 }
