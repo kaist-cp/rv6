@@ -41,7 +41,7 @@ mod libc {
 mod console;
 // mod exec;
 // mod file;
-// mod fs;
+mod fs;
 mod kalloc;
 mod kernel_main;
 mod log;
