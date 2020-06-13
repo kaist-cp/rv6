@@ -38,7 +38,6 @@ OBJS = \
 OBJS = \
   $K/entry.o \
   $K/start.o \
-  $K/uart.o \
   $K/vm.o \
   $K/proc.o \
   $K/swtch.o \
@@ -47,7 +46,6 @@ OBJS = \
   $K/fs.o \
   $K/log.o \
   $K/file.o \
-  $K/exec.o \
   $K/kernelvec.o \
   $K/virtio_disk.o \
   $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a

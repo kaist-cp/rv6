@@ -37,6 +37,14 @@ extern "C" {
     fn release(_: *mut spinlock);
     #[no_mangle]
     fn copyout(_: pagetable_t, _: uint64, _: *mut libc::c_char, _: uint64) -> libc::c_int;
+
+    //
+    // Support functions for system calls that involve file descriptors.
+    //
+    #[no_mangle]
+    static mut devsw: [devsw; 10];
+    #[no_mangle]
+    static mut ftable: C2RustUnnamed_0;
 }
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
@@ -241,32 +249,32 @@ pub const MAXOPBLOCKS: libc::c_int = 10 as libc::c_int;
 // Both the kernel and user programs use this header file.
 // root i-number
 pub const BSIZE: libc::c_int = 1024 as libc::c_int;
-//
-// Support functions for system calls that involve file descriptors.
-//
-#[no_mangle]
-pub static mut devsw: [devsw; 10] = [devsw {
-    read: None,
-    write: None,
-}; 10];
-#[no_mangle]
-pub static mut ftable: C2RustUnnamed_0 = C2RustUnnamed_0 {
-    lock: spinlock {
-        locked: 0,
-        name: ptr::null_mut(),
-        cpu: ptr::null_mut(),
-    },
-    file: [file {
-        type_0: FD_NONE,
-        ref_0: 0,
-        readable: 0,
-        writable: 0,
-        pipe: 0 as *const pipe as *mut pipe,
-        ip: 0 as *const inode as *mut inode,
-        off: 0,
-        major: 0,
-    }; 100],
-};
+// //
+// // Support functions for system calls that involve file descriptors.
+// //
+// #[no_mangle]
+// pub static mut devsw: [devsw; 10] = [devsw {
+//     read: None,
+//     write: None,
+// }; 10];
+// #[no_mangle]
+// pub static mut ftable: C2RustUnnamed_0 = C2RustUnnamed_0 {
+//     lock: spinlock {
+//         locked: 0,
+//         name: ptr::null_mut(),
+//         cpu: ptr::null_mut(),
+//     },
+//     file: [file {
+//         type_0: FD_NONE,
+//         ref_0: 0,
+//         readable: 0,
+//         writable: 0,
+//         pipe: 0 as *const pipe as *mut pipe,
+//         ip: 0 as *const inode as *mut inode,
+//         off: 0,
+//         major: 0,
+//     }; 100],
+// };
 #[no_mangle]
 pub unsafe extern "C" fn fileinit() {
     initlock(

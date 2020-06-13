@@ -22,6 +22,9 @@ extern "C" {
     fn initsleeplock(_: *mut sleeplock, _: *mut libc::c_char);
     #[no_mangle]
     fn virtio_disk_rw(_: *mut buf, _: libc::c_int);
+
+    #[no_mangle]
+    pub static mut bcache: C2RustUnnamed;
 }
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
@@ -89,56 +92,56 @@ pub const MAXOPBLOCKS: libc::c_int = 10 as libc::c_int;
 // max # of blocks any FS op writes
 // max data blocks in on-disk log
 pub const NBUF: libc::c_int = MAXOPBLOCKS * 3 as libc::c_int;
-#[no_mangle]
-pub static mut bcache: C2RustUnnamed = C2RustUnnamed {
-    lock: spinlock {
-        locked: 0,
-        name: 0 as *const libc::c_char as *mut libc::c_char,
-        cpu: 0 as *const cpu as *mut cpu,
-    },
-    buf: [buf {
-        valid: 0,
-        disk: 0,
-        dev: 0,
-        blockno: 0,
-        lock: sleeplock {
-            locked: 0,
-            lk: spinlock {
-                locked: 0,
-                name: 0 as *const libc::c_char as *mut libc::c_char,
-                cpu: 0 as *const cpu as *mut cpu,
-            },
-            name: 0 as *const libc::c_char as *mut libc::c_char,
-            pid: 0,
-        },
-        refcnt: 0,
-        prev: 0 as *const buf as *mut buf,
-        next: 0 as *const buf as *mut buf,
-        qnext: 0 as *const buf as *mut buf,
-        data: [0; 1024],
-    }; 30],
-    head: buf {
-        valid: 0,
-        disk: 0,
-        dev: 0,
-        blockno: 0,
-        lock: sleeplock {
-            locked: 0,
-            lk: spinlock {
-                locked: 0,
-                name: 0 as *const libc::c_char as *mut libc::c_char,
-                cpu: 0 as *const cpu as *mut cpu,
-            },
-            name: 0 as *const libc::c_char as *mut libc::c_char,
-            pid: 0,
-        },
-        refcnt: 0,
-        prev: 0 as *const buf as *mut buf,
-        next: 0 as *const buf as *mut buf,
-        qnext: 0 as *const buf as *mut buf,
-        data: [0; 1024],
-    },
-};
+// #[no_mangle]
+// pub static mut bcache: C2RustUnnamed = C2RustUnnamed {
+//     lock: spinlock {
+//         locked: 0,
+//         name: 0 as *const libc::c_char as *mut libc::c_char,
+//         cpu: 0 as *const cpu as *mut cpu,
+//     },
+//     buf: [buf {
+//         valid: 0,
+//         disk: 0,
+//         dev: 0,
+//         blockno: 0,
+//         lock: sleeplock {
+//             locked: 0,
+//             lk: spinlock {
+//                 locked: 0,
+//                 name: 0 as *const libc::c_char as *mut libc::c_char,
+//                 cpu: 0 as *const cpu as *mut cpu,
+//             },
+//             name: 0 as *const libc::c_char as *mut libc::c_char,
+//             pid: 0,
+//         },
+//         refcnt: 0,
+//         prev: 0 as *const buf as *mut buf,
+//         next: 0 as *const buf as *mut buf,
+//         qnext: 0 as *const buf as *mut buf,
+//         data: [0; 1024],
+//     }; 30],
+//     head: buf {
+//         valid: 0,
+//         disk: 0,
+//         dev: 0,
+//         blockno: 0,
+//         lock: sleeplock {
+//             locked: 0,
+//             lk: spinlock {
+//                 locked: 0,
+//                 name: 0 as *const libc::c_char as *mut libc::c_char,
+//                 cpu: 0 as *const cpu as *mut cpu,
+//             },
+//             name: 0 as *const libc::c_char as *mut libc::c_char,
+//             pid: 0,
+//         },
+//         refcnt: 0,
+//         prev: 0 as *const buf as *mut buf,
+//         next: 0 as *const buf as *mut buf,
+//         qnext: 0 as *const buf as *mut buf,
+//         data: [0; 1024],
+//     },
+// };
 // bio.c
 #[no_mangle]
 pub unsafe extern "C" fn binit() {

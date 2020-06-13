@@ -37,10 +37,10 @@ mod libc {
     pub type intptr_t = isize;
 }
 
-// mod bio;
+mod bio;
 mod console;
-// mod exec;
-// mod file;
+mod exec;
+mod file;
 mod fs;
 mod kalloc;
 mod kernel_main;
@@ -58,7 +58,7 @@ mod syscall;
 mod sysfile;
 mod sysproc;
 mod trap;
-// mod uart;
+mod uart;
 mod utils;
 mod virtio_disk;
 mod vm;
