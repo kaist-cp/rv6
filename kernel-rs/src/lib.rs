@@ -61,7 +61,7 @@ mod trap;
 // mod uart;
 mod utils;
 mod virtio_disk;
-// mod vm;
+mod vm;
 
 #[cfg(test)]
 mod tests {
