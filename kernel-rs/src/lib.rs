@@ -60,7 +60,7 @@ mod sysproc;
 mod trap;
 // mod uart;
 mod utils;
-// mod virtio_disk;
+mod virtio_disk;
 // mod vm;
 
 #[cfg(test)]
