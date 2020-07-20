@@ -1,15 +1,15 @@
-#include "param.h"
-#include "types.h"
-#include "memlayout.h"
-#include "elf.h"
-#include "riscv.h"
-#include "defs.h"
-#include "fs.h"
+// #include "param.h"
+// #include "types.h"
+// #include "memlayout.h"
+// #include "elf.h"
+// #include "riscv.h"
+// #include "defs.h"
+// #include "fs.h"
 
-/*
- * the kernel's page table.
- */
-pagetable_t kernel_pagetable;
+// /*
+//  * the kernel's page table.
+//  */
+// pagetable_t kernel_pagetable;
 
 /* extern char etext[];  // kernel.ld sets this to end of kernel code. */
 

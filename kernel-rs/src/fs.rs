@@ -55,8 +55,8 @@ extern "C" {
     fn strncpy(_: *mut libc::c_char, _: *const libc::c_char, _: libc::c_int) -> *mut libc::c_char;
 
     // there should be one superblock per disk device, but we run with only one device
-    #[no_mangle]
-    static mut sb: superblock;
+    // #[no_mangle]
+    // static mut sb: superblock;
     #[no_mangle]
     static mut icache: C2RustUnnamed_0;
 }
@@ -382,19 +382,19 @@ pub const BPB: libc::c_int = BSIZE * 8 as libc::c_int;
 // Block of free map containing bit for block b
 // Directory is a file containing a sequence of dirent structures.
 pub const DIRSIZ: libc::c_int = 14 as libc::c_int;
-// // there should be one superblock per disk device, but we run with
-// // only one device
-// #[no_mangle]
-// pub static mut sb: superblock = superblock {
-//     magic: 0,
-//     size: 0,
-//     nblocks: 0,
-//     ninodes: 0,
-//     nlog: 0,
-//     logstart: 0,
-//     inodestart: 0,
-//     bmapstart: 0,
-// };
+// there should be one superblock per disk device, but we run with
+// only one device
+#[no_mangle]
+pub static mut sb: superblock = superblock {
+    magic: 0,
+    size: 0,
+    nblocks: 0,
+    ninodes: 0,
+    nlog: 0,
+    logstart: 0,
+    inodestart: 0,
+    bmapstart: 0,
+};
 // Read the super block.
 unsafe extern "C" fn readsb(mut dev: libc::c_int, mut sb_0: *mut superblock) {
     let mut bp: *mut buf = ptr::null_mut();

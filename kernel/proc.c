@@ -12,8 +12,8 @@ struct proc proc[NPROC];
 
 struct proc *initproc;
 
-int nextpid = 1;
-struct spinlock pid_lock;
+// int nextpid = 1;
+// struct spinlock pid_lock;
 
 /* extern void forkret(void); */
 /* static void wakeup1(struct proc *chan); */

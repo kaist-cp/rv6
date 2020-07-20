@@ -41,8 +41,8 @@ extern "C" {
     //
     // Support functions for system calls that involve file descriptors.
     //
-    #[no_mangle]
-    static mut devsw: [devsw; 10];
+    // #[no_mangle]
+    // static mut devsw: [devsw; 10];
     #[no_mangle]
     static mut ftable: C2RustUnnamed_0;
 }
@@ -250,13 +250,13 @@ pub const MAXOPBLOCKS: libc::c_int = 10 as libc::c_int;
 // root i-number
 pub const BSIZE: libc::c_int = 1024 as libc::c_int;
 // //
-// // Support functions for system calls that involve file descriptors.
-// //
-// #[no_mangle]
-// pub static mut devsw: [devsw; 10] = [devsw {
-//     read: None,
-//     write: None,
-// }; 10];
+// Support functions for system calls that involve file descriptors.
+//
+#[no_mangle]
+pub static mut devsw: [devsw; 10] = [devsw {
+    read: None,
+    write: None,
+}; 10];
 // #[no_mangle]
 // pub static mut ftable: C2RustUnnamed_0 = C2RustUnnamed_0 {
 //     lock: spinlock {

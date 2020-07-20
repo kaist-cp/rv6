@@ -91,10 +91,10 @@ extern "C" {
     static mut proc: [proc_0; 64];
     #[no_mangle]
     static mut initproc: *mut proc_0;
-    #[no_mangle]
-    static mut nextpid: libc::c_int;
-    #[no_mangle]
-    static mut pid_lock: spinlock;
+    // #[no_mangle]
+    // static mut nextpid: libc::c_int;
+    // #[no_mangle]
+    // static mut pid_lock: spinlock;
 
 }
 pub type uint = libc::c_uint;
@@ -400,14 +400,14 @@ pub const MAXVA: libc::c_long = (1 as libc::c_long)
 // }; 64];
 // #[no_mangle]
 // pub static mut initproc: *mut proc_0 = 0 as *const proc_ptr::null_mut();
-// #[no_mangle]
-// pub static mut nextpid: libc::c_int = 1 as libc::c_int;
-// #[no_mangle]
-// pub static mut pid_lock: spinlock = spinlock {
-//     locked: 0,
-//     name: 0 as *const libc::c_char as *mut libc::c_char,
-//     cpu: 0 as *const cpu as *mut cpu,
-// };
+#[no_mangle]
+pub static mut nextpid: libc::c_int = 1 as libc::c_int;
+#[no_mangle]
+pub static mut pid_lock: spinlock = spinlock {
+    locked: 0,
+    name: 0 as *const libc::c_char as *mut libc::c_char,
+    cpu: 0 as *const cpu as *mut cpu,
+};
 // trampoline.S
 #[no_mangle]
 pub unsafe extern "C" fn procinit() {

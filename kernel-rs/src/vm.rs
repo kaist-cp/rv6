@@ -24,8 +24,8 @@ extern "C" {
     /*
      * the kernel's page table.
      */
-    #[no_mangle]
-    static mut kernel_pagetable: pagetable_t;
+    // #[no_mangle]
+    // static mut kernel_pagetable: pagetable_t;
 }
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
@@ -103,11 +103,11 @@ pub const PXMASK: libc::c_int = 0x1ff as libc::c_int;
 pub const MAXVA: libc::c_long = (1 as libc::c_long)
     << (9 as libc::c_int + 9 as libc::c_int + 9 as libc::c_int + 12 as libc::c_int
         - 1 as libc::c_int);
-// /*
-//  * the kernel's page table.
-//  */
-// #[no_mangle]
-// pub static mut kernel_pagetable: pagetable_t = 0 as *const uint64 as *mut uint64;
+/*
+ * the kernel's page table.
+ */
+#[no_mangle]
+pub static mut kernel_pagetable: pagetable_t = 0 as *const uint64 as *mut uint64;
 // vm.c
 // trampoline.S
 /*
