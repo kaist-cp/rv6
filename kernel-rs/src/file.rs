@@ -41,8 +41,6 @@ extern "C" {
     //
     // Support functions for system calls that involve file descriptors.
     //
-    // #[no_mangle]
-    // static mut devsw: [devsw; 10];
     #[no_mangle]
     static mut ftable: C2RustUnnamed_0;
 }

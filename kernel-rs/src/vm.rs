@@ -20,12 +20,6 @@ extern "C" {
     // kernel.ld sets this to end of kernel code.
     #[no_mangle]
     static mut trampoline: [libc::c_char; 0];
-
-    /*
-     * the kernel's page table.
-     */
-    // #[no_mangle]
-    // static mut kernel_pagetable: pagetable_t;
 }
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;

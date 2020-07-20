@@ -55,8 +55,6 @@ extern "C" {
     fn strncpy(_: *mut libc::c_char, _: *const libc::c_char, _: libc::c_int) -> *mut libc::c_char;
 
     // there should be one superblock per disk device, but we run with only one device
-    // #[no_mangle]
-    // static mut sb: superblock;
     #[no_mangle]
     static mut icache: C2RustUnnamed_0;
 }

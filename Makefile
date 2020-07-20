@@ -5,46 +5,44 @@ KR=kernel-rs
 RUST_TARGET=riscv64gc-unknown-none-elfhf
 RUST_MODE=release
 
-OBJS = \
-  $K/entry.o \
-  $K/start.o \
-  $K/console.o \
-  $K/printf.o \
-  $K/uart.o \
-  $K/kalloc.o \
-  $K/spinlock.o \
-  $K/string.o \
-  $K/main.o \
-  $K/vm.o \
-  $K/proc.o \
-  $K/swtch.o \
-  $K/trampoline.o \
-  $K/trap.o \
-  $K/syscall.o \
-  $K/sysproc.o \
-  $K/bio.o \
-  $K/fs.o \
-  $K/log.o \
-  $K/sleeplock.o \
-  $K/file.o \
-  $K/pipe.o \
-  $K/exec.o \
-  $K/sysfile.o \
-  $K/kernelvec.o \
-  $K/plic.o \
-  $K/virtio_disk.o \
-  $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a
+# OBJS = \
+#   $K/entry.o \
+#   $K/start.o \
+#   $K/console.o \
+#   $K/printf.o \
+#   $K/uart.o \
+#   $K/kalloc.o \
+#   $K/spinlock.o \
+#   $K/string.o \
+#   $K/main.o \
+#   $K/vm.o \
+#   $K/proc.o \
+#   $K/swtch.o \
+#   $K/trampoline.o \
+#   $K/trap.o \
+#   $K/syscall.o \
+#   $K/sysproc.o \
+#   $K/bio.o \
+#   $K/fs.o \
+#   $K/log.o \
+#   $K/sleeplock.o \
+#   $K/file.o \
+#   $K/pipe.o \
+#   $K/exec.o \
+#   $K/sysfile.o \
+#   $K/kernelvec.o \
+#   $K/plic.o \
+#   $K/virtio_disk.o \
+#   $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a
 
 OBJS = \
   $K/entry.o \
   $K/start.o \
-  $K/vm.o \
   $K/proc.o \
   $K/swtch.o \
   $K/trampoline.o \
   $K/bio.o \
   $K/fs.o \
-  $K/log.o \
   $K/file.o \
   $K/kernelvec.o \
   $K/virtio_disk.o \
