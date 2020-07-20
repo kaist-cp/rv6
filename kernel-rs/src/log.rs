@@ -26,9 +26,6 @@ extern "C" {
     fn release(_: *mut spinlock);
     #[no_mangle]
     fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: uint) -> *mut libc::c_void;
-
-    // #[no_mangle]
-    // static mut log: log;
 }
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;

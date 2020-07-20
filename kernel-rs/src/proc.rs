@@ -91,11 +91,6 @@ extern "C" {
     static mut proc: [proc_0; 64];
     #[no_mangle]
     static mut initproc: *mut proc_0;
-    // #[no_mangle]
-    // static mut nextpid: libc::c_int;
-    // #[no_mangle]
-    // static mut pid_lock: spinlock;
-
 }
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
@@ -341,7 +336,7 @@ pub const MAXVA: libc::c_long = (1 as libc::c_long)
         - 1 as libc::c_int);
 // #[no_mangle]
 // pub static mut cpus: [cpu; 8] = [cpu {
-//     proc_0: 0 as *const proc_ptr::null_mut(),
+//     proc_0: ptr::null_mut(), //0 as *const proc_ptr::null_mut(),
 //     scheduler: context {
 //         ra: 0,
 //         sp: 0,
@@ -399,6 +394,7 @@ pub const MAXVA: libc::c_long = (1 as libc::c_long)
 //     name: [0; 16],
 // }; 64];
 // #[no_mangle]
+// pub static mut initproc: *mut proc_0 = ptr::null_mut();
 // pub static mut initproc: *mut proc_0 = 0 as *const proc_ptr::null_mut();
 #[no_mangle]
 pub static mut nextpid: libc::c_int = 1 as libc::c_int;
