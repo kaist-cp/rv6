@@ -86,11 +86,7 @@ extern "C" {
     static mut trampoline: [libc::c_char; 0];
 
     #[no_mangle]
-    static mut cpus: [cpu; 8];
-    #[no_mangle]
     static mut proc: [proc_0; 64];
-    #[no_mangle]
-    static mut initproc: *mut proc_0;
 }
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
@@ -334,28 +330,28 @@ pub const PTE_X: libc::c_long = (1 as libc::c_long) << 3 as libc::c_int;
 pub const MAXVA: libc::c_long = (1 as libc::c_long)
     << (9 as libc::c_int + 9 as libc::c_int + 9 as libc::c_int + 12 as libc::c_int
         - 1 as libc::c_int);
-// #[no_mangle]
-// pub static mut cpus: [cpu; 8] = [cpu {
-//     proc_0: ptr::null_mut(), //0 as *const proc_ptr::null_mut(),
-//     scheduler: context {
-//         ra: 0,
-//         sp: 0,
-//         s0: 0,
-//         s1: 0,
-//         s2: 0,
-//         s3: 0,
-//         s4: 0,
-//         s5: 0,
-//         s6: 0,
-//         s7: 0,
-//         s8: 0,
-//         s9: 0,
-//         s10: 0,
-//         s11: 0,
-//     },
-//     noff: 0,
-//     intena: 0,
-// }; 8];
+#[no_mangle]
+pub static mut cpus: [cpu; 8] = [cpu {
+    proc_0: ptr::null_mut(),
+    scheduler: context {
+        ra: 0,
+        sp: 0,
+        s0: 0,
+        s1: 0,
+        s2: 0,
+        s3: 0,
+        s4: 0,
+        s5: 0,
+        s6: 0,
+        s7: 0,
+        s8: 0,
+        s9: 0,
+        s10: 0,
+        s11: 0,
+    },
+    noff: 0,
+    intena: 0,
+}; 8];
 // #[export_name = "proc"]
 // pub static mut proc_0: [proc_0; 64] = [proc_0 {
 //     lock: spinlock {
@@ -393,9 +389,8 @@ pub const MAXVA: libc::c_long = (1 as libc::c_long)
 //     cwd: 0 as *const inode as *mut inode,
 //     name: [0; 16],
 // }; 64];
-// #[no_mangle]
-// pub static mut initproc: *mut proc_0 = ptr::null_mut();
-// pub static mut initproc: *mut proc_0 = 0 as *const proc_ptr::null_mut();
+#[no_mangle]
+pub static mut initproc: *mut proc_0 = ptr::null_mut();
 #[no_mangle]
 pub static mut nextpid: libc::c_int = 1 as libc::c_int;
 #[no_mangle]
