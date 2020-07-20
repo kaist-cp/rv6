@@ -1,11 +1,11 @@
-#include "types.h"
-#include "riscv.h"
-#include "defs.h"
-#include "param.h"
-#include "spinlock.h"
-#include "sleeplock.h"
-#include "fs.h"
-#include "buf.h"
+// #include "types.h"
+// #include "riscv.h"
+// #include "defs.h"
+// #include "param.h"
+// #include "spinlock.h"
+// #include "sleeplock.h"
+// #include "fs.h"
+// #include "buf.h"
 
 // Simple logging that allows concurrent FS system calls.
 //
@@ -32,21 +32,21 @@
 
 // Contents of the header block, used for both the on-disk header block
 // and to keep track in memory of logged block# before commit.
-struct logheader {
-  int n;
-  int block[LOGSIZE];
-};
+// struct logheader {
+//   int n;
+//   int block[LOGSIZE];
+// };
 
-struct log {
-  struct spinlock lock;
-  int start;
-  int size;
-  int outstanding; // how many FS sys calls are executing.
-  int committing;  // in commit(), please wait.
-  int dev;
-  struct logheader lh;
-};
-struct log log;
+// struct log {
+//   struct spinlock lock;
+//   int start;
+//   int size;
+//   int outstanding; // how many FS sys calls are executing.
+//   int committing;  // in commit(), please wait.
+//   int dev;
+//   struct logheader lh;
+// };
+// struct log log;
 
 /* static void recover_from_log(void); */
 /* static void commit(); */

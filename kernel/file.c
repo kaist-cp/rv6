@@ -13,7 +13,7 @@
 #include "stat.h"
 #include "proc.h"
 
-struct devsw devsw[NDEV];
+// struct devsw devsw[NDEV];
 struct {
   struct spinlock lock;
   struct file file[NFILE];

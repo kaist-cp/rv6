@@ -25,7 +25,7 @@
 /* static void itrunc(struct inode*); */
 // there should be one superblock per disk device, but we run with
 // only one device
-struct superblock sb; 
+// struct superblock sb; 
 
 /* // Read the super block. */
 /* static void */
