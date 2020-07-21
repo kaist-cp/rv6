@@ -32,9 +32,11 @@
 
   (Different shell)
   ```
-  gdb-multiarch
-  ```
+  gdb-multiarch kernel/kernel
 
+  target remote (port)
+  [E.g., target remote :29556]
+  ```
 
 ## How we ported xv6 to Rust
 
