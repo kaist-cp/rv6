@@ -84,9 +84,6 @@ extern "C" {
     fn copyin(_: pagetable_t, _: *mut libc::c_char, _: uint64, _: uint64) -> libc::c_int;
     #[no_mangle]
     static mut trampoline: [libc::c_char; 0];
-
-    #[no_mangle]
-    static mut proc: [proc_0; 64];
 }
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
@@ -352,43 +349,43 @@ pub static mut cpus: [cpu; 8] = [cpu {
     noff: 0,
     intena: 0,
 }; 8];
-// #[export_name = "proc"]
-// pub static mut proc_0: [proc_0; 64] = [proc_0 {
-//     lock: spinlock {
-//         locked: 0,
-//         name: 0 as *const libc::c_char as *mut libc::c_char,
-//         cpu: 0 as *const cpu as *mut cpu,
-//     },
-//     state: UNUSED,
-//     parent: 0 as *const proc_ptr::null_mut(),
-//     chan: 0 as *const libc::c_void as *mut libc::c_void,
-//     killed: 0,
-//     xstate: 0,
-//     pid: 0,
-//     kstack: 0,
-//     sz: 0,
-//     pagetable: 0 as *const uint64 as *mut uint64,
-//     tf: 0 as *const trapframe as *mut trapframe,
-//     context: context {
-//         ra: 0,
-//         sp: 0,
-//         s0: 0,
-//         s1: 0,
-//         s2: 0,
-//         s3: 0,
-//         s4: 0,
-//         s5: 0,
-//         s6: 0,
-//         s7: 0,
-//         s8: 0,
-//         s9: 0,
-//         s10: 0,
-//         s11: 0,
-//     },
-//     ofile: [0 as *const file as *mut file; 16],
-//     cwd: 0 as *const inode as *mut inode,
-//     name: [0; 16],
-// }; 64];
+#[export_name = "proc"]
+pub static mut proc: [proc_0; 64] = [proc_0 {
+    lock: spinlock {
+        locked: 0,
+        name: 0 as *const libc::c_char as *mut libc::c_char,
+        cpu: 0 as *const cpu as *mut cpu,
+    },
+    state: UNUSED,
+    parent: ptr::null_mut(),
+    chan: 0 as *const libc::c_void as *mut libc::c_void,
+    killed: 0,
+    xstate: 0,
+    pid: 0,
+    kstack: 0,
+    sz: 0,
+    pagetable: 0 as *const uint64 as *mut uint64,
+    tf: 0 as *const trapframe as *mut trapframe,
+    context: context {
+        ra: 0,
+        sp: 0,
+        s0: 0,
+        s1: 0,
+        s2: 0,
+        s3: 0,
+        s4: 0,
+        s5: 0,
+        s6: 0,
+        s7: 0,
+        s8: 0,
+        s9: 0,
+        s10: 0,
+        s11: 0,
+    },
+    ofile: [0 as *const file as *mut file; 16],
+    cwd: 0 as *const inode as *mut inode,
+    name: [0; 16],
+}; 64];
 #[no_mangle]
 pub static mut initproc: *mut proc_0 = ptr::null_mut();
 #[no_mangle]

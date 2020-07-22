@@ -1,5 +1,6 @@
 use crate::libc;
 use core::ptr;
+use crate::printf::printf;
 extern "C" {
     pub type cpu;
     #[no_mangle]
@@ -13,11 +14,11 @@ extern "C" {
     fn release(_: *mut spinlock);
     #[no_mangle]
     fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
-    #[no_mangle]
-    static mut end: [libc::c_char; 0];
 }
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
+
+pub static mut end: [u8;0] = [0; 0];
 // Mutual exclusion lock.
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -82,6 +83,9 @@ pub unsafe extern "C" fn kinit() {
         &mut kmem.lock,
         b"kmem\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
+    let a = 10;
+    printf(b"\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    printf(b"\x00" as *const u8 as *const libc::c_char as *mut libc::c_char, a);
     freerange(
         end.as_mut_ptr() as *mut libc::c_void,
         PHYSTOP as *mut libc::c_void,
@@ -97,6 +101,7 @@ pub unsafe extern "C" fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: 
         .wrapping_add(PGSIZE as libc::c_ulong)
         .wrapping_sub(1 as libc::c_int as libc::c_ulong)
         & !(PGSIZE - 1 as libc::c_int) as libc::c_ulong) as *mut libc::c_char;
+    
     while p.offset(PGSIZE as isize) <= pa_end as *mut libc::c_char {
         kfree(p as *mut libc::c_void);
         p = p.offset(PGSIZE as isize)

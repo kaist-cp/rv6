@@ -19,9 +19,6 @@ extern "C" {
     fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
     #[no_mangle]
     fn kvmpa(_: uint64) -> uint64;
-
-    #[no_mangle]
-    static mut disk: Disk;
 }
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
@@ -199,23 +196,23 @@ pub const VRING_DESC_F_WRITE: libc::c_int = 2 as libc::c_int;
 pub const VIRTIO_BLK_T_IN: libc::c_int = 0 as libc::c_int;
 // read the disk
 pub const VIRTIO_BLK_T_OUT: libc::c_int = 1 as libc::c_int;
-// static mut disk: Disk = Disk(disk_Inner {
-//     pages: [0; 8192],
-//     desc: 0 as *const VRingDesc as *mut VRingDesc,
-//     avail: 0 as *const uint16 as *mut uint16,
-//     used: 0 as *const UsedArea as *mut UsedArea,
-//     free: [0; 8],
-//     used_idx: 0,
-//     info: [C2RustUnnamed {
-//         b: 0 as *const buf as *mut buf,
-//         status: 0,
-//     }; 8],
-//     vdisk_lock: spinlock {
-//         locked: 0,
-//         name: 0 as *const libc::c_char as *mut libc::c_char,
-//         cpu: 0 as *const cpu as *mut cpu,
-//     },
-// });
+static mut disk: Disk = Disk(disk_Inner {
+    pages: [0; 8192],
+    desc: 0 as *const VRingDesc as *mut VRingDesc,
+    avail: 0 as *const uint16 as *mut uint16,
+    used: 0 as *const UsedArea as *mut UsedArea,
+    free: [0; 8],
+    used_idx: 0,
+    info: [C2RustUnnamed {
+        b: 0 as *const buf as *mut buf,
+        status: 0,
+    }; 8],
+    vdisk_lock: spinlock {
+        locked: 0,
+        name: 0 as *const libc::c_char as *mut libc::c_char,
+        cpu: 0 as *const cpu as *mut cpu,
+    },
+});
 // virtio_disk.c
 #[no_mangle]
 pub unsafe extern "C" fn virtio_disk_init() {
