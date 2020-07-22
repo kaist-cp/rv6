@@ -53,10 +53,6 @@ extern "C" {
     fn strncmp(_: *const libc::c_char, _: *const libc::c_char, _: uint) -> libc::c_int;
     #[no_mangle]
     fn strncpy(_: *mut libc::c_char, _: *const libc::c_char, _: libc::c_int) -> *mut libc::c_char;
-
-    // there should be one superblock per disk device, but we run with only one device
-    #[no_mangle]
-    static mut icache: C2RustUnnamed_0;
 }
 pub type uint = libc::c_uint;
 pub type ushort = libc::c_ushort;
@@ -476,36 +472,36 @@ unsafe extern "C" fn bfree(mut dev: libc::c_int, mut b: uint) {
     log_write(bp);
     brelse(bp);
 }
-// #[no_mangle]
-// pub static mut icache: C2RustUnnamed_0 = C2RustUnnamed_0 {
-//     lock: spinlock {
-//         locked: 0,
-//         name: 0 as *const libc::c_char as *mut libc::c_char,
-//         cpu: 0 as *const cpu as *mut cpu,
-//     },
-//     inode: [inode {
-//         dev: 0,
-//         inum: 0,
-//         ref_0: 0,
-//         lock: sleeplock {
-//             locked: 0,
-//             lk: spinlock {
-//                 locked: 0,
-//                 name: 0 as *const libc::c_char as *mut libc::c_char,
-//                 cpu: 0 as *const cpu as *mut cpu,
-//             },
-//             name: 0 as *const libc::c_char as *mut libc::c_char,
-//             pid: 0,
-//         },
-//         valid: 0,
-//         type_0: 0,
-//         major: 0,
-//         minor: 0,
-//         nlink: 0,
-//         size: 0,
-//         addrs: [0; 13],
-//     }; 50],
-// };
+#[no_mangle]
+pub static mut icache: C2RustUnnamed_0 = C2RustUnnamed_0 {
+    lock: spinlock {
+        locked: 0,
+        name: 0 as *const libc::c_char as *mut libc::c_char,
+        cpu: 0 as *const cpu as *mut cpu,
+    },
+    inode: [inode {
+        dev: 0,
+        inum: 0,
+        ref_0: 0,
+        lock: sleeplock {
+            locked: 0,
+            lk: spinlock {
+                locked: 0,
+                name: 0 as *const libc::c_char as *mut libc::c_char,
+                cpu: 0 as *const cpu as *mut cpu,
+            },
+            name: 0 as *const libc::c_char as *mut libc::c_char,
+            pid: 0,
+        },
+        valid: 0,
+        type_0: 0,
+        major: 0,
+        minor: 0,
+        nlink: 0,
+        size: 0,
+        addrs: [0; 13],
+    }; 50],
+};
 #[no_mangle]
 pub unsafe extern "C" fn iinit() {
     let mut i: libc::c_int = 0 as libc::c_int;
