@@ -22,9 +22,6 @@ extern "C" {
     fn initsleeplock(_: *mut sleeplock, _: *mut libc::c_char);
     #[no_mangle]
     fn virtio_disk_rw(_: *mut buf, _: libc::c_int);
-
-    // #[no_mangle]
-    // pub static mut bcache: C2RustUnnamed;
 }
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
