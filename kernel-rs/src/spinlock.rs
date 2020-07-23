@@ -10,7 +10,7 @@ pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 // Mutual exclusion lock.
 #[derive(Copy, Clone)] 
-pub struct spinlock {
+pub struct Spinlock {
     pub locked: uint,
     pub name: *mut libc::c_char,
     pub cpu: *mut cpu,
@@ -44,7 +44,7 @@ pub struct context {
 // Per-process state
 #[derive(Copy, Clone)] 
 pub struct proc_0 {
-    pub lock: spinlock,
+    pub lock: Spinlock,
     pub state: procstate,
     pub parent: *mut proc_0,
     pub chan: *mut libc::c_void,
@@ -174,16 +174,16 @@ unsafe fn intr_get() -> libc::c_int {
 }
 // Mutual exclusion spin locks.
 #[no_mangle]
-pub unsafe fn initlock(mut lk: *mut spinlock, mut name: *mut libc::c_char) {
+pub unsafe fn initlock(mut lk: *mut Spinlock, mut name: *mut libc::c_char) {
     (*lk).name = name;
     (*lk).locked = 0 as libc::c_int as uint;
     (*lk).cpu = ptr::null_mut();
 }
-// spinlock.c
+// Spinlock.c
 // Acquire the lock.
 // Loops (spins) until the lock is acquired.
 #[no_mangle]
-pub unsafe fn acquire(mut lk: *mut spinlock) {
+pub unsafe fn acquire(mut lk: *mut Spinlock) {
     push_off(); // disable interrupts to avoid deadlock.
     if holding(lk) != 0 {
         panic(b"acquire\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -206,7 +206,7 @@ pub unsafe fn acquire(mut lk: *mut spinlock) {
 }
 // Release the lock.
 #[no_mangle]
-pub unsafe fn release(mut lk: *mut spinlock) {
+pub unsafe fn release(mut lk: *mut Spinlock) {
     if holding(lk) == 0 {
         panic(b"release\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
@@ -228,7 +228,7 @@ pub unsafe fn release(mut lk: *mut spinlock) {
 }
 // Check whether this cpu is holding the lock.
 #[no_mangle]
-pub unsafe fn holding(mut lk: *mut spinlock) -> libc::c_int {
+pub unsafe fn holding(mut lk: *mut Spinlock) -> libc::c_int {
     let mut r: libc::c_int = 0;
     push_off();
     r = ((*lk).locked != 0 && (*lk).cpu == proc::mycpu() as *mut cpu) as libc::c_int;

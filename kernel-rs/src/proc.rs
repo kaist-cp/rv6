@@ -1,4 +1,4 @@
-use crate::{ libc, spinlock };
+use crate::libc;
 use core::ptr;
 extern "C" {
     pub type inode;
@@ -33,6 +33,15 @@ extern "C" {
     // swtch.S
     #[no_mangle]
     fn swtch(_: *mut context, _: *mut context);
+    // spinlock.c
+    #[no_mangle]
+    fn acquire(_: *mut spinlock);
+    #[no_mangle]
+    fn holding(_: *mut spinlock) -> libc::c_int;
+    #[no_mangle]
+    fn initlock(_: *mut spinlock, _: *mut libc::c_char);
+    #[no_mangle]
+    fn release(_: *mut spinlock);
     #[no_mangle]
     fn push_off();
     #[no_mangle]
@@ -83,7 +92,7 @@ pub type pagetable_t = *mut uint64;
 // Mutual exclusion lock.
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct s_pinlock {
+pub struct spinlock {
     pub locked: uint,
     pub name: *mut libc::c_char,
     pub cpu: *mut cpu,
@@ -120,7 +129,7 @@ pub struct context {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct proc_0 {
-    pub lock: spinlock::spinlock,
+    pub lock: spinlock,
     pub state: procstate,
     pub parent: *mut proc_0,
     pub chan: *mut libc::c_void,
@@ -342,10 +351,10 @@ pub static mut cpus: [cpu; 8] = [cpu {
 }; 8];
 #[export_name = "proc"]
 pub static mut proc: [proc_0; 64] = [proc_0 {
-    lock: spinlock::spinlock {
+    lock: spinlock {
         locked: 0,
         name: 0 as *const libc::c_char as *mut libc::c_char,
-        cpu: 0 as *const cpu as *mut spinlock::cpu,
+        cpu: 0 as *const cpu as *mut cpu,
     },
     state: UNUSED,
     parent: ptr::null_mut(),
@@ -382,22 +391,22 @@ pub static mut initproc: *mut proc_0 = ptr::null_mut();
 #[no_mangle]
 pub static mut nextpid: libc::c_int = 1 as libc::c_int;
 #[no_mangle]
-pub static mut pid_lock: spinlock::spinlock = spinlock::spinlock {
+pub static mut pid_lock: spinlock = spinlock {
     locked: 0,
     name: 0 as *const libc::c_char as *mut libc::c_char,
-    cpu: 0 as *const cpu as *mut spinlock::cpu,
+    cpu: 0 as *const cpu as *mut cpu,
 };
 // trampoline.S
 #[no_mangle]
 pub unsafe extern "C" fn procinit() {
     let mut p: *mut proc_0 = ptr::null_mut();
-    spinlock::initlock(
+    initlock(
         &mut pid_lock,
         b"nextpid\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
     p = proc.as_mut_ptr();
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
-        spinlock::initlock(
+        initlock(
             &mut (*p).lock,
             b"proc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
         );
@@ -453,10 +462,10 @@ pub unsafe extern "C" fn myproc() -> *mut proc_0 {
 #[no_mangle]
 pub unsafe extern "C" fn allocpid() -> libc::c_int {
     let mut pid: libc::c_int = 0;
-    spinlock::acquire(&mut pid_lock);
+    acquire(&mut pid_lock);
     pid = nextpid;
     nextpid += 1;
-    spinlock::release(&mut pid_lock);
+    release(&mut pid_lock);
     pid
 }
 // Look in the process table for an UNUSED proc.
@@ -472,12 +481,12 @@ unsafe extern "C" fn allocproc() -> *mut proc_0 {
             current_block = 7815301370352969686;
             break;
         }
-        spinlock::acquire(&mut (*p).lock);
+        acquire(&mut (*p).lock);
         if (*p).state as libc::c_uint == UNUSED as libc::c_int as libc::c_uint {
             current_block = 17234009953499979309;
             break;
         }
-        spinlock::release(&mut (*p).lock);
+        release(&mut (*p).lock);
         p = p.offset(1)
     }
     match current_block {
@@ -487,7 +496,7 @@ unsafe extern "C" fn allocproc() -> *mut proc_0 {
             // Allocate a trapframe page.
             (*p).tf = kalloc() as *mut trapframe;
             if (*p).tf.is_null() {
-                spinlock::release(&mut (*p).lock);
+                release(&mut (*p).lock);
                 return ptr::null_mut();
             }
             // An empty user page table.
@@ -656,7 +665,7 @@ pub unsafe extern "C" fn userinit() {
     );
     (*p).cwd = namei(b"/\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     (*p).state = RUNNABLE;
-    spinlock::release(&mut (*p).lock);
+    release(&mut (*p).lock);
 }
 // Grow or shrink user memory by n bytes.
 // Return 0 on success, -1 on failure.
@@ -700,7 +709,7 @@ pub unsafe extern "C" fn fork() -> libc::c_int {
     // Copy user memory from parent to child.
     if uvmcopy((*p).pagetable, (*np).pagetable, (*p).sz) < 0 as libc::c_int {
         freeproc(np);
-        spinlock::release(&mut (*np).lock);
+        release(&mut (*np).lock);
         return -(1 as libc::c_int);
     }
     (*np).sz = (*p).sz;
@@ -725,7 +734,7 @@ pub unsafe extern "C" fn fork() -> libc::c_int {
     );
     pid = (*np).pid;
     (*np).state = RUNNABLE;
-    spinlock::release(&mut (*np).lock);
+    release(&mut (*np).lock);
     pid
 }
 // Pass p's abandoned children to init.
@@ -735,20 +744,20 @@ pub unsafe extern "C" fn reparent(mut p: *mut proc_0) {
     let mut pp: *mut proc_0 = ptr::null_mut();
     pp = proc.as_mut_ptr();
     while pp < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
-        // this code uses pp->parent without spinlock::holding pp->lock.
+        // this code uses pp->parent without holding pp->lock.
         // acquiring the lock first could cause a deadlock
         // if pp or a child of pp were also in exit()
         // and about to try to lock p.
         if (*pp).parent == p {
-            // pp->parent can't change between the check and the spinlock::acquire()
+            // pp->parent can't change between the check and the acquire()
             // because only the parent changes it, and we're the parent.
-            spinlock::acquire(&mut (*pp).lock);
+            acquire(&mut (*pp).lock);
             (*pp).parent = initproc;
             // we should wake up init here, but that would require
             // initproc->lock, which would be a deadlock, since we hold
             // the lock on one of init's children (pp). this is why
             // exit() always wakes init (before acquiring any locks).
-            spinlock::release(&mut (*pp).lock);
+            release(&mut (*pp).lock);
         }
         pp = pp.offset(1)
     }
@@ -777,33 +786,33 @@ pub unsafe extern "C" fn exit(mut status: libc::c_int) {
     end_op();
     (*p).cwd = 0 as *mut inode;
     // we might re-parent a child to init. we can't be precise about
-    // waking up init, since we can't spinlock::acquire its lock once we've
+    // waking up init, since we can't acquire its lock once we've
     // acquired any other proc lock. so wake up init whether that's
     // necessary or not. init may miss this wakeup, but that seems
     // harmless.
-    spinlock::acquire(&mut (*initproc).lock);
+    acquire(&mut (*initproc).lock);
     wakeup1(initproc);
-    spinlock::release(&mut (*initproc).lock);
+    release(&mut (*initproc).lock);
     // grab a copy of p->parent, to ensure that we unlock the same
     // parent we locked. in case our parent gives us away to init while
     // we're waiting for the parent lock. we may then race with an
     // exiting parent, but the result will be a harmless spurious wakeup
     // to a dead or wrong process; proc structs are never re-allocated
     // as anything else.
-    spinlock::acquire(&mut (*p).lock);
+    acquire(&mut (*p).lock);
     let mut original_parent: *mut proc_0 = (*p).parent;
-    spinlock::release(&mut (*p).lock);
+    release(&mut (*p).lock);
     // we need the parent's lock in order to wake it up from wait().
     // the parent-then-child rule says we have to lock it first.
-    spinlock::acquire(&mut (*original_parent).lock);
-    spinlock::acquire(&mut (*p).lock);
+    acquire(&mut (*original_parent).lock);
+    acquire(&mut (*p).lock);
     // Give any children to init.
     reparent(p);
     // Parent might be sleeping in wait().
     wakeup1(original_parent);
     (*p).xstate = status;
     (*p).state = ZOMBIE;
-    spinlock::release(&mut (*original_parent).lock);
+    release(&mut (*original_parent).lock);
     // Jump into the scheduler, never to return.
     sched();
     panic(b"zombie exit\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -818,20 +827,20 @@ pub unsafe extern "C" fn wait(mut addr: uint64) -> libc::c_int {
     let mut p: *mut proc_0 = myproc();
     // hold p->lock for the whole time to avoid lost
     // wakeups from a child's exit().
-    spinlock::acquire(&mut (*p).lock);
+    acquire(&mut (*p).lock);
     loop {
         // Scan through table looking for exited children.
         havekids = 0 as libc::c_int;
         np = proc.as_mut_ptr();
         while np < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
             //DOC: wait-sleep
-            // this code uses np->parent without spinlock::holding np->lock.
+            // this code uses np->parent without holding np->lock.
             // acquiring the lock first would cause a deadlock,
             // since np might be an ancestor, and we already hold p->lock.
             if (*np).parent == p {
-                // np->parent can't change between the check and the spinlock::acquire()
+                // np->parent can't change between the check and the acquire()
                 // because only the parent changes it, and we're the parent.
-                spinlock::acquire(&mut (*np).lock);
+                acquire(&mut (*np).lock);
                 havekids = 1 as libc::c_int;
                 if (*np).state as libc::c_uint == ZOMBIE as libc::c_int as libc::c_uint {
                     // Found one.
@@ -844,21 +853,21 @@ pub unsafe extern "C" fn wait(mut addr: uint64) -> libc::c_int {
                             ::core::mem::size_of::<libc::c_int>() as libc::c_ulong,
                         ) < 0 as libc::c_int
                     {
-                        spinlock::release(&mut (*np).lock);
-                        spinlock::release(&mut (*p).lock);
+                        release(&mut (*np).lock);
+                        release(&mut (*p).lock);
                         return -(1 as libc::c_int);
                     }
                     freeproc(np);
-                    spinlock::release(&mut (*np).lock);
-                    spinlock::release(&mut (*p).lock);
+                    release(&mut (*np).lock);
+                    release(&mut (*p).lock);
                     return pid;
                 }
-                spinlock::release(&mut (*np).lock);
+                release(&mut (*np).lock);
             }
             np = np.offset(1)
         }
         if havekids == 0 || (*p).killed != 0 {
-            spinlock::release(&mut (*p).lock);
+            release(&mut (*p).lock);
             return -(1 as libc::c_int);
         }
         sleep(p as *mut libc::c_void, &mut (*p).lock);
@@ -883,10 +892,10 @@ pub unsafe extern "C" fn scheduler() -> ! {
         intr_on();
         p = proc.as_mut_ptr();
         while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
-            spinlock::acquire(&mut (*p).lock);
+            acquire(&mut (*p).lock);
             if (*p).state as libc::c_uint == RUNNABLE as libc::c_int as libc::c_uint {
                 // Switch to chosen process.  It is the process's job
-                // to spinlock::release its lock and then reacquire it
+                // to release its lock and then reacquire it
                 // before jumping back to us.
                 (*p).state = RUNNING;
                 (*c).proc_0 = p;
@@ -895,7 +904,7 @@ pub unsafe extern "C" fn scheduler() -> ! {
                 // It should have changed its p->state before coming back.
                 (*c).proc_0 = ptr::null_mut()
             }
-            spinlock::release(&mut (*p).lock);
+            release(&mut (*p).lock);
             p = p.offset(1)
         }
     }
@@ -911,7 +920,7 @@ pub unsafe extern "C" fn scheduler() -> ! {
 pub unsafe extern "C" fn sched() {
     let mut intena: libc::c_int = 0;
     let mut p: *mut proc_0 = myproc();
-    if spinlock::holding(&mut (*p).lock) == 0 {
+    if holding(&mut (*p).lock) == 0 {
         panic(b"sched p->lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     if (*mycpu()).noff != 1 as libc::c_int {
@@ -934,18 +943,18 @@ pub unsafe extern "C" fn sched() {
 #[export_name = "yield"]
 pub unsafe extern "C" fn yield_0() {
     let mut p: *mut proc_0 = myproc();
-    spinlock::acquire(&mut (*p).lock);
+    acquire(&mut (*p).lock);
     (*p).state = RUNNABLE;
     sched();
-    spinlock::release(&mut (*p).lock);
+    release(&mut (*p).lock);
 }
 // A fork child's very first scheduling by scheduler()
 // will swtch to forkret.
 #[no_mangle]
 pub unsafe extern "C" fn forkret() {
     static mut first: libc::c_int = 1 as libc::c_int;
-    // Still spinlock::holding p->lock from scheduler.
-    spinlock::release(&mut (*(myproc as unsafe extern "C" fn() -> *mut proc_0)()).lock);
+    // Still holding p->lock from scheduler.
+    release(&mut (*(myproc as unsafe extern "C" fn() -> *mut proc_0)()).lock);
     if first != 0 {
         // File system initialization must be run in the context of a
         // regular process (e.g., because it calls sleep), and thus cannot
@@ -955,21 +964,21 @@ pub unsafe extern "C" fn forkret() {
     }
     usertrapret();
 }
-// Atomically spinlock::release lock and sleep on chan.
+// Atomically release lock and sleep on chan.
 // Reacquires lock when awakened.
 #[no_mangle]
-pub unsafe extern "C" fn sleep(mut chan: *mut libc::c_void, mut lk: *mut spinlock::spinlock) {
+pub unsafe extern "C" fn sleep(mut chan: *mut libc::c_void, mut lk: *mut spinlock) {
     let mut p: *mut proc_0 = myproc();
-    // Must spinlock::acquire p->lock in order to
+    // Must acquire p->lock in order to
     // change p->state and then call sched.
     // Once we hold p->lock, we can be
     // guaranteed that we won't miss any wakeup
     // (wakeup locks p->lock),
-    // so it's okay to spinlock::release lk.
-    if lk != &mut (*p).lock as *mut spinlock::spinlock {
+    // so it's okay to release lk.
+    if lk != &mut (*p).lock as *mut spinlock {
         //DOC: sleeplock0
-        spinlock::acquire(&mut (*p).lock); //DOC: sleeplock1
-        spinlock::release(lk);
+        acquire(&mut (*p).lock); //DOC: sleeplock1
+        release(lk);
     }
     // Go to sleep.
     (*p).chan = chan;
@@ -978,9 +987,9 @@ pub unsafe extern "C" fn sleep(mut chan: *mut libc::c_void, mut lk: *mut spinloc
     // Tidy up.
     (*p).chan = ptr::null_mut();
     // Reacquire original lock.
-    if lk != &mut (*p).lock as *mut spinlock::spinlock {
-        spinlock::release(&mut (*p).lock);
-        spinlock::acquire(lk);
+    if lk != &mut (*p).lock as *mut spinlock {
+        release(&mut (*p).lock);
+        acquire(lk);
     };
 }
 // Wake up all processes sleeping on chan.
@@ -990,20 +999,20 @@ pub unsafe extern "C" fn wakeup(mut chan: *mut libc::c_void) {
     let mut p: *mut proc_0 = ptr::null_mut();
     p = proc.as_mut_ptr();
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
-        spinlock::acquire(&mut (*p).lock);
+        acquire(&mut (*p).lock);
         if (*p).state as libc::c_uint == SLEEPING as libc::c_int as libc::c_uint
             && (*p).chan == chan
         {
             (*p).state = RUNNABLE
         }
-        spinlock::release(&mut (*p).lock);
+        release(&mut (*p).lock);
         p = p.offset(1)
     }
 }
 // Wake up p if it is sleeping in wait(); used by exit().
 // Caller must hold p->lock.
 unsafe extern "C" fn wakeup1(mut p: *mut proc_0) {
-    if spinlock::holding(&mut (*p).lock) == 0 {
+    if holding(&mut (*p).lock) == 0 {
         panic(b"wakeup1\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     if (*p).chan == p as *mut libc::c_void
@@ -1020,17 +1029,17 @@ pub unsafe extern "C" fn kill(mut pid: libc::c_int) -> libc::c_int {
     let mut p: *mut proc_0 = ptr::null_mut();
     p = proc.as_mut_ptr();
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
-        spinlock::acquire(&mut (*p).lock);
+        acquire(&mut (*p).lock);
         if (*p).pid == pid {
             (*p).killed = 1 as libc::c_int;
             if (*p).state as libc::c_uint == SLEEPING as libc::c_int as libc::c_uint {
                 // Wake process from sleep().
                 (*p).state = RUNNABLE
             }
-            spinlock::release(&mut (*p).lock);
+            release(&mut (*p).lock);
             return 0 as libc::c_int;
         }
-        spinlock::release(&mut (*p).lock);
+        release(&mut (*p).lock);
         p = p.offset(1)
     }
     -(1 as libc::c_int)
