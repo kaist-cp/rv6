@@ -37,15 +37,9 @@ RUST_MODE=release
 
 OBJS = \
   $K/entry.o \
-  $K/start.o \
-  $K/proc.o \
   $K/swtch.o \
   $K/trampoline.o \
-  $K/bio.o \
-  $K/fs.o \
-  $K/file.o \
   $K/kernelvec.o \
-  $K/virtio_disk.o \
   $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a
 
 # riscv64-unknown-elf- or riscv64-linux-gnu-

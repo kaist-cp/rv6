@@ -316,6 +316,7 @@ pub static mut icache: C2RustUnnamed_0 = C2RustUnnamed_0 {
         lock: Sleeplock {
             locked: 0,
             lk: Spinlock {
+
                 locked: 0,
                 name: 0 as *const libc::c_char as *mut libc::c_char,
                 cpu: 0 as *const cpu as *mut cpu,
