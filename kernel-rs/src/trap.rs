@@ -1,4 +1,4 @@
-use crate::{ libc, proc::{ proc_0, cpu }, spinlock::Spinlock };
+use crate::{ libc, proc::{ proc_0, cpu, myproc }, spinlock::{ Spinlock, initlock, release, acquire } };
 extern "C" {
     // pub type inode;
     // pub type file;
@@ -13,18 +13,9 @@ extern "C" {
     #[no_mangle]
     fn exit(_: libc::c_int);
     #[no_mangle]
-    fn myproc() -> *mut proc_0;
-    #[no_mangle]
     fn wakeup(_: *mut libc::c_void);
     #[link_name = "yield"]
     fn yield_0();
-    // spinlock.c
-    #[no_mangle]
-    fn acquire(_: *mut Spinlock);
-    #[no_mangle]
-    fn initlock(_: *mut Spinlock, _: *mut libc::c_char);
-    #[no_mangle]
-    fn release(_: *mut Spinlock);
     #[no_mangle]
     fn syscall();
     #[no_mangle]

@@ -1,5 +1,5 @@
 use crate::libc;
-use crate::proc::cpu;
+use crate::proc::{cpu, sleep, wakeup};
 use crate::spinlock::{ Spinlock, acquire, initlock, release };
 use crate::buf::{ Buf };
 use crate::bio::{ bread, brelse, bwrite, bpin, bunpin };
@@ -7,10 +7,6 @@ use crate::fs::{ superblock };
 extern "C" {
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn sleep(_: *mut libc::c_void, _: *mut Spinlock);
-    #[no_mangle]
-    fn wakeup(_: *mut libc::c_void);
     #[no_mangle]
     fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: uint) -> *mut libc::c_void;
 }

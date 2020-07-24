@@ -1,30 +1,10 @@
-use crate::{ libc, spinlock::Spinlock, file::{File, inode} };
+use crate::{ libc, spinlock::{ Spinlock, initlock, acquire, release, holding }, file::{File, inode} };
+use crate::file::{filedup, fileclose};
 use core::ptr;
+use crate::fs::{fsinit, idup, iput, namei };
+use crate::kalloc::{kalloc, kfree};
+use crate::log::{begin_op, end_op};
 extern "C" {
-    // pub type inode;
-    // pub type file;
-    #[no_mangle]
-    fn fileclose(_: *mut File);
-    #[no_mangle]
-    fn filedup(_: *mut File) -> *mut File;
-    // fs.c
-    #[no_mangle]
-    fn fsinit(_: libc::c_int);
-    #[no_mangle]
-    fn idup(_: *mut inode) -> *mut inode;
-    #[no_mangle]
-    fn iput(_: *mut inode);
-    #[no_mangle]
-    fn namei(_: *mut libc::c_char) -> *mut inode;
-    // kalloc.c
-    #[no_mangle]
-    fn kalloc() -> *mut libc::c_void;
-    #[no_mangle]
-    fn kfree(_: *mut libc::c_void);
-    #[no_mangle]
-    fn begin_op();
-    #[no_mangle]
-    fn end_op();
     // printf.c
     #[no_mangle]
     fn printf(_: *mut libc::c_char, _: ...);
@@ -33,15 +13,6 @@ extern "C" {
     // swtch.S
     #[no_mangle]
     fn swtch(_: *mut context, _: *mut context);
-    // spinlock.c
-    #[no_mangle]
-    fn acquire(_: *mut Spinlock);
-    #[no_mangle]
-    fn holding(_: *mut Spinlock) -> libc::c_int;
-    #[no_mangle]
-    fn initlock(_: *mut Spinlock, _: *mut libc::c_char);
-    #[no_mangle]
-    fn release(_: *mut Spinlock);
     #[no_mangle]
     fn push_off();
     #[no_mangle]
@@ -89,19 +60,6 @@ pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
 pub type uint64 = libc::c_ulong;
 pub type pagetable_t = *mut uint64;
-<<<<<<< HEAD
-// // Mutual exclusion lock.
-// #[derive(Copy, Clone)]
-// #[repr(C)]
-// pub struct spinlock {
-//     pub locked: uint,
-//     pub name: *mut libc::c_char,
-//     pub cpu: *mut cpu,
-// }
-// Per-CPU state.
-=======
-
->>>>>>> 06fd0fd378579c7297307f899f5c2fc0a92117c0
 #[derive(Copy, Clone)]
 // #[repr(C)]
 pub struct cpu {
@@ -164,7 +122,7 @@ pub struct proc_0 {
 // return-to-user path via usertrapret() doesn't return through
 // the entire kernel call stack.
 #[derive(Copy, Clone)]
-// #[repr(C)]
+#[repr(C)]
 pub struct trapframe {
     pub kernel_satp: uint64,
     pub kernel_sp: uint64,

@@ -1,49 +1,17 @@
-use crate::{ libc, proc::proc_0, file::{ File, inode }, fs::dirent};
+use crate::{ libc, proc::{myproc, proc_0}, file::{ File, inode }, fs::dirent};
+use crate::pipe::{pipealloc};
+use crate::fs::{writei, readi, nameiparent, namei, iupdate, iunlock, iunlockput, iput, ilock, ialloc
+, dirlookup, dirlink};
+use crate::file::{filewrite, filestat, fileread, filedup, fileclose, filealloc};
+
 use core::ptr;
 extern "C" {
     // pub type pipe;
     // exec.c
     #[no_mangle]
     fn exec(_: *mut libc::c_char, _: *mut *mut libc::c_char) -> libc::c_int;
-    // file.c
-    #[no_mangle]
-    fn filealloc() -> *mut File;
-    #[no_mangle]
-    fn fileclose(_: *mut File);
-    #[no_mangle]
-    fn filedup(_: *mut File) -> *mut File;
-    #[no_mangle]
-    fn fileread(_: *mut File, _: uint64, n: libc::c_int) -> libc::c_int;
-    #[no_mangle]
-    fn filestat(_: *mut File, addr: uint64) -> libc::c_int;
-    #[no_mangle]
-    fn filewrite(_: *mut File, _: uint64, n: libc::c_int) -> libc::c_int;
-    #[no_mangle]
-    fn dirlink(_: *mut inode, _: *mut libc::c_char, _: uint) -> libc::c_int;
-    #[no_mangle]
-    fn dirlookup(_: *mut inode, _: *mut libc::c_char, _: *mut uint) -> *mut inode;
-    #[no_mangle]
-    fn ialloc(_: uint, _: libc::c_short) -> *mut inode;
-    #[no_mangle]
-    fn ilock(_: *mut inode);
-    #[no_mangle]
-    fn iput(_: *mut inode);
-    #[no_mangle]
-    fn iunlock(_: *mut inode);
-    #[no_mangle]
-    fn iunlockput(_: *mut inode);
-    #[no_mangle]
-    fn iupdate(_: *mut inode);
     #[no_mangle]
     fn namecmp(_: *const libc::c_char, _: *const libc::c_char) -> libc::c_int;
-    #[no_mangle]
-    fn namei(_: *mut libc::c_char) -> *mut inode;
-    #[no_mangle]
-    fn nameiparent(_: *mut libc::c_char, _: *mut libc::c_char) -> *mut inode;
-    #[no_mangle]
-    fn readi(_: *mut inode, _: libc::c_int, _: uint64, _: uint, _: uint) -> libc::c_int;
-    #[no_mangle]
-    fn writei(_: *mut inode, _: libc::c_int, _: uint64, _: uint, _: uint) -> libc::c_int;
     // kalloc.c
     #[no_mangle]
     fn kalloc() -> *mut libc::c_void;
@@ -53,13 +21,8 @@ extern "C" {
     fn begin_op();
     #[no_mangle]
     fn end_op();
-    // pipe.c
-    #[no_mangle]
-    fn pipealloc(_: *mut *mut File, _: *mut *mut File) -> libc::c_int;
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn myproc() -> *mut proc_0;
     #[no_mangle]
     fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
     // syscall.c

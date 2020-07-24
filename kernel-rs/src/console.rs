@@ -1,15 +1,9 @@
 use crate::libc;
 use crate::spinlock::{ Spinlock, acquire, initlock, release };
-use crate::proc::{ cpu, proc_0 };
+use crate::proc::{ cpu, myproc, sleep, wakeup };
 use crate::file::devsw;
 extern "C" {
     pub type pipe;
-    #[no_mangle]
-    fn myproc() -> *mut proc_0;
-    #[no_mangle]
-    fn sleep(_: *mut libc::c_void, _: *mut Spinlock);
-    #[no_mangle]
-    fn wakeup(_: *mut libc::c_void);
     #[no_mangle]
     fn either_copyout(
         user_dst: libc::c_int,

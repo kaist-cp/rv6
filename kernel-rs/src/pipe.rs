@@ -1,32 +1,14 @@
 use crate::{ libc, proc, file, spinlock };
-use proc::proc_0;
-use file::File;
-use spinlock::Spinlock;
+use proc::{myproc, sleep, wakeup, proc_0};
+use file::{File, filealloc, fileclose};
+use spinlock::{Spinlock, acquire, release, initlock};
 use core::ptr;
 extern "C" {
-    // file.c
-    #[no_mangle]
-    fn filealloc() -> *mut File;
-    #[no_mangle]
-    fn fileclose(_: *mut File);
     // kalloc.c
     #[no_mangle]
     fn kalloc() -> *mut libc::c_void;
     #[no_mangle]
     fn kfree(_: *mut libc::c_void);
-    #[no_mangle]
-    fn myproc() -> *mut proc_0;
-    #[no_mangle]
-    fn sleep(_: *mut libc::c_void, _: *mut Spinlock);
-    #[no_mangle]
-    fn wakeup(_: *mut libc::c_void);
-    // spinlock.c
-    #[no_mangle]
-    fn acquire(_: *mut Spinlock);
-    #[no_mangle]
-    fn initlock(_: *mut Spinlock, _: *mut libc::c_char);
-    #[no_mangle]
-    fn release(_: *mut Spinlock);
     #[no_mangle]
     fn copyout(_: pagetable_t, _: uint64, _: *mut libc::c_char, _: uint64) -> libc::c_int;
     #[no_mangle]

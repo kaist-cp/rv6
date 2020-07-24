@@ -4,11 +4,10 @@ use crate::spinlock::{ Spinlock, acquire, initlock, release };
 use crate::sleeplock::{ Sleeplock, acquiresleep, releasesleep, holdingsleep, initsleeplock };
 use crate::proc::cpu;
 use crate::buf::Buf;
+use crate::virtio_disk::virtio_disk_rw;
 extern "C" {
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn virtio_disk_rw(_: *mut Buf, _: libc::c_int);
 }
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;

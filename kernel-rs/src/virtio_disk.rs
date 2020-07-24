@@ -1,20 +1,11 @@
-use crate::{ libc, spinlock::Spinlock, buf::Buf, proc::cpu };
+use crate::{ libc, spinlock::{ Spinlock, release, initlock, acquire }, buf::Buf, proc::{ cpu, sleep } };
 use core::ptr;
 extern "C" {
     // pub type cpu;
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
     #[no_mangle]
-    fn sleep(_: *mut libc::c_void, _: *mut Spinlock);
-    #[no_mangle]
     fn wakeup(_: *mut libc::c_void);
-    // spinlock.c
-    #[no_mangle]
-    fn acquire(_: *mut Spinlock);
-    #[no_mangle]
-    fn initlock(_: *mut Spinlock, _: *mut libc::c_char);
-    #[no_mangle]
-    fn release(_: *mut Spinlock);
     #[no_mangle]
     fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
     #[no_mangle]

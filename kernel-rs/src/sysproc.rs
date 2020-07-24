@@ -1,4 +1,4 @@
-use crate::{ libc, proc::proc_0, spinlock::Spinlock};
+use crate::{ libc, proc::{ myproc, sleep }, spinlock::{ acquire, release }, trap::tickslock};
 extern "C" {
     // pub type file;
     // pub type inode;
@@ -11,16 +11,7 @@ extern "C" {
     #[no_mangle]
     fn kill(_: libc::c_int) -> libc::c_int;
     #[no_mangle]
-    fn myproc() -> *mut proc_0;
-    #[no_mangle]
-    fn sleep(_: *mut libc::c_void, _: *mut Spinlock);
-    #[no_mangle]
     fn wait(_: uint64) -> libc::c_int;
-    // spinlock.c
-    #[no_mangle]
-    fn acquire(_: *mut Spinlock);
-    #[no_mangle]
-    fn release(_: *mut Spinlock);
     // syscall.c
     #[no_mangle]
     fn argint(_: libc::c_int, _: *mut libc::c_int) -> libc::c_int;
@@ -29,8 +20,6 @@ extern "C" {
     // trap.c
     #[no_mangle]
     static mut ticks: uint;
-    #[no_mangle]
-    static mut tickslock: Spinlock;
 }
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;

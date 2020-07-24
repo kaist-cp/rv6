@@ -1,6 +1,6 @@
 use crate::libc;
 use core::ptr;
-use crate::proc::proc_0;
+use crate::proc::{myproc, proc_0, proc_pagetable, proc_freepagetable};
 extern "C" {
     pub type inode;
     pub type file;
@@ -18,12 +18,6 @@ extern "C" {
     fn end_op();
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn proc_pagetable(_: *mut proc_0) -> pagetable_t;
-    #[no_mangle]
-    fn proc_freepagetable(_: pagetable_t, _: uint64);
-    #[no_mangle]
-    fn myproc() -> *mut proc_0;
     #[no_mangle]
     fn safestrcpy(
         _: *mut libc::c_char,

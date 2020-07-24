@@ -1,37 +1,19 @@
 use crate::libc;
 use crate::stat::Stat;
 use crate::spinlock::{ Spinlock, acquire, initlock, release };
-use crate::fs::stati;
-use crate::proc::proc_0;
+use crate::fs::{stati, readi, writei, ilock, iput, iunlock};
+use crate::proc::{myproc, proc_0};
 use crate::sleeplock::Sleeplock;
-use crate::pipe::Pipe;
+use crate::pipe::{ Pipe, piperead, pipeclose, pipewrite};
 use core::ptr;
 extern "C" {
     pub type pipe;
-    #[no_mangle]
-    fn ilock(_: *mut inode);
-    #[no_mangle]
-    fn iput(_: *mut inode);
-    #[no_mangle]
-    fn iunlock(_: *mut inode);
-    #[no_mangle]
-    fn readi(_: *mut inode, _: libc::c_int, _: uint64, _: uint, _: uint) -> libc::c_int;
-    #[no_mangle]
-    fn writei(_: *mut inode, _: libc::c_int, _: uint64, _: uint, _: uint) -> libc::c_int;
     #[no_mangle]
     fn begin_op();
     #[no_mangle]
     fn end_op();
     #[no_mangle]
-    fn pipeclose(_: *mut Pipe, _: libc::c_int);
-    #[no_mangle]
-    fn piperead(_: *mut Pipe, _: uint64, _: libc::c_int) -> libc::c_int;
-    #[no_mangle]
-    fn pipewrite(_: *mut Pipe, _: uint64, _: libc::c_int) -> libc::c_int;
-    #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn myproc() -> *mut proc_0;
     #[no_mangle]
     fn copyout(_: pagetable_t, _: uint64, _: *mut libc::c_char, _: uint64) -> libc::c_int;
 }

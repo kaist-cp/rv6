@@ -1,8 +1,10 @@
 use crate::{ libc, buf, sleeplock, spinlock, proc, file, stat };
-use spinlock::Spinlock;
-use sleeplock::Sleeplock;
+use spinlock::{Spinlock, release, acquire, initlock};
 use buf::Buf;
-use proc::{ proc_0, cpu };
+use proc::{ cpu, myproc};
+use sleeplock::{Sleeplock, acquiresleep, initsleeplock, releasesleep, holdingsleep};
+use crate::log::{log_write, initlog};
+use crate::bio::{brelse, bread};
 use file::inode;
 use core::ptr;
 use stat::Stat;
@@ -10,18 +12,7 @@ use stat::Stat;
 extern "C" {
     pub type pipe;
     #[no_mangle]
-    fn bread(_: uint, _: uint) -> *mut Buf;
-    #[no_mangle]
-    fn brelse(_: *mut Buf);
-    // log.c
-    #[no_mangle]
-    fn initlog(_: libc::c_int, _: *mut superblock);
-    #[no_mangle]
-    fn log_write(_: *mut Buf);
-    #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn myproc() -> *mut proc_0;
     #[no_mangle]
     fn either_copyout(
         user_dst: libc::c_int,
@@ -36,22 +27,6 @@ extern "C" {
         src: uint64,
         len: uint64,
     ) -> libc::c_int;
-    // Spinlock.c
-    #[no_mangle]
-    fn acquire(_: *mut Spinlock);
-    #[no_mangle]
-    fn initlock(_: *mut Spinlock, _: *mut libc::c_char);
-    #[no_mangle]
-    fn release(_: *mut Spinlock);
-    // Sleeplock.c
-    #[no_mangle]
-    fn acquiresleep(_: *mut Sleeplock);
-    #[no_mangle]
-    fn releasesleep(_: *mut Sleeplock);
-    #[no_mangle]
-    fn holdingsleep(_: *mut Sleeplock) -> libc::c_int;
-    #[no_mangle]
-    fn initsleeplock(_: *mut Sleeplock, _: *mut libc::c_char);
     #[no_mangle]
     fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: uint) -> *mut libc::c_void;
     #[no_mangle]
