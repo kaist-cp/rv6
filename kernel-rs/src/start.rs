@@ -5,9 +5,6 @@ extern "C" {
     // assembly code in kernelvec.S for machine-mode timer interrupt.
     #[no_mangle]
     fn timervec();
-
-    // #[no_mangle]
-    // static mut stack0: [libc::c_char; 32768];
 }
 pub type uint64 = libc::c_ulong;
 // Physical memory layout

@@ -5,85 +5,18 @@ use crate::buf::{ Buf };
 use crate::bio::{ bread, brelse, bwrite, bpin, bunpin };
 use crate::fs::{ superblock };
 extern "C" {
-    // pub type cpu;
-    // #[no_mangle]
-    // fn bread(_: uint, _: uint) -> *mut buf;
-    // #[no_mangle]
-    // fn brelse(_: *mut buf);
-    // #[no_mangle]
-    // fn bwrite(_: *mut buf);
-    // #[no_mangle]
-    // fn bpin(_: *mut buf);
-    // #[no_mangle]
-    // fn bunpin(_: *mut buf);
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
     #[no_mangle]
     fn sleep(_: *mut libc::c_void, _: *mut Spinlock);
     #[no_mangle]
     fn wakeup(_: *mut libc::c_void);
-    // spinlock.c
-    // #[no_mangle]
-    // fn acquire(_: *mut spinlock);
-    // #[no_mangle]
-    // fn initlock(_: *mut spinlock, _: *mut libc::c_char);
-    // #[no_mangle]
-    // fn release(_: *mut spinlock);
     #[no_mangle]
     fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: uint) -> *mut libc::c_void;
 }
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
-// #[derive(Copy, Clone)]
-// #[repr(C)]
-// pub struct buf {
-//     pub valid: libc::c_int,
-//     pub disk: libc::c_int,
-//     pub dev: uint,
-//     pub blockno: uint,
-//     pub lock: sleeplock,
-//     pub refcnt: uint,
-//     pub prev: *mut buf,
-//     pub next: *mut buf,
-//     pub qnext: *mut buf,
-//     pub data: [uchar; 1024],
-// }
-// Long-term locks for processes
-// #[derive(Copy, Clone)]
-// #[repr(C)]
-// pub struct sleeplock {
-//     pub locked: uint,
-//     pub lk: spinlock,
-//     pub name: *mut libc::c_char,
-//     pub pid: libc::c_int,
-// }
-// Mutual exclusion lock.
-// #[derive(Copy, Clone)]
-// #[repr(C)]
-// pub struct spinlock {
-//     pub locked: uint,
-//     pub name: *mut libc::c_char,
-//     pub cpu: *mut cpu,
-// }
-// block size
-// Disk layout:
-// [ boot block | super block | log | inode blocks |
-//                                          free bit map | data blocks]
-//
-// mkfs computes the super block and builds an initial file system. The
-// super block describes the disk layout:
-// #[derive(Copy, Clone)]
-// #[repr(C)]
-// pub struct superblock {
-//     pub magic: uint,
-//     pub size: uint,
-//     pub nblocks: uint,
-//     pub ninodes: uint,
-//     pub nlog: uint,
-//     pub logstart: uint,
-//     pub inodestart: uint,
-//     pub bmapstart: uint,
-// }
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct log {
