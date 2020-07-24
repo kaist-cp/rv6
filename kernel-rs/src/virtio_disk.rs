@@ -1,20 +1,20 @@
-use crate::{ libc, spinlock, buf, proc };
+use crate::{ libc, spinlock::Spinlock, buf::Buf, proc::cpu };
 use core::ptr;
 extern "C" {
-    pub type cpu;
+    // pub type cpu;
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
     #[no_mangle]
-    fn sleep(_: *mut libc::c_void, _: *mut spinlock::Spinlock);
+    fn sleep(_: *mut libc::c_void, _: *mut Spinlock);
     #[no_mangle]
     fn wakeup(_: *mut libc::c_void);
     // spinlock.c
     #[no_mangle]
-    fn acquire(_: *mut spinlock::Spinlock);
+    fn acquire(_: *mut Spinlock);
     #[no_mangle]
-    fn initlock(_: *mut spinlock::Spinlock, _: *mut libc::c_char);
+    fn initlock(_: *mut Spinlock, _: *mut libc::c_char);
     #[no_mangle]
-    fn release(_: *mut spinlock::Spinlock);
+    fn release(_: *mut Spinlock);
     #[no_mangle]
     fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
     #[no_mangle]
@@ -25,6 +25,37 @@ pub type uchar = libc::c_uchar;
 pub type uint16 = libc::c_ushort;
 pub type uint32 = libc::c_uint;
 pub type uint64 = libc::c_ulong;
+// #[derive(Copy, Clone)]
+// #[repr(C)]
+// pub struct buf {
+//     pub valid: libc::c_int,
+//     pub disk: libc::c_int,
+//     pub dev: uint,
+//     pub blockno: uint,
+//     pub lock: sleeplock,
+//     pub refcnt: uint,
+//     pub prev: *mut buf,
+//     pub next: *mut buf,
+//     pub qnext: *mut buf,
+//     pub data: [uchar; 1024],
+// }
+// // Long-term locks for processes
+// #[derive(Copy, Clone)]
+// #[repr(C)]
+// pub struct sleeplock {
+//     pub locked: uint,
+//     pub lk: spinlock,
+//     pub name: *mut libc::c_char,
+//     pub pid: libc::c_int,
+// }
+// // Mutual exclusion lock.
+// #[derive(Copy, Clone)]
+// #[repr(C)]
+// pub struct spinlock {
+//     pub locked: uint,
+//     pub name: *mut libc::c_char,
+//     pub cpu: *mut cpu,
+// }
 //
 // driver for qemu's virtio disk device.
 // uses qemu's mmio interface to virtio.
@@ -46,14 +77,14 @@ pub struct disk_Inner {
     pub free: [libc::c_char; 8],
     pub used_idx: uint16,
     pub info: [C2RustUnnamed; 8],
-    pub vdisk_lock: spinlock::Spinlock,
+    pub vdisk_lock: Spinlock,
 }
 #[allow(dead_code, non_upper_case_globals)]
 const disk_PADDING: usize = ::core::mem::size_of::<Disk>() - ::core::mem::size_of::<disk_Inner>();
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed {
-    pub b: *mut buf::Buf,
+    pub b: *mut Buf,
     pub status: libc::c_char,
 }
 // write the disk
@@ -173,13 +204,13 @@ static mut disk: Disk = Disk(disk_Inner {
     free: [0; 8],
     used_idx: 0,
     info: [C2RustUnnamed {
-        b: 0 as *const buf::Buf as *mut buf::Buf,
+        b: 0 as *const Buf as *mut Buf,
         status: 0,
     }; 8],
-    vdisk_lock: spinlock::Spinlock {
+    vdisk_lock: Spinlock {
         locked: 0,
         name: 0 as *const libc::c_char as *mut libc::c_char,
-        cpu: 0 as *const proc::cpu as *mut proc::cpu,
+        cpu: 0 as *const cpu as *mut cpu,
     },
 });
 // virtio_disk.c
@@ -329,7 +360,7 @@ unsafe extern "C" fn alloc3_desc(mut idx: *mut libc::c_int) -> libc::c_int {
     0 as libc::c_int
 }
 #[no_mangle]
-pub unsafe extern "C" fn virtio_disk_rw(mut b: *mut buf::Buf, mut write: libc::c_int) {
+pub unsafe extern "C" fn virtio_disk_rw(mut b: *mut Buf, mut write: libc::c_int) {
     let mut sector: uint64 =
         (*b).blockno
             .wrapping_mul((BSIZE / 512 as libc::c_int) as libc::c_uint) as uint64;
@@ -397,7 +428,7 @@ pub unsafe extern "C" fn virtio_disk_rw(mut b: *mut buf::Buf, mut write: libc::c
         VRING_DESC_F_WRITE as uint16;
     (*disk.0.desc.offset(idx[2 as libc::c_int as usize] as isize)).next =
         0 as libc::c_int as uint16;
-    // record struct buf::Buf for virtio_disk_intr().
+    // record struct Buf for virtio_disk_intr().
     (*b).disk = 1 as libc::c_int;
     disk.0.info[idx[0 as libc::c_int as usize] as usize].b = b;
     // avail[0] is flags
@@ -418,7 +449,7 @@ pub unsafe extern "C" fn virtio_disk_rw(mut b: *mut buf::Buf, mut write: libc::c
     );
     // Wait for virtio_disk_intr() to say request has finished.
     while (*b).disk == 1 as libc::c_int {
-        sleep(b as *mut libc::c_void, &mut disk.0.vdisk_lock); // disk is done with buf::Buf
+        sleep(b as *mut libc::c_void, &mut disk.0.vdisk_lock); // disk is done with Buf
     }
     disk.0.info[idx[0 as libc::c_int as usize] as usize].b = ptr::null_mut();
     free_chain(idx[0 as libc::c_int as usize]);
