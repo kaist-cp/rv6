@@ -1,12 +1,12 @@
-use crate::libc;
+use crate::{ libc, spinlock::Spinlock, file::{File, inode} };
 use core::ptr;
 extern "C" {
-    pub type inode;
-    pub type file;
+    // pub type inode;
+    // pub type file;
     #[no_mangle]
-    fn fileclose(_: *mut file);
+    fn fileclose(_: *mut File);
     #[no_mangle]
-    fn filedup(_: *mut file) -> *mut file;
+    fn filedup(_: *mut File) -> *mut File;
     // fs.c
     #[no_mangle]
     fn fsinit(_: libc::c_int);
@@ -35,13 +35,13 @@ extern "C" {
     fn swtch(_: *mut context, _: *mut context);
     // spinlock.c
     #[no_mangle]
-    fn acquire(_: *mut spinlock);
+    fn acquire(_: *mut Spinlock);
     #[no_mangle]
-    fn holding(_: *mut spinlock) -> libc::c_int;
+    fn holding(_: *mut Spinlock) -> libc::c_int;
     #[no_mangle]
-    fn initlock(_: *mut spinlock, _: *mut libc::c_char);
+    fn initlock(_: *mut Spinlock, _: *mut libc::c_char);
     #[no_mangle]
-    fn release(_: *mut spinlock);
+    fn release(_: *mut Spinlock);
     #[no_mangle]
     fn push_off();
     #[no_mangle]
@@ -84,22 +84,19 @@ extern "C" {
     fn copyin(_: pagetable_t, _: *mut libc::c_char, _: uint64, _: uint64) -> libc::c_int;
     #[no_mangle]
     static mut trampoline: [libc::c_char; 0];
-
-    #[no_mangle]
-    static mut proc: [proc_0; 64];
 }
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
 pub type uint64 = libc::c_ulong;
 pub type pagetable_t = *mut uint64;
-// Mutual exclusion lock.
-#[derive(Copy, Clone)]
+// // Mutual exclusion lock.
+// #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct spinlock {
-    pub locked: uint,
-    pub name: *mut libc::c_char,
-    pub cpu: *mut cpu,
-}
+// pub struct spinlock {
+//     pub locked: uint,
+//     pub name: *mut libc::c_char,
+//     pub cpu: *mut cpu,
+// }
 // Per-CPU state.
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -132,7 +129,7 @@ pub struct context {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct proc_0 {
-    pub lock: spinlock,
+    pub lock: Spinlock,
     pub state: procstate,
     pub parent: *mut proc_0,
     pub chan: *mut libc::c_void,
@@ -144,7 +141,7 @@ pub struct proc_0 {
     pub pagetable: pagetable_t,
     pub tf: *mut trapframe,
     pub context: context,
-    pub ofile: [*mut file; 16],
+    pub ofile: [*mut File; 16],
     pub cwd: *mut inode,
     pub name: [libc::c_char; 16],
 }
@@ -352,49 +349,49 @@ pub static mut cpus: [cpu; 8] = [cpu {
     noff: 0,
     intena: 0,
 }; 8];
-// #[export_name = "proc"]
-// pub static mut proc_0: [proc_0; 64] = [proc_0 {
-//     lock: spinlock {
-//         locked: 0,
-//         name: 0 as *const libc::c_char as *mut libc::c_char,
-//         cpu: 0 as *const cpu as *mut cpu,
-//     },
-//     state: UNUSED,
-//     parent: 0 as *const proc_ptr::null_mut(),
-//     chan: 0 as *const libc::c_void as *mut libc::c_void,
-//     killed: 0,
-//     xstate: 0,
-//     pid: 0,
-//     kstack: 0,
-//     sz: 0,
-//     pagetable: 0 as *const uint64 as *mut uint64,
-//     tf: 0 as *const trapframe as *mut trapframe,
-//     context: context {
-//         ra: 0,
-//         sp: 0,
-//         s0: 0,
-//         s1: 0,
-//         s2: 0,
-//         s3: 0,
-//         s4: 0,
-//         s5: 0,
-//         s6: 0,
-//         s7: 0,
-//         s8: 0,
-//         s9: 0,
-//         s10: 0,
-//         s11: 0,
-//     },
-//     ofile: [0 as *const file as *mut file; 16],
-//     cwd: 0 as *const inode as *mut inode,
-//     name: [0; 16],
-// }; 64];
+#[export_name = "proc"]
+pub static mut proc: [proc_0; 64] = [proc_0 {
+    lock: Spinlock {
+        locked: 0,
+        name: 0 as *const libc::c_char as *mut libc::c_char,
+        cpu: 0 as *const cpu as *mut cpu,
+    },
+    state: UNUSED,
+    parent: ptr::null_mut(),
+    chan: 0 as *const libc::c_void as *mut libc::c_void,
+    killed: 0,
+    xstate: 0,
+    pid: 0,
+    kstack: 0,
+    sz: 0,
+    pagetable: 0 as *const uint64 as *mut uint64,
+    tf: 0 as *const trapframe as *mut trapframe,
+    context: context {
+        ra: 0,
+        sp: 0,
+        s0: 0,
+        s1: 0,
+        s2: 0,
+        s3: 0,
+        s4: 0,
+        s5: 0,
+        s6: 0,
+        s7: 0,
+        s8: 0,
+        s9: 0,
+        s10: 0,
+        s11: 0,
+    },
+    ofile: [0 as *const File as *mut File; 16],
+    cwd: 0 as *const inode as *mut inode,
+    name: [0; 16],
+}; 64];
 #[no_mangle]
 pub static mut initproc: *mut proc_0 = ptr::null_mut();
 #[no_mangle]
 pub static mut nextpid: libc::c_int = 1 as libc::c_int;
 #[no_mangle]
-pub static mut pid_lock: spinlock = spinlock {
+pub static mut pid_lock: Spinlock = Spinlock {
     locked: 0,
     name: 0 as *const libc::c_char as *mut libc::c_char,
     cpu: 0 as *const cpu as *mut cpu,
@@ -778,9 +775,9 @@ pub unsafe extern "C" fn exit(mut status: libc::c_int) {
     let mut fd: libc::c_int = 0 as libc::c_int;
     while fd < NOFILE {
         if !(*p).ofile[fd as usize].is_null() {
-            let mut f: *mut file = (*p).ofile[fd as usize];
+            let mut f: *mut File = (*p).ofile[fd as usize];
             fileclose(f);
-            (*p).ofile[fd as usize] = 0 as *mut file
+            (*p).ofile[fd as usize] = 0 as *mut File
         }
         fd += 1
     }
@@ -790,7 +787,7 @@ pub unsafe extern "C" fn exit(mut status: libc::c_int) {
     (*p).cwd = 0 as *mut inode;
     // we might re-parent a child to init. we can't be precise about
     // waking up init, since we can't acquire its lock once we've
-    // acquired any other proc lock. so wake up init whether that's
+    // spinlock::acquired any other proc lock. so wake up init whether that's
     // necessary or not. init may miss this wakeup, but that seems
     // harmless.
     acquire(&mut (*initproc).lock);
@@ -898,7 +895,7 @@ pub unsafe extern "C" fn scheduler() -> ! {
             acquire(&mut (*p).lock);
             if (*p).state as libc::c_uint == RUNNABLE as libc::c_int as libc::c_uint {
                 // Switch to chosen process.  It is the process's job
-                // to release its lock and then reacquire it
+                // to release its lock and then respinlock::acquire it
                 // before jumping back to us.
                 (*p).state = RUNNING;
                 (*c).proc_0 = p;
@@ -968,9 +965,9 @@ pub unsafe extern "C" fn forkret() {
     usertrapret();
 }
 // Atomically release lock and sleep on chan.
-// Reacquires lock when awakened.
+// Respinlock::acquires lock when awakened.
 #[no_mangle]
-pub unsafe extern "C" fn sleep(mut chan: *mut libc::c_void, mut lk: *mut spinlock) {
+pub unsafe extern "C" fn sleep(mut chan: *mut libc::c_void, mut lk: *mut Spinlock) {
     let mut p: *mut proc_0 = myproc();
     // Must acquire p->lock in order to
     // change p->state and then call sched.
@@ -978,7 +975,7 @@ pub unsafe extern "C" fn sleep(mut chan: *mut libc::c_void, mut lk: *mut spinloc
     // guaranteed that we won't miss any wakeup
     // (wakeup locks p->lock),
     // so it's okay to release lk.
-    if lk != &mut (*p).lock as *mut spinlock {
+    if lk != &mut (*p).lock as *mut Spinlock {
         //DOC: sleeplock0
         acquire(&mut (*p).lock); //DOC: sleeplock1
         release(lk);
@@ -989,8 +986,8 @@ pub unsafe extern "C" fn sleep(mut chan: *mut libc::c_void, mut lk: *mut spinloc
     sched();
     // Tidy up.
     (*p).chan = ptr::null_mut();
-    // Reacquire original lock.
-    if lk != &mut (*p).lock as *mut spinlock {
+    // Respinlock::acquire original lock.
+    if lk != &mut (*p).lock as *mut Spinlock {
         release(&mut (*p).lock);
         acquire(lk);
     };

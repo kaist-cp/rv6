@@ -1,31 +1,35 @@
 use crate::libc;
 use core::ptr;
+use crate::printf::printf;
+use crate::spinlock::{ Spinlock, acquire, initlock, release };
+use crate::proc::cpu;
+
 extern "C" {
-    pub type cpu;
+    // pub type cpu;
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
     // spinlock.c
-    #[no_mangle]
-    fn acquire(_: *mut spinlock);
-    #[no_mangle]
-    fn initlock(_: *mut spinlock, _: *mut libc::c_char);
-    #[no_mangle]
-    fn release(_: *mut spinlock);
+    // #[no_mangle]
+    // fn acquire(_: *mut spinlock);
+    // #[no_mangle]
+    // fn initlock(_: *mut spinlock, _: *mut libc::c_char);
+    // #[no_mangle]
+    // fn release(_: *mut spinlock);
     #[no_mangle]
     fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
-    #[no_mangle]
-    static mut end: [libc::c_char; 0];
 }
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
+
+pub static mut end: [u8;0] = [0; 0];
 // Mutual exclusion lock.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct spinlock {
-    pub locked: uint,
-    pub name: *mut libc::c_char,
-    pub cpu: *mut cpu,
-}
+// #[derive(Copy, Clone)]
+// #[repr(C)]
+// pub struct spinlock {
+//     pub locked: uint,
+//     pub name: *mut libc::c_char,
+//     pub cpu: *mut cpu,
+// }
 // first address after kernel.
 // defined by kernel.ld.
 #[derive(Copy, Clone)]
@@ -36,7 +40,7 @@ pub struct run {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed {
-    pub lock: spinlock,
+    pub lock: Spinlock,
     pub freelist: *mut run,
 }
 // Physical memory layout
@@ -69,7 +73,7 @@ pub const PHYSTOP: libc::c_long =
 pub const PGSIZE: libc::c_int = 4096 as libc::c_int;
 #[no_mangle]
 pub static mut kmem: C2RustUnnamed = C2RustUnnamed {
-    lock: spinlock {
+    lock: Spinlock {
         locked: 0,
         name: 0 as *const libc::c_char as *mut libc::c_char,
         cpu: 0 as *const cpu as *mut cpu,
@@ -82,6 +86,13 @@ pub unsafe extern "C" fn kinit() {
         &mut kmem.lock,
         b"kmem\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
+    
+    // To successfully boot rv6 and pass usertests, two printf()s with b"\x00" 
+    // and variable `a` are needed. See https://github.com/kaist-cp/rv6/issues/8
+    let a = 10;
+    printf(b"\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    printf(b"\x00" as *const u8 as *const libc::c_char as *mut libc::c_char, a);
+
     freerange(
         end.as_mut_ptr() as *mut libc::c_void,
         PHYSTOP as *mut libc::c_void,
@@ -97,6 +108,7 @@ pub unsafe extern "C" fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: 
         .wrapping_add(PGSIZE as libc::c_ulong)
         .wrapping_sub(1 as libc::c_int as libc::c_ulong)
         & !(PGSIZE - 1 as libc::c_int) as libc::c_ulong) as *mut libc::c_char;
+    
     while p.offset(PGSIZE as isize) <= pa_end as *mut libc::c_char {
         kfree(p as *mut libc::c_void);
         p = p.offset(PGSIZE as isize)

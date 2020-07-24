@@ -1,12 +1,15 @@
 use crate::libc;
+use crate::spinlock::{ Spinlock, acquire, initlock, release };
+use crate::proc::{ cpu, proc_0 };
+use crate::file::devsw;
 extern "C" {
     pub type pipe;
-    #[no_mangle]
-    static mut devsw: [devsw; 0];
+    // #[no_mangle]
+    // static mut devsw: [devsw; 0];
     #[no_mangle]
     fn myproc() -> *mut proc_0;
     #[no_mangle]
-    fn sleep(_: *mut libc::c_void, _: *mut spinlock);
+    fn sleep(_: *mut libc::c_void, _: *mut Spinlock);
     #[no_mangle]
     fn wakeup(_: *mut libc::c_void);
     #[no_mangle]
@@ -26,12 +29,12 @@ extern "C" {
     #[no_mangle]
     fn procdump();
     // spinlock.c
-    #[no_mangle]
-    fn acquire(_: *mut spinlock);
-    #[no_mangle]
-    fn initlock(_: *mut spinlock, _: *mut libc::c_char);
-    #[no_mangle]
-    fn release(_: *mut spinlock);
+    // #[no_mangle]
+    // fn acquire(_: *mut spinlock);
+    // #[no_mangle]
+    // fn initlock(_: *mut spinlock, _: *mut libc::c_char);
+    // #[no_mangle]
+    // fn release(_: *mut spinlock);
     // uart.c
     #[no_mangle]
     fn uartinit();
@@ -41,104 +44,104 @@ extern "C" {
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 // Mutual exclusion lock.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct spinlock {
-    pub locked: uint,
-    pub name: *mut libc::c_char,
-    pub cpu: *mut cpu,
-}
+// #[derive(Copy, Clone)]
+// #[repr(C)]
+// pub struct spinlock {
+//     pub locked: uint,
+//     pub name: *mut libc::c_char,
+//     pub cpu: *mut cpu,
+// }
 // Per-CPU state.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cpu {
-    pub proc_0: *mut proc_0,
-    pub scheduler: context,
-    pub noff: libc::c_int,
-    pub intena: libc::c_int,
-}
+// #[derive(Copy, Clone)]
+// #[repr(C)]
+// pub struct cpu {
+//     pub proc_0: *mut proc_0,
+//     pub scheduler: context,
+//     pub noff: libc::c_int,
+//     pub intena: libc::c_int,
+// }
 // Saved registers for kernel context switches.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct context {
-    pub ra: uint64,
-    pub sp: uint64,
-    pub s0: uint64,
-    pub s1: uint64,
-    pub s2: uint64,
-    pub s3: uint64,
-    pub s4: uint64,
-    pub s5: uint64,
-    pub s6: uint64,
-    pub s7: uint64,
-    pub s8: uint64,
-    pub s9: uint64,
-    pub s10: uint64,
-    pub s11: uint64,
-}
+// #[derive(Copy, Clone)]
+// #[repr(C)]
+// pub struct context {
+//     pub ra: uint64,
+//     pub sp: uint64,
+//     pub s0: uint64,
+//     pub s1: uint64,
+//     pub s2: uint64,
+//     pub s3: uint64,
+//     pub s4: uint64,
+//     pub s5: uint64,
+//     pub s6: uint64,
+//     pub s7: uint64,
+//     pub s8: uint64,
+//     pub s9: uint64,
+//     pub s10: uint64,
+//     pub s11: uint64,
+// }
 // Per-process state
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct proc_0 {
-    pub lock: spinlock,
-    pub state: procstate,
-    pub parent: *mut proc_0,
-    pub chan: *mut libc::c_void,
-    pub killed: libc::c_int,
-    pub xstate: libc::c_int,
-    pub pid: libc::c_int,
-    pub kstack: uint64,
-    pub sz: uint64,
-    pub pagetable: pagetable_t,
-    pub tf: *mut trapframe,
-    pub context: context,
-    pub ofile: [*mut file; 16],
-    pub cwd: *mut inode,
-    pub name: [libc::c_char; 16],
-}
+// #[derive(Copy, Clone)]
+// #[repr(C)]
+// pub struct proc_0 {
+//     pub lock: Spinlock,
+//     pub state: procstate,
+//     pub parent: *mut proc_0,
+//     pub chan: *mut libc::c_void,
+//     pub killed: libc::c_int,
+//     pub xstate: libc::c_int,
+//     pub pid: libc::c_int,
+//     pub kstack: uint64,
+//     pub sz: uint64,
+//     pub pagetable: pagetable_t,
+//     pub tf: *mut trapframe,
+//     pub context: context,
+//     pub ofile: [*mut file; 16],
+//     pub cwd: *mut inode,
+//     pub name: [libc::c_char; 16],
+// }
 // FD_DEVICE
 // in-memory copy of an inode
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct inode {
-    pub dev: uint,
-    pub inum: uint,
-    pub ref_0: libc::c_int,
-    pub lock: sleeplock,
-    pub valid: libc::c_int,
-    pub type_0: libc::c_short,
-    pub major: libc::c_short,
-    pub minor: libc::c_short,
-    pub nlink: libc::c_short,
-    pub size: uint,
-    pub addrs: [uint; 13],
-}
+// #[derive(Copy, Clone)]
+// #[repr(C)]
+// pub struct inode {
+//     pub dev: uint,
+//     pub inum: uint,
+//     pub ref_0: libc::c_int,
+//     pub lock: sleeplock,
+//     pub valid: libc::c_int,
+//     pub type_0: libc::c_short,
+//     pub major: libc::c_short,
+//     pub minor: libc::c_short,
+//     pub nlink: libc::c_short,
+//     pub size: uint,
+//     pub addrs: [uint; 13],
+// }
 // Long-term locks for processes
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sleeplock {
-    pub locked: uint,
-    pub lk: spinlock,
-    pub name: *mut libc::c_char,
-    pub pid: libc::c_int,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct file {
-    pub type_0: C2RustUnnamed,
-    pub ref_0: libc::c_int,
-    pub readable: libc::c_char,
-    pub writable: libc::c_char,
-    pub pipe: *mut pipe,
-    pub ip: *mut inode,
-    pub off: uint,
-    pub major: libc::c_short,
-}
+// #[derive(Copy, Clone)]
+// #[repr(C)]
+// pub struct sleeplock {
+//     pub locked: uint,
+//     pub lk: Spinlock,
+//     pub name: *mut libc::c_char,
+//     pub pid: libc::c_int,
+// }
+// #[derive(Copy, Clone)]
+// #[repr(C)]
+// pub struct file {
+//     pub type_0: C2RustUnnamed,
+//     pub ref_0: libc::c_int,
+//     pub readable: libc::c_char,
+//     pub writable: libc::c_char,
+//     pub pipe: *mut pipe,
+//     pub ip: *mut inode,
+//     pub off: uint,
+//     pub major: libc::c_short,
+// }
 pub type C2RustUnnamed = libc::c_uint;
-pub const FD_DEVICE: C2RustUnnamed = 3;
-pub const FD_INODE: C2RustUnnamed = 2;
-pub const FD_PIPE: C2RustUnnamed = 1;
-pub const FD_NONE: C2RustUnnamed = 0;
+// pub const FD_DEVICE: C2RustUnnamed = 3;
+// pub const FD_INODE: C2RustUnnamed = 2;
+// pub const FD_PIPE: C2RustUnnamed = 1;
+// pub const FD_NONE: C2RustUnnamed = 0;
 // per-process data for the trap handling code in trampoline.S.
 // sits in a page by itself just under the trampoline page in the
 // user page table. not specially mapped in the kernel page table.
@@ -152,66 +155,66 @@ pub const FD_NONE: C2RustUnnamed = 0;
 // the trapframe includes callee-saved user registers like s0-s11 because the
 // return-to-user path via usertrapret() doesn't return through
 // the entire kernel call stack.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct trapframe {
-    pub kernel_satp: uint64,
-    pub kernel_sp: uint64,
-    pub kernel_trap: uint64,
-    pub epc: uint64,
-    pub kernel_hartid: uint64,
-    pub ra: uint64,
-    pub sp: uint64,
-    pub gp: uint64,
-    pub tp: uint64,
-    pub t0: uint64,
-    pub t1: uint64,
-    pub t2: uint64,
-    pub s0: uint64,
-    pub s1: uint64,
-    pub a0: uint64,
-    pub a1: uint64,
-    pub a2: uint64,
-    pub a3: uint64,
-    pub a4: uint64,
-    pub a5: uint64,
-    pub a6: uint64,
-    pub a7: uint64,
-    pub s2: uint64,
-    pub s3: uint64,
-    pub s4: uint64,
-    pub s5: uint64,
-    pub s6: uint64,
-    pub s7: uint64,
-    pub s8: uint64,
-    pub s9: uint64,
-    pub s10: uint64,
-    pub s11: uint64,
-    pub t3: uint64,
-    pub t4: uint64,
-    pub t5: uint64,
-    pub t6: uint64,
-}
-pub type pagetable_t = *mut uint64;
-pub type procstate = libc::c_uint;
-pub const ZOMBIE: procstate = 4;
-pub const RUNNING: procstate = 3;
-pub const RUNNABLE: procstate = 2;
-pub const SLEEPING: procstate = 1;
-pub const UNUSED: procstate = 0;
+// #[derive(Copy, Clone)]
+// #[repr(C)]
+// pub struct trapframe {
+//     pub kernel_satp: uint64,
+//     pub kernel_sp: uint64,
+//     pub kernel_trap: uint64,
+//     pub epc: uint64,
+//     pub kernel_hartid: uint64,
+//     pub ra: uint64,
+//     pub sp: uint64,
+//     pub gp: uint64,
+//     pub tp: uint64,
+//     pub t0: uint64,
+//     pub t1: uint64,
+//     pub t2: uint64,
+//     pub s0: uint64,
+//     pub s1: uint64,
+//     pub a0: uint64,
+//     pub a1: uint64,
+//     pub a2: uint64,
+//     pub a3: uint64,
+//     pub a4: uint64,
+//     pub a5: uint64,
+//     pub a6: uint64,
+//     pub a7: uint64,
+//     pub s2: uint64,
+//     pub s3: uint64,
+//     pub s4: uint64,
+//     pub s5: uint64,
+//     pub s6: uint64,
+//     pub s7: uint64,
+//     pub s8: uint64,
+//     pub s9: uint64,
+//     pub s10: uint64,
+//     pub s11: uint64,
+//     pub t3: uint64,
+//     pub t4: uint64,
+//     pub t5: uint64,
+//     pub t6: uint64,
+// }
+// pub type pagetable_t = *mut uint64;
+// pub type procstate = libc::c_uint;
+// pub const ZOMBIE: procstate = 4;
+// pub const RUNNING: procstate = 3;
+// pub const RUNNABLE: procstate = 2;
+// pub const SLEEPING: procstate = 1;
+// pub const UNUSED: procstate = 0;
 // map major device number to device functions.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct devsw {
-    pub read:
-        Option<unsafe extern "C" fn(_: libc::c_int, _: uint64, _: libc::c_int) -> libc::c_int>,
-    pub write:
-        Option<unsafe extern "C" fn(_: libc::c_int, _: uint64, _: libc::c_int) -> libc::c_int>,
-}
+// #[derive(Copy, Clone)]
+// #[repr(C)]
+// pub struct devsw {
+//     pub read:
+//         Option<unsafe extern "C" fn(_: libc::c_int, _: uint64, _: libc::c_int) -> libc::c_int>,
+//     pub write:
+//         Option<unsafe extern "C" fn(_: libc::c_int, _: uint64, _: libc::c_int) -> libc::c_int>,
+// }
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed_0 {
-    pub lock: spinlock,
+    pub lock: Spinlock,
     pub buf: [libc::c_char; 128],
     pub r: uint,
     pub w: uint,
@@ -255,7 +258,7 @@ pub const INPUT_BUF: libc::c_int = 128 as libc::c_int;
 // Edit index
 #[no_mangle]
 pub static mut cons: C2RustUnnamed_0 = C2RustUnnamed_0 {
-    lock: spinlock {
+    lock: Spinlock {
         locked: 0,
         name: 0 as *const libc::c_char as *mut libc::c_char,
         cpu: 0 as *const cpu as *mut cpu,
