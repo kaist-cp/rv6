@@ -101,7 +101,7 @@ unsafe extern "C" fn w_mscratch(mut x: uint64) {
 unsafe extern "C" fn w_tp(mut x: uint64) {
     llvm_asm!("mv tp, $0" : : "r" (x) : : "volatile");
 }
-// // entry.S needs one stack per CPU.
+// entry.S needs one stack per CPU.
 #[repr(align(16))]
 pub struct Stack([libc::c_char; 32768]);
 #[no_mangle]

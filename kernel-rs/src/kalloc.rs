@@ -1,17 +1,20 @@
 use crate::libc;
 use core::ptr;
 use crate::printf::printf;
+use crate::spinlock::{ Spinlock, acquire, initlock, release };
+use crate::proc::cpu;
+
 extern "C" {
-    pub type cpu;
+    // pub type cpu;
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
     // spinlock.c
-    #[no_mangle]
-    fn acquire(_: *mut spinlock);
-    #[no_mangle]
-    fn initlock(_: *mut spinlock, _: *mut libc::c_char);
-    #[no_mangle]
-    fn release(_: *mut spinlock);
+    // #[no_mangle]
+    // fn acquire(_: *mut spinlock);
+    // #[no_mangle]
+    // fn initlock(_: *mut spinlock, _: *mut libc::c_char);
+    // #[no_mangle]
+    // fn release(_: *mut spinlock);
     #[no_mangle]
     fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
 }
@@ -20,13 +23,13 @@ pub type uint64 = libc::c_ulong;
 
 pub static mut end: [u8;0] = [0; 0];
 // Mutual exclusion lock.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct spinlock {
-    pub locked: uint,
-    pub name: *mut libc::c_char,
-    pub cpu: *mut cpu,
-}
+// #[derive(Copy, Clone)]
+// #[repr(C)]
+// pub struct spinlock {
+//     pub locked: uint,
+//     pub name: *mut libc::c_char,
+//     pub cpu: *mut cpu,
+// }
 // first address after kernel.
 // defined by kernel.ld.
 #[derive(Copy, Clone)]
@@ -37,7 +40,7 @@ pub struct run {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed {
-    pub lock: spinlock,
+    pub lock: Spinlock,
     pub freelist: *mut run,
 }
 // Physical memory layout
@@ -70,7 +73,7 @@ pub const PHYSTOP: libc::c_long =
 pub const PGSIZE: libc::c_int = 4096 as libc::c_int;
 #[no_mangle]
 pub static mut kmem: C2RustUnnamed = C2RustUnnamed {
-    lock: spinlock {
+    lock: Spinlock {
         locked: 0,
         name: 0 as *const libc::c_char as *mut libc::c_char,
         cpu: 0 as *const cpu as *mut cpu,

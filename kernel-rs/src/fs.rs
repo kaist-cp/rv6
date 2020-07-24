@@ -1,16 +1,23 @@
-use crate::libc;
+use crate::{ libc, buf, sleeplock, spinlock, proc, file, stat };
+use spinlock::Spinlock;
+use sleeplock::Sleeplock;
+use buf::Buf;
+use proc::{ proc_0, cpu };
+use file::inode;
 use core::ptr;
+use stat::Stat;
+
 extern "C" {
     pub type pipe;
     #[no_mangle]
-    fn bread(_: uint, _: uint) -> *mut buf;
+    fn bread(_: uint, _: uint) -> *mut Buf;
     #[no_mangle]
-    fn brelse(_: *mut buf);
+    fn brelse(_: *mut Buf);
     // log.c
     #[no_mangle]
     fn initlog(_: libc::c_int, _: *mut superblock);
     #[no_mangle]
-    fn log_write(_: *mut buf);
+    fn log_write(_: *mut Buf);
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
     #[no_mangle]
@@ -29,22 +36,22 @@ extern "C" {
         src: uint64,
         len: uint64,
     ) -> libc::c_int;
-    // spinlock.c
+    // Spinlock.c
     #[no_mangle]
-    fn acquire(_: *mut spinlock);
+    fn acquire(_: *mut Spinlock);
     #[no_mangle]
-    fn initlock(_: *mut spinlock, _: *mut libc::c_char);
+    fn initlock(_: *mut Spinlock, _: *mut libc::c_char);
     #[no_mangle]
-    fn release(_: *mut spinlock);
-    // sleeplock.c
+    fn release(_: *mut Spinlock);
+    // Sleeplock.c
     #[no_mangle]
-    fn acquiresleep(_: *mut sleeplock);
+    fn acquiresleep(_: *mut Sleeplock);
     #[no_mangle]
-    fn releasesleep(_: *mut sleeplock);
+    fn releasesleep(_: *mut Sleeplock);
     #[no_mangle]
-    fn holdingsleep(_: *mut sleeplock) -> libc::c_int;
+    fn holdingsleep(_: *mut Sleeplock) -> libc::c_int;
     #[no_mangle]
-    fn initsleeplock(_: *mut sleeplock, _: *mut libc::c_char);
+    fn initsleeplock(_: *mut Sleeplock, _: *mut libc::c_char);
     #[no_mangle]
     fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: uint) -> *mut libc::c_void;
     #[no_mangle]
@@ -59,190 +66,13 @@ pub type ushort = libc::c_ushort;
 pub type uchar = libc::c_uchar;
 pub type uint64 = libc::c_ulong;
 pub type pagetable_t = *mut uint64;
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct buf {
-    pub valid: libc::c_int,
-    pub disk: libc::c_int,
-    pub dev: uint,
-    pub blockno: uint,
-    pub lock: sleeplock,
-    pub refcnt: uint,
-    pub prev: *mut buf,
-    pub next: *mut buf,
-    pub qnext: *mut buf,
-    pub data: [uchar; 1024],
-}
-// Long-term locks for processes
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sleeplock {
-    pub locked: uint,
-    pub lk: spinlock,
-    pub name: *mut libc::c_char,
-    pub pid: libc::c_int,
-}
-// Mutual exclusion lock.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct spinlock {
-    pub locked: uint,
-    pub name: *mut libc::c_char,
-    pub cpu: *mut cpu,
-}
-// Per-CPU state.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cpu {
-    pub proc_0: *mut proc_0,
-    pub scheduler: context,
-    pub noff: libc::c_int,
-    pub intena: libc::c_int,
-}
-// Saved registers for kernel context switches.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct context {
-    pub ra: uint64,
-    pub sp: uint64,
-    pub s0: uint64,
-    pub s1: uint64,
-    pub s2: uint64,
-    pub s3: uint64,
-    pub s4: uint64,
-    pub s5: uint64,
-    pub s6: uint64,
-    pub s7: uint64,
-    pub s8: uint64,
-    pub s9: uint64,
-    pub s10: uint64,
-    pub s11: uint64,
-}
-// Per-process state
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct proc_0 {
-    pub lock: spinlock,
-    pub state: procstate,
-    pub parent: *mut proc_0,
-    pub chan: *mut libc::c_void,
-    pub killed: libc::c_int,
-    pub xstate: libc::c_int,
-    pub pid: libc::c_int,
-    pub kstack: uint64,
-    pub sz: uint64,
-    pub pagetable: pagetable_t,
-    pub tf: *mut trapframe,
-    pub context: context,
-    pub ofile: [*mut file; 16],
-    pub cwd: *mut inode,
-    pub name: [libc::c_char; 16],
-}
-// FD_DEVICE
-// in-memory copy of an inode
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct inode {
-    pub dev: uint,
-    pub inum: uint,
-    pub ref_0: libc::c_int,
-    pub lock: sleeplock,
-    pub valid: libc::c_int,
-    pub type_0: libc::c_short,
-    pub major: libc::c_short,
-    pub minor: libc::c_short,
-    pub nlink: libc::c_short,
-    pub size: uint,
-    pub addrs: [uint; 13],
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct file {
-    pub type_0: C2RustUnnamed,
-    pub ref_0: libc::c_int,
-    pub readable: libc::c_char,
-    pub writable: libc::c_char,
-    pub pipe: *mut pipe,
-    pub ip: *mut inode,
-    pub off: uint,
-    pub major: libc::c_short,
-}
+
 pub type C2RustUnnamed = libc::c_uint;
 pub const FD_DEVICE: C2RustUnnamed = 3;
 pub const FD_INODE: C2RustUnnamed = 2;
 pub const FD_PIPE: C2RustUnnamed = 1;
 pub const FD_NONE: C2RustUnnamed = 0;
-// per-process data for the trap handling code in trampoline.S.
-// sits in a page by itself just under the trampoline page in the
-// user page table. not specially mapped in the kernel page table.
-// the sscratch register points here.
-// uservec in trampoline.S saves user registers in the trapframe,
-// then initializes registers from the trapframe's
-// kernel_sp, kernel_hartid, kernel_satp, and jumps to kernel_trap.
-// usertrapret() and userret in trampoline.S set up
-// the trapframe's kernel_*, restore user registers from the
-// trapframe, switch to the user page table, and enter user space.
-// the trapframe includes callee-saved user registers like s0-s11 because the
-// return-to-user path via usertrapret() doesn't return through
-// the entire kernel call stack.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct trapframe {
-    pub kernel_satp: uint64,
-    pub kernel_sp: uint64,
-    pub kernel_trap: uint64,
-    pub epc: uint64,
-    pub kernel_hartid: uint64,
-    pub ra: uint64,
-    pub sp: uint64,
-    pub gp: uint64,
-    pub tp: uint64,
-    pub t0: uint64,
-    pub t1: uint64,
-    pub t2: uint64,
-    pub s0: uint64,
-    pub s1: uint64,
-    pub a0: uint64,
-    pub a1: uint64,
-    pub a2: uint64,
-    pub a3: uint64,
-    pub a4: uint64,
-    pub a5: uint64,
-    pub a6: uint64,
-    pub a7: uint64,
-    pub s2: uint64,
-    pub s3: uint64,
-    pub s4: uint64,
-    pub s5: uint64,
-    pub s6: uint64,
-    pub s7: uint64,
-    pub s8: uint64,
-    pub s9: uint64,
-    pub s10: uint64,
-    pub s11: uint64,
-    pub t3: uint64,
-    pub t4: uint64,
-    pub t5: uint64,
-    pub t6: uint64,
-}
-pub type procstate = libc::c_uint;
-pub const ZOMBIE: procstate = 4;
-pub const RUNNING: procstate = 3;
-pub const RUNNABLE: procstate = 2;
-pub const SLEEPING: procstate = 1;
-pub const UNUSED: procstate = 0;
-// Directory
-// File
-// Device
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct stat {
-    pub dev: libc::c_int,
-    pub ino: uint,
-    pub type_0: libc::c_short,
-    pub nlink: libc::c_short,
-    pub size: uint64,
-}
+
 // block size
 // Disk layout:
 // [ boot block | super block | log | inode blocks |
@@ -350,7 +180,7 @@ pub struct dinode {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed_0 {
-    pub lock: spinlock,
+    pub lock: Spinlock,
     pub inode: [inode; 50],
 }
 // maximum number of processes
@@ -391,7 +221,7 @@ pub static mut sb: superblock = superblock {
 };
 // Read the super block.
 unsafe extern "C" fn readsb(mut dev: libc::c_int, mut sb_0: *mut superblock) {
-    let mut bp: *mut buf = ptr::null_mut();
+    let mut bp: *mut Buf = ptr::null_mut();
     bp = bread(dev as uint, 1 as libc::c_int as uint);
     memmove(
         sb_0 as *mut libc::c_void,
@@ -412,7 +242,7 @@ pub unsafe extern "C" fn fsinit(mut dev: libc::c_int) {
 }
 // Zero a block.
 unsafe extern "C" fn bzero(mut dev: libc::c_int, mut bno: libc::c_int) {
-    let mut bp: *mut buf = ptr::null_mut();
+    let mut bp: *mut Buf = ptr::null_mut();
     bp = bread(dev as uint, bno as uint);
     memset(
         (*bp).data.as_mut_ptr() as *mut libc::c_void,
@@ -428,7 +258,7 @@ unsafe extern "C" fn balloc(mut dev: uint) -> uint {
     let mut b: libc::c_int = 0;
     let mut bi: libc::c_int = 0;
     let mut m: libc::c_int = 0;
-    let mut bp: *mut buf = ptr::null_mut();
+    let mut bp: *mut Buf = ptr::null_mut();
     bp = ptr::null_mut();
     b = 0 as libc::c_int;
     while (b as libc::c_uint) < sb.size {
@@ -454,7 +284,7 @@ unsafe extern "C" fn balloc(mut dev: uint) -> uint {
 }
 // Free a disk block.
 unsafe extern "C" fn bfree(mut dev: libc::c_int, mut b: uint) {
-    let mut bp: *mut buf = ptr::null_mut();
+    let mut bp: *mut Buf = ptr::null_mut();
     let mut bi: libc::c_int = 0;
     let mut m: libc::c_int = 0;
     bp = bread(
@@ -474,7 +304,7 @@ unsafe extern "C" fn bfree(mut dev: libc::c_int, mut b: uint) {
 }
 #[no_mangle]
 pub static mut icache: C2RustUnnamed_0 = C2RustUnnamed_0 {
-    lock: spinlock {
+    lock: Spinlock {
         locked: 0,
         name: 0 as *const libc::c_char as *mut libc::c_char,
         cpu: 0 as *const cpu as *mut cpu,
@@ -483,9 +313,10 @@ pub static mut icache: C2RustUnnamed_0 = C2RustUnnamed_0 {
         dev: 0,
         inum: 0,
         ref_0: 0,
-        lock: sleeplock {
+        lock: Sleeplock {
             locked: 0,
-            lk: spinlock {
+            lk: Spinlock {
+
                 locked: 0,
                 name: 0 as *const libc::c_char as *mut libc::c_char,
                 cpu: 0 as *const cpu as *mut cpu,
@@ -524,7 +355,7 @@ pub unsafe extern "C" fn iinit() {
 #[no_mangle]
 pub unsafe extern "C" fn ialloc(mut dev: uint, mut type_0: libc::c_short) -> *mut inode {
     let mut inum: libc::c_int = 0;
-    let mut bp: *mut buf = ptr::null_mut();
+    let mut bp: *mut Buf = ptr::null_mut();
     let mut dip: *mut dinode = ptr::null_mut();
     inum = 1 as libc::c_int;
     while (inum as libc::c_uint) < sb.ninodes {
@@ -566,7 +397,7 @@ pub unsafe extern "C" fn ialloc(mut dev: uint, mut type_0: libc::c_short) -> *mu
 // Caller must hold ip->lock.
 #[no_mangle]
 pub unsafe extern "C" fn iupdate(mut ip: *mut inode) {
-    let mut bp: *mut buf = ptr::null_mut();
+    let mut bp: *mut Buf = ptr::null_mut();
     let mut dip: *mut dinode = ptr::null_mut();
     bp = bread(
         (*ip).dev,
@@ -643,7 +474,7 @@ pub unsafe extern "C" fn idup(mut ip: *mut inode) -> *mut inode {
 // Reads the inode from disk if necessary.
 #[no_mangle]
 pub unsafe extern "C" fn ilock(mut ip: *mut inode) {
-    let mut bp: *mut buf = ptr::null_mut();
+    let mut bp: *mut Buf = ptr::null_mut();
     let mut dip: *mut dinode = ptr::null_mut();
     if ip.is_null() || (*ip).ref_0 < 1 as libc::c_int {
         panic(b"ilock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -736,7 +567,7 @@ pub unsafe extern "C" fn iunlockput(mut ip: *mut inode) {
 unsafe extern "C" fn bmap(mut ip: *mut inode, mut bn: uint) -> uint {
     let mut addr: uint = 0;
     let mut a: *mut uint = ptr::null_mut();
-    let mut bp: *mut buf = ptr::null_mut();
+    let mut bp: *mut Buf = ptr::null_mut();
     if bn < NDIRECT as libc::c_uint {
         addr = (*ip).addrs[bn as usize];
         if addr == 0 as libc::c_int as libc::c_uint {
@@ -786,7 +617,7 @@ unsafe extern "C" fn bmap(mut ip: *mut inode, mut bn: uint) -> uint {
 unsafe extern "C" fn itrunc(mut ip: *mut inode) {
     let mut i: libc::c_int = 0;
     let mut j: libc::c_int = 0;
-    let mut bp: *mut buf = ptr::null_mut();
+    let mut bp: *mut Buf = ptr::null_mut();
     let mut a: *mut uint = ptr::null_mut();
     i = 0 as libc::c_int;
     while i < NDIRECT {
@@ -818,7 +649,7 @@ unsafe extern "C" fn itrunc(mut ip: *mut inode) {
 // Copy stat information from inode.
 // Caller must hold ip->lock.
 #[no_mangle]
-pub unsafe extern "C" fn stati(mut ip: *mut inode, mut st: *mut stat) {
+pub unsafe extern "C" fn stati(mut ip: *mut inode, mut st: *mut Stat) {
     (*st).dev = (*ip).dev as libc::c_int;
     (*st).ino = (*ip).inum;
     (*st).type_0 = (*ip).type_0;
@@ -839,7 +670,7 @@ pub unsafe extern "C" fn readi(
 ) -> libc::c_int {
     let mut tot: uint = 0;
     let mut m: uint = 0;
-    let mut bp: *mut buf = ptr::null_mut();
+    let mut bp: *mut Buf = ptr::null_mut();
     if off > (*ip).size || off.wrapping_add(n) < off {
         return -(1 as libc::c_int);
     }
@@ -894,7 +725,7 @@ pub unsafe extern "C" fn writei(
 ) -> libc::c_int {
     let mut tot: uint = 0;
     let mut m: uint = 0;
-    let mut bp: *mut buf = ptr::null_mut();
+    let mut bp: *mut Buf = ptr::null_mut();
     if off > (*ip).size || off.wrapping_add(n) < off {
         return -(1 as libc::c_int);
     }

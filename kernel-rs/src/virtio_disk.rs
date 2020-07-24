@@ -25,38 +25,6 @@ pub type uchar = libc::c_uchar;
 pub type uint16 = libc::c_ushort;
 pub type uint32 = libc::c_uint;
 pub type uint64 = libc::c_ulong;
-// #[derive(Copy, Clone)]
-// #[repr(C)]
-// pub struct buf {
-//     pub valid: libc::c_int,
-//     pub disk: libc::c_int,
-//     pub dev: uint,
-//     pub blockno: uint,
-//     pub lock: sleeplock,
-//     pub refcnt: uint,
-//     pub prev: *mut buf,
-//     pub next: *mut buf,
-//     pub qnext: *mut buf,
-//     pub data: [uchar; 1024],
-// }
-// // Long-term locks for processes
-// #[derive(Copy, Clone)]
-// #[repr(C)]
-// pub struct sleeplock {
-//     pub locked: uint,
-//     pub lk: spinlock,
-//     pub name: *mut libc::c_char,
-//     pub pid: libc::c_int,
-// }
-// // Mutual exclusion lock.
-// #[derive(Copy, Clone)]
-// #[repr(C)]
-// pub struct spinlock {
-//     pub locked: uint,
-//     pub name: *mut libc::c_char,
-//     pub cpu: *mut cpu,
-// }
-//
 // driver for qemu's virtio disk device.
 // uses qemu's mmio interface to virtio.
 // qemu presents a "legacy" virtio interface.

@@ -89,6 +89,7 @@ pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
 pub type uint64 = libc::c_ulong;
 pub type pagetable_t = *mut uint64;
+<<<<<<< HEAD
 // // Mutual exclusion lock.
 // #[derive(Copy, Clone)]
 // #[repr(C)]
@@ -98,6 +99,9 @@ pub type pagetable_t = *mut uint64;
 //     pub cpu: *mut cpu,
 // }
 // Per-CPU state.
+=======
+
+>>>>>>> 06fd0fd378579c7297307f899f5c2fc0a92117c0
 #[derive(Copy, Clone)]
 // #[repr(C)]
 pub struct cpu {
