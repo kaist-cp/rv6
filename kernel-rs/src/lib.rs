@@ -62,7 +62,6 @@ mod uart;
 mod utils;
 mod virtio_disk;
 mod vm;
-
 mod stat;
 
 #[cfg(test)]
