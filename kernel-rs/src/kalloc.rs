@@ -3,7 +3,6 @@ use crate::printf::printf;
 use crate::proc::cpu;
 use crate::spinlock::{acquire, initlock, release, Spinlock};
 use core::ptr;
-
 extern "C" {
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
@@ -95,7 +94,6 @@ pub unsafe extern "C" fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: 
         .wrapping_add(PGSIZE as libc::c_ulong)
         .wrapping_sub(1 as libc::c_int as libc::c_ulong)
         & !(PGSIZE - 1 as libc::c_int) as libc::c_ulong) as *mut libc::c_char;
-
     while p.offset(PGSIZE as isize) <= pa_end as *mut libc::c_char {
         kfree(p as *mut libc::c_void);
         p = p.offset(PGSIZE as isize)
