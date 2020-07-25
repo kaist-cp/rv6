@@ -860,7 +860,7 @@ pub unsafe extern "C" fn scheduler() -> ! {
             acquire(&mut (*p).lock);
             if (*p).state as libc::c_uint == RUNNABLE as libc::c_int as libc::c_uint {
                 // Switch to chosen process.  It is the process's job
-                // to release its lock and then respinlock::acquire it
+                // to release its lock and then reacquire it
                 // before jumping back to us.
                 (*p).state = RUNNING;
                 (*c).proc_0 = p;
@@ -930,7 +930,7 @@ pub unsafe extern "C" fn forkret() {
     usertrapret();
 }
 /// Atomically release lock and sleep on chan.
-/// Respinlock::acquires lock when awakened.
+/// reacquires lock when awakened.
 #[no_mangle]
 pub unsafe extern "C" fn sleep(mut chan: *mut libc::c_void, mut lk: *mut Spinlock) {
     let mut p: *mut proc_0 = myproc();
@@ -951,7 +951,7 @@ pub unsafe extern "C" fn sleep(mut chan: *mut libc::c_void, mut lk: *mut Spinloc
     sched();
     // Tidy up.
     (*p).chan = ptr::null_mut();
-    // Respinlock::acquire original lock.
+    // reacquire original lock.
     if lk != &mut (*p).lock as *mut Spinlock {
         release(&mut (*p).lock);
         acquire(lk);

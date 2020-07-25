@@ -3,7 +3,6 @@ use crate::proc::cpu;
 use crate::spinlock::{acquire, initlock, release, Spinlock};
 use core::ptr;
 extern "C" {
-    pub type pipe;
     #[no_mangle]
     fn consputc(_: libc::c_int);
 }

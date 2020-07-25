@@ -10,7 +10,6 @@ use spinlock::{acquire, initlock, release, Spinlock};
 use stat::Stat;
 
 extern "C" {
-    pub type pipe;
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
     #[no_mangle]

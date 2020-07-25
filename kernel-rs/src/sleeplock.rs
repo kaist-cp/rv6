@@ -1,10 +1,6 @@
 use crate::libc;
 use crate::proc::{myproc, sleep, wakeup};
 use crate::spinlock::{acquire, initlock, release, Spinlock};
-extern "C" {
-    pub type file;
-    pub type inode;
-}
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 

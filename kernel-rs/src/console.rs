@@ -3,7 +3,6 @@ use crate::libc;
 use crate::proc::{cpu, myproc, sleep, wakeup};
 use crate::spinlock::{acquire, initlock, release, Spinlock};
 extern "C" {
-    pub type pipe;
     #[no_mangle]
     fn either_copyout(
         user_dst: libc::c_int,
