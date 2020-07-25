@@ -16,7 +16,7 @@ pub struct Sleeplock {
     pub name: *mut libc::c_char,
     pub pid: libc::c_int,
 }
-// Sleeping locks
+/// Sleeping locks
 #[no_mangle]
 pub unsafe extern "C" fn initsleeplock(mut lk: *mut Sleeplock, mut name: *mut libc::c_char) {
     initlock(

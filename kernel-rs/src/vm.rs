@@ -63,13 +63,13 @@ pub const PHYSTOP: libc::c_long =
 pub const TRAMPOLINE: libc::c_long = MAXVA - PGSIZE as libc::c_long;
 // use riscv's sv39 page table scheme.
 pub const SATP_SV39: libc::c_long = (8 as libc::c_long) << 60 as libc::c_int;
-// supervisor address translation and protection;
-// holds the address of the page table.
+/// supervisor address translation and protection;
+/// holds the address of the page table.
 #[inline]
 unsafe extern "C" fn w_satp(mut x: uint64) {
     llvm_asm!("csrw satp, $0" : : "r" (x) : : "volatile");
 }
-// flush the TLB.
+/// flush the TLB.
 #[inline]
 unsafe extern "C" fn sfence_vma() {
     // the zero, zero means flush all TLB entries.
@@ -104,11 +104,10 @@ pub const MAXVA: libc::c_long = (1 as libc::c_long)
 pub static mut kernel_pagetable: pagetable_t = 0 as *const uint64 as *mut uint64;
 // vm.c
 // trampoline.S
-/*
- * create a direct-map page table for the kernel and
- * turn on paging. called early, in supervisor mode.
- * the page allocator is already initialized.
- */
+
+/// create a direct-map page table for the kernel and
+/// turn on paging. called early, in supervisor mode.
+/// the page allocator is already initialized.
 #[no_mangle]
 pub unsafe extern "C" fn kvminit() {
     kernel_pagetable = kalloc() as pagetable_t;
@@ -168,25 +167,25 @@ pub unsafe extern "C" fn kvminit() {
         (PTE_R | PTE_X) as libc::c_int,
     );
 }
-// Switch h/w page table register to the kernel's page table,
-// and enable paging.
+/// Switch h/w page table register to the kernel's page table,
+/// and enable paging.
 #[no_mangle]
 pub unsafe extern "C" fn kvminithart() {
     w_satp(SATP_SV39 as libc::c_ulong | kernel_pagetable as uint64 >> 12 as libc::c_int);
     sfence_vma();
 }
-// Return the address of the PTE in page table pagetable
-// that corresponds to virtual address va.  If alloc!=0,
-// create any required page-table pages.
-//
-// The risc-v Sv39 scheme has three levels of page-table
-// pages. A page-table page contains 512 64-bit PTEs.
-// A 64-bit virtual address is split into five fields:
-//   39..63 -- must be zero.
-//   30..38 -- 9 bits of level-2 index.
-//   21..39 -- 9 bits of level-1 index.
-//   12..20 -- 9 bits of level-0 index.
-//    0..12 -- 12 bits of byte offset within the page.
+/// Return the address of the PTE in page table pagetable
+/// that corresponds to virtual address va.  If alloc!=0,
+/// create any required page-table pages.
+///
+/// The risc-v Sv39 scheme has three levels of page-table
+/// pages. A page-table page contains 512 64-bit PTEs.
+/// A 64-bit virtual address is split into five fields:
+///   39..63 -- must be zero.
+///   30..38 -- 9 bits of level-2 index.
+///   21..39 -- 9 bits of level-1 index.
+///   12..20 -- 9 bits of level-0 index.
+///    0..12 -- 12 bits of byte offset within the page.
 unsafe extern "C" fn walk(
     mut pagetable: pagetable_t,
     mut va: uint64,
@@ -223,9 +222,9 @@ unsafe extern "C" fn walk(
         (va >> (PGSHIFT + 9 as libc::c_int * 0 as libc::c_int) & PXMASK as libc::c_ulong) as isize,
     ) as *mut uint64
 }
-// Look up a virtual address, return the physical address,
-// or 0 if not mapped.
-// Can only be used to look up user pages.
+/// Look up a virtual address, return the physical address,
+/// or 0 if not mapped.
+/// Can only be used to look up user pages.
 #[no_mangle]
 pub unsafe extern "C" fn walkaddr(mut pagetable: pagetable_t, mut va: uint64) -> uint64 {
     let mut pte: *mut pte_t = ptr::null_mut();
@@ -246,9 +245,9 @@ pub unsafe extern "C" fn walkaddr(mut pagetable: pagetable_t, mut va: uint64) ->
     pa = (*pte >> 10 as libc::c_int) << 12 as libc::c_int;
     pa
 }
-// add a mapping to the kernel page table.
-// only used when booting.
-// does not flush TLB or enable paging.
+/// add a mapping to the kernel page table.
+/// only used when booting.
+/// does not flush TLB or enable paging.
 #[no_mangle]
 pub unsafe extern "C" fn kvmmap(
     mut va: uint64,
@@ -260,10 +259,10 @@ pub unsafe extern "C" fn kvmmap(
         panic(b"kvmmap\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     };
 }
-// translate a kernel virtual address to
-// a physical address. only needed for
-// addresses on the stack.
-// assumes va is page aligned.
+/// translate a kernel virtual address to
+/// a physical address. only needed for
+/// addresses on the stack.
+/// assumes va is page aligned.
 #[no_mangle]
 pub unsafe extern "C" fn kvmpa(mut va: uint64) -> uint64 {
     let mut off: uint64 = va.wrapping_rem(PGSIZE as libc::c_ulong);
@@ -279,10 +278,10 @@ pub unsafe extern "C" fn kvmpa(mut va: uint64) -> uint64 {
     pa = (*pte >> 10 as libc::c_int) << 12 as libc::c_int;
     pa.wrapping_add(off)
 }
-// Create PTEs for virtual addresses starting at va that refer to
-// physical addresses starting at pa. va and size might not
-// be page-aligned. Returns 0 on success, -1 if walk() couldn't
-// allocate a needed page-table page.
+/// Create PTEs for virtual addresses starting at va that refer to
+/// physical addresses starting at pa. va and size might not
+/// be page-aligned. Returns 0 on success, -1 if walk() couldn't
+/// allocate a needed page-table page.
 #[no_mangle]
 pub unsafe extern "C" fn mappages(
     mut pagetable: pagetable_t,
@@ -318,9 +317,9 @@ pub unsafe extern "C" fn mappages(
     }
     0 as libc::c_int
 }
-// Remove mappings from a page table. The mappings in
-// the given range must exist. Optionally free the
-// physical memory.
+/// Remove mappings from a page table. The mappings in
+/// the given range must exist. Optionally free the
+/// physical memory.
 #[no_mangle]
 pub unsafe extern "C" fn uvmunmap(
     mut pagetable: pagetable_t,
@@ -371,7 +370,7 @@ pub unsafe extern "C" fn uvmunmap(
         pa = (pa as libc::c_ulong).wrapping_add(PGSIZE as libc::c_ulong) as uint64 as uint64
     }
 }
-// create an empty user page table.
+/// create an empty user page table.
 #[no_mangle]
 pub unsafe extern "C" fn uvmcreate() -> pagetable_t {
     let mut pagetable: pagetable_t = ptr::null_mut();
@@ -389,9 +388,9 @@ pub unsafe extern "C" fn uvmcreate() -> pagetable_t {
     );
     pagetable
 }
-// Load the user initcode into address 0 of pagetable,
-// for the very first process.
-// sz must be less than a page.
+/// Load the user initcode into address 0 of pagetable,
+/// for the very first process.
+/// sz must be less than a page.
 #[no_mangle]
 pub unsafe extern "C" fn uvminit(mut pagetable: pagetable_t, mut src: *mut uchar, mut sz: uint) {
     let mut mem: *mut libc::c_char = ptr::null_mut();
@@ -412,8 +411,8 @@ pub unsafe extern "C" fn uvminit(mut pagetable: pagetable_t, mut src: *mut uchar
     );
     memmove(mem as *mut libc::c_void, src as *const libc::c_void, sz);
 }
-// Allocate PTEs and physical memory to grow process from oldsz to
-// newsz, which need not be page aligned.  Returns new size or 0 on error.
+/// Allocate PTEs and physical memory to grow process from oldsz to
+/// newsz, which need not be page aligned.  Returns new size or 0 on error.
 #[no_mangle]
 pub unsafe extern "C" fn uvmalloc(
     mut pagetable: pagetable_t,
@@ -485,8 +484,8 @@ pub unsafe extern "C" fn uvmdealloc(
     }
     newsz
 }
-// Recursively free page-table pages.
-// All leaf mappings must already have been removed.
+/// Recursively free page-table pages.
+/// All leaf mappings must already have been removed.
 unsafe extern "C" fn freewalk(mut pagetable: pagetable_t) {
     // there are 2^9 = 512 PTEs in a page table.
     let mut i: libc::c_int = 0 as libc::c_int;
@@ -506,19 +505,19 @@ unsafe extern "C" fn freewalk(mut pagetable: pagetable_t) {
     }
     kfree(pagetable as *mut libc::c_void);
 }
-// Free user memory pages,
-// then free page-table pages.
+/// Free user memory pages,
+/// then free page-table pages.
 #[no_mangle]
 pub unsafe extern "C" fn uvmfree(mut pagetable: pagetable_t, mut sz: uint64) {
     uvmunmap(pagetable, 0 as libc::c_int as uint64, sz, 1 as libc::c_int);
     freewalk(pagetable);
 }
-// Given a parent process's page table, copy
-// its memory into a child's page table.
-// Copies both the page table and the
-// physical memory.
-// returns 0 on success, -1 on failure.
-// frees any allocated pages on failure.
+/// Given a parent process's page table, copy
+/// its memory into a child's page table.
+/// Copies both the page table and the
+/// physical memory.
+/// returns 0 on success, -1 on failure.
+/// frees any allocated pages on failure.
 #[no_mangle]
 pub unsafe extern "C" fn uvmcopy(
     mut old: pagetable_t,
@@ -585,8 +584,8 @@ pub unsafe extern "C" fn uvmcopy(
         }
     }
 }
-// mark a PTE invalid for user access.
-// used by exec for the user stack guard page.
+/// mark a PTE invalid for user access.
+/// used by exec for the user stack guard page.
 #[no_mangle]
 pub unsafe extern "C" fn uvmclear(mut pagetable: pagetable_t, mut va: uint64) {
     let mut pte: *mut pte_t = ptr::null_mut();
@@ -596,9 +595,9 @@ pub unsafe extern "C" fn uvmclear(mut pagetable: pagetable_t, mut va: uint64) {
     }
     *pte &= !PTE_U as libc::c_ulong;
 }
-// Copy from kernel to user.
-// Copy len bytes from src to virtual address dstva in a given page table.
-// Return 0 on success, -1 on error.
+/// Copy from kernel to user.
+/// Copy len bytes from src to virtual address dstva in a given page table.
+/// Return 0 on success, -1 on error.
 #[no_mangle]
 pub unsafe extern "C" fn copyout(
     mut pagetable: pagetable_t,
@@ -630,9 +629,9 @@ pub unsafe extern "C" fn copyout(
     }
     0 as libc::c_int
 }
-// Copy from user to kernel.
-// Copy len bytes to dst from virtual address srcva in a given page table.
-// Return 0 on success, -1 on error.
+/// Copy from user to kernel.
+/// Copy len bytes to dst from virtual address srcva in a given page table.
+/// Return 0 on success, -1 on error.
 #[no_mangle]
 pub unsafe extern "C" fn copyin(
     mut pagetable: pagetable_t,
@@ -664,10 +663,10 @@ pub unsafe extern "C" fn copyin(
     }
     0 as libc::c_int
 }
-// Copy a null-terminated string from user to kernel.
-// Copy bytes to dst from virtual address srcva in a given page table,
-// until a '\0', or max.
-// Return 0 on success, -1 on error.
+/// Copy a null-terminated string from user to kernel.
+/// Copy bytes to dst from virtual address srcva in a given page table,
+/// until a '\0', or max.
+/// Return 0 on success, -1 on error.
 #[no_mangle]
 pub unsafe extern "C" fn copyinstr(
     mut pagetable: pagetable_t,

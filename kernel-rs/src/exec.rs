@@ -42,8 +42,8 @@ pub type uint32 = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 pub type pde_t = uint64;
 pub type pagetable_t = *mut uint64;
-// "\x7FELF" in little endian
-// File header
+/// "\x7FELF" in little endian
+/// File header
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct elfhdr {
@@ -63,7 +63,7 @@ pub struct elfhdr {
     pub shnum: ushort,
     pub shstrndx: ushort,
 }
-// Program section header
+/// Program section header
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct proghdr {
@@ -341,10 +341,10 @@ pub unsafe extern "C" fn exec(
     }
     -(1 as libc::c_int)
 }
-// Load a program segment into pagetable at virtual address va.
-// va must be page-aligned
-// and the pages from va to va+sz must already be mapped.
-// Returns 0 on success, -1 on failure.
+/// Load a program segment into pagetable at virtual address va.
+/// va must be page-aligned
+/// and the pages from va to va+sz must already be mapped.
+/// Returns 0 on success, -1 on failure.
 unsafe extern "C" fn loadseg(
     mut pagetable: pagetable_t,
     mut va: uint64,

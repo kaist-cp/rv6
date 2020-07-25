@@ -33,8 +33,8 @@ pub struct File {
     pub off: uint,
     pub major: libc::c_short,
 }
-// FD_DEVICE
-// in-memory copy of an inode
+/// FD_DEVICE
+/// in-memory copy of an inode
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct inode {
@@ -63,7 +63,7 @@ pub struct C2RustUnnamed_0 {
     pub lock: Spinlock,
     pub file: [File; 100],
 }
-// map major device number to device functions.
+/// map major device number to device functions.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct devsw {
@@ -121,7 +121,7 @@ pub unsafe extern "C" fn fileinit() {
     );
 }
 // file.c
-// Allocate a file structure.
+/// Allocate a file structure.
 #[no_mangle]
 pub unsafe extern "C" fn filealloc() -> *mut File {
     let mut f: *mut File = ptr::null_mut();
@@ -138,7 +138,7 @@ pub unsafe extern "C" fn filealloc() -> *mut File {
     release(&mut ftable.lock);
     ptr::null_mut()
 }
-// Increment ref count for file f.
+/// Increment ref count for file f.
 #[no_mangle]
 pub unsafe extern "C" fn filedup(mut f: *mut File) -> *mut File {
     acquire(&mut ftable.lock);
@@ -149,7 +149,7 @@ pub unsafe extern "C" fn filedup(mut f: *mut File) -> *mut File {
     release(&mut ftable.lock);
     f
 }
-// Close file f.  (Decrement ref count, close when reaches 0.)
+/// Close file f.  (Decrement ref count, close when reaches 0.)
 #[no_mangle]
 pub unsafe extern "C" fn fileclose(mut f: *mut File) {
     let mut ff: File = File {
@@ -185,8 +185,8 @@ pub unsafe extern "C" fn fileclose(mut f: *mut File) {
         end_op();
     };
 }
-// Get metadata about file f.
-// addr is a user virtual address, pointing to a struct stat.
+/// Get metadata about file f.
+/// addr is a user virtual address, pointing to a struct stat.
 #[no_mangle]
 pub unsafe extern "C" fn filestat(mut f: *mut File, mut addr: uint64) -> libc::c_int {
     let mut p: *mut proc_0 = myproc();
@@ -216,8 +216,8 @@ pub unsafe extern "C" fn filestat(mut f: *mut File, mut addr: uint64) -> libc::c
     }
     -(1 as libc::c_int)
 }
-// Read from file f.
-// addr is a user virtual address.
+/// Read from file f.
+/// addr is a user virtual address.
 #[no_mangle]
 pub unsafe extern "C" fn fileread(
     mut f: *mut File,
@@ -252,8 +252,8 @@ pub unsafe extern "C" fn fileread(
     }
     r
 }
-// Write to file f.
-// addr is a user virtual address.
+/// Write to file f.
+/// addr is a user virtual address.
 #[no_mangle]
 pub unsafe extern "C" fn filewrite(
     mut f: *mut File,

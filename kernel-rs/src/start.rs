@@ -28,7 +28,7 @@ pub type uint64 = libc::c_ulong;
 // local interrupt controller, which contains the timer.
 pub const CLINT: libc::c_long = 0x2000000 as libc::c_long;
 pub const CLINT_MTIME: libc::c_long = CLINT + 0xbff8 as libc::c_int as libc::c_long;
-// which hart (core) is this?
+/// which hart (core) is this?
 #[inline]
 unsafe extern "C" fn r_mhartid() -> uint64 {
     let mut x: uint64 = 0;
@@ -40,7 +40,7 @@ pub const MSTATUS_MPP_MASK: libc::c_long = (3 as libc::c_long) << 11 as libc::c_
 // previous mode.
 pub const MSTATUS_MPP_S: libc::c_long = (1 as libc::c_long) << 11 as libc::c_int;
 pub const MSTATUS_MIE: libc::c_long = (1 as libc::c_long) << 3 as libc::c_int;
-// machine-mode interrupt enable.
+/// machine-mode interrupt enable.
 #[inline]
 unsafe extern "C" fn r_mstatus() -> uint64 {
     let mut x: uint64 = 0;
@@ -51,9 +51,9 @@ unsafe extern "C" fn r_mstatus() -> uint64 {
 unsafe extern "C" fn w_mstatus(mut x: uint64) {
     llvm_asm!("csrw mstatus, $0" : : "r" (x) : : "volatile");
 }
-// machine exception program counter, holds the
-// instruction address to which a return from
-// exception will go.
+/// machine exception program counter, holds the
+/// instruction address to which a return from
+/// exception will go.
 #[inline]
 unsafe extern "C" fn w_mepc(mut x: uint64) {
     llvm_asm!("csrw mepc, $0" : : "r" (x) : : "volatile");
@@ -61,8 +61,8 @@ unsafe extern "C" fn w_mepc(mut x: uint64) {
 // Machine-mode Interrupt Enable
 // external
 pub const MIE_MTIE: libc::c_long = (1 as libc::c_long) << 7 as libc::c_int;
-// timer
-// software
+/// timer
+/// software
 #[inline]
 unsafe extern "C" fn r_mie() -> uint64 {
     let mut x: uint64 = 0;
@@ -81,14 +81,14 @@ unsafe extern "C" fn w_medeleg(mut x: uint64) {
 unsafe extern "C" fn w_mideleg(mut x: uint64) {
     llvm_asm!("csrw mideleg, $0" : : "r" (x) : : "volatile");
 }
-// Machine-mode interrupt vector
+/// Machine-mode interrupt vector
 #[inline]
 unsafe extern "C" fn w_mtvec(mut x: uint64) {
     llvm_asm!("csrw mtvec, $0" : : "r" (x) : : "volatile");
 }
-// use riscv's sv39 page table scheme.
-// supervisor address translation and protection;
-// holds the address of the page table.
+/// use riscv's sv39 page table scheme.
+/// supervisor address translation and protection;
+/// holds the address of the page table.
 #[inline]
 unsafe extern "C" fn w_satp(mut x: uint64) {
     llvm_asm!("csrw satp, $0" : : "r" (x) : : "volatile");
@@ -101,7 +101,7 @@ unsafe extern "C" fn w_mscratch(mut x: uint64) {
 unsafe extern "C" fn w_tp(mut x: uint64) {
     llvm_asm!("mv tp, $0" : : "r" (x) : : "volatile");
 }
-// entry.S needs one stack per CPU.
+/// entry.S needs one stack per CPU.
 #[repr(align(16))]
 pub struct Stack([libc::c_char; 32768]);
 #[no_mangle]
@@ -109,7 +109,7 @@ pub static mut stack0: Stack = Stack([0; 32768]);
 // scratch area for timer interrupt, one per CPU.
 #[no_mangle]
 pub static mut mscratch0: [uint64; 256] = [0; 256];
-// entry.S jumps here in machine mode on stack0.
+/// entry.S jumps here in machine mode on stack0.
 #[no_mangle]
 pub unsafe extern "C" fn start() {
     // set M Previous Privilege mode to Supervisor, for mret.
@@ -139,10 +139,10 @@ pub unsafe extern "C" fn start() {
     // switch to supervisor mode and jump to main().
     llvm_asm!("mret" : : : : "volatile");
 }
-// set up to receive timer interrupts in machine mode,
-// which arrive at timervec in kernelvec.S,
-// which turns them into software interrupts for
-// devintr() in trap.c.
+/// set up to receive timer interrupts in machine mode,
+/// which arrive at timervec in kernelvec.S,
+/// which turns them into software interrupts for
+/// devintr() in trap.c.
 #[no_mangle]
 pub unsafe extern "C" fn timerinit() {
     // each CPU has a separate source of timer interrupts.

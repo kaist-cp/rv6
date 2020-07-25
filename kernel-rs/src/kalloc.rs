@@ -14,8 +14,8 @@ pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 
 pub static mut end: [u8; 0] = [0; 0];
-// first address after kernel.
-// defined by kernel.ld.
+/// first address after kernel.
+/// defined by kernel.ld.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct run {
@@ -85,9 +85,9 @@ pub unsafe extern "C" fn kinit() {
         PHYSTOP as *mut libc::c_void,
     );
 }
-// Physical memory allocator, for user processes,
-// kernel stacks, page-table pages,
-// and pipe buffers. Allocates whole 4096-byte pages.
+/// Physical memory allocator, for user processes,
+/// kernel stacks, page-table pages,
+/// and pipe buffers. Allocates whole 4096-byte pages.
 #[no_mangle]
 pub unsafe extern "C" fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: *mut libc::c_void) {
     let mut p: *mut libc::c_char = ptr::null_mut();
@@ -101,10 +101,10 @@ pub unsafe extern "C" fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: 
         p = p.offset(PGSIZE as isize)
     }
 }
-// Free the page of physical memory pointed at by v,
-// which normally should have been returned by a
-// call to kalloc().  (The exception is when
-// initializing the allocator; see kinit above.)
+/// Free the page of physical memory pointed at by v,
+/// which normally should have been returned by a
+/// call to kalloc().  (The exception is when
+/// initializing the allocator; see kinit above.)
 #[no_mangle]
 pub unsafe extern "C" fn kfree(mut pa: *mut libc::c_void) {
     let mut r: *mut run = ptr::null_mut();
@@ -123,9 +123,9 @@ pub unsafe extern "C" fn kfree(mut pa: *mut libc::c_void) {
     release(&mut kmem.lock);
 }
 // kalloc.c
-// Allocate one 4096-byte page of physical memory.
-// Returns a pointer that the kernel can use.
-// Returns 0 if the memory cannot be allocated.
+/// Allocate one 4096-byte page of physical memory.
+/// Returns a pointer that the kernel can use.
+/// Returns 0 if the memory cannot be allocated.
 #[no_mangle]
 pub unsafe extern "C" fn kalloc() -> *mut libc::c_void {
     let mut r: *mut run = ptr::null_mut(); // fill with junk

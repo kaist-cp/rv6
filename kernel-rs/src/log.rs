@@ -19,35 +19,37 @@ pub struct log {
     pub lock: Spinlock,
     pub start: libc::c_int,
     pub size: libc::c_int,
+    /// how many FS sys calls are executing.
     pub outstanding: libc::c_int,
+    /// in commit(), please wait.
     pub committing: libc::c_int,
     pub dev: libc::c_int,
     pub lh: logheader,
 }
-// Simple logging that allows concurrent FS system calls.
-//
-// A log transaction contains the updates of multiple FS system
-// calls. The logging system only commits when there are
-// no FS system calls active. Thus there is never
-// any reasoning required about whether a commit might
-// write an uncommitted system call's updates to disk.
-//
-// A system call should call begin_op()/end_op() to mark
-// its start and end. Usually begin_op() just increments
-// the count of in-progress FS system calls and returns.
-// But if it thinks the log is close to running out, it
-// sleeps until the last outstanding end_op() commits.
-//
-// The log is a physical re-do log containing disk blocks.
-// The on-disk log format:
-//   header block, containing block #s for block A, B, C, ...
-//   block A
-//   block B
-//   block C
-//   ...
-// Log appends are synchronous.
-// Contents of the header block, used for both the on-disk header block
-// and to keep track in memory of logged block# before commit.
+/// Simple logging that allows concurrent FS system calls.
+///
+/// A log transaction contains the updates of multiple FS system
+/// calls. The logging system only commits when there are
+/// no FS system calls active. Thus there is never
+/// any reasoning required about whether a commit might
+/// write an uncommitted system call's updates to disk.
+///
+/// A system call should call begin_op()/end_op() to mark
+/// its start and end. Usually begin_op() just increments
+/// the count of in-progress FS system calls and returns.
+/// But if it thinks the log is close to running out, it
+/// sleeps until the last outstanding end_op() commits.
+///
+/// The log is a physical re-do log containing disk blocks.
+/// The on-disk log format:
+///   header block, containing block #s for block A, B, C, ...
+///   block A
+///   block B
+///   block C
+///   ...
+/// Log appends are synchronous.
+/// Contents of the header block, used for both the on-disk header block
+/// and to keep track in memory of logged block# before commit.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct logheader {
@@ -104,7 +106,7 @@ pub unsafe extern "C" fn initlog(mut dev: libc::c_int, mut sb: *mut superblock) 
     log.dev = dev;
     recover_from_log();
 }
-// Copy committed blocks from log to their home location
+/// Copy committed blocks from log to their home location
 unsafe extern "C" fn install_trans() {
     let mut tail: libc::c_int = 0; // read log block
     tail = 0 as libc::c_int; // read dst
@@ -126,7 +128,7 @@ unsafe extern "C" fn install_trans() {
         tail += 1
     }
 }
-// Read the log header from disk into the in-memory log header
+/// Read the log header from disk into the in-memory log header
 unsafe extern "C" fn read_head() {
     let mut buf: *mut Buf = bread(log.dev as uint, log.start as uint);
     let mut lh: *mut logheader = (*buf).data.as_mut_ptr() as *mut logheader;
@@ -139,9 +141,9 @@ unsafe extern "C" fn read_head() {
     }
     brelse(buf);
 }
-// Write in-memory log header to disk.
-// This is the true point at which the
-// current transaction commits.
+/// Write in-memory log header to disk.
+/// This is the true point at which the
+/// current transaction commits.
 unsafe extern "C" fn write_head() {
     let mut buf: *mut Buf = bread(log.dev as uint, log.start as uint); // if committed, copy from log to disk
     let mut hb: *mut logheader = (*buf).data.as_mut_ptr() as *mut logheader;
@@ -162,7 +164,7 @@ unsafe extern "C" fn recover_from_log() {
     write_head();
     // clear the log
 }
-// called at the start of each FS system call.
+/// called at the start of each FS system call.
 #[no_mangle]
 pub unsafe extern "C" fn begin_op() {
     acquire(&mut log.lock);
@@ -179,8 +181,8 @@ pub unsafe extern "C" fn begin_op() {
         }
     }
 }
-// called at the end of each FS system call.
-// commits if this was the last outstanding operation.
+/// called at the end of each FS system call.
+/// commits if this was the last outstanding operation.
 #[no_mangle]
 pub unsafe extern "C" fn end_op() {
     let mut do_commit: libc::c_int = 0 as libc::c_int;
@@ -209,7 +211,7 @@ pub unsafe extern "C" fn end_op() {
         release(&mut log.lock);
     };
 }
-// Copy modified blocks from cache to log.
+/// Copy modified blocks from cache to log.
 unsafe extern "C" fn write_log() {
     let mut tail: libc::c_int = 0; // log block
     tail = 0 as libc::c_int; // cache block
@@ -240,15 +242,15 @@ unsafe extern "C" fn commit() {
         write_head();
     };
 }
-// Caller has modified b->data and is done with the buffer.
-// Record the block number and pin in the cache by increasing refcnt.
-// commit()/write_log() will do the disk write.
-//
-// log_write() replaces bwrite(); a typical use is:
-//   bp = bread(...)
-//   modify bp->data[]
-//   log_write(bp)
-//   brelse(bp)
+/// Caller has modified b->data and is done with the buffer.
+/// Record the block number and pin in the cache by increasing refcnt.
+/// commit()/write_log() will do the disk write.
+///
+/// log_write() replaces bwrite(); a typical use is:
+///   bp = bread(...)
+///   modify bp->data[]
+///   log_write(bp)
+///   brelse(bp)
 #[no_mangle]
 pub unsafe extern "C" fn log_write(mut b: *mut Buf) {
     let mut i: libc::c_int = 0;

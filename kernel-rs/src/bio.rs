@@ -11,20 +11,20 @@ extern "C" {
 }
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
-// Buffer cache.
-//
-// The buffer cache is a linked list of buf structures holding
-// cached copies of disk block contents.  Caching disk blocks
-// in memory reduces the number of disk reads and also provides
-// a synchronization point for disk blocks used by multiple processes.
-//
-// Interface:
-// * To get a buffer for a particular disk block, call bread.
-// * After changing buffer data, call bwrite to write it to disk.
-// * When done with the buffer, call brelse.
-// * Do not use the buffer after calling brelse.
-// * Only one process at a time can use a buffer,
-//     so do not keep them longer than necessary.
+/// Buffer cache.
+///
+/// The buffer cache is a linked list of buf structures holding
+/// cached copies of disk block contents.  Caching disk blocks
+/// in memory reduces the number of disk reads and also provides
+/// a synchronization point for disk blocks used by multiple processes.
+///
+/// Interface:
+/// * To get a buffer for a particular disk block, call bread.
+/// * After changing buffer data, call bwrite to write it to disk.
+/// * When done with the buffer, call brelse.
+/// * Do not use the buffer after calling brelse.
+/// * Only one process at a time can use a buffer,
+///     so do not keep them longer than necessary.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed {
@@ -118,9 +118,9 @@ pub unsafe extern "C" fn binit() {
         b = b.offset(1)
     }
 }
-// Look through buffer cache for block on device dev.
-// If not found, allocate a buffer.
-// In either case, return locked buffer.
+/// Look through buffer cache for block on device dev.
+/// If not found, allocate a buffer.
+/// In either case, return locked buffer.
 unsafe extern "C" fn bget(mut dev: uint, mut blockno: uint) -> *mut Buf {
     let mut b: *mut Buf = ptr::null_mut();
     acquire(&mut bcache.lock);
@@ -151,7 +151,7 @@ unsafe extern "C" fn bget(mut dev: uint, mut blockno: uint) -> *mut Buf {
     }
     panic(b"bget: no buffers\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
-// Return a locked buf with the contents of the indicated block.
+/// Return a locked buf with the contents of the indicated block.
 #[no_mangle]
 pub unsafe extern "C" fn bread(mut dev: uint, mut blockno: uint) -> *mut Buf {
     let mut b: *mut Buf = ptr::null_mut();
@@ -162,7 +162,7 @@ pub unsafe extern "C" fn bread(mut dev: uint, mut blockno: uint) -> *mut Buf {
     }
     b
 }
-// Write b's contents to disk.  Must be locked.
+/// Write b's contents to disk.  Must be locked.
 #[no_mangle]
 pub unsafe extern "C" fn bwrite(mut b: *mut Buf) {
     if holdingsleep(&mut (*b).lock) == 0 {
@@ -170,8 +170,8 @@ pub unsafe extern "C" fn bwrite(mut b: *mut Buf) {
     }
     virtio_disk_rw(b, 1 as libc::c_int);
 }
-// Release a locked buffer.
-// Move to the head of the MRU list.
+/// Release a locked buffer.
+/// Move to the head of the MRU list.
 #[no_mangle]
 pub unsafe extern "C" fn brelse(mut b: *mut Buf) {
     if holdingsleep(&mut (*b).lock) == 0 {

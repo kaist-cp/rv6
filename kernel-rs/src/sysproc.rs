@@ -5,8 +5,6 @@ use crate::{
     trap::tickslock,
 };
 extern "C" {
-    // pub type file;
-    // pub type inode;
     #[no_mangle]
     fn exit(_: libc::c_int);
     #[no_mangle]
@@ -95,8 +93,8 @@ pub unsafe extern "C" fn sys_kill() -> uint64 {
     }
     kill(pid) as uint64
 }
-// return how many clock tick interrupts have occurred
-// since start.
+/// return how many clock tick interrupts have occurred
+/// since start.
 #[no_mangle]
 pub unsafe extern "C" fn sys_uptime() -> uint64 {
     let mut xticks: uint = 0;

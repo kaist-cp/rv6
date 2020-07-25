@@ -29,9 +29,13 @@ pub const UNUSED: procstate = 0;
 pub struct Pipe {
     pub lock: Spinlock,
     pub data: [libc::c_char; 512],
+    /// number of bytes read
     pub nread: uint,
+    /// number of bytes written
     pub nwrite: uint,
+    /// read fd is still open
     pub readopen: libc::c_int,
+    /// write fd is still open
     pub writeopen: libc::c_int,
 }
 pub type C2RustUnnamed = libc::c_uint;
@@ -41,7 +45,7 @@ pub const FD_PIPE: C2RustUnnamed = 1;
 pub const FD_NONE: C2RustUnnamed = 0;
 pub const PIPESIZE: libc::c_int = 512 as libc::c_int;
 // pipe.c
-// write fd is still open
+/// write fd is still open
 #[no_mangle]
 pub unsafe extern "C" fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> libc::c_int {
     let mut pi: *mut Pipe = ptr::null_mut();

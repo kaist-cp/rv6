@@ -6,7 +6,6 @@ use crate::{
 };
 use core::ptr;
 extern "C" {
-    // pub type cpu;
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
     #[no_mangle]
@@ -21,13 +20,13 @@ pub type uchar = libc::c_uchar;
 pub type uint16 = libc::c_ushort;
 pub type uint32 = libc::c_uint;
 pub type uint64 = libc::c_ulong;
-// driver for qemu's virtio disk device.
-// uses qemu's mmio interface to virtio.
-// qemu presents a "legacy" virtio interface.
-//
-// qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
-//
-// the address of virtio mmio register r.
+/// driver for qemu's virtio disk device.
+/// uses qemu's mmio interface to virtio.
+/// qemu presents a "legacy" virtio interface.
+///
+/// qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+///
+/// the address of virtio mmio register r.
 #[derive(Copy, Clone)]
 #[repr(C, align(4096))]
 pub struct Disk(pub disk_Inner);
@@ -51,7 +50,7 @@ pub struct C2RustUnnamed {
     pub b: *mut Buf,
     pub status: libc::c_char,
 }
-// write the disk
+/// write the disk
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct UsedArea {
@@ -59,7 +58,7 @@ pub struct UsedArea {
     pub id: uint16,
     pub elems: [VRingUsedElem; 8],
 }
-// device writes (vs read)
+/// device writes (vs read)
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct VRingUsedElem {
@@ -270,7 +269,7 @@ pub unsafe extern "C" fn virtio_disk_init() {
     }
     // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
 }
-// find a free descriptor, mark it non-free, return its index.
+/// find a free descriptor, mark it non-free, return its index.
 unsafe extern "C" fn alloc_desc() -> libc::c_int {
     let mut i: libc::c_int = 0 as libc::c_int;
     while i < NUM {
@@ -282,7 +281,7 @@ unsafe extern "C" fn alloc_desc() -> libc::c_int {
     }
     -(1 as libc::c_int)
 }
-// mark a descriptor as free.
+/// mark a descriptor as free.
 unsafe extern "C" fn free_desc(mut i: libc::c_int) {
     if i >= NUM {
         panic(b"virtio_disk_intr 1\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -297,7 +296,7 @@ unsafe extern "C" fn free_desc(mut i: libc::c_int) {
             as *mut libc::c_void,
     );
 }
-// free a chain of descriptors.
+/// free a chain of descriptors.
 unsafe extern "C" fn free_chain(mut i: libc::c_int) {
     loop {
         free_desc(i);

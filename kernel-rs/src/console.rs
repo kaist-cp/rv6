@@ -51,10 +51,10 @@ pub const CONSOLE: libc::c_int = 1 as libc::c_int;
 //   control-p -- print process list
 //
 pub const BACKSPACE: libc::c_int = 0x100 as libc::c_int;
-// Control-x
-//
-// send one character to the uart.
-//
+/// Control-x
+///
+/// send one character to the uart.
+///
 #[no_mangle]
 pub unsafe extern "C" fn consputc(mut c: libc::c_int) {
     extern "C" {
@@ -87,9 +87,9 @@ pub static mut cons: C2RustUnnamed_0 = C2RustUnnamed_0 {
     w: 0,
     e: 0,
 };
-//
-// user write()s to the console go here.
-//
+///
+/// user write()s to the console go here.
+///
 #[no_mangle]
 pub unsafe extern "C" fn consolewrite(
     mut user_src: libc::c_int,
@@ -116,12 +116,12 @@ pub unsafe extern "C" fn consolewrite(
     release(&mut cons.lock);
     n
 }
-//
-// user read()s from the console go here.
-// copy (up to) a whole input line to dst.
-// user_dist indicates whether dst is a user
-// or kernel address.
-//
+///
+/// user read()s from the console go here.
+/// copy (up to) a whole input line to dst.
+/// user_dist indicates whether dst is a user
+/// or kernel address.
+///
 #[no_mangle]
 pub unsafe extern "C" fn consoleread(
     mut user_dst: libc::c_int,
@@ -179,12 +179,12 @@ pub unsafe extern "C" fn consoleread(
     release(&mut cons.lock);
     target.wrapping_sub(n as libc::c_uint) as libc::c_int
 }
-//
-// the console input interrupt handler.
-// uartintr() calls this for input character.
-// do erase/kill processing, append to cons.buf,
-// wake up consoleread() if a whole line has arrived.
-//
+///
+/// the console input interrupt handler.
+/// uartintr() calls this for input character.
+/// do erase/kill processing, append to cons.buf,
+/// wake up consoleread() if a whole line has arrived.
+///
 #[no_mangle]
 pub unsafe extern "C" fn consoleintr(mut c: libc::c_int) {
     acquire(&mut cons.lock);

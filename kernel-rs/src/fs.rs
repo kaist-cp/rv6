@@ -48,13 +48,13 @@ pub const FD_INODE: C2RustUnnamed = 2;
 pub const FD_PIPE: C2RustUnnamed = 1;
 pub const FD_NONE: C2RustUnnamed = 0;
 
-// block size
-// Disk layout:
-// [ boot block | super block | log | inode blocks |
-//                                          free bit map | data blocks]
-//
-// mkfs computes the super block and builds an initial file system. The
-// super block describes the disk layout:
+/// block size
+/// Disk layout:
+/// [ boot block | super block | log | inode blocks |
+///                                          free bit map | data blocks]
+///
+/// mkfs computes the super block and builds an initial file system. The
+/// super block describes the disk layout:
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct superblock {
@@ -73,7 +73,7 @@ pub struct dirent {
     pub inum: ushort,
     pub name: [libc::c_char; 14],
 }
-// On-disk inode structure
+/// On-disk inode structure
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct dinode {
@@ -84,74 +84,74 @@ pub struct dinode {
     pub size: uint,
     pub addrs: [uint; 13],
 }
-// Inodes.
-//
-// An inode describes a single unnamed file.
-// The inode disk structure holds metadata: the file's type,
-// its size, the number of links referring to it, and the
-// list of blocks holding the file's content.
-//
-// The inodes are laid out sequentially on disk at
-// sb.startinode. Each inode has a number, indicating its
-// position on the disk.
-//
-// The kernel keeps a cache of in-use inodes in memory
-// to provide a place for synchronizing access
-// to inodes used by multiple processes. The cached
-// inodes include book-keeping information that is
-// not stored on disk: ip->ref and ip->valid.
-//
-// An inode and its in-memory representation go through a
-// sequence of states before they can be used by the
-// rest of the file system code.
-//
-// * Allocation: an inode is allocated if its type (on disk)
-//   is non-zero. ialloc() allocates, and iput() frees if
-//   the reference and link counts have fallen to zero.
-//
-// * Referencing in cache: an entry in the inode cache
-//   is free if ip->ref is zero. Otherwise ip->ref tracks
-//   the number of in-memory pointers to the entry (open
-//   files and current directories). iget() finds or
-//   creates a cache entry and increments its ref; iput()
-//   decrements ref.
-//
-// * Valid: the information (type, size, &c) in an inode
-//   cache entry is only correct when ip->valid is 1.
-//   ilock() reads the inode from
-//   the disk and sets ip->valid, while iput() clears
-//   ip->valid if ip->ref has fallen to zero.
-//
-// * Locked: file system code may only examine and modify
-//   the information in an inode and its content if it
-//   has first locked the inode.
-//
-// Thus a typical sequence is:
-//   ip = iget(dev, inum)
-//   ilock(ip)
-//   ... examine and modify ip->xxx ...
-//   iunlock(ip)
-//   iput(ip)
-//
-// ilock() is separate from iget() so that system calls can
-// get a long-term reference to an inode (as for an open file)
-// and only lock it for short periods (e.g., in read()).
-// The separation also helps avoid deadlock and races during
-// pathname lookup. iget() increments ip->ref so that the inode
-// stays cached and pointers to it remain valid.
-//
-// Many internal file system functions expect the caller to
-// have locked the inodes involved; this lets callers create
-// multi-step atomic operations.
-//
-// The icache.lock spin-lock protects the allocation of icache
-// entries. Since ip->ref indicates whether an entry is free,
-// and ip->dev and ip->inum indicate which i-node an entry
-// holds, one must hold icache.lock while using any of those fields.
-//
-// An ip->lock sleep-lock protects all ip-> fields other than ref,
-// dev, and inum.  One must hold ip->lock in order to
-// read or write that inode's ip->valid, ip->size, ip->type, &c.
+/// Inodes.
+///
+/// An inode describes a single unnamed file.
+/// The inode disk structure holds metadata: the file's type,
+/// its size, the number of links referring to it, and the
+/// list of blocks holding the file's content.
+///
+/// The inodes are laid out sequentially on disk at
+/// sb.startinode. Each inode has a number, indicating its
+/// position on the disk.
+///
+/// The kernel keeps a cache of in-use inodes in memory
+/// to provide a place for synchronizing access
+/// to inodes used by multiple processes. The cached
+/// inodes include book-keeping information that is
+/// not stored on disk: ip->ref and ip->valid.
+///
+/// An inode and its in-memory representation go through a
+/// sequence of states before they can be used by the
+/// rest of the file system code.
+///
+/// * Allocation: an inode is allocated if its type (on disk)
+///   is non-zero. ialloc() allocates, and iput() frees if
+///   the reference and link counts have fallen to zero.
+///
+/// * Referencing in cache: an entry in the inode cache
+///   is free if ip->ref is zero. Otherwise ip->ref tracks
+///   the number of in-memory pointers to the entry (open
+///   files and current directories). iget() finds or
+///   creates a cache entry and increments its ref; iput()
+///   decrements ref.
+///
+/// * Valid: the information (type, size, &c) in an inode
+///   cache entry is only correct when ip->valid is 1.
+///   ilock() reads the inode from
+///   the disk and sets ip->valid, while iput() clears
+///   ip->valid if ip->ref has fallen to zero.
+///
+/// * Locked: file system code may only examine and modify
+///   the information in an inode and its content if it
+///   has first locked the inode.
+///
+/// Thus a typical sequence is:
+///   ip = iget(dev, inum)
+///   ilock(ip)
+///   ... examine and modify ip->xxx ...
+///   iunlock(ip)
+///   iput(ip)
+///
+/// ilock() is separate from iget() so that system calls can
+/// get a long-term reference to an inode (as for an open file)
+/// and only lock it for short periods (e.g., in read()).
+/// The separation also helps avoid deadlock and races during
+/// pathname lookup. iget() increments ip->ref so that the inode
+/// stays cached and pointers to it remain valid.
+///
+/// Many internal file system functions expect the caller to
+/// have locked the inodes involved; this lets callers create
+/// multi-step atomic operations.
+///
+/// The icache.lock spin-lock protects the allocation of icache
+/// entries. Since ip->ref indicates whether an entry is free,
+/// and ip->dev and ip->inum indicate which i-node an entry
+/// holds, one must hold icache.lock while using any of those fields.
+///
+/// An ip->lock sleep-lock protects all ip-> fields other than ref,
+/// dev, and inum.  One must hold ip->lock in order to
+/// read or write that inode's ip->valid, ip->size, ip->type, &c.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed_0 {
@@ -194,7 +194,7 @@ pub static mut sb: superblock = superblock {
     inodestart: 0,
     bmapstart: 0,
 };
-// Read the super block.
+/// Read the super block.
 unsafe extern "C" fn readsb(mut dev: libc::c_int, mut sb_0: *mut superblock) {
     let mut bp: *mut Buf = ptr::null_mut();
     bp = bread(dev as uint, 1 as libc::c_int as uint);
@@ -206,7 +206,7 @@ unsafe extern "C" fn readsb(mut dev: libc::c_int, mut sb_0: *mut superblock) {
     brelse(bp);
 }
 // fs.c
-// Init fs
+/// Init fs
 #[no_mangle]
 pub unsafe extern "C" fn fsinit(mut dev: libc::c_int) {
     readsb(dev, &mut sb);
@@ -215,7 +215,7 @@ pub unsafe extern "C" fn fsinit(mut dev: libc::c_int) {
     }
     initlog(dev, &mut sb);
 }
-// Zero a block.
+/// Zero a block.
 unsafe extern "C" fn bzero(mut dev: libc::c_int, mut bno: libc::c_int) {
     let mut bp: *mut Buf = ptr::null_mut();
     bp = bread(dev as uint, bno as uint);
@@ -227,8 +227,8 @@ unsafe extern "C" fn bzero(mut dev: libc::c_int, mut bno: libc::c_int) {
     log_write(bp);
     brelse(bp);
 }
-// Blocks.
-// Allocate a zeroed disk block.
+/// Blocks.
+/// Allocate a zeroed disk block.
 unsafe extern "C" fn balloc(mut dev: uint) -> uint {
     let mut b: libc::c_int = 0;
     let mut bi: libc::c_int = 0;
@@ -257,7 +257,7 @@ unsafe extern "C" fn balloc(mut dev: uint) -> uint {
     }
     panic(b"balloc: out of blocks\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
-// Free a disk block.
+/// Free a disk block.
 unsafe extern "C" fn bfree(mut dev: libc::c_int, mut b: uint) {
     let mut bp: *mut Buf = ptr::null_mut();
     let mut bi: libc::c_int = 0;
@@ -323,9 +323,9 @@ pub unsafe extern "C" fn iinit() {
         i += 1
     }
 }
-// Allocate an inode on device dev.
-// Mark it as allocated by  giving it type type.
-// Returns an unlocked but allocated and referenced inode.
+/// Allocate an inode on device dev.
+/// Mark it as allocated by  giving it type type.
+/// Returns an unlocked but allocated and referenced inode.
 #[no_mangle]
 pub unsafe extern "C" fn ialloc(mut dev: uint, mut type_0: libc::c_short) -> *mut inode {
     let mut inum: libc::c_int = 0;
@@ -365,10 +365,10 @@ pub unsafe extern "C" fn ialloc(mut dev: uint, mut type_0: libc::c_short) -> *mu
     }
     panic(b"ialloc: no inodes\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
-// Copy a modified in-memory inode to disk.
-// Must be called after every change to an ip->xxx field
-// that lives on disk, since i-node cache is write-through.
-// Caller must hold ip->lock.
+/// Copy a modified in-memory inode to disk.
+/// Must be called after every change to an ip->xxx field
+/// that lives on disk, since i-node cache is write-through.
+/// Caller must hold ip->lock.
 #[no_mangle]
 pub unsafe extern "C" fn iupdate(mut ip: *mut inode) {
     let mut bp: *mut Buf = ptr::null_mut();
@@ -401,9 +401,9 @@ pub unsafe extern "C" fn iupdate(mut ip: *mut inode) {
     log_write(bp);
     brelse(bp);
 }
-// Find the inode with number inum on device dev
-// and return the in-memory copy. Does not lock
-// the inode and does not read it from disk.
+/// Find the inode with number inum on device dev
+/// and return the in-memory copy. Does not lock
+/// the inode and does not read it from disk.
 unsafe extern "C" fn iget(mut dev: uint, mut inum: uint) -> *mut inode {
     let mut ip: *mut inode = ptr::null_mut();
     let mut empty: *mut inode = ptr::null_mut();
@@ -435,8 +435,8 @@ unsafe extern "C" fn iget(mut dev: uint, mut inum: uint) -> *mut inode {
     release(&mut icache.lock);
     ip
 }
-// Increment reference count for ip.
-// Returns ip to enable ip = idup(ip1) idiom.
+/// Increment reference count for ip.
+/// Returns ip to enable ip = idup(ip1) idiom.
 #[no_mangle]
 pub unsafe extern "C" fn idup(mut ip: *mut inode) -> *mut inode {
     acquire(&mut icache.lock);
@@ -444,8 +444,8 @@ pub unsafe extern "C" fn idup(mut ip: *mut inode) -> *mut inode {
     release(&mut icache.lock);
     ip
 }
-// Lock the given inode.
-// Reads the inode from disk if necessary.
+/// Lock the given inode.
+/// Reads the inode from disk if necessary.
 #[no_mangle]
 pub unsafe extern "C" fn ilock(mut ip: *mut inode) {
     let mut bp: *mut Buf = ptr::null_mut();
@@ -487,7 +487,7 @@ pub unsafe extern "C" fn ilock(mut ip: *mut inode) {
         }
     };
 }
-// Unlock the given inode.
+/// Unlock the given inode.
 #[no_mangle]
 pub unsafe extern "C" fn iunlock(mut ip: *mut inode) {
     if ip.is_null() || holdingsleep(&mut (*ip).lock) == 0 || (*ip).ref_0 < 1 as libc::c_int {
@@ -495,13 +495,13 @@ pub unsafe extern "C" fn iunlock(mut ip: *mut inode) {
     }
     releasesleep(&mut (*ip).lock);
 }
-// Drop a reference to an in-memory inode.
-// If that was the last reference, the inode cache entry can
-// be recycled.
-// If that was the last reference and the inode has no links
-// to it, free the inode (and its content) on disk.
-// All calls to iput() must be inside a transaction in
-// case it has to free the inode.
+/// Drop a reference to an in-memory inode.
+/// If that was the last reference, the inode cache entry can
+/// be recycled.
+/// If that was the last reference and the inode has no links
+/// to it, free the inode (and its content) on disk.
+/// All calls to iput() must be inside a transaction in
+/// case it has to free the inode.
 #[no_mangle]
 pub unsafe extern "C" fn iput(mut ip: *mut inode) {
     acquire(&mut icache.lock);
@@ -524,20 +524,20 @@ pub unsafe extern "C" fn iput(mut ip: *mut inode) {
     (*ip).ref_0 -= 1;
     release(&mut icache.lock);
 }
-// Common idiom: unlock, then put.
+/// Common idiom: unlock, then put.
 #[no_mangle]
 pub unsafe extern "C" fn iunlockput(mut ip: *mut inode) {
     iunlock(ip);
     iput(ip);
 }
-// Inode content
-//
-// The content (data) associated with each inode is stored
-// in blocks on the disk. The first NDIRECT block numbers
-// are listed in ip->addrs[].  The next NINDIRECT blocks are
-// listed in block ip->addrs[NDIRECT].
-// Return the disk block address of the nth block in inode ip.
-// If there is no such block, bmap allocates one.
+/// Inode content
+///
+/// The content (data) associated with each inode is stored
+/// in blocks on the disk. The first NDIRECT block numbers
+/// are listed in ip->addrs[].  The next NINDIRECT blocks are
+/// listed in block ip->addrs[NDIRECT].
+/// Return the disk block address of the nth block in inode ip.
+/// If there is no such block, bmap allocates one.
 unsafe extern "C" fn bmap(mut ip: *mut inode, mut bn: uint) -> uint {
     let mut addr: uint = 0;
     let mut a: *mut uint = ptr::null_mut();
@@ -573,21 +573,21 @@ unsafe extern "C" fn bmap(mut ip: *mut inode, mut bn: uint) -> uint {
     }
     panic(b"bmap: out of range\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
-// File system implementation.  Five layers:
-//   + Blocks: allocator for raw disk blocks.
-//   + Log: crash recovery for multi-step updates.
-//   + Files: inode allocator, reading, writing, metadata.
-//   + Directories: inode with special contents (list of other inodes!)
-//   + Names: paths like /usr/rtm/xv6/fs.c for convenient naming.
-//
-// This file contains the low-level file system manipulation
-// routines.  The (higher-level) system call implementations
-// are in sysfile.c.
-// Truncate inode (discard contents).
-// Only called when the inode has no links
-// to it (no directory entries referring to it)
-// and has no in-memory reference to it (is
-// not an open file or current directory).
+/// File system implementation.  Five layers:
+///   + Blocks: allocator for raw disk blocks.
+///   + Log: crash recovery for multi-step updates.
+///   + Files: inode allocator, reading, writing, metadata.
+///   + Directories: inode with special contents (list of other inodes!)
+///   + Names: paths like /usr/rtm/xv6/fs.c for convenient naming.
+///
+/// This file contains the low-level file system manipulation
+/// routines.  The (higher-level) system call implementations
+/// are in sysfile.c.
+/// Truncate inode (discard contents).
+/// Only called when the inode has no links
+/// to it (no directory entries referring to it)
+/// and has no in-memory reference to it (is
+/// not an open file or current directory).
 unsafe extern "C" fn itrunc(mut ip: *mut inode) {
     let mut i: libc::c_int = 0;
     let mut j: libc::c_int = 0;
@@ -620,8 +620,8 @@ unsafe extern "C" fn itrunc(mut ip: *mut inode) {
     (*ip).size = 0 as libc::c_int as uint;
     iupdate(ip);
 }
-// Copy stat information from inode.
-// Caller must hold ip->lock.
+/// Copy stat information from inode.
+/// Caller must hold ip->lock.
 #[no_mangle]
 pub unsafe extern "C" fn stati(mut ip: *mut inode, mut st: *mut Stat) {
     (*st).dev = (*ip).dev as libc::c_int;
@@ -630,10 +630,10 @@ pub unsafe extern "C" fn stati(mut ip: *mut inode, mut st: *mut Stat) {
     (*st).nlink = (*ip).nlink;
     (*st).size = (*ip).size as uint64;
 }
-// Read data from inode.
-// Caller must hold ip->lock.
-// If user_dst==1, then dst is a user virtual address;
-// otherwise, dst is a kernel address.
+/// Read data from inode.
+/// Caller must hold ip->lock.
+/// If user_dst==1, then dst is a user virtual address;
+/// otherwise, dst is a kernel address.
 #[no_mangle]
 pub unsafe extern "C" fn readi(
     mut ip: *mut inode,
@@ -685,10 +685,10 @@ pub unsafe extern "C" fn readi(
     }
     n as libc::c_int
 }
-// Write data to inode.
-// Caller must hold ip->lock.
-// If user_src==1, then src is a user virtual address;
-// otherwise, src is a kernel address.
+/// Write data to inode.
+/// Caller must hold ip->lock.
+/// If user_src==1, then src is a user virtual address;
+/// otherwise, src is a kernel address.
 #[no_mangle]
 pub unsafe extern "C" fn writei(
     mut ip: *mut inode,
@@ -757,7 +757,7 @@ pub unsafe extern "C" fn writei(
     }
     n as libc::c_int
 }
-// Directories
+/// Directories
 #[no_mangle]
 pub unsafe extern "C" fn namecmp(
     mut s: *const libc::c_char,
@@ -765,8 +765,8 @@ pub unsafe extern "C" fn namecmp(
 ) -> libc::c_int {
     strncmp(s, t, DIRSIZ as uint)
 }
-// Look for a directory entry in a directory.
-// If found, set *poff to byte offset of entry.
+/// Look for a directory entry in a directory.
+/// If found, set *poff to byte offset of entry.
 #[no_mangle]
 pub unsafe extern "C" fn dirlookup(
     mut dp: *mut inode,
@@ -810,7 +810,7 @@ pub unsafe extern "C" fn dirlookup(
     }
     ptr::null_mut()
 }
-// Write a new directory entry (name, inum) into the directory dp.
+/// Write a new directory entry (name, inum) into the directory dp.
 #[no_mangle]
 pub unsafe extern "C" fn dirlink(
     mut dp: *mut inode,
@@ -864,19 +864,19 @@ pub unsafe extern "C" fn dirlink(
     }
     0 as libc::c_int
 }
-// Paths
-// Copy the next path element from path into name.
-// Return a pointer to the element following the copied one.
-// The returned path has no leading slashes,
-// so the caller can check *path=='\0' to see if the name is the last one.
-// If no name to remove, return 0.
-//
-// Examples:
-//   skipelem("a/bb/c", name) = "bb/c", setting name = "a"
-//   skipelem("///a//bb", name) = "bb", setting name = "a"
-//   skipelem("a", name) = "", setting name = "a"
-//   skipelem("", name) = skipelem("////", name) = 0
-//
+/// Paths
+/// Copy the next path element from path into name.
+/// Return a pointer to the element following the copied one.
+/// The returned path has no leading slashes,
+/// so the caller can check *path=='\0' to see if the name is the last one.
+/// If no name to remove, return 0.
+///
+/// Examples:
+///   skipelem("a/bb/c", name) = "bb/c", setting name = "a"
+///   skipelem("///a//bb", name) = "bb", setting name = "a"
+///   skipelem("a", name) = "", setting name = "a"
+///   skipelem("", name) = skipelem("////", name) = 0
+///
 unsafe extern "C" fn skipelem(
     mut path: *mut libc::c_char,
     mut name: *mut libc::c_char,
@@ -913,10 +913,10 @@ unsafe extern "C" fn skipelem(
     }
     path
 }
-// Look up and return the inode for a path name.
-// If parent != 0, return the inode for the parent and copy the final
-// path element into name, which must have room for DIRSIZ bytes.
-// Must be called inside a transaction since it calls iput().
+/// Look up and return the inode for a path name.
+/// If parent != 0, return the inode for the parent and copy the final
+/// path element into name, which must have room for DIRSIZ bytes.
+/// Must be called inside a transaction since it calls iput().
 unsafe extern "C" fn namex(
     mut path: *mut libc::c_char,
     mut nameiparent_0: libc::c_int,

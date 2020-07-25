@@ -13,7 +13,6 @@ use crate::{
 
 use core::ptr;
 extern "C" {
-    // pub type pipe;
     // exec.c
     #[no_mangle]
     fn exec(_: *mut libc::c_char, _: *mut *mut libc::c_char) -> libc::c_int;
@@ -80,13 +79,13 @@ pub const O_RDONLY: libc::c_int = 0 as libc::c_int;
 pub const O_WRONLY: libc::c_int = 0x1 as libc::c_int;
 pub const O_RDWR: libc::c_int = 0x2 as libc::c_int;
 pub const O_CREATE: libc::c_int = 0x200 as libc::c_int;
-//
-// File-system system calls.
-// Mostly argument checking, since we don't trust
-// user code, and calls into file.c and fs.c.
-//
-// Fetch the nth word-sized system call argument as a file descriptor
-// and return both the descriptor and the corresponding struct file.
+
+/// File-system system calls.
+/// Mostly argument checking, since we don't trust
+/// user code, and calls into file.c and fs.c.
+
+/// Fetch the nth word-sized system call argument as a file descriptor
+/// and return both the descriptor and the corresponding struct file.
 unsafe extern "C" fn argfd(
     mut n: libc::c_int,
     mut pfd: *mut libc::c_int,
@@ -111,8 +110,8 @@ unsafe extern "C" fn argfd(
     }
     0 as libc::c_int
 }
-// Allocate a file descriptor for the given file.
-// Takes over file reference from caller on success.
+/// Allocate a file descriptor for the given file.
+/// Takes over file reference from caller on success.
 unsafe extern "C" fn fdalloc(mut f: *mut File) -> libc::c_int {
     let mut fd: libc::c_int = 0; // user pointer to struct stat
     let mut p: *mut proc_0 = myproc();
@@ -189,7 +188,7 @@ pub unsafe extern "C" fn sys_fstat() -> uint64 {
     }
     filestat(f, st) as uint64
 }
-// Create the path new as a link to the same inode as old.
+/// Create the path new as a link to the same inode as old.
 #[no_mangle]
 pub unsafe extern "C" fn sys_link() -> uint64 {
     let mut name: [libc::c_char; 14] = [0; 14];
@@ -236,7 +235,7 @@ pub unsafe extern "C" fn sys_link() -> uint64 {
     end_op();
     -(1 as libc::c_int) as uint64
 }
-// Is the directory dp empty except for "." and ".." ?
+/// Is the directory dp empty except for "." and ".." ?
 unsafe extern "C" fn isdirempty(mut dp: *mut inode) -> libc::c_int {
     let mut off: libc::c_int = 0;
     let mut de: dirent = dirent {

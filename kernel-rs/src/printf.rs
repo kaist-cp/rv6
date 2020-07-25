@@ -20,35 +20,15 @@ pub type va_list = __builtin_va_list;
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 
-// Saved registers for kernel context switches.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct context {
-    pub ra: uint64,
-    pub sp: uint64,
-    pub s0: uint64,
-    pub s1: uint64,
-    pub s2: uint64,
-    pub s3: uint64,
-    pub s4: uint64,
-    pub s5: uint64,
-    pub s6: uint64,
-    pub s7: uint64,
-    pub s8: uint64,
-    pub s9: uint64,
-    pub s10: uint64,
-    pub s11: uint64,
-}
-
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed_0 {
     pub lock: Spinlock,
     pub locking: libc::c_int,
 }
-//
-// formatted console output -- printf, panic.
-//
+///
+/// formatted console output -- printf, panic.
+///
 #[no_mangle]
 pub static mut panicked: libc::c_int = 0 as libc::c_int;
 static mut pr: C2RustUnnamed_0 = C2RustUnnamed_0 {
@@ -118,7 +98,7 @@ unsafe extern "C" fn printptr(mut x: uint64) {
     }
 }
 // printf.c
-// Print to the console. only understands %d, %x, %p, %s.
+/// Print to the console. only understands %d, %x, %p, %s.
 #[no_mangle]
 pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
     let mut ap: ::core::ffi::VaListImpl;

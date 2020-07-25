@@ -4,8 +4,6 @@ use crate::{
     spinlock::{acquire, initlock, release, Spinlock},
 };
 extern "C" {
-    // pub type inode;
-    // pub type file;
     // printf.c
     #[no_mangle]
     fn printf(_: *mut libc::c_char, _: ...);
@@ -97,8 +95,8 @@ pub const SSTATUS_SPIE: libc::c_long = (1 as libc::c_long) << 5 as libc::c_int;
 // Supervisor Previous Interrupt Enable
 // User Previous Interrupt Enable
 pub const SSTATUS_SIE: libc::c_long = (1 as libc::c_long) << 1 as libc::c_int;
-// Supervisor Interrupt Enable
-// User Interrupt Enable
+/// Supervisor Interrupt Enable
+/// User Interrupt Enable
 #[inline]
 unsafe extern "C" fn r_sstatus() -> uint64 {
     let mut x: uint64 = 0;
@@ -109,7 +107,7 @@ unsafe extern "C" fn r_sstatus() -> uint64 {
 unsafe extern "C" fn w_sstatus(mut x: uint64) {
     llvm_asm!("csrw sstatus, $0" : : "r" (x) : : "volatile");
 }
-// Supervisor Interrupt Pending
+/// Supervisor Interrupt Pending
 #[inline]
 unsafe extern "C" fn r_sip() -> uint64 {
     let mut x: uint64 = 0;
@@ -137,9 +135,9 @@ unsafe extern "C" fn r_sie() -> uint64 {
 unsafe extern "C" fn w_sie(mut x: uint64) {
     llvm_asm!("csrw sie, $0" : : "r" (x) : : "volatile");
 }
-// machine exception program counter, holds the
-// instruction address to which a return from
-// exception will go.
+/// machine exception program counter, holds the
+/// instruction address to which a return from
+/// exception will go.
 #[inline]
 unsafe extern "C" fn w_sepc(mut x: uint64) {
     llvm_asm!("csrw sepc, $0" : : "r" (x) : : "volatile");
@@ -150,8 +148,8 @@ unsafe extern "C" fn r_sepc() -> uint64 {
     llvm_asm!("csrr $0, sepc" : "=r" (x) : : : "volatile");
     x
 }
-// Supervisor Trap-Vector Base Address
-// low two bits are mode.
+/// Supervisor Trap-Vector Base Address
+/// low two bits are mode.
 #[inline]
 unsafe extern "C" fn w_stvec(mut x: uint64) {
     llvm_asm!("csrw stvec, $0" : : "r" (x) : : "volatile");
@@ -164,21 +162,21 @@ unsafe extern "C" fn r_satp() -> uint64 {
     llvm_asm!("csrr $0, satp" : "=r" (x) : : : "volatile");
     x
 }
-// Supervisor Trap Cause
+/// Supervisor Trap Cause
 #[inline]
 unsafe extern "C" fn r_scause() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("csrr $0, scause" : "=r" (x) : : : "volatile");
     x
 }
-// Supervisor Trap Value
+/// Supervisor Trap Value
 #[inline]
 unsafe extern "C" fn r_stval() -> uint64 {
     let mut x: uint64 = 0;
     llvm_asm!("csrr $0, stval" : "=r" (x) : : : "volatile");
     x
 }
-// enable device interrupts
+/// enable device interrupts
 #[inline]
 unsafe extern "C" fn intr_on() {
     w_sie(
@@ -186,19 +184,19 @@ unsafe extern "C" fn intr_on() {
     );
     w_sstatus(r_sstatus() | SSTATUS_SIE as libc::c_ulong);
 }
-// disable device interrupts
+/// disable device interrupts
 #[inline]
 unsafe extern "C" fn intr_off() {
     w_sstatus(r_sstatus() & !SSTATUS_SIE as libc::c_ulong);
 }
-// are device interrupts enabled?
+/// are device interrupts enabled?
 #[inline]
 unsafe extern "C" fn intr_get() -> libc::c_int {
     let mut x: uint64 = r_sstatus();
     (x & SSTATUS_SIE as libc::c_ulong != 0 as libc::c_int as libc::c_ulong) as libc::c_int
 }
-// read and write tp, the thread pointer, which holds
-// this core's hartid (core number), the index into cpus[].
+/// read and write tp, the thread pointer, which holds
+/// this core's hartid (core number), the index into cpus[].
 #[inline]
 unsafe extern "C" fn r_tp() -> uint64 {
     let mut x: uint64 = 0;
@@ -236,7 +234,7 @@ pub unsafe extern "C" fn trapinit() {
         b"time\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
 }
-// set up to take exceptions and traps while in the kernel.
+/// set up to take exceptions and traps while in the kernel.
 #[no_mangle]
 pub unsafe extern "C" fn trapinithart() {
     w_stvec(::core::mem::transmute::<
@@ -247,10 +245,9 @@ pub unsafe extern "C" fn trapinithart() {
         unsafe extern "C" fn() -> (),
     >(kernelvec))));
 }
-//
-// handle an interrupt, exception, or system call from user space.
-// called from trampoline.S
-//
+
+/// handle an interrupt, exception, or system call from user space.
+/// called from trampoline.S
 #[no_mangle]
 pub unsafe extern "C" fn usertrap() {
     let mut which_dev: libc::c_int = 0 as libc::c_int;
@@ -313,9 +310,8 @@ pub unsafe extern "C" fn usertrap() {
     }
     usertrapret();
 }
-//
-// return to user space
-//
+
+/// return to user space
 #[no_mangle]
 pub unsafe extern "C" fn usertrapret() {
     let mut p: *mut proc_0 = myproc();
@@ -363,9 +359,9 @@ pub unsafe extern "C" fn usertrapret() {
     >(fn_0 as libc::intptr_t)
     .expect("non-null function pointer")(TRAPFRAME as uint64, satp);
 }
-// interrupts and exceptions from kernel code go here via kernelvec,
-// on whatever the current kernel stack is.
-// must be 4-byte aligned to fit in stvec.
+/// interrupts and exceptions from kernel code go here via kernelvec,
+/// on whatever the current kernel stack is.
+/// must be 4-byte aligned to fit in stvec.
 #[no_mangle]
 pub unsafe extern "C" fn kerneltrap() {
     let mut which_dev: libc::c_int = 0 as libc::c_int;
@@ -416,11 +412,11 @@ pub unsafe extern "C" fn clockintr() {
     wakeup(&mut ticks as *mut uint as *mut libc::c_void);
     release(&mut tickslock);
 }
-// check if it's an external interrupt or software interrupt,
-// and handle it.
-// returns 2 if timer interrupt,
-// 1 if other device,
-// 0 if not recognized.
+/// check if it's an external interrupt or software interrupt,
+/// and handle it.
+/// returns 2 if timer interrupt,
+/// 1 if other device,
+/// 0 if not recognized.
 #[no_mangle]
 pub unsafe extern "C" fn devintr() -> libc::c_int {
     let mut scause: uint64 = r_scause();

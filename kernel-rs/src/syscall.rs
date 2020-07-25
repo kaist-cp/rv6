@@ -60,7 +60,7 @@ extern "C" {
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 pub type pagetable_t = *mut uint64;
-// Fetch the uint64 at addr from the current process.
+/// Fetch the uint64 at addr from the current process.
 #[no_mangle]
 pub unsafe extern "C" fn fetchaddr(mut addr: uint64, mut ip: *mut uint64) -> libc::c_int {
     let mut p: *mut proc_0 = myproc();
@@ -80,8 +80,8 @@ pub unsafe extern "C" fn fetchaddr(mut addr: uint64, mut ip: *mut uint64) -> lib
     }
     0 as libc::c_int
 }
-// Fetch the nul-terminated string at addr from the current process.
-// Returns length of string, not including nul, or -1 for error.
+/// Fetch the nul-terminated string at addr from the current process.
+/// Returns length of string, not including nul, or -1 for error.
 #[no_mangle]
 pub unsafe extern "C" fn fetchstr(
     mut addr: uint64,
@@ -109,23 +109,23 @@ unsafe extern "C" fn argraw(mut n: libc::c_int) -> uint64 {
     panic(b"argraw\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
 // syscall.c
-// Fetch the nth 32-bit system call argument.
+/// Fetch the nth 32-bit system call argument.
 #[no_mangle]
 pub unsafe extern "C" fn argint(mut n: libc::c_int, mut ip: *mut libc::c_int) -> libc::c_int {
     *ip = argraw(n) as libc::c_int;
     0 as libc::c_int
 }
-// Retrieve an argument as a pointer.
-// Doesn't check for legality, since
-// copyin/copyout will do that.
+/// Retrieve an argument as a pointer.
+/// Doesn't check for legality, since
+/// copyin/copyout will do that.
 #[no_mangle]
 pub unsafe extern "C" fn argaddr(mut n: libc::c_int, mut ip: *mut uint64) -> libc::c_int {
     *ip = argraw(n);
     0 as libc::c_int
 }
-// Fetch the nth word-sized system call argument as a null-terminated string.
-// Copies into buf, at most max.
-// Returns string length if OK (including nul), -1 if error.
+/// Fetch the nth word-sized system call argument as a null-terminated string.
+/// Copies into buf, at most max.
+/// Returns string length if OK (including nul), -1 if error.
 #[no_mangle]
 pub unsafe extern "C" fn argstr(
     mut n: libc::c_int,

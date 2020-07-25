@@ -9,7 +9,7 @@ extern "C" {
 }
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
-// Mutual exclusion lock.
+/// Mutual exclusion lock.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Spinlock {
@@ -18,8 +18,8 @@ pub struct Spinlock {
     pub cpu: *mut cpu,
 }
 pub const SSTATUS_SIE: libc::c_long = (1 as libc::c_long) << 1 as libc::c_int;
-// Supervisor Interrupt Enable
-// User Interrupt Enable
+/// Supervisor Interrupt Enable
+/// User Interrupt Enable
 #[inline]
 unsafe fn r_sstatus() -> uint64 {
     let mut x: uint64 = 0;
@@ -36,7 +36,7 @@ pub const SIE_SEIE: libc::c_long = (1 as libc::c_long) << 9 as libc::c_int;
 pub const SIE_STIE: libc::c_long = (1 as libc::c_long) << 5 as libc::c_int;
 // timer
 pub const SIE_SSIE: libc::c_long = (1 as libc::c_long) << 1 as libc::c_int;
-// software
+/// software
 #[inline]
 unsafe fn r_sie() -> uint64 {
     let mut x: uint64 = 0;
@@ -47,7 +47,7 @@ unsafe fn r_sie() -> uint64 {
 unsafe fn w_sie(mut x: uint64) {
     llvm_asm!("csrw sie, $0" : : "r" (x) : : "volatile");
 }
-// enable device interrupts
+/// enable device interrupts
 #[inline]
 unsafe fn intr_on() {
     w_sie(
@@ -55,18 +55,18 @@ unsafe fn intr_on() {
     );
     w_sstatus(r_sstatus() | SSTATUS_SIE as libc::c_ulong);
 }
-// disable device interrupts
+/// disable device interrupts
 #[inline]
 unsafe fn intr_off() {
     w_sstatus(r_sstatus() & !SSTATUS_SIE as libc::c_ulong);
 }
-// are device interrupts enabled?
+/// are device interrupts enabled?
 #[inline]
 unsafe fn intr_get() -> libc::c_int {
     let mut x: uint64 = r_sstatus();
     (x & SSTATUS_SIE as libc::c_ulong != 0 as libc::c_int as libc::c_ulong) as libc::c_int
 }
-// Mutual exclusion spin locks.
+/// Mutual exclusion spin locks.
 #[no_mangle]
 pub unsafe fn initlock(mut lk: *mut Spinlock, mut name: *mut libc::c_char) {
     (*lk).name = name;
@@ -74,8 +74,8 @@ pub unsafe fn initlock(mut lk: *mut Spinlock, mut name: *mut libc::c_char) {
     (*lk).cpu = ptr::null_mut();
 }
 // Spinlock.c
-// Acquire the lock.
-// Loops (spins) until the lock is acquired.
+/// Acquire the lock.
+/// Loops (spins) until the lock is acquired.
 #[no_mangle]
 pub unsafe fn acquire(mut lk: *mut Spinlock) {
     push_off(); // disable interrupts to avoid deadlock.
@@ -98,7 +98,7 @@ pub unsafe fn acquire(mut lk: *mut Spinlock) {
     // Record info about lock acquisition for holding() and debugging.
     (*lk).cpu = mycpu();
 }
-// Release the lock.
+/// Release the lock.
 #[no_mangle]
 pub unsafe fn release(mut lk: *mut Spinlock) {
     if holding(lk) == 0 {
@@ -120,7 +120,7 @@ pub unsafe fn release(mut lk: *mut Spinlock) {
     ::core::intrinsics::atomic_store_rel(&mut (*lk).locked, 0);
     pop_off();
 }
-// Check whether this cpu is holding the lock.
+/// Check whether this cpu is holding the lock.
 #[no_mangle]
 pub unsafe fn holding(mut lk: *mut Spinlock) -> libc::c_int {
     let mut r: libc::c_int = 0;
@@ -129,9 +129,9 @@ pub unsafe fn holding(mut lk: *mut Spinlock) -> libc::c_int {
     pop_off();
     r
 }
-// push_off/pop_off are like intr_off()/intr_on() except that they are matched:
-// it takes two pop_off()s to undo two push_off()s.  Also, if interrupts
-// are initially off, then push_off, pop_off leaves them off.
+/// push_off/pop_off are like intr_off()/intr_on() except that they are matched:
+/// it takes two pop_off()s to undo two push_off()s.  Also, if interrupts
+/// are initially off, then push_off, pop_off leaves them off.
 #[no_mangle]
 pub unsafe fn push_off() {
     let mut old: libc::c_int = intr_get();
