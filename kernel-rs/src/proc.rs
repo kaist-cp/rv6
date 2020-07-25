@@ -65,7 +65,6 @@ pub type uchar = libc::c_uchar;
 pub type uint64 = libc::c_ulong;
 pub type pagetable_t = *mut uint64;
 #[derive(Copy, Clone)]
-// #[repr(C)]
 pub struct cpu {
     pub proc_0: *mut proc_0,
     pub scheduler: context,
