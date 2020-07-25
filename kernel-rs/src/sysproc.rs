@@ -1,4 +1,9 @@
-use crate::{ libc, proc::{ myproc, sleep }, spinlock::{ acquire, release }, trap::tickslock};
+use crate::{
+    libc,
+    proc::{myproc, sleep},
+    spinlock::{acquire, release},
+    trap::tickslock,
+};
 extern "C" {
     // pub type file;
     // pub type inode;

@@ -1,6 +1,6 @@
 use crate::libc;
-use crate::spinlock::{ Spinlock, acquire, initlock, release };
 use crate::proc::{myproc, sleep, wakeup};
+use crate::spinlock::{acquire, initlock, release, Spinlock};
 extern "C" {
     pub type file;
     pub type inode;

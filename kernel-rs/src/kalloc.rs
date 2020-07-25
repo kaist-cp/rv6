@@ -1,35 +1,19 @@
 use crate::libc;
-use core::ptr;
 use crate::printf::printf;
-use crate::spinlock::{ Spinlock, acquire, initlock, release };
 use crate::proc::cpu;
+use crate::spinlock::{acquire, initlock, release, Spinlock};
+use core::ptr;
 
 extern "C" {
-    // pub type cpu;
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
-    // spinlock.c
-    // #[no_mangle]
-    // fn acquire(_: *mut spinlock);
-    // #[no_mangle]
-    // fn initlock(_: *mut spinlock, _: *mut libc::c_char);
-    // #[no_mangle]
-    // fn release(_: *mut spinlock);
     #[no_mangle]
     fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
 }
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 
-pub static mut end: [u8;0] = [0; 0];
-// Mutual exclusion lock.
-// #[derive(Copy, Clone)]
-// #[repr(C)]
-// pub struct spinlock {
-//     pub locked: uint,
-//     pub name: *mut libc::c_char,
-//     pub cpu: *mut cpu,
-// }
+pub static mut end: [u8; 0] = [0; 0];
 // first address after kernel.
 // defined by kernel.ld.
 #[derive(Copy, Clone)]
@@ -86,12 +70,15 @@ pub unsafe extern "C" fn kinit() {
         &mut kmem.lock,
         b"kmem\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
-    
-    // To successfully boot rv6 and pass usertests, two printf()s with b"\x00" 
+
+    // To successfully boot rv6 and pass usertests, two printf()s with b"\x00"
     // and variable `a` are needed. See https://github.com/kaist-cp/rv6/issues/8
     let a = 10;
     printf(b"\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-    printf(b"\x00" as *const u8 as *const libc::c_char as *mut libc::c_char, a);
+    printf(
+        b"\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        a,
+    );
 
     freerange(
         end.as_mut_ptr() as *mut libc::c_void,
@@ -108,7 +95,7 @@ pub unsafe extern "C" fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: 
         .wrapping_add(PGSIZE as libc::c_ulong)
         .wrapping_sub(1 as libc::c_int as libc::c_ulong)
         & !(PGSIZE - 1 as libc::c_int) as libc::c_ulong) as *mut libc::c_char;
-    
+
     while p.offset(PGSIZE as isize) <= pa_end as *mut libc::c_char {
         kfree(p as *mut libc::c_void);
         p = p.offset(PGSIZE as isize)

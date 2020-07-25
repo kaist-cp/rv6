@@ -1,7 +1,7 @@
-use crate::libc;
-use crate::spinlock::{ Spinlock, acquire, initlock, release };
-use crate::proc::{ cpu, myproc, sleep, wakeup };
 use crate::file::devsw;
+use crate::libc;
+use crate::proc::{cpu, myproc, sleep, wakeup};
+use crate::spinlock::{acquire, initlock, release, Spinlock};
 extern "C" {
     pub type pipe;
     #[no_mangle]
@@ -25,7 +25,6 @@ extern "C" {
     #[no_mangle]
     fn uartputc(_: libc::c_int);
 }
-
 
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;

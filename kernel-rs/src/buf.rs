@@ -1,4 +1,4 @@
-use crate::{ libc, sleeplock }; 
+use crate::{libc, sleeplock};
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 pub type uchar = libc::c_uchar;

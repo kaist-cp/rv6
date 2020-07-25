@@ -1,9 +1,13 @@
-use crate::{ libc, spinlock::{ Spinlock, initlock, acquire, release, holding }, file::{File, inode} };
-use crate::file::{filedup, fileclose};
-use core::ptr;
-use crate::fs::{fsinit, idup, iput, namei };
+use crate::file::{fileclose, filedup};
+use crate::fs::{fsinit, idup, iput, namei};
 use crate::kalloc::{kalloc, kfree};
 use crate::log::{begin_op, end_op};
+use crate::{
+    file::{inode, File},
+    libc,
+    spinlock::{acquire, holding, initlock, release, Spinlock},
+};
+use core::ptr;
 extern "C" {
     // printf.c
     #[no_mangle]

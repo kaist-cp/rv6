@@ -1,4 +1,9 @@
-use crate::{ libc, spinlock::{ Spinlock, release, initlock, acquire }, buf::Buf, proc::{ cpu, sleep } };
+use crate::{
+    buf::Buf,
+    libc,
+    proc::{cpu, sleep},
+    spinlock::{acquire, initlock, release, Spinlock},
+};
 use core::ptr;
 extern "C" {
     // pub type cpu;

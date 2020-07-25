@@ -1,12 +1,12 @@
-use crate::{ libc, buf, sleeplock, spinlock, proc, file, stat };
-use spinlock::{Spinlock, release, acquire, initlock};
+use crate::bio::{bread, brelse};
+use crate::log::{initlog, log_write};
+use crate::{buf, file, libc, proc, sleeplock, spinlock, stat};
 use buf::Buf;
-use proc::{ cpu, myproc};
-use sleeplock::{Sleeplock, acquiresleep, initsleeplock, releasesleep, holdingsleep};
-use crate::log::{log_write, initlog};
-use crate::bio::{brelse, bread};
-use file::inode;
 use core::ptr;
+use file::inode;
+use proc::{cpu, myproc};
+use sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock};
+use spinlock::{acquire, initlock, release, Spinlock};
 use stat::Stat;
 
 extern "C" {
@@ -291,7 +291,6 @@ pub static mut icache: C2RustUnnamed_0 = C2RustUnnamed_0 {
         lock: Sleeplock {
             locked: 0,
             lk: Spinlock {
-
                 locked: 0,
                 name: 0 as *const libc::c_char as *mut libc::c_char,
                 cpu: 0 as *const cpu as *mut cpu,

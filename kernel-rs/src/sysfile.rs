@@ -1,8 +1,15 @@
-use crate::{ libc, proc::{myproc, proc_0}, file::{ File, inode }, fs::dirent};
-use crate::pipe::{pipealloc};
-use crate::fs::{writei, readi, nameiparent, namei, iupdate, iunlock, iunlockput, iput, ilock, ialloc
-, dirlookup, dirlink};
-use crate::file::{filewrite, filestat, fileread, filedup, fileclose, filealloc};
+use crate::file::{filealloc, fileclose, filedup, fileread, filestat, filewrite};
+use crate::fs::{
+    dirlink, dirlookup, ialloc, ilock, iput, iunlock, iunlockput, iupdate, namei, nameiparent,
+    readi, writei,
+};
+use crate::pipe::pipealloc;
+use crate::{
+    file::{inode, File},
+    fs::dirent,
+    libc,
+    proc::{myproc, proc_0},
+};
 
 use core::ptr;
 extern "C" {

@@ -1,9 +1,9 @@
+use crate::bio::{bpin, bread, brelse, bunpin, bwrite};
+use crate::buf::Buf;
+use crate::fs::superblock;
 use crate::libc;
 use crate::proc::{cpu, sleep, wakeup};
-use crate::spinlock::{ Spinlock, acquire, initlock, release };
-use crate::buf::{ Buf };
-use crate::bio::{ bread, brelse, bwrite, bpin, bunpin };
-use crate::fs::{ superblock };
+use crate::spinlock::{acquire, initlock, release, Spinlock};
 extern "C" {
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;

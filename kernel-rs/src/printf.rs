@@ -1,7 +1,7 @@
 use crate::libc;
-use core::ptr;
-use crate::spinlock::{ Spinlock, acquire, initlock, release };
 use crate::proc::cpu;
+use crate::spinlock::{acquire, initlock, release, Spinlock};
+use core::ptr;
 extern "C" {
     pub type pipe;
     #[no_mangle]

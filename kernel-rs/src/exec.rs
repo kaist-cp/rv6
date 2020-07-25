@@ -1,6 +1,6 @@
 use crate::libc;
+use crate::proc::{myproc, proc_0, proc_freepagetable, proc_pagetable};
 use core::ptr;
-use crate::proc::{myproc, proc_0, proc_pagetable, proc_freepagetable};
 extern "C" {
     pub type inode;
     pub type file;

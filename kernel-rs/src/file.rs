@@ -1,10 +1,10 @@
+use crate::fs::{ilock, iput, iunlock, readi, stati, writei};
 use crate::libc;
-use crate::stat::Stat;
-use crate::spinlock::{ Spinlock, acquire, initlock, release };
-use crate::fs::{stati, readi, writei, ilock, iput, iunlock};
+use crate::pipe::{pipeclose, piperead, pipewrite, Pipe};
 use crate::proc::{myproc, proc_0};
 use crate::sleeplock::Sleeplock;
-use crate::pipe::{ Pipe, piperead, pipeclose, pipewrite};
+use crate::spinlock::{acquire, initlock, release, Spinlock};
+use crate::stat::Stat;
 use core::ptr;
 extern "C" {
     pub type pipe;

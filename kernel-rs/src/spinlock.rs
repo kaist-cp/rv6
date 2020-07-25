@@ -1,4 +1,7 @@
-use crate::{ libc, proc::{ cpu, mycpu } };
+use crate::{
+    libc,
+    proc::{cpu, mycpu},
+};
 use core::ptr;
 extern "C" {
     #[no_mangle]
@@ -7,7 +10,7 @@ extern "C" {
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 // Mutual exclusion lock.
-#[derive(Copy, Clone)] 
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Spinlock {
     pub locked: uint,

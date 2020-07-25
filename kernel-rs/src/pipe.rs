@@ -1,8 +1,8 @@
-use crate::{ libc, proc, file, spinlock };
-use proc::{myproc, sleep, wakeup, proc_0};
-use file::{File, filealloc, fileclose};
-use spinlock::{Spinlock, acquire, release, initlock};
+use crate::{file, libc, proc, spinlock};
 use core::ptr;
+use file::{filealloc, fileclose, File};
+use proc::{myproc, proc_0, sleep, wakeup};
+use spinlock::{acquire, initlock, release, Spinlock};
 extern "C" {
     // kalloc.c
     #[no_mangle]

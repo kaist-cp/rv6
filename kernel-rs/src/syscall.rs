@@ -1,7 +1,8 @@
-use crate::{ libc, proc::{ proc_0, myproc } };
+use crate::{
+    libc,
+    proc::{myproc, proc_0},
+};
 extern "C" {
-    // pub type inode;
-    // pub type file;
     // printf.c
     #[no_mangle]
     fn printf(_: *mut libc::c_char, _: ...);

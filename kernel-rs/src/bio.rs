@@ -1,10 +1,10 @@
-use crate::libc;
-use core::ptr;
-use crate::spinlock::{ Spinlock, acquire, initlock, release };
-use crate::sleeplock::{ Sleeplock, acquiresleep, releasesleep, holdingsleep, initsleeplock };
-use crate::proc::cpu;
 use crate::buf::Buf;
+use crate::libc;
+use crate::proc::cpu;
+use crate::sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock};
+use crate::spinlock::{acquire, initlock, release, Spinlock};
 use crate::virtio_disk::virtio_disk_rw;
+use core::ptr;
 extern "C" {
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
