@@ -38,6 +38,7 @@ mod libc {
 }
 
 mod bio;
+mod buf;
 mod console;
 mod exec;
 mod file;
@@ -53,6 +54,7 @@ mod proc;
 mod sleeplock;
 mod spinlock;
 mod start;
+mod stat;
 mod string;
 mod syscall;
 mod sysfile;

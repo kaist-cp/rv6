@@ -46,7 +46,7 @@ extern "C" {
     #[no_mangle]
     fn virtio_disk_init();
 }
-// start() jumps here in supervisor mode on all CPUs.
+/// start() jumps here in supervisor mode on all CPUs.
 #[export_name = "main"]
 pub unsafe extern "C" fn main_0() {
     let started: AtomicBool = AtomicBool::new(false);

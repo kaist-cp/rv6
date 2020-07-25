@@ -1,49 +1,23 @@
-use crate::libc;
+use crate::file::{filealloc, fileclose, filedup, fileread, filestat, filewrite};
+use crate::fs::{
+    dirlink, dirlookup, ialloc, ilock, iput, iunlock, iunlockput, iupdate, namei, nameiparent,
+    readi, writei,
+};
+use crate::pipe::pipealloc;
+use crate::{
+    file::{inode, File},
+    fs::dirent,
+    libc,
+    proc::{myproc, proc_0},
+};
+
 use core::ptr;
 extern "C" {
-    pub type pipe;
     // exec.c
     #[no_mangle]
     fn exec(_: *mut libc::c_char, _: *mut *mut libc::c_char) -> libc::c_int;
-    // file.c
-    #[no_mangle]
-    fn filealloc() -> *mut file;
-    #[no_mangle]
-    fn fileclose(_: *mut file);
-    #[no_mangle]
-    fn filedup(_: *mut file) -> *mut file;
-    #[no_mangle]
-    fn fileread(_: *mut file, _: uint64, n: libc::c_int) -> libc::c_int;
-    #[no_mangle]
-    fn filestat(_: *mut file, addr: uint64) -> libc::c_int;
-    #[no_mangle]
-    fn filewrite(_: *mut file, _: uint64, n: libc::c_int) -> libc::c_int;
-    #[no_mangle]
-    fn dirlink(_: *mut inode, _: *mut libc::c_char, _: uint) -> libc::c_int;
-    #[no_mangle]
-    fn dirlookup(_: *mut inode, _: *mut libc::c_char, _: *mut uint) -> *mut inode;
-    #[no_mangle]
-    fn ialloc(_: uint, _: libc::c_short) -> *mut inode;
-    #[no_mangle]
-    fn ilock(_: *mut inode);
-    #[no_mangle]
-    fn iput(_: *mut inode);
-    #[no_mangle]
-    fn iunlock(_: *mut inode);
-    #[no_mangle]
-    fn iunlockput(_: *mut inode);
-    #[no_mangle]
-    fn iupdate(_: *mut inode);
     #[no_mangle]
     fn namecmp(_: *const libc::c_char, _: *const libc::c_char) -> libc::c_int;
-    #[no_mangle]
-    fn namei(_: *mut libc::c_char) -> *mut inode;
-    #[no_mangle]
-    fn nameiparent(_: *mut libc::c_char, _: *mut libc::c_char) -> *mut inode;
-    #[no_mangle]
-    fn readi(_: *mut inode, _: libc::c_int, _: uint64, _: uint, _: uint) -> libc::c_int;
-    #[no_mangle]
-    fn writei(_: *mut inode, _: libc::c_int, _: uint64, _: uint, _: uint) -> libc::c_int;
     // kalloc.c
     #[no_mangle]
     fn kalloc() -> *mut libc::c_void;
@@ -53,13 +27,8 @@ extern "C" {
     fn begin_op();
     #[no_mangle]
     fn end_op();
-    // pipe.c
-    #[no_mangle]
-    fn pipealloc(_: *mut *mut file, _: *mut *mut file) -> libc::c_int;
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn myproc() -> *mut proc_0;
     #[no_mangle]
     fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
     // syscall.c
@@ -80,176 +49,11 @@ pub type uint = libc::c_uint;
 pub type ushort = libc::c_ushort;
 pub type uint64 = libc::c_ulong;
 pub type pagetable_t = *mut uint64;
-// Saved registers for kernel context switches.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct context {
-    pub ra: uint64,
-    pub sp: uint64,
-    pub s0: uint64,
-    pub s1: uint64,
-    pub s2: uint64,
-    pub s3: uint64,
-    pub s4: uint64,
-    pub s5: uint64,
-    pub s6: uint64,
-    pub s7: uint64,
-    pub s8: uint64,
-    pub s9: uint64,
-    pub s10: uint64,
-    pub s11: uint64,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct file {
-    pub type_0: C2RustUnnamed,
-    pub ref_0: libc::c_int,
-    pub readable: libc::c_char,
-    pub writable: libc::c_char,
-    pub pipe: *mut pipe,
-    pub ip: *mut inode,
-    pub off: uint,
-    pub major: libc::c_short,
-}
-// FD_DEVICE
-// in-memory copy of an inode
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct inode {
-    pub dev: uint,
-    pub inum: uint,
-    pub ref_0: libc::c_int,
-    pub lock: sleeplock,
-    pub valid: libc::c_int,
-    pub type_0: libc::c_short,
-    pub major: libc::c_short,
-    pub minor: libc::c_short,
-    pub nlink: libc::c_short,
-    pub size: uint,
-    pub addrs: [uint; 13],
-}
-// Long-term locks for processes
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct sleeplock {
-    pub locked: uint,
-    pub lk: spinlock,
-    pub name: *mut libc::c_char,
-    pub pid: libc::c_int,
-}
-// Mutual exclusion lock.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct spinlock {
-    pub locked: uint,
-    pub name: *mut libc::c_char,
-    pub cpu: *mut cpu,
-}
-// Per-CPU state.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct cpu {
-    pub proc_0: *mut proc_0,
-    pub scheduler: context,
-    pub noff: libc::c_int,
-    pub intena: libc::c_int,
-}
-// Per-process state
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct proc_0 {
-    pub lock: spinlock,
-    pub state: procstate,
-    pub parent: *mut proc_0,
-    pub chan: *mut libc::c_void,
-    pub killed: libc::c_int,
-    pub xstate: libc::c_int,
-    pub pid: libc::c_int,
-    pub kstack: uint64,
-    pub sz: uint64,
-    pub pagetable: pagetable_t,
-    pub tf: *mut trapframe,
-    pub context: context,
-    pub ofile: [*mut file; 16],
-    pub cwd: *mut inode,
-    pub name: [libc::c_char; 16],
-}
-// per-process data for the trap handling code in trampoline.S.
-// sits in a page by itself just under the trampoline page in the
-// user page table. not specially mapped in the kernel page table.
-// the sscratch register points here.
-// uservec in trampoline.S saves user registers in the trapframe,
-// then initializes registers from the trapframe's
-// kernel_sp, kernel_hartid, kernel_satp, and jumps to kernel_trap.
-// usertrapret() and userret in trampoline.S set up
-// the trapframe's kernel_*, restore user registers from the
-// trapframe, switch to the user page table, and enter user space.
-// the trapframe includes callee-saved user registers like s0-s11 because the
-// return-to-user path via usertrapret() doesn't return through
-// the entire kernel call stack.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct trapframe {
-    pub kernel_satp: uint64,
-    pub kernel_sp: uint64,
-    pub kernel_trap: uint64,
-    pub epc: uint64,
-    pub kernel_hartid: uint64,
-    pub ra: uint64,
-    pub sp: uint64,
-    pub gp: uint64,
-    pub tp: uint64,
-    pub t0: uint64,
-    pub t1: uint64,
-    pub t2: uint64,
-    pub s0: uint64,
-    pub s1: uint64,
-    pub a0: uint64,
-    pub a1: uint64,
-    pub a2: uint64,
-    pub a3: uint64,
-    pub a4: uint64,
-    pub a5: uint64,
-    pub a6: uint64,
-    pub a7: uint64,
-    pub s2: uint64,
-    pub s3: uint64,
-    pub s4: uint64,
-    pub s5: uint64,
-    pub s6: uint64,
-    pub s7: uint64,
-    pub s8: uint64,
-    pub s9: uint64,
-    pub s10: uint64,
-    pub s11: uint64,
-    pub t3: uint64,
-    pub t4: uint64,
-    pub t5: uint64,
-    pub t6: uint64,
-}
-pub type procstate = libc::c_uint;
-pub const ZOMBIE: procstate = 4;
-pub const RUNNING: procstate = 3;
-pub const RUNNABLE: procstate = 2;
-pub const SLEEPING: procstate = 1;
-pub const UNUSED: procstate = 0;
 pub type C2RustUnnamed = libc::c_uint;
 pub const FD_DEVICE: C2RustUnnamed = 3;
 pub const FD_INODE: C2RustUnnamed = 2;
 pub const FD_PIPE: C2RustUnnamed = 1;
 pub const FD_NONE: C2RustUnnamed = 0;
-// Data block addresses
-// Inodes per block.
-// Block containing inode i
-// Bitmap bits per block
-// Block of free map containing bit for block b
-// Directory is a file containing a sequence of dirent structures.
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct dirent {
-    pub inum: ushort,
-    pub name: [libc::c_char; 14],
-}
 pub const PGSIZE: libc::c_int = 4096 as libc::c_int;
 // maximum number of processes
 // maximum number of CPUs
@@ -275,20 +79,20 @@ pub const O_RDONLY: libc::c_int = 0 as libc::c_int;
 pub const O_WRONLY: libc::c_int = 0x1 as libc::c_int;
 pub const O_RDWR: libc::c_int = 0x2 as libc::c_int;
 pub const O_CREATE: libc::c_int = 0x200 as libc::c_int;
-//
-// File-system system calls.
-// Mostly argument checking, since we don't trust
-// user code, and calls into file.c and fs.c.
-//
-// Fetch the nth word-sized system call argument as a file descriptor
-// and return both the descriptor and the corresponding struct file.
+
+/// File-system system calls.
+/// Mostly argument checking, since we don't trust
+/// user code, and calls into file.c and fs.c.
+
+/// Fetch the nth word-sized system call argument as a file descriptor
+/// and return both the descriptor and the corresponding struct file.
 unsafe extern "C" fn argfd(
     mut n: libc::c_int,
     mut pfd: *mut libc::c_int,
-    mut pf: *mut *mut file,
+    mut pf: *mut *mut File,
 ) -> libc::c_int {
     let mut fd: libc::c_int = 0;
-    let mut f: *mut file = ptr::null_mut();
+    let mut f: *mut File = ptr::null_mut();
     if argint(n, &mut fd) < 0 as libc::c_int {
         return -(1 as libc::c_int);
     }
@@ -306,9 +110,9 @@ unsafe extern "C" fn argfd(
     }
     0 as libc::c_int
 }
-// Allocate a file descriptor for the given file.
-// Takes over file reference from caller on success.
-unsafe extern "C" fn fdalloc(mut f: *mut file) -> libc::c_int {
+/// Allocate a file descriptor for the given file.
+/// Takes over file reference from caller on success.
+unsafe extern "C" fn fdalloc(mut f: *mut File) -> libc::c_int {
     let mut fd: libc::c_int = 0; // user pointer to struct stat
     let mut p: *mut proc_0 = myproc();
     fd = 0 as libc::c_int;
@@ -323,7 +127,7 @@ unsafe extern "C" fn fdalloc(mut f: *mut file) -> libc::c_int {
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_dup() -> uint64 {
-    let mut f: *mut file = ptr::null_mut();
+    let mut f: *mut File = ptr::null_mut();
     let mut fd: libc::c_int = 0;
     if argfd(0 as libc::c_int, ptr::null_mut(), &mut f) < 0 as libc::c_int {
         return -(1 as libc::c_int) as uint64;
@@ -337,7 +141,7 @@ pub unsafe extern "C" fn sys_dup() -> uint64 {
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_read() -> uint64 {
-    let mut f: *mut file = ptr::null_mut();
+    let mut f: *mut File = ptr::null_mut();
     let mut n: libc::c_int = 0;
     let mut p: uint64 = 0;
     if argfd(0 as libc::c_int, ptr::null_mut(), &mut f) < 0 as libc::c_int
@@ -350,7 +154,7 @@ pub unsafe extern "C" fn sys_read() -> uint64 {
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_write() -> uint64 {
-    let mut f: *mut file = ptr::null_mut();
+    let mut f: *mut File = ptr::null_mut();
     let mut n: libc::c_int = 0;
     let mut p: uint64 = 0;
     if argfd(0 as libc::c_int, ptr::null_mut(), &mut f) < 0 as libc::c_int
@@ -364,7 +168,7 @@ pub unsafe extern "C" fn sys_write() -> uint64 {
 #[no_mangle]
 pub unsafe extern "C" fn sys_close() -> uint64 {
     let mut fd: libc::c_int = 0;
-    let mut f: *mut file = ptr::null_mut();
+    let mut f: *mut File = ptr::null_mut();
     if argfd(0 as libc::c_int, &mut fd, &mut f) < 0 as libc::c_int {
         return -(1 as libc::c_int) as uint64;
     }
@@ -375,7 +179,7 @@ pub unsafe extern "C" fn sys_close() -> uint64 {
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_fstat() -> uint64 {
-    let mut f: *mut file = ptr::null_mut();
+    let mut f: *mut File = ptr::null_mut();
     let mut st: uint64 = 0;
     if argfd(0 as libc::c_int, ptr::null_mut(), &mut f) < 0 as libc::c_int
         || argaddr(1 as libc::c_int, &mut st) < 0 as libc::c_int
@@ -384,7 +188,7 @@ pub unsafe extern "C" fn sys_fstat() -> uint64 {
     }
     filestat(f, st) as uint64
 }
-// Create the path new as a link to the same inode as old.
+/// Create the path new as a link to the same inode as old.
 #[no_mangle]
 pub unsafe extern "C" fn sys_link() -> uint64 {
     let mut name: [libc::c_char; 14] = [0; 14];
@@ -431,7 +235,7 @@ pub unsafe extern "C" fn sys_link() -> uint64 {
     end_op();
     -(1 as libc::c_int) as uint64
 }
-// Is the directory dp empty except for "." and ".." ?
+/// Is the directory dp empty except for "." and ".." ?
 unsafe extern "C" fn isdirempty(mut dp: *mut inode) -> libc::c_int {
     let mut off: libc::c_int = 0;
     let mut de: dirent = dirent {
@@ -607,7 +411,7 @@ pub unsafe extern "C" fn sys_open() -> uint64 {
     let mut path: [libc::c_char; 128] = [0; 128];
     let mut fd: libc::c_int = 0;
     let mut omode: libc::c_int = 0;
-    let mut f: *mut file = ptr::null_mut();
+    let mut f: *mut File = ptr::null_mut();
     let mut ip: *mut inode = ptr::null_mut();
     let mut n: libc::c_int = 0;
     n = argstr(0 as libc::c_int, path.as_mut_ptr(), MAXPATH);
@@ -833,8 +637,8 @@ pub unsafe extern "C" fn sys_exec() -> uint64 {
 #[no_mangle]
 pub unsafe extern "C" fn sys_pipe() -> uint64 {
     let mut fdarray: uint64 = 0;
-    let mut rf: *mut file = ptr::null_mut();
-    let mut wf: *mut file = ptr::null_mut();
+    let mut rf: *mut File = ptr::null_mut();
+    let mut wf: *mut File = ptr::null_mut();
     let mut fd0: libc::c_int = 0;
     let mut fd1: libc::c_int = 0;
     let mut p: *mut proc_0 = myproc();

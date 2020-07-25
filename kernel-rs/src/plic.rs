@@ -32,9 +32,9 @@ pub const VIRTIO0_IRQ: libc::c_int = 1 as libc::c_int;
 pub const PLIC: libc::c_long = 0xc000000 as libc::c_long;
 pub const PLIC_PENDING: libc::c_long = PLIC + 0x1000 as libc::c_int as libc::c_long;
 // plic.c
-//
-// the riscv Platform Level Interrupt Controller (PLIC).
-//
+///
+/// the riscv Platform Level Interrupt Controller (PLIC).
+///
 #[no_mangle]
 pub unsafe extern "C" fn plicinit() {
     // set desired IRQ priorities non-zero (otherwise disabled).
@@ -56,15 +56,15 @@ pub unsafe extern "C" fn plicinithart() {
         + (hart * 0x2000 as libc::c_int) as libc::c_long) as *mut uint32) =
         0 as libc::c_int as uint32;
 }
-// return a bitmap of which IRQs are waiting
-// to be served.
+/// return a bitmap of which IRQs are waiting
+/// to be served.
 #[no_mangle]
 pub unsafe extern "C" fn plic_pending() -> uint64 {
     //mask = *(uint32*)(PLIC + 0x1000);
     //mask |= (uint64)*(uint32*)(PLIC + 0x1004) << 32;
     *(PLIC_PENDING as *mut uint64)
 }
-// ask the PLIC what interrupt we should serve.
+/// ask the PLIC what interrupt we should serve.
 #[no_mangle]
 pub unsafe extern "C" fn plic_claim() -> libc::c_int {
     let mut hart: libc::c_int = cpuid();
@@ -75,7 +75,7 @@ pub unsafe extern "C" fn plic_claim() -> libc::c_int {
         as *mut uint32) as libc::c_int;
     irq
 }
-// tell the PLIC we've served this IRQ.
+/// tell the PLIC we've served this IRQ.
 #[no_mangle]
 pub unsafe extern "C" fn plic_complete(mut irq: libc::c_int) {
     let mut hart: libc::c_int = cpuid();

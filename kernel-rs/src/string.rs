@@ -80,7 +80,7 @@ pub unsafe extern "C" fn memmove(
     }
     dst
 }
-// memcpy exists to placate GCC.  Use memmove.
+/// memcpy exists to placate GCC.  Use memmove.
 #[no_mangle]
 pub unsafe extern "C" fn memcpy(
     mut dst: *mut libc::c_void,
@@ -142,7 +142,7 @@ pub unsafe extern "C" fn strncpy(
     }
     os
 }
-// Like strncpy but guaranteed to NUL-terminate.
+/// Like strncpy but guaranteed to NUL-terminate.
 #[no_mangle]
 pub unsafe extern "C" fn safestrcpy(
     mut s: *mut libc::c_char,

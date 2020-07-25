@@ -1,5 +1,5 @@
-use core::ptr;
 use crate::libc;
+use core::ptr;
 extern "C" {
     #[no_mangle]
     fn consoleintr(_: libc::c_int);
@@ -23,23 +23,23 @@ extern "C" {
 // qemu puts UART registers here in physical memory.
 pub const UART0: libc::c_long = 0x10000000 as libc::c_long;
 // uart.c
-//
-// low-level driver routines for 16550a UART.
-//
-// the UART control registers are memory-mapped
-// at address UART0. this macro returns the
-// address of one of the registers.
-// the UART control registers.
-// some have different meanings for
-// read vs write.
-// http://byterunner.com/16550.html
-// receive holding register (for input bytes)
-// transmit holding register (for output bytes)
-// interrupt enable register
-// FIFO control register
-// interrupt status register
-// line control register
-// line status register
+
+/// low-level driver routines for 16550a UART.
+
+/// the UART control registers are memory-mapped
+/// at address UART0. this macro returns the
+/// address of one of the registers.
+/// the UART control registers.
+/// some have different meanings for
+/// read vs write.
+/// http://byterunner.com/16550.html
+/// receive holding register (for input bytes)
+/// transmit holding register (for output bytes)
+/// interrupt enable register
+/// FIFO control register
+/// interrupt status register
+/// line control register
+/// line status register
 #[no_mangle]
 pub unsafe extern "C" fn uartinit() {
     // disable interrupts.
@@ -79,11 +79,12 @@ pub unsafe extern "C" fn uartinit() {
         0x1 as libc::c_int as libc::c_uchar,
     );
 }
-// write one output character to the UART.
+/// write one output character to the UART.
 #[no_mangle]
 pub unsafe extern "C" fn uartputc(mut c: libc::c_int) {
     // wait for Transmit Holding Empty to be set in LSR.
-    while ptr::read_volatile((UART0 + 5 as libc::c_int as libc::c_long) as *mut libc::c_uchar) as libc::c_int
+    while ptr::read_volatile((UART0 + 5 as libc::c_int as libc::c_long) as *mut libc::c_uchar)
+        as libc::c_int
         & (1 as libc::c_int) << 5 as libc::c_int
         == 0 as libc::c_int
     {}
@@ -92,21 +93,23 @@ pub unsafe extern "C" fn uartputc(mut c: libc::c_int) {
         c as libc::c_uchar,
     );
 }
-// read one input character from the UART.
-// return -1 if none is waiting.
+/// read one input character from the UART.
+/// return -1 if none is waiting.
 #[no_mangle]
 pub unsafe extern "C" fn uartgetc() -> libc::c_int {
-    if ptr::read_volatile((UART0 + 5 as libc::c_int as libc::c_long) as *mut libc::c_uchar) as libc::c_int
+    if ptr::read_volatile((UART0 + 5 as libc::c_int as libc::c_long) as *mut libc::c_uchar)
+        as libc::c_int
         & 0x1 as libc::c_int
         != 0
     {
         // input data is ready.
-        ptr::read_volatile((UART0 + 0 as libc::c_int as libc::c_long) as *mut libc::c_uchar) as libc::c_int
+        ptr::read_volatile((UART0 + 0 as libc::c_int as libc::c_long) as *mut libc::c_uchar)
+            as libc::c_int
     } else {
         -(1 as libc::c_int)
     }
 }
-// trap.c calls here when the uart interrupts.
+/// trap.c calls here when the uart interrupts.
 #[no_mangle]
 pub unsafe extern "C" fn uartintr() {
     loop {
