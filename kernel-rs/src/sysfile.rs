@@ -15,9 +15,9 @@ use core::ptr;
 extern "C" {
     // exec.c
     #[no_mangle]
-    fn exec(_: *mut u8, _: *mut *mut u8) -> i32;
+    fn exec(_: *mut i8, _: *mut *mut i8) -> i32;
     #[no_mangle]
-    fn namecmp(_: *const u8, _: *const u8) -> i32;
+    fn namecmp(_: *const i8, _: *const i8) -> i32;
     // kalloc.c
     #[no_mangle]
     fn kalloc() -> *mut libc::c_void;
@@ -28,22 +28,22 @@ extern "C" {
     #[no_mangle]
     fn end_op();
     #[no_mangle]
-    fn panic(_: *mut u8) -> !;
+    fn panic(_: *mut i8) -> !;
     #[no_mangle]
     fn memset(_: *mut libc::c_void, _: i32, _: u32) -> *mut libc::c_void;
     // syscall.c
     #[no_mangle]
     fn argint(_: i32, _: *mut i32) -> i32;
     #[no_mangle]
-    fn argstr(_: i32, _: *mut u8, _: i32) -> i32;
+    fn argstr(_: i32, _: *mut i8, _: i32) -> i32;
     #[no_mangle]
     fn argaddr(_: i32, _: *mut u64) -> i32;
     #[no_mangle]
-    fn fetchstr(_: u64, _: *mut u8, _: i32) -> i32;
+    fn fetchstr(_: u64, _: *mut i8, _: i32) -> i32;
     #[no_mangle]
     fn fetchaddr(_: u64, _: *mut u64) -> i32;
     #[no_mangle]
-    fn copyout(_: pagetable_t, _: u64, _: *mut u8, _: u64) -> i32;
+    fn copyout(_: pagetable_t, _: u64, _: *mut i8, _: u64) -> i32;
 }
 pub type pagetable_t = *mut u64;
 pub const FD_DEVICE: u32 = 3;
@@ -181,9 +181,9 @@ pub unsafe extern "C" fn sys_fstat() -> u64 {
 /// Create the path new as a link to the same inode as old.
 #[no_mangle]
 pub unsafe extern "C" fn sys_link() -> u64 {
-    let mut name: [u8; 14] = [0; 14];
-    let mut new: [u8; 128] = [0; 128];
-    let mut old: [u8; 128] = [0; 128];
+    let mut name: [i8; 14] = [0; 14];
+    let mut new: [i8; 128] = [0; 128];
+    let mut old: [i8; 128] = [0; 128];
     let mut dp: *mut inode = ptr::null_mut();
     let mut ip: *mut inode = ptr::null_mut();
     if argstr(0 as i32, old.as_mut_ptr(), MAXPATH) < 0 as i32
@@ -243,7 +243,7 @@ unsafe extern "C" fn isdirempty(mut dp: *mut inode) -> i32 {
         ) as u64
             != ::core::mem::size_of::<dirent>() as u64
         {
-            panic(b"isdirempty: readi\x00" as *const u8 as *mut u8);
+            panic(b"isdirempty: readi\x00" as *const u8 as *mut i8);
         }
         if de.inum as i32 != 0 as i32 {
             return 0 as i32;
@@ -260,8 +260,8 @@ pub unsafe extern "C" fn sys_unlink() -> u64 {
         inum: 0,
         name: [0; 14],
     };
-    let mut name: [u8; 14] = [0; 14];
-    let mut path: [u8; 128] = [0; 128];
+    let mut name: [i8; 14] = [0; 14];
+    let mut path: [i8; 128] = [0; 128];
     let mut off: u32 = 0;
     if argstr(0 as i32, path.as_mut_ptr(), MAXPATH) < 0 as i32 {
         return -(1 as i32) as u64;
@@ -274,14 +274,14 @@ pub unsafe extern "C" fn sys_unlink() -> u64 {
     }
     ilock(dp);
     // Cannot unlink "." or "..".
-    if !(namecmp(name.as_mut_ptr(), b".\x00" as *const u8) == 0 as i32
-        || namecmp(name.as_mut_ptr(), b"..\x00" as *const u8) == 0 as i32)
+    if !(namecmp(name.as_mut_ptr(), b".\x00" as *const u8 as *mut i8) == 0 as i32
+        || namecmp(name.as_mut_ptr(), b"..\x00" as *const u8 as *mut i8) == 0 as i32)
     {
         ip = dirlookup(dp, name.as_mut_ptr(), &mut off);
         if !ip.is_null() {
             ilock(ip);
             if ((*ip).nlink as i32) < 1 as i32 {
-                panic(b"unlink: nlink < 1\x00" as *const u8 as *mut u8);
+                panic(b"unlink: nlink < 1\x00" as *const u8 as *mut i8);
             }
             if (*ip).type_0 as i32 == T_DIR && isdirempty(ip) == 0 {
                 iunlockput(ip);
@@ -300,7 +300,7 @@ pub unsafe extern "C" fn sys_unlink() -> u64 {
                 ) as u64
                     != ::core::mem::size_of::<dirent>() as u64
                 {
-                    panic(b"unlink: writei\x00" as *const u8 as *mut u8);
+                    panic(b"unlink: writei\x00" as *const u8 as *mut i8);
                 }
                 if (*ip).type_0 as i32 == T_DIR {
                     (*dp).nlink -= 1;
@@ -320,14 +320,14 @@ pub unsafe extern "C" fn sys_unlink() -> u64 {
     -(1 as i32) as u64
 }
 unsafe extern "C" fn create(
-    mut path: *mut u8,
+    mut path: *mut i8,
     mut type_0: i16,
     mut major: i16,
     mut minor: i16,
 ) -> *mut inode {
     let mut ip: *mut inode = ptr::null_mut();
     let mut dp: *mut inode = ptr::null_mut();
-    let mut name: [u8; 14] = [0; 14];
+    let mut name: [i8; 14] = [0; 14];
     dp = nameiparent(path, name.as_mut_ptr());
     if dp.is_null() {
         return ptr::null_mut();
@@ -347,7 +347,7 @@ unsafe extern "C" fn create(
     }
     ip = ialloc((*dp).dev, type_0);
     if ip.is_null() {
-        panic(b"create: ialloc\x00" as *const u8 as *mut u8);
+        panic(b"create: ialloc\x00" as *const u8 as *mut i8);
     }
     ilock(ip);
     (*ip).major = major;
@@ -359,22 +359,22 @@ unsafe extern "C" fn create(
         (*dp).nlink += 1; // for ".."
         iupdate(dp);
         // No ip->nlink++ for ".": avoid cyclic ref count.
-        if dirlink(ip, b".\x00" as *const u8 as *mut u8, (*ip).inum) < 0 as i32
-            || dirlink(ip, b"..\x00" as *const u8 as *mut u8, (*dp).inum) < 0 as i32
+        if dirlink(ip, b".\x00" as *const u8 as *mut i8, (*ip).inum) < 0 as i32
+            || dirlink(ip, b"..\x00" as *const u8 as *mut i8, (*dp).inum) < 0 as i32
         {
-            panic(b"create dots\x00" as *const u8 as *mut u8);
+            panic(b"create dots\x00" as *const u8 as *mut i8);
             // user pointer to array of two integers
         }
     }
     if dirlink(dp, name.as_mut_ptr(), (*ip).inum) < 0 as i32 {
-        panic(b"create: dirlink\x00" as *const u8 as *mut u8);
+        panic(b"create: dirlink\x00" as *const u8 as *mut i8);
     }
     iunlockput(dp);
     ip
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_open() -> u64 {
-    let mut path: [u8; 128] = [0; 128];
+    let mut path: [i8; 128] = [0; 128];
     let mut fd: i32 = 0;
     let mut omode: i32 = 0;
     let mut f: *mut File = ptr::null_mut();
@@ -436,15 +436,15 @@ pub unsafe extern "C" fn sys_open() -> u64 {
         (*f).off = 0 as i32 as u32
     }
     (*f).ip = ip;
-    (*f).readable = (omode & O_WRONLY == 0) as i32 as u8;
-    (*f).writable = (omode & O_WRONLY != 0 || omode & O_RDWR != 0) as i32 as u8;
+    (*f).readable = (omode & O_WRONLY == 0) as i32 as i8;
+    (*f).writable = (omode & O_WRONLY != 0 || omode & O_RDWR != 0) as i32 as i8;
     iunlock(ip);
     end_op();
     fd as u64
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_mkdir() -> u64 {
-    let mut path: [u8; 128] = [0; 128];
+    let mut path: [i8; 128] = [0; 128];
     let mut ip: *mut inode = ptr::null_mut();
     begin_op();
     if argstr(0 as i32, path.as_mut_ptr(), MAXPATH) < 0 as i32 || {
@@ -466,7 +466,7 @@ pub unsafe extern "C" fn sys_mkdir() -> u64 {
 #[no_mangle]
 pub unsafe extern "C" fn sys_mknod() -> u64 {
     let mut ip: *mut inode = ptr::null_mut();
-    let mut path: [u8; 128] = [0; 128];
+    let mut path: [i8; 128] = [0; 128];
     let mut major: i32 = 0;
     let mut minor: i32 = 0;
     begin_op();
@@ -492,7 +492,7 @@ pub unsafe extern "C" fn sys_mknod() -> u64 {
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_chdir() -> u64 {
-    let mut path: [u8; 128] = [0; 128];
+    let mut path: [i8; 128] = [0; 128];
     let mut ip: *mut inode = ptr::null_mut();
     let mut p: *mut proc_0 = myproc();
     begin_op();
@@ -519,8 +519,8 @@ pub unsafe extern "C" fn sys_chdir() -> u64 {
 pub unsafe extern "C" fn sys_exec() -> u64 {
     let mut ret: i32 = 0;
     let mut current_block: u64;
-    let mut path: [u8; 128] = [0; 128];
-    let mut argv: [*mut u8; 32] = [ptr::null_mut(); 32];
+    let mut path: [i8; 128] = [0; 128];
+    let mut argv: [*mut i8; 32] = [ptr::null_mut(); 32];
     let mut i: i32 = 0;
     let mut uargv: u64 = 0;
     let mut uarg: u64 = 0;
@@ -531,13 +531,13 @@ pub unsafe extern "C" fn sys_exec() -> u64 {
     memset(
         argv.as_mut_ptr() as *mut libc::c_void,
         0,
-        ::core::mem::size_of::<[*mut u8; 32]>() as u64 as u32,
+        ::core::mem::size_of::<[*mut i8; 32]>() as u64 as u32,
     );
     i = 0 as i32;
     loop {
         if i as u64
-            >= (::core::mem::size_of::<[*mut u8; 32]>() as u64)
-                .wrapping_div(::core::mem::size_of::<*mut u8>() as u64)
+            >= (::core::mem::size_of::<[*mut i8; 32]>() as u64)
+                .wrapping_div(::core::mem::size_of::<*mut i8>() as u64)
         {
             current_block = 12646643519710607562;
             break;
@@ -555,9 +555,9 @@ pub unsafe extern "C" fn sys_exec() -> u64 {
             current_block = 6009453772311597924;
             break;
         } else {
-            argv[i as usize] = kalloc() as *mut u8;
+            argv[i as usize] = kalloc() as *mut i8;
             if argv[i as usize].is_null() {
-                panic(b"sys_exec kalloc\x00" as *const u8 as *mut u8);
+                panic(b"sys_exec kalloc\x00" as *const u8 as *mut i8);
             }
             if fetchstr(uarg, argv[i as usize], PGSIZE) < 0 as i32 {
                 current_block = 12646643519710607562;
@@ -570,8 +570,8 @@ pub unsafe extern "C" fn sys_exec() -> u64 {
         12646643519710607562 => {
             i = 0 as i32;
             while (i as u64)
-                < (::core::mem::size_of::<[*mut u8; 32]>() as u64)
-                    .wrapping_div(::core::mem::size_of::<*mut u8>() as u64)
+                < (::core::mem::size_of::<[*mut i8; 32]>() as u64)
+                    .wrapping_div(::core::mem::size_of::<*mut i8>() as u64)
                 && !argv[i as usize].is_null()
             {
                 kfree(argv[i as usize] as *mut libc::c_void);
@@ -583,8 +583,8 @@ pub unsafe extern "C" fn sys_exec() -> u64 {
             ret = exec(path.as_mut_ptr(), argv.as_mut_ptr());
             i = 0 as i32;
             while (i as u64)
-                < (::core::mem::size_of::<[*mut u8; 32]>() as u64)
-                    .wrapping_div(::core::mem::size_of::<*mut u8>() as u64)
+                < (::core::mem::size_of::<[*mut i8; 32]>() as u64)
+                    .wrapping_div(::core::mem::size_of::<*mut i8>() as u64)
                 && !argv[i as usize].is_null()
             {
                 kfree(argv[i as usize] as *mut libc::c_void);
@@ -624,13 +624,13 @@ pub unsafe extern "C" fn sys_pipe() -> u64 {
     if copyout(
         (*p).pagetable,
         fdarray,
-        &mut fd0 as *mut i32 as *mut u8,
+        &mut fd0 as *mut i32 as *mut i8,
         ::core::mem::size_of::<i32>() as u64,
     ) < 0
         || copyout(
             (*p).pagetable,
             fdarray.wrapping_add(::core::mem::size_of::<i32>() as u64),
-            &mut fd1 as *mut i32 as *mut u8,
+            &mut fd1 as *mut i32 as *mut i8,
             ::core::mem::size_of::<i32>() as u64,
         ) < 0
     {
