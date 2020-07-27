@@ -1,5 +1,4 @@
 use crate::buf::Buf;
-use crate::libc;
 use crate::proc::cpu;
 use crate::sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock};
 use crate::spinlock::{acquire, initlock, release, Spinlock};
@@ -7,10 +6,8 @@ use crate::virtio_disk::virtio_disk_rw;
 use core::ptr;
 extern "C" {
     #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
+    fn panic(_: *mut u8) -> !;
 }
-pub type uint = libc::c_uint;
-pub type uchar = libc::c_uchar;
 /// Buffer cache.
 ///
 /// The buffer cache is a linked list of buf structures holding
@@ -40,15 +37,15 @@ pub struct C2RustUnnamed {
 // maximum major device number
 // device number of file system root disk
 // max exec arguments
-pub const MAXOPBLOCKS: libc::c_int = 10 as libc::c_int;
+pub const MAXOPBLOCKS: isize = 10;
 // max # of blocks any FS op writes
 // max data blocks in on-disk log
-pub const NBUF: libc::c_int = MAXOPBLOCKS * 3 as libc::c_int;
+pub const NBUF: isize = MAXOPBLOCKS * 3;
 #[no_mangle]
 pub static mut bcache: C2RustUnnamed = C2RustUnnamed {
     lock: Spinlock {
         locked: 0,
-        name: 0 as *const libc::c_char as *mut libc::c_char,
+        name: 0 as *const u8 as *mut u8,
         cpu: 0 as *const cpu as *mut cpu,
     },
     buf: [Buf {
@@ -60,10 +57,10 @@ pub static mut bcache: C2RustUnnamed = C2RustUnnamed {
             locked: 0,
             lk: Spinlock {
                 locked: 0,
-                name: 0 as *const libc::c_char as *mut libc::c_char,
+                name: 0 as *const u8 as *mut u8,
                 cpu: 0 as *const cpu as *mut cpu,
             },
-            name: 0 as *const libc::c_char as *mut libc::c_char,
+            name: 0 as *const u8 as *mut u8,
             pid: 0,
         },
         refcnt: 0,
@@ -81,10 +78,10 @@ pub static mut bcache: C2RustUnnamed = C2RustUnnamed {
             locked: 0,
             lk: Spinlock {
                 locked: 0,
-                name: 0 as *const libc::c_char as *mut libc::c_char,
+                name: 0 as *const u8 as *mut u8,
                 cpu: 0 as *const cpu as *mut cpu,
             },
-            name: 0 as *const libc::c_char as *mut libc::c_char,
+            name: 0 as *const u8 as *mut u8,
             pid: 0,
         },
         refcnt: 0,
@@ -98,21 +95,15 @@ pub static mut bcache: C2RustUnnamed = C2RustUnnamed {
 #[no_mangle]
 pub unsafe extern "C" fn binit() {
     let mut b: *mut Buf = ptr::null_mut();
-    initlock(
-        &mut bcache.lock,
-        b"bcache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-    );
+    initlock(&mut bcache.lock, b"bcache\x00" as *const u8 as *mut u8);
     // Create linked list of buffers
     bcache.head.prev = &mut bcache.head;
     bcache.head.next = &mut bcache.head;
     b = bcache.buf.as_mut_ptr();
-    while b < bcache.buf.as_mut_ptr().offset(NBUF as isize) {
+    while b < bcache.buf.as_mut_ptr().offset(NBUF) {
         (*b).next = bcache.head.next;
         (*b).prev = &mut bcache.head;
-        initsleeplock(
-            &mut (*b).lock,
-            b"buffer\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-        );
+        initsleeplock(&mut (*b).lock, b"buffer\x00" as *const u8 as *mut u8);
         (*bcache.head.next).prev = b;
         bcache.head.next = b;
         b = b.offset(1)
@@ -121,7 +112,7 @@ pub unsafe extern "C" fn binit() {
 /// Look through buffer cache for block on device dev.
 /// If not found, allocate a buffer.
 /// In either case, return locked buffer.
-unsafe extern "C" fn bget(mut dev: uint, mut blockno: uint) -> *mut Buf {
+unsafe extern "C" fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
     let mut b: *mut Buf = ptr::null_mut();
     acquire(&mut bcache.lock);
     // Is the block already cached?
@@ -138,27 +129,27 @@ unsafe extern "C" fn bget(mut dev: uint, mut blockno: uint) -> *mut Buf {
     // Not cached; recycle an unused buffer.
     b = bcache.head.prev;
     while b != &mut bcache.head as *mut Buf {
-        if (*b).refcnt == 0 as libc::c_int as libc::c_uint {
+        if (*b).refcnt == 0 as i32 as u32 {
             (*b).dev = dev;
             (*b).blockno = blockno;
-            (*b).valid = 0 as libc::c_int;
-            (*b).refcnt = 1 as libc::c_int as uint;
+            (*b).valid = 0 as i32;
+            (*b).refcnt = 1 as i32 as u32;
             release(&mut bcache.lock);
             acquiresleep(&mut (*b).lock);
             return b;
         }
         b = (*b).prev
     }
-    panic(b"bget: no buffers\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    panic(b"bget: no buffers\x00" as *const u8 as *mut u8);
 }
 /// Return a locked buf with the contents of the indicated block.
 #[no_mangle]
-pub unsafe extern "C" fn bread(mut dev: uint, mut blockno: uint) -> *mut Buf {
+pub unsafe extern "C" fn bread(mut dev: u32, mut blockno: u32) -> *mut Buf {
     let mut b: *mut Buf = ptr::null_mut();
     b = bget(dev, blockno);
     if (*b).valid == 0 {
-        virtio_disk_rw(b, 0 as libc::c_int);
-        (*b).valid = 1 as libc::c_int
+        virtio_disk_rw(b, 0 as i32);
+        (*b).valid = 1 as i32
     }
     b
 }
@@ -166,21 +157,21 @@ pub unsafe extern "C" fn bread(mut dev: uint, mut blockno: uint) -> *mut Buf {
 #[no_mangle]
 pub unsafe extern "C" fn bwrite(mut b: *mut Buf) {
     if holdingsleep(&mut (*b).lock) == 0 {
-        panic(b"bwrite\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic(b"bwrite\x00" as *const u8 as *mut u8);
     }
-    virtio_disk_rw(b, 1 as libc::c_int);
+    virtio_disk_rw(b, 1 as i32);
 }
 /// Release a locked buffer.
 /// Move to the head of the MRU list.
 #[no_mangle]
 pub unsafe extern "C" fn brelse(mut b: *mut Buf) {
     if holdingsleep(&mut (*b).lock) == 0 {
-        panic(b"brelse\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic(b"brelse\x00" as *const u8 as *mut u8);
     }
     releasesleep(&mut (*b).lock);
     acquire(&mut bcache.lock);
     (*b).refcnt = (*b).refcnt.wrapping_sub(1);
-    if (*b).refcnt == 0 as libc::c_int as libc::c_uint {
+    if (*b).refcnt == 0 as i32 as u32 {
         // no one is waiting for it.
         (*(*b).next).prev = (*b).prev;
         (*(*b).prev).next = (*b).next;

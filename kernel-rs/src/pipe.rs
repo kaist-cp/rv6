@@ -10,15 +10,13 @@ extern "C" {
     #[no_mangle]
     fn kfree(_: *mut libc::c_void);
     #[no_mangle]
-    fn copyout(_: pagetable_t, _: uint64, _: *mut libc::c_char, _: uint64) -> libc::c_int;
+    fn copyout(_: pagetable_t, _: u64, _: *mut u8, _: u64) -> i32;
     #[no_mangle]
-    fn copyin(_: pagetable_t, _: *mut libc::c_char, _: uint64, _: uint64) -> libc::c_int;
+    fn copyin(_: pagetable_t, _: *mut u8, _: u64, _: u64) -> i32;
 }
-pub type uint = libc::c_uint;
-pub type uint64 = libc::c_ulong;
-pub type pagetable_t = *mut uint64;
+pub type pagetable_t = *mut u64;
 
-pub type procstate = libc::c_uint;
+pub type procstate = u32;
 pub const ZOMBIE: procstate = 4;
 pub const RUNNING: procstate = 3;
 pub const RUNNABLE: procstate = 2;
@@ -28,26 +26,25 @@ pub const UNUSED: procstate = 0;
 #[repr(C)]
 pub struct Pipe {
     pub lock: Spinlock,
-    pub data: [libc::c_char; 512],
+    pub data: [u8; 512],
     /// number of bytes read
-    pub nread: uint,
+    pub nread: u32,
     /// number of bytes written
-    pub nwrite: uint,
+    pub nwrite: u32,
     /// read fd is still open
-    pub readopen: libc::c_int,
+    pub readopen: i32,
     /// write fd is still open
-    pub writeopen: libc::c_int,
+    pub writeopen: i32,
 }
-pub type C2RustUnnamed = libc::c_uint;
-pub const FD_DEVICE: C2RustUnnamed = 3;
-pub const FD_INODE: C2RustUnnamed = 2;
-pub const FD_PIPE: C2RustUnnamed = 1;
-pub const FD_NONE: C2RustUnnamed = 0;
-pub const PIPESIZE: libc::c_int = 512 as libc::c_int;
+pub const FD_DEVICE: u32 = 3;
+pub const FD_INODE: u32 = 2;
+pub const FD_PIPE: u32 = 1;
+pub const FD_NONE: u32 = 0;
+pub const PIPESIZE: i32 = 512;
 // pipe.c
 /// write fd is still open
 #[no_mangle]
-pub unsafe extern "C" fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> libc::c_int {
+pub unsafe extern "C" fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {
     let mut pi: *mut Pipe = ptr::null_mut();
     pi = ptr::null_mut();
     *f1 = 0 as *mut File;
@@ -59,27 +56,24 @@ pub unsafe extern "C" fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut Fil
     }) {
         pi = kalloc() as *mut Pipe;
         if !pi.is_null() {
-            (*pi).readopen = 1 as libc::c_int;
-            (*pi).writeopen = 1 as libc::c_int;
-            (*pi).nwrite = 0 as libc::c_int as uint;
-            (*pi).nread = 0 as libc::c_int as uint;
-            initlock(
-                &mut (*pi).lock,
-                b"pipe\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-            );
+            (*pi).readopen = 1 as i32;
+            (*pi).writeopen = 1 as i32;
+            (*pi).nwrite = 0 as u32;
+            (*pi).nread = 0 as u32;
+            initlock(&mut (*pi).lock, b"pipe\x00" as *const u8 as *mut u8);
             (**f0).type_0 = FD_PIPE;
-            (**f0).readable = 1 as libc::c_int as libc::c_char;
-            (**f0).writable = 0 as libc::c_int as libc::c_char;
+            (**f0).readable = 1 as u8;
+            (**f0).writable = 0 as u8;
             (**f0).pipe = pi;
             (**f1).type_0 = FD_PIPE;
-            (**f1).readable = 0 as libc::c_int as libc::c_char;
-            (**f1).writable = 1 as libc::c_int as libc::c_char;
+            (**f1).readable = 0 as u8;
+            (**f1).writable = 1 as u8;
             (**f1).pipe = pi;
-            return 0 as libc::c_int;
+            return 0;
         }
     }
     if !pi.is_null() {
-        kfree(pi as *mut libc::c_char as *mut libc::c_void);
+        kfree(pi as *mut u8 as *mut libc::c_void);
     }
     if !(*f0).is_null() {
         fileclose(*f0);
@@ -87,90 +81,80 @@ pub unsafe extern "C" fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut Fil
     if !(*f1).is_null() {
         fileclose(*f1);
     }
-    -(1 as libc::c_int)
+    -(1 as i32)
 }
 #[no_mangle]
-pub unsafe extern "C" fn pipeclose(mut pi: *mut Pipe, mut writable: libc::c_int) {
+pub unsafe extern "C" fn pipeclose(mut pi: *mut Pipe, mut writable: i32) {
     acquire(&mut (*pi).lock);
     if writable != 0 {
-        (*pi).writeopen = 0 as libc::c_int;
-        wakeup(&mut (*pi).nread as *mut uint as *mut libc::c_void);
+        (*pi).writeopen = 0 as i32;
+        wakeup(&mut (*pi).nread as *mut u32 as *mut libc::c_void);
     } else {
-        (*pi).readopen = 0 as libc::c_int;
-        wakeup(&mut (*pi).nwrite as *mut uint as *mut libc::c_void);
+        (*pi).readopen = 0 as i32;
+        wakeup(&mut (*pi).nwrite as *mut u32 as *mut libc::c_void);
     }
-    if (*pi).readopen == 0 as libc::c_int && (*pi).writeopen == 0 as libc::c_int {
+    if (*pi).readopen == 0 as i32 && (*pi).writeopen == 0 as i32 {
         release(&mut (*pi).lock);
-        kfree(pi as *mut libc::c_char as *mut libc::c_void);
+        kfree(pi as *mut u8 as *mut libc::c_void);
     } else {
         release(&mut (*pi).lock);
     };
 }
 #[no_mangle]
-pub unsafe extern "C" fn pipewrite(
-    mut pi: *mut Pipe,
-    mut addr: uint64,
-    mut n: libc::c_int,
-) -> libc::c_int {
-    let mut i: libc::c_int = 0;
-    let mut ch: libc::c_char = 0;
+pub unsafe extern "C" fn pipewrite(mut pi: *mut Pipe, mut addr: u64, mut n: i32) -> i32 {
+    let mut i: i32 = 0;
+    let mut ch: u8 = 0;
     let mut pr: *mut proc_0 = myproc();
     acquire(&mut (*pi).lock);
-    i = 0 as libc::c_int;
     while i < n {
-        while (*pi).nwrite == (*pi).nread.wrapping_add(PIPESIZE as libc::c_uint) {
+        while (*pi).nwrite == (*pi).nread.wrapping_add(PIPESIZE as u32) {
             //DOC: pipewrite-full
-            if (*pi).readopen == 0 as libc::c_int || (*myproc()).killed != 0 {
+            if (*pi).readopen == 0 as i32 || (*myproc()).killed != 0 {
                 release(&mut (*pi).lock);
-                return -(1 as libc::c_int);
+                return -(1 as i32);
             }
-            wakeup(&mut (*pi).nread as *mut uint as *mut libc::c_void);
+            wakeup(&mut (*pi).nread as *mut u32 as *mut libc::c_void);
             sleep(
-                &mut (*pi).nwrite as *mut uint as *mut libc::c_void,
+                &mut (*pi).nwrite as *mut u32 as *mut libc::c_void,
                 &mut (*pi).lock,
             );
         }
         if copyin(
             (*pr).pagetable,
             &mut ch,
-            addr.wrapping_add(i as libc::c_ulong),
-            1 as libc::c_int as uint64,
-        ) == -(1 as libc::c_int)
+            addr.wrapping_add(i as u64),
+            1 as i32 as u64,
+        ) == -(1 as i32)
         {
             break;
         }
         let fresh0 = (*pi).nwrite;
         (*pi).nwrite = (*pi).nwrite.wrapping_add(1);
-        (*pi).data[fresh0.wrapping_rem(PIPESIZE as libc::c_uint) as usize] = ch;
+        (*pi).data[fresh0.wrapping_rem(PIPESIZE as u32) as usize] = ch;
         i += 1
     }
-    wakeup(&mut (*pi).nread as *mut uint as *mut libc::c_void);
+    wakeup(&mut (*pi).nread as *mut u32 as *mut libc::c_void);
     release(&mut (*pi).lock);
     n
 }
 #[no_mangle]
-pub unsafe extern "C" fn piperead(
-    mut pi: *mut Pipe,
-    mut addr: uint64,
-    mut n: libc::c_int,
-) -> libc::c_int {
-    let mut i: libc::c_int = 0;
+pub unsafe extern "C" fn piperead(mut pi: *mut Pipe, mut addr: u64, mut n: i32) -> i32 {
+    let mut i: i32 = 0;
     let mut pr: *mut proc_0 = myproc();
-    let mut ch: libc::c_char = 0;
+    let mut ch: u8 = 0;
     acquire(&mut (*pi).lock);
     while (*pi).nread == (*pi).nwrite && (*pi).writeopen != 0 {
         //DOC: pipe-empty
         if (*myproc()).killed != 0 {
             release(&mut (*pi).lock);
-            return -(1 as libc::c_int);
+            return -(1 as i32);
         }
         sleep(
-            &mut (*pi).nread as *mut uint as *mut libc::c_void,
+            &mut (*pi).nread as *mut u32 as *mut libc::c_void,
             &mut (*pi).lock,
         );
         //DOC: piperead-sleep
     }
-    i = 0 as libc::c_int;
     while i < n {
         //DOC: piperead-copy
         if (*pi).nread == (*pi).nwrite {
@@ -178,19 +162,19 @@ pub unsafe extern "C" fn piperead(
         }
         let fresh1 = (*pi).nread;
         (*pi).nread = (*pi).nread.wrapping_add(1);
-        ch = (*pi).data[fresh1.wrapping_rem(PIPESIZE as libc::c_uint) as usize];
+        ch = (*pi).data[fresh1.wrapping_rem(PIPESIZE as u32) as usize];
         if copyout(
             (*pr).pagetable,
-            addr.wrapping_add(i as libc::c_ulong),
+            addr.wrapping_add(i as u64),
             &mut ch,
-            1 as libc::c_int as uint64,
-        ) == -(1 as libc::c_int)
+            1 as i32 as u64,
+        ) == -(1 as i32)
         {
             break;
         }
         i += 1
     }
-    wakeup(&mut (*pi).nwrite as *mut uint as *mut libc::c_void);
+    wakeup(&mut (*pi).nwrite as *mut u32 as *mut libc::c_void);
     release(&mut (*pi).lock);
     i
 }

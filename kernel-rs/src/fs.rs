@@ -11,41 +11,25 @@ use stat::Stat;
 
 extern "C" {
     #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
+    fn panic(_: *mut u8) -> !;
     #[no_mangle]
-    fn either_copyout(
-        user_dst: libc::c_int,
-        dst: uint64,
-        src: *mut libc::c_void,
-        len: uint64,
-    ) -> libc::c_int;
+    fn either_copyout(user_dst: i32, dst: u64, src: *mut libc::c_void, len: u64) -> i32;
     #[no_mangle]
-    fn either_copyin(
-        dst: *mut libc::c_void,
-        user_src: libc::c_int,
-        src: uint64,
-        len: uint64,
-    ) -> libc::c_int;
+    fn either_copyin(dst: *mut libc::c_void, user_src: i32, src: u64, len: u64) -> i32;
     #[no_mangle]
-    fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: uint) -> *mut libc::c_void;
+    fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: u32) -> *mut libc::c_void;
     #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
+    fn memset(_: *mut libc::c_void, _: i32, _: u32) -> *mut libc::c_void;
     #[no_mangle]
-    fn strncmp(_: *const libc::c_char, _: *const libc::c_char, _: uint) -> libc::c_int;
+    fn strncmp(_: *const u8, _: *const u8, _: u32) -> i32;
     #[no_mangle]
-    fn strncpy(_: *mut libc::c_char, _: *const libc::c_char, _: libc::c_int) -> *mut libc::c_char;
+    fn strncpy(_: *mut u8, _: *const u8, _: i32) -> *mut u8;
 }
-pub type uint = libc::c_uint;
-pub type ushort = libc::c_ushort;
-pub type uchar = libc::c_uchar;
-pub type uint64 = libc::c_ulong;
-pub type pagetable_t = *mut uint64;
-
-pub type C2RustUnnamed = libc::c_uint;
-pub const FD_DEVICE: C2RustUnnamed = 3;
-pub const FD_INODE: C2RustUnnamed = 2;
-pub const FD_PIPE: C2RustUnnamed = 1;
-pub const FD_NONE: C2RustUnnamed = 0;
+pub type pagetable_t = *mut u64;
+pub const FD_DEVICE: u32 = 3;
+pub const FD_INODE: u32 = 2;
+pub const FD_PIPE: u32 = 1;
+pub const FD_NONE: u32 = 0;
 
 /// block size
 /// Disk layout:
@@ -57,31 +41,31 @@ pub const FD_NONE: C2RustUnnamed = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct superblock {
-    pub magic: uint,
-    pub size: uint,
-    pub nblocks: uint,
-    pub ninodes: uint,
-    pub nlog: uint,
-    pub logstart: uint,
-    pub inodestart: uint,
-    pub bmapstart: uint,
+    pub magic: u32,
+    pub size: u32,
+    pub nblocks: u32,
+    pub ninodes: u32,
+    pub nlog: u32,
+    pub logstart: u32,
+    pub inodestart: u32,
+    pub bmapstart: u32,
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct dirent {
-    pub inum: ushort,
-    pub name: [libc::c_char; 14],
+    pub inum: u16,
+    pub name: [u8; 14],
 }
 /// On-disk inode structure
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct dinode {
-    pub type_0: libc::c_short,
-    pub major: libc::c_short,
-    pub minor: libc::c_short,
-    pub nlink: libc::c_short,
-    pub size: uint,
-    pub addrs: [uint; 13],
+    pub type_0: i16,
+    pub major: i16,
+    pub minor: i16,
+    pub nlink: i16,
+    pub size: u32,
+    pub addrs: [u32; 13],
 }
 /// Inodes.
 ///
@@ -161,25 +145,25 @@ pub struct C2RustUnnamed_0 {
 // maximum number of CPUs
 // open files per process
 // open files per system
-pub const NINODE: libc::c_int = 50 as libc::c_int;
+pub const NINODE: i32 = 50;
 // maximum number of active i-nodes
 // maximum major device number
-pub const ROOTDEV: libc::c_int = 1 as libc::c_int;
-pub const T_DIR: libc::c_int = 1 as libc::c_int;
+pub const ROOTDEV: i32 = 1;
+pub const T_DIR: i32 = 1;
 // On-disk file system format.
 // Both the kernel and user programs use this header file.
-pub const ROOTINO: libc::c_int = 1 as libc::c_int;
+pub const ROOTINO: i32 = 1;
 // root i-number
-pub const BSIZE: libc::c_int = 1024 as libc::c_int;
+pub const BSIZE: i32 = 1024;
 // Block number of first free map block
-pub const FSMAGIC: libc::c_int = 0x10203040 as libc::c_int;
-pub const NDIRECT: libc::c_int = 12 as libc::c_int;
+pub const FSMAGIC: i32 = 0x10203040;
+pub const NDIRECT: i32 = 12;
 // Block containing inode i
 // Bitmap bits per block
-pub const BPB: libc::c_int = BSIZE * 8 as libc::c_int;
+pub const BPB: i32 = BSIZE * 8;
 // Block of free map containing bit for block b
 // Directory is a file containing a sequence of dirent structures.
-pub const DIRSIZ: libc::c_int = 14 as libc::c_int;
+pub const DIRSIZ: i32 = 14;
 // there should be one superblock per disk device, but we run with
 // only one device
 #[no_mangle]
@@ -194,85 +178,83 @@ pub static mut sb: superblock = superblock {
     bmapstart: 0,
 };
 /// Read the super block.
-unsafe extern "C" fn readsb(mut dev: libc::c_int, mut sb_0: *mut superblock) {
+unsafe extern "C" fn readsb(mut dev: i32, mut sb_0: *mut superblock) {
     let mut bp: *mut Buf = ptr::null_mut();
-    bp = bread(dev as uint, 1 as libc::c_int as uint);
+    bp = bread(dev as u32, 1 as u32);
     memmove(
         sb_0 as *mut libc::c_void,
         (*bp).data.as_mut_ptr() as *const libc::c_void,
-        ::core::mem::size_of::<superblock>() as libc::c_ulong as uint,
+        ::core::mem::size_of::<superblock>() as u64 as u32,
     );
     brelse(bp);
 }
 // fs.c
 /// Init fs
 #[no_mangle]
-pub unsafe extern "C" fn fsinit(mut dev: libc::c_int) {
+pub unsafe extern "C" fn fsinit(mut dev: i32) {
     readsb(dev, &mut sb);
-    if sb.magic != FSMAGIC as libc::c_uint {
-        panic(b"invalid file system\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    if sb.magic != FSMAGIC as u32 {
+        panic(b"invalid file system\x00" as *const u8 as *mut u8);
     }
     initlog(dev, &mut sb);
 }
 /// Zero a block.
-unsafe extern "C" fn bzero(mut dev: libc::c_int, mut bno: libc::c_int) {
+unsafe extern "C" fn bzero(mut dev: i32, mut bno: i32) {
     let mut bp: *mut Buf = ptr::null_mut();
-    bp = bread(dev as uint, bno as uint);
+    bp = bread(dev as u32, bno as u32);
     memset(
         (*bp).data.as_mut_ptr() as *mut libc::c_void,
-        0 as libc::c_int,
-        BSIZE as uint,
+        0 as i32,
+        BSIZE as u32,
     );
     log_write(bp);
     brelse(bp);
 }
 /// Blocks.
 /// Allocate a zeroed disk block.
-unsafe extern "C" fn balloc(mut dev: uint) -> uint {
-    let mut b: libc::c_int = 0;
-    let mut bi: libc::c_int = 0;
-    let mut m: libc::c_int = 0;
+unsafe extern "C" fn balloc(mut dev: u32) -> u32 {
+    let mut b: i32 = 0;
+    let mut bi: i32 = 0;
+    let mut m: i32 = 0;
     let mut bp: *mut Buf = ptr::null_mut();
     bp = ptr::null_mut();
-    b = 0 as libc::c_int;
-    while (b as libc::c_uint) < sb.size {
-        bp = bread(dev, ((b / BPB) as libc::c_uint).wrapping_add(sb.bmapstart));
-        bi = 0 as libc::c_int;
-        while bi < BPB && ((b + bi) as libc::c_uint) < sb.size {
-            m = (1 as libc::c_int) << (bi % 8 as libc::c_int);
-            if (*bp).data[(bi / 8 as libc::c_int) as usize] as libc::c_int & m == 0 as libc::c_int {
+    b = 0 as i32;
+    while (b as u32) < sb.size {
+        bp = bread(dev, ((b / BPB) as u32).wrapping_add(sb.bmapstart));
+        bi = 0 as i32;
+        while bi < BPB && ((b + bi) as u32) < sb.size {
+            m = (1 as i32) << (bi % 8 as i32);
+            if (*bp).data[(bi / 8 as i32) as usize] as i32 & m == 0 as i32 {
                 // Is block free?
-                (*bp).data[(bi / 8 as libc::c_int) as usize] =
-                    ((*bp).data[(bi / 8 as libc::c_int) as usize] as libc::c_int | m) as uchar; // Mark block in use.
+                (*bp).data[(bi / 8 as i32) as usize] =
+                    ((*bp).data[(bi / 8 as i32) as usize] as i32 | m) as u8; // Mark block in use.
                 log_write(bp);
                 brelse(bp);
-                bzero(dev as libc::c_int, b + bi);
-                return (b + bi) as uint;
+                bzero(dev as i32, b + bi);
+                return (b + bi) as u32;
             }
             bi += 1
         }
         brelse(bp);
         b += BPB
     }
-    panic(b"balloc: out of blocks\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    panic(b"balloc: out of blocks\x00" as *const u8 as *mut u8);
 }
 /// Free a disk block.
-unsafe extern "C" fn bfree(mut dev: libc::c_int, mut b: uint) {
+unsafe extern "C" fn bfree(mut dev: i32, mut b: u32) {
     let mut bp: *mut Buf = ptr::null_mut();
-    let mut bi: libc::c_int = 0;
-    let mut m: libc::c_int = 0;
+    let mut bi: i32 = 0;
+    let mut m: i32 = 0;
     bp = bread(
-        dev as uint,
-        b.wrapping_div(BPB as libc::c_uint)
-            .wrapping_add(sb.bmapstart),
+        dev as u32,
+        b.wrapping_div(BPB as u32).wrapping_add(sb.bmapstart),
     );
-    bi = b.wrapping_rem(BPB as libc::c_uint) as libc::c_int;
-    m = (1 as libc::c_int) << (bi % 8 as libc::c_int);
-    if (*bp).data[(bi / 8 as libc::c_int) as usize] as libc::c_int & m == 0 as libc::c_int {
-        panic(b"freeing free block\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    bi = b.wrapping_rem(BPB as u32) as i32;
+    m = (1 as i32) << (bi % 8 as i32);
+    if (*bp).data[(bi / 8 as i32) as usize] as i32 & m == 0 as i32 {
+        panic(b"freeing free block\x00" as *const u8 as *mut u8);
     }
-    (*bp).data[(bi / 8 as libc::c_int) as usize] =
-        ((*bp).data[(bi / 8 as libc::c_int) as usize] as libc::c_int & !m) as uchar;
+    (*bp).data[(bi / 8 as i32) as usize] = ((*bp).data[(bi / 8 as i32) as usize] as i32 & !m) as u8;
     log_write(bp);
     brelse(bp);
 }
@@ -280,7 +262,7 @@ unsafe extern "C" fn bfree(mut dev: libc::c_int, mut b: uint) {
 pub static mut icache: C2RustUnnamed_0 = C2RustUnnamed_0 {
     lock: Spinlock {
         locked: 0,
-        name: 0 as *const libc::c_char as *mut libc::c_char,
+        name: 0 as *const u8 as *mut u8,
         cpu: 0 as *const cpu as *mut cpu,
     },
     inode: [inode {
@@ -291,10 +273,10 @@ pub static mut icache: C2RustUnnamed_0 = C2RustUnnamed_0 {
             locked: 0,
             lk: Spinlock {
                 locked: 0,
-                name: 0 as *const libc::c_char as *mut libc::c_char,
+                name: 0 as *const u8 as *mut u8,
                 cpu: 0 as *const cpu as *mut cpu,
             },
-            name: 0 as *const libc::c_char as *mut libc::c_char,
+            name: 0 as *const u8 as *mut u8,
             pid: 0,
         },
         valid: 0,
@@ -308,16 +290,12 @@ pub static mut icache: C2RustUnnamed_0 = C2RustUnnamed_0 {
 };
 #[no_mangle]
 pub unsafe extern "C" fn iinit() {
-    let mut i: libc::c_int = 0 as libc::c_int;
-    initlock(
-        &mut icache.lock,
-        b"icache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-    );
-    i = 0 as libc::c_int;
+    let mut i: i32 = 0;
+    initlock(&mut icache.lock, b"icache\x00" as *const u8 as *mut u8);
     while i < NINODE {
         initsleeplock(
             &mut (*icache.inode.as_mut_ptr().offset(i as isize)).lock,
-            b"inode\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+            b"inode\x00" as *const u8 as *mut u8,
         );
         i += 1
     }
@@ -326,43 +304,38 @@ pub unsafe extern "C" fn iinit() {
 /// Mark it as allocated by  giving it type type.
 /// Returns an unlocked but allocated and referenced inode.
 #[no_mangle]
-pub unsafe extern "C" fn ialloc(mut dev: uint, mut type_0: libc::c_short) -> *mut inode {
-    let mut inum: libc::c_int = 0;
+pub unsafe extern "C" fn ialloc(mut dev: u32, mut type_0: i16) -> *mut inode {
+    let mut inum: i32 = 1;
     let mut bp: *mut Buf = ptr::null_mut();
     let mut dip: *mut dinode = ptr::null_mut();
-    inum = 1 as libc::c_int;
-    while (inum as libc::c_uint) < sb.ninodes {
+    while (inum as u32) < sb.ninodes {
         bp = bread(
             dev,
-            (inum as libc::c_ulong)
-                .wrapping_div(
-                    (BSIZE as libc::c_ulong)
-                        .wrapping_div(::core::mem::size_of::<dinode>() as libc::c_ulong),
-                )
-                .wrapping_add(sb.inodestart as libc::c_ulong) as uint,
+            (inum as u64)
+                .wrapping_div((BSIZE as u64).wrapping_div(::core::mem::size_of::<dinode>() as u64))
+                .wrapping_add(sb.inodestart as u64) as u32,
         );
         dip = ((*bp).data.as_mut_ptr() as *mut dinode).offset(
-            (inum as libc::c_ulong).wrapping_rem(
-                (BSIZE as libc::c_ulong)
-                    .wrapping_div(::core::mem::size_of::<dinode>() as libc::c_ulong),
-            ) as isize,
+            (inum as u64)
+                .wrapping_rem((BSIZE as u64).wrapping_div(::core::mem::size_of::<dinode>() as u64))
+                as isize,
         );
-        if (*dip).type_0 as libc::c_int == 0 as libc::c_int {
+        if (*dip).type_0 as i32 == 0 as i32 {
             // a free inode
             memset(
                 dip as *mut libc::c_void,
-                0 as libc::c_int,
-                ::core::mem::size_of::<dinode>() as libc::c_ulong as uint,
+                0 as i32,
+                ::core::mem::size_of::<dinode>() as u64 as u32,
             ); // mark it allocated on the disk
             (*dip).type_0 = type_0;
             log_write(bp);
             brelse(bp);
-            return iget(dev, inum as uint);
+            return iget(dev, inum as u32);
         }
         brelse(bp);
         inum += 1
     }
-    panic(b"ialloc: no inodes\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    panic(b"ialloc: no inodes\x00" as *const u8 as *mut u8);
 }
 /// Copy a modified in-memory inode to disk.
 /// Must be called after every change to an ip->xxx field
@@ -374,18 +347,14 @@ pub unsafe extern "C" fn iupdate(mut ip: *mut inode) {
     let mut dip: *mut dinode = ptr::null_mut();
     bp = bread(
         (*ip).dev,
-        ((*ip).inum as libc::c_ulong)
-            .wrapping_div(
-                (BSIZE as libc::c_ulong)
-                    .wrapping_div(::core::mem::size_of::<dinode>() as libc::c_ulong),
-            )
-            .wrapping_add(sb.inodestart as libc::c_ulong) as uint,
+        ((*ip).inum as u64)
+            .wrapping_div((BSIZE as u64).wrapping_div(::core::mem::size_of::<dinode>() as u64))
+            .wrapping_add(sb.inodestart as u64) as u32,
     );
     dip = ((*bp).data.as_mut_ptr() as *mut dinode).offset(
-        ((*ip).inum as libc::c_ulong).wrapping_rem(
-            (BSIZE as libc::c_ulong)
-                .wrapping_div(::core::mem::size_of::<dinode>() as libc::c_ulong),
-        ) as isize,
+        ((*ip).inum as u64)
+            .wrapping_rem((BSIZE as u64).wrapping_div(::core::mem::size_of::<dinode>() as u64))
+            as isize,
     );
     (*dip).type_0 = (*ip).type_0;
     (*dip).major = (*ip).major;
@@ -395,7 +364,7 @@ pub unsafe extern "C" fn iupdate(mut ip: *mut inode) {
     memmove(
         (*dip).addrs.as_mut_ptr() as *mut libc::c_void,
         (*ip).addrs.as_mut_ptr() as *const libc::c_void,
-        ::core::mem::size_of::<[uint; 13]>() as libc::c_ulong as uint,
+        ::core::mem::size_of::<[u32; 13]>() as u64 as u32,
     );
     log_write(bp);
     brelse(bp);
@@ -403,20 +372,20 @@ pub unsafe extern "C" fn iupdate(mut ip: *mut inode) {
 /// Find the inode with number inum on device dev
 /// and return the in-memory copy. Does not lock
 /// the inode and does not read it from disk.
-unsafe extern "C" fn iget(mut dev: uint, mut inum: uint) -> *mut inode {
+unsafe extern "C" fn iget(mut dev: u32, mut inum: u32) -> *mut inode {
     let mut ip: *mut inode = ptr::null_mut();
     let mut empty: *mut inode = ptr::null_mut();
     acquire(&mut icache.lock);
     // Is the inode already cached?
     empty = ptr::null_mut();
-    ip = &mut *icache.inode.as_mut_ptr().offset(0 as libc::c_int as isize) as *mut inode;
+    ip = &mut *icache.inode.as_mut_ptr().offset(0 as i32 as isize) as *mut inode;
     while ip < &mut *icache.inode.as_mut_ptr().offset(NINODE as isize) as *mut inode {
-        if (*ip).ref_0 > 0 as libc::c_int && (*ip).dev == dev && (*ip).inum == inum {
+        if (*ip).ref_0 > 0 as i32 && (*ip).dev == dev && (*ip).inum == inum {
             (*ip).ref_0 += 1;
             release(&mut icache.lock);
             return ip;
         }
-        if empty.is_null() && (*ip).ref_0 == 0 as libc::c_int {
+        if empty.is_null() && (*ip).ref_0 == 0 as i32 {
             // Remember empty slot.
             empty = ip
         }
@@ -424,13 +393,13 @@ unsafe extern "C" fn iget(mut dev: uint, mut inum: uint) -> *mut inode {
     }
     // Recycle an inode cache entry.
     if empty.is_null() {
-        panic(b"iget: no inodes\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic(b"iget: no inodes\x00" as *const u8 as *mut u8);
     }
     ip = empty;
     (*ip).dev = dev;
     (*ip).inum = inum;
-    (*ip).ref_0 = 1 as libc::c_int;
-    (*ip).valid = 0 as libc::c_int;
+    (*ip).ref_0 = 1 as i32;
+    (*ip).valid = 0 as i32;
     release(&mut icache.lock);
     ip
 }
@@ -449,25 +418,21 @@ pub unsafe extern "C" fn idup(mut ip: *mut inode) -> *mut inode {
 pub unsafe extern "C" fn ilock(mut ip: *mut inode) {
     let mut bp: *mut Buf = ptr::null_mut();
     let mut dip: *mut dinode = ptr::null_mut();
-    if ip.is_null() || (*ip).ref_0 < 1 as libc::c_int {
-        panic(b"ilock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    if ip.is_null() || (*ip).ref_0 < 1 as i32 {
+        panic(b"ilock\x00" as *const u8 as *mut u8);
     }
     acquiresleep(&mut (*ip).lock);
-    if (*ip).valid == 0 as libc::c_int {
+    if (*ip).valid == 0 as i32 {
         bp = bread(
             (*ip).dev,
-            ((*ip).inum as libc::c_ulong)
-                .wrapping_div(
-                    (BSIZE as libc::c_ulong)
-                        .wrapping_div(::core::mem::size_of::<dinode>() as libc::c_ulong),
-                )
-                .wrapping_add(sb.inodestart as libc::c_ulong) as uint,
+            ((*ip).inum as u64)
+                .wrapping_div((BSIZE as u64).wrapping_div(::core::mem::size_of::<dinode>() as u64))
+                .wrapping_add(sb.inodestart as u64) as u32,
         );
         dip = ((*bp).data.as_mut_ptr() as *mut dinode).offset(
-            ((*ip).inum as libc::c_ulong).wrapping_rem(
-                (BSIZE as libc::c_ulong)
-                    .wrapping_div(::core::mem::size_of::<dinode>() as libc::c_ulong),
-            ) as isize,
+            ((*ip).inum as u64)
+                .wrapping_rem((BSIZE as u64).wrapping_div(::core::mem::size_of::<dinode>() as u64))
+                as isize,
         );
         (*ip).type_0 = (*dip).type_0;
         (*ip).major = (*dip).major;
@@ -477,20 +442,20 @@ pub unsafe extern "C" fn ilock(mut ip: *mut inode) {
         memmove(
             (*ip).addrs.as_mut_ptr() as *mut libc::c_void,
             (*dip).addrs.as_mut_ptr() as *const libc::c_void,
-            ::core::mem::size_of::<[uint; 13]>() as libc::c_ulong as uint,
+            ::core::mem::size_of::<[u32; 13]>() as u64 as u32,
         );
         brelse(bp);
-        (*ip).valid = 1 as libc::c_int;
-        if (*ip).type_0 as libc::c_int == 0 as libc::c_int {
-            panic(b"ilock: no type\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        (*ip).valid = 1 as i32;
+        if (*ip).type_0 as i32 == 0 as i32 {
+            panic(b"ilock: no type\x00" as *const u8 as *mut u8);
         }
     };
 }
 /// Unlock the given inode.
 #[no_mangle]
 pub unsafe extern "C" fn iunlock(mut ip: *mut inode) {
-    if ip.is_null() || holdingsleep(&mut (*ip).lock) == 0 || (*ip).ref_0 < 1 as libc::c_int {
-        panic(b"iunlock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    if ip.is_null() || holdingsleep(&mut (*ip).lock) == 0 || (*ip).ref_0 < 1 as i32 {
+        panic(b"iunlock\x00" as *const u8 as *mut u8);
     }
     releasesleep(&mut (*ip).lock);
 }
@@ -504,19 +469,16 @@ pub unsafe extern "C" fn iunlock(mut ip: *mut inode) {
 #[no_mangle]
 pub unsafe extern "C" fn iput(mut ip: *mut inode) {
     acquire(&mut icache.lock);
-    if (*ip).ref_0 == 1 as libc::c_int
-        && (*ip).valid != 0
-        && (*ip).nlink as libc::c_int == 0 as libc::c_int
-    {
+    if (*ip).ref_0 == 1 as i32 && (*ip).valid != 0 && (*ip).nlink as i32 == 0 as i32 {
         // inode has no links and no other references: truncate and free.
         // ip->ref == 1 means no other process can have ip locked,
         // so this acquiresleep() won't block (or deadlock).
         acquiresleep(&mut (*ip).lock);
         release(&mut icache.lock);
         itrunc(ip);
-        (*ip).type_0 = 0 as libc::c_int as libc::c_short;
+        (*ip).type_0 = 0 as i32 as i16;
         iupdate(ip);
-        (*ip).valid = 0 as libc::c_int;
+        (*ip).valid = 0 as i32;
         releasesleep(&mut (*ip).lock);
         acquire(&mut icache.lock);
     }
@@ -537,32 +499,30 @@ pub unsafe extern "C" fn iunlockput(mut ip: *mut inode) {
 /// listed in block ip->addrs[NDIRECT].
 /// Return the disk block address of the nth block in inode ip.
 /// If there is no such block, bmap allocates one.
-unsafe extern "C" fn bmap(mut ip: *mut inode, mut bn: uint) -> uint {
-    let mut addr: uint = 0;
-    let mut a: *mut uint = ptr::null_mut();
+unsafe extern "C" fn bmap(mut ip: *mut inode, mut bn: u32) -> u32 {
+    let mut addr: u32 = 0;
+    let mut a: *mut u32 = ptr::null_mut();
     let mut bp: *mut Buf = ptr::null_mut();
-    if bn < NDIRECT as libc::c_uint {
+    if bn < NDIRECT as u32 {
         addr = (*ip).addrs[bn as usize];
-        if addr == 0 as libc::c_int as libc::c_uint {
+        if addr == 0 as i32 as u32 {
             addr = balloc((*ip).dev);
             (*ip).addrs[bn as usize] = addr
         }
         return addr;
     }
-    bn = (bn as libc::c_uint).wrapping_sub(NDIRECT as libc::c_uint) as uint as uint;
-    if (bn as libc::c_ulong)
-        < (BSIZE as libc::c_ulong).wrapping_div(::core::mem::size_of::<uint>() as libc::c_ulong)
-    {
+    bn = (bn as u32).wrapping_sub(NDIRECT as u32) as u32 as u32;
+    if (bn as u64) < (BSIZE as u64).wrapping_div(::core::mem::size_of::<u32>() as u64) {
         // Load indirect block, allocating if necessary.
         addr = (*ip).addrs[NDIRECT as usize];
-        if addr == 0 as libc::c_int as libc::c_uint {
+        if addr == 0 as i32 as u32 {
             addr = balloc((*ip).dev);
             (*ip).addrs[NDIRECT as usize] = addr
         }
         bp = bread((*ip).dev, addr);
-        a = (*bp).data.as_mut_ptr() as *mut uint;
+        a = (*bp).data.as_mut_ptr() as *mut u32;
         addr = *a.offset(bn as isize);
-        if addr == 0 as libc::c_int as libc::c_uint {
+        if addr == 0 as i32 as u32 {
             addr = balloc((*ip).dev);
             *a.offset(bn as isize) = addr;
             log_write(bp);
@@ -570,7 +530,7 @@ unsafe extern "C" fn bmap(mut ip: *mut inode, mut bn: uint) -> uint {
         brelse(bp);
         return addr;
     }
-    panic(b"bmap: out of range\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    panic(b"bmap: out of range\x00" as *const u8 as *mut u8);
 }
 /// File system implementation.  Five layers:
 ///   + Blocks: allocator for raw disk blocks.
@@ -588,46 +548,43 @@ unsafe extern "C" fn bmap(mut ip: *mut inode, mut bn: uint) -> uint {
 /// and has no in-memory reference to it (is
 /// not an open file or current directory).
 unsafe extern "C" fn itrunc(mut ip: *mut inode) {
-    let mut i: libc::c_int = 0;
-    let mut j: libc::c_int = 0;
+    let mut i: i32 = 0;
+    let mut j: i32 = 0;
     let mut bp: *mut Buf = ptr::null_mut();
-    let mut a: *mut uint = ptr::null_mut();
-    i = 0 as libc::c_int;
+    let mut a: *mut u32 = ptr::null_mut();
     while i < NDIRECT {
         if (*ip).addrs[i as usize] != 0 {
-            bfree((*ip).dev as libc::c_int, (*ip).addrs[i as usize]);
-            (*ip).addrs[i as usize] = 0 as libc::c_int as uint
+            bfree((*ip).dev as i32, (*ip).addrs[i as usize]);
+            (*ip).addrs[i as usize] = 0 as i32 as u32
         }
         i += 1
     }
     if (*ip).addrs[NDIRECT as usize] != 0 {
         bp = bread((*ip).dev, (*ip).addrs[NDIRECT as usize]);
-        a = (*bp).data.as_mut_ptr() as *mut uint;
-        j = 0 as libc::c_int;
-        while (j as libc::c_ulong)
-            < (BSIZE as libc::c_ulong).wrapping_div(::core::mem::size_of::<uint>() as libc::c_ulong)
-        {
+        a = (*bp).data.as_mut_ptr() as *mut u32;
+        j = 0 as i32;
+        while (j as u64) < (BSIZE as u64).wrapping_div(::core::mem::size_of::<u32>() as u64) {
             if *a.offset(j as isize) != 0 {
-                bfree((*ip).dev as libc::c_int, *a.offset(j as isize));
+                bfree((*ip).dev as i32, *a.offset(j as isize));
             }
             j += 1
         }
         brelse(bp);
-        bfree((*ip).dev as libc::c_int, (*ip).addrs[NDIRECT as usize]);
-        (*ip).addrs[NDIRECT as usize] = 0 as libc::c_int as uint
+        bfree((*ip).dev as i32, (*ip).addrs[NDIRECT as usize]);
+        (*ip).addrs[NDIRECT as usize] = 0 as i32 as u32
     }
-    (*ip).size = 0 as libc::c_int as uint;
+    (*ip).size = 0 as i32 as u32;
     iupdate(ip);
 }
 /// Copy stat information from inode.
 /// Caller must hold ip->lock.
 #[no_mangle]
 pub unsafe extern "C" fn stati(mut ip: *mut inode, mut st: *mut Stat) {
-    (*st).dev = (*ip).dev as libc::c_int;
+    (*st).dev = (*ip).dev as i32;
     (*st).ino = (*ip).inum;
     (*st).type_0 = (*ip).type_0;
     (*st).nlink = (*ip).nlink;
-    (*st).size = (*ip).size as uint64;
+    (*st).size = (*ip).size as u64;
 }
 /// Read data from inode.
 /// Caller must hold ip->lock.
@@ -636,31 +593,29 @@ pub unsafe extern "C" fn stati(mut ip: *mut inode, mut st: *mut Stat) {
 #[no_mangle]
 pub unsafe extern "C" fn readi(
     mut ip: *mut inode,
-    mut user_dst: libc::c_int,
-    mut dst: uint64,
-    mut off: uint,
-    mut n: uint,
-) -> libc::c_int {
-    let mut tot: uint = 0;
-    let mut m: uint = 0;
+    mut user_dst: i32,
+    mut dst: u64,
+    mut off: u32,
+    mut n: u32,
+) -> i32 {
+    let mut tot: u32 = 0;
+    let mut m: u32 = 0;
     let mut bp: *mut Buf = ptr::null_mut();
     if off > (*ip).size || off.wrapping_add(n) < off {
-        return -(1 as libc::c_int);
+        return -1;
     }
     if off.wrapping_add(n) > (*ip).size {
         n = (*ip).size.wrapping_sub(off)
     }
-    tot = 0 as libc::c_int as uint;
+    tot = 0 as u32;
     while tot < n {
-        bp = bread((*ip).dev, bmap(ip, off.wrapping_div(BSIZE as libc::c_uint)));
+        bp = bread((*ip).dev, bmap(ip, off.wrapping_div(BSIZE as u32)));
         m = if n.wrapping_sub(tot)
-            < (1024 as libc::c_int as libc::c_uint)
-                .wrapping_sub(off.wrapping_rem(1024 as libc::c_int as libc::c_uint))
+            < (1024 as i32 as u32).wrapping_sub(off.wrapping_rem(1024 as i32 as u32))
         {
             n.wrapping_sub(tot)
         } else {
-            (1024 as libc::c_int as libc::c_uint)
-                .wrapping_sub(off.wrapping_rem(1024 as libc::c_int as libc::c_uint))
+            (1024 as i32 as u32).wrapping_sub(off.wrapping_rem(1024 as i32 as u32))
         };
         if either_copyout(
             user_dst,
@@ -668,21 +623,20 @@ pub unsafe extern "C" fn readi(
             (*bp)
                 .data
                 .as_mut_ptr()
-                .offset(off.wrapping_rem(BSIZE as libc::c_uint) as isize)
-                as *mut libc::c_void,
-            m as uint64,
-        ) == -(1 as libc::c_int)
+                .offset(off.wrapping_rem(BSIZE as u32) as isize) as *mut libc::c_void,
+            m as u64,
+        ) == -(1 as i32)
         {
             brelse(bp);
             break;
         } else {
             brelse(bp);
-            tot = (tot as libc::c_uint).wrapping_add(m) as uint as uint;
-            off = (off as libc::c_uint).wrapping_add(m) as uint as uint;
-            dst = (dst as libc::c_ulong).wrapping_add(m as libc::c_ulong) as uint64 as uint64
+            tot = (tot as u32).wrapping_add(m) as u32 as u32;
+            off = (off as u32).wrapping_add(m) as u32 as u32;
+            dst = (dst as u64).wrapping_add(m as u64) as u64 as u64
         }
     }
-    n as libc::c_int
+    n as i32
 }
 /// Write data to inode.
 /// Caller must hold ip->lock.
@@ -691,61 +645,55 @@ pub unsafe extern "C" fn readi(
 #[no_mangle]
 pub unsafe extern "C" fn writei(
     mut ip: *mut inode,
-    mut user_src: libc::c_int,
-    mut src: uint64,
-    mut off: uint,
-    mut n: uint,
-) -> libc::c_int {
-    let mut tot: uint = 0;
-    let mut m: uint = 0;
+    mut user_src: i32,
+    mut src: u64,
+    mut off: u32,
+    mut n: u32,
+) -> i32 {
+    let mut tot: u32 = 0;
+    let mut m: u32 = 0;
     let mut bp: *mut Buf = ptr::null_mut();
     if off > (*ip).size || off.wrapping_add(n) < off {
-        return -(1 as libc::c_int);
+        return -1;
     }
-    if off.wrapping_add(n) as libc::c_ulong
-        > (NDIRECT as libc::c_ulong)
-            .wrapping_add(
-                (BSIZE as libc::c_ulong)
-                    .wrapping_div(::core::mem::size_of::<uint>() as libc::c_ulong),
-            )
-            .wrapping_mul(BSIZE as libc::c_ulong)
+    if off.wrapping_add(n) as u64
+        > (NDIRECT as u64)
+            .wrapping_add((BSIZE as u64).wrapping_div(::core::mem::size_of::<u32>() as u64))
+            .wrapping_mul(BSIZE as u64)
     {
-        return -(1 as libc::c_int);
+        return -1;
     }
-    tot = 0 as libc::c_int as uint;
+    tot = 0 as i32 as u32;
     while tot < n {
-        bp = bread((*ip).dev, bmap(ip, off.wrapping_div(BSIZE as libc::c_uint)));
+        bp = bread((*ip).dev, bmap(ip, off.wrapping_div(BSIZE as u32)));
         m = if n.wrapping_sub(tot)
-            < (1024 as libc::c_int as libc::c_uint)
-                .wrapping_sub(off.wrapping_rem(1024 as libc::c_int as libc::c_uint))
+            < (1024 as i32 as u32).wrapping_sub(off.wrapping_rem(1024 as i32 as u32))
         {
             n.wrapping_sub(tot)
         } else {
-            (1024 as libc::c_int as libc::c_uint)
-                .wrapping_sub(off.wrapping_rem(1024 as libc::c_int as libc::c_uint))
+            (1024 as i32 as u32).wrapping_sub(off.wrapping_rem(1024 as i32 as u32))
         };
         if either_copyin(
             (*bp)
                 .data
                 .as_mut_ptr()
-                .offset(off.wrapping_rem(BSIZE as libc::c_uint) as isize)
-                as *mut libc::c_void,
+                .offset(off.wrapping_rem(BSIZE as u32) as isize) as *mut libc::c_void,
             user_src,
             src,
-            m as uint64,
-        ) == -(1 as libc::c_int)
+            m as u64,
+        ) == -(1 as i32)
         {
             brelse(bp);
             break;
         } else {
             log_write(bp);
             brelse(bp);
-            tot = (tot as libc::c_uint).wrapping_add(m) as uint as uint;
-            off = (off as libc::c_uint).wrapping_add(m) as uint as uint;
-            src = (src as libc::c_ulong).wrapping_add(m as libc::c_ulong) as uint64 as uint64
+            tot = (tot as u32).wrapping_add(m) as u32 as u32;
+            off = (off as u32).wrapping_add(m) as u32 as u32;
+            src = (src as u64).wrapping_add(m as u64) as u64 as u64
         }
     }
-    if n > 0 as libc::c_int as libc::c_uint {
+    if n > 0 as i32 as u32 {
         if off > (*ip).size {
             (*ip).size = off
         }
@@ -754,69 +702,59 @@ pub unsafe extern "C" fn writei(
         // block to ip->addrs[].
         iupdate(ip);
     }
-    n as libc::c_int
+    n as i32
 }
 /// Directories
 #[no_mangle]
-pub unsafe extern "C" fn namecmp(
-    mut s: *const libc::c_char,
-    mut t: *const libc::c_char,
-) -> libc::c_int {
-    strncmp(s, t, DIRSIZ as uint)
+pub unsafe extern "C" fn namecmp(mut s: *const u8, mut t: *const u8) -> i32 {
+    strncmp(s, t, DIRSIZ as u32)
 }
 /// Look for a directory entry in a directory.
 /// If found, set *poff to byte offset of entry.
 #[no_mangle]
 pub unsafe extern "C" fn dirlookup(
     mut dp: *mut inode,
-    mut name: *mut libc::c_char,
-    mut poff: *mut uint,
+    mut name: *mut u8,
+    mut poff: *mut u32,
 ) -> *mut inode {
-    let mut off: uint = 0;
-    let mut inum: uint = 0;
+    let mut off: u32 = 0;
+    let mut inum: u32 = 0;
     let mut de: dirent = dirent {
         inum: 0,
         name: [0; 14],
     };
-    if (*dp).type_0 as libc::c_int != T_DIR {
-        panic(b"dirlookup not DIR\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    if (*dp).type_0 as i32 != T_DIR {
+        panic(b"dirlookup not DIR\x00" as *const u8 as *mut u8);
     }
-    off = 0 as libc::c_int as uint;
+    off = 0 as i32 as u32;
     while off < (*dp).size {
         if readi(
             dp,
-            0 as libc::c_int,
-            &mut de as *mut dirent as uint64,
+            0 as i32,
+            &mut de as *mut dirent as u64,
             off,
-            ::core::mem::size_of::<dirent>() as libc::c_ulong as uint,
-        ) as libc::c_ulong
-            != ::core::mem::size_of::<dirent>() as libc::c_ulong
+            ::core::mem::size_of::<dirent>() as u64 as u32,
+        ) as u64
+            != ::core::mem::size_of::<dirent>() as u64
         {
-            panic(b"dirlookup read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(b"dirlookup read\x00" as *const u8 as *mut u8);
         }
-        if de.inum as libc::c_int != 0 as libc::c_int
-            && namecmp(name, de.name.as_mut_ptr()) == 0 as libc::c_int
-        {
+        if de.inum as i32 != 0 as i32 && namecmp(name, de.name.as_mut_ptr()) == 0 as i32 {
             // entry matches path element
             if !poff.is_null() {
                 *poff = off
             }
-            inum = de.inum as uint;
+            inum = de.inum as u32;
             return iget((*dp).dev, inum);
         }
-        off = (off as libc::c_ulong).wrapping_add(::core::mem::size_of::<dirent>() as libc::c_ulong)
-            as uint as uint
+        off = (off as u64).wrapping_add(::core::mem::size_of::<dirent>() as u64) as u32 as u32
     }
     ptr::null_mut()
 }
 /// Write a new directory entry (name, inum) into the directory dp.
 #[no_mangle]
-pub unsafe extern "C" fn dirlink(
-    mut dp: *mut inode,
-    mut name: *mut libc::c_char,
-    mut inum: uint,
-) -> libc::c_int {
-    let mut off: libc::c_int = 0;
+pub unsafe extern "C" fn dirlink(mut dp: *mut inode, mut name: *mut u8, mut inum: u32) -> i32 {
+    let mut off: i32 = 0;
     let mut de: dirent = dirent {
         inum: 0,
         name: [0; 14],
@@ -826,42 +764,41 @@ pub unsafe extern "C" fn dirlink(
     ip = dirlookup(dp, name, ptr::null_mut());
     if !ip.is_null() {
         iput(ip);
-        return -(1 as libc::c_int);
+        return -(1 as i32);
     }
     // Look for an empty dirent.
-    off = 0 as libc::c_int;
-    while (off as libc::c_uint) < (*dp).size {
+    off = 0;
+    while (off as u32) < (*dp).size {
         if readi(
             dp,
-            0 as libc::c_int,
-            &mut de as *mut dirent as uint64,
-            off as uint,
-            ::core::mem::size_of::<dirent>() as libc::c_ulong as uint,
-        ) as libc::c_ulong
-            != ::core::mem::size_of::<dirent>() as libc::c_ulong
+            0 as i32,
+            &mut de as *mut dirent as u64,
+            off as u32,
+            ::core::mem::size_of::<dirent>() as u64 as u32,
+        ) as u64
+            != ::core::mem::size_of::<dirent>() as u64
         {
-            panic(b"dirlink read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(b"dirlink read\x00" as *const u8 as *mut u8);
         }
-        if de.inum as libc::c_int == 0 as libc::c_int {
+        if de.inum as i32 == 0 as i32 {
             break;
         }
-        off = (off as libc::c_ulong).wrapping_add(::core::mem::size_of::<dirent>() as libc::c_ulong)
-            as libc::c_int as libc::c_int
+        off = (off as u64).wrapping_add(::core::mem::size_of::<dirent>() as u64) as i32 as i32
     }
     strncpy(de.name.as_mut_ptr(), name, DIRSIZ);
-    de.inum = inum as ushort;
+    de.inum = inum as u16;
     if writei(
         dp,
-        0 as libc::c_int,
-        &mut de as *mut dirent as uint64,
-        off as uint,
-        ::core::mem::size_of::<dirent>() as libc::c_ulong as uint,
-    ) as libc::c_ulong
-        != ::core::mem::size_of::<dirent>() as libc::c_ulong
+        0 as i32,
+        &mut de as *mut dirent as u64,
+        off as u32,
+        ::core::mem::size_of::<dirent>() as u64 as u32,
+    ) as u64
+        != ::core::mem::size_of::<dirent>() as u64
     {
-        panic(b"dirlink\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic(b"dirlink\x00" as *const u8 as *mut u8);
     }
-    0 as libc::c_int
+    0 as i32
 }
 /// Paths
 /// Copy the next path element from path into name.
@@ -876,38 +813,35 @@ pub unsafe extern "C" fn dirlink(
 ///   skipelem("a", name) = "", setting name = "a"
 ///   skipelem("", name) = skipelem("////", name) = 0
 ///
-unsafe extern "C" fn skipelem(
-    mut path: *mut libc::c_char,
-    mut name: *mut libc::c_char,
-) -> *mut libc::c_char {
-    let mut s: *mut libc::c_char = ptr::null_mut();
-    let mut len: libc::c_int = 0;
-    while *path as libc::c_int == '/' as i32 {
+unsafe extern "C" fn skipelem(mut path: *mut u8, mut name: *mut u8) -> *mut u8 {
+    let mut s: *mut u8 = ptr::null_mut();
+    let mut len: i32 = 0;
+    while *path as i32 == '/' as i32 {
         path = path.offset(1)
     }
-    if *path as libc::c_int == 0 as libc::c_int {
+    if *path as i32 == 0 as i32 {
         return ptr::null_mut();
     }
     s = path;
-    while *path as libc::c_int != '/' as i32 && *path as libc::c_int != 0 as libc::c_int {
+    while *path as i32 != '/' as i32 && *path as i32 != 0 as i32 {
         path = path.offset(1)
     }
-    len = path.wrapping_offset_from(s) as libc::c_long as libc::c_int;
+    len = path.wrapping_offset_from(s) as i64 as i32;
     if len >= DIRSIZ {
         memmove(
             name as *mut libc::c_void,
             s as *const libc::c_void,
-            DIRSIZ as uint,
+            DIRSIZ as u32,
         );
     } else {
         memmove(
             name as *mut libc::c_void,
             s as *const libc::c_void,
-            len as uint,
+            len as u32,
         );
-        *name.offset(len as isize) = 0 as libc::c_int as libc::c_char
+        *name.offset(len as isize) = 0 as i32 as u8
     }
-    while *path as libc::c_int == '/' as i32 {
+    while *path as i32 == '/' as i32 {
         path = path.offset(1)
     }
     path
@@ -917,14 +851,14 @@ unsafe extern "C" fn skipelem(
 /// path element into name, which must have room for DIRSIZ bytes.
 /// Must be called inside a transaction since it calls iput().
 unsafe extern "C" fn namex(
-    mut path: *mut libc::c_char,
-    mut nameiparent_0: libc::c_int,
-    mut name: *mut libc::c_char,
+    mut path: *mut u8,
+    mut nameiparent_0: i32,
+    mut name: *mut u8,
 ) -> *mut inode {
     let mut ip: *mut inode = ptr::null_mut();
     let mut next: *mut inode = ptr::null_mut();
-    if *path as libc::c_int == '/' as i32 {
-        ip = iget(ROOTDEV as uint, ROOTINO as uint)
+    if *path as i32 == '/' as i32 {
+        ip = iget(ROOTDEV as u32, ROOTINO as u32)
     } else {
         ip = idup((*myproc()).cwd)
     }
@@ -934,11 +868,11 @@ unsafe extern "C" fn namex(
             break;
         }
         ilock(ip);
-        if (*ip).type_0 as libc::c_int != T_DIR {
+        if (*ip).type_0 as i32 != T_DIR {
             iunlockput(ip);
             return ptr::null_mut();
         }
-        if nameiparent_0 != 0 && *path as libc::c_int == '\u{0}' as i32 {
+        if nameiparent_0 != 0 && *path as i32 == '\u{0}' as i32 {
             // Stop one level early.
             iunlock(ip);
             return ip;
@@ -958,14 +892,11 @@ unsafe extern "C" fn namex(
     ip
 }
 #[no_mangle]
-pub unsafe extern "C" fn namei(mut path: *mut libc::c_char) -> *mut inode {
-    let mut name: [libc::c_char; 14] = [0; 14];
-    namex(path, 0 as libc::c_int, name.as_mut_ptr())
+pub unsafe extern "C" fn namei(mut path: *mut u8) -> *mut inode {
+    let mut name: [u8; 14] = [0; 14];
+    namex(path, 0 as i32, name.as_mut_ptr())
 }
 #[no_mangle]
-pub unsafe extern "C" fn nameiparent(
-    mut path: *mut libc::c_char,
-    mut name: *mut libc::c_char,
-) -> *mut inode {
-    namex(path, 1 as libc::c_int, name)
+pub unsafe extern "C" fn nameiparent(mut path: *mut u8, mut name: *mut u8) -> *mut inode {
+    namex(path, 1 as i32, name)
 }
