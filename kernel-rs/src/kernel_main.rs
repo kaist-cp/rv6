@@ -1,6 +1,4 @@
 use core::sync::atomic::{AtomicBool, Ordering};
-
-use crate::libc;
 extern "C" {
     // bio.c
     #[no_mangle]
@@ -16,12 +14,12 @@ extern "C" {
     fn kinit();
     // printf.c
     #[no_mangle]
-    fn printf(_: *mut libc::c_char, _: ...);
+    fn printf(_: *mut u8, _: ...);
     #[no_mangle]
     fn printfinit();
     // proc.c
     #[no_mangle]
-    fn cpuid() -> libc::c_int;
+    fn cpuid() -> i32;
     #[no_mangle]
     fn procinit();
     #[no_mangle]
@@ -51,14 +49,12 @@ extern "C" {
 pub unsafe extern "C" fn main_0() {
     let started: AtomicBool = AtomicBool::new(false);
     // physical page allocator
-    if cpuid() == 0 as libc::c_int {
+    if cpuid() == 0 as i32 {
         consoleinit(); // create kernel page table
         printfinit(); // turn on paging
-        printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char); // process table
-        printf(
-            b"xv6 kernel is booting\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-        ); // trap vectors
-        printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char); // install kernel trap vector
+        printf(b"\n\x00" as *const u8 as *mut u8); // process table
+        printf(b"xv6 kernel is booting\n\x00" as *const u8 as *mut u8); // trap vectors
+        printf(b"\n\x00" as *const u8 as *mut u8); // install kernel trap vector
         kinit(); // set up interrupt controller
         kvminit(); // ask PLIC for device interrupts
         kvminithart(); // buffer cache
@@ -75,10 +71,7 @@ pub unsafe extern "C" fn main_0() {
         started.store(true, Ordering::Release);
     } else {
         while !started.load(Ordering::Acquire) {}
-        printf(
-            b"hart %d starting\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-            cpuid(),
-        );
+        printf(b"hart %d starting\n\x00" as *const u8 as *mut u8, cpuid());
         // ask PLIC for device interrupts
         kvminithart(); // turn on paging
         trapinithart(); // install kernel trap vector

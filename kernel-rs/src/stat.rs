@@ -1,17 +1,13 @@
-use crate::libc;
-pub type uint = libc::c_uint;
-pub type uint64 = libc::c_ulong;
-
 #[derive(Copy, Clone)]
 pub struct Stat {
     /// File system's disk device
-    pub dev: libc::c_int,
+    pub dev: i32,
     /// Inode number
-    pub ino: uint,
+    pub ino: u32,
     /// Type of file
-    pub type_0: libc::c_short,
+    pub type_0: i16,
     /// Number of links to file
-    pub nlink: libc::c_short,
+    pub nlink: i16,
     /// Size of file in bytes
-    pub size: uint64,
+    pub size: u64,
 }

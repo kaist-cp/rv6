@@ -1,8 +1,7 @@
-use crate::libc;
 use core::ptr;
 extern "C" {
     #[no_mangle]
-    fn consoleintr(_: libc::c_int);
+    fn consoleintr(_: i32);
 }
 // Physical memory layout
 // qemu -machine virt is set up like this,
@@ -21,7 +20,7 @@ extern "C" {
 // end -- start of kernel page allocation area
 // PHYSTOP -- end RAM used by the kernel
 // qemu puts UART registers here in physical memory.
-pub const UART0: libc::c_long = 0x10000000 as libc::c_long;
+pub const UART0: i64 = 0x10000000;
 // uart.c
 
 /// low-level driver routines for 16550a UART.
@@ -43,78 +42,47 @@ pub const UART0: libc::c_long = 0x10000000 as libc::c_long;
 #[no_mangle]
 pub unsafe extern "C" fn uartinit() {
     // disable interrupts.
-    ptr::write_volatile(
-        (UART0 + 1 as libc::c_int as libc::c_long) as *mut libc::c_uchar,
-        0 as libc::c_int as libc::c_uchar,
-    );
+    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0);
     // special mode to set baud rate.
-    ptr::write_volatile(
-        (UART0 + 3 as libc::c_int as libc::c_long) as *mut libc::c_uchar,
-        0x80 as libc::c_int as libc::c_uchar,
-    );
+    ptr::write_volatile((UART0 + 3 as i64) as *mut u8, 0x80);
     // LSB for baud rate of 38.4K.
-    ptr::write_volatile(
-        (UART0 + 0 as libc::c_int as libc::c_long) as *mut libc::c_uchar,
-        0x3 as libc::c_int as libc::c_uchar,
-    );
+    ptr::write_volatile((UART0 + 0 as i64) as *mut u8, 0x3);
     // MSB for baud rate of 38.4K.
-    ptr::write_volatile(
-        (UART0 + 1 as libc::c_int as libc::c_long) as *mut libc::c_uchar,
-        0 as libc::c_int as libc::c_uchar,
-    );
+    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0);
     // leave set-baud mode,
     // and set word length to 8 bits, no parity.
-    ptr::write_volatile(
-        (UART0 + 3 as libc::c_int as libc::c_long) as *mut libc::c_uchar,
-        0x3 as libc::c_int as libc::c_uchar,
-    );
+    ptr::write_volatile((UART0 + 3 as i64) as *mut u8, 0x3);
     // reset and enable FIFOs.
-    ptr::write_volatile(
-        (UART0 + 2 as libc::c_int as libc::c_long) as *mut libc::c_uchar,
-        0x7 as libc::c_int as libc::c_uchar,
-    );
+    ptr::write_volatile((UART0 + 2 as i64) as *mut u8, 0x7);
     // enable receive interrupts.
-    ptr::write_volatile(
-        (UART0 + 1 as libc::c_int as libc::c_long) as *mut libc::c_uchar,
-        0x1 as libc::c_int as libc::c_uchar,
-    );
+    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0x1);
 }
 /// write one output character to the UART.
 #[no_mangle]
-pub unsafe extern "C" fn uartputc(mut c: libc::c_int) {
+pub unsafe extern "C" fn uartputc(mut c: i32) {
     // wait for Transmit Holding Empty to be set in LSR.
-    while ptr::read_volatile((UART0 + 5 as libc::c_int as libc::c_long) as *mut libc::c_uchar)
-        as libc::c_int
-        & (1 as libc::c_int) << 5 as libc::c_int
-        == 0 as libc::c_int
+    while ptr::read_volatile((UART0 + 5 as i64) as *mut u8) as i32 & (1 as i32) << 5 as i32
+        == 0 as i32
     {}
-    ptr::write_volatile(
-        (UART0 + 0 as libc::c_int as libc::c_long) as *mut libc::c_uchar,
-        c as libc::c_uchar,
-    );
+    ptr::write_volatile((UART0 + 0 as i32 as i64) as *mut u8, c as u8);
 }
 /// read one input character from the UART.
 /// return -1 if none is waiting.
 #[no_mangle]
-pub unsafe extern "C" fn uartgetc() -> libc::c_int {
-    if ptr::read_volatile((UART0 + 5 as libc::c_int as libc::c_long) as *mut libc::c_uchar)
-        as libc::c_int
-        & 0x1 as libc::c_int
-        != 0
-    {
+pub unsafe extern "C" fn uartgetc() -> i32 {
+    if ptr::read_volatile((UART0 + 5 as i64) as *mut u8) as i32 & 0x1 as i32 != 0 {
         // input data is ready.
-        ptr::read_volatile((UART0 + 0 as libc::c_int as libc::c_long) as *mut libc::c_uchar)
-            as libc::c_int
+        ptr::read_volatile((UART0 + 0 as i64) as *mut u8) as i32
     } else {
-        -(1 as libc::c_int)
+        -1
     }
 }
 /// trap.c calls here when the uart interrupts.
 #[no_mangle]
 pub unsafe extern "C" fn uartintr() {
     loop {
-        let mut c: libc::c_int = uartgetc();
-        if c == -(1 as libc::c_int) {
+        let mut c: i32 = uartgetc();
+        if c == -(1 as i32) {
             break;
         }
         consoleintr(c);

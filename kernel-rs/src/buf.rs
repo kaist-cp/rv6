@@ -1,23 +1,19 @@
-use crate::{libc, sleeplock};
-pub type uint = libc::c_uint;
-pub type uint64 = libc::c_ulong;
-pub type uchar = libc::c_uchar;
-
+use crate::sleeplock::Sleeplock;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Buf {
     /// has data been read from disk?
-    pub valid: libc::c_int,
+    pub valid: i32,
     /// does disk "own" buf?
-    pub disk: libc::c_int,
-    pub dev: uint,
-    pub blockno: uint,
-    pub lock: sleeplock::Sleeplock,
-    pub refcnt: uint,
+    pub disk: i32,
+    pub dev: u32,
+    pub blockno: u32,
+    pub lock: Sleeplock,
+    pub refcnt: u32,
     /// LRU cache list
     pub prev: *mut Buf,
     pub next: *mut Buf,
     /// disk queue
     pub qnext: *mut Buf,
-    pub data: [uchar; 1024],
+    pub data: [u8; 1024],
 }
