@@ -38,7 +38,7 @@ extern "C" {
     #[no_mangle]
     fn uvmcreate() -> pagetable_t;
     #[no_mangle]
-    fn uvminit(_: pagetable_t, _: *mut u8, _: u32);
+    fn uvminit(_: pagetable_t, _: *mut uchar, _: u32);
     #[no_mangle]
     fn uvmalloc(_: pagetable_t, _: u64, _: u64) -> u64;
     #[no_mangle]
@@ -56,6 +56,7 @@ extern "C" {
     #[no_mangle]
     static mut trampoline: [libc::c_char; 0];
 }
+pub type uchar = libc::c_uchar;
 pub type pagetable_t = *mut u64;
 #[derive(Copy, Clone)]
 pub struct cpu {
@@ -527,13 +528,57 @@ pub unsafe extern "C" fn proc_freepagetable(mut pagetable: pagetable_t, mut sz: 
 // od -t xC initcode
 #[no_mangle]
 pub static mut initcode: [u8; 51] = [
-    0x17 as u8, 0x5 as u8, 0 as u8, 0 as u8, 0x13 as u8, 0x5 as u8, 0x5 as u8, 0x2 as u8,
-    0x97 as u8, 0x5 as u8, 0 as u8, 0 as u8, 0x93 as u8, 0x85 as u8, 0x5 as u8, 0x2 as u8,
-    0x9d as u8, 0x48 as u8, 0x73 as u8, 0 as u8, 0 as u8, 0 as u8, 0x89 as u8, 0x48 as u8,
-    0x73 as u8, 0 as u8, 0 as u8, 0 as u8, 0xef as u8, 0xf0 as u8, 0xbf as u8, 0xff as u8,
-    0x2f as u8, 0x69 as u8, 0x6e as u8, 0x69 as u8, 0x74 as u8, 0 as u8, 0 as u8, 0x1 as u8,
-    0x20 as u8, 0 as u8, 0 as u8, 0 as u8, 0 as u8, 0 as u8, 0 as u8, 0 as u8, 0 as u8, 0 as u8,
-    0 as u8,
+    0x17 as libc::c_int as uchar,
+    0x5 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0x13 as libc::c_int as uchar,
+    0x5 as libc::c_int as uchar,
+    0x5 as libc::c_int as uchar,
+    0x2 as libc::c_int as uchar,
+    0x97 as libc::c_int as uchar,
+    0x5 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0x93 as libc::c_int as uchar,
+    0x85 as libc::c_int as uchar,
+    0x5 as libc::c_int as uchar,
+    0x2 as libc::c_int as uchar,
+    0x9d as libc::c_int as uchar,
+    0x48 as libc::c_int as uchar,
+    0x73 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0x89 as libc::c_int as uchar,
+    0x48 as libc::c_int as uchar,
+    0x73 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0xef as libc::c_int as uchar,
+    0xf0 as libc::c_int as uchar,
+    0xbf as libc::c_int as uchar,
+    0xff as libc::c_int as uchar,
+    0x2f as libc::c_int as uchar,
+    0x69 as libc::c_int as uchar,
+    0x6e as libc::c_int as uchar,
+    0x69 as libc::c_int as uchar,
+    0x74 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0x1 as libc::c_int as uchar,
+    0x20 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
+    0 as libc::c_int as uchar,
 ];
 /// Set up first user process.
 #[no_mangle]
@@ -546,7 +591,7 @@ pub unsafe extern "C" fn userinit() {
     uvminit(
         (*p).pagetable,
         initcode.as_mut_ptr(),
-        ::core::mem::size_of::<[u8; 51]>() as u64 as u32,
+        ::core::mem::size_of::<[uchar; 51]>() as u64 as u32,
     );
     (*p).sz = PGSIZE as u64;
     // prepare for the very first "return" from kernel to user.

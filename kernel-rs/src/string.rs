@@ -1,5 +1,6 @@
 use crate::libc;
 use core::ptr;
+pub type uchar = libc::c_uchar;
 #[no_mangle]
 pub unsafe extern "C" fn memset(
     mut dst: *mut libc::c_void,
@@ -21,10 +22,10 @@ pub unsafe extern "C" fn memcmp(
     mut v2: *const libc::c_void,
     mut n: u32,
 ) -> i32 {
-    let mut s1: *const u8 = ptr::null();
-    let mut s2: *const u8 = ptr::null();
-    s1 = v1 as *const u8;
-    s2 = v2 as *const u8;
+    let mut s1: *const uchar = ptr::null();
+    let mut s2: *const uchar = ptr::null();
+    s1 = v1 as *const uchar;
+    s2 = v2 as *const uchar;
     loop {
         let fresh0 = n;
         n = n.wrapping_sub(1);
