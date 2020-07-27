@@ -10,9 +10,9 @@ extern "C" {
     #[no_mangle]
     fn kfree(_: *mut libc::c_void);
     #[no_mangle]
-    fn copyout(_: pagetable_t, _: u64, _: *mut u8, _: u64) -> i32;
+    fn copyout(_: pagetable_t, _: u64, _: *mut i8, _: u64) -> i32;
     #[no_mangle]
-    fn copyin(_: pagetable_t, _: *mut u8, _: u64, _: u64) -> i32;
+    fn copyin(_: pagetable_t, _: *mut i8, _: u64, _: u64) -> i32;
 }
 pub type pagetable_t = *mut u64;
 
@@ -26,7 +26,7 @@ pub const UNUSED: procstate = 0;
 #[repr(C)]
 pub struct Pipe {
     pub lock: Spinlock,
-    pub data: [u8; 512],
+    pub data: [i8; 512],
     /// number of bytes read
     pub nread: u32,
     /// number of bytes written
@@ -60,20 +60,20 @@ pub unsafe extern "C" fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut Fil
             (*pi).writeopen = 1 as i32;
             (*pi).nwrite = 0 as u32;
             (*pi).nread = 0 as u32;
-            initlock(&mut (*pi).lock, b"pipe\x00" as *const u8 as *mut u8);
+            initlock(&mut (*pi).lock, b"pipe\x00" as *const u8 as *mut i8);
             (**f0).type_0 = FD_PIPE;
-            (**f0).readable = 1 as u8;
-            (**f0).writable = 0 as u8;
+            (**f0).readable = 1 as i8;
+            (**f0).writable = 0 as i8;
             (**f0).pipe = pi;
             (**f1).type_0 = FD_PIPE;
-            (**f1).readable = 0 as u8;
-            (**f1).writable = 1 as u8;
+            (**f1).readable = 0 as i8;
+            (**f1).writable = 1 as i8;
             (**f1).pipe = pi;
             return 0;
         }
     }
     if !pi.is_null() {
-        kfree(pi as *mut u8 as *mut libc::c_void);
+        kfree(pi as *mut i8 as *mut libc::c_void);
     }
     if !(*f0).is_null() {
         fileclose(*f0);
@@ -95,7 +95,7 @@ pub unsafe extern "C" fn pipeclose(mut pi: *mut Pipe, mut writable: i32) {
     }
     if (*pi).readopen == 0 as i32 && (*pi).writeopen == 0 as i32 {
         release(&mut (*pi).lock);
-        kfree(pi as *mut u8 as *mut libc::c_void);
+        kfree(pi as *mut i8 as *mut libc::c_void);
     } else {
         release(&mut (*pi).lock);
     };
@@ -103,7 +103,7 @@ pub unsafe extern "C" fn pipeclose(mut pi: *mut Pipe, mut writable: i32) {
 #[no_mangle]
 pub unsafe extern "C" fn pipewrite(mut pi: *mut Pipe, mut addr: u64, mut n: i32) -> i32 {
     let mut i: i32 = 0;
-    let mut ch: u8 = 0;
+    let mut ch: i8 = 0;
     let mut pr: *mut proc_0 = myproc();
     acquire(&mut (*pi).lock);
     while i < n {
@@ -141,7 +141,7 @@ pub unsafe extern "C" fn pipewrite(mut pi: *mut Pipe, mut addr: u64, mut n: i32)
 pub unsafe extern "C" fn piperead(mut pi: *mut Pipe, mut addr: u64, mut n: i32) -> i32 {
     let mut i: i32 = 0;
     let mut pr: *mut proc_0 = myproc();
-    let mut ch: u8 = 0;
+    let mut ch: i8 = 0;
     acquire(&mut (*pi).lock);
     while (*pi).nread == (*pi).nwrite && (*pi).writeopen != 0 {
         //DOC: pipe-empty

@@ -12,9 +12,9 @@ extern "C" {
     #[no_mangle]
     fn end_op();
     #[no_mangle]
-    fn panic(_: *mut u8) -> !;
+    fn panic(_: *mut i8) -> !;
     #[no_mangle]
-    fn copyout(_: pagetable_t, _: u64, _: *mut u8, _: u64) -> i32;
+    fn copyout(_: pagetable_t, _: u64, _: *mut i8, _: u64) -> i32;
 }
 pub type pagetable_t = *mut u64;
 #[derive(Copy, Clone)]
@@ -22,8 +22,8 @@ pub type pagetable_t = *mut u64;
 pub struct File {
     pub type_0: u32,
     pub ref_0: i32,
-    pub readable: u8,
-    pub writable: u8,
+    pub readable: i8,
+    pub writable: i8,
     pub pipe: *mut Pipe,
     pub ip: *mut inode,
     pub off: u32,
@@ -106,7 +106,7 @@ pub static mut ftable: C2RustUnnamed_0 = C2RustUnnamed_0 {
 };
 #[no_mangle]
 pub unsafe extern "C" fn fileinit() {
-    initlock(&mut ftable.lock, b"ftable\x00" as *const u8 as *mut u8);
+    initlock(&mut ftable.lock, b"ftable\x00" as *const u8 as *mut i8);
 }
 // file.c
 /// Allocate a file structure.
@@ -131,7 +131,7 @@ pub unsafe extern "C" fn filealloc() -> *mut File {
 pub unsafe extern "C" fn filedup(mut f: *mut File) -> *mut File {
     acquire(&mut ftable.lock);
     if (*f).ref_0 < 1 as i32 {
-        panic(b"filedup\x00" as *const u8 as *mut u8);
+        panic(b"filedup\x00" as *const u8 as *mut i8);
     }
     (*f).ref_0 += 1;
     release(&mut ftable.lock);
@@ -152,7 +152,7 @@ pub unsafe extern "C" fn fileclose(mut f: *mut File) {
     };
     acquire(&mut ftable.lock);
     if (*f).ref_0 < 1 as i32 {
-        panic(b"fileclose\x00" as *const u8 as *mut u8);
+        panic(b"fileclose\x00" as *const u8 as *mut i8);
     }
     (*f).ref_0 -= 1;
     if (*f).ref_0 > 0 as i32 {
@@ -193,7 +193,7 @@ pub unsafe extern "C" fn filestat(mut f: *mut File, mut addr: u64) -> i32 {
         if copyout(
             (*p).pagetable,
             addr,
-            &mut st as *mut Stat as *mut u8,
+            &mut st as *mut Stat as *mut i8,
             ::core::mem::size_of::<Stat>() as u64,
         ) < 0 as i32
         {
@@ -231,7 +231,7 @@ pub unsafe extern "C" fn fileread(mut f: *mut File, mut addr: u64, mut n: i32) -
         }
         iunlock((*f).ip);
     } else {
-        panic(b"fileread\x00" as *const u8 as *mut u8);
+        panic(b"fileread\x00" as *const u8 as *mut i8);
     }
     r
 }
@@ -288,13 +288,13 @@ pub unsafe extern "C" fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) 
                 break;
             }
             if r != n1 {
-                panic(b"short filewrite\x00" as *const u8 as *mut u8);
+                panic(b"short filewrite\x00" as *const u8 as *mut i8);
             }
             i += r
         }
         ret = if i == n { n } else { -(1 as i32) }
     } else {
-        panic(b"filewrite\x00" as *const u8 as *mut u8);
+        panic(b"filewrite\x00" as *const u8 as *mut i8);
     }
     ret
 }

@@ -6,11 +6,11 @@ pub unsafe extern "C" fn memset(
     mut c: i32,
     mut n: u32,
 ) -> *mut libc::c_void {
-    let mut cdst: *mut u8 = dst as *mut u8;
+    let mut cdst: *mut i8 = dst as *mut i8;
     let mut i: i32 = 0;
     i = 0 as i32;
     while (i as u32) < n {
-        *cdst.offset(i as isize) = c as u8;
+        *cdst.offset(i as isize) = c as i8;
         i += 1
     }
     dst
@@ -45,10 +45,10 @@ pub unsafe extern "C" fn memmove(
     mut src: *const libc::c_void,
     mut n: u32,
 ) -> *mut libc::c_void {
-    let mut s: *const u8 = ptr::null();
-    let mut d: *mut u8 = ptr::null_mut();
-    s = src as *const u8;
-    d = dst as *mut u8;
+    let mut s: *const i8 = ptr::null();
+    let mut d: *mut i8 = ptr::null_mut();
+    s = src as *const i8;
+    d = dst as *mut i8;
     if s < d && s.offset(n as isize) > d {
         s = s.offset(n as isize);
         d = d.offset(n as isize);
@@ -88,7 +88,7 @@ pub unsafe extern "C" fn memcpy(
     memmove(dst, src, n)
 }
 #[no_mangle]
-pub unsafe extern "C" fn strncmp(mut p: *const u8, mut q: *const u8, mut n: u32) -> i32 {
+pub unsafe extern "C" fn strncmp(mut p: *const i8, mut q: *const i8, mut n: u32) -> i32 {
     while n > 0 as u32 && *p as i32 != 0 && *p as i32 == *q as i32 {
         n = n.wrapping_sub(1);
         p = p.offset(1);
@@ -100,8 +100,8 @@ pub unsafe extern "C" fn strncmp(mut p: *const u8, mut q: *const u8, mut n: u32)
     *p as u8 as i32 - *q as u8 as i32
 }
 #[no_mangle]
-pub unsafe extern "C" fn strncpy(mut s: *mut u8, mut t: *const u8, mut n: i32) -> *mut u8 {
-    let mut os: *mut u8 = ptr::null_mut();
+pub unsafe extern "C" fn strncpy(mut s: *mut i8, mut t: *const i8, mut n: i32) -> *mut i8 {
+    let mut os: *mut i8 = ptr::null_mut();
     os = s;
     loop {
         let fresh5 = n;
@@ -125,14 +125,14 @@ pub unsafe extern "C" fn strncpy(mut s: *mut u8, mut t: *const u8, mut n: i32) -
         }
         let fresh9 = s;
         s = s.offset(1);
-        *fresh9 = 0 as i32 as u8
+        *fresh9 = 0 as i32 as i8
     }
     os
 }
 /// Like strncpy but guaranteed to NUL-terminate.
 #[no_mangle]
-pub unsafe extern "C" fn safestrcpy(mut s: *mut u8, mut t: *const u8, mut n: i32) -> *mut u8 {
-    let mut os: *mut u8 = ptr::null_mut();
+pub unsafe extern "C" fn safestrcpy(mut s: *mut i8, mut t: *const i8, mut n: i32) -> *mut i8 {
+    let mut os: *mut i8 = ptr::null_mut();
     os = s;
     if n <= 0 {
         return os;
@@ -150,11 +150,11 @@ pub unsafe extern "C" fn safestrcpy(mut s: *mut u8, mut t: *const u8, mut n: i32
             break;
         }
     }
-    *s = 0 as i32 as u8;
+    *s = 0 as i32 as i8;
     os
 }
 #[no_mangle]
-pub unsafe extern "C" fn strlen(mut s: *const u8) -> i32 {
+pub unsafe extern "C" fn strlen(mut s: *const i8) -> i32 {
     let mut n: i32 = 0;
     while *s.offset(n as isize) != 0 {
         n += 1
