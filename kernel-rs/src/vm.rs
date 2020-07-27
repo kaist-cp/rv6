@@ -1,12 +1,12 @@
 use crate::libc;
 use crate::{
-    string::{memmove, memset},
     kalloc::{kalloc, kfree},
     printf::{panic, printf},
     riscv::{
         pagetable_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W,
         PTE_X, PXMASK, SATP_SV39,
-    }
+    },
+    string::{memmove, memset},
 };
 use core::ptr;
 extern "C" {

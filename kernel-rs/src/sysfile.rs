@@ -15,7 +15,7 @@ use crate::{
     proc::{myproc, proc_0},
     string::memset,
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
-    vm::copyout
+    vm::copyout,
 };
 use core::ptr;
 pub type uint = libc::c_uint;

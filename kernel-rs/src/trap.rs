@@ -1,6 +1,7 @@
 use crate::{
     libc,
     plic::{plic_claim, plic_complete},
+    printf::{panic, printf},
     proc::{cpu, cpuid, exit, myproc, proc_0, wakeup, yield_0},
     riscv::{
         intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_sstatus, r_stval, r_tp,
@@ -10,7 +11,6 @@ use crate::{
     syscall::syscall,
     uart::uartintr,
     virtio_disk::virtio_disk_intr,
-    printf::{panic, printf}
 };
 extern "C" {
     // trampoline.S
