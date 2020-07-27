@@ -1,27 +1,17 @@
+use crate::kalloc::{kalloc, kfree};
 use crate::libc;
+use crate::printf::{panic, printf};
 use crate::riscv::{
     pagetable_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W,
     PTE_X, PXMASK, SATP_SV39,
 };
+use crate::string::{memmove, memset};
 use core::ptr;
 extern "C" {
-    // kalloc.c
-    #[no_mangle]
-    fn kalloc() -> *mut libc::c_void;
-    #[no_mangle]
-    fn kfree(_: *mut libc::c_void);
-    // printf.c
-    #[no_mangle]
-    fn printf(_: *mut libc::c_char, _: ...);
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: uint) -> *mut libc::c_void;
-    #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
+    // kernel.ld sets this to end of kernel code.
     #[no_mangle]
     static mut etext: [libc::c_char; 0];
-    // kernel.ld sets this to end of kernel code.
+    // trampoline.S
     #[no_mangle]
     static mut trampoline: [libc::c_char; 0];
 }
@@ -68,7 +58,6 @@ pub const TRAMPOLINE: libc::c_long = MAXVA - PGSIZE as libc::c_long;
  */
 #[no_mangle]
 pub static mut kernel_pagetable: pagetable_t = 0 as *const uint64 as *mut uint64;
-// vm.c
 // trampoline.S
 
 /// create a direct-map page table for the kernel and

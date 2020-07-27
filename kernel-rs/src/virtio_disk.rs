@@ -1,20 +1,13 @@
+use crate::printf::panic;
+use crate::string::memset;
 use crate::{
     buf::Buf,
     libc,
-    proc::{cpu, sleep},
+    proc::{cpu, sleep, wakeup},
     spinlock::{acquire, initlock, release, Spinlock},
+    vm::kvmpa,
 };
 use core::ptr;
-extern "C" {
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn wakeup(_: *mut libc::c_void);
-    #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
-    #[no_mangle]
-    fn kvmpa(_: uint64) -> uint64;
-}
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
 pub type uint16 = libc::c_ushort;
@@ -176,7 +169,6 @@ static mut disk: Disk = Disk(disk_Inner {
         cpu: 0 as *const cpu as *mut cpu,
     },
 });
-// virtio_disk.c
 #[no_mangle]
 pub unsafe extern "C" fn virtio_disk_init() {
     let mut status: uint32 = 0 as libc::c_int as uint32;

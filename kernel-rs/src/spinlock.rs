@@ -1,12 +1,9 @@
+use crate::printf::panic;
 use crate::{
     libc,
     proc::{cpu, mycpu},
 };
 use core::ptr;
-extern "C" {
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-}
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 /// Mutual exclusion lock.

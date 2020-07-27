@@ -1,14 +1,10 @@
 use crate::libc;
+use crate::printf::panic;
 use crate::printf::printf;
 use crate::proc::cpu;
 use crate::spinlock::{acquire, initlock, release, Spinlock};
+use crate::string::memset;
 use core::ptr;
-extern "C" {
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
-}
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 
@@ -120,7 +116,6 @@ pub unsafe extern "C" fn kfree(mut pa: *mut libc::c_void) {
     kmem.freelist = r;
     release(&mut kmem.lock);
 }
-// kalloc.c
 /// Allocate one 4096-byte page of physical memory.
 /// Returns a pointer that the kernel can use.
 /// Returns 0 if the memory cannot be allocated.

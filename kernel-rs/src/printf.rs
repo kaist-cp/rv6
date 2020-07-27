@@ -1,11 +1,8 @@
+use crate::console::consputc;
 use crate::libc;
 use crate::proc::cpu;
 use crate::spinlock::{acquire, initlock, release, Spinlock};
 use core::ptr;
-extern "C" {
-    #[no_mangle]
-    fn consputc(_: libc::c_int);
-}
 pub type __builtin_va_list = [__va_list_tag; 1];
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -96,7 +93,6 @@ unsafe extern "C" fn printptr(mut x: uint64) {
         x <<= 4 as libc::c_int
     }
 }
-// printf.c
 /// Print to the console. only understands %d, %x, %p, %s.
 #[no_mangle]
 pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {

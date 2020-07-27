@@ -1,30 +1,8 @@
 use crate::file::devsw;
 use crate::libc;
-use crate::proc::{cpu, myproc, sleep, wakeup};
+use crate::proc::{cpu, either_copyin, either_copyout, myproc, procdump, sleep, wakeup};
 use crate::spinlock::{acquire, initlock, release, Spinlock};
-extern "C" {
-    #[no_mangle]
-    fn either_copyout(
-        user_dst: libc::c_int,
-        dst: uint64,
-        src: *mut libc::c_void,
-        len: uint64,
-    ) -> libc::c_int;
-    #[no_mangle]
-    fn either_copyin(
-        dst: *mut libc::c_void,
-        user_src: libc::c_int,
-        src: uint64,
-        len: uint64,
-    ) -> libc::c_int;
-    #[no_mangle]
-    fn procdump();
-    #[no_mangle]
-    fn uartinit();
-    #[no_mangle]
-    fn uartputc(_: libc::c_int);
-}
-
+use crate::uart::{uartinit, uartputc};
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 pub type C2RustUnnamed = libc::c_uint;
@@ -237,7 +215,6 @@ pub unsafe extern "C" fn consoleintr(mut c: libc::c_int) {
     }
     release(&mut cons.lock);
 }
-// console.c
 #[no_mangle]
 pub unsafe extern "C" fn consoleinit() {
     initlock(

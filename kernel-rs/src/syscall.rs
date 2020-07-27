@@ -1,62 +1,12 @@
 use crate::{
     libc,
+    printf::{panic, printf},
     proc::{myproc, proc_0},
+    string::strlen,
+    sysfile::*,
+    sysproc::*,
+    vm::{copyin, copyinstr},
 };
-extern "C" {
-    // printf.c
-    #[no_mangle]
-    fn printf(_: *mut libc::c_char, _: ...);
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn strlen(_: *const libc::c_char) -> libc::c_int;
-    #[no_mangle]
-    fn copyin(_: pagetable_t, _: *mut libc::c_char, _: uint64, _: uint64) -> libc::c_int;
-    #[no_mangle]
-    fn copyinstr(_: pagetable_t, _: *mut libc::c_char, _: uint64, _: uint64) -> libc::c_int;
-    #[no_mangle]
-    fn sys_chdir() -> uint64;
-    #[no_mangle]
-    fn sys_close() -> uint64;
-    #[no_mangle]
-    fn sys_dup() -> uint64;
-    #[no_mangle]
-    fn sys_exec() -> uint64;
-    #[no_mangle]
-    fn sys_exit() -> uint64;
-    #[no_mangle]
-    fn sys_fork() -> uint64;
-    #[no_mangle]
-    fn sys_fstat() -> uint64;
-    #[no_mangle]
-    fn sys_getpid() -> uint64;
-    #[no_mangle]
-    fn sys_kill() -> uint64;
-    #[no_mangle]
-    fn sys_link() -> uint64;
-    #[no_mangle]
-    fn sys_mkdir() -> uint64;
-    #[no_mangle]
-    fn sys_mknod() -> uint64;
-    #[no_mangle]
-    fn sys_open() -> uint64;
-    #[no_mangle]
-    fn sys_pipe() -> uint64;
-    #[no_mangle]
-    fn sys_read() -> uint64;
-    #[no_mangle]
-    fn sys_sbrk() -> uint64;
-    #[no_mangle]
-    fn sys_sleep() -> uint64;
-    #[no_mangle]
-    fn sys_unlink() -> uint64;
-    #[no_mangle]
-    fn sys_wait() -> uint64;
-    #[no_mangle]
-    fn sys_write() -> uint64;
-    #[no_mangle]
-    fn sys_uptime() -> uint64;
-}
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 pub type pagetable_t = *mut uint64;
@@ -108,7 +58,6 @@ unsafe extern "C" fn argraw(mut n: libc::c_int) -> uint64 {
     }
     panic(b"argraw\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
-// syscall.c
 /// Fetch the nth 32-bit system call argument.
 #[no_mangle]
 pub unsafe extern "C" fn argint(mut n: libc::c_int, mut ip: *mut libc::c_int) -> libc::c_int {

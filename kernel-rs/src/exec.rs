@@ -1,40 +1,12 @@
+use crate::file::inode;
+use crate::fs::{ilock, iunlockput, namei, readi};
 use crate::libc;
+use crate::log::{begin_op, end_op};
+use crate::printf::panic;
 use crate::proc::{myproc, proc_0, proc_freepagetable, proc_pagetable};
+use crate::string::{safestrcpy, strlen};
+use crate::vm::{copyout, uvmalloc, uvmclear, walkaddr};
 use core::ptr;
-extern "C" {
-    pub type inode;
-    pub type file;
-    #[no_mangle]
-    fn ilock(_: *mut inode);
-    #[no_mangle]
-    fn iunlockput(_: *mut inode);
-    #[no_mangle]
-    fn namei(_: *mut libc::c_char) -> *mut inode;
-    #[no_mangle]
-    fn readi(_: *mut inode, _: libc::c_int, _: uint64, _: uint, _: uint) -> libc::c_int;
-    #[no_mangle]
-    fn begin_op();
-    #[no_mangle]
-    fn end_op();
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn safestrcpy(
-        _: *mut libc::c_char,
-        _: *const libc::c_char,
-        _: libc::c_int,
-    ) -> *mut libc::c_char;
-    #[no_mangle]
-    fn strlen(_: *const libc::c_char) -> libc::c_int;
-    #[no_mangle]
-    fn uvmalloc(_: pagetable_t, _: uint64, _: uint64) -> uint64;
-    #[no_mangle]
-    fn uvmclear(_: pagetable_t, _: uint64);
-    #[no_mangle]
-    fn walkaddr(_: pagetable_t, _: uint64) -> uint64;
-    #[no_mangle]
-    fn copyout(_: pagetable_t, _: uint64, _: *mut libc::c_char, _: uint64) -> libc::c_int;
-}
 pub type uint = libc::c_uint;
 pub type ushort = libc::c_ushort;
 pub type uchar = libc::c_uchar;
@@ -89,7 +61,6 @@ pub const PGSIZE: libc::c_int = 4096 as libc::c_int;
 pub const ELF_MAGIC: libc::c_uint = 0x464c457f as libc::c_uint;
 // Values for Proghdr type
 pub const ELF_PROG_LOAD: libc::c_int = 1 as libc::c_int;
-// exec.c
 #[no_mangle]
 pub unsafe extern "C" fn exec(
     mut path: *mut libc::c_char,

@@ -1,22 +1,14 @@
 use crate::fs::{ilock, iput, iunlock, readi, stati, writei};
 use crate::libc;
+use crate::log::{begin_op, end_op};
 use crate::pipe::{pipeclose, piperead, pipewrite, Pipe};
+use crate::printf::panic;
 use crate::proc::{myproc, proc_0};
 use crate::sleeplock::Sleeplock;
 use crate::spinlock::{acquire, initlock, release, Spinlock};
 use crate::stat::Stat;
+use crate::vm::copyout;
 use core::ptr;
-extern "C" {
-    pub type pipe;
-    #[no_mangle]
-    fn begin_op();
-    #[no_mangle]
-    fn end_op();
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn copyout(_: pagetable_t, _: uint64, _: *mut libc::c_char, _: uint64) -> libc::c_int;
-}
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 pub type pagetable_t = *mut uint64;
@@ -120,7 +112,6 @@ pub unsafe extern "C" fn fileinit() {
         b"ftable\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
 }
-// file.c
 /// Allocate a file structure.
 #[no_mangle]
 pub unsafe extern "C" fn filealloc() -> *mut File {

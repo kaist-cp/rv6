@@ -1,50 +1,23 @@
 use crate::file::{filealloc, fileclose, filedup, fileread, filestat, filewrite};
 use crate::fs::{
-    dirlink, dirlookup, ialloc, ilock, iput, iunlock, iunlockput, iupdate, namei, nameiparent,
-    readi, writei,
+    dirlink, dirlookup, ialloc, ilock, iput, iunlock, iunlockput, iupdate, namecmp, namei,
+    nameiparent, readi, writei,
 };
+use crate::kalloc::{kalloc, kfree};
+use crate::log::{begin_op, end_op};
 use crate::pipe::pipealloc;
+use crate::printf::panic;
+use crate::string::memset;
+use crate::syscall::{argaddr, argint, argstr, fetchaddr, fetchstr};
+use crate::vm::copyout;
 use crate::{
+    exec::exec,
     file::{inode, File},
     fs::dirent,
     libc,
     proc::{myproc, proc_0},
 };
-
 use core::ptr;
-extern "C" {
-    // exec.c
-    #[no_mangle]
-    fn exec(_: *mut libc::c_char, _: *mut *mut libc::c_char) -> libc::c_int;
-    #[no_mangle]
-    fn namecmp(_: *const libc::c_char, _: *const libc::c_char) -> libc::c_int;
-    // kalloc.c
-    #[no_mangle]
-    fn kalloc() -> *mut libc::c_void;
-    #[no_mangle]
-    fn kfree(_: *mut libc::c_void);
-    #[no_mangle]
-    fn begin_op();
-    #[no_mangle]
-    fn end_op();
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
-    // syscall.c
-    #[no_mangle]
-    fn argint(_: libc::c_int, _: *mut libc::c_int) -> libc::c_int;
-    #[no_mangle]
-    fn argstr(_: libc::c_int, _: *mut libc::c_char, _: libc::c_int) -> libc::c_int;
-    #[no_mangle]
-    fn argaddr(_: libc::c_int, _: *mut uint64) -> libc::c_int;
-    #[no_mangle]
-    fn fetchstr(_: uint64, _: *mut libc::c_char, _: libc::c_int) -> libc::c_int;
-    #[no_mangle]
-    fn fetchaddr(_: uint64, _: *mut uint64) -> libc::c_int;
-    #[no_mangle]
-    fn copyout(_: pagetable_t, _: uint64, _: *mut libc::c_char, _: uint64) -> libc::c_int;
-}
 pub type uint = libc::c_uint;
 pub type ushort = libc::c_ushort;
 pub type uint64 = libc::c_ulong;

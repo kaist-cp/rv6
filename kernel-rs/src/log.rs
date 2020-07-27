@@ -2,14 +2,10 @@ use crate::bio::{bpin, bread, brelse, bunpin, bwrite};
 use crate::buf::Buf;
 use crate::fs::superblock;
 use crate::libc;
+use crate::printf::panic;
 use crate::proc::{cpu, sleep, wakeup};
 use crate::spinlock::{acquire, initlock, release, Spinlock};
-extern "C" {
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: uint) -> *mut libc::c_void;
-}
+use crate::string::memmove;
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
 
@@ -88,7 +84,6 @@ pub static mut log: log = log {
         block: [0; 30],
     },
 };
-// log.c
 #[no_mangle]
 pub unsafe extern "C" fn initlog(mut dev: libc::c_int, mut sb: *mut superblock) {
     if ::core::mem::size_of::<logheader>() as libc::c_ulong >= BSIZE as libc::c_ulong {

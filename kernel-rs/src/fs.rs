@@ -1,40 +1,15 @@
 use crate::bio::{bread, brelse};
 use crate::log::{initlog, log_write};
+use crate::printf::panic;
+use crate::string::{memmove, memset, strncmp, strncpy};
 use crate::{buf, file, libc, proc, sleeplock, spinlock, stat};
 use buf::Buf;
 use core::ptr;
 use file::inode;
-use proc::{cpu, myproc};
+use proc::{cpu, either_copyin, either_copyout, myproc};
 use sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock};
 use spinlock::{acquire, initlock, release, Spinlock};
 use stat::Stat;
-
-extern "C" {
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn either_copyout(
-        user_dst: libc::c_int,
-        dst: uint64,
-        src: *mut libc::c_void,
-        len: uint64,
-    ) -> libc::c_int;
-    #[no_mangle]
-    fn either_copyin(
-        dst: *mut libc::c_void,
-        user_src: libc::c_int,
-        src: uint64,
-        len: uint64,
-    ) -> libc::c_int;
-    #[no_mangle]
-    fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: uint) -> *mut libc::c_void;
-    #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: libc::c_int, _: uint) -> *mut libc::c_void;
-    #[no_mangle]
-    fn strncmp(_: *const libc::c_char, _: *const libc::c_char, _: uint) -> libc::c_int;
-    #[no_mangle]
-    fn strncpy(_: *mut libc::c_char, _: *const libc::c_char, _: libc::c_int) -> *mut libc::c_char;
-}
 pub type uint = libc::c_uint;
 pub type ushort = libc::c_ushort;
 pub type uchar = libc::c_uchar;
@@ -204,7 +179,6 @@ unsafe extern "C" fn readsb(mut dev: libc::c_int, mut sb_0: *mut superblock) {
     );
     brelse(bp);
 }
-// fs.c
 /// Init fs
 #[no_mangle]
 pub unsafe extern "C" fn fsinit(mut dev: libc::c_int) {

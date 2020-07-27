@@ -1,9 +1,5 @@
 use crate::libc;
-extern "C" {
-    // proc.c
-    #[no_mangle]
-    fn cpuid() -> libc::c_int;
-}
+use crate::proc::cpuid;
 pub type uint32 = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 // Physical memory layout
@@ -31,7 +27,6 @@ pub const VIRTIO0_IRQ: libc::c_int = 1 as libc::c_int;
 // qemu puts programmable interrupt controller here.
 pub const PLIC: libc::c_long = 0xc000000 as libc::c_long;
 pub const PLIC_PENDING: libc::c_long = PLIC + 0x1000 as libc::c_int as libc::c_long;
-// plic.c
 ///
 /// the riscv Platform Level Interrupt Controller (PLIC).
 ///

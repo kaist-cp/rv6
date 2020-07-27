@@ -1,14 +1,11 @@
 use crate::buf::Buf;
 use crate::libc;
+use crate::printf::panic;
 use crate::proc::cpu;
 use crate::sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock};
 use crate::spinlock::{acquire, initlock, release, Spinlock};
 use crate::virtio_disk::virtio_disk_rw;
 use core::ptr;
-extern "C" {
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-}
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
 /// Buffer cache.
@@ -94,7 +91,6 @@ pub static mut bcache: C2RustUnnamed = C2RustUnnamed {
         data: [0; 1024],
     },
 };
-// bio.c
 #[no_mangle]
 pub unsafe extern "C" fn binit() {
     let mut b: *mut Buf = ptr::null_mut();

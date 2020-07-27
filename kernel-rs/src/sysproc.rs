@@ -1,29 +1,11 @@
 use crate::{
     libc,
+    proc::{exit, fork, growproc, kill, wait},
     proc::{myproc, sleep},
     spinlock::{acquire, release},
-    trap::tickslock,
+    syscall::{argaddr, argint},
+    trap::{ticks, tickslock},
 };
-extern "C" {
-    #[no_mangle]
-    fn exit(_: libc::c_int);
-    #[no_mangle]
-    fn fork() -> libc::c_int;
-    #[no_mangle]
-    fn growproc(_: libc::c_int) -> libc::c_int;
-    #[no_mangle]
-    fn kill(_: libc::c_int) -> libc::c_int;
-    #[no_mangle]
-    fn wait(_: uint64) -> libc::c_int;
-    // syscall.c
-    #[no_mangle]
-    fn argint(_: libc::c_int, _: *mut libc::c_int) -> libc::c_int;
-    #[no_mangle]
-    fn argaddr(_: libc::c_int, _: *mut uint64) -> libc::c_int;
-    // trap.c
-    #[no_mangle]
-    static mut ticks: uint;
-}
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 pub type pagetable_t = *mut uint64;

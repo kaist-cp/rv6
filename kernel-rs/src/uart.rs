@@ -1,9 +1,6 @@
+use crate::console::consoleintr;
 use crate::libc;
 use core::ptr;
-extern "C" {
-    #[no_mangle]
-    fn consoleintr(_: libc::c_int);
-}
 // Physical memory layout
 // qemu -machine virt is set up like this,
 // based on qemu's hw/riscv/virt.c:
@@ -22,7 +19,6 @@ extern "C" {
 // PHYSTOP -- end RAM used by the kernel
 // qemu puts UART registers here in physical memory.
 pub const UART0: libc::c_long = 0x10000000 as libc::c_long;
-// uart.c
 
 /// low-level driver routines for 16550a UART.
 

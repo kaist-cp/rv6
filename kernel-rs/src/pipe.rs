@@ -1,29 +1,15 @@
 use crate::{file, libc, proc, spinlock};
+use crate::{
+    kalloc::{kalloc, kfree},
+    vm::{copyin, copyout},
+};
 use core::ptr;
 use file::{filealloc, fileclose, File};
 use proc::{myproc, proc_0, sleep, wakeup};
 use spinlock::{acquire, initlock, release, Spinlock};
-extern "C" {
-    // kalloc.c
-    #[no_mangle]
-    fn kalloc() -> *mut libc::c_void;
-    #[no_mangle]
-    fn kfree(_: *mut libc::c_void);
-    #[no_mangle]
-    fn copyout(_: pagetable_t, _: uint64, _: *mut libc::c_char, _: uint64) -> libc::c_int;
-    #[no_mangle]
-    fn copyin(_: pagetable_t, _: *mut libc::c_char, _: uint64, _: uint64) -> libc::c_int;
-}
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 pub type pagetable_t = *mut uint64;
-
-pub type procstate = libc::c_uint;
-pub const ZOMBIE: procstate = 4;
-pub const RUNNING: procstate = 3;
-pub const RUNNABLE: procstate = 2;
-pub const SLEEPING: procstate = 1;
-pub const UNUSED: procstate = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Pipe {
@@ -44,7 +30,6 @@ pub const FD_INODE: C2RustUnnamed = 2;
 pub const FD_PIPE: C2RustUnnamed = 1;
 pub const FD_NONE: C2RustUnnamed = 0;
 pub const PIPESIZE: libc::c_int = 512 as libc::c_int;
-// pipe.c
 /// write fd is still open
 #[no_mangle]
 pub unsafe extern "C" fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> libc::c_int {

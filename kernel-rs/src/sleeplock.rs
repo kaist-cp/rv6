@@ -23,7 +23,6 @@ pub unsafe extern "C" fn initsleeplock(mut lk: *mut Sleeplock, mut name: *mut li
     (*lk).locked = 0 as libc::c_int as uint;
     (*lk).pid = 0 as libc::c_int;
 }
-// sleeplock.c
 #[no_mangle]
 pub unsafe extern "C" fn acquiresleep(mut lk: *mut Sleeplock) {
     acquire(&mut (*lk).lk);
