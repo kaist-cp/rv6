@@ -6,7 +6,7 @@ use crate::virtio_disk::virtio_disk_rw;
 use core::ptr;
 extern "C" {
     #[no_mangle]
-    fn panic(_: *mut i8) -> !;
+    fn panic(_: *mut u8) -> !;
 }
 /// Buffer cache.
 ///
@@ -45,7 +45,7 @@ pub const NBUF: isize = MAXOPBLOCKS * 3;
 pub static mut bcache: C2RustUnnamed = C2RustUnnamed {
     lock: Spinlock {
         locked: 0,
-        name: 0 as *const i8 as *mut i8,
+        name: 0 as *const u8 as *mut u8,
         cpu: 0 as *const cpu as *mut cpu,
     },
     buf: [Buf {
@@ -57,10 +57,10 @@ pub static mut bcache: C2RustUnnamed = C2RustUnnamed {
             locked: 0,
             lk: Spinlock {
                 locked: 0,
-                name: 0 as *const i8 as *mut i8,
+                name: 0 as *const u8 as *mut u8,
                 cpu: 0 as *const cpu as *mut cpu,
             },
-            name: 0 as *const i8 as *mut i8,
+            name: 0 as *const u8 as *mut u8,
             pid: 0,
         },
         refcnt: 0,
@@ -78,10 +78,10 @@ pub static mut bcache: C2RustUnnamed = C2RustUnnamed {
             locked: 0,
             lk: Spinlock {
                 locked: 0,
-                name: 0 as *const i8 as *mut i8,
+                name: 0 as *const u8 as *mut u8,
                 cpu: 0 as *const cpu as *mut cpu,
             },
-            name: 0 as *const i8 as *mut i8,
+            name: 0 as *const u8 as *mut u8,
             pid: 0,
         },
         refcnt: 0,
@@ -95,7 +95,7 @@ pub static mut bcache: C2RustUnnamed = C2RustUnnamed {
 #[no_mangle]
 pub unsafe extern "C" fn binit() {
     let mut b: *mut Buf = ptr::null_mut();
-    initlock(&mut bcache.lock, b"bcache\x00" as *const u8 as *mut i8);
+    initlock(&mut bcache.lock, b"bcache\x00" as *const u8 as *mut u8);
     // Create linked list of buffers
     bcache.head.prev = &mut bcache.head;
     bcache.head.next = &mut bcache.head;
@@ -103,7 +103,7 @@ pub unsafe extern "C" fn binit() {
     while b < bcache.buf.as_mut_ptr().offset(NBUF) {
         (*b).next = bcache.head.next;
         (*b).prev = &mut bcache.head;
-        initsleeplock(&mut (*b).lock, b"buffer\x00" as *const u8 as *mut i8);
+        initsleeplock(&mut (*b).lock, b"buffer\x00" as *const u8 as *mut u8);
         (*bcache.head.next).prev = b;
         bcache.head.next = b;
         b = b.offset(1)
@@ -140,7 +140,7 @@ unsafe extern "C" fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
         }
         b = (*b).prev
     }
-    panic(b"bget: no buffers\x00" as *const u8 as *mut i8);
+    panic(b"bget: no buffers\x00" as *const u8 as *mut u8);
 }
 /// Return a locked buf with the contents of the indicated block.
 #[no_mangle]
@@ -157,7 +157,7 @@ pub unsafe extern "C" fn bread(mut dev: u32, mut blockno: u32) -> *mut Buf {
 #[no_mangle]
 pub unsafe extern "C" fn bwrite(mut b: *mut Buf) {
     if holdingsleep(&mut (*b).lock) == 0 {
-        panic(b"bwrite\x00" as *const u8 as *mut i8);
+        panic(b"bwrite\x00" as *const u8 as *mut u8);
     }
     virtio_disk_rw(b, 1 as i32);
 }
@@ -166,7 +166,7 @@ pub unsafe extern "C" fn bwrite(mut b: *mut Buf) {
 #[no_mangle]
 pub unsafe extern "C" fn brelse(mut b: *mut Buf) {
     if holdingsleep(&mut (*b).lock) == 0 {
-        panic(b"brelse\x00" as *const u8 as *mut i8);
+        panic(b"brelse\x00" as *const u8 as *mut u8);
     }
     releasesleep(&mut (*b).lock);
     acquire(&mut bcache.lock);

@@ -6,7 +6,7 @@ use crate::proc::{cpu, sleep, wakeup};
 use crate::spinlock::{acquire, initlock, release, Spinlock};
 extern "C" {
     #[no_mangle]
-    fn panic(_: *mut i8) -> !;
+    fn panic(_: *mut u8) -> !;
     #[no_mangle]
     fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: u32) -> *mut libc::c_void;
 }
@@ -72,7 +72,7 @@ pub const BSIZE: i32 = 1024;
 pub static mut log: log = log {
     lock: Spinlock {
         locked: 0,
-        name: 0 as *const i8 as *mut i8,
+        name: 0 as *const u8 as *mut u8,
         cpu: 0 as *const cpu as *mut cpu,
     },
     start: 0,
@@ -89,9 +89,9 @@ pub static mut log: log = log {
 #[no_mangle]
 pub unsafe extern "C" fn initlog(mut dev: i32, mut sb: *mut superblock) {
     if ::core::mem::size_of::<logheader>() as u64 >= BSIZE as u64 {
-        panic(b"initlog: too big logheader\x00" as *const u8 as *mut i8);
+        panic(b"initlog: too big logheader\x00" as *const u8 as *mut u8);
     }
-    initlock(&mut log.lock, b"log\x00" as *const u8 as *mut i8);
+    initlock(&mut log.lock, b"log\x00" as *const u8 as *mut u8);
     log.start = (*sb).logstart as i32;
     log.size = (*sb).nlog as i32;
     log.dev = dev;
@@ -175,7 +175,7 @@ pub unsafe extern "C" fn end_op() {
     acquire(&mut log.lock);
     log.outstanding -= 1 as i32;
     if log.committing != 0 {
-        panic(b"log.committing\x00" as *const u8 as *mut i8);
+        panic(b"log.committing\x00" as *const u8 as *mut u8);
     }
     if log.outstanding == 0 as i32 {
         do_commit = 1 as i32;
@@ -238,10 +238,10 @@ unsafe extern "C" fn commit() {
 pub unsafe extern "C" fn log_write(mut b: *mut Buf) {
     let mut i: i32 = 0;
     if log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1 as i32 {
-        panic(b"too big a transaction\x00" as *const u8 as *mut i8);
+        panic(b"too big a transaction\x00" as *const u8 as *mut u8);
     }
     if log.outstanding < 1 as i32 {
-        panic(b"log_write outside of trans\x00" as *const u8 as *mut i8);
+        panic(b"log_write outside of trans\x00" as *const u8 as *mut u8);
     }
     acquire(&mut log.lock);
     i = 0;
