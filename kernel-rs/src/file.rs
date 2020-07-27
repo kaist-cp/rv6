@@ -6,6 +6,7 @@ use crate::sleeplock::Sleeplock;
 use crate::spinlock::{acquire, initlock, release, Spinlock};
 use crate::stat::Stat;
 use core::ptr;
+pub type uint = libc::c_uint;
 extern "C" {
     pub type pipe;
     #[no_mangle]
@@ -21,7 +22,7 @@ pub type pagetable_t = *mut u64;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct File {
-    pub type_0: u32,
+    pub type_0: C2RustUnnamed,
     pub ref_0: i32,
     pub readable: libc::c_char,
     pub writable: libc::c_char,
@@ -47,10 +48,11 @@ pub struct inode {
     pub size: u32,
     pub addrs: [u32; 13],
 }
-pub const FD_DEVICE: u32 = 3;
-pub const FD_INODE: u32 = 2;
-pub const FD_PIPE: u32 = 1;
-pub const FD_NONE: u32 = 0;
+pub type C2RustUnnamed = libc::c_uint;
+pub const FD_DEVICE: C2RustUnnamed = 3;
+pub const FD_INODE: C2RustUnnamed = 2;
+pub const FD_PIPE: C2RustUnnamed = 1;
+pub const FD_NONE: C2RustUnnamed = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed_0 {

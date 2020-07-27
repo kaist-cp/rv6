@@ -46,10 +46,11 @@ extern "C" {
     fn copyout(_: pagetable_t, _: u64, _: *mut libc::c_char, _: u64) -> i32;
 }
 pub type pagetable_t = *mut u64;
-pub const FD_DEVICE: u32 = 3;
-pub const FD_INODE: u32 = 2;
-pub const FD_PIPE: u32 = 1;
-pub const FD_NONE: u32 = 0;
+pub type C2RustUnnamed = libc::c_uint;
+pub const FD_DEVICE: C2RustUnnamed = 3;
+pub const FD_INODE: C2RustUnnamed = 2;
+pub const FD_PIPE: C2RustUnnamed = 1;
+pub const FD_NONE: C2RustUnnamed = 0;
 pub const PGSIZE: i32 = 4096;
 // maximum number of processes
 // maximum number of CPUs
