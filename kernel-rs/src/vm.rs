@@ -1,4 +1,8 @@
 use crate::libc;
+use crate::riscv::{
+    pagetable_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W,
+    PTE_X, PXMASK, SATP_SV39,
+};
 use core::ptr;
 extern "C" {
     // kalloc.c
@@ -25,8 +29,6 @@ pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
 pub type uint64 = libc::c_ulong;
 pub type pde_t = uint64;
-pub type pte_t = uint64;
-pub type pagetable_t = *mut uint64;
 // Physical memory layout
 // qemu -machine virt is set up like this,
 // based on qemu's hw/riscv/virt.c:
@@ -61,42 +63,6 @@ pub const PHYSTOP: libc::c_long =
 // map the trampoline page to the highest address,
 // in both user and kernel space.
 pub const TRAMPOLINE: libc::c_long = MAXVA - PGSIZE as libc::c_long;
-// use riscv's sv39 page table scheme.
-pub const SATP_SV39: libc::c_long = (8 as libc::c_long) << 60 as libc::c_int;
-/// supervisor address translation and protection;
-/// holds the address of the page table.
-#[inline]
-unsafe extern "C" fn w_satp(mut x: uint64) {
-    llvm_asm!("csrw satp, $0" : : "r" (x) : : "volatile");
-}
-/// flush the TLB.
-#[inline]
-unsafe extern "C" fn sfence_vma() {
-    // the zero, zero means flush all TLB entries.
-    llvm_asm!("sfence.vma zero, zero" : : : : "volatile");
-}
-pub const PGSIZE: libc::c_int = 4096 as libc::c_int;
-// bytes per page
-pub const PGSHIFT: libc::c_int = 12 as libc::c_int;
-// bits of offset within a page
-pub const PTE_V: libc::c_long = (1 as libc::c_long) << 0 as libc::c_int;
-// valid
-pub const PTE_R: libc::c_long = (1 as libc::c_long) << 1 as libc::c_int;
-pub const PTE_W: libc::c_long = (1 as libc::c_long) << 2 as libc::c_int;
-pub const PTE_X: libc::c_long = (1 as libc::c_long) << 3 as libc::c_int;
-pub const PTE_U: libc::c_long = (1 as libc::c_long) << 4 as libc::c_int;
-// 1 -> user can access
-// shift a physical address to the right place for a PTE.
-// extract the three 9-bit page table indices from a virtual address.
-pub const PXMASK: libc::c_int = 0x1ff as libc::c_int;
-// 9 bits
-// one beyond the highest possible virtual address.
-// MAXVA is actually one bit less than the max allowed by
-// Sv39, to avoid having to sign-extend virtual addresses
-// that have the high bit set.
-pub const MAXVA: libc::c_long = (1 as libc::c_long)
-    << (9 as libc::c_int + 9 as libc::c_int + 9 as libc::c_int + 12 as libc::c_int
-        - 1 as libc::c_int);
 /*
  * the kernel's page table.
  */

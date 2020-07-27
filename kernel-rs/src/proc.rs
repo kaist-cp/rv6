@@ -1,9 +1,9 @@
-use crate::file::{fileclose, filedup};
+use crate::file::{fileclose, filedup, inode, File};
 use crate::fs::{fsinit, idup, iput, namei};
 use crate::kalloc::{kalloc, kfree};
 use crate::log::{begin_op, end_op};
+use crate::riscv::{r_sstatus, w_sstatus, SSTATUS_SIE};
 use crate::{
-    file::{inode, File},
     libc,
     spinlock::{acquire, holding, initlock, release, Spinlock},
 };
@@ -218,23 +218,6 @@ pub const TRAMPOLINE: libc::c_long = MAXVA - PGSIZE as libc::c_long;
 //   TRAPFRAME (p->tf, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
 pub const TRAPFRAME: libc::c_long = TRAMPOLINE - PGSIZE as libc::c_long;
-// Supervisor Status Register, sstatus
-// Previous mode, 1=Supervisor, 0=User
-// Supervisor Previous Interrupt Enable
-// User Previous Interrupt Enable
-pub const SSTATUS_SIE: libc::c_long = (1 as libc::c_long) << 1 as libc::c_int;
-/// Supervisor Interrupt Enable
-/// User Interrupt Enable
-#[inline]
-unsafe extern "C" fn r_sstatus() -> uint64 {
-    let mut x: uint64 = 0;
-    llvm_asm!("csrr $0, sstatus" : "=r" (x) : : : "volatile");
-    x
-}
-#[inline]
-unsafe extern "C" fn w_sstatus(mut x: uint64) {
-    llvm_asm!("csrw sstatus, $0" : : "r" (x) : : "volatile");
-}
 // Supervisor Interrupt Enable
 pub const SIE_SEIE: libc::c_long = (1 as libc::c_long) << 9 as libc::c_int;
 // external

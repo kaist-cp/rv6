@@ -51,6 +51,7 @@ mod pipe;
 mod plic;
 mod printf;
 mod proc;
+mod riscv;
 mod sleeplock;
 mod spinlock;
 mod start;

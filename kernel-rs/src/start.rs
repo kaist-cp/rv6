@@ -1,4 +1,8 @@
 use crate::libc;
+use crate::riscv::{
+    r_mhartid, r_mie, r_mstatus, w_medeleg, w_mepc, w_mideleg, w_mie, w_mscratch, w_mstatus,
+    w_mtvec, w_satp, w_tp, MIE_MTIE, MSTATUS_MIE, MSTATUS_MPP_MASK, MSTATUS_MPP_S,
+};
 extern "C" {
     #[link_name = "main"]
     fn main_0();
@@ -28,79 +32,6 @@ pub type uint64 = libc::c_ulong;
 // local interrupt controller, which contains the timer.
 pub const CLINT: libc::c_long = 0x2000000 as libc::c_long;
 pub const CLINT_MTIME: libc::c_long = CLINT + 0xbff8 as libc::c_int as libc::c_long;
-/// which hart (core) is this?
-#[inline]
-unsafe extern "C" fn r_mhartid() -> uint64 {
-    let mut x: uint64 = 0;
-    llvm_asm!("csrr $0, mhartid" : "=r" (x) : : : "volatile");
-    x
-}
-// Machine Status Register, mstatus
-pub const MSTATUS_MPP_MASK: libc::c_long = (3 as libc::c_long) << 11 as libc::c_int;
-// previous mode.
-pub const MSTATUS_MPP_S: libc::c_long = (1 as libc::c_long) << 11 as libc::c_int;
-pub const MSTATUS_MIE: libc::c_long = (1 as libc::c_long) << 3 as libc::c_int;
-/// machine-mode interrupt enable.
-#[inline]
-unsafe extern "C" fn r_mstatus() -> uint64 {
-    let mut x: uint64 = 0;
-    llvm_asm!("csrr $0, mstatus" : "=r" (x) : : : "volatile");
-    x
-}
-#[inline]
-unsafe extern "C" fn w_mstatus(mut x: uint64) {
-    llvm_asm!("csrw mstatus, $0" : : "r" (x) : : "volatile");
-}
-/// machine exception program counter, holds the
-/// instruction address to which a return from
-/// exception will go.
-#[inline]
-unsafe extern "C" fn w_mepc(mut x: uint64) {
-    llvm_asm!("csrw mepc, $0" : : "r" (x) : : "volatile");
-}
-// Machine-mode Interrupt Enable
-// external
-pub const MIE_MTIE: libc::c_long = (1 as libc::c_long) << 7 as libc::c_int;
-/// timer
-/// software
-#[inline]
-unsafe extern "C" fn r_mie() -> uint64 {
-    let mut x: uint64 = 0;
-    llvm_asm!("csrr $0, mie" : "=r" (x) : : : "volatile");
-    x
-}
-#[inline]
-unsafe extern "C" fn w_mie(mut x: uint64) {
-    llvm_asm!("csrw mie, $0" : : "r" (x) : : "volatile");
-}
-#[inline]
-unsafe extern "C" fn w_medeleg(mut x: uint64) {
-    llvm_asm!("csrw medeleg, $0" : : "r" (x) : : "volatile");
-}
-#[inline]
-unsafe extern "C" fn w_mideleg(mut x: uint64) {
-    llvm_asm!("csrw mideleg, $0" : : "r" (x) : : "volatile");
-}
-/// Machine-mode interrupt vector
-#[inline]
-unsafe extern "C" fn w_mtvec(mut x: uint64) {
-    llvm_asm!("csrw mtvec, $0" : : "r" (x) : : "volatile");
-}
-/// use riscv's sv39 page table scheme.
-/// supervisor address translation and protection;
-/// holds the address of the page table.
-#[inline]
-unsafe extern "C" fn w_satp(mut x: uint64) {
-    llvm_asm!("csrw satp, $0" : : "r" (x) : : "volatile");
-}
-#[inline]
-unsafe extern "C" fn w_mscratch(mut x: uint64) {
-    llvm_asm!("csrw mscratch, $0" : : "r" (x) : : "volatile");
-}
-#[inline]
-unsafe extern "C" fn w_tp(mut x: uint64) {
-    llvm_asm!("mv tp, $0" : : "r" (x) : : "volatile");
-}
 /// entry.S needs one stack per CPU.
 #[repr(align(16))]
 pub struct Stack([libc::c_char; 32768]);
