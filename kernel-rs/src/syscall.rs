@@ -2,15 +2,15 @@ use crate::proc::{myproc, proc_0};
 extern "C" {
     // printf.c
     #[no_mangle]
-    fn printf(_: *mut u8, _: ...);
+    fn printf(_: *mut i8, _: ...);
     #[no_mangle]
-    fn panic(_: *mut u8) -> !;
+    fn panic(_: *mut i8) -> !;
     #[no_mangle]
-    fn strlen(_: *const u8) -> i32;
+    fn strlen(_: *const i8) -> i32;
     #[no_mangle]
-    fn copyin(_: pagetable_t, _: *mut u8, _: u64, _: u64) -> i32;
+    fn copyin(_: pagetable_t, _: *mut i8, _: u64, _: u64) -> i32;
     #[no_mangle]
-    fn copyinstr(_: pagetable_t, _: *mut u8, _: u64, _: u64) -> i32;
+    fn copyinstr(_: pagetable_t, _: *mut i8, _: u64, _: u64) -> i32;
     #[no_mangle]
     fn sys_chdir() -> u64;
     #[no_mangle]
@@ -64,7 +64,7 @@ pub unsafe extern "C" fn fetchaddr(mut addr: u64, mut ip: *mut u64) -> i32 {
     }
     if copyin(
         (*p).pagetable,
-        ip as *mut u8,
+        ip as *mut i8,
         addr,
         ::core::mem::size_of::<u64>() as u64,
     ) != 0 as i32
@@ -76,7 +76,7 @@ pub unsafe extern "C" fn fetchaddr(mut addr: u64, mut ip: *mut u64) -> i32 {
 /// Fetch the nul-terminated string at addr from the current process.
 /// Returns length of string, not including nul, or -1 for error.
 #[no_mangle]
-pub unsafe extern "C" fn fetchstr(mut addr: u64, mut buf: *mut u8, mut max: i32) -> i32 {
+pub unsafe extern "C" fn fetchstr(mut addr: u64, mut buf: *mut i8, mut max: i32) -> i32 {
     let mut p: *mut proc_0 = myproc();
     let mut err: i32 = copyinstr((*p).pagetable, buf, addr, max as u64);
     if err < 0 as i32 {
@@ -95,7 +95,7 @@ unsafe extern "C" fn argraw(mut n: i32) -> u64 {
         5 => return (*(*p).tf).a5,
         _ => {}
     }
-    panic(b"argraw\x00" as *const u8 as *mut u8);
+    panic(b"argraw\x00" as *const u8 as *mut i8);
 }
 // syscall.c
 /// Fetch the nth 32-bit system call argument.
@@ -116,7 +116,7 @@ pub unsafe extern "C" fn argaddr(mut n: i32, mut ip: *mut u64) -> i32 {
 /// Copies into buf, at most max.
 /// Returns string length if OK (including nul), -1 if error.
 #[no_mangle]
-pub unsafe extern "C" fn argstr(mut n: i32, mut buf: *mut u8, mut max: i32) -> i32 {
+pub unsafe extern "C" fn argstr(mut n: i32, mut buf: *mut i8, mut max: i32) -> i32 {
     let mut addr: u64 = 0;
     if argaddr(n, &mut addr) < 0 as i32 {
         return -1;
@@ -165,7 +165,7 @@ pub unsafe extern "C" fn syscall() {
         (*(*p).tf).a0 = syscalls[num as usize].expect("non-null function pointer")()
     } else {
         printf(
-            b"%d %s: unknown sys call %d\n\x00" as *const u8 as *mut u8,
+            b"%d %s: unknown sys call %d\n\x00" as *const u8 as *mut i8,
             (*p).pid,
             (*p).name.as_mut_ptr(),
             num,
