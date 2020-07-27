@@ -1,4 +1,5 @@
 use crate::fs::{ilock, iput, iunlock, readi, stati, writei};
+use crate::libc;
 use crate::pipe::{pipeclose, piperead, pipewrite, Pipe};
 use crate::proc::{myproc, proc_0};
 use crate::sleeplock::Sleeplock;
@@ -12,9 +13,9 @@ extern "C" {
     #[no_mangle]
     fn end_op();
     #[no_mangle]
-    fn panic(_: *mut i8) -> !;
+    fn panic(_: *mut libc::c_char) -> !;
     #[no_mangle]
-    fn copyout(_: pagetable_t, _: u64, _: *mut i8, _: u64) -> i32;
+    fn copyout(_: pagetable_t, _: u64, _: *mut libc::c_char, _: u64) -> i32;
 }
 pub type pagetable_t = *mut u64;
 #[derive(Copy, Clone)]
@@ -22,8 +23,8 @@ pub type pagetable_t = *mut u64;
 pub struct File {
     pub type_0: u32,
     pub ref_0: i32,
-    pub readable: i8,
-    pub writable: i8,
+    pub readable: libc::c_char,
+    pub writable: libc::c_char,
     pub pipe: *mut Pipe,
     pub ip: *mut inode,
     pub off: u32,
@@ -106,7 +107,10 @@ pub static mut ftable: C2RustUnnamed_0 = C2RustUnnamed_0 {
 };
 #[no_mangle]
 pub unsafe extern "C" fn fileinit() {
-    initlock(&mut ftable.lock, b"ftable\x00" as *const u8 as *mut i8);
+    initlock(
+        &mut ftable.lock,
+        b"ftable\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+    );
 }
 // file.c
 /// Allocate a file structure.
@@ -131,7 +135,7 @@ pub unsafe extern "C" fn filealloc() -> *mut File {
 pub unsafe extern "C" fn filedup(mut f: *mut File) -> *mut File {
     acquire(&mut ftable.lock);
     if (*f).ref_0 < 1 as i32 {
-        panic(b"filedup\x00" as *const u8 as *mut i8);
+        panic(b"filedup\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     (*f).ref_0 += 1;
     release(&mut ftable.lock);
@@ -152,7 +156,7 @@ pub unsafe extern "C" fn fileclose(mut f: *mut File) {
     };
     acquire(&mut ftable.lock);
     if (*f).ref_0 < 1 as i32 {
-        panic(b"fileclose\x00" as *const u8 as *mut i8);
+        panic(b"fileclose\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     (*f).ref_0 -= 1;
     if (*f).ref_0 > 0 as i32 {
@@ -193,7 +197,7 @@ pub unsafe extern "C" fn filestat(mut f: *mut File, mut addr: u64) -> i32 {
         if copyout(
             (*p).pagetable,
             addr,
-            &mut st as *mut Stat as *mut i8,
+            &mut st as *mut Stat as *mut libc::c_char,
             ::core::mem::size_of::<Stat>() as u64,
         ) < 0 as i32
         {
@@ -231,7 +235,7 @@ pub unsafe extern "C" fn fileread(mut f: *mut File, mut addr: u64, mut n: i32) -
         }
         iunlock((*f).ip);
     } else {
-        panic(b"fileread\x00" as *const u8 as *mut i8);
+        panic(b"fileread\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     r
 }
@@ -288,13 +292,15 @@ pub unsafe extern "C" fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) 
                 break;
             }
             if r != n1 {
-                panic(b"short filewrite\x00" as *const u8 as *mut i8);
+                panic(
+                    b"short filewrite\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+                );
             }
             i += r
         }
         ret = if i == n { n } else { -(1 as i32) }
     } else {
-        panic(b"filewrite\x00" as *const u8 as *mut i8);
+        panic(b"filewrite\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     ret
 }

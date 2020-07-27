@@ -18,7 +18,7 @@ extern "C" {
 #[repr(C)]
 pub struct C2RustUnnamed_0 {
     pub lock: Spinlock,
-    pub buf: [i8; 128],
+    pub buf: [libc::c_char; 128],
     pub r: u32,
     pub w: u32,
     pub e: u32,
@@ -63,7 +63,7 @@ pub const INPUT_BUF: i32 = 128;
 pub static mut cons: C2RustUnnamed_0 = C2RustUnnamed_0 {
     lock: Spinlock {
         locked: 0,
-        name: 0 as *const i8 as *mut i8,
+        name: 0 as *const libc::c_char as *mut libc::c_char,
         cpu: 0 as *const cpu as *mut cpu,
     },
     buf: [0; 128],
@@ -79,9 +79,9 @@ pub unsafe extern "C" fn consolewrite(mut user_src: i32, mut src: u64, mut n: i3
     let mut i: i32 = 0;
     acquire(&mut cons.lock);
     while i < n {
-        let mut c: i8 = 0;
+        let mut c: libc::c_char = 0;
         if either_copyin(
-            &mut c as *mut i8 as *mut libc::c_void,
+            &mut c as *mut libc::c_char as *mut libc::c_void,
             user_src,
             src.wrapping_add(i as u64),
             1 as i32 as u64,
@@ -105,7 +105,7 @@ pub unsafe extern "C" fn consolewrite(mut user_src: i32, mut src: u64, mut n: i3
 pub unsafe extern "C" fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
     let mut target: u32 = n as u32;
     let mut c: i32 = 0;
-    let mut cbuf: i8 = 0;
+    let mut cbuf: libc::c_char = 0;
     acquire(&mut cons.lock);
     while n > 0 as i32 {
         // wait until interrupt handler has put some
@@ -130,11 +130,11 @@ pub unsafe extern "C" fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32
             break;
         } else {
             // copy the input byte to the user-space buffer.
-            cbuf = c as i8;
+            cbuf = c as libc::c_char;
             if either_copyout(
                 user_dst,
                 dst,
-                &mut cbuf as *mut i8 as *mut libc::c_void,
+                &mut cbuf as *mut libc::c_char as *mut libc::c_void,
                 1 as i32 as u64,
             ) == -(1 as i32)
             {
@@ -192,7 +192,7 @@ pub unsafe extern "C" fn consoleintr(mut c: i32) {
                 // store for consumption by consoleread().
                 let fresh1 = cons.e;
                 cons.e = cons.e.wrapping_add(1);
-                cons.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = c as i8;
+                cons.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = c as libc::c_char;
                 if c == '\n' as i32
                     || c == 'D' as i32 - '@' as i32
                     || cons.e == cons.r.wrapping_add(INPUT_BUF as u32)
@@ -210,7 +210,10 @@ pub unsafe extern "C" fn consoleintr(mut c: i32) {
 // console.c
 #[no_mangle]
 pub unsafe extern "C" fn consoleinit() {
-    initlock(&mut cons.lock, b"cons\x00" as *const u8 as *mut i8);
+    initlock(
+        &mut cons.lock,
+        b"cons\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+    );
     uartinit();
     // connect read and write system calls
     // to consoleread and consolewrite.

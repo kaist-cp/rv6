@@ -1,15 +1,16 @@
+use crate::libc;
 use crate::proc::{cpu, mycpu};
 use core::ptr;
 extern "C" {
     #[no_mangle]
-    fn panic(_: *mut i8) -> !;
+    fn panic(_: *mut libc::c_char) -> !;
 }
 /// Mutual exclusion lock.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Spinlock {
     pub locked: u32,
-    pub name: *mut i8,
+    pub name: *mut libc::c_char,
     pub cpu: *mut cpu,
 }
 pub const SSTATUS_SIE: i64 = (1 as i64) << 1 as i32;
@@ -61,7 +62,7 @@ unsafe fn intr_get() -> i32 {
 }
 /// Mutual exclusion spin locks.
 #[no_mangle]
-pub unsafe fn initlock(mut lk: *mut Spinlock, mut name: *mut i8) {
+pub unsafe fn initlock(mut lk: *mut Spinlock, mut name: *mut libc::c_char) {
     (*lk).name = name;
     (*lk).locked = 0 as i32 as u32;
     (*lk).cpu = ptr::null_mut();
@@ -73,7 +74,7 @@ pub unsafe fn initlock(mut lk: *mut Spinlock, mut name: *mut i8) {
 pub unsafe fn acquire(mut lk: *mut Spinlock) {
     push_off(); // disable interrupts to avoid deadlock.
     if holding(lk) != 0 {
-        panic(b"acquire\x00" as *const u8 as *mut i8);
+        panic(b"acquire\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
     //   a5 = 1
@@ -93,7 +94,7 @@ pub unsafe fn acquire(mut lk: *mut Spinlock) {
 #[no_mangle]
 pub unsafe fn release(mut lk: *mut Spinlock) {
     if holding(lk) == 0 {
-        panic(b"release\x00" as *const u8 as *mut i8);
+        panic(b"release\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     (*lk).cpu = ptr::null_mut();
     // Tell the C compiler and the CPU to not move loads or stores
@@ -136,11 +137,13 @@ pub unsafe fn push_off() {
 pub unsafe fn pop_off() {
     let mut c: *mut cpu = mycpu();
     if intr_get() != 0 {
-        panic(b"pop_off - interruptible\x00" as *const u8 as *mut i8);
+        panic(
+            b"pop_off - interruptible\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        );
     }
     (*c).noff -= 1 as i32;
     if (*c).noff < 0 as i32 {
-        panic(b"pop_off\x00" as *const u8 as *mut i8);
+        panic(b"pop_off\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     if (*c).noff == 0 as i32 && (*c).intena != 0 {
         intr_on();

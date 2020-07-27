@@ -11,7 +11,7 @@ use stat::Stat;
 
 extern "C" {
     #[no_mangle]
-    fn panic(_: *mut i8) -> !;
+    fn panic(_: *mut libc::c_char) -> !;
     #[no_mangle]
     fn either_copyout(user_dst: i32, dst: u64, src: *mut libc::c_void, len: u64) -> i32;
     #[no_mangle]
@@ -21,9 +21,9 @@ extern "C" {
     #[no_mangle]
     fn memset(_: *mut libc::c_void, _: i32, _: u32) -> *mut libc::c_void;
     #[no_mangle]
-    fn strncmp(_: *const i8, _: *const i8, _: u32) -> i32;
+    fn strncmp(_: *const libc::c_char, _: *const libc::c_char, _: u32) -> i32;
     #[no_mangle]
-    fn strncpy(_: *mut i8, _: *const i8, _: i32) -> *mut i8;
+    fn strncpy(_: *mut libc::c_char, _: *const libc::c_char, _: i32) -> *mut libc::c_char;
 }
 pub type pagetable_t = *mut u64;
 pub const FD_DEVICE: u32 = 3;
@@ -54,7 +54,7 @@ pub struct superblock {
 #[repr(C)]
 pub struct dirent {
     pub inum: u16,
-    pub name: [i8; 14],
+    pub name: [libc::c_char; 14],
 }
 /// On-disk inode structure
 #[derive(Copy, Clone)]
@@ -194,7 +194,7 @@ unsafe extern "C" fn readsb(mut dev: i32, mut sb_0: *mut superblock) {
 pub unsafe extern "C" fn fsinit(mut dev: i32) {
     readsb(dev, &mut sb);
     if sb.magic != FSMAGIC as u32 {
-        panic(b"invalid file system\x00" as *const u8 as *mut i8);
+        panic(b"invalid file system\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     initlog(dev, &mut sb);
 }
@@ -238,7 +238,7 @@ unsafe extern "C" fn balloc(mut dev: u32) -> u32 {
         brelse(bp);
         b += BPB
     }
-    panic(b"balloc: out of blocks\x00" as *const u8 as *mut i8);
+    panic(b"balloc: out of blocks\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
 /// Free a disk block.
 unsafe extern "C" fn bfree(mut dev: i32, mut b: u32) {
@@ -252,7 +252,7 @@ unsafe extern "C" fn bfree(mut dev: i32, mut b: u32) {
     bi = b.wrapping_rem(BPB as u32) as i32;
     m = (1 as i32) << (bi % 8 as i32);
     if (*bp).data[(bi / 8 as i32) as usize] as i32 & m == 0 as i32 {
-        panic(b"freeing free block\x00" as *const u8 as *mut i8);
+        panic(b"freeing free block\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     (*bp).data[(bi / 8 as i32) as usize] = ((*bp).data[(bi / 8 as i32) as usize] as i32 & !m) as u8;
     log_write(bp);
@@ -262,7 +262,7 @@ unsafe extern "C" fn bfree(mut dev: i32, mut b: u32) {
 pub static mut icache: C2RustUnnamed_0 = C2RustUnnamed_0 {
     lock: Spinlock {
         locked: 0,
-        name: 0 as *const i8 as *mut i8,
+        name: 0 as *const libc::c_char as *mut libc::c_char,
         cpu: 0 as *const cpu as *mut cpu,
     },
     inode: [inode {
@@ -273,10 +273,10 @@ pub static mut icache: C2RustUnnamed_0 = C2RustUnnamed_0 {
             locked: 0,
             lk: Spinlock {
                 locked: 0,
-                name: 0 as *const i8 as *mut i8,
+                name: 0 as *const libc::c_char as *mut libc::c_char,
                 cpu: 0 as *const cpu as *mut cpu,
             },
-            name: 0 as *const i8 as *mut i8,
+            name: 0 as *const libc::c_char as *mut libc::c_char,
             pid: 0,
         },
         valid: 0,
@@ -291,11 +291,14 @@ pub static mut icache: C2RustUnnamed_0 = C2RustUnnamed_0 {
 #[no_mangle]
 pub unsafe extern "C" fn iinit() {
     let mut i: i32 = 0;
-    initlock(&mut icache.lock, b"icache\x00" as *const u8 as *mut i8);
+    initlock(
+        &mut icache.lock,
+        b"icache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+    );
     while i < NINODE {
         initsleeplock(
             &mut (*icache.inode.as_mut_ptr().offset(i as isize)).lock,
-            b"inode\x00" as *const u8 as *mut i8,
+            b"inode\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
         );
         i += 1
     }
@@ -335,7 +338,7 @@ pub unsafe extern "C" fn ialloc(mut dev: u32, mut type_0: i16) -> *mut inode {
         brelse(bp);
         inum += 1
     }
-    panic(b"ialloc: no inodes\x00" as *const u8 as *mut i8);
+    panic(b"ialloc: no inodes\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
 /// Copy a modified in-memory inode to disk.
 /// Must be called after every change to an ip->xxx field
@@ -393,7 +396,7 @@ unsafe extern "C" fn iget(mut dev: u32, mut inum: u32) -> *mut inode {
     }
     // Recycle an inode cache entry.
     if empty.is_null() {
-        panic(b"iget: no inodes\x00" as *const u8 as *mut i8);
+        panic(b"iget: no inodes\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     ip = empty;
     (*ip).dev = dev;
@@ -419,7 +422,7 @@ pub unsafe extern "C" fn ilock(mut ip: *mut inode) {
     let mut bp: *mut Buf = ptr::null_mut();
     let mut dip: *mut dinode = ptr::null_mut();
     if ip.is_null() || (*ip).ref_0 < 1 as i32 {
-        panic(b"ilock\x00" as *const u8 as *mut i8);
+        panic(b"ilock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     acquiresleep(&mut (*ip).lock);
     if (*ip).valid == 0 as i32 {
@@ -447,7 +450,7 @@ pub unsafe extern "C" fn ilock(mut ip: *mut inode) {
         brelse(bp);
         (*ip).valid = 1 as i32;
         if (*ip).type_0 as i32 == 0 as i32 {
-            panic(b"ilock: no type\x00" as *const u8 as *mut i8);
+            panic(b"ilock: no type\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
     };
 }
@@ -455,7 +458,7 @@ pub unsafe extern "C" fn ilock(mut ip: *mut inode) {
 #[no_mangle]
 pub unsafe extern "C" fn iunlock(mut ip: *mut inode) {
     if ip.is_null() || holdingsleep(&mut (*ip).lock) == 0 || (*ip).ref_0 < 1 as i32 {
-        panic(b"iunlock\x00" as *const u8 as *mut i8);
+        panic(b"iunlock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     releasesleep(&mut (*ip).lock);
 }
@@ -530,7 +533,7 @@ unsafe extern "C" fn bmap(mut ip: *mut inode, mut bn: u32) -> u32 {
         brelse(bp);
         return addr;
     }
-    panic(b"bmap: out of range\x00" as *const u8 as *mut i8);
+    panic(b"bmap: out of range\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
 /// File system implementation.  Five layers:
 ///   + Blocks: allocator for raw disk blocks.
@@ -706,7 +709,7 @@ pub unsafe extern "C" fn writei(
 }
 /// Directories
 #[no_mangle]
-pub unsafe extern "C" fn namecmp(mut s: *const i8, mut t: *const i8) -> i32 {
+pub unsafe extern "C" fn namecmp(mut s: *const libc::c_char, mut t: *const libc::c_char) -> i32 {
     strncmp(s, t, DIRSIZ as u32)
 }
 /// Look for a directory entry in a directory.
@@ -714,7 +717,7 @@ pub unsafe extern "C" fn namecmp(mut s: *const i8, mut t: *const i8) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn dirlookup(
     mut dp: *mut inode,
-    mut name: *mut i8,
+    mut name: *mut libc::c_char,
     mut poff: *mut u32,
 ) -> *mut inode {
     let mut off: u32 = 0;
@@ -724,7 +727,7 @@ pub unsafe extern "C" fn dirlookup(
         name: [0; 14],
     };
     if (*dp).type_0 as i32 != T_DIR {
-        panic(b"dirlookup not DIR\x00" as *const u8 as *mut i8);
+        panic(b"dirlookup not DIR\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     off = 0 as i32 as u32;
     while off < (*dp).size {
@@ -737,7 +740,7 @@ pub unsafe extern "C" fn dirlookup(
         ) as u64
             != ::core::mem::size_of::<dirent>() as u64
         {
-            panic(b"dirlookup read\x00" as *const u8 as *mut i8);
+            panic(b"dirlookup read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         if de.inum as i32 != 0 as i32 && namecmp(name, de.name.as_mut_ptr()) == 0 as i32 {
             // entry matches path element
@@ -753,7 +756,11 @@ pub unsafe extern "C" fn dirlookup(
 }
 /// Write a new directory entry (name, inum) into the directory dp.
 #[no_mangle]
-pub unsafe extern "C" fn dirlink(mut dp: *mut inode, mut name: *mut i8, mut inum: u32) -> i32 {
+pub unsafe extern "C" fn dirlink(
+    mut dp: *mut inode,
+    mut name: *mut libc::c_char,
+    mut inum: u32,
+) -> i32 {
     let mut off: i32 = 0;
     let mut de: dirent = dirent {
         inum: 0,
@@ -778,7 +785,7 @@ pub unsafe extern "C" fn dirlink(mut dp: *mut inode, mut name: *mut i8, mut inum
         ) as u64
             != ::core::mem::size_of::<dirent>() as u64
         {
-            panic(b"dirlink read\x00" as *const u8 as *mut i8);
+            panic(b"dirlink read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         if de.inum as i32 == 0 as i32 {
             break;
@@ -796,7 +803,7 @@ pub unsafe extern "C" fn dirlink(mut dp: *mut inode, mut name: *mut i8, mut inum
     ) as u64
         != ::core::mem::size_of::<dirent>() as u64
     {
-        panic(b"dirlink\x00" as *const u8 as *mut i8);
+        panic(b"dirlink\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     0 as i32
 }
@@ -813,8 +820,11 @@ pub unsafe extern "C" fn dirlink(mut dp: *mut inode, mut name: *mut i8, mut inum
 ///   skipelem("a", name) = "", setting name = "a"
 ///   skipelem("", name) = skipelem("////", name) = 0
 ///
-unsafe extern "C" fn skipelem(mut path: *mut i8, mut name: *mut i8) -> *mut i8 {
-    let mut s: *mut i8 = ptr::null_mut();
+unsafe extern "C" fn skipelem(
+    mut path: *mut libc::c_char,
+    mut name: *mut libc::c_char,
+) -> *mut libc::c_char {
+    let mut s: *mut libc::c_char = ptr::null_mut();
     let mut len: i32 = 0;
     while *path as i32 == '/' as i32 {
         path = path.offset(1)
@@ -839,7 +849,7 @@ unsafe extern "C" fn skipelem(mut path: *mut i8, mut name: *mut i8) -> *mut i8 {
             s as *const libc::c_void,
             len as u32,
         );
-        *name.offset(len as isize) = 0 as i32 as i8
+        *name.offset(len as isize) = 0 as i32 as libc::c_char
     }
     while *path as i32 == '/' as i32 {
         path = path.offset(1)
@@ -851,9 +861,9 @@ unsafe extern "C" fn skipelem(mut path: *mut i8, mut name: *mut i8) -> *mut i8 {
 /// path element into name, which must have room for DIRSIZ bytes.
 /// Must be called inside a transaction since it calls iput().
 unsafe extern "C" fn namex(
-    mut path: *mut i8,
+    mut path: *mut libc::c_char,
     mut nameiparent_0: i32,
-    mut name: *mut i8,
+    mut name: *mut libc::c_char,
 ) -> *mut inode {
     let mut ip: *mut inode = ptr::null_mut();
     let mut next: *mut inode = ptr::null_mut();
@@ -892,11 +902,14 @@ unsafe extern "C" fn namex(
     ip
 }
 #[no_mangle]
-pub unsafe extern "C" fn namei(mut path: *mut i8) -> *mut inode {
-    let mut name: [i8; 14] = [0; 14];
+pub unsafe extern "C" fn namei(mut path: *mut libc::c_char) -> *mut inode {
+    let mut name: [libc::c_char; 14] = [0; 14];
     namex(path, 0 as i32, name.as_mut_ptr())
 }
 #[no_mangle]
-pub unsafe extern "C" fn nameiparent(mut path: *mut i8, mut name: *mut i8) -> *mut inode {
+pub unsafe extern "C" fn nameiparent(
+    mut path: *mut libc::c_char,
+    mut name: *mut libc::c_char,
+) -> *mut inode {
     namex(path, 1 as i32, name)
 }

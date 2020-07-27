@@ -1,3 +1,4 @@
+use crate::libc;
 extern "C" {
     #[link_name = "main"]
     fn main_0();
@@ -101,7 +102,7 @@ unsafe extern "C" fn w_tp(mut x: u64) {
 }
 /// entry.S needs one stack per CPU.
 #[repr(align(16))]
-pub struct Stack([i8; 32768]);
+pub struct Stack([libc::c_char; 32768]);
 #[no_mangle]
 pub static mut stack0: Stack = Stack([0; 32768]);
 // scratch area for timer interrupt, one per CPU.

@@ -1,3 +1,4 @@
+use crate::libc;
 use core::sync::atomic::{AtomicBool, Ordering};
 extern "C" {
     // bio.c
@@ -14,7 +15,7 @@ extern "C" {
     fn kinit();
     // printf.c
     #[no_mangle]
-    fn printf(_: *mut i8, _: ...);
+    fn printf(_: *mut libc::c_char, _: ...);
     #[no_mangle]
     fn printfinit();
     // proc.c
@@ -52,9 +53,11 @@ pub unsafe extern "C" fn main_0() {
     if cpuid() == 0 as i32 {
         consoleinit(); // create kernel page table
         printfinit(); // turn on paging
-        printf(b"\n\x00" as *const u8 as *mut i8); // process table
-        printf(b"xv6 kernel is booting\n\x00" as *const u8 as *mut i8); // trap vectors
-        printf(b"\n\x00" as *const u8 as *mut i8); // install kernel trap vector
+        printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char); // process table
+        printf(
+            b"xv6 kernel is booting\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        ); // trap vectors
+        printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char); // install kernel trap vector
         kinit(); // set up interrupt controller
         kvminit(); // ask PLIC for device interrupts
         kvminithart(); // buffer cache
@@ -71,7 +74,10 @@ pub unsafe extern "C" fn main_0() {
         started.store(true, Ordering::Release);
     } else {
         while !started.load(Ordering::Acquire) {}
-        printf(b"hart %d starting\n\x00" as *const u8 as *mut i8, cpuid());
+        printf(
+            b"hart %d starting\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+            cpuid(),
+        );
         // ask PLIC for device interrupts
         kvminithart(); // turn on paging
         trapinithart(); // install kernel trap vector

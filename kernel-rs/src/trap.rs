@@ -6,9 +6,9 @@ use crate::{
 extern "C" {
     // printf.c
     #[no_mangle]
-    fn printf(_: *mut i8, _: ...);
+    fn printf(_: *mut libc::c_char, _: ...);
     #[no_mangle]
-    fn panic(_: *mut i8) -> !;
+    fn panic(_: *mut libc::c_char) -> !;
     // proc.c
     #[no_mangle]
     fn cpuid() -> i32;
@@ -29,11 +29,11 @@ extern "C" {
     #[no_mangle]
     fn virtio_disk_intr();
     #[no_mangle]
-    static mut trampoline: [i8; 0];
+    static mut trampoline: [libc::c_char; 0];
     #[no_mangle]
-    static mut uservec: [i8; 0];
+    static mut uservec: [libc::c_char; 0];
     #[no_mangle]
-    static mut userret: [i8; 0];
+    static mut userret: [libc::c_char; 0];
     // in kernelvec.S, calls kerneltrap().
     #[no_mangle]
     fn kernelvec();
@@ -215,7 +215,7 @@ pub const MAXVA: i64 = (1 as i64) << (9 + 9 + 9 + 12 - 1) as i32;
 #[no_mangle]
 pub static mut tickslock: Spinlock = Spinlock {
     locked: 0,
-    name: 0 as *const i8 as *mut i8,
+    name: 0 as *const libc::c_char as *mut libc::c_char,
     cpu: 0 as *const cpu as *mut cpu,
 };
 #[no_mangle]
@@ -223,7 +223,10 @@ pub static mut ticks: u32 = 0;
 // trap.c
 #[no_mangle]
 pub unsafe extern "C" fn trapinit() {
-    initlock(&mut tickslock, b"time\x00" as *const u8 as *mut i8);
+    initlock(
+        &mut tickslock,
+        b"time\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+    );
 }
 /// set up to take exceptions and traps while in the kernel.
 #[no_mangle]
@@ -243,7 +246,10 @@ pub unsafe extern "C" fn trapinithart() {
 pub unsafe extern "C" fn usertrap() {
     let mut which_dev: i32 = 0 as i32;
     if r_sstatus() & SSTATUS_SPP as u64 != 0 as i32 as u64 {
-        panic(b"usertrap: not from user mode\x00" as *const u8 as *mut i8);
+        panic(
+            b"usertrap: not from user mode\x00" as *const u8 as *const libc::c_char
+                as *mut libc::c_char,
+        );
     }
     // send interrupts and exceptions to kerneltrap(),
     // since we're now in the kernel.
@@ -273,12 +279,14 @@ pub unsafe extern "C" fn usertrap() {
         which_dev = devintr();
         if which_dev == 0 as i32 {
             printf(
-                b"usertrap(): unexpected scause %p pid=%d\n\x00" as *const u8 as *mut i8,
+                b"usertrap(): unexpected scause %p pid=%d\n\x00" as *const u8 as *const libc::c_char
+                    as *mut libc::c_char,
                 r_scause(),
                 (*p).pid,
             );
             printf(
-                b"            sepc=%p stval=%p\n\x00" as *const u8 as *mut i8,
+                b"            sepc=%p stval=%p\n\x00" as *const u8 as *const libc::c_char
+                    as *mut libc::c_char,
                 r_sepc(),
                 r_stval(),
             );
@@ -350,20 +358,29 @@ pub unsafe extern "C" fn kerneltrap() {
     let mut sstatus: u64 = r_sstatus();
     let mut scause: u64 = r_scause();
     if sstatus & SSTATUS_SPP as u64 == 0 as u64 {
-        panic(b"kerneltrap: not from supervisor mode\x00" as *const u8 as *mut i8);
+        panic(
+            b"kerneltrap: not from supervisor mode\x00" as *const u8 as *const libc::c_char
+                as *mut libc::c_char,
+        );
     }
     if intr_get() != 0 as i32 {
-        panic(b"kerneltrap: interrupts enabled\x00" as *const u8 as *mut i8);
+        panic(
+            b"kerneltrap: interrupts enabled\x00" as *const u8 as *const libc::c_char
+                as *mut libc::c_char,
+        );
     }
     which_dev = devintr();
     if which_dev == 0 as i32 {
-        printf(b"scause %p\n\x00" as *const u8 as *mut i8, scause);
         printf(
-            b"sepc=%p stval=%p\n\x00" as *const u8 as *mut i8,
+            b"scause %p\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+            scause,
+        );
+        printf(
+            b"sepc=%p stval=%p\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
             r_sepc(),
             r_stval(),
         );
-        panic(b"kerneltrap\x00" as *const u8 as *mut i8);
+        panic(b"kerneltrap\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     // give up the CPU if this is a timer interrupt.
     if which_dev == 2 && !myproc().is_null() && (*myproc()).state as u32 == RUNNING as u32 {

@@ -11,9 +11,9 @@ use core::ptr;
 extern "C" {
     // printf.c
     #[no_mangle]
-    fn printf(_: *mut i8, _: ...);
+    fn printf(_: *mut libc::c_char, _: ...);
     #[no_mangle]
-    fn panic(_: *mut i8) -> !;
+    fn panic(_: *mut libc::c_char) -> !;
     // swtch.S
     #[no_mangle]
     fn swtch(_: *mut context, _: *mut context);
@@ -26,7 +26,7 @@ extern "C" {
     #[no_mangle]
     fn memset(_: *mut libc::c_void, _: i32, _: u32) -> *mut libc::c_void;
     #[no_mangle]
-    fn safestrcpy(_: *mut i8, _: *const i8, _: i32) -> *mut i8;
+    fn safestrcpy(_: *mut libc::c_char, _: *const libc::c_char, _: i32) -> *mut libc::c_char;
     #[no_mangle]
     fn usertrapret();
     #[no_mangle]
@@ -50,11 +50,11 @@ extern "C" {
     #[no_mangle]
     fn uvmunmap(_: pagetable_t, _: u64, _: u64, _: i32);
     #[no_mangle]
-    fn copyout(_: pagetable_t, _: u64, _: *mut i8, _: u64) -> i32;
+    fn copyout(_: pagetable_t, _: u64, _: *mut libc::c_char, _: u64) -> i32;
     #[no_mangle]
-    fn copyin(_: pagetable_t, _: *mut i8, _: u64, _: u64) -> i32;
+    fn copyin(_: pagetable_t, _: *mut libc::c_char, _: u64, _: u64) -> i32;
     #[no_mangle]
-    static mut trampoline: [i8; 0];
+    static mut trampoline: [libc::c_char; 0];
 }
 pub type pagetable_t = *mut u64;
 #[derive(Copy, Clone)]
@@ -101,7 +101,7 @@ pub struct proc_0 {
     pub context: context,
     pub ofile: [*mut File; 16],
     pub cwd: *mut inode,
-    pub name: [i8; 16],
+    pub name: [libc::c_char; 16],
 }
 /// Were interrupts enabled before push_off()?
 /// per-process data for the trap handling code in trampoline.S.
@@ -307,7 +307,7 @@ pub static mut cpus: [cpu; 8] = [cpu {
 pub static mut proc: [proc_0; 64] = [proc_0 {
     lock: Spinlock {
         locked: 0,
-        name: 0 as *const i8 as *mut i8,
+        name: 0 as *const libc::c_char as *mut libc::c_char,
         cpu: 0 as *const cpu as *mut cpu,
     },
     state: UNUSED,
@@ -347,23 +347,29 @@ pub static mut nextpid: i32 = 1;
 #[no_mangle]
 pub static mut pid_lock: Spinlock = Spinlock {
     locked: 0,
-    name: 0 as *const i8 as *mut i8,
+    name: 0 as *const libc::c_char as *mut libc::c_char,
     cpu: 0 as *const cpu as *mut cpu,
 };
 // trampoline.S
 #[no_mangle]
 pub unsafe extern "C" fn procinit() {
     let mut p: *mut proc_0 = ptr::null_mut();
-    initlock(&mut pid_lock, b"nextpid\x00" as *const u8 as *mut i8);
+    initlock(
+        &mut pid_lock,
+        b"nextpid\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+    );
     p = proc.as_mut_ptr();
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
-        initlock(&mut (*p).lock, b"proc\x00" as *const u8 as *mut i8);
+        initlock(
+            &mut (*p).lock,
+            b"proc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        );
         // Allocate a page for the process's kernel stack.
         // Map it high in memory, followed by an invalid
         // guard page.
-        let mut pa: *mut i8 = kalloc() as *mut i8;
+        let mut pa: *mut libc::c_char = kalloc() as *mut libc::c_char;
         if pa.is_null() {
-            panic(b"kalloc\x00" as *const u8 as *mut i8);
+            panic(b"kalloc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         let mut va: u64 = (TRAMPOLINE
             - ((p.wrapping_offset_from(proc.as_mut_ptr()) as i64 as i32 + 1 as i32)
@@ -473,7 +479,7 @@ unsafe extern "C" fn freeproc(mut p: *mut proc_0) {
     (*p).sz = 0 as i32 as u64;
     (*p).pid = 0 as i32;
     (*p).parent = ptr::null_mut();
-    (*p).name[0 as i32 as usize] = 0 as i32 as i8;
+    (*p).name[0 as i32 as usize] = 0 as i32 as libc::c_char;
     (*p).chan = ptr::null_mut();
     (*p).killed = 0 as i32;
     (*p).xstate = 0 as i32;
@@ -548,10 +554,10 @@ pub unsafe extern "C" fn userinit() {
     (*(*p).tf).sp = PGSIZE as u64; // user stack pointer
     safestrcpy(
         (*p).name.as_mut_ptr(),
-        b"initcode\x00" as *const u8 as *mut i8,
-        ::core::mem::size_of::<[i8; 16]>() as u64 as i32,
+        b"initcode\x00" as *const u8 as *const libc::c_char,
+        ::core::mem::size_of::<[libc::c_char; 16]>() as u64 as i32,
     );
-    (*p).cwd = namei(b"/\x00" as *const u8 as *mut i8);
+    (*p).cwd = namei(b"/\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     (*p).state = RUNNABLE;
     release(&mut (*p).lock);
 }
@@ -610,7 +616,7 @@ pub unsafe extern "C" fn fork() -> i32 {
     safestrcpy(
         (*np).name.as_mut_ptr(),
         (*p).name.as_mut_ptr(),
-        ::core::mem::size_of::<[i8; 16]>() as u64 as i32,
+        ::core::mem::size_of::<[libc::c_char; 16]>() as u64 as i32,
     );
     pid = (*np).pid;
     (*np).state = RUNNABLE;
@@ -649,7 +655,7 @@ pub unsafe extern "C" fn reparent(mut p: *mut proc_0) {
 pub unsafe extern "C" fn exit(mut status: i32) {
     let mut p: *mut proc_0 = myproc();
     if p == initproc {
-        panic(b"init exiting\x00" as *const u8 as *mut i8);
+        panic(b"init exiting\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     // Close all open files.
     let mut fd: i32 = 0 as i32;
@@ -695,7 +701,7 @@ pub unsafe extern "C" fn exit(mut status: i32) {
     release(&mut (*original_parent).lock);
     // Jump into the scheduler, never to return.
     sched();
-    panic(b"zombie exit\x00" as *const u8 as *mut i8);
+    panic(b"zombie exit\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
 /// Wait for a child process to exit and return its pid.
 /// Return -1 if this process has no children.
@@ -729,7 +735,7 @@ pub unsafe extern "C" fn wait(mut addr: u64) -> i32 {
                         && copyout(
                             (*p).pagetable,
                             addr,
-                            &mut (*np).xstate as *mut i32 as *mut i8,
+                            &mut (*np).xstate as *mut i32 as *mut libc::c_char,
                             ::core::mem::size_of::<i32>() as u64,
                         ) < 0 as i32
                     {
@@ -801,16 +807,16 @@ pub unsafe extern "C" fn sched() {
     let mut intena: i32 = 0;
     let mut p: *mut proc_0 = myproc();
     if holding(&mut (*p).lock) == 0 {
-        panic(b"sched p->lock\x00" as *const u8 as *mut i8);
+        panic(b"sched p->lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     if (*mycpu()).noff != 1 as i32 {
-        panic(b"sched locks\x00" as *const u8 as *mut i8);
+        panic(b"sched locks\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     if (*p).state as u32 == RUNNING as i32 as u32 {
-        panic(b"sched running\x00" as *const u8 as *mut i8);
+        panic(b"sched running\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     if intr_get() != 0 {
-        panic(b"sched interruptible\x00" as *const u8 as *mut i8);
+        panic(b"sched interruptible\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     intena = (*mycpu()).intena;
     swtch(
@@ -891,7 +897,7 @@ pub unsafe extern "C" fn wakeup(mut chan: *mut libc::c_void) {
 /// Caller must hold p->lock.
 unsafe extern "C" fn wakeup1(mut p: *mut proc_0) {
     if holding(&mut (*p).lock) == 0 {
-        panic(b"wakeup1\x00" as *const u8 as *mut i8);
+        panic(b"wakeup1\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     if (*p).chan == p as *mut libc::c_void && (*p).state as u32 == SLEEPING as u32 {
         (*p).state = RUNNABLE
@@ -932,9 +938,13 @@ pub unsafe extern "C" fn either_copyout(
 ) -> i32 {
     let mut p: *mut proc_0 = myproc();
     if user_dst != 0 {
-        copyout((*p).pagetable, dst, src as *mut i8, len)
+        copyout((*p).pagetable, dst, src as *mut libc::c_char, len)
     } else {
-        memmove(dst as *mut i8 as *mut libc::c_void, src, len as u32);
+        memmove(
+            dst as *mut libc::c_char as *mut libc::c_void,
+            src,
+            len as u32,
+        );
         0
     }
 }
@@ -950,9 +960,13 @@ pub unsafe extern "C" fn either_copyin(
 ) -> i32 {
     let mut p: *mut proc_0 = myproc();
     if user_src != 0 {
-        copyin((*p).pagetable, dst as *mut i8, src, len)
+        copyin((*p).pagetable, dst as *mut libc::c_char, src, len)
     } else {
-        memmove(dst, src as *mut i8 as *const libc::c_void, len as u32);
+        memmove(
+            dst,
+            src as *mut libc::c_char as *const libc::c_void,
+            len as u32,
+        );
         0
     }
 }
@@ -961,36 +975,36 @@ pub unsafe extern "C" fn either_copyin(
 /// No lock to avoid wedging a stuck machine further.
 #[no_mangle]
 pub unsafe extern "C" fn procdump() {
-    static mut states: [*mut i8; 5] = [
-        b"unused\x00" as *const u8 as *mut i8,
-        b"sleep \x00" as *const u8 as *mut i8,
-        b"runble\x00" as *const u8 as *mut i8,
-        b"run   \x00" as *const u8 as *mut i8,
-        b"zombie\x00" as *const u8 as *mut i8,
+    static mut states: [*mut libc::c_char; 5] = [
+        b"unused\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        b"sleep \x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        b"runble\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        b"run   \x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        b"zombie\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     ];
     let mut p: *mut proc_0 = ptr::null_mut();
-    let mut state: *mut i8 = ptr::null_mut();
-    printf(b"\n\x00" as *const u8 as *mut i8);
+    let mut state: *mut libc::c_char = ptr::null_mut();
+    printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     p = proc.as_mut_ptr();
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
         if (*p).state as u32 != UNUSED as i32 as u32 {
             if (*p).state as u32 >= 0 as i32 as u32
                 && ((*p).state as u64)
-                    < (::core::mem::size_of::<[*mut i8; 5]>() as u64)
-                        .wrapping_div(::core::mem::size_of::<*mut i8>() as u64)
+                    < (::core::mem::size_of::<[*mut libc::c_char; 5]>() as u64)
+                        .wrapping_div(::core::mem::size_of::<*mut libc::c_char>() as u64)
                 && !states[(*p).state as usize].is_null()
             {
                 state = states[(*p).state as usize]
             } else {
-                state = b"???\x00" as *const u8 as *mut i8
+                state = b"???\x00" as *const u8 as *const libc::c_char as *mut libc::c_char
             }
             printf(
-                b"%d %s %s\x00" as *const u8 as *mut i8,
+                b"%d %s %s\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
                 (*p).pid,
                 state,
                 (*p).name.as_mut_ptr(),
             );
-            printf(b"\n\x00" as *const u8 as *mut i8);
+            printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         p = p.offset(1)
     }
