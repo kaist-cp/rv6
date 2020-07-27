@@ -39,7 +39,7 @@ pub struct C2RustUnnamed {
 // maximum major device number
 // device number of file system root disk
 // max exec arguments
-pub const MAXOPBLOCKS: libc::c_int = 10 as libc::c_int;
+pub const MAXOPBLOCKS: libc::c_int = 10 as libc::c_int; // Not change in # 26
 // max # of blocks any FS op writes
 // max data blocks in on-disk log
 pub const NBUF: libc::c_int = MAXOPBLOCKS * 3 as libc::c_int;
