@@ -5,7 +5,6 @@ use crate::sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, 
 use crate::spinlock::{acquire, initlock, release, Spinlock};
 use crate::virtio_disk::virtio_disk_rw;
 use core::ptr;
-pub type uchar = libc::c_uchar;
 extern "C" {
     #[no_mangle]
     fn panic(_: *mut libc::c_char) -> !;
@@ -40,8 +39,8 @@ pub struct C2RustUnnamed {
 // device number of file system root disk
 // max exec arguments
 pub const MAXOPBLOCKS: libc::c_int = 10 as libc::c_int; // Not change in # 26
-// max # of blocks any FS op writes
-// max data blocks in on-disk log
+                                                        // max # of blocks any FS op writes
+                                                        // max data blocks in on-disk log
 pub const NBUF: libc::c_int = MAXOPBLOCKS * 3 as libc::c_int;
 #[no_mangle]
 pub static mut bcache: C2RustUnnamed = C2RustUnnamed {

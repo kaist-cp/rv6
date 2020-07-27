@@ -43,62 +43,37 @@ pub const UART0: i64 = 0x10000000;
 #[no_mangle]
 pub unsafe extern "C" fn uartinit() {
     // disable interrupts.
-    ptr::write_volatile(
-        (UART0 + 1 as i64) as *mut libc::c_uchar,
-        0 as libc::c_int as libc::c_uchar,
-    );
+    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0 as libc::c_int as u8);
     // special mode to set baud rate.
-    ptr::write_volatile(
-        (UART0 + 3 as i64) as *mut libc::c_uchar,
-        0x80 as libc::c_int as libc::c_uchar,
-    );
+    ptr::write_volatile((UART0 + 3 as i64) as *mut u8, 0x80 as libc::c_int as u8);
     // LSB for baud rate of 38.4K.
-    ptr::write_volatile(
-        (UART0 + 0 as i64) as *mut libc::c_uchar,
-        0x3 as libc::c_int as libc::c_uchar,
-    );
+    ptr::write_volatile((UART0 + 0 as i64) as *mut u8, 0x3 as libc::c_int as u8);
     // MSB for baud rate of 38.4K.
-    ptr::write_volatile(
-        (UART0 + 1 as i64) as *mut libc::c_uchar,
-        0 as libc::c_int as libc::c_uchar,
-    );
+    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0 as libc::c_int as u8);
     // leave set-baud mode,
     // and set word length to 8 bits, no parity.
-    ptr::write_volatile(
-        (UART0 + 3 as i64) as *mut libc::c_uchar,
-        0x3 as libc::c_int as libc::c_uchar,
-    );
+    ptr::write_volatile((UART0 + 3 as i64) as *mut u8, 0x3 as libc::c_int as u8);
     // reset and enable FIFOs.
-    ptr::write_volatile(
-        (UART0 + 2 as i64) as *mut libc::c_uchar,
-        0x7 as libc::c_int as libc::c_uchar,
-    );
+    ptr::write_volatile((UART0 + 2 as i64) as *mut u8, 0x7 as libc::c_int as u8);
     // enable receive interrupts.
-    ptr::write_volatile(
-        (UART0 + 1 as i64) as *mut libc::c_uchar,
-        0x1 as libc::c_int as libc::c_uchar,
-    );
+    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0x1 as libc::c_int as u8);
 }
 /// write one output character to the UART.
 #[no_mangle]
 pub unsafe extern "C" fn uartputc(mut c: i32) {
     // wait for Transmit Holding Empty to be set in LSR.
-    while ptr::read_volatile((UART0 + 5 as i64) as *mut libc::c_uchar) as i32
-        & (1 as i32) << 5 as i32
+    while ptr::read_volatile((UART0 + 5 as i64) as *mut u8) as i32 & (1 as i32) << 5 as i32
         == 0 as i32
     {}
-    ptr::write_volatile(
-        (UART0 + 0 as i32 as i64) as *mut libc::c_uchar,
-        c as libc::c_uchar,
-    );
+    ptr::write_volatile((UART0 + 0 as i32 as i64) as *mut u8, c as u8);
 }
 /// read one input character from the UART.
 /// return -1 if none is waiting.
 #[no_mangle]
 pub unsafe extern "C" fn uartgetc() -> i32 {
-    if ptr::read_volatile((UART0 + 5 as i64) as *mut libc::c_uchar) as i32 & 0x1 as i32 != 0 {
+    if ptr::read_volatile((UART0 + 5 as i64) as *mut u8) as i32 & 0x1 as i32 != 0 {
         // input data is ready.
-        ptr::read_volatile((UART0 + 0 as i64) as *mut libc::c_uchar) as i32
+        ptr::read_volatile((UART0 + 0 as i64) as *mut u8) as i32
     } else {
         -1
     }

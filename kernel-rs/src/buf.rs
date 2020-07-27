@@ -1,5 +1,4 @@
-use crate::{libc, sleeplock::Sleeplock};
-pub type uchar = libc::c_uchar;
+use crate::sleeplock::Sleeplock;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Buf {
@@ -16,5 +15,5 @@ pub struct Buf {
     pub next: *mut Buf,
     /// disk queue
     pub qnext: *mut Buf,
-    pub data: [uchar; 1024],
+    pub data: [u8; 1024],
 }

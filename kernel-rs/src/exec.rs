@@ -31,7 +31,7 @@ extern "C" {
     #[no_mangle]
     fn copyout(_: pagetable_t, _: u64, _: *mut libc::c_char, _: u64) -> i32;
 }
-pub type uchar = libc::c_uchar;
+pub type pde_t = u64;
 pub type pagetable_t = *mut u64;
 /// "\x7FELF" in little endian
 /// File header
@@ -39,7 +39,7 @@ pub type pagetable_t = *mut u64;
 #[repr(C)]
 pub struct elfhdr {
     pub magic: u32,
-    pub elf: [uchar; 12],
+    pub elf: [u8; 12],
     pub type_0: u16,
     pub machine: u16,
     pub version: u32,

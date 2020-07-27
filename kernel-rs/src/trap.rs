@@ -343,8 +343,8 @@ pub unsafe extern "C" fn usertrapret() {
         + userret
             .as_mut_ptr()
             .wrapping_offset_from(trampoline.as_mut_ptr()) as i64) as u64;
-    ::core::mem::transmute::<libc::intptr_t, Option<unsafe extern "C" fn(_: u64, _: u64) -> ()>>(
-        fn_0 as libc::intptr_t,
+    ::core::mem::transmute::<isize, Option<unsafe extern "C" fn(_: u64, _: u64) -> ()>>(
+        fn_0 as isize,
     )
     .expect("non-null function pointer")(TRAPFRAME as u64, satp);
 }
