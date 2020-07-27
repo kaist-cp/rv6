@@ -27,10 +27,8 @@
 mod libc {
     pub type c_void = core::ffi::c_void;
     pub type c_char = u8;
-    pub type c_uchar = u8;
     pub type c_int = i32;
     pub type c_uint = u32;
-    pub type intptr_t = isize;
 }
 
 mod bio;
