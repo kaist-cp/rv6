@@ -1,73 +1,68 @@
-use crate::libc;
 use crate::{
     printf::panic,
     proc::{cpu, mycpu},
 };
 use core::ptr;
-pub type uint = libc::c_uint;
-pub type uint64 = libc::c_ulong;
 /// Mutual exclusion lock.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Spinlock {
-    pub locked: uint,
-    pub name: *mut libc::c_char,
+    pub locked: u32,
+    pub name: *mut i8,
     pub cpu: *mut cpu,
 }
-pub const SSTATUS_SIE: libc::c_long = (1 as libc::c_long) << 1 as libc::c_int;
+pub const SSTATUS_SIE: i64 = (1 as i64) << 1 as i32;
 /// Supervisor Interrupt Enable
 /// User Interrupt Enable
 #[inline]
-unsafe fn r_sstatus() -> uint64 {
-    let mut x: uint64 = 0;
+unsafe fn r_sstatus() -> u64 {
+    let mut x: u64 = 0;
     llvm_asm!("csrr $0, sstatus" : "=r" (x) : : : "volatile");
     x
 }
 #[inline]
-unsafe fn w_sstatus(mut x: uint64) {
+unsafe fn w_sstatus(mut x: u64) {
     llvm_asm!("csrw sstatus, $0" : : "r" (x) : : "volatile");
 }
 // Supervisor Interrupt Enable
-pub const SIE_SEIE: libc::c_long = (1 as libc::c_long) << 9 as libc::c_int;
+pub const SIE_SEIE: i64 = (1 as i64) << 9 as i32;
 // external
-pub const SIE_STIE: libc::c_long = (1 as libc::c_long) << 5 as libc::c_int;
+pub const SIE_STIE: i64 = (1 as i64) << 5 as i32;
 // timer
-pub const SIE_SSIE: libc::c_long = (1 as libc::c_long) << 1 as libc::c_int;
+pub const SIE_SSIE: i64 = (1 as i64) << 1 as i32;
 /// software
 #[inline]
-unsafe fn r_sie() -> uint64 {
-    let mut x: uint64 = 0;
+unsafe fn r_sie() -> u64 {
+    let mut x: u64 = 0;
     llvm_asm!("csrr $0, sie" : "=r" (x) : : : "volatile");
     x
 }
 #[inline]
-unsafe fn w_sie(mut x: uint64) {
+unsafe fn w_sie(mut x: u64) {
     llvm_asm!("csrw sie, $0" : : "r" (x) : : "volatile");
 }
 /// enable device interrupts
 #[inline]
 unsafe fn intr_on() {
-    w_sie(
-        r_sie() | SIE_SEIE as libc::c_ulong | SIE_STIE as libc::c_ulong | SIE_SSIE as libc::c_ulong,
-    );
-    w_sstatus(r_sstatus() | SSTATUS_SIE as libc::c_ulong);
+    w_sie(r_sie() | SIE_SEIE as u64 | SIE_STIE as u64 | SIE_SSIE as u64);
+    w_sstatus(r_sstatus() | SSTATUS_SIE as u64);
 }
 /// disable device interrupts
 #[inline]
 unsafe fn intr_off() {
-    w_sstatus(r_sstatus() & !SSTATUS_SIE as libc::c_ulong);
+    w_sstatus(r_sstatus() & !SSTATUS_SIE as u64);
 }
 /// are device interrupts enabled?
 #[inline]
-unsafe fn intr_get() -> libc::c_int {
-    let mut x: uint64 = r_sstatus();
-    (x & SSTATUS_SIE as libc::c_ulong != 0 as libc::c_int as libc::c_ulong) as libc::c_int
+unsafe fn intr_get() -> i32 {
+    let mut x: u64 = r_sstatus();
+    (x & SSTATUS_SIE as u64 != 0 as i32 as u64) as i32
 }
 /// Mutual exclusion spin locks.
 #[no_mangle]
-pub unsafe fn initlock(mut lk: *mut Spinlock, mut name: *mut libc::c_char) {
+pub unsafe fn initlock(mut lk: *mut Spinlock, mut name: *mut i8) {
     (*lk).name = name;
-    (*lk).locked = 0 as libc::c_int as uint;
+    (*lk).locked = 0 as i32 as u32;
     (*lk).cpu = ptr::null_mut();
 }
 // Spinlock.c
@@ -77,16 +72,14 @@ pub unsafe fn initlock(mut lk: *mut Spinlock, mut name: *mut libc::c_char) {
 pub unsafe fn acquire(mut lk: *mut Spinlock) {
     push_off(); // disable interrupts to avoid deadlock.
     if holding(lk) != 0 {
-        panic(b"acquire\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic(b"acquire\x00" as *const u8 as *mut i8);
     }
     // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
     //   a5 = 1
     //   s1 = &lk->locked
     //   amoswap.w.aq a5, a5, (s1)
-    while ::core::intrinsics::atomic_xchg_acq(
-        &mut (*lk).locked as *mut uint,
-        1 as libc::c_int as uint,
-    ) != 0 as libc::c_int as libc::c_uint
+    while ::core::intrinsics::atomic_xchg_acq(&mut (*lk).locked as *mut u32, 1 as i32 as u32)
+        != 0 as i32 as u32
     {}
     // Tell the C compiler and the processor to not move loads or stores
     // past this point, to ensure that the critical section's memory
@@ -99,7 +92,7 @@ pub unsafe fn acquire(mut lk: *mut Spinlock) {
 #[no_mangle]
 pub unsafe fn release(mut lk: *mut Spinlock) {
     if holding(lk) == 0 {
-        panic(b"release\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic(b"release\x00" as *const u8 as *mut i8);
     }
     (*lk).cpu = ptr::null_mut();
     // Tell the C compiler and the CPU to not move loads or stores
@@ -119,10 +112,10 @@ pub unsafe fn release(mut lk: *mut Spinlock) {
 }
 /// Check whether this cpu is holding the lock.
 #[no_mangle]
-pub unsafe fn holding(mut lk: *mut Spinlock) -> libc::c_int {
-    let mut r: libc::c_int = 0;
+pub unsafe fn holding(mut lk: *mut Spinlock) -> i32 {
+    let mut r: i32 = 0;
     push_off();
-    r = ((*lk).locked != 0 && (*lk).cpu == mycpu()) as libc::c_int;
+    r = ((*lk).locked != 0 && (*lk).cpu == mycpu()) as i32;
     pop_off();
     r
 }
@@ -131,26 +124,24 @@ pub unsafe fn holding(mut lk: *mut Spinlock) -> libc::c_int {
 /// are initially off, then push_off, pop_off leaves them off.
 #[no_mangle]
 pub unsafe fn push_off() {
-    let mut old: libc::c_int = intr_get();
+    let mut old: i32 = intr_get();
     intr_off();
-    if (*(mycpu())).noff == 0 as libc::c_int {
+    if (*(mycpu())).noff == 0 as i32 {
         (*(mycpu())).intena = old
     }
-    (*(mycpu())).noff += 1 as libc::c_int;
+    (*(mycpu())).noff += 1 as i32;
 }
 #[no_mangle]
 pub unsafe fn pop_off() {
     let mut c: *mut cpu = mycpu();
     if intr_get() != 0 {
-        panic(
-            b"pop_off - interruptible\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-        );
+        panic(b"pop_off - interruptible\x00" as *const u8 as *mut i8);
     }
-    (*c).noff -= 1 as libc::c_int;
-    if (*c).noff < 0 as libc::c_int {
-        panic(b"pop_off\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    (*c).noff -= 1 as i32;
+    if (*c).noff < 0 as i32 {
+        panic(b"pop_off\x00" as *const u8 as *mut i8);
     }
-    if (*c).noff == 0 as libc::c_int && (*c).intena != 0 {
+    if (*c).noff == 0 as i32 && (*c).intena != 0 {
         intr_on();
     };
 }
