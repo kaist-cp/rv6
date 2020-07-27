@@ -1,9 +1,11 @@
 use crate::libc;
-use crate::printf::panic;
-use crate::printf::printf;
-use crate::proc::cpu;
-use crate::spinlock::{acquire, initlock, release, Spinlock};
-use crate::string::memset;
+use crate::{
+    printf::panic,
+    printf::printf,
+    proc::cpu,
+    spinlock::{acquire, initlock, release, Spinlock},
+    string::memset,
+};
 use core::ptr;
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;

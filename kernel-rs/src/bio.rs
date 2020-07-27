@@ -1,10 +1,12 @@
-use crate::buf::Buf;
 use crate::libc;
-use crate::printf::panic;
-use crate::proc::cpu;
-use crate::sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock};
-use crate::spinlock::{acquire, initlock, release, Spinlock};
-use crate::virtio_disk::virtio_disk_rw;
+use crate::{
+    buf::Buf,
+    printf::panic,
+    proc::cpu,
+    sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock},
+    spinlock::{acquire, initlock, release, Spinlock},
+    virtio_disk::virtio_disk_rw,
+};
 use core::ptr;
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;

@@ -1,11 +1,11 @@
-use crate::printf::panic;
-use crate::string::memset;
 use crate::{
     buf::Buf,
     libc,
     proc::{cpu, sleep, wakeup},
     spinlock::{acquire, initlock, release, Spinlock},
     vm::kvmpa,
+    string::memset,
+    printf::panic
 };
 use core::ptr;
 pub type uint = libc::c_uint;

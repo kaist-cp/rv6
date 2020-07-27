@@ -1,12 +1,12 @@
-use crate::{file, libc, proc, spinlock};
+use crate::libc;
 use crate::{
+    file::{filealloc, fileclose, File},
     kalloc::{kalloc, kfree},
+    proc::{myproc, proc_0, sleep, wakeup},
+    spinlock::{acquire, initlock, release, Spinlock},
     vm::{copyin, copyout},
 };
 use core::ptr;
-use file::{filealloc, fileclose, File};
-use proc::{myproc, proc_0, sleep, wakeup};
-use spinlock::{acquire, initlock, release, Spinlock};
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 pub type pagetable_t = *mut uint64;

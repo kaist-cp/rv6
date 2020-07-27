@@ -1,15 +1,17 @@
-use crate::bio::{bread, brelse};
-use crate::log::{initlog, log_write};
-use crate::printf::panic;
-use crate::string::{memmove, memset, strncmp, strncpy};
-use crate::{buf, file, libc, proc, sleeplock, spinlock, stat};
-use buf::Buf;
+use crate::libc;
+use crate::{
+    bio::{bread, brelse},
+    buf::Buf,
+    file::inode,
+    log::{initlog, log_write},
+    printf::panic,
+    proc::{cpu, either_copyin, either_copyout, myproc},
+    sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock},
+    spinlock::{acquire, initlock, release, Spinlock},
+    stat::Stat,
+    string::{memmove, memset, strncmp, strncpy},
+};
 use core::ptr;
-use file::inode;
-use proc::{cpu, either_copyin, either_copyout, myproc};
-use sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock};
-use spinlock::{acquire, initlock, release, Spinlock};
-use stat::Stat;
 pub type uint = libc::c_uint;
 pub type ushort = libc::c_ushort;
 pub type uchar = libc::c_uchar;

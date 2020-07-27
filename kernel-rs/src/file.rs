@@ -1,13 +1,15 @@
-use crate::fs::{ilock, iput, iunlock, readi, stati, writei};
 use crate::libc;
-use crate::log::{begin_op, end_op};
-use crate::pipe::{pipeclose, piperead, pipewrite, Pipe};
-use crate::printf::panic;
-use crate::proc::{myproc, proc_0};
-use crate::sleeplock::Sleeplock;
-use crate::spinlock::{acquire, initlock, release, Spinlock};
-use crate::stat::Stat;
-use crate::vm::copyout;
+use crate::{
+    fs::{ilock, iput, iunlock, readi, stati, writei},
+    log::{begin_op, end_op},
+    pipe::{pipeclose, piperead, pipewrite, Pipe},
+    printf::panic,
+    proc::{myproc, proc_0},
+    sleeplock::Sleeplock,
+    spinlock::{acquire, initlock, release, Spinlock},
+    stat::Stat,
+    vm::copyout,
+};
 use core::ptr;
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;

@@ -1,8 +1,10 @@
-use crate::file::devsw;
 use crate::libc;
-use crate::proc::{cpu, either_copyin, either_copyout, myproc, procdump, sleep, wakeup};
-use crate::spinlock::{acquire, initlock, release, Spinlock};
-use crate::uart::{uartinit, uartputc};
+use crate::{
+    file::devsw,
+    proc::{cpu, either_copyin, either_copyout, myproc, procdump, sleep, wakeup},
+    spinlock::{acquire, initlock, release, Spinlock},
+    uart::{uartinit, uartputc},
+};
 pub type uint = libc::c_uint;
 pub type uint64 = libc::c_ulong;
 pub type C2RustUnnamed = libc::c_uint;

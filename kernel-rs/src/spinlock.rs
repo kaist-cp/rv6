@@ -1,6 +1,6 @@
-use crate::printf::panic;
+use crate::libc;
 use crate::{
-    libc,
+    printf::panic,
     proc::{cpu, mycpu},
 };
 use core::ptr;

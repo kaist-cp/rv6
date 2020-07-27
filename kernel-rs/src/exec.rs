@@ -1,11 +1,13 @@
-use crate::file::inode;
-use crate::fs::{ilock, iunlockput, namei, readi};
 use crate::libc;
-use crate::log::{begin_op, end_op};
-use crate::printf::panic;
-use crate::proc::{myproc, proc_0, proc_freepagetable, proc_pagetable};
-use crate::string::{safestrcpy, strlen};
-use crate::vm::{copyout, uvmalloc, uvmclear, walkaddr};
+use crate::{
+    file::inode,
+    fs::{ilock, iunlockput, namei, readi},
+    log::{begin_op, end_op},
+    printf::panic,
+    proc::{myproc, proc_0, proc_freepagetable, proc_pagetable},
+    string::{safestrcpy, strlen},
+    vm::{copyout, uvmalloc, uvmclear, walkaddr},
+};
 use core::ptr;
 pub type uint = libc::c_uint;
 pub type ushort = libc::c_ushort;

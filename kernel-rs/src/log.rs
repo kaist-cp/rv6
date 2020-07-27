@@ -1,11 +1,13 @@
-use crate::bio::{bpin, bread, brelse, bunpin, bwrite};
-use crate::buf::Buf;
-use crate::fs::superblock;
 use crate::libc;
-use crate::printf::panic;
-use crate::proc::{cpu, sleep, wakeup};
-use crate::spinlock::{acquire, initlock, release, Spinlock};
-use crate::string::memmove;
+use crate::{
+    bio::{bpin, bread, brelse, bunpin, bwrite},
+    buf::Buf,
+    fs::superblock,
+    printf::panic,
+    proc::{cpu, sleep, wakeup},
+    spinlock::{acquire, initlock, release, Spinlock},
+    string::memmove,
+};
 pub type uint = libc::c_uint;
 pub type uchar = libc::c_uchar;
 

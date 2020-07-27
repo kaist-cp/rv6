@@ -1,11 +1,13 @@
-use crate::kalloc::{kalloc, kfree};
 use crate::libc;
-use crate::printf::{panic, printf};
-use crate::riscv::{
-    pagetable_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W,
-    PTE_X, PXMASK, SATP_SV39,
+use crate::{
+    string::{memmove, memset},
+    kalloc::{kalloc, kfree},
+    printf::{panic, printf},
+    riscv::{
+        pagetable_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W,
+        PTE_X, PXMASK, SATP_SV39,
+    }
 };
-use crate::string::{memmove, memset};
 use core::ptr;
 extern "C" {
     // kernel.ld sets this to end of kernel code.

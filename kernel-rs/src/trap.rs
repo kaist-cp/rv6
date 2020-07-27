@@ -1,4 +1,3 @@
-use crate::printf::{panic, printf};
 use crate::{
     libc,
     plic::{plic_claim, plic_complete},
@@ -11,6 +10,7 @@ use crate::{
     syscall::syscall,
     uart::uartintr,
     virtio_disk::virtio_disk_intr,
+    printf::{panic, printf}
 };
 extern "C" {
     // trampoline.S
