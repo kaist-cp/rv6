@@ -8,7 +8,7 @@ extern "C" {
     #[no_mangle]
     fn iunlockput(_: *mut inode);
     #[no_mangle]
-    fn namei(_: *mut i8) -> *mut inode;
+    fn namei(_: *mut u8) -> *mut inode;
     #[no_mangle]
     fn readi(_: *mut inode, _: i32, _: u64, _: u32, _: u32) -> i32;
     #[no_mangle]
@@ -16,11 +16,11 @@ extern "C" {
     #[no_mangle]
     fn end_op();
     #[no_mangle]
-    fn panic(_: *mut i8) -> !;
+    fn panic(_: *mut u8) -> !;
     #[no_mangle]
-    fn safestrcpy(_: *mut i8, _: *const i8, _: i32) -> *mut i8;
+    fn safestrcpy(_: *mut u8, _: *const u8, _: i32) -> *mut u8;
     #[no_mangle]
-    fn strlen(_: *const i8) -> i32;
+    fn strlen(_: *const u8) -> i32;
     #[no_mangle]
     fn uvmalloc(_: pagetable_t, _: u64, _: u64) -> u64;
     #[no_mangle]
@@ -28,7 +28,7 @@ extern "C" {
     #[no_mangle]
     fn walkaddr(_: pagetable_t, _: u64) -> u64;
     #[no_mangle]
-    fn copyout(_: pagetable_t, _: u64, _: *mut i8, _: u64) -> i32;
+    fn copyout(_: pagetable_t, _: u64, _: *mut u8, _: u64) -> i32;
 }
 pub type pagetable_t = *mut u64;
 /// "\x7FELF" in little endian
@@ -80,11 +80,11 @@ pub const ELF_MAGIC: u32 = 0x464c457f;
 pub const ELF_PROG_LOAD: i32 = 1;
 // exec.c
 #[no_mangle]
-pub unsafe extern "C" fn exec(mut path: *mut i8, mut argv: *mut *mut i8) -> i32 {
+pub unsafe extern "C" fn exec(mut path: *mut u8, mut argv: *mut *mut u8) -> i32 {
     let mut oldsz: u64 = 0;
     let mut current_block: u64;
-    let mut s: *mut i8 = ptr::null_mut();
-    let mut last: *mut i8 = ptr::null_mut();
+    let mut s: *mut u8 = ptr::null_mut();
+    let mut last: *mut u8 = ptr::null_mut();
     let mut i: i32 = 0;
     let mut off: i32 = 0;
     let mut argc: u64 = 0;
@@ -257,7 +257,7 @@ pub unsafe extern "C" fn exec(mut path: *mut i8, mut argv: *mut *mut i8) -> i32 
                                     && copyout(
                                         pagetable,
                                         sp,
-                                        ustack.as_mut_ptr() as *mut i8,
+                                        ustack.as_mut_ptr() as *mut u8,
                                         argc.wrapping_add(1 as i32 as u64)
                                             .wrapping_mul(::core::mem::size_of::<u64>() as u64),
                                     ) >= 0 as i32
@@ -278,7 +278,7 @@ pub unsafe extern "C" fn exec(mut path: *mut i8, mut argv: *mut *mut i8) -> i32 
                                     safestrcpy(
                                         (*p).name.as_mut_ptr(),
                                         last,
-                                        ::core::mem::size_of::<[i8; 16]>() as u64 as i32,
+                                        ::core::mem::size_of::<[u8; 16]>() as u64 as i32,
                                     );
                                     // Commit to the user image.
                                     oldpagetable = (*p).pagetable; // initial program counter = main
@@ -320,13 +320,13 @@ unsafe extern "C" fn loadseg(
     let mut n: u32 = 0;
     let mut pa: u64 = 0;
     if va.wrapping_rem(PGSIZE as u64) != 0 as i32 as u64 {
-        panic(b"loadseg: va must be page aligned\x00" as *const u8 as *mut i8);
+        panic(b"loadseg: va must be page aligned\x00" as *const u8 as *mut u8);
     }
     i = 0 as i32 as u32;
     while i < sz {
         pa = walkaddr(pagetable, va.wrapping_add(i as u64));
         if pa == 0 as i32 as u64 {
-            panic(b"loadseg: address should exist\x00" as *const u8 as *mut i8);
+            panic(b"loadseg: address should exist\x00" as *const u8 as *mut u8);
         }
         if sz.wrapping_sub(i) < PGSIZE as u32 {
             n = sz.wrapping_sub(i)
