@@ -5,6 +5,7 @@ use crate::{
     log::{begin_op, end_op},
     printf::panic,
     proc::{myproc, proc_0, proc_freepagetable, proc_pagetable},
+    riscv::PGSIZE,
     string::{safestrcpy, strlen},
     vm::{copyout, uvmalloc, uvmclear, walkaddr},
 };
@@ -53,12 +54,10 @@ pub struct proghdr {
 // maximum major device number
 // device number of file system root disk
 pub const MAXARG: i32 = 32;
-pub const PGSIZE: i32 = 4096;
 // Format of an ELF executable file
 pub const ELF_MAGIC: u32 = 0x464c457f;
 // Values for Proghdr type
 pub const ELF_PROG_LOAD: i32 = 1;
-// exec.c
 #[no_mangle]
 pub unsafe extern "C" fn exec(
     mut path: *mut libc::c_char,

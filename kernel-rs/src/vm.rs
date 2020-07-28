@@ -56,7 +56,6 @@ pub const TRAMPOLINE: i64 = MAXVA - PGSIZE as i64;
  */
 #[no_mangle]
 pub static mut kernel_pagetable: pagetable_t = 0 as *const u64 as *mut u64;
-// vm.c
 // trampoline.S
 
 /// create a direct-map page table for the kernel and

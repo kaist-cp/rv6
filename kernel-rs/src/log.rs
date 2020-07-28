@@ -84,7 +84,6 @@ pub static mut log: log = log {
         block: [0; 30],
     },
 };
-// log.c
 #[no_mangle]
 pub unsafe extern "C" fn initlog(mut dev: i32, mut sb: *mut superblock) {
     if ::core::mem::size_of::<logheader>() as u64 >= BSIZE as u64 {

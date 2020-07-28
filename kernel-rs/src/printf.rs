@@ -89,7 +89,6 @@ unsafe extern "C" fn printptr(mut x: u64) {
         x <<= 4 as i32
     }
 }
-// printf.c
 /// Print to the console. only understands %d, %x, %p, %s.
 #[no_mangle]
 pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {

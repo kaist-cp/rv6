@@ -13,6 +13,7 @@ use crate::{
     pipe::pipealloc,
     printf::panic,
     proc::{myproc, proc_0},
+    riscv::PGSIZE,
     string::memset,
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
     vm::copyout,
@@ -24,7 +25,6 @@ pub const FD_DEVICE: C2RustUnnamed = 3;
 pub const FD_INODE: C2RustUnnamed = 2;
 pub const FD_PIPE: C2RustUnnamed = 1;
 pub const FD_NONE: C2RustUnnamed = 0;
-pub const PGSIZE: i32 = 4096;
 // maximum number of processes
 // maximum number of CPUs
 pub const NOFILE: i32 = 16;

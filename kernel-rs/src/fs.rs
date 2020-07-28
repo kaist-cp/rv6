@@ -176,7 +176,6 @@ unsafe extern "C" fn readsb(mut dev: i32, mut sb_0: *mut superblock) {
     );
     brelse(bp);
 }
-// fs.c
 /// Init fs
 #[no_mangle]
 pub unsafe extern "C" fn fsinit(mut dev: i32) {
