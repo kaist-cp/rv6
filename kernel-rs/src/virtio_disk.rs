@@ -34,14 +34,14 @@ pub struct disk_Inner {
     pub used: *mut UsedArea,
     pub free: [libc::c_char; 8],
     pub used_idx: u16,
-    pub info: [C2RustUnnamed; 8],
+    pub info: [Info; 8],
     pub vdisk_lock: Spinlock,
 }
 #[allow(dead_code, non_upper_case_globals)]
 const disk_PADDING: usize = ::core::mem::size_of::<Disk>() - ::core::mem::size_of::<disk_Inner>();
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct C2RustUnnamed {
+pub struct Info {
     pub b: *mut Buf,
     pub status: libc::c_char,
 }
@@ -161,7 +161,7 @@ static mut disk: Disk = Disk(disk_Inner {
     used: 0 as *const UsedArea as *mut UsedArea,
     free: [0; 8],
     used_idx: 0,
-    info: [C2RustUnnamed {
+    info: [Info {
         b: 0 as *const Buf as *mut Buf,
         status: 0,
     }; 8],

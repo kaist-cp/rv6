@@ -16,7 +16,7 @@ extern "C" {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct C2RustUnnamed_0 {
+pub struct Cons {
     pub lock: Spinlock,
     pub buf: [libc::c_char; 128],
     pub r: u32,
@@ -60,7 +60,7 @@ pub unsafe extern "C" fn consputc(mut c: i32) {
 pub const INPUT_BUF: i32 = 128;
 // Edit index
 #[no_mangle]
-pub static mut cons: C2RustUnnamed_0 = C2RustUnnamed_0 {
+pub static mut cons: Cons = Cons {
     lock: Spinlock {
         locked: 0,
         name: 0 as *const libc::c_char as *mut libc::c_char,

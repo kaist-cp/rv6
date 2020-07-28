@@ -25,7 +25,7 @@ extern "C" {
 ///     so do not keep them longer than necessary.
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct C2RustUnnamed {
+pub struct Bcache {
     pub lock: Spinlock,
     pub buf: [Buf; 30],
     pub head: Buf,
@@ -43,7 +43,7 @@ pub const MAXOPBLOCKS: libc::c_int = 10 as libc::c_int; // Not change in # 26
                                                         // max data blocks in on-disk log
 pub const NBUF: libc::c_int = MAXOPBLOCKS * 3 as libc::c_int;
 #[no_mangle]
-pub static mut bcache: C2RustUnnamed = C2RustUnnamed {
+pub static mut bcache: Bcache = Bcache {
     lock: Spinlock {
         locked: 0,
         name: 0 as *const libc::c_char as *mut libc::c_char,

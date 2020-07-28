@@ -19,7 +19,7 @@ pub struct run {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct C2RustUnnamed {
+pub struct Kmem {
     pub lock: Spinlock,
     pub freelist: *mut run,
 }
@@ -51,7 +51,7 @@ pub const KERNBASE: i64 = 0x80000000;
 pub const PHYSTOP: i64 = KERNBASE + (128 * 1024 * 1024);
 pub const PGSIZE: i32 = 4096;
 #[no_mangle]
-pub static mut kmem: C2RustUnnamed = C2RustUnnamed {
+pub static mut kmem: Kmem = Kmem {
     lock: Spinlock {
         locked: 0,
         name: 0 as *const libc::c_char as *mut libc::c_char,
