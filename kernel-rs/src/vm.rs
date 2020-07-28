@@ -1,29 +1,24 @@
 use crate::libc;
+use crate::{
+    kalloc::{kalloc, kfree},
+    printf::{panic, printf},
+    riscv::{
+        pagetable_t, pte_t, 
+        // sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W,
+        // PTE_X, PXMASK, SATP_SV39,
+    },
+    string::{memmove, memset},
+};
 use core::ptr;
 extern "C" {
-    // kalloc.c
-    #[no_mangle]
-    fn kalloc() -> *mut libc::c_void;
-    #[no_mangle]
-    fn kfree(_: *mut libc::c_void);
-    // printf.c
-    #[no_mangle]
-    fn printf(_: *mut libc::c_char, _: ...);
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: u32) -> *mut libc::c_void;
-    #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: i32, _: u32) -> *mut libc::c_void;
+    // kernel.ld sets this to end of kernel code.
     #[no_mangle]
     static mut etext: [libc::c_char; 0];
-    // kernel.ld sets this to end of kernel code.
+    // trampoline.S
     #[no_mangle]
     static mut trampoline: [libc::c_char; 0];
 }
 pub type pde_t = u64;
-pub type pte_t = u64;
-pub type pagetable_t = *mut u64;
 // Physical memory layout
 // qemu -machine virt is set up like this,
 // based on qemu's hw/riscv/virt.c:

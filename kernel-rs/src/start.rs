@@ -1,7 +1,12 @@
 use crate::libc;
+use crate::{
+    kernel_main::main_0,
+    // riscv::{
+    //     r_mhartid, r_mie, r_mstatus, w_medeleg, w_mepc, w_mideleg, w_mie, w_mscratch, w_mstatus,
+    //     w_mtvec, w_satp, w_tp, MIE_MTIE, MSTATUS_MIE, MSTATUS_MPP_MASK, MSTATUS_MPP_S,
+    // },
+};
 extern "C" {
-    #[link_name = "main"]
-    fn main_0();
     // assembly code in kernelvec.S for machine-mode timer interrupt.
     #[no_mangle]
     fn timervec();

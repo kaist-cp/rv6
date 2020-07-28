@@ -1,15 +1,14 @@
-use crate::bio::{bpin, bread, brelse, bunpin, bwrite};
-use crate::buf::Buf;
-use crate::fs::superblock;
 use crate::libc;
-use crate::proc::{cpu, sleep, wakeup};
-use crate::spinlock::{acquire, initlock, release, Spinlock};
-extern "C" {
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: u32) -> *mut libc::c_void;
-}
+use crate::{
+    bio::{bpin, bread, brelse, bunpin, bwrite},
+    buf::Buf,
+    fs::superblock,
+    printf::panic,
+    proc::{cpu, sleep, wakeup},
+    spinlock::{acquire, initlock, release, Spinlock},
+    string::memmove,
+};
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct log {

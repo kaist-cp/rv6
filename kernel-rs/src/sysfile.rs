@@ -1,50 +1,23 @@
-use crate::file::{filealloc, fileclose, filedup, fileread, filestat, filewrite};
-use crate::fs::{
-    dirlink, dirlookup, ialloc, ilock, iput, iunlock, iunlockput, iupdate, namei, nameiparent,
-    readi, writei,
-};
-use crate::pipe::pipealloc;
 use crate::{
+    exec::exec,
+    file::{filealloc, fileclose, filedup, fileread, filestat, filewrite},
     file::{inode, File},
     fs::dirent,
+    fs::{
+        dirlink, dirlookup, ialloc, ilock, iput, iunlock, iunlockput, iupdate, namecmp, namei,
+        nameiparent, readi, writei,
+    },
+    kalloc::{kalloc, kfree},
     libc,
+    log::{begin_op, end_op},
+    pipe::pipealloc,
+    printf::panic,
     proc::{myproc, proc_0},
+    string::memset,
+    syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
+    vm::copyout,
 };
-
 use core::ptr;
-extern "C" {
-    // exec.c
-    #[no_mangle]
-    fn exec(_: *mut libc::c_char, _: *mut *mut libc::c_char) -> i32;
-    #[no_mangle]
-    fn namecmp(_: *const libc::c_char, _: *const libc::c_char) -> i32;
-    // kalloc.c
-    #[no_mangle]
-    fn kalloc() -> *mut libc::c_void;
-    #[no_mangle]
-    fn kfree(_: *mut libc::c_void);
-    #[no_mangle]
-    fn begin_op();
-    #[no_mangle]
-    fn end_op();
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: i32, _: u32) -> *mut libc::c_void;
-    // syscall.c
-    #[no_mangle]
-    fn argint(_: i32, _: *mut i32) -> i32;
-    #[no_mangle]
-    fn argstr(_: i32, _: *mut libc::c_char, _: i32) -> i32;
-    #[no_mangle]
-    fn argaddr(_: i32, _: *mut u64) -> i32;
-    #[no_mangle]
-    fn fetchstr(_: u64, _: *mut libc::c_char, _: i32) -> i32;
-    #[no_mangle]
-    fn fetchaddr(_: u64, _: *mut u64) -> i32;
-    #[no_mangle]
-    fn copyout(_: pagetable_t, _: u64, _: *mut libc::c_char, _: u64) -> i32;
-}
 pub type pagetable_t = *mut u64;
 pub type C2RustUnnamed = libc::c_uint;
 pub const FD_DEVICE: C2RustUnnamed = 3;

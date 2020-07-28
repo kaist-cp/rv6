@@ -1,23 +1,17 @@
-use crate::fs::{ilock, iput, iunlock, readi, stati, writei};
 use crate::libc;
-use crate::pipe::{pipeclose, piperead, pipewrite, Pipe};
-use crate::proc::{myproc, proc_0};
-use crate::sleeplock::Sleeplock;
-use crate::spinlock::{acquire, initlock, release, Spinlock};
-use crate::stat::Stat;
+use crate::{
+    fs::{ilock, iput, iunlock, readi, stati, writei},
+    log::{begin_op, end_op},
+    pipe::{pipeclose, piperead, pipewrite, Pipe},
+    printf::panic,
+    proc::{myproc, proc_0},
+    sleeplock::Sleeplock,
+    spinlock::{acquire, initlock, release, Spinlock},
+    stat::Stat,
+    vm::copyout,
+};
 use core::ptr;
 pub type uint = libc::c_uint;
-extern "C" {
-    pub type pipe;
-    #[no_mangle]
-    fn begin_op();
-    #[no_mangle]
-    fn end_op();
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn copyout(_: pagetable_t, _: u64, _: *mut libc::c_char, _: u64) -> i32;
-}
 pub type pagetable_t = *mut u64;
 #[derive(Copy, Clone)]
 #[repr(C)]

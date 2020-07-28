@@ -1,33 +1,19 @@
 use crate::{
     libc,
-    proc::{cpu, myproc, proc_0},
+    plic::{plic_claim, plic_complete},
+    printf::{panic, printf},
+    proc::{cpu, cpuid, exit, myproc, proc_0, wakeup, yield_0},
+    // riscv::{
+    //     intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_sstatus, r_stval, r_tp,
+    //     w_sepc, w_sip, w_sstatus, w_stvec, SATP_SV39, SSTATUS_SPIE, SSTATUS_SPP,
+    // },
     spinlock::{acquire, initlock, release, Spinlock},
+    syscall::syscall,
+    uart::uartintr,
+    virtio_disk::virtio_disk_intr,
 };
 extern "C" {
-    // printf.c
-    #[no_mangle]
-    fn printf(_: *mut libc::c_char, _: ...);
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    // proc.c
-    #[no_mangle]
-    fn cpuid() -> i32;
-    #[no_mangle]
-    fn exit(_: i32);
-    #[no_mangle]
-    fn wakeup(_: *mut libc::c_void);
-    #[link_name = "yield"]
-    fn yield_0();
-    #[no_mangle]
-    fn syscall();
-    #[no_mangle]
-    fn uartintr();
-    #[no_mangle]
-    fn plic_claim() -> i32;
-    #[no_mangle]
-    fn plic_complete(_: i32);
-    #[no_mangle]
-    fn virtio_disk_intr();
+    // trampoline.S
     #[no_mangle]
     static mut trampoline: [libc::c_char; 0];
     #[no_mangle]

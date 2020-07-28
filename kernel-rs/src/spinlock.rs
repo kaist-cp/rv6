@@ -1,10 +1,9 @@
 use crate::libc;
-use crate::proc::{cpu, mycpu};
+use crate::{
+    printf::panic,
+    proc::{cpu, mycpu},
+};
 use core::ptr;
-extern "C" {
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-}
 /// Mutual exclusion lock.
 #[derive(Copy, Clone)]
 #[repr(C)]
