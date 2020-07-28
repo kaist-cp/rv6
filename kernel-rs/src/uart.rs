@@ -1,3 +1,4 @@
+use crate::libc;
 use crate::console::consoleintr;
 use core::ptr;
 // Physical memory layout
@@ -38,20 +39,20 @@ pub const UART0: i64 = 0x10000000;
 #[no_mangle]
 pub unsafe extern "C" fn uartinit() {
     // disable interrupts.
-    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0);
+    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0 as libc::c_int as u8);
     // special mode to set baud rate.
-    ptr::write_volatile((UART0 + 3 as i64) as *mut u8, 0x80);
+    ptr::write_volatile((UART0 + 3 as i64) as *mut u8, 0x80 as libc::c_int as u8);
     // LSB for baud rate of 38.4K.
-    ptr::write_volatile((UART0 + 0 as i64) as *mut u8, 0x3);
+    ptr::write_volatile((UART0 + 0 as i64) as *mut u8, 0x3 as libc::c_int as u8);
     // MSB for baud rate of 38.4K.
-    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0);
+    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0 as libc::c_int as u8);
     // leave set-baud mode,
     // and set word length to 8 bits, no parity.
-    ptr::write_volatile((UART0 + 3 as i64) as *mut u8, 0x3);
+    ptr::write_volatile((UART0 + 3 as i64) as *mut u8, 0x3 as libc::c_int as u8);
     // reset and enable FIFOs.
-    ptr::write_volatile((UART0 + 2 as i64) as *mut u8, 0x7);
+    ptr::write_volatile((UART0 + 2 as i64) as *mut u8, 0x7 as libc::c_int as u8);
     // enable receive interrupts.
-    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0x1);
+    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0x1 as libc::c_int as u8);
 }
 /// write one output character to the UART.
 #[no_mangle]

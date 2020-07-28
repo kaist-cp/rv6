@@ -1,4 +1,5 @@
 use crate::{
+    libc,
     file::inode,
     fs::{ilock, iunlockput, namei, readi},
     log::{begin_op, end_op},
@@ -59,11 +60,14 @@ pub const ELF_MAGIC: u32 = 0x464c457f;
 pub const ELF_PROG_LOAD: i32 = 1;
 // exec.c
 #[no_mangle]
-pub unsafe extern "C" fn exec(mut path: *mut i8, mut argv: *mut *mut i8) -> i32 {
+pub unsafe extern "C" fn exec(
+    mut path: *mut libc::c_char,
+    mut argv: *mut *mut libc::c_char,
+) -> i32 {
     let mut oldsz: u64 = 0;
     let mut current_block: u64;
-    let mut s: *mut i8 = ptr::null_mut();
-    let mut last: *mut i8 = ptr::null_mut();
+    let mut s: *mut libc::c_char = ptr::null_mut();
+    let mut last: *mut libc::c_char = ptr::null_mut();
     let mut i: i32 = 0;
     let mut off: i32 = 0;
     let mut argc: u64 = 0;
@@ -236,7 +240,7 @@ pub unsafe extern "C" fn exec(mut path: *mut i8, mut argv: *mut *mut i8) -> i32 
                                     && copyout(
                                         pagetable,
                                         sp,
-                                        ustack.as_mut_ptr() as *mut i8,
+                                        ustack.as_mut_ptr() as *mut libc::c_char,
                                         argc.wrapping_add(1 as i32 as u64)
                                             .wrapping_mul(::core::mem::size_of::<u64>() as u64),
                                     ) >= 0 as i32
@@ -257,7 +261,7 @@ pub unsafe extern "C" fn exec(mut path: *mut i8, mut argv: *mut *mut i8) -> i32 
                                     safestrcpy(
                                         (*p).name.as_mut_ptr(),
                                         last,
-                                        ::core::mem::size_of::<[i8; 16]>() as u64 as i32,
+                                        ::core::mem::size_of::<[libc::c_char; 16]>() as u64 as i32,
                                     );
                                     // Commit to the user image.
                                     oldpagetable = (*p).pagetable; // initial program counter = main
@@ -299,13 +303,19 @@ unsafe extern "C" fn loadseg(
     let mut n: u32 = 0;
     let mut pa: u64 = 0;
     if va.wrapping_rem(PGSIZE as u64) != 0 as i32 as u64 {
-        panic(b"loadseg: va must be page aligned\x00" as *const u8 as *mut i8);
+        panic(
+            b"loadseg: va must be page aligned\x00" as *const u8 as *const libc::c_char
+                as *mut libc::c_char,
+        );
     }
     i = 0 as i32 as u32;
     while i < sz {
         pa = walkaddr(pagetable, va.wrapping_add(i as u64));
         if pa == 0 as i32 as u64 {
-            panic(b"loadseg: address should exist\x00" as *const u8 as *mut i8);
+            panic(
+                b"loadseg: address should exist\x00" as *const u8 as *const libc::c_char
+                    as *mut libc::c_char,
+            );
         }
         if sz.wrapping_sub(i) < PGSIZE as u32 {
             n = sz.wrapping_sub(i)

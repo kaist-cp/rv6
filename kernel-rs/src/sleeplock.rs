@@ -7,13 +7,13 @@ use crate::spinlock::{acquire, initlock, release, Spinlock};
 pub struct Sleeplock {
     pub locked: u32,
     pub lk: Spinlock,
-    pub name: *mut i8,
+    pub name: *mut libc::c_char,
     pub pid: i32,
 }
 /// Sleeping locks
 #[no_mangle]
-pub unsafe extern "C" fn initsleeplock(mut lk: *mut Sleeplock, mut name: *mut i8) {
-    initlock(&mut (*lk).lk, b"sleep lock\x00" as *const u8 as *mut i8);
+pub unsafe extern "C" fn initsleeplock(mut lk: *mut Sleeplock, mut name: *mut libc::c_char) {
+    initlock(&mut (*lk).lk, b"sleep lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     (*lk).name = name;
     (*lk).locked = 0 as u32;
     (*lk).pid = 0 as i32;

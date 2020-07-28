@@ -1,3 +1,4 @@
+use crate::libc;
 use crate::{
     kernel_main::main_0,
     riscv::{
@@ -33,7 +34,7 @@ pub const CLINT: i64 = 0x2000000;
 pub const CLINT_MTIME: i64 = CLINT + 0xbff8 as i32 as i64;
 /// entry.S needs one stack per CPU.
 #[repr(align(16))]
-pub struct Stack([i8; 32768]);
+pub struct Stack([libc::c_char; 32768]);
 #[no_mangle]
 pub static mut stack0: Stack = Stack([0; 32768]);
 // scratch area for timer interrupt, one per CPU.

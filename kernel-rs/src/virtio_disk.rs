@@ -21,11 +21,11 @@ pub struct Disk(pub disk_Inner);
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct disk_Inner {
-    pub pages: [i8; 8192],
+    pub pages: [libc::c_char; 8192],
     pub desc: *mut VRingDesc,
     pub avail: *mut u16,
     pub used: *mut UsedArea,
-    pub free: [i8; 8],
+    pub free: [libc::c_char; 8],
     pub used_idx: u16,
     pub info: [C2RustUnnamed; 8],
     pub vdisk_lock: Spinlock,
@@ -36,7 +36,7 @@ const disk_PADDING: usize = ::core::mem::size_of::<Disk>() - ::core::mem::size_o
 #[repr(C)]
 pub struct C2RustUnnamed {
     pub b: *mut Buf,
-    pub status: i8,
+    pub status: libc::c_char,
 }
 /// write the disk
 #[derive(Copy, Clone)]
@@ -160,7 +160,7 @@ static mut disk: Disk = Disk(disk_Inner {
     }; 8],
     vdisk_lock: Spinlock {
         locked: 0,
-        name: 0 as *const i8 as *mut i8,
+        name: 0 as *const libc::c_char as *mut libc::c_char,
         cpu: 0 as *const cpu as *mut cpu,
     },
 });
@@ -169,14 +169,14 @@ pub unsafe extern "C" fn virtio_disk_init() {
     let mut status: u32 = 0 as u32;
     initlock(
         &mut disk.0.vdisk_lock,
-        b"virtio_disk\x00" as *const u8 as *mut i8,
+        b"virtio_disk\x00" as *const u8 as *mut libc::c_char,
     );
     if *((VIRTIO0 + 0 as i32) as *mut u32) != 0x74726976 as u32
         || *((VIRTIO0 + 0x4 as i32) as *mut u32) != 1 as u32
         || *((VIRTIO0 + 0x8 as i32) as *mut u32) != 2 as u32
         || *((VIRTIO0 + 0xc as i32) as *mut u32) != 0x554d4551 as u32
     {
-        panic(b"could not find virtio disk\x00" as *const u8 as *mut i8);
+        panic(b"could not find virtio disk\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     status |= VIRTIO_CONFIG_S_ACKNOWLEDGE as u32;
     ::core::ptr::write_volatile((VIRTIO0 + 0x70 as i32) as *mut u32, status);
@@ -203,16 +203,22 @@ pub unsafe extern "C" fn virtio_disk_init() {
     ::core::ptr::write_volatile((VIRTIO0 + 0x30 as i32) as *mut u32, 0);
     let mut max: u32 = *((VIRTIO0 + 0x34 as i32) as *mut u32);
     if max == 0 as u32 {
-        panic(b"virtio disk has no queue 0\x00" as *const u8 as *mut i8);
+        panic(
+            b"virtio disk has no queue 0\x00" as *const u8 as *const libc::c_char
+                as *mut libc::c_char,
+        );
     }
     if max < NUM as u32 {
-        panic(b"virtio disk max queue too short\x00" as *const u8 as *mut i8);
+        panic(
+            b"virtio disk max queue too short\x00" as *const u8 as *const libc::c_char
+                as *mut libc::c_char,
+        );
     }
     ::core::ptr::write_volatile((VIRTIO0 + 0x38 as i32) as *mut u32, NUM as u32);
     memset(
         disk.0.pages.as_mut_ptr() as *mut libc::c_void,
         0 as i32,
-        ::core::mem::size_of::<[i8; 8192]>() as u64 as u32,
+        ::core::mem::size_of::<[libc::c_char; 8192]>() as u64 as u32,
     );
     ::core::ptr::write_volatile(
         (VIRTIO0 + 0x40 as i32) as *mut u32,
@@ -222,13 +228,13 @@ pub unsafe extern "C" fn virtio_disk_init() {
     // avail = pages + 0x40 -- 2 * u16, then num * u16
     // used = pages + 4096 -- 2 * u16, then num * vRingUsedElem
     disk.0.desc = disk.0.pages.as_mut_ptr() as *mut VRingDesc;
-    disk.0.avail = (disk.0.desc as *mut i8)
+    disk.0.avail = (disk.0.desc as *mut libc::c_char)
         .offset((NUM as u64).wrapping_mul(::core::mem::size_of::<VRingDesc>() as u64) as isize)
         as *mut u16;
     disk.0.used = disk.0.pages.as_mut_ptr().offset(PGSIZE as isize) as *mut UsedArea;
     let mut i: i32 = 0;
     while i < NUM {
-        disk.0.free[i as usize] = 1 as i32 as i8;
+        disk.0.free[i as usize] = 1 as i32 as libc::c_char;
         i += 1
     }
     // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
@@ -238,7 +244,7 @@ unsafe extern "C" fn alloc_desc() -> i32 {
     let mut i: i32 = 0;
     while i < NUM {
         if disk.0.free[i as usize] != 0 {
-            disk.0.free[i as usize] = 0 as i32 as i8;
+            disk.0.free[i as usize] = 0 as i32 as libc::c_char;
             return i;
         }
         i += 1
@@ -248,15 +254,16 @@ unsafe extern "C" fn alloc_desc() -> i32 {
 /// mark a descriptor as free.
 unsafe extern "C" fn free_desc(mut i: i32) {
     if i >= NUM {
-        panic(b"virtio_disk_intr 1\x00" as *const u8 as *mut i8);
+        panic(b"virtio_disk_intr 1\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     if disk.0.free[i as usize] != 0 {
-        panic(b"virtio_disk_intr 2\x00" as *const u8 as *mut i8);
+        panic(b"virtio_disk_intr 2\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     (*disk.0.desc.offset(i as isize)).addr = 0 as i32 as u64;
-    disk.0.free[i as usize] = 1 as i32 as i8;
+    disk.0.free[i as usize] = 1 as i32 as libc::c_char;
     wakeup(
-        &mut *disk.0.free.as_mut_ptr().offset(0 as i32 as isize) as *mut i8 as *mut libc::c_void,
+        &mut *disk.0.free.as_mut_ptr().offset(0 as i32 as isize) as *mut libc::c_char
+            as *mut libc::c_void,
     );
 }
 /// free a chain of descriptors.
@@ -296,7 +303,7 @@ pub unsafe extern "C" fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     let mut idx: [i32; 3] = [0; 3];
     while alloc3_desc(idx.as_mut_ptr()) != 0 as i32 {
         sleep(
-            &mut *disk.0.free.as_mut_ptr().offset(0 as i32 as isize) as *mut i8
+            &mut *disk.0.free.as_mut_ptr().offset(0 as i32 as isize) as *mut libc::c_char
                 as *mut libc::c_void,
             &mut disk.0.vdisk_lock,
         );
@@ -333,13 +340,14 @@ pub unsafe extern "C" fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     let fresh0 = &mut (*disk.0.desc.offset(idx[1 as i32 as usize] as isize)).flags;
     *fresh0 = (*fresh0 as i32 | VRING_DESC_F_NEXT) as u16;
     (*disk.0.desc.offset(idx[1 as i32 as usize] as isize)).next = idx[2 as i32 as usize] as u16;
-    disk.0.info[idx[0 as i32 as usize] as usize].status = 0 as i32 as i8;
+    disk.0.info[idx[0 as i32 as usize] as usize].status = 0 as i32 as libc::c_char;
     (*disk.0.desc.offset(idx[2 as i32 as usize] as isize)).addr = &mut (*disk
         .0
         .info
         .as_mut_ptr()
         .offset(*idx.as_mut_ptr().offset(0 as i32 as isize) as isize))
-    .status as *mut i8 as u64;
+    .status as *mut libc::c_char
+        as u64;
     (*disk.0.desc.offset(idx[2 as i32 as usize] as isize)).len = 1 as u32;
     (*disk.0.desc.offset(idx[2 as i32 as usize] as isize)).flags = VRING_DESC_F_WRITE as u16;
     (*disk.0.desc.offset(idx[2 as i32 as usize] as isize)).next = 0 as i32 as u16;
@@ -373,7 +381,10 @@ pub unsafe extern "C" fn virtio_disk_intr() {
     while disk.0.used_idx as i32 % NUM != (*disk.0.used).id as i32 % NUM {
         let mut id: i32 = (*disk.0.used).elems[disk.0.used_idx as usize].id as i32;
         if disk.0.info[id as usize].status as i32 != 0 as i32 {
-            panic(b"virtio_disk_intr status\x00" as *const u8 as *mut i8);
+            panic(
+                b"virtio_disk_intr status\x00" as *const u8 as *const libc::c_char
+                    as *mut libc::c_char,
+            );
         }
         (*disk.0.info[id as usize].b).disk = 0 as i32;
         wakeup(disk.0.info[id as usize].b as *mut libc::c_void);

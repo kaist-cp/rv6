@@ -26,7 +26,9 @@
 // https://github.com/rust-lang/libc/blob/master/src/unix/linux_like/linux/gnu/b64/riscv64/mod.rs
 mod libc {
     pub type c_void = core::ffi::c_void;
-    pub type intptr_t = isize;
+    pub type c_char = u8;
+    pub type c_int = i32;
+    pub type c_uint = u32;
 }
 
 mod bio;
