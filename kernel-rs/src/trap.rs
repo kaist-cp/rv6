@@ -43,18 +43,6 @@ extern "C" {
     #[no_mangle]
     fn kernelvec();
 }
-// bytes per page
-// bits of offset within a page
-// valid
-// 1 -> user can access
-// shift a physical address to the right place for a PTE.
-// extract the three 9-bit page table indices from a virtual address.
-// 9 bits
-// one beyond the highest possible virtual address.
-// MAXVA is actually one bit less than the max allowed by
-// Sv39, to avoid having to sign-extend virtual addresses
-// that have the high bit set.
-pub const MAXVA: i64 = (1 as i64) << (9 + 9 + 9 + 12 - 1) as i32;
 #[no_mangle]
 pub static mut tickslock: Spinlock = Spinlock {
     locked: 0,
@@ -63,7 +51,6 @@ pub static mut tickslock: Spinlock = Spinlock {
 };
 #[no_mangle]
 pub static mut ticks: u32 = 0;
-// trap.c
 #[no_mangle]
 pub unsafe extern "C" fn trapinit() {
     initlock(

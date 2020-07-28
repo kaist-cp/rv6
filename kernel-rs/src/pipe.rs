@@ -34,7 +34,6 @@ pub const FD_INODE: u32 = 2;
 pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
 pub const PIPESIZE: i32 = 512;
-// pipe.c
 /// write fd is still open
 #[no_mangle]
 pub unsafe extern "C" fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {

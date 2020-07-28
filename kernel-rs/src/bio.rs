@@ -81,7 +81,6 @@ pub static mut bcache: C2RustUnnamed = C2RustUnnamed {
         data: [0; 1024],
     },
 };
-// bio.c
 #[no_mangle]
 pub unsafe extern "C" fn binit() {
     let mut b: *mut Buf = ptr::null_mut();

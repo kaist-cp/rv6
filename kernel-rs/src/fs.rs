@@ -145,22 +145,20 @@ pub struct C2RustUnnamed_0 {
     pub lock: Spinlock,
     pub inode: [inode; 50],
 }
-// On-disk file system format.
-// Both the kernel and user programs use this header file.
+/// On-disk file system format.
+/// Both the kernel and user programs use this header file.
 pub const ROOTINO: i32 = 1;
-// root i-number
-pub const BSIZE: i32 = 1024; // block size
-                             // Block number of first free map block
+/// root i-number
+pub const BSIZE: i32 = 1024;
+/// block size
 pub const FSMAGIC: i32 = 0x10203040;
 pub const NDIRECT: i32 = 12;
-// Block containing inode i
-// Bitmap bits per block
+/// Bitmap bits per block
 pub const BPB: i32 = BSIZE * 8;
-// Block of free map containing bit for block b
-// Directory is a file containing a sequence of dirent structures.
+/// Directory is a file containing a sequence of dirent structures.
 pub const DIRSIZ: i32 = 14;
-// there should be one superblock per disk device, but we run with
-// only one device
+/// there should be one superblock per disk device, but we run with
+/// only one device
 #[no_mangle]
 pub static mut sb: superblock = superblock {
     magic: 0,
@@ -183,7 +181,6 @@ unsafe extern "C" fn readsb(mut dev: i32, mut sb_0: *mut superblock) {
     );
     brelse(bp);
 }
-// fs.c
 /// Init fs
 #[no_mangle]
 pub unsafe extern "C" fn fsinit(mut dev: i32) {

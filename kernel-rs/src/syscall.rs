@@ -98,7 +98,6 @@ unsafe extern "C" fn argraw(mut n: i32) -> u64 {
     }
     panic(b"argraw\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
-// syscall.c
 /// Fetch the nth 32-bit system call argument.
 #[no_mangle]
 pub unsafe extern "C" fn argint(mut n: i32, mut ip: *mut i32) -> i32 {

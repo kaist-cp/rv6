@@ -32,9 +32,6 @@ extern "C" {
  */
 #[no_mangle]
 pub static mut kernel_pagetable: pagetable_t = 0 as *const u64 as *mut u64;
-// vm.c
-// trampoline.S
-
 /// create a direct-map page table for the kernel and
 /// turn on paging. called early, in supervisor mode.
 /// the page allocator is already initialized.
@@ -340,10 +337,10 @@ pub unsafe extern "C" fn uvmalloc(
     }
     newsz
 }
-// Deallocate user pages to bring the process size from oldsz to
-// newsz.  oldsz and newsz need not be page-aligned, nor does newsz
-// need to be less than oldsz.  oldsz can be larger than the actual
-// process size.  Returns the new process size.
+/// Deallocate user pages to bring the process size from oldsz to
+/// newsz.  oldsz and newsz need not be page-aligned, nor does newsz
+/// need to be less than oldsz.  oldsz can be larger than the actual
+/// process size.  Returns the new process size.
 #[no_mangle]
 pub unsafe extern "C" fn uvmdealloc(
     mut pagetable: pagetable_t,

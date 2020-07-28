@@ -1,4 +1,4 @@
-// Format of an ELF executable file
+/// Format of an ELF executable file
 pub const ELF_MAGIC: u32 = 0x464c457f;
 /// "\x7FELF" in little endian
 /// File header
@@ -34,5 +34,5 @@ pub struct proghdr {
     pub memsz: u64,
     pub align: u64,
 }
-// Values for Proghdr type
+/// Values for Proghdr type
 pub const ELF_PROG_LOAD: i32 = 1;

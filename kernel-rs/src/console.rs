@@ -24,16 +24,16 @@ pub struct C2RustUnnamed_0 {
     pub e: u32,
 }
 
-//
-// Console input and output, to the uart.
-// Reads are line at a time.
-// Implements special input characters:
-//   newline -- end of line
-//   control-h -- backspace
-//   control-u -- kill line
-//   control-d -- end of file
-//   control-p -- print process list
-//
+///
+/// Console input and output, to the uart.
+/// Reads are line at a time.
+/// Implements special input characters:
+///   newline -- end of line
+///   control-h -- backspace
+///   control-u -- kill line
+///   control-d -- end of file
+///   control-p -- print process list
+///
 pub const BACKSPACE: i32 = 0x100;
 /// Control-x
 ///
@@ -58,7 +58,9 @@ pub unsafe extern "C" fn consputc(mut c: i32) {
     };
 }
 pub const INPUT_BUF: i32 = 128;
-// Edit index
+///
+/// Edit index
+///
 #[no_mangle]
 pub static mut cons: C2RustUnnamed_0 = C2RustUnnamed_0 {
     lock: Spinlock {
@@ -207,7 +209,6 @@ pub unsafe extern "C" fn consoleintr(mut c: i32) {
     }
     release(&mut cons.lock);
 }
-// console.c
 #[no_mangle]
 pub unsafe extern "C" fn consoleinit() {
     initlock(

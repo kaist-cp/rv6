@@ -16,7 +16,7 @@ extern "C" {
 pub struct Stack([libc::c_char; 32768]);
 #[no_mangle]
 pub static mut stack0: Stack = Stack([0; 32768]);
-// scratch area for timer interrupt, one per CPU.
+/// scratch area for timer interrupt, one per CPU.
 #[no_mangle]
 pub static mut mscratch0: [u64; 256] = [0; 256];
 /// entry.S jumps here in machine mode on stack0.

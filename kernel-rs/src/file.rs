@@ -67,9 +67,9 @@ pub struct devsw {
     pub read: Option<unsafe extern "C" fn(_: i32, _: u64, _: i32) -> i32>,
     pub write: Option<unsafe extern "C" fn(_: i32, _: u64, _: i32) -> i32>,
 }
-// //
-// Support functions for system calls that involve file descriptors.
-//
+///
+/// Support functions for system calls that involve file descriptors.
+///
 #[no_mangle]
 pub static mut devsw: [devsw; 10] = [devsw {
     read: None,
@@ -100,7 +100,6 @@ pub unsafe extern "C" fn fileinit() {
         b"ftable\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
 }
-// file.c
 /// Allocate a file structure.
 #[no_mangle]
 pub unsafe extern "C" fn filealloc() -> *mut File {
@@ -157,9 +156,7 @@ pub unsafe extern "C" fn fileclose(mut f: *mut File) {
     release(&mut ftable.lock);
     if ff.typ as u32 == FD_PIPE as i32 as u32 {
         pipeclose(ff.pipe, ff.writable as i32);
-    } else if ff.typ as u32 == FD_INODE as i32 as u32
-        || ff.typ as u32 == FD_DEVICE as i32 as u32
-    {
+    } else if ff.typ as u32 == FD_INODE as i32 as u32 || ff.typ as u32 == FD_DEVICE as i32 as u32 {
         begin_op();
         iput(ff.ip);
         end_op();
@@ -177,8 +174,7 @@ pub unsafe extern "C" fn filestat(mut f: *mut File, mut addr: u64) -> i32 {
         nlink: 0,
         size: 0,
     };
-    if (*f).typ as u32 == FD_INODE as i32 as u32 || (*f).typ as u32 == FD_DEVICE as i32 as u32
-    {
+    if (*f).typ as u32 == FD_INODE as i32 as u32 || (*f).typ as u32 == FD_DEVICE as i32 as u32 {
         ilock((*f).ip);
         stati((*f).ip, &mut st);
         iunlock((*f).ip);

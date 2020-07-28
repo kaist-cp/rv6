@@ -330,9 +330,7 @@ unsafe extern "C" fn create(
     if !ip.is_null() {
         iunlockput(dp);
         ilock(ip);
-        if typ as i32 == T_FILE
-            && ((*ip).typ as i32 == T_FILE || (*ip).typ as i32 == T_DEVICE)
-        {
+        if typ as i32 == T_FILE && ((*ip).typ as i32 == T_FILE || (*ip).typ as i32 == T_DEVICE) {
             return ip;
         }
         iunlockput(ip);

@@ -4,8 +4,8 @@ extern "C" {
     #[no_mangle]
     fn cpuid() -> i32;
 }
-// local interrupt controller, which contains the timer.
-// cycles since boot.
+/// local interrupt controller, which contains the timer.
+/// cycles since boot.
 ///
 /// the riscv Platform Level Interrupt Controller (PLIC).
 ///
