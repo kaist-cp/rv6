@@ -10,9 +10,9 @@ pub unsafe fn r_mhartid() -> u64 {
 
 // previous mode.
 pub const MSTATUS_MPP_MASK: i64 = (3 as i64) << 11 as i32;
-// TODO: unused - #define MSTATUS_MPP_M (3L << 11)
+pub const MSTATUS_MPP_M: i64 = (3 as i64) << 11 as i32;
 pub const MSTATUS_MPP_S: i64 = (1 as i64) << 11 as i32;
-// TODO: unused - #define MSTATUS_MPP_U (0L << 11)
+pub const MSTATUS_MPP_U: i64 = (0 as i64) << 11 as i32;
 // machine-mode interrupt enable.
 pub const MSTATUS_MIE: i64 = (1 as i64) << 3 as i32;
 /// machine-mode interrupt enable.
@@ -34,15 +34,17 @@ pub unsafe fn w_mepc(mut x: u64) {
     llvm_asm!("csrw mepc, $0" : : "r" (x) : : "volatile");
 }
 
-// Supervisor Status Register, sstatus
-// Previous mode, 1=Supervisor, 0=User
-pub const SSTATUS_SPP: i64 = (1 as i64) << 8 as i32; //i64
-                                                     // Supervisor Previous Interrupt Enable
+/// Supervisor Status Register, sstatus
+/// Previous mode, 1=Supervisor, 0=User
+pub const SSTATUS_SPP: i64 = (1 as i64) << 8 as i32;
+/// Supervisor Previous Interrupt Enable
 pub const SSTATUS_SPIE: i64 = (1 as i64) << 5 as i32;
-// TODO: unused - #define SSTATUS_UPIE (1L << 4) // User Previous Interrupt Enable
-// Supervisor Interrupt Enable
+/// User Previous Interrupt Enable
+pub const SSTATUS_UPIE: i64 = (1 as i64) << 4 as i32;
+/// Supervisor Interrupt Enable
 pub const SSTATUS_SIE: i64 = (1 as i64) << 1 as i32;
-// TODO: unused - #define SSTATUS_UIE (1L << 0)  // User Interrupt Enable
+/// User Interrupt Enable
+pub const SSTATUS_UIE: i64 = (1 as i64) << 0 as i32;
 #[inline]
 pub unsafe fn r_sstatus() -> u64 {
     let mut x: u64 = 0;
@@ -65,12 +67,12 @@ pub unsafe fn w_sip(mut x: u64) {
     llvm_asm!("csrw sip, $0" : : "r" (x) : : "volatile");
 }
 
-// Supervisor Interrupt Enable
-// external
+/// Supervisor Interrupt Enable
+/// external
 pub const SIE_SEIE: i64 = (1 as i64) << 9 as i32;
-// timer
+/// timer
 pub const SIE_STIE: i64 = (1 as i64) << 5 as i32;
-// software
+/// software
 pub const SIE_SSIE: i64 = (1 as i64) << 1 as i32;
 #[inline]
 pub unsafe fn r_sie() -> u64 {
@@ -83,11 +85,13 @@ pub unsafe fn w_sie(mut x: u64) {
     llvm_asm!("csrw sie, $0" : : "r" (x) : : "volatile");
 }
 
-// Machine-mode Interrupt Enable
-// TODO: unused - #define MIE_MEIE (1L << 11) // external
-// timer
+/// Machine-mode Interrupt Enable
+/// external
+pub const MIE_MEIE: i64 = (1 as i64) << 11 as i32;
+/// timer
 pub const MIE_MTIE: i64 = (1 as i64) << 7 as i32;
-// TODO: unused - #define MIE_MSIE (1L << 3)  // software
+/// software
+pub const MIE_MSIE: i64 = (1 as i64) << 3 as i32;
 #[inline]
 pub unsafe fn r_mie() -> u64 {
     let mut x: u64 = 0;
@@ -111,30 +115,24 @@ pub unsafe fn r_sepc() -> u64 {
     llvm_asm!("csrr $0, sepc" : "=r" (x) : : : "volatile");
     x
 }
-/* TODO: unused
-  // Machine Exception Delegation
-  static inline u64
-  r_medeleg()
-  {
-    u64 x;
-    asm volatile("csrr %0, medeleg" : "=r" (x) );
-    return x;
-  }
-*/
+/// Machine Exception Delegation
+#[inline]
+pub unsafe fn r_medeleg() -> u64 {
+    let mut x: u64 = 0;
+    llvm_asm!("csrr %0, medeleg" : "=r" (x) : : : "volatile");
+    x
+}
 #[inline]
 pub unsafe fn w_medeleg(mut x: u64) {
     llvm_asm!("csrw medeleg, $0" : : "r" (x) : : "volatile");
 }
-/* TODO: unused
-// Machine Interrupt Delegation
-static inline u64
-r_mideleg()
-{
-  u64 x;
-  asm volatile("csrr %0, mideleg" : "=r" (x) );
-  return x;
+/// Machine Interrupt Delegation
+#[inline]
+pub unsafe fn r_mideleg() -> u64 {
+    let mut x: u64 = 0;
+    llvm_asm!("csrr %0, mideleg" : "=r" (x) : : : "volatile");
+    x
 }
-*/
 #[inline]
 pub unsafe fn w_mideleg(mut x: u64) {
     llvm_asm!("csrw mideleg, $0" : : "r" (x) : : "volatile");
@@ -145,22 +143,19 @@ pub unsafe fn w_mideleg(mut x: u64) {
 pub unsafe fn w_stvec(mut x: u64) {
     llvm_asm!("csrw stvec, $0" : : "r" (x) : : "volatile");
 }
-/* TODO: unused
-static inline u64
-r_stvec()
-{
-  u64 x;
-  asm volatile("csrr %0, stvec" : "=r" (x) );
-  return x;
+#[inline]
+pub unsafe fn r_stvec() -> u64 {
+    let mut x: u64 = 0;
+    llvm_asm!("csrr %0, stvec" : "=r" (x) : : : "volatile");
+    x
 }
-*/
 /// Machine-mode interrupt vector
 #[inline]
 pub unsafe fn w_mtvec(mut x: u64) {
     llvm_asm!("csrw mtvec, $0" : : "r" (x) : : "volatile");
 }
 
-// use riscv's sv39 page table scheme.
+/// use riscv's sv39 page table scheme.
 pub const SATP_SV39: i64 = (8 as i64) << 60 as i32;
 // TODO: use in other file directly - e.g., kvminithart() in vm.rs
 // #define MAKE_SATP(pagetable) (SATP_SV39 | (((u64)pagetable) >> 12))
@@ -177,16 +172,11 @@ pub unsafe fn r_satp() -> u64 {
     llvm_asm!("csrr $0, satp" : "=r" (x) : : : "volatile");
     x
 }
-
-/*
-TODO: unused
-// Supervisor Scratch register, for early trap handler in trampoline.S.
-static inline void
-w_sscratch(u64 x)
-{
-  asm volatile("csrw sscratch, %0" : : "r" (x));
+/// Supervisor Scratch register, for early trap handler in trampoline.S.
+#[inline]
+pub unsafe fn w_sscratch(mut x: u64) {
+    llvm_asm!("csrw sscratch, %0" : : "r" (x) : : : "volatile");
 }
-*/
 #[inline]
 pub unsafe fn w_mscratch(mut x: u64) {
     llvm_asm!("csrw mscratch, $0" : : "r" (x) : : "volatile");
@@ -205,34 +195,24 @@ pub unsafe fn r_stval() -> u64 {
     llvm_asm!("csrr $0, stval" : "=r" (x) : : : "volatile");
     x
 }
-/*
-TODO: unused
-// Machine-mode Counter-Enable
-static inline void
-w_mcounteren(u64 x)
-{
-  asm volatile("csrw mcounteren, %0" : : "r" (x));
+/// Machine-mode Counter-Enable
+#[inline]
+pub unsafe fn w_mcounteren(mut x: u64) {
+    llvm_asm!("csrw mcounteren, %0" : : "r" (x)  : : : "volatile");
 }
-
-TODO: unused
-static inline u64
-r_mcounteren()
-{
-  u64 x;
-  asm volatile("csrr %0, mcounteren" : "=r" (x) );
-  return x;
+#[inline]
+pub unsafe fn r_mcounteren() -> u64 {
+    let mut x: u64 = 0;
+    llvm_asm!("csrr %0, mcounteren" : "=r" (x) : : : "volatile");
+    x
 }
-
-TODO: unused
-// machine-mode cycle counter
-static inline u64
-r_time()
-{
-  u64 x;
-  asm volatile("csrr %0, time" : "=r" (x) );
-  return x;
+/// machine-mode cycle counter
+#[inline]
+pub unsafe fn r_time() -> u64 {
+    let mut x: u64 = 0;
+    llvm_asm!("csrr %0, time" : "=r" (x) : : : "volatile");
+    x
 }
-*/
 /// enable device interrupts
 #[inline]
 pub unsafe fn intr_on() {
@@ -275,17 +255,12 @@ r_sp()
 pub unsafe fn w_tp(mut x: u64) {
     llvm_asm!("mv tp, $0" : : "r" (x) : : "volatile");
 }
-
-/*
-TODO: unused
-static inline u64
-r_ra()
-{
-  u64 x;
-  asm volatile("mv %0, ra" : "=r" (x) );
-  return x;
+#[inline]
+pub unsafe fn r_ra() -> u64 {
+    let mut x: u64 = 0;
+    llvm_asm!("mv %0, ra" : "=r" (x) : : : "volatile");
+    x
 }
-*/
 
 /// flush the TLB.
 #[inline]
