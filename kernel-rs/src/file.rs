@@ -55,7 +55,7 @@ pub const FD_PIPE: C2RustUnnamed = 1;
 pub const FD_NONE: C2RustUnnamed = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct C2RustUnnamed_0 {
+pub struct Ftable {
     pub lock: Spinlock,
     pub file: [File; 100],
 }
@@ -90,7 +90,7 @@ pub static mut devsw: [devsw; 10] = [devsw {
     write: None,
 }; 10];
 #[no_mangle]
-pub static mut ftable: C2RustUnnamed_0 = C2RustUnnamed_0 {
+pub static mut ftable: Ftable = Ftable {
     lock: Spinlock {
         locked: 0,
         name: ptr::null_mut(),
