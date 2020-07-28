@@ -57,11 +57,11 @@ pub unsafe extern "C" fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut Fil
                 &mut (*pi).lock,
                 b"pipe\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
             );
-            (**f0).type_0 = FD_PIPE;
+            (**f0).typ = FD_PIPE;
             (**f0).readable = 1 as libc::c_char;
             (**f0).writable = 0 as libc::c_char;
             (**f0).pipe = pi;
-            (**f1).type_0 = FD_PIPE;
+            (**f1).typ = FD_PIPE;
             (**f1).readable = 0 as libc::c_char;
             (**f1).writable = 1 as libc::c_char;
             (**f1).pipe = pi;

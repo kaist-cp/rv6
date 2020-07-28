@@ -54,7 +54,7 @@ pub unsafe extern "C" fn exec(
     let mut elf: elfhdr = elfhdr {
         magic: 0,
         elf: [0; 12],
-        type_0: 0,
+        typ: 0,
         machine: 0,
         version: 0,
         entry: 0,
@@ -70,7 +70,7 @@ pub unsafe extern "C" fn exec(
     };
     let mut ip: *mut inode = 0 as *mut inode;
     let mut ph: proghdr = proghdr {
-        type_0: 0,
+        typ: 0,
         flags: 0,
         off: 0,
         vaddr: 0,
@@ -123,7 +123,7 @@ pub unsafe extern "C" fn exec(
                     current_block = 7080392026674647309;
                     break;
                 }
-                if ph.type_0 == ELF_PROG_LOAD as u32 {
+                if ph.typ == ELF_PROG_LOAD as u32 {
                     if ph.memsz < ph.filesz {
                         current_block = 7080392026674647309;
                         break;

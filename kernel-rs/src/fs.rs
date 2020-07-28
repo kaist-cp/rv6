@@ -64,7 +64,7 @@ pub struct dirent {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct dinode {
-    pub type_0: i16,
+    pub typ: i16,
     pub major: i16,
     pub minor: i16,
     pub nlink: i16,
@@ -275,7 +275,7 @@ pub static mut icache: C2RustUnnamed_0 = C2RustUnnamed_0 {
             pid: 0,
         },
         valid: 0,
-        type_0: 0,
+        typ: 0,
         major: 0,
         minor: 0,
         nlink: 0,
@@ -302,7 +302,7 @@ pub unsafe extern "C" fn iinit() {
 /// Mark it as allocated by  giving it type type.
 /// Returns an unlocked but allocated and referenced inode.
 #[no_mangle]
-pub unsafe extern "C" fn ialloc(mut dev: u32, mut type_0: i16) -> *mut inode {
+pub unsafe extern "C" fn ialloc(mut dev: u32, mut typ: i16) -> *mut inode {
     let mut inum: i32 = 1;
     let mut bp: *mut Buf = ptr::null_mut();
     let mut dip: *mut dinode = ptr::null_mut();
@@ -318,14 +318,14 @@ pub unsafe extern "C" fn ialloc(mut dev: u32, mut type_0: i16) -> *mut inode {
                 .wrapping_rem((BSIZE as u64).wrapping_div(::core::mem::size_of::<dinode>() as u64))
                 as isize,
         );
-        if (*dip).type_0 as i32 == 0 as i32 {
+        if (*dip).typ as i32 == 0 as i32 {
             // a free inode
             memset(
                 dip as *mut libc::c_void,
                 0 as i32,
                 ::core::mem::size_of::<dinode>() as u64 as u32,
             ); // mark it allocated on the disk
-            (*dip).type_0 = type_0;
+            (*dip).typ = typ;
             log_write(bp);
             brelse(bp);
             return iget(dev, inum as u32);
@@ -354,7 +354,7 @@ pub unsafe extern "C" fn iupdate(mut ip: *mut inode) {
             .wrapping_rem((BSIZE as u64).wrapping_div(::core::mem::size_of::<dinode>() as u64))
             as isize,
     );
-    (*dip).type_0 = (*ip).type_0;
+    (*dip).typ = (*ip).typ;
     (*dip).major = (*ip).major;
     (*dip).minor = (*ip).minor;
     (*dip).nlink = (*ip).nlink;
@@ -432,7 +432,7 @@ pub unsafe extern "C" fn ilock(mut ip: *mut inode) {
                 .wrapping_rem((BSIZE as u64).wrapping_div(::core::mem::size_of::<dinode>() as u64))
                 as isize,
         );
-        (*ip).type_0 = (*dip).type_0;
+        (*ip).typ = (*dip).typ;
         (*ip).major = (*dip).major;
         (*ip).minor = (*dip).minor;
         (*ip).nlink = (*dip).nlink;
@@ -444,7 +444,7 @@ pub unsafe extern "C" fn ilock(mut ip: *mut inode) {
         );
         brelse(bp);
         (*ip).valid = 1 as i32;
-        if (*ip).type_0 as i32 == 0 as i32 {
+        if (*ip).typ as i32 == 0 as i32 {
             panic(b"ilock: no type\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
     };
@@ -474,7 +474,7 @@ pub unsafe extern "C" fn iput(mut ip: *mut inode) {
         acquiresleep(&mut (*ip).lock);
         release(&mut icache.lock);
         itrunc(ip);
-        (*ip).type_0 = 0 as i32 as i16;
+        (*ip).typ = 0 as i32 as i16;
         iupdate(ip);
         (*ip).valid = 0 as i32;
         releasesleep(&mut (*ip).lock);
@@ -580,7 +580,7 @@ unsafe extern "C" fn itrunc(mut ip: *mut inode) {
 pub unsafe extern "C" fn stati(mut ip: *mut inode, mut st: *mut Stat) {
     (*st).dev = (*ip).dev as i32;
     (*st).ino = (*ip).inum;
-    (*st).type_0 = (*ip).type_0;
+    (*st).typ = (*ip).typ;
     (*st).nlink = (*ip).nlink;
     (*st).size = (*ip).size as u64;
 }
@@ -721,7 +721,7 @@ pub unsafe extern "C" fn dirlookup(
         inum: 0,
         name: [0; 14],
     };
-    if (*dp).type_0 as i32 != T_DIR {
+    if (*dp).typ as i32 != T_DIR {
         panic(b"dirlookup not DIR\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     off = 0 as i32 as u32;
@@ -873,7 +873,7 @@ unsafe extern "C" fn namex(
             break;
         }
         ilock(ip);
-        if (*ip).type_0 as i32 != T_DIR {
+        if (*ip).typ as i32 != T_DIR {
             iunlockput(ip);
             return ptr::null_mut();
         }

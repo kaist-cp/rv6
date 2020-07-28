@@ -58,7 +58,7 @@ pub struct C2RustUnnamed {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct virtio_blk_outhdr {
-    pub type_0: u32,
+    pub typ: u32,
     pub reserved: u32,
     pub sector: u64,
 }
@@ -229,14 +229,14 @@ pub unsafe extern "C" fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     // format the three descriptors.
     // qemu's virtio-blk.c reads them.
     let mut buf0: virtio_blk_outhdr = virtio_blk_outhdr {
-        type_0: 0,
+        typ: 0,
         reserved: 0,
         sector: 0,
     }; // read the disk
     if write != 0 {
-        buf0.type_0 = VIRTIO_BLK_T_OUT as u32
+        buf0.typ = VIRTIO_BLK_T_OUT as u32
     } else {
-        buf0.type_0 = VIRTIO_BLK_T_IN as u32
+        buf0.typ = VIRTIO_BLK_T_IN as u32
     } // write the disk
     buf0.reserved = 0 as u32;
     buf0.sector = sector;

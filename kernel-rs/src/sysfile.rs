@@ -177,7 +177,7 @@ pub unsafe extern "C" fn sys_link() -> u64 {
         return -(1 as i32) as u64;
     }
     ilock(ip);
-    if (*ip).type_0 as i32 == T_DIR {
+    if (*ip).typ as i32 == T_DIR {
         iunlockput(ip);
         end_op();
         return -(1 as i32) as u64;
@@ -273,7 +273,7 @@ pub unsafe extern "C" fn sys_unlink() -> u64 {
                         as *mut libc::c_char,
                 );
             }
-            if (*ip).type_0 as i32 == T_DIR && isdirempty(ip) == 0 {
+            if (*ip).typ as i32 == T_DIR && isdirempty(ip) == 0 {
                 iunlockput(ip);
             } else {
                 memset(
@@ -295,7 +295,7 @@ pub unsafe extern "C" fn sys_unlink() -> u64 {
                             as *mut libc::c_char,
                     );
                 }
-                if (*ip).type_0 as i32 == T_DIR {
+                if (*ip).typ as i32 == T_DIR {
                     (*dp).nlink -= 1;
                     iupdate(dp);
                 }
@@ -314,7 +314,7 @@ pub unsafe extern "C" fn sys_unlink() -> u64 {
 }
 unsafe extern "C" fn create(
     mut path: *mut libc::c_char,
-    mut type_0: i16,
+    mut typ: i16,
     mut major: i16,
     mut minor: i16,
 ) -> *mut inode {
@@ -330,15 +330,15 @@ unsafe extern "C" fn create(
     if !ip.is_null() {
         iunlockput(dp);
         ilock(ip);
-        if type_0 as i32 == T_FILE
-            && ((*ip).type_0 as i32 == T_FILE || (*ip).type_0 as i32 == T_DEVICE)
+        if typ as i32 == T_FILE
+            && ((*ip).typ as i32 == T_FILE || (*ip).typ as i32 == T_DEVICE)
         {
             return ip;
         }
         iunlockput(ip);
         return ptr::null_mut();
     }
-    ip = ialloc((*dp).dev, type_0);
+    ip = ialloc((*dp).dev, typ);
     if ip.is_null() {
         panic(b"create: ialloc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
@@ -347,7 +347,7 @@ unsafe extern "C" fn create(
     (*ip).minor = minor;
     (*ip).nlink = 1 as i16;
     iupdate(ip);
-    if type_0 as i32 == T_DIR {
+    if typ as i32 == T_DIR {
         // Create . and .. entries.
         (*dp).nlink += 1; // for ".."
         iupdate(dp);
@@ -404,13 +404,13 @@ pub unsafe extern "C" fn sys_open() -> u64 {
             return -(1 as i32) as u64;
         }
         ilock(ip);
-        if (*ip).type_0 as i32 == T_DIR && omode != O_RDONLY {
+        if (*ip).typ as i32 == T_DIR && omode != O_RDONLY {
             iunlockput(ip);
             end_op();
             return -(1 as i32) as u64;
         }
     }
-    if (*ip).type_0 as i32 == T_DEVICE
+    if (*ip).typ as i32 == T_DEVICE
         && (((*ip).major as i32) < 0 as i32 || (*ip).major as i32 >= NDEV)
     {
         iunlockput(ip);
@@ -429,11 +429,11 @@ pub unsafe extern "C" fn sys_open() -> u64 {
         end_op();
         return -(1 as i32) as u64;
     }
-    if (*ip).type_0 as i32 == T_DEVICE {
-        (*f).type_0 = FD_DEVICE;
+    if (*ip).typ as i32 == T_DEVICE {
+        (*f).typ = FD_DEVICE;
         (*f).major = (*ip).major
     } else {
-        (*f).type_0 = FD_INODE;
+        (*f).typ = FD_INODE;
         (*f).off = 0 as i32 as u32
     }
     (*f).ip = ip;
@@ -505,7 +505,7 @@ pub unsafe extern "C" fn sys_chdir() -> u64 {
         return -(1 as i32) as u64;
     }
     ilock(ip);
-    if (*ip).type_0 as i32 != T_DIR {
+    if (*ip).typ as i32 != T_DIR {
         iunlockput(ip);
         end_op();
         return -(1 as i32) as u64;

@@ -7,7 +7,7 @@ pub const ELF_MAGIC: u32 = 0x464c457f;
 pub struct elfhdr {
     pub magic: u32,
     pub elf: [u8; 12],
-    pub type_0: u16,
+    pub typ: u16,
     pub machine: u16,
     pub version: u32,
     pub entry: u64,
@@ -25,7 +25,7 @@ pub struct elfhdr {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct proghdr {
-    pub type_0: u32,
+    pub typ: u32,
     pub flags: u32,
     pub off: u64,
     pub vaddr: u64,
