@@ -1,104 +1,15 @@
 use crate::libc;
+use crate::memlayout::{CLINT, CLINT_MTIME};
+use crate::riscv::{
+    r_mhartid, r_mie, r_mstatus, w_medeleg, w_mepc, w_mideleg, w_mie, w_mscratch, w_mstatus,
+    w_mtvec, w_satp, w_tp, MIE_MTIE, MSTATUS_MIE, MSTATUS_MPP_MASK, MSTATUS_MPP_S,
+};
 extern "C" {
     #[link_name = "main"]
     fn main_0();
     // assembly code in kernelvec.S for machine-mode timer interrupt.
     #[no_mangle]
     fn timervec();
-}
-// Physical memory layout
-// qemu -machine virt is set up like this,
-// based on qemu's hw/riscv/virt.c:
-//
-// 00001000 -- boot ROM, provided by qemu
-// 02000000 -- CLINT
-// 0C000000 -- PLIC
-// 10000000 -- uart0
-// 10001000 -- virtio disk
-// 80000000 -- boot ROM jumps here in machine mode
-//             -kernel loads the kernel here
-// unused RAM after 80000000.
-// the kernel uses physical memory thus:
-// 80000000 -- entry.S, then kernel text and data
-// end -- start of kernel page allocation area
-// PHYSTOP -- end RAM used by the kernel
-// qemu puts UART registers here in physical memory.
-// virtio mmio interface
-// local interrupt controller, which contains the timer.
-pub const CLINT: i64 = 0x2000000;
-pub const CLINT_MTIME: i64 = CLINT + 0xbff8 as i32 as i64;
-/// which hart (core) is this?
-#[inline]
-unsafe extern "C" fn r_mhartid() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, mhartid" : "=r" (x) : : : "volatile");
-    x
-}
-// Machine Status Register, mstatus
-pub const MSTATUS_MPP_MASK: i64 = (3 as i64) << 11 as i32;
-// previous mode.
-pub const MSTATUS_MPP_S: i64 = (1 as i64) << 11 as i32;
-pub const MSTATUS_MIE: i64 = (1 as i64) << 3 as i32;
-/// machine-mode interrupt enable.
-#[inline]
-unsafe extern "C" fn r_mstatus() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, mstatus" : "=r" (x) : : : "volatile");
-    x
-}
-#[inline]
-unsafe extern "C" fn w_mstatus(mut x: u64) {
-    llvm_asm!("csrw mstatus, $0" : : "r" (x) : : "volatile");
-}
-/// machine exception program counter, holds the
-/// instruction address to which a return from
-/// exception will go.
-#[inline]
-unsafe extern "C" fn w_mepc(mut x: u64) {
-    llvm_asm!("csrw mepc, $0" : : "r" (x) : : "volatile");
-}
-// Machine-mode Interrupt Enable
-// external
-pub const MIE_MTIE: i64 = (1 as i64) << 7 as i32;
-/// timer
-/// software
-#[inline]
-unsafe extern "C" fn r_mie() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, mie" : "=r" (x) : : : "volatile");
-    x
-}
-#[inline]
-unsafe extern "C" fn w_mie(mut x: u64) {
-    llvm_asm!("csrw mie, $0" : : "r" (x) : : "volatile");
-}
-#[inline]
-unsafe extern "C" fn w_medeleg(mut x: u64) {
-    llvm_asm!("csrw medeleg, $0" : : "r" (x) : : "volatile");
-}
-#[inline]
-unsafe extern "C" fn w_mideleg(mut x: u64) {
-    llvm_asm!("csrw mideleg, $0" : : "r" (x) : : "volatile");
-}
-/// Machine-mode interrupt vector
-#[inline]
-unsafe extern "C" fn w_mtvec(mut x: u64) {
-    llvm_asm!("csrw mtvec, $0" : : "r" (x) : : "volatile");
-}
-/// use riscv's sv39 page table scheme.
-/// supervisor address translation and protection;
-/// holds the address of the page table.
-#[inline]
-unsafe extern "C" fn w_satp(mut x: u64) {
-    llvm_asm!("csrw satp, $0" : : "r" (x) : : "volatile");
-}
-#[inline]
-unsafe extern "C" fn w_mscratch(mut x: u64) {
-    llvm_asm!("csrw mscratch, $0" : : "r" (x) : : "volatile");
-}
-#[inline]
-unsafe extern "C" fn w_tp(mut x: u64) {
-    llvm_asm!("mv tp, $0" : : "r" (x) : : "volatile");
 }
 /// entry.S needs one stack per CPU.
 #[repr(align(16))]

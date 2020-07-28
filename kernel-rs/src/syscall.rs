@@ -1,5 +1,6 @@
 use crate::libc;
 use crate::proc::{myproc, proc_0};
+use crate::riscv::pagetable_t;
 extern "C" {
     // printf.c
     #[no_mangle]
@@ -55,7 +56,6 @@ extern "C" {
     #[no_mangle]
     fn sys_uptime() -> u64;
 }
-pub type pagetable_t = *mut u64;
 /// Fetch the u64 at addr from the current process.
 #[no_mangle]
 pub unsafe extern "C" fn fetchaddr(mut addr: u64, mut ip: *mut u64) -> i32 {

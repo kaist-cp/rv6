@@ -1,7 +1,8 @@
 use crate::bio::{bpin, bread, brelse, bunpin, bwrite};
 use crate::buf::Buf;
-use crate::fs::superblock;
+use crate::fs::{superblock, BSIZE};
 use crate::libc;
+use crate::param::{LOGSIZE, MAXOPBLOCKS};
 use crate::proc::{cpu, sleep, wakeup};
 use crate::spinlock::{acquire, initlock, release, Spinlock};
 extern "C" {
@@ -53,21 +54,6 @@ pub struct logheader {
     pub n: i32,
     pub block: [i32; 30],
 }
-// maximum number of processes
-// maximum number of CPUs
-// open files per process
-// open files per system
-// maximum number of active i-nodes
-// maximum major device number
-// device number of file system root disk
-// max exec arguments
-pub const MAXOPBLOCKS: i32 = 10;
-// max # of blocks any FS op writes
-pub const LOGSIZE: i32 = MAXOPBLOCKS * 3;
-// On-disk file system format.
-// Both the kernel and user programs use this header file.
-// root i-number
-pub const BSIZE: i32 = 1024;
 #[no_mangle]
 pub static mut log: log = log {
     lock: Spinlock {

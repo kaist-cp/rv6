@@ -1,5 +1,6 @@
 use crate::libc;
 use crate::proc::{cpu, mycpu};
+use crate::riscv::{intr_get, intr_off, intr_on};
 use core::ptr;
 extern "C" {
     #[no_mangle]
@@ -12,53 +13,6 @@ pub struct Spinlock {
     pub locked: u32,
     pub name: *mut libc::c_char,
     pub cpu: *mut cpu,
-}
-pub const SSTATUS_SIE: i64 = (1 as i64) << 1 as i32;
-/// Supervisor Interrupt Enable
-/// User Interrupt Enable
-#[inline]
-unsafe fn r_sstatus() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, sstatus" : "=r" (x) : : : "volatile");
-    x
-}
-#[inline]
-unsafe fn w_sstatus(mut x: u64) {
-    llvm_asm!("csrw sstatus, $0" : : "r" (x) : : "volatile");
-}
-// Supervisor Interrupt Enable
-pub const SIE_SEIE: i64 = (1 as i64) << 9 as i32;
-// external
-pub const SIE_STIE: i64 = (1 as i64) << 5 as i32;
-// timer
-pub const SIE_SSIE: i64 = (1 as i64) << 1 as i32;
-/// software
-#[inline]
-unsafe fn r_sie() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, sie" : "=r" (x) : : : "volatile");
-    x
-}
-#[inline]
-unsafe fn w_sie(mut x: u64) {
-    llvm_asm!("csrw sie, $0" : : "r" (x) : : "volatile");
-}
-/// enable device interrupts
-#[inline]
-unsafe fn intr_on() {
-    w_sie(r_sie() | SIE_SEIE as u64 | SIE_STIE as u64 | SIE_SSIE as u64);
-    w_sstatus(r_sstatus() | SSTATUS_SIE as u64);
-}
-/// disable device interrupts
-#[inline]
-unsafe fn intr_off() {
-    w_sstatus(r_sstatus() & !SSTATUS_SIE as u64);
-}
-/// are device interrupts enabled?
-#[inline]
-unsafe fn intr_get() -> i32 {
-    let mut x: u64 = r_sstatus();
-    (x & SSTATUS_SIE as u64 != 0 as i32 as u64) as i32
 }
 /// Mutual exclusion spin locks.
 #[no_mangle]

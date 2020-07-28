@@ -1,13 +1,17 @@
 use crate::bio::{bread, brelse};
 use crate::log::{initlog, log_write};
-use crate::{buf, file, libc, proc, sleeplock, spinlock, stat};
+use crate::{
+    buf, file, libc,
+    param::{NINODE, ROOTDEV},
+    proc, sleeplock, spinlock, stat,
+};
 use buf::Buf;
 use core::ptr;
 use file::inode;
 use proc::{cpu, myproc};
 use sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock};
 use spinlock::{acquire, initlock, release, Spinlock};
-use stat::Stat;
+use stat::{Stat, T_DIR};
 
 extern "C" {
     #[no_mangle]
@@ -25,7 +29,6 @@ extern "C" {
     #[no_mangle]
     fn strncpy(_: *mut libc::c_char, _: *const libc::c_char, _: i32) -> *mut libc::c_char;
 }
-pub type pagetable_t = *mut u64;
 pub type C2RustUnnamed = libc::c_uint;
 pub const FD_DEVICE: C2RustUnnamed = 3;
 pub const FD_INODE: C2RustUnnamed = 2;
@@ -142,21 +145,12 @@ pub struct C2RustUnnamed_0 {
     pub lock: Spinlock,
     pub inode: [inode; 50],
 }
-// maximum number of processes
-// maximum number of CPUs
-// open files per process
-// open files per system
-pub const NINODE: i32 = 50;
-// maximum number of active i-nodes
-// maximum major device number
-pub const ROOTDEV: i32 = 1;
-pub const T_DIR: i32 = 1;
 // On-disk file system format.
 // Both the kernel and user programs use this header file.
 pub const ROOTINO: i32 = 1;
 // root i-number
-pub const BSIZE: i32 = 1024;
-// Block number of first free map block
+pub const BSIZE: i32 = 1024; // block size
+                             // Block number of first free map block
 pub const FSMAGIC: i32 = 0x10203040;
 pub const NDIRECT: i32 = 12;
 // Block containing inode i

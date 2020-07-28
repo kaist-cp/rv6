@@ -1,8 +1,18 @@
 use crate::{
     buf::Buf,
+    fs::BSIZE,
     libc,
+    memlayout::VIRTIO0,
     proc::{cpu, sleep},
+    riscv::{PGSHIFT, PGSIZE},
     spinlock::{acquire, initlock, release, Spinlock},
+    virtio::{
+        UsedArea, VRingDesc, NUM, VIRTIO_BLK_F_CONFIG_WCE, VIRTIO_BLK_F_MQ, VIRTIO_BLK_F_RO,
+        VIRTIO_BLK_F_SCSI, VIRTIO_BLK_T_IN, VIRTIO_BLK_T_OUT, VIRTIO_CONFIG_S_ACKNOWLEDGE,
+        VIRTIO_CONFIG_S_DRIVER, VIRTIO_CONFIG_S_DRIVER_OK, VIRTIO_CONFIG_S_FEATURES_OK,
+        VIRTIO_F_ANY_LAYOUT, VIRTIO_RING_F_EVENT_IDX, VIRTIO_RING_F_INDIRECT_DESC,
+        VRING_DESC_F_NEXT, VRING_DESC_F_WRITE,
+    },
 };
 use core::ptr;
 extern "C" {
@@ -45,29 +55,6 @@ pub struct C2RustUnnamed {
     pub b: *mut Buf,
     pub status: libc::c_char,
 }
-/// write the disk
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct UsedArea {
-    pub flags: u16,
-    pub id: u16,
-    pub elems: [VRingUsedElem; 8],
-}
-/// device writes (vs read)
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct VRingUsedElem {
-    pub id: u32,
-    pub len: u32,
-}
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct VRingDesc {
-    pub addr: u64,
-    pub len: u32,
-    pub flags: u16,
-    pub next: u16,
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct virtio_blk_outhdr {
@@ -75,85 +62,6 @@ pub struct virtio_blk_outhdr {
     pub reserved: u32,
     pub sector: u64,
 }
-pub const PGSIZE: i32 = 4096;
-// bytes per page
-pub const PGSHIFT: i32 = 12;
-// Physical memory layout
-// qemu -machine virt is set up like this,
-// based on qemu's hw/riscv/virt.c:
-//
-// 00001000 -- boot ROM, provided by qemu
-// 02000000 -- CLINT
-// 0C000000 -- PLIC
-// 10000000 -- uart0
-// 10001000 -- virtio disk
-// 80000000 -- boot ROM jumps here in machine mode
-//             -kernel loads the kernel here
-// unused RAM after 80000000.
-// the kernel uses physical memory thus:
-// 80000000 -- entry.S, then kernel text and data
-// end -- start of kernel page allocation area
-// PHYSTOP -- end RAM used by the kernel
-// qemu puts UART registers here in physical memory.
-// virtio mmio interface
-pub const VIRTIO0: i32 = 0x10001000;
-// On-disk file system format.
-// Both the kernel and user programs use this header file.
-// root i-number
-pub const BSIZE: i32 = 1024;
-//
-// virtio device definitions.
-// for both the mmio interface, and virtio descriptors.
-// only tested with qemu.
-// this is the "legacy" virtio interface.
-//
-// the virtio spec:
-// https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.pdf
-//
-// virtio mmio control registers, mapped starting at 0x10001000.
-// from qemu virtio_mmio.h
-// 0x74726976
-// version; 1 is legacy
-// device type; 1 is net, 2 is disk
-// 0x554d4551
-// page size for PFN, write-only
-// select queue, write-only
-// max size of current queue, read-only
-// size of current queue, write-only
-// used ring alignment, write-only
-// physical page number for queue, read/write
-// ready bit
-// write-only
-// read-only
-// write-only
-// read/write
-// status register bits, from qemu virtio_config.h
-pub const VIRTIO_CONFIG_S_ACKNOWLEDGE: i32 = 1;
-pub const VIRTIO_CONFIG_S_DRIVER: i32 = 2;
-pub const VIRTIO_CONFIG_S_DRIVER_OK: i32 = 4;
-pub const VIRTIO_CONFIG_S_FEATURES_OK: i32 = 8;
-// device feature bits
-pub const VIRTIO_BLK_F_RO: i32 = 5;
-/* Disk is read-only */
-pub const VIRTIO_BLK_F_SCSI: i32 = 7;
-/* Supports scsi command passthru */
-pub const VIRTIO_BLK_F_CONFIG_WCE: i32 = 11;
-/* Writeback mode available in config */
-pub const VIRTIO_BLK_F_MQ: i32 = 12;
-/* support more than one vq */
-pub const VIRTIO_F_ANY_LAYOUT: i32 = 27;
-pub const VIRTIO_RING_F_INDIRECT_DESC: i32 = 28;
-pub const VIRTIO_RING_F_EVENT_IDX: i32 = 29;
-// this many virtio descriptors.
-// must be a power of two.
-pub const NUM: i32 = 8;
-pub const VRING_DESC_F_NEXT: i32 = 1;
-// chained with another descriptor
-pub const VRING_DESC_F_WRITE: i32 = 2;
-// for disk ops
-pub const VIRTIO_BLK_T_IN: i32 = 0;
-// read the disk
-pub const VIRTIO_BLK_T_OUT: i32 = 1;
 static mut disk: Disk = Disk(disk_Inner {
     pages: [0; 8192],
     desc: 0 as *const VRingDesc as *mut VRingDesc,
@@ -171,7 +79,6 @@ static mut disk: Disk = Disk(disk_Inner {
         cpu: 0 as *const cpu as *mut cpu,
     },
 });
-// virtio_disk.c
 #[no_mangle]
 pub unsafe extern "C" fn virtio_disk_init() {
     let mut status: u32 = 0 as u32;

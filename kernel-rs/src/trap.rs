@@ -1,6 +1,11 @@
 use crate::{
     libc,
-    proc::{cpu, myproc, proc_0},
+    memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
+    proc::{cpu, myproc, proc_0, RUNNING},
+    riscv::{
+        intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_sstatus, r_stval, r_tp,
+        w_sepc, w_sip, w_sstatus, w_stvec, PGSIZE, SATP_SV39, SSTATUS_SPIE, SSTATUS_SPP,
+    },
     spinlock::{acquire, initlock, release, Spinlock},
 };
 extern "C" {
@@ -38,168 +43,6 @@ extern "C" {
     #[no_mangle]
     fn kernelvec();
 }
-pub type pagetable_t = *mut u64;
-pub type procstate = u32;
-pub const ZOMBIE: procstate = 4;
-pub const RUNNING: procstate = 3;
-pub const RUNNABLE: procstate = 2;
-pub const SLEEPING: procstate = 1;
-pub const UNUSED: procstate = 0;
-// Physical memory layout
-// qemu -machine virt is set up like this,
-// based on qemu's hw/riscv/virt.c:
-//
-// 00001000 -- boot ROM, provided by qemu
-// 02000000 -- CLINT
-// 0C000000 -- PLIC
-// 10000000 -- uart0
-// 10001000 -- virtio disk
-// 80000000 -- boot ROM jumps here in machine mode
-//             -kernel loads the kernel here
-// unused RAM after 80000000.
-// the kernel uses physical memory thus:
-// 80000000 -- entry.S, then kernel text and data
-// end -- start of kernel page allocation area
-// PHYSTOP -- end RAM used by the kernel
-// qemu puts UART registers here in physical memory.
-pub const UART0_IRQ: i32 = 10;
-// virtio mmio interface
-pub const VIRTIO0_IRQ: i32 = 1;
-// local interrupt controller, which contains the timer.
-// cycles since boot.
-// qemu puts programmable interrupt controller here.
-// the kernel expects there to be RAM
-// for use by the kernel and user pages
-// from physical address 0x80000000 to PHYSTOP.
-// map the trampoline page to the highest address,
-// in both user and kernel space.
-pub const TRAMPOLINE: i64 = MAXVA - PGSIZE as i64;
-// map kernel stacks beneath the trampoline,
-// each surrounded by invalid guard pages.
-// User memory layout.
-// Address zero first:
-//   text
-//   original data and bss
-//   fixed-size stack
-//   expandable heap
-//   ...
-//   TRAPFRAME (p->tf, used by the trampoline)
-//   TRAMPOLINE (the same page as in the kernel)
-pub const TRAPFRAME: i64 = TRAMPOLINE - PGSIZE as i64;
-// Supervisor Status Register, sstatus
-pub const SSTATUS_SPP: i64 = (1 as i64) << 8 as i32;
-// Previous mode, 1=Supervisor, 0=User
-pub const SSTATUS_SPIE: i64 = (1 as i64) << 5 as i32;
-// Supervisor Previous Interrupt Enable
-// User Previous Interrupt Enable
-pub const SSTATUS_SIE: i64 = (1 as i64) << 1 as i32;
-/// Supervisor Interrupt Enable
-/// User Interrupt Enable
-#[inline]
-unsafe extern "C" fn r_sstatus() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, sstatus" : "=r" (x) : : : "volatile");
-    x
-}
-#[inline]
-unsafe extern "C" fn w_sstatus(mut x: u64) {
-    llvm_asm!("csrw sstatus, $0" : : "r" (x) : : "volatile");
-}
-/// Supervisor Interrupt Pending
-#[inline]
-unsafe extern "C" fn r_sip() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, sip" : "=r" (x) : : : "volatile");
-    x
-}
-#[inline]
-unsafe extern "C" fn w_sip(mut x: u64) {
-    llvm_asm!("csrw sip, $0" : : "r" (x) : : "volatile");
-}
-// Supervisor Interrupt Enable
-pub const SIE_SEIE: i64 = (1 as i64) << 9 as i32;
-// external
-pub const SIE_STIE: i64 = (1 as i64) << 5 as i32;
-// timer
-pub const SIE_SSIE: i64 = (1 as i64) << 1 as i32;
-// software
-#[inline]
-unsafe extern "C" fn r_sie() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, sie" : "=r" (x) : : : "volatile");
-    x
-}
-#[inline]
-unsafe extern "C" fn w_sie(mut x: u64) {
-    llvm_asm!("csrw sie, $0" : : "r" (x) : : "volatile");
-}
-/// machine exception program counter, holds the
-/// instruction address to which a return from
-/// exception will go.
-#[inline]
-unsafe extern "C" fn w_sepc(mut x: u64) {
-    llvm_asm!("csrw sepc, $0" : : "r" (x) : : "volatile");
-}
-#[inline]
-unsafe extern "C" fn r_sepc() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, sepc" : "=r" (x) : : : "volatile");
-    x
-}
-/// Supervisor Trap-Vector Base Address
-/// low two bits are mode.
-#[inline]
-unsafe extern "C" fn w_stvec(mut x: u64) {
-    llvm_asm!("csrw stvec, $0" : : "r" (x) : : "volatile");
-}
-// use riscv's sv39 page table scheme.
-pub const SATP_SV39: i64 = (8 as i64) << 60 as i32;
-#[inline]
-unsafe extern "C" fn r_satp() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, satp" : "=r" (x) : : : "volatile");
-    x
-}
-/// Supervisor Trap Cause
-#[inline]
-unsafe extern "C" fn r_scause() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, scause" : "=r" (x) : : : "volatile");
-    x
-}
-/// Supervisor Trap Value
-#[inline]
-unsafe extern "C" fn r_stval() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, stval" : "=r" (x) : : : "volatile");
-    x
-}
-/// enable device interrupts
-#[inline]
-unsafe extern "C" fn intr_on() {
-    w_sie(r_sie() | SIE_SEIE as u64 | SIE_STIE as u64 | SIE_SSIE as u64);
-    w_sstatus(r_sstatus() | SSTATUS_SIE as u64);
-}
-/// disable device interrupts
-#[inline]
-unsafe extern "C" fn intr_off() {
-    w_sstatus(r_sstatus() & !SSTATUS_SIE as u64);
-}
-/// are device interrupts enabled?
-#[inline]
-unsafe extern "C" fn intr_get() -> i32 {
-    let mut x: u64 = r_sstatus();
-    (x & SSTATUS_SIE as u64 != 0 as i32 as u64) as i32
-}
-/// read and write tp, the thread pointer, which holds
-/// this core's hartid (core number), the index into cpus[].
-#[inline]
-unsafe extern "C" fn r_tp() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("mv $0, tp" : "=r" (x) : : : "volatile");
-    x
-}
-pub const PGSIZE: i32 = 4096 as i32;
 // bytes per page
 // bits of offset within a page
 // valid

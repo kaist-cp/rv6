@@ -1,3 +1,4 @@
+use crate::fcntl::{O_CREATE, O_RDONLY, O_RDWR, O_WRONLY};
 use crate::file::{filealloc, fileclose, filedup, fileread, filestat, filewrite};
 use crate::fs::{
     dirlink, dirlookup, ialloc, ilock, iput, iunlock, iunlockput, iupdate, namei, nameiparent,
@@ -8,7 +9,10 @@ use crate::{
     file::{inode, File},
     fs::dirent,
     libc,
+    param::{MAXPATH, NDEV, NOFILE},
     proc::{myproc, proc_0},
+    riscv::{pagetable_t, PGSIZE},
+    stat::{T_DEVICE, T_DIR, T_FILE},
 };
 
 use core::ptr;
@@ -45,37 +49,11 @@ extern "C" {
     #[no_mangle]
     fn copyout(_: pagetable_t, _: u64, _: *mut libc::c_char, _: u64) -> i32;
 }
-pub type pagetable_t = *mut u64;
 pub type C2RustUnnamed = libc::c_uint;
 pub const FD_DEVICE: C2RustUnnamed = 3;
 pub const FD_INODE: C2RustUnnamed = 2;
 pub const FD_PIPE: C2RustUnnamed = 1;
 pub const FD_NONE: C2RustUnnamed = 0;
-pub const PGSIZE: i32 = 4096;
-// maximum number of processes
-// maximum number of CPUs
-pub const NOFILE: i32 = 16;
-// open files per process
-// open files per system
-// maximum number of active i-nodes
-pub const NDEV: i32 = 10;
-// maximum major device number
-// device number of file system root disk
-// max exec arguments
-// max # of blocks any FS op writes
-// max data blocks in on-disk log
-// size of disk block cache
-// size of file system in blocks
-pub const MAXPATH: i32 = 128;
-pub const T_DIR: i32 = 1;
-// Directory
-pub const T_FILE: i32 = 2;
-// File
-pub const T_DEVICE: i32 = 3;
-pub const O_RDONLY: i32 = 0;
-pub const O_WRONLY: i32 = 0x1;
-pub const O_RDWR: i32 = 0x2;
-pub const O_CREATE: i32 = 0x200;
 
 /// File-system system calls.
 /// Mostly argument checking, since we don't trust

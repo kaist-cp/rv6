@@ -1,5 +1,9 @@
+use crate::elf::{elfhdr, proghdr};
+use crate::elf::{ELF_MAGIC, ELF_PROG_LOAD};
 use crate::libc;
+use crate::param::MAXARG;
 use crate::proc::{myproc, proc_0, proc_freepagetable, proc_pagetable};
+use crate::riscv::{pagetable_t, PGSIZE};
 use core::ptr;
 extern "C" {
     pub type inode;
@@ -31,56 +35,6 @@ extern "C" {
     #[no_mangle]
     fn copyout(_: pagetable_t, _: u64, _: *mut libc::c_char, _: u64) -> i32;
 }
-pub type pde_t = u64;
-pub type pagetable_t = *mut u64;
-/// "\x7FELF" in little endian
-/// File header
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct elfhdr {
-    pub magic: u32,
-    pub elf: [u8; 12],
-    pub type_0: u16,
-    pub machine: u16,
-    pub version: u32,
-    pub entry: u64,
-    pub phoff: u64,
-    pub shoff: u64,
-    pub flags: u32,
-    pub ehsize: u16,
-    pub phentsize: u16,
-    pub phnum: u16,
-    pub shentsize: u16,
-    pub shnum: u16,
-    pub shstrndx: u16,
-}
-/// Program section header
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct proghdr {
-    pub type_0: u32,
-    pub flags: u32,
-    pub off: u64,
-    pub vaddr: u64,
-    pub paddr: u64,
-    pub filesz: u64,
-    pub memsz: u64,
-    pub align: u64,
-}
-// maximum number of processes
-// maximum number of CPUs
-// open files per process
-// open files per system
-// maximum number of active i-nodes
-// maximum major device number
-// device number of file system root disk
-pub const MAXARG: i32 = 32;
-pub const PGSIZE: i32 = 4096;
-// Format of an ELF executable file
-pub const ELF_MAGIC: u32 = 0x464c457f;
-// Values for Proghdr type
-pub const ELF_PROG_LOAD: i32 = 1;
-// exec.c
 #[no_mangle]
 pub unsafe extern "C" fn exec(
     mut path: *mut libc::c_char,

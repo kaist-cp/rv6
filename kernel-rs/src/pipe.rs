@@ -1,3 +1,4 @@
+use crate::riscv::pagetable_t;
 use crate::{file, libc, proc, spinlock};
 use core::ptr;
 use file::{filealloc, fileclose, File};
@@ -14,14 +15,6 @@ extern "C" {
     #[no_mangle]
     fn copyin(_: pagetable_t, _: *mut libc::c_char, _: u64, _: u64) -> i32;
 }
-pub type pagetable_t = *mut u64;
-
-pub type procstate = u32;
-pub const ZOMBIE: procstate = 4;
-pub const RUNNING: procstate = 3;
-pub const RUNNABLE: procstate = 2;
-pub const SLEEPING: procstate = 1;
-pub const UNUSED: procstate = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Pipe {

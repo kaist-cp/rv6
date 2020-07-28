@@ -1,12 +1,13 @@
-use crate::fs::{ilock, iput, iunlock, readi, stati, writei};
+use crate::fs::{ilock, iput, iunlock, readi, stati, writei, BSIZE};
 use crate::libc;
+use crate::param::{MAXOPBLOCKS, NDEV, NFILE};
 use crate::pipe::{pipeclose, piperead, pipewrite, Pipe};
 use crate::proc::{myproc, proc_0};
+use crate::riscv::pagetable_t;
 use crate::sleeplock::Sleeplock;
 use crate::spinlock::{acquire, initlock, release, Spinlock};
 use crate::stat::Stat;
 use core::ptr;
-pub type uint = libc::c_uint;
 extern "C" {
     pub type pipe;
     #[no_mangle]
@@ -18,7 +19,7 @@ extern "C" {
     #[no_mangle]
     fn copyout(_: pagetable_t, _: u64, _: *mut libc::c_char, _: u64) -> i32;
 }
-pub type pagetable_t = *mut u64;
+pub const CONSOLE: isize = 1;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct File {
@@ -66,21 +67,6 @@ pub struct devsw {
     pub read: Option<unsafe extern "C" fn(_: i32, _: u64, _: i32) -> i32>,
     pub write: Option<unsafe extern "C" fn(_: i32, _: u64, _: i32) -> i32>,
 }
-// maximum number of processes
-// maximum number of CPUs
-// open files per process
-pub const NFILE: i32 = 100;
-// open files per system
-// maximum number of active i-nodes
-pub const NDEV: i32 = 10;
-// maximum major device number
-// device number of file system root disk
-// max exec arguments
-pub const MAXOPBLOCKS: i32 = 10;
-// On-disk file system format.
-// Both the kernel and user programs use this header file.
-// root i-number
-pub const BSIZE: i32 = 1024;
 // //
 // Support functions for system calls that involve file descriptors.
 //

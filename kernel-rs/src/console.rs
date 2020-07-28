@@ -1,4 +1,4 @@
-use crate::file::devsw;
+use crate::file::{devsw, CONSOLE};
 use crate::libc;
 use crate::proc::{cpu, myproc, sleep, wakeup};
 use crate::spinlock::{acquire, initlock, release, Spinlock};
@@ -23,7 +23,7 @@ pub struct C2RustUnnamed_0 {
     pub w: u32,
     pub e: u32,
 }
-pub const CONSOLE: isize = 1;
+
 //
 // Console input and output, to the uart.
 // Reads are line at a time.
