@@ -1,9 +1,6 @@
 use crate::libc;
+use crate::console::consoleintr;
 use core::ptr;
-extern "C" {
-    #[no_mangle]
-    fn consoleintr(_: i32);
-}
 // Physical memory layout
 // qemu -machine virt is set up like this,
 // based on qemu's hw/riscv/virt.c:

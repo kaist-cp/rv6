@@ -1,20 +1,13 @@
 use crate::{
     buf::Buf,
     libc,
-    proc::{cpu, sleep},
+    printf::panic,
+    proc::{cpu, sleep, wakeup},
     spinlock::{acquire, initlock, release, Spinlock},
+    string::memset,
+    vm::kvmpa,
 };
 use core::ptr;
-extern "C" {
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn wakeup(_: *mut libc::c_void);
-    #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: i32, _: u32) -> *mut libc::c_void;
-    #[no_mangle]
-    fn kvmpa(_: u64) -> u64;
-}
 /// driver for qemu's virtio disk device.
 /// uses qemu's mmio interface to virtio.
 /// qemu presents a "legacy" virtio interface.

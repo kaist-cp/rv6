@@ -1,30 +1,17 @@
-use crate::bio::{bread, brelse};
-use crate::log::{initlog, log_write};
-use crate::{buf, file, libc, proc, sleeplock, spinlock, stat};
-use buf::Buf;
+use crate::libc;
+use crate::{
+    bio::{bread, brelse},
+    buf::Buf,
+    file::inode,
+    log::{initlog, log_write},
+    printf::panic,
+    proc::{cpu, either_copyin, either_copyout, myproc},
+    sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock},
+    spinlock::{acquire, initlock, release, Spinlock},
+    stat::Stat,
+    string::{memmove, memset, strncmp, strncpy},
+};
 use core::ptr;
-use file::inode;
-use proc::{cpu, myproc};
-use sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock};
-use spinlock::{acquire, initlock, release, Spinlock};
-use stat::Stat;
-
-extern "C" {
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn either_copyout(user_dst: i32, dst: u64, src: *mut libc::c_void, len: u64) -> i32;
-    #[no_mangle]
-    fn either_copyin(dst: *mut libc::c_void, user_src: i32, src: u64, len: u64) -> i32;
-    #[no_mangle]
-    fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: u32) -> *mut libc::c_void;
-    #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: i32, _: u32) -> *mut libc::c_void;
-    #[no_mangle]
-    fn strncmp(_: *const libc::c_char, _: *const libc::c_char, _: u32) -> i32;
-    #[no_mangle]
-    fn strncpy(_: *mut libc::c_char, _: *const libc::c_char, _: i32) -> *mut libc::c_char;
-}
 pub type pagetable_t = *mut u64;
 pub type C2RustUnnamed = libc::c_uint;
 pub const FD_DEVICE: C2RustUnnamed = 3;

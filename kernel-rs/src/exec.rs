@@ -1,36 +1,14 @@
 use crate::libc;
-use crate::proc::{myproc, proc_0, proc_freepagetable, proc_pagetable};
+use crate::{
+    file::inode,
+    fs::{ilock, iunlockput, namei, readi},
+    log::{begin_op, end_op},
+    printf::panic,
+    proc::{myproc, proc_0, proc_freepagetable, proc_pagetable},
+    string::{safestrcpy, strlen},
+    vm::{copyout, uvmalloc, uvmclear, walkaddr},
+};
 use core::ptr;
-extern "C" {
-    pub type inode;
-    pub type file;
-    #[no_mangle]
-    fn ilock(_: *mut inode);
-    #[no_mangle]
-    fn iunlockput(_: *mut inode);
-    #[no_mangle]
-    fn namei(_: *mut libc::c_char) -> *mut inode;
-    #[no_mangle]
-    fn readi(_: *mut inode, _: i32, _: u64, _: u32, _: u32) -> i32;
-    #[no_mangle]
-    fn begin_op();
-    #[no_mangle]
-    fn end_op();
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn safestrcpy(_: *mut libc::c_char, _: *const libc::c_char, _: i32) -> *mut libc::c_char;
-    #[no_mangle]
-    fn strlen(_: *const libc::c_char) -> i32;
-    #[no_mangle]
-    fn uvmalloc(_: pagetable_t, _: u64, _: u64) -> u64;
-    #[no_mangle]
-    fn uvmclear(_: pagetable_t, _: u64);
-    #[no_mangle]
-    fn walkaddr(_: pagetable_t, _: u64) -> u64;
-    #[no_mangle]
-    fn copyout(_: pagetable_t, _: u64, _: *mut libc::c_char, _: u64) -> i32;
-}
 pub type pde_t = u64;
 pub type pagetable_t = *mut u64;
 /// "\x7FELF" in little endian

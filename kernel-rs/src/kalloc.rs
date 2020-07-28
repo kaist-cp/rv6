@@ -1,14 +1,12 @@
 use crate::libc;
-use crate::printf::printf;
-use crate::proc::cpu;
-use crate::spinlock::{acquire, initlock, release, Spinlock};
+use crate::{
+    printf::panic,
+    printf::printf,
+    proc::cpu,
+    spinlock::{acquire, initlock, release, Spinlock},
+    string::memset,
+};
 use core::ptr;
-extern "C" {
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: i32, _: u32) -> *mut libc::c_void;
-}
 pub static mut end: [u8; 0] = [0; 0];
 /// first address after kernel.
 /// defined by kernel.ld.

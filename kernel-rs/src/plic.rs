@@ -1,8 +1,4 @@
-extern "C" {
-    // proc.c
-    #[no_mangle]
-    fn cpuid() -> i32;
-}
+use crate::proc::cpuid;
 // Physical memory layout
 // qemu -machine virt is set up like this,
 // based on qemu's hw/riscv/virt.c:
