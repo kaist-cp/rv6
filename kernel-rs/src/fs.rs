@@ -125,7 +125,7 @@ pub struct dinode {
 /// read or write that inode's ip->valid, ip->size, ip->type, &c.
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct C2RustUnnamed_0 {
+pub struct Icache {
     pub lock: Spinlock,
     pub inode: [inode; 50],
 }
@@ -246,7 +246,7 @@ unsafe extern "C" fn bfree(mut dev: i32, mut b: u32) {
     brelse(bp);
 }
 #[no_mangle]
-pub static mut icache: C2RustUnnamed_0 = C2RustUnnamed_0 {
+pub static mut icache: Icache = Icache {
     lock: Spinlock {
         locked: 0,
         name: 0 as *const libc::c_char as *mut libc::c_char,
