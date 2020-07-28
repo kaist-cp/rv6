@@ -1,7 +1,6 @@
 use crate::{
     libc,
-    proc::{exit, fork, growproc, kill, wait},
-    proc::{myproc, sleep},
+    proc::{exit, fork, growproc, kill, myproc, sleep, wait},
     spinlock::{acquire, release},
     syscall::{argaddr, argint},
     trap::{ticks, tickslock},
