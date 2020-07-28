@@ -3,6 +3,7 @@ use crate::{
     libc,
     printf::panic,
     proc::{cpu, sleep, wakeup},
+    riscv::{PGSHIFT, PGSIZE},
     spinlock::{acquire, initlock, release, Spinlock},
     string::memset,
     vm::kvmpa,
@@ -68,9 +69,6 @@ pub struct virtio_blk_outhdr {
     pub reserved: u32,
     pub sector: u64,
 }
-pub const PGSIZE: i32 = 4096;
-// bytes per page
-pub const PGSHIFT: i32 = 12;
 // Physical memory layout
 // qemu -machine virt is set up like this,
 // based on qemu's hw/riscv/virt.c:
@@ -164,7 +162,6 @@ static mut disk: Disk = Disk(disk_Inner {
         cpu: 0 as *const cpu as *mut cpu,
     },
 });
-// virtio_disk.c
 #[no_mangle]
 pub unsafe extern "C" fn virtio_disk_init() {
     let mut status: u32 = 0 as u32;

@@ -66,7 +66,6 @@ pub unsafe fn initlock(mut lk: *mut Spinlock, mut name: *mut libc::c_char) {
     (*lk).locked = 0 as i32 as u32;
     (*lk).cpu = ptr::null_mut();
 }
-// Spinlock.c
 /// Acquire the lock.
 /// Loops (spins) until the lock is acquired.
 #[no_mangle]

@@ -198,7 +198,6 @@ pub unsafe extern "C" fn consoleintr(mut c: i32) {
     }
     release(&mut cons.lock);
 }
-// console.c
 #[no_mangle]
 pub unsafe extern "C" fn consoleinit() {
     initlock(

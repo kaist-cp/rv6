@@ -81,7 +81,6 @@ pub static mut tickslock: Spinlock = Spinlock {
 };
 #[no_mangle]
 pub static mut ticks: u32 = 0;
-// trap.c
 #[no_mangle]
 pub unsafe extern "C" fn trapinit() {
     initlock(

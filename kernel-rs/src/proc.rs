@@ -331,7 +331,6 @@ pub unsafe extern "C" fn procinit() {
     }
     kvminithart();
 }
-// proc.c
 /// Must be called with interrupts disabled,
 /// to prevent race with process being moved
 /// to a different CPU.

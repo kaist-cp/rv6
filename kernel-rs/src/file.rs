@@ -108,7 +108,6 @@ pub unsafe extern "C" fn fileinit() {
         b"ftable\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
 }
-// file.c
 /// Allocate a file structure.
 #[no_mangle]
 pub unsafe extern "C" fn filealloc() -> *mut File {

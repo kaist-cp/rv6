@@ -19,7 +19,6 @@ use core::ptr;
 // PHYSTOP -- end RAM used by the kernel
 // qemu puts UART registers here in physical memory.
 pub const UART0: i64 = 0x10000000;
-// uart.c
 
 /// low-level driver routines for 16550a UART.
 

@@ -24,7 +24,6 @@ pub const VIRTIO0_IRQ: i32 = 1;
 // qemu puts programmable interrupt controller here.
 pub const PLIC: i64 = 0xc000000;
 pub const PLIC_PENDING: i64 = PLIC + 0x1000;
-// plic.c
 ///
 /// the riscv Platform Level Interrupt Controller (PLIC).
 ///
