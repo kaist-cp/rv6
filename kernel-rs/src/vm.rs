@@ -3,9 +3,8 @@ use crate::{
     kalloc::{kalloc, kfree},
     printf::{panic, printf},
     riscv::{
-        pagetable_t, pte_t, 
-        // sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W,
-        // PTE_X, PXMASK, SATP_SV39,
+        pagetable_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W,
+        PTE_X, PXMASK, SATP_SV39,
     },
     string::{memmove, memset},
 };
@@ -52,40 +51,6 @@ pub const PHYSTOP: i64 = KERNBASE + (128 as i32 * 1024 as i32 * 1024 as i32) as 
 // map the trampoline page to the highest address,
 // in both user and kernel space.
 pub const TRAMPOLINE: i64 = MAXVA - PGSIZE as i64;
-// use riscv's sv39 page table scheme.
-pub const SATP_SV39: i64 = (8 as i64) << 60 as i32;
-/// supervisor address translation and protection;
-/// holds the address of the page table.
-#[inline]
-unsafe extern "C" fn w_satp(mut x: u64) {
-    llvm_asm!("csrw satp, $0" : : "r" (x) : : "volatile");
-}
-/// flush the TLB.
-#[inline]
-unsafe extern "C" fn sfence_vma() {
-    // the zero, zero means flush all TLB entries.
-    llvm_asm!("sfence.vma zero, zero" : : : : "volatile");
-}
-pub const PGSIZE: i32 = 4096;
-// bytes per page
-pub const PGSHIFT: i32 = 12;
-// bits of offset within a page
-pub const PTE_V: i64 = (1 as i64) << 0 as i32;
-// valid
-pub const PTE_R: i64 = (1 as i64) << 1 as i32;
-pub const PTE_W: i64 = (1 as i64) << 2 as i32;
-pub const PTE_X: i64 = (1 as i64) << 3 as i32;
-pub const PTE_U: i64 = (1 as i64) << 4 as i32;
-// 1 -> user can access
-// shift a physical address to the right place for a PTE.
-// extract the three 9-bit page table indices from a virtual address.
-pub const PXMASK: i32 = 0x1ff;
-// 9 bits
-// one beyond the highest possible virtual address.
-// MAXVA is actually one bit less than the max allowed by
-// Sv39, to avoid having to sign-extend virtual addresses
-// that have the high bit set.
-pub const MAXVA: i64 = (1 as i64) << (9 as i32 + 9 as i32 + 9 as i32 + 12 as i32 - 1 as i32);
 /*
  * the kernel's page table.
  */

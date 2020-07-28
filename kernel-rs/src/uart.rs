@@ -1,5 +1,5 @@
-use crate::libc;
 use crate::console::consoleintr;
+use crate::libc;
 use core::ptr;
 // Physical memory layout
 // qemu -machine virt is set up like this,

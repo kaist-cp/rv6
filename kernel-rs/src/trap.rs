@@ -3,10 +3,10 @@ use crate::{
     plic::{plic_claim, plic_complete},
     printf::{panic, printf},
     proc::{cpu, cpuid, exit, myproc, proc_0, wakeup, yield_0},
-    // riscv::{
-    //     intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_sstatus, r_stval, r_tp,
-    //     w_sepc, w_sip, w_sstatus, w_stvec, SATP_SV39, SSTATUS_SPIE, SSTATUS_SPP,
-    // },
+    riscv::{
+        intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_sstatus, r_stval, r_tp,
+        w_sepc, w_sip, w_sstatus, w_stvec, MAXVA, PGSIZE, SATP_SV39, SSTATUS_SPIE, SSTATUS_SPP,
+    },
     spinlock::{acquire, initlock, release, Spinlock},
     syscall::syscall,
     uart::uartintr,
@@ -72,132 +72,7 @@ pub const TRAMPOLINE: i64 = MAXVA - PGSIZE as i64;
 //   TRAPFRAME (p->tf, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
 pub const TRAPFRAME: i64 = TRAMPOLINE - PGSIZE as i64;
-// Supervisor Status Register, sstatus
-pub const SSTATUS_SPP: i64 = (1 as i64) << 8 as i32;
-// Previous mode, 1=Supervisor, 0=User
-pub const SSTATUS_SPIE: i64 = (1 as i64) << 5 as i32;
-// Supervisor Previous Interrupt Enable
-// User Previous Interrupt Enable
-pub const SSTATUS_SIE: i64 = (1 as i64) << 1 as i32;
-/// Supervisor Interrupt Enable
-/// User Interrupt Enable
-#[inline]
-unsafe extern "C" fn r_sstatus() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, sstatus" : "=r" (x) : : : "volatile");
-    x
-}
-#[inline]
-unsafe extern "C" fn w_sstatus(mut x: u64) {
-    llvm_asm!("csrw sstatus, $0" : : "r" (x) : : "volatile");
-}
-/// Supervisor Interrupt Pending
-#[inline]
-unsafe extern "C" fn r_sip() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, sip" : "=r" (x) : : : "volatile");
-    x
-}
-#[inline]
-unsafe extern "C" fn w_sip(mut x: u64) {
-    llvm_asm!("csrw sip, $0" : : "r" (x) : : "volatile");
-}
-// Supervisor Interrupt Enable
-pub const SIE_SEIE: i64 = (1 as i64) << 9 as i32;
-// external
-pub const SIE_STIE: i64 = (1 as i64) << 5 as i32;
-// timer
-pub const SIE_SSIE: i64 = (1 as i64) << 1 as i32;
-// software
-#[inline]
-unsafe extern "C" fn r_sie() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, sie" : "=r" (x) : : : "volatile");
-    x
-}
-#[inline]
-unsafe extern "C" fn w_sie(mut x: u64) {
-    llvm_asm!("csrw sie, $0" : : "r" (x) : : "volatile");
-}
-/// machine exception program counter, holds the
-/// instruction address to which a return from
-/// exception will go.
-#[inline]
-unsafe extern "C" fn w_sepc(mut x: u64) {
-    llvm_asm!("csrw sepc, $0" : : "r" (x) : : "volatile");
-}
-#[inline]
-unsafe extern "C" fn r_sepc() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, sepc" : "=r" (x) : : : "volatile");
-    x
-}
-/// Supervisor Trap-Vector Base Address
-/// low two bits are mode.
-#[inline]
-unsafe extern "C" fn w_stvec(mut x: u64) {
-    llvm_asm!("csrw stvec, $0" : : "r" (x) : : "volatile");
-}
-// use riscv's sv39 page table scheme.
-pub const SATP_SV39: i64 = (8 as i64) << 60 as i32;
-#[inline]
-unsafe extern "C" fn r_satp() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, satp" : "=r" (x) : : : "volatile");
-    x
-}
-/// Supervisor Trap Cause
-#[inline]
-unsafe extern "C" fn r_scause() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, scause" : "=r" (x) : : : "volatile");
-    x
-}
-/// Supervisor Trap Value
-#[inline]
-unsafe extern "C" fn r_stval() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, stval" : "=r" (x) : : : "volatile");
-    x
-}
-/// enable device interrupts
-#[inline]
-unsafe extern "C" fn intr_on() {
-    w_sie(r_sie() | SIE_SEIE as u64 | SIE_STIE as u64 | SIE_SSIE as u64);
-    w_sstatus(r_sstatus() | SSTATUS_SIE as u64);
-}
-/// disable device interrupts
-#[inline]
-unsafe extern "C" fn intr_off() {
-    w_sstatus(r_sstatus() & !SSTATUS_SIE as u64);
-}
-/// are device interrupts enabled?
-#[inline]
-unsafe extern "C" fn intr_get() -> i32 {
-    let mut x: u64 = r_sstatus();
-    (x & SSTATUS_SIE as u64 != 0 as i32 as u64) as i32
-}
-/// read and write tp, the thread pointer, which holds
-/// this core's hartid (core number), the index into cpus[].
-#[inline]
-unsafe extern "C" fn r_tp() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("mv $0, tp" : "=r" (x) : : : "volatile");
-    x
-}
-pub const PGSIZE: i32 = 4096 as i32;
-// bytes per page
-// bits of offset within a page
-// valid
-// 1 -> user can access
-// shift a physical address to the right place for a PTE.
-// extract the three 9-bit page table indices from a virtual address.
-// 9 bits
-// one beyond the highest possible virtual address.
-// MAXVA is actually one bit less than the max allowed by
-// Sv39, to avoid having to sign-extend virtual addresses
-// that have the high bit set.
-pub const MAXVA: i64 = (1 as i64) << (9 + 9 + 9 + 12 - 1) as i32;
+
 #[no_mangle]
 pub static mut tickslock: Spinlock = Spinlock {
     locked: 0,
