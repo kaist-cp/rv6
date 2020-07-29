@@ -106,7 +106,7 @@ pub unsafe extern "C" fn kfree(mut pa: *mut libc::c_void) {
         panic(b"kfree\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     // Fill with junk to catch dangling refs.
-    ptr::write_bytes(pa as *mut (), 1, PGSIZE as usize);
+    ptr::write_bytes(pa as *mut libc::c_void, 1, PGSIZE as usize);
     r = pa as *mut run;
     acquire(&mut kmem.lock);
     (*r).next = kmem.freelist;
