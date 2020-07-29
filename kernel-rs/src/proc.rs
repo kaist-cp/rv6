@@ -7,7 +7,7 @@ use crate::{
     printf::{panic, printf},
     riscv::{r_sstatus, w_sstatus, SSTATUS_SIE},
     spinlock::{acquire, holding, initlock, pop_off, push_off, release, Spinlock},
-    string::{memset, safestrcpy},
+    string::safestrcpy,
     trap::usertrapret,
     vm::{
         copyin, copyout, kvminithart, kvmmap, mappages, uvmalloc, uvmcopy, uvmcreate, uvmdealloc,
@@ -400,11 +400,7 @@ unsafe extern "C" fn allocproc() -> *mut proc_0 {
             (*p).pagetable = proc_pagetable(p);
             // Set up new context to start executing at forkret,
             // which returns to user space.
-            memset(
-                &mut (*p).context as *mut context as *mut libc::c_void,
-                0 as i32,
-                ::core::mem::size_of::<context>() as u64 as u32,
-            );
+            ptr::write_bytes(&mut (*p).context as *mut context, 0, 1);
             (*p).context.ra = ::core::mem::transmute::<Option<unsafe extern "C" fn() -> ()>, u64>(
                 Some(forkret as unsafe extern "C" fn() -> ()),
             );

@@ -14,7 +14,6 @@ use crate::{
     printf::panic,
     proc::{myproc, proc_0},
     riscv::PGSIZE,
-    string::memset,
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
     vm::copyout,
 };
@@ -271,11 +270,7 @@ pub unsafe extern "C" fn sys_unlink() -> u64 {
             if (*ip).type_0 as i32 == T_DIR && isdirempty(ip) == 0 {
                 iunlockput(ip);
             } else {
-                memset(
-                    &mut de as *mut dirent as *mut libc::c_void,
-                    0 as i32,
-                    ::core::mem::size_of::<dirent>() as u64 as u32,
-                );
+                ptr::write_bytes(&mut de as *mut dirent, 0, 1);
                 if writei(
                     dp,
                     0,
@@ -524,11 +519,7 @@ pub unsafe extern "C" fn sys_exec() -> u64 {
     {
         return -(1 as i32) as u64;
     }
-    memset(
-        argv.as_mut_ptr() as *mut libc::c_void,
-        0,
-        ::core::mem::size_of::<[*mut libc::c_char; 32]>() as u64 as u32,
-    );
+    ptr::write_bytes(argv.as_mut_ptr(), 0, 1);
     i = 0 as i32;
     loop {
         if i as u64

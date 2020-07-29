@@ -9,7 +9,7 @@ use crate::{
     sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock},
     spinlock::{acquire, initlock, release, Spinlock},
     stat::Stat,
-    string::{memset, strncmp, strncpy},
+    string::{strncmp, strncpy},
 };
 use core::ptr;
 pub type pagetable_t = *mut u64;
@@ -189,11 +189,7 @@ pub unsafe extern "C" fn fsinit(mut dev: i32) {
 unsafe extern "C" fn bzero(mut dev: i32, mut bno: i32) {
     let mut bp: *mut Buf = ptr::null_mut();
     bp = bread(dev as u32, bno as u32);
-    memset(
-        (*bp).data.as_mut_ptr() as *mut libc::c_void,
-        0 as i32,
-        BSIZE as u32,
-    );
+    ptr::write_bytes((*bp).data.as_mut_ptr(), 0, BSIZE as usize);
     log_write(bp);
     brelse(bp);
 }
@@ -312,11 +308,7 @@ pub unsafe extern "C" fn ialloc(mut dev: u32, mut type_0: i16) -> *mut inode {
         );
         if (*dip).type_0 as i32 == 0 as i32 {
             // a free inode
-            memset(
-                dip as *mut libc::c_void,
-                0 as i32,
-                ::core::mem::size_of::<dinode>() as u64 as u32,
-            ); // mark it allocated on the disk
+            ptr::write_bytes(dip, 0, 1); // mark it allocated on the disk
             (*dip).type_0 = type_0;
             log_write(bp);
             brelse(bp);
