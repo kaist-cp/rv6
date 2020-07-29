@@ -6,7 +6,6 @@ use crate::{
         pagetable_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W,
         PTE_X, PXMASK, SATP_SV39,
     },
-    string::memset,
 };
 use core::ptr;
 extern "C" {
@@ -64,7 +63,7 @@ pub static mut kernel_pagetable: pagetable_t = 0 as *const u64 as *mut u64;
 #[no_mangle]
 pub unsafe extern "C" fn kvminit() {
     kernel_pagetable = kalloc() as pagetable_t;
-    memset(kernel_pagetable as *mut libc::c_void, 0, PGSIZE as u32);
+    ptr::write_bytes(kernel_pagetable as *mut libc::c_void, 0, PGSIZE as usize);
     // uart registers
     kvmmap(
         UART0 as u64,
@@ -143,7 +142,7 @@ unsafe extern "C" fn walk(mut pagetable: pagetable_t, mut va: u64, mut alloc: i3
             } {
                 return ptr::null_mut();
             }
-            memset(pagetable as *mut libc::c_void, 0, PGSIZE as u32);
+            ptr::write_bytes(pagetable as *mut libc::c_void, 0, PGSIZE as usize);
             *pte = (pagetable as u64 >> 12 as i32) << 10 as i32 | PTE_V as u64
         }
         level -= 1
@@ -296,7 +295,7 @@ pub unsafe extern "C" fn uvmcreate() -> pagetable_t {
                 as *mut libc::c_char,
         );
     }
-    memset(pagetable as *mut libc::c_void, 0, PGSIZE as u32);
+    ptr::write_bytes(pagetable as *mut libc::c_void, 0, PGSIZE as usize);
     pagetable
 }
 /// Load the user initcode into address 0 of pagetable,
@@ -312,7 +311,7 @@ pub unsafe extern "C" fn uvminit(mut pagetable: pagetable_t, mut src: *mut u8, m
         );
     }
     mem = kalloc() as *mut libc::c_char;
-    memset(mem as *mut libc::c_void, 0 as i32, PGSIZE as u32);
+    ptr::write_bytes(mem as *mut libc::c_void, 0, PGSIZE as usize);
     mappages(
         pagetable,
         0,
@@ -350,7 +349,7 @@ pub unsafe extern "C" fn uvmalloc(
             uvmdealloc(pagetable, a, oldsz);
             return 0 as i32 as u64;
         }
-        memset(mem as *mut libc::c_void, 0 as i32, PGSIZE as u32);
+        ptr::write_bytes(mem as *mut libc::c_void, 0, PGSIZE as usize);
         if mappages(
             pagetable,
             a,
