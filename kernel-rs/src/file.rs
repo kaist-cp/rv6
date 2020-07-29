@@ -6,7 +6,6 @@ use crate::{
     pipe::{pipeclose, piperead, pipewrite, Pipe},
     printf::panic,
     proc::{myproc, proc_0},
-    riscv::pagetable_t,
     sleeplock::Sleeplock,
     spinlock::{acquire, initlock, release, Spinlock},
     stat::Stat,

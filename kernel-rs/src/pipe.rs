@@ -3,7 +3,6 @@ use crate::{
     file::{filealloc, fileclose, File},
     kalloc::{kalloc, kfree},
     proc::{myproc, proc_0, sleep, wakeup},
-    riscv::pagetable_t,
     spinlock::{acquire, initlock, release, Spinlock},
     vm::{copyin, copyout},
 };

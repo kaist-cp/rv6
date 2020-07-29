@@ -3,10 +3,10 @@ use crate::{
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     plic::{plic_claim, plic_complete},
     printf::{panic, printf},
-    proc::{cpu, cpuid, exit, myproc, proc_0, RUNNING, wakeup, yield_0},
+    proc::{cpu, cpuid, exit, myproc, proc_0, wakeup, yield_0, RUNNING},
     riscv::{
         intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_sstatus, r_stval, r_tp,
-        w_sepc, w_sip, w_sstatus, w_stvec, MAXVA, PGSIZE, SATP_SV39, SSTATUS_SPIE, SSTATUS_SPP,
+        w_sepc, w_sip, w_sstatus, w_stvec, PGSIZE, SATP_SV39, SSTATUS_SPIE, SSTATUS_SPP,
     },
     spinlock::{acquire, initlock, release, Spinlock},
     syscall::syscall,

@@ -15,7 +15,7 @@ use crate::{
     pipe::pipealloc,
     printf::panic,
     proc::{myproc, proc_0},
-    riscv::{pagetable_t, PGSIZE},
+    riscv::PGSIZE,
     stat::{T_DEVICE, T_DIR, T_FILE},
     string::memset,
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},

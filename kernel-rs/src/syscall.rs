@@ -2,7 +2,6 @@ use crate::libc;
 use crate::{
     printf::{panic, printf},
     proc::{myproc, proc_0},
-    riscv::pagetable_t,
     string::strlen,
     sysfile::*,
     sysproc::*,
