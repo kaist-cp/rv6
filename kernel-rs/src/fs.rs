@@ -131,10 +131,10 @@ pub struct C2RustUnnamed_0 {
 }
 /// On-disk file system format.
 /// Both the kernel and user programs use this header file.
-pub const ROOTINO: i32 = 1;
 /// root i-number
-pub const BSIZE: i32 = 1024;
+pub const ROOTINO: i32 = 1;
 /// block size
+pub const BSIZE: i32 = 1024;
 pub const FSMAGIC: i32 = 0x10203040;
 pub const NDIRECT: i32 = 12;
 /// Bitmap bits per block
