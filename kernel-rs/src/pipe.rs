@@ -1,20 +1,13 @@
-use crate::riscv::pagetable_t;
-use crate::{file, libc, proc, spinlock};
+use crate::libc;
+use crate::{
+    file::{filealloc, fileclose, File},
+    kalloc::{kalloc, kfree},
+    proc::{myproc, proc_0, sleep, wakeup},
+    riscv::pagetable_t,
+    spinlock::{acquire, initlock, release, Spinlock},
+    vm::{copyin, copyout},
+};
 use core::ptr;
-use file::{filealloc, fileclose, File};
-use proc::{myproc, proc_0, sleep, wakeup};
-use spinlock::{acquire, initlock, release, Spinlock};
-extern "C" {
-    // kalloc.c
-    #[no_mangle]
-    fn kalloc() -> *mut libc::c_void;
-    #[no_mangle]
-    fn kfree(_: *mut libc::c_void);
-    #[no_mangle]
-    fn copyout(_: pagetable_t, _: u64, _: *mut libc::c_char, _: u64) -> i32;
-    #[no_mangle]
-    fn copyin(_: pagetable_t, _: *mut libc::c_char, _: u64, _: u64) -> i32;
-}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Pipe {

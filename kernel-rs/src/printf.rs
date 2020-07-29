@@ -1,11 +1,10 @@
+use crate::console::consputc;
 use crate::libc;
-use crate::proc::cpu;
-use crate::spinlock::{acquire, initlock, release, Spinlock};
+use crate::{
+    proc::cpu,
+    spinlock::{acquire, initlock, release, Spinlock},
+};
 use core::ptr;
-extern "C" {
-    #[no_mangle]
-    fn consputc(_: i32);
-}
 pub type __builtin_va_list = [__va_list_tag; 1];
 #[derive(Copy, Clone)]
 #[repr(C)]

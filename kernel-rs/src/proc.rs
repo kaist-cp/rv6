@@ -1,61 +1,27 @@
-use crate::file::{fileclose, filedup};
-use crate::fs::{fsinit, idup, iput, namei};
-use crate::kalloc::{kalloc, kfree};
-use crate::log::{begin_op, end_op};
+use crate::libc;
 use crate::{
-    file::{inode, File},
-    libc,
+    file::{fileclose, filedup, inode, File},
+    fs::{fsinit, idup, iput, namei},
+    kalloc::{kalloc, kfree},
+    log::{begin_op, end_op},
     memlayout::{TRAMPOLINE, TRAPFRAME},
     param::{NOFILE, NPROC, ROOTDEV},
+    printf::{panic, printf},
     riscv::{intr_get, intr_on, pagetable_t, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
-    spinlock::{acquire, holding, initlock, release, Spinlock},
+    spinlock::{acquire, holding, initlock, pop_off, push_off, release, Spinlock},
+    string::{memmove, memset, safestrcpy},
+    trap::usertrapret,
+    vm::{
+        copyin, copyout, kvminithart, kvmmap, mappages, uvmalloc, uvmcopy, uvmcreate, uvmdealloc,
+        uvmfree, uvminit, uvmunmap,
+    },
 };
 use core::ptr;
 extern "C" {
-    // printf.c
-    #[no_mangle]
-    fn printf(_: *mut libc::c_char, _: ...);
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
     // swtch.S
     #[no_mangle]
     fn swtch(_: *mut context, _: *mut context);
-    #[no_mangle]
-    fn push_off();
-    #[no_mangle]
-    fn pop_off();
-    #[no_mangle]
-    fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: u32) -> *mut libc::c_void;
-    #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: i32, _: u32) -> *mut libc::c_void;
-    #[no_mangle]
-    fn safestrcpy(_: *mut libc::c_char, _: *const libc::c_char, _: i32) -> *mut libc::c_char;
-    #[no_mangle]
-    fn usertrapret();
-    #[no_mangle]
-    fn kvminithart();
-    #[no_mangle]
-    fn kvmmap(_: u64, _: u64, _: u64, _: i32);
-    #[no_mangle]
-    fn mappages(_: pagetable_t, _: u64, _: u64, _: u64, _: i32) -> i32;
-    #[no_mangle]
-    fn uvmcreate() -> pagetable_t;
-    #[no_mangle]
-    fn uvminit(_: pagetable_t, _: *mut u8, _: u32);
-    #[no_mangle]
-    fn uvmalloc(_: pagetable_t, _: u64, _: u64) -> u64;
-    #[no_mangle]
-    fn uvmdealloc(_: pagetable_t, _: u64, _: u64) -> u64;
-    #[no_mangle]
-    fn uvmcopy(_: pagetable_t, _: pagetable_t, _: u64) -> i32;
-    #[no_mangle]
-    fn uvmfree(_: pagetable_t, _: u64);
-    #[no_mangle]
-    fn uvmunmap(_: pagetable_t, _: u64, _: u64, _: i32);
-    #[no_mangle]
-    fn copyout(_: pagetable_t, _: u64, _: *mut libc::c_char, _: u64) -> i32;
-    #[no_mangle]
-    fn copyin(_: pagetable_t, _: *mut libc::c_char, _: u64, _: u64) -> i32;
+    // trampoline.S
     #[no_mangle]
     static mut trampoline: [libc::c_char; 0];
 }
@@ -265,7 +231,6 @@ pub unsafe extern "C" fn procinit() {
     }
     kvminithart();
 }
-// proc.c
 /// Must be called with interrupts disabled,
 /// to prevent race with process being moved
 /// to a different CPU.

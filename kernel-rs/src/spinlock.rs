@@ -1,11 +1,10 @@
 use crate::libc;
-use crate::proc::{cpu, mycpu};
-use crate::riscv::{intr_get, intr_off, intr_on};
+use crate::{
+    printf::panic,
+    proc::{cpu, mycpu},
+    riscv::{intr_get, intr_off, intr_on},
+};
 use core::ptr;
-extern "C" {
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-}
 /// Mutual exclusion lock.
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -21,7 +20,6 @@ pub unsafe fn initlock(mut lk: *mut Spinlock, mut name: *mut libc::c_char) {
     (*lk).locked = 0 as i32 as u32;
     (*lk).cpu = ptr::null_mut();
 }
-// Spinlock.c
 /// Acquire the lock.
 /// Loops (spins) until the lock is acquired.
 #[no_mangle]

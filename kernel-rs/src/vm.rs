@@ -1,29 +1,21 @@
 use crate::libc;
-use crate::memlayout::{CLINT, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0};
-use crate::riscv::{
-    pagetable_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W,
-    PTE_X, PXMASK, SATP_SV39,
+use crate::{
+    kalloc::{kalloc, kfree},
+    memlayout::{CLINT, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
+    printf::{panic, printf},
+    riscv::{
+        pagetable_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W,
+        PTE_X, PXMASK, SATP_SV39,
+    },
+    string::{memmove, memset},
+    types::pde_t,
 };
-use crate::types::pde_t;
 use core::ptr;
 extern "C" {
-    // kalloc.c
-    #[no_mangle]
-    fn kalloc() -> *mut libc::c_void;
-    #[no_mangle]
-    fn kfree(_: *mut libc::c_void);
-    // printf.c
-    #[no_mangle]
-    fn printf(_: *mut libc::c_char, _: ...);
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn memmove(_: *mut libc::c_void, _: *const libc::c_void, _: u32) -> *mut libc::c_void;
-    #[no_mangle]
-    fn memset(_: *mut libc::c_void, _: i32, _: u32) -> *mut libc::c_void;
+    // kernel.ld sets this to end of kernel code.
     #[no_mangle]
     static mut etext: [libc::c_char; 0];
-    // kernel.ld sets this to end of kernel code.
+    // trampoline.S
     #[no_mangle]
     static mut trampoline: [libc::c_char; 0];
 }
@@ -32,6 +24,7 @@ extern "C" {
  */
 #[no_mangle]
 pub static mut kernel_pagetable: pagetable_t = 0 as *const u64 as *mut u64;
+// trampoline.S
 /// create a direct-map page table for the kernel and
 /// turn on paging. called early, in supervisor mode.
 /// the page allocator is already initialized.

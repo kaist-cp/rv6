@@ -1,15 +1,14 @@
-use crate::buf::Buf;
 use crate::libc;
-use crate::param::NBUF;
-use crate::proc::cpu;
-use crate::sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock};
-use crate::spinlock::{acquire, initlock, release, Spinlock};
-use crate::virtio_disk::virtio_disk_rw;
+use crate::{
+    buf::Buf,
+    param::NBUF,
+    printf::panic,
+    proc::cpu,
+    sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock},
+    spinlock::{acquire, initlock, release, Spinlock},
+    virtio_disk::virtio_disk_rw,
+};
 use core::ptr;
-extern "C" {
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-}
 /// Buffer cache.
 ///
 /// The buffer cache is a linked list of buf structures holding

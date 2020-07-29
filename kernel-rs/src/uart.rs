@@ -1,11 +1,7 @@
+use crate::console::consoleintr;
 use crate::libc;
 use crate::memlayout::UART0;
 use core::ptr;
-extern "C" {
-    #[no_mangle]
-    fn consoleintr(_: i32);
-}
-
 /// low-level driver routines for 16550a UART.
 
 /// the UART control registers are memory-mapped

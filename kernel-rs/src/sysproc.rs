@@ -1,29 +1,10 @@
 use crate::{
     libc,
-    proc::{myproc, sleep},
+    proc::{exit, fork, growproc, kill, myproc, sleep, wait},
     spinlock::{acquire, release},
-    trap::tickslock,
+    syscall::{argaddr, argint},
+    trap::{ticks, tickslock},
 };
-extern "C" {
-    #[no_mangle]
-    fn exit(_: i32);
-    #[no_mangle]
-    fn fork() -> i32;
-    #[no_mangle]
-    fn growproc(_: i32) -> i32;
-    #[no_mangle]
-    fn kill(_: i32) -> i32;
-    #[no_mangle]
-    fn wait(_: u64) -> i32;
-    // syscall.c
-    #[no_mangle]
-    fn argint(_: i32, _: *mut i32) -> i32;
-    #[no_mangle]
-    fn argaddr(_: i32, _: *mut u64) -> i32;
-    // trap.c
-    #[no_mangle]
-    static mut ticks: u32;
-}
 #[no_mangle]
 pub unsafe extern "C" fn sys_exit() -> u64 {
     let mut n: i32 = 0;

@@ -1,19 +1,10 @@
-use crate::file::{devsw, CONSOLE};
 use crate::libc;
-use crate::proc::{cpu, myproc, sleep, wakeup};
-use crate::spinlock::{acquire, initlock, release, Spinlock};
-extern "C" {
-    #[no_mangle]
-    fn either_copyout(user_dst: i32, dst: u64, src: *mut libc::c_void, len: u64) -> i32;
-    #[no_mangle]
-    fn either_copyin(dst: *mut libc::c_void, user_src: i32, src: u64, len: u64) -> i32;
-    #[no_mangle]
-    fn procdump();
-    #[no_mangle]
-    fn uartinit();
-    #[no_mangle]
-    fn uartputc(_: i32);
-}
+use crate::{
+    file::{devsw, CONSOLE},
+    proc::{cpu, either_copyin, either_copyout, myproc, procdump, sleep, wakeup},
+    spinlock::{acquire, initlock, release, Spinlock},
+    uart::{uartinit, uartputc},
+};
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct C2RustUnnamed_0 {

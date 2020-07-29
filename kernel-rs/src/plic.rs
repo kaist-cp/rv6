@@ -1,9 +1,7 @@
-use crate::memlayout::{PLIC, PLIC_PENDING, UART0_IRQ, VIRTIO0_IRQ};
-extern "C" {
-    // proc.c
-    #[no_mangle]
-    fn cpuid() -> i32;
-}
+use crate::{
+    memlayout::{PLIC, PLIC_PENDING, UART0_IRQ, VIRTIO0_IRQ},
+    proc::cpuid,
+};
 /// local interrupt controller, which contains the timer.
 /// cycles since boot.
 ///

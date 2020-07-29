@@ -1,50 +1,18 @@
 use crate::libc;
+use crate::{
+    bio::binit,
+    console::consoleinit,
+    file::fileinit,
+    fs::iinit,
+    kalloc::kinit,
+    plic::{plicinit, plicinithart},
+    printf::{printf, printfinit},
+    proc::{cpuid, procinit, scheduler, userinit},
+    trap::{trapinit, trapinithart},
+    virtio_disk::virtio_disk_init,
+    vm::{kvminit, kvminithart},
+};
 use core::sync::atomic::{AtomicBool, Ordering};
-extern "C" {
-    // bio.c
-    #[no_mangle]
-    fn binit();
-    // console.c
-    #[no_mangle]
-    fn consoleinit();
-    #[no_mangle]
-    fn fileinit();
-    #[no_mangle]
-    fn iinit();
-    #[no_mangle]
-    fn kinit();
-    // printf.c
-    #[no_mangle]
-    fn printf(_: *mut libc::c_char, _: ...);
-    #[no_mangle]
-    fn printfinit();
-    // proc.c
-    #[no_mangle]
-    fn cpuid() -> i32;
-    #[no_mangle]
-    fn procinit();
-    #[no_mangle]
-    fn scheduler() -> !;
-    #[no_mangle]
-    fn userinit();
-    #[no_mangle]
-    fn trapinit();
-    #[no_mangle]
-    fn trapinithart();
-    // vm.c
-    #[no_mangle]
-    fn kvminit();
-    #[no_mangle]
-    fn kvminithart();
-    // plic.c
-    #[no_mangle]
-    fn plicinit();
-    #[no_mangle]
-    fn plicinithart();
-    // virtio_disk.c
-    #[no_mangle]
-    fn virtio_disk_init();
-}
 /// start() jumps here in supervisor mode on all CPUs.
 #[export_name = "main"]
 pub unsafe extern "C" fn main_0() {

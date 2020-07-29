@@ -1,61 +1,13 @@
 use crate::libc;
-use crate::proc::{myproc, proc_0};
-use crate::riscv::pagetable_t;
-extern "C" {
-    // printf.c
-    #[no_mangle]
-    fn printf(_: *mut libc::c_char, _: ...);
-    #[no_mangle]
-    fn panic(_: *mut libc::c_char) -> !;
-    #[no_mangle]
-    fn strlen(_: *const libc::c_char) -> i32;
-    #[no_mangle]
-    fn copyin(_: pagetable_t, _: *mut libc::c_char, _: u64, _: u64) -> i32;
-    #[no_mangle]
-    fn copyinstr(_: pagetable_t, _: *mut libc::c_char, _: u64, _: u64) -> i32;
-    #[no_mangle]
-    fn sys_chdir() -> u64;
-    #[no_mangle]
-    fn sys_close() -> u64;
-    #[no_mangle]
-    fn sys_dup() -> u64;
-    #[no_mangle]
-    fn sys_exec() -> u64;
-    #[no_mangle]
-    fn sys_exit() -> u64;
-    #[no_mangle]
-    fn sys_fork() -> u64;
-    #[no_mangle]
-    fn sys_fstat() -> u64;
-    #[no_mangle]
-    fn sys_getpid() -> u64;
-    #[no_mangle]
-    fn sys_kill() -> u64;
-    #[no_mangle]
-    fn sys_link() -> u64;
-    #[no_mangle]
-    fn sys_mkdir() -> u64;
-    #[no_mangle]
-    fn sys_mknod() -> u64;
-    #[no_mangle]
-    fn sys_open() -> u64;
-    #[no_mangle]
-    fn sys_pipe() -> u64;
-    #[no_mangle]
-    fn sys_read() -> u64;
-    #[no_mangle]
-    fn sys_sbrk() -> u64;
-    #[no_mangle]
-    fn sys_sleep() -> u64;
-    #[no_mangle]
-    fn sys_unlink() -> u64;
-    #[no_mangle]
-    fn sys_wait() -> u64;
-    #[no_mangle]
-    fn sys_write() -> u64;
-    #[no_mangle]
-    fn sys_uptime() -> u64;
-}
+use crate::{
+    printf::{panic, printf},
+    proc::{myproc, proc_0},
+    riscv::pagetable_t,
+    string::strlen,
+    sysfile::*,
+    sysproc::*,
+    vm::{copyin, copyinstr},
+};
 /// Fetch the u64 at addr from the current process.
 #[no_mangle]
 pub unsafe extern "C" fn fetchaddr(mut addr: u64, mut ip: *mut u64) -> i32 {
