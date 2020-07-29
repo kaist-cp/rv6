@@ -6,7 +6,7 @@ use crate::{
         pagetable_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W,
         PTE_X, PXMASK, SATP_SV39,
     },
-    string::{memmove, memset},
+    string::memset,
 };
 use core::ptr;
 extern "C" {
@@ -320,7 +320,11 @@ pub unsafe extern "C" fn uvminit(mut pagetable: pagetable_t, mut src: *mut u8, m
         mem as u64,
         (PTE_W | PTE_R | PTE_X | PTE_U) as i32,
     );
-    memmove(mem as *mut libc::c_void, src as *const libc::c_void, sz);
+    ptr::copy(
+        src as *const libc::c_void,
+        mem as *mut libc::c_void,
+        sz as usize,
+    );
 }
 /// Allocate PTEs and physical memory to grow process from oldsz to
 /// newsz, which need not be page aligned.  Returns new size or 0 on error.
@@ -456,10 +460,10 @@ pub unsafe extern "C" fn uvmcopy(mut old: pagetable_t, mut new: pagetable_t, mut
             current_block = 9000140654394160520;
             break;
         }
-        memmove(
-            mem as *mut libc::c_void,
+        ptr::copy(
             pa as *mut libc::c_char as *const libc::c_void,
-            PGSIZE as u32,
+            mem as *mut libc::c_void,
+            PGSIZE as usize,
         );
         if mappages(new, i, PGSIZE as u64, mem as u64, flags as i32) != 0 as i32 {
             kfree(mem as *mut libc::c_void);
@@ -511,10 +515,10 @@ pub unsafe extern "C" fn copyout(
         if n > len {
             n = len
         }
-        memmove(
-            pa0.wrapping_add(dstva.wrapping_sub(va0)) as *mut libc::c_void,
+        ptr::copy(
             src as *const libc::c_void,
-            n as u32,
+            pa0.wrapping_add(dstva.wrapping_sub(va0)) as *mut libc::c_void,
+            n as usize,
         );
         len = (len as u64).wrapping_sub(n) as u64 as u64;
         src = src.offset(n as isize);
@@ -545,10 +549,10 @@ pub unsafe extern "C" fn copyin(
         if n > len {
             n = len
         }
-        memmove(
-            dst as *mut libc::c_void,
+        ptr::copy(
             pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut libc::c_void,
-            n as u32,
+            dst as *mut libc::c_void,
+            n as usize,
         );
         len = (len as u64).wrapping_sub(n) as u64 as u64;
         dst = dst.offset(n as isize);

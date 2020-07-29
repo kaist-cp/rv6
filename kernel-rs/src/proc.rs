@@ -7,7 +7,7 @@ use crate::{
     printf::{panic, printf},
     riscv::{r_sstatus, w_sstatus, SSTATUS_SIE},
     spinlock::{acquire, holding, initlock, pop_off, push_off, release, Spinlock},
-    string::{memmove, memset, safestrcpy},
+    string::{memset, safestrcpy},
     trap::usertrapret,
     vm::{
         copyin, copyout, kvminithart, kvmmap, mappages, uvmalloc, uvmcopy, uvmcreate, uvmdealloc,
@@ -889,10 +889,10 @@ pub unsafe extern "C" fn either_copyout(
     if user_dst != 0 {
         copyout((*p).pagetable, dst, src as *mut libc::c_char, len)
     } else {
-        memmove(
-            dst as *mut libc::c_char as *mut libc::c_void,
+        ptr::copy(
             src,
-            len as u32,
+            dst as *mut libc::c_char as *mut libc::c_void,
+            len as usize,
         );
         0
     }
@@ -911,10 +911,10 @@ pub unsafe extern "C" fn either_copyin(
     if user_src != 0 {
         copyin((*p).pagetable, dst as *mut libc::c_char, src, len)
     } else {
-        memmove(
-            dst,
+        ptr::copy(
             src as *mut libc::c_char as *const libc::c_void,
-            len as u32,
+            dst,
+            len as usize,
         );
         0
     }

@@ -9,7 +9,7 @@ use crate::{
     sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock},
     spinlock::{acquire, initlock, release, Spinlock},
     stat::Stat,
-    string::{memmove, memset, strncmp, strncpy},
+    string::{memset, strncmp, strncpy},
 };
 use core::ptr;
 pub type pagetable_t = *mut u64;
@@ -169,10 +169,10 @@ pub static mut sb: superblock = superblock {
 unsafe extern "C" fn readsb(mut dev: i32, mut sb_0: *mut superblock) {
     let mut bp: *mut Buf = ptr::null_mut();
     bp = bread(dev as u32, 1 as u32);
-    memmove(
-        sb_0 as *mut libc::c_void,
+    ptr::copy(
         (*bp).data.as_mut_ptr() as *const libc::c_void,
-        ::core::mem::size_of::<superblock>() as u64 as u32,
+        sb_0 as *mut libc::c_void,
+        ::core::mem::size_of::<superblock>(),
     );
     brelse(bp);
 }
@@ -351,10 +351,10 @@ pub unsafe extern "C" fn iupdate(mut ip: *mut inode) {
     (*dip).minor = (*ip).minor;
     (*dip).nlink = (*ip).nlink;
     (*dip).size = (*ip).size;
-    memmove(
-        (*dip).addrs.as_mut_ptr() as *mut libc::c_void,
+    ptr::copy(
         (*ip).addrs.as_mut_ptr() as *const libc::c_void,
-        ::core::mem::size_of::<[u32; 13]>() as u64 as u32,
+        (*dip).addrs.as_mut_ptr() as *mut libc::c_void,
+        ::core::mem::size_of::<[u32; 13]>(),
     );
     log_write(bp);
     brelse(bp);
@@ -429,10 +429,10 @@ pub unsafe extern "C" fn ilock(mut ip: *mut inode) {
         (*ip).minor = (*dip).minor;
         (*ip).nlink = (*dip).nlink;
         (*ip).size = (*dip).size;
-        memmove(
-            (*ip).addrs.as_mut_ptr() as *mut libc::c_void,
+        ptr::copy(
             (*dip).addrs.as_mut_ptr() as *const libc::c_void,
-            ::core::mem::size_of::<[u32; 13]>() as u64 as u32,
+            (*ip).addrs.as_mut_ptr() as *mut libc::c_void,
+            ::core::mem::size_of::<[u32; 13]>(),
         );
         brelse(bp);
         (*ip).valid = 1 as i32;
@@ -825,16 +825,16 @@ unsafe extern "C" fn skipelem(
     }
     len = path.wrapping_offset_from(s) as i64 as i32;
     if len >= DIRSIZ {
-        memmove(
-            name as *mut libc::c_void,
+        ptr::copy(
             s as *const libc::c_void,
-            DIRSIZ as u32,
+            name as *mut libc::c_void,
+            DIRSIZ as usize,
         );
     } else {
-        memmove(
-            name as *mut libc::c_void,
+        ptr::copy(
             s as *const libc::c_void,
-            len as u32,
+            name as *mut libc::c_void,
+            len as usize,
         );
         *name.offset(len as isize) = 0 as i32 as libc::c_char
     }
