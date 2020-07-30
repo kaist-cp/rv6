@@ -1,4 +1,3 @@
-use crate::libc;
 /// maximum number of processes
 pub const NPROC: i32 = 64;
 /// open files per process
@@ -15,10 +14,10 @@ pub const ROOTDEV: i32 = 1;
 pub const MAXARG: i32 = 32;
 /// max # of blocks any FS op writes
 /// Will be handled in #31
-pub const MAXOPBLOCKS: libc::c_int = 10 as libc::c_int;
+pub const MAXOPBLOCKS: i32 = 10;
 /// max data blocks in on-disk log
 pub const LOGSIZE: i32 = MAXOPBLOCKS * 3;
 /// size of disk block cache
-pub const NBUF: libc::c_int = MAXOPBLOCKS * 3 as libc::c_int;
+pub const NBUF: i32 = MAXOPBLOCKS * 3;
 /// maximum file path name
 pub const MAXPATH: i32 = 128;
