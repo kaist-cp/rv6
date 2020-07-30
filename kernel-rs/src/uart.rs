@@ -1,5 +1,4 @@
 use crate::console::consoleintr;
-use crate::libc;
 use crate::memlayout::UART0;
 use core::ptr;
 /// low-level driver routines for 16550a UART.
@@ -21,20 +20,20 @@ use core::ptr;
 #[no_mangle]
 pub unsafe extern "C" fn uartinit() {
     // disable interrupts.
-    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0 as libc::c_int as u8);
+    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0);
     // special mode to set baud rate.
-    ptr::write_volatile((UART0 + 3 as i64) as *mut u8, 0x80 as libc::c_int as u8);
+    ptr::write_volatile((UART0 + 3 as i64) as *mut u8, 0x80);
     // LSB for baud rate of 38.4K.
-    ptr::write_volatile((UART0 + 0 as i64) as *mut u8, 0x3 as libc::c_int as u8);
+    ptr::write_volatile((UART0 + 0 as i64) as *mut u8, 0x3);
     // MSB for baud rate of 38.4K.
-    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0 as libc::c_int as u8);
+    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0);
     // leave set-baud mode,
     // and set word length to 8 bits, no parity.
-    ptr::write_volatile((UART0 + 3 as i64) as *mut u8, 0x3 as libc::c_int as u8);
+    ptr::write_volatile((UART0 + 3 as i64) as *mut u8, 0x3);
     // reset and enable FIFOs.
-    ptr::write_volatile((UART0 + 2 as i64) as *mut u8, 0x7 as libc::c_int as u8);
+    ptr::write_volatile((UART0 + 2 as i64) as *mut u8, 0x7);
     // enable receive interrupts.
-    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0x1 as libc::c_int as u8);
+    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0x1);
 }
 /// write one output character to the UART.
 #[no_mangle]
