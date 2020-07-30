@@ -7,7 +7,6 @@ use crate::{
     proc::{cpu, sleep, wakeup},
     riscv::{PGSHIFT, PGSIZE},
     spinlock::{acquire, initlock, release, Spinlock},
-    string::memset,
     virtio::{
         UsedArea, VRingDesc, NUM, VIRTIO_BLK_F_CONFIG_WCE, VIRTIO_BLK_F_MQ, VIRTIO_BLK_F_RO,
         VIRTIO_BLK_F_SCSI, VIRTIO_BLK_T_IN, VIRTIO_BLK_T_OUT, VIRTIO_CONFIG_S_ACKNOWLEDGE,
@@ -126,11 +125,7 @@ pub unsafe extern "C" fn virtio_disk_init() {
         );
     }
     ::core::ptr::write_volatile((VIRTIO0 + 0x38 as i32) as *mut u32, NUM as u32);
-    memset(
-        disk.0.pages.as_mut_ptr() as *mut libc::c_void,
-        0 as i32,
-        ::core::mem::size_of::<[libc::c_char; 8192]>() as u64 as u32,
-    );
+    ptr::write_bytes(disk.0.pages.as_mut_ptr(), 0, 1);
     ::core::ptr::write_volatile(
         (VIRTIO0 + 0x40 as i32) as *mut u32,
         (disk.0.pages.as_mut_ptr() as u64 >> PGSHIFT) as u32,

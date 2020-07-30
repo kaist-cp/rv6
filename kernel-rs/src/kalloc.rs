@@ -5,7 +5,6 @@ use crate::{
     proc::cpu,
     riscv::PGSIZE,
     spinlock::{acquire, initlock, release, Spinlock},
-    string::memset,
 };
 use core::ptr;
 pub static mut end: [u8; 0] = [0; 0];
@@ -81,7 +80,7 @@ pub unsafe extern "C" fn kfree(mut pa: *mut libc::c_void) {
         panic(b"kfree\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     // Fill with junk to catch dangling refs.
-    memset(pa, 1 as i32, PGSIZE as u32);
+    ptr::write_bytes(pa as *mut libc::c_void, 1, PGSIZE as usize);
     r = pa as *mut run;
     acquire(&mut kmem.lock);
     (*r).next = kmem.freelist;
@@ -101,10 +100,10 @@ pub unsafe extern "C" fn kalloc() -> *mut libc::c_void {
     }
     release(&mut kmem.lock);
     if !r.is_null() {
-        memset(
+        ptr::write_bytes(
             r as *mut libc::c_char as *mut libc::c_void,
             5,
-            PGSIZE as u32,
+            PGSIZE as usize,
         );
     }
     r as *mut libc::c_void

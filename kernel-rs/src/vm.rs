@@ -7,7 +7,6 @@ use crate::{
         pagetable_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W,
         PTE_X, PXMASK, SATP_SV39,
     },
-    string::{memmove, memset},
     types::pde_t,
 };
 use core::ptr;
@@ -31,7 +30,7 @@ pub static mut kernel_pagetable: pagetable_t = 0 as *const u64 as *mut u64;
 #[no_mangle]
 pub unsafe extern "C" fn kvminit() {
     kernel_pagetable = kalloc() as pagetable_t;
-    memset(kernel_pagetable as *mut libc::c_void, 0, PGSIZE as u32);
+    ptr::write_bytes(kernel_pagetable as *mut libc::c_void, 0, PGSIZE as usize);
     // uart registers
     kvmmap(
         UART0 as u64,
@@ -110,7 +109,7 @@ unsafe extern "C" fn walk(mut pagetable: pagetable_t, mut va: u64, mut alloc: i3
             } {
                 return ptr::null_mut();
             }
-            memset(pagetable as *mut libc::c_void, 0, PGSIZE as u32);
+            ptr::write_bytes(pagetable as *mut libc::c_void, 0, PGSIZE as usize);
             *pte = (pagetable as u64 >> 12 as i32) << 10 as i32 | PTE_V as u64
         }
         level -= 1
@@ -263,7 +262,7 @@ pub unsafe extern "C" fn uvmcreate() -> pagetable_t {
                 as *mut libc::c_char,
         );
     }
-    memset(pagetable as *mut libc::c_void, 0, PGSIZE as u32);
+    ptr::write_bytes(pagetable as *mut libc::c_void, 0, PGSIZE as usize);
     pagetable
 }
 /// Load the user initcode into address 0 of pagetable,
@@ -279,7 +278,7 @@ pub unsafe extern "C" fn uvminit(mut pagetable: pagetable_t, mut src: *mut u8, m
         );
     }
     mem = kalloc() as *mut libc::c_char;
-    memset(mem as *mut libc::c_void, 0 as i32, PGSIZE as u32);
+    ptr::write_bytes(mem as *mut libc::c_void, 0, PGSIZE as usize);
     mappages(
         pagetable,
         0,
@@ -287,7 +286,11 @@ pub unsafe extern "C" fn uvminit(mut pagetable: pagetable_t, mut src: *mut u8, m
         mem as u64,
         (PTE_W | PTE_R | PTE_X | PTE_U) as i32,
     );
-    memmove(mem as *mut libc::c_void, src as *const libc::c_void, sz);
+    ptr::copy(
+        src as *const libc::c_void,
+        mem as *mut libc::c_void,
+        sz as usize,
+    );
 }
 /// Allocate PTEs and physical memory to grow process from oldsz to
 /// newsz, which need not be page aligned.  Returns new size or 0 on error.
@@ -313,7 +316,7 @@ pub unsafe extern "C" fn uvmalloc(
             uvmdealloc(pagetable, a, oldsz);
             return 0 as i32 as u64;
         }
-        memset(mem as *mut libc::c_void, 0 as i32, PGSIZE as u32);
+        ptr::write_bytes(mem as *mut libc::c_void, 0, PGSIZE as usize);
         if mappages(
             pagetable,
             a,
@@ -423,10 +426,10 @@ pub unsafe extern "C" fn uvmcopy(mut old: pagetable_t, mut new: pagetable_t, mut
             current_block = 9000140654394160520;
             break;
         }
-        memmove(
-            mem as *mut libc::c_void,
+        ptr::copy(
             pa as *mut libc::c_char as *const libc::c_void,
-            PGSIZE as u32,
+            mem as *mut libc::c_void,
+            PGSIZE as usize,
         );
         if mappages(new, i, PGSIZE as u64, mem as u64, flags as i32) != 0 as i32 {
             kfree(mem as *mut libc::c_void);
@@ -478,10 +481,10 @@ pub unsafe extern "C" fn copyout(
         if n > len {
             n = len
         }
-        memmove(
-            pa0.wrapping_add(dstva.wrapping_sub(va0)) as *mut libc::c_void,
+        ptr::copy(
             src as *const libc::c_void,
-            n as u32,
+            pa0.wrapping_add(dstva.wrapping_sub(va0)) as *mut libc::c_void,
+            n as usize,
         );
         len = (len as u64).wrapping_sub(n) as u64 as u64;
         src = src.offset(n as isize);
@@ -512,10 +515,10 @@ pub unsafe extern "C" fn copyin(
         if n > len {
             n = len
         }
-        memmove(
-            dst as *mut libc::c_void,
+        ptr::copy(
             pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut libc::c_void,
-            n as u32,
+            dst as *mut libc::c_void,
+            n as usize,
         );
         len = (len as u64).wrapping_sub(n) as u64 as u64;
         dst = dst.offset(n as isize);

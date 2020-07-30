@@ -9,7 +9,7 @@ use crate::{
     printf::{panic, printf},
     riscv::{intr_get, intr_on, pagetable_t, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
     spinlock::{acquire, holding, initlock, pop_off, push_off, release, Spinlock},
-    string::{memmove, memset, safestrcpy},
+    string::safestrcpy,
     trap::usertrapret,
     vm::{
         copyin, copyout, kvminithart, kvmmap, mappages, uvmalloc, uvmcopy, uvmcreate, uvmdealloc,
@@ -300,11 +300,7 @@ unsafe extern "C" fn allocproc() -> *mut proc_0 {
             (*p).pagetable = proc_pagetable(p);
             // Set up new context to start executing at forkret,
             // which returns to user space.
-            memset(
-                &mut (*p).context as *mut context as *mut libc::c_void,
-                0 as i32,
-                ::core::mem::size_of::<context>() as u64 as u32,
-            );
+            ptr::write_bytes(&mut (*p).context as *mut context, 0, 1);
             (*p).context.ra = ::core::mem::transmute::<Option<unsafe extern "C" fn() -> ()>, u64>(
                 Some(forkret as unsafe extern "C" fn() -> ()),
             );
@@ -789,10 +785,10 @@ pub unsafe extern "C" fn either_copyout(
     if user_dst != 0 {
         copyout((*p).pagetable, dst, src as *mut libc::c_char, len)
     } else {
-        memmove(
-            dst as *mut libc::c_char as *mut libc::c_void,
+        ptr::copy(
             src,
-            len as u32,
+            dst as *mut libc::c_char as *mut libc::c_void,
+            len as usize,
         );
         0
     }
@@ -811,10 +807,10 @@ pub unsafe extern "C" fn either_copyin(
     if user_src != 0 {
         copyin((*p).pagetable, dst as *mut libc::c_char, src, len)
     } else {
-        memmove(
-            dst,
+        ptr::copy(
             src as *mut libc::c_char as *const libc::c_void,
-            len as u32,
+            dst,
+            len as usize,
         );
         0
     }

@@ -7,8 +7,9 @@ use crate::{
     printf::panic,
     proc::{cpu, sleep, wakeup},
     spinlock::{acquire, initlock, release, Spinlock},
-    string::memmove,
 };
+use core::ptr;
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct log {
@@ -93,10 +94,10 @@ unsafe extern "C" fn install_trans() {
     while tail < log.lh.n {
         let mut lbuf: *mut Buf = bread(log.dev as u32, (log.start + tail + 1 as i32) as u32); // copy block to dst
         let mut dbuf: *mut Buf = bread(log.dev as u32, log.lh.block[tail as usize] as u32); // write dst to disk
-        memmove(
-            (*dbuf).data.as_mut_ptr() as *mut libc::c_void,
+        ptr::copy(
             (*lbuf).data.as_mut_ptr() as *const libc::c_void,
-            BSIZE as u32,
+            (*dbuf).data.as_mut_ptr() as *mut libc::c_void,
+            BSIZE as usize,
         );
         bwrite(dbuf);
         bunpin(dbuf);
@@ -193,10 +194,10 @@ unsafe extern "C" fn write_log() {
     while tail < log.lh.n {
         let mut to: *mut Buf = bread(log.dev as u32, (log.start + tail + 1 as i32) as u32); // write the log
         let mut from: *mut Buf = bread(log.dev as u32, log.lh.block[tail as usize] as u32); // Write modified blocks from cache to log
-        memmove(
-            (*to).data.as_mut_ptr() as *mut libc::c_void,
+        ptr::copy(
             (*from).data.as_mut_ptr() as *const libc::c_void,
-            BSIZE as u32,
+            (*to).data.as_mut_ptr() as *mut libc::c_void,
+            BSIZE as usize,
         );
         bwrite(to);
         brelse(from);
