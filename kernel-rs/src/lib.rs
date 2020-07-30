@@ -73,3 +73,6 @@ mod tests {
         assert_eq!(2 + 2, 4);
     }
 }
+
+#[macro_use]
+extern crate bitflags;
