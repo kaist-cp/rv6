@@ -409,10 +409,13 @@ pub unsafe extern "C" fn sys_open() -> u64 {
         (*f).off = 0 as i32 as u32
     }
     (*f).ip = ip;
-    let omode_is_wronly = omode.intersects(FcntlFlags::O_WRONLY);
-    (*f).readable = (!omode_is_wronly) as i32 as libc::c_char;
+    // let omode_is_wronly = omode.intersects(FcntlFlags::O_WRONLY);
+    (*f).readable = (!omode.intersects(FcntlFlags::O_WRONLY)) as i32 as libc::c_char;
+    // (*f).writable =
+    //     (omode_is_wronly || omode.intersects(FcntlFlags::O_RDWR)) as i32 as libc::c_char;
     (*f).writable =
-        (omode_is_wronly || omode.intersects(FcntlFlags::O_RDWR)) as i32 as libc::c_char;
+        omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR) as i32 as libc::c_char;
+
     iunlock(ip);
     end_op();
     fd as u64
