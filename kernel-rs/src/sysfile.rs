@@ -1,7 +1,7 @@
 use crate::libc;
 use crate::{
     exec::exec,
-    fcntl::Flags,
+    fcntl::Flags_fcntl,
     file::{filealloc, fileclose, filedup, fileread, filestat, filewrite},
     file::{inode, File},
     fs::dirent,
@@ -357,9 +357,9 @@ pub unsafe extern "C" fn sys_open() -> u64 {
         return -(1 as i32) as u64;
     }
     begin_op();
-    let mut flags_omode = Flags::O_MODE.clone();
-    flags_omode.setbits(omode);
-    if flags_omode.intersects(Flags::O_CREATE) {
+    let mut flags_omode = Flags_fcntl::O_MODE;
+    flags_omode = Flags_fcntl::from_bits_truncate(omode);
+    if flags_omode.intersects(Flags_fcntl::O_CREATE) {
         ip = create(
             path.as_mut_ptr(),
             T_FILE as i16,
@@ -377,8 +377,8 @@ pub unsafe extern "C" fn sys_open() -> u64 {
             return -(1 as i32) as u64;
         }
         ilock(ip);
-        flags_omode.setbits(omode);
-        if (*ip).typ as i32 == T_DIR && flags_omode != Flags::O_RDONLY {
+        flags_omode = Flags_fcntl::from_bits_truncate(omode);
+        if (*ip).typ as i32 == T_DIR && flags_omode != Flags_fcntl::O_RDONLY {
             iunlockput(ip);
             end_op();
             return -(1 as i32) as u64;
@@ -411,10 +411,10 @@ pub unsafe extern "C" fn sys_open() -> u64 {
         (*f).off = 0 as i32 as u32
     }
     (*f).ip = ip;
-    flags_omode.setbits(omode);
-    (*f).readable = (!flags_omode.intersects(Flags::O_WRONLY)) as i32 as libc::c_char;
-    (*f).writable = (flags_omode.intersects(Flags::O_WRONLY)
-        || flags_omode.intersects(Flags::O_RDWR)) as i32 as libc::c_char;
+    flags_omode = Flags_fcntl::from_bits_truncate(omode);
+    (*f).readable = (!flags_omode.intersects(Flags_fcntl::O_WRONLY)) as i32 as libc::c_char;
+    (*f).writable = (flags_omode.intersects(Flags_fcntl::O_WRONLY)
+        || flags_omode.intersects(Flags_fcntl::O_RDWR)) as i32 as libc::c_char;
     iunlock(ip);
     end_op();
     fd as u64
