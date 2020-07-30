@@ -1,6 +1,7 @@
 use crate::libc;
 use crate::{
     buf::Buf,
+    param::NBUF,
     printf::panic,
     proc::cpu,
     sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock},
@@ -29,18 +30,6 @@ pub struct Bcache {
     pub buf: [Buf; 30],
     pub head: Buf,
 }
-// maximum number of processes
-// maximum number of CPUs
-// open files per process
-// open files per system
-// maximum number of active i-nodes
-// maximum major device number
-// device number of file system root disk
-// max exec arguments
-pub const MAXOPBLOCKS: libc::c_int = 10 as libc::c_int; // Not change in # 26
-                                                        // max # of blocks any FS op writes
-                                                        // max data blocks in on-disk log
-pub const NBUF: libc::c_int = MAXOPBLOCKS * 3 as libc::c_int;
 #[no_mangle]
 pub static mut bcache: Bcache = Bcache {
     lock: Spinlock {

@@ -1,11 +1,12 @@
+use crate::libc;
 use crate::{
-    libc,
+    memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     plic::{plic_claim, plic_complete},
     printf::{panic, printf},
-    proc::{cpu, cpuid, exit, myproc, proc_0, wakeup, yield_0},
+    proc::{cpu, cpuid, exit, myproc, proc_0, wakeup, yield_0, RUNNING},
     riscv::{
         intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_sstatus, r_stval, r_tp,
-        w_sepc, w_sip, w_sstatus, w_stvec, MAXVA, PGSIZE, SATP_SV39, SSTATUS_SPIE, SSTATUS_SPP,
+        w_sepc, w_sip, w_sstatus, w_stvec, PGSIZE, SATP_SV39, SSTATUS_SPIE, SSTATUS_SPP,
     },
     spinlock::{acquire, initlock, release, Spinlock},
     syscall::syscall,
@@ -24,55 +25,6 @@ extern "C" {
     #[no_mangle]
     fn kernelvec();
 }
-pub type pagetable_t = *mut u64;
-pub type procstate = u32;
-pub const ZOMBIE: procstate = 4;
-pub const RUNNING: procstate = 3;
-pub const RUNNABLE: procstate = 2;
-pub const SLEEPING: procstate = 1;
-pub const UNUSED: procstate = 0;
-// Physical memory layout
-// qemu -machine virt is set up like this,
-// based on qemu's hw/riscv/virt.c:
-//
-// 00001000 -- boot ROM, provided by qemu
-// 02000000 -- CLINT
-// 0C000000 -- PLIC
-// 10000000 -- uart0
-// 10001000 -- virtio disk
-// 80000000 -- boot ROM jumps here in machine mode
-//             -kernel loads the kernel here
-// unused RAM after 80000000.
-// the kernel uses physical memory thus:
-// 80000000 -- entry.S, then kernel text and data
-// end -- start of kernel page allocation area
-// PHYSTOP -- end RAM used by the kernel
-// qemu puts UART registers here in physical memory.
-pub const UART0_IRQ: i32 = 10;
-// virtio mmio interface
-pub const VIRTIO0_IRQ: i32 = 1;
-// local interrupt controller, which contains the timer.
-// cycles since boot.
-// qemu puts programmable interrupt controller here.
-// the kernel expects there to be RAM
-// for use by the kernel and user pages
-// from physical address 0x80000000 to PHYSTOP.
-// map the trampoline page to the highest address,
-// in both user and kernel space.
-pub const TRAMPOLINE: i64 = MAXVA - PGSIZE as i64;
-// map kernel stacks beneath the trampoline,
-// each surrounded by invalid guard pages.
-// User memory layout.
-// Address zero first:
-//   text
-//   original data and bss
-//   fixed-size stack
-//   expandable heap
-//   ...
-//   TRAPFRAME (p->tf, used by the trampoline)
-//   TRAMPOLINE (the same page as in the kernel)
-pub const TRAPFRAME: i64 = TRAMPOLINE - PGSIZE as i64;
-
 #[no_mangle]
 pub static mut tickslock: Spinlock = Spinlock {
     locked: 0,

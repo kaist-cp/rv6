@@ -7,7 +7,6 @@ use crate::{
     sysproc::*,
     vm::{copyin, copyinstr},
 };
-pub type pagetable_t = *mut u64;
 /// Fetch the u64 at addr from the current process.
 #[no_mangle]
 pub unsafe extern "C" fn fetchaddr(mut addr: u64, mut ip: *mut u64) -> i32 {

@@ -1,7 +1,8 @@
 use crate::libc;
 use crate::{
-    fs::{ilock, iput, iunlock, readi, stati, writei},
+    fs::{ilock, iput, iunlock, readi, stati, writei, BSIZE},
     log::{begin_op, end_op},
+    param::{MAXOPBLOCKS, NDEV, NFILE},
     pipe::{pipeclose, piperead, pipewrite, Pipe},
     printf::panic,
     proc::{myproc, proc_0},
@@ -11,12 +12,11 @@ use crate::{
     vm::copyout,
 };
 use core::ptr;
-pub type uint = libc::c_uint;
-pub type pagetable_t = *mut u64;
+pub const CONSOLE: isize = 1;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct File {
-    pub type_0: C2RustUnnamed,
+    pub typ: C2RustUnnamed,
     pub ref_0: i32,
     pub readable: libc::c_char,
     pub writable: libc::c_char,
@@ -35,7 +35,7 @@ pub struct inode {
     pub ref_0: i32,
     pub lock: Sleeplock,
     pub valid: i32,
-    pub type_0: i16,
+    pub typ: i16,
     pub major: i16,
     pub minor: i16,
     pub nlink: i16,
@@ -60,24 +60,9 @@ pub struct devsw {
     pub read: Option<unsafe extern "C" fn(_: i32, _: u64, _: i32) -> i32>,
     pub write: Option<unsafe extern "C" fn(_: i32, _: u64, _: i32) -> i32>,
 }
-// maximum number of processes
-// maximum number of CPUs
-// open files per process
-pub const NFILE: i32 = 100;
-// open files per system
-// maximum number of active i-nodes
-pub const NDEV: i32 = 10;
-// maximum major device number
-// device number of file system root disk
-// max exec arguments
-pub const MAXOPBLOCKS: i32 = 10;
-// On-disk file system format.
-// Both the kernel and user programs use this header file.
-// root i-number
-pub const BSIZE: i32 = 1024;
-// //
-// Support functions for system calls that involve file descriptors.
-//
+///
+/// Support functions for system calls that involve file descriptors.
+///
 #[no_mangle]
 pub static mut devsw: [devsw; 10] = [devsw {
     read: None,
@@ -91,7 +76,7 @@ pub static mut ftable: Ftable = Ftable {
         cpu: ptr::null_mut(),
     },
     file: [File {
-        type_0: FD_NONE,
+        typ: FD_NONE,
         ref_0: 0,
         readable: 0,
         writable: 0,
@@ -140,7 +125,7 @@ pub unsafe extern "C" fn filedup(mut f: *mut File) -> *mut File {
 #[no_mangle]
 pub unsafe extern "C" fn fileclose(mut f: *mut File) {
     let mut ff: File = File {
-        type_0: FD_NONE,
+        typ: FD_NONE,
         ref_0: 0,
         readable: 0,
         writable: 0,
@@ -160,13 +145,11 @@ pub unsafe extern "C" fn fileclose(mut f: *mut File) {
     }
     ff = *f;
     (*f).ref_0 = 0 as i32;
-    (*f).type_0 = FD_NONE;
+    (*f).typ = FD_NONE;
     release(&mut ftable.lock);
-    if ff.type_0 as u32 == FD_PIPE as i32 as u32 {
+    if ff.typ as u32 == FD_PIPE as i32 as u32 {
         pipeclose(ff.pipe, ff.writable as i32);
-    } else if ff.type_0 as u32 == FD_INODE as i32 as u32
-        || ff.type_0 as u32 == FD_DEVICE as i32 as u32
-    {
+    } else if ff.typ as u32 == FD_INODE as i32 as u32 || ff.typ as u32 == FD_DEVICE as i32 as u32 {
         begin_op();
         iput(ff.ip);
         end_op();
@@ -180,12 +163,11 @@ pub unsafe extern "C" fn filestat(mut f: *mut File, mut addr: u64) -> i32 {
     let mut st: Stat = Stat {
         dev: 0,
         ino: 0,
-        type_0: 0,
+        typ: 0,
         nlink: 0,
         size: 0,
     };
-    if (*f).type_0 as u32 == FD_INODE as i32 as u32 || (*f).type_0 as u32 == FD_DEVICE as i32 as u32
-    {
+    if (*f).typ as u32 == FD_INODE as i32 as u32 || (*f).typ as u32 == FD_DEVICE as i32 as u32 {
         ilock((*f).ip);
         stati((*f).ip, &mut st);
         iunlock((*f).ip);
@@ -210,9 +192,9 @@ pub unsafe extern "C" fn fileread(mut f: *mut File, mut addr: u64, mut n: i32) -
     if (*f).readable as i32 == 0 as i32 {
         return -(1 as i32);
     }
-    if (*f).type_0 as u32 == FD_PIPE as i32 as u32 {
+    if (*f).typ as u32 == FD_PIPE as i32 as u32 {
         r = piperead((*f).pipe, addr, n)
-    } else if (*f).type_0 as u32 == FD_DEVICE as i32 as u32 {
+    } else if (*f).typ as u32 == FD_DEVICE as i32 as u32 {
         if ((*f).major as i32) < 0 as i32
             || (*f).major as i32 >= NDEV
             || devsw[(*f).major as usize].read.is_none()
@@ -222,7 +204,7 @@ pub unsafe extern "C" fn fileread(mut f: *mut File, mut addr: u64, mut n: i32) -
         r = devsw[(*f).major as usize]
             .read
             .expect("non-null function pointer")(1 as i32, addr, n)
-    } else if (*f).type_0 as u32 == FD_INODE as i32 as u32 {
+    } else if (*f).typ as u32 == FD_INODE as i32 as u32 {
         ilock((*f).ip);
         r = readi((*f).ip, 1 as i32, addr, (*f).off, n as u32);
         if r > 0 as i32 {
@@ -243,9 +225,9 @@ pub unsafe extern "C" fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) 
     if (*f).writable as i32 == 0 as i32 {
         return -1;
     }
-    if (*f).type_0 as u32 == FD_PIPE as i32 as u32 {
+    if (*f).typ as u32 == FD_PIPE as i32 as u32 {
         ret = pipewrite((*f).pipe, addr, n)
-    } else if (*f).type_0 as u32 == FD_DEVICE as i32 as u32 {
+    } else if (*f).typ as u32 == FD_DEVICE as i32 as u32 {
         if ((*f).major as i32) < 0 as i32
             || (*f).major as i32 >= NDEV
             || devsw[(*f).major as usize].write.is_none()
@@ -255,7 +237,7 @@ pub unsafe extern "C" fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) 
         ret = devsw[(*f).major as usize]
             .write
             .expect("non-null function pointer")(1 as i32, addr, n)
-    } else if (*f).type_0 as u32 == FD_INODE as i32 as u32 {
+    } else if (*f).typ as u32 == FD_INODE as i32 as u32 {
         // write a few blocks at a time to avoid exceeding
         // the maximum log transaction size, including
         // i-node, indirect block, allocation blocks,

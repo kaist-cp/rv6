@@ -5,7 +5,6 @@ use crate::{
     syscall::{argaddr, argint},
     trap::{ticks, tickslock},
 };
-pub type pagetable_t = *mut u64;
 #[no_mangle]
 pub unsafe extern "C" fn sys_exit() -> u64 {
     let mut n: i32 = 0;

@@ -1,12 +1,14 @@
 use crate::libc;
 use crate::{
     kalloc::{kalloc, kfree},
+    memlayout::{CLINT, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     printf::{panic, printf},
     riscv::{
         pagetable_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W,
         PTE_X, PXMASK, SATP_SV39,
     },
     string::{memmove, memset},
+    types::pde_t,
 };
 use core::ptr;
 extern "C" {
@@ -17,47 +19,12 @@ extern "C" {
     #[no_mangle]
     static mut trampoline: [libc::c_char; 0];
 }
-pub type pde_t = u64;
-// Physical memory layout
-// qemu -machine virt is set up like this,
-// based on qemu's hw/riscv/virt.c:
-//
-// 00001000 -- boot ROM, provided by qemu
-// 02000000 -- CLINT
-// 0C000000 -- PLIC
-// 10000000 -- uart0
-// 10001000 -- virtio disk
-// 80000000 -- boot ROM jumps here in machine mode
-//             -kernel loads the kernel here
-// unused RAM after 80000000.
-// the kernel uses physical memory thus:
-// 80000000 -- entry.S, then kernel text and data
-// end -- start of kernel page allocation area
-// PHYSTOP -- end RAM used by the kernel
-// qemu puts UART registers here in physical memory.
-pub const UART0: i64 = 0x10000000;
-// virtio mmio interface
-pub const VIRTIO0: i32 = 0x10001000;
-// local interrupt controller, which contains the timer.
-pub const CLINT: i64 = 0x2000000;
-// cycles since boot.
-// qemu puts programmable interrupt controller here.
-pub const PLIC: i64 = 0xc000000;
-// the kernel expects there to be RAM
-// for use by the kernel and user pages
-// from physical address 0x80000000 to PHYSTOP.
-pub const KERNBASE: i64 = 0x80000000;
-pub const PHYSTOP: i64 = KERNBASE + (128 as i32 * 1024 as i32 * 1024 as i32) as i64;
-// map the trampoline page to the highest address,
-// in both user and kernel space.
-pub const TRAMPOLINE: i64 = MAXVA - PGSIZE as i64;
 /*
  * the kernel's page table.
  */
 #[no_mangle]
 pub static mut kernel_pagetable: pagetable_t = 0 as *const u64 as *mut u64;
 // trampoline.S
-
 /// create a direct-map page table for the kernel and
 /// turn on paging. called early, in supervisor mode.
 /// the page allocator is already initialized.
@@ -363,10 +330,10 @@ pub unsafe extern "C" fn uvmalloc(
     }
     newsz
 }
-// Deallocate user pages to bring the process size from oldsz to
-// newsz.  oldsz and newsz need not be page-aligned, nor does newsz
-// need to be less than oldsz.  oldsz can be larger than the actual
-// process size.  Returns the new process size.
+/// Deallocate user pages to bring the process size from oldsz to
+/// newsz.  oldsz and newsz need not be page-aligned, nor does newsz
+/// need to be less than oldsz.  oldsz can be larger than the actual
+/// process size.  Returns the new process size.
 #[no_mangle]
 pub unsafe extern "C" fn uvmdealloc(
     mut pagetable: pagetable_t,

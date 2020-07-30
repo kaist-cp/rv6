@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    file::devsw,
+    file::{devsw, CONSOLE},
     proc::{cpu, either_copyin, either_copyout, myproc, procdump, sleep, wakeup},
     spinlock::{acquire, initlock, release, Spinlock},
     uart::{uartinit, uartputc},
@@ -14,17 +14,17 @@ pub struct Console {
     pub w: u32,
     pub e: u32,
 }
-pub const CONSOLE: isize = 1;
-//
-// Console input and output, to the uart.
-// Reads are line at a time.
-// Implements special input characters:
-//   newline -- end of line
-//   control-h -- backspace
-//   control-u -- kill line
-//   control-d -- end of file
-//   control-p -- print process list
-//
+
+///
+/// Console input and output, to the uart.
+/// Reads are line at a time.
+/// Implements special input characters:
+///   newline -- end of line
+///   control-h -- backspace
+///   control-u -- kill line
+///   control-d -- end of file
+///   control-p -- print process list
+///
 pub const BACKSPACE: i32 = 0x100;
 /// Control-x
 ///
@@ -49,7 +49,9 @@ pub unsafe extern "C" fn consputc(mut c: i32) {
     };
 }
 pub const INPUT_BUF: i32 = 128;
-// Edit index
+///
+/// Edit index
+///
 #[no_mangle]
 pub static mut cons: Console = Console {
     lock: Spinlock {
