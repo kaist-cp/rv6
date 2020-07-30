@@ -406,7 +406,6 @@ pub unsafe extern "C" fn sys_open() -> u64 {
     (*f).readable = (!omode.intersects(FcntlFlags::O_WRONLY)) as i32 as libc::c_char;
     (*f).writable =
         omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR) as i32 as libc::c_char;
-
     iunlock(ip);
     end_op();
     fd as u64
