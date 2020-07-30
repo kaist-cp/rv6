@@ -13,11 +13,10 @@ use crate::{
     string::{strncmp, strncpy},
 };
 use core::ptr;
-pub type C2RustUnnamed = libc::c_uint;
-pub const FD_DEVICE: C2RustUnnamed = 3;
-pub const FD_INODE: C2RustUnnamed = 2;
-pub const FD_PIPE: C2RustUnnamed = 1;
-pub const FD_NONE: C2RustUnnamed = 0;
+pub const FD_DEVICE: u32 = 3;
+pub const FD_INODE: u32 = 2;
+pub const FD_PIPE: u32 = 1;
+pub const FD_NONE: u32 = 0;
 
 /// block size
 /// Disk layout:
