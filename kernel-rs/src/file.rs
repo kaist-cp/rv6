@@ -16,7 +16,7 @@ pub const CONSOLE: isize = 1;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct File {
-    pub typ: C2RustUnnamed,
+    pub typ: u32,
     pub ref_0: i32,
     pub readable: libc::c_char,
     pub writable: libc::c_char,
@@ -42,11 +42,10 @@ pub struct inode {
     pub size: u32,
     pub addrs: [u32; 13],
 }
-pub type C2RustUnnamed = libc::c_uint;
-pub const FD_DEVICE: C2RustUnnamed = 3;
-pub const FD_INODE: C2RustUnnamed = 2;
-pub const FD_PIPE: C2RustUnnamed = 1;
-pub const FD_NONE: C2RustUnnamed = 0;
+pub const FD_DEVICE: u32 = 3;
+pub const FD_INODE: u32 = 2;
+pub const FD_PIPE: u32 = 1;
+pub const FD_NONE: u32 = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Ftable {
