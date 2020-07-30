@@ -357,10 +357,8 @@ pub unsafe extern "C" fn sys_open() -> u64 {
         return -(1 as i32) as u64;
     }
     begin_op();
-    let mut flags_omode = FcntlFlags::O_MODE;
-    flags_omode = FcntlFlags::from_bits_truncate(omode);
+    let mut flags_omode = FcntlFlags::from_bits_truncate(omode);
     if flags_omode.contains(FcntlFlags::O_CREATE) {
-
         ip = create(
             path.as_mut_ptr(),
             T_FILE as i16,
@@ -414,8 +412,8 @@ pub unsafe extern "C" fn sys_open() -> u64 {
     (*f).ip = ip;
     let omode_is_wronly = flags_omode.intersects(FcntlFlags::O_WRONLY);
     (*f).readable = (!omode_is_wronly) as i32 as libc::c_char;
-    (*f).writable = (omode_is_wronly
-        || flags_omode.intersects(FcntlFlags::O_RDWR)) as i32 as libc::c_char;
+    (*f).writable =
+        (omode_is_wronly || flags_omode.intersects(FcntlFlags::O_RDWR)) as i32 as libc::c_char;
     iunlock(ip);
     end_op();
     fd as u64
