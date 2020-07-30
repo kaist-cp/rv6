@@ -1,3 +1,9 @@
+/// Directory
+pub const T_DIR: i32 = 1;
+/// File
+pub const T_FILE: i32 = 2;
+/// Device
+pub const T_DEVICE: i32 = 3;
 #[derive(Copy, Clone)]
 pub struct Stat {
     /// File system's disk device
@@ -5,7 +11,7 @@ pub struct Stat {
     /// Inode number
     pub ino: u32,
     /// Type of file
-    pub type_0: i16,
+    pub typ: i16,
     /// Number of links to file
     pub nlink: i16,
     /// Size of file in bytes

@@ -4,8 +4,10 @@ use crate::{
     fs::{fsinit, idup, iput, namei},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
+    memlayout::{TRAMPOLINE, TRAPFRAME},
+    param::{NOFILE, NPROC, ROOTDEV},
     printf::{panic, printf},
-    riscv::{r_sstatus, w_sstatus, SSTATUS_SIE},
+    riscv::{intr_get, intr_on, pagetable_t, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
     spinlock::{acquire, holding, initlock, pop_off, push_off, release, Spinlock},
     string::safestrcpy,
     trap::usertrapret,
@@ -23,7 +25,6 @@ extern "C" {
     #[no_mangle]
     static mut trampoline: [libc::c_char; 0];
 }
-pub type pagetable_t = *mut u64;
 #[derive(Copy, Clone)]
 pub struct cpu {
     pub proc_0: *mut proc_0,
@@ -130,107 +131,6 @@ pub const RUNNING: procstate = 3;
 pub const RUNNABLE: procstate = 2;
 pub const SLEEPING: procstate = 1;
 pub const UNUSED: procstate = 0;
-pub const NPROC: i32 = 64 as i32;
-// maximum number of processes
-// maximum number of CPUs
-pub const NOFILE: i32 = 16 as i32;
-// open files per process
-// open files per system
-// maximum number of active i-nodes
-// maximum major device number
-pub const ROOTDEV: i32 = 1 as i32;
-// Physical memory layout
-// qemu -machine virt is set up like this,
-// based on qemu's hw/riscv/virt.c:
-//
-// 00001000 -- boot ROM, provided by qemu
-// 02000000 -- CLINT
-// 0C000000 -- PLIC
-// 10000000 -- uart0
-// 10001000 -- virtio disk
-// 80000000 -- boot ROM jumps here in machine mode
-//             -kernel loads the kernel here
-// unused RAM after 80000000.
-// the kernel uses physical memory thus:
-// 80000000 -- entry.S, then kernel text and data
-// end -- start of kernel page allocation area
-// PHYSTOP -- end RAM used by the kernel
-// qemu puts UART registers here in physical memory.
-// virtio mmio interface
-// local interrupt controller, which contains the timer.
-// cycles since boot.
-// qemu puts programmable interrupt controller here.
-// the kernel expects there to be RAM
-// for use by the kernel and user pages
-// from physical address 0x80000000 to PHYSTOP.
-// map the trampoline page to the highest address,
-// in both user and kernel space.
-pub const TRAMPOLINE: i64 = MAXVA - PGSIZE as i64;
-// map kernel stacks beneath the trampoline,
-// each surrounded by invalid guard pages.
-// User memory layout.
-// Address zero first:
-//   text
-//   original data and bss
-//   fixed-size stack
-//   expandable heap
-//   ...
-//   TRAPFRAME (p->tf, used by the trampoline)
-//   TRAMPOLINE (the same page as in the kernel)
-pub const TRAPFRAME: i64 = TRAMPOLINE - PGSIZE as i64;
-// Supervisor Interrupt Enable
-pub const SIE_SEIE: i64 = (1 as i64) << 9 as i32;
-// external
-pub const SIE_STIE: i64 = (1 as i64) << 5 as i32;
-// timer
-pub const SIE_SSIE: i64 = (1 as i64) << 1 as i32;
-/// software
-#[inline]
-unsafe extern "C" fn r_sie() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("csrr $0, sie" : "=r" (x) : : : "volatile");
-    x
-}
-#[inline]
-unsafe extern "C" fn w_sie(mut x: u64) {
-    llvm_asm!("csrw sie, $0" : : "r" (x) : : "volatile");
-}
-/// enable device interrupts
-#[inline]
-unsafe extern "C" fn intr_on() {
-    w_sie(r_sie() | SIE_SEIE as u64 | SIE_STIE as u64 | SIE_SSIE as u64);
-    w_sstatus(r_sstatus() | SSTATUS_SIE as u64);
-}
-/// are device interrupts enabled?
-#[inline]
-unsafe extern "C" fn intr_get() -> i32 {
-    let mut x: u64 = r_sstatus();
-    (x & SSTATUS_SIE as u64 != 0 as i32 as u64) as i32
-}
-/// read and write tp, the thread pointer, which holds
-/// this core's hartid (core number), the index into cpus[].
-#[inline]
-unsafe extern "C" fn r_tp() -> u64 {
-    let mut x: u64 = 0;
-    llvm_asm!("mv $0, tp" : "=r" (x) : : : "volatile");
-    x
-}
-pub const PGSIZE: i32 = 4096 as i32;
-// bytes per page
-// bits of offset within a page
-// valid
-pub const PTE_R: i64 = (1 as i64) << 1 as i32;
-pub const PTE_W: i64 = (1 as i64) << 2 as i32;
-pub const PTE_X: i64 = (1 as i64) << 3 as i32;
-// 1 -> user can access
-// shift a physical address to the right place for a PTE.
-// extract the three 9-bit page table indices from a virtual address.
-// 9 bits
-// one beyond the highest possible virtual address.
-// MAXVA is actually one bit less than the max allowed by
-// Sv39, to avoid having to sign-extend virtual addresses
-// that have the high bit set.
-pub const MAXVA: i64 = (1 as i64) << (9 as i32 + 9 as i32 + 9 as i32 + 12 as i32 - 1 as i32);
 #[no_mangle]
 pub static mut cpus: [cpu; 8] = [cpu {
     proc_0: ptr::null_mut(),

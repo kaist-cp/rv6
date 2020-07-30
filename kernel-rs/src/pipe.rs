@@ -7,14 +7,6 @@ use crate::{
     vm::{copyin, copyout},
 };
 use core::ptr;
-pub type pagetable_t = *mut u64;
-
-pub type procstate = u32;
-pub const ZOMBIE: procstate = 4;
-pub const RUNNING: procstate = 3;
-pub const RUNNABLE: procstate = 2;
-pub const SLEEPING: procstate = 1;
-pub const UNUSED: procstate = 0;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Pipe {
@@ -56,11 +48,11 @@ pub unsafe extern "C" fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut Fil
                 &mut (*pi).lock,
                 b"pipe\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
             );
-            (**f0).type_0 = FD_PIPE;
+            (**f0).typ = FD_PIPE;
             (**f0).readable = 1 as libc::c_char;
             (**f0).writable = 0 as libc::c_char;
             (**f0).pipe = pi;
-            (**f1).type_0 = FD_PIPE;
+            (**f1).typ = FD_PIPE;
             (**f1).readable = 0 as libc::c_char;
             (**f1).writable = 1 as libc::c_char;
             (**f1).pipe = pi;

@@ -1,6 +1,7 @@
 use crate::libc;
 use crate::{
     kernel_main::main_0,
+    memlayout::{CLINT, CLINT_MTIME},
     riscv::{
         r_mhartid, r_mie, r_mstatus, w_medeleg, w_mepc, w_mideleg, w_mie, w_mscratch, w_mstatus,
         w_mtvec, w_satp, w_tp, MIE_MTIE, MSTATUS_MIE, MSTATUS_MPP_MASK, MSTATUS_MPP_S,
@@ -11,33 +12,12 @@ extern "C" {
     #[no_mangle]
     fn timervec();
 }
-// Physical memory layout
-// qemu -machine virt is set up like this,
-// based on qemu's hw/riscv/virt.c:
-//
-// 00001000 -- boot ROM, provided by qemu
-// 02000000 -- CLINT
-// 0C000000 -- PLIC
-// 10000000 -- uart0
-// 10001000 -- virtio disk
-// 80000000 -- boot ROM jumps here in machine mode
-//             -kernel loads the kernel here
-// unused RAM after 80000000.
-// the kernel uses physical memory thus:
-// 80000000 -- entry.S, then kernel text and data
-// end -- start of kernel page allocation area
-// PHYSTOP -- end RAM used by the kernel
-// qemu puts UART registers here in physical memory.
-// virtio mmio interface
-// local interrupt controller, which contains the timer.
-pub const CLINT: i64 = 0x2000000;
-pub const CLINT_MTIME: i64 = CLINT + 0xbff8 as i32 as i64;
 /// entry.S needs one stack per CPU.
 #[repr(align(16))]
 pub struct Stack([libc::c_char; 32768]);
 #[no_mangle]
 pub static mut stack0: Stack = Stack([0; 32768]);
-// scratch area for timer interrupt, one per CPU.
+/// scratch area for timer interrupt, one per CPU.
 #[no_mangle]
 pub static mut mscratch0: [u64; 256] = [0; 256];
 /// entry.S jumps here in machine mode on stack0.

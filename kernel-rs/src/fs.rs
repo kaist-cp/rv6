@@ -4,15 +4,15 @@ use crate::{
     buf::Buf,
     file::inode,
     log::{initlog, log_write},
+    param::{NINODE, ROOTDEV},
     printf::panic,
     proc::{cpu, either_copyin, either_copyout, myproc},
     sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock},
     spinlock::{acquire, initlock, release, Spinlock},
-    stat::Stat,
+    stat::{Stat, T_DIR},
     string::{strncmp, strncpy},
 };
 use core::ptr;
-pub type pagetable_t = *mut u64;
 pub type C2RustUnnamed = libc::c_uint;
 pub const FD_DEVICE: C2RustUnnamed = 3;
 pub const FD_INODE: C2RustUnnamed = 2;
@@ -48,7 +48,7 @@ pub struct dirent {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct dinode {
-    pub type_0: i16,
+    pub typ: i16,
     pub major: i16,
     pub minor: i16,
     pub nlink: i16,
@@ -125,35 +125,24 @@ pub struct dinode {
 /// read or write that inode's ip->valid, ip->size, ip->type, &c.
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct C2RustUnnamed_0 {
+pub struct Icache {
     pub lock: Spinlock,
     pub inode: [inode; 50],
 }
-// maximum number of processes
-// maximum number of CPUs
-// open files per process
-// open files per system
-pub const NINODE: i32 = 50;
-// maximum number of active i-nodes
-// maximum major device number
-pub const ROOTDEV: i32 = 1;
-pub const T_DIR: i32 = 1;
-// On-disk file system format.
-// Both the kernel and user programs use this header file.
+/// On-disk file system format.
+/// Both the kernel and user programs use this header file.
+/// root i-number
 pub const ROOTINO: i32 = 1;
-// root i-number
+/// block size
 pub const BSIZE: i32 = 1024;
-// Block number of first free map block
 pub const FSMAGIC: i32 = 0x10203040;
 pub const NDIRECT: i32 = 12;
-// Block containing inode i
-// Bitmap bits per block
+/// Bitmap bits per block
 pub const BPB: i32 = BSIZE * 8;
-// Block of free map containing bit for block b
-// Directory is a file containing a sequence of dirent structures.
+/// Directory is a file containing a sequence of dirent structures.
 pub const DIRSIZ: i32 = 14;
-// there should be one superblock per disk device, but we run with
-// only one device
+/// there should be one superblock per disk device, but we run with
+/// only one device
 #[no_mangle]
 pub static mut sb: superblock = superblock {
     magic: 0,
@@ -242,7 +231,7 @@ unsafe extern "C" fn bfree(mut dev: i32, mut b: u32) {
     brelse(bp);
 }
 #[no_mangle]
-pub static mut icache: C2RustUnnamed_0 = C2RustUnnamed_0 {
+pub static mut icache: Icache = Icache {
     lock: Spinlock {
         locked: 0,
         name: 0 as *const libc::c_char as *mut libc::c_char,
@@ -263,7 +252,7 @@ pub static mut icache: C2RustUnnamed_0 = C2RustUnnamed_0 {
             pid: 0,
         },
         valid: 0,
-        type_0: 0,
+        typ: 0,
         major: 0,
         minor: 0,
         nlink: 0,
@@ -290,7 +279,7 @@ pub unsafe extern "C" fn iinit() {
 /// Mark it as allocated by  giving it type type.
 /// Returns an unlocked but allocated and referenced inode.
 #[no_mangle]
-pub unsafe extern "C" fn ialloc(mut dev: u32, mut type_0: i16) -> *mut inode {
+pub unsafe extern "C" fn ialloc(mut dev: u32, mut typ: i16) -> *mut inode {
     let mut inum: i32 = 1;
     let mut bp: *mut Buf = ptr::null_mut();
     let mut dip: *mut dinode = ptr::null_mut();
@@ -306,10 +295,10 @@ pub unsafe extern "C" fn ialloc(mut dev: u32, mut type_0: i16) -> *mut inode {
                 .wrapping_rem((BSIZE as u64).wrapping_div(::core::mem::size_of::<dinode>() as u64))
                 as isize,
         );
-        if (*dip).type_0 as i32 == 0 as i32 {
+        if (*dip).typ as i32 == 0 as i32 {
             // a free inode
             ptr::write_bytes(dip, 0, 1); // mark it allocated on the disk
-            (*dip).type_0 = type_0;
+            (*dip).typ = typ;
             log_write(bp);
             brelse(bp);
             return iget(dev, inum as u32);
@@ -338,7 +327,7 @@ pub unsafe extern "C" fn iupdate(mut ip: *mut inode) {
             .wrapping_rem((BSIZE as u64).wrapping_div(::core::mem::size_of::<dinode>() as u64))
             as isize,
     );
-    (*dip).type_0 = (*ip).type_0;
+    (*dip).typ = (*ip).typ;
     (*dip).major = (*ip).major;
     (*dip).minor = (*ip).minor;
     (*dip).nlink = (*ip).nlink;
@@ -416,7 +405,7 @@ pub unsafe extern "C" fn ilock(mut ip: *mut inode) {
                 .wrapping_rem((BSIZE as u64).wrapping_div(::core::mem::size_of::<dinode>() as u64))
                 as isize,
         );
-        (*ip).type_0 = (*dip).type_0;
+        (*ip).typ = (*dip).typ;
         (*ip).major = (*dip).major;
         (*ip).minor = (*dip).minor;
         (*ip).nlink = (*dip).nlink;
@@ -428,7 +417,7 @@ pub unsafe extern "C" fn ilock(mut ip: *mut inode) {
         );
         brelse(bp);
         (*ip).valid = 1 as i32;
-        if (*ip).type_0 as i32 == 0 as i32 {
+        if (*ip).typ as i32 == 0 as i32 {
             panic(b"ilock: no type\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
     };
@@ -458,7 +447,7 @@ pub unsafe extern "C" fn iput(mut ip: *mut inode) {
         acquiresleep(&mut (*ip).lock);
         release(&mut icache.lock);
         itrunc(ip);
-        (*ip).type_0 = 0 as i32 as i16;
+        (*ip).typ = 0 as i32 as i16;
         iupdate(ip);
         (*ip).valid = 0 as i32;
         releasesleep(&mut (*ip).lock);
@@ -564,7 +553,7 @@ unsafe extern "C" fn itrunc(mut ip: *mut inode) {
 pub unsafe extern "C" fn stati(mut ip: *mut inode, mut st: *mut Stat) {
     (*st).dev = (*ip).dev as i32;
     (*st).ino = (*ip).inum;
-    (*st).type_0 = (*ip).type_0;
+    (*st).typ = (*ip).typ;
     (*st).nlink = (*ip).nlink;
     (*st).size = (*ip).size as u64;
 }
@@ -705,7 +694,7 @@ pub unsafe extern "C" fn dirlookup(
         inum: 0,
         name: [0; 14],
     };
-    if (*dp).type_0 as i32 != T_DIR {
+    if (*dp).typ as i32 != T_DIR {
         panic(b"dirlookup not DIR\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     off = 0 as i32 as u32;
@@ -857,7 +846,7 @@ unsafe extern "C" fn namex(
             break;
         }
         ilock(ip);
-        if (*ip).type_0 as i32 != T_DIR {
+        if (*ip).typ as i32 != T_DIR {
             iunlockput(ip);
             return ptr::null_mut();
         }

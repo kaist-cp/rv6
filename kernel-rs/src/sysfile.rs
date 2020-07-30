@@ -1,5 +1,7 @@
+use crate::libc;
 use crate::{
     exec::exec,
+    fcntl::{O_CREATE, O_RDONLY, O_RDWR, O_WRONLY},
     file::{filealloc, fileclose, filedup, fileread, filestat, filewrite},
     file::{inode, File},
     fs::dirent,
@@ -8,46 +10,22 @@ use crate::{
         nameiparent, readi, writei,
     },
     kalloc::{kalloc, kfree},
-    libc,
     log::{begin_op, end_op},
+    param::{MAXPATH, NDEV, NOFILE},
     pipe::pipealloc,
     printf::panic,
     proc::{myproc, proc_0},
     riscv::PGSIZE,
+    stat::{T_DEVICE, T_DIR, T_FILE},
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
     vm::copyout,
 };
 use core::ptr;
-pub type pagetable_t = *mut u64;
 pub type C2RustUnnamed = libc::c_uint;
 pub const FD_DEVICE: C2RustUnnamed = 3;
 pub const FD_INODE: C2RustUnnamed = 2;
 pub const FD_PIPE: C2RustUnnamed = 1;
 pub const FD_NONE: C2RustUnnamed = 0;
-// maximum number of processes
-// maximum number of CPUs
-pub const NOFILE: i32 = 16;
-// open files per process
-// open files per system
-// maximum number of active i-nodes
-pub const NDEV: i32 = 10;
-// maximum major device number
-// device number of file system root disk
-// max exec arguments
-// max # of blocks any FS op writes
-// max data blocks in on-disk log
-// size of disk block cache
-// size of file system in blocks
-pub const MAXPATH: i32 = 128;
-pub const T_DIR: i32 = 1;
-// Directory
-pub const T_FILE: i32 = 2;
-// File
-pub const T_DEVICE: i32 = 3;
-pub const O_RDONLY: i32 = 0;
-pub const O_WRONLY: i32 = 0x1;
-pub const O_RDWR: i32 = 0x2;
-pub const O_CREATE: i32 = 0x200;
 
 /// File-system system calls.
 /// Mostly argument checking, since we don't trust
@@ -171,7 +149,7 @@ pub unsafe extern "C" fn sys_link() -> u64 {
         return -(1 as i32) as u64;
     }
     ilock(ip);
-    if (*ip).type_0 as i32 == T_DIR {
+    if (*ip).typ as i32 == T_DIR {
         iunlockput(ip);
         end_op();
         return -(1 as i32) as u64;
@@ -267,7 +245,7 @@ pub unsafe extern "C" fn sys_unlink() -> u64 {
                         as *mut libc::c_char,
                 );
             }
-            if (*ip).type_0 as i32 == T_DIR && isdirempty(ip) == 0 {
+            if (*ip).typ as i32 == T_DIR && isdirempty(ip) == 0 {
                 iunlockput(ip);
             } else {
                 ptr::write_bytes(&mut de as *mut dirent, 0, 1);
@@ -285,7 +263,7 @@ pub unsafe extern "C" fn sys_unlink() -> u64 {
                             as *mut libc::c_char,
                     );
                 }
-                if (*ip).type_0 as i32 == T_DIR {
+                if (*ip).typ as i32 == T_DIR {
                     (*dp).nlink -= 1;
                     iupdate(dp);
                 }
@@ -304,7 +282,7 @@ pub unsafe extern "C" fn sys_unlink() -> u64 {
 }
 unsafe extern "C" fn create(
     mut path: *mut libc::c_char,
-    mut type_0: i16,
+    mut typ: i16,
     mut major: i16,
     mut minor: i16,
 ) -> *mut inode {
@@ -320,15 +298,13 @@ unsafe extern "C" fn create(
     if !ip.is_null() {
         iunlockput(dp);
         ilock(ip);
-        if type_0 as i32 == T_FILE
-            && ((*ip).type_0 as i32 == T_FILE || (*ip).type_0 as i32 == T_DEVICE)
-        {
+        if typ as i32 == T_FILE && ((*ip).typ as i32 == T_FILE || (*ip).typ as i32 == T_DEVICE) {
             return ip;
         }
         iunlockput(ip);
         return ptr::null_mut();
     }
-    ip = ialloc((*dp).dev, type_0);
+    ip = ialloc((*dp).dev, typ);
     if ip.is_null() {
         panic(b"create: ialloc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
@@ -337,7 +313,7 @@ unsafe extern "C" fn create(
     (*ip).minor = minor;
     (*ip).nlink = 1 as i16;
     iupdate(ip);
-    if type_0 as i32 == T_DIR {
+    if typ as i32 == T_DIR {
         // Create . and .. entries.
         (*dp).nlink += 1; // for ".."
         iupdate(dp);
@@ -394,13 +370,13 @@ pub unsafe extern "C" fn sys_open() -> u64 {
             return -(1 as i32) as u64;
         }
         ilock(ip);
-        if (*ip).type_0 as i32 == T_DIR && omode != O_RDONLY {
+        if (*ip).typ as i32 == T_DIR && omode != O_RDONLY {
             iunlockput(ip);
             end_op();
             return -(1 as i32) as u64;
         }
     }
-    if (*ip).type_0 as i32 == T_DEVICE
+    if (*ip).typ as i32 == T_DEVICE
         && (((*ip).major as i32) < 0 as i32 || (*ip).major as i32 >= NDEV)
     {
         iunlockput(ip);
@@ -419,11 +395,11 @@ pub unsafe extern "C" fn sys_open() -> u64 {
         end_op();
         return -(1 as i32) as u64;
     }
-    if (*ip).type_0 as i32 == T_DEVICE {
-        (*f).type_0 = FD_DEVICE;
+    if (*ip).typ as i32 == T_DEVICE {
+        (*f).typ = FD_DEVICE;
         (*f).major = (*ip).major
     } else {
-        (*f).type_0 = FD_INODE;
+        (*f).typ = FD_INODE;
         (*f).off = 0 as i32 as u32
     }
     (*f).ip = ip;
@@ -495,7 +471,7 @@ pub unsafe extern "C" fn sys_chdir() -> u64 {
         return -(1 as i32) as u64;
     }
     ilock(ip);
-    if (*ip).type_0 as i32 != T_DIR {
+    if (*ip).typ as i32 != T_DIR {
         iunlockput(ip);
         end_op();
         return -(1 as i32) as u64;

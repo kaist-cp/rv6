@@ -18,7 +18,7 @@ pub type va_list = __builtin_va_list;
 
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct C2RustUnnamed_0 {
+pub struct PrintfLock {
     pub lock: Spinlock,
     pub locking: i32,
 }
@@ -27,7 +27,7 @@ pub struct C2RustUnnamed_0 {
 ///
 #[no_mangle]
 pub static mut panicked: i32 = 0;
-static mut pr: C2RustUnnamed_0 = C2RustUnnamed_0 {
+static mut pr: PrintfLock = PrintfLock {
     lock: Spinlock {
         locked: 0,
         name: 0 as *const libc::c_char as *mut libc::c_char,

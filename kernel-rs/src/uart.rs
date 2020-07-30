@@ -1,25 +1,6 @@
 use crate::console::consoleintr;
-use crate::libc;
+use crate::memlayout::UART0;
 use core::ptr;
-// Physical memory layout
-// qemu -machine virt is set up like this,
-// based on qemu's hw/riscv/virt.c:
-//
-// 00001000 -- boot ROM, provided by qemu
-// 02000000 -- CLINT
-// 0C000000 -- PLIC
-// 10000000 -- uart0
-// 10001000 -- virtio disk
-// 80000000 -- boot ROM jumps here in machine mode
-//             -kernel loads the kernel here
-// unused RAM after 80000000.
-// the kernel uses physical memory thus:
-// 80000000 -- entry.S, then kernel text and data
-// end -- start of kernel page allocation area
-// PHYSTOP -- end RAM used by the kernel
-// qemu puts UART registers here in physical memory.
-pub const UART0: i64 = 0x10000000;
-
 /// low-level driver routines for 16550a UART.
 
 /// the UART control registers are memory-mapped
@@ -39,20 +20,20 @@ pub const UART0: i64 = 0x10000000;
 #[no_mangle]
 pub unsafe extern "C" fn uartinit() {
     // disable interrupts.
-    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0 as libc::c_int as u8);
+    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0);
     // special mode to set baud rate.
-    ptr::write_volatile((UART0 + 3 as i64) as *mut u8, 0x80 as libc::c_int as u8);
+    ptr::write_volatile((UART0 + 3 as i64) as *mut u8, 0x80);
     // LSB for baud rate of 38.4K.
-    ptr::write_volatile((UART0 + 0 as i64) as *mut u8, 0x3 as libc::c_int as u8);
+    ptr::write_volatile((UART0 + 0 as i64) as *mut u8, 0x3);
     // MSB for baud rate of 38.4K.
-    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0 as libc::c_int as u8);
+    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0);
     // leave set-baud mode,
     // and set word length to 8 bits, no parity.
-    ptr::write_volatile((UART0 + 3 as i64) as *mut u8, 0x3 as libc::c_int as u8);
+    ptr::write_volatile((UART0 + 3 as i64) as *mut u8, 0x3);
     // reset and enable FIFOs.
-    ptr::write_volatile((UART0 + 2 as i64) as *mut u8, 0x7 as libc::c_int as u8);
+    ptr::write_volatile((UART0 + 2 as i64) as *mut u8, 0x7);
     // enable receive interrupts.
-    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0x1 as libc::c_int as u8);
+    ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0x1);
 }
 /// write one output character to the UART.
 #[no_mangle]

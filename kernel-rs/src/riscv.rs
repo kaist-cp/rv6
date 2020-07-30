@@ -269,9 +269,9 @@ pub unsafe fn sfence_vma() {
     llvm_asm!("sfence.vma zero, zero" : : : : "volatile");
 }
 
-// bytes per page
+/// bytes per page
 pub const PGSIZE: i32 = 4096 as i32;
-// bits of offset within a page
+/// bits of offset within a page
 pub const PGSHIFT: i32 = 12 as i32;
 
 /*
@@ -279,25 +279,25 @@ TODO: used directly in oter function e.g., uvmalloc in vm.rs
 #define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
 #define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1))
 */
-// valid
+/// valid
 pub const PTE_V: i64 = (1 as i64) << 0 as i32;
 pub const PTE_R: i64 = (1 as i64) << 1 as i32;
 pub const PTE_W: i64 = (1 as i64) << 2 as i32;
 pub const PTE_X: i64 = (1 as i64) << 3 as i32;
-// 1 -> user can access
+/// 1 -> user can access
 pub const PTE_U: i64 = (1 as i64) << 4 as i32;
 
 /*
 TODO: used directly in other file e.g., vm.rs
-// shift a physical address to the right place for a PTE.
+/// shift a physical address to the right place for a PTE.
 #define PA2PTE(pa) ((((u64)pa) >> 12) << 10)
 
 #define PTE2PA(pte) (((pte) >> 10) << 12)
 
 #define PTE_FLAGS(pte) ((pte) & 0x3FF)
 */
-// extract the three 9-bit page table indices from a virtual address.
-// 9 bits
+/// extract the three 9-bit page table indices from a virtual address.
+/// 9 bits
 pub const PXMASK: i32 = 0x1ff as i32;
 
 /*
@@ -307,10 +307,10 @@ TODO: used directly in vm.rs
 #define PX(level, va) ((((u64) (va)) >> PXSHIFT(level)) & PXMASK)
 */
 
-// one beyond the highest possible virtual address.
-// MAXVA is actually one bit less than the max allowed by
-// Sv39, to avoid having to sign-extend virtual addresses
-// that have the high bit set.
+/// one beyond the highest possible virtual address.
+/// MAXVA is actually one bit less than the max allowed by
+/// Sv39, to avoid having to sign-extend virtual addresses
+/// that have the high bit set.
 pub const MAXVA: i64 = (1 as i64) << (9 as i32 + 9 as i32 + 9 as i32 + 12 as i32 - 1 as i32);
 
 pub type pte_t = u64;

@@ -34,13 +34,17 @@ mod libc {
 mod bio;
 mod buf;
 mod console;
+mod elf;
 mod exec;
+mod fcntl;
 mod file;
 mod fs;
 mod kalloc;
 mod kernel_main;
 mod log;
+mod memlayout;
 mod panic;
+mod param;
 mod pipe;
 mod plic;
 mod printf;
@@ -55,8 +59,10 @@ mod syscall;
 mod sysfile;
 mod sysproc;
 mod trap;
+mod types;
 mod uart;
 mod utils;
+mod virtio;
 mod virtio_disk;
 mod vm;
 
