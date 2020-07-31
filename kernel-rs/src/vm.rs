@@ -4,8 +4,8 @@ use crate::{
     memlayout::{CLINT, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     printf::{panic, printf},
     riscv::{
-        pagetable_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W,
-        PTE_X, PXMASK, make_satp
+        make_satp, pagetable_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U,
+        PTE_V, PTE_W, PTE_X, PXMASK,
     },
     types::pde_t,
 };

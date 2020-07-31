@@ -15,19 +15,19 @@ const fn reg(r: i32) -> *mut u8 {
 /// address of one of the registers.
 
 /// receive holding register (for input bytes)
-const RHR:i32 = 0; 
+const RHR: i32 = 0;
 /// transmit holding register (for output bytes)
-const THR:i32 = 0; 
+const THR: i32 = 0;
 /// interrupt enable register
-const IER:i32 = 1; 
+const IER: i32 = 1;
 /// FIFO control register
-const FCR:i32 = 2; 
+const FCR: i32 = 2;
 /// interrupt status register
-const ISR:i32 = 2; 
+const ISR: i32 = 2;
 /// line control register
-const LCR:i32 = 3; 
+const LCR: i32 = 3;
 /// line status register
-const LSR:i32 = 5; 
+const LSR: i32 = 5;
 
 const fn readreg(r: i32) -> *mut u8 {
     reg(r) as *mut u8
@@ -49,28 +49,26 @@ unsafe fn writereg(r: i32, v: i32) {
 #[no_mangle]
 pub unsafe extern "C" fn uartinit() {
     // disable interrupts.
-    writereg(IER,0x00);
+    writereg(IER, 0x00);
     // special mode to set baud rate.
-    writereg(LCR,0x80);
+    writereg(LCR, 0x80);
     // LSB for baud rate of 38.4K.
-    writereg(0,0x03);
+    writereg(0, 0x03);
     // MSB for baud rate of 38.4K.
-    writereg(1,0x00);
+    writereg(1, 0x00);
     // leave set-baud mode,
     // and set word length to 8 bits, no parity.
-    writereg(LCR,0x03);
+    writereg(LCR, 0x03);
     // reset and enable FIFOs.
-    writereg(FCR,0x07);
+    writereg(FCR, 0x07);
     // enable receive interrupts.
-    writereg(IER,0x01);
+    writereg(IER, 0x01);
 }
 /// write one output character to the UART.
 #[no_mangle]
 pub unsafe extern "C" fn uartputc(mut c: i32) {
     // wait for Transmit Holding Empty to be set in LSR.
-    while ptr::read_volatile(readreg(LSR)) as i32 & (1 as i32) << 5 as i32
-        == 0 as i32
-    {}
+    while ptr::read_volatile(readreg(LSR)) as i32 & (1 as i32) << 5 as i32 == 0 as i32 {}
     writereg(THR, c);
 }
 /// read one input character from the UART.
