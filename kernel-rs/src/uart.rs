@@ -2,10 +2,31 @@ use crate::console::consoleintr;
 use crate::memlayout::UART0;
 use core::ptr;
 /// low-level driver routines for 16550a UART.
+/* TODO:
+// the UART control registers are memory-mapped
+// at address UART0. this macro returns the
+// address of one of the registers.
+#define Reg(reg) ((volatile unsigned char *)(UART0 + reg))
+
+
+*/
 
 /// the UART control registers are memory-mapped
 /// at address UART0. this macro returns the
 /// address of one of the registers.
+// TODO: use RHR, THR, IER ... cf> uart.c:22-28
+/*
+#define RHR 0 // receive holding register (for input bytes)
+#define THR 0 // transmit holding register (for output bytes)
+#define IER 1 // interrupt enable register
+#define FCR 2 // FIFO control register
+#define ISR 2 // interrupt status register
+#define LCR 3 // line control register
+#define LSR 5 // line status register
+
+#define ReadReg(reg) (*(Reg(reg)))
+#define WriteReg(reg, v) (*(Reg(reg)) = (v))
+*/
 /// the UART control registers.
 /// some have different meanings for
 /// read vs write.

@@ -4,14 +4,14 @@ use crate::{
     fcntl::FcntlFlags,
     file::{filealloc, fileclose, filedup, fileread, filestat, filewrite},
     file::{inode, File},
-    fs::dirent,
+    fs::{dirent, DIRSIZ},
     fs::{
         dirlink, dirlookup, ialloc, ilock, iput, iunlock, iunlockput, iupdate, namecmp, namei,
         nameiparent, readi, writei,
     },
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
-    param::{MAXPATH, NDEV, NOFILE},
+    param::{MAXARG, MAXPATH, NDEV, NOFILE},
     pipe::pipealloc,
     printf::panic,
     proc::{myproc, proc_0},
@@ -131,9 +131,9 @@ pub unsafe extern "C" fn sys_fstat() -> u64 {
 /// Create the path new as a link to the same inode as old.
 #[no_mangle]
 pub unsafe extern "C" fn sys_link() -> u64 {
-    let mut name: [libc::c_char; 14] = [0; 14];
-    let mut new: [libc::c_char; 128] = [0; 128];
-    let mut old: [libc::c_char; 128] = [0; 128];
+    let mut name: [libc::c_char; DIRSIZ as usize] = [0; DIRSIZ as usize];
+    let mut new: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
+    let mut old: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut dp: *mut inode = ptr::null_mut();
     let mut ip: *mut inode = ptr::null_mut();
     if argstr(0 as i32, old.as_mut_ptr(), MAXPATH) < 0 as i32
@@ -180,7 +180,7 @@ unsafe extern "C" fn isdirempty(mut dp: *mut inode) -> i32 {
     let mut off: i32 = 0;
     let mut de: dirent = dirent {
         inum: 0,
-        name: [0; 14],
+        name: [0; DIRSIZ as usize],
     };
     off = (2 as u64).wrapping_mul(::core::mem::size_of::<dirent>() as u64) as i32;
     while (off as u32) < (*dp).size {
@@ -210,10 +210,10 @@ pub unsafe extern "C" fn sys_unlink() -> u64 {
     let mut dp: *mut inode = ptr::null_mut();
     let mut de: dirent = dirent {
         inum: 0,
-        name: [0; 14],
+        name: [0; DIRSIZ as usize],
     };
-    let mut name: [libc::c_char; 14] = [0; 14];
-    let mut path: [libc::c_char; 128] = [0; 128];
+    let mut name: [libc::c_char; DIRSIZ as usize] = [0; DIRSIZ as usize];
+    let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut off: u32 = 0;
     if argstr(0 as i32, path.as_mut_ptr(), MAXPATH) < 0 as i32 {
         return -(1 as i32) as u64;
@@ -287,7 +287,7 @@ unsafe extern "C" fn create(
 ) -> *mut inode {
     let mut ip: *mut inode = ptr::null_mut();
     let mut dp: *mut inode = ptr::null_mut();
-    let mut name: [libc::c_char; 14] = [0; 14];
+    let mut name: [libc::c_char; DIRSIZ as usize] = [0; DIRSIZ as usize];
     dp = nameiparent(path, name.as_mut_ptr());
     if dp.is_null() {
         return ptr::null_mut();
@@ -340,7 +340,7 @@ unsafe extern "C" fn create(
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_open() -> u64 {
-    let mut path: [libc::c_char; 128] = [0; 128];
+    let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut fd: i32 = 0;
     let mut omode: i32 = 0;
     let mut f: *mut File = ptr::null_mut();
@@ -412,7 +412,7 @@ pub unsafe extern "C" fn sys_open() -> u64 {
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_mkdir() -> u64 {
-    let mut path: [libc::c_char; 128] = [0; 128];
+    let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut ip: *mut inode = ptr::null_mut();
     begin_op();
     if argstr(0 as i32, path.as_mut_ptr(), MAXPATH) < 0 as i32 || {
@@ -434,7 +434,7 @@ pub unsafe extern "C" fn sys_mkdir() -> u64 {
 #[no_mangle]
 pub unsafe extern "C" fn sys_mknod() -> u64 {
     let mut ip: *mut inode = ptr::null_mut();
-    let mut path: [libc::c_char; 128] = [0; 128];
+    let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut major: i32 = 0;
     let mut minor: i32 = 0;
     begin_op();
@@ -460,7 +460,7 @@ pub unsafe extern "C" fn sys_mknod() -> u64 {
 }
 #[no_mangle]
 pub unsafe extern "C" fn sys_chdir() -> u64 {
-    let mut path: [libc::c_char; 128] = [0; 128];
+    let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut ip: *mut inode = ptr::null_mut();
     let mut p: *mut proc_0 = myproc();
     begin_op();
@@ -487,8 +487,8 @@ pub unsafe extern "C" fn sys_chdir() -> u64 {
 pub unsafe extern "C" fn sys_exec() -> u64 {
     let mut ret: i32 = 0;
     let mut current_block: u64;
-    let mut path: [libc::c_char; 128] = [0; 128];
-    let mut argv: [*mut libc::c_char; 32] = [ptr::null_mut(); 32];
+    let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
+    let mut argv: [*mut libc::c_char; MAXARG as usize] = [ptr::null_mut(); MAXARG as usize];
     let mut i: i32 = 0;
     let mut uargv: u64 = 0;
     let mut uarg: u64 = 0;

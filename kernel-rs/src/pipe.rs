@@ -11,7 +11,7 @@ use core::ptr;
 #[repr(C)]
 pub struct Pipe {
     pub lock: Spinlock,
-    pub data: [libc::c_char; 512],
+    pub data: [libc::c_char; PIPESIZE as usize],
     /// number of bytes read
     pub nread: u32,
     /// number of bytes written
