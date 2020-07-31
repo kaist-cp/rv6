@@ -1,10 +1,12 @@
 /// Format of an ELF executable file
-pub const ELF_MAGIC: u32 = 0x464c457f;
+
 /// "\x7FELF" in little endian
+pub const ELF_MAGIC: u32 = 0x464c457f;
+
 /// File header
-#[derive(Copy, Clone)]
+#[derive(Default, Clone)]
 #[repr(C)]
-pub struct elfhdr {
+pub struct ElfHdr {
     pub magic: u32,
     pub elf: [u8; 12],
     pub typ: u16,
@@ -21,10 +23,11 @@ pub struct elfhdr {
     pub shnum: u16,
     pub shstrndx: u16,
 }
+
 /// Program section header
-#[derive(Copy, Clone)]
+#[derive(Default, Clone)]
 #[repr(C)]
-pub struct proghdr {
+pub struct ProgHdr {
     pub typ: u32,
     pub flags: u32,
     pub off: u64,
@@ -34,5 +37,14 @@ pub struct proghdr {
     pub memsz: u64,
     pub align: u64,
 }
+
 /// Values for Proghdr type
-pub const ELF_PROG_LOAD: i32 = 1;
+pub const ELF_PROG_LOAD: u32 = 1;
+
+bitflags! {
+    pub struct ELF_PROG_FLAG: u32 {
+        const EXEC = 1;
+        const WRITE = 2;
+        const READ = 4;
+    }
+}

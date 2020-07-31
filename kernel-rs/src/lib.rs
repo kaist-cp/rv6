@@ -20,6 +20,7 @@
 #![feature(ptr_wrapping_offset_from)]
 #![feature(const_if_match)]
 #![feature(const_wrapping_int_methods)]
+#![feature(maybe_uninit_ref)]
 
 // TODO(@jeehoonkang): we define `libc` module here because the `libc` crate doesn't work for the
 // `riscv64gc-unknown-none-elfhf` target.
@@ -29,8 +30,6 @@
 mod libc {
     pub type c_void = core::ffi::c_void;
     pub type c_char = u8;
-    pub type c_int = i32;
-    pub type c_uint = u32;
 }
 
 mod bio;
@@ -61,7 +60,6 @@ mod syscall;
 mod sysfile;
 mod sysproc;
 mod trap;
-mod types;
 mod uart;
 mod utils;
 mod virtio;

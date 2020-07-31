@@ -118,8 +118,8 @@ pub unsafe fn fileclose(mut f: *mut File) {
         ref_0: 0,
         readable: 0,
         writable: 0,
-        pipe: 0 as *const Pipe as *mut Pipe,
-        ip: 0 as *const inode as *mut inode,
+        pipe: ptr::null_mut(),
+        ip: ptr::null_mut(),
         off: 0,
         major: 0,
     };

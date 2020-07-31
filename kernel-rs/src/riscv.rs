@@ -330,4 +330,5 @@ TODO: used directly in vm.rs
 pub const MAXVA: i64 = (1 as i64) << (9 as i32 + 9 as i32 + 9 as i32 + 12 as i32 - 1 as i32);
 
 pub type pte_t = u64;
+pub type pde_t = u64;
 pub type pagetable_t = *mut u64;

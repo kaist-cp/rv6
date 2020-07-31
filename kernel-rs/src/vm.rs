@@ -4,24 +4,26 @@ use crate::{
     memlayout::{CLINT, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     printf::{panic, printf},
     riscv::{
-        make_satp, pagetable_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U,
-        PTE_V, PTE_W, PTE_X, PXMASK,
+        make_satp, pagetable_t, pde_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R,
+        PTE_U, PTE_V, PTE_W, PTE_X, PXMASK,
     },
-    types::pde_t,
 };
 use core::ptr;
 extern "C" {
     // kernel.ld sets this to end of kernel code.
     #[no_mangle]
     static mut etext: [libc::c_char; 0];
+
     // trampoline.S
     #[no_mangle]
     static mut trampoline: [libc::c_char; 0];
 }
+
 /*
  * the kernel's page table.
  */
 pub static mut kernel_pagetable: pagetable_t = 0 as *const u64 as *mut u64;
+
 // trampoline.S
 /// create a direct-map page table for the kernel and
 /// turn on paging. called early, in supervisor mode.
@@ -70,12 +72,14 @@ pub unsafe fn kvminit() {
         (PTE_R | PTE_X) as i32,
     );
 }
+
 /// Switch h/w page table register to the kernel's page table,
 /// and enable paging.
 pub unsafe fn kvminithart() {
     w_satp(make_satp(kernel_pagetable as u64));
     sfence_vma();
 }
+
 /// Return the address of the PTE in page table pagetable
 /// that corresponds to virtual address va.  If alloc!=0,
 /// create any required page-table pages.
@@ -113,6 +117,7 @@ unsafe fn walk(mut pagetable: pagetable_t, mut va: u64, mut alloc: i32) -> *mut 
     }
     &mut *pagetable.offset((va >> (PGSHIFT + 9 * 0) & PXMASK as u64) as isize) as *mut u64
 }
+
 /// Look up a virtual address, return the physical address,
 /// or 0 if not mapped.
 /// Can only be used to look up user pages.
@@ -135,6 +140,7 @@ pub unsafe fn walkaddr(mut pagetable: pagetable_t, mut va: u64) -> u64 {
     pa = (*pte >> 10 as i32) << 12 as i32;
     pa
 }
+
 /// add a mapping to the kernel page table.
 /// only used when booting.
 /// does not flush TLB or enable paging.
@@ -143,6 +149,7 @@ pub unsafe fn kvmmap(mut va: u64, mut pa: u64, mut sz: u64, mut perm: i32) {
         panic(b"kvmmap\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     };
 }
+
 /// translate a kernel virtual address to
 /// a physical address. only needed for
 /// addresses on the stack.
@@ -161,6 +168,7 @@ pub unsafe fn kvmpa(mut va: u64) -> u64 {
     pa = (*pte >> 10 as i32) << 12 as i32;
     pa.wrapping_add(off)
 }
+
 /// Create PTEs for virtual addresses starting at va that refer to
 /// physical addresses starting at pa. va and size might not
 /// be page-aligned. Returns 0 on success, -1 if walk() couldn't
@@ -194,6 +202,7 @@ pub unsafe fn mappages(
     }
     0
 }
+
 /// Remove mappings from a page table. The mappings in
 /// the given range must exist. Optionally free the
 /// physical memory.
@@ -238,6 +247,7 @@ pub unsafe fn uvmunmap(mut pagetable: pagetable_t, mut va: u64, mut size: u64, m
         pa = (pa as u64).wrapping_add(PGSIZE as u64) as u64 as u64
     }
 }
+
 /// create an empty user page table.
 pub unsafe fn uvmcreate() -> pagetable_t {
     let mut pagetable: pagetable_t = ptr::null_mut();
@@ -251,6 +261,7 @@ pub unsafe fn uvmcreate() -> pagetable_t {
     ptr::write_bytes(pagetable as *mut libc::c_void, 0, PGSIZE as usize);
     pagetable
 }
+
 /// Load the user initcode into address 0 of pagetable,
 /// for the very first process.
 /// sz must be less than a page.
@@ -277,6 +288,7 @@ pub unsafe fn uvminit(mut pagetable: pagetable_t, mut src: *mut u8, mut sz: u32)
         sz as usize,
     );
 }
+
 /// Allocate PTEs and physical memory to grow process from oldsz to
 /// newsz, which need not be page aligned.  Returns new size or 0 on error.
 pub unsafe fn uvmalloc(mut pagetable: pagetable_t, mut oldsz: u64, mut newsz: u64) -> u64 {
@@ -313,6 +325,7 @@ pub unsafe fn uvmalloc(mut pagetable: pagetable_t, mut oldsz: u64, mut newsz: u6
     }
     newsz
 }
+
 /// Deallocate user pages to bring the process size from oldsz to
 /// newsz.  oldsz and newsz need not be page-aligned, nor does newsz
 /// need to be less than oldsz.  oldsz can be larger than the actual
@@ -335,6 +348,7 @@ pub unsafe fn uvmdealloc(mut pagetable: pagetable_t, mut oldsz: u64, mut newsz: 
     }
     newsz
 }
+
 /// Recursively free page-table pages.
 /// All leaf mappings must already have been removed.
 unsafe fn freewalk(mut pagetable: pagetable_t) {
@@ -354,12 +368,14 @@ unsafe fn freewalk(mut pagetable: pagetable_t) {
     }
     kfree(pagetable as *mut libc::c_void);
 }
+
 /// Free user memory pages,
 /// then free page-table pages.
 pub unsafe fn uvmfree(mut pagetable: pagetable_t, mut sz: u64) {
     uvmunmap(pagetable, 0 as i32 as u64, sz, 1 as i32);
     freewalk(pagetable);
 }
+
 /// Given a parent process's page table, copy
 /// its memory into a child's page table.
 /// Copies both the page table and the
@@ -420,6 +436,7 @@ pub unsafe fn uvmcopy(mut old: pagetable_t, mut new: pagetable_t, mut sz: u64) -
         }
     }
 }
+
 /// mark a PTE invalid for user access.
 /// used by exec for the user stack guard page.
 pub unsafe fn uvmclear(mut pagetable: pagetable_t, mut va: u64) {
@@ -430,6 +447,7 @@ pub unsafe fn uvmclear(mut pagetable: pagetable_t, mut va: u64) {
     }
     *pte &= !PTE_U as u64;
 }
+
 /// Copy from kernel to user.
 /// Copy len bytes from src to virtual address dstva in a given page table.
 /// Return 0 on success, -1 on error.
@@ -463,6 +481,7 @@ pub unsafe fn copyout(
     }
     0
 }
+
 /// Copy from user to kernel.
 /// Copy len bytes to dst from virtual address srcva in a given page table.
 /// Return 0 on success, -1 on error.
@@ -496,6 +515,7 @@ pub unsafe fn copyin(
     }
     0
 }
+
 /// Copy a null-terminated string from user to kernel.
 /// Copy bytes to dst from virtual address srcva in a given page table,
 /// until a '\0', or max.

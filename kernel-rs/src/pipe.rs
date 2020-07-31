@@ -29,7 +29,7 @@ pub const PIPESIZE: i32 = 512;
 pub unsafe fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {
     let mut pi: *mut Pipe = ptr::null_mut();
     pi = ptr::null_mut();
-    *f1 = 0 as *mut File;
+    *f1 = ptr::null_mut();
     *f0 = *f1;
     *f0 = filealloc();
     if !((*f0).is_null() || {
