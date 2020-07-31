@@ -1,12 +1,12 @@
 use crate::libc;
 use crate::{
     file::{devsw, CONSOLE},
+    printf::panicked,
     proc::{cpu, either_copyin, either_copyout, myproc, procdump, sleep, wakeup},
     spinlock::{acquire, initlock, release, Spinlock},
     uart::{uartinit, uartputc},
 };
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct Console {
     pub lock: Spinlock,
     pub buf: [libc::c_char; 128],
@@ -33,12 +33,7 @@ const fn ctrl(x: char) -> i32 {
 ///
 /// send one character to the uart.
 ///
-#[no_mangle]
-pub unsafe extern "C" fn consputc(mut c: i32) {
-    extern "C" {
-        #[no_mangle]
-        static mut panicked: i32;
-    } // from printf.c
+pub unsafe fn consputc(mut c: i32) {
     if panicked != 0 {
         loop {}
     }
@@ -55,7 +50,6 @@ pub const INPUT_BUF: usize = 128;
 ///
 /// Edit index
 ///
-#[no_mangle]
 pub static mut cons: Console = Console {
     lock: Spinlock {
         locked: 0,
@@ -70,8 +64,7 @@ pub static mut cons: Console = Console {
 ///
 /// user write()s to the console go here.
 ///
-#[no_mangle]
-pub unsafe extern "C" fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
+pub unsafe fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
     let mut i: i32 = 0;
     acquire(&mut cons.lock);
     while i < n {
@@ -97,8 +90,7 @@ pub unsafe extern "C" fn consolewrite(mut user_src: i32, mut src: u64, mut n: i3
 /// user_dist indicates whether dst is a user
 /// or kernel address.
 ///
-#[no_mangle]
-pub unsafe extern "C" fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
+pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
     let mut target: u32 = n as u32;
     let mut cin: i32 = 0;
     let mut cbuf: libc::c_char = 0;
@@ -152,8 +144,8 @@ pub unsafe extern "C" fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32
 /// do erase/kill processing, append to cons.buf,
 /// wake up consoleread() if a whole line has arrived.
 ///
-#[no_mangle]
-pub unsafe extern "C" fn consoleintr(mut cin: i32) {
+
+pub unsafe fn consoleintr(mut cin: i32) {
     acquire(&mut cons.lock);
     match cin {
         // Print process list.
@@ -203,8 +195,7 @@ pub unsafe extern "C" fn consoleintr(mut cin: i32) {
     }
     release(&mut cons.lock);
 }
-#[no_mangle]
-pub unsafe extern "C" fn consoleinit() {
+pub unsafe fn consoleinit() {
     initlock(
         &mut cons.lock,
         b"cons\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
@@ -213,7 +204,7 @@ pub unsafe extern "C" fn consoleinit() {
     // connect read and write system calls
     // to consoleread and consolewrite.
     let fresh2 = &mut (*devsw.as_mut_ptr().offset(CONSOLE)).read;
-    *fresh2 = Some(consoleread as unsafe extern "C" fn(_: i32, _: u64, _: i32) -> i32);
+    *fresh2 = Some(consoleread as unsafe fn(_: i32, _: u64, _: i32) -> i32);
     let fresh3 = &mut (*devsw.as_mut_ptr().offset(CONSOLE)).write;
-    *fresh3 = Some(consolewrite as unsafe extern "C" fn(_: i32, _: u64, _: i32) -> i32);
+    *fresh3 = Some(consolewrite as unsafe fn(_: i32, _: u64, _: i32) -> i32);
 }

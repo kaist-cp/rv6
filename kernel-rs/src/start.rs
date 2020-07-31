@@ -19,11 +19,10 @@ pub struct Stack([libc::c_char; 4096 * NCPU as usize]);
 #[no_mangle]
 pub static mut stack0: Stack = Stack([0; 4096 * NCPU as usize]);
 /// scratch area for timer interrupt, one per CPU.
-#[no_mangle]
 pub static mut mscratch0: [u64; NCPU as usize * 32] = [0; NCPU as usize * 32];
 /// entry.S jumps here in machine mode on stack0.
 #[no_mangle]
-pub unsafe extern "C" fn start() {
+pub unsafe fn start() {
     // set M Previous Privilege mode to Supervisor, for mret.
     let mut x: u64 = r_mstatus();
     x &= !MSTATUS_MPP_MASK as u64;
@@ -31,13 +30,9 @@ pub unsafe extern "C" fn start() {
     w_mstatus(x);
     // set M Exception Program Counter to main, for mret.
     // requires gcc -mcmodel=medany
-    w_mepc(::core::mem::transmute::<
-        Option<unsafe extern "C" fn() -> ()>,
-        u64,
-    >(Some(::core::mem::transmute::<
-        unsafe extern "C" fn() -> (),
-        unsafe extern "C" fn() -> (),
-    >(main_0))));
+    w_mepc(::core::mem::transmute::<Option<unsafe fn() -> ()>, u64>(
+        Some(::core::mem::transmute::<unsafe fn() -> (), unsafe fn() -> ()>(main_0)),
+    ));
     // disable paging for now.
     w_satp(0 as u64);
     // delegate all interrupts and exceptions to supervisor mode.
@@ -55,8 +50,7 @@ pub unsafe extern "C" fn start() {
 /// which arrive at timervec in kernelvec.S,
 /// which turns them into software interrupts for
 /// devintr() in trap.c.
-#[no_mangle]
-pub unsafe extern "C" fn timerinit() {
+pub unsafe fn timerinit() {
     // each CPU has a separate source of timer interrupts.
     let mut id: i32 = r_mhartid() as i32;
     // ask the CLINT for a timer interrupt.

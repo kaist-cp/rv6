@@ -7,7 +7,6 @@ use crate::{
 use core::ptr;
 pub type __builtin_va_list = [__va_list_tag; 1];
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct __va_list_tag {
     pub gp_offset: u32,
     pub fp_offset: u32,
@@ -17,7 +16,6 @@ pub struct __va_list_tag {
 pub type va_list = __builtin_va_list;
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct PrintfLock {
     pub lock: Spinlock,
     pub locking: i32,
@@ -25,7 +23,6 @@ pub struct PrintfLock {
 ///
 /// formatted console output -- printf, panic.
 ///
-#[no_mangle]
 pub static mut panicked: i32 = 0;
 static mut pr: PrintfLock = PrintfLock {
     lock: Spinlock {
@@ -38,7 +35,7 @@ static mut pr: PrintfLock = PrintfLock {
 static mut digits: [libc::c_char; 17] = [
     48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102, 0,
 ];
-unsafe extern "C" fn printint(mut xx: i32, mut base: i32, mut sign: i32) {
+unsafe fn printint(mut xx: i32, mut base: i32, mut sign: i32) {
     let mut buf: [libc::c_char; 16] = [0; 16];
     let mut i: i32 = 0;
     let mut x: u32 = 0;
@@ -73,7 +70,7 @@ unsafe extern "C" fn printint(mut xx: i32, mut base: i32, mut sign: i32) {
         consputc(buf[i as usize] as i32);
     }
 }
-unsafe extern "C" fn printptr(mut x: u64) {
+unsafe fn printptr(mut x: u64) {
     let mut i: i32 = 0;
     consputc('0' as i32);
     consputc('x' as i32);
@@ -90,7 +87,6 @@ unsafe extern "C" fn printptr(mut x: u64) {
     }
 }
 /// Print to the console. only understands %d, %x, %p, %s.
-#[no_mangle]
 pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
     let mut ap: ::core::ffi::VaListImpl;
     let mut i: i32 = 0;
@@ -155,8 +151,7 @@ pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
         release(&mut pr.lock);
     };
 }
-#[no_mangle]
-pub unsafe extern "C" fn panic(mut s: *mut libc::c_char) -> ! {
+pub unsafe fn panic(mut s: *mut libc::c_char) -> ! {
     pr.locking = 0 as i32;
     printf(b"panic: \x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     printf(s);
@@ -164,8 +159,7 @@ pub unsafe extern "C" fn panic(mut s: *mut libc::c_char) -> ! {
     ::core::ptr::write_volatile(&mut panicked as *mut i32, 1 as i32);
     loop {}
 }
-#[no_mangle]
-pub unsafe extern "C" fn printfinit() {
+pub unsafe fn printfinit() {
     initlock(
         &mut pr.lock,
         b"pr\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,

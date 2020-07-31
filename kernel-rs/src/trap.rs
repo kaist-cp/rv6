@@ -25,24 +25,20 @@ extern "C" {
     #[no_mangle]
     fn kernelvec();
 }
-#[no_mangle]
 pub static mut tickslock: Spinlock = Spinlock {
     locked: 0,
     name: 0 as *const libc::c_char as *mut libc::c_char,
     cpu: 0 as *const cpu as *mut cpu,
 };
-#[no_mangle]
 pub static mut ticks: u32 = 0;
-#[no_mangle]
-pub unsafe extern "C" fn trapinit() {
+pub unsafe fn trapinit() {
     initlock(
         &mut tickslock,
         b"time\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
 }
 /// set up to take exceptions and traps while in the kernel.
-#[no_mangle]
-pub unsafe extern "C" fn trapinithart() {
+pub unsafe fn trapinithart() {
     w_stvec(::core::mem::transmute::<
         Option<unsafe extern "C" fn() -> ()>,
         u64,
@@ -116,8 +112,7 @@ pub unsafe extern "C" fn usertrap() {
 }
 
 /// return to user space
-#[no_mangle]
-pub unsafe extern "C" fn usertrapret() {
+pub unsafe fn usertrapret() {
     let mut p: *mut proc_0 = myproc();
     // turn off interrupts, since we're switching
     // now from kerneltrap() to usertrap().
@@ -164,7 +159,7 @@ pub unsafe extern "C" fn usertrapret() {
 /// on whatever the current kernel stack is.
 /// must be 4-byte aligned to fit in stvec.
 #[no_mangle]
-pub unsafe extern "C" fn kerneltrap() {
+pub unsafe fn kerneltrap() {
     let mut which_dev: i32 = 0 as i32;
     let mut sepc: u64 = r_sepc();
     let mut sstatus: u64 = r_sstatus();
@@ -203,8 +198,7 @@ pub unsafe extern "C" fn kerneltrap() {
     w_sepc(sepc);
     w_sstatus(sstatus);
 }
-#[no_mangle]
-pub unsafe extern "C" fn clockintr() {
+pub unsafe fn clockintr() {
     acquire(&mut tickslock);
     ticks = ticks.wrapping_add(1);
     wakeup(&mut ticks as *mut u32 as *mut libc::c_void);
@@ -215,8 +209,7 @@ pub unsafe extern "C" fn clockintr() {
 /// returns 2 if timer interrupt,
 /// 1 if other device,
 /// 0 if not recognized.
-#[no_mangle]
-pub unsafe extern "C" fn devintr() -> i32 {
+pub unsafe fn devintr() -> i32 {
     let mut scause: u64 = r_scause();
     if scause & 0x8000000000000000 as u64 != 0 && scause & 0xff as u64 == 9 as u64 {
         // this is a supervisor external interrupt, via PLIC.

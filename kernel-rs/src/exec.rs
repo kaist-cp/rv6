@@ -12,11 +12,7 @@ use crate::{
     vm::{copyout, uvmalloc, uvmclear, walkaddr},
 };
 use core::ptr;
-#[no_mangle]
-pub unsafe extern "C" fn exec(
-    mut path: *mut libc::c_char,
-    mut argv: *mut *mut libc::c_char,
-) -> i32 {
+pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char) -> i32 {
     let mut oldsz: u64 = 0;
     let mut current_block: u64;
     let mut s: *mut libc::c_char = ptr::null_mut();
@@ -245,7 +241,7 @@ pub unsafe extern "C" fn exec(
 /// va must be page-aligned
 /// and the pages from va to va+sz must already be mapped.
 /// Returns 0 on success, -1 on failure.
-unsafe extern "C" fn loadseg(
+unsafe fn loadseg(
     mut pagetable: pagetable_t,
     mut va: u64,
     mut ip: *mut inode,

@@ -32,7 +32,7 @@ pub const FD_NONE: u32 = 0;
 
 /// Fetch the nth word-sized system call argument as a file descriptor
 /// and return both the descriptor and the corresponding struct file.
-unsafe extern "C" fn argfd(mut n: i32, mut pfd: *mut i32, mut pf: *mut *mut File) -> i32 {
+unsafe fn argfd(mut n: i32, mut pfd: *mut i32, mut pf: *mut *mut File) -> i32 {
     let mut fd: i32 = 0;
     let mut f: *mut File = ptr::null_mut();
     if argint(n, &mut fd) < 0 as i32 {
@@ -54,7 +54,7 @@ unsafe extern "C" fn argfd(mut n: i32, mut pfd: *mut i32, mut pf: *mut *mut File
 }
 /// Allocate a file descriptor for the given file.
 /// Takes over file reference from caller on success.
-unsafe extern "C" fn fdalloc(mut f: *mut File) -> i32 {
+unsafe fn fdalloc(mut f: *mut File) -> i32 {
     let mut fd: i32 = 0; // user pointer to struct stat
     let mut p: *mut proc_0 = myproc();
     while fd < NOFILE {
@@ -66,8 +66,7 @@ unsafe extern "C" fn fdalloc(mut f: *mut File) -> i32 {
     }
     -1
 }
-#[no_mangle]
-pub unsafe extern "C" fn sys_dup() -> u64 {
+pub unsafe fn sys_dup() -> u64 {
     let mut f: *mut File = ptr::null_mut();
     let mut fd: i32 = 0;
     if argfd(0 as i32, ptr::null_mut(), &mut f) < 0 as i32 {
@@ -80,8 +79,7 @@ pub unsafe extern "C" fn sys_dup() -> u64 {
     filedup(f);
     fd as u64
 }
-#[no_mangle]
-pub unsafe extern "C" fn sys_read() -> u64 {
+pub unsafe fn sys_read() -> u64 {
     let mut f: *mut File = ptr::null_mut();
     let mut n: i32 = 0;
     let mut p: u64 = 0;
@@ -93,8 +91,7 @@ pub unsafe extern "C" fn sys_read() -> u64 {
     }
     fileread(f, p, n) as u64
 }
-#[no_mangle]
-pub unsafe extern "C" fn sys_write() -> u64 {
+pub unsafe fn sys_write() -> u64 {
     let mut f: *mut File = ptr::null_mut();
     let mut n: i32 = 0;
     let mut p: u64 = 0;
@@ -106,8 +103,7 @@ pub unsafe extern "C" fn sys_write() -> u64 {
     }
     filewrite(f, p, n) as u64
 }
-#[no_mangle]
-pub unsafe extern "C" fn sys_close() -> u64 {
+pub unsafe fn sys_close() -> u64 {
     let mut fd: i32 = 0;
     let mut f: *mut File = ptr::null_mut();
     if argfd(0 as i32, &mut fd, &mut f) < 0 as i32 {
@@ -118,8 +114,7 @@ pub unsafe extern "C" fn sys_close() -> u64 {
     fileclose(f);
     0 as u64
 }
-#[no_mangle]
-pub unsafe extern "C" fn sys_fstat() -> u64 {
+pub unsafe fn sys_fstat() -> u64 {
     let mut f: *mut File = ptr::null_mut();
     let mut st: u64 = 0;
     if argfd(0 as i32, ptr::null_mut(), &mut f) < 0 as i32 || argaddr(1 as i32, &mut st) < 0 as i32
@@ -129,8 +124,7 @@ pub unsafe extern "C" fn sys_fstat() -> u64 {
     filestat(f, st) as u64
 }
 /// Create the path new as a link to the same inode as old.
-#[no_mangle]
-pub unsafe extern "C" fn sys_link() -> u64 {
+pub unsafe fn sys_link() -> u64 {
     let mut name: [libc::c_char; DIRSIZ] = [0; DIRSIZ];
     let mut new: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut old: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
@@ -176,7 +170,7 @@ pub unsafe extern "C" fn sys_link() -> u64 {
     -(1 as i32) as u64
 }
 /// Is the directory dp empty except for "." and ".." ?
-unsafe extern "C" fn isdirempty(mut dp: *mut inode) -> i32 {
+unsafe fn isdirempty(mut dp: *mut inode) -> i32 {
     let mut off: i32 = 0;
     let mut de: dirent = dirent {
         inum: 0,
@@ -204,8 +198,7 @@ unsafe extern "C" fn isdirempty(mut dp: *mut inode) -> i32 {
     }
     1
 }
-#[no_mangle]
-pub unsafe extern "C" fn sys_unlink() -> u64 {
+pub unsafe fn sys_unlink() -> u64 {
     let mut ip: *mut inode = ptr::null_mut();
     let mut dp: *mut inode = ptr::null_mut();
     let mut de: dirent = dirent {
@@ -279,7 +272,7 @@ pub unsafe extern "C" fn sys_unlink() -> u64 {
     end_op();
     -(1 as i32) as u64
 }
-unsafe extern "C" fn create(
+unsafe fn create(
     mut path: *mut libc::c_char,
     mut typ: i16,
     mut major: i16,
@@ -338,8 +331,7 @@ unsafe extern "C" fn create(
     iunlockput(dp);
     ip
 }
-#[no_mangle]
-pub unsafe extern "C" fn sys_open() -> u64 {
+pub unsafe fn sys_open() -> u64 {
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut fd: i32 = 0;
     let mut omode: i32 = 0;
@@ -410,8 +402,7 @@ pub unsafe extern "C" fn sys_open() -> u64 {
     end_op();
     fd as u64
 }
-#[no_mangle]
-pub unsafe extern "C" fn sys_mkdir() -> u64 {
+pub unsafe fn sys_mkdir() -> u64 {
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut ip: *mut inode = ptr::null_mut();
     begin_op();
@@ -431,8 +422,7 @@ pub unsafe extern "C" fn sys_mkdir() -> u64 {
     end_op();
     0
 }
-#[no_mangle]
-pub unsafe extern "C" fn sys_mknod() -> u64 {
+pub unsafe fn sys_mknod() -> u64 {
     let mut ip: *mut inode = ptr::null_mut();
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut major: i32 = 0;
@@ -458,8 +448,7 @@ pub unsafe extern "C" fn sys_mknod() -> u64 {
     end_op();
     0 as u64
 }
-#[no_mangle]
-pub unsafe extern "C" fn sys_chdir() -> u64 {
+pub unsafe fn sys_chdir() -> u64 {
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut ip: *mut inode = ptr::null_mut();
     let mut p: *mut proc_0 = myproc();
@@ -483,8 +472,7 @@ pub unsafe extern "C" fn sys_chdir() -> u64 {
     (*p).cwd = ip;
     0 as u64
 }
-#[no_mangle]
-pub unsafe extern "C" fn sys_exec() -> u64 {
+pub unsafe fn sys_exec() -> u64 {
     let mut ret: i32 = 0;
     let mut current_block: u64;
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
@@ -560,8 +548,7 @@ pub unsafe extern "C" fn sys_exec() -> u64 {
         }
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn sys_pipe() -> u64 {
+pub unsafe fn sys_pipe() -> u64 {
     let mut fdarray: u64 = 0;
     let mut rf: *mut File = ptr::null_mut();
     let mut wf: *mut File = ptr::null_mut();

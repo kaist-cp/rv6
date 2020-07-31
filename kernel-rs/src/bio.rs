@@ -24,13 +24,11 @@ use core::ptr;
 /// * Only one process at a time can use a buffer,
 ///     so do not keep them longer than necessary.
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct Bcache {
     pub lock: Spinlock,
     pub buf: [Buf; 30],
     pub head: Buf,
 }
-#[no_mangle]
 pub static mut bcache: Bcache = Bcache {
     lock: Spinlock {
         locked: 0,
@@ -80,8 +78,7 @@ pub static mut bcache: Bcache = Bcache {
         data: [0; 1024],
     },
 };
-#[no_mangle]
-pub unsafe extern "C" fn binit() {
+pub unsafe fn binit() {
     let mut b: *mut Buf = ptr::null_mut();
     initlock(
         &mut bcache.lock,
@@ -106,7 +103,7 @@ pub unsafe extern "C" fn binit() {
 /// Look through buffer cache for block on device dev.
 /// If not found, allocate a buffer.
 /// In either case, return locked buffer.
-unsafe extern "C" fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
+unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
     let mut b: *mut Buf = ptr::null_mut();
     acquire(&mut bcache.lock);
     // Is the block already cached?
@@ -137,8 +134,7 @@ unsafe extern "C" fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
     panic(b"bget: no buffers\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
 /// Return a locked buf with the contents of the indicated block.
-#[no_mangle]
-pub unsafe extern "C" fn bread(mut dev: u32, mut blockno: u32) -> *mut Buf {
+pub unsafe fn bread(mut dev: u32, mut blockno: u32) -> *mut Buf {
     let mut b: *mut Buf = ptr::null_mut();
     b = bget(dev, blockno);
     if (*b).valid == 0 {
@@ -148,8 +144,7 @@ pub unsafe extern "C" fn bread(mut dev: u32, mut blockno: u32) -> *mut Buf {
     b
 }
 /// Write b's contents to disk.  Must be locked.
-#[no_mangle]
-pub unsafe extern "C" fn bwrite(mut b: *mut Buf) {
+pub unsafe fn bwrite(mut b: *mut Buf) {
     if holdingsleep(&mut (*b).lock) == 0 {
         panic(b"bwrite\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
@@ -157,8 +152,7 @@ pub unsafe extern "C" fn bwrite(mut b: *mut Buf) {
 }
 /// Release a locked buffer.
 /// Move to the head of the MRU list.
-#[no_mangle]
-pub unsafe extern "C" fn brelse(mut b: *mut Buf) {
+pub unsafe fn brelse(mut b: *mut Buf) {
     if holdingsleep(&mut (*b).lock) == 0 {
         panic(b"brelse\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
@@ -176,14 +170,12 @@ pub unsafe extern "C" fn brelse(mut b: *mut Buf) {
     }
     release(&mut bcache.lock);
 }
-#[no_mangle]
-pub unsafe extern "C" fn bpin(mut b: *mut Buf) {
+pub unsafe fn bpin(mut b: *mut Buf) {
     acquire(&mut bcache.lock);
     (*b).refcnt = (*b).refcnt.wrapping_add(1);
     release(&mut bcache.lock);
 }
-#[no_mangle]
-pub unsafe extern "C" fn bunpin(mut b: *mut Buf) {
+pub unsafe fn bunpin(mut b: *mut Buf) {
     acquire(&mut bcache.lock);
     (*b).refcnt = (*b).refcnt.wrapping_sub(1);
     release(&mut bcache.lock);

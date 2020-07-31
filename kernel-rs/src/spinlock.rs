@@ -7,14 +7,12 @@ use crate::{
 use core::ptr;
 /// Mutual exclusion lock.
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct Spinlock {
     pub locked: u32,
     pub name: *mut libc::c_char,
     pub cpu: *mut cpu,
 }
 /// Mutual exclusion spin locks.
-#[no_mangle]
 pub unsafe fn initlock(mut lk: *mut Spinlock, mut name: *mut libc::c_char) {
     (*lk).name = name;
     (*lk).locked = 0 as i32 as u32;
@@ -22,7 +20,6 @@ pub unsafe fn initlock(mut lk: *mut Spinlock, mut name: *mut libc::c_char) {
 }
 /// Acquire the lock.
 /// Loops (spins) until the lock is acquired.
-#[no_mangle]
 pub unsafe fn acquire(mut lk: *mut Spinlock) {
     push_off(); // disable interrupts to avoid deadlock.
     if holding(lk) != 0 {
@@ -43,7 +40,6 @@ pub unsafe fn acquire(mut lk: *mut Spinlock) {
     (*lk).cpu = mycpu();
 }
 /// Release the lock.
-#[no_mangle]
 pub unsafe fn release(mut lk: *mut Spinlock) {
     if holding(lk) == 0 {
         panic(b"release\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -65,7 +61,6 @@ pub unsafe fn release(mut lk: *mut Spinlock) {
     pop_off();
 }
 /// Check whether this cpu is holding the lock.
-#[no_mangle]
 pub unsafe fn holding(mut lk: *mut Spinlock) -> i32 {
     let mut r: i32 = 0;
     push_off();
@@ -76,7 +71,6 @@ pub unsafe fn holding(mut lk: *mut Spinlock) -> i32 {
 /// push_off/pop_off are like intr_off()/intr_on() except that they are matched:
 /// it takes two pop_off()s to undo two push_off()s.  Also, if interrupts
 /// are initially off, then push_off, pop_off leaves them off.
-#[no_mangle]
 pub unsafe fn push_off() {
     let mut old: i32 = intr_get();
     intr_off();
@@ -85,7 +79,6 @@ pub unsafe fn push_off() {
     }
     (*(mycpu())).noff += 1 as i32;
 }
-#[no_mangle]
 pub unsafe fn pop_off() {
     let mut c: *mut cpu = mycpu();
     if intr_get() != 0 {

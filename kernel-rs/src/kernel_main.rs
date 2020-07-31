@@ -15,7 +15,7 @@ use crate::{
 use core::sync::atomic::{AtomicBool, Ordering};
 /// start() jumps here in supervisor mode on all CPUs.
 #[export_name = "main"]
-pub unsafe extern "C" fn main_0() {
+pub unsafe fn main_0() {
     let started: AtomicBool = AtomicBool::new(false);
     // physical page allocator
     if cpuid() == 0 as i32 {
