@@ -289,6 +289,12 @@ pub const PTE_U: i64 = (1 as i64) << 4 as i32;
 pub const fn pa2pte(pa: u64) -> u64 {
     (pa >> 12 as i32) << 10 as i32
 }
+pub const fn pte2pa(pte: pte_t) -> u64 {
+    (pte >> 10 as i32) << 12 as i32
+}
+pub const fn pte_flags(pte: pte_t) -> u64 {
+    pte & 0x3ff as i32 as u64
+}
 /*
 TODO: used directly in other file e.g., vm.rs
 
@@ -302,6 +308,13 @@ TODO: used directly in other file e.g., vm.rs
 /// 9 bits
 pub const PXMASK: i32 = 0x1ff as i32;
 
+fn pxshift(level: i32) -> i32 {
+    PGSHIFT + 9 * level
+}
+
+pub fn px(level: i32, va: u64) -> u64 {
+    (va >> pxshift(level) as u64) & PXMASK as u64
+}
 /*
 TODO: unused
 #define PXSHIFT(level)  (PGSHIFT+(9*(level)))
