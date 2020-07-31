@@ -3,82 +3,39 @@ use crate::{
     buf::Buf,
     param::NBUF,
     printf::panic,
-    proc::cpu,
-    sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock},
+    sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep},
     spinlock::{acquire, initlock, release, Spinlock},
     virtio_disk::virtio_disk_rw,
 };
+use core::mem::MaybeUninit;
 use core::ptr;
+
 /// Buffer cache.
 ///
-/// The buffer cache is a linked list of buf structures holding
-/// cached copies of disk block contents.  Caching disk blocks
-/// in memory reduces the number of disk reads and also provides
-/// a synchronization point for disk blocks used by multiple processes.
+/// The buffer cache is a linked list of buf structures holding cached copies of disk block
+/// contents.  Caching disk blocks in memory reduces the number of disk reads and also provides a
+/// synchronization point for disk blocks used by multiple processes.
 ///
 /// Interface:
 /// * To get a buffer for a particular disk block, call bread.
 /// * After changing buffer data, call bwrite to write it to disk.
 /// * When done with the buffer, call brelse.
 /// * Do not use the buffer after calling brelse.
-/// * Only one process at a time can use a buffer,
-///     so do not keep them longer than necessary.
+/// * Only one process at a time can use a buffer, so do not keep them longer than necessary.
 #[derive(Copy, Clone)]
 pub struct Bcache {
-    pub lock: Spinlock,
-    pub buf: [Buf; 30],
-    pub head: Buf,
+    lock: Spinlock,
+    buf: [Buf; NBUF as usize],
+
+    // Linked list of all buffers, through prev/next.  head.next is most recently used.
+    head: Buf,
 }
-pub static mut bcache: Bcache = Bcache {
-    lock: Spinlock {
-        locked: 0,
-        name: 0 as *const libc::c_char as *mut libc::c_char,
-        cpu: 0 as *const cpu as *mut cpu,
-    },
-    buf: [Buf {
-        valid: 0,
-        disk: 0,
-        dev: 0,
-        blockno: 0,
-        lock: Sleeplock {
-            locked: 0,
-            lk: Spinlock {
-                locked: 0,
-                name: 0 as *const libc::c_char as *mut libc::c_char,
-                cpu: 0 as *const cpu as *mut cpu,
-            },
-            name: 0 as *const libc::c_char as *mut libc::c_char,
-            pid: 0,
-        },
-        refcnt: 0,
-        prev: 0 as *const Buf as *mut Buf,
-        next: 0 as *const Buf as *mut Buf,
-        qnext: 0 as *const Buf as *mut Buf,
-        data: [0; 1024],
-    }; 30],
-    head: Buf {
-        valid: 0,
-        disk: 0,
-        dev: 0,
-        blockno: 0,
-        lock: Sleeplock {
-            locked: 0,
-            lk: Spinlock {
-                locked: 0,
-                name: 0 as *const libc::c_char as *mut libc::c_char,
-                cpu: 0 as *const cpu as *mut cpu,
-            },
-            name: 0 as *const libc::c_char as *mut libc::c_char,
-            pid: 0,
-        },
-        refcnt: 0,
-        prev: 0 as *const Buf as *mut Buf,
-        next: 0 as *const Buf as *mut Buf,
-        qnext: 0 as *const Buf as *mut Buf,
-        data: [0; 1024],
-    },
-};
+
+pub static mut BCACHE: MaybeUninit<Bcache> = MaybeUninit::uninit();
+
 pub unsafe fn binit() {
+    let bcache = BCACHE.get_mut();
+
     let mut b: *mut Buf = ptr::null_mut();
     initlock(
         &mut bcache.lock,
@@ -104,6 +61,8 @@ pub unsafe fn binit() {
 /// If not found, allocate a buffer.
 /// In either case, return locked buffer.
 unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
+    let bcache = BCACHE.get_mut();
+
     let mut b: *mut Buf = ptr::null_mut();
     acquire(&mut bcache.lock);
     // Is the block already cached?
@@ -153,6 +112,8 @@ pub unsafe fn bwrite(mut b: *mut Buf) {
 /// Release a locked buffer.
 /// Move to the head of the MRU list.
 pub unsafe fn brelse(mut b: *mut Buf) {
+    let bcache = BCACHE.get_mut();
+
     if holdingsleep(&mut (*b).lock) == 0 {
         panic(b"brelse\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
@@ -171,11 +132,15 @@ pub unsafe fn brelse(mut b: *mut Buf) {
     release(&mut bcache.lock);
 }
 pub unsafe fn bpin(mut b: *mut Buf) {
+    let bcache = BCACHE.get_mut();
+
     acquire(&mut bcache.lock);
     (*b).refcnt = (*b).refcnt.wrapping_add(1);
     release(&mut bcache.lock);
 }
 pub unsafe fn bunpin(mut b: *mut Buf) {
+    let bcache = BCACHE.get_mut();
+
     acquire(&mut bcache.lock);
     (*b).refcnt = (*b).refcnt.wrapping_sub(1);
     release(&mut bcache.lock);

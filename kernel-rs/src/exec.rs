@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    elf::{elfhdr, proghdr, ELF_MAGIC, ELF_PROG_LOAD},
+    elf::{ElfHdr, ProgHdr, ELF_MAGIC, ELF_PROG_LOAD},
     file::inode,
     fs::{ilock, iunlockput, namei, readi},
     log::{begin_op, end_op},
@@ -12,6 +12,7 @@ use crate::{
     vm::{copyout, uvmalloc, uvmclear, walkaddr},
 };
 use core::ptr;
+
 pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char) -> i32 {
     let mut oldsz: u64 = 0;
     let mut current_block: u64;
@@ -24,7 +25,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     let mut sp: u64 = 0;
     let mut ustack: [u64; 33] = [0; 33];
     let mut stackbase: u64 = 0;
-    let mut elf: elfhdr = elfhdr {
+    let mut elf: ElfHdr = ElfHdr {
         magic: 0,
         elf: [0; 12],
         typ: 0,
@@ -41,8 +42,8 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
         shnum: 0,
         shstrndx: 0,
     };
-    let mut ip: *mut inode = 0 as *mut inode;
-    let mut ph: proghdr = proghdr {
+    let mut ip: *mut inode = ptr::null_mut();
+    let mut ph: ProgHdr = ProgHdr {
         typ: 0,
         flags: 0,
         off: 0,
@@ -66,11 +67,11 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     if readi(
         ip,
         0 as i32,
-        &mut elf as *mut elfhdr as u64,
+        &mut elf as *mut ElfHdr as u64,
         0 as i32 as u32,
-        ::core::mem::size_of::<elfhdr>() as u64 as u32,
+        ::core::mem::size_of::<ElfHdr>() as u64 as u32,
     ) as u64
-        == ::core::mem::size_of::<elfhdr>() as u64
+        == ::core::mem::size_of::<ElfHdr>() as u64
         && elf.magic == ELF_MAGIC
     {
         pagetable = proc_pagetable(p);
@@ -87,11 +88,11 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                 if readi(
                     ip,
                     0 as i32,
-                    &mut ph as *mut proghdr as u64,
+                    &mut ph as *mut ProgHdr as u64,
                     off as u32,
-                    ::core::mem::size_of::<proghdr>() as u64 as u32,
+                    ::core::mem::size_of::<ProgHdr>() as u64 as u32,
                 ) as u64
-                    != ::core::mem::size_of::<proghdr>() as u64
+                    != ::core::mem::size_of::<ProgHdr>() as u64
                 {
                     current_block = 7080392026674647309;
                     break;
@@ -121,7 +122,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                     }
                 }
                 i += 1;
-                off = (off as u64).wrapping_add(::core::mem::size_of::<proghdr>() as u64) as i32
+                off = (off as u64).wrapping_add(::core::mem::size_of::<ProgHdr>() as u64) as i32
                     as i32
             }
             match current_block {
@@ -129,7 +130,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                 _ => {
                     iunlockput(ip);
                     end_op();
-                    ip = 0 as *mut inode;
+                    ip = ptr::null_mut();
                     p = myproc();
                     oldsz = (*p).sz;
                     // Allocate two pages at the next page boundary.
@@ -237,6 +238,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     }
     -(1 as i32)
 }
+
 /// Load a program segment into pagetable at virtual address va.
 /// va must be page-aligned
 /// and the pages from va to va+sz must already be mapped.
