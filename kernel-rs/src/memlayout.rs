@@ -54,6 +54,8 @@ pub const PHYSTOP: i64 = KERNBASE + (128 * 1024 * 1024);
 /// in both user and kernel space.
 pub const TRAMPOLINE: i64 = MAXVA - PGSIZE as i64;
 
+/// map kernel stacks beneath the trampoline,
+/// each surrounded by invalid guard pages.
 pub const fn kstack(p: i32) -> i64 {
     TRAMPOLINE - ((p + 1 as i32) * 2 as i32 * PGSIZE) as i64
 }
