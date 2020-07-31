@@ -19,14 +19,6 @@ pub const FD_INODE: u32 = 2;
 pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
 
-const fn min(a: u32, b: u32) -> u32 {
-    if a < b {
-        a
-    } else {
-        b
-    }
-}
-
 /// block size
 /// Disk layout:
 /// [ boot block | super block | log | inode blocks |
@@ -50,9 +42,10 @@ pub struct superblock {
 #[repr(C)]
 pub struct dirent {
     pub inum: u16,
-    pub name: [libc::c_char; DIRSIZ as usize],
+    pub name: [libc::c_char; DIRSIZ],
 }
 /// On-disk inode structure
+/// Both the kernel and user programs use this header file.
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct dinode {
@@ -150,17 +143,19 @@ pub const MAXFILE: i32 = NDIRECT.wrapping_add(NINDIRECT);
 /// Inodes per block.
 pub const IPB: i32 = BSIZE.wrapping_div(mem::size_of::<dinode>() as i32);
 /// Block containing inode i
-pub const fn iblock(i: i32, _sb: superblock) -> u32 {
-    i.wrapping_div(IPB).wrapping_add(_sb.inodestart as i32) as u32
+pub const fn iblock(i: i32, super_block: superblock) -> u32 {
+    i.wrapping_div(IPB)
+        .wrapping_add(super_block.inodestart as i32) as u32
 }
 /// Block of free map containing bit for block b
-pub const fn bblock(b: u32, _sb: superblock) -> u32 {
-    b.wrapping_div(BPB as u32).wrapping_add(_sb.bmapstart)
+pub const fn bblock(b: u32, super_block: superblock) -> u32 {
+    b.wrapping_div(BPB as u32)
+        .wrapping_add(super_block.bmapstart)
 }
 /// Bitmap bits per block
 pub const BPB: i32 = BSIZE * 8;
 /// Directory is a file containing a sequence of dirent structures.
-pub const DIRSIZ: i32 = 14;
+pub const DIRSIZ: usize = 14;
 /// there should be one superblock per disk device, but we run with
 /// only one device
 #[no_mangle]
@@ -574,7 +569,7 @@ pub unsafe extern "C" fn readi(
     tot = 0 as u32;
     while tot < n {
         bp = bread((*ip).dev, bmap(ip, off.wrapping_div(BSIZE as u32)));
-        m = min(
+        m = core::cmp::min(
             n.wrapping_sub(tot),
             (1024 as i32 as u32).wrapping_sub(off.wrapping_rem(1024 as i32 as u32)),
         );
@@ -623,7 +618,7 @@ pub unsafe extern "C" fn writei(
     tot = 0 as i32 as u32;
     while tot < n {
         bp = bread((*ip).dev, bmap(ip, off.wrapping_div(BSIZE as u32)));
-        m = min(
+        m = core::cmp::min(
             n.wrapping_sub(tot),
             (1024 as i32 as u32).wrapping_sub(off.wrapping_rem(1024 as i32 as u32)),
         );
@@ -675,7 +670,7 @@ pub unsafe extern "C" fn dirlookup(
     let mut inum: u32 = 0;
     let mut de: dirent = dirent {
         inum: 0,
-        name: [0; DIRSIZ as usize],
+        name: [0; DIRSIZ],
     };
     if (*dp).typ as i32 != T_DIR {
         panic(b"dirlookup not DIR\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -715,7 +710,7 @@ pub unsafe extern "C" fn dirlink(
     let mut off: i32 = 0;
     let mut de: dirent = dirent {
         inum: 0,
-        name: [0; DIRSIZ as usize],
+        name: [0; DIRSIZ],
     };
     let mut ip: *mut inode = ptr::null_mut();
     // Check that name is not present.
@@ -743,7 +738,7 @@ pub unsafe extern "C" fn dirlink(
         }
         off = (off as u64).wrapping_add(::core::mem::size_of::<dirent>() as u64) as i32 as i32
     }
-    strncpy(de.name.as_mut_ptr(), name, DIRSIZ);
+    strncpy(de.name.as_mut_ptr(), name, DIRSIZ as i32);
     de.inum = inum as u16;
     if writei(
         dp,
@@ -788,12 +783,8 @@ unsafe extern "C" fn skipelem(
         path = path.offset(1)
     }
     len = path.wrapping_offset_from(s) as i64 as i32;
-    if len >= DIRSIZ {
-        ptr::copy(
-            s as *const libc::c_void,
-            name as *mut libc::c_void,
-            DIRSIZ as usize,
-        );
+    if len >= DIRSIZ as i32 {
+        ptr::copy(s as *const libc::c_void, name as *mut libc::c_void, DIRSIZ);
     } else {
         ptr::copy(
             s as *const libc::c_void,
@@ -854,7 +845,7 @@ unsafe extern "C" fn namex(
 }
 #[no_mangle]
 pub unsafe extern "C" fn namei(mut path: *mut libc::c_char) -> *mut inode {
-    let mut name: [libc::c_char; DIRSIZ as usize] = [0; DIRSIZ as usize];
+    let mut name: [libc::c_char; DIRSIZ] = [0; DIRSIZ];
     namex(path, 0 as i32, name.as_mut_ptr())
 }
 #[no_mangle]

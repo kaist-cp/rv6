@@ -131,7 +131,7 @@ pub unsafe extern "C" fn sys_fstat() -> u64 {
 /// Create the path new as a link to the same inode as old.
 #[no_mangle]
 pub unsafe extern "C" fn sys_link() -> u64 {
-    let mut name: [libc::c_char; DIRSIZ as usize] = [0; DIRSIZ as usize];
+    let mut name: [libc::c_char; DIRSIZ] = [0; DIRSIZ];
     let mut new: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut old: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut dp: *mut inode = ptr::null_mut();
@@ -180,7 +180,7 @@ unsafe extern "C" fn isdirempty(mut dp: *mut inode) -> i32 {
     let mut off: i32 = 0;
     let mut de: dirent = dirent {
         inum: 0,
-        name: [0; DIRSIZ as usize],
+        name: [0; DIRSIZ],
     };
     off = (2 as u64).wrapping_mul(::core::mem::size_of::<dirent>() as u64) as i32;
     while (off as u32) < (*dp).size {
@@ -210,9 +210,9 @@ pub unsafe extern "C" fn sys_unlink() -> u64 {
     let mut dp: *mut inode = ptr::null_mut();
     let mut de: dirent = dirent {
         inum: 0,
-        name: [0; DIRSIZ as usize],
+        name: [0; DIRSIZ],
     };
-    let mut name: [libc::c_char; DIRSIZ as usize] = [0; DIRSIZ as usize];
+    let mut name: [libc::c_char; DIRSIZ] = [0; DIRSIZ];
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut off: u32 = 0;
     if argstr(0 as i32, path.as_mut_ptr(), MAXPATH) < 0 as i32 {
@@ -287,7 +287,7 @@ unsafe extern "C" fn create(
 ) -> *mut inode {
     let mut ip: *mut inode = ptr::null_mut();
     let mut dp: *mut inode = ptr::null_mut();
-    let mut name: [libc::c_char; DIRSIZ as usize] = [0; DIRSIZ as usize];
+    let mut name: [libc::c_char; DIRSIZ] = [0; DIRSIZ];
     dp = nameiparent(path, name.as_mut_ptr());
     if dp.is_null() {
         return ptr::null_mut();

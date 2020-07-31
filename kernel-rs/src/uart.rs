@@ -68,14 +68,14 @@ pub unsafe extern "C" fn uartinit() {
 #[no_mangle]
 pub unsafe extern "C" fn uartputc(mut c: i32) {
     // wait for Transmit Holding Empty to be set in LSR.
-    while ptr::read_volatile(readreg(LSR)) as i32 & (1 as i32) << 5 as i32 == 0 as i32 {}
+    while ptr::read_volatile(readreg(LSR)) as i32 & 1 << 5 == 0 {}
     writereg(THR, c);
 }
 /// read one input character from the UART.
 /// return -1 if none is waiting.
 #[no_mangle]
 pub unsafe extern "C" fn uartgetc() -> i32 {
-    if ptr::read_volatile(readreg(LSR)) as i32 & 0x1 as i32 != 0 {
+    if ptr::read_volatile(readreg(LSR)) as i32 & 0x1 != 0 {
         // input data is ready.
         ptr::read_volatile(readreg(RHR)) as i32
     } else {
@@ -87,7 +87,7 @@ pub unsafe extern "C" fn uartgetc() -> i32 {
 pub unsafe extern "C" fn uartintr() {
     loop {
         let mut c: i32 = uartgetc();
-        if c == -(1 as i32) {
+        if c == -1 {
             break;
         }
         consoleintr(c);

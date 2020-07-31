@@ -231,6 +231,7 @@ pub unsafe fn intr_get() -> i32 {
     let mut x: u64 = r_sstatus();
     (x & SSTATUS_SIE as u64 != 0 as i32 as u64) as i32
 }
+
 /// read and write tp, the thread pointer, which holds
 /// this core's hartid (core number), the index into cpus[].
 #[inline]
