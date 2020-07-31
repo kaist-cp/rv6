@@ -17,6 +17,12 @@ use crate::{
     vm::kvmpa,
 };
 use core::ptr;
+
+/* TODO:
+// the address of virtio mmio register r.
+#define R(r) ((volatile uint32 *)(VIRTIO0 + (r)))
+*/
+
 /// driver for qemu's virtio disk device.
 /// uses qemu's mmio interface to virtio.
 /// qemu presents a "legacy" virtio interface.
@@ -30,13 +36,23 @@ pub struct Disk(pub disk_Inner);
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct disk_Inner {
-    pub pages: [libc::c_char; 8192],
+    /// memory for virtio descriptors &c for queue 0.
+    /// this is a global instead of allocated because it must
+    /// be multiple contiguous pages, which kalloc()
+    /// doesn't support, and page aligned.
+    pub pages: [libc::c_char; 2 * PGSIZE as usize],
     pub desc: *mut VRingDesc,
     pub avail: *mut u16,
     pub used: *mut UsedArea,
-    pub free: [libc::c_char; 8],
+
+    /// our own book-keeping.
+    pub free: [libc::c_char; NUM as usize],
     pub used_idx: u16,
-    pub info: [InflightInfo; 8],
+
+    /// track info about in-flight operations,
+    /// for use when completion interrupt arrives.
+    /// indexed by first descriptor index of chain.
+    pub info: [InflightInfo; NUM as usize],
     pub vdisk_lock: Spinlock,
 }
 #[allow(dead_code, non_upper_case_globals)]
@@ -59,12 +75,12 @@ static mut disk: Disk = Disk(disk_Inner {
     desc: 0 as *const VRingDesc as *mut VRingDesc,
     avail: 0 as *const u16 as *mut u16,
     used: 0 as *const UsedArea as *mut UsedArea,
-    free: [0; 8],
+    free: [0; NUM as usize],
     used_idx: 0,
     info: [InflightInfo {
         b: 0 as *const Buf as *mut Buf,
         status: 0,
-    }; 8],
+    }; NUM as usize],
     vdisk_lock: Spinlock {
         locked: 0,
         name: 0 as *const libc::c_char as *mut libc::c_char,

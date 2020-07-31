@@ -5,7 +5,7 @@ use crate::{
     printf::{panic, printf},
     riscv::{
         pagetable_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W,
-        PTE_X, PXMASK, SATP_SV39,
+        PTE_X, PXMASK, make_satp,
     },
     types::pde_t,
 };
@@ -76,7 +76,7 @@ pub unsafe extern "C" fn kvminit() {
 /// and enable paging.
 #[no_mangle]
 pub unsafe extern "C" fn kvminithart() {
-    w_satp(SATP_SV39 as u64 | kernel_pagetable as u64 >> 12 as i32);
+    w_satp(make_satp(kernel_pagetable as u64));
     sfence_vma();
 }
 /// Return the address of the PTE in page table pagetable

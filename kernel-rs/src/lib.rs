@@ -18,6 +18,8 @@
 #![feature(c_variadic)]
 #![feature(core_intrinsics)]
 #![feature(ptr_wrapping_offset_from)]
+#![feature(const_if_match)]
+#![feature(const_wrapping_int_methods)]
 
 // TODO(@jeehoonkang): we define `libc` module here because the `libc` crate doesn't work for the
 // `riscv64gc-unknown-none-elfhf` target.
