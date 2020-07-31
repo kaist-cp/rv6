@@ -1,5 +1,7 @@
 /// maximum number of processes
 pub const NPROC: i32 = 64;
+/// maximum number of CPUs
+pub const NCPU: i32 = 8;
 /// open files per process
 pub const NOFILE: i32 = 16;
 /// open files per system
@@ -19,5 +21,7 @@ pub const MAXOPBLOCKS: i32 = 10;
 pub const LOGSIZE: i32 = MAXOPBLOCKS * 3;
 /// size of disk block cache
 pub const NBUF: i32 = MAXOPBLOCKS * 3;
+/// size of file system in blocks
+pub const FSSIZE: i32 = 1000;
 /// maximum file path name
 pub const MAXPATH: i32 = 128;

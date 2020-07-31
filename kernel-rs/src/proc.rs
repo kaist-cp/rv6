@@ -4,8 +4,8 @@ use crate::{
     fs::{fsinit, idup, iput, namei},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
-    memlayout::{TRAMPOLINE, TRAPFRAME},
-    param::{NOFILE, NPROC, ROOTDEV},
+    memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
+    param::{NCPU, NOFILE, NPROC, ROOTDEV},
     printf::{panic, printf},
     riscv::{intr_get, intr_on, pagetable_t, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
     spinlock::{acquire, holding, initlock, pop_off, push_off, release, Spinlock},
@@ -129,7 +129,7 @@ pub const RUNNING: procstate = 3;
 pub const RUNNABLE: procstate = 2;
 pub const SLEEPING: procstate = 1;
 pub const UNUSED: procstate = 0;
-pub static mut cpus: [cpu; 8] = [cpu {
+pub static mut cpus: [cpu; NCPU as usize] = [cpu {
     proc_0: ptr::null_mut(),
     scheduler: context {
         ra: 0,
@@ -149,7 +149,7 @@ pub static mut cpus: [cpu; 8] = [cpu {
     },
     noff: 0,
     intena: 0,
-}; 8];
+}; NCPU as usize];
 #[export_name = "proc"]
 pub static mut proc: [proc_0; 64] = [proc_0 {
     lock: Spinlock {
@@ -215,10 +215,7 @@ pub unsafe fn procinit() {
         if pa.is_null() {
             panic(b"kalloc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
-        let mut va: u64 = (TRAMPOLINE
-            - ((p.wrapping_offset_from(proc.as_mut_ptr()) as i64 as i32 + 1 as i32)
-                * 2 as i32
-                * PGSIZE) as i64) as u64;
+        let mut va: u64 = kstack(p.wrapping_offset_from(proc.as_mut_ptr()) as i64 as i32) as u64;
         kvmmap(va, pa as u64, PGSIZE as u64, (PTE_R | PTE_W) as i32);
         (*p).kstack = va;
         p = p.offset(1)

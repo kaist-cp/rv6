@@ -1,7 +1,8 @@
 use crate::libc;
 use crate::{
     kernel_main::main_0,
-    memlayout::{CLINT, CLINT_MTIME},
+    memlayout::{clint_mtimecmp, CLINT_MTIME},
+    param::NCPU,
     riscv::{
         r_mhartid, r_mie, r_mstatus, w_medeleg, w_mepc, w_mideleg, w_mie, w_mscratch, w_mstatus,
         w_mtvec, w_satp, w_tp, MIE_MTIE, MSTATUS_MIE, MSTATUS_MPP_MASK, MSTATUS_MPP_S,
@@ -14,11 +15,11 @@ extern "C" {
 }
 /// entry.S needs one stack per CPU.
 #[repr(align(16))]
-pub struct Stack([libc::c_char; 32768]);
+pub struct Stack([libc::c_char; 4096 * NCPU as usize]);
 #[no_mangle]
-pub static mut stack0: Stack = Stack([0; 32768]);
+pub static mut stack0: Stack = Stack([0; 4096 * NCPU as usize]);
 /// scratch area for timer interrupt, one per CPU.
-pub static mut mscratch0: [u64; 256] = [0; 256];
+pub static mut mscratch0: [u64; NCPU as usize * 32] = [0; NCPU as usize * 32];
 /// entry.S jumps here in machine mode on stack0.
 #[no_mangle]
 pub unsafe fn start() {
@@ -54,14 +55,14 @@ pub unsafe fn timerinit() {
     let mut id: i32 = r_mhartid() as i32;
     // ask the CLINT for a timer interrupt.
     let mut interval: i32 = 1000000; // cycles; about 1/10th second in qemu.
-    *((CLINT + 0x4000 as i64 + (8 * id) as i64) as *mut u64) =
+    *(clint_mtimecmp(id as u64) as *mut u64) =
         (*(CLINT_MTIME as *mut u64)).wrapping_add(interval as u64);
     // prepare information in scratch[] for timervec.
     // scratch[0..3] : space for timervec to save registers.
     // scratch[4] : address of CLINT MTIMECMP register.
     // scratch[5] : desired interval (in cycles) between timer interrupts.
     let mut scratch: *mut u64 = &mut *mscratch0.as_mut_ptr().offset(32 * id as isize) as *mut u64;
-    *scratch.offset(4) = (CLINT + 0x4000 as i64 + (8 * id) as i64) as u64;
+    *scratch.offset(4) = clint_mtimecmp(id as u64);
     *scratch.offset(5) = interval as u64;
     w_mscratch(scratch as u64);
     // set the machine-mode trap handler.

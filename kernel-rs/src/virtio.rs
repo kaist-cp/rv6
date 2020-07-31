@@ -8,6 +8,33 @@
 /// https:///docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.pdf
 ///
 
+// virtio mmio control registers, mapped starting at 0x10001000.
+// from qemu virtio_mmio.h
+/// 0x74726976
+pub const VIRTIO_MMIO_MAGIC_VALUE: i32 = 0x000;
+/// version; 1 is legacy
+pub const VIRTIO_MMIO_VERSION: i32 = 0x004;
+/// device type; 1 is net, 2 is disk
+pub const VIRTIO_MMIO_DEVICE_ID: i32 = 0x008;
+/// 0x554d4551
+pub const VIRTIO_MMIO_VENDOR_ID: i32 = 0x00c;
+pub const VIRTIO_MMIO_DEVICE_FEATURES: i32 = 0x010;
+pub const VIRTIO_MMIO_DRIVER_FEATURES: i32 = 0x020;
+/// page size for PFN, write-only
+pub const VIRTIO_MMIO_GUEST_PAGE_SIZE: i32 = 0x028;
+/// select queue, write-only
+pub const VIRTIO_MMIO_QUEUE_SEL: i32 = 0x030;
+/// max size of current queue, read-only
+pub const VIRTIO_MMIO_QUEUE_NUM_MAX: i32 = 0x034;
+/// size of current queue, write-only
+pub const VIRTIO_MMIO_QUEUE_NUM: i32 = 0x038;
+/// physical page number for queue, read/write
+pub const VIRTIO_MMIO_QUEUE_PFN: i32 = 0x040;
+/// write-only
+pub const VIRTIO_MMIO_QUEUE_NOTIFY: i32 = 0x050;
+/// read/write
+pub const VIRTIO_MMIO_STATUS: i32 = 0x070;
+
 /// status register bits, from qemu virtio_config.h
 pub const VIRTIO_CONFIG_S_ACKNOWLEDGE: i32 = 1;
 pub const VIRTIO_CONFIG_S_DRIVER: i32 = 2;
@@ -55,5 +82,5 @@ pub const VIRTIO_BLK_T_OUT: i32 = 1;
 pub struct UsedArea {
     pub flags: u16,
     pub id: u16,
-    pub elems: [VRingUsedElem; 8],
+    pub elems: [VRingUsedElem; NUM as usize],
 }

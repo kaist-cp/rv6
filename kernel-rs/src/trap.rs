@@ -5,8 +5,8 @@ use crate::{
     printf::{panic, printf},
     proc::{cpu, cpuid, exit, myproc, proc_0, wakeup, yield_0, RUNNING},
     riscv::{
-        intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_sstatus, r_stval, r_tp,
-        w_sepc, w_sip, w_sstatus, w_stvec, PGSIZE, SATP_SV39, SSTATUS_SPIE, SSTATUS_SPP,
+        intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_sstatus,
+        r_stval, r_tp, w_sepc, w_sip, w_sstatus, w_stvec, PGSIZE, SSTATUS_SPIE, SSTATUS_SPP,
     },
     spinlock::{acquire, initlock, release, Spinlock},
     syscall::syscall,
@@ -142,7 +142,7 @@ pub unsafe fn usertrapret() {
     // set S Exception Program Counter to the saved user pc.
     w_sepc((*(*p).tf).epc);
     // tell trampoline.S the user page table to switch to.
-    let mut satp: u64 = SATP_SV39 as u64 | (*p).pagetable as u64 >> 12 as i32;
+    let mut satp: u64 = make_satp((*p).pagetable as u64);
     // jump to trampoline.S at the top of memory, which
     // switches to the user page table, restores user registers,
     // and switches to user mode with sret.

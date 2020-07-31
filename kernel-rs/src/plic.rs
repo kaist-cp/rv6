@@ -1,5 +1,7 @@
 use crate::{
-    memlayout::{PLIC, PLIC_PENDING, UART0_IRQ, VIRTIO0_IRQ},
+    memlayout::{
+        plic_sclaim, plic_senable, plic_spriority, PLIC, PLIC_PENDING, UART0_IRQ, VIRTIO0_IRQ,
+    },
     proc::cpuid,
 };
 /// local interrupt controller, which contains the timer.
@@ -15,10 +17,10 @@ pub unsafe fn plicinit() {
 pub unsafe fn plicinithart() {
     let mut hart: i32 = cpuid();
     // set uart's enable bit for this hart's S-mode.
-    *((PLIC + 0x2080 as i32 as i64 + (hart * 0x100 as i32) as i64) as *mut u32) =
+    *(plic_senable(hart) as *mut u32) =
         ((1 as i32) << UART0_IRQ | (1 as i32) << VIRTIO0_IRQ) as u32;
     // set this hart's S-mode priority threshold to 0.
-    *((PLIC + 0x201000 as i32 as i64 + (hart * 0x2000) as i64) as *mut u32) = 0 as i32 as u32;
+    *(plic_spriority(hart) as *mut u32) = 0 as i32 as u32;
 }
 /// return a bitmap of which IRQs are waiting
 /// to be served.
@@ -31,12 +33,12 @@ pub unsafe fn plic_pending() -> u32 {
 pub unsafe fn plic_claim() -> i32 {
     let mut hart: i32 = cpuid();
     //int irq = *(u32*)(PLIC + 0x201004);
-    let mut irq: i32 = *((PLIC + 0x201004 as i64 + (hart * 0x2000) as i64) as *mut u32) as i32;
+    let mut irq: i32 = *(plic_sclaim(hart) as *mut u32) as i32;
     irq
 }
 /// tell the PLIC we've served this IRQ.
 pub unsafe fn plic_complete(mut irq: i32) {
     let mut hart: i32 = cpuid();
     //*(u32*)(PLIC + 0x201004) = irq;
-    *((PLIC + 0x201004 as i64 + (hart * 0x2000) as i64) as *mut u32) = irq as u32;
+    *(plic_sclaim(hart) as *mut u32) = irq as u32;
 }

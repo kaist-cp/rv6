@@ -27,6 +27,9 @@ pub struct Console {
 ///
 pub const BACKSPACE: i32 = 0x100;
 /// Control-x
+const fn ctrl(x: char) -> i32 {
+    x as i32 - '@' as i32
+}
 ///
 /// send one character to the uart.
 ///
@@ -43,7 +46,7 @@ pub unsafe fn consputc(mut c: i32) {
         uartputc(c);
     };
 }
-pub const INPUT_BUF: i32 = 128;
+pub const INPUT_BUF: usize = 128;
 ///
 /// Edit index
 ///
@@ -53,7 +56,7 @@ pub static mut cons: Console = Console {
         name: 0 as *const libc::c_char as *mut libc::c_char,
         cpu: 0 as *const cpu as *mut cpu,
     },
-    buf: [0; 128],
+    buf: [0; INPUT_BUF],
     r: 0,
     w: 0,
     e: 0,
@@ -89,7 +92,7 @@ pub unsafe fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
 ///
 pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
     let mut target: u32 = n as u32;
-    let mut c: i32 = 0;
+    let mut cin: i32 = 0;
     let mut cbuf: libc::c_char = 0;
     acquire(&mut cons.lock);
     while n > 0 as i32 {
@@ -104,8 +107,8 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
         }
         let fresh0 = cons.r;
         cons.r = cons.r.wrapping_add(1);
-        c = cons.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
-        if c == 'D' as i32 - '@' as i32 {
+        cin = cons.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
+        if cin == ctrl('D') {
             // end-of-file
             if (n as u32) < target {
                 // Save ^D for next time, to make sure
@@ -115,7 +118,7 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
             break;
         } else {
             // copy the input byte to the user-space buffer.
-            cbuf = c as libc::c_char;
+            cbuf = cin as libc::c_char;
             if either_copyout(
                 user_dst,
                 dst,
@@ -127,7 +130,7 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
             }
             dst = dst.wrapping_add(1);
             n -= 1;
-            if c == '\n' as i32 {
+            if cin == '\n' as i32 {
                 break;
             }
         }
@@ -141,15 +144,16 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
 /// do erase/kill processing, append to cons.buf,
 /// wake up consoleread() if a whole line has arrived.
 ///
-pub unsafe fn consoleintr(mut c: i32) {
+
+pub unsafe fn consoleintr(mut cin: i32) {
     acquire(&mut cons.lock);
-    match c {
-        16 => {
-            // Print process list.
+    match cin {
+        // Print process list.
+        m if m == ctrl('P') => {
             procdump();
         }
-        21 => {
-            // Kill line.
+        // Kill line.
+        m if m == ctrl('U') => {
             while cons.e != cons.w
                 && cons.buf[cons
                     .e
@@ -161,24 +165,24 @@ pub unsafe fn consoleintr(mut c: i32) {
                 consputc(BACKSPACE);
             }
         }
-        8 | 127 => {
-            // Backspace
+        // Backspace
+        m if m == ctrl('H') | '\x7f' as i32 => {
             if cons.e != cons.w {
                 cons.e = cons.e.wrapping_sub(1);
                 consputc(BACKSPACE);
             }
         }
         _ => {
-            if c != 0 as i32 && cons.e.wrapping_sub(cons.r) < INPUT_BUF as u32 {
-                c = if c == '\r' as i32 { '\n' as i32 } else { c };
+            if cin != 0 as i32 && cons.e.wrapping_sub(cons.r) < INPUT_BUF as u32 {
+                cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
                 // echo back to the user.
-                consputc(c);
+                consputc(cin);
                 // store for consumption by consoleread().
                 let fresh1 = cons.e;
                 cons.e = cons.e.wrapping_add(1);
-                cons.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = c as libc::c_char;
-                if c == '\n' as i32
-                    || c == 'D' as i32 - '@' as i32
+                cons.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = cin as libc::c_char;
+                if cin == '\n' as i32
+                    || cin == ctrl('D')
                     || cons.e == cons.r.wrapping_add(INPUT_BUF as u32)
                 {
                     // wake up consoleread() if a whole line (or end-of-file)

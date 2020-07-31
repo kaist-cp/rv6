@@ -157,8 +157,9 @@ pub unsafe fn w_mtvec(mut x: u64) {
 
 /// use riscv's sv39 page table scheme.
 pub const SATP_SV39: i64 = (8 as i64) << 60 as i32;
-// TODO: use in other file directly - e.g., kvminithart() in vm.rs
-// #define MAKE_SATP(pagetable) (SATP_SV39 | (((u64)pagetable) >> 12))
+pub const fn make_satp(pagetable: u64) -> u64 {
+    SATP_SV39 as u64 | pagetable >> 12 as i32
+}
 
 /// supervisor address translation and protection;
 /// holds the address of the page table.
@@ -239,18 +240,12 @@ pub unsafe fn r_tp() -> u64 {
     llvm_asm!("mv $0, tp" : "=r" (x) : : : "volatile");
     x
 }
-
-/*
-TODO: will be used in usetests.rs
-static inline u64
-r_sp()
-{
-  u64 x;
-  asm volatile("mv %0, sp" : "=r" (x) );
-  return x;
+#[inline]
+pub unsafe fn r_sp() -> u64 {
+    let mut x: u64 = 0;
+    llvm_asm!("mv %0, sp" : "=r" (x) : : : "volatile");
+    x
 }
-*/
-
 #[inline]
 pub unsafe fn w_tp(mut x: u64) {
     llvm_asm!("mv tp, $0" : : "r" (x) : : "volatile");
@@ -273,7 +268,12 @@ pub unsafe fn sfence_vma() {
 pub const PGSIZE: i32 = 4096 as i32;
 /// bits of offset within a page
 pub const PGSHIFT: i32 = 12 as i32;
-
+pub const fn pgroundup(sz: u64) -> u64 {
+    sz.wrapping_add(PGSIZE as u64).wrapping_sub(1 as i32 as u64) & (!(PGSIZE - 1 as i32) as u64)
+}
+pub const fn pgrounddown(a: u64) -> u64 {
+    a & !(PGSIZE - 1 as i32) as u64
+}
 /*
 TODO: used directly in oter function e.g., uvmalloc in vm.rs
 #define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
@@ -286,10 +286,19 @@ pub const PTE_W: i64 = (1 as i64) << 2 as i32;
 pub const PTE_X: i64 = (1 as i64) << 3 as i32;
 /// 1 -> user can access
 pub const PTE_U: i64 = (1 as i64) << 4 as i32;
-
+/// shift a physical address to the right place for a PTE.
+pub const fn pa2pte(pa: u64) -> u64 {
+    (pa >> 12 as i32) << 10 as i32
+}
+pub const fn pte2pa(pte: pte_t) -> u64 {
+    (pte >> 10 as i32) << 12 as i32
+}
+pub const fn pte_flags(pte: pte_t) -> u64 {
+    pte & 0x3ff as i32 as u64
+}
 /*
 TODO: used directly in other file e.g., vm.rs
-/// shift a physical address to the right place for a PTE.
+
 #define PA2PTE(pa) ((((u64)pa) >> 12) << 10)
 
 #define PTE2PA(pte) (((pte) >> 10) << 12)
@@ -300,6 +309,13 @@ TODO: used directly in other file e.g., vm.rs
 /// 9 bits
 pub const PXMASK: i32 = 0x1ff as i32;
 
+fn pxshift(level: i32) -> i32 {
+    PGSHIFT + 9 * level
+}
+
+pub fn px(level: i32, va: u64) -> u64 {
+    (va >> pxshift(level) as u64) & PXMASK as u64
+}
 /*
 TODO: unused
 #define PXSHIFT(level)  (PGSHIFT+(9*(level)))
