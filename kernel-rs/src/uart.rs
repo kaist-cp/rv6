@@ -17,8 +17,7 @@ use core::ptr;
 /// interrupt status register
 /// line control register
 /// line status register
-#[no_mangle]
-pub unsafe extern "C" fn uartinit() {
+pub unsafe fn uartinit() {
     // disable interrupts.
     ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0);
     // special mode to set baud rate.
@@ -36,8 +35,7 @@ pub unsafe extern "C" fn uartinit() {
     ptr::write_volatile((UART0 + 1 as i64) as *mut u8, 0x1);
 }
 /// write one output character to the UART.
-#[no_mangle]
-pub unsafe extern "C" fn uartputc(mut c: i32) {
+pub unsafe fn uartputc(mut c: i32) {
     // wait for Transmit Holding Empty to be set in LSR.
     while ptr::read_volatile((UART0 + 5 as i64) as *mut u8) as i32 & (1 as i32) << 5 as i32
         == 0 as i32
@@ -46,8 +44,7 @@ pub unsafe extern "C" fn uartputc(mut c: i32) {
 }
 /// read one input character from the UART.
 /// return -1 if none is waiting.
-#[no_mangle]
-pub unsafe extern "C" fn uartgetc() -> i32 {
+pub unsafe fn uartgetc() -> i32 {
     if ptr::read_volatile((UART0 + 5 as i64) as *mut u8) as i32 & 0x1 as i32 != 0 {
         // input data is ready.
         ptr::read_volatile((UART0 + 0 as i64) as *mut u8) as i32
@@ -56,8 +53,7 @@ pub unsafe extern "C" fn uartgetc() -> i32 {
     }
 }
 /// trap.c calls here when the uart interrupts.
-#[no_mangle]
-pub unsafe extern "C" fn uartintr() {
+pub unsafe fn uartintr() {
     loop {
         let mut c: i32 = uartgetc();
         if c == -(1 as i32) {

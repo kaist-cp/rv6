@@ -11,7 +11,6 @@ use crate::{
 use core::ptr;
 
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct log {
     pub lock: Spinlock,
     pub start: i32,
@@ -48,12 +47,10 @@ pub struct log {
 /// Contents of the header block, used for both the on-disk header block
 /// and to keep track in memory of logged block# before commit.
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct logheader {
     pub n: i32,
     pub block: [i32; 30],
 }
-#[no_mangle]
 pub static mut log: log = log {
     lock: Spinlock {
         locked: 0,
@@ -70,8 +67,7 @@ pub static mut log: log = log {
         block: [0; 30],
     },
 };
-#[no_mangle]
-pub unsafe extern "C" fn initlog(mut dev: i32, mut sb: *mut superblock) {
+pub unsafe fn initlog(mut dev: i32, mut sb: *mut superblock) {
     if ::core::mem::size_of::<logheader>() as u64 >= BSIZE as u64 {
         panic(
             b"initlog: too big logheader\x00" as *const u8 as *const libc::c_char
@@ -88,7 +84,7 @@ pub unsafe extern "C" fn initlog(mut dev: i32, mut sb: *mut superblock) {
     recover_from_log();
 }
 /// Copy committed blocks from log to their home location
-unsafe extern "C" fn install_trans() {
+unsafe fn install_trans() {
     let mut tail: i32 = 0; // read log block
     tail = 0; // read dst
     while tail < log.lh.n {
@@ -107,7 +103,7 @@ unsafe extern "C" fn install_trans() {
     }
 }
 /// Read the log header from disk into the in-memory log header
-unsafe extern "C" fn read_head() {
+unsafe fn read_head() {
     let mut buf: *mut Buf = bread(log.dev as u32, log.start as u32);
     let mut lh: *mut logheader = (*buf).data.as_mut_ptr() as *mut logheader;
     let mut i: i32 = 0;
@@ -121,7 +117,7 @@ unsafe extern "C" fn read_head() {
 /// Write in-memory log header to disk.
 /// This is the true point at which the
 /// current transaction commits.
-unsafe extern "C" fn write_head() {
+unsafe fn write_head() {
     let mut buf: *mut Buf = bread(log.dev as u32, log.start as u32); // if committed, copy from log to disk
     let mut hb: *mut logheader = (*buf).data.as_mut_ptr() as *mut logheader;
     let mut i: i32 = 0;
@@ -133,7 +129,7 @@ unsafe extern "C" fn write_head() {
     bwrite(buf);
     brelse(buf);
 }
-unsafe extern "C" fn recover_from_log() {
+unsafe fn recover_from_log() {
     read_head();
     install_trans();
     log.lh.n = 0 as i32;
@@ -141,8 +137,7 @@ unsafe extern "C" fn recover_from_log() {
     // clear the log
 }
 /// called at the start of each FS system call.
-#[no_mangle]
-pub unsafe extern "C" fn begin_op() {
+pub unsafe fn begin_op() {
     acquire(&mut log.lock);
     loop {
         if log.committing != 0 {
@@ -159,8 +154,7 @@ pub unsafe extern "C" fn begin_op() {
 }
 /// called at the end of each FS system call.
 /// commits if this was the last outstanding operation.
-#[no_mangle]
-pub unsafe extern "C" fn end_op() {
+pub unsafe fn end_op() {
     let mut do_commit: i32 = 0;
     acquire(&mut log.lock);
     log.outstanding -= 1 as i32;
@@ -188,7 +182,7 @@ pub unsafe extern "C" fn end_op() {
     };
 }
 /// Copy modified blocks from cache to log.
-unsafe extern "C" fn write_log() {
+unsafe fn write_log() {
     let mut tail: i32 = 0; // log block
     tail = 0; // cache block
     while tail < log.lh.n {
@@ -205,7 +199,7 @@ unsafe extern "C" fn write_log() {
         tail += 1
     }
 }
-unsafe extern "C" fn commit() {
+unsafe fn commit() {
     if log.lh.n > 0 as i32 {
         write_log();
         // Erase the transaction from the log
@@ -224,8 +218,7 @@ unsafe extern "C" fn commit() {
 ///   modify bp->data[]
 ///   log_write(bp)
 ///   brelse(bp)
-#[no_mangle]
-pub unsafe extern "C" fn log_write(mut b: *mut Buf) {
+pub unsafe fn log_write(mut b: *mut Buf) {
     let mut i: i32 = 0;
     if log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1 as i32 {
         panic(

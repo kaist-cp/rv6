@@ -42,7 +42,6 @@ pub struct disk_Inner {
 #[allow(dead_code, non_upper_case_globals)]
 const disk_PADDING: usize = ::core::mem::size_of::<Disk>() - ::core::mem::size_of::<disk_Inner>();
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct InflightInfo {
     pub b: *mut Buf,
     pub status: libc::c_char,
@@ -71,8 +70,7 @@ static mut disk: Disk = Disk(disk_Inner {
         cpu: 0 as *const cpu as *mut cpu,
     },
 });
-#[no_mangle]
-pub unsafe extern "C" fn virtio_disk_init() {
+pub unsafe fn virtio_disk_init() {
     let mut status: u32 = 0 as u32;
     initlock(
         &mut disk.0.vdisk_lock,
@@ -146,7 +144,7 @@ pub unsafe extern "C" fn virtio_disk_init() {
     // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
 }
 /// find a free descriptor, mark it non-free, return its index.
-unsafe extern "C" fn alloc_desc() -> i32 {
+unsafe fn alloc_desc() -> i32 {
     let mut i: i32 = 0;
     while i < NUM {
         if disk.0.free[i as usize] != 0 {
@@ -158,7 +156,7 @@ unsafe extern "C" fn alloc_desc() -> i32 {
     -1
 }
 /// mark a descriptor as free.
-unsafe extern "C" fn free_desc(mut i: i32) {
+unsafe fn free_desc(mut i: i32) {
     if i >= NUM {
         panic(b"virtio_disk_intr 1\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
@@ -173,7 +171,7 @@ unsafe extern "C" fn free_desc(mut i: i32) {
     );
 }
 /// free a chain of descriptors.
-unsafe extern "C" fn free_chain(mut i: i32) {
+unsafe fn free_chain(mut i: i32) {
     loop {
         free_desc(i);
         if (*disk.0.desc.offset(i as isize)).flags as i32 & VRING_DESC_F_NEXT == 0 {
@@ -182,7 +180,7 @@ unsafe extern "C" fn free_chain(mut i: i32) {
         i = (*disk.0.desc.offset(i as isize)).next as i32
     }
 }
-unsafe extern "C" fn alloc3_desc(mut idx: *mut i32) -> i32 {
+unsafe fn alloc3_desc(mut idx: *mut i32) -> i32 {
     let mut i: i32 = 0;
     while i < 3 as i32 {
         *idx.offset(i as isize) = alloc_desc();
@@ -198,8 +196,7 @@ unsafe extern "C" fn alloc3_desc(mut idx: *mut i32) -> i32 {
     }
     0
 }
-#[no_mangle]
-pub unsafe extern "C" fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
+pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     let mut sector: u64 = (*b).blockno.wrapping_mul((BSIZE / 512 as i32) as u32) as u64;
     acquire(&mut disk.0.vdisk_lock);
     // the spec says that legacy block operations use three
@@ -281,8 +278,7 @@ pub unsafe extern "C" fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     free_chain(idx[0 as i32 as usize]);
     release(&mut disk.0.vdisk_lock);
 }
-#[no_mangle]
-pub unsafe extern "C" fn virtio_disk_intr() {
+pub unsafe fn virtio_disk_intr() {
     acquire(&mut disk.0.vdisk_lock);
     while disk.0.used_idx as i32 % NUM != (*disk.0.used).id as i32 % NUM {
         let mut id: i32 = (*disk.0.used).elems[disk.0.used_idx as usize].id as i32;

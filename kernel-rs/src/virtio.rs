@@ -29,7 +29,6 @@ pub const VIRTIO_RING_F_EVENT_IDX: i32 = 29;
 /// must be a power of two.
 pub const NUM: i32 = 8;
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct VRingDesc {
     pub addr: u64,
     pub len: u32,
@@ -41,7 +40,6 @@ pub const VRING_DESC_F_NEXT: i32 = 1;
 /// device writes (vs read)
 pub const VRING_DESC_F_WRITE: i32 = 2;
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct VRingUsedElem {
     pub id: u32,
     /// index of start of completed descriptor chain

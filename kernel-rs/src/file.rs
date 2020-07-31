@@ -14,7 +14,6 @@ use crate::{
 use core::ptr;
 pub const CONSOLE: isize = 1;
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct File {
     pub typ: u32,
     pub ref_0: i32,
@@ -28,7 +27,6 @@ pub struct File {
 /// FD_DEVICE
 /// in-memory copy of an inode
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct inode {
     pub dev: u32,
     pub inum: u32,
@@ -47,27 +45,23 @@ pub const FD_INODE: u32 = 2;
 pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct Ftable {
     pub lock: Spinlock,
     pub file: [File; 100],
 }
 /// map major device number to device functions.
 #[derive(Copy, Clone)]
-#[repr(C)]
 pub struct devsw {
-    pub read: Option<unsafe extern "C" fn(_: i32, _: u64, _: i32) -> i32>,
-    pub write: Option<unsafe extern "C" fn(_: i32, _: u64, _: i32) -> i32>,
+    pub read: Option<unsafe fn(_: i32, _: u64, _: i32) -> i32>,
+    pub write: Option<unsafe fn(_: i32, _: u64, _: i32) -> i32>,
 }
 ///
 /// Support functions for system calls that involve file descriptors.
 ///
-#[no_mangle]
 pub static mut devsw: [devsw; 10] = [devsw {
     read: None,
     write: None,
 }; 10];
-#[no_mangle]
 pub static mut ftable: Ftable = Ftable {
     lock: Spinlock {
         locked: 0,
@@ -85,16 +79,14 @@ pub static mut ftable: Ftable = Ftable {
         major: 0,
     }; 100],
 };
-#[no_mangle]
-pub unsafe extern "C" fn fileinit() {
+pub unsafe fn fileinit() {
     initlock(
         &mut ftable.lock,
         b"ftable\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
 }
 /// Allocate a file structure.
-#[no_mangle]
-pub unsafe extern "C" fn filealloc() -> *mut File {
+pub unsafe fn filealloc() -> *mut File {
     let mut f: *mut File = ptr::null_mut();
     acquire(&mut ftable.lock);
     f = ftable.file.as_mut_ptr();
@@ -110,8 +102,7 @@ pub unsafe extern "C" fn filealloc() -> *mut File {
     ptr::null_mut()
 }
 /// Increment ref count for file f.
-#[no_mangle]
-pub unsafe extern "C" fn filedup(mut f: *mut File) -> *mut File {
+pub unsafe fn filedup(mut f: *mut File) -> *mut File {
     acquire(&mut ftable.lock);
     if (*f).ref_0 < 1 as i32 {
         panic(b"filedup\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -121,8 +112,7 @@ pub unsafe extern "C" fn filedup(mut f: *mut File) -> *mut File {
     f
 }
 /// Close file f.  (Decrement ref count, close when reaches 0.)
-#[no_mangle]
-pub unsafe extern "C" fn fileclose(mut f: *mut File) {
+pub unsafe fn fileclose(mut f: *mut File) {
     let mut ff: File = File {
         typ: FD_NONE,
         ref_0: 0,
@@ -156,8 +146,7 @@ pub unsafe extern "C" fn fileclose(mut f: *mut File) {
 }
 /// Get metadata about file f.
 /// addr is a user virtual address, pointing to a struct stat.
-#[no_mangle]
-pub unsafe extern "C" fn filestat(mut f: *mut File, mut addr: u64) -> i32 {
+pub unsafe fn filestat(mut f: *mut File, mut addr: u64) -> i32 {
     let mut p: *mut proc_0 = myproc();
     let mut st: Stat = Stat {
         dev: 0,
@@ -185,8 +174,7 @@ pub unsafe extern "C" fn filestat(mut f: *mut File, mut addr: u64) -> i32 {
 }
 /// Read from file f.
 /// addr is a user virtual address.
-#[no_mangle]
-pub unsafe extern "C" fn fileread(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
+pub unsafe fn fileread(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
     let mut r: i32 = 0;
     if (*f).readable as i32 == 0 as i32 {
         return -(1 as i32);
@@ -217,8 +205,7 @@ pub unsafe extern "C" fn fileread(mut f: *mut File, mut addr: u64, mut n: i32) -
 }
 /// Write to file f.
 /// addr is a user virtual address.
-#[no_mangle]
-pub unsafe extern "C" fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
+pub unsafe fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
     let mut r: i32 = 0;
     let mut ret: i32 = 0;
     if (*f).writable as i32 == 0 as i32 {

@@ -21,14 +21,12 @@ extern "C" {
 /*
  * the kernel's page table.
  */
-#[no_mangle]
 pub static mut kernel_pagetable: pagetable_t = 0 as *const u64 as *mut u64;
 // trampoline.S
 /// create a direct-map page table for the kernel and
 /// turn on paging. called early, in supervisor mode.
 /// the page allocator is already initialized.
-#[no_mangle]
-pub unsafe extern "C" fn kvminit() {
+pub unsafe fn kvminit() {
     kernel_pagetable = kalloc() as pagetable_t;
     ptr::write_bytes(kernel_pagetable as *mut libc::c_void, 0, PGSIZE as usize);
     // uart registers
@@ -74,8 +72,7 @@ pub unsafe extern "C" fn kvminit() {
 }
 /// Switch h/w page table register to the kernel's page table,
 /// and enable paging.
-#[no_mangle]
-pub unsafe extern "C" fn kvminithart() {
+pub unsafe fn kvminithart() {
     w_satp(SATP_SV39 as u64 | kernel_pagetable as u64 >> 12 as i32);
     sfence_vma();
 }
@@ -91,7 +88,7 @@ pub unsafe extern "C" fn kvminithart() {
 ///   21..39 -- 9 bits of level-1 index.
 ///   12..20 -- 9 bits of level-0 index.
 ///    0..12 -- 12 bits of byte offset within the page.
-unsafe extern "C" fn walk(mut pagetable: pagetable_t, mut va: u64, mut alloc: i32) -> *mut pte_t {
+unsafe fn walk(mut pagetable: pagetable_t, mut va: u64, mut alloc: i32) -> *mut pte_t {
     if va >= MAXVA as u64 {
         panic(b"walk\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
@@ -119,8 +116,7 @@ unsafe extern "C" fn walk(mut pagetable: pagetable_t, mut va: u64, mut alloc: i3
 /// Look up a virtual address, return the physical address,
 /// or 0 if not mapped.
 /// Can only be used to look up user pages.
-#[no_mangle]
-pub unsafe extern "C" fn walkaddr(mut pagetable: pagetable_t, mut va: u64) -> u64 {
+pub unsafe fn walkaddr(mut pagetable: pagetable_t, mut va: u64) -> u64 {
     let mut pte: *mut pte_t = ptr::null_mut();
     let mut pa: u64 = 0;
     if va >= MAXVA as u64 {
@@ -142,8 +138,7 @@ pub unsafe extern "C" fn walkaddr(mut pagetable: pagetable_t, mut va: u64) -> u6
 /// add a mapping to the kernel page table.
 /// only used when booting.
 /// does not flush TLB or enable paging.
-#[no_mangle]
-pub unsafe extern "C" fn kvmmap(mut va: u64, mut pa: u64, mut sz: u64, mut perm: i32) {
+pub unsafe fn kvmmap(mut va: u64, mut pa: u64, mut sz: u64, mut perm: i32) {
     if mappages(kernel_pagetable, va, sz, pa, perm) != 0 as i32 {
         panic(b"kvmmap\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     };
@@ -152,8 +147,7 @@ pub unsafe extern "C" fn kvmmap(mut va: u64, mut pa: u64, mut sz: u64, mut perm:
 /// a physical address. only needed for
 /// addresses on the stack.
 /// assumes va is page aligned.
-#[no_mangle]
-pub unsafe extern "C" fn kvmpa(mut va: u64) -> u64 {
+pub unsafe fn kvmpa(mut va: u64) -> u64 {
     let mut off: u64 = va.wrapping_rem(PGSIZE as u64);
     let mut pte: *mut pte_t = ptr::null_mut();
     let mut pa: u64 = 0;
@@ -171,8 +165,7 @@ pub unsafe extern "C" fn kvmpa(mut va: u64) -> u64 {
 /// physical addresses starting at pa. va and size might not
 /// be page-aligned. Returns 0 on success, -1 if walk() couldn't
 /// allocate a needed page-table page.
-#[no_mangle]
-pub unsafe extern "C" fn mappages(
+pub unsafe fn mappages(
     mut pagetable: pagetable_t,
     mut va: u64,
     mut size: u64,
@@ -204,13 +197,7 @@ pub unsafe extern "C" fn mappages(
 /// Remove mappings from a page table. The mappings in
 /// the given range must exist. Optionally free the
 /// physical memory.
-#[no_mangle]
-pub unsafe extern "C" fn uvmunmap(
-    mut pagetable: pagetable_t,
-    mut va: u64,
-    mut size: u64,
-    mut do_free: i32,
-) {
+pub unsafe fn uvmunmap(mut pagetable: pagetable_t, mut va: u64, mut size: u64, mut do_free: i32) {
     let mut a: u64 = 0;
     let mut last: u64 = 0;
     let mut pte: *mut pte_t = ptr::null_mut();
@@ -252,8 +239,7 @@ pub unsafe extern "C" fn uvmunmap(
     }
 }
 /// create an empty user page table.
-#[no_mangle]
-pub unsafe extern "C" fn uvmcreate() -> pagetable_t {
+pub unsafe fn uvmcreate() -> pagetable_t {
     let mut pagetable: pagetable_t = ptr::null_mut();
     pagetable = kalloc() as pagetable_t;
     if pagetable.is_null() {
@@ -268,8 +254,7 @@ pub unsafe extern "C" fn uvmcreate() -> pagetable_t {
 /// Load the user initcode into address 0 of pagetable,
 /// for the very first process.
 /// sz must be less than a page.
-#[no_mangle]
-pub unsafe extern "C" fn uvminit(mut pagetable: pagetable_t, mut src: *mut u8, mut sz: u32) {
+pub unsafe fn uvminit(mut pagetable: pagetable_t, mut src: *mut u8, mut sz: u32) {
     let mut mem: *mut libc::c_char = ptr::null_mut();
     if sz >= PGSIZE as u32 {
         panic(
@@ -294,12 +279,7 @@ pub unsafe extern "C" fn uvminit(mut pagetable: pagetable_t, mut src: *mut u8, m
 }
 /// Allocate PTEs and physical memory to grow process from oldsz to
 /// newsz, which need not be page aligned.  Returns new size or 0 on error.
-#[no_mangle]
-pub unsafe extern "C" fn uvmalloc(
-    mut pagetable: pagetable_t,
-    mut oldsz: u64,
-    mut newsz: u64,
-) -> u64 {
+pub unsafe fn uvmalloc(mut pagetable: pagetable_t, mut oldsz: u64, mut newsz: u64) -> u64 {
     let mut mem: *mut libc::c_char = ptr::null_mut();
     let mut a: u64 = 0;
     if newsz < oldsz {
@@ -337,12 +317,7 @@ pub unsafe extern "C" fn uvmalloc(
 /// newsz.  oldsz and newsz need not be page-aligned, nor does newsz
 /// need to be less than oldsz.  oldsz can be larger than the actual
 /// process size.  Returns the new process size.
-#[no_mangle]
-pub unsafe extern "C" fn uvmdealloc(
-    mut pagetable: pagetable_t,
-    mut oldsz: u64,
-    mut newsz: u64,
-) -> u64 {
+pub unsafe fn uvmdealloc(mut pagetable: pagetable_t, mut oldsz: u64, mut newsz: u64) -> u64 {
     if newsz >= oldsz {
         return oldsz;
     }
@@ -362,7 +337,7 @@ pub unsafe extern "C" fn uvmdealloc(
 }
 /// Recursively free page-table pages.
 /// All leaf mappings must already have been removed.
-unsafe extern "C" fn freewalk(mut pagetable: pagetable_t) {
+unsafe fn freewalk(mut pagetable: pagetable_t) {
     // there are 2^9 = 512 PTEs in a page table.
     let mut i: i32 = 0;
     while i < 512 {
@@ -381,8 +356,7 @@ unsafe extern "C" fn freewalk(mut pagetable: pagetable_t) {
 }
 /// Free user memory pages,
 /// then free page-table pages.
-#[no_mangle]
-pub unsafe extern "C" fn uvmfree(mut pagetable: pagetable_t, mut sz: u64) {
+pub unsafe fn uvmfree(mut pagetable: pagetable_t, mut sz: u64) {
     uvmunmap(pagetable, 0 as i32 as u64, sz, 1 as i32);
     freewalk(pagetable);
 }
@@ -392,8 +366,7 @@ pub unsafe extern "C" fn uvmfree(mut pagetable: pagetable_t, mut sz: u64) {
 /// physical memory.
 /// returns 0 on success, -1 on failure.
 /// frees any allocated pages on failure.
-#[no_mangle]
-pub unsafe extern "C" fn uvmcopy(mut old: pagetable_t, mut new: pagetable_t, mut sz: u64) -> i32 {
+pub unsafe fn uvmcopy(mut old: pagetable_t, mut new: pagetable_t, mut sz: u64) -> i32 {
     let mut current_block: u64;
     let mut pte: *mut pte_t = ptr::null_mut();
     let mut pa: u64 = 0;
@@ -449,8 +422,7 @@ pub unsafe extern "C" fn uvmcopy(mut old: pagetable_t, mut new: pagetable_t, mut
 }
 /// mark a PTE invalid for user access.
 /// used by exec for the user stack guard page.
-#[no_mangle]
-pub unsafe extern "C" fn uvmclear(mut pagetable: pagetable_t, mut va: u64) {
+pub unsafe fn uvmclear(mut pagetable: pagetable_t, mut va: u64) {
     let mut pte: *mut pte_t = ptr::null_mut();
     pte = walk(pagetable, va, 0 as i32);
     if pte.is_null() {
@@ -461,8 +433,7 @@ pub unsafe extern "C" fn uvmclear(mut pagetable: pagetable_t, mut va: u64) {
 /// Copy from kernel to user.
 /// Copy len bytes from src to virtual address dstva in a given page table.
 /// Return 0 on success, -1 on error.
-#[no_mangle]
-pub unsafe extern "C" fn copyout(
+pub unsafe fn copyout(
     mut pagetable: pagetable_t,
     mut dstva: u64,
     mut src: *mut libc::c_char,
@@ -495,8 +466,7 @@ pub unsafe extern "C" fn copyout(
 /// Copy from user to kernel.
 /// Copy len bytes to dst from virtual address srcva in a given page table.
 /// Return 0 on success, -1 on error.
-#[no_mangle]
-pub unsafe extern "C" fn copyin(
+pub unsafe fn copyin(
     mut pagetable: pagetable_t,
     mut dst: *mut libc::c_char,
     mut srcva: u64,
@@ -530,8 +500,7 @@ pub unsafe extern "C" fn copyin(
 /// Copy bytes to dst from virtual address srcva in a given page table,
 /// until a '\0', or max.
 /// Return 0 on success, -1 on error.
-#[no_mangle]
-pub unsafe extern "C" fn copyinstr(
+pub unsafe fn copyinstr(
     mut pagetable: pagetable_t,
     mut dst: *mut libc::c_char,
     mut srcva: u64,
