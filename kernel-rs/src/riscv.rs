@@ -285,10 +285,13 @@ pub const PTE_W: i64 = (1 as i64) << 2 as i32;
 pub const PTE_X: i64 = (1 as i64) << 3 as i32;
 /// 1 -> user can access
 pub const PTE_U: i64 = (1 as i64) << 4 as i32;
-
+/// shift a physical address to the right place for a PTE.
+pub const fn pa2pte(pa: u64) -> u64 {
+    (pa >> 12 as i32) << 10 as i32
+}
 /*
 TODO: used directly in other file e.g., vm.rs
-/// shift a physical address to the right place for a PTE.
+
 #define PA2PTE(pa) ((((u64)pa) >> 12) << 10)
 
 #define PTE2PA(pte) (((pte) >> 10) << 12)
