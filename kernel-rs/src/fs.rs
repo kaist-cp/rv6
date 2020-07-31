@@ -132,6 +132,7 @@ pub struct Icache {
     pub inode: [inode; 50],
 }
 /// On-disk file system format.
+/// Both the kernel and user programs use this header file.
 /// root i-number
 pub const ROOTINO: i32 = 1;
 /// block size
