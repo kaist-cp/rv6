@@ -2,7 +2,7 @@ use crate::libc;
 use crate::{
     memlayout::PHYSTOP,
     printf::{panic, printf},
-    riscv::PGSIZE,
+    riscv::{PGSIZE, pgroundup},
     spinlock::{acquire, initlock, release, Spinlock},
 };
 use core::ptr;
@@ -47,10 +47,7 @@ pub unsafe fn kinit() {
 /// and pipe buffers. Allocates whole 4096-byte pages.
 pub unsafe fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: *mut libc::c_void) {
     let mut p: *mut libc::c_char = ptr::null_mut();
-    p = ((pa_start as u64)
-        .wrapping_add(PGSIZE as u64)
-        .wrapping_sub(1 as i32 as u64)
-        & !(PGSIZE - 1 as i32) as u64) as *mut libc::c_char;
+    p = pgroundup(pa_start as u64) as *mut libc::c_char;
     while p.offset(PGSIZE as isize) <= pa_end as *mut libc::c_char {
         kfree(p as *mut libc::c_void);
         p = p.offset(PGSIZE as isize)

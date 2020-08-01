@@ -4,8 +4,8 @@ use crate::{
     memlayout::{CLINT, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     printf::{panic, printf},
     riscv::{
-        make_satp, pagetable_t, pde_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R,
-        PTE_U, PTE_V, PTE_W, PTE_X, PXMASK,
+        make_satp, pagetable_t, pde_t, pte_t, sfence_vma, w_satp, MAXVA, PGSIZE, PTE_R,
+        PTE_U, PTE_V, PTE_W, PTE_X, pgroundup, pgrounddown, pa2pte, pte2pa, pte_flags, px,
     },
 };
 use core::ptr;
@@ -99,10 +99,10 @@ unsafe fn walk(mut pagetable: pagetable_t, mut va: u64, mut alloc: i32) -> *mut 
     let mut level: i32 = 2;
     while level > 0 {
         let mut pte: *mut pte_t = &mut *pagetable
-            .offset((va >> (PGSHIFT + 9 * level) & PXMASK as u64) as isize)
+            .offset(px(level, va))
             as *mut u64;
         if *pte & PTE_V as u64 != 0 {
-            pagetable = ((*pte >> 10 as i32) << 12 as i32) as pagetable_t
+            pagetable = pte2pa(*pte) as pagetable_t
         } else {
             if alloc == 0 || {
                 pagetable = kalloc() as *mut pde_t;
@@ -111,11 +111,11 @@ unsafe fn walk(mut pagetable: pagetable_t, mut va: u64, mut alloc: i32) -> *mut 
                 return ptr::null_mut();
             }
             ptr::write_bytes(pagetable as *mut libc::c_void, 0, PGSIZE as usize);
-            *pte = (pagetable as u64 >> 12 as i32) << 10 as i32 | PTE_V as u64
+            *pte = pa2pte(pagetable as u64) | PTE_V as u64
         }
         level -= 1
     }
-    &mut *pagetable.offset((va >> (PGSHIFT + 9 * 0) & PXMASK as u64) as isize) as *mut u64
+    &mut *pagetable.offset(px(0, va)) as *mut u64
 }
 
 /// Look up a virtual address, return the physical address,
@@ -137,7 +137,7 @@ pub unsafe fn walkaddr(mut pagetable: pagetable_t, mut va: u64) -> u64 {
     if *pte & PTE_U as u64 == 0 as i32 as u64 {
         return 0;
     }
-    pa = (*pte >> 10 as i32) << 12 as i32;
+    pa = pte2pa(*pte);
     pa
 }
 
@@ -165,7 +165,7 @@ pub unsafe fn kvmpa(mut va: u64) -> u64 {
     if *pte & PTE_V as u64 == 0 as i32 as u64 {
         panic(b"kvmpa\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    pa = (*pte >> 10 as i32) << 12 as i32;
+    pa = pte2pa(*pte);
     pa.wrapping_add(off)
 }
 
@@ -183,8 +183,8 @@ pub unsafe fn mappages(
     let mut a: u64 = 0;
     let mut last: u64 = 0;
     let mut pte: *mut pte_t = ptr::null_mut();
-    a = va & !(PGSIZE - 1 as i32) as u64;
-    last = va.wrapping_add(size).wrapping_sub(1 as i32 as u64) & !(PGSIZE - 1 as i32) as u64;
+    a = pgrounddown(va);
+    last = pgrounddown(va.wrapping_add(size).wrapping_sub(1 as i32 as u64));
     loop {
         pte = walk(pagetable, a, 1 as i32);
         if pte.is_null() {
@@ -193,7 +193,7 @@ pub unsafe fn mappages(
         if *pte & PTE_V as u64 != 0 {
             panic(b"remap\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
-        *pte = (pa >> 12 as i32) << 10 as i32 | perm as u64 | PTE_V as u64;
+        *pte = pa2pte(pa) | perm as u64 | PTE_V as u64;
         if a == last {
             break;
         }
@@ -211,8 +211,8 @@ pub unsafe fn uvmunmap(mut pagetable: pagetable_t, mut va: u64, mut size: u64, m
     let mut last: u64 = 0;
     let mut pte: *mut pte_t = ptr::null_mut();
     let mut pa: u64 = 0;
-    a = va & !(PGSIZE - 1) as u64;
-    last = va.wrapping_add(size).wrapping_sub(1) & !(PGSIZE - 1) as u64;
+    a = pgrounddown(va);
+    last = pgrounddown(va.wrapping_add(size).wrapping_sub(1));
     loop {
         pte = walk(pagetable, a, 0);
         if pte.is_null() {
@@ -229,14 +229,14 @@ pub unsafe fn uvmunmap(mut pagetable: pagetable_t, mut va: u64, mut size: u64, m
                     as *mut libc::c_char,
             );
         }
-        if *pte & 0x3ff as i32 as u64 == PTE_V as u64 {
+        if pte_flags(*pte) == PTE_V as u64 {
             panic(
                 b"uvmunmap: not a leaf\x00" as *const u8 as *const libc::c_char
                     as *mut libc::c_char,
             );
         }
         if do_free != 0 {
-            pa = (*pte >> 10 as i32) << 12 as i32;
+            pa = pte2pa(*pte);
             kfree(pa as *mut libc::c_void);
         }
         *pte = 0 as i32 as pte_t;
@@ -297,10 +297,7 @@ pub unsafe fn uvmalloc(mut pagetable: pagetable_t, mut oldsz: u64, mut newsz: u6
     if newsz < oldsz {
         return oldsz;
     }
-    oldsz = oldsz
-        .wrapping_add(PGSIZE as u64)
-        .wrapping_sub(1 as i32 as u64)
-        & !(PGSIZE - 1 as i32) as u64;
+    oldsz = pgroundup(oldsz);
     a = oldsz;
     while a < newsz {
         mem = kalloc() as *mut libc::c_char;
@@ -334,15 +331,9 @@ pub unsafe fn uvmdealloc(mut pagetable: pagetable_t, mut oldsz: u64, mut newsz: 
     if newsz >= oldsz {
         return oldsz;
     }
-    let mut newup: u64 = newsz
-        .wrapping_add(PGSIZE as u64)
-        .wrapping_sub(1 as i32 as u64)
-        & !(PGSIZE - 1 as i32) as u64;
+    let mut newup: u64 = pgroundup(newsz);
     if newup
-        < oldsz
-            .wrapping_add(PGSIZE as u64)
-            .wrapping_sub(1 as i32 as u64)
-            & !(PGSIZE - 1 as i32) as u64
+        < pgroundup(oldsz)
     {
         uvmunmap(pagetable, newup, oldsz.wrapping_sub(newup), 1 as i32);
     }
@@ -358,7 +349,7 @@ unsafe fn freewalk(mut pagetable: pagetable_t) {
         let mut pte: pte_t = *pagetable.offset(i as isize);
         if pte & PTE_V as u64 != 0 && pte & (PTE_R | PTE_W | PTE_X) as u64 == 0 as i32 as u64 {
             // this PTE points to a lower-level page table.
-            let mut child: u64 = (pte >> 10 as i32) << 12 as i32;
+            let mut child: u64 = pte2pa(pte);
             freewalk(child as pagetable_t);
             *pagetable.offset(i as isize) = 0 as i32 as u64
         } else if pte & PTE_V as u64 != 0 {
@@ -408,8 +399,8 @@ pub unsafe fn uvmcopy(mut old: pagetable_t, mut new: pagetable_t, mut sz: u64) -
                     as *mut libc::c_char,
             );
         }
-        pa = (*pte >> 10 as i32) << 12 as i32;
-        flags = (*pte & 0x3ff as i32 as u64) as u32;
+        pa = pte2pa(*pte);
+        flags = pte_flags(*pte) as u32;
         mem = kalloc() as *mut libc::c_char;
         if mem.is_null() {
             current_block = 9000140654394160520;
@@ -461,7 +452,7 @@ pub unsafe fn copyout(
     let mut va0: u64 = 0;
     let mut pa0: u64 = 0;
     while len > 0 as u64 {
-        va0 = dstva & !(PGSIZE - 1 as i32) as u64;
+        va0 = pgrounddown(dstva);
         pa0 = walkaddr(pagetable, va0);
         if pa0 == 0 as u64 {
             return -1;
@@ -495,7 +486,7 @@ pub unsafe fn copyin(
     let mut va0: u64 = 0;
     let mut pa0: u64 = 0;
     while len > 0 as u64 {
-        va0 = srcva & !(PGSIZE - 1) as u64;
+        va0 = pgrounddown(srcva);
         pa0 = walkaddr(pagetable, va0);
         if pa0 == 0 as u64 {
             return -1;
@@ -531,7 +522,7 @@ pub unsafe fn copyinstr(
     let mut pa0: u64 = 0;
     let mut got_null: i32 = 0;
     while got_null == 0 && max > 0 as u64 {
-        va0 = srcva & !(PGSIZE - 1) as u64;
+        va0 = pgrounddown(srcva);
         pa0 = walkaddr(pagetable, va0);
         if pa0 == 0 as u64 {
             return -1;
