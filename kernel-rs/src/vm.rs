@@ -4,8 +4,8 @@ use crate::{
     memlayout::{CLINT, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     printf::{panic, printf},
     riscv::{
-        make_satp, pagetable_t, pde_t, pte_t, sfence_vma, w_satp, MAXVA, PGSIZE, PTE_R,
-        PTE_U, PTE_V, PTE_W, PTE_X, pgroundup, pgrounddown, pa2pte, pte2pa, pte_flags, px,
+        make_satp, pa2pte, pagetable_t, pde_t, pgrounddown, pgroundup, pte2pa, pte_flags, pte_t,
+        px, sfence_vma, w_satp, MAXVA, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
     },
 };
 use core::ptr;
@@ -98,9 +98,7 @@ unsafe fn walk(mut pagetable: pagetable_t, mut va: u64, mut alloc: i32) -> *mut 
     }
     let mut level: i32 = 2;
     while level > 0 {
-        let mut pte: *mut pte_t = &mut *pagetable
-            .offset(px(level, va))
-            as *mut u64;
+        let mut pte: *mut pte_t = &mut *pagetable.offset(px(level, va)) as *mut u64;
         if *pte & PTE_V as u64 != 0 {
             pagetable = pte2pa(*pte) as pagetable_t
         } else {
@@ -332,9 +330,7 @@ pub unsafe fn uvmdealloc(mut pagetable: pagetable_t, mut oldsz: u64, mut newsz: 
         return oldsz;
     }
     let mut newup: u64 = pgroundup(newsz);
-    if newup
-        < pgroundup(oldsz)
-    {
+    if newup < pgroundup(oldsz) {
         uvmunmap(pagetable, newup, oldsz.wrapping_sub(newup), 1 as i32);
     }
     newsz

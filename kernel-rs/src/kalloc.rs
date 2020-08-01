@@ -2,7 +2,7 @@ use crate::libc;
 use crate::{
     memlayout::PHYSTOP,
     printf::{panic, printf},
-    riscv::{PGSIZE, pgroundup},
+    riscv::{pgroundup, PGSIZE},
     spinlock::{acquire, initlock, release, Spinlock},
 };
 use core::ptr;
