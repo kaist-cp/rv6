@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    kernel_main::main_0,
+    kernel_main::kernel_main,
     memlayout::{clint_mtimecmp, CLINT_MTIME},
     param::NCPU,
     riscv::{
@@ -40,7 +40,7 @@ pub unsafe fn start() {
 
     // set M Exception Program Counter to main, for mret.
     // requires gcc -mcmodel=medany
-    w_mepc(main_0 as usize as u64);
+    w_mepc(kernel_main as usize as u64);
 
     // disable paging for now.
     w_satp(0);
@@ -81,13 +81,7 @@ unsafe fn timerinit() {
     w_mscratch(scratch as u64);
 
     // set the machine-mode trap handler.
-    w_mtvec(::core::mem::transmute::<
-        Option<unsafe extern "C" fn() -> ()>,
-        u64,
-    >(Some(::core::mem::transmute::<
-        unsafe extern "C" fn() -> (),
-        unsafe extern "C" fn() -> (),
-    >(timervec))));
+    w_mtvec(timervec as _);
 
     // enable machine-mode interrupts.
     w_mstatus(r_mstatus() | MSTATUS_MIE as u64);

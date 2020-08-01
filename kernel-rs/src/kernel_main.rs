@@ -13,43 +13,78 @@ use crate::{
     vm::{kvminit, kvminithart},
 };
 use core::sync::atomic::{AtomicBool, Ordering};
+
 /// start() jumps here in supervisor mode on all CPUs.
 #[export_name = "main"]
-pub unsafe fn main_0() {
+pub unsafe fn kernel_main() {
     let started: AtomicBool = AtomicBool::new(false);
-    // physical page allocator
+
     if cpuid() == 0 as i32 {
-        consoleinit(); // create kernel page table
-        printfinit(); // turn on paging
-        printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char); // process table
+        consoleinit();
+        printfinit();
+
+        printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         printf(
             b"xv6 kernel is booting\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-        ); // trap vectors
-        printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char); // install kernel trap vector
-        kinit(); // set up interrupt controller
-        kvminit(); // ask PLIC for device interrupts
-        kvminithart(); // buffer cache
-        procinit(); // inode cache
-        trapinit(); // file table
-        trapinithart(); // emulated hard disk
-        plicinit(); // first user process
+        );
+        printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+
+        // physical page allocator
+        kinit();
+
+        // create kernel page table
+        kvminit();
+
+        // turn on paging
+        kvminithart();
+
+        // process table
+        procinit();
+
+        // trap vectors
+        trapinit();
+
+        // install kernel trap vector
+        trapinithart();
+
+        // set up interrupt controller
+        plicinit();
+
+        // ask PLIC for device interrupts
         plicinithart();
+
+        // buffer cache
         binit();
+
+        // inode cache
         iinit();
+
+        // file table
         fileinit();
+
+        // emulated hard disk
         virtio_disk_init();
+
+        // first user process
         userinit();
         started.store(true, Ordering::Release);
     } else {
         while !started.load(Ordering::Acquire) {}
+
         printf(
             b"hart %d starting\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
             cpuid(),
         );
+
+        // turn on paging
+        kvminithart();
+
+        // install kernel trap vector
+        trapinithart();
+
         // ask PLIC for device interrupts
-        kvminithart(); // turn on paging
-        trapinithart(); // install kernel trap vector
         plicinithart();
     }
+
     scheduler();
 }

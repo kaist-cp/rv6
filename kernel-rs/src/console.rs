@@ -2,7 +2,7 @@ use crate::libc;
 use crate::{
     file::{devsw, CONSOLE},
     printf::panicked,
-    proc::{cpu, either_copyin, either_copyout, myproc, procdump, sleep, wakeup},
+    proc::{either_copyin, either_copyout, myproc, procdump, sleep, wakeup},
     spinlock::{acquire, initlock, release, Spinlock},
     uart::{uartinit, uartputc},
 };
@@ -51,11 +51,7 @@ pub const INPUT_BUF: usize = 128;
 /// Edit index
 ///
 pub static mut cons: Console = Console {
-    lock: Spinlock {
-        locked: 0,
-        name: 0 as *const libc::c_char as *mut libc::c_char,
-        cpu: 0 as *const cpu as *mut cpu,
-    },
+    lock: Spinlock::zeroed(),
     buf: [0; INPUT_BUF],
     r: 0,
     w: 0,

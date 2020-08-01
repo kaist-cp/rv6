@@ -1,5 +1,5 @@
 use crate::sleeplock::Sleeplock;
-#[derive(Copy, Clone)]
+
 pub struct Buf {
     /// has data been read from disk?
     pub valid: i32,
