@@ -4,11 +4,11 @@ use crate::{
     fcntl::FcntlFlags,
     file::{filealloc, fileclose, filedup, fileread, filestat, filewrite},
     file::{inode, File},
-    fs::{dirent, DIRSIZ},
     fs::{
-        dirlink, dirlookup, ialloc, ilock, iput, iunlock, iunlockput, iupdate, namecmp, namei,
-        nameiparent, readi, writei,
+        dirlink, dirlookup, ialloc, ilock, iput, iunlock, iunlockput, namecmp, namei, nameiparent,
+        readi, writei,
     },
+    fs::{Dirent, DIRSIZ},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
@@ -148,7 +148,7 @@ pub unsafe fn sys_link() -> u64 {
         return -(1 as i32) as u64;
     }
     (*ip).nlink += 1;
-    iupdate(ip);
+    (*ip).update();
     iunlock(ip);
     dp = nameiparent(new.as_mut_ptr(), name.as_mut_ptr());
     if !dp.is_null() {
@@ -164,7 +164,7 @@ pub unsafe fn sys_link() -> u64 {
     }
     ilock(ip);
     (*ip).nlink -= 1;
-    iupdate(ip);
+    (*ip).update();
     iunlockput(ip);
     end_op();
     -(1 as i32) as u64
@@ -172,20 +172,20 @@ pub unsafe fn sys_link() -> u64 {
 /// Is the directory dp empty except for "." and ".." ?
 unsafe fn isdirempty(mut dp: *mut inode) -> i32 {
     let mut off: i32 = 0;
-    let mut de: dirent = dirent {
+    let mut de: Dirent = Dirent {
         inum: 0,
         name: [0; DIRSIZ],
     };
-    off = (2 as u64).wrapping_mul(::core::mem::size_of::<dirent>() as u64) as i32;
+    off = (2 as u64).wrapping_mul(::core::mem::size_of::<Dirent>() as u64) as i32;
     while (off as u32) < (*dp).size {
         if readi(
             dp,
             0 as i32,
-            &mut de as *mut dirent as u64,
+            &mut de as *mut Dirent as u64,
             off as u32,
-            ::core::mem::size_of::<dirent>() as u64 as u32,
+            ::core::mem::size_of::<Dirent>() as u64 as u32,
         ) as u64
-            != ::core::mem::size_of::<dirent>() as u64
+            != ::core::mem::size_of::<Dirent>() as u64
         {
             panic(
                 b"isdirempty: readi\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
@@ -194,14 +194,14 @@ unsafe fn isdirempty(mut dp: *mut inode) -> i32 {
         if de.inum as i32 != 0 as i32 {
             return 0 as i32;
         }
-        off = (off as u64).wrapping_add(::core::mem::size_of::<dirent>() as u64) as i32 as i32
+        off = (off as u64).wrapping_add(::core::mem::size_of::<Dirent>() as u64) as i32 as i32
     }
     1
 }
 pub unsafe fn sys_unlink() -> u64 {
     let mut ip: *mut inode = ptr::null_mut();
     let mut dp: *mut inode = ptr::null_mut();
-    let mut de: dirent = dirent {
+    let mut de: Dirent = Dirent {
         inum: 0,
         name: [0; DIRSIZ],
     };
@@ -240,15 +240,15 @@ pub unsafe fn sys_unlink() -> u64 {
             if (*ip).typ as i32 == T_DIR && isdirempty(ip) == 0 {
                 iunlockput(ip);
             } else {
-                ptr::write_bytes(&mut de as *mut dirent, 0, 1);
+                ptr::write_bytes(&mut de as *mut Dirent, 0, 1);
                 if writei(
                     dp,
                     0,
-                    &mut de as *mut dirent as u64,
+                    &mut de as *mut Dirent as u64,
                     off,
-                    ::core::mem::size_of::<dirent>() as u64 as u32,
+                    ::core::mem::size_of::<Dirent>() as u64 as u32,
                 ) as u64
-                    != ::core::mem::size_of::<dirent>() as u64
+                    != ::core::mem::size_of::<Dirent>() as u64
                 {
                     panic(
                         b"unlink: writei\x00" as *const u8 as *const libc::c_char
@@ -257,11 +257,11 @@ pub unsafe fn sys_unlink() -> u64 {
                 }
                 if (*ip).typ as i32 == T_DIR {
                     (*dp).nlink -= 1;
-                    iupdate(dp);
+                    (*dp).update();
                 }
                 iunlockput(dp);
                 (*ip).nlink -= 1;
-                iupdate(ip);
+                (*ip).update();
                 iunlockput(ip);
                 end_op();
                 return 0;
@@ -304,11 +304,11 @@ unsafe fn create(
     (*ip).major = major;
     (*ip).minor = minor;
     (*ip).nlink = 1 as i16;
-    iupdate(ip);
+    (*ip).update();
     if typ as i32 == T_DIR {
         // Create . and .. entries.
         (*dp).nlink += 1; // for ".."
-        iupdate(dp);
+        (*dp).update();
         // No ip->nlink++ for ".": avoid cyclic ref count.
         if dirlink(
             ip,

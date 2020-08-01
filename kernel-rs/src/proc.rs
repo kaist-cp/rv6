@@ -1,7 +1,7 @@
 use crate::libc;
 use crate::{
     file::{fileclose, filedup, inode, File},
-    fs::{fsinit, idup, iput, namei},
+    fs::{fsinit, iput, namei},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
@@ -161,11 +161,7 @@ pub static mut cpus: [cpu; NCPU as usize] = [cpu {
 
 #[export_name = "proc"]
 pub static mut proc: [proc_0; 64] = [proc_0 {
-    lock: Spinlock {
-        locked: 0,
-        name: 0 as *const libc::c_char as *mut libc::c_char,
-        cpu: 0 as *const cpu as *mut cpu,
-    },
+    lock: Spinlock::zeroed(),
     state: UNUSED,
     parent: ptr::null_mut(),
     chan: 0 as *const libc::c_void as *mut libc::c_void,
@@ -199,11 +195,7 @@ pub static mut proc: [proc_0; 64] = [proc_0 {
 
 pub static mut initproc: *mut proc_0 = ptr::null_mut();
 pub static mut nextpid: i32 = 1;
-pub static mut pid_lock: Spinlock = Spinlock {
-    locked: 0,
-    name: 0 as *const libc::c_char as *mut libc::c_char,
-    cpu: 0 as *const cpu as *mut cpu,
-};
+pub static mut pid_lock: Spinlock = Spinlock::zeroed();
 
 // trampoline.S
 #[no_mangle]
@@ -304,9 +296,7 @@ unsafe fn allocproc() -> *mut proc_0 {
             // Set up new context to start executing at forkret,
             // which returns to user space.
             ptr::write_bytes(&mut (*p).context as *mut context, 0, 1);
-            (*p).context.ra = ::core::mem::transmute::<Option<unsafe fn() -> ()>, u64>(Some(
-                forkret as unsafe fn() -> (),
-            ));
+            (*p).context.ra = forkret as u64;
             (*p).context.sp = (*p).kstack.wrapping_add(PGSIZE as u64);
             p
         }
@@ -460,7 +450,7 @@ pub unsafe fn fork() -> i32 {
         }
         i += 1
     }
-    (*np).cwd = idup((*p).cwd);
+    (*np).cwd = (*(*p).cwd).idup();
     safestrcpy(
         (*np).name.as_mut_ptr(),
         (*p).name.as_mut_ptr(),

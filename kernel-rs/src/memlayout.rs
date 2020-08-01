@@ -17,7 +17,7 @@ use crate::riscv::{MAXVA, PGSIZE};
 /// PHYSTOP -- end RAM used by the kernel
 
 /// qemu puts UART registers here in physical memory.
-pub const UART0: i64 = 0x10000000;
+pub const UART0: u64 = 0x10000000;
 pub const UART0_IRQ: i32 = 10;
 
 /// virtio mmio interface

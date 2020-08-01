@@ -24,6 +24,7 @@ pub struct File {
     pub off: u32,
     pub major: i16,
 }
+
 /// FD_DEVICE
 /// in-memory copy of an inode
 #[derive(Copy, Clone)]
@@ -40,6 +41,7 @@ pub struct inode {
     pub size: u32,
     pub addrs: [u32; 13],
 }
+
 pub const FD_DEVICE: u32 = 3;
 pub const FD_INODE: u32 = 2;
 pub const FD_PIPE: u32 = 1;
@@ -63,11 +65,7 @@ pub static mut devsw: [devsw; 10] = [devsw {
     write: None,
 }; 10];
 pub static mut ftable: Ftable = Ftable {
-    lock: Spinlock {
-        locked: 0,
-        name: ptr::null_mut(),
-        cpu: ptr::null_mut(),
-    },
+    lock: Spinlock::zeroed(),
     file: [File {
         typ: FD_NONE,
         ref_0: 0,
