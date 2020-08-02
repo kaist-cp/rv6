@@ -322,7 +322,7 @@ pub unsafe fn virtio_disk_intr() {
         
         // disk is done with Buf
         wakeup(disk.info[id as usize].b as *mut libc::c_void);
-      
+
         disk.used_idx = ((disk.used_idx as i32 + 1 as i32) % NUM) as u16
     }
     release(&mut disk.vdisk_lock);
