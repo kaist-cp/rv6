@@ -44,14 +44,21 @@ pub unsafe fn consputc(mut c: i32) {
         uartputc(c);
     };
 }
+
+/// input
 pub const INPUT_BUF: usize = 128;
 
-/// Edit index
 pub static mut cons: Console = Console {
     lock: Spinlock::zeroed(),
     buf: [0; INPUT_BUF],
+    
+    /// Read index
     r: 0,
+
+    /// Write index
     w: 0,
+
+    /// Edit index
     e: 0,
 };
 
@@ -99,8 +106,9 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
         let fresh0 = cons.r;
         cons.r = cons.r.wrapping_add(1);
         cin = cons.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
+
+        // end-of-file
         if cin == ctrl('D') {
-            // end-of-file
             if (n as u32) < target {
                 // Save ^D for next time, to make sure
                 // caller gets a 0-byte result.
@@ -122,6 +130,8 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
             dst = dst.wrapping_add(1);
             n -= 1;
             if cin == '\n' as i32 {
+                // a whole line has arrived, return to
+                // the user-level read().
                 break;
             }
         }
@@ -166,6 +176,7 @@ pub unsafe fn consoleintr(mut cin: i32) {
         _ => {
             if cin != 0 as i32 && cons.e.wrapping_sub(cons.r) < INPUT_BUF as u32 {
                 cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
+
                 // echo back to the user.
                 consputc(cin);
                 
@@ -193,6 +204,7 @@ pub unsafe fn consoleinit() {
         b"cons\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
     uartinit();
+
     // connect read and write system calls
     // to consoleread and consolewrite.
     let fresh2 = &mut (*devsw.as_mut_ptr().offset(CONSOLE)).read;
