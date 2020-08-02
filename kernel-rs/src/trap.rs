@@ -13,6 +13,7 @@ use crate::{
     uart::uartintr,
     virtio_disk::virtio_disk_intr,
 };
+use core::mem;
 
 extern "C" {
     // trampoline.S
@@ -115,9 +116,7 @@ pub unsafe fn usertrapret() {
     // the process next re-enters the kernel.
     (*(*p).tf).kernel_satp = r_satp(); // kernel page table
     (*(*p).tf).kernel_sp = (*p).kstack.wrapping_add(PGSIZE as u64); // process's kernel stack
-    (*(*p).tf).kernel_trap = ::core::mem::transmute::<Option<unsafe extern "C" fn() -> ()>, u64>(
-        Some(usertrap as unsafe extern "C" fn() -> ()),
-    ); // hartid for cpuid()
+    (*(*p).tf).kernel_trap = usertrap as u64; // hartid for cpuid()
     (*(*p).tf).kernel_hartid = r_tp();
     // set up the registers that trampoline.S's sret will use
     // to get to user space.
@@ -137,10 +136,8 @@ pub unsafe fn usertrapret() {
         + userret
             .as_mut_ptr()
             .wrapping_offset_from(trampoline.as_mut_ptr()) as i64) as u64;
-    ::core::mem::transmute::<isize, Option<unsafe extern "C" fn(_: u64, _: u64) -> ()>>(
-        fn_0 as isize,
-    )
-    .expect("non-null function pointer")(TRAPFRAME as u64, satp);
+    let fn_0 = mem::transmute::<u64, unsafe extern "C" fn(_: u64, _: u64) -> ()>(fn_0);
+    fn_0(TRAPFRAME as u64, satp);
 }
 
 /// interrupts and exceptions from kernel code go here via kernelvec,
