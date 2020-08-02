@@ -25,7 +25,7 @@ pub unsafe fn kernel_main() {
 
         printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         printf(
-            b"xv6 kernel is booting\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+            b"rv6 kernel is booting\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
         );
         printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 
