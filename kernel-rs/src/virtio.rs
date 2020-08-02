@@ -1,4 +1,3 @@
-///
 /// virtio device definitions.
 /// for both the mmio interface, and virtio descriptors.
 /// only tested with qemu.
@@ -6,7 +5,6 @@
 ///
 /// the virtio spec:
 /// https:///docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.pdf
-///
 
 // virtio mmio control registers, mapped starting at 0x10001000.
 // from qemu virtio_mmio.h

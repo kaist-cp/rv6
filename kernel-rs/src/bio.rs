@@ -76,6 +76,7 @@ unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
         }
         b = (*b).next
     }
+    
     // Not cached; recycle an unused buffer.
     b = bcache.head.prev;
     while b != &mut bcache.head as *mut Buf {

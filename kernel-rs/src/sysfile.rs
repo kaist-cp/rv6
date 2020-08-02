@@ -1,3 +1,7 @@
+/// File-system system calls.
+/// Mostly argument checking, since we don't trust
+/// user code, and calls into file.c and fs.c.
+
 use crate::libc;
 use crate::{
     exec::exec,
@@ -25,10 +29,6 @@ pub const FD_DEVICE: u32 = 3;
 pub const FD_INODE: u32 = 2;
 pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
-
-/// File-system system calls.
-/// Mostly argument checking, since we don't trust
-/// user code, and calls into file.c and fs.c.
 
 /// Fetch the nth word-sized system call argument as a file descriptor
 /// and return both the descriptor and the corresponding struct file.
@@ -67,6 +67,7 @@ unsafe fn fdalloc(mut f: *mut File) -> i32 {
     }
     -1
 }
+
 pub unsafe fn sys_dup() -> u64 {
     let mut f: *mut File = ptr::null_mut();
     let mut fd: i32 = 0;
@@ -80,6 +81,7 @@ pub unsafe fn sys_dup() -> u64 {
     filedup(f);
     fd as u64
 }
+
 pub unsafe fn sys_read() -> u64 {
     let mut f: *mut File = ptr::null_mut();
     let mut n: i32 = 0;
@@ -92,6 +94,7 @@ pub unsafe fn sys_read() -> u64 {
     }
     fileread(f, p, n) as u64
 }
+
 pub unsafe fn sys_write() -> u64 {
     let mut f: *mut File = ptr::null_mut();
     let mut n: i32 = 0;
@@ -104,6 +107,7 @@ pub unsafe fn sys_write() -> u64 {
     }
     filewrite(f, p, n) as u64
 }
+
 pub unsafe fn sys_close() -> u64 {
     let mut fd: i32 = 0;
     let mut f: *mut File = ptr::null_mut();
@@ -115,6 +119,7 @@ pub unsafe fn sys_close() -> u64 {
     fileclose(f);
     0 as u64
 }
+
 pub unsafe fn sys_fstat() -> u64 {
     let mut f: *mut File = ptr::null_mut();
     let mut st: u64 = 0;
@@ -201,6 +206,7 @@ unsafe fn isdirempty(mut dp: *mut inode) -> i32 {
     }
     1
 }
+
 pub unsafe fn sys_unlink() -> u64 {
     let mut ip: *mut inode = ptr::null_mut();
     let mut dp: *mut inode = ptr::null_mut();
@@ -221,6 +227,7 @@ pub unsafe fn sys_unlink() -> u64 {
         return -(1 as i32) as u64;
     }
     ilock(dp);
+
     // Cannot unlink "." or "..".
     if !(namecmp(
         name.as_mut_ptr(),
@@ -275,6 +282,7 @@ pub unsafe fn sys_unlink() -> u64 {
     end_op();
     -(1 as i32) as u64
 }
+
 unsafe fn create(
     mut path: *mut libc::c_char,
     mut typ: i16,
@@ -308,10 +316,13 @@ unsafe fn create(
     (*ip).minor = minor;
     (*ip).nlink = 1 as i16;
     (*ip).update();
+
+    // Create . and .. entries.
     if typ as i32 == T_DIR {
-        // Create . and .. entries.
-        (*dp).nlink += 1; // for ".."
+        // for ".."
+        (*dp).nlink += 1; 
         (*dp).update();
+
         // No ip->nlink++ for ".": avoid cyclic ref count.
         if dirlink(
             ip,
@@ -325,7 +336,6 @@ unsafe fn create(
             ) < 0 as i32
         {
             panic(b"create dots\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-            // user pointer to array of two integers
         }
     }
     if dirlink(dp, name.as_mut_ptr(), (*ip).inum) < 0 as i32 {
@@ -334,6 +344,7 @@ unsafe fn create(
     iunlockput(dp);
     ip
 }
+
 pub unsafe fn sys_open() -> u64 {
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut fd: i32 = 0;
@@ -405,6 +416,7 @@ pub unsafe fn sys_open() -> u64 {
     end_op();
     fd as u64
 }
+
 pub unsafe fn sys_mkdir() -> u64 {
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut ip: *mut inode = ptr::null_mut();
@@ -425,6 +437,7 @@ pub unsafe fn sys_mkdir() -> u64 {
     end_op();
     0
 }
+
 pub unsafe fn sys_mknod() -> u64 {
     let mut ip: *mut inode = ptr::null_mut();
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
@@ -451,6 +464,7 @@ pub unsafe fn sys_mknod() -> u64 {
     end_op();
     0 as u64
 }
+
 pub unsafe fn sys_chdir() -> u64 {
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut ip: *mut inode = ptr::null_mut();
@@ -475,6 +489,7 @@ pub unsafe fn sys_chdir() -> u64 {
     (*p).cwd = ip;
     0 as u64
 }
+
 pub unsafe fn sys_exec() -> u64 {
     let mut ret: i32 = 0;
     let mut current_block: u64;
@@ -551,6 +566,8 @@ pub unsafe fn sys_exec() -> u64 {
         }
     }
 }
+
+// user pointer to array of two integers
 pub unsafe fn sys_pipe() -> u64 {
     let mut fdarray: u64 = 0;
     let mut rf: *mut File = ptr::null_mut();

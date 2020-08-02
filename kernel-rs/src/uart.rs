@@ -47,17 +47,23 @@ unsafe fn write_reg(r: i32, v: i32) {
 pub unsafe fn uartinit() {
     // disable interrupts.
     write_reg(IER, 0x00);
+
     // special mode to set baud rate.
     write_reg(LCR, 0x80);
+
     // LSB for baud rate of 38.4K.
     write_reg(0, 0x03);
+
     // MSB for baud rate of 38.4K.
     write_reg(1, 0x00);
+
     // leave set-baud mode,
     // and set word length to 8 bits, no parity.
     write_reg(LCR, 0x03);
+
     // reset and enable FIFOs.
     write_reg(FCR, 0x07);
+    
     // enable receive interrupts.
     write_reg(IER, 0x01);
 }

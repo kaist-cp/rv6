@@ -31,6 +31,7 @@ pub static mut kernel_pagetable: pagetable_t = 0 as *const u64 as *mut u64;
 pub unsafe fn kvminit() {
     kernel_pagetable = kalloc() as pagetable_t;
     ptr::write_bytes(kernel_pagetable as *mut libc::c_void, 0, PGSIZE as usize);
+    
     // uart registers
     kvmmap(
         UART0 as u64,
@@ -38,6 +39,7 @@ pub unsafe fn kvminit() {
         PGSIZE as u64,
         (PTE_R | PTE_W) as i32,
     );
+
     // virtio mmio disk interface
     kvmmap(
         VIRTIO0 as u64,
@@ -45,10 +47,13 @@ pub unsafe fn kvminit() {
         PGSIZE as u64,
         (PTE_R | PTE_W) as i32,
     );
+
     // CLINT
     kvmmap(CLINT as u64, CLINT as u64, 0x10000, (PTE_R | PTE_W) as i32);
+
     // PLIC
     kvmmap(PLIC as u64, PLIC as u64, 0x400000, (PTE_R | PTE_W) as i32);
+
     // map kernel text executable and read-only.
     kvmmap(
         KERNBASE as u64,
@@ -56,6 +61,7 @@ pub unsafe fn kvminit() {
         (etext.as_mut_ptr() as u64).wrapping_sub(KERNBASE as u64),
         (PTE_R | PTE_X) as i32,
     );
+
     // map kernel data and the physical RAM we'll make use of.
     kvmmap(
         etext.as_mut_ptr() as u64,
@@ -63,6 +69,7 @@ pub unsafe fn kvminit() {
         (PHYSTOP as u64).wrapping_sub(etext.as_mut_ptr() as u64),
         (PTE_R | PTE_W) as i32,
     );
+
     // map the trampoline for trap entry/exit to
     // the highest virtual address in the kernel.
     kvmmap(

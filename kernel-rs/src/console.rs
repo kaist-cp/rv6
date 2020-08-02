@@ -141,6 +141,7 @@ pub unsafe fn consoleintr(mut cin: i32) {
         m if m == ctrl('P') => {
             procdump();
         }
+
         // Kill line.
         m if m == ctrl('U') => {
             while cons.e != cons.w
@@ -154,6 +155,7 @@ pub unsafe fn consoleintr(mut cin: i32) {
                 consputc(BACKSPACE);
             }
         }
+
         // Backspace
         m if m == ctrl('H') | '\x7f' as i32 => {
             if cons.e != cons.w {
@@ -166,6 +168,7 @@ pub unsafe fn consoleintr(mut cin: i32) {
                 cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
                 // echo back to the user.
                 consputc(cin);
+                
                 // store for consumption by consoleread().
                 let fresh1 = cons.e;
                 cons.e = cons.e.wrapping_add(1);

@@ -67,7 +67,8 @@ unsafe fn timerinit() {
     let mut id: i32 = r_mhartid() as i32;
 
     // ask the CLINT for a timer interrupt.
-    let mut interval: i32 = 1000000; // cycles; about 1/10th second in qemu.
+    // cycles; about 1/10th second in qemu.
+    let mut interval: i32 = 1000000; 
     *(clint_mtimecmp(id as u64) as *mut u64) =
         (*(CLINT_MTIME as *mut u64)).wrapping_add(interval as u64);
 

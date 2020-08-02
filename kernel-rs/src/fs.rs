@@ -308,8 +308,10 @@ pub unsafe fn ialloc(mut dev: u32, mut typ: i16) -> *mut inode {
             .offset((inum as u64).wrapping_rem(IPB as u64) as isize);
         if (*dip).typ as i32 == 0 as i32 {
             // a free inode
-            ptr::write_bytes(dip, 0, 1); // mark it allocated on the disk
+            ptr::write_bytes(dip, 0, 1);
             (*dip).typ = typ;
+
+            // mark it allocated on the disk
             log_write(bp);
             brelse(bp);
             return iget(dev, inum as u32);
@@ -361,7 +363,9 @@ impl inode {
 unsafe fn iget(mut dev: u32, mut inum: u32) -> *mut inode {
     let mut ip: *mut inode = ptr::null_mut();
     let mut empty: *mut inode = ptr::null_mut();
+
     acquire(&mut icache.lock);
+
     // Is the inode already cached?
     empty = ptr::null_mut();
     ip = &mut *icache.inode.as_mut_ptr().offset(0 as i32 as isize) as *mut inode;
@@ -377,6 +381,7 @@ unsafe fn iget(mut dev: u32, mut inum: u32) -> *mut inode {
         }
         ip = ip.offset(1)
     }
+
     // Recycle an inode cache entry.
     if empty.is_null() {
         panic(b"iget: no inodes\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -721,12 +726,14 @@ pub unsafe fn dirlink(mut dp: *mut inode, mut name: *mut libc::c_char, mut inum:
         name: [0; DIRSIZ],
     };
     let mut ip: *mut inode = ptr::null_mut();
+
     // Check that name is not present.
     ip = dirlookup(dp, name, ptr::null_mut());
     if !ip.is_null() {
         iput(ip);
         return -(1 as i32);
     }
+    
     // Look for an empty Dirent.
     off = 0;
     while (off as u32) < (*dp).size {

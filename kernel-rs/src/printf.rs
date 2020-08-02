@@ -139,7 +139,7 @@ pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
                 }
                 _ => {
                     // Print unknown % sequence to draw attention.
-                    consputc('%' as i32); // freeze other CPUs
+                    consputc('%' as i32);
                     consputc(c);
                 }
             }
@@ -156,6 +156,8 @@ pub unsafe fn panic(mut s: *mut libc::c_char) -> ! {
     printf(b"panic: \x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     printf(s);
     printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+
+     // freeze other CPUs
     ::core::ptr::write_volatile(&mut panicked as *mut i32, 1 as i32);
     loop {}
 }

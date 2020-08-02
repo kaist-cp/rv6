@@ -63,6 +63,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
         return -(1 as i32);
     }
     ilock(ip);
+    
     // Check ELF header
     if readi(
         ip,
@@ -76,6 +77,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     {
         pagetable = proc_pagetable(p);
         if !pagetable.is_null() {
+
             // Load program into memory.
             sz = 0 as i32 as u64;
             i = 0 as i32;
@@ -133,6 +135,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                     ip = ptr::null_mut();
                     p = myproc();
                     oldsz = (*p).sz;
+                    
                     // Allocate two pages at the next page boundary.
                     // Use the second as the user stack.
                     sz = sz.wrapping_add(PGSIZE as u64).wrapping_sub(1 as i32 as u64)
@@ -142,8 +145,9 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                         uvmclear(pagetable, sz.wrapping_sub((2 as i32 * PGSIZE) as u64));
                         sp = sz;
                         stackbase = sp.wrapping_sub(PGSIZE as u64);
+
                         // Push argument strings, prepare rest of stack in ustack.
-                        argc = 0 as i32 as u64; // riscv sp must be 16-byte aligned
+                        argc = 0 as i32 as u64;
                         loop {
                             if (*argv.offset(argc as isize)).is_null() {
                                 current_block = 4567019141635105728;
@@ -156,6 +160,8 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                             sp = (sp as u64).wrapping_sub(
                                 (strlen(*argv.offset(argc as isize)) + 1 as i32) as u64,
                             ) as u64 as u64;
+
+                            // riscv sp must be 16-byte aligned
                             sp = (sp as u64).wrapping_sub(sp.wrapping_rem(16 as i32 as u64)) as u64
                                 as u64;
                             if sp < stackbase {
@@ -179,6 +185,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                             7080392026674647309 => {}
                             _ => {
                                 ustack[argc as usize] = 0 as i32 as u64;
+
                                 // push the array of argv[] pointers.
                                 sp = (sp as u64).wrapping_sub(
                                     argc.wrapping_add(1 as i32 as u64)
@@ -199,6 +206,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                                     // argc is returned via the system call return
                                     // value, which goes in a0.
                                     (*(*p).tf).a1 = sp;
+
                                     // Save program name for debugging.
                                     s = path;
                                     last = s;
@@ -213,13 +221,20 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                                         last,
                                         ::core::mem::size_of::<[libc::c_char; 16]>() as u64 as i32,
                                     );
+
                                     // Commit to the user image.
-                                    oldpagetable = (*p).pagetable; // initial program counter = main
-                                    (*p).pagetable = pagetable; // initial stack pointer
-                                    (*p).sz = sz; // this ends up in a0, the first argument to main(argc, argv)
+                                    oldpagetable = (*p).pagetable;
+                                    (*p).pagetable = pagetable;
+                                    (*p).sz = sz;
+                                    
+                                    // initial program counter = main
                                     (*(*p).tf).epc = elf.entry;
+
+                                    // initial stack pointer
                                     (*(*p).tf).sp = sp;
                                     proc_freepagetable(oldpagetable, oldsz);
+
+                                    // this ends up in a0, the first argument to main(argc, argv)
                                     return argc as i32;
                                 }
                             }

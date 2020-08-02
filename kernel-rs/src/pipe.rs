@@ -30,7 +30,6 @@ pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
 pub const PIPESIZE: i32 = 512;
 
-/// write fd is still open
 pub unsafe fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {
     let mut pi: *mut Pipe = ptr::null_mut();
     pi = ptr::null_mut();
@@ -129,23 +128,27 @@ pub unsafe fn piperead(mut pi: *mut Pipe, mut addr: u64, mut n: i32) -> i32 {
     let mut i: i32 = 0;
     let mut pr: *mut proc_0 = myproc();
     let mut ch: libc::c_char = 0;
+
     acquire(&mut (*pi).lock);
+
+    //DOC: pipe-empty
     while (*pi).nread == (*pi).nwrite && (*pi).writeopen != 0 {
-        //DOC: pipe-empty
         if (*myproc()).killed != 0 {
             release(&mut (*pi).lock);
             return -(1 as i32);
         }
+
+        //DOC: piperead-sleep
         sleep(
             &mut (*pi).nread as *mut u32 as *mut libc::c_void,
             &mut (*pi).lock,
         );
-        //DOC: piperead-sleep
     }
-    while i < n {
-        //DOC: piperead-copy
+
+    //DOC: piperead-copy
+    while i < n {    
         if (*pi).nread == (*pi).nwrite {
-            break; //DOC: piperead-wakeup
+            break;
         }
         let fresh1 = (*pi).nread;
         (*pi).nread = (*pi).nread.wrapping_add(1);
@@ -161,6 +164,8 @@ pub unsafe fn piperead(mut pi: *mut Pipe, mut addr: u64, mut n: i32) -> i32 {
         }
         i += 1
     }
+
+    //DOC: piperead-wakeup
     wakeup(&mut (*pi).nwrite as *mut u32 as *mut libc::c_void);
     release(&mut (*pi).lock);
     i
