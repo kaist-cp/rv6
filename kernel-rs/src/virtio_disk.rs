@@ -291,7 +291,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     (*disk.0.desc.offset(idx[2 as i32 as usize] as isize)).next = 0 as i32 as u16;
     
     // record struct Buf for virtio_disk_intr().
-    (*b).disk = 1;
+    (*b).disk = 1 as i32;
     disk.0.info[idx[0 as i32 as usize] as usize].b = b;
     
     // avail[0] is flags
@@ -311,8 +311,8 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_NOTIFY), 0);
 
     // Wait for virtio_disk_intr() to say request has finished.
-    while (*b).disk == 1{
-        sleep(b as *mut libc::c_void, &mut disk.0.vdisk_lock);
+    while (*b).disk == 1 as i32 {
+        sleep(b as *mut libc::c_void, &mut disk.0.vdisk_lock); // disk is done with Buf
     }
     disk.0.info[idx[0 as i32 as usize] as usize].b = ptr::null_mut();
     free_chain(idx[0 as i32 as usize]);
@@ -328,9 +328,7 @@ pub unsafe fn virtio_disk_intr() {
                     as *mut libc::c_char,
             );
         }
-
-        // disk is done with Buf
-        (*disk.0.info[id as usize].b).disk = 0;
+        (*disk.0.info[id as usize].b).disk = 0 as i32;
         wakeup(disk.0.info[id as usize].b as *mut libc::c_void);
 
         disk.0.used_idx = ((disk.0.used_idx as i32 + 1 as i32) % NUM) as u16

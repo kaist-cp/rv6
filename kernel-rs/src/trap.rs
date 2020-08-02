@@ -62,7 +62,7 @@ pub unsafe extern "C" fn usertrap() {
 
     // save user program counter.
     (*(*p).tf).epc = r_sepc();
-    if r_scause() == 8 {
+    if r_scause() == 8 as u64 {
         // system call
 
         if (*p).killed != 0 {
@@ -170,25 +170,24 @@ pub unsafe fn usertrapret() {
 /// must be 4-byte aligned to fit in stvec.
 #[no_mangle]
 pub unsafe fn kerneltrap() {
+    let mut which_dev: i32 = 0 as i32;
     let mut sepc: u64 = r_sepc();
     let mut sstatus: u64 = r_sstatus();
     let mut scause: u64 = r_scause();
-
-    if sstatus & SSTATUS_SPP as u64 == 0 {
+    if sstatus & SSTATUS_SPP as u64 == 0 as u64 {
         panic(
             b"kerneltrap: not from supervisor mode\x00" as *const u8 as *const libc::c_char
                 as *mut libc::c_char,
         );
     }
-    if intr_get() != 0 {
+    if intr_get() != 0 as i32 {
         panic(
             b"kerneltrap: interrupts enabled\x00" as *const u8 as *const libc::c_char
                 as *mut libc::c_char,
         );
     }
-
-    let which_dev = devintr();
-    if which_dev == 0 {
+    which_dev = devintr();
+    if which_dev == 0 as i32 {
         printf(
             b"scause %p\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
             scause,
@@ -200,12 +199,10 @@ pub unsafe fn kerneltrap() {
         );
         panic(b"kerneltrap\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-
     // give up the CPU if this is a timer interrupt.
-    if which_dev == 2 && !myproc().is_null() && (*myproc()).state == RUNNING {
+    if which_dev == 2 && !myproc().is_null() && (*myproc()).state as u32 == RUNNING as u32 {
         yield_0();
     }
-
     // the yield() may have caused some traps to occur,
     // so restore trap registers for use by kernelvec.S's sepc instruction.
     w_sepc(sepc);
@@ -225,7 +222,7 @@ pub unsafe fn clockintr() {
 /// 0 if not recognized.
 pub unsafe fn devintr() -> i32 {
     let mut scause: u64 = r_scause();
-    if scause & 0x8000000000000000 != 0 && scause & 0xff == 9 {
+    if scause & 0x8000000000000000 as u64 != 0 && scause & 0xff as u64 == 9 as u64 {
         // this is a supervisor external interrupt, via PLIC.
         // irq indicates which device interrupted.
         let mut irq: i32 = plic_claim();
@@ -236,7 +233,7 @@ pub unsafe fn devintr() -> i32 {
         }
         plic_complete(irq);
         1
-    } else if scause == 0x8000000000000001 {
+    } else if scause == 0x8000000000000001 as u64 {
         // software interrupt from a machine-mode timer interrupt,
         // forwarded by timervec in kernelvec.S.
         if cpuid() == 0 {
@@ -245,7 +242,7 @@ pub unsafe fn devintr() -> i32 {
 
         // acknowledge the software interrupt by clearing
         // the SSIP bit in sip.
-        w_sip(r_sip() & !2);
+        w_sip(r_sip() & !(2 as i32) as u64);
         2
     } else {
         0
