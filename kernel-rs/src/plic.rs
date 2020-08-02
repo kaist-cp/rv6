@@ -17,7 +17,7 @@ pub unsafe fn plicinit() {
 
 pub unsafe fn plicinithart() {
     let mut hart: i32 = cpuid();
-    
+
     // set uart's enable bit for this hart's S-mode.
     *(plic_senable(hart) as *mut u32) =
         ((1 as i32) << UART0_IRQ | (1 as i32) << VIRTIO0_IRQ) as u32;

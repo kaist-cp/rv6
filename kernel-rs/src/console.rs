@@ -51,7 +51,7 @@ pub const INPUT_BUF: usize = 128;
 pub static mut cons: Console = Console {
     lock: Spinlock::zeroed(),
     buf: [0; INPUT_BUF],
-    
+
     /// Read index
     r: 0,
 
@@ -179,7 +179,7 @@ pub unsafe fn consoleintr(mut cin: i32) {
 
                 // echo back to the user.
                 consputc(cin);
-                
+
                 // store for consumption by consoleread().
                 let fresh1 = cons.e;
                 cons.e = cons.e.wrapping_add(1);

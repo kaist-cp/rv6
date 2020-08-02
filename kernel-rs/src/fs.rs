@@ -733,7 +733,7 @@ pub unsafe fn dirlink(mut dp: *mut inode, mut name: *mut libc::c_char, mut inum:
         iput(ip);
         return -(1 as i32);
     }
-    
+
     // Look for an empty Dirent.
     off = 0;
     while (off as u32) < (*dp).size {

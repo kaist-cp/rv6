@@ -20,7 +20,7 @@ pub struct Pipe {
 
     /// read fd is still open
     pub readopen: i32,
-    
+
     /// write fd is still open
     pub writeopen: i32,
 }
@@ -146,7 +146,7 @@ pub unsafe fn piperead(mut pi: *mut Pipe, mut addr: u64, mut n: i32) -> i32 {
     }
 
     //DOC: piperead-copy
-    while i < n {    
+    while i < n {
         if (*pi).nread == (*pi).nwrite {
             break;
         }

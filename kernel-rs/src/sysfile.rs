@@ -1,18 +1,17 @@
 /// File-system system calls.
 /// Mostly argument checking, since we don't trust
 /// user code, and calls into file.c and fs.c.
-
 use crate::libc;
 use crate::{
     exec::exec,
     fcntl::FcntlFlags,
     file::{filealloc, fileclose, filedup, fileread, filestat, filewrite},
     file::{inode, File},
-    fs::{Dirent, DIRSIZ},
     fs::{
-        dirlink, dirlookup, ialloc, ilock, iput, iunlock, iunlockput, namecmp, namei,
-        nameiparent, readi, writei,
+        dirlink, dirlookup, ialloc, ilock, iput, iunlock, iunlockput, namecmp, namei, nameiparent,
+        readi, writei,
     },
+    fs::{Dirent, DIRSIZ},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
@@ -320,7 +319,7 @@ unsafe fn create(
     // Create . and .. entries.
     if typ as i32 == T_DIR {
         // for ".."
-        (*dp).nlink += 1; 
+        (*dp).nlink += 1;
         (*dp).update();
 
         // No ip->nlink++ for ".": avoid cyclic ref count.

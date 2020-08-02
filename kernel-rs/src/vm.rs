@@ -31,7 +31,7 @@ pub static mut kernel_pagetable: pagetable_t = 0 as *const u64 as *mut u64;
 pub unsafe fn kvminit() {
     kernel_pagetable = kalloc() as pagetable_t;
     ptr::write_bytes(kernel_pagetable as *mut libc::c_void, 0, PGSIZE as usize);
-    
+
     // uart registers
     kvmmap(
         UART0 as u64,

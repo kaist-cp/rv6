@@ -3,7 +3,6 @@
 /// qemu presents a "legacy" virtio interface.
 ///
 /// qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
-
 use crate::libc;
 use crate::{
     buf::Buf,
@@ -102,7 +101,7 @@ pub unsafe fn virtio_disk_init() {
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status);
     status |= VIRTIO_CONFIG_S_DRIVER as u32;
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status);
-    
+
     // negotiate features
     let mut features: u64 = *(r(VIRTIO_MMIO_DEVICE_FEATURES)) as u64;
     features &= !((1 as i32) << VIRTIO_BLK_F_RO) as u64;
@@ -113,16 +112,16 @@ pub unsafe fn virtio_disk_init() {
     features &= !((1 as i32) << VIRTIO_RING_F_EVENT_IDX) as u64;
     features &= !((1 as i32) << VIRTIO_RING_F_INDIRECT_DESC) as u64;
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_DRIVER_FEATURES), features as u32);
-    
+
     // tell device that feature negotiation is complete.
     status |= VIRTIO_CONFIG_S_FEATURES_OK as u32;
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status);
-    
+
     // tell device we're completely ready.
     status |= VIRTIO_CONFIG_S_DRIVER_OK as u32;
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status);
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_GUEST_PAGE_SIZE), PGSIZE as u32);
-    
+
     // initialize queue 0.
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_SEL), 0);
     let mut max: u32 = *(r(VIRTIO_MMIO_QUEUE_NUM_MAX));
@@ -144,11 +143,11 @@ pub unsafe fn virtio_disk_init() {
         r(VIRTIO_MMIO_QUEUE_PFN),
         (disk.0.pages.as_mut_ptr() as u64 >> PGSHIFT) as u32,
     );
-    
+
     // desc = pages -- num * VRingDesc
     // avail = pages + 0x40 -- 2 * u16, then num * u16
     // used = pages + 4096 -- 2 * u16, then num * vRingUsedElem
-    
+
     disk.0.desc = disk.0.pages.as_mut_ptr() as *mut VRingDesc;
     disk.0.avail = (disk.0.desc as *mut libc::c_char)
         .offset((NUM as u64).wrapping_mul(::core::mem::size_of::<VRingDesc>() as u64) as isize)
@@ -221,7 +220,7 @@ unsafe fn alloc3_desc(mut idx: *mut i32) -> i32 {
 }
 pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     let mut sector: u64 = (*b).blockno.wrapping_mul((BSIZE / 512 as i32) as u32) as u64;
-    
+
     acquire(&mut disk.0.vdisk_lock);
 
     // the spec says that legacy block operations use three
@@ -272,11 +271,11 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
         // device reads b->data
         (*disk.0.desc.offset(idx[1 as i32 as usize] as isize)).flags = VRING_DESC_F_WRITE as u16
     }
-    
+
     let fresh0 = &mut (*disk.0.desc.offset(idx[1 as i32 as usize] as isize)).flags;
     *fresh0 = (*fresh0 as i32 | VRING_DESC_F_NEXT) as u16;
     (*disk.0.desc.offset(idx[1 as i32 as usize] as isize)).next = idx[2 as i32 as usize] as u16;
-    
+
     disk.0.info[idx[0 as i32 as usize] as usize].status = 0 as i32 as libc::c_char;
     (*disk.0.desc.offset(idx[2 as i32 as usize] as isize)).addr = &mut (*disk
         .0
@@ -289,11 +288,11 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     // device writes the status
     (*disk.0.desc.offset(idx[2 as i32 as usize] as isize)).flags = VRING_DESC_F_WRITE as u16;
     (*disk.0.desc.offset(idx[2 as i32 as usize] as isize)).next = 0 as i32 as u16;
-    
+
     // record struct Buf for virtio_disk_intr().
-    (*b).disk = 1 as i32;
+    (*b).disk = 1;
     disk.0.info[idx[0 as i32 as usize] as usize].b = b;
-    
+
     // avail[0] is flags
     // avail[1] tells the device how far to look in avail[2...].
     // avail[2...] are desc[] indices the device should process.
@@ -311,7 +310,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_NOTIFY), 0);
 
     // Wait for virtio_disk_intr() to say request has finished.
-    while (*b).disk == 1 as i32 {
+    while (*b).disk == 1 {
         sleep(b as *mut libc::c_void, &mut disk.0.vdisk_lock); // disk is done with Buf
     }
     disk.0.info[idx[0 as i32 as usize] as usize].b = ptr::null_mut();
@@ -328,7 +327,7 @@ pub unsafe fn virtio_disk_intr() {
                     as *mut libc::c_char,
             );
         }
-        (*disk.0.info[id as usize].b).disk = 0 as i32;
+        (*disk.0.info[id as usize].b).disk = 0;
         wakeup(disk.0.info[id as usize].b as *mut libc::c_void);
 
         disk.0.used_idx = ((disk.0.used_idx as i32 + 1 as i32) % NUM) as u16

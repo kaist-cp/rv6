@@ -22,49 +22,49 @@ pub unsafe fn kernel_main() {
     if cpuid() == 0 as i32 {
         consoleinit();
         printfinit();
-        
+
         printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         printf(
             b"xv6 kernel is booting\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
         );
-        printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char); 
-        
+        printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+
         // physical page allocator
         kinit();
-        
+
         // create kernel page table
         kvminit();
-        
+
         // turn on paging
         kvminithart();
-        
+
         // process table
         procinit();
-        
+
         // trap vectors
         trapinit();
-        
+
         // install kernel trap vector
         trapinithart();
-        
+
         // set up interrupt controller
         plicinit();
-        
+
         // ask PLIC for device interrupts
         plicinithart();
-        
+
         // buffer cache
         binit();
-        
+
         // inode cache
         iinit();
-        
+
         // file table
         fileinit();
-        
+
         // emulated hard disk
         virtio_disk_init();
-        
+
         // first user process
         userinit();
         started.store(true, Ordering::Release);
@@ -77,14 +77,14 @@ pub unsafe fn kernel_main() {
         );
 
         // turn on paging
-        kvminithart(); 
+        kvminithart();
 
         // install kernel trap vector
-        trapinithart(); 
+        trapinithart();
 
         // ask PLIC for device interrupts
         plicinithart();
     }
-    
+
     scheduler();
 }

@@ -63,7 +63,7 @@ pub unsafe fn uartinit() {
 
     // reset and enable FIFOs.
     write_reg(FCR, 0x07);
-    
+
     // enable receive interrupts.
     write_reg(IER, 0x01);
 }

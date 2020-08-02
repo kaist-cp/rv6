@@ -36,7 +36,7 @@ pub unsafe fn initlock(mut lk: *mut Spinlock, mut name: *mut libc::c_char) {
 /// Loops (spins) until the lock is acquired.
 pub unsafe fn acquire(mut lk: *mut Spinlock) {
     // disable interrupts to avoid deadlock.
-    push_off(); 
+    push_off();
     if holding(lk) != 0 {
         panic(b"acquire\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }

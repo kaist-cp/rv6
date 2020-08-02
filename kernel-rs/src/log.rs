@@ -18,7 +18,7 @@ pub struct log {
 
     /// how many FS sys calls are executing.
     pub outstanding: i32,
-    
+
     /// in commit(), please wait.
     pub committing: i32,
     pub dev: i32,
@@ -127,7 +127,7 @@ unsafe fn read_head() {
 /// This is the true point at which the
 /// current transaction commits.
 unsafe fn write_head() {
-    let mut buf: *mut Buf = bread(log.dev as u32, log.start as u32); 
+    let mut buf: *mut Buf = bread(log.dev as u32, log.start as u32);
     let mut hb: *mut logheader = (*buf).data.as_mut_ptr() as *mut logheader;
     let mut i: i32 = 0;
     (*hb).n = log.lh.n;
@@ -147,7 +147,6 @@ unsafe fn recover_from_log() {
 
     // clear the log
     write_head();
-    
 }
 
 /// called at the start of each FS system call.
@@ -227,7 +226,6 @@ unsafe fn commit() {
         // Write modified blocks from cache to log
         write_log();
 
-        
         // Write header to disk -- the real commit
         write_head();
 
@@ -272,9 +270,9 @@ pub unsafe fn log_write(mut b: *mut Buf) {
         i += 1
     }
     log.lh.block[i as usize] = (*b).blockno as i32;
-    
+
     // Add new block to log?
-    if i == log.lh.n {    
+    if i == log.lh.n {
         bpin(b);
         log.lh.n += 1
     }

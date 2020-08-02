@@ -1,8 +1,6 @@
 use crate::console::consputc;
 use crate::libc;
-use crate::{
-    spinlock::{acquire, initlock, release, Spinlock},
-};
+use crate::spinlock::{acquire, initlock, release, Spinlock};
 use core::ptr;
 
 pub type __builtin_va_list = [__va_list_tag; 1];
@@ -157,7 +155,7 @@ pub unsafe fn panic(mut s: *mut libc::c_char) -> ! {
     printf(s);
     printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 
-     // freeze other CPUs
+    // freeze other CPUs
     ::core::ptr::write_volatile(&mut panicked as *mut i32, 1 as i32);
     loop {}
 }

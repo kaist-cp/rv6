@@ -14,7 +14,7 @@ pub struct Buf {
     /// LRU cache list
     pub prev: *mut Buf,
     pub next: *mut Buf,
-    
+
     /// disk queue
     pub qnext: *mut Buf,
     pub data: [u8; 1024],

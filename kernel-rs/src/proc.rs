@@ -403,7 +403,7 @@ pub unsafe fn userinit() {
     (*(*p).tf).epc = 0 as i32 as u64;
 
     // user stack pointer
-    (*(*p).tf).sp = PGSIZE as u64; 
+    (*(*p).tf).sp = PGSIZE as u64;
     safestrcpy(
         (*p).name.as_mut_ptr(),
         b"initcode\x00" as *const u8 as *const libc::c_char,
@@ -460,7 +460,7 @@ pub unsafe fn fork() -> i32 {
 
     // Cause fork to return 0 in the child.
     (*(*np).tf).a0 = 0 as i32 as u64;
-    
+
     // increment reference counts on open file descriptors.
     i = 0 as i32;
     while i < NOFILE {
@@ -631,7 +631,6 @@ pub unsafe fn wait(mut addr: u64) -> i32 {
     }
 }
 
-
 /// Per-CPU process scheduler.
 /// Each CPU calls scheduler() after setting itself up.
 /// Scheduler never returns.  It loops, doing:
@@ -749,7 +748,7 @@ pub unsafe fn sleep(mut chan: *mut libc::c_void, mut lk: *mut Spinlock) {
 
     // Tidy up.
     (*p).chan = ptr::null_mut();
-    
+
     // reacquire original lock.
     if lk != &mut (*p).lock as *mut Spinlock {
         release(&mut (*p).lock);

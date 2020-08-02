@@ -63,7 +63,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
         return -(1 as i32);
     }
     ilock(ip);
-    
+
     // Check ELF header
     if readi(
         ip,
@@ -77,7 +77,6 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     {
         pagetable = proc_pagetable(p);
         if !pagetable.is_null() {
-
             // Load program into memory.
             sz = 0 as i32 as u64;
             i = 0 as i32;
@@ -135,7 +134,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                     ip = ptr::null_mut();
                     p = myproc();
                     oldsz = (*p).sz;
-                    
+
                     // Allocate two pages at the next page boundary.
                     // Use the second as the user stack.
                     sz = sz.wrapping_add(PGSIZE as u64).wrapping_sub(1 as i32 as u64)
@@ -226,7 +225,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                                     oldpagetable = (*p).pagetable;
                                     (*p).pagetable = pagetable;
                                     (*p).sz = sz;
-                                    
+
                                     // initial program counter = main
                                     (*(*p).tf).epc = elf.entry;
 

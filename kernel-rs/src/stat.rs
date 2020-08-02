@@ -19,7 +19,7 @@ pub struct Stat {
 
     /// Number of links to file
     pub nlink: i16,
-    
+
     /// Size of file in bytes
     pub size: u64,
 }

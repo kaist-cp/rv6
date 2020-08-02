@@ -19,17 +19,21 @@ extern "C" {
     // trampoline.S
     #[no_mangle]
     static mut trampoline: [libc::c_char; 0];
+
     #[no_mangle]
     static mut uservec: [libc::c_char; 0];
+
     #[no_mangle]
     static mut userret: [libc::c_char; 0];
-    
+
     // in kernelvec.S, calls kerneltrap().
     #[no_mangle]
     fn kernelvec();
 }
+
 pub static mut tickslock: Spinlock = Spinlock::zeroed();
 pub static mut ticks: u32 = 0;
+
 pub unsafe fn trapinit() {
     initlock(
         &mut tickslock,
@@ -47,6 +51,7 @@ pub unsafe fn trapinithart() {
 #[no_mangle]
 pub unsafe extern "C" fn usertrap() {
     let mut which_dev: i32 = 0 as i32;
+
     if r_sstatus() & SSTATUS_SPP as u64 != 0 as i32 as u64 {
         panic(
             b"usertrap: not from user mode\x00" as *const u8 as *const libc::c_char
@@ -62,7 +67,7 @@ pub unsafe extern "C" fn usertrap() {
 
     // save user program counter.
     (*(*p).tf).epc = r_sepc();
-    if r_scause() == 8 as u64 {
+    if r_scause() == 8 {
         // system call
 
         if (*p).killed != 0 {
@@ -95,6 +100,7 @@ pub unsafe extern "C" fn usertrap() {
             (*p).killed = 1 as i32
         }
     }
+
     if (*p).killed != 0 {
         exit(-(1 as i32));
     }
@@ -131,7 +137,7 @@ pub unsafe fn usertrapret() {
     // process's kernel stack
     (*(*p).tf).kernel_sp = (*p).kstack.wrapping_add(PGSIZE as u64);
     (*(*p).tf).kernel_trap = usertrap as u64;
-    
+
     // hartid for cpuid()
     (*(*p).tf).kernel_hartid = r_tp();
 
@@ -170,24 +176,26 @@ pub unsafe fn usertrapret() {
 /// must be 4-byte aligned to fit in stvec.
 #[no_mangle]
 pub unsafe fn kerneltrap() {
-    let mut which_dev: i32 = 0 as i32;
     let mut sepc: u64 = r_sepc();
     let mut sstatus: u64 = r_sstatus();
     let mut scause: u64 = r_scause();
-    if sstatus & SSTATUS_SPP as u64 == 0 as u64 {
+
+    if sstatus & SSTATUS_SPP as u64 == 0 {
         panic(
             b"kerneltrap: not from supervisor mode\x00" as *const u8 as *const libc::c_char
                 as *mut libc::c_char,
         );
     }
-    if intr_get() != 0 as i32 {
+
+    if intr_get() != 0 {
         panic(
             b"kerneltrap: interrupts enabled\x00" as *const u8 as *const libc::c_char
                 as *mut libc::c_char,
         );
     }
-    which_dev = devintr();
-    if which_dev == 0 as i32 {
+
+    let which_dev = devintr();
+    if which_dev == 0 {
         printf(
             b"scause %p\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
             scause,
@@ -199,15 +207,18 @@ pub unsafe fn kerneltrap() {
         );
         panic(b"kerneltrap\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
+
     // give up the CPU if this is a timer interrupt.
-    if which_dev == 2 && !myproc().is_null() && (*myproc()).state as u32 == RUNNING as u32 {
+    if which_dev == 2 && !myproc().is_null() && (*myproc()).state == RUNNING {
         yield_0();
     }
+
     // the yield() may have caused some traps to occur,
     // so restore trap registers for use by kernelvec.S's sepc instruction.
     w_sepc(sepc);
     w_sstatus(sstatus);
 }
+
 pub unsafe fn clockintr() {
     acquire(&mut tickslock);
     ticks = ticks.wrapping_add(1);
@@ -233,16 +244,18 @@ pub unsafe fn devintr() -> i32 {
         }
         plic_complete(irq);
         1
-    } else if scause == 0x8000000000000001 as u64 {
+    } else if scause == 0x8000000000000001 {
         // software interrupt from a machine-mode timer interrupt,
         // forwarded by timervec in kernelvec.S.
+
         if cpuid() == 0 {
             clockintr();
         }
 
         // acknowledge the software interrupt by clearing
         // the SSIP bit in sip.
-        w_sip(r_sip() & !(2 as i32) as u64);
+        w_sip(r_sip() & !2);
+
         2
     } else {
         0
