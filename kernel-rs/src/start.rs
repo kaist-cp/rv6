@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    kernel_main::main_0,
+    kernel_main::kernel_main,
     memlayout::{clint_mtimecmp, CLINT_MTIME},
     param::NCPU,
     riscv::{
@@ -40,7 +40,7 @@ pub unsafe fn start() {
 
     // set M Exception Program Counter to main, for mret.
     // requires gcc -mcmodel=medany
-    w_mepc(main_0 as usize as u64);
+    w_mepc(kernel_main as usize as u64);
 
     // disable paging for now.
     w_satp(0);

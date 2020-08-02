@@ -18,7 +18,7 @@ static mut started: AtomicBool = AtomicBool::new(false);
 
 /// start() jumps here in supervisor mode on all CPUs.
 #[export_name = "main"]
-pub unsafe fn main_0() {
+pub unsafe fn kernel_main() {
     // physical page allocator
     if cpuid() == 0 as i32 {
         consoleinit(); // create kernel page table
