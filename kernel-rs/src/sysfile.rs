@@ -315,7 +315,7 @@ unsafe fn create(
     (*ip).minor = minor;
     (*ip).nlink = 1 as i16;
     (*ip).update();
-  
+
     // Create . and .. entries.
     if typ as i32 == T_DIR {
         // for ".."
