@@ -22,7 +22,6 @@ use core::ptr;
 /// * When done with the buffer, call brelse.
 /// * Do not use the buffer after calling brelse.
 /// * Only one process at a time can use a buffer, so do not keep them longer than necessary.
-#[derive(Copy, Clone)]
 pub struct Bcache {
     lock: Spinlock,
     buf: [Buf; NBUF as usize],
