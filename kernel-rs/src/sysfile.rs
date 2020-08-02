@@ -6,7 +6,7 @@ use crate::{
     file::{inode, File},
     fs::{Dirent, DIRSIZ},
     fs::{
-        dirlink, dirlookup, ialloc, ilock, iput, iunlock, iunlockput, iupdate, namecmp, namei,
+        dirlink, dirlookup, ialloc, ilock, iput, iunlock, iunlockput, namecmp, namei,
         nameiparent, readi, writei,
     },
     kalloc::{kalloc, kfree},
@@ -150,7 +150,7 @@ pub unsafe fn sys_link() -> u64 {
         return -(1 as i32) as u64;
     }
     (*ip).nlink += 1;
-    iupdate(ip);
+    (*ip).update();
     iunlock(ip);
     dp = nameiparent(new.as_mut_ptr(), name.as_mut_ptr());
     if !dp.is_null() {
@@ -166,7 +166,7 @@ pub unsafe fn sys_link() -> u64 {
     }
     ilock(ip);
     (*ip).nlink -= 1;
-    iupdate(ip);
+    (*ip).update();
     iunlockput(ip);
     end_op();
     -(1 as i32) as u64
@@ -260,11 +260,11 @@ pub unsafe fn sys_unlink() -> u64 {
                 }
                 if (*ip).typ as i32 == T_DIR {
                     (*dp).nlink -= 1;
-                    iupdate(dp);
+                    (*dp).update();
                 }
                 iunlockput(dp);
                 (*ip).nlink -= 1;
-                iupdate(ip);
+                (*ip).update();
                 iunlockput(ip);
                 end_op();
                 return 0;
@@ -307,11 +307,11 @@ unsafe fn create(
     (*ip).major = major;
     (*ip).minor = minor;
     (*ip).nlink = 1 as i16;
-    iupdate(ip);
+    (*ip).update();
     if typ as i32 == T_DIR {
         // Create . and .. entries.
         (*dp).nlink += 1; // for ".."
-        iupdate(dp);
+        (*dp).update();
         // No ip->nlink++ for ".": avoid cyclic ref count.
         if dirlink(
             ip,

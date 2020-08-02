@@ -320,28 +320,39 @@ pub unsafe fn ialloc(mut dev: u32, mut typ: i16) -> *mut inode {
     panic(b"ialloc: no inodes\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
 
-/// Copy a modified in-memory inode to disk.
-/// Must be called after every change to an ip->xxx field
-/// that lives on disk, since i-node cache is write-through.
-/// Caller must hold ip->lock.
-pub unsafe fn iupdate(mut ip: *mut inode) {
-    let mut bp: *mut Buf = ptr::null_mut();
-    let mut dip: *mut Dinode = ptr::null_mut();
-    bp = bread((*ip).dev, iblock((*ip).inum as i32, sb));
-    dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-        .offset(((*ip).inum as u64).wrapping_rem(IPB as u64) as isize);
-    (*dip).typ = (*ip).typ;
-    (*dip).major = (*ip).major;
-    (*dip).minor = (*ip).minor;
-    (*dip).nlink = (*ip).nlink;
-    (*dip).size = (*ip).size;
-    ptr::copy(
-        (*ip).addrs.as_mut_ptr() as *const libc::c_void,
-        (*dip).addrs.as_mut_ptr() as *mut libc::c_void,
-        ::core::mem::size_of::<[u32; 13]>(),
-    );
-    log_write(bp);
-    brelse(bp);
+impl inode {
+    /// Copy a modified in-memory inode to disk.
+    /// Must be called after every change to an ip->xxx field
+    /// that lives on disk, since i-node cache is write-through.
+    /// Caller must hold ip->lock.
+    pub unsafe fn update(&mut self) {
+        let mut bp: *mut Buf = ptr::null_mut();
+        let mut dip: *mut Dinode = ptr::null_mut();
+        bp = bread(self.dev, iblock(self.inum as i32, sb));
+        dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
+            .offset((self.inum as u64).wrapping_rem(IPB as u64) as isize);
+        (*dip).typ = self.typ;
+        (*dip).major = self.major;
+        (*dip).minor = self.minor;
+        (*dip).nlink = self.nlink;
+        (*dip).size = self.size;
+        ptr::copy(
+            self.addrs.as_mut_ptr() as *const libc::c_void,
+            (*dip).addrs.as_mut_ptr() as *mut libc::c_void,
+            ::core::mem::size_of::<[u32; 13]>(),
+        );
+        log_write(bp);
+        brelse(bp);
+    }
+
+    /// Increment reference count for ip.
+    /// Returns ip to enable ip = idup(ip1) idiom.
+    pub unsafe fn idup(&mut self) -> *mut Self {
+        acquire(&mut icache.lock);
+        self.ref_0 += 1;
+        release(&mut icache.lock);
+        self
+    }
 }
 
 /// Find the inode with number inum on device dev
@@ -375,15 +386,6 @@ unsafe fn iget(mut dev: u32, mut inum: u32) -> *mut inode {
     (*ip).inum = inum;
     (*ip).ref_0 = 1 as i32;
     (*ip).valid = 0 as i32;
-    release(&mut icache.lock);
-    ip
-}
-
-/// Increment reference count for ip.
-/// Returns ip to enable ip = idup(ip1) idiom.
-pub unsafe fn idup(mut ip: *mut inode) -> *mut inode {
-    acquire(&mut icache.lock);
-    (*ip).ref_0 += 1;
     release(&mut icache.lock);
     ip
 }
@@ -444,7 +446,7 @@ pub unsafe fn iput(mut ip: *mut inode) {
         release(&mut icache.lock);
         itrunc(ip);
         (*ip).typ = 0 as i32 as i16;
-        iupdate(ip);
+        (*ip).update();
         (*ip).valid = 0 as i32;
         releasesleep(&mut (*ip).lock);
         acquire(&mut icache.lock);
@@ -543,7 +545,7 @@ unsafe fn itrunc(mut ip: *mut inode) {
         (*ip).addrs[NDIRECT as usize] = 0 as i32 as u32
     }
     (*ip).size = 0 as i32 as u32;
-    iupdate(ip);
+    (*ip).update();
 }
 
 /// Copy stat information from inode.
@@ -659,7 +661,7 @@ pub unsafe fn writei(
         // write the i-node back to disk even if the size didn't change
         // because the loop above might have called bmap() and added a new
         // block to ip->addrs[].
-        iupdate(ip);
+        (*ip).update();
     }
     n as i32
 }
@@ -816,7 +818,7 @@ unsafe fn namex(
     if *path as i32 == '/' as i32 {
         ip = iget(ROOTDEV as u32, ROOTINO as u32)
     } else {
-        ip = idup((*myproc()).cwd)
+        ip = (*(*myproc()).cwd).idup()
     }
     loop {
         path = skipelem(path, name);

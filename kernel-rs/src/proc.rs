@@ -1,7 +1,7 @@
 use crate::libc;
 use crate::{
     file::{fileclose, filedup, inode, File},
-    fs::{fsinit, idup, iput, namei},
+    fs::{fsinit, iput, namei},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
@@ -453,7 +453,7 @@ pub unsafe fn fork() -> i32 {
         }
         i += 1
     }
-    (*np).cwd = idup((*p).cwd);
+    (*np).cwd = (*(*p).cwd).idup();
     safestrcpy(
         (*np).name.as_mut_ptr(),
         (*p).name.as_mut_ptr(),
