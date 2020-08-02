@@ -12,7 +12,7 @@ use crate::{
     stat::{Stat, T_DIR},
     string::{strncmp, strncpy},
 };
-use ::core::mem;
+use core::mem;
 use core::ptr;
 pub const FD_DEVICE: u32 = 3;
 pub const FD_INODE: u32 = 2;
