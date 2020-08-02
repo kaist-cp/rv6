@@ -13,6 +13,7 @@ use crate::{
     uart::uartintr,
     virtio_disk::virtio_disk_intr,
 };
+
 extern "C" {
     // trampoline.S
     #[no_mangle]
@@ -36,13 +37,7 @@ pub unsafe fn trapinit() {
 
 /// set up to take exceptions and traps while in the kernel.
 pub unsafe fn trapinithart() {
-    w_stvec(::core::mem::transmute::<
-        Option<unsafe extern "C" fn() -> ()>,
-        u64,
-    >(Some(::core::mem::transmute::<
-        unsafe extern "C" fn() -> (),
-        unsafe extern "C" fn() -> (),
-    >(kernelvec))));
+    w_stvec(kernelvec as _);
 }
 
 /// handle an interrupt, exception, or system call from user space.
@@ -58,13 +53,8 @@ pub unsafe extern "C" fn usertrap() {
     }
     // send interrupts and exceptions to kerneltrap(),
     // since we're now in the kernel.
-    w_stvec(::core::mem::transmute::<
-        Option<unsafe extern "C" fn() -> ()>,
-        u64,
-    >(Some(::core::mem::transmute::<
-        unsafe extern "C" fn() -> (),
-        unsafe extern "C" fn() -> (),
-    >(kernelvec))));
+    w_stvec(kernelvec as _);
+
     let mut p: *mut proc_0 = myproc();
     // save user program counter.
     (*(*p).tf).epc = r_sepc();
