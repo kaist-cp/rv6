@@ -161,11 +161,7 @@ pub static mut cpus: [cpu; NCPU as usize] = [cpu {
 
 #[export_name = "proc"]
 pub static mut proc: [proc_0; 64] = [proc_0 {
-    lock: Spinlock {
-        locked: 0,
-        name: 0 as *const libc::c_char as *mut libc::c_char,
-        cpu: 0 as *const cpu as *mut cpu,
-    },
+    lock: Spinlock::zeroed(),
     state: UNUSED,
     parent: ptr::null_mut(),
     chan: 0 as *const libc::c_void as *mut libc::c_void,
@@ -199,11 +195,7 @@ pub static mut proc: [proc_0; 64] = [proc_0 {
 
 pub static mut initproc: *mut proc_0 = ptr::null_mut();
 pub static mut nextpid: i32 = 1;
-pub static mut pid_lock: Spinlock = Spinlock {
-    locked: 0,
-    name: 0 as *const libc::c_char as *mut libc::c_char,
-    cpu: 0 as *const cpu as *mut cpu,
-};
+pub static mut pid_lock: Spinlock = Spinlock::zeroed();
 
 // trampoline.S
 #[no_mangle]

@@ -6,7 +6,7 @@ use crate::{
     log::{initlog, log_write},
     param::{NINODE, ROOTDEV},
     printf::panic,
-    proc::{cpu, either_copyin, either_copyout, myproc},
+    proc::{either_copyin, either_copyout, myproc},
     sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock},
     spinlock::{acquire, initlock, release, Spinlock},
     stat::{Stat, T_DIR},
@@ -239,25 +239,12 @@ unsafe fn bfree(mut dev: i32, mut b: u32) {
     brelse(bp);
 }
 pub static mut icache: Icache = Icache {
-    lock: Spinlock {
-        locked: 0,
-        name: 0 as *const libc::c_char as *mut libc::c_char,
-        cpu: 0 as *const cpu as *mut cpu,
-    },
+    lock: Spinlock::zeroed(),
     inode: [inode {
         dev: 0,
         inum: 0,
         ref_0: 0,
-        lock: Sleeplock {
-            locked: 0,
-            lk: Spinlock {
-                locked: 0,
-                name: 0 as *const libc::c_char as *mut libc::c_char,
-                cpu: 0 as *const cpu as *mut cpu,
-            },
-            name: 0 as *const libc::c_char as *mut libc::c_char,
-            pid: 0,
-        },
+        lock: Sleeplock::zeroed(),
         valid: 0,
         typ: 0,
         major: 0,

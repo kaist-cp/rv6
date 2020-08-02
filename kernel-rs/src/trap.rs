@@ -3,7 +3,7 @@ use crate::{
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     plic::{plic_claim, plic_complete},
     printf::{panic, printf},
-    proc::{cpu, cpuid, exit, myproc, proc_0, wakeup, yield_0, RUNNING},
+    proc::{cpuid, exit, myproc, proc_0, wakeup, yield_0, RUNNING},
     riscv::{
         intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_sstatus,
         r_stval, r_tp, w_sepc, w_sip, w_sstatus, w_stvec, PGSIZE, SSTATUS_SPIE, SSTATUS_SPP,
@@ -25,11 +25,7 @@ extern "C" {
     #[no_mangle]
     fn kernelvec();
 }
-pub static mut tickslock: Spinlock = Spinlock {
-    locked: 0,
-    name: 0 as *const libc::c_char as *mut libc::c_char,
-    cpu: 0 as *const cpu as *mut cpu,
-};
+pub static mut tickslock: Spinlock = Spinlock::zeroed();
 pub static mut ticks: u32 = 0;
 pub unsafe fn trapinit() {
     initlock(

@@ -63,11 +63,7 @@ pub static mut devsw: [devsw; 10] = [devsw {
     write: None,
 }; 10];
 pub static mut ftable: Ftable = Ftable {
-    lock: Spinlock {
-        locked: 0,
-        name: ptr::null_mut(),
-        cpu: ptr::null_mut(),
-    },
+    lock: Spinlock::zeroed(),
     file: [File {
         typ: FD_NONE,
         ref_0: 0,

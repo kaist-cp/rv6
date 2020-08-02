@@ -2,7 +2,6 @@ use crate::libc;
 use crate::{
     memlayout::PHYSTOP,
     printf::{panic, printf},
-    proc::cpu,
     riscv::PGSIZE,
     spinlock::{acquire, initlock, release, Spinlock},
 };
@@ -20,11 +19,7 @@ pub struct Kmem {
     pub freelist: *mut run,
 }
 pub static mut kmem: Kmem = Kmem {
-    lock: Spinlock {
-        locked: 0,
-        name: 0 as *const libc::c_char as *mut libc::c_char,
-        cpu: 0 as *const cpu as *mut cpu,
-    },
+    lock: Spinlock::zeroed(),
     freelist: 0 as *const run as *mut run,
 };
 pub unsafe fn kinit() {

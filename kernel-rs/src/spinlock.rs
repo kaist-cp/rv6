@@ -12,6 +12,18 @@ pub struct Spinlock {
     pub name: *mut libc::c_char,
     pub cpu: *mut cpu,
 }
+
+impl Spinlock {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            locked: 0,
+            name: 0 as *const libc::c_char as *mut libc::c_char,
+            cpu: 0 as *const cpu as *mut cpu,
+        }
+    }
+}
+
 /// Mutual exclusion spin locks.
 pub unsafe fn initlock(mut lk: *mut Spinlock, mut name: *mut libc::c_char) {
     (*lk).name = name;

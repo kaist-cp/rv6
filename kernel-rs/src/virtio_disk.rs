@@ -4,7 +4,7 @@ use crate::{
     fs::BSIZE,
     memlayout::VIRTIO0,
     printf::panic,
-    proc::{cpu, sleep, wakeup},
+    proc::{sleep, wakeup},
     riscv::{PGSHIFT, PGSIZE},
     spinlock::{acquire, initlock, release, Spinlock},
     virtio::*,
@@ -74,11 +74,7 @@ static mut disk: Disk = Disk(disk_Inner {
         b: 0 as *const Buf as *mut Buf,
         status: 0,
     }; NUM as usize],
-    vdisk_lock: Spinlock {
-        locked: 0,
-        name: 0 as *const libc::c_char as *mut libc::c_char,
-        cpu: 0 as *const cpu as *mut cpu,
-    },
+    vdisk_lock: Spinlock::zeroed(),
 });
 pub unsafe fn virtio_disk_init() {
     let mut status: u32 = 0 as u32;

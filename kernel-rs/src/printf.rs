@@ -1,7 +1,6 @@
 use crate::console::consputc;
 use crate::libc;
 use crate::{
-    proc::cpu,
     spinlock::{acquire, initlock, release, Spinlock},
 };
 use core::ptr;
@@ -25,11 +24,7 @@ pub struct PrintfLock {
 ///
 pub static mut panicked: i32 = 0;
 static mut pr: PrintfLock = PrintfLock {
-    lock: Spinlock {
-        locked: 0,
-        name: 0 as *const libc::c_char as *mut libc::c_char,
-        cpu: 0 as *const cpu as *mut cpu,
-    },
+    lock: Spinlock::zeroed(),
     locking: 0,
 };
 static mut digits: [libc::c_char; 17] = [

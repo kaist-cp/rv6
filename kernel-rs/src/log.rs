@@ -5,7 +5,7 @@ use crate::{
     fs::{superblock, BSIZE},
     param::{LOGSIZE, MAXOPBLOCKS},
     printf::panic,
-    proc::{cpu, sleep, wakeup},
+    proc::{sleep, wakeup},
     spinlock::{acquire, initlock, release, Spinlock},
 };
 use core::ptr;
@@ -52,11 +52,7 @@ pub struct logheader {
     pub block: [i32; 30],
 }
 pub static mut log: log = log {
-    lock: Spinlock {
-        locked: 0,
-        name: 0 as *const libc::c_char as *mut libc::c_char,
-        cpu: 0 as *const cpu as *mut cpu,
-    },
+    lock: Spinlock::zeroed(),
     start: 0,
     size: 0,
     outstanding: 0,

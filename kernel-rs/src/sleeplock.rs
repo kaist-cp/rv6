@@ -9,7 +9,34 @@ pub struct Sleeplock {
     pub name: *mut libc::c_char,
     pub pid: i32,
 }
-/// Sleeping locks
+
+impl Sleeplock {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            locked: 0,
+            lk: Spinlock::zeroed(),
+            name: 0 as *const libc::c_char as *mut libc::c_char,
+            pid: 0,
+        }
+    }
+
+    /// Sleeping locks
+    pub unsafe fn new(name: *mut libc::c_char) -> Self {
+        let mut lk = Self::zeroed();
+
+        initlock(
+            &mut lk.lk,
+            b"sleep lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        );
+        lk.name = name;
+        lk.locked = 0 as u32;
+        lk.pid = 0 as i32;
+
+        lk
+    }
+}
+
 pub unsafe fn initsleeplock(mut lk: *mut Sleeplock, mut name: *mut libc::c_char) {
     initlock(
         &mut (*lk).lk,
