@@ -296,9 +296,7 @@ unsafe fn allocproc() -> *mut proc_0 {
             // Set up new context to start executing at forkret,
             // which returns to user space.
             ptr::write_bytes(&mut (*p).context as *mut context, 0, 1);
-            (*p).context.ra = ::core::mem::transmute::<Option<unsafe fn() -> ()>, u64>(Some(
-                forkret as unsafe fn() -> (),
-            ));
+            (*p).context.ra = forkret as u64;
             (*p).context.sp = (*p).kstack.wrapping_add(PGSIZE as u64);
             p
         }
