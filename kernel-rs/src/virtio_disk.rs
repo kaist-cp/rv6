@@ -149,6 +149,7 @@ pub unsafe fn virtio_disk_init() {
     }
     // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
 }
+
 /// find a free descriptor, mark it non-free, return its index.
 unsafe fn alloc_desc() -> i32 {
     let mut i: i32 = 0;
@@ -161,6 +162,7 @@ unsafe fn alloc_desc() -> i32 {
     }
     -1
 }
+
 /// mark a descriptor as free.
 unsafe fn free_desc(mut i: i32) {
     if i >= NUM {
@@ -176,6 +178,7 @@ unsafe fn free_desc(mut i: i32) {
             as *mut libc::c_void,
     );
 }
+
 /// free a chain of descriptors.
 unsafe fn free_chain(mut i: i32) {
     loop {

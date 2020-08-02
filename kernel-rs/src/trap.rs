@@ -33,6 +33,7 @@ pub unsafe fn trapinit() {
         b"time\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
 }
+
 /// set up to take exceptions and traps while in the kernel.
 pub unsafe fn trapinithart() {
     w_stvec(::core::mem::transmute::<
@@ -151,6 +152,7 @@ pub unsafe fn usertrapret() {
     )
     .expect("non-null function pointer")(TRAPFRAME as u64, satp);
 }
+
 /// interrupts and exceptions from kernel code go here via kernelvec,
 /// on whatever the current kernel stack is.
 /// must be 4-byte aligned to fit in stvec.
@@ -200,6 +202,7 @@ pub unsafe fn clockintr() {
     wakeup(&mut ticks as *mut u32 as *mut libc::c_void);
     release(&mut tickslock);
 }
+
 /// check if it's an external interrupt or software interrupt,
 /// and handle it.
 /// returns 2 if timer interrupt,

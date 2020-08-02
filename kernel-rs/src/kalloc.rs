@@ -7,6 +7,7 @@ use crate::{
 };
 use core::ptr;
 pub static mut end: [u8; 0] = [0; 0];
+
 /// first address after kernel.
 /// defined by kernel.ld.
 #[derive(Copy, Clone)]
@@ -42,6 +43,7 @@ pub unsafe fn kinit() {
         PHYSTOP as *mut libc::c_void,
     );
 }
+
 /// Physical memory allocator, for user processes,
 /// kernel stacks, page-table pages,
 /// and pipe buffers. Allocates whole 4096-byte pages.
@@ -56,6 +58,7 @@ pub unsafe fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: *mut libc::
         p = p.offset(PGSIZE as isize)
     }
 }
+
 /// Free the page of physical memory pointed at by v,
 /// which normally should have been returned by a
 /// call to kalloc().  (The exception is when
@@ -76,6 +79,7 @@ pub unsafe fn kfree(mut pa: *mut libc::c_void) {
     kmem.freelist = r;
     release(&mut kmem.lock);
 }
+
 /// Allocate one 4096-byte page of physical memory.
 /// Returns a pointer that the kernel can use.
 /// Returns 0 if the memory cannot be allocated.

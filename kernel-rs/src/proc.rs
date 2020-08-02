@@ -304,6 +304,7 @@ unsafe fn allocproc() -> *mut proc_0 {
         }
     }
 }
+
 /// free a proc structure and the data hanging from it,
 /// including user pages.
 /// p->lock must be held.
@@ -665,6 +666,7 @@ pub unsafe fn sched() {
     );
     (*mycpu()).intena = intena;
 }
+
 /// Give up the CPU for one scheduling round.
 #[export_name = "yield"]
 pub unsafe fn yield_0() {
@@ -674,6 +676,7 @@ pub unsafe fn yield_0() {
     sched();
     release(&mut (*p).lock);
 }
+
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
 pub unsafe fn forkret() {
@@ -689,6 +692,7 @@ pub unsafe fn forkret() {
     }
     usertrapret();
 }
+
 /// Atomically release lock and sleep on chan.
 /// reacquires lock when awakened.
 pub unsafe fn sleep(mut chan: *mut libc::c_void, mut lk: *mut Spinlock) {
@@ -716,6 +720,7 @@ pub unsafe fn sleep(mut chan: *mut libc::c_void, mut lk: *mut Spinlock) {
         acquire(lk);
     };
 }
+
 /// Wake up all processes sleeping on chan.
 /// Must be called without any p->lock.
 pub unsafe fn wakeup(mut chan: *mut libc::c_void) {
@@ -741,6 +746,7 @@ unsafe fn wakeup1(mut p: *mut proc_0) {
         (*p).state = RUNNABLE
     };
 }
+
 /// Kill the process with the given pid.
 /// The victim won't exit until it tries to return
 /// to user space (see usertrap() in trap.c).
@@ -763,6 +769,7 @@ pub unsafe fn kill(mut pid: i32) -> i32 {
     }
     -1
 }
+
 /// Copy to either a user address, or kernel address,
 /// depending on usr_dst.
 /// Returns 0 on success, -1 on error.

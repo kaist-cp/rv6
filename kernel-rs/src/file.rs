@@ -24,6 +24,7 @@ pub struct File {
     pub off: u32,
     pub major: i16,
 }
+
 /// FD_DEVICE
 /// in-memory copy of an inode
 #[derive(Copy, Clone)]
@@ -40,6 +41,7 @@ pub struct inode {
     pub size: u32,
     pub addrs: [u32; 13],
 }
+
 pub const FD_DEVICE: u32 = 3;
 pub const FD_INODE: u32 = 2;
 pub const FD_PIPE: u32 = 1;
@@ -49,15 +51,15 @@ pub struct Ftable {
     pub lock: Spinlock,
     pub file: [File; 100],
 }
+
 /// map major device number to device functions.
 #[derive(Copy, Clone)]
 pub struct devsw {
     pub read: Option<unsafe fn(_: i32, _: u64, _: i32) -> i32>,
     pub write: Option<unsafe fn(_: i32, _: u64, _: i32) -> i32>,
 }
-///
+
 /// Support functions for system calls that involve file descriptors.
-///
 pub static mut devsw: [devsw; 10] = [devsw {
     read: None,
     write: None,
@@ -81,6 +83,7 @@ pub unsafe fn fileinit() {
         b"ftable\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
 }
+
 /// Allocate a file structure.
 pub unsafe fn filealloc() -> *mut File {
     let mut f: *mut File = ptr::null_mut();
@@ -97,6 +100,7 @@ pub unsafe fn filealloc() -> *mut File {
     release(&mut ftable.lock);
     ptr::null_mut()
 }
+
 /// Increment ref count for file f.
 pub unsafe fn filedup(mut f: *mut File) -> *mut File {
     acquire(&mut ftable.lock);
@@ -107,6 +111,7 @@ pub unsafe fn filedup(mut f: *mut File) -> *mut File {
     release(&mut ftable.lock);
     f
 }
+
 /// Close file f.  (Decrement ref count, close when reaches 0.)
 pub unsafe fn fileclose(mut f: *mut File) {
     let mut ff: File = File {
@@ -140,6 +145,7 @@ pub unsafe fn fileclose(mut f: *mut File) {
         end_op();
     };
 }
+
 /// Get metadata about file f.
 /// addr is a user virtual address, pointing to a struct stat.
 pub unsafe fn filestat(mut f: *mut File, mut addr: u64) -> i32 {
@@ -168,6 +174,7 @@ pub unsafe fn filestat(mut f: *mut File, mut addr: u64) -> i32 {
     }
     -(1 as i32)
 }
+
 /// Read from file f.
 /// addr is a user virtual address.
 pub unsafe fn fileread(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
@@ -199,6 +206,7 @@ pub unsafe fn fileread(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
     }
     r
 }
+
 /// Write to file f.
 /// addr is a user virtual address.
 pub unsafe fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {

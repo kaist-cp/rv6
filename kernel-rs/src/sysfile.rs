@@ -52,6 +52,7 @@ unsafe fn argfd(mut n: i32, mut pfd: *mut i32, mut pf: *mut *mut File) -> i32 {
     }
     0 as i32
 }
+
 /// Allocate a file descriptor for the given file.
 /// Takes over file reference from caller on success.
 unsafe fn fdalloc(mut f: *mut File) -> i32 {
@@ -123,6 +124,7 @@ pub unsafe fn sys_fstat() -> u64 {
     }
     filestat(f, st) as u64
 }
+
 /// Create the path new as a link to the same inode as old.
 pub unsafe fn sys_link() -> u64 {
     let mut name: [libc::c_char; DIRSIZ] = [0; DIRSIZ];
@@ -169,6 +171,7 @@ pub unsafe fn sys_link() -> u64 {
     end_op();
     -(1 as i32) as u64
 }
+
 /// Is the directory dp empty except for "." and ".." ?
 unsafe fn isdirempty(mut dp: *mut inode) -> i32 {
     let mut off: i32 = 0;

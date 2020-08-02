@@ -15,13 +15,16 @@ pub struct log {
     pub lock: Spinlock,
     pub start: i32,
     pub size: i32,
+
     /// how many FS sys calls are executing.
     pub outstanding: i32,
+    
     /// in commit(), please wait.
     pub committing: i32,
     pub dev: i32,
     pub lh: logheader,
 }
+
 /// Simple logging that allows concurrent FS system calls.
 ///
 /// A log transaction contains the updates of multiple FS system
@@ -79,6 +82,7 @@ pub unsafe fn initlog(mut dev: i32, mut sb: *mut Superblock) {
     log.dev = dev;
     recover_from_log();
 }
+
 /// Copy committed blocks from log to their home location
 unsafe fn install_trans() {
     let mut tail: i32 = 0; // read log block
@@ -98,6 +102,7 @@ unsafe fn install_trans() {
         tail += 1
     }
 }
+
 /// Read the log header from disk into the in-memory log header
 unsafe fn read_head() {
     let mut buf: *mut Buf = bread(log.dev as u32, log.start as u32);
@@ -110,6 +115,7 @@ unsafe fn read_head() {
     }
     brelse(buf);
 }
+
 /// Write in-memory log header to disk.
 /// This is the true point at which the
 /// current transaction commits.
@@ -132,6 +138,7 @@ unsafe fn recover_from_log() {
     write_head();
     // clear the log
 }
+
 /// called at the start of each FS system call.
 pub unsafe fn begin_op() {
     acquire(&mut log.lock);
@@ -148,6 +155,7 @@ pub unsafe fn begin_op() {
         }
     }
 }
+
 /// called at the end of each FS system call.
 /// commits if this was the last outstanding operation.
 pub unsafe fn end_op() {
@@ -177,6 +185,7 @@ pub unsafe fn end_op() {
         release(&mut log.lock);
     };
 }
+
 /// Copy modified blocks from cache to log.
 unsafe fn write_log() {
     let mut tail: i32 = 0; // log block
@@ -205,6 +214,7 @@ unsafe fn commit() {
         write_head();
     };
 }
+
 /// Caller has modified b->data and is done with the buffer.
 /// Record the block number and pin in the cache by increasing refcnt.
 /// commit()/write_log() will do the disk write.

@@ -15,7 +15,6 @@ pub struct Console {
     pub e: u32,
 }
 
-///
 /// Console input and output, to the uart.
 /// Reads are line at a time.
 /// Implements special input characters:
@@ -24,15 +23,14 @@ pub struct Console {
 ///   control-u -- kill line
 ///   control-d -- end of file
 ///   control-p -- print process list
-///
 pub const BACKSPACE: i32 = 0x100;
+
 /// Control-x
 const fn ctrl(x: char) -> i32 {
     x as i32 - '@' as i32
 }
-///
+
 /// send one character to the uart.
-///
 pub unsafe fn consputc(mut c: i32) {
     if panicked != 0 {
         loop {}
@@ -47,9 +45,8 @@ pub unsafe fn consputc(mut c: i32) {
     };
 }
 pub const INPUT_BUF: usize = 128;
-///
+
 /// Edit index
-///
 pub static mut cons: Console = Console {
     lock: Spinlock::zeroed(),
     buf: [0; INPUT_BUF],
@@ -57,9 +54,8 @@ pub static mut cons: Console = Console {
     w: 0,
     e: 0,
 };
-///
+
 /// user write()s to the console go here.
-///
 pub unsafe fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
     let mut i: i32 = 0;
     acquire(&mut cons.lock);
@@ -80,12 +76,11 @@ pub unsafe fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
     release(&mut cons.lock);
     n
 }
-///
+
 /// user read()s from the console go here.
 /// copy (up to) a whole input line to dst.
 /// user_dist indicates whether dst is a user
 /// or kernel address.
-///
 pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
     let mut target: u32 = n as u32;
     let mut cin: i32 = 0;
@@ -134,13 +129,11 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
     release(&mut cons.lock);
     target.wrapping_sub(n as u32) as i32
 }
-///
+
 /// the console input interrupt handler.
 /// uartintr() calls this for input character.
 /// do erase/kill processing, append to cons.buf,
 /// wake up consoleread() if a whole line has arrived.
-///
-
 pub unsafe fn consoleintr(mut cin: i32) {
     acquire(&mut cons.lock);
     match cin {

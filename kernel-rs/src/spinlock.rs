@@ -5,6 +5,7 @@ use crate::{
     riscv::{intr_get, intr_off, intr_on},
 };
 use core::ptr;
+
 /// Mutual exclusion lock.
 #[derive(Copy, Clone)]
 pub struct Spinlock {
@@ -30,6 +31,7 @@ pub unsafe fn initlock(mut lk: *mut Spinlock, mut name: *mut libc::c_char) {
     (*lk).locked = 0 as i32 as u32;
     (*lk).cpu = ptr::null_mut();
 }
+
 /// Acquire the lock.
 /// Loops (spins) until the lock is acquired.
 pub unsafe fn acquire(mut lk: *mut Spinlock) {
@@ -51,6 +53,7 @@ pub unsafe fn acquire(mut lk: *mut Spinlock) {
     // Record info about lock acquisition for holding() and debugging.
     (*lk).cpu = mycpu();
 }
+
 /// Release the lock.
 pub unsafe fn release(mut lk: *mut Spinlock) {
     if holding(lk) == 0 {
@@ -72,6 +75,7 @@ pub unsafe fn release(mut lk: *mut Spinlock) {
     ::core::intrinsics::atomic_store_rel(&mut (*lk).locked, 0);
     pop_off();
 }
+
 /// Check whether this cpu is holding the lock.
 pub unsafe fn holding(mut lk: *mut Spinlock) -> i32 {
     let mut r: i32 = 0;
@@ -80,6 +84,7 @@ pub unsafe fn holding(mut lk: *mut Spinlock) -> i32 {
     pop_off();
     r
 }
+
 /// push_off/pop_off are like intr_off()/intr_on() except that they are matched:
 /// it takes two pop_off()s to undo two push_off()s.  Also, if interrupts
 /// are initially off, then push_off, pop_off leaves them off.

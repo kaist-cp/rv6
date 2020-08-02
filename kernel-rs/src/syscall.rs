@@ -7,6 +7,7 @@ use crate::{
     sysproc::*,
     vm::{copyin, copyinstr},
 };
+
 /// Fetch the u64 at addr from the current process.
 pub unsafe fn fetchaddr(mut addr: u64, mut ip: *mut u64) -> i32 {
     let mut p: *mut proc_0 = myproc();
@@ -24,6 +25,7 @@ pub unsafe fn fetchaddr(mut addr: u64, mut ip: *mut u64) -> i32 {
     }
     0
 }
+
 /// Fetch the nul-terminated string at addr from the current process.
 /// Returns length of string, not including nul, or -1 for error.
 pub unsafe fn fetchstr(mut addr: u64, mut buf: *mut libc::c_char, mut max: i32) -> i32 {
@@ -47,11 +49,13 @@ unsafe fn argraw(mut n: i32) -> u64 {
     }
     panic(b"argraw\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
+
 /// Fetch the nth 32-bit system call argument.
 pub unsafe fn argint(mut n: i32, mut ip: *mut i32) -> i32 {
     *ip = argraw(n) as i32;
     0
 }
+
 /// Retrieve an argument as a pointer.
 /// Doesn't check for legality, since
 /// copyin/copyout will do that.
@@ -59,6 +63,7 @@ pub unsafe fn argaddr(mut n: i32, mut ip: *mut u64) -> i32 {
     *ip = argraw(n);
     0
 }
+
 /// Fetch the nth word-sized system call argument as a null-terminated string.
 /// Copies into buf, at most max.
 /// Returns string length if OK (including nul), -1 if error.

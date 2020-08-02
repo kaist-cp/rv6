@@ -44,6 +44,7 @@ pub unsafe fn strncpy(
     }
     os
 }
+
 /// Like strncpy but guaranteed to NUL-terminate.
 pub unsafe fn safestrcpy(
     mut s: *mut libc::c_char,

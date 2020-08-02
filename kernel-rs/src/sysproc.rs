@@ -64,6 +64,7 @@ pub unsafe fn sys_kill() -> u64 {
     }
     kill(pid) as u64
 }
+
 /// return how many clock tick interrupts have occurred
 /// since start.
 pub unsafe fn sys_uptime() -> u64 {
