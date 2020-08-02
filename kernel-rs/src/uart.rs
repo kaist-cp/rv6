@@ -1,7 +1,8 @@
+//! low-level driver routines for 16550a UART.
+
 use crate::console::consoleintr;
 use crate::memlayout::UART0;
 use core::ptr;
-/// low-level driver routines for 16550a UART.
 
 /// the UART control registers are memory-mapped
 /// at address UART0. this macro returns the
@@ -10,9 +11,10 @@ const fn reg(r: i32) -> *mut u8 {
     (UART0 + r as u64) as *mut u8
 }
 
-/// the UART control registers are memory-mapped
-/// at address UART0. this macro returns the
-/// address of one of the registers.
+/// the UART control registers.
+/// some have different meanings for
+/// read vs write.
+/// http://byterunner.com/16550.html
 
 /// receive holding register (for input bytes)
 const RHR: i32 = 0;
@@ -42,17 +44,6 @@ unsafe fn writereg(r: i32, v: i32) {
     ptr::write_volatile(reg(r), v as u8)
 }
 
-/// the UART control registers.
-/// some have different meanings for
-/// read vs write.
-/// http://byterunner.com/16550.html
-/// receive holding register (for input bytes)
-/// transmit holding register (for output bytes)
-/// interrupt enable register
-/// FIFO control register
-/// interrupt status register
-/// line control register
-/// line status register
 pub unsafe fn uartinit() {
     // disable interrupts.
     writereg(IER, 0x00);
