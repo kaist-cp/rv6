@@ -37,10 +37,10 @@ const LCR: i32 = 3;
 /// line status register
 const LSR: i32 = 5;
 
-unsafe fn read_reg(r: i32) -> i32 {
-    ptr::read_volatile(reg(r)) as _
+unsafe fn read_reg(r: i32) -> u8 {
+    ptr::read_volatile(reg(r))
 }
-unsafe fn write_reg(r: i32, v: i32) {
+unsafe fn write_reg(r: i32, v: u8) {
     ptr::write_volatile(reg(r), v as u8)
 }
 
@@ -72,7 +72,7 @@ pub unsafe fn uartinit() {
 pub unsafe fn uartputc(mut c: i32) {
     // wait for Transmit Holding Empty to be set in LSR.
     while read_reg(LSR) & 1 << 5 == 0 {}
-    write_reg(THR, c);
+    write_reg(THR, c as u8);
 }
 
 /// read one input character from the UART.
@@ -80,7 +80,7 @@ pub unsafe fn uartputc(mut c: i32) {
 pub unsafe fn uartgetc() -> i32 {
     if read_reg(LSR) & 0x1 != 0 {
         // input data is ready.
-        read_reg(RHR)
+        read_reg(RHR) as i32
     } else {
         -1
     }
