@@ -2,7 +2,7 @@ use crate::libc;
 use crate::{
     bio::{bpin, bread, brelse, bunpin, bwrite},
     buf::Buf,
-    fs::{superblock, BSIZE},
+    fs::{Superblock, BSIZE},
     param::{LOGSIZE, MAXOPBLOCKS},
     printf::panic,
     proc::{sleep, wakeup},
@@ -63,7 +63,7 @@ pub static mut log: log = log {
         block: [0; 30],
     },
 };
-pub unsafe fn initlog(mut dev: i32, mut sb: *mut superblock) {
+pub unsafe fn initlog(mut dev: i32, mut sb: *mut Superblock) {
     if ::core::mem::size_of::<logheader>() as u64 >= BSIZE as u64 {
         panic(
             b"initlog: too big logheader\x00" as *const u8 as *const libc::c_char

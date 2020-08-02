@@ -27,7 +27,7 @@ pub const FD_NONE: u32 = 0;
 /// mkfs computes the super block and builds an initial file system. The
 /// super block describes the disk layout:
 #[derive(Copy, Clone)]
-pub struct superblock {
+pub struct Superblock {
     pub magic: u32,
     pub size: u32,
     pub nblocks: u32,
@@ -38,7 +38,7 @@ pub struct superblock {
     pub bmapstart: u32,
 }
 #[derive(Copy, Clone)]
-pub struct dirent {
+pub struct Dirent {
     pub inum: u16,
     pub name: [libc::c_char; DIRSIZ],
 }
@@ -46,7 +46,7 @@ pub struct dirent {
 /// Both the kernel and user programs use this header file.
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct dinode {
+pub struct Dinode {
     pub typ: i16,
     pub major: i16,
     pub minor: i16,
@@ -139,24 +139,24 @@ pub const NDIRECT: i32 = 12;
 pub const NINDIRECT: i32 = BSIZE.wrapping_div(mem::size_of::<u32>() as i32);
 pub const MAXFILE: i32 = NDIRECT.wrapping_add(NINDIRECT);
 /// Inodes per block.
-pub const IPB: i32 = BSIZE.wrapping_div(mem::size_of::<dinode>() as i32);
+pub const IPB: i32 = BSIZE.wrapping_div(mem::size_of::<Dinode>() as i32);
 /// Block containing inode i
-pub const fn iblock(i: i32, super_block: superblock) -> u32 {
+pub const fn iblock(i: i32, super_block: Superblock) -> u32 {
     i.wrapping_div(IPB)
         .wrapping_add(super_block.inodestart as i32) as u32
 }
 /// Block of free map containing bit for block b
-pub const fn bblock(b: u32, super_block: superblock) -> u32 {
+pub const fn bblock(b: u32, super_block: Superblock) -> u32 {
     b.wrapping_div(BPB as u32)
         .wrapping_add(super_block.bmapstart)
 }
 /// Bitmap bits per block
 pub const BPB: i32 = BSIZE * 8;
-/// Directory is a file containing a sequence of dirent structures.
+/// Directory is a file containing a sequence of Dirent structures.
 pub const DIRSIZ: usize = 14;
 /// there should be one superblock per disk device, but we run with
 /// only one device
-pub static mut sb: superblock = superblock {
+pub static mut sb: Superblock = Superblock {
     magic: 0,
     size: 0,
     nblocks: 0,
@@ -167,13 +167,13 @@ pub static mut sb: superblock = superblock {
     bmapstart: 0,
 };
 /// Read the super block.
-unsafe fn readsb(mut dev: i32, mut sb_0: *mut superblock) {
+unsafe fn readsb(mut dev: i32, mut sb_0: *mut Superblock) {
     let mut bp: *mut Buf = ptr::null_mut();
     bp = bread(dev as u32, 1 as u32);
     ptr::copy(
         (*bp).data.as_mut_ptr() as *const libc::c_void,
         sb_0 as *mut libc::c_void,
-        ::core::mem::size_of::<superblock>(),
+        ::core::mem::size_of::<Superblock>(),
     );
     brelse(bp);
 }
@@ -274,10 +274,10 @@ pub unsafe fn iinit() {
 pub unsafe fn ialloc(mut dev: u32, mut typ: i16) -> *mut inode {
     let mut inum: i32 = 1;
     let mut bp: *mut Buf = ptr::null_mut();
-    let mut dip: *mut dinode = ptr::null_mut();
+    let mut dip: *mut Dinode = ptr::null_mut();
     while (inum as u32) < sb.ninodes {
         bp = bread(dev, iblock(inum, sb));
-        dip = ((*bp).data.as_mut_ptr() as *mut dinode)
+        dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
             .offset((inum as u64).wrapping_rem(IPB as u64) as isize);
         if (*dip).typ as i32 == 0 as i32 {
             // a free inode
@@ -298,9 +298,9 @@ pub unsafe fn ialloc(mut dev: u32, mut typ: i16) -> *mut inode {
 /// Caller must hold ip->lock.
 pub unsafe fn iupdate(mut ip: *mut inode) {
     let mut bp: *mut Buf = ptr::null_mut();
-    let mut dip: *mut dinode = ptr::null_mut();
+    let mut dip: *mut Dinode = ptr::null_mut();
     bp = bread((*ip).dev, iblock((*ip).inum as i32, sb));
-    dip = ((*bp).data.as_mut_ptr() as *mut dinode)
+    dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
         .offset(((*ip).inum as u64).wrapping_rem(IPB as u64) as isize);
     (*dip).typ = (*ip).typ;
     (*dip).major = (*ip).major;
@@ -361,14 +361,14 @@ pub unsafe fn idup(mut ip: *mut inode) -> *mut inode {
 /// Reads the inode from disk if necessary.
 pub unsafe fn ilock(mut ip: *mut inode) {
     let mut bp: *mut Buf = ptr::null_mut();
-    let mut dip: *mut dinode = ptr::null_mut();
+    let mut dip: *mut Dinode = ptr::null_mut();
     if ip.is_null() || (*ip).ref_0 < 1 as i32 {
         panic(b"ilock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     acquiresleep(&mut (*ip).lock);
     if (*ip).valid == 0 as i32 {
         bp = bread((*ip).dev, iblock((*ip).inum as i32, sb));
-        dip = ((*bp).data.as_mut_ptr() as *mut dinode)
+        dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
             .offset(((*ip).inum as u64).wrapping_rem(IPB as u64) as isize);
         (*ip).typ = (*dip).typ;
         (*ip).major = (*dip).major;
@@ -637,7 +637,7 @@ pub unsafe fn dirlookup(
 ) -> *mut inode {
     let mut off: u32 = 0;
     let mut inum: u32 = 0;
-    let mut de: dirent = dirent {
+    let mut de: Dirent = Dirent {
         inum: 0,
         name: [0; DIRSIZ],
     };
@@ -649,11 +649,11 @@ pub unsafe fn dirlookup(
         if readi(
             dp,
             0 as i32,
-            &mut de as *mut dirent as u64,
+            &mut de as *mut Dirent as u64,
             off,
-            ::core::mem::size_of::<dirent>() as u64 as u32,
+            ::core::mem::size_of::<Dirent>() as u64 as u32,
         ) as u64
-            != ::core::mem::size_of::<dirent>() as u64
+            != ::core::mem::size_of::<Dirent>() as u64
         {
             panic(b"dirlookup read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
@@ -665,14 +665,14 @@ pub unsafe fn dirlookup(
             inum = de.inum as u32;
             return iget((*dp).dev, inum);
         }
-        off = (off as u64).wrapping_add(::core::mem::size_of::<dirent>() as u64) as u32 as u32
+        off = (off as u64).wrapping_add(::core::mem::size_of::<Dirent>() as u64) as u32 as u32
     }
     ptr::null_mut()
 }
 /// Write a new directory entry (name, inum) into the directory dp.
 pub unsafe fn dirlink(mut dp: *mut inode, mut name: *mut libc::c_char, mut inum: u32) -> i32 {
     let mut off: i32 = 0;
-    let mut de: dirent = dirent {
+    let mut de: Dirent = Dirent {
         inum: 0,
         name: [0; DIRSIZ],
     };
@@ -683,35 +683,35 @@ pub unsafe fn dirlink(mut dp: *mut inode, mut name: *mut libc::c_char, mut inum:
         iput(ip);
         return -(1 as i32);
     }
-    // Look for an empty dirent.
+    // Look for an empty Dirent.
     off = 0;
     while (off as u32) < (*dp).size {
         if readi(
             dp,
             0 as i32,
-            &mut de as *mut dirent as u64,
+            &mut de as *mut Dirent as u64,
             off as u32,
-            ::core::mem::size_of::<dirent>() as u64 as u32,
+            ::core::mem::size_of::<Dirent>() as u64 as u32,
         ) as u64
-            != ::core::mem::size_of::<dirent>() as u64
+            != ::core::mem::size_of::<Dirent>() as u64
         {
             panic(b"dirlink read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         if de.inum as i32 == 0 as i32 {
             break;
         }
-        off = (off as u64).wrapping_add(::core::mem::size_of::<dirent>() as u64) as i32 as i32
+        off = (off as u64).wrapping_add(::core::mem::size_of::<Dirent>() as u64) as i32 as i32
     }
     strncpy(de.name.as_mut_ptr(), name, DIRSIZ as i32);
     de.inum = inum as u16;
     if writei(
         dp,
         0 as i32,
-        &mut de as *mut dirent as u64,
+        &mut de as *mut Dirent as u64,
         off as u32,
-        ::core::mem::size_of::<dirent>() as u64 as u32,
+        ::core::mem::size_of::<Dirent>() as u64 as u32,
     ) as u64
-        != ::core::mem::size_of::<dirent>() as u64
+        != ::core::mem::size_of::<Dirent>() as u64
     {
         panic(b"dirlink\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
