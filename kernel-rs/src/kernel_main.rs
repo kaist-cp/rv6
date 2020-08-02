@@ -13,10 +13,12 @@ use crate::{
     vm::{kvminit, kvminithart},
 };
 use core::sync::atomic::{AtomicBool, Ordering};
+
+static mut started: AtomicBool = AtomicBool::new(false);
+
 /// start() jumps here in supervisor mode on all CPUs.
 #[export_name = "main"]
 pub unsafe fn main_0() {
-    let started: AtomicBool = AtomicBool::new(false);
     // physical page allocator
     if cpuid() == 0 as i32 {
         consoleinit(); // create kernel page table
