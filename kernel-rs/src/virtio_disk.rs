@@ -25,11 +25,7 @@ const fn r(r: i32) -> *mut u32 {
 /// the address of virtio mmio register r.
 #[derive(Copy, Clone)]
 #[repr(C, align(4096))]
-pub struct Disk(pub disk_Inner);
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct disk_Inner {
+pub struct Disk {
     /// memory for virtio descriptors &c for queue 0.
     /// this is a global instead of allocated because it must
     /// be multiple contiguous pages, which kalloc()
@@ -50,9 +46,6 @@ pub struct disk_Inner {
     pub vdisk_lock: Spinlock,
 }
 
-#[allow(dead_code, non_upper_case_globals)]
-const disk_PADDING: usize = ::core::mem::size_of::<Disk>() - ::core::mem::size_of::<disk_Inner>();
-
 #[derive(Copy, Clone)]
 pub struct InflightInfo {
     pub b: *mut Buf,
@@ -67,7 +60,7 @@ pub struct virtio_blk_outhdr {
     pub sector: u64,
 }
 
-static mut disk: Disk = Disk(disk_Inner {
+static mut disk: Disk = Disk {
     pages: [0; 8192],
     desc: 0 as *const VRingDesc as *mut VRingDesc,
     avail: 0 as *const u16 as *mut u16,
@@ -79,12 +72,12 @@ static mut disk: Disk = Disk(disk_Inner {
         status: 0,
     }; NUM as usize],
     vdisk_lock: Spinlock::zeroed(),
-});
+};
 
 pub unsafe fn virtio_disk_init() {
     let mut status: u32 = 0 as u32;
     initlock(
-        &mut disk.0.vdisk_lock,
+        &mut disk.vdisk_lock,
         b"virtio_disk\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
     if *(r(VIRTIO_MMIO_MAGIC_VALUE)) != 0x74726976 as u32
@@ -138,24 +131,24 @@ pub unsafe fn virtio_disk_init() {
         );
     }
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_NUM), NUM as u32);
-    ptr::write_bytes(disk.0.pages.as_mut_ptr(), 0, 1);
+    ptr::write_bytes(disk.pages.as_mut_ptr(), 0, 1);
     ::core::ptr::write_volatile(
         r(VIRTIO_MMIO_QUEUE_PFN),
-        (disk.0.pages.as_mut_ptr() as u64 >> PGSHIFT) as u32,
+        (disk.pages.as_mut_ptr() as u64 >> PGSHIFT) as u32,
     );
 
     // desc = pages -- num * VRingDesc
     // avail = pages + 0x40 -- 2 * u16, then num * u16
     // used = pages + 4096 -- 2 * u16, then num * vRingUsedElem
 
-    disk.0.desc = disk.0.pages.as_mut_ptr() as *mut VRingDesc;
-    disk.0.avail = (disk.0.desc as *mut libc::c_char)
+    disk.desc = disk.pages.as_mut_ptr() as *mut VRingDesc;
+    disk.avail = (disk.desc as *mut libc::c_char)
         .offset((NUM as u64).wrapping_mul(::core::mem::size_of::<VRingDesc>() as u64) as isize)
         as *mut u16;
-    disk.0.used = disk.0.pages.as_mut_ptr().offset(PGSIZE as isize) as *mut UsedArea;
+    disk.used = disk.pages.as_mut_ptr().offset(PGSIZE as isize) as *mut UsedArea;
     let mut i: i32 = 0;
     while i < NUM {
-        disk.0.free[i as usize] = 1 as i32 as libc::c_char;
+        disk.free[i as usize] = 1 as i32 as libc::c_char;
         i += 1
     }
 
@@ -166,8 +159,8 @@ pub unsafe fn virtio_disk_init() {
 unsafe fn alloc_desc() -> i32 {
     let mut i: i32 = 0;
     while i < NUM {
-        if disk.0.free[i as usize] != 0 {
-            disk.0.free[i as usize] = 0 as i32 as libc::c_char;
+        if disk.free[i as usize] != 0 {
+            disk.free[i as usize] = 0 as i32 as libc::c_char;
             return i;
         }
         i += 1
@@ -180,13 +173,13 @@ unsafe fn free_desc(mut i: i32) {
     if i >= NUM {
         panic(b"virtio_disk_intr 1\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    if disk.0.free[i as usize] != 0 {
+    if disk.free[i as usize] != 0 {
         panic(b"virtio_disk_intr 2\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    (*disk.0.desc.offset(i as isize)).addr = 0 as i32 as u64;
-    disk.0.free[i as usize] = 1 as i32 as libc::c_char;
+    (*disk.desc.offset(i as isize)).addr = 0 as i32 as u64;
+    disk.free[i as usize] = 1 as i32 as libc::c_char;
     wakeup(
-        &mut *disk.0.free.as_mut_ptr().offset(0 as i32 as isize) as *mut libc::c_char
+        &mut *disk.free.as_mut_ptr().offset(0 as i32 as isize) as *mut libc::c_char
             as *mut libc::c_void,
     );
 }
@@ -195,10 +188,10 @@ unsafe fn free_desc(mut i: i32) {
 unsafe fn free_chain(mut i: i32) {
     loop {
         free_desc(i);
-        if (*disk.0.desc.offset(i as isize)).flags as i32 & VRING_DESC_F_NEXT == 0 {
+        if (*disk.desc.offset(i as isize)).flags as i32 & VRING_DESC_F_NEXT == 0 {
             break;
         }
-        i = (*disk.0.desc.offset(i as isize)).next as i32
+        i = (*disk.desc.offset(i as isize)).next as i32
     }
 }
 
@@ -221,7 +214,7 @@ unsafe fn alloc3_desc(mut idx: *mut i32) -> i32 {
 pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     let mut sector: u64 = (*b).blockno.wrapping_mul((BSIZE / 512 as i32) as u32) as u64;
 
-    acquire(&mut disk.0.vdisk_lock);
+    acquire(&mut disk.vdisk_lock);
 
     // the spec says that legacy block operations use three
     // descriptors: one for type/reserved/sector, one for
@@ -231,9 +224,9 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     let mut idx: [i32; 3] = [0; 3];
     while alloc3_desc(idx.as_mut_ptr()) != 0 as i32 {
         sleep(
-            &mut *disk.0.free.as_mut_ptr().offset(0 as i32 as isize) as *mut libc::c_char
+            &mut *disk.free.as_mut_ptr().offset(0 as i32 as isize) as *mut libc::c_char
                 as *mut libc::c_void,
-            &mut disk.0.vdisk_lock,
+            &mut disk.vdisk_lock,
         );
     }
 
@@ -256,81 +249,79 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
 
     // buf0 is on a kernel stack, which is not direct mapped,
     // thus the call to kvmpa().
-    (*disk.0.desc.offset(idx[0 as i32 as usize] as isize)).addr =
+    (*disk.desc.offset(idx[0 as i32 as usize] as isize)).addr =
         kvmpa(&mut buf0 as *mut virtio_blk_outhdr as u64);
-    (*disk.0.desc.offset(idx[0 as i32 as usize] as isize)).len =
+    (*disk.desc.offset(idx[0 as i32 as usize] as isize)).len =
         ::core::mem::size_of::<virtio_blk_outhdr>() as u64 as u32;
-    (*disk.0.desc.offset(idx[0 as i32 as usize] as isize)).flags = VRING_DESC_F_NEXT as u16;
-    (*disk.0.desc.offset(idx[0 as i32 as usize] as isize)).next = idx[1 as i32 as usize] as u16;
-    (*disk.0.desc.offset(idx[1 as i32 as usize] as isize)).addr = (*b).data.as_mut_ptr() as u64;
-    (*disk.0.desc.offset(idx[1 as i32 as usize] as isize)).len = BSIZE as u32;
+    (*disk.desc.offset(idx[0 as i32 as usize] as isize)).flags = VRING_DESC_F_NEXT as u16;
+    (*disk.desc.offset(idx[0 as i32 as usize] as isize)).next = idx[1 as i32 as usize] as u16;
+    (*disk.desc.offset(idx[1 as i32 as usize] as isize)).addr = (*b).data.as_mut_ptr() as u64;
+    (*disk.desc.offset(idx[1 as i32 as usize] as isize)).len = BSIZE as u32;
     if write != 0 {
         // device writes b->data
-        (*disk.0.desc.offset(idx[1 as i32 as usize] as isize)).flags = 0 as i32 as u16
+        (*disk.desc.offset(idx[1 as i32 as usize] as isize)).flags = 0 as i32 as u16
     } else {
         // device reads b->data
-        (*disk.0.desc.offset(idx[1 as i32 as usize] as isize)).flags = VRING_DESC_F_WRITE as u16
+        (*disk.desc.offset(idx[1 as i32 as usize] as isize)).flags = VRING_DESC_F_WRITE as u16
     }
 
-    let fresh0 = &mut (*disk.0.desc.offset(idx[1 as i32 as usize] as isize)).flags;
+    let fresh0 = &mut (*disk.desc.offset(idx[1 as i32 as usize] as isize)).flags;
     *fresh0 = (*fresh0 as i32 | VRING_DESC_F_NEXT) as u16;
-    (*disk.0.desc.offset(idx[1 as i32 as usize] as isize)).next = idx[2 as i32 as usize] as u16;
+    (*disk.desc.offset(idx[1 as i32 as usize] as isize)).next = idx[2 as i32 as usize] as u16;
 
-    disk.0.info[idx[0 as i32 as usize] as usize].status = 0 as i32 as libc::c_char;
-    (*disk.0.desc.offset(idx[2 as i32 as usize] as isize)).addr = &mut (*disk
-        .0
+    disk.info[idx[0 as i32 as usize] as usize].status = 0 as i32 as libc::c_char;
+    (*disk.desc.offset(idx[2 as i32 as usize] as isize)).addr = &mut (*disk
         .info
         .as_mut_ptr()
         .offset(*idx.as_mut_ptr().offset(0 as i32 as isize) as isize))
     .status as *mut libc::c_char
         as u64;
-    (*disk.0.desc.offset(idx[2 as i32 as usize] as isize)).len = 1 as u32;
+    (*disk.desc.offset(idx[2 as i32 as usize] as isize)).len = 1 as u32;
     // device writes the status
-    (*disk.0.desc.offset(idx[2 as i32 as usize] as isize)).flags = VRING_DESC_F_WRITE as u16;
-    (*disk.0.desc.offset(idx[2 as i32 as usize] as isize)).next = 0 as i32 as u16;
+    (*disk.desc.offset(idx[2 as i32 as usize] as isize)).flags = VRING_DESC_F_WRITE as u16;
+    (*disk.desc.offset(idx[2 as i32 as usize] as isize)).next = 0 as i32 as u16;
 
     // record struct Buf for virtio_disk_intr().
     (*b).disk = 1;
-    disk.0.info[idx[0 as i32 as usize] as usize].b = b;
+    disk.info[idx[0 as i32 as usize] as usize].b = b;
 
     // avail[0] is flags
     // avail[1] tells the device how far to look in avail[2...].
     // avail[2...] are desc[] indices the device should process.
     // we only tell device the first index in our chain of descriptors.
     *disk
-        .0
         .avail
-        .offset((2 as i32 + *disk.0.avail.offset(1 as i32 as isize) as i32 % NUM) as isize) =
+        .offset((2 as i32 + *disk.avail.offset(1 as i32 as isize) as i32 % NUM) as isize) =
         idx[0 as i32 as usize] as u16;
     ::core::intrinsics::atomic_fence();
-    *disk.0.avail.offset(1 as i32 as isize) =
-        (*disk.0.avail.offset(1 as i32 as isize) as i32 + 1 as i32) as u16;
+    *disk.avail.offset(1 as i32 as isize) =
+        (*disk.avail.offset(1 as i32 as isize) as i32 + 1 as i32) as u16;
 
     // value is queue number
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_NOTIFY), 0);
 
     // Wait for virtio_disk_intr() to say request has finished.
     while (*b).disk == 1 {
-        sleep(b as *mut libc::c_void, &mut disk.0.vdisk_lock); // disk is done with Buf
+        sleep(b as *mut libc::c_void, &mut disk.vdisk_lock); // disk is done with Buf
     }
-    disk.0.info[idx[0 as i32 as usize] as usize].b = ptr::null_mut();
+    disk.info[idx[0 as i32 as usize] as usize].b = ptr::null_mut();
     free_chain(idx[0 as i32 as usize]);
-    release(&mut disk.0.vdisk_lock);
+    release(&mut disk.vdisk_lock);
 }
 pub unsafe fn virtio_disk_intr() {
-    acquire(&mut disk.0.vdisk_lock);
-    while disk.0.used_idx as i32 % NUM != (*disk.0.used).id as i32 % NUM {
-        let mut id: i32 = (*disk.0.used).elems[disk.0.used_idx as usize].id as i32;
-        if disk.0.info[id as usize].status as i32 != 0 as i32 {
+    acquire(&mut disk.vdisk_lock);
+    while disk.used_idx as i32 % NUM != (*disk.used).id as i32 % NUM {
+        let mut id: i32 = (*disk.used).elems[disk.used_idx as usize].id as i32;
+        if disk.info[id as usize].status as i32 != 0 as i32 {
             panic(
                 b"virtio_disk_intr status\x00" as *const u8 as *const libc::c_char
                     as *mut libc::c_char,
             );
         }
-        (*disk.0.info[id as usize].b).disk = 0;
-        wakeup(disk.0.info[id as usize].b as *mut libc::c_void);
+        (*disk.info[id as usize].b).disk = 0;
+        wakeup(disk.info[id as usize].b as *mut libc::c_void);
 
-        disk.0.used_idx = ((disk.0.used_idx as i32 + 1 as i32) % NUM) as u16
+        disk.used_idx = ((disk.used_idx as i32 + 1 as i32) % NUM) as u16
     }
-    release(&mut disk.0.vdisk_lock);
+    release(&mut disk.vdisk_lock);
 }
