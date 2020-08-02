@@ -7,7 +7,7 @@ use core::ptr;
 /// at address UART0. this macro returns the
 /// address of one of the registers.
 const fn reg(r: i32) -> *mut u8 {
-    (UART0 + r as i64) as *mut u8
+    (UART0 + r as u64) as *mut u8
 }
 
 /// the UART control registers are memory-mapped
