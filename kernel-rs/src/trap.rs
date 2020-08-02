@@ -109,6 +109,7 @@ pub unsafe extern "C" fn usertrap() {
     if which_dev == 2 as i32 {
         yield_0();
     }
+
     usertrapret();
 }
 
@@ -233,15 +234,19 @@ pub unsafe fn clockintr() {
 /// 0 if not recognized.
 pub unsafe fn devintr() -> i32 {
     let mut scause: u64 = r_scause();
-    if scause & 0x8000000000000000 as u64 != 0 && scause & 0xff as u64 == 9 as u64 {
+
+    if scause & 0x8000000000000000 != 0 && scause & 0xff == 9 {
         // this is a supervisor external interrupt, via PLIC.
+
         // irq indicates which device interrupted.
         let mut irq: i32 = plic_claim();
+
         if irq == UART0_IRQ {
             uartintr();
         } else if irq == VIRTIO0_IRQ {
             virtio_disk_intr();
         }
+
         plic_complete(irq);
         1
     } else if scause == 0x8000000000000001 {

@@ -315,11 +315,13 @@ pub const fn pgroundup(sz: u64) -> u64 {
 pub const fn pgrounddown(a: u64) -> u64 {
     a & !(PGSIZE - 1 as i32) as u64
 }
+
 /*
 TODO: used directly in oter function e.g., uvmalloc in vm.rs
 #define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
 #define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1))
 */
+
 
 /// valid
 pub const PTE_V: i64 = (1 as i64) << 0 as i32;
@@ -361,15 +363,9 @@ fn pxshift(level: i32) -> i32 {
     PGSHIFT + 9 * level
 }
 
-pub fn px(level: i32, va: u64) -> u64 {
-    (va >> pxshift(level) as u64) & PXMASK as u64
+pub fn px(level: i32, va: u64) -> isize {
+    ((va >> pxshift(level) as u64) & PXMASK as u64) as isize
 }
-/*
-TODO: unused
-#define PXSHIFT(level)  (PGSHIFT+(9*(level)))
-TODO: used directly in vm.rs
-#define PX(level, va) ((((u64) (va)) >> PXSHIFT(level)) & PXMASK)
-*/
 
 /// one beyond the highest possible virtual address.
 /// MAXVA is actually one bit less than the max allowed by

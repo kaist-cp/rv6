@@ -302,7 +302,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
 
     // Wait for virtio_disk_intr() to say request has finished.
     while (*b).disk == 1 {
-        sleep(b as *mut libc::c_void, &mut disk.vdisk_lock); // disk is done with Buf
+        sleep(b as *mut libc::c_void, &mut disk.vdisk_lock);
     }
     disk.info[idx[0 as i32 as usize] as usize].b = ptr::null_mut();
     free_chain(idx[0 as i32 as usize]);
@@ -319,8 +319,10 @@ pub unsafe fn virtio_disk_intr() {
             );
         }
         (*disk.info[id as usize].b).disk = 0;
+        
+        // disk is done with Buf
         wakeup(disk.info[id as usize].b as *mut libc::c_void);
-
+      
         disk.used_idx = ((disk.used_idx as i32 + 1 as i32) % NUM) as u16
     }
     release(&mut disk.vdisk_lock);

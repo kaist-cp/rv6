@@ -7,6 +7,7 @@ use core::ptr;
 /// the UART control registers are memory-mapped
 /// at address UART0. this macro returns the
 /// address of one of the registers.
+#[inline]
 const fn reg(r: i32) -> *mut u8 {
     (UART0 + r as u64) as *mut u8
 }
@@ -41,7 +42,7 @@ unsafe fn read_reg(r: i32) -> u8 {
     ptr::read_volatile(reg(r))
 }
 unsafe fn write_reg(r: i32, v: u8) {
-    ptr::write_volatile(reg(r), v as u8)
+    ptr::write_volatile(reg(r), v)
 }
 
 pub unsafe fn uartinit() {
@@ -69,7 +70,7 @@ pub unsafe fn uartinit() {
 }
 
 /// write one output character to the UART.
-pub unsafe fn uartputc(mut c: i32) {
+pub unsafe fn uartputc(c: i32) {
     // wait for Transmit Holding Empty to be set in LSR.
     while read_reg(LSR) & 1 << 5 == 0 {}
     write_reg(THR, c as u8);

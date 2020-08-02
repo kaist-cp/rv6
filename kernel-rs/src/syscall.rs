@@ -36,6 +36,7 @@ pub unsafe fn fetchstr(mut addr: u64, mut buf: *mut libc::c_char, mut max: i32) 
     }
     strlen(buf)
 }
+
 unsafe fn argraw(mut n: i32) -> u64 {
     let mut p: *mut proc_0 = myproc();
     match n {
@@ -74,6 +75,7 @@ pub unsafe fn argstr(mut n: i32, mut buf: *mut libc::c_char, mut max: i32) -> i3
     }
     fetchstr(addr, buf, max)
 }
+
 static mut syscalls: [Option<unsafe fn() -> u64>; 22] = unsafe {
     [
         None,
@@ -100,6 +102,7 @@ static mut syscalls: [Option<unsafe fn() -> u64>; 22] = unsafe {
         Some(sys_close as unsafe fn() -> u64),
     ]
 };
+
 pub unsafe fn syscall() {
     let mut num: i32 = 0;
     let mut p: *mut proc_0 = myproc();

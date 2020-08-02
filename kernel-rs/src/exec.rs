@@ -7,7 +7,7 @@ use crate::{
     param::MAXARG,
     printf::panic,
     proc::{myproc, proc_0, proc_freepagetable, proc_pagetable},
-    riscv::{pagetable_t, PGSIZE},
+    riscv::{pagetable_t, pgroundup, PGSIZE},
     string::{safestrcpy, strlen},
     vm::{copyout, uvmalloc, uvmclear, walkaddr},
 };
@@ -137,8 +137,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
 
                     // Allocate two pages at the next page boundary.
                     // Use the second as the user stack.
-                    sz = sz.wrapping_add(PGSIZE as u64).wrapping_sub(1 as i32 as u64)
-                        & !(PGSIZE - 1 as i32) as u64;
+                    sz = pgroundup(sz);
                     sz = uvmalloc(pagetable, sz, sz.wrapping_add((2 as i32 * PGSIZE) as u64));
                     if sz != 0 as i32 as u64 {
                         uvmclear(pagetable, sz.wrapping_sub((2 as i32 * PGSIZE) as u64));

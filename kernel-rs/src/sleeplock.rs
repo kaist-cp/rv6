@@ -46,6 +46,7 @@ pub unsafe fn initsleeplock(mut lk: *mut Sleeplock, mut name: *mut libc::c_char)
     (*lk).locked = 0 as u32;
     (*lk).pid = 0 as i32;
 }
+
 pub unsafe fn acquiresleep(mut lk: *mut Sleeplock) {
     acquire(&mut (*lk).lk);
     while (*lk).locked != 0 {
@@ -55,6 +56,7 @@ pub unsafe fn acquiresleep(mut lk: *mut Sleeplock) {
     (*lk).pid = (*myproc()).pid;
     release(&mut (*lk).lk);
 }
+
 pub unsafe fn releasesleep(mut lk: *mut Sleeplock) {
     acquire(&mut (*lk).lk);
     (*lk).locked = 0 as u32;
@@ -62,6 +64,7 @@ pub unsafe fn releasesleep(mut lk: *mut Sleeplock) {
     wakeup(lk as *mut libc::c_void);
     release(&mut (*lk).lk);
 }
+
 pub unsafe fn holdingsleep(mut lk: *mut Sleeplock) -> i32 {
     let mut r: i32 = 0;
     acquire(&mut (*lk).lk);

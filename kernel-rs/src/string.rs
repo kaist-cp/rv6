@@ -1,5 +1,6 @@
 use crate::libc;
 use core::ptr;
+
 pub unsafe fn strncmp(mut p: *const libc::c_char, mut q: *const libc::c_char, mut n: u32) -> i32 {
     while n > 0 as u32 && *p as i32 != 0 && *p as i32 == *q as i32 {
         n = n.wrapping_sub(1);
@@ -11,6 +12,7 @@ pub unsafe fn strncmp(mut p: *const libc::c_char, mut q: *const libc::c_char, mu
     }
     *p as u8 as i32 - *q as u8 as i32
 }
+
 pub unsafe fn strncpy(
     mut s: *mut libc::c_char,
     mut t: *const libc::c_char,
@@ -72,6 +74,7 @@ pub unsafe fn safestrcpy(
     *s = 0 as i32 as libc::c_char;
     os
 }
+
 pub unsafe fn strlen(mut s: *const libc::c_char) -> i32 {
     let mut n: i32 = 0;
     while *s.offset(n as isize) != 0 {

@@ -48,6 +48,7 @@ pub struct Superblock {
     pub inodestart: u32,
     pub bmapstart: u32,
 }
+
 #[derive(Copy, Clone)]
 pub struct Dirent {
     pub inum: u16,
@@ -264,6 +265,7 @@ unsafe fn bfree(mut dev: i32, mut b: u32) {
     log_write(bp);
     brelse(bp);
 }
+
 pub static mut icache: Icache = Icache {
     lock: Spinlock::zeroed(),
     inode: [inode {
@@ -280,6 +282,7 @@ pub static mut icache: Icache = Icache {
         addrs: [0; 13],
     }; 50],
 };
+
 pub unsafe fn iinit() {
     let mut i: i32 = 0;
     initlock(
@@ -856,10 +859,12 @@ unsafe fn namex(
     }
     ip
 }
+
 pub unsafe fn namei(mut path: *mut libc::c_char) -> *mut inode {
     let mut name: [libc::c_char; DIRSIZ] = [0; DIRSIZ];
     namex(path, 0 as i32, name.as_mut_ptr())
 }
+
 pub unsafe fn nameiparent(mut path: *mut libc::c_char, mut name: *mut libc::c_char) -> *mut inode {
     namex(path, 1 as i32, name)
 }
