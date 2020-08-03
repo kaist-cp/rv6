@@ -67,15 +67,17 @@ pub unsafe extern "C" fn usertrap() {
 
     // save user program counter.
     (*(*p).tf).epc = r_sepc();
-
     if r_scause() == 8 {
         // system call
+
         if (*p).killed != 0 {
             exit(-(1 as i32));
         }
+
         // sepc points to the ecall instruction,
         // but we want to return to the next instruction.
         (*(*p).tf).epc = ((*(*p).tf).epc as u64).wrapping_add(4 as u64) as u64;
+
         // an interrupt will change sstatus &c registers,
         // so don't enable until done with those registers.
         intr_on();
@@ -129,17 +131,27 @@ pub unsafe fn usertrapret() {
 
     // set up trapframe values that uservec will need when
     // the process next re-enters the kernel.
-    (*(*p).tf).kernel_satp = r_satp(); // kernel page table
-    (*(*p).tf).kernel_sp = (*p).kstack.wrapping_add(PGSIZE as u64); // process's kernel stack
-    (*(*p).tf).kernel_trap = usertrap as u64; // hartid for cpuid()
+
+    // kernel page table
+    (*(*p).tf).kernel_satp = r_satp();
+
+    // process's kernel stack
+    (*(*p).tf).kernel_sp = (*p).kstack.wrapping_add(PGSIZE as u64);
+    (*(*p).tf).kernel_trap = usertrap as u64;
+
+    // hartid for cpuid()
     (*(*p).tf).kernel_hartid = r_tp();
 
     // set up the registers that trampoline.S's sret will use
     // to get to user space.
 
     // set S Previous Privilege mode to User.
-    let mut x: u64 = r_sstatus(); // clear SPP to 0 for user mode
-    x &= !SSTATUS_SPP as u64; // enable interrupts in user mode
+    let mut x: u64 = r_sstatus();
+
+    // clear SPP to 0 for user mode
+    x &= !SSTATUS_SPP as u64;
+
+    // enable interrupts in user mode
     x |= SSTATUS_SPIE as u64;
     w_sstatus(x);
 

@@ -15,7 +15,6 @@ pub struct Console {
     pub e: u32,
 }
 
-///
 /// Console input and output, to the uart.
 /// Reads are line at a time.
 /// Implements special input characters:
@@ -24,15 +23,14 @@ pub struct Console {
 ///   control-u -- kill line
 ///   control-d -- end of file
 ///   control-p -- print process list
-///
 pub const BACKSPACE: i32 = 0x100;
+
 /// Control-x
 const fn ctrl(x: char) -> i32 {
     x as i32 - '@' as i32
 }
-///
+
 /// send one character to the uart.
-///
 pub unsafe fn consputc(mut c: i32) {
     if panicked != 0 {
         loop {}
@@ -46,20 +44,25 @@ pub unsafe fn consputc(mut c: i32) {
         uartputc(c);
     };
 }
+
+/// input
 pub const INPUT_BUF: usize = 128;
-///
-/// Edit index
-///
+
 pub static mut cons: Console = Console {
     lock: Spinlock::zeroed(),
     buf: [0; INPUT_BUF],
+
+    /// Read index
     r: 0,
+
+    /// Write index
     w: 0,
+
+    /// Edit index
     e: 0,
 };
-///
+
 /// user write()s to the console go here.
-///
 pub unsafe fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
     let mut i: i32 = 0;
     acquire(&mut cons.lock);
@@ -80,12 +83,11 @@ pub unsafe fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
     release(&mut cons.lock);
     n
 }
-///
+
 /// user read()s from the console go here.
 /// copy (up to) a whole input line to dst.
 /// user_dist indicates whether dst is a user
 /// or kernel address.
-///
 pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
     let mut target: u32 = n as u32;
     let mut cin: i32 = 0;
@@ -104,8 +106,9 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
         let fresh0 = cons.r;
         cons.r = cons.r.wrapping_add(1);
         cin = cons.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
+
+        // end-of-file
         if cin == ctrl('D') {
-            // end-of-file
             if (n as u32) < target {
                 // Save ^D for next time, to make sure
                 // caller gets a 0-byte result.
@@ -127,6 +130,8 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
             dst = dst.wrapping_add(1);
             n -= 1;
             if cin == '\n' as i32 {
+                // a whole line has arrived, return to
+                // the user-level read().
                 break;
             }
         }
@@ -134,13 +139,11 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
     release(&mut cons.lock);
     target.wrapping_sub(n as u32) as i32
 }
-///
+
 /// the console input interrupt handler.
 /// uartintr() calls this for input character.
 /// do erase/kill processing, append to cons.buf,
 /// wake up consoleread() if a whole line has arrived.
-///
-
 pub unsafe fn consoleintr(mut cin: i32) {
     acquire(&mut cons.lock);
     match cin {
@@ -148,6 +151,7 @@ pub unsafe fn consoleintr(mut cin: i32) {
         m if m == ctrl('P') => {
             procdump();
         }
+
         // Kill line.
         m if m == ctrl('U') => {
             while cons.e != cons.w
@@ -161,6 +165,7 @@ pub unsafe fn consoleintr(mut cin: i32) {
                 consputc(BACKSPACE);
             }
         }
+
         // Backspace
         m if m == ctrl('H') | '\x7f' as i32 => {
             if cons.e != cons.w {
@@ -171,8 +176,10 @@ pub unsafe fn consoleintr(mut cin: i32) {
         _ => {
             if cin != 0 as i32 && cons.e.wrapping_sub(cons.r) < INPUT_BUF as u32 {
                 cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
+
                 // echo back to the user.
                 consputc(cin);
+
                 // store for consumption by consoleread().
                 let fresh1 = cons.e;
                 cons.e = cons.e.wrapping_add(1);
@@ -197,6 +204,7 @@ pub unsafe fn consoleinit() {
         b"cons\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
     uartinit();
+
     // connect read and write system calls
     // to consoleread and consolewrite.
     let fresh2 = &mut (*devsw.as_mut_ptr().offset(CONSOLE)).read;

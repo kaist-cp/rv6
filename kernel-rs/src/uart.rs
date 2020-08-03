@@ -19,16 +19,22 @@ const fn reg(r: i32) -> *mut u8 {
 
 /// receive holding register (for input bytes)
 const RHR: i32 = 0;
+
 /// transmit holding register (for output bytes)
 const THR: i32 = 0;
+
 /// interrupt enable register
 const IER: i32 = 1;
+
 /// FIFO control register
 const FCR: i32 = 2;
+
 /// interrupt status register
 const ISR: i32 = 2;
+
 /// line control register
 const LCR: i32 = 3;
+
 /// line status register
 const LSR: i32 = 5;
 

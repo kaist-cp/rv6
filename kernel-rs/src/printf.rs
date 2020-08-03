@@ -2,7 +2,9 @@ use crate::console::consputc;
 use crate::libc;
 use crate::spinlock::{acquire, initlock, release, Spinlock};
 use core::ptr;
+
 pub type __builtin_va_list = [__va_list_tag; 1];
+
 #[derive(Copy, Clone)]
 pub struct __va_list_tag {
     pub gp_offset: u32,
@@ -10,6 +12,7 @@ pub struct __va_list_tag {
     pub overflow_arg_area: *mut libc::c_void,
     pub reg_save_area: *mut libc::c_void,
 }
+
 pub type va_list = __builtin_va_list;
 
 #[derive(Copy, Clone)]
@@ -17,9 +20,8 @@ pub struct PrintfLock {
     pub lock: Spinlock,
     pub locking: i32,
 }
-///
+
 /// formatted console output -- printf, panic.
-///
 pub static mut panicked: i32 = 0;
 static mut pr: PrintfLock = PrintfLock {
     lock: Spinlock::zeroed(),
@@ -63,6 +65,7 @@ unsafe fn printint(mut xx: i32, mut base: i32, mut sign: i32) {
         consputc(buf[i as usize] as i32);
     }
 }
+
 unsafe fn printptr(mut x: u64) {
     let mut i: i32 = 0;
     consputc('0' as i32);
@@ -79,6 +82,7 @@ unsafe fn printptr(mut x: u64) {
         x <<= 4 as i32
     }
 }
+
 /// Print to the console. only understands %d, %x, %p, %s.
 pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
     let mut ap: ::core::ffi::VaListImpl;
@@ -133,7 +137,7 @@ pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
                 }
                 _ => {
                     // Print unknown % sequence to draw attention.
-                    consputc('%' as i32); // freeze other CPUs
+                    consputc('%' as i32);
                     consputc(c);
                 }
             }
@@ -144,14 +148,18 @@ pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
         release(&mut pr.lock);
     };
 }
+
 pub unsafe fn panic(mut s: *mut libc::c_char) -> ! {
     pr.locking = 0 as i32;
     printf(b"panic: \x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     printf(s);
     printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+
+    // freeze other CPUs
     ::core::ptr::write_volatile(&mut panicked as *mut i32, 1 as i32);
     loop {}
 }
+
 pub unsafe fn printfinit() {
     initlock(
         &mut pr.lock,

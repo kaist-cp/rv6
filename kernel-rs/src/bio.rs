@@ -56,6 +56,7 @@ pub unsafe fn binit() {
         b = b.offset(1)
     }
 }
+
 /// Look through buffer cache for block on device dev.
 /// If not found, allocate a buffer.
 /// In either case, return locked buffer.
@@ -75,6 +76,7 @@ unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
         }
         b = (*b).next
     }
+
     // Not cached; recycle an unused buffer.
     b = bcache.head.prev;
     while b != &mut bcache.head as *mut Buf {
@@ -91,6 +93,7 @@ unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
     }
     panic(b"bget: no buffers\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
+
 /// Return a locked buf with the contents of the indicated block.
 pub unsafe fn bread(mut dev: u32, mut blockno: u32) -> *mut Buf {
     let mut b: *mut Buf = ptr::null_mut();
@@ -101,6 +104,7 @@ pub unsafe fn bread(mut dev: u32, mut blockno: u32) -> *mut Buf {
     }
     b
 }
+
 /// Write b's contents to disk.  Must be locked.
 pub unsafe fn bwrite(mut b: *mut Buf) {
     if holdingsleep(&mut (*b).lock) == 0 {
@@ -108,6 +112,7 @@ pub unsafe fn bwrite(mut b: *mut Buf) {
     }
     virtio_disk_rw(b, 1 as i32);
 }
+
 /// Release a locked buffer.
 /// Move to the head of the MRU list.
 pub unsafe fn brelse(mut b: *mut Buf) {

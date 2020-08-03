@@ -59,6 +59,7 @@ pub const TRAMPOLINE: i64 = MAXVA - PGSIZE as i64;
 pub const fn kstack(p: i32) -> i64 {
     TRAMPOLINE - ((p + 1 as i32) * 2 as i32 * PGSIZE) as i64
 }
+
 /// User memory layout.
 /// Address zero first:
 ///   text
