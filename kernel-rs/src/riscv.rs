@@ -274,11 +274,6 @@ pub const fn pgroundup(sz: u64) -> u64 {
 pub const fn pgrounddown(a: u64) -> u64 {
     a & !(PGSIZE - 1 as i32) as u64
 }
-/*
-TODO: used directly in oter function e.g., uvmalloc in vm.rs
-#define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
-#define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1))
-*/
 /// valid
 pub const PTE_V: i64 = (1 as i64) << 0 as i32;
 pub const PTE_R: i64 = (1 as i64) << 1 as i32;
@@ -296,15 +291,6 @@ pub const fn pte2pa(pte: pte_t) -> u64 {
 pub const fn pte_flags(pte: pte_t) -> u64 {
     pte & 0x3ff as i32 as u64
 }
-/*
-TODO: used directly in other file e.g., vm.rs
-
-#define PA2PTE(pa) ((((u64)pa) >> 12) << 10)
-
-#define PTE2PA(pte) (((pte) >> 10) << 12)
-
-#define PTE_FLAGS(pte) ((pte) & 0x3FF)
-*/
 /// extract the three 9-bit page table indices from a virtual address.
 /// 9 bits
 pub const PXMASK: i32 = 0x1ff as i32;
@@ -313,15 +299,9 @@ fn pxshift(level: i32) -> i32 {
     PGSHIFT + 9 * level
 }
 
-pub fn px(level: i32, va: u64) -> u64 {
-    (va >> pxshift(level) as u64) & PXMASK as u64
+pub fn px(level: i32, va: u64) -> isize {
+    ((va >> pxshift(level) as u64) & PXMASK as u64) as isize
 }
-/*
-TODO: unused
-#define PXSHIFT(level)  (PGSHIFT+(9*(level)))
-TODO: used directly in vm.rs
-#define PX(level, va) ((((u64) (va)) >> PXSHIFT(level)) & PXMASK)
-*/
 
 /// one beyond the highest possible virtual address.
 /// MAXVA is actually one bit less than the max allowed by
