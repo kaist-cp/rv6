@@ -9,9 +9,9 @@ use core::ptr;
 /// Mutual exclusion lock.
 #[derive(Copy, Clone)]
 pub struct Spinlock {
-    pub locked: u32,
-    pub name: *mut libc::c_char,
-    pub cpu: *mut cpu,
+    locked: u32,
+    name: *mut libc::c_char,
+    cpu: *mut cpu,
 }
 
 impl Spinlock {
