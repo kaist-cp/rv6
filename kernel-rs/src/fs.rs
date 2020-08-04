@@ -18,7 +18,7 @@ use crate::{
     param::{NINODE, ROOTDEV},
     printf::panic,
     proc::{either_copyin, either_copyout, myproc},
-    sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock},
+    sleeplock::{holdingsleep, releasesleep, Sleeplock},
     spinlock::Spinlock,
     stat::{Stat, T_DIR},
     string::{strncmp, strncpy},
@@ -292,8 +292,7 @@ pub unsafe fn iinit() {
         .lock
         .initlock(b"icache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     while i < NINODE {
-        initsleeplock(
-            &mut (*icache.inode.as_mut_ptr().offset(i as isize)).lock,
+        (*icache.inode.as_mut_ptr().offset(i as isize)).lock.initsleeplock(
             b"inode\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
         );
         i += 1
@@ -408,7 +407,7 @@ pub unsafe fn ilock(mut ip: *mut inode) {
     if ip.is_null() || (*ip).ref_0 < 1 as i32 {
         panic(b"ilock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    acquiresleep(&mut (*ip).lock);
+    (*ip).lock.acquiresleep();
     if (*ip).valid == 0 as i32 {
         bp = bread((*ip).dev, iblock((*ip).inum as i32, sb));
         dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
@@ -452,7 +451,7 @@ pub unsafe fn iput(mut ip: *mut inode) {
         // inode has no links and no other references: truncate and free.
         // ip->ref == 1 means no other process can have ip locked,
         // so this acquiresleep() won't block (or deadlock).
-        acquiresleep(&mut (*ip).lock);
+        (*ip).lock.acquiresleep();
         icache.lock.release();
         itrunc(ip);
         (*ip).typ = 0 as i32 as i16;

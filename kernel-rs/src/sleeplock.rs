@@ -33,25 +33,25 @@ impl Sleeplock {
 
         lk
     }
-}
 
-pub unsafe fn initsleeplock(mut lk: *mut Sleeplock, mut name: *mut libc::c_char) {
-    (*lk)
-        .lk
-        .initlock(b"sleep lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-    (*lk).name = name;
-    (*lk).locked = 0 as u32;
-    (*lk).pid = 0 as i32;
-}
-
-pub unsafe fn acquiresleep(mut lk: *mut Sleeplock) {
-    (*lk).lk.acquire();
-    while (*lk).locked != 0 {
-        sleep(lk as *mut libc::c_void, &mut (*lk).lk);
+    pub fn initsleeplock(&mut self, mut name: *mut libc::c_char) {
+        (*self)
+            .lk
+            .initlock(b"sleep lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        (*self).name = name;
+        (*self).locked = 0 as u32;
+        (*self).pid = 0 as i32;
     }
-    (*lk).locked = 1 as u32;
-    (*lk).pid = (*myproc()).pid;
-    (*lk).lk.release();
+    
+    pub unsafe fn acquiresleep(&mut self) {
+        (*self).lk.acquire();
+        while (*self).locked != 0 {
+            sleep(self as *mut Sleeplock as *mut libc::c_void, &mut (*self).lk);
+        }
+        (*self).locked = 1 as u32;
+        (*self).pid = (*myproc()).pid;
+        (*self).lk.release();
+    }
 }
 
 pub unsafe fn releasesleep(mut lk: *mut Sleeplock) {

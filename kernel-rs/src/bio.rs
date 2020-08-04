@@ -3,7 +3,7 @@ use crate::{
     buf::Buf,
     param::NBUF,
     printf::panic,
-    sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep},
+    sleeplock::{holdingsleep, releasesleep},
     spinlock::Spinlock,
     virtio_disk::virtio_disk_rw,
 };
@@ -46,8 +46,7 @@ pub unsafe fn binit() {
     while b < bcache.buf.as_mut_ptr().offset(NBUF as isize) {
         (*b).next = bcache.head.next;
         (*b).prev = &mut bcache.head;
-        initsleeplock(
-            &mut (*b).lock,
+        (*b).lock.initsleeplock(
             b"buffer\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
         );
         (*bcache.head.next).prev = b;
@@ -70,7 +69,7 @@ unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
         if (*b).dev == dev && (*b).blockno == blockno {
             (*b).refcnt = (*b).refcnt.wrapping_add(1);
             bcache.lock.release();
-            acquiresleep(&mut (*b).lock);
+            (*b).lock.acquiresleep();
             return b;
         }
         b = (*b).next
@@ -85,7 +84,7 @@ unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
             (*b).valid = 0 as i32;
             (*b).refcnt = 1 as i32 as u32;
             bcache.lock.release();
-            acquiresleep(&mut (*b).lock);
+            (*b).lock.acquiresleep();
             return b;
         }
         b = (*b).prev
