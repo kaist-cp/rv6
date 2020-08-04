@@ -13,6 +13,7 @@ use crate::{
 };
 use core::ptr;
 pub const CONSOLE: isize = 1;
+
 #[derive(Copy, Clone)]
 pub struct File {
     pub typ: u32,
