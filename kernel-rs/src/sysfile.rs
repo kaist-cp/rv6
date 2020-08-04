@@ -178,9 +178,8 @@ pub unsafe fn sys_link() -> u64 {
 
 /// Is the directory dp empty except for "." and ".." ?
 unsafe fn isdirempty(mut dp: *mut inode) -> i32 {
-    let mut off: i32 = 0;
     let mut de: Dirent = Default::default();
-    off = (2 as u64).wrapping_mul(::core::mem::size_of::<Dirent>() as u64) as i32;
+    let mut off = (2 as u64).wrapping_mul(::core::mem::size_of::<Dirent>() as u64) as i32;
     while (off as u32) < (*dp).size {
         if readi(
             dp,
@@ -484,7 +483,6 @@ pub unsafe fn sys_chdir() -> u64 {
 }
 
 pub unsafe fn sys_exec() -> u64 {
-    let mut ret: i32 = 0;
     let mut current_block: u64;
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut argv: [*mut libc::c_char; MAXARG as usize] = [ptr::null_mut(); MAXARG as usize];
@@ -496,7 +494,6 @@ pub unsafe fn sys_exec() -> u64 {
         return -(1 as i32) as u64;
     }
     ptr::write_bytes(argv.as_mut_ptr(), 0, 1);
-    i = 0 as i32;
     loop {
         if i as u64
             >= (::core::mem::size_of::<[*mut libc::c_char; 32]>() as u64)
@@ -545,7 +542,7 @@ pub unsafe fn sys_exec() -> u64 {
             -(1 as i32) as u64
         }
         _ => {
-            ret = exec(path.as_mut_ptr(), argv.as_mut_ptr());
+            let ret = exec(path.as_mut_ptr(), argv.as_mut_ptr());
             i = 0 as i32;
             while (i as u64)
                 < (::core::mem::size_of::<[*mut libc::c_char; 32]>() as u64)

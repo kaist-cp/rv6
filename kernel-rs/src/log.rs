@@ -85,10 +85,7 @@ pub unsafe fn initlog(mut dev: i32, mut sb: *mut Superblock) {
 
 /// Copy committed blocks from log to their home location
 unsafe fn install_trans() {
-    let mut tail: i32 = 0;
-    tail = 0;
-    while tail < log.lh.n {
-        // read log block
+    for tail in 0..log.lh.n {
         let mut lbuf: *mut Buf = bread(log.dev as u32, (log.start + tail + 1 as i32) as u32);
 
         // read dst
@@ -106,7 +103,7 @@ unsafe fn install_trans() {
         bunpin(dbuf);
         brelse(lbuf);
         brelse(dbuf);
-        tail += 1
+        // tail += 1
     }
 }
 
@@ -114,11 +111,9 @@ unsafe fn install_trans() {
 unsafe fn read_head() {
     let mut buf: *mut Buf = bread(log.dev as u32, log.start as u32);
     let mut lh: *mut logheader = (*buf).data.as_mut_ptr() as *mut logheader;
-    let mut i: i32 = 0;
     log.lh.n = (*lh).n;
-    while i < log.lh.n {
+    for i in 0..log.lh.n {
         log.lh.block[i as usize] = (*lh).block[i as usize];
-        i += 1
     }
     brelse(buf);
 }
@@ -129,11 +124,9 @@ unsafe fn read_head() {
 unsafe fn write_head() {
     let mut buf: *mut Buf = bread(log.dev as u32, log.start as u32);
     let mut hb: *mut logheader = (*buf).data.as_mut_ptr() as *mut logheader;
-    let mut i: i32 = 0;
     (*hb).n = log.lh.n;
-    while i < log.lh.n {
+    for i in 0..log.lh.n {
         (*hb).block[i as usize] = log.lh.block[i as usize];
-        i += 1
     }
     bwrite(buf);
     brelse(buf);
@@ -199,9 +192,7 @@ pub unsafe fn end_op() {
 
 /// Copy modified blocks from cache to log.
 unsafe fn write_log() {
-    let mut tail: i32 = 0;
-    tail = 0;
-    while tail < log.lh.n {
+    for tail in 0..log.lh.n {
         // log block
         let mut to: *mut Buf = bread(log.dev as u32, (log.start + tail + 1 as i32) as u32);
 
@@ -218,7 +209,6 @@ unsafe fn write_log() {
         bwrite(to);
         brelse(from);
         brelse(to);
-        tail += 1
     }
 }
 
@@ -262,7 +252,6 @@ pub unsafe fn log_write(mut b: *mut Buf) {
         );
     }
     log.lock.acquire();
-    i = 0;
     while i < log.lh.n {
         // log absorbtion
         if log.lh.block[i as usize] as u32 == (*b).blockno {

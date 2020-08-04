@@ -201,9 +201,8 @@ pub static mut pid_lock: Spinlock = Spinlock::zeroed();
 // trampoline.S
 #[no_mangle]
 pub unsafe fn procinit() {
-    let mut p: *mut proc_0 = ptr::null_mut();
     pid_lock.initlock(b"nextpid\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-    p = proc.as_mut_ptr();
+    let mut p = proc.as_mut_ptr();
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
         (*p).lock
             .initlock(b"proc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -263,8 +262,7 @@ pub unsafe fn allocpid() -> i32 {
 /// If there are no free procs, return 0.
 unsafe fn allocproc() -> *mut proc_0 {
     let mut current_block: u64;
-    let mut p: *mut proc_0 = ptr::null_mut();
-    p = proc.as_mut_ptr();
+    let mut p = proc.as_mut_ptr();
     loop {
         if p >= &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
             current_block = 7815301370352969686;
@@ -430,7 +428,6 @@ pub unsafe fn growproc(mut n: i32) -> i32 {
 /// Create a new process, copying the parent.
 /// Sets up child kernel stack to return as if from fork() system call.
 pub unsafe fn fork() -> i32 {
-    let mut i: i32 = 0;
     let mut pid: i32 = 0;
     let mut np: *mut proc_0 = ptr::null_mut();
     let mut p: *mut proc_0 = myproc();
@@ -457,12 +454,10 @@ pub unsafe fn fork() -> i32 {
     (*(*np).tf).a0 = 0 as i32 as u64;
 
     // increment reference counts on open file descriptors.
-    i = 0 as i32;
-    while i < NOFILE {
+    for i in 0..NOFILE {
         if !(*p).ofile[i as usize].is_null() {
             (*np).ofile[i as usize] = filedup((*p).ofile[i as usize])
         }
-        i += 1
     }
     (*np).cwd = (*(*p).cwd).idup();
     safestrcpy(
@@ -479,8 +474,7 @@ pub unsafe fn fork() -> i32 {
 /// Pass p's abandoned children to init.
 /// Caller must hold p->lock.
 pub unsafe fn reparent(mut p: *mut proc_0) {
-    let mut pp: *mut proc_0 = ptr::null_mut();
-    pp = proc.as_mut_ptr();
+    let mut pp = proc.as_mut_ptr();
     while pp < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
         // this code uses pp->parent without holding pp->lock.
         // acquiring the lock first could cause a deadlock
@@ -512,14 +506,12 @@ pub unsafe fn exit(mut status: i32) {
     }
 
     // Close all open files.
-    let mut fd: i32 = 0 as i32;
-    while fd < NOFILE {
+    for fd in 0..NOFILE {
         if !(*p).ofile[fd as usize].is_null() {
             let mut f: *mut File = (*p).ofile[fd as usize];
             fileclose(f);
             (*p).ofile[fd as usize] = ptr::null_mut();
         }
-        fd += 1
     }
     begin_op();
     iput((*p).cwd);
@@ -568,9 +560,6 @@ pub unsafe fn exit(mut status: i32) {
 /// Wait for a child process to exit and return its pid.
 /// Return -1 if this process has no children.
 pub unsafe fn wait(mut addr: u64) -> i32 {
-    let mut np: *mut proc_0 = ptr::null_mut();
-    let mut havekids: i32 = 0;
-    let mut pid: i32 = 0;
     let mut p: *mut proc_0 = myproc();
 
     // hold p->lock for the whole time to avoid lost
@@ -578,8 +567,8 @@ pub unsafe fn wait(mut addr: u64) -> i32 {
     (*p).lock.acquire();
     loop {
         // Scan through table looking for exited children.
-        havekids = 0 as i32;
-        np = proc.as_mut_ptr();
+        let mut havekids: i32 = 0;
+        let mut np = proc.as_mut_ptr();
         while np < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
             // this code uses np->parent without holding np->lock.
             // acquiring the lock first would cause a deadlock,
@@ -591,7 +580,7 @@ pub unsafe fn wait(mut addr: u64) -> i32 {
                 havekids = 1 as i32;
                 if (*np).state as u32 == ZOMBIE as i32 as u32 {
                     // Found one.
-                    pid = (*np).pid;
+                    let pid = (*np).pid;
                     if addr != 0 as i32 as u64
                         && copyout(
                             (*p).pagetable,
@@ -634,13 +623,12 @@ pub unsafe fn wait(mut addr: u64) -> i32 {
 ///  - eventually that process transfers control
 ///    via swtch back to the scheduler.
 pub unsafe fn scheduler() -> ! {
-    let mut p: *mut proc_0 = ptr::null_mut();
     let mut c: *mut cpu = mycpu();
     (*c).proc_0 = ptr::null_mut();
     loop {
         // Avoid deadlock by ensuring that devices can interrupt.
         intr_on();
-        p = proc.as_mut_ptr();
+        let mut p = proc.as_mut_ptr();
         while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
             (*p).lock.acquire();
             if (*p).state as u32 == RUNNABLE as i32 as u32 {
@@ -754,8 +742,7 @@ pub unsafe fn sleep(mut chan: *mut libc::c_void, mut lk: *mut Spinlock) {
 /// Wake up all processes sleeping on chan.
 /// Must be called without any p->lock.
 pub unsafe fn wakeup(mut chan: *mut libc::c_void) {
-    let mut p: *mut proc_0 = ptr::null_mut();
-    p = proc.as_mut_ptr();
+    let mut p = proc.as_mut_ptr();
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
         (*p).lock.acquire();
         if (*p).state as u32 == SLEEPING as u32 && (*p).chan == chan {
@@ -781,8 +768,7 @@ unsafe fn wakeup1(mut p: *mut proc_0) {
 /// The victim won't exit until it tries to return
 /// to user space (see usertrap() in trap.c).
 pub unsafe fn kill(mut pid: i32) -> i32 {
-    let mut p: *mut proc_0 = ptr::null_mut();
-    p = proc.as_mut_ptr();
+    let mut p = proc.as_mut_ptr();
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
         (*p).lock.acquire();
         if (*p).pid == pid {
@@ -855,22 +841,20 @@ pub unsafe fn procdump() {
         b"run   \x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
         b"zombie\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     ];
-    let mut p: *mut proc_0 = ptr::null_mut();
-    let mut state: *mut libc::c_char = ptr::null_mut();
     printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-    p = proc.as_mut_ptr();
+    let mut p = proc.as_mut_ptr();
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
         if (*p).state as u32 != UNUSED as i32 as u32 {
-            if (*p).state as u32 >= 0 as i32 as u32
+            let state = if (*p).state as u32 >= 0 as i32 as u32
                 && ((*p).state as u64)
                     < (::core::mem::size_of::<[*mut libc::c_char; 5]>() as u64)
                         .wrapping_div(::core::mem::size_of::<*mut libc::c_char>() as u64)
                 && !states[(*p).state as usize].is_null()
             {
-                state = states[(*p).state as usize]
+                states[(*p).state as usize]
             } else {
-                state = b"???\x00" as *const u8 as *const libc::c_char as *mut libc::c_char
-            }
+                b"???\x00" as *const u8 as *const libc::c_char as *mut libc::c_char
+            };
             printf(
                 b"%d %s %s\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
                 (*p).pid,
