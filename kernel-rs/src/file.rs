@@ -3,7 +3,7 @@ use crate::{
     fs::{ilock, iput, iunlock, readi, stati, writei, BSIZE},
     log::{begin_op, end_op},
     param::{MAXOPBLOCKS, NDEV, NFILE},
-    pipe::{Pipe},
+    pipe::Pipe,
     printf::panic,
     proc::{myproc, proc_0},
     sleeplock::Sleeplock,

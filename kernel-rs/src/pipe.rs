@@ -85,23 +85,23 @@ impl Pipe {
         let mut i: i32 = 0;
         let mut pr: *mut proc_0 = myproc();
         let mut ch: libc::c_char = 0;
-    
+
         (*self).lock.acquire();
-    
+
         //DOC: pipe-empty
         while (*self).nread == (*self).nwrite && (*self).writeopen != 0 {
             if (*myproc()).killed != 0 {
                 (*self).lock.release();
                 return -(1 as i32);
             }
-    
+
             //DOC: piperead-sleep
             sleep(
                 &mut (*self).nread as *mut u32 as *mut libc::c_void,
                 &mut (*self).lock,
             );
         }
-    
+
         //DOC: piperead-copy
         while i < n {
             if (*self).nread == (*self).nwrite {
@@ -121,7 +121,7 @@ impl Pipe {
             }
             i += 1
         }
-    
+
         //DOC: piperead-wakeup
         wakeup(&mut (*self).nwrite as *mut u32 as *mut libc::c_void);
         (*self).lock.release();
