@@ -29,7 +29,7 @@ pub struct Pipe {
 }
 
 impl Pipe {
-    pub unsafe fn pipeclose(&mut self, mut writable: i32) {
+    pub unsafe fn close(&mut self, mut writable: i32) {
         (*self).lock.acquire();
         if writable != 0 {
             (*self).writeopen = 0 as i32;
@@ -45,7 +45,7 @@ impl Pipe {
             (*self).lock.release();
         };
     }
-    pub unsafe fn pipewrite(&mut self, mut addr: u64, mut n: i32) -> i32 {
+    pub unsafe fn write(&mut self, mut addr: u64, mut n: i32) -> i32 {
         let mut i: i32 = 0;
         let mut ch: libc::c_char = 0;
         let mut pr: *mut proc_0 = myproc();
@@ -81,7 +81,7 @@ impl Pipe {
         (*self).lock.release();
         n
     }
-    pub unsafe fn piperead(&mut self, mut addr: u64, mut n: i32) -> i32 {
+    pub unsafe fn read(&mut self, mut addr: u64, mut n: i32) -> i32 {
         let mut i: i32 = 0;
         let mut pr: *mut proc_0 = myproc();
         let mut ch: libc::c_char = 0;

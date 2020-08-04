@@ -142,7 +142,7 @@ pub unsafe fn fileclose(mut f: *mut File) {
     (*f).typ = FD_NONE;
     ftable.lock.release();
     if ff.typ as u32 == FD_PIPE as i32 as u32 {
-        (*(ff.pipe)).pipeclose(ff.writable as i32);
+        (*(ff.pipe)).close(ff.writable as i32);
     } else if ff.typ as u32 == FD_INODE as i32 as u32 || ff.typ as u32 == FD_DEVICE as i32 as u32 {
         begin_op();
         iput(ff.ip);
@@ -187,7 +187,7 @@ pub unsafe fn fileread(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
         return -(1 as i32);
     }
     if (*f).typ as u32 == FD_PIPE as i32 as u32 {
-        r = (*((*f).pipe)).piperead(addr, n)
+        r = (*((*f).pipe)).read(addr, n)
     } else if (*f).typ as u32 == FD_DEVICE as i32 as u32 {
         if ((*f).major as i32) < 0 as i32
             || (*f).major as i32 >= NDEV
@@ -220,7 +220,7 @@ pub unsafe fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
         return -1;
     }
     if (*f).typ as u32 == FD_PIPE as i32 as u32 {
-        ret = (*((*f).pipe)).pipewrite(addr, n)
+        ret = (*((*f).pipe)).write(addr, n)
     } else if (*f).typ as u32 == FD_DEVICE as i32 as u32 {
         if ((*f).major as i32) < 0 as i32
             || (*f).major as i32 >= NDEV
