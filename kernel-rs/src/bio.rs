@@ -4,7 +4,7 @@ use crate::{
     param::NBUF,
     printf::panic,
     sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep},
-    spinlock::{acquire, initlock, release, Spinlock},
+    spinlock::{acquire, release, Spinlock},
     virtio_disk::virtio_disk_rw,
 };
 use core::mem::MaybeUninit;
@@ -36,8 +36,7 @@ pub unsafe fn binit() {
     let bcache = BCACHE.get_mut();
 
     let mut b: *mut Buf = ptr::null_mut();
-    initlock(
-        &mut bcache.lock,
+    bcache.lock.initlock(
         b"bcache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
     // Create linked list of buffers

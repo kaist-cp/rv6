@@ -11,7 +11,7 @@ use crate::{
     printf::panic,
     proc::{sleep, wakeup},
     riscv::{PGSHIFT, PGSIZE},
-    spinlock::{acquire, initlock, release, Spinlock},
+    spinlock::{acquire, release, Spinlock},
     virtio::*,
     vm::kvmpa,
 };
@@ -82,8 +82,7 @@ static mut disk: Disk = Disk {
 
 pub unsafe fn virtio_disk_init() {
     let mut status: u32 = 0 as u32;
-    initlock(
-        &mut disk.vdisk_lock,
+    disk.vdisk_lock.initlock(
         b"virtio_disk\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
     if *(r(VIRTIO_MMIO_MAGIC_VALUE)) != 0x74726976 as u32

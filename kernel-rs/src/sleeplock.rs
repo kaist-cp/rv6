@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::proc::{myproc, sleep, wakeup};
-use crate::spinlock::{acquire, initlock, release, Spinlock};
+use crate::spinlock::{acquire, release, Spinlock};
 
 #[derive(Copy, Clone)]
 pub struct Sleeplock {
@@ -25,8 +25,7 @@ impl Sleeplock {
     pub unsafe fn new(name: *mut libc::c_char) -> Self {
         let mut lk = Self::zeroed();
 
-        initlock(
-            &mut lk.lk,
+        lk.lk.initlock(
             b"sleep lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
         );
         lk.name = name;
@@ -38,8 +37,7 @@ impl Sleeplock {
 }
 
 pub unsafe fn initsleeplock(mut lk: *mut Sleeplock, mut name: *mut libc::c_char) {
-    initlock(
-        &mut (*lk).lk,
+    (*lk).lk.initlock(
         b"sleep lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
     (*lk).name = name;

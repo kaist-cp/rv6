@@ -19,7 +19,7 @@ use crate::{
     printf::panic,
     proc::{either_copyin, either_copyout, myproc},
     sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock},
-    spinlock::{acquire, initlock, release, Spinlock},
+    spinlock::{acquire, release, Spinlock},
     stat::{Stat, T_DIR},
     string::{strncmp, strncpy},
 };
@@ -295,8 +295,7 @@ pub static mut icache: Icache = Icache {
 
 pub unsafe fn iinit() {
     let mut i: i32 = 0;
-    initlock(
-        &mut icache.lock,
+    icache.lock.initlock(
         b"icache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
     while i < NINODE {

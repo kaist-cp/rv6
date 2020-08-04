@@ -3,7 +3,7 @@ use crate::{
     memlayout::PHYSTOP,
     printf::{panic, printf},
     riscv::PGSIZE,
-    spinlock::{acquire, initlock, release, Spinlock},
+    spinlock::{acquire, release, Spinlock},
 };
 use core::ptr;
 pub static mut end: [u8; 0] = [0; 0];
@@ -24,8 +24,7 @@ pub static mut kmem: Kmem = Kmem {
     freelist: 0 as *const run as *mut run,
 };
 pub unsafe fn kinit() {
-    initlock(
-        &mut kmem.lock,
+    kmem.lock.initlock(
         b"kmem\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
 

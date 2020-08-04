@@ -7,7 +7,7 @@ use crate::{
     printf::panic,
     proc::{myproc, proc_0},
     sleeplock::Sleeplock,
-    spinlock::{acquire, initlock, release, Spinlock},
+    spinlock::{acquire, release, Spinlock},
     stat::Stat,
     vm::copyout,
 };
@@ -83,8 +83,7 @@ pub static mut ftable: Ftable = Ftable {
 };
 
 pub unsafe fn fileinit() {
-    initlock(
-        &mut ftable.lock,
+    ftable.lock.initlock(
         b"ftable\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
 }
