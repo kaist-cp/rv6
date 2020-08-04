@@ -7,6 +7,7 @@ use crate::{
     vm::{copyin, copyout},
 };
 use core::ptr;
+
 #[derive(Copy, Clone)]
 pub struct Pipe {
     pub lock: Spinlock,

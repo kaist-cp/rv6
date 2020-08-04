@@ -54,6 +54,7 @@ pub struct logheader {
     pub n: i32,
     pub block: [i32; 30],
 }
+
 pub static mut log: log = log {
     lock: Spinlock::zeroed(),
     start: 0,
@@ -66,6 +67,7 @@ pub static mut log: log = log {
         block: [0; 30],
     },
 };
+
 pub unsafe fn initlog(mut dev: i32, mut sb: *mut Superblock) {
     if ::core::mem::size_of::<logheader>() as u64 >= BSIZE as u64 {
         panic(
@@ -138,6 +140,7 @@ unsafe fn write_head() {
     bwrite(buf);
     brelse(buf);
 }
+
 unsafe fn recover_from_log() {
     read_head();
 
