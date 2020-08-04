@@ -64,6 +64,7 @@ pub static mut devsw: [devsw; 10] = [devsw {
     read: None,
     write: None,
 }; 10];
+
 pub static mut ftable: Ftable = Ftable {
     lock: Spinlock::zeroed(),
     file: [File {
@@ -77,6 +78,7 @@ pub static mut ftable: Ftable = Ftable {
         major: 0,
     }; 100],
 };
+
 pub unsafe fn fileinit() {
     initlock(
         &mut ftable.lock,
