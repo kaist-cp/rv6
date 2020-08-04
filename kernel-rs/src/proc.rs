@@ -130,6 +130,28 @@ pub struct trapframe {
     pub t6: u64,
 }
 
+impl Context {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            ra: 0,
+            sp: 0,
+            s0: 0,
+            s1: 0,
+            s2: 0,
+            s3: 0,
+            s4: 0,
+            s5: 0,
+            s6: 0,
+            s7: 0,
+            s8: 0,
+            s9: 0,
+            s10: 0,
+            s11: 0,
+        }
+    }
+}
+
 pub type procstate = u32;
 
 pub const ZOMBIE: procstate = 4;
@@ -140,22 +162,7 @@ pub const UNUSED: procstate = 0;
 
 pub static mut cpus: [cpu; NCPU as usize] = [cpu {
     proc_0: ptr::null_mut(),
-    scheduler: Context {
-        ra: 0,
-        sp: 0,
-        s0: 0,
-        s1: 0,
-        s2: 0,
-        s3: 0,
-        s4: 0,
-        s5: 0,
-        s6: 0,
-        s7: 0,
-        s8: 0,
-        s9: 0,
-        s10: 0,
-        s11: 0,
-    },
+    scheduler: Context::zeroed(),
     noff: 0,
     intena: 0,
 }; NCPU as usize];
@@ -173,22 +180,7 @@ pub static mut proc: [proc_0; 64] = [proc_0 {
     sz: 0,
     pagetable: 0 as *const u64 as *mut u64,
     tf: 0 as *const trapframe as *mut trapframe,
-    context: Context {
-        ra: 0,
-        sp: 0,
-        s0: 0,
-        s1: 0,
-        s2: 0,
-        s3: 0,
-        s4: 0,
-        s5: 0,
-        s6: 0,
-        s7: 0,
-        s8: 0,
-        s9: 0,
-        s10: 0,
-        s11: 0,
-    },
+    context: Context::zeroed(),
     ofile: [0 as *const File as *mut File; 16],
     cwd: 0 as *const Inode as *mut Inode,
     name: [0; 16],
