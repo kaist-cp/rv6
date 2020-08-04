@@ -72,9 +72,8 @@ pub static mut cons: Console = Console::zeroed();
 
 /// user write()s to the console go here.
 pub unsafe fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
-    let mut i: i32 = 0;
     acquire(&mut cons.lock);
-    while i < n {
+    for i in 0..n {
         let mut c: libc::c_char = 0;
         if either_copyin(
             &mut c as *mut libc::c_char as *mut libc::c_void,
@@ -86,7 +85,6 @@ pub unsafe fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
             break;
         }
         consputc(c as i32);
-        i += 1
     }
     release(&mut cons.lock);
     n
@@ -111,7 +109,7 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
         }
         let fresh0 = cons.r;
         cons.r = cons.r.wrapping_add(1);
-        let cin: i32 = cons.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
+        let cin = cons.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
 
         // end-of-file
         if cin == ctrl('D') {

@@ -433,7 +433,6 @@ pub unsafe fn growproc(mut n: i32) -> i32 {
 /// Create a new process, copying the parent.
 /// Sets up child kernel stack to return as if from fork() system call.
 pub unsafe fn fork() -> i32 {
-    let mut i: i32 = 0;
     let mut pid: i32 = 0;
     let mut np: *mut proc_0 = ptr::null_mut();
     let mut p: *mut proc_0 = myproc();
@@ -460,11 +459,10 @@ pub unsafe fn fork() -> i32 {
     (*(*np).tf).a0 = 0 as i32 as u64;
 
     // increment reference counts on open file descriptors.
-    while i < NOFILE {
+    for i in 0..NOFILE {
         if !(*p).ofile[i as usize].is_null() {
             (*np).ofile[i as usize] = filedup((*p).ofile[i as usize])
         }
-        i += 1
     }
     (*np).cwd = (*(*p).cwd).idup();
     safestrcpy(
@@ -513,14 +511,12 @@ pub unsafe fn exit(mut status: i32) {
     }
 
     // Close all open files.
-    let mut fd: i32 = 0;
-    while fd < NOFILE {
+    for fd in 0..NOFILE {
         if !(*p).ofile[fd as usize].is_null() {
             let mut f: *mut File = (*p).ofile[fd as usize];
             fileclose(f);
             (*p).ofile[fd as usize] = ptr::null_mut();
         }
-        fd += 1
     }
     begin_op();
     iput((*p).cwd);

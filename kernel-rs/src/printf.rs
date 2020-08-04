@@ -65,17 +65,15 @@ unsafe fn printint(mut xx: i32, mut base: i32, mut sign: i32) {
 }
 
 unsafe fn printptr(mut x: u64) {
-    let mut i: i32 = 0;
     consputc('0' as i32);
     consputc('x' as i32);
-    while (i as u64) < (::core::mem::size_of::<u64>() as u64).wrapping_mul(2 as i32 as u64) {
+    for _i in 0..(::core::mem::size_of::<u64>() as u64).wrapping_mul(2 as i32 as u64) {
         consputc(
             digits[(x
                 >> (::core::mem::size_of::<u64>() as u64)
                     .wrapping_mul(8 as i32 as u64)
                     .wrapping_sub(4 as i32 as u64)) as usize] as i32,
         );
-        i += 1;
         x <<= 4 as i32
     }
 }

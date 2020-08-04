@@ -89,11 +89,10 @@ pub unsafe fn pipeclose(mut pi: *mut Pipe, mut writable: i32) {
     };
 }
 pub unsafe fn pipewrite(mut pi: *mut Pipe, mut addr: u64, mut n: i32) -> i32 {
-    let mut i: i32 = 0;
     let mut ch: libc::c_char = 0;
     let mut pr: *mut proc_0 = myproc();
     acquire(&mut (*pi).lock);
-    while i < n {
+    for i in 0..n {
         while (*pi).nwrite == (*pi).nread.wrapping_add(PIPESIZE as u32) {
             //DOC: pipewrite-full
             if (*pi).readopen == 0 as i32 || (*myproc()).killed != 0 {
@@ -118,7 +117,6 @@ pub unsafe fn pipewrite(mut pi: *mut Pipe, mut addr: u64, mut n: i32) -> i32 {
         let fresh0 = (*pi).nwrite;
         (*pi).nwrite = (*pi).nwrite.wrapping_add(1);
         (*pi).data[fresh0.wrapping_rem(PIPESIZE as u32) as usize] = ch;
-        i += 1
     }
     wakeup(&mut (*pi).nread as *mut u32 as *mut libc::c_void);
     release(&mut (*pi).lock);

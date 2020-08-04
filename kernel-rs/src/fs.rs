@@ -284,17 +284,15 @@ pub static mut icache: Icache = Icache {
 };
 
 pub unsafe fn iinit() {
-    let mut i: i32 = 0;
     initlock(
         &mut icache.lock,
         b"icache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
-    while i < NINODE {
+    for i in 0..NINODE {
         initsleeplock(
             &mut (*icache.inode.as_mut_ptr().offset(i as isize)).lock,
             b"inode\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
         );
-        i += 1
     }
 }
 
@@ -302,9 +300,8 @@ pub unsafe fn iinit() {
 /// Mark it as allocated by  giving it type type.
 /// Returns an unlocked but allocated and referenced inode.
 pub unsafe fn ialloc(mut dev: u32, mut typ: i16) -> *mut inode {
-    let mut inum: i32 = 1;
-    while (inum as u32) < sb.ninodes {
-        let bp = bread(dev, iblock(inum, sb));
+    for inum in 1..sb.ninodes {
+        let bp = bread(dev, iblock(inum as i32, sb));
         let dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
             .offset((inum as u64).wrapping_rem(IPB as u64) as isize);
         if (*dip).typ as i32 == 0 as i32 {
@@ -318,7 +315,6 @@ pub unsafe fn ialloc(mut dev: u32, mut typ: i16) -> *mut inode {
             return iget(dev, inum as u32);
         }
         brelse(bp);
-        inum += 1
     }
     panic(b"ialloc: no inodes\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
@@ -525,23 +521,19 @@ unsafe fn bmap(mut ip: *mut inode, mut bn: u32) -> u32 {
 /// and has no in-memory reference to it (is
 /// not an open file or current directory).
 unsafe fn itrunc(mut ip: *mut inode) {
-    let mut i: i32 = 0;
-    while i < NDIRECT {
+    for i in 0..NDIRECT {
         if (*ip).addrs[i as usize] != 0 {
             bfree((*ip).dev as i32, (*ip).addrs[i as usize]);
             (*ip).addrs[i as usize] = 0 as i32 as u32
         }
-        i += 1
     }
     if (*ip).addrs[NDIRECT as usize] != 0 {
         let bp = bread((*ip).dev, (*ip).addrs[NDIRECT as usize]);
         let a = (*bp).data.as_mut_ptr() as *mut u32;
-        let mut j: i32 = 0;
-        while (j as u64) < NINDIRECT as u64 {
+        for j in 0..NINDIRECT {
             if *a.offset(j as isize) != 0 {
                 bfree((*ip).dev as i32, *a.offset(j as isize));
             }
-            j += 1
         }
         brelse(bp);
         bfree((*ip).dev as i32, (*ip).addrs[NDIRECT as usize]);
@@ -702,8 +694,7 @@ pub unsafe fn dirlookup(
             if !poff.is_null() {
                 *poff = off
             }
-            let inum = de.inum as u32;
-            return iget((*dp).dev, inum);
+            return iget((*dp).dev, de.inum as u32);
         }
         off = (off as u64).wrapping_add(::core::mem::size_of::<Dirent>() as u64) as u32 as u32
     }

@@ -103,8 +103,7 @@ unsafe fn walk(mut pagetable: pagetable_t, mut va: u64, mut alloc: i32) -> *mut 
     if va >= MAXVA as u64 {
         panic(b"walk\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    let mut level: i32 = 2;
-    while level > 0 {
+    for level in (1..3).rev() {
         let mut pte: *mut pte_t = &mut *pagetable
             .offset((va >> (PGSHIFT + 9 * level) & PXMASK as u64) as isize)
             as *mut u64;
@@ -120,7 +119,6 @@ unsafe fn walk(mut pagetable: pagetable_t, mut va: u64, mut alloc: i32) -> *mut 
             ptr::write_bytes(pagetable as *mut libc::c_void, 0, PGSIZE as usize);
             *pte = (pagetable as u64 >> 12 as i32) << 10 as i32 | PTE_V as u64
         }
-        level -= 1
     }
     &mut *pagetable.offset((va >> (PGSHIFT + 9 * 0) & PXMASK as u64) as isize) as *mut u64
 }
@@ -352,8 +350,7 @@ pub unsafe fn uvmdealloc(mut pagetable: pagetable_t, mut oldsz: u64, mut newsz: 
 /// All leaf mappings must already have been removed.
 unsafe fn freewalk(mut pagetable: pagetable_t) {
     // there are 2^9 = 512 PTEs in a page table.
-    let mut i: i32 = 0;
-    while i < 512 {
+    for i in 0..512 {
         let mut pte: pte_t = *pagetable.offset(i as isize);
         if pte & PTE_V as u64 != 0 && pte & (PTE_R | PTE_W | PTE_X) as u64 == 0 as i32 as u64 {
             // this PTE points to a lower-level page table.
@@ -363,7 +360,6 @@ unsafe fn freewalk(mut pagetable: pagetable_t) {
         } else if pte & PTE_V as u64 != 0 {
             panic(b"freewalk: leaf\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
-        i += 1
     }
     kfree(pagetable as *mut libc::c_void);
 }
