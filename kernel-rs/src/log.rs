@@ -11,7 +11,7 @@ use crate::{
 use core::ptr;
 
 #[derive(Copy, Clone)]
-pub struct log {
+pub struct Log {
     pub lock: Spinlock,
     pub start: i32,
     pub size: i32,
@@ -22,7 +22,7 @@ pub struct log {
     /// in commit(), please wait.
     pub committing: i32,
     pub dev: i32,
-    pub lh: logheader,
+    pub lh: LogHeader,
 }
 
 /// Simple logging that allows concurrent FS system calls.
@@ -50,12 +50,12 @@ pub struct log {
 /// Contents of the header block, used for both the on-disk header block
 /// and to keep track in memory of logged block# before commit.
 #[derive(Copy, Clone)]
-pub struct logheader {
+pub struct LogHeader {
     pub n: i32,
     pub block: [i32; 30],
 }
 
-impl log {
+impl Log {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
@@ -65,7 +65,7 @@ impl log {
             outstanding: 0,
             committing: 0,
             dev: 0,
-            lh: logheader {
+            lh: LogHeader {
                 n: 0,
                 block: [0; 30],
             },
@@ -73,12 +73,12 @@ impl log {
     }
 }
 
-pub static mut log: log = log::zeroed();
+pub static mut log: Log = Log::zeroed();
 
 pub unsafe fn initlog(mut dev: i32, mut sb: *mut Superblock) {
-    if ::core::mem::size_of::<logheader>() as u64 >= BSIZE as u64 {
+    if ::core::mem::size_of::<LogHeader>() as u64 >= BSIZE as u64 {
         panic(
-            b"initlog: too big logheader\x00" as *const u8 as *const libc::c_char
+            b"initlog: too big LogHeader\x00" as *const u8 as *const libc::c_char
                 as *mut libc::c_char,
         );
     }
@@ -122,7 +122,7 @@ unsafe fn install_trans() {
 /// Read the log header from disk into the in-memory log header
 unsafe fn read_head() {
     let mut buf: *mut Buf = bread(log.dev as u32, log.start as u32);
-    let mut lh: *mut logheader = (*buf).data.as_mut_ptr() as *mut logheader;
+    let mut lh: *mut LogHeader = (*buf).data.as_mut_ptr() as *mut LogHeader;
     let mut i: i32 = 0;
     log.lh.n = (*lh).n;
     while i < log.lh.n {
@@ -137,7 +137,7 @@ unsafe fn read_head() {
 /// current transaction commits.
 unsafe fn write_head() {
     let mut buf: *mut Buf = bread(log.dev as u32, log.start as u32);
-    let mut hb: *mut logheader = (*buf).data.as_mut_ptr() as *mut logheader;
+    let mut hb: *mut LogHeader = (*buf).data.as_mut_ptr() as *mut LogHeader;
     let mut i: i32 = 0;
     (*hb).n = log.lh.n;
     while i < log.lh.n {
@@ -164,10 +164,10 @@ pub unsafe fn begin_op() {
     acquire(&mut log.lock);
     loop {
         if log.committing != 0 {
-            sleep(&mut log as *mut log as *mut libc::c_void, &mut log.lock);
+            sleep(&mut log as *mut Log as *mut libc::c_void, &mut log.lock);
         } else if log.lh.n + (log.outstanding + 1 as i32) * MAXOPBLOCKS > LOGSIZE {
             // this op might exhaust log space; wait for commit.
-            sleep(&mut log as *mut log as *mut libc::c_void, &mut log.lock);
+            sleep(&mut log as *mut Log as *mut libc::c_void, &mut log.lock);
         } else {
             log.outstanding += 1 as i32;
             release(&mut log.lock);
@@ -192,7 +192,7 @@ pub unsafe fn end_op() {
         // begin_op() may be waiting for log space,
         // and decrementing log.outstanding has decreased
         // the amount of reserved space.
-        wakeup(&mut log as *mut log as *mut libc::c_void);
+        wakeup(&mut log as *mut Log as *mut libc::c_void);
     }
     release(&mut log.lock);
     if do_commit != 0 {
@@ -201,7 +201,7 @@ pub unsafe fn end_op() {
         commit();
         acquire(&mut log.lock);
         log.committing = 0 as i32;
-        wakeup(&mut log as *mut log as *mut libc::c_void);
+        wakeup(&mut log as *mut Log as *mut libc::c_void);
         release(&mut log.lock);
     };
 }
