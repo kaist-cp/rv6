@@ -1,6 +1,6 @@
 use crate::console::consputc;
 use crate::libc;
-use crate::spinlock::{release, Spinlock};
+use crate::spinlock::Spinlock;
 use core::ptr;
 
 pub type __builtin_va_list = [__va_list_tag; 1];
@@ -145,7 +145,7 @@ pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
         i += 1
     }
     if locking != 0 {
-        release(&mut pr.lock);
+        pr.lock.release();
     };
 }
 

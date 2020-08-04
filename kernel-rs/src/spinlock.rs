@@ -56,6 +56,30 @@ impl Spinlock {
         // Record info about lock acquisition for holding() and debugging.
         (*self).cpu = mycpu();
     }
+
+    /// Release the lock.
+    pub unsafe fn release(&mut self) {
+        if holding(self) == 0 {
+            panic(b"release\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        }
+        (*self).cpu = ptr::null_mut();
+
+        // Tell the C compiler and the CPU to not move loads or stores
+        // past this point, to ensure that all the stores in the critical
+        // section are visible to other CPUs before the lock is released.
+        // On RISC-V, this turns into a fence instruction.
+        ::core::intrinsics::atomic_fence();
+
+        // Release the lock, equivalent to lk->locked = 0.
+        // This code doesn't use a C assignment, since the C standard
+        // implies that an assignment might be implemented with
+        // multiple store instructions.
+        // On RISC-V, sync_lock_release turns into an atomic swap:
+        //   s1 = &lk->locked
+        //   amoswap.w zero, zero, (s1)
+        ::core::intrinsics::atomic_store_rel(&mut (*self).locked, 0);
+        pop_off();
+    }
 }
 
 /// Release the lock.

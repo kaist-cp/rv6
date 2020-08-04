@@ -19,7 +19,7 @@ use crate::{
     printf::panic,
     proc::{either_copyin, either_copyout, myproc},
     sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock},
-    spinlock::{release, Spinlock},
+    spinlock::Spinlock,
     stat::{Stat, T_DIR},
     string::{strncmp, strncpy},
 };
@@ -364,7 +364,7 @@ impl inode {
     pub unsafe fn idup(&mut self) -> *mut Self {
         icache.lock.acquire();
         self.ref_0 += 1;
-        release(&mut icache.lock);
+        icache.lock.release();
         self
     }
 }
@@ -384,7 +384,7 @@ unsafe fn iget(mut dev: u32, mut inum: u32) -> *mut inode {
     while ip < &mut *icache.inode.as_mut_ptr().offset(NINODE as isize) as *mut inode {
         if (*ip).ref_0 > 0 as i32 && (*ip).dev == dev && (*ip).inum == inum {
             (*ip).ref_0 += 1;
-            release(&mut icache.lock);
+            icache.lock.release();
             return ip;
         }
         if empty.is_null() && (*ip).ref_0 == 0 as i32 {
@@ -403,7 +403,7 @@ unsafe fn iget(mut dev: u32, mut inum: u32) -> *mut inode {
     (*ip).inum = inum;
     (*ip).ref_0 = 1 as i32;
     (*ip).valid = 0 as i32;
-    release(&mut icache.lock);
+    icache.lock.release();
     ip
 }
 
@@ -460,7 +460,7 @@ pub unsafe fn iput(mut ip: *mut inode) {
         // ip->ref == 1 means no other process can have ip locked,
         // so this acquiresleep() won't block (or deadlock).
         acquiresleep(&mut (*ip).lock);
-        release(&mut icache.lock);
+        icache.lock.release();
         itrunc(ip);
         (*ip).typ = 0 as i32 as i16;
         (*ip).update();
@@ -469,7 +469,7 @@ pub unsafe fn iput(mut ip: *mut inode) {
         icache.lock.acquire();
     }
     (*ip).ref_0 -= 1;
-    release(&mut icache.lock);
+    icache.lock.release();
 }
 
 /// Common idiom: unlock, then put.

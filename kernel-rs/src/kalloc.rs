@@ -3,7 +3,7 @@ use crate::{
     memlayout::PHYSTOP,
     printf::{panic, printf},
     riscv::PGSIZE,
-    spinlock::{release, Spinlock},
+    spinlock::Spinlock,
 };
 use core::ptr;
 pub static mut end: [u8; 0] = [0; 0];
@@ -76,7 +76,7 @@ pub unsafe fn kfree(mut pa: *mut libc::c_void) {
     kmem.lock.acquire();
     (*r).next = kmem.freelist;
     kmem.freelist = r;
-    release(&mut kmem.lock);
+    kmem.lock.release();
 }
 
 /// Allocate one 4096-byte page of physical memory.
@@ -89,7 +89,7 @@ pub unsafe fn kalloc() -> *mut libc::c_void {
     if !r.is_null() {
         kmem.freelist = (*r).next
     }
-    release(&mut kmem.lock);
+    kmem.lock.release();
     if !r.is_null() {
         // fill with junk
         ptr::write_bytes(

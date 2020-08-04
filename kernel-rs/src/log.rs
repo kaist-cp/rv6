@@ -6,7 +6,7 @@ use crate::{
     param::{LOGSIZE, MAXOPBLOCKS},
     printf::panic,
     proc::{sleep, wakeup},
-    spinlock::{release, Spinlock},
+    spinlock::Spinlock,
 };
 use core::ptr;
 
@@ -161,7 +161,7 @@ pub unsafe fn begin_op() {
             sleep(&mut log as *mut log as *mut libc::c_void, &mut log.lock);
         } else {
             log.outstanding += 1 as i32;
-            release(&mut log.lock);
+            log.lock.release();
             break;
         }
     }
@@ -185,7 +185,7 @@ pub unsafe fn end_op() {
         // the amount of reserved space.
         wakeup(&mut log as *mut log as *mut libc::c_void);
     }
-    release(&mut log.lock);
+    log.lock.release();
     if do_commit != 0 {
         // call commit w/o holding locks, since not allowed
         // to sleep with locks.
@@ -193,7 +193,7 @@ pub unsafe fn end_op() {
         log.lock.acquire();
         log.committing = 0 as i32;
         wakeup(&mut log as *mut log as *mut libc::c_void);
-        release(&mut log.lock);
+        log.lock.release();
     };
 }
 
@@ -277,5 +277,5 @@ pub unsafe fn log_write(mut b: *mut Buf) {
         bpin(b);
         log.lh.n += 1
     }
-    release(&mut log.lock);
+    log.lock.release();
 }

@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::proc::{myproc, sleep, wakeup};
-use crate::spinlock::{release, Spinlock};
+use crate::spinlock::Spinlock;
 
 #[derive(Copy, Clone)]
 pub struct Sleeplock {
@@ -51,7 +51,7 @@ pub unsafe fn acquiresleep(mut lk: *mut Sleeplock) {
     }
     (*lk).locked = 1 as u32;
     (*lk).pid = (*myproc()).pid;
-    release(&mut (*lk).lk);
+    (*lk).lk.release();
 }
 
 pub unsafe fn releasesleep(mut lk: *mut Sleeplock) {
@@ -59,13 +59,13 @@ pub unsafe fn releasesleep(mut lk: *mut Sleeplock) {
     (*lk).locked = 0 as u32;
     (*lk).pid = 0 as i32;
     wakeup(lk as *mut libc::c_void);
-    release(&mut (*lk).lk);
+    (*lk).lk.release();
 }
 
 pub unsafe fn holdingsleep(mut lk: *mut Sleeplock) -> i32 {
     let mut r: i32 = 0;
     (*lk).lk.acquire();
     r = ((*lk).locked != 0 && (*lk).pid == (*myproc()).pid) as i32;
-    release(&mut (*lk).lk);
+    (*lk).lk.release();
     r
 }
