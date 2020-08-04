@@ -3,7 +3,7 @@ use crate::{
     file::{filealloc, fileclose, File},
     kalloc::{kalloc, kfree},
     proc::{myproc, proc_0, sleep, wakeup},
-    spinlock::{acquire, release, Spinlock},
+    spinlock::{release, Spinlock},
     vm::{copyin, copyout},
 };
 use core::ptr;
@@ -46,9 +46,9 @@ pub unsafe fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {
             (*pi).writeopen = 1 as i32;
             (*pi).nwrite = 0 as u32;
             (*pi).nread = 0 as u32;
-            (*pi).lock.initlock(
-                b"pipe\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-            );
+            (*pi)
+                .lock
+                .initlock(b"pipe\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
             (**f0).typ = FD_PIPE;
             (**f0).readable = 1 as libc::c_char;
             (**f0).writable = 0 as libc::c_char;
@@ -72,7 +72,7 @@ pub unsafe fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {
     -(1 as i32)
 }
 pub unsafe fn pipeclose(mut pi: *mut Pipe, mut writable: i32) {
-    acquire(&mut (*pi).lock);
+    (*pi).lock.acquire();
     if writable != 0 {
         (*pi).writeopen = 0 as i32;
         wakeup(&mut (*pi).nread as *mut u32 as *mut libc::c_void);
@@ -91,7 +91,7 @@ pub unsafe fn pipewrite(mut pi: *mut Pipe, mut addr: u64, mut n: i32) -> i32 {
     let mut i: i32 = 0;
     let mut ch: libc::c_char = 0;
     let mut pr: *mut proc_0 = myproc();
-    acquire(&mut (*pi).lock);
+    (*pi).lock.acquire();
     while i < n {
         while (*pi).nwrite == (*pi).nread.wrapping_add(PIPESIZE as u32) {
             //DOC: pipewrite-full
@@ -128,7 +128,7 @@ pub unsafe fn piperead(mut pi: *mut Pipe, mut addr: u64, mut n: i32) -> i32 {
     let mut pr: *mut proc_0 = myproc();
     let mut ch: libc::c_char = 0;
 
-    acquire(&mut (*pi).lock);
+    (*pi).lock.acquire();
 
     //DOC: pipe-empty
     while (*pi).nread == (*pi).nwrite && (*pi).writeopen != 0 {

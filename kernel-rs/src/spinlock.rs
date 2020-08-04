@@ -30,32 +30,32 @@ impl Spinlock {
         (*self).locked = 0 as i32 as u32;
         (*self).cpu = ptr::null_mut();
     }
-}
 
-/// Acquire the lock.
-/// Loops (spins) until the lock is acquired.
-pub unsafe fn acquire(mut lk: *mut Spinlock) {
-    // disable interrupts to avoid deadlock.
-    push_off();
-    if holding(lk) != 0 {
-        panic(b"acquire\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    /// Acquire the lock.
+    /// Loops (spins) until the lock is acquired.
+    pub unsafe fn acquire(&mut self) {
+        // disable interrupts to avoid deadlock.
+        push_off();
+        if holding(self) != 0 {
+            panic(b"acquire\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        }
+
+        // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
+        //   a5 = 1
+        //   s1 = &self->locked
+        //   amoswap.w.aq a5, a5, (s1)
+        while ::core::intrinsics::atomic_xchg_acq(&mut (*self).locked as *mut u32, 1 as i32 as u32)
+            != 0 as i32 as u32
+        {}
+
+        // Tell the C compiler and the processor to not move loads or stores
+        // past this point, to ensure that the critical section's memory
+        // references happen after the lock is acquired.
+        ::core::intrinsics::atomic_fence();
+
+        // Record info about lock acquisition for holding() and debugging.
+        (*self).cpu = mycpu();
     }
-
-    // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
-    //   a5 = 1
-    //   s1 = &lk->locked
-    //   amoswap.w.aq a5, a5, (s1)
-    while ::core::intrinsics::atomic_xchg_acq(&mut (*lk).locked as *mut u32, 1 as i32 as u32)
-        != 0 as i32 as u32
-    {}
-
-    // Tell the C compiler and the processor to not move loads or stores
-    // past this point, to ensure that the critical section's memory
-    // references happen after the lock is acquired.
-    ::core::intrinsics::atomic_fence();
-
-    // Record info about lock acquisition for holding() and debugging.
-    (*lk).cpu = mycpu();
 }
 
 /// Release the lock.

@@ -8,7 +8,7 @@ use crate::{
         intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_sstatus,
         r_stval, r_tp, w_sepc, w_sip, w_sstatus, w_stvec, PGSIZE, SSTATUS_SPIE, SSTATUS_SPP,
     },
-    spinlock::{acquire, release, Spinlock},
+    spinlock::{release, Spinlock},
     syscall::syscall,
     uart::uartintr,
     virtio_disk::virtio_disk_intr,
@@ -35,9 +35,7 @@ pub static mut tickslock: Spinlock = Spinlock::zeroed();
 pub static mut ticks: u32 = 0;
 
 pub unsafe fn trapinit() {
-    tickslock.initlock(
-        b"time\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-    );
+    tickslock.initlock(b"time\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
 
 /// set up to take exceptions and traps while in the kernel.
@@ -220,7 +218,7 @@ pub unsafe fn kerneltrap() {
 }
 
 pub unsafe fn clockintr() {
-    acquire(&mut tickslock);
+    tickslock.acquire();
     ticks = ticks.wrapping_add(1);
     wakeup(&mut ticks as *mut u32 as *mut libc::c_void);
     release(&mut tickslock);

@@ -11,7 +11,7 @@ use crate::{
     printf::panic,
     proc::{sleep, wakeup},
     riscv::{PGSHIFT, PGSIZE},
-    spinlock::{acquire, release, Spinlock},
+    spinlock::{release, Spinlock},
     virtio::*,
     vm::kvmpa,
 };
@@ -82,9 +82,8 @@ static mut disk: Disk = Disk {
 
 pub unsafe fn virtio_disk_init() {
     let mut status: u32 = 0 as u32;
-    disk.vdisk_lock.initlock(
-        b"virtio_disk\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-    );
+    disk.vdisk_lock
+        .initlock(b"virtio_disk\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     if *(r(VIRTIO_MMIO_MAGIC_VALUE)) != 0x74726976 as u32
         || *(r(VIRTIO_MMIO_VERSION)) != 1 as u32
         || *(r(VIRTIO_MMIO_DEVICE_ID)) != 2 as u32
@@ -219,7 +218,7 @@ unsafe fn alloc3_desc(mut idx: *mut i32) -> i32 {
 pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     let mut sector: u64 = (*b).blockno.wrapping_mul((BSIZE / 512 as i32) as u32) as u64;
 
-    acquire(&mut disk.vdisk_lock);
+    disk.vdisk_lock.acquire();
 
     // the spec says that legacy block operations use three
     // descriptors: one for type/reserved/sector, one for
@@ -314,7 +313,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     release(&mut disk.vdisk_lock);
 }
 pub unsafe fn virtio_disk_intr() {
-    acquire(&mut disk.vdisk_lock);
+    disk.vdisk_lock.acquire();
     while disk.used_idx as i32 % NUM != (*disk.used).id as i32 % NUM {
         let mut id: i32 = (*disk.used).elems[disk.used_idx as usize].id as i32;
         if disk.info[id as usize].status as i32 != 0 as i32 {

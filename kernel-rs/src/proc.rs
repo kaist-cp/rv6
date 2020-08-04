@@ -8,7 +8,7 @@ use crate::{
     param::{NCPU, NOFILE, NPROC, ROOTDEV},
     printf::{panic, printf},
     riscv::{intr_get, intr_on, pagetable_t, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
-    spinlock::{acquire, holding, pop_off, push_off, release, Spinlock},
+    spinlock::{holding, pop_off, push_off, release, Spinlock},
     string::safestrcpy,
     trap::usertrapret,
     vm::{
@@ -202,14 +202,11 @@ pub static mut pid_lock: Spinlock = Spinlock::zeroed();
 #[no_mangle]
 pub unsafe fn procinit() {
     let mut p: *mut proc_0 = ptr::null_mut();
-    pid_lock.initlock(
-        b"nextpid\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-    );
+    pid_lock.initlock(b"nextpid\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     p = proc.as_mut_ptr();
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
-        (*p).lock.initlock(
-            b"proc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-        );
+        (*p).lock
+            .initlock(b"proc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 
         // Allocate a page for the process's kernel stack.
         // Map it high in memory, followed by an invalid
@@ -253,7 +250,7 @@ pub unsafe fn myproc() -> *mut proc_0 {
 
 pub unsafe fn allocpid() -> i32 {
     let mut pid: i32 = 0;
-    acquire(&mut pid_lock);
+    pid_lock.acquire();
     pid = nextpid;
     nextpid += 1;
     release(&mut pid_lock);
@@ -273,7 +270,7 @@ unsafe fn allocproc() -> *mut proc_0 {
             current_block = 7815301370352969686;
             break;
         }
-        acquire(&mut (*p).lock);
+        (*p).lock.acquire();
         if (*p).state as u32 == UNUSED as u32 {
             current_block = 17234009953499979309;
             break;
@@ -492,7 +489,7 @@ pub unsafe fn reparent(mut p: *mut proc_0) {
         if (*pp).parent == p {
             // pp->parent can't change between the check and the acquire()
             // because only the parent changes it, and we're the parent.
-            acquire(&mut (*pp).lock);
+            (*pp).lock.acquire();
             (*pp).parent = initproc;
 
             // we should wake up init here, but that would require
@@ -534,7 +531,7 @@ pub unsafe fn exit(mut status: i32) {
     // spinlock::acquired any other proc lock. so wake up init whether that's
     // necessary or not. init may miss this wakeup, but that seems
     // harmless.
-    acquire(&mut (*initproc).lock);
+    (*initproc).lock.acquire();
     wakeup1(initproc);
     release(&mut (*initproc).lock);
 
@@ -544,15 +541,15 @@ pub unsafe fn exit(mut status: i32) {
     // exiting parent, but the result will be a harmless spurious wakeup
     // to a dead or wrong process; proc structs are never re-allocated
     // as anything else.
-    acquire(&mut (*p).lock);
+    (*p).lock.acquire();
     let mut original_parent: *mut proc_0 = (*p).parent;
     release(&mut (*p).lock);
 
     // we need the parent's lock in order to wake it up from wait().
     // the parent-then-child rule says we have to lock it first.
-    acquire(&mut (*original_parent).lock);
+    (*original_parent).lock.acquire();
 
-    acquire(&mut (*p).lock);
+    (*p).lock.acquire();
 
     // Give any children to init.
     reparent(p);
@@ -578,7 +575,7 @@ pub unsafe fn wait(mut addr: u64) -> i32 {
 
     // hold p->lock for the whole time to avoid lost
     // wakeups from a child's exit().
-    acquire(&mut (*p).lock);
+    (*p).lock.acquire();
     loop {
         // Scan through table looking for exited children.
         havekids = 0 as i32;
@@ -590,7 +587,7 @@ pub unsafe fn wait(mut addr: u64) -> i32 {
             if (*np).parent == p {
                 // np->parent can't change between the check and the acquire()
                 // because only the parent changes it, and we're the parent.
-                acquire(&mut (*np).lock);
+                (*np).lock.acquire();
                 havekids = 1 as i32;
                 if (*np).state as u32 == ZOMBIE as i32 as u32 {
                     // Found one.
@@ -645,7 +642,7 @@ pub unsafe fn scheduler() -> ! {
         intr_on();
         p = proc.as_mut_ptr();
         while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
-            acquire(&mut (*p).lock);
+            (*p).lock.acquire();
             if (*p).state as u32 == RUNNABLE as i32 as u32 {
                 // Switch to chosen process.  It is the process's job
                 // to release its lock and then reacquire it
@@ -697,7 +694,7 @@ pub unsafe fn sched() {
 #[export_name = "yield"]
 pub unsafe fn yield_0() {
     let mut p: *mut proc_0 = myproc();
-    acquire(&mut (*p).lock);
+    (*p).lock.acquire();
     (*p).state = RUNNABLE;
     sched();
     release(&mut (*p).lock);
@@ -735,7 +732,7 @@ pub unsafe fn sleep(mut chan: *mut libc::c_void, mut lk: *mut Spinlock) {
     //DOC: sleeplock0
     if lk != &mut (*p).lock as *mut Spinlock {
         //DOC: sleeplock1
-        acquire(&mut (*p).lock);
+        (*p).lock.acquire();
         release(lk);
     }
 
@@ -750,7 +747,7 @@ pub unsafe fn sleep(mut chan: *mut libc::c_void, mut lk: *mut Spinlock) {
     // reacquire original lock.
     if lk != &mut (*p).lock as *mut Spinlock {
         release(&mut (*p).lock);
-        acquire(lk);
+        (*lk).acquire();
     };
 }
 
@@ -760,7 +757,7 @@ pub unsafe fn wakeup(mut chan: *mut libc::c_void) {
     let mut p: *mut proc_0 = ptr::null_mut();
     p = proc.as_mut_ptr();
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
-        acquire(&mut (*p).lock);
+        (*p).lock.acquire();
         if (*p).state as u32 == SLEEPING as u32 && (*p).chan == chan {
             (*p).state = RUNNABLE
         }
@@ -787,7 +784,7 @@ pub unsafe fn kill(mut pid: i32) -> i32 {
     let mut p: *mut proc_0 = ptr::null_mut();
     p = proc.as_mut_ptr();
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
-        acquire(&mut (*p).lock);
+        (*p).lock.acquire();
         if (*p).pid == pid {
             (*p).killed = 1 as i32;
             if (*p).state as u32 == SLEEPING as u32 {

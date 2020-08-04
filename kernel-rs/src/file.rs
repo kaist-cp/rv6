@@ -7,7 +7,7 @@ use crate::{
     printf::panic,
     proc::{myproc, proc_0},
     sleeplock::Sleeplock,
-    spinlock::{acquire, release, Spinlock},
+    spinlock::{release, Spinlock},
     stat::Stat,
     vm::copyout,
 };
@@ -80,15 +80,15 @@ pub static mut ftable: Ftable = Ftable {
 };
 
 pub unsafe fn fileinit() {
-    ftable.lock.initlock(
-        b"ftable\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-    );
+    ftable
+        .lock
+        .initlock(b"ftable\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
 
 /// Allocate a file structure.
 pub unsafe fn filealloc() -> *mut File {
     let mut f: *mut File = ptr::null_mut();
-    acquire(&mut ftable.lock);
+    ftable.lock.acquire();
     f = ftable.file.as_mut_ptr();
     while f < ftable.file.as_mut_ptr().offset(NFILE as isize) {
         if (*f).ref_0 == 0 as i32 {
@@ -104,7 +104,7 @@ pub unsafe fn filealloc() -> *mut File {
 
 /// Increment ref count for file f.
 pub unsafe fn filedup(mut f: *mut File) -> *mut File {
-    acquire(&mut ftable.lock);
+    ftable.lock.acquire();
     if (*f).ref_0 < 1 as i32 {
         panic(b"filedup\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
@@ -125,7 +125,7 @@ pub unsafe fn fileclose(mut f: *mut File) {
         off: 0,
         major: 0,
     };
-    acquire(&mut ftable.lock);
+    ftable.lock.acquire();
     if (*f).ref_0 < 1 as i32 {
         panic(b"fileclose\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
