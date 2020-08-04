@@ -6,6 +6,7 @@ use crate::{
     spinlock::{acquire, initlock, release, Spinlock},
 };
 use core::ptr;
+
 pub static mut end: [u8; 0] = [0; 0];
 
 /// first address after kernel.
@@ -14,15 +15,25 @@ pub static mut end: [u8; 0] = [0; 0];
 pub struct run {
     pub next: *mut run,
 }
+
 #[derive(Copy, Clone)]
 pub struct Kmem {
     pub lock: Spinlock,
     pub freelist: *mut run,
 }
-pub static mut kmem: Kmem = Kmem {
-    lock: Spinlock::zeroed(),
-    freelist: 0 as *const run as *mut run,
-};
+
+impl Kmem {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            lock: Spinlock::zeroed(),
+            freelist: 0 as *const run as *mut run,
+        }
+    }
+}
+
+pub static mut kmem: Kmem = Kmem::zeroed();
+
 pub unsafe fn kinit() {
     initlock(
         &mut kmem.lock,
