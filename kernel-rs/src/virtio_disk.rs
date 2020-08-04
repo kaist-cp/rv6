@@ -55,7 +55,7 @@ pub struct InflightInfo {
     pub status: libc::c_char,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Default, Copy, Clone)]
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
@@ -245,11 +245,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
 
     // format the three descriptors.
     // qemu's virtio-blk.c reads them.
-    let mut buf0: virtio_blk_outhdr = virtio_blk_outhdr {
-        typ: 0,
-        reserved: 0,
-        sector: 0,
-    };
+    let mut buf0: virtio_blk_outhdr = Default::default();
     if write != 0 {
         // write the disk
         buf0.typ = VIRTIO_BLK_T_OUT as u32
