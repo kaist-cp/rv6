@@ -3,7 +3,7 @@ use crate::{
     file::{devsw, CONSOLE},
     printf::panicked,
     proc::{either_copyin, either_copyout, myproc, procdump, sleep, wakeup},
-    spinlock::{release, Spinlock},
+    spinlock::Spinlock,
     uart::{uartinit, uartputc},
 };
 
@@ -88,7 +88,7 @@ pub unsafe fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
         consputc(c as i32);
         i += 1
     }
-    release(&mut cons.lock);
+    cons.lock.release();
     n
 }
 
@@ -106,7 +106,7 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
         // input into cons.buffer.
         while cons.r == cons.w {
             if (*myproc()).killed != 0 {
-                release(&mut cons.lock);
+                cons.lock.release();
                 return -(1 as i32);
             }
             sleep(&mut cons.r as *mut u32 as *mut libc::c_void, &mut cons.lock);
@@ -144,7 +144,7 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
             }
         }
     }
-    release(&mut cons.lock);
+    cons.lock.release();
     target.wrapping_sub(n as u32) as i32
 }
 
@@ -204,7 +204,7 @@ pub unsafe fn consoleintr(mut cin: i32) {
             }
         }
     }
-    release(&mut cons.lock);
+    cons.lock.release();
 }
 
 pub unsafe fn consoleinit() {

@@ -4,7 +4,7 @@ use crate::{
     param::NBUF,
     printf::panic,
     sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep},
-    spinlock::{release, Spinlock},
+    spinlock::Spinlock,
     virtio_disk::virtio_disk_rw,
 };
 use core::mem::MaybeUninit;
@@ -69,7 +69,7 @@ unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
     while b != &mut bcache.head as *mut Buf {
         if (*b).dev == dev && (*b).blockno == blockno {
             (*b).refcnt = (*b).refcnt.wrapping_add(1);
-            release(&mut bcache.lock);
+            bcache.lock.release();
             acquiresleep(&mut (*b).lock);
             return b;
         }
@@ -84,7 +84,7 @@ unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
             (*b).blockno = blockno;
             (*b).valid = 0 as i32;
             (*b).refcnt = 1 as i32 as u32;
-            release(&mut bcache.lock);
+            bcache.lock.release();
             acquiresleep(&mut (*b).lock);
             return b;
         }
@@ -132,19 +132,19 @@ pub unsafe fn brelse(mut b: *mut Buf) {
         (*bcache.head.next).prev = b;
         bcache.head.next = b
     }
-    release(&mut bcache.lock);
+    bcache.lock.release();
 }
 pub unsafe fn bpin(mut b: *mut Buf) {
     let bcache = BCACHE.get_mut();
 
     bcache.lock.acquire();
     (*b).refcnt = (*b).refcnt.wrapping_add(1);
-    release(&mut bcache.lock);
+    bcache.lock.release();
 }
 pub unsafe fn bunpin(mut b: *mut Buf) {
     let bcache = BCACHE.get_mut();
 
     bcache.lock.acquire();
     (*b).refcnt = (*b).refcnt.wrapping_sub(1);
-    release(&mut bcache.lock);
+    bcache.lock.release();
 }

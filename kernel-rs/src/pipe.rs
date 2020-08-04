@@ -3,7 +3,7 @@ use crate::{
     file::{filealloc, fileclose, File},
     kalloc::{kalloc, kfree},
     proc::{myproc, proc_0, sleep, wakeup},
-    spinlock::{release, Spinlock},
+    spinlock::Spinlock,
     vm::{copyin, copyout},
 };
 use core::ptr;
@@ -81,10 +81,10 @@ pub unsafe fn pipeclose(mut pi: *mut Pipe, mut writable: i32) {
         wakeup(&mut (*pi).nwrite as *mut u32 as *mut libc::c_void);
     }
     if (*pi).readopen == 0 as i32 && (*pi).writeopen == 0 as i32 {
-        release(&mut (*pi).lock);
+        (*pi).lock.release();
         kfree(pi as *mut libc::c_char as *mut libc::c_void);
     } else {
-        release(&mut (*pi).lock);
+        (*pi).lock.release();
     };
 }
 pub unsafe fn pipewrite(mut pi: *mut Pipe, mut addr: u64, mut n: i32) -> i32 {
@@ -96,7 +96,7 @@ pub unsafe fn pipewrite(mut pi: *mut Pipe, mut addr: u64, mut n: i32) -> i32 {
         while (*pi).nwrite == (*pi).nread.wrapping_add(PIPESIZE as u32) {
             //DOC: pipewrite-full
             if (*pi).readopen == 0 as i32 || (*myproc()).killed != 0 {
-                release(&mut (*pi).lock);
+                (*pi).lock.release();
                 return -(1 as i32);
             }
             wakeup(&mut (*pi).nread as *mut u32 as *mut libc::c_void);
@@ -120,7 +120,7 @@ pub unsafe fn pipewrite(mut pi: *mut Pipe, mut addr: u64, mut n: i32) -> i32 {
         i += 1
     }
     wakeup(&mut (*pi).nread as *mut u32 as *mut libc::c_void);
-    release(&mut (*pi).lock);
+    (*pi).lock.release();
     n
 }
 pub unsafe fn piperead(mut pi: *mut Pipe, mut addr: u64, mut n: i32) -> i32 {
@@ -133,7 +133,7 @@ pub unsafe fn piperead(mut pi: *mut Pipe, mut addr: u64, mut n: i32) -> i32 {
     //DOC: pipe-empty
     while (*pi).nread == (*pi).nwrite && (*pi).writeopen != 0 {
         if (*myproc()).killed != 0 {
-            release(&mut (*pi).lock);
+            (*pi).lock.release();
             return -(1 as i32);
         }
 
@@ -166,6 +166,6 @@ pub unsafe fn piperead(mut pi: *mut Pipe, mut addr: u64, mut n: i32) -> i32 {
 
     //DOC: piperead-wakeup
     wakeup(&mut (*pi).nwrite as *mut u32 as *mut libc::c_void);
-    release(&mut (*pi).lock);
+    (*pi).lock.release();
     i
 }

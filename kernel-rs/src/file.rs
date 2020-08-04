@@ -7,7 +7,7 @@ use crate::{
     printf::panic,
     proc::{myproc, proc_0},
     sleeplock::Sleeplock,
-    spinlock::{release, Spinlock},
+    spinlock::Spinlock,
     stat::Stat,
     vm::copyout,
 };
@@ -93,12 +93,12 @@ pub unsafe fn filealloc() -> *mut File {
     while f < ftable.file.as_mut_ptr().offset(NFILE as isize) {
         if (*f).ref_0 == 0 as i32 {
             (*f).ref_0 = 1 as i32;
-            release(&mut ftable.lock);
+            ftable.lock.release();
             return f;
         }
         f = f.offset(1)
     }
-    release(&mut ftable.lock);
+    ftable.lock.release();
     ptr::null_mut()
 }
 
@@ -109,7 +109,7 @@ pub unsafe fn filedup(mut f: *mut File) -> *mut File {
         panic(b"filedup\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     (*f).ref_0 += 1;
-    release(&mut ftable.lock);
+    ftable.lock.release();
     f
 }
 
@@ -131,13 +131,13 @@ pub unsafe fn fileclose(mut f: *mut File) {
     }
     (*f).ref_0 -= 1;
     if (*f).ref_0 > 0 as i32 {
-        release(&mut ftable.lock);
+        ftable.lock.release();
         return;
     }
     ff = *f;
     (*f).ref_0 = 0 as i32;
     (*f).typ = FD_NONE;
-    release(&mut ftable.lock);
+    ftable.lock.release();
     if ff.typ as u32 == FD_PIPE as i32 as u32 {
         pipeclose(ff.pipe, ff.writable as i32);
     } else if ff.typ as u32 == FD_INODE as i32 as u32 || ff.typ as u32 == FD_DEVICE as i32 as u32 {

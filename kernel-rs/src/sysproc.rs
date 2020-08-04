@@ -1,7 +1,6 @@
 use crate::{
     libc,
     proc::{exit, fork, growproc, kill, myproc, sleep, wait},
-    spinlock::release,
     syscall::{argaddr, argint},
     trap::{ticks, tickslock},
 };
@@ -55,12 +54,12 @@ pub unsafe fn sys_sleep() -> u64 {
     ticks0 = ticks;
     while ticks.wrapping_sub(ticks0) < n as u32 {
         if (*myproc()).killed != 0 {
-            release(&mut tickslock);
+            tickslock.release();
             return -(1 as i32) as u64;
         }
         sleep(&mut ticks as *mut u32 as *mut libc::c_void, &mut tickslock);
     }
-    release(&mut tickslock);
+    tickslock.release();
     0 as i32 as u64
 }
 
@@ -78,6 +77,6 @@ pub unsafe fn sys_uptime() -> u64 {
     let mut xticks: u32 = 0;
     tickslock.acquire();
     xticks = ticks;
-    release(&mut tickslock);
+    tickslock.release();
     xticks as u64
 }

@@ -11,7 +11,7 @@ use crate::{
     printf::panic,
     proc::{sleep, wakeup},
     riscv::{PGSHIFT, PGSIZE},
-    spinlock::{release, Spinlock},
+    spinlock::Spinlock,
     virtio::*,
     vm::kvmpa,
 };
@@ -310,7 +310,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     }
     disk.info[idx[0 as i32 as usize] as usize].b = ptr::null_mut();
     free_chain(idx[0 as i32 as usize]);
-    release(&mut disk.vdisk_lock);
+    disk.vdisk_lock.release();
 }
 pub unsafe fn virtio_disk_intr() {
     disk.vdisk_lock.acquire();
@@ -329,5 +329,5 @@ pub unsafe fn virtio_disk_intr() {
 
         disk.used_idx = ((disk.used_idx as i32 + 1 as i32) % NUM) as u16
     }
-    release(&mut disk.vdisk_lock);
+    disk.vdisk_lock.release();
 }
