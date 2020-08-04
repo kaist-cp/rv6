@@ -22,5 +22,5 @@ pub struct Stat {
     pub nlink: i16,
 
     /// Size of file in bytes
-    pub size: u64,
+    pub size: usize,
 }

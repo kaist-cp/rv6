@@ -181,7 +181,7 @@ impl Inode {
         let mut dip: *mut Dinode = ptr::null_mut();
         bp = bread(self.dev, iblock(self.inum as i32, sb));
         dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-            .offset((self.inum as u64).wrapping_rem(IPB as u64) as isize);
+            .offset((self.inum as usize).wrapping_rem(IPB as usize) as isize);
         (*dip).typ = self.typ;
         (*dip).major = self.major;
         (*dip).minor = self.minor;
@@ -355,7 +355,7 @@ pub unsafe fn ialloc(mut dev: u32, mut typ: i16) -> *mut Inode {
     for inum in 1..sb.ninodes {
         let bp = bread(dev, iblock(inum as i32, sb));
         let dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-            .offset((inum as u64).wrapping_rem(IPB as u64) as isize);
+            .offset((inum as usize).wrapping_rem(IPB as usize) as isize);
         if (*dip).typ as i32 == 0 as i32 {
             // a free inode
             ptr::write_bytes(dip, 0, 1);
@@ -421,7 +421,7 @@ pub unsafe fn ilock(mut ip: *mut Inode) {
     if (*ip).valid == 0 as i32 {
         bp = bread((*ip).dev, iblock((*ip).inum as i32, sb));
         dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-            .offset(((*ip).inum as u64).wrapping_rem(IPB as u64) as isize);
+            .offset(((*ip).inum as usize).wrapping_rem(IPB as usize) as isize);
         (*ip).typ = (*dip).typ;
         (*ip).major = (*dip).major;
         (*ip).minor = (*dip).minor;
@@ -502,7 +502,7 @@ unsafe fn bmap(mut ip: *mut Inode, mut bn: u32) -> u32 {
         return addr;
     }
     bn = (bn as u32).wrapping_sub(NDIRECT as u32) as u32 as u32;
-    if (bn as u64) < NINDIRECT as u64 {
+    if (bn as usize) < NINDIRECT as usize {
         // Load indirect block, allocating if necessary.
         addr = (*ip).addrs[NDIRECT as usize];
         if addr == 0 as i32 as u32 {
@@ -568,7 +568,7 @@ pub unsafe fn stati(mut ip: *mut Inode, mut st: *mut Stat) {
     (*st).ino = (*ip).inum;
     (*st).typ = (*ip).typ;
     (*st).nlink = (*ip).nlink;
-    (*st).size = (*ip).size as u64;
+    (*st).size = (*ip).size as usize;
 }
 
 /// Read data from inode.
@@ -578,7 +578,7 @@ pub unsafe fn stati(mut ip: *mut Inode, mut st: *mut Stat) {
 pub unsafe fn readi(
     mut ip: *mut Inode,
     mut user_dst: i32,
-    mut dst: u64,
+    mut dst: usize,
     mut off: u32,
     mut n: u32,
 ) -> i32 {
@@ -603,7 +603,7 @@ pub unsafe fn readi(
                 .data
                 .as_mut_ptr()
                 .offset(off.wrapping_rem(BSIZE as u32) as isize) as *mut libc::c_void,
-            m as u64,
+            m as usize,
         ) == -(1 as i32)
         {
             brelse(bp);
@@ -612,7 +612,7 @@ pub unsafe fn readi(
             brelse(bp);
             tot = (tot as u32).wrapping_add(m) as u32 as u32;
             off = (off as u32).wrapping_add(m) as u32 as u32;
-            dst = (dst as u64).wrapping_add(m as u64) as u64 as u64
+            dst = (dst as usize).wrapping_add(m as usize) as usize as usize
         }
     }
     n as i32
@@ -625,7 +625,7 @@ pub unsafe fn readi(
 pub unsafe fn writei(
     mut ip: *mut Inode,
     mut user_src: i32,
-    mut src: u64,
+    mut src: usize,
     mut off: u32,
     mut n: u32,
 ) -> i32 {
@@ -633,7 +633,7 @@ pub unsafe fn writei(
     if off > (*ip).size || off.wrapping_add(n) < off {
         return -1;
     }
-    if off.wrapping_add(n) as u64 > MAXFILE.wrapping_mul(BSIZE) as u64 {
+    if off.wrapping_add(n) as usize > MAXFILE.wrapping_mul(BSIZE) as usize {
         return -1;
     }
     tot = 0 as i32 as u32;
@@ -650,7 +650,7 @@ pub unsafe fn writei(
                 .offset(off.wrapping_rem(BSIZE as u32) as isize) as *mut libc::c_void,
             user_src,
             src,
-            m as u64,
+            m as usize,
         ) == -(1 as i32)
         {
             brelse(bp);
@@ -660,7 +660,7 @@ pub unsafe fn writei(
             brelse(bp);
             tot = (tot as u32).wrapping_add(m) as u32 as u32;
             off = (off as u32).wrapping_add(m) as u32 as u32;
-            src = (src as u64).wrapping_add(m as u64) as u64 as u64
+            src = (src as usize).wrapping_add(m as usize) as usize as usize
         }
     }
     if n > 0 as i32 as u32 {
@@ -696,11 +696,11 @@ pub unsafe fn dirlookup(
         if readi(
             dp,
             0 as i32,
-            &mut de as *mut Dirent as u64,
+            &mut de as *mut Dirent as usize,
             off,
-            ::core::mem::size_of::<Dirent>() as u64 as u32,
-        ) as u64
-            != ::core::mem::size_of::<Dirent>() as u64
+            ::core::mem::size_of::<Dirent>() as usize as u32,
+        ) as usize
+            != ::core::mem::size_of::<Dirent>() as usize
         {
             panic(b"dirlookup read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
@@ -711,7 +711,7 @@ pub unsafe fn dirlookup(
             }
             return iget((*dp).dev, de.inum as u32);
         }
-        off = (off as u64).wrapping_add(::core::mem::size_of::<Dirent>() as u64) as u32 as u32
+        off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>() as usize) as u32 as u32
     }
     ptr::null_mut()
 }
@@ -735,29 +735,29 @@ pub unsafe fn dirlink(mut dp: *mut Inode, mut name: *mut libc::c_char, mut inum:
         if readi(
             dp,
             0 as i32,
-            &mut de as *mut Dirent as u64,
+            &mut de as *mut Dirent as usize,
             off as u32,
-            ::core::mem::size_of::<Dirent>() as u64 as u32,
-        ) as u64
-            != ::core::mem::size_of::<Dirent>() as u64
+            ::core::mem::size_of::<Dirent>() as usize as u32,
+        ) as usize
+            != ::core::mem::size_of::<Dirent>() as usize
         {
             panic(b"dirlink read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         if de.inum as i32 == 0 as i32 {
             break;
         }
-        off = (off as u64).wrapping_add(::core::mem::size_of::<Dirent>() as u64) as i32 as i32
+        off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>() as usize) as i32 as i32
     }
     strncpy(de.name.as_mut_ptr(), name, DIRSIZ as i32);
     de.inum = inum as u16;
     if writei(
         dp,
         0 as i32,
-        &mut de as *mut Dirent as u64,
+        &mut de as *mut Dirent as usize,
         off as u32,
-        ::core::mem::size_of::<Dirent>() as u64 as u32,
-    ) as u64
-        != ::core::mem::size_of::<Dirent>() as u64
+        ::core::mem::size_of::<Dirent>() as usize as u32,
+    ) as usize
+        != ::core::mem::size_of::<Dirent>() as usize
     {
         panic(b"dirlink\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }

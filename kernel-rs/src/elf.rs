@@ -15,9 +15,9 @@ pub struct ElfHdr {
     pub typ: u16,
     pub machine: u16,
     pub version: u32,
-    pub entry: u64,
-    pub phoff: u64,
-    pub shoff: u64,
+    pub entry: usize,
+    pub phoff: usize,
+    pub shoff: usize,
     pub flags: u32,
     pub ehsize: u16,
     pub phentsize: u16,
@@ -36,12 +36,12 @@ pub struct ElfHdr {
 pub struct ProgHdr {
     pub typ: u32,
     pub flags: u32,
-    pub off: u64,
-    pub vaddr: u64,
-    pub paddr: u64,
-    pub filesz: u64,
-    pub memsz: u64,
-    pub align: u64,
+    pub off: usize,
+    pub vaddr: usize,
+    pub paddr: usize,
+    pub filesz: usize,
+    pub memsz: usize,
+    pub align: usize,
 }
 
 /// Values for Proghdr type

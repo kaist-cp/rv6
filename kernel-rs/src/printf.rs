@@ -74,15 +74,15 @@ unsafe fn printint(mut xx: i32, mut base: i32, mut sign: i32) {
     }
 }
 
-unsafe fn printptr(mut x: u64) {
+unsafe fn printptr(mut x: usize) {
     consputc('0' as i32);
     consputc('x' as i32);
-    for _i in 0..(::core::mem::size_of::<u64>() as u64).wrapping_mul(2 as i32 as u64) {
+    for _i in 0..(::core::mem::size_of::<usize>() as usize).wrapping_mul(2 as i32 as usize) {
         consputc(
             digits[(x
-                >> (::core::mem::size_of::<u64>() as u64)
-                    .wrapping_mul(8 as i32 as u64)
-                    .wrapping_sub(4 as i32 as u64)) as usize] as i32,
+                >> (::core::mem::size_of::<usize>() as usize)
+                    .wrapping_mul(8 as i32 as usize)
+                    .wrapping_sub(4 as i32 as usize)) as usize] as i32,
         );
         x <<= 4 as i32
     }
@@ -122,7 +122,7 @@ pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
                     printint(ap.as_va_list().arg::<i32>(), 16 as i32, 1 as i32);
                 }
                 112 => {
-                    printptr(ap.as_va_list().arg::<u64>());
+                    printptr(ap.as_va_list().arg::<usize>());
                 }
                 115 => {
                     let mut s = ap.as_va_list().arg::<*mut libc::c_char>();
