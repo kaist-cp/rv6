@@ -3,7 +3,7 @@ use crate::{
     fs::{ilock, iput, iunlock, readi, stati, writei, BSIZE},
     log::{begin_op, end_op},
     param::{MAXOPBLOCKS, NDEV, NFILE},
-    pipe::{pipeclose, piperead, pipewrite, Pipe},
+    pipe::{Pipe},
     printf::panic,
     proc::{myproc, proc_0},
     sleeplock::Sleeplock,
@@ -142,7 +142,7 @@ pub unsafe fn fileclose(mut f: *mut File) {
     (*f).typ = FD_NONE;
     ftable.lock.release();
     if ff.typ as u32 == FD_PIPE as i32 as u32 {
-        pipeclose(ff.pipe, ff.writable as i32);
+        (*(ff.pipe)).pipeclose(ff.writable as i32);
     } else if ff.typ as u32 == FD_INODE as i32 as u32 || ff.typ as u32 == FD_DEVICE as i32 as u32 {
         begin_op();
         iput(ff.ip);
@@ -187,7 +187,7 @@ pub unsafe fn fileread(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
         return -(1 as i32);
     }
     if (*f).typ as u32 == FD_PIPE as i32 as u32 {
-        r = piperead((*f).pipe, addr, n)
+        r = (*((*f).pipe)).piperead(addr, n)
     } else if (*f).typ as u32 == FD_DEVICE as i32 as u32 {
         if ((*f).major as i32) < 0 as i32
             || (*f).major as i32 >= NDEV
@@ -220,7 +220,7 @@ pub unsafe fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
         return -1;
     }
     if (*f).typ as u32 == FD_PIPE as i32 as u32 {
-        ret = pipewrite((*f).pipe, addr, n)
+        ret = (*((*f).pipe)).pipewrite(addr, n)
     } else if (*f).typ as u32 == FD_DEVICE as i32 as u32 {
         if ((*f).major as i32) < 0 as i32
             || (*f).major as i32 >= NDEV
