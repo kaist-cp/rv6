@@ -124,7 +124,8 @@ impl Buf {
         }
         releasesleep(&mut (*self).lock);
         acquire(&mut bcache.lock);
-        (*self).decrefcnt();
+        let refcnt = (*self).getrefcnt();
+        (*self).setrefcnt(refcnt.wrapping_sub(1));
         if (*self).getrefcnt() == 0 as i32 as u32 {
             // no one is waiting for it.
             (*(*self).next).prev = (*self).prev;
@@ -141,7 +142,8 @@ impl Buf {
         let bcache = BCACHE.get_mut();
 
         acquire(&mut bcache.lock);
-        (*self).increfcnt();
+        let refcnt = (*self).getrefcnt();
+        (*self).setrefcnt(refcnt.wrapping_add(1));
         release(&mut bcache.lock);
     }
 
@@ -149,7 +151,8 @@ impl Buf {
         let bcache = BCACHE.get_mut();
 
         acquire(&mut bcache.lock);
-        (*self).decrefcnt();
+        let refcnt = (*self).getrefcnt();
+        (*self).setrefcnt(refcnt.wrapping_sub(1));
         release(&mut bcache.lock);
     }
 }

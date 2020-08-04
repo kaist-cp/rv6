@@ -51,9 +51,6 @@ impl Buf {
     pub fn setrefcnt(&mut self, refcnt: u32) {
         self.refcnt = refcnt;
     }
-    pub fn decrefcnt(&mut self) {
-        self.refcnt = self.refcnt.wrapping_sub(1);
-    }
     pub fn increfcnt(&mut self) {
         self.refcnt = self.refcnt.wrapping_add(1);
     }
