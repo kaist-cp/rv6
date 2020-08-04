@@ -24,6 +24,9 @@ const fn r(r: i32) -> *mut u32 {
 
 /// the address of virtio mmio register r.
 #[derive(Copy, Clone)]
+// It needs repr(C) because it's struct for in-disk representation
+// which should follow C(=machine) representation
+// https://github.com/kaist-cp/rv6/issues/52
 #[repr(C, align(4096))]
 pub struct Disk {
     /// memory for virtio descriptors &c for queue 0.
@@ -53,6 +56,9 @@ pub struct InflightInfo {
 }
 
 #[derive(Copy, Clone)]
+// It needs repr(C) because it's struct for in-disk representation
+// which should follow C(=machine) representation
+// https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
 pub struct virtio_blk_outhdr {
     pub typ: u32,
@@ -319,7 +325,7 @@ pub unsafe fn virtio_disk_intr() {
             );
         }
         (*disk.info[id as usize].b).disk = 0;
-        
+
         // disk is done with Buf
         wakeup(disk.info[id as usize].b as *mut libc::c_void);
 

@@ -58,6 +58,9 @@ pub struct Dirent {
 /// On-disk inode structure
 /// Both the kernel and user programs use this header file.
 #[derive(Copy, Clone)]
+// It needs repr(C) because it's struct for in-disk representation
+// which should follow C(=machine) representation
+// https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
 pub struct Dinode {
     pub typ: i16,
