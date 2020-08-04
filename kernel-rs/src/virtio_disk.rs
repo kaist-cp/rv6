@@ -66,19 +66,26 @@ pub struct virtio_blk_outhdr {
     pub sector: u64,
 }
 
-static mut disk: Disk = Disk {
-    pages: [0; 8192],
-    desc: 0 as *const VRingDesc as *mut VRingDesc,
-    avail: 0 as *const u16 as *mut u16,
-    used: 0 as *const UsedArea as *mut UsedArea,
-    free: [0; NUM as usize],
-    used_idx: 0,
-    info: [InflightInfo {
-        b: 0 as *const Buf as *mut Buf,
-        status: 0,
-    }; NUM as usize],
-    vdisk_lock: Spinlock::zeroed(),
-};
+impl Disk {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            pages: [0; 8192],
+            desc: 0 as *const VRingDesc as *mut VRingDesc,
+            avail: 0 as *const u16 as *mut u16,
+            used: 0 as *const UsedArea as *mut UsedArea,
+            free: [0; NUM as usize],
+            used_idx: 0,
+            info: [InflightInfo {
+                b: 0 as *const Buf as *mut Buf,
+                status: 0,
+            }; NUM as usize],
+            vdisk_lock: Spinlock::zeroed(),
+        }
+    }
+}
+
+static mut disk: Disk = Disk::zeroed();
 
 pub unsafe fn virtio_disk_init() {
     let mut status: u32 = 0 as u32;
