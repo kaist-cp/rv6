@@ -1,11 +1,6 @@
 use crate::libc;
 use crate::{
-    buf::Buf,
-    param::NBUF,
-    printf::panic,
-    sleeplock::{holdingsleep, releasesleep},
-    spinlock::Spinlock,
-    virtio_disk::virtio_disk_rw,
+    buf::Buf, param::NBUF, printf::panic, spinlock::Spinlock, virtio_disk::virtio_disk_rw,
 };
 use core::mem::MaybeUninit;
 use core::ptr;
@@ -104,7 +99,7 @@ pub unsafe fn bread(mut dev: u32, mut blockno: u32) -> *mut Buf {
 
 /// Write b's contents to disk.  Must be locked.
 pub unsafe fn bwrite(mut b: *mut Buf) {
-    if holdingsleep(&mut (*b).lock) == 0 {
+    if (*b).lock.holdingsleep() == 0 {
         panic(b"bwrite\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     virtio_disk_rw(b, 1 as i32);
@@ -115,10 +110,10 @@ pub unsafe fn bwrite(mut b: *mut Buf) {
 pub unsafe fn brelse(mut b: *mut Buf) {
     let bcache = BCACHE.get_mut();
 
-    if holdingsleep(&mut (*b).lock) == 0 {
+    if (*b).lock.holdingsleep() == 0 {
         panic(b"brelse\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    releasesleep(&mut (*b).lock);
+    (*b).lock.releasesleep();
     bcache.lock.acquire();
     (*b).refcnt = (*b).refcnt.wrapping_sub(1);
     if (*b).refcnt == 0 as i32 as u32 {

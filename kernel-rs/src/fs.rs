@@ -18,7 +18,7 @@ use crate::{
     param::{NINODE, ROOTDEV},
     printf::panic,
     proc::{either_copyin, either_copyout, myproc},
-    sleeplock::{holdingsleep, releasesleep, Sleeplock},
+    sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::{Stat, T_DIR},
     string::{strncmp, strncpy},
@@ -432,10 +432,10 @@ pub unsafe fn ilock(mut ip: *mut inode) {
 
 /// Unlock the given inode.
 pub unsafe fn iunlock(mut ip: *mut inode) {
-    if ip.is_null() || holdingsleep(&mut (*ip).lock) == 0 || (*ip).ref_0 < 1 as i32 {
+    if ip.is_null() || (*ip).lock.holdingsleep() == 0 || (*ip).ref_0 < 1 as i32 {
         panic(b"iunlock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    releasesleep(&mut (*ip).lock);
+    (*ip).lock.releasesleep();
 }
 
 /// Drop a reference to an in-memory inode.
@@ -457,7 +457,7 @@ pub unsafe fn iput(mut ip: *mut inode) {
         (*ip).typ = 0 as i32 as i16;
         (*ip).update();
         (*ip).valid = 0 as i32;
-        releasesleep(&mut (*ip).lock);
+        (*ip).lock.releasesleep();
         icache.lock.acquire();
     }
     (*ip).ref_0 -= 1;
