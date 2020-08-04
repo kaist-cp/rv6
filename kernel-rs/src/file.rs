@@ -58,8 +58,8 @@ pub struct Ftable {
 /// map major device number to device functions.
 #[derive(Copy, Clone)]
 pub struct Devsw {
-    pub read: Option<unsafe fn(_: i32, _: u64, _: i32) -> i32>,
-    pub write: Option<unsafe fn(_: i32, _: u64, _: i32) -> i32>,
+    pub read: Option<unsafe fn(_: i32, _: usize, _: i32) -> i32>,
+    pub write: Option<unsafe fn(_: i32, _: usize, _: i32) -> i32>,
 }
 
 impl File {
@@ -157,7 +157,7 @@ pub unsafe fn fileclose(mut f: *mut File) {
 
 /// Get metadata about file f.
 /// addr is a user virtual address, pointing to a struct stat.
-pub unsafe fn filestat(mut f: *mut File, mut addr: u64) -> i32 {
+pub unsafe fn filestat(mut f: *mut File, mut addr: usize) -> i32 {
     let mut p: *mut proc_0 = myproc();
     let mut st: Stat = Default::default();
     if (*f).typ as u32 == FD_INODE as i32 as u32 || (*f).typ as u32 == FD_DEVICE as i32 as u32 {
@@ -168,7 +168,7 @@ pub unsafe fn filestat(mut f: *mut File, mut addr: u64) -> i32 {
             (*p).pagetable,
             addr,
             &mut st as *mut Stat as *mut libc::c_char,
-            ::core::mem::size_of::<Stat>() as u64,
+            ::core::mem::size_of::<Stat>() as usize,
         ) < 0 as i32
         {
             return -(1 as i32);
@@ -180,7 +180,7 @@ pub unsafe fn filestat(mut f: *mut File, mut addr: u64) -> i32 {
 
 /// Read from file f.
 /// addr is a user virtual address.
-pub unsafe fn fileread(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
+pub unsafe fn fileread(mut f: *mut File, mut addr: usize, mut n: i32) -> i32 {
     let mut r: i32 = 0;
     if (*f).readable as i32 == 0 as i32 {
         return -(1 as i32);
@@ -212,7 +212,7 @@ pub unsafe fn fileread(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
 
 /// Write to file f.
 /// addr is a user virtual address.
-pub unsafe fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
+pub unsafe fn filewrite(mut f: *mut File, mut addr: usize, mut n: i32) -> i32 {
     let mut r: i32 = 0;
     let mut ret: i32 = 0;
     if (*f).writable as i32 == 0 as i32 {
@@ -249,7 +249,7 @@ pub unsafe fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
             r = writei(
                 (*f).ip,
                 1 as i32,
-                addr.wrapping_add(i as u64),
+                addr.wrapping_add(i as usize),
                 (*f).off,
                 n1 as u32,
             );

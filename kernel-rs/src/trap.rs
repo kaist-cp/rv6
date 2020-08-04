@@ -49,7 +49,7 @@ pub unsafe fn trapinithart() {
 pub unsafe extern "C" fn usertrap() {
     let mut which_dev: i32 = 0 as i32;
 
-    if r_sstatus() & SSTATUS_SPP as u64 != 0 as i32 as u64 {
+    if r_sstatus() & SSTATUS_SPP as usize != 0 as i32 as usize {
         panic(
             b"usertrap: not from user mode\x00" as *const u8 as *const libc::c_char
                 as *mut libc::c_char,
@@ -73,7 +73,7 @@ pub unsafe extern "C" fn usertrap() {
 
         // sepc points to the ecall instruction,
         // but we want to return to the next instruction.
-        (*(*p).tf).epc = ((*(*p).tf).epc as u64).wrapping_add(4 as u64) as u64;
+        (*(*p).tf).epc = ((*(*p).tf).epc as usize).wrapping_add(4 as usize) as usize;
 
         // an interrupt will change sstatus &c registers,
         // so don't enable until done with those registers.
@@ -123,7 +123,7 @@ pub unsafe fn usertrapret() {
         (TRAMPOLINE
             + uservec
                 .as_mut_ptr()
-                .wrapping_offset_from(trampoline.as_mut_ptr()) as i64) as u64,
+                .wrapping_offset_from(trampoline.as_mut_ptr()) as i64) as usize,
     );
 
     // set up trapframe values that uservec will need when
@@ -133,8 +133,8 @@ pub unsafe fn usertrapret() {
     (*(*p).tf).kernel_satp = r_satp();
 
     // process's kernel stack
-    (*(*p).tf).kernel_sp = (*p).kstack.wrapping_add(PGSIZE as u64);
-    (*(*p).tf).kernel_trap = usertrap as u64;
+    (*(*p).tf).kernel_sp = (*p).kstack.wrapping_add(PGSIZE as usize);
+    (*(*p).tf).kernel_trap = usertrap as usize;
 
     // hartid for cpuid()
     (*(*p).tf).kernel_hartid = r_tp();
@@ -143,30 +143,31 @@ pub unsafe fn usertrapret() {
     // to get to user space.
 
     // set S Previous Privilege mode to User.
-    let mut x: u64 = r_sstatus();
+    let mut x: usize = r_sstatus();
 
     // clear SPP to 0 for user mode
-    x &= !SSTATUS_SPP as u64;
+    x &= !SSTATUS_SPP as usize;
 
     // enable interrupts in user mode
-    x |= SSTATUS_SPIE as u64;
+    x |= SSTATUS_SPIE as usize;
     w_sstatus(x);
 
     // set S Exception Program Counter to the saved user pc.
     w_sepc((*(*p).tf).epc);
 
     // tell trampoline.S the user page table to switch to.
-    let mut satp: u64 = make_satp((*p).pagetable as u64);
+    let mut satp: usize = make_satp((*p).pagetable as usize);
 
     // jump to trampoline.S at the top of memory, which
     // switches to the user page table, restores user registers,
     // and switches to user mode with sret.
-    let mut fn_0: u64 = (TRAMPOLINE
+    let mut fn_0: usize = (TRAMPOLINE
         + userret
             .as_mut_ptr()
-            .wrapping_offset_from(trampoline.as_mut_ptr()) as i64) as u64;
-    let fn_0 = mem::transmute::<u64, unsafe extern "C" fn(_: u64, _: u64) -> ()>(fn_0);
-    fn_0(TRAPFRAME as u64, satp);
+            .wrapping_offset_from(trampoline.as_mut_ptr()) as i64)
+        as usize;
+    let fn_0 = mem::transmute::<usize, unsafe extern "C" fn(_: usize, _: usize) -> ()>(fn_0);
+    fn_0(TRAPFRAME as usize, satp);
 }
 
 /// interrupts and exceptions from kernel code go here via kernelvec,
@@ -174,11 +175,11 @@ pub unsafe fn usertrapret() {
 /// must be 4-byte aligned to fit in stvec.
 #[no_mangle]
 pub unsafe fn kerneltrap() {
-    let mut sepc: u64 = r_sepc();
-    let mut sstatus: u64 = r_sstatus();
-    let mut scause: u64 = r_scause();
+    let mut sepc: usize = r_sepc();
+    let mut sstatus: usize = r_sstatus();
+    let mut scause: usize = r_scause();
 
-    if sstatus & SSTATUS_SPP as u64 == 0 {
+    if sstatus & SSTATUS_SPP as usize == 0 {
         panic(
             b"kerneltrap: not from supervisor mode\x00" as *const u8 as *const libc::c_char
                 as *mut libc::c_char,
@@ -230,7 +231,7 @@ pub unsafe fn clockintr() {
 /// 1 if other device,
 /// 0 if not recognized.
 pub unsafe fn devintr() -> i32 {
-    let mut scause: u64 = r_scause();
+    let mut scause: usize = r_scause();
 
     if scause & 0x8000000000000000 != 0 && scause & 0xff == 9 {
         // this is a supervisor external interrupt, via PLIC.

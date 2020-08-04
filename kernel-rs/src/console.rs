@@ -71,15 +71,15 @@ pub const INPUT_BUF: usize = 128;
 pub static mut cons: Console = Console::zeroed();
 
 /// user write()s to the console go here.
-pub unsafe fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
+pub unsafe fn consolewrite(mut user_src: i32, mut src: usize, mut n: i32) -> i32 {
     cons.lock.acquire();
     for i in 0..n {
         let mut c: libc::c_char = 0;
         if either_copyin(
             &mut c as *mut libc::c_char as *mut libc::c_void,
             user_src,
-            src.wrapping_add(i as u64),
-            1 as i32 as u64,
+            src.wrapping_add(i as usize),
+            1 as i32 as usize,
         ) == -(1 as i32)
         {
             break;
@@ -94,7 +94,7 @@ pub unsafe fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
 /// copy (up to) a whole input line to dst.
 /// user_dist indicates whether dst is a user
 /// or kernel address.
-pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
+pub unsafe fn consoleread(mut user_dst: i32, mut dst: usize, mut n: i32) -> i32 {
     let mut target: u32 = n as u32;
     cons.lock.acquire();
     while n > 0 as i32 {
@@ -126,7 +126,7 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
                 user_dst,
                 dst,
                 &mut cbuf as *mut libc::c_char as *mut libc::c_void,
-                1 as i32 as u64,
+                1 as i32 as usize,
             ) == -(1 as i32)
             {
                 break;
@@ -211,7 +211,7 @@ pub unsafe fn consoleinit() {
     // connect read and write system calls
     // to consoleread and consolewrite.
     let fresh2 = &mut (*devsw.as_mut_ptr().offset(CONSOLE)).read;
-    *fresh2 = Some(consoleread as unsafe fn(_: i32, _: u64, _: i32) -> i32);
+    *fresh2 = Some(consoleread as unsafe fn(_: i32, _: usize, _: i32) -> i32);
     let fresh3 = &mut (*devsw.as_mut_ptr().offset(CONSOLE)).write;
-    *fresh3 = Some(consolewrite as unsafe fn(_: i32, _: u64, _: i32) -> i32);
+    *fresh3 = Some(consolewrite as unsafe fn(_: i32, _: usize, _: i32) -> i32);
 }
