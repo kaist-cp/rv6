@@ -6,7 +6,7 @@ use crate::{
     param::{LOGSIZE, MAXOPBLOCKS},
     printf::panic,
     proc::{sleep, wakeup},
-    spinlock::{acquire, initlock, release, Spinlock},
+    spinlock::Spinlock,
 };
 use core::ptr;
 
@@ -82,10 +82,8 @@ pub unsafe fn initlog(mut dev: i32, mut sb: *mut Superblock) {
                 as *mut libc::c_char,
         );
     }
-    initlock(
-        &mut log.lock,
-        b"log\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-    );
+    log.lock
+        .initlock(b"log\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     log.start = (*sb).logstart as i32;
     log.size = (*sb).nlog as i32;
     log.dev = dev;
@@ -161,7 +159,7 @@ unsafe fn recover_from_log() {
 
 /// called at the start of each FS system call.
 pub unsafe fn begin_op() {
-    acquire(&mut log.lock);
+    log.lock.acquire();
     loop {
         if log.committing != 0 {
             sleep(&mut log as *mut Log as *mut libc::c_void, &mut log.lock);
@@ -170,7 +168,7 @@ pub unsafe fn begin_op() {
             sleep(&mut log as *mut Log as *mut libc::c_void, &mut log.lock);
         } else {
             log.outstanding += 1 as i32;
-            release(&mut log.lock);
+            log.lock.release();
             break;
         }
     }
@@ -180,7 +178,7 @@ pub unsafe fn begin_op() {
 /// commits if this was the last outstanding operation.
 pub unsafe fn end_op() {
     let mut do_commit: i32 = 0;
-    acquire(&mut log.lock);
+    log.lock.acquire();
     log.outstanding -= 1 as i32;
     if log.committing != 0 {
         panic(b"log.committing\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -194,15 +192,15 @@ pub unsafe fn end_op() {
         // the amount of reserved space.
         wakeup(&mut log as *mut Log as *mut libc::c_void);
     }
-    release(&mut log.lock);
+    log.lock.release();
     if do_commit != 0 {
         // call commit w/o holding locks, since not allowed
         // to sleep with locks.
         commit();
-        acquire(&mut log.lock);
+        log.lock.acquire();
         log.committing = 0 as i32;
         wakeup(&mut log as *mut Log as *mut libc::c_void);
-        release(&mut log.lock);
+        log.lock.release();
     };
 }
 
@@ -270,7 +268,7 @@ pub unsafe fn log_write(mut b: *mut Buf) {
                 as *mut libc::c_char,
         );
     }
-    acquire(&mut log.lock);
+    log.lock.acquire();
     i = 0;
     while i < log.lh.n {
         // log absorbtion
@@ -286,5 +284,5 @@ pub unsafe fn log_write(mut b: *mut Buf) {
         bpin(b);
         log.lh.n += 1
     }
-    release(&mut log.lock);
+    log.lock.release();
 }

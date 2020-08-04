@@ -3,7 +3,7 @@ use crate::{
     memlayout::PHYSTOP,
     printf::{panic, printf},
     riscv::PGSIZE,
-    spinlock::{acquire, initlock, release, Spinlock},
+    spinlock::Spinlock,
 };
 use core::ptr;
 
@@ -35,10 +35,8 @@ impl Kmem {
 pub static mut kmem: Kmem = Kmem::zeroed();
 
 pub unsafe fn kinit() {
-    initlock(
-        &mut kmem.lock,
-        b"kmem\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-    );
+    kmem.lock
+        .initlock(b"kmem\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 
     // To successfully boot rv6 and pass usertests, two printf()s with b"\x00"
     // and variable `a` are needed. See https://github.com/kaist-cp/rv6/issues/8
@@ -86,10 +84,10 @@ pub unsafe fn kfree(mut pa: *mut libc::c_void) {
     // Fill with junk to catch dangling refs.
     ptr::write_bytes(pa as *mut libc::c_void, 1, PGSIZE as usize);
     r = pa as *mut run;
-    acquire(&mut kmem.lock);
+    kmem.lock.acquire();
     (*r).next = kmem.freelist;
     kmem.freelist = r;
-    release(&mut kmem.lock);
+    kmem.lock.release();
 }
 
 /// Allocate one 4096-byte page of physical memory.
@@ -97,12 +95,12 @@ pub unsafe fn kfree(mut pa: *mut libc::c_void) {
 /// Returns 0 if the memory cannot be allocated.
 pub unsafe fn kalloc() -> *mut libc::c_void {
     let mut r: *mut run = ptr::null_mut();
-    acquire(&mut kmem.lock);
+    kmem.lock.acquire();
     r = kmem.freelist;
     if !r.is_null() {
         kmem.freelist = (*r).next
     }
-    release(&mut kmem.lock);
+    kmem.lock.release();
     if !r.is_null() {
         // fill with junk
         ptr::write_bytes(

@@ -4,7 +4,7 @@ use crate::{
     param::NBUF,
     printf::panic,
     sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep},
-    spinlock::{acquire, initlock, release, Spinlock},
+    spinlock::Spinlock,
     virtio_disk::virtio_disk_rw,
 };
 use core::mem::MaybeUninit;
@@ -36,10 +36,9 @@ pub unsafe fn binit() {
     let bcache = BCACHE.get_mut();
 
     let mut b: *mut Buf = ptr::null_mut();
-    initlock(
-        &mut bcache.lock,
-        b"bcache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-    );
+    bcache
+        .lock
+        .initlock(b"bcache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     // Create linked list of buffers
     bcache.head.prev = &mut bcache.head;
     bcache.head.next = &mut bcache.head;
@@ -64,13 +63,13 @@ unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
     let bcache = BCACHE.get_mut();
 
     let mut b: *mut Buf = ptr::null_mut();
-    acquire(&mut bcache.lock);
+    bcache.lock.acquire();
     // Is the block already cached?
     b = bcache.head.next;
     while b != &mut bcache.head as *mut Buf {
         if (*b).dev == dev && (*b).blockno == blockno {
             (*b).refcnt = (*b).refcnt.wrapping_add(1);
-            release(&mut bcache.lock);
+            bcache.lock.release();
             acquiresleep(&mut (*b).lock);
             return b;
         }
@@ -85,7 +84,7 @@ unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
             (*b).blockno = blockno;
             (*b).valid = 0 as i32;
             (*b).refcnt = 1 as i32 as u32;
-            release(&mut bcache.lock);
+            bcache.lock.release();
             acquiresleep(&mut (*b).lock);
             return b;
         }
@@ -122,7 +121,7 @@ pub unsafe fn brelse(mut b: *mut Buf) {
         panic(b"brelse\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     releasesleep(&mut (*b).lock);
-    acquire(&mut bcache.lock);
+    bcache.lock.acquire();
     (*b).refcnt = (*b).refcnt.wrapping_sub(1);
     if (*b).refcnt == 0 as i32 as u32 {
         // no one is waiting for it.
@@ -133,19 +132,19 @@ pub unsafe fn brelse(mut b: *mut Buf) {
         (*bcache.head.next).prev = b;
         bcache.head.next = b
     }
-    release(&mut bcache.lock);
+    bcache.lock.release();
 }
 pub unsafe fn bpin(mut b: *mut Buf) {
     let bcache = BCACHE.get_mut();
 
-    acquire(&mut bcache.lock);
+    bcache.lock.acquire();
     (*b).refcnt = (*b).refcnt.wrapping_add(1);
-    release(&mut bcache.lock);
+    bcache.lock.release();
 }
 pub unsafe fn bunpin(mut b: *mut Buf) {
     let bcache = BCACHE.get_mut();
 
-    acquire(&mut bcache.lock);
+    bcache.lock.acquire();
     (*b).refcnt = (*b).refcnt.wrapping_sub(1);
-    release(&mut bcache.lock);
+    bcache.lock.release();
 }
