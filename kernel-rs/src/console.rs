@@ -6,13 +6,33 @@ use crate::{
     spinlock::{acquire, initlock, release, Spinlock},
     uart::{uartinit, uartputc},
 };
+
 #[derive(Copy, Clone)]
 pub struct Console {
     pub lock: Spinlock,
     pub buf: [libc::c_char; 128],
+
+    /// Read index
     pub r: u32,
+
+    /// Write index
     pub w: u32,
+
+    /// Edit index
     pub e: u32,
+}
+
+impl Console {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            lock: Spinlock::zeroed(),
+            buf: [0; INPUT_BUF],
+            r: 0,
+            w: 0,
+            e: 0,
+        }
+    }
 }
 
 /// Console input and output, to the uart.
@@ -48,19 +68,7 @@ pub unsafe fn consputc(mut c: i32) {
 /// input
 pub const INPUT_BUF: usize = 128;
 
-pub static mut cons: Console = Console {
-    lock: Spinlock::zeroed(),
-    buf: [0; INPUT_BUF],
-
-    /// Read index
-    r: 0,
-
-    /// Write index
-    w: 0,
-
-    /// Edit index
-    e: 0,
-};
+pub static mut cons: Console = Console::zeroed();
 
 /// user write()s to the console go here.
 pub unsafe fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
@@ -198,6 +206,7 @@ pub unsafe fn consoleintr(mut cin: i32) {
     }
     release(&mut cons.lock);
 }
+
 pub unsafe fn consoleinit() {
     initlock(
         &mut cons.lock,
