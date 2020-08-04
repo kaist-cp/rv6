@@ -16,6 +16,7 @@ use crate::{
         uvmfree, uvminit, uvmunmap,
     },
 };
+use core::cmp::Ordering;
 use core::ptr;
 
 extern "C" {
@@ -300,7 +301,7 @@ unsafe fn allocproc() -> *mut proc_0 {
             // Set up new context to start executing at forkret,
             // which returns to user space.
             ptr::write_bytes(&mut (*p).context as *mut Context, 0, 1);
-            (*p).context.ra = forkret as u64;
+            (*p).context.ra = forkret as usize as u64;
             (*p).context.sp = (*p).kstack.wrapping_add(PGSIZE as u64);
             p
         }
@@ -415,18 +416,22 @@ pub unsafe fn userinit() {
 
 /// Grow or shrink user memory by n bytes.
 /// Return 0 on success, -1 on failure.
-pub unsafe fn growproc(mut n: i32) -> i32 {
-    let mut sz: u32 = 0;
+pub unsafe fn growproc(n: i32) -> i32 {
     let mut p: *mut proc_0 = myproc();
-    sz = (*p).sz as u32;
-    if n > 0 as i32 {
-        sz = uvmalloc((*p).pagetable, sz as u64, sz.wrapping_add(n as u32) as u64) as u32;
-        if sz == 0 as i32 as u32 {
-            return -(1 as i32);
+    let sz = (*p).sz as u32;
+    let sz = match n.cmp(&0) {
+        Ordering::Equal => sz,
+        Ordering::Greater => {
+            let sz = uvmalloc((*p).pagetable, sz as u64, sz.wrapping_add(n as u32) as u64) as u32;
+            if sz == 0 {
+                return -1;
+            }
+            sz
         }
-    } else if n < 0 as i32 {
-        sz = uvmdealloc((*p).pagetable, sz as u64, sz.wrapping_add(n as u32) as u64) as u32
-    }
+        Ordering::Less => {
+            uvmdealloc((*p).pagetable, sz as u64, sz.wrapping_add(n as u32) as u64) as u32
+        }
+    };
     (*p).sz = sz as u64;
     0 as i32
 }

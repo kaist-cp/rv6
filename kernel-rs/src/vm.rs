@@ -4,8 +4,8 @@ use crate::{
     memlayout::{CLINT, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     printf::{panic, printf},
     riscv::{
-        make_satp, pagetable_t, pde_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R,
-        PTE_U, PTE_V, PTE_W, PTE_X, PXMASK,
+        make_satp, pagetable_t, pde_t, pte_t, px, sfence_vma, w_satp, MAXVA, PGSIZE, PTE_R, PTE_U,
+        PTE_V, PTE_W, PTE_X,
     },
 };
 use core::ptr;
@@ -104,9 +104,7 @@ unsafe fn walk(mut pagetable: pagetable_t, mut va: u64, mut alloc: i32) -> *mut 
         panic(b"walk\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     for level in (1..3).rev() {
-        let mut pte: *mut pte_t = &mut *pagetable
-            .offset((va >> (PGSHIFT + 9 * level) & PXMASK as u64) as isize)
-            as *mut u64;
+        let mut pte: *mut pte_t = &mut *pagetable.offset(px(level, va) as isize) as *mut u64;
         if *pte & PTE_V as u64 != 0 {
             pagetable = ((*pte >> 10 as i32) << 12 as i32) as pagetable_t
         } else {
@@ -120,7 +118,7 @@ unsafe fn walk(mut pagetable: pagetable_t, mut va: u64, mut alloc: i32) -> *mut 
             *pte = (pagetable as u64 >> 12 as i32) << 10 as i32 | PTE_V as u64
         }
     }
-    &mut *pagetable.offset((va >> (PGSHIFT + 9 * 0) & PXMASK as u64) as isize) as *mut u64
+    &mut *pagetable.add(px(0, va) as usize) as *mut u64
 }
 
 /// Look up a virtual address, return the physical address,

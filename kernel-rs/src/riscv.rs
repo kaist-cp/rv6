@@ -359,19 +359,15 @@ TODO: used directly in other file e.g., vm.rs
 /// 9 bits
 pub const PXMASK: i32 = 0x1ff as i32;
 
+#[inline]
 fn pxshift(level: i32) -> i32 {
     PGSHIFT + 9 * level
 }
 
+#[inline]
 pub fn px(level: i32, va: u64) -> u64 {
     (va >> pxshift(level) as u64) & PXMASK as u64
 }
-/*
-TODO: unused
-#define PXSHIFT(level)  (PGSHIFT+(9*(level)))
-TODO: used directly in vm.rs
-#define PX(level, va) ((((u64) (va)) >> PXSHIFT(level)) & PXMASK)
-*/
 
 /// one beyond the highest possible virtual address.
 /// MAXVA is actually one bit less than the max allowed by
