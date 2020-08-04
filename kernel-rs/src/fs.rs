@@ -18,8 +18,8 @@ use crate::{
     param::{NINODE, ROOTDEV},
     printf::panic,
     proc::{either_copyin, either_copyout, myproc},
-    sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock},
-    spinlock::{acquire, initlock, release, Spinlock},
+    sleeplock::Sleeplock,
+    spinlock::Spinlock,
     stat::{Stat, T_DIR},
     string::{strncmp, strncpy},
 };
@@ -49,7 +49,7 @@ pub struct Superblock {
     pub bmapstart: u32,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Default, Copy, Clone)]
 pub struct Dirent {
     pub inum: u16,
     pub name: [libc::c_char; DIRSIZ],
@@ -145,6 +145,22 @@ pub struct Icache {
     pub inode: [inode; 50],
 }
 
+impl Superblock {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            magic: 0,
+            size: 0,
+            nblocks: 0,
+            ninodes: 0,
+            nlog: 0,
+            logstart: 0,
+            inodestart: 0,
+            bmapstart: 0,
+        }
+    }
+}
+
 /// On-disk file system format.
 /// Both the kernel and user programs use this header file.
 /// root i-number
@@ -181,16 +197,7 @@ pub const DIRSIZ: usize = 14;
 
 /// there should be one superblock per disk device, but we run with
 /// only one device
-pub static mut sb: Superblock = Superblock {
-    magic: 0,
-    size: 0,
-    nblocks: 0,
-    ninodes: 0,
-    nlog: 0,
-    logstart: 0,
-    inodestart: 0,
-    bmapstart: 0,
-};
+pub static mut sb: Superblock = Superblock::zeroed();
 
 /// Read the super block.
 unsafe fn readsb(mut dev: i32, mut sb_0: *mut Superblock) {
@@ -288,15 +295,13 @@ pub static mut icache: Icache = Icache {
 
 pub unsafe fn iinit() {
     let mut i: i32 = 0;
-    initlock(
-        &mut icache.lock,
-        b"icache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-    );
+    icache
+        .lock
+        .initlock(b"icache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     while i < NINODE {
-        initsleeplock(
-            &mut (*icache.inode.as_mut_ptr().offset(i as isize)).lock,
-            b"inode\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-        );
+        (*icache.inode.as_mut_ptr().offset(i as isize))
+            .lock
+            .initlock(b"inode\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         i += 1
     }
 }
@@ -356,9 +361,9 @@ impl inode {
     /// Increment reference count for ip.
     /// Returns ip to enable ip = idup(ip1) idiom.
     pub unsafe fn idup(&mut self) -> *mut Self {
-        acquire(&mut icache.lock);
+        icache.lock.acquire();
         self.ref_0 += 1;
-        release(&mut icache.lock);
+        icache.lock.release();
         self
     }
 }
@@ -370,7 +375,7 @@ unsafe fn iget(mut dev: u32, mut inum: u32) -> *mut inode {
     let mut ip: *mut inode = ptr::null_mut();
     let mut empty: *mut inode = ptr::null_mut();
 
-    acquire(&mut icache.lock);
+    icache.lock.acquire();
 
     // Is the inode already cached?
     empty = ptr::null_mut();
@@ -378,7 +383,7 @@ unsafe fn iget(mut dev: u32, mut inum: u32) -> *mut inode {
     while ip < &mut *icache.inode.as_mut_ptr().offset(NINODE as isize) as *mut inode {
         if (*ip).ref_0 > 0 as i32 && (*ip).dev == dev && (*ip).inum == inum {
             (*ip).ref_0 += 1;
-            release(&mut icache.lock);
+            icache.lock.release();
             return ip;
         }
         if empty.is_null() && (*ip).ref_0 == 0 as i32 {
@@ -397,7 +402,7 @@ unsafe fn iget(mut dev: u32, mut inum: u32) -> *mut inode {
     (*ip).inum = inum;
     (*ip).ref_0 = 1 as i32;
     (*ip).valid = 0 as i32;
-    release(&mut icache.lock);
+    icache.lock.release();
     ip
 }
 
@@ -409,7 +414,7 @@ pub unsafe fn ilock(mut ip: *mut inode) {
     if ip.is_null() || (*ip).ref_0 < 1 as i32 {
         panic(b"ilock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    acquiresleep(&mut (*ip).lock);
+    (*ip).lock.acquire();
     if (*ip).valid == 0 as i32 {
         bp = bread((*ip).dev, iblock((*ip).inum as i32, sb));
         dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
@@ -434,10 +439,10 @@ pub unsafe fn ilock(mut ip: *mut inode) {
 
 /// Unlock the given inode.
 pub unsafe fn iunlock(mut ip: *mut inode) {
-    if ip.is_null() || holdingsleep(&mut (*ip).lock) == 0 || (*ip).ref_0 < 1 as i32 {
+    if ip.is_null() || (*ip).lock.holding() == 0 || (*ip).ref_0 < 1 as i32 {
         panic(b"iunlock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    releasesleep(&mut (*ip).lock);
+    (*ip).lock.release();
 }
 
 /// Drop a reference to an in-memory inode.
@@ -448,22 +453,22 @@ pub unsafe fn iunlock(mut ip: *mut inode) {
 /// All calls to iput() must be inside a transaction in
 /// case it has to free the inode.
 pub unsafe fn iput(mut ip: *mut inode) {
-    acquire(&mut icache.lock);
+    icache.lock.acquire();
     if (*ip).ref_0 == 1 as i32 && (*ip).valid != 0 && (*ip).nlink as i32 == 0 as i32 {
         // inode has no links and no other references: truncate and free.
         // ip->ref == 1 means no other process can have ip locked,
         // so this acquiresleep() won't block (or deadlock).
-        acquiresleep(&mut (*ip).lock);
-        release(&mut icache.lock);
+        (*ip).lock.acquire();
+        icache.lock.release();
         itrunc(ip);
         (*ip).typ = 0 as i32 as i16;
         (*ip).update();
         (*ip).valid = 0 as i32;
-        releasesleep(&mut (*ip).lock);
-        acquire(&mut icache.lock);
+        (*ip).lock.release();
+        icache.lock.acquire();
     }
     (*ip).ref_0 -= 1;
-    release(&mut icache.lock);
+    icache.lock.release();
 }
 
 /// Common idiom: unlock, then put.
@@ -691,10 +696,7 @@ pub unsafe fn dirlookup(
 ) -> *mut inode {
     let mut off: u32 = 0;
     let mut inum: u32 = 0;
-    let mut de: Dirent = Dirent {
-        inum: 0,
-        name: [0; DIRSIZ],
-    };
+    let mut de: Dirent = Default::default();
     if (*dp).typ as i32 != T_DIR {
         panic(b"dirlookup not DIR\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
@@ -727,10 +729,7 @@ pub unsafe fn dirlookup(
 /// Write a new directory entry (name, inum) into the directory dp.
 pub unsafe fn dirlink(mut dp: *mut inode, mut name: *mut libc::c_char, mut inum: u32) -> i32 {
     let mut off: i32 = 0;
-    let mut de: Dirent = Dirent {
-        inum: 0,
-        name: [0; DIRSIZ],
-    };
+    let mut de: Dirent = Default::default();
     let mut ip: *mut inode = ptr::null_mut();
 
     // Check that name is not present.
