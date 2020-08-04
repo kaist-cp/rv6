@@ -18,8 +18,8 @@ use crate::{
     param::{NINODE, ROOTDEV},
     printf::panic,
     proc::{either_copyin, either_copyout, myproc},
-    sleeplock::{acquiresleep, holdingsleep, initsleeplock, releasesleep, Sleeplock},
-    spinlock::{acquire, initlock, release, Spinlock},
+    sleeplock::Sleeplock,
+    spinlock::Spinlock,
     stat::{Stat, T_DIR},
     string::{strncmp, strncpy},
 };
@@ -199,9 +199,9 @@ impl Inode {
     /// Increment reference count for ip.
     /// Returns ip to enable ip = idup(ip1) idiom.
     pub unsafe fn idup(&mut self) -> *mut Self {
-        acquire(&mut icache.lock);
+        icache.lock.acquire();
         self.ref_0 += 1;
-        release(&mut icache.lock);
+        icache.lock.release();
         self
     }
 
@@ -342,15 +342,13 @@ pub static mut icache: Icache = Icache::zeroed();
 
 pub unsafe fn iinit() {
     let mut i: i32 = 0;
-    initlock(
-        &mut icache.lock,
-        b"icache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-    );
+    icache
+        .lock
+        .initlock(b"icache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     while i < NINODE {
-        initsleeplock(
-            &mut (*icache.inode.as_mut_ptr().offset(i as isize)).lock,
-            b"inode\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-        );
+        (*icache.inode.as_mut_ptr().offset(i as isize))
+            .lock
+            .initlock(b"inode\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         i += 1
     }
 }
@@ -389,7 +387,7 @@ unsafe fn iget(mut dev: u32, mut inum: u32) -> *mut Inode {
     let mut ip: *mut Inode = ptr::null_mut();
     let mut empty: *mut Inode = ptr::null_mut();
 
-    acquire(&mut icache.lock);
+    icache.lock.acquire();
 
     // Is the inode already cached?
     empty = ptr::null_mut();
@@ -397,7 +395,7 @@ unsafe fn iget(mut dev: u32, mut inum: u32) -> *mut Inode {
     while ip < &mut *icache.inode.as_mut_ptr().offset(NINODE as isize) as *mut Inode {
         if (*ip).ref_0 > 0 as i32 && (*ip).dev == dev && (*ip).inum == inum {
             (*ip).ref_0 += 1;
-            release(&mut icache.lock);
+            icache.lock.release();
             return ip;
         }
         if empty.is_null() && (*ip).ref_0 == 0 as i32 {
@@ -416,7 +414,7 @@ unsafe fn iget(mut dev: u32, mut inum: u32) -> *mut Inode {
     (*ip).inum = inum;
     (*ip).ref_0 = 1 as i32;
     (*ip).valid = 0 as i32;
-    release(&mut icache.lock);
+    icache.lock.release();
     ip
 }
 
@@ -428,7 +426,7 @@ pub unsafe fn ilock(mut ip: *mut Inode) {
     if ip.is_null() || (*ip).ref_0 < 1 as i32 {
         panic(b"ilock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    acquiresleep(&mut (*ip).lock);
+    (*ip).lock.acquire();
     if (*ip).valid == 0 as i32 {
         bp = bread((*ip).dev, iblock((*ip).inum as i32, sb));
         dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
@@ -453,10 +451,10 @@ pub unsafe fn ilock(mut ip: *mut Inode) {
 
 /// Unlock the given inode.
 pub unsafe fn iunlock(mut ip: *mut Inode) {
-    if ip.is_null() || holdingsleep(&mut (*ip).lock) == 0 || (*ip).ref_0 < 1 as i32 {
+    if ip.is_null() || (*ip).lock.holding() == 0 || (*ip).ref_0 < 1 as i32 {
         panic(b"iunlock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    releasesleep(&mut (*ip).lock);
+    (*ip).lock.release();
 }
 
 /// Drop a reference to an in-memory inode.
@@ -467,22 +465,23 @@ pub unsafe fn iunlock(mut ip: *mut Inode) {
 /// All calls to iput() must be inside a transaction in
 /// case it has to free the inode.
 pub unsafe fn iput(mut ip: *mut Inode) {
-    acquire(&mut icache.lock);
+    icache.lock.acquire();
+
     if (*ip).ref_0 == 1 as i32 && (*ip).valid != 0 && (*ip).nlink as i32 == 0 as i32 {
         // inode has no links and no other references: truncate and free.
         // ip->ref == 1 means no other process can have ip locked,
         // so this acquiresleep() won't block (or deadlock).
-        acquiresleep(&mut (*ip).lock);
-        release(&mut icache.lock);
+        (*ip).lock.acquire();
+        icache.lock.release();
         itrunc(ip);
         (*ip).typ = 0 as i32 as i16;
         (*ip).update();
         (*ip).valid = 0 as i32;
-        releasesleep(&mut (*ip).lock);
-        acquire(&mut icache.lock);
+        (*ip).lock.release();
+        icache.lock.acquire();
     }
     (*ip).ref_0 -= 1;
-    release(&mut icache.lock);
+    icache.lock.release();
 }
 
 /// Common idiom: unlock, then put.
