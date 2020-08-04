@@ -8,7 +8,7 @@ use crate::{
     param::{NCPU, NOFILE, NPROC, ROOTDEV},
     printf::{panic, printf},
     riscv::{intr_get, intr_on, pagetable_t, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
-    spinlock::{holding, pop_off, push_off, Spinlock},
+    spinlock::{pop_off, push_off, Spinlock},
     string::safestrcpy,
     trap::usertrapret,
     vm::{
@@ -670,7 +670,7 @@ pub unsafe fn scheduler() -> ! {
 pub unsafe fn sched() {
     let mut intena: i32 = 0;
     let mut p: *mut proc_0 = myproc();
-    if holding(&mut (*p).lock) == 0 {
+    if (*p).lock.holding() == 0 {
         panic(b"sched p->lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     if (*mycpu()).noff != 1 as i32 {
@@ -769,7 +769,7 @@ pub unsafe fn wakeup(mut chan: *mut libc::c_void) {
 /// Wake up p if it is sleeping in wait(); used by exit().
 /// Caller must hold p->lock.
 unsafe fn wakeup1(mut p: *mut proc_0) {
-    if holding(&mut (*p).lock) == 0 {
+    if (*p).lock.holding() == 0 {
         panic(b"wakeup1\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     if (*p).chan == p as *mut libc::c_void && (*p).state as u32 == SLEEPING as u32 {
