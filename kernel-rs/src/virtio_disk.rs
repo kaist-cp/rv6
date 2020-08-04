@@ -218,7 +218,7 @@ unsafe fn alloc3_desc(mut idx: *mut i32) -> i32 {
     0
 }
 pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
-    let mut sector: u64 = (*b).blockno.wrapping_mul((BSIZE / 512 as i32) as u32) as u64;
+    let mut sector: u64 = (*b).getblockno().wrapping_mul((BSIZE / 512 as i32) as u32) as u64;
 
     acquire(&mut disk.vdisk_lock);
 
@@ -288,7 +288,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     (*disk.desc.offset(idx[2 as i32 as usize] as isize)).next = 0 as i32 as u16;
 
     // record struct Buf for virtio_disk_intr().
-    (*b).disk = 1;
+    (*b).setdisk(1);
     disk.info[idx[0 as i32 as usize] as usize].b = b;
 
     // avail[0] is flags
@@ -307,7 +307,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_NOTIFY), 0);
 
     // Wait for virtio_disk_intr() to say request has finished.
-    while (*b).disk == 1 {
+    while (*b).getdisk() == 1 {
         sleep(b as *mut libc::c_void, &mut disk.vdisk_lock);
     }
     disk.info[idx[0 as i32 as usize] as usize].b = ptr::null_mut();
@@ -324,7 +324,7 @@ pub unsafe fn virtio_disk_intr() {
                     as *mut libc::c_char,
             );
         }
-        (*disk.info[id as usize].b).disk = 0;
+        (*disk.info[id as usize].b).setdisk(0);
 
         // disk is done with Buf
         wakeup(disk.info[id as usize].b as *mut libc::c_void);

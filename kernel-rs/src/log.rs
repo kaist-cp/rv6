@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    bio::{bpin, bread, brelse, bunpin, bwrite},
+    bio::bread,
     buf::Buf,
     fs::{Superblock, BSIZE},
     param::{LOGSIZE, MAXOPBLOCKS},
@@ -102,10 +102,11 @@ unsafe fn install_trans() {
         );
 
         // write dst to disk
-        bwrite(dbuf);
-        bunpin(dbuf);
-        brelse(lbuf);
-        brelse(dbuf);
+        // bwrite(dbuf);
+        (*dbuf).bwrite();
+        (*dbuf).bunpin();
+        (*lbuf).brelse();
+        (*dbuf).brelse();
         tail += 1
     }
 }
@@ -120,7 +121,7 @@ unsafe fn read_head() {
         log.lh.block[i as usize] = (*lh).block[i as usize];
         i += 1
     }
-    brelse(buf);
+    (*buf).brelse();
 }
 
 /// Write in-memory log header to disk.
@@ -135,8 +136,9 @@ unsafe fn write_head() {
         (*hb).block[i as usize] = log.lh.block[i as usize];
         i += 1
     }
-    bwrite(buf);
-    brelse(buf);
+    // bwrite(buf);
+    (*buf).bwrite();
+    (*buf).brelse();
 }
 unsafe fn recover_from_log() {
     read_head();
@@ -214,9 +216,10 @@ unsafe fn write_log() {
         );
 
         // write the log
-        bwrite(to);
-        brelse(from);
-        brelse(to);
+        // bwrite(to);
+        (*to).bwrite();
+        (*from).brelse();
+        (*to).brelse();
         tail += 1
     }
 }
@@ -264,16 +267,16 @@ pub unsafe fn log_write(mut b: *mut Buf) {
     i = 0;
     while i < log.lh.n {
         // log absorbtion
-        if log.lh.block[i as usize] as u32 == (*b).blockno {
+        if log.lh.block[i as usize] as u32 == (*b).getblockno() {
             break;
         }
         i += 1
     }
-    log.lh.block[i as usize] = (*b).blockno as i32;
+    log.lh.block[i as usize] = (*b).getblockno() as i32;
 
     // Add new block to log?
     if i == log.lh.n {
-        bpin(b);
+        (*b).bpin();
         log.lh.n += 1
     }
     release(&mut log.lock);

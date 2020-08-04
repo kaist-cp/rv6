@@ -68,8 +68,8 @@ unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
     // Is the block already cached?
     b = bcache.head.next;
     while b != &mut bcache.head as *mut Buf {
-        if (*b).dev == dev && (*b).blockno == blockno {
-            (*b).refcnt = (*b).refcnt.wrapping_add(1);
+        if (*b).getdev() == dev && (*b).getblockno() == blockno {
+            (*b).increfcnt();
             release(&mut bcache.lock);
             acquiresleep(&mut (*b).lock);
             return b;
@@ -80,11 +80,11 @@ unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
     // Not cached; recycle an unused buffer.
     b = bcache.head.prev;
     while b != &mut bcache.head as *mut Buf {
-        if (*b).refcnt == 0 as i32 as u32 {
-            (*b).dev = dev;
-            (*b).blockno = blockno;
-            (*b).valid = 0 as i32;
-            (*b).refcnt = 1 as i32 as u32;
+        if (*b).getrefcnt() == 0 as i32 as u32 {
+            (*b).setdev(dev);
+            (*b).setblockno(blockno);
+            (*b).setvalid(0);
+            (*b).setrefcnt(1);
             release(&mut bcache.lock);
             acquiresleep(&mut (*b).lock);
             return b;
@@ -98,54 +98,58 @@ unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
 pub unsafe fn bread(mut dev: u32, mut blockno: u32) -> *mut Buf {
     let mut b: *mut Buf = ptr::null_mut();
     b = bget(dev, blockno);
-    if (*b).valid == 0 {
+    if (*b).getvalid() == 0 {
         virtio_disk_rw(b, 0 as i32);
-        (*b).valid = 1 as i32
+        (*b).setvalid(1);
     }
     b
 }
 
-/// Write b's contents to disk.  Must be locked.
-pub unsafe fn bwrite(mut b: *mut Buf) {
-    if holdingsleep(&mut (*b).lock) == 0 {
-        panic(b"bwrite\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+impl Buf {
+    /// Write b's contents to disk.  Must be locked.
+    pub unsafe fn bwrite(&mut self) {
+        if holdingsleep(&mut (*self).lock) == 0 {
+            panic(b"bwrite\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        }
+        virtio_disk_rw(self, 1 as i32);
     }
-    virtio_disk_rw(b, 1 as i32);
-}
 
-/// Release a locked buffer.
-/// Move to the head of the MRU list.
-pub unsafe fn brelse(mut b: *mut Buf) {
-    let bcache = BCACHE.get_mut();
+    /// Release a locked buffer.
+    /// Move to the head of the MRU list.
+    pub unsafe fn brelse(&mut self) {
+        let bcache = BCACHE.get_mut();
 
-    if holdingsleep(&mut (*b).lock) == 0 {
-        panic(b"brelse\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        if holdingsleep(&mut (*self).lock) == 0 {
+            panic(b"brelse\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        }
+        releasesleep(&mut (*self).lock);
+        acquire(&mut bcache.lock);
+        (*self).decrefcnt();
+        if (*self).getrefcnt() == 0 as i32 as u32 {
+            // no one is waiting for it.
+            (*(*self).next).prev = (*self).prev;
+            (*(*self).prev).next = (*self).next;
+            (*self).next = bcache.head.next;
+            (*self).prev = &mut bcache.head;
+            (*bcache.head.next).prev = self;
+            bcache.head.next = self
+        }
+        release(&mut bcache.lock);
     }
-    releasesleep(&mut (*b).lock);
-    acquire(&mut bcache.lock);
-    (*b).refcnt = (*b).refcnt.wrapping_sub(1);
-    if (*b).refcnt == 0 as i32 as u32 {
-        // no one is waiting for it.
-        (*(*b).next).prev = (*b).prev;
-        (*(*b).prev).next = (*b).next;
-        (*b).next = bcache.head.next;
-        (*b).prev = &mut bcache.head;
-        (*bcache.head.next).prev = b;
-        bcache.head.next = b
+
+    pub unsafe fn bpin(&mut self) {
+        let bcache = BCACHE.get_mut();
+
+        acquire(&mut bcache.lock);
+        (*self).increfcnt();
+        release(&mut bcache.lock);
     }
-    release(&mut bcache.lock);
-}
-pub unsafe fn bpin(mut b: *mut Buf) {
-    let bcache = BCACHE.get_mut();
 
-    acquire(&mut bcache.lock);
-    (*b).refcnt = (*b).refcnt.wrapping_add(1);
-    release(&mut bcache.lock);
-}
-pub unsafe fn bunpin(mut b: *mut Buf) {
-    let bcache = BCACHE.get_mut();
+    pub unsafe fn bunpin(&mut self) {
+        let bcache = BCACHE.get_mut();
 
-    acquire(&mut bcache.lock);
-    (*b).refcnt = (*b).refcnt.wrapping_sub(1);
-    release(&mut bcache.lock);
+        acquire(&mut bcache.lock);
+        (*self).decrefcnt();
+        release(&mut bcache.lock);
+    }
 }

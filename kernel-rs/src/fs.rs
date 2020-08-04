@@ -11,7 +11,7 @@
 
 use crate::libc;
 use crate::{
-    bio::{bread, brelse},
+    bio::bread,
     buf::Buf,
     file::inode,
     log::{initlog, log_write},
@@ -201,7 +201,7 @@ unsafe fn readsb(mut dev: i32, mut sb_0: *mut Superblock) {
         sb_0 as *mut libc::c_void,
         ::core::mem::size_of::<Superblock>(),
     );
-    brelse(bp);
+    (*bp).brelse();
 }
 
 /// Init fs
@@ -219,7 +219,7 @@ unsafe fn bzero(mut dev: i32, mut bno: i32) {
     bp = bread(dev as u32, bno as u32);
     ptr::write_bytes((*bp).data.as_mut_ptr(), 0, BSIZE as usize);
     log_write(bp);
-    brelse(bp);
+    (*bp).brelse();
 }
 
 /// Blocks.
@@ -241,13 +241,13 @@ unsafe fn balloc(mut dev: u32) -> u32 {
                 (*bp).data[(bi / 8 as i32) as usize] =
                     ((*bp).data[(bi / 8 as i32) as usize] as i32 | m) as u8; // Mark block in use.
                 log_write(bp);
-                brelse(bp);
+                (*bp).brelse();
                 bzero(dev as i32, b + bi);
                 return (b + bi) as u32;
             }
             bi += 1
         }
-        brelse(bp);
+        (*bp).brelse();
         b += BPB
     }
     panic(b"balloc: out of blocks\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -266,7 +266,7 @@ unsafe fn bfree(mut dev: i32, mut b: u32) {
     }
     (*bp).data[(bi / 8 as i32) as usize] = ((*bp).data[(bi / 8 as i32) as usize] as i32 & !m) as u8;
     log_write(bp);
-    brelse(bp);
+    (*bp).brelse();
 }
 
 pub static mut icache: Icache = Icache {
@@ -319,10 +319,10 @@ pub unsafe fn ialloc(mut dev: u32, mut typ: i16) -> *mut inode {
 
             // mark it allocated on the disk
             log_write(bp);
-            brelse(bp);
+            (*bp).brelse();
             return iget(dev, inum as u32);
         }
-        brelse(bp);
+        (*bp).brelse();
         inum += 1
     }
     panic(b"ialloc: no inodes\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -350,7 +350,7 @@ impl inode {
             ::core::mem::size_of::<[u32; 13]>(),
         );
         log_write(bp);
-        brelse(bp);
+        (*bp).brelse();
     }
 
     /// Increment reference count for ip.
@@ -424,7 +424,7 @@ pub unsafe fn ilock(mut ip: *mut inode) {
             (*ip).addrs.as_mut_ptr() as *mut libc::c_void,
             ::core::mem::size_of::<[u32; 13]>(),
         );
-        brelse(bp);
+        (*bp).brelse();
         (*ip).valid = 1 as i32;
         if (*ip).typ as i32 == 0 as i32 {
             panic(b"ilock: no type\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -508,7 +508,7 @@ unsafe fn bmap(mut ip: *mut inode, mut bn: u32) -> u32 {
             *a.offset(bn as isize) = addr;
             log_write(bp);
         }
-        brelse(bp);
+        (*bp).brelse();
         return addr;
     }
     panic(b"bmap: out of range\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -551,7 +551,7 @@ unsafe fn itrunc(mut ip: *mut inode) {
             }
             j += 1
         }
-        brelse(bp);
+        (*bp).brelse();
         bfree((*ip).dev as i32, (*ip).addrs[NDIRECT as usize]);
         (*ip).addrs[NDIRECT as usize] = 0 as i32 as u32
     }
@@ -606,10 +606,10 @@ pub unsafe fn readi(
             m as u64,
         ) == -(1 as i32)
         {
-            brelse(bp);
+            (*bp).brelse();
             break;
         } else {
-            brelse(bp);
+            (*bp).brelse();
             tot = (tot as u32).wrapping_add(m) as u32 as u32;
             off = (off as u32).wrapping_add(m) as u32 as u32;
             dst = (dst as u64).wrapping_add(m as u64) as u64 as u64
@@ -655,11 +655,11 @@ pub unsafe fn writei(
             m as u64,
         ) == -(1 as i32)
         {
-            brelse(bp);
+            (*bp).brelse();
             break;
         } else {
             log_write(bp);
-            brelse(bp);
+            (*bp).brelse();
             tot = (tot as u32).wrapping_add(m) as u32 as u32;
             off = (off as u32).wrapping_add(m) as u32 as u32;
             src = (src as u64).wrapping_add(m as u64) as u64 as u64
