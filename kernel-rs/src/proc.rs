@@ -130,6 +130,18 @@ pub struct trapframe {
     pub t6: u64,
 }
 
+impl cpu {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            proc_0: ptr::null_mut(),
+            scheduler: Context::zeroed(),
+            noff: 0,
+            intena: 0,        
+        }
+    }
+}
+
 impl Context {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
@@ -160,12 +172,7 @@ pub const RUNNABLE: procstate = 2;
 pub const SLEEPING: procstate = 1;
 pub const UNUSED: procstate = 0;
 
-pub static mut cpus: [cpu; NCPU as usize] = [cpu {
-    proc_0: ptr::null_mut(),
-    scheduler: Context::zeroed(),
-    noff: 0,
-    intena: 0,
-}; NCPU as usize];
+pub static mut cpus: [cpu; NCPU as usize] = [cpu::zeroed(); NCPU as usize];
 
 #[export_name = "proc"]
 pub static mut proc: [proc_0; 64] = [proc_0 {
