@@ -12,6 +12,7 @@ use crate::{
     vm::copyout,
 };
 use core::ptr;
+
 pub const CONSOLE: isize = 1;
 
 #[derive(Copy, Clone)]
@@ -47,6 +48,7 @@ pub const FD_DEVICE: u32 = 3;
 pub const FD_INODE: u32 = 2;
 pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
+
 #[derive(Copy, Clone)]
 pub struct Ftable {
     pub lock: Spinlock,
