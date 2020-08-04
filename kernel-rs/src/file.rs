@@ -57,29 +57,35 @@ pub struct Ftable {
 
 /// map major device number to device functions.
 #[derive(Copy, Clone)]
-pub struct devsw {
+pub struct Devsw {
     pub read: Option<unsafe fn(_: i32, _: u64, _: i32) -> i32>,
     pub write: Option<unsafe fn(_: i32, _: u64, _: i32) -> i32>,
 }
 
+impl File {
+    pub const fn zeroed() -> Self {
+        Self {
+            typ: FD_NONE,
+            ref_0: 0,
+            readable: 0,
+            writable: 0,
+            pipe: 0 as *const Pipe as *mut Pipe,
+            ip: 0 as *const inode as *mut inode,
+            off: 0,
+            major: 0,
+        }
+    }
+}
+
 /// Support functions for system calls that involve file descriptors.
-pub static mut devsw: [devsw; 10] = [devsw {
+pub static mut devsw: [Devsw; 10] = [Devsw {
     read: None,
     write: None,
 }; 10];
 
 pub static mut ftable: Ftable = Ftable {
     lock: Spinlock::zeroed(),
-    file: [File {
-        typ: FD_NONE,
-        ref_0: 0,
-        readable: 0,
-        writable: 0,
-        pipe: 0 as *const Pipe as *mut Pipe,
-        ip: 0 as *const inode as *mut inode,
-        off: 0,
-        major: 0,
-    }; 100],
+    file: [File::zeroed(); 100],
 };
 
 pub unsafe fn fileinit() {
@@ -119,16 +125,7 @@ pub unsafe fn filedup(mut f: *mut File) -> *mut File {
 
 /// Close file f.  (Decrement ref count, close when reaches 0.)
 pub unsafe fn fileclose(mut f: *mut File) {
-    let mut ff: File = File {
-        typ: FD_NONE,
-        ref_0: 0,
-        readable: 0,
-        writable: 0,
-        pipe: ptr::null_mut(),
-        ip: ptr::null_mut(),
-        off: 0,
-        major: 0,
-    };
+    let mut ff: File = File::zeroed();
     acquire(&mut ftable.lock);
     if (*f).ref_0 < 1 as i32 {
         panic(b"fileclose\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
