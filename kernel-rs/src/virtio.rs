@@ -97,6 +97,9 @@ pub const VIRTIO_BLK_T_IN: i32 = 0;
 /// write the disk
 pub const VIRTIO_BLK_T_OUT: i32 = 1;
 #[derive(Copy, Clone)]
+// It needs repr(C) because it's struct for in-disk representation
+// which should follow C(=machine) representation
+// https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
 pub struct UsedArea {
     pub flags: u16,

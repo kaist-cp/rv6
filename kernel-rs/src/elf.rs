@@ -5,6 +5,9 @@ pub const ELF_MAGIC: u32 = 0x464c457f;
 
 /// File header
 #[derive(Default, Clone)]
+// It needs repr(C) because it's struct for in-disk representation
+// which should follow C(=machine) representation
+// https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
 pub struct ElfHdr {
     pub magic: u32,
@@ -26,6 +29,9 @@ pub struct ElfHdr {
 
 /// Program section header
 #[derive(Default, Clone)]
+// It needs repr(C) because it's struct for in-disk representation
+// which should follow C(=machine) representation
+// https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
 pub struct ProgHdr {
     pub typ: u32,

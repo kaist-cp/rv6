@@ -322,7 +322,6 @@ TODO: used directly in oter function e.g., uvmalloc in vm.rs
 #define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1))
 */
 
-
 /// valid
 pub const PTE_V: i64 = (1 as i64) << 0 as i32;
 
@@ -355,7 +354,6 @@ TODO: used directly in other file e.g., vm.rs
 
 #define PTE_FLAGS(pte) ((pte) & 0x3FF)
 */
-
 
 /// extract the three 9-bit page table indices from a virtual address.
 /// 9 bits
