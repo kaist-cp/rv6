@@ -63,6 +63,7 @@ pub struct Devsw {
 }
 
 impl File {
+    // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
             typ: FD_NONE,
@@ -77,16 +78,23 @@ impl File {
     }
 }
 
+impl Ftable {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            lock: Spinlock::zeroed(),
+            file: [File::zeroed(); 100],
+        }
+    }
+}
+
 /// Support functions for system calls that involve file descriptors.
 pub static mut devsw: [Devsw; 10] = [Devsw {
     read: None,
     write: None,
 }; 10];
 
-pub static mut ftable: Ftable = Ftable {
-    lock: Spinlock::zeroed(),
-    file: [File::zeroed(); 100],
-};
+pub static mut ftable: Ftable = Ftable::zeroed();
 
 pub unsafe fn fileinit() {
     initlock(
