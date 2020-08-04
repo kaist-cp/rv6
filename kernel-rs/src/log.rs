@@ -55,18 +55,25 @@ pub struct logheader {
     pub block: [i32; 30],
 }
 
-pub static mut log: log = log {
-    lock: Spinlock::zeroed(),
-    start: 0,
-    size: 0,
-    outstanding: 0,
-    committing: 0,
-    dev: 0,
-    lh: logheader {
-        n: 0,
-        block: [0; 30],
-    },
-};
+impl log {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            lock: Spinlock::zeroed(),
+            start: 0,
+            size: 0,
+            outstanding: 0,
+            committing: 0,
+            dev: 0,
+            lh: logheader {
+                n: 0,
+                block: [0; 30],
+            },
+        }
+    }
+}
+
+pub static mut log: log = log::zeroed();
 
 pub unsafe fn initlog(mut dev: i32, mut sb: *mut Superblock) {
     if ::core::mem::size_of::<logheader>() as u64 >= BSIZE as u64 {
