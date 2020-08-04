@@ -27,16 +27,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     let mut stackbase: u64 = 0;
     let mut elf: ElfHdr = Default::default();
     let mut ip: *mut inode = ptr::null_mut();
-    let mut ph: ProgHdr = ProgHdr {
-        typ: 0,
-        flags: 0,
-        off: 0,
-        vaddr: 0,
-        paddr: 0,
-        filesz: 0,
-        memsz: 0,
-        align: 0,
-    };
+    let mut ph: ProgHdr = Default::default();
     let mut pagetable: pagetable_t = 0 as pagetable_t;
     let mut oldpagetable: pagetable_t = ptr::null_mut();
     let mut p: *mut proc_0 = myproc();
