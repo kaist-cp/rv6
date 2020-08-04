@@ -161,6 +161,68 @@ impl Superblock {
     }
 }
 
+impl Icache {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            lock: Spinlock::zeroed(),
+            inode: [Inode::zeroed(); 50],
+        }
+    }
+}
+
+impl Inode {
+    /// Copy a modified in-memory inode to disk.
+    /// Must be called after every change to an ip->xxx field
+    /// that lives on disk, since i-node cache is write-through.
+    /// Caller must hold ip->lock.
+    pub unsafe fn update(&mut self) {
+        let mut bp: *mut Buf = ptr::null_mut();
+        let mut dip: *mut Dinode = ptr::null_mut();
+        bp = bread(self.dev, iblock(self.inum as i32, sb));
+        dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
+            .offset((self.inum as u64).wrapping_rem(IPB as u64) as isize);
+        (*dip).typ = self.typ;
+        (*dip).major = self.major;
+        (*dip).minor = self.minor;
+        (*dip).nlink = self.nlink;
+        (*dip).size = self.size;
+        ptr::copy(
+            self.addrs.as_mut_ptr() as *const libc::c_void,
+            (*dip).addrs.as_mut_ptr() as *mut libc::c_void,
+            ::core::mem::size_of::<[u32; 13]>(),
+        );
+        log_write(bp);
+        brelse(bp);
+    }
+
+    /// Increment reference count for ip.
+    /// Returns ip to enable ip = idup(ip1) idiom.
+    pub unsafe fn idup(&mut self) -> *mut Self {
+        acquire(&mut icache.lock);
+        self.ref_0 += 1;
+        release(&mut icache.lock);
+        self
+    }
+
+    pub const fn zeroed() -> Self {
+        // TODO: transient measure
+        Self {
+            dev: 0,
+            inum: 0,
+            ref_0: 0,
+            lock: Sleeplock::zeroed(),
+            valid: 0,
+            typ: 0,
+            major: 0,
+            minor: 0,
+            nlink: 0,
+            size: 0,
+            addrs: [0; 13],
+        }
+    }
+}
+
 /// On-disk file system format.
 /// Both the kernel and user programs use this header file.
 /// root i-number
@@ -276,10 +338,7 @@ unsafe fn bfree(mut dev: i32, mut b: u32) {
     brelse(bp);
 }
 
-pub static mut icache: Icache = Icache {
-    lock: Spinlock::zeroed(),
-    inode: [Inode::zeroed(); 50],
-};
+pub static mut icache: Icache = Icache::zeroed();
 
 pub unsafe fn iinit() {
     let mut i: i32 = 0;
@@ -321,57 +380,6 @@ pub unsafe fn ialloc(mut dev: u32, mut typ: i16) -> *mut Inode {
         inum += 1
     }
     panic(b"ialloc: no inodes\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-}
-
-impl Inode {
-    /// Copy a modified in-memory inode to disk.
-    /// Must be called after every change to an ip->xxx field
-    /// that lives on disk, since i-node cache is write-through.
-    /// Caller must hold ip->lock.
-    pub unsafe fn update(&mut self) {
-        let mut bp: *mut Buf = ptr::null_mut();
-        let mut dip: *mut Dinode = ptr::null_mut();
-        bp = bread(self.dev, iblock(self.inum as i32, sb));
-        dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-            .offset((self.inum as u64).wrapping_rem(IPB as u64) as isize);
-        (*dip).typ = self.typ;
-        (*dip).major = self.major;
-        (*dip).minor = self.minor;
-        (*dip).nlink = self.nlink;
-        (*dip).size = self.size;
-        ptr::copy(
-            self.addrs.as_mut_ptr() as *const libc::c_void,
-            (*dip).addrs.as_mut_ptr() as *mut libc::c_void,
-            ::core::mem::size_of::<[u32; 13]>(),
-        );
-        log_write(bp);
-        brelse(bp);
-    }
-
-    /// Increment reference count for ip.
-    /// Returns ip to enable ip = idup(ip1) idiom.
-    pub unsafe fn idup(&mut self) -> *mut Self {
-        acquire(&mut icache.lock);
-        self.ref_0 += 1;
-        release(&mut icache.lock);
-        self
-    }
-
-    pub const fn zeroed() -> Self {
-        Self {
-            dev: 0,
-            inum: 0,
-            ref_0: 0,
-            lock: Sleeplock::zeroed(),
-            valid: 0,
-            typ: 0,
-            major: 0,
-            minor: 0,
-            nlink: 0,
-            size: 0,
-            addrs: [0; 13],
-        }
-    }
 }
 
 /// Find the inode with number inum on device dev
