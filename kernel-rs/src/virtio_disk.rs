@@ -76,11 +76,18 @@ impl Disk {
             used: 0 as *const UsedArea as *mut UsedArea,
             free: [0; NUM as usize],
             used_idx: 0,
-            info: [InflightInfo {
-                b: 0 as *const Buf as *mut Buf,
-                status: 0,
-            }; NUM as usize],
+            info: [InflightInfo::zeroed(); NUM as usize],
             vdisk_lock: Spinlock::zeroed(),
+        }
+    }
+}
+
+impl InflightInfo {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            b: 0 as *const Buf as *mut Buf,
+            status: 0,
         }
     }
 }
@@ -224,6 +231,7 @@ unsafe fn alloc3_desc(mut idx: *mut i32) -> i32 {
     }
     0
 }
+
 pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     let mut sector: u64 = (*b).blockno.wrapping_mul((BSIZE / 512 as i32) as u32) as u64;
 
@@ -235,6 +243,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
 
     // allocate the three descriptors.
     let mut idx: [i32; 3] = [0; 3];
+
     while alloc3_desc(idx.as_mut_ptr()) != 0 as i32 {
         sleep(
             &mut *disk.free.as_mut_ptr().offset(0 as i32 as isize) as *mut libc::c_char
@@ -246,6 +255,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     // format the three descriptors.
     // qemu's virtio-blk.c reads them.
     let mut buf0: virtio_blk_outhdr = Default::default();
+
     if write != 0 {
         // write the disk
         buf0.typ = VIRTIO_BLK_T_OUT as u32
