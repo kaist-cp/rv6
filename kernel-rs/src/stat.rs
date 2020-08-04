@@ -7,7 +7,7 @@ pub const T_FILE: i32 = 2;
 /// Device
 pub const T_DEVICE: i32 = 3;
 
-#[derive(Copy, Clone)]
+#[derive(Default, Copy, Clone)]
 pub struct Stat {
     /// File system's disk device
     pub dev: i32,

@@ -152,13 +152,7 @@ pub unsafe fn fileclose(mut f: *mut File) {
 /// addr is a user virtual address, pointing to a struct stat.
 pub unsafe fn filestat(mut f: *mut File, mut addr: u64) -> i32 {
     let mut p: *mut proc_0 = myproc();
-    let mut st: Stat = Stat {
-        dev: 0,
-        ino: 0,
-        typ: 0,
-        nlink: 0,
-        size: 0,
-    };
+    let mut st: Stat = Default::default();
     if (*f).typ as u32 == FD_INODE as i32 as u32 || (*f).typ as u32 == FD_DEVICE as i32 as u32 {
         ilock((*f).ip);
         stati((*f).ip, &mut st);
