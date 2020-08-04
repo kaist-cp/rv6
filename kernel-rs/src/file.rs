@@ -237,7 +237,7 @@ pub unsafe fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
         // and 2 blocks of slop for non-aligned writes.
         // this really belongs lower down, since writei()
         // might be writing a device like the console.
-        let mut max: i32 = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
+        let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
         let mut i: i32 = 0;
         while i < n {
             let mut n1: i32 = n - i;

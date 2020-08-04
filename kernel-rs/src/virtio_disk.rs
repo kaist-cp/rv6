@@ -164,10 +164,8 @@ pub unsafe fn virtio_disk_init() {
         .offset((NUM as u64).wrapping_mul(::core::mem::size_of::<VRingDesc>() as u64) as isize)
         as *mut u16;
     disk.used = disk.pages.as_mut_ptr().offset(PGSIZE as isize) as *mut UsedArea;
-    let mut i: i32 = 0;
-    while i < NUM {
+    for i in 0..NUM {
         disk.free[i as usize] = 1 as i32 as libc::c_char;
-        i += 1
     }
 
     // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
@@ -175,13 +173,11 @@ pub unsafe fn virtio_disk_init() {
 
 /// find a free descriptor, mark it non-free, return its index.
 unsafe fn alloc_desc() -> i32 {
-    let mut i: i32 = 0;
-    while i < NUM {
+    for i in 0..NUM {
         if disk.free[i as usize] != 0 {
             disk.free[i as usize] = 0 as i32 as libc::c_char;
             return i;
         }
-        i += 1
     }
     -1
 }
@@ -214,18 +210,14 @@ unsafe fn free_chain(mut i: i32) {
 }
 
 unsafe fn alloc3_desc(mut idx: *mut i32) -> i32 {
-    let mut i: i32 = 0;
-    while i < 3 as i32 {
+    for i in 0..3 {
         *idx.offset(i as isize) = alloc_desc();
         if *idx.offset(i as isize) < 0 as i32 {
-            let mut j: i32 = 0;
-            while j < i {
+            for j in 0..i {
                 free_desc(*idx.offset(j as isize));
-                j += 1
             }
             return -(1 as i32);
         }
-        i += 1
     }
     0
 }

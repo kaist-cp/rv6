@@ -57,8 +57,7 @@ pub unsafe fn kinit() {
 /// kernel stacks, page-table pages,
 /// and pipe buffers. Allocates whole 4096-byte pages.
 pub unsafe fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: *mut libc::c_void) {
-    let mut p: *mut libc::c_char = ptr::null_mut();
-    p = ((pa_start as u64)
+    let mut p = ((pa_start as u64)
         .wrapping_add(PGSIZE as u64)
         .wrapping_sub(1 as i32 as u64)
         & !(PGSIZE - 1 as i32) as u64) as *mut libc::c_char;
