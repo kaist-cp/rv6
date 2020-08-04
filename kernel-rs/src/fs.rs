@@ -49,22 +49,6 @@ pub struct Superblock {
     pub bmapstart: u32,
 }
 
-impl Superblock {
-    // TODO: transient measure
-    pub const fn zeroed() -> Self {
-        Self {
-            magic: 0,
-            size: 0,
-            nblocks: 0,
-            ninodes: 0,
-            nlog: 0,
-            logstart: 0,
-            inodestart: 0,
-            bmapstart: 0,
-        }
-    }
-}
-
 #[derive(Copy, Clone)]
 pub struct Dirent {
     pub inum: u16,
@@ -159,6 +143,22 @@ pub struct Dinode {
 pub struct Icache {
     pub lock: Spinlock,
     pub inode: [inode; 50],
+}
+
+impl Superblock {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            magic: 0,
+            size: 0,
+            nblocks: 0,
+            ninodes: 0,
+            nlog: 0,
+            logstart: 0,
+            inodestart: 0,
+            bmapstart: 0,
+        }
+    }
 }
 
 /// On-disk file system format.
