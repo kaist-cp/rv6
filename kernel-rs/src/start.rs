@@ -83,7 +83,7 @@ unsafe fn timerinit() {
     w_mscratch(scratch as usize);
 
     // set the machine-mode trap handler.
-    w_mtvec(timervec as _);
+    w_mtvec(timervec as usize as _);
 
     // enable machine-mode interrupts.
     w_mstatus(r_mstatus() | MSTATUS_MIE as usize);

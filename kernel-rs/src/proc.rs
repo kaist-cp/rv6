@@ -16,6 +16,7 @@ use crate::{
         uvmfree, uvminit, uvmunmap,
     },
 };
+use core::cmp::Ordering;
 use core::ptr;
 
 extern "C" {
@@ -416,8 +417,7 @@ pub unsafe fn userinit() {
 
 /// Grow or shrink user memory by n bytes.
 /// Return 0 on success, -1 on failure.
-pub unsafe fn growproc(mut n: i32) -> i32 {
-    let mut sz: u32 = 0;
+pub unsafe fn growproc(n: i32) -> i32 {
     let mut p: *mut proc_0 = myproc();
     sz = (*p).sz as u32;
     if n > 0 as i32 {

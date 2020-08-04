@@ -4,8 +4,8 @@ use crate::{
     memlayout::{CLINT, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     printf::{panic, printf},
     riscv::{
-        make_satp, pagetable_t, pde_t, pte_t, sfence_vma, w_satp, MAXVA, PGSHIFT, PGSIZE, PTE_R,
-        PTE_U, PTE_V, PTE_W, PTE_X, PXMASK,
+        make_satp, pagetable_t, pde_t, pte_t, px, sfence_vma, w_satp, MAXVA, PGSIZE, PTE_R, PTE_U,
+        PTE_V, PTE_W, PTE_X,
     },
 };
 use core::ptr;
@@ -130,8 +130,7 @@ unsafe fn walk(mut pagetable: pagetable_t, mut va: usize, mut alloc: i32) -> *mu
             *pte = (pagetable as usize >> 12 as i32) << 10 as i32 | PTE_V as usize
         }
     }
-    &mut *pagetable.offset((va >> (PGSHIFT + 9 * 0) & PXMASK as usize) as isize) as *mut usize
-}
+    &mut *pagetable.add(px(0, va) as usize)
 
 /// Look up a virtual address, return the physical address,
 /// or 0 if not mapped.
