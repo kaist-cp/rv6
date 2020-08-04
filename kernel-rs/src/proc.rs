@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    file::{fileclose, filedup, inode, File},
+    file::{fileclose, filedup, File, Inode},
     fs::{fsinit, iput, namei},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
@@ -72,7 +72,7 @@ pub struct proc_0 {
     pub tf: *mut trapframe,
     pub context: Context,
     pub ofile: [*mut File; 16],
-    pub cwd: *mut inode,
+    pub cwd: *mut Inode,
     pub name: [libc::c_char; 16],
 }
 
@@ -190,7 +190,7 @@ pub static mut proc: [proc_0; 64] = [proc_0 {
         s11: 0,
     },
     ofile: [0 as *const File as *mut File; 16],
-    cwd: 0 as *const inode as *mut inode,
+    cwd: 0 as *const Inode as *mut Inode,
     name: [0; 16],
 }; 64];
 

@@ -22,7 +22,7 @@ pub struct File {
     pub readable: libc::c_char,
     pub writable: libc::c_char,
     pub pipe: *mut Pipe,
-    pub ip: *mut inode,
+    pub ip: *mut Inode,
     pub off: u32,
     pub major: i16,
 }
@@ -30,7 +30,7 @@ pub struct File {
 /// FD_DEVICE
 /// in-memory copy of an inode
 #[derive(Copy, Clone)]
-pub struct inode {
+pub struct Inode {
     pub dev: u32,
     pub inum: u32,
     pub ref_0: i32,
@@ -71,7 +71,7 @@ impl File {
             readable: 0,
             writable: 0,
             pipe: 0 as *const Pipe as *mut Pipe,
-            ip: 0 as *const inode as *mut inode,
+            ip: 0 as *const Inode as *mut Inode,
             off: 0,
             major: 0,
         }

@@ -1,7 +1,7 @@
 use crate::libc;
 use crate::{
     elf::{ElfHdr, ProgHdr, ELF_MAGIC, ELF_PROG_LOAD},
-    file::inode,
+    file::Inode,
     fs::{ilock, iunlockput, namei, readi},
     log::{begin_op, end_op},
     param::MAXARG,
@@ -26,7 +26,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     let mut ustack: [u64; 33] = [0; 33];
     let mut stackbase: u64 = 0;
     let mut elf: ElfHdr = Default::default();
-    let mut ip: *mut inode = ptr::null_mut();
+    let mut ip: *mut Inode = ptr::null_mut();
     let mut ph: ProgHdr = Default::default();
     let mut pagetable: pagetable_t = 0 as pagetable_t;
     let mut oldpagetable: pagetable_t = ptr::null_mut();
@@ -235,7 +235,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
 unsafe fn loadseg(
     mut pagetable: pagetable_t,
     mut va: u64,
-    mut ip: *mut inode,
+    mut ip: *mut Inode,
     mut offset: u32,
     mut sz: u32,
 ) -> i32 {
