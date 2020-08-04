@@ -154,10 +154,10 @@ unsafe fn recover_from_log() {
 pub unsafe fn begin_op() {
     log.lock.acquire();
     loop {
-        if log.committing != 0 {
-            sleep(&mut log as *mut Log as *mut libc::c_void, &mut log.lock);
-        } else if log.lh.n + (log.outstanding + 1 as i32) * MAXOPBLOCKS > LOGSIZE {
+        if log.committing != 0 ||
             // this op might exhaust log space; wait for commit.
+            log.lh.n + (log.outstanding + 1 as i32) * MAXOPBLOCKS > LOGSIZE
+        {
             sleep(&mut log as *mut Log as *mut libc::c_void, &mut log.lock);
         } else {
             log.outstanding += 1 as i32;
