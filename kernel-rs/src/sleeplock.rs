@@ -42,7 +42,7 @@ impl Sleeplock {
         (*self).locked = 0 as u32;
         (*self).pid = 0 as i32;
     }
-    
+
     pub unsafe fn acquiresleep(&mut self) {
         (*self).lk.acquire();
         while (*self).locked != 0 {

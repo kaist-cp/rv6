@@ -46,9 +46,8 @@ pub unsafe fn binit() {
     while b < bcache.buf.as_mut_ptr().offset(NBUF as isize) {
         (*b).next = bcache.head.next;
         (*b).prev = &mut bcache.head;
-        (*b).lock.initsleeplock(
-            b"buffer\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-        );
+        (*b).lock
+            .initsleeplock(b"buffer\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         (*bcache.head.next).prev = b;
         bcache.head.next = b;
         b = b.offset(1)

@@ -292,9 +292,9 @@ pub unsafe fn iinit() {
         .lock
         .initlock(b"icache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     while i < NINODE {
-        (*icache.inode.as_mut_ptr().offset(i as isize)).lock.initsleeplock(
-            b"inode\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-        );
+        (*icache.inode.as_mut_ptr().offset(i as isize))
+            .lock
+            .initsleeplock(b"inode\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         i += 1
     }
 }
