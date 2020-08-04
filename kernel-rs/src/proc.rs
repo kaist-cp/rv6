@@ -8,7 +8,7 @@ use crate::{
     param::{NCPU, NOFILE, NPROC, ROOTDEV},
     printf::{panic, printf},
     riscv::{intr_get, intr_on, pagetable_t, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
-    spinlock::{acquire, holding, initlock, pop_off, push_off, release, Spinlock},
+    spinlock::{acquire, holding, pop_off, push_off, release, Spinlock},
     string::safestrcpy,
     trap::usertrapret,
     vm::{
@@ -202,14 +202,12 @@ pub static mut pid_lock: Spinlock = Spinlock::zeroed();
 #[no_mangle]
 pub unsafe fn procinit() {
     let mut p: *mut proc_0 = ptr::null_mut();
-    initlock(
-        &mut pid_lock,
+    pid_lock.initlock(
         b"nextpid\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
     p = proc.as_mut_ptr();
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
-        initlock(
-            &mut (*p).lock,
+        (*p).lock.initlock(
             b"proc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
         );
 

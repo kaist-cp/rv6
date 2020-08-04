@@ -3,7 +3,7 @@ use crate::{
     file::{devsw, CONSOLE},
     printf::panicked,
     proc::{either_copyin, either_copyout, myproc, procdump, sleep, wakeup},
-    spinlock::{acquire, initlock, release, Spinlock},
+    spinlock::{acquire, release, Spinlock},
     uart::{uartinit, uartputc},
 };
 
@@ -208,8 +208,7 @@ pub unsafe fn consoleintr(mut cin: i32) {
 }
 
 pub unsafe fn consoleinit() {
-    initlock(
-        &mut cons.lock,
+    cons.lock.initlock(
         b"cons\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
     uartinit();

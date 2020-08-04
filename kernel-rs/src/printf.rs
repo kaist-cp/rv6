@@ -1,6 +1,6 @@
 use crate::console::consputc;
 use crate::libc;
-use crate::spinlock::{acquire, initlock, release, Spinlock};
+use crate::spinlock::{acquire, release, Spinlock};
 use core::ptr;
 
 pub type __builtin_va_list = [__va_list_tag; 1];
@@ -161,8 +161,7 @@ pub unsafe fn panic(mut s: *mut libc::c_char) -> ! {
 }
 
 pub unsafe fn printfinit() {
-    initlock(
-        &mut pr.lock,
+    pr.lock.initlock(
         b"pr\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
     pr.locking = 1 as i32;

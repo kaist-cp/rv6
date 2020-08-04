@@ -8,7 +8,7 @@ use crate::{
         intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_sstatus,
         r_stval, r_tp, w_sepc, w_sip, w_sstatus, w_stvec, PGSIZE, SSTATUS_SPIE, SSTATUS_SPP,
     },
-    spinlock::{acquire, initlock, release, Spinlock},
+    spinlock::{acquire, release, Spinlock},
     syscall::syscall,
     uart::uartintr,
     virtio_disk::virtio_disk_intr,
@@ -35,8 +35,7 @@ pub static mut tickslock: Spinlock = Spinlock::zeroed();
 pub static mut ticks: u32 = 0;
 
 pub unsafe fn trapinit() {
-    initlock(
-        &mut tickslock,
+    tickslock.initlock(
         b"time\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
 }

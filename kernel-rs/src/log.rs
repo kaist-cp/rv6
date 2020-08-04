@@ -6,7 +6,7 @@ use crate::{
     param::{LOGSIZE, MAXOPBLOCKS},
     printf::panic,
     proc::{sleep, wakeup},
-    spinlock::{acquire, initlock, release, Spinlock},
+    spinlock::{acquire, release, Spinlock},
 };
 use core::ptr;
 
@@ -73,8 +73,7 @@ pub unsafe fn initlog(mut dev: i32, mut sb: *mut Superblock) {
                 as *mut libc::c_char,
         );
     }
-    initlock(
-        &mut log.lock,
+    log.lock.initlock(
         b"log\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
     );
     log.start = (*sb).logstart as i32;

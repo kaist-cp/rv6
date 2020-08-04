@@ -23,13 +23,13 @@ impl Spinlock {
             cpu: 0 as *const cpu as *mut cpu,
         }
     }
-}
 
-/// Mutual exclusion spin locks.
-pub unsafe fn initlock(mut lk: *mut Spinlock, mut name: *mut libc::c_char) {
-    (*lk).name = name;
-    (*lk).locked = 0 as i32 as u32;
-    (*lk).cpu = ptr::null_mut();
+    /// Mutual exclusion spin locks.
+    pub fn initlock(&mut self, mut name: *mut libc::c_char) {
+        (*self).name = name;
+        (*self).locked = 0 as i32 as u32;
+        (*self).cpu = ptr::null_mut();
+    }
 }
 
 /// Acquire the lock.
