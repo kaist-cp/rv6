@@ -294,7 +294,7 @@ pub unsafe fn iinit() {
     while i < NINODE {
         (*icache.inode.as_mut_ptr().offset(i as isize))
             .lock
-            .initsleeplock(b"inode\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            .initlock(b"inode\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         i += 1
     }
 }
@@ -407,7 +407,7 @@ pub unsafe fn ilock(mut ip: *mut inode) {
     if ip.is_null() || (*ip).ref_0 < 1 as i32 {
         panic(b"ilock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    (*ip).lock.acquiresleep();
+    (*ip).lock.acquire();
     if (*ip).valid == 0 as i32 {
         bp = bread((*ip).dev, iblock((*ip).inum as i32, sb));
         dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
@@ -432,10 +432,10 @@ pub unsafe fn ilock(mut ip: *mut inode) {
 
 /// Unlock the given inode.
 pub unsafe fn iunlock(mut ip: *mut inode) {
-    if ip.is_null() || (*ip).lock.holdingsleep() == 0 || (*ip).ref_0 < 1 as i32 {
+    if ip.is_null() || (*ip).lock.holding() == 0 || (*ip).ref_0 < 1 as i32 {
         panic(b"iunlock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    (*ip).lock.releasesleep();
+    (*ip).lock.release();
 }
 
 /// Drop a reference to an in-memory inode.
@@ -451,13 +451,13 @@ pub unsafe fn iput(mut ip: *mut inode) {
         // inode has no links and no other references: truncate and free.
         // ip->ref == 1 means no other process can have ip locked,
         // so this acquiresleep() won't block (or deadlock).
-        (*ip).lock.acquiresleep();
+        (*ip).lock.acquire();
         icache.lock.release();
         itrunc(ip);
         (*ip).typ = 0 as i32 as i16;
         (*ip).update();
         (*ip).valid = 0 as i32;
-        (*ip).lock.releasesleep();
+        (*ip).lock.release();
         icache.lock.acquire();
     }
     (*ip).ref_0 -= 1;

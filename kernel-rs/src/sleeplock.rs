@@ -34,7 +34,7 @@ impl Sleeplock {
         lk
     }
 
-    pub fn initsleeplock(&mut self, mut name: *mut libc::c_char) {
+    pub fn initlock(&mut self, mut name: *mut libc::c_char) {
         (*self)
             .lk
             .initlock(b"sleep lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -43,7 +43,7 @@ impl Sleeplock {
         (*self).pid = 0 as i32;
     }
 
-    pub unsafe fn acquiresleep(&mut self) {
+    pub unsafe fn acquire(&mut self) {
         (*self).lk.acquire();
         while (*self).locked != 0 {
             sleep(self as *mut Sleeplock as *mut libc::c_void, &mut (*self).lk);
@@ -53,7 +53,7 @@ impl Sleeplock {
         (*self).lk.release();
     }
 
-    pub unsafe fn releasesleep(&mut self) {
+    pub unsafe fn release(&mut self) {
         (*self).lk.acquire();
         (*self).locked = 0 as u32;
         (*self).pid = 0 as i32;
@@ -61,7 +61,7 @@ impl Sleeplock {
         (*self).lk.release();
     }
 
-    pub unsafe fn holdingsleep(&mut self) -> i32 {
+    pub unsafe fn holding(&mut self) -> i32 {
         let mut r: i32 = 0;
         (*self).lk.acquire();
         r = ((*self).locked != 0 && (*self).pid == (*myproc()).pid) as i32;
