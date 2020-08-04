@@ -3,7 +3,7 @@ use crate::{
     file::{devsw, CONSOLE},
     printf::panicked,
     proc::{either_copyin, either_copyout, myproc, procdump, sleep, wakeup},
-    spinlock::{acquire, release, Spinlock},
+    spinlock::{release, Spinlock},
     uart::{uartinit, uartputc},
 };
 
@@ -73,7 +73,7 @@ pub static mut cons: Console = Console::zeroed();
 /// user write()s to the console go here.
 pub unsafe fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
     let mut i: i32 = 0;
-    acquire(&mut cons.lock);
+    cons.lock.acquire();
     while i < n {
         let mut c: libc::c_char = 0;
         if either_copyin(
@@ -100,7 +100,7 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
     let mut target: u32 = n as u32;
     let mut cin: i32 = 0;
     let mut cbuf: libc::c_char = 0;
-    acquire(&mut cons.lock);
+    cons.lock.acquire();
     while n > 0 as i32 {
         // wait until interrupt handler has put some
         // input into cons.buffer.
@@ -153,7 +153,7 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
 /// do erase/kill processing, append to cons.buf,
 /// wake up consoleread() if a whole line has arrived.
 pub unsafe fn consoleintr(mut cin: i32) {
-    acquire(&mut cons.lock);
+    cons.lock.acquire();
     match cin {
         // Print process list.
         m if m == ctrl('P') => {
@@ -208,9 +208,8 @@ pub unsafe fn consoleintr(mut cin: i32) {
 }
 
 pub unsafe fn consoleinit() {
-    cons.lock.initlock(
-        b"cons\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-    );
+    cons.lock
+        .initlock(b"cons\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     uartinit();
 
     // connect read and write system calls
