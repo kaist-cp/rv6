@@ -137,7 +137,7 @@ impl cpu {
             proc_0: ptr::null_mut(),
             scheduler: Context::zeroed(),
             noff: 0,
-            intena: 0,        
+            intena: 0,
         }
     }
 }
