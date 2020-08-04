@@ -4,10 +4,10 @@ use crate::spinlock::Spinlock;
 
 #[derive(Copy, Clone)]
 pub struct Sleeplock {
-    pub locked: u32,
-    pub lk: Spinlock,
-    pub name: *mut libc::c_char,
-    pub pid: i32,
+    locked: u32,
+    lk: Spinlock,
+    name: *mut libc::c_char,
+    pid: i32,
 }
 
 impl Sleeplock {
