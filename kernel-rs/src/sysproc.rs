@@ -47,12 +47,11 @@ pub unsafe fn sys_sbrk() -> u64 {
 
 pub unsafe fn sys_sleep() -> u64 {
     let mut n: i32 = 0;
-    let mut ticks0: u32 = 0;
     if argint(0 as i32, &mut n) < 0 as i32 {
         return -(1 as i32) as u64;
     }
     acquire(&mut tickslock);
-    ticks0 = ticks;
+    let ticks0 = ticks;
     while ticks.wrapping_sub(ticks0) < n as u32 {
         if (*myproc()).killed != 0 {
             release(&mut tickslock);

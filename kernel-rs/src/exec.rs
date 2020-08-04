@@ -265,28 +265,25 @@ unsafe fn loadseg(
     mut sz: u32,
 ) -> i32 {
     let mut i: u32 = 0;
-    let mut n: u32 = 0;
-    let mut pa: u64 = 0;
     if va.wrapping_rem(PGSIZE as u64) != 0 as i32 as u64 {
         panic(
             b"loadseg: va must be page aligned\x00" as *const u8 as *const libc::c_char
                 as *mut libc::c_char,
         );
     }
-    i = 0 as i32 as u32;
     while i < sz {
-        pa = walkaddr(pagetable, va.wrapping_add(i as u64));
+        let pa = walkaddr(pagetable, va.wrapping_add(i as u64));
         if pa == 0 as i32 as u64 {
             panic(
                 b"loadseg: address should exist\x00" as *const u8 as *const libc::c_char
                     as *mut libc::c_char,
             );
         }
-        if sz.wrapping_sub(i) < PGSIZE as u32 {
-            n = sz.wrapping_sub(i)
+        let n = if sz.wrapping_sub(i) < PGSIZE as u32 {
+            sz.wrapping_sub(i)
         } else {
-            n = PGSIZE as u32
-        }
+            PGSIZE as u32
+        };
         if readi(ip, 0 as i32, pa, offset.wrapping_add(i), n) as u32 != n {
             return -(1 as i32);
         }

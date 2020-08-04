@@ -86,7 +86,6 @@ pub unsafe fn initlog(mut dev: i32, mut sb: *mut Superblock) {
 /// Copy committed blocks from log to their home location
 unsafe fn install_trans() {
     let mut tail: i32 = 0;
-    tail = 0;
     while tail < log.lh.n {
         // read log block
         let mut lbuf: *mut Buf = bread(log.dev as u32, (log.start + tail + 1 as i32) as u32);
@@ -199,7 +198,6 @@ pub unsafe fn end_op() {
 /// Copy modified blocks from cache to log.
 unsafe fn write_log() {
     let mut tail: i32 = 0;
-    tail = 0;
     while tail < log.lh.n {
         // log block
         let mut to: *mut Buf = bread(log.dev as u32, (log.start + tail + 1 as i32) as u32);
@@ -261,7 +259,6 @@ pub unsafe fn log_write(mut b: *mut Buf) {
         );
     }
     acquire(&mut log.lock);
-    i = 0;
     while i < log.lh.n {
         // log absorbtion
         if log.lh.block[i as usize] as u32 == (*b).blockno {

@@ -98,8 +98,6 @@ pub unsafe fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
 /// or kernel address.
 pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
     let mut target: u32 = n as u32;
-    let mut cin: i32 = 0;
-    let mut cbuf: libc::c_char = 0;
     acquire(&mut cons.lock);
     while n > 0 as i32 {
         // wait until interrupt handler has put some
@@ -113,7 +111,7 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
         }
         let fresh0 = cons.r;
         cons.r = cons.r.wrapping_add(1);
-        cin = cons.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
+        let cin: i32 = cons.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
 
         // end-of-file
         if cin == ctrl('D') {
@@ -125,7 +123,7 @@ pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
             break;
         } else {
             // copy the input byte to the user-space buffer.
-            cbuf = cin as libc::c_char;
+            let mut cbuf = cin as libc::c_char;
             if either_copyout(
                 user_dst,
                 dst,
