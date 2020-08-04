@@ -1,6 +1,6 @@
 use crate::console::consputc;
 use crate::libc;
-use crate::spinlock::{acquire, initlock, release, Spinlock};
+use crate::spinlock::Spinlock;
 
 pub type __builtin_va_list = [__va_list_tag; 1];
 
@@ -85,7 +85,7 @@ pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
     let mut locking: i32 = 0;
     locking = pr.locking;
     if locking != 0 {
-        acquire(&mut pr.lock);
+        pr.lock.acquire();
     }
     if fmt.is_null() {
         panic(b"null fmt\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -137,7 +137,7 @@ pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
         i += 1
     }
     if locking != 0 {
-        release(&mut pr.lock);
+        pr.lock.release();
     };
 }
 
@@ -153,9 +153,7 @@ pub unsafe fn panic(mut s: *mut libc::c_char) -> ! {
 }
 
 pub unsafe fn printfinit() {
-    initlock(
-        &mut pr.lock,
-        b"pr\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-    );
+    pr.lock
+        .initlock(b"pr\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     pr.locking = 1 as i32;
 }

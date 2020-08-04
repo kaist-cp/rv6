@@ -178,10 +178,7 @@ pub unsafe fn sys_link() -> u64 {
 
 /// Is the directory dp empty except for "." and ".." ?
 unsafe fn isdirempty(mut dp: *mut inode) -> i32 {
-    let mut de: Dirent = Dirent {
-        inum: 0,
-        name: [0; DIRSIZ],
-    };
+    let mut de: Dirent = Default::default();
     let mut off = (2 as u64).wrapping_mul(::core::mem::size_of::<Dirent>() as u64) as i32;
     while (off as u32) < (*dp).size {
         if readi(
@@ -208,10 +205,7 @@ unsafe fn isdirempty(mut dp: *mut inode) -> i32 {
 pub unsafe fn sys_unlink() -> u64 {
     let mut ip: *mut inode = ptr::null_mut();
     let mut dp: *mut inode = ptr::null_mut();
-    let mut de: Dirent = Dirent {
-        inum: 0,
-        name: [0; DIRSIZ],
-    };
+    let mut de: Dirent = Default::default();
     let mut name: [libc::c_char; DIRSIZ] = [0; DIRSIZ];
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut off: u32 = 0;
