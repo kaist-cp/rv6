@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    file::{fileclose, filedup, inode, File},
+    file::{fileclose, filedup, File, Inode},
     fs::{fsinit, iput, namei},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
@@ -72,7 +72,7 @@ pub struct proc_0 {
     pub tf: *mut trapframe,
     pub context: Context,
     pub ofile: [*mut File; 16],
-    pub cwd: *mut inode,
+    pub cwd: *mut Inode,
     pub name: [libc::c_char; 16],
 }
 
@@ -130,6 +130,63 @@ pub struct trapframe {
     pub t6: u64,
 }
 
+impl cpu {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            proc_0: ptr::null_mut(),
+            scheduler: Context::zeroed(),
+            noff: 0,
+            intena: 0,
+        }
+    }
+}
+
+impl Context {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            ra: 0,
+            sp: 0,
+            s0: 0,
+            s1: 0,
+            s2: 0,
+            s3: 0,
+            s4: 0,
+            s5: 0,
+            s6: 0,
+            s7: 0,
+            s8: 0,
+            s9: 0,
+            s10: 0,
+            s11: 0,
+        }
+    }
+}
+
+impl proc_0 {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            lock: Spinlock::zeroed(),
+            state: UNUSED,
+            parent: ptr::null_mut(),
+            chan: ptr::null_mut(),
+            killed: 0,
+            xstate: 0,
+            pid: 0,
+            kstack: 0,
+            sz: 0,
+            pagetable: ptr::null_mut(),
+            tf: ptr::null_mut(),
+            context: Context::zeroed(),
+            ofile: [ptr::null_mut(); 16],
+            cwd: ptr::null_mut(),
+            name: [0; 16],
+        }
+    }
+}
+
 pub type procstate = u32;
 
 pub const ZOMBIE: procstate = 4;
@@ -138,61 +195,10 @@ pub const RUNNABLE: procstate = 2;
 pub const SLEEPING: procstate = 1;
 pub const UNUSED: procstate = 0;
 
-pub static mut cpus: [cpu; NCPU as usize] = [cpu {
-    proc_0: ptr::null_mut(),
-    scheduler: Context {
-        ra: 0,
-        sp: 0,
-        s0: 0,
-        s1: 0,
-        s2: 0,
-        s3: 0,
-        s4: 0,
-        s5: 0,
-        s6: 0,
-        s7: 0,
-        s8: 0,
-        s9: 0,
-        s10: 0,
-        s11: 0,
-    },
-    noff: 0,
-    intena: 0,
-}; NCPU as usize];
+pub static mut cpus: [cpu; NCPU as usize] = [cpu::zeroed(); NCPU as usize];
 
 #[export_name = "proc"]
-pub static mut proc: [proc_0; 64] = [proc_0 {
-    lock: Spinlock::zeroed(),
-    state: UNUSED,
-    parent: ptr::null_mut(),
-    chan: 0 as *const libc::c_void as *mut libc::c_void,
-    killed: 0,
-    xstate: 0,
-    pid: 0,
-    kstack: 0,
-    sz: 0,
-    pagetable: 0 as *const u64 as *mut u64,
-    tf: 0 as *const trapframe as *mut trapframe,
-    context: Context {
-        ra: 0,
-        sp: 0,
-        s0: 0,
-        s1: 0,
-        s2: 0,
-        s3: 0,
-        s4: 0,
-        s5: 0,
-        s6: 0,
-        s7: 0,
-        s8: 0,
-        s9: 0,
-        s10: 0,
-        s11: 0,
-    },
-    ofile: [0 as *const File as *mut File; 16],
-    cwd: 0 as *const inode as *mut inode,
-    name: [0; 16],
-}; 64];
+pub static mut proc: [proc_0; 64] = [proc_0::zeroed(); 64];
 
 pub static mut initproc: *mut proc_0 = ptr::null_mut();
 pub static mut nextpid: i32 = 1;

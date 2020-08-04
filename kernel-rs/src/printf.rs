@@ -20,15 +20,25 @@ pub struct PrintfLock {
     pub locking: i32,
 }
 
+impl PrintfLock {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            lock: Spinlock::zeroed(),
+            locking: 0,
+        }
+    }
+}
+
 /// formatted console output -- printf, panic.
 pub static mut panicked: i32 = 0;
-static mut pr: PrintfLock = PrintfLock {
-    lock: Spinlock::zeroed(),
-    locking: 0,
-};
+
+static mut pr: PrintfLock = PrintfLock::zeroed();
+
 static mut digits: [libc::c_char; 17] = [
     48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102, 0,
 ];
+
 unsafe fn printint(mut xx: i32, mut base: i32, mut sign: i32) {
     let mut buf: [libc::c_char; 16] = [0; 16];
     let mut i: i32 = 0;

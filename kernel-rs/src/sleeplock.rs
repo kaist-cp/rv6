@@ -1,6 +1,7 @@
 use crate::libc;
 use crate::proc::{myproc, sleep, wakeup};
 use crate::spinlock::Spinlock;
+use core::ptr;
 
 #[derive(Copy, Clone)]
 pub struct Sleeplock {
@@ -16,7 +17,7 @@ impl Sleeplock {
         Self {
             locked: 0,
             lk: Spinlock::zeroed(),
-            name: 0 as *const libc::c_char as *mut libc::c_char,
+            name: ptr::null_mut(),
             pid: 0,
         }
     }
