@@ -49,6 +49,22 @@ pub struct Superblock {
     pub bmapstart: u32,
 }
 
+impl Superblock {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            magic: 0,
+            size: 0,
+            nblocks: 0,
+            ninodes: 0,
+            nlog: 0,
+            logstart: 0,
+            inodestart: 0,
+            bmapstart: 0,
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct Dirent {
     pub inum: u16,
@@ -181,16 +197,7 @@ pub const DIRSIZ: usize = 14;
 
 /// there should be one superblock per disk device, but we run with
 /// only one device
-pub static mut sb: Superblock = Superblock {
-    magic: 0,
-    size: 0,
-    nblocks: 0,
-    ninodes: 0,
-    nlog: 0,
-    logstart: 0,
-    inodestart: 0,
-    bmapstart: 0,
-};
+pub static mut sb: Superblock = Superblock::zeroed();
 
 /// Read the super block.
 unsafe fn readsb(mut dev: i32, mut sb_0: *mut Superblock) {
