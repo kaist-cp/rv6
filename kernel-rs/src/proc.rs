@@ -21,7 +21,7 @@ use core::ptr;
 extern "C" {
     // swtch.S
     #[no_mangle]
-    fn swtch(_: *mut context, _: *mut context);
+    fn swtch(_: *mut Context, _: *mut Context);
 
     // trampoline.S
     #[no_mangle]
@@ -31,7 +31,7 @@ extern "C" {
 #[derive(Copy, Clone)]
 pub struct cpu {
     pub proc_0: *mut proc_0,
-    pub scheduler: context,
+    pub scheduler: Context,
     pub noff: i32,
     pub intena: i32,
 }
@@ -39,7 +39,7 @@ pub struct cpu {
 /// Saved registers for kernel context switches.
 #[derive(Copy, Clone)]
 #[repr(C)]
-pub struct context {
+pub struct Context {
     pub ra: u64,
     pub sp: u64,
     pub s0: u64,
@@ -70,7 +70,7 @@ pub struct proc_0 {
     pub sz: u64,
     pub pagetable: pagetable_t,
     pub tf: *mut trapframe,
-    pub context: context,
+    pub context: Context,
     pub ofile: [*mut File; 16],
     pub cwd: *mut inode,
     pub name: [libc::c_char; 16],
@@ -140,7 +140,7 @@ pub const UNUSED: procstate = 0;
 
 pub static mut cpus: [cpu; NCPU as usize] = [cpu {
     proc_0: ptr::null_mut(),
-    scheduler: context {
+    scheduler: Context {
         ra: 0,
         sp: 0,
         s0: 0,
@@ -173,7 +173,7 @@ pub static mut proc: [proc_0; 64] = [proc_0 {
     sz: 0,
     pagetable: 0 as *const u64 as *mut u64,
     tf: 0 as *const trapframe as *mut trapframe,
-    context: context {
+    context: Context {
         ra: 0,
         sp: 0,
         s0: 0,
@@ -295,7 +295,7 @@ unsafe fn allocproc() -> *mut proc_0 {
 
             // Set up new context to start executing at forkret,
             // which returns to user space.
-            ptr::write_bytes(&mut (*p).context as *mut context, 0, 1);
+            ptr::write_bytes(&mut (*p).context as *mut Context, 0, 1);
             (*p).context.ra = forkret as u64;
             (*p).context.sp = (*p).kstack.wrapping_add(PGSIZE as u64);
             p
