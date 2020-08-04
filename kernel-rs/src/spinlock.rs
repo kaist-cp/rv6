@@ -36,7 +36,7 @@ impl Spinlock {
     pub unsafe fn acquire(&mut self) {
         // disable interrupts to avoid deadlock.
         push_off();
-        if holding(self) != 0 {
+        if self.holding() != 0 {
             panic(b"acquire\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
 
@@ -59,7 +59,7 @@ impl Spinlock {
 
     /// Release the lock.
     pub unsafe fn release(&mut self) {
-        if holding(self) == 0 {
+        if self.holding() == 0 {
             panic(b"release\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         (*self).cpu = ptr::null_mut();
@@ -80,39 +80,15 @@ impl Spinlock {
         ::core::intrinsics::atomic_store_rel(&mut (*self).locked, 0);
         pop_off();
     }
-}
 
-/// Release the lock.
-pub unsafe fn release(mut lk: *mut Spinlock) {
-    if holding(lk) == 0 {
-        panic(b"release\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    /// Check whether this cpu is holding the lock.
+    pub unsafe fn holding(&mut self) -> i32 {
+        let mut r: i32 = 0;
+        push_off();
+        r = ((*self).locked != 0 && (*self).cpu == mycpu()) as i32;
+        pop_off();
+        r
     }
-    (*lk).cpu = ptr::null_mut();
-
-    // Tell the C compiler and the CPU to not move loads or stores
-    // past this point, to ensure that all the stores in the critical
-    // section are visible to other CPUs before the lock is released.
-    // On RISC-V, this turns into a fence instruction.
-    ::core::intrinsics::atomic_fence();
-
-    // Release the lock, equivalent to lk->locked = 0.
-    // This code doesn't use a C assignment, since the C standard
-    // implies that an assignment might be implemented with
-    // multiple store instructions.
-    // On RISC-V, sync_lock_release turns into an atomic swap:
-    //   s1 = &lk->locked
-    //   amoswap.w zero, zero, (s1)
-    ::core::intrinsics::atomic_store_rel(&mut (*lk).locked, 0);
-    pop_off();
-}
-
-/// Check whether this cpu is holding the lock.
-pub unsafe fn holding(mut lk: *mut Spinlock) -> i32 {
-    let mut r: i32 = 0;
-    push_off();
-    r = ((*lk).locked != 0 && (*lk).cpu == mycpu()) as i32;
-    pop_off();
-    r
 }
 
 /// push_off/pop_off are like intr_off()/intr_on() except that they are matched:
