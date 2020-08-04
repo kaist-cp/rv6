@@ -17,7 +17,7 @@ impl Sleeplock {
         Self {
             locked: 0,
             lk: Spinlock::zeroed(),
-            name: ptr::null_mut() as *const libc::c_char as *mut libc::c_char,
+            name: ptr::null_mut(),
             pid: 0,
         }
     }

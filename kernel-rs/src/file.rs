@@ -70,8 +70,8 @@ impl File {
             ref_0: 0,
             readable: 0,
             writable: 0,
-            pipe: ptr::null_mut() as *const Pipe as *mut Pipe,
-            ip: ptr::null_mut() as *const Inode as *mut Inode,
+            pipe: ptr::null_mut(),
+            ip: ptr::null_mut(),
             off: 0,
             major: 0,
         }

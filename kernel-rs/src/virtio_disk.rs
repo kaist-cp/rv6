@@ -71,9 +71,9 @@ impl Disk {
     pub const fn zeroed() -> Self {
         Self {
             pages: [0; 8192],
-            desc: ptr::null_mut() as *const VRingDesc as *mut VRingDesc,
-            avail: ptr::null_mut() as *const u16 as *mut u16,
-            used: ptr::null_mut() as *const UsedArea as *mut UsedArea,
+            desc: ptr::null_mut(),
+            avail: ptr::null_mut(),
+            used: ptr::null_mut(),
             free: [0; NUM as usize],
             used_idx: 0,
             info: [InflightInfo::zeroed(); NUM as usize],
@@ -86,7 +86,7 @@ impl InflightInfo {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            b: ptr::null_mut() as *const Buf as *mut Buf,
+            b: ptr::null_mut(),
             status: 0,
         }
     }

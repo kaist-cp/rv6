@@ -27,7 +27,7 @@ impl Kmem {
     pub const fn zeroed() -> Self {
         Self {
             lock: Spinlock::zeroed(),
-            freelist: ptr::null_mut() as *const run as *mut run,
+            freelist: ptr::null_mut(),
         }
     }
 }

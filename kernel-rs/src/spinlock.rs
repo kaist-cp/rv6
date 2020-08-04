@@ -19,8 +19,8 @@ impl Spinlock {
     pub const fn zeroed() -> Self {
         Self {
             locked: 0,
-            name: ptr::null_mut() as *const libc::c_char as *mut libc::c_char,
-            cpu: ptr::null_mut() as *const cpu as *mut cpu,
+            name: ptr::null_mut(),
+            cpu: ptr::null_mut(),
         }
     }
 
