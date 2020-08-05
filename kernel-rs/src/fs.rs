@@ -263,7 +263,7 @@ impl Inode {
             // so this acquiresleep() won't block (or deadlock).
             (*self).lock.acquire();
             icache.lock.release();
-            itrunc(self);
+            self.itrunc();
             (*self).typ = 0 as i32 as i16;
             (*self).update();
             (*self).valid = 0 as i32;
@@ -278,6 +278,190 @@ impl Inode {
     pub unsafe fn unlockput(&mut self) {
         self.unlock();
         self.put();
+    }
+
+    /// Inode content
+    ///
+    /// The content (data) associated with each inode is stored
+    /// in blocks on the disk. The first NDIRECT block numbers
+    /// are listed in self->addrs[].  The next NINDIRECT blocks are
+    /// listed in block self->addrs[NDIRECT].
+    /// Return the disk block address of the nth block in inode self.
+    /// If there is no such block, bmap allocates one.
+    unsafe fn bmap(&mut self, mut bn: u32) -> u32 {
+        let mut addr: u32 = 0;
+        let mut a: *mut u32 = ptr::null_mut();
+        let mut bp: *mut Buf = ptr::null_mut();
+        if bn < NDIRECT as u32 {
+            addr = (*self).addrs[bn as usize];
+            if addr == 0 as i32 as u32 {
+                addr = balloc((*self).dev);
+                (*self).addrs[bn as usize] = addr
+            }
+            return addr;
+        }
+        bn = (bn as u32).wrapping_sub(NDIRECT as u32) as u32 as u32;
+        if (bn as u64) < NINDIRECT as u64 {
+            // Load indirect block, allocating if necessary.
+            addr = (*self).addrs[NDIRECT as usize];
+            if addr == 0 as i32 as u32 {
+                addr = balloc((*self).dev);
+                (*self).addrs[NDIRECT as usize] = addr
+            }
+            bp = bread((*self).dev, addr);
+            a = (*bp).data.as_mut_ptr() as *mut u32;
+            addr = *a.offset(bn as isize);
+            if addr == 0 as i32 as u32 {
+                addr = balloc((*self).dev);
+                *a.offset(bn as isize) = addr;
+                log_write(bp);
+            }
+            brelse(bp);
+            return addr;
+        }
+        panic(b"bmap: out of range\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    }
+
+    /// File system implementation.  Five layers:
+    ///   + Blocks: allocator for raw disk blocks.
+    ///   + Log: crash recovery for multi-step updates.
+    ///   + Files: inode allocator, reading, writing, metadata.
+    ///   + Directories: inode with special contents (list of other inodes!)
+    ///   + Names: paths like /usr/rtm/xv6/fs.c for convenient naming.
+    ///
+    /// This file contains the low-level file system manipulation
+    /// routines.  The (higher-level) system call implementations
+    /// are in sysfile.c.
+    /// Truncate inode (discard contents).
+    /// Only called when the inode has no links
+    /// to it (no directory entries referring to it)
+    /// and has no in-memory reference to it (is
+    /// not an open file or current directory).
+    unsafe fn itrunc(&mut self) {
+        for i in 0..NDIRECT {
+            if (*self).addrs[i as usize] != 0 {
+                bfree((*self).dev as i32, (*self).addrs[i as usize]);
+                (*self).addrs[i as usize] = 0 as i32 as u32
+            }
+        }
+        if (*self).addrs[NDIRECT as usize] != 0 {
+            let bp = bread((*self).dev, (*self).addrs[NDIRECT as usize]);
+            let a = (*bp).data.as_mut_ptr() as *mut u32;
+            for j in 0..NINDIRECT {
+                if *a.offset(j as isize) != 0 {
+                    bfree((*self).dev as i32, *a.offset(j as isize));
+                }
+            }
+            brelse(bp);
+            bfree((*self).dev as i32, (*self).addrs[NDIRECT as usize]);
+            (*self).addrs[NDIRECT as usize] = 0 as i32 as u32
+        }
+        (*self).size = 0 as i32 as u32;
+        (*self).update();
+    }
+
+    /// Read data from inode.
+    /// Caller must hold self->lock.
+    /// If user_dst==1, then dst is a user virtual address;
+    /// otherwise, dst is a kernel address.
+    pub unsafe fn read(
+        &mut self,
+        mut user_dst: i32,
+        mut dst: u64,
+        mut off: u32,
+        mut n: u32,
+    ) -> i32 {
+        let mut tot: u32 = 0;
+        if off > (*self).size || off.wrapping_add(n) < off {
+            return -1;
+        }
+        if off.wrapping_add(n) > (*self).size {
+            n = (*self).size.wrapping_sub(off)
+        }
+        tot = 0 as u32;
+        while tot < n {
+            let bp = bread((*self).dev, self.bmap(off.wrapping_div(BSIZE as u32)));
+            let m = core::cmp::min(
+                n.wrapping_sub(tot),
+                (1024 as i32 as u32).wrapping_sub(off.wrapping_rem(1024 as i32 as u32)),
+            );
+            if either_copyout(
+                user_dst,
+                dst,
+                (*bp)
+                    .data
+                    .as_mut_ptr()
+                    .offset(off.wrapping_rem(BSIZE as u32) as isize) as *mut libc::c_void,
+                m as u64,
+            ) == -(1 as i32)
+            {
+                brelse(bp);
+                break;
+            } else {
+                brelse(bp);
+                tot = (tot as u32).wrapping_add(m) as u32 as u32;
+                off = (off as u32).wrapping_add(m) as u32 as u32;
+                dst = (dst as u64).wrapping_add(m as u64) as u64 as u64
+            }
+        }
+        n as i32
+    }
+
+    /// Write data to inode.
+    /// Caller must hold self->lock.
+    /// If user_src==1, then src is a user virtual address;
+    /// otherwise, src is a kernel address.
+    pub unsafe fn write(
+        &mut self,
+        mut user_src: i32,
+        mut src: u64,
+        mut off: u32,
+        mut n: u32,
+    ) -> i32 {
+        let mut tot: u32 = 0;
+        if off > (*self).size || off.wrapping_add(n) < off {
+            return -1;
+        }
+        if off.wrapping_add(n) as u64 > MAXFILE.wrapping_mul(BSIZE) as u64 {
+            return -1;
+        }
+        tot = 0 as i32 as u32;
+        while tot < n {
+            let bp = bread((*self).dev, self.bmap(off.wrapping_div(BSIZE as u32)));
+            let m = core::cmp::min(
+                n.wrapping_sub(tot),
+                (1024 as i32 as u32).wrapping_sub(off.wrapping_rem(1024 as i32 as u32)),
+            );
+            if either_copyin(
+                (*bp)
+                    .data
+                    .as_mut_ptr()
+                    .offset(off.wrapping_rem(BSIZE as u32) as isize) as *mut libc::c_void,
+                user_src,
+                src,
+                m as u64,
+            ) == -(1 as i32)
+            {
+                brelse(bp);
+                break;
+            } else {
+                log_write(bp);
+                brelse(bp);
+                tot = (tot as u32).wrapping_add(m) as u32 as u32;
+                off = (off as u32).wrapping_add(m) as u32 as u32;
+                src = (src as u64).wrapping_add(m as u64) as u64 as u64
+            }
+        }
+        if n > 0 as i32 as u32 {
+            if off > (*self).size {
+                (*self).size = off
+            }
+            // write the i-node back to disk even if the size didn't change
+            // because the loop above might have called bmap() and added a new
+            // block to self->addrs[].
+            (*self).update();
+        }
+        n as i32
     }
 
     pub const fn zeroed() -> Self {
@@ -484,86 +668,6 @@ unsafe fn iget(mut dev: u32, mut inum: u32) -> *mut Inode {
     ip
 }
 
-/// Inode content
-///
-/// The content (data) associated with each inode is stored
-/// in blocks on the disk. The first NDIRECT block numbers
-/// are listed in ip->addrs[].  The next NINDIRECT blocks are
-/// listed in block ip->addrs[NDIRECT].
-/// Return the disk block address of the nth block in inode ip.
-/// If there is no such block, bmap allocates one.
-unsafe fn bmap(mut ip: *mut Inode, mut bn: u32) -> u32 {
-    let mut addr: u32 = 0;
-    let mut a: *mut u32 = ptr::null_mut();
-    let mut bp: *mut Buf = ptr::null_mut();
-    if bn < NDIRECT as u32 {
-        addr = (*ip).addrs[bn as usize];
-        if addr == 0 as i32 as u32 {
-            addr = balloc((*ip).dev);
-            (*ip).addrs[bn as usize] = addr
-        }
-        return addr;
-    }
-    bn = (bn as u32).wrapping_sub(NDIRECT as u32) as u32 as u32;
-    if (bn as u64) < NINDIRECT as u64 {
-        // Load indirect block, allocating if necessary.
-        addr = (*ip).addrs[NDIRECT as usize];
-        if addr == 0 as i32 as u32 {
-            addr = balloc((*ip).dev);
-            (*ip).addrs[NDIRECT as usize] = addr
-        }
-        bp = bread((*ip).dev, addr);
-        a = (*bp).data.as_mut_ptr() as *mut u32;
-        addr = *a.offset(bn as isize);
-        if addr == 0 as i32 as u32 {
-            addr = balloc((*ip).dev);
-            *a.offset(bn as isize) = addr;
-            log_write(bp);
-        }
-        brelse(bp);
-        return addr;
-    }
-    panic(b"bmap: out of range\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-}
-
-/// File system implementation.  Five layers:
-///   + Blocks: allocator for raw disk blocks.
-///   + Log: crash recovery for multi-step updates.
-///   + Files: inode allocator, reading, writing, metadata.
-///   + Directories: inode with special contents (list of other inodes!)
-///   + Names: paths like /usr/rtm/xv6/fs.c for convenient naming.
-///
-/// This file contains the low-level file system manipulation
-/// routines.  The (higher-level) system call implementations
-/// are in sysfile.c.
-/// Truncate inode (discard contents).
-/// Only called when the inode has no links
-/// to it (no directory entries referring to it)
-/// and has no in-memory reference to it (is
-/// not an open file or current directory).
-unsafe fn itrunc(mut ip: *mut Inode) {
-    for i in 0..NDIRECT {
-        if (*ip).addrs[i as usize] != 0 {
-            bfree((*ip).dev as i32, (*ip).addrs[i as usize]);
-            (*ip).addrs[i as usize] = 0 as i32 as u32
-        }
-    }
-    if (*ip).addrs[NDIRECT as usize] != 0 {
-        let bp = bread((*ip).dev, (*ip).addrs[NDIRECT as usize]);
-        let a = (*bp).data.as_mut_ptr() as *mut u32;
-        for j in 0..NINDIRECT {
-            if *a.offset(j as isize) != 0 {
-                bfree((*ip).dev as i32, *a.offset(j as isize));
-            }
-        }
-        brelse(bp);
-        bfree((*ip).dev as i32, (*ip).addrs[NDIRECT as usize]);
-        (*ip).addrs[NDIRECT as usize] = 0 as i32 as u32
-    }
-    (*ip).size = 0 as i32 as u32;
-    (*ip).update();
-}
-
 /// Copy stat information from inode.
 /// Caller must hold ip->lock.
 pub unsafe fn stati(mut ip: *mut Inode, mut st: *mut Stat) {
@@ -572,110 +676,6 @@ pub unsafe fn stati(mut ip: *mut Inode, mut st: *mut Stat) {
     (*st).typ = (*ip).typ;
     (*st).nlink = (*ip).nlink;
     (*st).size = (*ip).size as u64;
-}
-
-/// Read data from inode.
-/// Caller must hold ip->lock.
-/// If user_dst==1, then dst is a user virtual address;
-/// otherwise, dst is a kernel address.
-pub unsafe fn readi(
-    mut ip: *mut Inode,
-    mut user_dst: i32,
-    mut dst: u64,
-    mut off: u32,
-    mut n: u32,
-) -> i32 {
-    let mut tot: u32 = 0;
-    if off > (*ip).size || off.wrapping_add(n) < off {
-        return -1;
-    }
-    if off.wrapping_add(n) > (*ip).size {
-        n = (*ip).size.wrapping_sub(off)
-    }
-    tot = 0 as u32;
-    while tot < n {
-        let bp = bread((*ip).dev, bmap(ip, off.wrapping_div(BSIZE as u32)));
-        let m = core::cmp::min(
-            n.wrapping_sub(tot),
-            (1024 as i32 as u32).wrapping_sub(off.wrapping_rem(1024 as i32 as u32)),
-        );
-        if either_copyout(
-            user_dst,
-            dst,
-            (*bp)
-                .data
-                .as_mut_ptr()
-                .offset(off.wrapping_rem(BSIZE as u32) as isize) as *mut libc::c_void,
-            m as u64,
-        ) == -(1 as i32)
-        {
-            brelse(bp);
-            break;
-        } else {
-            brelse(bp);
-            tot = (tot as u32).wrapping_add(m) as u32 as u32;
-            off = (off as u32).wrapping_add(m) as u32 as u32;
-            dst = (dst as u64).wrapping_add(m as u64) as u64 as u64
-        }
-    }
-    n as i32
-}
-
-/// Write data to inode.
-/// Caller must hold ip->lock.
-/// If user_src==1, then src is a user virtual address;
-/// otherwise, src is a kernel address.
-pub unsafe fn writei(
-    mut ip: *mut Inode,
-    mut user_src: i32,
-    mut src: u64,
-    mut off: u32,
-    mut n: u32,
-) -> i32 {
-    let mut tot: u32 = 0;
-    if off > (*ip).size || off.wrapping_add(n) < off {
-        return -1;
-    }
-    if off.wrapping_add(n) as u64 > MAXFILE.wrapping_mul(BSIZE) as u64 {
-        return -1;
-    }
-    tot = 0 as i32 as u32;
-    while tot < n {
-        let bp = bread((*ip).dev, bmap(ip, off.wrapping_div(BSIZE as u32)));
-        let m = core::cmp::min(
-            n.wrapping_sub(tot),
-            (1024 as i32 as u32).wrapping_sub(off.wrapping_rem(1024 as i32 as u32)),
-        );
-        if either_copyin(
-            (*bp)
-                .data
-                .as_mut_ptr()
-                .offset(off.wrapping_rem(BSIZE as u32) as isize) as *mut libc::c_void,
-            user_src,
-            src,
-            m as u64,
-        ) == -(1 as i32)
-        {
-            brelse(bp);
-            break;
-        } else {
-            log_write(bp);
-            brelse(bp);
-            tot = (tot as u32).wrapping_add(m) as u32 as u32;
-            off = (off as u32).wrapping_add(m) as u32 as u32;
-            src = (src as u64).wrapping_add(m as u64) as u64 as u64
-        }
-    }
-    if n > 0 as i32 as u32 {
-        if off > (*ip).size {
-            (*ip).size = off
-        }
-        // write the i-node back to disk even if the size didn't change
-        // because the loop above might have called bmap() and added a new
-        // block to ip->addrs[].
-        (*ip).update();
-    }
-    n as i32
 }
 
 /// Directories
@@ -696,8 +696,7 @@ pub unsafe fn dirlookup(
         panic(b"dirlookup not DIR\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     while off < (*dp).size {
-        if readi(
-            dp,
+        if (*dp).read(
             0 as i32,
             &mut de as *mut Dirent as u64,
             off,
@@ -735,8 +734,7 @@ pub unsafe fn dirlink(mut dp: *mut Inode, mut name: *mut libc::c_char, mut inum:
     // Look for an empty Dirent.
     off = 0;
     while (off as u32) < (*dp).size {
-        if readi(
-            dp,
+        if (*dp).read(
             0 as i32,
             &mut de as *mut Dirent as u64,
             off as u32,
@@ -753,8 +751,7 @@ pub unsafe fn dirlink(mut dp: *mut Inode, mut name: *mut libc::c_char, mut inum:
     }
     strncpy(de.name.as_mut_ptr(), name, DIRSIZ as i32);
     de.inum = inum as u16;
-    if writei(
-        dp,
+    if (*dp).write(
         0 as i32,
         &mut de as *mut Dirent as u64,
         off as u32,

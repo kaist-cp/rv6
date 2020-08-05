@@ -7,7 +7,7 @@ use crate::{
     fcntl::FcntlFlags,
     file::{filealloc, fileclose, filedup, fileread, filestat, filewrite},
     file::{File, Inode},
-    fs::{dirlink, dirlookup, ialloc, namecmp, namei, nameiparent, readi, writei},
+    fs::{dirlink, dirlookup, ialloc, namecmp, namei, nameiparent},
     fs::{Dirent, DIRSIZ},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
@@ -178,8 +178,7 @@ unsafe fn isdirempty(mut dp: *mut Inode) -> i32 {
     let mut de: Dirent = Default::default();
     let mut off = (2 as u64).wrapping_mul(::core::mem::size_of::<Dirent>() as u64) as i32;
     while (off as u32) < (*dp).size {
-        if readi(
-            dp,
+        if (*dp).read(
             0 as i32,
             &mut de as *mut Dirent as u64,
             off as u32,
@@ -240,8 +239,7 @@ pub unsafe fn sys_unlink() -> u64 {
                 (*ip).unlockput();
             } else {
                 ptr::write_bytes(&mut de as *mut Dirent, 0, 1);
-                if writei(
-                    dp,
+                if (*dp).write(
                     0,
                     &mut de as *mut Dirent as u64,
                     off,

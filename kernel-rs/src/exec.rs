@@ -2,7 +2,7 @@ use crate::libc;
 use crate::{
     elf::{ElfHdr, ProgHdr, ELF_MAGIC, ELF_PROG_LOAD},
     file::Inode,
-    fs::{namei, readi},
+    fs::namei,
     log::{begin_op, end_op},
     param::MAXARG,
     printf::panic,
@@ -40,8 +40,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     (*ip).lock();
 
     // Check ELF header
-    if readi(
-        ip,
+    if (*ip).read(
         0 as i32,
         &mut elf as *mut ElfHdr as u64,
         0 as i32 as u32,
@@ -61,8 +60,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                     current_block = 15768484401365413375;
                     break;
                 }
-                if readi(
-                    ip,
+                if (*ip).read(
                     0 as i32,
                     &mut ph as *mut ProgHdr as u64,
                     off as u32,
@@ -261,7 +259,7 @@ impl Inode {
             } else {
                 PGSIZE as u32
             };
-            if readi(self, 0 as i32, pa, offset.wrapping_add(i), n) as u32 != n {
+            if self.read(0 as i32, pa, offset.wrapping_add(i), n) as u32 != n {
                 return -(1 as i32);
             }
             i = (i as u32).wrapping_add(PGSIZE as u32) as u32 as u32

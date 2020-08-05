@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    fs::{readi, stati, writei, BSIZE},
+    fs::{stati, BSIZE},
     log::{begin_op, end_op},
     param::{MAXOPBLOCKS, NDEV, NFILE},
     pipe::{pipeclose, piperead, pipewrite, Pipe},
@@ -199,7 +199,7 @@ pub unsafe fn fileread(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
             .expect("non-null function pointer")(1 as i32, addr, n)
     } else if (*f).typ as u32 == FD_INODE as i32 as u32 {
         (*(*f).ip).lock();
-        r = readi((*f).ip, 1 as i32, addr, (*f).off, n as u32);
+        r = (*(*f).ip).read(1 as i32, addr, (*f).off, n as u32);
         if r > 0 as i32 {
             (*f).off = ((*f).off as u32).wrapping_add(r as u32) as u32 as u32
         }
@@ -235,7 +235,7 @@ pub unsafe fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
         // the maximum log transaction size, including
         // i-node, indirect block, allocation blocks,
         // and 2 blocks of slop for non-aligned writes.
-        // this really belongs lower down, since writei()
+        // this really belongs lower down, since write()
         // might be writing a device like the console.
         let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
         let mut i: i32 = 0;
@@ -246,8 +246,7 @@ pub unsafe fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
             }
             begin_op();
             (*(*f).ip).lock();
-            r = writei(
-                (*f).ip,
+            r = (*(*f).ip).write(
                 1 as i32,
                 addr.wrapping_add(i as u64),
                 (*f).off,
