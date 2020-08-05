@@ -8,18 +8,18 @@ use crate::{
 };
 
 #[derive(Copy, Clone)]
-pub struct Console {
-    pub lock: Spinlock,
-    pub buf: [libc::c_char; 128],
+struct Console {
+    lock: Spinlock,
+    buf: [libc::c_char; 128],
 
     /// Read index
-    pub r: u32,
+    r: u32,
 
     /// Write index
-    pub w: u32,
+    w: u32,
 
     /// Edit index
-    pub e: u32,
+    e: u32,
 }
 
 impl Console {
@@ -43,7 +43,7 @@ impl Console {
 ///   control-u -- kill line
 ///   control-d -- end of file
 ///   control-p -- print process list
-pub const BACKSPACE: i32 = 0x100;
+const BACKSPACE: i32 = 0x100;
 
 /// Control-x
 const fn ctrl(x: char) -> i32 {
@@ -66,12 +66,12 @@ pub unsafe fn consputc(mut c: i32) {
 }
 
 /// input
-pub const INPUT_BUF: usize = 128;
+const INPUT_BUF: usize = 128;
 
-pub static mut cons: Console = Console::zeroed();
+static mut cons: Console = Console::zeroed();
 
 /// user write()s to the console go here.
-pub unsafe fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
+unsafe fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
     cons.lock.acquire();
     for i in 0..n {
         let mut c: libc::c_char = 0;
@@ -94,7 +94,7 @@ pub unsafe fn consolewrite(mut user_src: i32, mut src: u64, mut n: i32) -> i32 {
 /// copy (up to) a whole input line to dst.
 /// user_dist indicates whether dst is a user
 /// or kernel address.
-pub unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
+unsafe fn consoleread(mut user_dst: i32, mut dst: u64, mut n: i32) -> i32 {
     let mut target: u32 = n as u32;
     cons.lock.acquire();
     while n > 0 as i32 {
