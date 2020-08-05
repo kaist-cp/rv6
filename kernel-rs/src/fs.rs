@@ -466,91 +466,6 @@ impl Inode {
         n as i32
     }
 
-    /// Look for a directory entry in a directory.
-    /// If found, set *poff to byte offset of entry.
-    pub unsafe fn dirlookup(
-        &mut self,
-        mut name: *mut libc::c_char,
-        mut poff: *mut u32,
-    ) -> *mut Inode {
-        let mut off: u32 = 0;
-        let mut de: Dirent = Default::default();
-        if (*self).typ as i32 != T_DIR {
-            panic(
-                b"dirlookup not DIR\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-            );
-        }
-        while off < (*self).size {
-            if (*self).read(
-                0 as i32,
-                &mut de as *mut Dirent as u64,
-                off,
-                ::core::mem::size_of::<Dirent>() as u64 as u32,
-            ) as u64
-                != ::core::mem::size_of::<Dirent>() as u64
-            {
-                panic(
-                    b"dirlookup read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-                );
-            }
-            if de.inum as i32 != 0 as i32 && namecmp(name, de.name.as_mut_ptr()) == 0 as i32 {
-                // entry matches path element
-                if !poff.is_null() {
-                    *poff = off
-                }
-                return iget((*self).dev, de.inum as u32);
-            }
-            off = (off as u64).wrapping_add(::core::mem::size_of::<Dirent>() as u64) as u32 as u32
-        }
-        ptr::null_mut()
-    }
-
-    /// Write a new directory entry (name, inum) into the directory self.
-    pub unsafe fn dirlink(&mut self, mut name: *mut libc::c_char, mut inum: u32) -> i32 {
-        let mut off: i32 = 0;
-        let mut de: Dirent = Default::default();
-        let mut ip: *mut Inode = ptr::null_mut();
-
-        // Check that name is not present.
-        ip = self.dirlookup(name, ptr::null_mut());
-        if !ip.is_null() {
-            (*ip).put();
-            return -(1 as i32);
-        }
-
-        // Look for an empty Dirent.
-        off = 0;
-        while (off as u32) < (*self).size {
-            if (*self).read(
-                0 as i32,
-                &mut de as *mut Dirent as u64,
-                off as u32,
-                ::core::mem::size_of::<Dirent>() as u64 as u32,
-            ) as u64
-                != ::core::mem::size_of::<Dirent>() as u64
-            {
-                panic(b"dirlink read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-            }
-            if de.inum as i32 == 0 as i32 {
-                break;
-            }
-            off = (off as u64).wrapping_add(::core::mem::size_of::<Dirent>() as u64) as i32 as i32
-        }
-        strncpy(de.name.as_mut_ptr(), name, DIRSIZ as i32);
-        de.inum = inum as u16;
-        if (*self).write(
-            0 as i32,
-            &mut de as *mut Dirent as u64,
-            off as u32,
-            ::core::mem::size_of::<Dirent>() as u64 as u32,
-        ) as u64
-            != ::core::mem::size_of::<Dirent>() as u64
-        {
-            panic(b"dirlink\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-        }
-        0 as i32
-    }
-
     pub const fn zeroed() -> Self {
         // TODO: transient measure
         Self {
@@ -770,6 +685,87 @@ pub unsafe fn namecmp(mut s: *const libc::c_char, mut t: *const libc::c_char) ->
     strncmp(s, t, DIRSIZ as u32)
 }
 
+/// Look for a directory entry in a directory.
+/// If found, set *poff to byte offset of entry.
+pub unsafe fn dirlookup(
+    mut dp: *mut Inode,
+    mut name: *mut libc::c_char,
+    mut poff: *mut u32,
+) -> *mut Inode {
+    let mut off: u32 = 0;
+    let mut de: Dirent = Default::default();
+    if (*dp).typ as i32 != T_DIR {
+        panic(b"dirlookup not DIR\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    }
+    while off < (*dp).size {
+        if (*dp).read(
+            0 as i32,
+            &mut de as *mut Dirent as u64,
+            off,
+            ::core::mem::size_of::<Dirent>() as u64 as u32,
+        ) as u64
+            != ::core::mem::size_of::<Dirent>() as u64
+        {
+            panic(b"dirlookup read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        }
+        if de.inum as i32 != 0 as i32 && namecmp(name, de.name.as_mut_ptr()) == 0 as i32 {
+            // entry matches path element
+            if !poff.is_null() {
+                *poff = off
+            }
+            return iget((*dp).dev, de.inum as u32);
+        }
+        off = (off as u64).wrapping_add(::core::mem::size_of::<Dirent>() as u64) as u32 as u32
+    }
+    ptr::null_mut()
+}
+
+/// Write a new directory entry (name, inum) into the directory dp.
+pub unsafe fn dirlink(mut dp: *mut Inode, mut name: *mut libc::c_char, mut inum: u32) -> i32 {
+    let mut off: i32 = 0;
+    let mut de: Dirent = Default::default();
+    let mut ip: *mut Inode = ptr::null_mut();
+
+    // Check that name is not present.
+    ip = dirlookup(dp, name, ptr::null_mut());
+    if !ip.is_null() {
+        (*ip).put();
+        return -(1 as i32);
+    }
+
+    // Look for an empty Dirent.
+    off = 0;
+    while (off as u32) < (*dp).size {
+        if (*dp).read(
+            0 as i32,
+            &mut de as *mut Dirent as u64,
+            off as u32,
+            ::core::mem::size_of::<Dirent>() as u64 as u32,
+        ) as u64
+            != ::core::mem::size_of::<Dirent>() as u64
+        {
+            panic(b"dirlink read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        }
+        if de.inum as i32 == 0 as i32 {
+            break;
+        }
+        off = (off as u64).wrapping_add(::core::mem::size_of::<Dirent>() as u64) as i32 as i32
+    }
+    strncpy(de.name.as_mut_ptr(), name, DIRSIZ as i32);
+    de.inum = inum as u16;
+    if (*dp).write(
+        0 as i32,
+        &mut de as *mut Dirent as u64,
+        off as u32,
+        ::core::mem::size_of::<Dirent>() as u64 as u32,
+    ) as u64
+        != ::core::mem::size_of::<Dirent>() as u64
+    {
+        panic(b"dirlink\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    }
+    0 as i32
+}
+
 /// Paths
 /// Copy the next path element from path into name.
 /// Return a pointer to the element following the copied one.
@@ -843,7 +839,7 @@ unsafe fn namex(
             (*ip).unlock();
             return ip;
         }
-        next = (*ip).dirlookup(name, ptr::null_mut());
+        next = dirlookup(ip, name, ptr::null_mut());
         if next.is_null() {
             (*ip).unlockput();
             return ptr::null_mut();
