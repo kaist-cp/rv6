@@ -2,7 +2,7 @@ use crate::libc;
 use crate::{
     elf::{ElfHdr, ProgHdr, ELF_MAGIC, ELF_PROG_LOAD},
     file::Inode,
-    fs::{ilock, iunlockput, namei, readi},
+    fs::{namei, readi},
     log::{begin_op, end_op},
     param::MAXARG,
     printf::panic,
@@ -37,7 +37,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
         end_op();
         return -(1 as i32);
     }
-    ilock(ip);
+    (*ip).lock();
 
     // Check ELF header
     if readi(
@@ -91,7 +91,8 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                         current_block = 7080392026674647309;
                         break;
                     }
-                    if loadseg(pagetable, ph.vaddr, ip, ph.off as u32, ph.filesz as u32) < 0 as i32
+                    if (*ip).loadseg(pagetable, ph.vaddr, ph.off as u32, ph.filesz as u32)
+                        < 0 as i32
                     {
                         current_block = 7080392026674647309;
                         break;
@@ -104,7 +105,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
             match current_block {
                 7080392026674647309 => {}
                 _ => {
-                    iunlockput(ip);
+                    (*ip).unlockput();
                     end_op();
                     ip = ptr::null_mut();
                     p = myproc();
@@ -222,47 +223,49 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
         proc_freepagetable(pagetable, sz);
     }
     if !ip.is_null() {
-        iunlockput(ip);
+        (*ip).unlockput();
         end_op();
     }
     -(1 as i32)
 }
 
-/// Load a program segment into pagetable at virtual address va.
-/// va must be page-aligned
-/// and the pages from va to va+sz must already be mapped.
-/// Returns 0 on success, -1 on failure.
-unsafe fn loadseg(
-    mut pagetable: pagetable_t,
-    mut va: u64,
-    mut ip: *mut Inode,
-    mut offset: u32,
-    mut sz: u32,
-) -> i32 {
-    let mut i: u32 = 0;
-    if va.wrapping_rem(PGSIZE as u64) != 0 as i32 as u64 {
-        panic(
-            b"loadseg: va must be page aligned\x00" as *const u8 as *const libc::c_char
-                as *mut libc::c_char,
-        );
-    }
-    while i < sz {
-        let pa = walkaddr(pagetable, va.wrapping_add(i as u64));
-        if pa == 0 as i32 as u64 {
+impl Inode {
+    /// Load a program segment into pagetable at virtual address va.
+    /// va must be page-aligned
+    /// and the pages from va to va+sz must already be mapped.
+    /// Returns 0 on success, -1 on failure.
+    unsafe fn loadseg(
+        &mut self,
+        mut pagetable: pagetable_t,
+        mut va: u64,
+        mut offset: u32,
+        mut sz: u32,
+    ) -> i32 {
+        let mut i: u32 = 0;
+        if va.wrapping_rem(PGSIZE as u64) != 0 as i32 as u64 {
             panic(
-                b"loadseg: address should exist\x00" as *const u8 as *const libc::c_char
+                b"loadseg: va must be page aligned\x00" as *const u8 as *const libc::c_char
                     as *mut libc::c_char,
             );
         }
-        let n = if sz.wrapping_sub(i) < PGSIZE as u32 {
-            sz.wrapping_sub(i)
-        } else {
-            PGSIZE as u32
-        };
-        if readi(ip, 0 as i32, pa, offset.wrapping_add(i), n) as u32 != n {
-            return -(1 as i32);
+        while i < sz {
+            let pa = walkaddr(pagetable, va.wrapping_add(i as u64));
+            if pa == 0 as i32 as u64 {
+                panic(
+                    b"loadseg: address should exist\x00" as *const u8 as *const libc::c_char
+                        as *mut libc::c_char,
+                );
+            }
+            let n = if sz.wrapping_sub(i) < PGSIZE as u32 {
+                sz.wrapping_sub(i)
+            } else {
+                PGSIZE as u32
+            };
+            if readi(self, 0 as i32, pa, offset.wrapping_add(i), n) as u32 != n {
+                return -(1 as i32);
+            }
+            i = (i as u32).wrapping_add(PGSIZE as u32) as u32 as u32
         }
-        i = (i as u32).wrapping_add(PGSIZE as u32) as u32 as u32
+        0 as i32
     }
-    0 as i32
 }
