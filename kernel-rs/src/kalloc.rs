@@ -6,6 +6,7 @@ use crate::{
     spinlock::Spinlock,
 };
 use core::ptr;
+
 pub static mut end: [u8; 0] = [0; 0];
 
 /// first address after kernel.
@@ -14,15 +15,25 @@ pub static mut end: [u8; 0] = [0; 0];
 pub struct run {
     pub next: *mut run,
 }
+
 #[derive(Copy, Clone)]
 pub struct Kmem {
     pub lock: Spinlock,
     pub freelist: *mut run,
 }
-pub static mut kmem: Kmem = Kmem {
-    lock: Spinlock::zeroed(),
-    freelist: 0 as *const run as *mut run,
-};
+
+impl Kmem {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            lock: Spinlock::zeroed(),
+            freelist: ptr::null_mut(),
+        }
+    }
+}
+
+pub static mut kmem: Kmem = Kmem::zeroed();
+
 pub unsafe fn kinit() {
     kmem.lock
         .initlock(b"kmem\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -46,8 +57,7 @@ pub unsafe fn kinit() {
 /// kernel stacks, page-table pages,
 /// and pipe buffers. Allocates whole 4096-byte pages.
 pub unsafe fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: *mut libc::c_void) {
-    let mut p: *mut libc::c_char = ptr::null_mut();
-    p = ((pa_start as u64)
+    let mut p = ((pa_start as u64)
         .wrapping_add(PGSIZE as u64)
         .wrapping_sub(1 as i32 as u64)
         & !(PGSIZE - 1 as i32) as u64) as *mut libc::c_char;

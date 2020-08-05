@@ -1,7 +1,7 @@
 use crate::libc;
 use crate::{
     elf::{ElfHdr, ProgHdr, ELF_MAGIC, ELF_PROG_LOAD},
-    file::inode,
+    file::Inode,
     fs::{ilock, iunlockput, namei, readi},
     log::{begin_op, end_op},
     param::MAXARG,
@@ -26,7 +26,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     let mut ustack: [u64; 33] = [0; 33];
     let mut stackbase: u64 = 0;
     let mut elf: ElfHdr = Default::default();
-    let mut ip: *mut inode = ptr::null_mut();
+    let mut ip: *mut Inode = ptr::null_mut();
     let mut ph: ProgHdr = Default::default();
     let mut pagetable: pagetable_t = 0 as pagetable_t;
     let mut oldpagetable: pagetable_t = ptr::null_mut();
@@ -235,33 +235,30 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
 unsafe fn loadseg(
     mut pagetable: pagetable_t,
     mut va: u64,
-    mut ip: *mut inode,
+    mut ip: *mut Inode,
     mut offset: u32,
     mut sz: u32,
 ) -> i32 {
     let mut i: u32 = 0;
-    let mut n: u32 = 0;
-    let mut pa: u64 = 0;
     if va.wrapping_rem(PGSIZE as u64) != 0 as i32 as u64 {
         panic(
             b"loadseg: va must be page aligned\x00" as *const u8 as *const libc::c_char
                 as *mut libc::c_char,
         );
     }
-    i = 0 as i32 as u32;
     while i < sz {
-        pa = walkaddr(pagetable, va.wrapping_add(i as u64));
+        let pa = walkaddr(pagetable, va.wrapping_add(i as u64));
         if pa == 0 as i32 as u64 {
             panic(
                 b"loadseg: address should exist\x00" as *const u8 as *const libc::c_char
                     as *mut libc::c_char,
             );
         }
-        if sz.wrapping_sub(i) < PGSIZE as u32 {
-            n = sz.wrapping_sub(i)
+        let n = if sz.wrapping_sub(i) < PGSIZE as u32 {
+            sz.wrapping_sub(i)
         } else {
-            n = PGSIZE as u32
-        }
+            PGSIZE as u32
+        };
         if readi(ip, 0 as i32, pa, offset.wrapping_add(i), n) as u32 != n {
             return -(1 as i32);
         }

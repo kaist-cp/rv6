@@ -22,7 +22,7 @@ pub struct File {
     pub readable: libc::c_char,
     pub writable: libc::c_char,
     pub pipe: *mut Pipe,
-    pub ip: *mut inode,
+    pub ip: *mut Inode,
     pub off: u32,
     pub major: i16,
 }
@@ -30,7 +30,7 @@ pub struct File {
 /// FD_DEVICE
 /// in-memory copy of an inode
 #[derive(Copy, Clone)]
-pub struct inode {
+pub struct Inode {
     pub dev: u32,
     pub inum: u32,
     pub ref_0: i32,
@@ -57,30 +57,44 @@ pub struct Ftable {
 
 /// map major device number to device functions.
 #[derive(Copy, Clone)]
-pub struct devsw {
+pub struct Devsw {
     pub read: Option<unsafe fn(_: i32, _: u64, _: i32) -> i32>,
     pub write: Option<unsafe fn(_: i32, _: u64, _: i32) -> i32>,
 }
 
+impl File {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            typ: FD_NONE,
+            ref_0: 0,
+            readable: 0,
+            writable: 0,
+            pipe: ptr::null_mut(),
+            ip: ptr::null_mut(),
+            off: 0,
+            major: 0,
+        }
+    }
+}
+
+impl Ftable {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            lock: Spinlock::zeroed(),
+            file: [File::zeroed(); 100],
+        }
+    }
+}
+
 /// Support functions for system calls that involve file descriptors.
-pub static mut devsw: [devsw; 10] = [devsw {
+pub static mut devsw: [Devsw; 10] = [Devsw {
     read: None,
     write: None,
 }; 10];
 
-pub static mut ftable: Ftable = Ftable {
-    lock: Spinlock::zeroed(),
-    file: [File {
-        typ: FD_NONE,
-        ref_0: 0,
-        readable: 0,
-        writable: 0,
-        pipe: 0 as *const Pipe as *mut Pipe,
-        ip: 0 as *const inode as *mut inode,
-        off: 0,
-        major: 0,
-    }; 100],
-};
+pub static mut ftable: Ftable = Ftable::zeroed();
 
 pub unsafe fn fileinit() {
     ftable
@@ -118,16 +132,7 @@ pub unsafe fn filedup(mut f: *mut File) -> *mut File {
 
 /// Close file f.  (Decrement ref count, close when reaches 0.)
 pub unsafe fn fileclose(mut f: *mut File) {
-    let mut ff: File = File {
-        typ: FD_NONE,
-        ref_0: 0,
-        readable: 0,
-        writable: 0,
-        pipe: ptr::null_mut(),
-        ip: ptr::null_mut(),
-        off: 0,
-        major: 0,
-    };
+    let mut ff: File = File::zeroed();
     ftable.lock.acquire();
     if (*f).ref_0 < 1 as i32 {
         panic(b"fileclose\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -154,13 +159,7 @@ pub unsafe fn fileclose(mut f: *mut File) {
 /// addr is a user virtual address, pointing to a struct stat.
 pub unsafe fn filestat(mut f: *mut File, mut addr: u64) -> i32 {
     let mut p: *mut proc_0 = myproc();
-    let mut st: Stat = Stat {
-        dev: 0,
-        ino: 0,
-        typ: 0,
-        nlink: 0,
-        size: 0,
-    };
+    let mut st: Stat = Default::default();
     if (*f).typ as u32 == FD_INODE as i32 as u32 || (*f).typ as u32 == FD_DEVICE as i32 as u32 {
         ilock((*f).ip);
         stati((*f).ip, &mut st);
@@ -238,7 +237,7 @@ pub unsafe fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
         // and 2 blocks of slop for non-aligned writes.
         // this really belongs lower down, since writei()
         // might be writing a device like the console.
-        let mut max: i32 = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
+        let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
         let mut i: i32 = 0;
         while i < n {
             let mut n1: i32 = n - i;

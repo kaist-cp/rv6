@@ -1,7 +1,6 @@
 use crate::console::consputc;
 use crate::libc;
 use crate::spinlock::Spinlock;
-use core::ptr;
 
 pub type __builtin_va_list = [__va_list_tag; 1];
 
@@ -21,15 +20,25 @@ pub struct PrintfLock {
     pub locking: i32,
 }
 
+impl PrintfLock {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            lock: Spinlock::zeroed(),
+            locking: 0,
+        }
+    }
+}
+
 /// formatted console output -- printf, panic.
 pub static mut panicked: i32 = 0;
-static mut pr: PrintfLock = PrintfLock {
-    lock: Spinlock::zeroed(),
-    locking: 0,
-};
+
+static mut pr: PrintfLock = PrintfLock::zeroed();
+
 static mut digits: [libc::c_char; 17] = [
     48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102, 0,
 ];
+
 unsafe fn printint(mut xx: i32, mut base: i32, mut sign: i32) {
     let mut buf: [libc::c_char; 16] = [0; 16];
     let mut i: i32 = 0;
@@ -42,7 +51,6 @@ unsafe fn printint(mut xx: i32, mut base: i32, mut sign: i32) {
     } else {
         x = xx as u32
     }
-    i = 0 as i32;
     loop {
         let fresh0 = i;
         i += 1;
@@ -67,18 +75,15 @@ unsafe fn printint(mut xx: i32, mut base: i32, mut sign: i32) {
 }
 
 unsafe fn printptr(mut x: u64) {
-    let mut i: i32 = 0;
     consputc('0' as i32);
     consputc('x' as i32);
-    i = 0 as i32;
-    while (i as u64) < (::core::mem::size_of::<u64>() as u64).wrapping_mul(2 as i32 as u64) {
+    for _i in 0..(::core::mem::size_of::<u64>() as u64).wrapping_mul(2 as i32 as u64) {
         consputc(
             digits[(x
                 >> (::core::mem::size_of::<u64>() as u64)
                     .wrapping_mul(8 as i32 as u64)
                     .wrapping_sub(4 as i32 as u64)) as usize] as i32,
         );
-        i += 1;
         x <<= 4 as i32
     }
 }
@@ -87,9 +92,7 @@ unsafe fn printptr(mut x: u64) {
 pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
     let mut ap: ::core::ffi::VaListImpl;
     let mut i: i32 = 0;
-    let mut c: i32 = 0;
     let mut locking: i32 = 0;
-    let mut s: *mut libc::c_char = ptr::null_mut();
     locking = pr.locking;
     if locking != 0 {
         pr.lock.acquire();
@@ -98,9 +101,8 @@ pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
         panic(b"null fmt\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     ap = args.clone();
-    i = 0 as i32;
     loop {
-        c = *fmt.offset(i as isize) as i32 & 0xff as i32;
+        let mut c = *fmt.offset(i as isize) as i32 & 0xff as i32;
         if c == 0 as i32 {
             break;
         }
@@ -123,7 +125,7 @@ pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
                     printptr(ap.as_va_list().arg::<u64>());
                 }
                 115 => {
-                    s = ap.as_va_list().arg::<*mut libc::c_char>();
+                    let mut s = ap.as_va_list().arg::<*mut libc::c_char>();
                     if s.is_null() {
                         s = b"(null)\x00" as *const u8 as *const libc::c_char as *mut libc::c_char
                     }

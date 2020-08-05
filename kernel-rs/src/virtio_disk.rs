@@ -55,7 +55,7 @@ pub struct InflightInfo {
     pub status: libc::c_char,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Default, Copy, Clone)]
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
@@ -66,19 +66,33 @@ pub struct virtio_blk_outhdr {
     pub sector: u64,
 }
 
-static mut disk: Disk = Disk {
-    pages: [0; 8192],
-    desc: 0 as *const VRingDesc as *mut VRingDesc,
-    avail: 0 as *const u16 as *mut u16,
-    used: 0 as *const UsedArea as *mut UsedArea,
-    free: [0; NUM as usize],
-    used_idx: 0,
-    info: [InflightInfo {
-        b: 0 as *const Buf as *mut Buf,
-        status: 0,
-    }; NUM as usize],
-    vdisk_lock: Spinlock::zeroed(),
-};
+impl Disk {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            pages: [0; 8192],
+            desc: ptr::null_mut(),
+            avail: ptr::null_mut(),
+            used: ptr::null_mut(),
+            free: [0; NUM as usize],
+            used_idx: 0,
+            info: [InflightInfo::zeroed(); NUM as usize],
+            vdisk_lock: Spinlock::zeroed(),
+        }
+    }
+}
+
+impl InflightInfo {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            b: ptr::null_mut(),
+            status: 0,
+        }
+    }
+}
+
+static mut disk: Disk = Disk::zeroed();
 
 pub unsafe fn virtio_disk_init() {
     let mut status: u32 = 0 as u32;
@@ -150,10 +164,8 @@ pub unsafe fn virtio_disk_init() {
         .offset((NUM as u64).wrapping_mul(::core::mem::size_of::<VRingDesc>() as u64) as isize)
         as *mut u16;
     disk.used = disk.pages.as_mut_ptr().offset(PGSIZE as isize) as *mut UsedArea;
-    let mut i: i32 = 0;
-    while i < NUM {
+    for i in 0..NUM {
         disk.free[i as usize] = 1 as i32 as libc::c_char;
-        i += 1
     }
 
     // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
@@ -161,13 +173,11 @@ pub unsafe fn virtio_disk_init() {
 
 /// find a free descriptor, mark it non-free, return its index.
 unsafe fn alloc_desc() -> i32 {
-    let mut i: i32 = 0;
-    while i < NUM {
+    for i in 0..NUM {
         if disk.free[i as usize] != 0 {
             disk.free[i as usize] = 0 as i32 as libc::c_char;
             return i;
         }
-        i += 1
     }
     -1
 }
@@ -200,21 +210,18 @@ unsafe fn free_chain(mut i: i32) {
 }
 
 unsafe fn alloc3_desc(mut idx: *mut i32) -> i32 {
-    let mut i: i32 = 0;
-    while i < 3 as i32 {
+    for i in 0..3 {
         *idx.offset(i as isize) = alloc_desc();
         if *idx.offset(i as isize) < 0 as i32 {
-            let mut j: i32 = 0;
-            while j < i {
+            for j in 0..i {
                 free_desc(*idx.offset(j as isize));
-                j += 1
             }
             return -(1 as i32);
         }
-        i += 1
     }
     0
 }
+
 pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     let mut sector: u64 = (*b).blockno.wrapping_mul((BSIZE / 512 as i32) as u32) as u64;
 
@@ -226,6 +233,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
 
     // allocate the three descriptors.
     let mut idx: [i32; 3] = [0; 3];
+
     while alloc3_desc(idx.as_mut_ptr()) != 0 as i32 {
         sleep(
             &mut *disk.free.as_mut_ptr().offset(0 as i32 as isize) as *mut libc::c_char
@@ -236,11 +244,8 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
 
     // format the three descriptors.
     // qemu's virtio-blk.c reads them.
-    let mut buf0: virtio_blk_outhdr = virtio_blk_outhdr {
-        typ: 0,
-        reserved: 0,
-        sector: 0,
-    };
+    let mut buf0: virtio_blk_outhdr = Default::default();
+
     if write != 0 {
         // write the disk
         buf0.typ = VIRTIO_BLK_T_OUT as u32
