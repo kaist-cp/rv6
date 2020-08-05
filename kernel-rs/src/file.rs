@@ -50,9 +50,9 @@ pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
 
 #[derive(Copy, Clone)]
-pub struct Ftable {
-    pub lock: Spinlock,
-    pub file: [File; 100],
+struct Ftable {
+    lock: Spinlock,
+    file: [File; 100],
 }
 
 /// map major device number to device functions.
@@ -94,7 +94,7 @@ pub static mut devsw: [Devsw; 10] = [Devsw {
     write: None,
 }; 10];
 
-pub static mut ftable: Ftable = Ftable::zeroed();
+static mut ftable: Ftable = Ftable::zeroed();
 
 pub unsafe fn fileinit() {
     ftable
