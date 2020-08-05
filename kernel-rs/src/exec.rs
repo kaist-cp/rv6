@@ -143,7 +143,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                             if copyout(
                                 pagetable,
                                 sp,
-                                *argv.offset(argc as isize),
+                                *argv.add(argc),
                                 (strlen(*argv.add(argc)) + 1 as i32) as usize,
                             ) < 0 as i32
                             {
