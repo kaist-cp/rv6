@@ -40,7 +40,7 @@ pub unsafe fn start() {
 
     // set M Exception Program Counter to main, for mret.
     // requires gcc -mcmodel=medany
-    w_mepc(kernel_main as usize as usize);
+    w_mepc(kernel_main as usize);
 
     // disable paging for now.
     w_satp(0);
@@ -83,7 +83,7 @@ unsafe fn timerinit() {
     w_mscratch(scratch as usize);
 
     // set the machine-mode trap handler.
-    w_mtvec(timervec as usize as _);
+    w_mtvec(timervec as _);
 
     // enable machine-mode interrupts.
     w_mstatus(r_mstatus() | MSTATUS_MIE as usize);
