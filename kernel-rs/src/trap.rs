@@ -40,7 +40,7 @@ pub unsafe fn trapinit() {
 
 /// set up to take exceptions and traps while in the kernel.
 pub unsafe fn trapinithart() {
-    w_stvec(kernelvec as usize as _);
+    w_stvec(kernelvec as _);
 }
 
 /// handle an interrupt, exception, or system call from user space.
@@ -58,7 +58,7 @@ pub unsafe extern "C" fn usertrap() {
 
     // send interrupts and exceptions to kerneltrap(),
     // since we're now in the kernel.
-    w_stvec(kernelvec as usize as _);
+    w_stvec(kernelvec as _);
 
     let mut p: *mut proc_0 = myproc();
 
@@ -73,7 +73,7 @@ pub unsafe extern "C" fn usertrap() {
 
         // sepc points to the ecall instruction,
         // but we want to return to the next instruction.
-        (*(*p).tf).epc = ((*(*p).tf).epc as usize).wrapping_add(4 as usize) as usize;
+        (*(*p).tf).epc = ((*(*p).tf).epc).wrapping_add(4 as usize);
 
         // an interrupt will change sstatus &c registers,
         // so don't enable until done with those registers.
@@ -134,7 +134,7 @@ pub unsafe fn usertrapret() {
 
     // process's kernel stack
     (*(*p).tf).kernel_sp = (*p).kstack.wrapping_add(PGSIZE as usize);
-    (*(*p).tf).kernel_trap = usertrap as usize as usize;
+    (*(*p).tf).kernel_trap = usertrap as usize;
 
     // hartid for cpuid()
     (*(*p).tf).kernel_hartid = r_tp();
