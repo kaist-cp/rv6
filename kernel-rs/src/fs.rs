@@ -612,7 +612,7 @@ pub unsafe fn readi(
             brelse(bp);
             tot = (tot as u32).wrapping_add(m) as u32 as u32;
             off = (off as u32).wrapping_add(m) as u32 as u32;
-            dst = (dst as usize).wrapping_add(m as usize) as usize as usize
+            dst = dst.wrapping_add(m as usize);
         }
     }
     n as i32
@@ -660,7 +660,7 @@ pub unsafe fn writei(
             brelse(bp);
             tot = (tot as u32).wrapping_add(m) as u32 as u32;
             off = (off as u32).wrapping_add(m) as u32 as u32;
-            src = (src as usize).wrapping_add(m as usize) as usize as usize
+            src = src.wrapping_add(m as usize);
         }
     }
     if n > 0 as i32 as u32 {
