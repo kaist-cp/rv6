@@ -322,16 +322,6 @@ impl Inode {
         panic(b"bmap: out of range\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
 
-    /// File system implementation.  Five layers:
-    ///   + Blocks: allocator for raw disk blocks.
-    ///   + Log: crash recovery for multi-step updates.
-    ///   + Files: inode allocator, reading, writing, metadata.
-    ///   + Directories: inode with special contents (list of other inodes!)
-    ///   + Names: paths like /usr/rtm/xv6/fs.c for convenient naming.
-    ///
-    /// This file contains the low-level file system manipulation
-    /// routines.  The (higher-level) system call implementations
-    /// are in sysfile.c.
     /// Truncate inode (discard contents).
     /// Only called when the inode has no links
     /// to it (no directory entries referring to it)
