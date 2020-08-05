@@ -18,7 +18,7 @@ pub const CONSOLE: isize = 1;
 #[derive(Copy, Clone)]
 pub struct File {
     pub typ: u32,
-    pub ref_0: i32,
+    ref_0: i32,
     pub readable: libc::c_char,
     pub writable: libc::c_char,
     pub pipe: *mut Pipe,
