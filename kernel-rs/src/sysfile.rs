@@ -26,6 +26,23 @@ pub const FD_INODE: u32 = 2;
 pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
 
+impl File {
+    /// Allocate a file descriptor for the given file.
+    /// Takes over file reference from caller on success.
+    unsafe fn fdalloc(&mut self) -> i32 {
+        let mut fd: i32 = 0; // user pointer to struct stat
+        let mut p: *mut proc_0 = myproc();
+        while fd < NOFILE {
+            if (*p).ofile[fd as usize].is_null() {
+                (*p).ofile[fd as usize] = self;
+                return fd;
+            }
+            fd += 1
+        }
+        -1
+    }
+}
+
 impl Inode {
     /// Is the directory self empty except for "." and ".." ?
     unsafe fn isdirempty(&mut self) -> i32 {
@@ -77,28 +94,13 @@ unsafe fn argfd(mut n: i32, mut pfd: *mut i32, mut pf: *mut *mut File) -> i32 {
     0 as i32
 }
 
-/// Allocate a file descriptor for the given file.
-/// Takes over file reference from caller on success.
-unsafe fn fdalloc(mut f: *mut File) -> i32 {
-    let mut fd: i32 = 0; // user pointer to struct stat
-    let mut p: *mut proc_0 = myproc();
-    while fd < NOFILE {
-        if (*p).ofile[fd as usize].is_null() {
-            (*p).ofile[fd as usize] = f;
-            return fd;
-        }
-        fd += 1
-    }
-    -1
-}
-
 pub unsafe fn sys_dup() -> u64 {
     let mut f: *mut File = ptr::null_mut();
     let mut fd: i32 = 0;
     if argfd(0 as i32, ptr::null_mut(), &mut f) < 0 as i32 {
         return -(1 as i32) as u64;
     }
-    fd = fdalloc(f);
+    fd = (*f).fdalloc();
     if fd < 0 as i32 {
         return -(1 as i32) as u64;
     }
@@ -379,7 +381,7 @@ pub unsafe fn sys_open() -> u64 {
     }
     f = filealloc();
     if f.is_null() || {
-        fd = fdalloc(f);
+        fd = (*f).fdalloc();
         (fd) < 0 as i32
     } {
         if !f.is_null() {
@@ -568,9 +570,9 @@ pub unsafe fn sys_pipe() -> u64 {
         return -(1 as i32) as u64;
     }
     fd0 = -(1 as i32);
-    fd0 = fdalloc(rf);
+    fd0 = (*rf).fdalloc();
     if fd0 < 0 as i32 || {
-        fd1 = fdalloc(wf);
+        fd1 = (*wf).fdalloc();
         (fd1) < 0 as i32
     } {
         if fd0 >= 0 as i32 {
