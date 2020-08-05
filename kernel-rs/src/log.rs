@@ -11,18 +11,18 @@ use crate::{
 use core::ptr;
 
 #[derive(Copy, Clone)]
-pub struct Log {
-    pub lock: Spinlock,
-    pub start: i32,
-    pub size: i32,
+struct Log {
+    lock: Spinlock,
+    start: i32,
+    size: i32,
 
     /// how many FS sys calls are executing.
-    pub outstanding: i32,
+    outstanding: i32,
 
     /// in commit(), please wait.
-    pub committing: i32,
-    pub dev: i32,
-    pub lh: LogHeader,
+    committing: i32,
+    dev: i32,
+    lh: LogHeader,
 }
 
 /// Simple logging that allows concurrent FS system calls.
@@ -50,14 +50,14 @@ pub struct Log {
 /// Contents of the header block, used for both the on-disk header block
 /// and to keep track in memory of logged block# before commit.
 #[derive(Copy, Clone)]
-pub struct LogHeader {
+struct LogHeader {
     pub n: i32,
     pub block: [i32; 30],
 }
 
 impl Log {
     // TODO: transient measure
-    pub const fn zeroed() -> Self {
+    const fn zeroed() -> Self {
         Self {
             lock: Spinlock::zeroed(),
             start: 0,
@@ -73,7 +73,7 @@ impl Log {
     }
 }
 
-pub static mut log: Log = Log::zeroed();
+static mut log: Log = Log::zeroed();
 
 pub unsafe fn initlog(mut dev: i32, mut sb: *mut Superblock) {
     if ::core::mem::size_of::<LogHeader>() as u64 >= BSIZE as u64 {
