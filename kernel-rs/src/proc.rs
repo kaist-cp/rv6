@@ -1,7 +1,7 @@
 use crate::libc;
 use crate::{
     file::{fileclose, filedup, File, Inode},
-    fs::{fsinit, iput, namei},
+    fs::{fsinit, namei},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
@@ -525,7 +525,7 @@ pub unsafe fn exit(mut status: i32) {
         }
     }
     begin_op();
-    iput((*p).cwd);
+    (*(*p).cwd).put();
     end_op();
     (*p).cwd = ptr::null_mut();
 

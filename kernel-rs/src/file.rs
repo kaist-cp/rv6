@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    fs::{ilock, iput, iunlock, readi, stati, writei, BSIZE},
+    fs::{readi, stati, writei, BSIZE},
     log::{begin_op, end_op},
     param::{MAXOPBLOCKS, NDEV, NFILE},
     pipe::{pipeclose, piperead, pipewrite, Pipe},
@@ -150,7 +150,7 @@ pub unsafe fn fileclose(mut f: *mut File) {
         pipeclose(ff.pipe, ff.writable as i32);
     } else if ff.typ as u32 == FD_INODE as i32 as u32 || ff.typ as u32 == FD_DEVICE as i32 as u32 {
         begin_op();
-        iput(ff.ip);
+        (*ff.ip).put();
         end_op();
     };
 }
@@ -161,9 +161,9 @@ pub unsafe fn filestat(mut f: *mut File, mut addr: u64) -> i32 {
     let mut p: *mut proc_0 = myproc();
     let mut st: Stat = Default::default();
     if (*f).typ as u32 == FD_INODE as i32 as u32 || (*f).typ as u32 == FD_DEVICE as i32 as u32 {
-        ilock((*f).ip);
+        (*(*f).ip).lock();
         stati((*f).ip, &mut st);
-        iunlock((*f).ip);
+        (*(*f).ip).unlock();
         if copyout(
             (*p).pagetable,
             addr,
@@ -198,12 +198,12 @@ pub unsafe fn fileread(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
             .read
             .expect("non-null function pointer")(1 as i32, addr, n)
     } else if (*f).typ as u32 == FD_INODE as i32 as u32 {
-        ilock((*f).ip);
+        (*(*f).ip).lock();
         r = readi((*f).ip, 1 as i32, addr, (*f).off, n as u32);
         if r > 0 as i32 {
             (*f).off = ((*f).off as u32).wrapping_add(r as u32) as u32 as u32
         }
-        iunlock((*f).ip);
+        (*(*f).ip).unlock();
     } else {
         panic(b"fileread\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
@@ -245,7 +245,7 @@ pub unsafe fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
                 n1 = max
             }
             begin_op();
-            ilock((*f).ip);
+            (*(*f).ip).lock();
             r = writei(
                 (*f).ip,
                 1 as i32,
@@ -256,7 +256,7 @@ pub unsafe fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
             if r > 0 as i32 {
                 (*f).off = ((*f).off as u32).wrapping_add(r as u32) as u32
             }
-            iunlock((*f).ip);
+            (*(*f).ip).unlock();
             end_op();
             if r < 0 as i32 {
                 break;
