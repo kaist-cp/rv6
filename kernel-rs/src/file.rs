@@ -168,7 +168,7 @@ pub unsafe fn filestat(mut f: *mut File, mut addr: usize) -> i32 {
             (*p).pagetable,
             addr,
             &mut st as *mut Stat as *mut libc::c_char,
-            ::core::mem::size_of::<Stat>() as usize,
+            ::core::mem::size_of::<Stat>(),
         ) < 0 as i32
         {
             return -(1 as i32);

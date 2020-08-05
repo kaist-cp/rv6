@@ -179,16 +179,16 @@ pub unsafe fn sys_link() -> usize {
 /// Is the directory dp empty except for "." and ".." ?
 unsafe fn isdirempty(mut dp: *mut Inode) -> i32 {
     let mut de: Dirent = Default::default();
-    let mut off = (2 as usize).wrapping_mul(::core::mem::size_of::<Dirent>() as usize) as i32;
+    let mut off = (2 as usize).wrapping_mul(::core::mem::size_of::<Dirent>()) as i32;
     while (off as u32) < (*dp).size {
         if readi(
             dp,
             0 as i32,
             &mut de as *mut Dirent as usize,
             off as u32,
-            ::core::mem::size_of::<Dirent>() as usize as u32,
+            ::core::mem::size_of::<Dirent>() as u32,
         ) as usize
-            != ::core::mem::size_of::<Dirent>() as usize
+            != ::core::mem::size_of::<Dirent>()
         {
             panic(
                 b"isdirempty: readi\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
@@ -197,7 +197,7 @@ unsafe fn isdirempty(mut dp: *mut Inode) -> i32 {
         if de.inum as i32 != 0 as i32 {
             return 0 as i32;
         }
-        off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>() as usize) as i32 as i32
+        off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>()) as i32 as i32
     }
     1
 }
@@ -248,9 +248,9 @@ pub unsafe fn sys_unlink() -> usize {
                     0,
                     &mut de as *mut Dirent as usize,
                     off,
-                    ::core::mem::size_of::<Dirent>() as usize as u32,
+                    ::core::mem::size_of::<Dirent>() as u32,
                 ) as usize
-                    != ::core::mem::size_of::<Dirent>() as usize
+                    != ::core::mem::size_of::<Dirent>()
                 {
                     panic(
                         b"unlink: writei\x00" as *const u8 as *const libc::c_char
@@ -496,14 +496,14 @@ pub unsafe fn sys_exec() -> usize {
     ptr::write_bytes(argv.as_mut_ptr(), 0, 1);
     loop {
         if i as usize
-            >= (::core::mem::size_of::<[*mut libc::c_char; 32]>() as usize)
-                .wrapping_div(::core::mem::size_of::<*mut libc::c_char>() as usize)
+            >= (::core::mem::size_of::<[*mut libc::c_char; 32]>())
+                .wrapping_div(::core::mem::size_of::<*mut libc::c_char>())
         {
             current_block = 12646643519710607562;
             break;
         }
         if fetchaddr(
-            uargv.wrapping_add((::core::mem::size_of::<usize>() as usize).wrapping_mul(i as usize)),
+            uargv.wrapping_add((::core::mem::size_of::<usize>()).wrapping_mul(i as usize)),
             &mut uarg as *mut usize,
         ) < 0 as i32
         {
@@ -532,8 +532,8 @@ pub unsafe fn sys_exec() -> usize {
         12646643519710607562 => {
             i = 0 as i32;
             while (i as usize)
-                < (::core::mem::size_of::<[*mut libc::c_char; 32]>() as usize)
-                    .wrapping_div(::core::mem::size_of::<*mut libc::c_char>() as usize)
+                < (::core::mem::size_of::<[*mut libc::c_char; 32]>())
+                    .wrapping_div(::core::mem::size_of::<*mut libc::c_char>())
                 && !argv[i as usize].is_null()
             {
                 kfree(argv[i as usize] as *mut libc::c_void);
@@ -545,8 +545,8 @@ pub unsafe fn sys_exec() -> usize {
             let ret = exec(path.as_mut_ptr(), argv.as_mut_ptr());
             i = 0 as i32;
             while (i as usize)
-                < (::core::mem::size_of::<[*mut libc::c_char; 32]>() as usize)
-                    .wrapping_div(::core::mem::size_of::<*mut libc::c_char>() as usize)
+                < (::core::mem::size_of::<[*mut libc::c_char; 32]>())
+                    .wrapping_div(::core::mem::size_of::<*mut libc::c_char>())
                 && !argv[i as usize].is_null()
             {
                 kfree(argv[i as usize] as *mut libc::c_void);
@@ -588,13 +588,13 @@ pub unsafe fn sys_pipe() -> usize {
         (*p).pagetable,
         fdarray,
         &mut fd0 as *mut i32 as *mut libc::c_char,
-        ::core::mem::size_of::<i32>() as usize,
+        ::core::mem::size_of::<i32>(),
     ) < 0
         || copyout(
             (*p).pagetable,
-            fdarray.wrapping_add(::core::mem::size_of::<i32>() as usize),
+            fdarray.wrapping_add(::core::mem::size_of::<i32>()),
             &mut fd1 as *mut i32 as *mut libc::c_char,
-            ::core::mem::size_of::<i32>() as usize,
+            ::core::mem::size_of::<i32>(),
         ) < 0
     {
         (*p).ofile[fd0 as usize] = ptr::null_mut();

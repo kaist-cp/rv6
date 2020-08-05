@@ -77,12 +77,12 @@ unsafe fn printint(mut xx: i32, mut base: i32, mut sign: i32) {
 unsafe fn printptr(mut x: usize) {
     consputc('0' as i32);
     consputc('x' as i32);
-    for _i in 0..(::core::mem::size_of::<usize>() as usize).wrapping_mul(2 as i32 as usize) {
+    for _i in 0..(::core::mem::size_of::<usize>()).wrapping_mul(2 as i32 as usize) {
         consputc(
             digits[(x
-                >> (::core::mem::size_of::<usize>() as usize)
+                >> (::core::mem::size_of::<usize>())
                     .wrapping_mul(8 as i32 as usize)
-                    .wrapping_sub(4 as i32 as usize)) as usize] as i32,
+                    .wrapping_sub(4 as i32 as usize))] as i32,
         );
         x <<= 4 as i32
     }

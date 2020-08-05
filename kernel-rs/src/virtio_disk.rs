@@ -161,7 +161,7 @@ pub unsafe fn virtio_disk_init() {
 
     disk.desc = disk.pages.as_mut_ptr() as *mut VRingDesc;
     disk.avail = (disk.desc as *mut libc::c_char)
-        .add((NUM as usize).wrapping_mul(::core::mem::size_of::<VRingDesc>() as usize))
+        .add((NUM as usize).wrapping_mul(::core::mem::size_of::<VRingDesc>()))
         as *mut u16;
     disk.used = disk.pages.as_mut_ptr().offset(PGSIZE as isize) as *mut UsedArea;
     for i in 0..NUM {
@@ -261,7 +261,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     (*disk.desc.offset(idx[0 as i32 as usize] as isize)).addr =
         kvmpa(&mut buf0 as *mut virtio_blk_outhdr as usize);
     (*disk.desc.offset(idx[0 as i32 as usize] as isize)).len =
-        ::core::mem::size_of::<virtio_blk_outhdr>() as usize as u32;
+        ::core::mem::size_of::<virtio_blk_outhdr>() as u32;
     (*disk.desc.offset(idx[0 as i32 as usize] as isize)).flags = VRING_DESC_F_NEXT as u16;
     (*disk.desc.offset(idx[0 as i32 as usize] as isize)).next = idx[1 as i32 as usize] as u16;
     (*disk.desc.offset(idx[1 as i32 as usize] as isize)).addr = (*b).data.as_mut_ptr() as usize;

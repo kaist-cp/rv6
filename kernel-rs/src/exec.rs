@@ -45,9 +45,9 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
         0 as i32,
         &mut elf as *mut ElfHdr as usize,
         0 as i32 as u32,
-        ::core::mem::size_of::<ElfHdr>() as usize as u32,
+        ::core::mem::size_of::<ElfHdr>() as u32,
     ) as usize
-        == ::core::mem::size_of::<ElfHdr>() as usize
+        == ::core::mem::size_of::<ElfHdr>()
         && elf.magic == ELF_MAGIC
     {
         pagetable = proc_pagetable(p);
@@ -66,9 +66,9 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                     0 as i32,
                     &mut ph as *mut ProgHdr as usize,
                     off as u32,
-                    ::core::mem::size_of::<ProgHdr>() as usize as u32,
+                    ::core::mem::size_of::<ProgHdr>() as u32,
                 ) as usize
-                    != ::core::mem::size_of::<ProgHdr>() as usize
+                    != ::core::mem::size_of::<ProgHdr>()
                 {
                     current_block = 7080392026674647309;
                     break;
@@ -98,8 +98,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                     }
                 }
                 i += 1;
-                off = (off as usize).wrapping_add(::core::mem::size_of::<ProgHdr>() as usize) as i32
-                    as i32
+                off = (off as usize).wrapping_add(::core::mem::size_of::<ProgHdr>()) as i32 as i32
             }
             match current_block {
                 7080392026674647309 => {}
@@ -162,7 +161,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                                 // push the array of argv[] pointers.
                                 sp = sp.wrapping_sub(
                                     argc.wrapping_add(1 as i32 as usize)
-                                        .wrapping_mul(::core::mem::size_of::<usize>() as usize),
+                                        .wrapping_mul(::core::mem::size_of::<usize>()),
                                 );
                                 sp = sp.wrapping_sub(sp.wrapping_rem(16 as i32 as usize));
                                 if sp >= stackbase
@@ -171,7 +170,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                                         sp,
                                         ustack.as_mut_ptr() as *mut libc::c_char,
                                         argc.wrapping_add(1 as i32 as usize)
-                                            .wrapping_mul(::core::mem::size_of::<usize>() as usize),
+                                            .wrapping_mul(::core::mem::size_of::<usize>()),
                                     ) >= 0 as i32
                                 {
                                     // arguments to user main(argc, argv)
@@ -191,8 +190,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                                     safestrcpy(
                                         (*p).name.as_mut_ptr(),
                                         last,
-                                        ::core::mem::size_of::<[libc::c_char; 16]>() as usize
-                                            as i32,
+                                        ::core::mem::size_of::<[libc::c_char; 16]>() as i32,
                                     );
 
                                     // Commit to the user image.

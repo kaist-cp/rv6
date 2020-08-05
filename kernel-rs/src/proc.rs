@@ -395,7 +395,7 @@ pub unsafe fn userinit() {
     uvminit(
         (*p).pagetable,
         initcode.as_mut_ptr(),
-        ::core::mem::size_of::<[u8; 51]>() as usize as u32,
+        ::core::mem::size_of::<[u8; 51]>() as u32,
     );
     (*p).sz = PGSIZE as usize;
 
@@ -408,7 +408,7 @@ pub unsafe fn userinit() {
     safestrcpy(
         (*p).name.as_mut_ptr(),
         b"initcode\x00" as *const u8 as *const libc::c_char,
-        ::core::mem::size_of::<[libc::c_char; 16]>() as usize as i32,
+        ::core::mem::size_of::<[libc::c_char; 16]>() as i32,
     );
     (*p).cwd = namei(b"/\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     (*p).state = RUNNABLE;
@@ -481,7 +481,7 @@ pub unsafe fn fork() -> i32 {
     safestrcpy(
         (*np).name.as_mut_ptr(),
         (*p).name.as_mut_ptr(),
-        ::core::mem::size_of::<[libc::c_char; 16]>() as usize as i32,
+        ::core::mem::size_of::<[libc::c_char; 16]>() as i32,
     );
     pid = (*np).pid;
     (*np).state = RUNNABLE;
@@ -604,7 +604,7 @@ pub unsafe fn wait(mut addr: usize) -> i32 {
                             (*p).pagetable,
                             addr,
                             &mut (*np).xstate as *mut i32 as *mut libc::c_char,
-                            ::core::mem::size_of::<i32>() as usize,
+                            ::core::mem::size_of::<i32>(),
                         ) < 0 as i32
                     {
                         (*np).lock.release();
@@ -817,11 +817,7 @@ pub unsafe fn either_copyout(
     if user_dst != 0 {
         copyout((*p).pagetable, dst, src as *mut libc::c_char, len)
     } else {
-        ptr::copy(
-            src,
-            dst as *mut libc::c_char as *mut libc::c_void,
-            len,
-        );
+        ptr::copy(src, dst as *mut libc::c_char as *mut libc::c_void, len);
         0
     }
 }
@@ -839,11 +835,7 @@ pub unsafe fn either_copyin(
     if user_src != 0 {
         copyin((*p).pagetable, dst as *mut libc::c_char, src, len)
     } else {
-        ptr::copy(
-            src as *mut libc::c_char as *const libc::c_void,
-            dst,
-            len,
-        );
+        ptr::copy(src as *mut libc::c_char as *const libc::c_void, dst, len);
         0
     }
 }
@@ -866,7 +858,7 @@ pub unsafe fn procdump() {
             let state = if (*p).state as u32 >= 0 as i32 as u32
                 && ((*p).state as usize)
                     < (::core::mem::size_of::<[*mut libc::c_char; 5]>() as usize)
-                        .wrapping_div(::core::mem::size_of::<*mut libc::c_char>() as usize)
+                        .wrapping_div(::core::mem::size_of::<*mut libc::c_char>())
                 && !states[(*p).state as usize].is_null()
             {
                 states[(*p).state as usize]

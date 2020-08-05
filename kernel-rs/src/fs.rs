@@ -698,9 +698,9 @@ pub unsafe fn dirlookup(
             0 as i32,
             &mut de as *mut Dirent as usize,
             off,
-            ::core::mem::size_of::<Dirent>() as usize as u32,
+            ::core::mem::size_of::<Dirent>() as u32,
         ) as usize
-            != ::core::mem::size_of::<Dirent>() as usize
+            != ::core::mem::size_of::<Dirent>()
         {
             panic(b"dirlookup read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
@@ -711,7 +711,7 @@ pub unsafe fn dirlookup(
             }
             return iget((*dp).dev, de.inum as u32);
         }
-        off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>() as usize) as u32 as u32
+        off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>()) as u32 as u32
     }
     ptr::null_mut()
 }
@@ -737,16 +737,16 @@ pub unsafe fn dirlink(mut dp: *mut Inode, mut name: *mut libc::c_char, mut inum:
             0 as i32,
             &mut de as *mut Dirent as usize,
             off as u32,
-            ::core::mem::size_of::<Dirent>() as usize as u32,
+            ::core::mem::size_of::<Dirent>() as u32,
         ) as usize
-            != ::core::mem::size_of::<Dirent>() as usize
+            != ::core::mem::size_of::<Dirent>()
         {
             panic(b"dirlink read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         if de.inum as i32 == 0 as i32 {
             break;
         }
-        off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>() as usize) as i32 as i32
+        off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>()) as i32 as i32
     }
     strncpy(de.name.as_mut_ptr(), name, DIRSIZ as i32);
     de.inum = inum as u16;
@@ -755,9 +755,9 @@ pub unsafe fn dirlink(mut dp: *mut Inode, mut name: *mut libc::c_char, mut inum:
         0 as i32,
         &mut de as *mut Dirent as usize,
         off as u32,
-        ::core::mem::size_of::<Dirent>() as usize as u32,
+        ::core::mem::size_of::<Dirent>() as u32,
     ) as usize
-        != ::core::mem::size_of::<Dirent>() as usize
+        != ::core::mem::size_of::<Dirent>()
     {
         panic(b"dirlink\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }

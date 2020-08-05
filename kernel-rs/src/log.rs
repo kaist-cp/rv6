@@ -76,7 +76,7 @@ impl Log {
 pub static mut log: Log = Log::zeroed();
 
 pub unsafe fn initlog(mut dev: i32, mut sb: *mut Superblock) {
-    if ::core::mem::size_of::<LogHeader>() as usize >= BSIZE as usize {
+    if ::core::mem::size_of::<LogHeader>() >= BSIZE as usize {
         panic(
             b"initlog: too big LogHeader\x00" as *const u8 as *const libc::c_char
                 as *mut libc::c_char,
