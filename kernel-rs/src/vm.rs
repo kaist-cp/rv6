@@ -33,12 +33,7 @@ pub unsafe fn kvminit() {
     ptr::write_bytes(kernel_pagetable as *mut libc::c_void, 0, PGSIZE as usize);
 
     // uart registers
-    kvmmap(
-        UART0 as usize,
-        UART0 as usize,
-        PGSIZE as usize,
-        (PTE_R | PTE_W) as i32,
-    );
+    kvmmap(UART0, UART0, PGSIZE as usize, (PTE_R | PTE_W) as i32);
 
     // virtio mmio disk interface
     kvmmap(
@@ -128,7 +123,7 @@ unsafe fn walk(mut pagetable: pagetable_t, mut va: usize, mut alloc: i32) -> *mu
             *pte = (pagetable as usize >> 12 as i32) << 10 as i32 | PTE_V as usize
         }
     }
-    &mut *pagetable.add(px(0, va) as usize) as *mut usize
+    &mut *pagetable.add(px(0, va)) as *mut usize
 }
 
 /// Look up a virtual address, return the physical address,
@@ -208,8 +203,8 @@ pub unsafe fn mappages(
         if a == last {
             break;
         }
-        a = (a as usize).wrapping_add(PGSIZE as usize) as usize as usize;
-        pa = (pa as usize).wrapping_add(PGSIZE as usize) as usize as usize
+        a = a.wrapping_add(PGSIZE as usize);
+        pa = pa.wrapping_add(PGSIZE as usize);
     }
     0
 }
@@ -256,8 +251,8 @@ pub unsafe fn uvmunmap(
         if a == last {
             break;
         }
-        a = (a as usize).wrapping_add(PGSIZE as usize) as usize as usize;
-        pa = (pa as usize).wrapping_add(PGSIZE as usize) as usize as usize
+        a = a.wrapping_add(PGSIZE as usize);
+        pa = pa.wrapping_add(PGSIZE as usize);
     }
 }
 
@@ -332,7 +327,7 @@ pub unsafe fn uvmalloc(mut pagetable: pagetable_t, mut oldsz: usize, mut newsz: 
             uvmdealloc(pagetable, a, oldsz);
             return 0 as i32 as usize;
         }
-        a = (a as usize).wrapping_add(PGSIZE as usize) as usize as usize
+        a = a.wrapping_add(PGSIZE as usize);
     }
     newsz
 }
@@ -430,7 +425,7 @@ pub unsafe fn uvmcopy(mut old: pagetable_t, mut new: pagetable_t, mut sz: usize)
             current_block = 9000140654394160520;
             break;
         } else {
-            i = (i as usize).wrapping_add(PGSIZE as usize) as usize as usize
+            i = i.wrapping_add(PGSIZE as usize);
         }
     }
     match current_block {
@@ -475,11 +470,11 @@ pub unsafe fn copyout(
         ptr::copy(
             src as *const libc::c_void,
             pa0.wrapping_add(dstva.wrapping_sub(va0)) as *mut libc::c_void,
-            n as usize,
+            n,
         );
-        len = (len as usize).wrapping_sub(n) as usize as usize;
+        len = len.wrapping_sub(n);
         src = src.add(n);
-        dstva = va0.wrapping_add(PGSIZE as usize)
+        dstva = va0.wrapping_add(PGSIZE as usize);
     }
     0
 }
@@ -506,9 +501,9 @@ pub unsafe fn copyin(
         ptr::copy(
             pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut libc::c_void,
             dst as *mut libc::c_void,
-            n as usize,
+            n,
         );
-        len = (len as usize).wrapping_sub(n) as usize as usize;
+        len = len.wrapping_sub(n);
         dst = dst.add(n);
         srcva = va0.wrapping_add(PGSIZE as usize)
     }
