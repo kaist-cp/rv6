@@ -51,8 +51,8 @@ struct Log {
 /// and to keep track in memory of logged block# before commit.
 #[derive(Copy, Clone)]
 struct LogHeader {
-    pub n: i32,
-    pub block: [i32; 30],
+    n: i32,
+    block: [i32; 30],
 }
 
 impl Log {
