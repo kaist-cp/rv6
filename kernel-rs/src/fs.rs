@@ -14,7 +14,7 @@ use crate::{
     bio::{bread, brelse},
     buf::Buf,
     file::Inode,
-    log::{initlog, log_write},
+    log::log_write,
     param::{NINODE, ROOTDEV},
     printf::panic,
     proc::{either_copyin, either_copyout, myproc},
@@ -39,20 +39,20 @@ pub const FD_NONE: u32 = 0;
 /// super block describes the disk layout:
 #[derive(Copy, Clone)]
 pub struct Superblock {
-    pub magic: u32,
-    pub size: u32,
-    pub nblocks: u32,
-    pub ninodes: u32,
+    magic: u32,
+    size: u32,
+    nblocks: u32,
+    ninodes: u32,
     pub nlog: u32,
     pub logstart: u32,
-    pub inodestart: u32,
-    pub bmapstart: u32,
+    inodestart: u32,
+    bmapstart: u32,
 }
 
 #[derive(Default, Copy, Clone)]
 pub struct Dirent {
     pub inum: u16,
-    pub name: [libc::c_char; DIRSIZ],
+    name: [libc::c_char; DIRSIZ],
 }
 
 /// On-disk inode structure
@@ -62,13 +62,13 @@ pub struct Dirent {
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
-pub struct Dinode {
-    pub typ: i16,
-    pub major: i16,
-    pub minor: i16,
-    pub nlink: i16,
-    pub size: u32,
-    pub addrs: [u32; 13],
+struct Dinode {
+    typ: i16,
+    major: i16,
+    minor: i16,
+    nlink: i16,
+    size: u32,
+    addrs: [u32; 13],
 }
 
 /// Inodes.
@@ -140,9 +140,9 @@ pub struct Dinode {
 /// dev, and inum.  One must hold ip->lock in order to
 /// read or write that inode's ip->valid, ip->size, ip->type, &c.
 #[derive(Copy, Clone)]
-pub struct Icache {
-    pub lock: Spinlock,
-    pub inode: [Inode; 50],
+struct Icache {
+    lock: Spinlock,
+    inode: [Inode; 50],
 }
 
 impl Superblock {
@@ -179,7 +179,7 @@ impl Inode {
     pub unsafe fn update(&mut self) {
         let mut bp: *mut Buf = ptr::null_mut();
         let mut dip: *mut Dinode = ptr::null_mut();
-        bp = bread(self.dev, iblock(self.inum as i32, sb));
+        bp = bread(self.dev, sb.iblock(self.inum as i32));
         dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
             .offset((self.inum as u64).wrapping_rem(IPB as u64) as isize);
         (*dip).typ = self.typ;
@@ -239,16 +239,28 @@ pub const MAXFILE: i32 = NDIRECT.wrapping_add(NINDIRECT);
 /// Inodes per block.
 pub const IPB: i32 = BSIZE.wrapping_div(mem::size_of::<Dinode>() as i32);
 
-/// Block containing inode i
-pub const fn iblock(i: i32, super_block: Superblock) -> u32 {
-    i.wrapping_div(IPB)
-        .wrapping_add(super_block.inodestart as i32) as u32
-}
+impl Superblock {
+    /// Block containing inode i
+    const fn iblock(&mut self, i: i32) -> u32 {
+        i.wrapping_div(IPB).wrapping_add(self.inodestart as i32) as u32
+    }
 
-/// Block of free map containing bit for block b
-pub const fn bblock(b: u32, super_block: Superblock) -> u32 {
-    b.wrapping_div(BPB as u32)
-        .wrapping_add(super_block.bmapstart)
+    /// Block of free map containing bit for block b
+    const fn bblock(&mut self, b: u32) -> u32 {
+        b.wrapping_div(BPB as u32).wrapping_add(self.bmapstart)
+    }
+
+    /// Read the super block.
+    unsafe fn read(&mut self, mut dev: i32) {
+        let mut bp: *mut Buf = ptr::null_mut();
+        bp = bread(dev as u32, 1 as u32);
+        ptr::copy(
+            (*bp).data.as_mut_ptr() as *const libc::c_void,
+            self as *mut Superblock as *mut libc::c_void,
+            ::core::mem::size_of::<Superblock>(),
+        );
+        brelse(bp);
+    }
 }
 
 /// Bitmap bits per block
@@ -261,25 +273,13 @@ pub const DIRSIZ: usize = 14;
 /// only one device
 pub static mut sb: Superblock = Superblock::zeroed();
 
-/// Read the super block.
-unsafe fn readsb(mut dev: i32, mut sb_0: *mut Superblock) {
-    let mut bp: *mut Buf = ptr::null_mut();
-    bp = bread(dev as u32, 1 as u32);
-    ptr::copy(
-        (*bp).data.as_mut_ptr() as *const libc::c_void,
-        sb_0 as *mut libc::c_void,
-        ::core::mem::size_of::<Superblock>(),
-    );
-    brelse(bp);
-}
-
 /// Init fs
 pub unsafe fn fsinit(mut dev: i32) {
-    readsb(dev, &mut sb);
+    sb.read(dev);
     if sb.magic != FSMAGIC as u32 {
         panic(b"invalid file system\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    initlog(dev, &mut sb);
+    sb.initlog(dev);
 }
 
 /// Zero a block.
@@ -299,7 +299,7 @@ unsafe fn balloc(mut dev: u32) -> u32 {
     let mut bp: *mut Buf = ptr::null_mut();
     bp = ptr::null_mut();
     while (b as u32) < sb.size {
-        bp = bread(dev, bblock(b as u32, sb));
+        bp = bread(dev, sb.bblock(b as u32));
         while bi < BPB && ((b + bi) as u32) < sb.size {
             let m = (1 as i32) << (bi % 8 as i32);
             if (*bp).data[(bi / 8 as i32) as usize] as i32 & m == 0 as i32 {
@@ -324,7 +324,7 @@ unsafe fn bfree(mut dev: i32, mut b: u32) {
     let mut bp: *mut Buf = ptr::null_mut();
     let mut bi: i32 = 0;
     let mut m: i32 = 0;
-    bp = bread(dev as u32, bblock(b, sb));
+    bp = bread(dev as u32, sb.bblock(b));
     bi = b.wrapping_rem(BPB as u32) as i32;
     m = (1 as i32) << (bi % 8 as i32);
     if (*bp).data[(bi / 8 as i32) as usize] as i32 & m == 0 as i32 {
@@ -335,7 +335,7 @@ unsafe fn bfree(mut dev: i32, mut b: u32) {
     brelse(bp);
 }
 
-pub static mut icache: Icache = Icache::zeroed();
+static mut icache: Icache = Icache::zeroed();
 
 pub unsafe fn iinit() {
     icache
@@ -353,7 +353,7 @@ pub unsafe fn iinit() {
 /// Returns an unlocked but allocated and referenced inode.
 pub unsafe fn ialloc(mut dev: u32, mut typ: i16) -> *mut Inode {
     for inum in 1..sb.ninodes {
-        let bp = bread(dev, iblock(inum as i32, sb));
+        let bp = bread(dev, sb.iblock(inum as i32));
         let dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
             .offset((inum as u64).wrapping_rem(IPB as u64) as isize);
         if (*dip).typ as i32 == 0 as i32 {
@@ -419,7 +419,7 @@ pub unsafe fn ilock(mut ip: *mut Inode) {
     }
     (*ip).lock.acquire();
     if (*ip).valid == 0 as i32 {
-        bp = bread((*ip).dev, iblock((*ip).inum as i32, sb));
+        bp = bread((*ip).dev, sb.iblock((*ip).inum as i32));
         dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
             .offset(((*ip).inum as u64).wrapping_rem(IPB as u64) as isize);
         (*ip).typ = (*dip).typ;
