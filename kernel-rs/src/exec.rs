@@ -133,13 +133,10 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                                 current_block = 7080392026674647309;
                                 break;
                             }
-                            sp = (sp as usize)
-                                .wrapping_sub((strlen(*argv.add(argc)) + 1 as i32) as usize)
-                                as usize as usize;
+                            sp = sp.wrapping_sub((strlen(*argv.add(argc)) + 1 as i32) as usize);
 
                             // riscv sp must be 16-byte aligned
-                            sp = (sp as usize).wrapping_sub(sp.wrapping_rem(16 as i32 as usize))
-                                as usize as usize;
+                            sp = sp.wrapping_sub(sp.wrapping_rem(16 as i32 as usize));
                             if sp < stackbase {
                                 current_block = 7080392026674647309;
                                 break;
@@ -154,21 +151,20 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                                 current_block = 7080392026674647309;
                                 break;
                             }
-                            ustack[argc as usize] = sp;
+                            ustack[argc] = sp;
                             argc = argc.wrapping_add(1)
                         }
                         match current_block {
                             7080392026674647309 => {}
                             _ => {
-                                ustack[argc as usize] = 0 as i32 as usize;
+                                ustack[argc] = 0 as i32 as usize;
 
                                 // push the array of argv[] pointers.
-                                sp = (sp as usize).wrapping_sub(
+                                sp = sp.wrapping_sub(
                                     argc.wrapping_add(1 as i32 as usize)
                                         .wrapping_mul(::core::mem::size_of::<usize>() as usize),
-                                ) as usize as usize;
-                                sp = (sp as usize).wrapping_sub(sp.wrapping_rem(16 as i32 as usize))
-                                    as usize as usize;
+                                );
+                                sp = sp.wrapping_sub(sp.wrapping_rem(16 as i32 as usize));
                                 if sp >= stackbase
                                     && copyout(
                                         pagetable,
