@@ -11,14 +11,14 @@ use crate::{
 /// Fetch the usize at addr from the current process.
 pub unsafe fn fetchaddr(mut addr: usize, mut ip: *mut usize) -> i32 {
     let mut p: *mut proc_0 = myproc();
-    if addr >= (*p).sz || addr.wrapping_add(::core::mem::size_of::<usize>() as usize) > (*p).sz {
+    if addr >= (*p).sz || addr.wrapping_add(::core::mem::size_of::<usize>()) > (*p).sz {
         return -1;
     }
     if copyin(
         (*p).pagetable,
         ip as *mut libc::c_char,
         addr,
-        ::core::mem::size_of::<usize>() as usize,
+        ::core::mem::size_of::<usize>(),
     ) != 0 as i32
     {
         return -1;
@@ -109,8 +109,8 @@ pub unsafe fn syscall() {
     num = (*(*p).tf).a7 as i32;
     if num > 0
         && (num as usize)
-            < (::core::mem::size_of::<[Option<unsafe fn() -> usize>; 22]>() as usize)
-                .wrapping_div(::core::mem::size_of::<Option<unsafe fn() -> usize>>() as usize)
+            < (::core::mem::size_of::<[Option<unsafe fn() -> usize>; 22]>())
+                .wrapping_div(::core::mem::size_of::<Option<unsafe fn() -> usize>>())
         && syscalls[num as usize].is_some()
     {
         (*(*p).tf).a0 = syscalls[num as usize].expect("non-null function pointer")()
