@@ -302,7 +302,7 @@ unsafe fn allocproc() -> *mut proc_0 {
             // Set up new context to start executing at forkret,
             // which returns to user space.
             ptr::write_bytes(&mut (*p).context as *mut Context, 0, 1);
-            (*p).context.ra = forkret as usize as usize;
+            (*p).context.ra = forkret as usize;
             (*p).context.sp = (*p).kstack.wrapping_add(PGSIZE as usize);
             p
         }
@@ -820,7 +820,7 @@ pub unsafe fn either_copyout(
         ptr::copy(
             src,
             dst as *mut libc::c_char as *mut libc::c_void,
-            len as usize,
+            len,
         );
         0
     }
@@ -842,7 +842,7 @@ pub unsafe fn either_copyin(
         ptr::copy(
             src as *mut libc::c_char as *const libc::c_void,
             dst,
-            len as usize,
+            len,
         );
         0
     }
