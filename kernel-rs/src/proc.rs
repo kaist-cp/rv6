@@ -60,18 +60,18 @@ pub struct Context {
 /// Per-process state
 #[derive(Copy, Clone)]
 pub struct proc_0 {
-    pub lock: Spinlock,
+    lock: Spinlock,
     pub state: procstate,
-    pub parent: *mut proc_0,
-    pub chan: *mut libc::c_void,
+    parent: *mut proc_0,
+    chan: *mut libc::c_void,
     pub killed: i32,
-    pub xstate: i32,
+    xstate: i32,
     pub pid: i32,
     pub kstack: u64,
     pub sz: u64,
     pub pagetable: pagetable_t,
     pub tf: *mut trapframe,
-    pub context: Context,
+    context: Context,
     pub ofile: [*mut File; 16],
     pub cwd: *mut Inode,
     pub name: [libc::c_char; 16],
