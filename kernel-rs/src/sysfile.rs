@@ -26,6 +26,34 @@ pub const FD_INODE: u32 = 2;
 pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
 
+impl Inode {
+    /// Is the directory self empty except for "." and ".." ?
+    unsafe fn isdirempty(&mut self) -> i32 {
+        let mut de: Dirent = Default::default();
+        let mut off = (2 as u64).wrapping_mul(::core::mem::size_of::<Dirent>() as u64) as i32;
+        while (off as u32) < (*self).size {
+            if (*self).read(
+                0 as i32,
+                &mut de as *mut Dirent as u64,
+                off as u32,
+                ::core::mem::size_of::<Dirent>() as u64 as u32,
+            ) as u64
+                != ::core::mem::size_of::<Dirent>() as u64
+            {
+                panic(
+                    b"isdirempty: readi\x00" as *const u8 as *const libc::c_char
+                        as *mut libc::c_char,
+                );
+            }
+            if de.inum as i32 != 0 as i32 {
+                return 0 as i32;
+            }
+            off = (off as u64).wrapping_add(::core::mem::size_of::<Dirent>() as u64) as i32 as i32
+        }
+        1
+    }
+}
+
 /// Fetch the nth word-sized system call argument as a file descriptor
 /// and return both the descriptor and the corresponding struct file.
 unsafe fn argfd(mut n: i32, mut pfd: *mut i32, mut pf: *mut *mut File) -> i32 {
@@ -173,31 +201,6 @@ pub unsafe fn sys_link() -> u64 {
     -(1 as i32) as u64
 }
 
-/// Is the directory dp empty except for "." and ".." ?
-unsafe fn isdirempty(mut dp: *mut Inode) -> i32 {
-    let mut de: Dirent = Default::default();
-    let mut off = (2 as u64).wrapping_mul(::core::mem::size_of::<Dirent>() as u64) as i32;
-    while (off as u32) < (*dp).size {
-        if (*dp).read(
-            0 as i32,
-            &mut de as *mut Dirent as u64,
-            off as u32,
-            ::core::mem::size_of::<Dirent>() as u64 as u32,
-        ) as u64
-            != ::core::mem::size_of::<Dirent>() as u64
-        {
-            panic(
-                b"isdirempty: readi\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-            );
-        }
-        if de.inum as i32 != 0 as i32 {
-            return 0 as i32;
-        }
-        off = (off as u64).wrapping_add(::core::mem::size_of::<Dirent>() as u64) as i32 as i32
-    }
-    1
-}
-
 pub unsafe fn sys_unlink() -> u64 {
     let mut ip: *mut Inode = ptr::null_mut();
     let mut dp: *mut Inode = ptr::null_mut();
@@ -235,7 +238,7 @@ pub unsafe fn sys_unlink() -> u64 {
                         as *mut libc::c_char,
                 );
             }
-            if (*ip).typ as i32 == T_DIR && isdirempty(ip) == 0 {
+            if (*ip).typ as i32 == T_DIR && (*ip).isdirempty() == 0 {
                 (*ip).unlockput();
             } else {
                 ptr::write_bytes(&mut de as *mut Dirent, 0, 1);

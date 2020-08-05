@@ -246,12 +246,7 @@ pub unsafe fn filewrite(mut f: *mut File, mut addr: u64, mut n: i32) -> i32 {
             }
             begin_op();
             (*(*f).ip).lock();
-            r = (*(*f).ip).write(
-                1 as i32,
-                addr.wrapping_add(i as u64),
-                (*f).off,
-                n1 as u32,
-            );
+            r = (*(*f).ip).write(1 as i32, addr.wrapping_add(i as u64), (*f).off, n1 as u32);
             if r > 0 as i32 {
                 (*f).off = ((*f).off as u32).wrapping_add(r as u32) as u32
             }

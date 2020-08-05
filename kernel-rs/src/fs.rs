@@ -391,7 +391,8 @@ impl Inode {
                 (*bp)
                     .data
                     .as_mut_ptr()
-                    .offset(off.wrapping_rem(BSIZE as u32) as isize) as *mut libc::c_void,
+                    .offset(off.wrapping_rem(BSIZE as u32) as isize)
+                    as *mut libc::c_void,
                 m as u64,
             ) == -(1 as i32)
             {
@@ -436,7 +437,8 @@ impl Inode {
                 (*bp)
                     .data
                     .as_mut_ptr()
-                    .offset(off.wrapping_rem(BSIZE as u32) as isize) as *mut libc::c_void,
+                    .offset(off.wrapping_rem(BSIZE as u32) as isize)
+                    as *mut libc::c_void,
                 user_src,
                 src,
                 m as u64,
@@ -474,7 +476,9 @@ impl Inode {
         let mut off: u32 = 0;
         let mut de: Dirent = Default::default();
         if (*self).typ as i32 != T_DIR {
-            panic(b"dirlookup not DIR\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(
+                b"dirlookup not DIR\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+            );
         }
         while off < (*self).size {
             if (*self).read(
@@ -485,7 +489,9 @@ impl Inode {
             ) as u64
                 != ::core::mem::size_of::<Dirent>() as u64
             {
-                panic(b"dirlookup read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+                panic(
+                    b"dirlookup read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+                );
             }
             if de.inum as i32 != 0 as i32 && namecmp(name, de.name.as_mut_ptr()) == 0 as i32 {
                 // entry matches path element
