@@ -7,7 +7,7 @@ use crate::{
     fcntl::FcntlFlags,
     file::{filealloc, fileclose, filedup, fileread, filestat, filewrite},
     file::{File, Inode},
-    fs::{dirlink, dirlookup, ialloc, namecmp, namei, nameiparent},
+    fs::{ialloc, namecmp, namei, nameiparent},
     fs::{Dirent, DIRSIZ},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
@@ -156,7 +156,7 @@ pub unsafe fn sys_link() -> u64 {
     dp = nameiparent(new.as_mut_ptr(), name.as_mut_ptr());
     if !dp.is_null() {
         (*dp).lock();
-        if (*dp).dev != (*ip).dev || dirlink(dp, name.as_mut_ptr(), (*ip).inum) < 0 as i32 {
+        if (*dp).dev != (*ip).dev || (*dp).dirlink(name.as_mut_ptr(), (*ip).inum) < 0 as i32 {
             (*dp).unlockput();
         } else {
             (*dp).unlockput();
@@ -226,7 +226,7 @@ pub unsafe fn sys_unlink() -> u64 {
             b"..\x00" as *const u8 as *const libc::c_char,
         ) == 0 as i32)
     {
-        ip = dirlookup(dp, name.as_mut_ptr(), &mut off);
+        ip = (*dp).dirlookup(name.as_mut_ptr(), &mut off);
         if !ip.is_null() {
             (*ip).lock();
             if ((*ip).nlink as i32) < 1 as i32 {
@@ -284,7 +284,7 @@ unsafe fn create(
         return ptr::null_mut();
     }
     (*dp).lock();
-    ip = dirlookup(dp, name.as_mut_ptr(), ptr::null_mut());
+    ip = (*dp).dirlookup(name.as_mut_ptr(), ptr::null_mut());
     if !ip.is_null() {
         (*dp).unlockput();
         (*ip).lock();
@@ -311,13 +311,11 @@ unsafe fn create(
         (*dp).update();
 
         // No ip->nlink++ for ".": avoid cyclic ref count.
-        if dirlink(
-            ip,
+        if (*ip).dirlink(
             b".\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
             (*ip).inum,
         ) < 0 as i32
-            || dirlink(
-                ip,
+            || (*ip).dirlink(
                 b"..\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
                 (*dp).inum,
             ) < 0 as i32
@@ -325,7 +323,7 @@ unsafe fn create(
             panic(b"create dots\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
     }
-    if dirlink(dp, name.as_mut_ptr(), (*ip).inum) < 0 as i32 {
+    if (*dp).dirlink(name.as_mut_ptr(), (*ip).inum) < 0 as i32 {
         panic(b"create: dirlink\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     (*dp).unlockput();
