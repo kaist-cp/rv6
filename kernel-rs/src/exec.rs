@@ -125,7 +125,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                         // Push argument strings, prepare rest of stack in ustack.
                         argc = 0 as i32 as usize;
                         loop {
-                            if (*argv.offset(argc as isize)).is_null() {
+                            if (*argv.add(argc)).is_null() {
                                 current_block = 4567019141635105728;
                                 break;
                             }
@@ -133,9 +133,9 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                                 current_block = 7080392026674647309;
                                 break;
                             }
-                            sp = (sp as usize).wrapping_sub(
-                                (strlen(*argv.offset(argc as isize)) + 1 as i32) as usize,
-                            ) as usize as usize;
+                            sp = (sp as usize)
+                                .wrapping_sub((strlen(*argv.add(argc)) + 1 as i32) as usize)
+                                as usize as usize;
 
                             // riscv sp must be 16-byte aligned
                             sp = (sp as usize).wrapping_sub(sp.wrapping_rem(16 as i32 as usize))
@@ -148,7 +148,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                                 pagetable,
                                 sp,
                                 *argv.offset(argc as isize),
-                                (strlen(*argv.offset(argc as isize)) + 1 as i32) as usize,
+                                (strlen(*argv.add(argc)) + 1 as i32) as usize,
                             ) < 0 as i32
                             {
                                 current_block = 7080392026674647309;

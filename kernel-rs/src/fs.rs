@@ -181,7 +181,7 @@ impl Inode {
         let mut dip: *mut Dinode = ptr::null_mut();
         bp = bread(self.dev, iblock(self.inum as i32, sb));
         dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-            .offset((self.inum as usize).wrapping_rem(IPB as usize) as isize);
+            .add((self.inum as usize).wrapping_rem(IPB as usize));
         (*dip).typ = self.typ;
         (*dip).major = self.major;
         (*dip).minor = self.minor;
@@ -355,7 +355,7 @@ pub unsafe fn ialloc(mut dev: u32, mut typ: i16) -> *mut Inode {
     for inum in 1..sb.ninodes {
         let bp = bread(dev, iblock(inum as i32, sb));
         let dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-            .offset((inum as usize).wrapping_rem(IPB as usize) as isize);
+            .add((inum as usize).wrapping_rem(IPB as usize));
         if (*dip).typ as i32 == 0 as i32 {
             // a free inode
             ptr::write_bytes(dip, 0, 1);
@@ -421,7 +421,7 @@ pub unsafe fn ilock(mut ip: *mut Inode) {
     if (*ip).valid == 0 as i32 {
         bp = bread((*ip).dev, iblock((*ip).inum as i32, sb));
         dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-            .offset(((*ip).inum as usize).wrapping_rem(IPB as usize) as isize);
+            .add(((*ip).inum as usize).wrapping_rem(IPB as usize));
         (*ip).typ = (*dip).typ;
         (*ip).major = (*dip).major;
         (*ip).minor = (*dip).minor;

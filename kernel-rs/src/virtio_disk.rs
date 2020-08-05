@@ -161,7 +161,7 @@ pub unsafe fn virtio_disk_init() {
 
     disk.desc = disk.pages.as_mut_ptr() as *mut VRingDesc;
     disk.avail = (disk.desc as *mut libc::c_char)
-        .offset((NUM as usize).wrapping_mul(::core::mem::size_of::<VRingDesc>() as usize) as isize)
+        .add((NUM as usize).wrapping_mul(::core::mem::size_of::<VRingDesc>() as usize))
         as *mut u16;
     disk.used = disk.pages.as_mut_ptr().offset(PGSIZE as isize) as *mut UsedArea;
     for i in 0..NUM {

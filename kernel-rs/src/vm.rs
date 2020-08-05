@@ -114,7 +114,7 @@ unsafe fn walk(mut pagetable: pagetable_t, mut va: usize, mut alloc: i32) -> *mu
         panic(b"walk\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     for level in (1..3).rev() {
-        let mut pte: *mut pte_t = &mut *pagetable.offset(px(level, va) as isize) as *mut usize;
+        let mut pte: *mut pte_t = &mut *pagetable.add(px(level, va)) as *mut usize;
         if *pte & PTE_V as usize != 0 {
             pagetable = ((*pte >> 10 as i32) << 12 as i32) as pagetable_t
         } else {
@@ -478,7 +478,7 @@ pub unsafe fn copyout(
             n as usize,
         );
         len = (len as usize).wrapping_sub(n) as usize as usize;
-        src = src.offset(n as isize);
+        src = src.add(n);
         dstva = va0.wrapping_add(PGSIZE as usize)
     }
     0
@@ -509,7 +509,7 @@ pub unsafe fn copyin(
             n as usize,
         );
         len = (len as usize).wrapping_sub(n) as usize as usize;
-        dst = dst.offset(n as isize);
+        dst = dst.add(n);
         srcva = va0.wrapping_add(PGSIZE as usize)
     }
     0
