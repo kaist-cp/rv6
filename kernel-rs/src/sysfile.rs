@@ -5,7 +5,7 @@ use crate::libc;
 use crate::{
     exec::exec,
     fcntl::FcntlFlags,
-    file::{filealloc, fileclose, filedup, fileread, filestat, filewrite},
+    file::filealloc,
     file::{File, Inode},
     fs::{ialloc, namecmp, namei, nameiparent},
     fs::{Dirent, DIRSIZ},
@@ -102,7 +102,7 @@ pub unsafe fn sys_dup() -> u64 {
     if fd < 0 as i32 {
         return -(1 as i32) as u64;
     }
-    filedup(f);
+    (*f).dup();
     fd as u64
 }
 
@@ -116,7 +116,7 @@ pub unsafe fn sys_read() -> u64 {
     {
         return -(1 as i32) as u64;
     }
-    fileread(f, p, n) as u64
+    (*f).read(p, n) as u64
 }
 
 pub unsafe fn sys_write() -> u64 {
@@ -129,7 +129,7 @@ pub unsafe fn sys_write() -> u64 {
     {
         return -(1 as i32) as u64;
     }
-    filewrite(f, p, n) as u64
+    (*f).write(p, n) as u64
 }
 
 pub unsafe fn sys_close() -> u64 {
@@ -140,7 +140,7 @@ pub unsafe fn sys_close() -> u64 {
     }
     let fresh0 = &mut (*myproc()).ofile[fd as usize];
     *fresh0 = ptr::null_mut();
-    fileclose(f);
+    (*f).close();
     0 as u64
 }
 
@@ -151,7 +151,7 @@ pub unsafe fn sys_fstat() -> u64 {
     {
         return -(1 as i32) as u64;
     }
-    filestat(f, st) as u64
+    (*f).stat(st) as u64
 }
 
 /// Create the path new as a link to the same inode as old.
@@ -383,7 +383,7 @@ pub unsafe fn sys_open() -> u64 {
         (fd) < 0 as i32
     } {
         if !f.is_null() {
-            fileclose(f);
+            (*f).close();
         }
         (*ip).unlockput();
         end_op();
@@ -576,8 +576,8 @@ pub unsafe fn sys_pipe() -> u64 {
         if fd0 >= 0 as i32 {
             (*p).ofile[fd0 as usize] = ptr::null_mut()
         }
-        fileclose(rf);
-        fileclose(wf);
+        (*rf).close();
+        (*wf).close();
         return -(1 as i32) as u64;
     }
     if copyout(
@@ -595,8 +595,8 @@ pub unsafe fn sys_pipe() -> u64 {
     {
         (*p).ofile[fd0 as usize] = ptr::null_mut();
         (*p).ofile[fd1 as usize] = ptr::null_mut();
-        fileclose(rf);
-        fileclose(wf);
+        (*rf).close();
+        (*wf).close();
         return -(1 as i32) as u64;
     }
     0

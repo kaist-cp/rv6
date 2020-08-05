@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    file::{fileclose, filedup, File, Inode},
+    file::{File, Inode},
     fs::{fsinit, namei},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
@@ -467,7 +467,7 @@ pub unsafe fn fork() -> i32 {
     // increment reference counts on open file descriptors.
     for i in 0..NOFILE {
         if !(*p).ofile[i as usize].is_null() {
-            (*np).ofile[i as usize] = filedup((*p).ofile[i as usize])
+            (*np).ofile[i as usize] = (*(*p).ofile[i as usize]).dup()
         }
     }
     (*np).cwd = (*(*p).cwd).idup();
@@ -520,7 +520,7 @@ pub unsafe fn exit(mut status: i32) {
     for fd in 0..NOFILE {
         if !(*p).ofile[fd as usize].is_null() {
             let mut f: *mut File = (*p).ofile[fd as usize];
-            fileclose(f);
+            (*f).close();
             (*p).ofile[fd as usize] = ptr::null_mut();
         }
     }
