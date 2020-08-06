@@ -8,8 +8,8 @@ use core::ptr;
 /// at address UART0. this macro returns the
 /// address of one of the registers.
 #[inline]
-const fn reg(r: i32) -> *mut u8 {
-    (UART0 + r as usize) as *mut u8
+const fn reg(r: usize) -> *mut u8 {
+    (UART0 + r) as *mut u8
 }
 
 /// the UART control registers.
@@ -18,30 +18,30 @@ const fn reg(r: i32) -> *mut u8 {
 /// http://byterunner.com/16550.html
 
 /// receive holding register (for input bytes)
-const RHR: i32 = 0;
+const RHR: usize = 0;
 
 /// transmit holding register (for output bytes)
-const THR: i32 = 0;
+const THR: usize = 0;
 
 /// interrupt enable register
-const IER: i32 = 1;
+const IER: usize = 1;
 
 /// FIFO control register
-const FCR: i32 = 2;
+const FCR: usize = 2;
 
 /// interrupt status register
-const ISR: i32 = 2;
+const ISR: usize = 2;
 
 /// line control register
-const LCR: i32 = 3;
+const LCR: usize = 3;
 
 /// line status register
-const LSR: i32 = 5;
+const LSR: usize = 5;
 
-unsafe fn read_reg(r: i32) -> u8 {
+unsafe fn read_reg(r: usize) -> u8 {
     ptr::read_volatile(reg(r))
 }
-unsafe fn write_reg(r: i32, v: u8) {
+unsafe fn write_reg(r: usize, v: u8) {
     ptr::write_volatile(reg(r), v)
 }
 
