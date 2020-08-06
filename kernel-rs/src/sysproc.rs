@@ -1,5 +1,6 @@
 use crate::{
     libc,
+    printf::panic,
     proc::{exit, fork, growproc, kill, myproc, sleep, wait},
     syscall::{argaddr, argint},
     trap::{ticks, tickslock},
@@ -11,24 +12,24 @@ pub unsafe fn sys_exit() -> usize {
         return usize::MAX;
     }
     exit(n);
-    0
-    // not reached
+
+    panic(b"sys_exit: not reached\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
 
 pub unsafe fn sys_getpid() -> usize {
-    (*myproc()).pid as usize
+    (*myproc()).pid as _
 }
 
 pub unsafe fn sys_fork() -> usize {
-    fork() as usize
+    fork() as _
 }
 
 pub unsafe fn sys_wait() -> usize {
-    let mut p: usize = 0;
+    let mut p: u64 = 0;
     if argaddr(0, &mut p) < 0 {
         return usize::MAX;
     }
-    wait(p) as usize
+    wait(p) as _
 }
 
 pub unsafe fn sys_sbrk() -> usize {

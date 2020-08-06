@@ -28,31 +28,31 @@ const fn r(r: i32) -> *mut u32 {
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C, align(4096))]
-pub struct Disk {
+struct Disk {
     /// memory for virtio descriptors &c for queue 0.
     /// this is a global instead of allocated because it must
     /// be multiple contiguous pages, which kalloc()
     /// doesn't support, and page aligned.
-    pub pages: [libc::c_char; 2 * PGSIZE as usize],
-    pub desc: *mut VRingDesc,
-    pub avail: *mut u16,
-    pub used: *mut UsedArea,
+    pages: [libc::c_char; 2 * PGSIZE as usize],
+    desc: *mut VRingDesc,
+    avail: *mut u16,
+    used: *mut UsedArea,
 
     /// our own book-keeping.
-    pub free: [libc::c_char; NUM as usize],
-    pub used_idx: u16,
+    free: [libc::c_char; NUM as usize],
+    used_idx: u16,
 
     /// track info about in-flight operations,
     /// for use when completion interrupt arrives.
     /// indexed by first descriptor index of chain.
-    pub info: [InflightInfo; NUM as usize],
-    pub vdisk_lock: Spinlock,
+    info: [InflightInfo; NUM as usize],
+    vdisk_lock: Spinlock,
 }
 
 #[derive(Copy, Clone)]
-pub struct InflightInfo {
-    pub b: *mut Buf,
-    pub status: libc::c_char,
+struct InflightInfo {
+    b: *mut Buf,
+    status: libc::c_char,
 }
 
 #[derive(Default, Copy, Clone)]
@@ -60,15 +60,15 @@ pub struct InflightInfo {
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
-pub struct virtio_blk_outhdr {
-    pub typ: u32,
-    pub reserved: u32,
-    pub sector: usize,
+struct virtio_blk_outhdr {
+    typ: u32,
+    reserved: u32,
+    sector: usize,
 }
 
 impl Disk {
     // TODO: transient measure
-    pub const fn zeroed() -> Self {
+    const fn zeroed() -> Self {
         Self {
             pages: [0; 8192],
             desc: ptr::null_mut(),
@@ -84,7 +84,7 @@ impl Disk {
 
 impl InflightInfo {
     // TODO: transient measure
-    pub const fn zeroed() -> Self {
+    const fn zeroed() -> Self {
         Self {
             b: ptr::null_mut(),
             status: 0,
