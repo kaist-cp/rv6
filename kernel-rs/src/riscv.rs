@@ -9,12 +9,12 @@ pub unsafe fn r_mhartid() -> usize {
 // Machine Status Register, mstatus
 
 // previous mode.
-pub const MSTATUS_MPP_MASK: i64 = (3 as i64) << 11 as i32;
-pub const MSTATUS_MPP_M: i64 = (3 as i64) << 11 as i32;
-pub const MSTATUS_MPP_S: i64 = (1 as i64) << 11 as i32;
-pub const MSTATUS_MPP_U: i64 = (0 as i64) << 11 as i32;
+pub const MSTATUS_MPP_MASK: i64 = (3 as i64) << 11;
+pub const MSTATUS_MPP_M: i64 = (3 as i64) << 11;
+pub const MSTATUS_MPP_S: i64 = (1 as i64) << 11;
+pub const MSTATUS_MPP_U: i64 = (0 as i64) << 11;
 // machine-mode interrupt enable.
-pub const MSTATUS_MIE: i64 = (1 as i64) << 3 as i32;
+pub const MSTATUS_MIE: i64 = (1 as i64) << 3;
 
 #[inline]
 pub unsafe fn r_mstatus() -> usize {
@@ -38,19 +38,19 @@ pub unsafe fn w_mepc(mut x: usize) {
 /// Supervisor Status Register, sstatus
 
 /// Previous mode, 1=Supervisor, 0=User
-pub const SSTATUS_SPP: i64 = (1 as i64) << 8 as i32;
+pub const SSTATUS_SPP: i64 = (1 as i64) << 8;
 
 /// Supervisor Previous Interrupt Enable
-pub const SSTATUS_SPIE: i64 = (1 as i64) << 5 as i32;
+pub const SSTATUS_SPIE: i64 = (1 as i64) << 5;
 
 /// User Previous Interrupt Enable
-pub const SSTATUS_UPIE: i64 = (1 as i64) << 4 as i32;
+pub const SSTATUS_UPIE: i64 = (1 as i64) << 4;
 
 /// Supervisor Interrupt Enable
-pub const SSTATUS_SIE: i64 = (1 as i64) << 1 as i32;
+pub const SSTATUS_SIE: i64 = (1 as i64) << 1;
 
 /// User Interrupt Enable
-pub const SSTATUS_UIE: i64 = (1 as i64) << 0 as i32;
+pub const SSTATUS_UIE: i64 = (1 as i64) << 0;
 
 #[inline]
 pub unsafe fn r_sstatus() -> usize {
@@ -77,13 +77,13 @@ pub unsafe fn w_sip(mut x: usize) {
 
 /// Supervisor Interrupt Enable
 /// external
-pub const SIE_SEIE: i64 = (1 as i64) << 9 as i32;
+pub const SIE_SEIE: i64 = (1 as i64) << 9;
 
 /// timer
-pub const SIE_STIE: i64 = (1 as i64) << 5 as i32;
+pub const SIE_STIE: i64 = (1 as i64) << 5;
 
 /// software
-pub const SIE_SSIE: i64 = (1 as i64) << 1 as i32;
+pub const SIE_SSIE: i64 = (1 as i64) << 1;
 
 #[inline]
 pub unsafe fn r_sie() -> usize {
@@ -99,13 +99,13 @@ pub unsafe fn w_sie(mut x: usize) {
 
 /// Machine-mode Interrupt Enable
 /// external
-pub const MIE_MEIE: i64 = (1 as i64) << 11 as i32;
+pub const MIE_MEIE: i64 = (1 as i64) << 11;
 
 /// timer
-pub const MIE_MTIE: i64 = (1 as i64) << 7 as i32;
+pub const MIE_MTIE: i64 = (1 as i64) << 7;
 
 /// software
-pub const MIE_MSIE: i64 = (1 as i64) << 3 as i32;
+pub const MIE_MSIE: i64 = (1 as i64) << 3;
 #[inline]
 pub unsafe fn r_mie() -> usize {
     let mut x: usize = 0;
@@ -180,10 +180,10 @@ pub unsafe fn w_mtvec(mut x: usize) {
 }
 
 /// use riscv's sv39 page table scheme.
-pub const SATP_SV39: i64 = (8 as i64) << 60 as i32;
+pub const SATP_SV39: i64 = (8 as i64) << 60;
 
 pub const fn make_satp(pagetable: usize) -> usize {
-    SATP_SV39 as usize | pagetable >> 12 as i32
+    SATP_SV39 as usize | pagetable >> 12
 }
 
 /// supervisor address translation and protection;
@@ -304,18 +304,18 @@ pub unsafe fn sfence_vma() {
 }
 
 /// bytes per page
-pub const PGSIZE: i32 = 4096 as i32;
+pub const PGSIZE: i32 = 4096;
 
 /// bits of offset within a page
-pub const PGSHIFT: i32 = 12 as i32;
+pub const PGSHIFT: i32 = 12;
 
 pub const fn pgroundup(sz: usize) -> usize {
     sz.wrapping_add(PGSIZE as usize)
         .wrapping_sub(1usize)
-        & (!(PGSIZE - 1 as i32) as usize)
+        & (!(PGSIZE - 1) as usize)
 }
 pub const fn pgrounddown(a: usize) -> usize {
-    a & !(PGSIZE - 1 as i32) as usize
+    a & !(PGSIZE - 1) as usize
 }
 
 /*
@@ -325,22 +325,22 @@ TODO: used directly in oter function e.g., uvmalloc in vm.rs
 */
 
 /// valid
-pub const PTE_V: i64 = (1 as i64) << 0 as i32;
+pub const PTE_V: i64 = (1 as i64) << 0;
 
-pub const PTE_R: i64 = (1 as i64) << 1 as i32;
-pub const PTE_W: i64 = (1 as i64) << 2 as i32;
-pub const PTE_X: i64 = (1 as i64) << 3 as i32;
+pub const PTE_R: i64 = (1 as i64) << 1;
+pub const PTE_W: i64 = (1 as i64) << 2;
+pub const PTE_X: i64 = (1 as i64) << 3;
 
 /// 1 -> user can access
-pub const PTE_U: i64 = (1 as i64) << 4 as i32;
+pub const PTE_U: i64 = (1 as i64) << 4;
 
 /// shift a physical address to the right place for a PTE.
 pub const fn pa2pte(pa: usize) -> usize {
-    (pa >> 12 as i32) << 10 as i32
+    (pa >> 12) << 10
 }
 
 pub const fn pte2pa(pte: pte_t) -> usize {
-    (pte >> 10 as i32) << 12 as i32
+    (pte >> 10) << 12
 }
 
 pub const fn pte_flags(pte: pte_t) -> usize {
@@ -359,7 +359,7 @@ TODO: used directly in other file e.g., vm.rs
 
 /// extract the three 9-bit page table indices from a virtual address.
 /// 9 bits
-pub const PXMASK: i32 = 0x1ff as i32;
+pub const PXMASK: i32 = 0x1ff;
 
 #[inline]
 fn pxshift(level: i32) -> i32 {
@@ -375,7 +375,7 @@ pub fn px(level: i32, va: usize) -> usize {
 /// MAXVA is actually one bit less than the max allowed by
 /// Sv39, to avoid having to sign-extend virtual addresses
 /// that have the high bit set.
-pub const MAXVA: i64 = (1 as i64) << (9 as i32 + 9 as i32 + 9 as i32 + 12 as i32 - 1 as i32);
+pub const MAXVA: i64 = (1 as i64) << (9 + 9 + 9 + 12 - 1);
 
 pub type pte_t = usize;
 pub type pde_t = usize;

@@ -7,7 +7,7 @@ pub unsafe fn strncmp(mut p: *const libc::c_char, mut q: *const libc::c_char, mu
         q = q.offset(1)
     }
     if n == 0 as u32 {
-        return 0 as i32;
+        return 0;
     }
     *p as u8 as i32 - *q as u8 as i32
 }
@@ -21,13 +21,13 @@ pub unsafe fn strncpy(
     loop {
         let fresh5 = n;
         n -= 1;
-        if !(fresh5 > 0 as i32 && {
+        if !(fresh5 > 0 && {
             let fresh6 = t;
             t = t.offset(1);
             let fresh7 = s;
             s = s.offset(1);
             *fresh7 = *fresh6;
-            (*fresh7 as i32) != 0 as i32
+            (*fresh7 as i32) != 0
         }) {
             break;
         }
@@ -35,12 +35,12 @@ pub unsafe fn strncpy(
     loop {
         let fresh8 = n;
         n -= 1;
-        if fresh8 <= 0 as i32 {
+        if fresh8 <= 0 {
             break;
         }
         let fresh9 = s;
         s = s.offset(1);
-        *fresh9 = 0 as i32 as libc::c_char
+        *fresh9 = 0 as libc::c_char
     }
     os
 }
@@ -63,12 +63,12 @@ pub unsafe fn safestrcpy(
             let fresh11 = s;
             s = s.offset(1);
             *fresh11 = *fresh10;
-            (*fresh11 as i32) != 0 as i32
+            (*fresh11 as i32) != 0
         }) {
             break;
         }
     }
-    *s = 0 as i32 as libc::c_char;
+    *s = 0 as libc::c_char;
     os
 }
 

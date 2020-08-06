@@ -27,7 +27,7 @@ impl Spinlock {
     /// Mutual exclusion spin locks.
     pub fn initlock(&mut self, mut name: *mut libc::c_char) {
         (*self).name = name;
-        (*self).locked = 0 as i32 as u32;
+        (*self).locked = 0 as u32;
         (*self).cpu = ptr::null_mut();
     }
 
@@ -44,8 +44,8 @@ impl Spinlock {
         //   a5 = 1
         //   s1 = &self->locked
         //   amoswap.w.aq a5, a5, (s1)
-        while ::core::intrinsics::atomic_xchg_acq(&mut (*self).locked as *mut u32, 1 as i32 as u32)
-            != 0 as i32 as u32
+        while ::core::intrinsics::atomic_xchg_acq(&mut (*self).locked as *mut u32, 1 as u32)
+            != 0 as u32
         {}
 
         // Tell the C compiler and the processor to not move loads or stores
@@ -97,10 +97,10 @@ impl Spinlock {
 pub unsafe fn push_off() {
     let mut old: i32 = intr_get();
     intr_off();
-    if (*(mycpu())).noff == 0 as i32 {
+    if (*(mycpu())).noff == 0 {
         (*(mycpu())).intena = old
     }
-    (*(mycpu())).noff += 1 as i32;
+    (*(mycpu())).noff += 1;
 }
 pub unsafe fn pop_off() {
     let mut c: *mut cpu = mycpu();
@@ -109,11 +109,11 @@ pub unsafe fn pop_off() {
             b"pop_off - interruptible\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
         );
     }
-    (*c).noff -= 1 as i32;
-    if (*c).noff < 0 as i32 {
+    (*c).noff -= 1;
+    if (*c).noff < 0 {
         panic(b"pop_off\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    if (*c).noff == 0 as i32 && (*c).intena != 0 {
+    if (*c).noff == 0 && (*c).intena != 0 {
         intr_on();
     };
 }

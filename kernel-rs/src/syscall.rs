@@ -19,7 +19,7 @@ pub unsafe fn fetchaddr(mut addr: usize, mut ip: *mut usize) -> i32 {
         ip as *mut libc::c_char,
         addr,
         ::core::mem::size_of::<usize>(),
-    ) != 0 as i32
+    ) != 0
     {
         return -1;
     }
@@ -31,7 +31,7 @@ pub unsafe fn fetchaddr(mut addr: usize, mut ip: *mut usize) -> i32 {
 pub unsafe fn fetchstr(mut addr: usize, mut buf: *mut libc::c_char, mut max: i32) -> i32 {
     let mut p: *mut proc_0 = myproc();
     let mut err: i32 = copyinstr((*p).pagetable, buf, addr, max as usize);
-    if err < 0 as i32 {
+    if err < 0 {
         return err;
     }
     strlen(buf)
@@ -70,7 +70,7 @@ pub unsafe fn argaddr(mut n: i32, mut ip: *mut usize) -> i32 {
 /// Returns string length if OK (including nul), -1 if error.
 pub unsafe fn argstr(mut n: i32, mut buf: *mut libc::c_char, mut max: i32) -> i32 {
     let mut addr: usize = 0;
-    if argaddr(n, &mut addr) < 0 as i32 {
+    if argaddr(n, &mut addr) < 0 {
         return -1;
     }
     fetchstr(addr, buf, max)

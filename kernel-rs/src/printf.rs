@@ -44,7 +44,7 @@ unsafe fn printint(mut xx: i32, mut base: i32, mut sign: i32) {
     let mut i: i32 = 0;
     let mut x: u32 = 0;
     if sign != 0 && {
-        sign = (xx < 0 as i32) as i32;
+        sign = (xx < 0) as i32;
         (sign) != 0
     } {
         x = -xx as u32
@@ -56,7 +56,7 @@ unsafe fn printint(mut xx: i32, mut base: i32, mut sign: i32) {
         i += 1;
         buf[fresh0 as usize] = digits[x.wrapping_rem(base as u32) as usize];
         x = (x as u32).wrapping_div(base as u32) as u32 as u32;
-        if x == 0 as i32 as u32 {
+        if x == 0 as u32 {
             break;
         }
     }
@@ -67,7 +67,7 @@ unsafe fn printint(mut xx: i32, mut base: i32, mut sign: i32) {
     }
     loop {
         i -= 1;
-        if i < 0 as i32 {
+        if i < 0 {
             break;
         }
         consputc(buf[i as usize] as i32);
@@ -84,7 +84,7 @@ unsafe fn printptr(mut x: usize) {
                     .wrapping_mul(8usize)
                     .wrapping_sub(4usize))] as i32,
         );
-        x <<= 4 as i32
+        x <<= 4
     }
 }
 
@@ -102,24 +102,24 @@ pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
     }
     ap = args.clone();
     loop {
-        let mut c = *fmt.offset(i as isize) as i32 & 0xff as i32;
-        if c == 0 as i32 {
+        let mut c = *fmt.offset(i as isize) as i32 & 0xff;
+        if c == 0 {
             break;
         }
         if c != '%' as i32 {
             consputc(c);
         } else {
             i += 1;
-            c = *fmt.offset(i as isize) as i32 & 0xff as i32;
-            if c == 0 as i32 {
+            c = *fmt.offset(i as isize) as i32 & 0xff;
+            if c == 0 {
                 break;
             }
             match c {
                 100 => {
-                    printint(ap.as_va_list().arg::<i32>(), 10 as i32, 1 as i32);
+                    printint(ap.as_va_list().arg::<i32>(), 10, 1);
                 }
                 120 => {
-                    printint(ap.as_va_list().arg::<i32>(), 16 as i32, 1 as i32);
+                    printint(ap.as_va_list().arg::<i32>(), 16, 1);
                 }
                 112 => {
                     printptr(ap.as_va_list().arg::<usize>());
@@ -152,18 +152,18 @@ pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
 }
 
 pub unsafe fn panic(mut s: *mut libc::c_char) -> ! {
-    pr.locking = 0 as i32;
+    pr.locking = 0;
     printf(b"panic: \x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     printf(s);
     printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 
     // freeze other CPUs
-    ::core::ptr::write_volatile(&mut panicked as *mut i32, 1 as i32);
+    ::core::ptr::write_volatile(&mut panicked as *mut i32, 1);
     loop {}
 }
 
 pub unsafe fn printfinit() {
     pr.lock
         .initlock(b"pr\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-    pr.locking = 1 as i32;
+    pr.locking = 1;
 }

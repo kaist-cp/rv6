@@ -42,9 +42,9 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     // Check ELF header
     if readi(
         ip,
-        0 as i32,
+        0,
         &mut elf as *mut ElfHdr as usize,
-        0 as i32 as u32,
+        0 as u32,
         ::core::mem::size_of::<ElfHdr>() as u32,
     ) as usize
         == ::core::mem::size_of::<ElfHdr>()
@@ -54,7 +54,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
         if !pagetable.is_null() {
             // Load program into memory.
             sz = 0usize;
-            i = 0 as i32;
+            i = 0;
             off = elf.phoff as i32;
             loop {
                 if i >= elf.phnum as i32 {
@@ -63,7 +63,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                 }
                 if readi(
                     ip,
-                    0 as i32,
+                    0,
                     &mut ph as *mut ProgHdr as usize,
                     off as u32,
                     ::core::mem::size_of::<ProgHdr>() as u32,
@@ -91,7 +91,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                         current_block = 7080392026674647309;
                         break;
                     }
-                    if loadseg(pagetable, ph.vaddr, ip, ph.off as u32, ph.filesz as u32) < 0 as i32
+                    if loadseg(pagetable, ph.vaddr, ip, ph.off as u32, ph.filesz as u32) < 0
                     {
                         current_block = 7080392026674647309;
                         break;
@@ -114,10 +114,10 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                     sz = sz
                         .wrapping_add(PGSIZE as usize)
                         .wrapping_sub(1usize)
-                        & !(PGSIZE - 1 as i32) as usize;
-                    sz = uvmalloc(pagetable, sz, sz.wrapping_add((2 as i32 * PGSIZE) as usize));
+                        & !(PGSIZE - 1) as usize;
+                    sz = uvmalloc(pagetable, sz, sz.wrapping_add((2 * PGSIZE) as usize));
                     if sz != 0usize {
-                        uvmclear(pagetable, sz.wrapping_sub((2 as i32 * PGSIZE) as usize));
+                        uvmclear(pagetable, sz.wrapping_sub((2 * PGSIZE) as usize));
                         sp = sz;
                         stackbase = sp.wrapping_sub(PGSIZE as usize);
 
@@ -132,7 +132,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                                 current_block = 7080392026674647309;
                                 break;
                             }
-                            sp = sp.wrapping_sub((strlen(*argv.add(argc)) + 1 as i32) as usize);
+                            sp = sp.wrapping_sub((strlen(*argv.add(argc)) + 1) as usize);
 
                             // riscv sp must be 16-byte aligned
                             sp = sp.wrapping_sub(sp.wrapping_rem(16usize));
@@ -144,8 +144,8 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                                 pagetable,
                                 sp,
                                 *argv.add(argc),
-                                (strlen(*argv.add(argc)) + 1 as i32) as usize,
-                            ) < 0 as i32
+                                (strlen(*argv.add(argc)) + 1) as usize,
+                            ) < 0
                             {
                                 current_block = 7080392026674647309;
                                 break;
@@ -171,7 +171,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                                         ustack.as_mut_ptr() as *mut libc::c_char,
                                         argc.wrapping_add(1usize)
                                             .wrapping_mul(::core::mem::size_of::<usize>()),
-                                    ) >= 0 as i32
+                                    ) >= 0
                                 {
                                     // arguments to user main(argc, argv)
                                     // argc is returned via the system call return
@@ -183,7 +183,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                                     last = s;
                                     while *s != 0 {
                                         if *s as i32 == '/' as i32 {
-                                            last = s.offset(1 as i32 as isize)
+                                            last = s.offset(1 as isize)
                                         }
                                         s = s.offset(1)
                                     }
@@ -256,10 +256,10 @@ unsafe fn loadseg(
         } else {
             PGSIZE as u32
         };
-        if readi(ip, 0 as i32, pa, offset.wrapping_add(i), n) as u32 != n {
+        if readi(ip, 0, pa, offset.wrapping_add(i), n) as u32 != n {
             return -1;
         }
         i = (i as u32).wrapping_add(PGSIZE as u32) as u32 as u32
     }
-    0 as i32
+    0
 }

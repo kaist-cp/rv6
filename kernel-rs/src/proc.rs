@@ -322,12 +322,12 @@ unsafe fn freeproc(mut p: *mut proc_0) {
     }
     (*p).pagetable = 0 as pagetable_t;
     (*p).sz = 0usize;
-    (*p).pid = 0 as i32;
+    (*p).pid = 0;
     (*p).parent = ptr::null_mut();
-    (*p).name[0usize] = 0 as i32 as libc::c_char;
+    (*p).name[0usize] = 0 as libc::c_char;
     (*p).chan = ptr::null_mut();
-    (*p).killed = 0 as i32;
-    (*p).xstate = 0 as i32;
+    (*p).killed = 0;
+    (*p).xstate = 0;
     (*p).state = UNUSED;
 }
 
@@ -365,8 +365,8 @@ pub unsafe fn proc_pagetable(mut p: *mut proc_0) -> pagetable_t {
 /// Free a process's page table, and free the
 /// physical memory it refers to.
 pub unsafe fn proc_freepagetable(mut pagetable: pagetable_t, mut sz: usize) {
-    uvmunmap(pagetable, TRAMPOLINE as usize, PGSIZE as usize, 0 as i32);
-    uvmunmap(pagetable, TRAPFRAME as usize, PGSIZE as usize, 0 as i32);
+    uvmunmap(pagetable, TRAMPOLINE as usize, PGSIZE as usize, 0);
+    uvmunmap(pagetable, TRAPFRAME as usize, PGSIZE as usize, 0);
     if sz > 0usize {
         uvmfree(pagetable, sz);
     };
@@ -440,7 +440,7 @@ pub unsafe fn growproc(n: i32) -> i32 {
         ) as u32,
     };
     (*p).sz = sz as usize;
-    0 as i32
+    0
 }
 
 /// Create a new process, copying the parent.
@@ -457,7 +457,7 @@ pub unsafe fn fork() -> i32 {
     }
 
     // Copy user memory from parent to child.
-    if uvmcopy((*p).pagetable, (*np).pagetable, (*p).sz) < 0 as i32 {
+    if uvmcopy((*p).pagetable, (*np).pagetable, (*p).sz) < 0 {
         freeproc(np);
         (*np).lock.release();
         return -1;
@@ -595,7 +595,7 @@ pub unsafe fn wait(mut addr: usize) -> i32 {
                 // np->parent can't change between the check and the acquire()
                 // because only the parent changes it, and we're the parent.
                 (*np).lock.acquire();
-                havekids = 1 as i32;
+                havekids = 1;
                 if (*np).state as u32 == ZOMBIE as i32 as u32 {
                     // Found one.
                     let pid = (*np).pid;
@@ -605,7 +605,7 @@ pub unsafe fn wait(mut addr: usize) -> i32 {
                             addr,
                             &mut (*np).xstate as *mut i32 as *mut libc::c_char,
                             ::core::mem::size_of::<i32>(),
-                        ) < 0 as i32
+                        ) < 0
                     {
                         (*np).lock.release();
                         (*p).lock.release();
@@ -679,7 +679,7 @@ pub unsafe fn sched() {
     if (*p).lock.holding() == 0 {
         panic(b"sched p->lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    if (*mycpu()).noff != 1 as i32 {
+    if (*mycpu()).noff != 1 {
         panic(b"sched locks\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     if (*p).state as u32 == RUNNING as i32 as u32 {
@@ -709,7 +709,7 @@ pub unsafe fn yield_0() {
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
 pub unsafe fn forkret() {
-    static mut first: i32 = 1 as i32;
+    static mut first: i32 = 1;
 
     // Still holding p->lock from scheduler.
     (*(myproc as unsafe fn() -> *mut proc_0)()).lock.release();
@@ -717,7 +717,7 @@ pub unsafe fn forkret() {
         // File system initialization must be run in the context of a
         // regular process (e.g., because it calls sleep), and thus cannot
         // be run from main().
-        first = 0 as i32;
+        first = 0;
         fsinit(ROOTDEV);
     }
     usertrapret();
@@ -790,13 +790,13 @@ pub unsafe fn kill(mut pid: i32) -> i32 {
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
         (*p).lock.acquire();
         if (*p).pid == pid {
-            (*p).killed = 1 as i32;
+            (*p).killed = 1;
             if (*p).state as u32 == SLEEPING as u32 {
                 // Wake process from sleep().
                 (*p).state = RUNNABLE
             }
             (*p).lock.release();
-            return 0 as i32;
+            return 0;
         }
         (*p).lock.release();
         p = p.offset(1)
@@ -855,7 +855,7 @@ pub unsafe fn procdump() {
     let mut p = proc.as_mut_ptr();
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
         if (*p).state as u32 != UNUSED as i32 as u32 {
-            let state = if (*p).state as u32 >= 0 as i32 as u32
+            let state = if (*p).state as u32 >= 0 as u32
                 && ((*p).state as usize)
                     < (::core::mem::size_of::<[*mut libc::c_char; 5]>() as usize)
                         .wrapping_div(::core::mem::size_of::<*mut libc::c_char>())

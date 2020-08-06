@@ -93,7 +93,7 @@ pub unsafe fn initlog(mut dev: i32, mut sb: *mut Superblock) {
 /// Copy committed blocks from log to their home location
 unsafe fn install_trans() {
     for tail in 0..log.lh.n {
-        let mut lbuf: *mut Buf = bread(log.dev as u32, (log.start + tail + 1 as i32) as u32);
+        let mut lbuf: *mut Buf = bread(log.dev as u32, (log.start + tail + 1) as u32);
 
         // read dst
         let mut dbuf: *mut Buf = bread(log.dev as u32, log.lh.block[tail as usize] as u32);
@@ -144,7 +144,7 @@ unsafe fn recover_from_log() {
 
     // if committed, copy from log to disk
     install_trans();
-    log.lh.n = 0 as i32;
+    log.lh.n = 0;
 
     // clear the log
     write_head();
@@ -156,11 +156,11 @@ pub unsafe fn begin_op() {
     loop {
         if log.committing != 0 ||
             // this op might exhaust log space; wait for commit.
-            log.lh.n + (log.outstanding + 1 as i32) * MAXOPBLOCKS > LOGSIZE
+            log.lh.n + (log.outstanding + 1) * MAXOPBLOCKS > LOGSIZE
         {
             sleep(&mut log as *mut Log as *mut libc::c_void, &mut log.lock);
         } else {
-            log.outstanding += 1 as i32;
+            log.outstanding += 1;
             log.lock.release();
             break;
         }
@@ -172,13 +172,13 @@ pub unsafe fn begin_op() {
 pub unsafe fn end_op() {
     let mut do_commit: i32 = 0;
     log.lock.acquire();
-    log.outstanding -= 1 as i32;
+    log.outstanding -= 1;
     if log.committing != 0 {
         panic(b"log.committing\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    if log.outstanding == 0 as i32 {
-        do_commit = 1 as i32;
-        log.committing = 1 as i32
+    if log.outstanding == 0 {
+        do_commit = 1;
+        log.committing = 1
     } else {
         // begin_op() may be waiting for log space,
         // and decrementing log.outstanding has decreased
@@ -191,7 +191,7 @@ pub unsafe fn end_op() {
         // to sleep with locks.
         commit();
         log.lock.acquire();
-        log.committing = 0 as i32;
+        log.committing = 0;
         wakeup(&mut log as *mut Log as *mut libc::c_void);
         log.lock.release();
     };
@@ -201,7 +201,7 @@ pub unsafe fn end_op() {
 unsafe fn write_log() {
     for tail in 0..log.lh.n {
         // log block
-        let mut to: *mut Buf = bread(log.dev as u32, (log.start + tail + 1 as i32) as u32);
+        let mut to: *mut Buf = bread(log.dev as u32, (log.start + tail + 1) as u32);
 
         // cache block
         let mut from: *mut Buf = bread(log.dev as u32, log.lh.block[tail as usize] as u32);
@@ -220,7 +220,7 @@ unsafe fn write_log() {
 }
 
 unsafe fn commit() {
-    if log.lh.n > 0 as i32 {
+    if log.lh.n > 0 {
         // Write modified blocks from cache to log
         write_log();
 
@@ -229,7 +229,7 @@ unsafe fn commit() {
 
         // Now install writes to home locations
         install_trans();
-        log.lh.n = 0 as i32;
+        log.lh.n = 0;
 
         // Erase the transaction from the log
         write_head();
@@ -247,12 +247,12 @@ unsafe fn commit() {
 ///   (*bp).release()
 pub unsafe fn log_write(mut b: *mut Buf) {
     let mut i: i32 = 0;
-    if log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1 as i32 {
+    if log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1 {
         panic(
             b"too big a transaction\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
         );
     }
-    if log.outstanding < 1 as i32 {
+    if log.outstanding < 1 {
         panic(
             b"log_write outside of trans\x00" as *const u8 as *const libc::c_char
                 as *mut libc::c_char,

@@ -97,7 +97,7 @@ unsafe fn consolewrite(mut user_src: i32, mut src: usize, mut n: i32) -> i32 {
 unsafe fn consoleread(mut user_dst: i32, mut dst: usize, mut n: i32) -> i32 {
     let mut target: u32 = n as u32;
     cons.lock.acquire();
-    while n > 0 as i32 {
+    while n > 0 {
         // wait until interrupt handler has put some
         // input into cons.buffer.
         while cons.r == cons.w {
@@ -161,7 +161,7 @@ pub unsafe fn consoleintr(mut cin: i32) {
             while cons.e != cons.w
                 && cons.buf[cons
                     .e
-                    .wrapping_sub(1 as i32 as u32)
+                    .wrapping_sub(1 as u32)
                     .wrapping_rem(INPUT_BUF as u32) as usize] as i32
                     != '\n' as i32
             {
@@ -178,7 +178,7 @@ pub unsafe fn consoleintr(mut cin: i32) {
             }
         }
         _ => {
-            if cin != 0 as i32 && cons.e.wrapping_sub(cons.r) < INPUT_BUF as u32 {
+            if cin != 0 && cons.e.wrapping_sub(cons.r) < INPUT_BUF as u32 {
                 cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
 
                 // echo back to the user.

@@ -32,13 +32,13 @@ impl Pipe {
     pub unsafe fn close(&mut self, mut writable: i32) {
         (*self).lock.acquire();
         if writable != 0 {
-            (*self).writeopen = 0 as i32;
+            (*self).writeopen = 0;
             wakeup(&mut (*self).nread as *mut u32 as *mut libc::c_void);
         } else {
-            (*self).readopen = 0 as i32;
+            (*self).readopen = 0;
             wakeup(&mut (*self).nwrite as *mut u32 as *mut libc::c_void);
         }
-        if (*self).readopen == 0 as i32 && (*self).writeopen == 0 as i32 {
+        if (*self).readopen == 0 && (*self).writeopen == 0 {
             (*self).lock.release();
             kfree(self as *mut Pipe as *mut libc::c_char as *mut libc::c_void);
         } else {
@@ -53,7 +53,7 @@ impl Pipe {
         while i < n {
             while (*self).nwrite == (*self).nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
-                if (*self).readopen == 0 as i32 || (*myproc()).killed != 0 {
+                if (*self).readopen == 0 || (*myproc()).killed != 0 {
                     (*self).lock.release();
                     return -1;
                 }
@@ -141,8 +141,8 @@ pub unsafe fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {
     }) {
         pi = kalloc() as *mut Pipe;
         if !pi.is_null() {
-            (*pi).readopen = 1 as i32;
-            (*pi).writeopen = 1 as i32;
+            (*pi).readopen = 1;
+            (*pi).writeopen = 1;
             (*pi).nwrite = 0 as u32;
             (*pi).nread = 0 as u32;
             (*pi)

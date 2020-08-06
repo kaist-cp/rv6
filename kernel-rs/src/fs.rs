@@ -301,11 +301,11 @@ unsafe fn balloc(mut dev: u32) -> u32 {
     while (b as u32) < sb.size {
         bp = bread(dev, bblock(b as u32, sb));
         while bi < BPB && ((b + bi) as u32) < sb.size {
-            let m = (1 as i32) << (bi % 8 as i32);
-            if (*bp).data[(bi / 8 as i32) as usize] as i32 & m == 0 as i32 {
+            let m = (1) << (bi % 8);
+            if (*bp).data[(bi / 8) as usize] as i32 & m == 0 {
                 // Is block free?
-                (*bp).data[(bi / 8 as i32) as usize] =
-                    ((*bp).data[(bi / 8 as i32) as usize] as i32 | m) as u8; // Mark block in use.
+                (*bp).data[(bi / 8) as usize] =
+                    ((*bp).data[(bi / 8) as usize] as i32 | m) as u8; // Mark block in use.
                 log_write(bp);
                 (*bp).release();
                 bzero(dev as i32, b + bi);
@@ -326,11 +326,11 @@ unsafe fn bfree(mut dev: i32, mut b: u32) {
     let mut m: i32 = 0;
     bp = bread(dev as u32, bblock(b, sb));
     bi = b.wrapping_rem(BPB as u32) as i32;
-    m = (1 as i32) << (bi % 8 as i32);
-    if (*bp).data[(bi / 8 as i32) as usize] as i32 & m == 0 as i32 {
+    m = (1) << (bi % 8);
+    if (*bp).data[(bi / 8) as usize] as i32 & m == 0 {
         panic(b"freeing free block\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    (*bp).data[(bi / 8 as i32) as usize] = ((*bp).data[(bi / 8 as i32) as usize] as i32 & !m) as u8;
+    (*bp).data[(bi / 8) as usize] = ((*bp).data[(bi / 8) as usize] as i32 & !m) as u8;
     log_write(bp);
     (*bp).release();
 }
@@ -356,7 +356,7 @@ pub unsafe fn ialloc(mut dev: u32, mut typ: i16) -> *mut Inode {
         let bp = bread(dev, iblock(inum as i32, sb));
         let dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
             .add((inum as usize).wrapping_rem(IPB as usize));
-        if (*dip).typ as i32 == 0 as i32 {
+        if (*dip).typ as i32 == 0 {
             // a free inode
             ptr::write_bytes(dip, 0, 1);
             (*dip).typ = typ;
@@ -382,14 +382,14 @@ unsafe fn iget(mut dev: u32, mut inum: u32) -> *mut Inode {
 
     // Is the inode already cached?
     empty = ptr::null_mut();
-    ip = &mut *icache.inode.as_mut_ptr().offset(0 as i32 as isize) as *mut Inode;
+    ip = &mut *icache.inode.as_mut_ptr().offset(0 as isize) as *mut Inode;
     while ip < &mut *icache.inode.as_mut_ptr().offset(NINODE as isize) as *mut Inode {
-        if (*ip).ref_0 > 0 as i32 && (*ip).dev == dev && (*ip).inum == inum {
+        if (*ip).ref_0 > 0 && (*ip).dev == dev && (*ip).inum == inum {
             (*ip).ref_0 += 1;
             icache.lock.release();
             return ip;
         }
-        if empty.is_null() && (*ip).ref_0 == 0 as i32 {
+        if empty.is_null() && (*ip).ref_0 == 0 {
             // Remember empty slot.
             empty = ip
         }
@@ -403,8 +403,8 @@ unsafe fn iget(mut dev: u32, mut inum: u32) -> *mut Inode {
     ip = empty;
     (*ip).dev = dev;
     (*ip).inum = inum;
-    (*ip).ref_0 = 1 as i32;
-    (*ip).valid = 0 as i32;
+    (*ip).ref_0 = 1;
+    (*ip).valid = 0;
     icache.lock.release();
     ip
 }
@@ -414,11 +414,11 @@ unsafe fn iget(mut dev: u32, mut inum: u32) -> *mut Inode {
 pub unsafe fn ilock(mut ip: *mut Inode) {
     let mut bp: *mut Buf = ptr::null_mut();
     let mut dip: *mut Dinode = ptr::null_mut();
-    if ip.is_null() || (*ip).ref_0 < 1 as i32 {
+    if ip.is_null() || (*ip).ref_0 < 1 {
         panic(b"ilock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     (*ip).lock.acquire();
-    if (*ip).valid == 0 as i32 {
+    if (*ip).valid == 0 {
         bp = bread((*ip).dev, iblock((*ip).inum as i32, sb));
         dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
             .add(((*ip).inum as usize).wrapping_rem(IPB as usize));
@@ -433,8 +433,8 @@ pub unsafe fn ilock(mut ip: *mut Inode) {
             ::core::mem::size_of::<[u32; 13]>(),
         );
         (*bp).release();
-        (*ip).valid = 1 as i32;
-        if (*ip).typ as i32 == 0 as i32 {
+        (*ip).valid = 1;
+        if (*ip).typ as i32 == 0 {
             panic(b"ilock: no type\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
     };
@@ -442,7 +442,7 @@ pub unsafe fn ilock(mut ip: *mut Inode) {
 
 /// Unlock the given inode.
 pub unsafe fn iunlock(mut ip: *mut Inode) {
-    if ip.is_null() || (*ip).lock.holding() == 0 || (*ip).ref_0 < 1 as i32 {
+    if ip.is_null() || (*ip).lock.holding() == 0 || (*ip).ref_0 < 1 {
         panic(b"iunlock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     (*ip).lock.release();
@@ -458,16 +458,16 @@ pub unsafe fn iunlock(mut ip: *mut Inode) {
 pub unsafe fn iput(mut ip: *mut Inode) {
     icache.lock.acquire();
 
-    if (*ip).ref_0 == 1 as i32 && (*ip).valid != 0 && (*ip).nlink as i32 == 0 as i32 {
+    if (*ip).ref_0 == 1 && (*ip).valid != 0 && (*ip).nlink as i32 == 0 {
         // inode has no links and no other references: truncate and free.
         // ip->ref == 1 means no other process can have ip locked,
         // so this acquiresleep() won't block (or deadlock).
         (*ip).lock.acquire();
         icache.lock.release();
         itrunc(ip);
-        (*ip).typ = 0 as i32 as i16;
+        (*ip).typ = 0 as i16;
         (*ip).update();
-        (*ip).valid = 0 as i32;
+        (*ip).valid = 0;
         (*ip).lock.release();
         icache.lock.acquire();
     }
@@ -495,7 +495,7 @@ unsafe fn bmap(mut ip: *mut Inode, mut bn: u32) -> u32 {
     let mut bp: *mut Buf = ptr::null_mut();
     if bn < NDIRECT as u32 {
         addr = (*ip).addrs[bn as usize];
-        if addr == 0 as i32 as u32 {
+        if addr == 0 as u32 {
             addr = balloc((*ip).dev);
             (*ip).addrs[bn as usize] = addr
         }
@@ -505,14 +505,14 @@ unsafe fn bmap(mut ip: *mut Inode, mut bn: u32) -> u32 {
     if (bn as usize) < NINDIRECT as usize {
         // Load indirect block, allocating if necessary.
         addr = (*ip).addrs[NDIRECT as usize];
-        if addr == 0 as i32 as u32 {
+        if addr == 0 as u32 {
             addr = balloc((*ip).dev);
             (*ip).addrs[NDIRECT as usize] = addr
         }
         bp = bread((*ip).dev, addr);
         a = (*bp).data.as_mut_ptr() as *mut u32;
         addr = *a.offset(bn as isize);
-        if addr == 0 as i32 as u32 {
+        if addr == 0 as u32 {
             addr = balloc((*ip).dev);
             *a.offset(bn as isize) = addr;
             log_write(bp);
@@ -542,7 +542,7 @@ unsafe fn itrunc(mut ip: *mut Inode) {
     for i in 0..NDIRECT {
         if (*ip).addrs[i as usize] != 0 {
             bfree((*ip).dev as i32, (*ip).addrs[i as usize]);
-            (*ip).addrs[i as usize] = 0 as i32 as u32
+            (*ip).addrs[i as usize] = 0 as u32
         }
     }
     if (*ip).addrs[NDIRECT as usize] != 0 {
@@ -555,9 +555,9 @@ unsafe fn itrunc(mut ip: *mut Inode) {
         }
         (*bp).release();
         bfree((*ip).dev as i32, (*ip).addrs[NDIRECT as usize]);
-        (*ip).addrs[NDIRECT as usize] = 0 as i32 as u32
+        (*ip).addrs[NDIRECT as usize] = 0 as u32
     }
-    (*ip).size = 0 as i32 as u32;
+    (*ip).size = 0 as u32;
     (*ip).update();
 }
 
@@ -594,7 +594,7 @@ pub unsafe fn readi(
         let bp = bread((*ip).dev, bmap(ip, off.wrapping_div(BSIZE as u32)));
         let m = core::cmp::min(
             n.wrapping_sub(tot),
-            (1024 as i32 as u32).wrapping_sub(off.wrapping_rem(1024 as i32 as u32)),
+            (1024 as u32).wrapping_sub(off.wrapping_rem(1024 as u32)),
         );
         if either_copyout(
             user_dst,
@@ -636,12 +636,12 @@ pub unsafe fn writei(
     if off.wrapping_add(n) as usize > MAXFILE.wrapping_mul(BSIZE) as usize {
         return -1;
     }
-    tot = 0 as i32 as u32;
+    tot = 0 as u32;
     while tot < n {
         let bp = bread((*ip).dev, bmap(ip, off.wrapping_div(BSIZE as u32)));
         let m = core::cmp::min(
             n.wrapping_sub(tot),
-            (1024 as i32 as u32).wrapping_sub(off.wrapping_rem(1024 as i32 as u32)),
+            (1024 as u32).wrapping_sub(off.wrapping_rem(1024 as u32)),
         );
         if either_copyin(
             (*bp)
@@ -663,7 +663,7 @@ pub unsafe fn writei(
             src = src.wrapping_add(m as usize);
         }
     }
-    if n > 0 as i32 as u32 {
+    if n > 0 as u32 {
         if off > (*ip).size {
             (*ip).size = off
         }
@@ -695,7 +695,7 @@ pub unsafe fn dirlookup(
     while off < (*dp).size {
         if readi(
             dp,
-            0 as i32,
+            0,
             &mut de as *mut Dirent as usize,
             off,
             ::core::mem::size_of::<Dirent>() as u32,
@@ -704,7 +704,7 @@ pub unsafe fn dirlookup(
         {
             panic(b"dirlookup read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
-        if de.inum as i32 != 0 as i32 && namecmp(name, de.name.as_mut_ptr()) == 0 as i32 {
+        if de.inum as i32 != 0 && namecmp(name, de.name.as_mut_ptr()) == 0 {
             // entry matches path element
             if !poff.is_null() {
                 *poff = off
@@ -734,7 +734,7 @@ pub unsafe fn dirlink(mut dp: *mut Inode, mut name: *mut libc::c_char, mut inum:
     while (off as u32) < (*dp).size {
         if readi(
             dp,
-            0 as i32,
+            0,
             &mut de as *mut Dirent as usize,
             off as u32,
             ::core::mem::size_of::<Dirent>() as u32,
@@ -743,7 +743,7 @@ pub unsafe fn dirlink(mut dp: *mut Inode, mut name: *mut libc::c_char, mut inum:
         {
             panic(b"dirlink read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
-        if de.inum as i32 == 0 as i32 {
+        if de.inum as i32 == 0 {
             break;
         }
         off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>()) as i32 as i32
@@ -752,7 +752,7 @@ pub unsafe fn dirlink(mut dp: *mut Inode, mut name: *mut libc::c_char, mut inum:
     de.inum = inum as u16;
     if writei(
         dp,
-        0 as i32,
+        0,
         &mut de as *mut Dirent as usize,
         off as u32,
         ::core::mem::size_of::<Dirent>() as u32,
@@ -761,7 +761,7 @@ pub unsafe fn dirlink(mut dp: *mut Inode, mut name: *mut libc::c_char, mut inum:
     {
         panic(b"dirlink\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    0 as i32
+    0
 }
 
 /// Paths
@@ -782,11 +782,11 @@ unsafe fn skipelem(mut path: *mut libc::c_char, mut name: *mut libc::c_char) -> 
     while *path as i32 == '/' as i32 {
         path = path.offset(1)
     }
-    if *path as i32 == 0 as i32 {
+    if *path as i32 == 0 {
         return ptr::null_mut();
     }
     s = path;
-    while *path as i32 != '/' as i32 && *path as i32 != 0 as i32 {
+    while *path as i32 != '/' as i32 && *path as i32 != 0 {
         path = path.offset(1)
     }
     len = path.wrapping_offset_from(s) as i64 as i32;
@@ -798,7 +798,7 @@ unsafe fn skipelem(mut path: *mut libc::c_char, mut name: *mut libc::c_char) -> 
             name as *mut libc::c_void,
             len as usize,
         );
-        *name.offset(len as isize) = 0 as i32 as libc::c_char
+        *name.offset(len as isize) = 0 as libc::c_char
     }
     while *path as i32 == '/' as i32 {
         path = path.offset(1)
@@ -854,9 +854,9 @@ unsafe fn namex(
 
 pub unsafe fn namei(mut path: *mut libc::c_char) -> *mut Inode {
     let mut name: [libc::c_char; DIRSIZ] = [0; DIRSIZ];
-    namex(path, 0 as i32, name.as_mut_ptr())
+    namex(path, 0, name.as_mut_ptr())
 }
 
 pub unsafe fn nameiparent(mut path: *mut libc::c_char, mut name: *mut libc::c_char) -> *mut Inode {
-    namex(path, 1 as i32, name)
+    namex(path, 1, name)
 }

@@ -47,7 +47,7 @@ pub unsafe fn trapinithart() {
 /// called from trampoline.S
 #[no_mangle]
 pub unsafe extern "C" fn usertrap() {
-    let mut which_dev: i32 = 0 as i32;
+    let mut which_dev: i32 = 0;
 
     if r_sstatus() & SSTATUS_SPP as usize != 0usize {
         panic(
@@ -81,7 +81,7 @@ pub unsafe extern "C" fn usertrap() {
         syscall();
     } else {
         which_dev = devintr();
-        if which_dev == 0 as i32 {
+        if which_dev == 0 {
             printf(
                 b"usertrap(): unexpected scause %p pid=%d\n\x00" as *const u8 as *const libc::c_char
                     as *mut libc::c_char,
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn usertrap() {
                 r_sepc(),
                 r_stval(),
             );
-            (*p).killed = 1 as i32
+            (*p).killed = 1
         }
     }
 
@@ -103,7 +103,7 @@ pub unsafe extern "C" fn usertrap() {
     }
 
     // give up the CPU if this is a timer interrupt.
-    if which_dev == 2 as i32 {
+    if which_dev == 2 {
         yield_0();
     }
 

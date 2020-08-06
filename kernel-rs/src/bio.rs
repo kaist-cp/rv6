@@ -33,7 +33,7 @@ impl Buf {
         if (*self).lock.holding() == 0 {
             panic(b"bwrite\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
-        virtio_disk_rw(self, 1 as i32);
+        virtio_disk_rw(self, 1);
     }
 
     /// Release a locked buffer.
@@ -47,7 +47,7 @@ impl Buf {
         (*self).lock.release();
         bcache.lock.acquire();
         (*self).refcnt = (*self).refcnt.wrapping_sub(1);
-        if (*self).refcnt == 0 as i32 as u32 {
+        if (*self).refcnt == 0 as u32 {
             // no one is waiting for it.
             (*(*self).next).prev = (*self).prev;
             (*(*self).prev).next = (*self).next;
@@ -119,11 +119,11 @@ unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
     // Not cached; recycle an unused buffer.
     b = bcache.head.prev;
     while b != &mut bcache.head as *mut Buf {
-        if (*b).refcnt == 0 as i32 as u32 {
+        if (*b).refcnt == 0 as u32 {
             (*b).dev = dev;
             (*b).blockno = blockno;
-            (*b).valid = 0 as i32;
-            (*b).refcnt = 1 as i32 as u32;
+            (*b).valid = 0;
+            (*b).refcnt = 1 as u32;
             bcache.lock.release();
             (*b).lock.acquire();
             return b;
@@ -138,8 +138,8 @@ pub unsafe fn bread(mut dev: u32, mut blockno: u32) -> *mut Buf {
     let mut b: *mut Buf = ptr::null_mut();
     b = bget(dev, blockno);
     if (*b).valid == 0 {
-        virtio_disk_rw(b, 0 as i32);
-        (*b).valid = 1 as i32
+        virtio_disk_rw(b, 0);
+        (*b).valid = 1
     }
     b
 }

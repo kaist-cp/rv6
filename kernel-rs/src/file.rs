@@ -108,8 +108,8 @@ pub unsafe fn filealloc() -> *mut File {
     ftable.lock.acquire();
     f = ftable.file.as_mut_ptr();
     while f < ftable.file.as_mut_ptr().offset(NFILE as isize) {
-        if (*f).ref_0 == 0 as i32 {
-            (*f).ref_0 = 1 as i32;
+        if (*f).ref_0 == 0 {
+            (*f).ref_0 = 1;
             ftable.lock.release();
             return f;
         }
@@ -122,7 +122,7 @@ pub unsafe fn filealloc() -> *mut File {
 /// Increment ref count for file f.
 pub unsafe fn filedup(mut f: *mut File) -> *mut File {
     ftable.lock.acquire();
-    if (*f).ref_0 < 1 as i32 {
+    if (*f).ref_0 < 1 {
         panic(b"filedup\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     (*f).ref_0 += 1;
@@ -134,16 +134,16 @@ pub unsafe fn filedup(mut f: *mut File) -> *mut File {
 pub unsafe fn fileclose(mut f: *mut File) {
     let mut ff: File = File::zeroed();
     ftable.lock.acquire();
-    if (*f).ref_0 < 1 as i32 {
+    if (*f).ref_0 < 1 {
         panic(b"fileclose\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     (*f).ref_0 -= 1;
-    if (*f).ref_0 > 0 as i32 {
+    if (*f).ref_0 > 0 {
         ftable.lock.release();
         return;
     }
     ff = *f;
-    (*f).ref_0 = 0 as i32;
+    (*f).ref_0 = 0;
     (*f).typ = FD_NONE;
     ftable.lock.release();
     if ff.typ as u32 == FD_PIPE as i32 as u32 {
@@ -169,11 +169,11 @@ pub unsafe fn filestat(mut f: *mut File, mut addr: usize) -> i32 {
             addr,
             &mut st as *mut Stat as *mut libc::c_char,
             ::core::mem::size_of::<Stat>(),
-        ) < 0 as i32
+        ) < 0
         {
             return -1;
         }
-        return 0 as i32;
+        return 0;
     }
     -1
 }
@@ -182,13 +182,13 @@ pub unsafe fn filestat(mut f: *mut File, mut addr: usize) -> i32 {
 /// addr is a user virtual address.
 pub unsafe fn fileread(mut f: *mut File, mut addr: usize, mut n: i32) -> i32 {
     let mut r: i32 = 0;
-    if (*f).readable as i32 == 0 as i32 {
+    if (*f).readable as i32 == 0 {
         return -1;
     }
     if (*f).typ as u32 == FD_PIPE as i32 as u32 {
         r = (*((*f).pipe)).read(addr, n)
     } else if (*f).typ as u32 == FD_DEVICE as i32 as u32 {
-        if ((*f).major as i32) < 0 as i32
+        if ((*f).major as i32) < 0
             || (*f).major as i32 >= NDEV
             || devsw[(*f).major as usize].read.is_none()
         {
@@ -196,11 +196,11 @@ pub unsafe fn fileread(mut f: *mut File, mut addr: usize, mut n: i32) -> i32 {
         }
         r = devsw[(*f).major as usize]
             .read
-            .expect("non-null function pointer")(1 as i32, addr, n)
+            .expect("non-null function pointer")(1, addr, n)
     } else if (*f).typ as u32 == FD_INODE as i32 as u32 {
         ilock((*f).ip);
-        r = readi((*f).ip, 1 as i32, addr, (*f).off, n as u32);
-        if r > 0 as i32 {
+        r = readi((*f).ip, 1, addr, (*f).off, n as u32);
+        if r > 0 {
             (*f).off = ((*f).off as u32).wrapping_add(r as u32) as u32 as u32
         }
         iunlock((*f).ip);
@@ -215,13 +215,13 @@ pub unsafe fn fileread(mut f: *mut File, mut addr: usize, mut n: i32) -> i32 {
 pub unsafe fn filewrite(mut f: *mut File, mut addr: usize, mut n: i32) -> i32 {
     let mut r: i32 = 0;
     let mut ret: i32 = 0;
-    if (*f).writable as i32 == 0 as i32 {
+    if (*f).writable as i32 == 0 {
         return -1;
     }
     if (*f).typ as u32 == FD_PIPE as i32 as u32 {
         ret = (*((*f).pipe)).write(addr, n)
     } else if (*f).typ as u32 == FD_DEVICE as i32 as u32 {
-        if ((*f).major as i32) < 0 as i32
+        if ((*f).major as i32) < 0
             || (*f).major as i32 >= NDEV
             || devsw[(*f).major as usize].write.is_none()
         {
@@ -229,7 +229,7 @@ pub unsafe fn filewrite(mut f: *mut File, mut addr: usize, mut n: i32) -> i32 {
         }
         ret = devsw[(*f).major as usize]
             .write
-            .expect("non-null function pointer")(1 as i32, addr, n)
+            .expect("non-null function pointer")(1, addr, n)
     } else if (*f).typ as u32 == FD_INODE as i32 as u32 {
         // write a few blocks at a time to avoid exceeding
         // the maximum log transaction size, including
@@ -248,17 +248,17 @@ pub unsafe fn filewrite(mut f: *mut File, mut addr: usize, mut n: i32) -> i32 {
             ilock((*f).ip);
             r = writei(
                 (*f).ip,
-                1 as i32,
+                1,
                 addr.wrapping_add(i as usize),
                 (*f).off,
                 n1 as u32,
             );
-            if r > 0 as i32 {
+            if r > 0 {
                 (*f).off = ((*f).off as u32).wrapping_add(r as u32) as u32
             }
             iunlock((*f).ip);
             end_op();
-            if r < 0 as i32 {
+            if r < 0 {
                 break;
             }
             if r != n1 {

@@ -29,16 +29,16 @@ pub const CLINT: i64 = 0x2000000;
 pub const fn clint_mtimecmp(hartid: usize) -> usize {
     (CLINT + 0x4000 as i64 + (8 * hartid) as i64) as usize
 }
-pub const CLINT_MTIME: i64 = CLINT + 0xbff8 as i32 as i64;
+pub const CLINT_MTIME: i64 = CLINT + 0xbff8 as i64;
 
 /// qemu puts programmable interrupt controller here.
 pub const PLIC: i64 = 0xc000000;
 pub const PLIC_PENDING: i64 = PLIC + 0x1000;
 pub const fn plic_senable(hart: i32) -> i64 {
-    PLIC + 0x2080 as i32 as i64 + (hart * 0x100 as i32) as i64
+    PLIC + 0x2080 as i64 + (hart * 0x100) as i64
 }
 pub const fn plic_spriority(hart: i32) -> i64 {
-    PLIC + 0x201000 as i32 as i64 + (hart * 0x2000) as i64
+    PLIC + 0x201000 as i64 + (hart * 0x2000) as i64
 }
 pub const fn plic_sclaim(hart: i32) -> i64 {
     PLIC + 0x201004 as i64 + (hart * 0x2000) as i64
@@ -57,7 +57,7 @@ pub const TRAMPOLINE: i64 = MAXVA - PGSIZE as i64;
 /// map kernel stacks beneath the trampoline,
 /// each surrounded by invalid guard pages.
 pub const fn kstack(p: i32) -> i64 {
-    TRAMPOLINE - ((p + 1 as i32) * 2 as i32 * PGSIZE) as i64
+    TRAMPOLINE - ((p + 1) * 2 * PGSIZE) as i64
 }
 
 /// User memory layout.
