@@ -14,10 +14,10 @@ use core::ptr;
 /// Interface:
 /// * To get a buffer for a particular disk block, call bread.
 /// * After changing buffer data, call bwrite to write it to disk.
-/// * When done with the buffer, call brelse.
-/// * Do not use the buffer after calling brelse.
+/// * When done with the buffer, call release.
+/// * Do not use the buffer after calling release.
 /// * Only one process at a time can use a buffer, so do not keep them longer than necessary.
-pub struct Bcache {
+struct Bcache {
     lock: Spinlock,
     buf: [Buf; NBUF as usize],
 
@@ -25,7 +25,54 @@ pub struct Bcache {
     head: Buf,
 }
 
-pub static mut BCACHE: MaybeUninit<Bcache> = MaybeUninit::uninit();
+static mut BCACHE: MaybeUninit<Bcache> = MaybeUninit::uninit();
+
+impl Buf {
+    /// Write self's contents to disk.  Must be locked.
+    pub unsafe fn write(&mut self) {
+        if (*self).lock.holding() == 0 {
+            panic(b"bwrite\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        }
+        virtio_disk_rw(self, 1 as i32);
+    }
+
+    /// Release a locked buffer.
+    /// Move to the head of the MRU list.
+    pub unsafe fn release(&mut self) {
+        let bcache = BCACHE.get_mut();
+
+        if (*self).lock.holding() == 0 {
+            panic(b"release\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        }
+        (*self).lock.release();
+        bcache.lock.acquire();
+        (*self).refcnt = (*self).refcnt.wrapping_sub(1);
+        if (*self).refcnt == 0 as i32 as u32 {
+            // no one is waiting for it.
+            (*(*self).next).prev = (*self).prev;
+            (*(*self).prev).next = (*self).next;
+            (*self).next = bcache.head.next;
+            (*self).prev = &mut bcache.head;
+            (*bcache.head.next).prev = self;
+            bcache.head.next = self
+        }
+        bcache.lock.release();
+    }
+    pub unsafe fn pin(&mut self) {
+        let bcache = BCACHE.get_mut();
+
+        bcache.lock.acquire();
+        (*self).refcnt = (*self).refcnt.wrapping_add(1);
+        bcache.lock.release();
+    }
+    pub unsafe fn unpin(&mut self) {
+        let bcache = BCACHE.get_mut();
+
+        bcache.lock.acquire();
+        (*self).refcnt = (*self).refcnt.wrapping_sub(1);
+        bcache.lock.release();
+    }
+}
 
 pub unsafe fn binit() {
     let bcache = BCACHE.get_mut();
@@ -95,49 +142,4 @@ pub unsafe fn bread(mut dev: u32, mut blockno: u32) -> *mut Buf {
         (*b).valid = 1 as i32
     }
     b
-}
-
-/// Write b's contents to disk.  Must be locked.
-pub unsafe fn bwrite(mut b: *mut Buf) {
-    if (*b).lock.holding() == 0 {
-        panic(b"bwrite\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-    }
-    virtio_disk_rw(b, 1 as i32);
-}
-
-/// Release a locked buffer.
-/// Move to the head of the MRU list.
-pub unsafe fn brelse(mut b: *mut Buf) {
-    let bcache = BCACHE.get_mut();
-
-    if (*b).lock.holding() == 0 {
-        panic(b"brelse\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-    }
-    (*b).lock.release();
-    bcache.lock.acquire();
-    (*b).refcnt = (*b).refcnt.wrapping_sub(1);
-    if (*b).refcnt == 0 as i32 as u32 {
-        // no one is waiting for it.
-        (*(*b).next).prev = (*b).prev;
-        (*(*b).prev).next = (*b).next;
-        (*b).next = bcache.head.next;
-        (*b).prev = &mut bcache.head;
-        (*bcache.head.next).prev = b;
-        bcache.head.next = b
-    }
-    bcache.lock.release();
-}
-pub unsafe fn bpin(mut b: *mut Buf) {
-    let bcache = BCACHE.get_mut();
-
-    bcache.lock.acquire();
-    (*b).refcnt = (*b).refcnt.wrapping_add(1);
-    bcache.lock.release();
-}
-pub unsafe fn bunpin(mut b: *mut Buf) {
-    let bcache = BCACHE.get_mut();
-
-    bcache.lock.acquire();
-    (*b).refcnt = (*b).refcnt.wrapping_sub(1);
-    bcache.lock.release();
 }

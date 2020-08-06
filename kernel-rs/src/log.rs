@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    bio::{bpin, bread, brelse, bunpin, bwrite},
+    bio::bread,
     buf::Buf,
     fs::{Superblock, BSIZE},
     param::{LOGSIZE, MAXOPBLOCKS},
@@ -108,10 +108,10 @@ unsafe fn install_trans() {
         );
 
         // write dst to disk
-        bwrite(dbuf);
-        bunpin(dbuf);
-        brelse(lbuf);
-        brelse(dbuf);
+        (*dbuf).write();
+        (*dbuf).unpin();
+        (*lbuf).release();
+        (*dbuf).release();
         // tail += 1
     }
 }
@@ -124,7 +124,7 @@ unsafe fn read_head() {
     for i in 0..log.lh.n {
         log.lh.block[i as usize] = (*lh).block[i as usize];
     }
-    brelse(buf);
+    (*buf).release();
 }
 
 /// Write in-memory log header to disk.
@@ -137,8 +137,8 @@ unsafe fn write_head() {
     for i in 0..log.lh.n {
         (*hb).block[i as usize] = log.lh.block[i as usize];
     }
-    bwrite(buf);
-    brelse(buf);
+    (*buf).write();
+    (*buf).release();
 }
 
 unsafe fn recover_from_log() {
@@ -215,9 +215,9 @@ unsafe fn write_log() {
         );
 
         // write the log
-        bwrite(to);
-        brelse(from);
-        brelse(to);
+        (*to).write();
+        (*from).release();
+        (*to).release();
     }
 }
 
@@ -242,11 +242,11 @@ unsafe fn commit() {
 /// Record the block number and pin in the cache by increasing refcnt.
 /// commit()/write_log() will do the disk write.
 ///
-/// log_write() replaces bwrite(); a typical use is:
+/// log_write() replaces write(); a typical use is:
 ///   bp = bread(...)
 ///   modify bp->data[]
 ///   log_write(bp)
-///   brelse(bp)
+///   (*bp).release()
 pub unsafe fn log_write(mut b: *mut Buf) {
     let mut i: i32 = 0;
     if log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1 as i32 {
@@ -272,7 +272,7 @@ pub unsafe fn log_write(mut b: *mut Buf) {
 
     // Add new block to log?
     if i == log.lh.n {
-        bpin(b);
+        (*b).pin();
         log.lh.n += 1
     }
     log.lock.release();

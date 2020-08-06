@@ -12,14 +12,14 @@ pub static mut end: [u8; 0] = [0; 0];
 /// first address after kernel.
 /// defined by kernel.ld.
 #[derive(Copy, Clone)]
-pub struct run {
-    pub next: *mut run,
+struct Run {
+    next: *mut Run,
 }
 
 #[derive(Copy, Clone)]
-pub struct Kmem {
-    pub lock: Spinlock,
-    pub freelist: *mut run,
+struct Kmem {
+    lock: Spinlock,
+    freelist: *mut Run,
 }
 
 impl Kmem {
@@ -32,7 +32,7 @@ impl Kmem {
     }
 }
 
-pub static mut kmem: Kmem = Kmem::zeroed();
+static mut kmem: Kmem = Kmem::zeroed();
 
 pub unsafe fn kinit() {
     kmem.lock
@@ -72,7 +72,7 @@ pub unsafe fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: *mut libc::
 /// call to kalloc().  (The exception is when
 /// initializing the allocator; see kinit above.)
 pub unsafe fn kfree(mut pa: *mut libc::c_void) {
-    let mut r: *mut run = ptr::null_mut();
+    let mut r: *mut Run = ptr::null_mut();
     if (pa as u64).wrapping_rem(PGSIZE as u64) != 0 as i32 as u64
         || (pa as *mut libc::c_char) < end.as_mut_ptr()
         || pa as u64 >= PHYSTOP as u64
@@ -82,7 +82,7 @@ pub unsafe fn kfree(mut pa: *mut libc::c_void) {
 
     // Fill with junk to catch dangling refs.
     ptr::write_bytes(pa as *mut libc::c_void, 1, PGSIZE as usize);
-    r = pa as *mut run;
+    r = pa as *mut Run;
     kmem.lock.acquire();
     (*r).next = kmem.freelist;
     kmem.freelist = r;
@@ -93,7 +93,7 @@ pub unsafe fn kfree(mut pa: *mut libc::c_void) {
 /// Returns a pointer that the kernel can use.
 /// Returns 0 if the memory cannot be allocated.
 pub unsafe fn kalloc() -> *mut libc::c_void {
-    let mut r: *mut run = ptr::null_mut();
+    let mut r: *mut Run = ptr::null_mut();
     kmem.lock.acquire();
     r = kmem.freelist;
     if !r.is_null() {
