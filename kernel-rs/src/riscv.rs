@@ -310,7 +310,7 @@ pub const PGSIZE: i32 = 4096;
 pub const PGSHIFT: i32 = 12;
 
 pub const fn pgroundup(sz: usize) -> usize {
-    sz.wrapping_add(PGSIZE as usize).wrapping_sub(1usize) & (!(PGSIZE - 1) as usize)
+    sz.wrapping_add(PGSIZE as usize).wrapping_sub(1) & (!(PGSIZE - 1) as usize)
 }
 pub const fn pgrounddown(a: usize) -> usize {
     a & !(PGSIZE - 1) as usize

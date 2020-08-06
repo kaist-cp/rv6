@@ -500,7 +500,7 @@ unsafe fn bmap(mut ip: *mut Inode, mut bn: u32) -> u32 {
         }
         return addr;
     }
-    bn = (bn as u32).wrapping_sub(NDIRECT as u32) as u32 as u32;
+    bn = bn.wrapping_sub(NDIRECT as u32);
     if (bn as usize) < NINDIRECT as usize {
         // Load indirect block, allocating if necessary.
         addr = (*ip).addrs[NDIRECT as usize];
@@ -609,8 +609,8 @@ pub unsafe fn readi(
             break;
         } else {
             (*bp).release();
-            tot = (tot as u32).wrapping_add(m) as u32 as u32;
-            off = (off as u32).wrapping_add(m) as u32 as u32;
+            tot = tot.wrapping_add(m);
+            off = off.wrapping_add(m);
             dst = dst.wrapping_add(m as usize);
         }
     }
@@ -635,7 +635,6 @@ pub unsafe fn writei(
     if off.wrapping_add(n) as usize > MAXFILE.wrapping_mul(BSIZE) as usize {
         return -1;
     }
-    tot = 0 as u32;
     while tot < n {
         let bp = bread((*ip).dev, bmap(ip, off.wrapping_div(BSIZE as u32)));
         let m = core::cmp::min(
@@ -745,7 +744,7 @@ pub unsafe fn dirlink(mut dp: *mut Inode, mut name: *mut libc::c_char, mut inum:
         if de.inum as i32 == 0 {
             break;
         }
-        off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>()) as i32 as i32
+        off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>()) as i32
     }
     strncpy(de.name.as_mut_ptr(), name, DIRSIZ as i32);
     de.inum = inum as u16;

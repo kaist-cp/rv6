@@ -188,7 +188,7 @@ unsafe fn isdirempty(mut dp: *mut Inode) -> i32 {
         if de.inum as i32 != 0 {
             return 0;
         }
-        off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>()) as i32 as i32
+        off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>()) as i32
     }
     1
 }

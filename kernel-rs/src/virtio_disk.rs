@@ -193,9 +193,7 @@ unsafe fn free_desc(mut i: i32) {
     }
     (*disk.desc.offset(i as isize)).addr = 0;
     disk.free[i as usize] = 1 as libc::c_char;
-    wakeup(
-        &mut *disk.free.as_mut_ptr().offset(0) as *mut libc::c_char as *mut libc::c_void,
-    );
+    wakeup(&mut *disk.free.as_mut_ptr().offset(0) as *mut libc::c_char as *mut libc::c_void);
 }
 
 /// free a chain of descriptors.
@@ -236,8 +234,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
 
     while alloc3_desc(idx.as_mut_ptr()) != 0 {
         sleep(
-            &mut *disk.free.as_mut_ptr().offset(0) as *mut libc::c_char
-                as *mut libc::c_void,
+            &mut *disk.free.as_mut_ptr().offset(0) as *mut libc::c_char as *mut libc::c_void,
             &mut disk.vdisk_lock,
         );
     }
@@ -261,31 +258,31 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     (*disk.desc.offset(idx[0] as isize)).addr = kvmpa(&mut buf0 as *mut virtio_blk_outhdr as usize);
     (*disk.desc.offset(idx[0] as isize)).len = ::core::mem::size_of::<virtio_blk_outhdr>() as u32;
     (*disk.desc.offset(idx[0] as isize)).flags = VRING_DESC_F_NEXT as u16;
-    (*disk.desc.offset(idx[0] as isize)).next = idx[1usize] as u16;
-    (*disk.desc.offset(idx[1usize] as isize)).addr = (*b).data.as_mut_ptr() as usize;
-    (*disk.desc.offset(idx[1usize] as isize)).len = BSIZE as u32;
+    (*disk.desc.offset(idx[0] as isize)).next = idx[1] as u16;
+    (*disk.desc.offset(idx[1] as isize)).addr = (*b).data.as_mut_ptr() as usize;
+    (*disk.desc.offset(idx[1] as isize)).len = BSIZE as u32;
     if write != 0 {
         // device writes b->data
-        (*disk.desc.offset(idx[1usize] as isize)).flags = 0 as u16
+        (*disk.desc.offset(idx[1] as isize)).flags = 0 as u16
     } else {
         // device reads b->data
-        (*disk.desc.offset(idx[1usize] as isize)).flags = VRING_DESC_F_WRITE as u16
+        (*disk.desc.offset(idx[1] as isize)).flags = VRING_DESC_F_WRITE as u16
     }
 
-    let fresh0 = &mut (*disk.desc.offset(idx[1usize] as isize)).flags;
+    let fresh0 = &mut (*disk.desc.offset(idx[1] as isize)).flags;
     *fresh0 = (*fresh0 as i32 | VRING_DESC_F_NEXT) as u16;
-    (*disk.desc.offset(idx[1usize] as isize)).next = idx[2usize] as u16;
+    (*disk.desc.offset(idx[1] as isize)).next = idx[2] as u16;
 
     disk.info[idx[0] as usize].status = 0 as libc::c_char;
-    (*disk.desc.offset(idx[2usize] as isize)).addr = &mut (*disk
+    (*disk.desc.offset(idx[2] as isize)).addr = &mut (*disk
         .info
         .as_mut_ptr()
         .offset(*idx.as_mut_ptr().offset(0) as isize))
     .status as *mut libc::c_char as usize;
-    (*disk.desc.offset(idx[2usize] as isize)).len = 1 as u32;
+    (*disk.desc.offset(idx[2] as isize)).len = 1 as u32;
     // device writes the status
-    (*disk.desc.offset(idx[2usize] as isize)).flags = VRING_DESC_F_WRITE as u16;
-    (*disk.desc.offset(idx[2usize] as isize)).next = 0 as u16;
+    (*disk.desc.offset(idx[2] as isize)).flags = VRING_DESC_F_WRITE as u16;
+    (*disk.desc.offset(idx[2] as isize)).next = 0 as u16;
 
     // record struct Buf for virtio_disk_intr().
     (*b).disk = 1;

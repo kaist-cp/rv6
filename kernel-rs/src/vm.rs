@@ -189,7 +189,7 @@ pub unsafe fn mappages(
     mut perm: i32,
 ) -> i32 {
     let mut a = va & !(PGSIZE - 1) as usize;
-    let last = va.wrapping_add(size).wrapping_sub(1usize) & !(PGSIZE - 1) as usize;
+    let last = va.wrapping_add(size).wrapping_sub(1) & !(PGSIZE - 1) as usize;
     loop {
         let pte = walk(pagetable, a, 1);
         if pte.is_null() {
@@ -302,7 +302,7 @@ pub unsafe fn uvmalloc(mut pagetable: pagetable_t, mut oldsz: usize, mut newsz: 
     if newsz < oldsz {
         return oldsz;
     }
-    oldsz = oldsz.wrapping_add(PGSIZE as usize).wrapping_sub(1usize) & !(PGSIZE - 1) as usize;
+    oldsz = oldsz.wrapping_add(PGSIZE as usize).wrapping_sub(1) & !(PGSIZE - 1) as usize;
     let mut a = oldsz;
     while a < newsz {
         let mem = kalloc() as *mut libc::c_char;
@@ -337,8 +337,8 @@ pub unsafe fn uvmdealloc(mut pagetable: pagetable_t, mut oldsz: usize, mut newsz
         return oldsz;
     }
     let mut newup: usize =
-        newsz.wrapping_add(PGSIZE as usize).wrapping_sub(1usize) & !(PGSIZE - 1) as usize;
-    if newup < oldsz.wrapping_add(PGSIZE as usize).wrapping_sub(1usize) & !(PGSIZE - 1) as usize {
+        newsz.wrapping_add(PGSIZE as usize).wrapping_sub(1) & !(PGSIZE - 1) as usize;
+    if newup < oldsz.wrapping_add(PGSIZE as usize).wrapping_sub(1) & !(PGSIZE - 1) as usize {
         uvmunmap(pagetable, newup, oldsz.wrapping_sub(newup), 1);
     }
     newsz

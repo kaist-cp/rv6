@@ -97,7 +97,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                     }
                 }
                 i += 1;
-                off = (off as usize).wrapping_add(::core::mem::size_of::<ProgHdr>()) as i32 as i32
+                off = (off as usize).wrapping_add(::core::mem::size_of::<ProgHdr>()) as i32
             }
             match current_block {
                 7080392026674647309 => {}
@@ -110,8 +110,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
 
                     // Allocate two pages at the next page boundary.
                     // Use the second as the user stack.
-                    sz = sz.wrapping_add(PGSIZE as usize).wrapping_sub(1usize)
-                        & !(PGSIZE - 1) as usize;
+                    sz = sz.wrapping_add(PGSIZE as usize).wrapping_sub(1) & !(PGSIZE - 1) as usize;
                     sz = uvmalloc(pagetable, sz, sz.wrapping_add((2 * PGSIZE) as usize));
                     if sz != 0 {
                         uvmclear(pagetable, sz.wrapping_sub((2 * PGSIZE) as usize));
@@ -132,7 +131,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                             sp = sp.wrapping_sub((strlen(*argv.add(argc)) + 1) as usize);
 
                             // riscv sp must be 16-byte aligned
-                            sp = sp.wrapping_sub(sp.wrapping_rem(16usize));
+                            sp = sp.wrapping_sub(sp.wrapping_rem(16));
                             if sp < stackbase {
                                 current_block = 7080392026674647309;
                                 break;
@@ -157,16 +156,16 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
 
                                 // push the array of argv[] pointers.
                                 sp = sp.wrapping_sub(
-                                    argc.wrapping_add(1usize)
+                                    argc.wrapping_add(1)
                                         .wrapping_mul(::core::mem::size_of::<usize>()),
                                 );
-                                sp = sp.wrapping_sub(sp.wrapping_rem(16usize));
+                                sp = sp.wrapping_sub(sp.wrapping_rem(16));
                                 if sp >= stackbase
                                     && copyout(
                                         pagetable,
                                         sp,
                                         ustack.as_mut_ptr() as *mut libc::c_char,
-                                        argc.wrapping_add(1usize)
+                                        argc.wrapping_add(1)
                                             .wrapping_mul(::core::mem::size_of::<usize>()),
                                     ) >= 0
                                 {
