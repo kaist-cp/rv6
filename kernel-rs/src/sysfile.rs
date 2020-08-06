@@ -5,12 +5,8 @@ use crate::libc;
 use crate::{
     exec::exec,
     fcntl::FcntlFlags,
-    file::{filealloc, fileclose, filedup, fileread, filestat, filewrite},
     file::{File, Inode},
-    fs::{
-        dirlink, dirlookup, ialloc, ilock, iput, iunlock, iunlockput, namecmp, namei, nameiparent,
-        readi, writei,
-    },
+    fs::{dirlink, dirlookup, namecmp, namei, nameiparent},
     fs::{Dirent, DIRSIZ},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
@@ -28,6 +24,23 @@ pub const FD_DEVICE: u32 = 3;
 pub const FD_INODE: u32 = 2;
 pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
+
+impl File {
+    /// Allocate a file descriptor for the given file.
+    /// Takes over file reference from caller on success.
+    unsafe fn fdalloc(&mut self) -> i32 {
+        let mut fd: i32 = 0; // user pointer to struct stat
+        let mut p: *mut proc_0 = myproc();
+        while fd < NOFILE {
+            if (*p).ofile[fd as usize].is_null() {
+                (*p).ofile[fd as usize] = self;
+                return fd;
+            }
+            fd += 1
+        }
+        -1
+    }
+}
 
 /// Fetch the nth word-sized system call argument as a file descriptor
 /// and return both the descriptor and the corresponding struct file.
@@ -52,30 +65,17 @@ unsafe fn argfd(mut n: i32, mut pfd: *mut i32, mut pf: *mut *mut File) -> i32 {
     0 as i32
 }
 
-/// Allocate a file descriptor for the given file.
-/// Takes over file reference from caller on success.
-unsafe fn fdalloc(mut f: *mut File) -> i32 {
-    let mut p: *mut proc_0 = myproc();
-    for fd in 0..NOFILE {
-        if (*p).ofile[fd as usize].is_null() {
-            (*p).ofile[fd as usize] = f;
-            return fd;
-        }
-    }
-    -1
-}
-
 pub unsafe fn sys_dup() -> u64 {
     let mut f: *mut File = ptr::null_mut();
     let mut fd: i32 = 0;
     if argfd(0 as i32, ptr::null_mut(), &mut f) < 0 as i32 {
         return -(1 as i32) as u64;
     }
-    fd = fdalloc(f);
+    fd = (*f).fdalloc();
     if fd < 0 as i32 {
         return -(1 as i32) as u64;
     }
-    filedup(f);
+    (*f).dup();
     fd as u64
 }
 
@@ -89,7 +89,7 @@ pub unsafe fn sys_read() -> u64 {
     {
         return -(1 as i32) as u64;
     }
-    fileread(f, p, n) as u64
+    (*f).read(p, n) as u64
 }
 
 pub unsafe fn sys_write() -> u64 {
@@ -102,7 +102,7 @@ pub unsafe fn sys_write() -> u64 {
     {
         return -(1 as i32) as u64;
     }
-    filewrite(f, p, n) as u64
+    (*f).write(p, n) as u64
 }
 
 pub unsafe fn sys_close() -> u64 {
@@ -113,7 +113,7 @@ pub unsafe fn sys_close() -> u64 {
     }
     let fresh0 = &mut (*myproc()).ofile[fd as usize];
     *fresh0 = ptr::null_mut();
-    fileclose(f);
+    (*f).close();
     0 as u64
 }
 
@@ -124,7 +124,7 @@ pub unsafe fn sys_fstat() -> u64 {
     {
         return -(1 as i32) as u64;
     }
-    filestat(f, st) as u64
+    (*f).stat(st) as u64
 }
 
 /// Create the path new as a link to the same inode as old.
@@ -145,31 +145,31 @@ pub unsafe fn sys_link() -> u64 {
         end_op();
         return -(1 as i32) as u64;
     }
-    ilock(ip);
+    (*ip).lock();
     if (*ip).typ as i32 == T_DIR {
-        iunlockput(ip);
+        (*ip).unlockput();
         end_op();
         return -(1 as i32) as u64;
     }
     (*ip).nlink += 1;
     (*ip).update();
-    iunlock(ip);
+    (*ip).unlock();
     dp = nameiparent(new.as_mut_ptr(), name.as_mut_ptr());
     if !dp.is_null() {
-        ilock(dp);
+        (*dp).lock();
         if (*dp).dev != (*ip).dev || dirlink(dp, name.as_mut_ptr(), (*ip).inum) < 0 as i32 {
-            iunlockput(dp);
+            (*dp).unlockput();
         } else {
-            iunlockput(dp);
-            iput(ip);
+            (*dp).unlockput();
+            (*ip).put();
             end_op();
             return 0 as u64;
         }
     }
-    ilock(ip);
+    (*ip).lock();
     (*ip).nlink -= 1;
     (*ip).update();
-    iunlockput(ip);
+    (*ip).unlockput();
     end_op();
     -(1 as i32) as u64
 }
@@ -179,8 +179,7 @@ unsafe fn isdirempty(mut dp: *mut Inode) -> i32 {
     let mut de: Dirent = Default::default();
     let mut off = (2 as u64).wrapping_mul(::core::mem::size_of::<Dirent>() as u64) as i32;
     while (off as u32) < (*dp).size {
-        if readi(
-            dp,
+        if (*dp).read(
             0 as i32,
             &mut de as *mut Dirent as u64,
             off as u32,
@@ -216,7 +215,7 @@ pub unsafe fn sys_unlink() -> u64 {
         end_op();
         return -(1 as i32) as u64;
     }
-    ilock(dp);
+    (*dp).lock();
 
     // Cannot unlink "." or "..".
     if !(namecmp(
@@ -230,7 +229,7 @@ pub unsafe fn sys_unlink() -> u64 {
     {
         ip = dirlookup(dp, name.as_mut_ptr(), &mut off);
         if !ip.is_null() {
-            ilock(ip);
+            (*ip).lock();
             if ((*ip).nlink as i32) < 1 as i32 {
                 panic(
                     b"unlink: nlink < 1\x00" as *const u8 as *const libc::c_char
@@ -238,11 +237,10 @@ pub unsafe fn sys_unlink() -> u64 {
                 );
             }
             if (*ip).typ as i32 == T_DIR && isdirempty(ip) == 0 {
-                iunlockput(ip);
+                (*ip).unlockput();
             } else {
                 ptr::write_bytes(&mut de as *mut Dirent, 0, 1);
-                if writei(
-                    dp,
+                if (*dp).write(
                     0,
                     &mut de as *mut Dirent as u64,
                     off,
@@ -259,16 +257,16 @@ pub unsafe fn sys_unlink() -> u64 {
                     (*dp).nlink -= 1;
                     (*dp).update();
                 }
-                iunlockput(dp);
+                (*dp).unlockput();
                 (*ip).nlink -= 1;
                 (*ip).update();
-                iunlockput(ip);
+                (*ip).unlockput();
                 end_op();
                 return 0;
             }
         }
     }
-    iunlockput(dp);
+    (*dp).unlockput();
     end_op();
     -(1 as i32) as u64
 }
@@ -286,22 +284,22 @@ unsafe fn create(
     if dp.is_null() {
         return ptr::null_mut();
     }
-    ilock(dp);
+    (*dp).lock();
     ip = dirlookup(dp, name.as_mut_ptr(), ptr::null_mut());
     if !ip.is_null() {
-        iunlockput(dp);
-        ilock(ip);
+        (*dp).unlockput();
+        (*ip).lock();
         if typ as i32 == T_FILE && ((*ip).typ as i32 == T_FILE || (*ip).typ as i32 == T_DEVICE) {
             return ip;
         }
-        iunlockput(ip);
+        (*ip).unlockput();
         return ptr::null_mut();
     }
-    ip = ialloc((*dp).dev, typ);
+    ip = Inode::alloc((*dp).dev, typ);
     if ip.is_null() {
-        panic(b"create: ialloc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic(b"create: Inode::alloc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    ilock(ip);
+    (*ip).lock();
     (*ip).major = major;
     (*ip).minor = minor;
     (*ip).nlink = 1 as i16;
@@ -331,7 +329,7 @@ unsafe fn create(
     if dirlink(dp, name.as_mut_ptr(), (*ip).inum) < 0 as i32 {
         panic(b"create: dirlink\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    iunlockput(dp);
+    (*dp).unlockput();
     ip
 }
 
@@ -365,9 +363,9 @@ pub unsafe fn sys_open() -> u64 {
             end_op();
             return -(1 as i32) as u64;
         }
-        ilock(ip);
+        (*ip).lock();
         if (*ip).typ as i32 == T_DIR && omode != FcntlFlags::O_RDONLY {
-            iunlockput(ip);
+            (*ip).unlockput();
             end_op();
             return -(1 as i32) as u64;
         }
@@ -375,19 +373,19 @@ pub unsafe fn sys_open() -> u64 {
     if (*ip).typ as i32 == T_DEVICE
         && (((*ip).major as i32) < 0 as i32 || (*ip).major as i32 >= NDEV)
     {
-        iunlockput(ip);
+        (*ip).unlockput();
         end_op();
         return -(1 as i32) as u64;
     }
-    f = filealloc();
+    f = File::alloc();
     if f.is_null() || {
-        fd = fdalloc(f);
+        fd = (*f).fdalloc();
         (fd) < 0 as i32
     } {
         if !f.is_null() {
-            fileclose(f);
+            (*f).close();
         }
-        iunlockput(ip);
+        (*ip).unlockput();
         end_op();
         return -(1 as i32) as u64;
     }
@@ -402,7 +400,7 @@ pub unsafe fn sys_open() -> u64 {
     (*f).readable = (!omode.intersects(FcntlFlags::O_WRONLY)) as i32 as libc::c_char;
     (*f).writable =
         omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR) as i32 as libc::c_char;
-    iunlock(ip);
+    (*ip).unlock();
     end_op();
     fd as u64
 }
@@ -423,7 +421,7 @@ pub unsafe fn sys_mkdir() -> u64 {
         end_op();
         return -(1 as i32) as u64;
     }
-    iunlockput(ip);
+    (*ip).unlockput();
     end_op();
     0
 }
@@ -450,7 +448,7 @@ pub unsafe fn sys_mknod() -> u64 {
         end_op();
         return -(1 as i32) as u64;
     }
-    iunlockput(ip);
+    (*ip).unlockput();
     end_op();
     0 as u64
 }
@@ -467,14 +465,14 @@ pub unsafe fn sys_chdir() -> u64 {
         end_op();
         return -(1 as i32) as u64;
     }
-    ilock(ip);
+    (*ip).lock();
     if (*ip).typ as i32 != T_DIR {
-        iunlockput(ip);
+        (*ip).unlockput();
         end_op();
         return -(1 as i32) as u64;
     }
-    iunlock(ip);
-    iput((*p).cwd);
+    (*ip).unlock();
+    (*(*p).cwd).put();
     end_op();
     (*p).cwd = ip;
     0 as u64
@@ -570,16 +568,16 @@ pub unsafe fn sys_pipe() -> u64 {
         return -(1 as i32) as u64;
     }
     fd0 = -(1 as i32);
-    fd0 = fdalloc(rf);
+    fd0 = (*rf).fdalloc();
     if fd0 < 0 as i32 || {
-        fd1 = fdalloc(wf);
+        fd1 = (*wf).fdalloc();
         (fd1) < 0 as i32
     } {
         if fd0 >= 0 as i32 {
             (*p).ofile[fd0 as usize] = ptr::null_mut()
         }
-        fileclose(rf);
-        fileclose(wf);
+        (*rf).close();
+        (*wf).close();
         return -(1 as i32) as u64;
     }
     if copyout(
@@ -597,8 +595,8 @@ pub unsafe fn sys_pipe() -> u64 {
     {
         (*p).ofile[fd0 as usize] = ptr::null_mut();
         (*p).ofile[fd1 as usize] = ptr::null_mut();
-        fileclose(rf);
-        fileclose(wf);
+        (*rf).close();
+        (*wf).close();
         return -(1 as i32) as u64;
     }
     0
