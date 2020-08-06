@@ -49,7 +49,7 @@ pub unsafe fn trapinithart() {
 pub unsafe extern "C" fn usertrap() {
     let mut which_dev: i32 = 0 as i32;
 
-    if r_sstatus() & SSTATUS_SPP as usize != 0 as i32 as usize {
+    if r_sstatus() & SSTATUS_SPP as usize != 0usize {
         panic(
             b"usertrap: not from user mode\x00" as *const u8 as *const libc::c_char
                 as *mut libc::c_char,

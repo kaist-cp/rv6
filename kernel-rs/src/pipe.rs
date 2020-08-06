@@ -67,7 +67,7 @@ impl Pipe {
                 (*pr).pagetable,
                 &mut ch,
                 addr.wrapping_add(i as usize),
-                1 as i32 as usize,
+                1usize,
             ) == -1
             {
                 break;
@@ -114,7 +114,7 @@ impl Pipe {
                 (*pr).pagetable,
                 addr.wrapping_add(i as usize),
                 &mut ch,
-                1 as i32 as usize,
+                1usize,
             ) == -1
             {
                 break;

@@ -11,7 +11,7 @@ pub unsafe fn sys_exit() -> usize {
         return usize::MAX;
     }
     exit(n);
-    0 as i32 as usize
+    0usize
     // not reached
 }
 
@@ -59,7 +59,7 @@ pub unsafe fn sys_sleep() -> usize {
         sleep(&mut ticks as *mut u32 as *mut libc::c_void, &mut tickslock);
     }
     tickslock.release();
-    0 as i32 as usize
+    0usize
 }
 
 pub unsafe fn sys_kill() -> usize {

@@ -510,7 +510,7 @@ pub unsafe fn sys_exec() -> usize {
             current_block = 12646643519710607562;
             break;
         }
-        if uarg == 0 as i32 as usize {
+        if uarg == 0usize {
             argv[i as usize] = ptr::null_mut();
             current_block = 6009453772311597924;
             break;

@@ -59,7 +59,7 @@ pub unsafe fn kinit() {
 pub unsafe fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: *mut libc::c_void) {
     let mut p = ((pa_start as usize)
         .wrapping_add(PGSIZE as usize)
-        .wrapping_sub(1 as i32 as usize)
+        .wrapping_sub(1usize)
         & !(PGSIZE - 1 as i32) as usize) as *mut libc::c_char;
     while p.offset(PGSIZE as isize) <= pa_end as *mut libc::c_char {
         kfree(p as *mut libc::c_void);
@@ -73,7 +73,7 @@ pub unsafe fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: *mut libc::
 /// initializing the allocator; see kinit above.)
 pub unsafe fn kfree(mut pa: *mut libc::c_void) {
     let mut r: *mut Run = ptr::null_mut();
-    if (pa as usize).wrapping_rem(PGSIZE as usize) != 0 as i32 as usize
+    if (pa as usize).wrapping_rem(PGSIZE as usize) != 0usize
         || (pa as *mut libc::c_char) < end.as_mut_ptr()
         || pa as usize >= PHYSTOP as usize
     {

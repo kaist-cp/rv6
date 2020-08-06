@@ -53,7 +53,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
         pagetable = proc_pagetable(p);
         if !pagetable.is_null() {
             // Load program into memory.
-            sz = 0 as i32 as usize;
+            sz = 0usize;
             i = 0 as i32;
             off = elf.phoff as i32;
             loop {
@@ -83,11 +83,11 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                         break;
                     }
                     sz = uvmalloc(pagetable, sz, ph.vaddr.wrapping_add(ph.memsz));
-                    if sz == 0 as i32 as usize {
+                    if sz == 0usize {
                         current_block = 7080392026674647309;
                         break;
                     }
-                    if ph.vaddr.wrapping_rem(PGSIZE as usize) != 0 as i32 as usize {
+                    if ph.vaddr.wrapping_rem(PGSIZE as usize) != 0usize {
                         current_block = 7080392026674647309;
                         break;
                     }
@@ -113,16 +113,16 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                     // Use the second as the user stack.
                     sz = sz
                         .wrapping_add(PGSIZE as usize)
-                        .wrapping_sub(1 as i32 as usize)
+                        .wrapping_sub(1usize)
                         & !(PGSIZE - 1 as i32) as usize;
                     sz = uvmalloc(pagetable, sz, sz.wrapping_add((2 as i32 * PGSIZE) as usize));
-                    if sz != 0 as i32 as usize {
+                    if sz != 0usize {
                         uvmclear(pagetable, sz.wrapping_sub((2 as i32 * PGSIZE) as usize));
                         sp = sz;
                         stackbase = sp.wrapping_sub(PGSIZE as usize);
 
                         // Push argument strings, prepare rest of stack in ustack.
-                        argc = 0 as i32 as usize;
+                        argc = 0usize;
                         loop {
                             if (*argv.add(argc)).is_null() {
                                 current_block = 4567019141635105728;
@@ -135,7 +135,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                             sp = sp.wrapping_sub((strlen(*argv.add(argc)) + 1 as i32) as usize);
 
                             // riscv sp must be 16-byte aligned
-                            sp = sp.wrapping_sub(sp.wrapping_rem(16 as i32 as usize));
+                            sp = sp.wrapping_sub(sp.wrapping_rem(16usize));
                             if sp < stackbase {
                                 current_block = 7080392026674647309;
                                 break;
@@ -156,20 +156,20 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                         match current_block {
                             7080392026674647309 => {}
                             _ => {
-                                ustack[argc] = 0 as i32 as usize;
+                                ustack[argc] = 0usize;
 
                                 // push the array of argv[] pointers.
                                 sp = sp.wrapping_sub(
-                                    argc.wrapping_add(1 as i32 as usize)
+                                    argc.wrapping_add(1usize)
                                         .wrapping_mul(::core::mem::size_of::<usize>()),
                                 );
-                                sp = sp.wrapping_sub(sp.wrapping_rem(16 as i32 as usize));
+                                sp = sp.wrapping_sub(sp.wrapping_rem(16usize));
                                 if sp >= stackbase
                                     && copyout(
                                         pagetable,
                                         sp,
                                         ustack.as_mut_ptr() as *mut libc::c_char,
-                                        argc.wrapping_add(1 as i32 as usize)
+                                        argc.wrapping_add(1usize)
                                             .wrapping_mul(::core::mem::size_of::<usize>()),
                                     ) >= 0 as i32
                                 {
@@ -237,7 +237,7 @@ unsafe fn loadseg(
     mut sz: u32,
 ) -> i32 {
     let mut i: u32 = 0;
-    if va.wrapping_rem(PGSIZE as usize) != 0 as i32 as usize {
+    if va.wrapping_rem(PGSIZE as usize) != 0usize {
         panic(
             b"loadseg: va must be page aligned\x00" as *const u8 as *const libc::c_char
                 as *mut libc::c_char,
@@ -245,7 +245,7 @@ unsafe fn loadseg(
     }
     while i < sz {
         let pa = walkaddr(pagetable, va.wrapping_add(i as usize));
-        if pa == 0 as i32 as usize {
+        if pa == 0usize {
             panic(
                 b"loadseg: address should exist\x00" as *const u8 as *const libc::c_char
                     as *mut libc::c_char,
