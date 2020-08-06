@@ -229,21 +229,21 @@ pub unsafe fn r_stval() -> usize {
 
 /// Machine-mode Counter-Enable
 #[inline]
-pub unsafe fn w_mcounteren(mut x: usize) {
+pub unsafe fn w_mcounteren(mut x: u64) {
     llvm_asm!("csrw mcounteren, %0" : : "r" (x)  : : : "volatile");
 }
 
 #[inline]
-pub unsafe fn r_mcounteren() -> usize {
-    let mut x: usize = 0;
+pub unsafe fn r_mcounteren() -> u64 {
+    let mut x: u64 = 0;
     llvm_asm!("csrr %0, mcounteren" : "=r" (x) : : : "volatile");
     x
 }
 
 /// machine-mode cycle counter
 #[inline]
-pub unsafe fn r_time() -> usize {
-    let mut x: usize = 0;
+pub unsafe fn r_time() -> u64 {
+    let mut x: u64 = 0;
     llvm_asm!("csrr %0, time" : "=r" (x) : : : "volatile");
     x
 }
