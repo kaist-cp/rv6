@@ -21,6 +21,7 @@
 #![feature(const_if_match)]
 #![feature(const_wrapping_int_methods)]
 #![feature(maybe_uninit_ref)]
+#![feature(const_fn)]
 
 // TODO(@jeehoonkang): we define `libc` module here because the `libc` crate doesn't work for the
 // `riscv64gc-unknown-none-elfhf` target.
