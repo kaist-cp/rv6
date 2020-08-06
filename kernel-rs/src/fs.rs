@@ -142,23 +142,7 @@ struct Dinode {
 #[derive(Copy, Clone)]
 struct Icache {
     lock: Spinlock,
-    inode: [Inode; 50],
-}
-
-impl Superblock {
-    // TODO: transient measure
-    pub const fn zeroed() -> Self {
-        Self {
-            magic: 0,
-            size: 0,
-            nblocks: 0,
-            ninodes: 0,
-            nlog: 0,
-            logstart: 0,
-            inodestart: 0,
-            bmapstart: 0,
-        }
-    }
+    inode: [Inode; NINODE as usize],
 }
 
 impl Icache {
@@ -166,7 +150,7 @@ impl Icache {
     pub const fn zeroed() -> Self {
         Self {
             lock: Spinlock::zeroed(),
-            inode: [Inode::zeroed(); 50],
+            inode: [Inode::zeroed(); NINODE as usize],
         }
     }
 }
@@ -241,12 +225,12 @@ pub const IPB: i32 = BSIZE.wrapping_div(mem::size_of::<Dinode>() as i32);
 
 impl Superblock {
     /// Block containing inode i
-    const fn iblock(&mut self, i: i32) -> u32 {
+    const fn iblock(self, i: i32) -> u32 {
         i.wrapping_div(IPB).wrapping_add(self.inodestart as i32) as u32
     }
 
     /// Block of free map containing bit for block b
-    const fn bblock(&mut self, b: u32) -> u32 {
+    const fn bblock(self, b: u32) -> u32 {
         b.wrapping_div(BPB as u32).wrapping_add(self.bmapstart)
     }
 
@@ -259,7 +243,21 @@ impl Superblock {
             self as *mut Superblock as *mut libc::c_void,
             ::core::mem::size_of::<Superblock>(),
         );
-        brelse(bp);
+        (*bp).release();
+    }
+
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
+        Self {
+            magic: 0,
+            size: 0,
+            nblocks: 0,
+            ninodes: 0,
+            nlog: 0,
+            logstart: 0,
+            inodestart: 0,
+            bmapstart: 0,
+        }
     }
 }
 
