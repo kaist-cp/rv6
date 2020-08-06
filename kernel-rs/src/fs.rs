@@ -201,7 +201,7 @@ impl Inode {
         if (*self).valid == 0 {
             bp = bread((*self).dev, sb.iblock((*self).inum as i32));
             dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-                .offset(((*self).inum as usize).wrapping_rem(IPB as usize) as isize);
+                .add(((*self).inum as usize).wrapping_rem(IPB as usize));
             (*self).typ = (*dip).typ;
             (*self).major = (*dip).major;
             (*self).minor = (*dip).minor;
@@ -447,7 +447,7 @@ impl Inode {
         for inum in 1..sb.ninodes {
             let bp = bread(dev, sb.iblock(inum as i32));
             let dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-                .offset((inum as usize).wrapping_rem(IPB as usize) as isize);
+                .add((inum as usize).wrapping_rem(IPB as usize));
             if (*dip).typ as i32 == 0 {
                 // a free inode
                 ptr::write_bytes(dip, 0, 1);
