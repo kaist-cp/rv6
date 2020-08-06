@@ -199,7 +199,7 @@ impl Inode {
         }
         (*self).lock.acquire();
         if (*self).valid == 0 as i32 {
-            bp = bread((*self).dev, iblock((*self).inum as i32, sb));
+            bp = bread((*self).dev, sb.iblock((*self).inum as i32));
             dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
                 .offset(((*self).inum as u64).wrapping_rem(IPB as u64) as isize);
             (*self).typ = (*dip).typ;
@@ -216,7 +216,8 @@ impl Inode {
             (*self).valid = 1 as i32;
             if (*self).typ as i32 == 0 as i32 {
                 panic(
-                    b"Inode::lock: no type\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+                    b"Inode::lock: no type\x00" as *const u8 as *const libc::c_char
+                        as *mut libc::c_char,
                 );
             }
         };
@@ -445,7 +446,7 @@ impl Inode {
     /// Returns an unlocked but allocated and referenced inode.
     pub unsafe fn alloc(mut dev: u32, mut typ: i16) -> *mut Inode {
         for inum in 1..sb.ninodes {
-            let bp = bread(dev, iblock(inum as i32, sb));
+            let bp = bread(dev, sb.iblock(inum as i32));
             let dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
                 .offset((inum as u64).wrapping_rem(IPB as u64) as isize);
             if (*dip).typ as i32 == 0 as i32 {
@@ -460,7 +461,9 @@ impl Inode {
             }
             (*bp).release();
         }
-        panic(b"Inode::alloc: no inodes\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic(
+            b"Inode::alloc: no inodes\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+        );
     }
 
     pub const fn zeroed() -> Self {
