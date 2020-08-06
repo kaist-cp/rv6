@@ -9,7 +9,7 @@ use crate::{
 pub unsafe fn sys_exit() -> usize {
     let mut n: i32 = 0;
     if argint(0, &mut n) < 0 {
-        return usize::MAX;
+        return -1 as _;
     }
     exit(n);
 
@@ -27,7 +27,7 @@ pub unsafe fn sys_fork() -> usize {
 pub unsafe fn sys_wait() -> usize {
     let mut p: usize = 0;
     if argaddr(0, &mut p) < 0 {
-        return usize::MAX;
+        return -1 as _;
     }
     wait(p) as _
 }
@@ -36,11 +36,11 @@ pub unsafe fn sys_sbrk() -> usize {
     let mut addr: i32 = 0;
     let mut n: i32 = 0;
     if argint(0, &mut n) < 0 {
-        return usize::MAX;
+        return -1 as _;
     }
     addr = (*myproc()).sz as i32;
     if growproc(n) < 0 {
-        return usize::MAX;
+        return -1 as _;
     }
     addr as usize
 }
@@ -48,14 +48,14 @@ pub unsafe fn sys_sbrk() -> usize {
 pub unsafe fn sys_sleep() -> usize {
     let mut n: i32 = 0;
     if argint(0, &mut n) < 0 {
-        return usize::MAX;
+        return -1 as _;
     }
     tickslock.acquire();
     let ticks0 = ticks;
     while ticks.wrapping_sub(ticks0) < n as u32 {
         if (*myproc()).killed != 0 {
             tickslock.release();
-            return usize::MAX;
+            return -1 as _;
         }
         sleep(&mut ticks as *mut u32 as *mut libc::c_void, &mut tickslock);
     }
@@ -66,7 +66,7 @@ pub unsafe fn sys_sleep() -> usize {
 pub unsafe fn sys_kill() -> usize {
     let mut pid: i32 = 0;
     if argint(0, &mut pid) < 0 {
-        return usize::MAX;
+        return -1 as _;
     }
     kill(pid) as usize
 }
