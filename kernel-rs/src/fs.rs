@@ -381,7 +381,7 @@ unsafe fn iget(mut dev: u32, mut inum: u32) -> *mut Inode {
 
     // Is the inode already cached?
     empty = ptr::null_mut();
-    ip = &mut *icache.inode.as_mut_ptr().offset(0 as isize) as *mut Inode;
+    ip = &mut *icache.inode.as_mut_ptr().offset(0) as *mut Inode;
     while ip < &mut *icache.inode.as_mut_ptr().offset(NINODE as isize) as *mut Inode {
         if (*ip).ref_0 > 0 && (*ip).dev == dev && (*ip).inum == inum {
             (*ip).ref_0 += 1;

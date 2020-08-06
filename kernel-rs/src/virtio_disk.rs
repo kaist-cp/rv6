@@ -194,7 +194,7 @@ unsafe fn free_desc(mut i: i32) {
     (*disk.desc.offset(i as isize)).addr = 0;
     disk.free[i as usize] = 1 as libc::c_char;
     wakeup(
-        &mut *disk.free.as_mut_ptr().offset(0 as isize) as *mut libc::c_char as *mut libc::c_void,
+        &mut *disk.free.as_mut_ptr().offset(0) as *mut libc::c_char as *mut libc::c_void,
     );
 }
 
@@ -236,7 +236,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
 
     while alloc3_desc(idx.as_mut_ptr()) != 0 {
         sleep(
-            &mut *disk.free.as_mut_ptr().offset(0 as isize) as *mut libc::c_char
+            &mut *disk.free.as_mut_ptr().offset(0) as *mut libc::c_char
                 as *mut libc::c_void,
             &mut disk.vdisk_lock,
         );
@@ -280,7 +280,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     (*disk.desc.offset(idx[2usize] as isize)).addr = &mut (*disk
         .info
         .as_mut_ptr()
-        .offset(*idx.as_mut_ptr().offset(0 as isize) as isize))
+        .offset(*idx.as_mut_ptr().offset(0) as isize))
     .status as *mut libc::c_char as usize;
     (*disk.desc.offset(idx[2usize] as isize)).len = 1 as u32;
     // device writes the status
@@ -297,9 +297,9 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     // we only tell device the first index in our chain of descriptors.
     *disk
         .avail
-        .offset((2 + *disk.avail.offset(1 as isize) as i32 % NUM) as isize) = idx[0] as u16;
+        .offset((2 + *disk.avail.offset(1isize) as i32 % NUM) as isize) = idx[0] as u16;
     ::core::intrinsics::atomic_fence();
-    *disk.avail.offset(1 as isize) = (*disk.avail.offset(1 as isize) as i32 + 1) as u16;
+    *disk.avail.offset(1isize) = (*disk.avail.offset(1isize) as i32 + 1) as u16;
 
     // value is queue number
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_NOTIFY), 0);

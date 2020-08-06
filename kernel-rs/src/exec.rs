@@ -180,7 +180,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                                     last = s;
                                     while *s != 0 {
                                         if *s as i32 == '/' as i32 {
-                                            last = s.offset(1 as isize)
+                                            last = s.offset(1isize)
                                         }
                                         s = s.offset(1)
                                     }
