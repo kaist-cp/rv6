@@ -16,6 +16,6 @@ pub struct Buf {
     pub next: *mut Buf,
 
     /// disk queue
-    pub qnext: *mut Buf,
+    qnext: *mut Buf,
     pub data: [u8; 1024],
 }

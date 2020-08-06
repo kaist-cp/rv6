@@ -11,7 +11,7 @@
 
 use crate::libc;
 use crate::{
-    bio::{bread, brelse},
+    bio::bread,
     buf::Buf,
     file::Inode,
     log::{initlog, log_write},
@@ -193,7 +193,7 @@ impl Inode {
             ::core::mem::size_of::<[u32; 13]>(),
         );
         log_write(bp);
-        brelse(bp);
+        (*bp).release();
     }
 
     /// Increment reference count for ip.
@@ -521,7 +521,7 @@ unsafe fn readsb(mut dev: i32, mut sb_0: *mut Superblock) {
         sb_0 as *mut libc::c_void,
         ::core::mem::size_of::<Superblock>(),
     );
-    brelse(bp);
+    (*bp).release();
 }
 
 /// Init fs
@@ -539,7 +539,7 @@ unsafe fn bzero(mut dev: i32, mut bno: i32) {
     bp = bread(dev as u32, bno as u32);
     ptr::write_bytes((*bp).data.as_mut_ptr(), 0, BSIZE as usize);
     log_write(bp);
-    brelse(bp);
+    (*bp).release();
 }
 
 /// Blocks.
@@ -558,13 +558,13 @@ unsafe fn balloc(mut dev: u32) -> u32 {
                 (*bp).data[(bi / 8 as i32) as usize] =
                     ((*bp).data[(bi / 8 as i32) as usize] as i32 | m) as u8; // Mark block in use.
                 log_write(bp);
-                brelse(bp);
+                (*bp).release();
                 bzero(dev as i32, b + bi);
                 return (b + bi) as u32;
             }
             bi += 1
         }
-        brelse(bp);
+        (*bp).release();
         b += BPB
     }
     panic(b"balloc: out of blocks\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -583,7 +583,7 @@ unsafe fn bfree(mut dev: i32, mut b: u32) {
     }
     (*bp).data[(bi / 8 as i32) as usize] = ((*bp).data[(bi / 8 as i32) as usize] as i32 & !m) as u8;
     log_write(bp);
-    brelse(bp);
+    (*bp).release();
 }
 
 pub static mut icache: Icache = Icache::zeroed();
@@ -614,10 +614,10 @@ pub unsafe fn ialloc(mut dev: u32, mut typ: i16) -> *mut Inode {
 
             // mark it allocated on the disk
             log_write(bp);
-            brelse(bp);
+            (*bp).release();
             return iget(dev, inum as u32);
         }
-        brelse(bp);
+        (*bp).release();
     }
     panic(b"ialloc: no inodes\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
