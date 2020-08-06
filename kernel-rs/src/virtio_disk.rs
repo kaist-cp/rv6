@@ -114,15 +114,16 @@ pub unsafe fn virtio_disk_init() {
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status);
 
     // negotiate features
-    let mut features: usize = *(r(VIRTIO_MMIO_DEVICE_FEATURES)) as usize;
-    features &= !((1) << VIRTIO_BLK_F_RO) as usize;
-    features &= !((1) << VIRTIO_BLK_F_SCSI) as usize;
-    features &= !((1) << VIRTIO_BLK_F_CONFIG_WCE) as usize;
-    features &= !((1) << VIRTIO_BLK_F_MQ) as usize;
-    features &= !((1) << VIRTIO_F_ANY_LAYOUT) as usize;
-    features &= !((1) << VIRTIO_RING_F_EVENT_IDX) as usize;
-    features &= !((1) << VIRTIO_RING_F_INDIRECT_DESC) as usize;
-    ::core::ptr::write_volatile(r(VIRTIO_MMIO_DRIVER_FEATURES), features as u32);
+    let mut features = *(r(VIRTIO_MMIO_DEVICE_FEATURES))
+        & !(1 << VIRTIO_BLK_F_RO)
+        & !(1 << VIRTIO_BLK_F_SCSI)
+        & !(1 << VIRTIO_BLK_F_CONFIG_WCE)
+        & !(1 << VIRTIO_BLK_F_MQ)
+        & !(1 << VIRTIO_F_ANY_LAYOUT)
+        & !(1 << VIRTIO_RING_F_EVENT_IDX)
+        & !(1 << VIRTIO_RING_F_INDIRECT_DESC);
+
+    ::core::ptr::write_volatile(r(VIRTIO_MMIO_DRIVER_FEATURES), features);
 
     // tell device that feature negotiation is complete.
     status |= VIRTIO_CONFIG_S_FEATURES_OK as u32;
