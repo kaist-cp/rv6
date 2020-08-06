@@ -60,18 +60,18 @@ pub struct Context {
 /// Per-process state
 #[derive(Copy, Clone)]
 pub struct proc_0 {
-    pub lock: Spinlock,
+    lock: Spinlock,
     pub state: procstate,
-    pub parent: *mut proc_0,
-    pub chan: *mut libc::c_void,
+    parent: *mut proc_0,
+    chan: *mut libc::c_void,
     pub killed: i32,
-    pub xstate: i32,
+    xstate: i32,
     pub pid: i32,
     pub kstack: u64,
     pub sz: u64,
     pub pagetable: pagetable_t,
     pub tf: *mut trapframe,
-    pub context: Context,
+    context: Context,
     pub ofile: [*mut File; NOFILE as usize],
     pub cwd: *mut Inode,
     pub name: [libc::c_char; 16],
@@ -133,7 +133,7 @@ pub struct trapframe {
 
 impl cpu {
     // TODO: transient measure
-    pub const fn zeroed() -> Self {
+    const fn zeroed() -> Self {
         Self {
             proc_0: ptr::null_mut(),
             scheduler: Context::zeroed(),
@@ -145,7 +145,7 @@ impl cpu {
 
 impl Context {
     // TODO: transient measure
-    pub const fn zeroed() -> Self {
+    const fn zeroed() -> Self {
         Self {
             ra: 0,
             sp: 0,
@@ -167,7 +167,7 @@ impl Context {
 
 impl proc_0 {
     // TODO: transient measure
-    pub const fn zeroed() -> Self {
+    const fn zeroed() -> Self {
         Self {
             lock: Spinlock::zeroed(),
             state: UNUSED,
@@ -188,7 +188,7 @@ impl proc_0 {
     }
 }
 
-pub type procstate = u32;
+type procstate = u32;
 
 pub const ZOMBIE: procstate = 4;
 pub const RUNNING: procstate = 3;
@@ -196,14 +196,14 @@ pub const RUNNABLE: procstate = 2;
 pub const SLEEPING: procstate = 1;
 pub const UNUSED: procstate = 0;
 
-pub static mut cpus: [cpu; NCPU as usize] = [cpu::zeroed(); NCPU as usize];
+static mut cpus: [cpu; NCPU as usize] = [cpu::zeroed(); NCPU as usize];
 
 #[export_name = "proc"]
-pub static mut proc: [proc_0; NPROC as usize] = [proc_0::zeroed(); NPROC as usize];
+static mut proc: [proc_0; NPROC as usize] = [proc_0::zeroed(); NPROC as usize];
 
-pub static mut initproc: *mut proc_0 = ptr::null_mut();
-pub static mut nextpid: i32 = 1;
-pub static mut pid_lock: Spinlock = Spinlock::zeroed();
+static mut initproc: *mut proc_0 = ptr::null_mut();
+static mut nextpid: i32 = 1;
+static mut pid_lock: Spinlock = Spinlock::zeroed();
 
 // trampoline.S
 #[no_mangle]
@@ -254,7 +254,7 @@ pub unsafe fn myproc() -> *mut proc_0 {
     p
 }
 
-pub unsafe fn allocpid() -> i32 {
+unsafe fn allocpid() -> i32 {
     let mut pid: i32 = 0;
     pid_lock.acquire();
     pid = nextpid;
@@ -373,7 +373,7 @@ pub unsafe fn proc_freepagetable(mut pagetable: pagetable_t, mut sz: u64) {
 
 // a user program that calls exec("/init")
 // od -t xC initcode
-pub static mut initcode: [u8; 51] = [
+static mut initcode: [u8; 51] = [
     0x17 as u8, 0x5 as u8, 0 as u8, 0 as u8, 0x13 as u8, 0x5 as u8, 0x5 as u8, 0x2 as u8,
     0x97 as u8, 0x5 as u8, 0 as u8, 0 as u8, 0x93 as u8, 0x85 as u8, 0x5 as u8, 0x2 as u8,
     0x9d as u8, 0x48 as u8, 0x73 as u8, 0 as u8, 0 as u8, 0 as u8, 0x89 as u8, 0x48 as u8,
@@ -666,7 +666,7 @@ pub unsafe fn scheduler() -> ! {
 /// be proc->intena and proc->noff, but that would
 /// break in the few places where a lock is held but
 /// there's no process.
-pub unsafe fn sched() {
+unsafe fn sched() {
     let mut intena: i32 = 0;
     let mut p: *mut proc_0 = myproc();
     if (*p).lock.holding() == 0 {
@@ -701,7 +701,7 @@ pub unsafe fn yield_0() {
 
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
-pub unsafe fn forkret() {
+unsafe fn forkret() {
     static mut first: i32 = 1 as i32;
 
     // Still holding p->lock from scheduler.

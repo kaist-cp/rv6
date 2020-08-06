@@ -2,27 +2,15 @@ use crate::console::consputc;
 use crate::libc;
 use crate::spinlock::Spinlock;
 
-pub type __builtin_va_list = [__va_list_tag; 1];
-
 #[derive(Copy, Clone)]
-pub struct __va_list_tag {
-    pub gp_offset: u32,
-    pub fp_offset: u32,
-    pub overflow_arg_area: *mut libc::c_void,
-    pub reg_save_area: *mut libc::c_void,
-}
-
-pub type va_list = __builtin_va_list;
-
-#[derive(Copy, Clone)]
-pub struct PrintfLock {
-    pub lock: Spinlock,
-    pub locking: i32,
+struct PrintfLock {
+    lock: Spinlock,
+    locking: i32,
 }
 
 impl PrintfLock {
     // TODO: transient measure
-    pub const fn zeroed() -> Self {
+    const fn zeroed() -> Self {
         Self {
             lock: Spinlock::zeroed(),
             locking: 0,
