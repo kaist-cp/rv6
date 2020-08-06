@@ -23,7 +23,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     let mut argc: u64 = 0;
     let mut sz: u64 = 0;
     let mut sp: u64 = 0;
-    let mut ustack: [u64; 33] = [0; 33];
+    let mut ustack: [u64; MAXARG + 1] = [0; MAXARG + 1];
     let mut stackbase: u64 = 0;
     let mut elf: ElfHdr = Default::default();
     let mut ip: *mut Inode = ptr::null_mut();

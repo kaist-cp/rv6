@@ -52,7 +52,7 @@ pub struct Log {
 #[derive(Copy, Clone)]
 pub struct LogHeader {
     pub n: i32,
-    pub block: [i32; 30],
+    pub block: [i32; LOGSIZE as usize],
 }
 
 impl Log {
@@ -67,7 +67,7 @@ impl Log {
             dev: 0,
             lh: LogHeader {
                 n: 0,
-                block: [0; 30],
+                block: [0; LOGSIZE as usize],
             },
         }
     }

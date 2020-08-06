@@ -119,7 +119,7 @@ pub unsafe fn sys_close() -> u64 {
 
 pub unsafe fn sys_fstat() -> u64 {
     let mut f: *mut File = ptr::null_mut();
-    let mut st: u64 = 0;
+    let mut st: u64 = 0; // user pointer to struct stat
     if argfd(0 as i32, ptr::null_mut(), &mut f) < 0 as i32 || argaddr(1 as i32, &mut st) < 0 as i32
     {
         return -(1 as i32) as u64;
@@ -481,7 +481,7 @@ pub unsafe fn sys_chdir() -> u64 {
 pub unsafe fn sys_exec() -> u64 {
     let mut current_block: u64;
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
-    let mut argv: [*mut libc::c_char; MAXARG as usize] = [ptr::null_mut(); MAXARG as usize];
+    let mut argv: [*mut libc::c_char; MAXARG] = [ptr::null_mut(); MAXARG];
     let mut i: i32 = 0;
     let mut uargv: u64 = 0;
     let mut uarg: u64 = 0;
