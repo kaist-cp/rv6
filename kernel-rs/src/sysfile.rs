@@ -481,7 +481,7 @@ pub unsafe fn sys_chdir() -> u64 {
 pub unsafe fn sys_exec() -> u64 {
     let mut current_block: u64;
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
-    let mut argv: [*mut libc::c_char; MAXARG as usize] = [ptr::null_mut(); MAXARG as usize];
+    let mut argv: [*mut libc::c_char; MAXARG] = [ptr::null_mut(); MAXARG];
     let mut i: i32 = 0;
     let mut uargv: u64 = 0;
     let mut uarg: u64 = 0;

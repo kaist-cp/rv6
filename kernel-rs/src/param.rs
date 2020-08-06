@@ -20,7 +20,7 @@ pub const NDEV: i32 = 10;
 pub const ROOTDEV: i32 = 1;
 
 /// max exec arguments
-pub const MAXARG: i32 = 32;
+pub const MAXARG: usize = 32;
 
 /// max # of blocks any FS op writes
 /// Will be handled in #31
