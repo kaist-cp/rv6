@@ -73,7 +73,7 @@ pub unsafe fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: *mut libc::
 /// initializing the allocator; see kinit above.)
 pub unsafe fn kfree(mut pa: *mut libc::c_void) {
     let mut r: *mut Run = ptr::null_mut();
-    if (pa as usize).wrapping_rem(PGSIZE as usize) != 0usize
+    if (pa as usize).wrapping_rem(PGSIZE as usize) != 0
         || (pa as *mut libc::c_char) < end.as_mut_ptr()
         || pa as usize >= PHYSTOP as usize
     {

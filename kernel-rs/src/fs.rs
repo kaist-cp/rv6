@@ -304,8 +304,7 @@ unsafe fn balloc(mut dev: u32) -> u32 {
             let m = (1) << (bi % 8);
             if (*bp).data[(bi / 8) as usize] as i32 & m == 0 {
                 // Is block free?
-                (*bp).data[(bi / 8) as usize] =
-                    ((*bp).data[(bi / 8) as usize] as i32 | m) as u8; // Mark block in use.
+                (*bp).data[(bi / 8) as usize] = ((*bp).data[(bi / 8) as usize] as i32 | m) as u8; // Mark block in use.
                 log_write(bp);
                 (*bp).release();
                 bzero(dev as i32, b + bi);

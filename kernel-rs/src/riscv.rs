@@ -265,7 +265,7 @@ pub unsafe fn intr_off() {
 #[inline]
 pub unsafe fn intr_get() -> i32 {
     let mut x: usize = r_sstatus();
-    (x & SSTATUS_SIE as usize != 0usize) as i32
+    (x & SSTATUS_SIE as usize != 0) as i32
 }
 
 /// read and write tp, the thread pointer, which holds
@@ -310,9 +310,7 @@ pub const PGSIZE: i32 = 4096;
 pub const PGSHIFT: i32 = 12;
 
 pub const fn pgroundup(sz: usize) -> usize {
-    sz.wrapping_add(PGSIZE as usize)
-        .wrapping_sub(1usize)
-        & (!(PGSIZE - 1) as usize)
+    sz.wrapping_add(PGSIZE as usize).wrapping_sub(1usize) & (!(PGSIZE - 1) as usize)
 }
 pub const fn pgrounddown(a: usize) -> usize {
     a & !(PGSIZE - 1) as usize

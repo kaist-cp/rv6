@@ -321,10 +321,10 @@ unsafe fn freeproc(mut p: *mut proc_0) {
         proc_freepagetable((*p).pagetable, (*p).sz);
     }
     (*p).pagetable = 0 as pagetable_t;
-    (*p).sz = 0usize;
+    (*p).sz = 0;
     (*p).pid = 0;
     (*p).parent = ptr::null_mut();
-    (*p).name[0usize] = 0 as libc::c_char;
+    (*p).name[0] = 0 as libc::c_char;
     (*p).chan = ptr::null_mut();
     (*p).killed = 0;
     (*p).xstate = 0;
@@ -367,7 +367,7 @@ pub unsafe fn proc_pagetable(mut p: *mut proc_0) -> pagetable_t {
 pub unsafe fn proc_freepagetable(mut pagetable: pagetable_t, mut sz: usize) {
     uvmunmap(pagetable, TRAMPOLINE as usize, PGSIZE as usize, 0);
     uvmunmap(pagetable, TRAPFRAME as usize, PGSIZE as usize, 0);
-    if sz > 0usize {
+    if sz > 0 {
         uvmfree(pagetable, sz);
     };
 }
@@ -401,7 +401,7 @@ pub unsafe fn userinit() {
 
     // prepare for the very first "return" from kernel to user.
     // user program counter
-    (*(*p).tf).epc = 0usize;
+    (*(*p).tf).epc = 0;
 
     // user stack pointer
     (*(*p).tf).sp = PGSIZE as usize;
@@ -469,7 +469,7 @@ pub unsafe fn fork() -> i32 {
     *(*np).tf = *(*p).tf;
 
     // Cause fork to return 0 in the child.
-    (*(*np).tf).a0 = 0usize;
+    (*(*np).tf).a0 = 0;
 
     // increment reference counts on open file descriptors.
     for i in 0..NOFILE {
@@ -599,7 +599,7 @@ pub unsafe fn wait(mut addr: usize) -> i32 {
                 if (*np).state as u32 == ZOMBIE as i32 as u32 {
                     // Found one.
                     let pid = (*np).pid;
-                    if addr != 0usize
+                    if addr != 0
                         && copyout(
                             (*p).pagetable,
                             addr,

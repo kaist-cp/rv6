@@ -85,10 +85,7 @@ pub unsafe fn sys_read() -> usize {
     let mut f: *mut File = ptr::null_mut();
     let mut n: i32 = 0;
     let mut p: usize = 0;
-    if argfd(0, ptr::null_mut(), &mut f) < 0
-        || argint(2, &mut n) < 0
-        || argaddr(1, &mut p) < 0
-    {
+    if argfd(0, ptr::null_mut(), &mut f) < 0 || argint(2, &mut n) < 0 || argaddr(1, &mut p) < 0 {
         return usize::MAX;
     }
     fileread(f, p, n) as usize
@@ -98,10 +95,7 @@ pub unsafe fn sys_write() -> usize {
     let mut f: *mut File = ptr::null_mut();
     let mut n: i32 = 0;
     let mut p: usize = 0;
-    if argfd(0, ptr::null_mut(), &mut f) < 0
-        || argint(2, &mut n) < 0
-        || argaddr(1, &mut p) < 0
-    {
+    if argfd(0, ptr::null_mut(), &mut f) < 0 || argint(2, &mut n) < 0 || argaddr(1, &mut p) < 0 {
         return usize::MAX;
     }
     filewrite(f, p, n) as usize
@@ -116,14 +110,13 @@ pub unsafe fn sys_close() -> usize {
     let fresh0 = &mut (*myproc()).ofile[fd as usize];
     *fresh0 = ptr::null_mut();
     fileclose(f);
-    0usize
+    0
 }
 
 pub unsafe fn sys_fstat() -> usize {
     let mut f: *mut File = ptr::null_mut();
     let mut st: usize = 0;
-    if argfd(0, ptr::null_mut(), &mut f) < 0 || argaddr(1, &mut st) < 0
-    {
+    if argfd(0, ptr::null_mut(), &mut f) < 0 || argaddr(1, &mut st) < 0 {
         return usize::MAX;
     }
     filestat(f, st) as usize
@@ -136,9 +129,7 @@ pub unsafe fn sys_link() -> usize {
     let mut old: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut dp: *mut Inode = ptr::null_mut();
     let mut ip: *mut Inode = ptr::null_mut();
-    if argstr(0, old.as_mut_ptr(), MAXPATH) < 0
-        || argstr(1, new.as_mut_ptr(), MAXPATH) < 0
-    {
+    if argstr(0, old.as_mut_ptr(), MAXPATH) < 0 || argstr(1, new.as_mut_ptr(), MAXPATH) < 0 {
         return usize::MAX;
     }
     begin_op();
@@ -165,7 +156,7 @@ pub unsafe fn sys_link() -> usize {
             iunlockput(dp);
             iput(ip);
             end_op();
-            return 0usize;
+            return 0;
         }
     }
     ilock(ip);
@@ -351,12 +342,7 @@ pub unsafe fn sys_open() -> usize {
     begin_op();
     let omode = FcntlFlags::from_bits_truncate(omode);
     if omode.contains(FcntlFlags::O_CREATE) {
-        ip = create(
-            path.as_mut_ptr(),
-            T_FILE as i16,
-            0 as i16,
-            0 as i16,
-        );
+        ip = create(path.as_mut_ptr(), T_FILE as i16, 0 as i16, 0 as i16);
         if ip.is_null() {
             end_op();
             return usize::MAX;
@@ -374,9 +360,7 @@ pub unsafe fn sys_open() -> usize {
             return usize::MAX;
         }
     }
-    if (*ip).typ as i32 == T_DEVICE
-        && (((*ip).major as i32) < 0 || (*ip).major as i32 >= NDEV)
-    {
+    if (*ip).typ as i32 == T_DEVICE && (((*ip).major as i32) < 0 || (*ip).major as i32 >= NDEV) {
         iunlockput(ip);
         end_op();
         return usize::MAX;
@@ -414,12 +398,7 @@ pub unsafe fn sys_mkdir() -> usize {
     let mut ip: *mut Inode = ptr::null_mut();
     begin_op();
     if argstr(0, path.as_mut_ptr(), MAXPATH) < 0 || {
-        ip = create(
-            path.as_mut_ptr(),
-            T_DIR as i16,
-            0 as i16,
-            0 as i16,
-        );
+        ip = create(path.as_mut_ptr(), T_DIR as i16, 0 as i16, 0 as i16);
         ip.is_null()
     } {
         end_op();
@@ -454,7 +433,7 @@ pub unsafe fn sys_mknod() -> usize {
     }
     iunlockput(ip);
     end_op();
-    0usize
+    0
 }
 
 pub unsafe fn sys_chdir() -> usize {
@@ -479,7 +458,7 @@ pub unsafe fn sys_chdir() -> usize {
     iput((*p).cwd);
     end_op();
     (*p).cwd = ip;
-    0usize
+    0
 }
 
 pub unsafe fn sys_exec() -> usize {
@@ -489,8 +468,7 @@ pub unsafe fn sys_exec() -> usize {
     let mut i: i32 = 0;
     let mut uargv: usize = 0;
     let mut uarg: usize = 0;
-    if argstr(0, path.as_mut_ptr(), MAXPATH) < 0 || argaddr(1, &mut uargv) < 0
-    {
+    if argstr(0, path.as_mut_ptr(), MAXPATH) < 0 || argaddr(1, &mut uargv) < 0 {
         return usize::MAX;
     }
     ptr::write_bytes(argv.as_mut_ptr(), 0, 1);
@@ -510,7 +488,7 @@ pub unsafe fn sys_exec() -> usize {
             current_block = 12646643519710607562;
             break;
         }
-        if uarg == 0usize {
+        if uarg == 0 {
             argv[i as usize] = ptr::null_mut();
             current_block = 6009453772311597924;
             break;

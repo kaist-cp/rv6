@@ -53,7 +53,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
         pagetable = proc_pagetable(p);
         if !pagetable.is_null() {
             // Load program into memory.
-            sz = 0usize;
+            sz = 0;
             i = 0;
             off = elf.phoff as i32;
             loop {
@@ -83,16 +83,15 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                         break;
                     }
                     sz = uvmalloc(pagetable, sz, ph.vaddr.wrapping_add(ph.memsz));
-                    if sz == 0usize {
+                    if sz == 0 {
                         current_block = 7080392026674647309;
                         break;
                     }
-                    if ph.vaddr.wrapping_rem(PGSIZE as usize) != 0usize {
+                    if ph.vaddr.wrapping_rem(PGSIZE as usize) != 0 {
                         current_block = 7080392026674647309;
                         break;
                     }
-                    if loadseg(pagetable, ph.vaddr, ip, ph.off as u32, ph.filesz as u32) < 0
-                    {
+                    if loadseg(pagetable, ph.vaddr, ip, ph.off as u32, ph.filesz as u32) < 0 {
                         current_block = 7080392026674647309;
                         break;
                     }
@@ -111,18 +110,16 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
 
                     // Allocate two pages at the next page boundary.
                     // Use the second as the user stack.
-                    sz = sz
-                        .wrapping_add(PGSIZE as usize)
-                        .wrapping_sub(1usize)
+                    sz = sz.wrapping_add(PGSIZE as usize).wrapping_sub(1usize)
                         & !(PGSIZE - 1) as usize;
                     sz = uvmalloc(pagetable, sz, sz.wrapping_add((2 * PGSIZE) as usize));
-                    if sz != 0usize {
+                    if sz != 0 {
                         uvmclear(pagetable, sz.wrapping_sub((2 * PGSIZE) as usize));
                         sp = sz;
                         stackbase = sp.wrapping_sub(PGSIZE as usize);
 
                         // Push argument strings, prepare rest of stack in ustack.
-                        argc = 0usize;
+                        argc = 0;
                         loop {
                             if (*argv.add(argc)).is_null() {
                                 current_block = 4567019141635105728;
@@ -156,7 +153,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                         match current_block {
                             7080392026674647309 => {}
                             _ => {
-                                ustack[argc] = 0usize;
+                                ustack[argc] = 0;
 
                                 // push the array of argv[] pointers.
                                 sp = sp.wrapping_sub(
@@ -237,7 +234,7 @@ unsafe fn loadseg(
     mut sz: u32,
 ) -> i32 {
     let mut i: u32 = 0;
-    if va.wrapping_rem(PGSIZE as usize) != 0usize {
+    if va.wrapping_rem(PGSIZE as usize) != 0 {
         panic(
             b"loadseg: va must be page aligned\x00" as *const u8 as *const libc::c_char
                 as *mut libc::c_char,
@@ -245,7 +242,7 @@ unsafe fn loadseg(
     }
     while i < sz {
         let pa = walkaddr(pagetable, va.wrapping_add(i as usize));
-        if pa == 0usize {
+        if pa == 0 {
             panic(
                 b"loadseg: address should exist\x00" as *const u8 as *const libc::c_char
                     as *mut libc::c_char,
