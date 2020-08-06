@@ -31,11 +31,15 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     let mut pagetable: pagetable_t = 0 as pagetable_t;
     let mut oldpagetable: pagetable_t = ptr::null_mut();
     let mut p: *mut proc_0 = myproc();
+
     begin_op();
+    let _op = scopeguard::guard((), |_| {
+        end_op();
+    });
+
     ip = namei(path);
     if ip.is_null() {
-        end_op();
-        return -(1 as i32);
+        return -1;
     }
     (*ip).lock();
 
@@ -103,7 +107,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                 7080392026674647309 => {}
                 _ => {
                     (*ip).unlockput();
-                    end_op();
+                    drop(_op);
                     ip = ptr::null_mut();
                     p = myproc();
                     oldsz = (*p).sz;
@@ -221,9 +225,8 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     }
     if !ip.is_null() {
         (*ip).unlockput();
-        end_op();
     }
-    -(1 as i32)
+    -1
 }
 
 /// Load a program segment into pagetable at virtual address va.
