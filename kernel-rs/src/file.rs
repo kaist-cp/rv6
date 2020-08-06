@@ -52,7 +52,7 @@ pub const FD_NONE: u32 = 0;
 #[derive(Copy, Clone)]
 pub struct Ftable {
     pub lock: Spinlock,
-    pub file: [File; 100],
+    pub file: [File; NFILE as usize],
 }
 
 /// map major device number to device functions.
@@ -83,16 +83,16 @@ impl Ftable {
     pub const fn zeroed() -> Self {
         Self {
             lock: Spinlock::zeroed(),
-            file: [File::zeroed(); 100],
+            file: [File::zeroed(); NFILE as usize],
         }
     }
 }
 
 /// Support functions for system calls that involve file descriptors.
-pub static mut devsw: [Devsw; 10] = [Devsw {
+pub static mut devsw: [Devsw; NDEV as usize] = [Devsw {
     read: None,
     write: None,
-}; 10];
+}; NDEV as usize];
 
 pub static mut ftable: Ftable = Ftable::zeroed();
 

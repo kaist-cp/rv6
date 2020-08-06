@@ -142,7 +142,7 @@ pub struct Dinode {
 #[derive(Copy, Clone)]
 pub struct Icache {
     pub lock: Spinlock,
-    pub inode: [Inode; 50],
+    pub inode: [Inode; NINODE as usize],
 }
 
 impl Superblock {
@@ -166,7 +166,7 @@ impl Icache {
     pub const fn zeroed() -> Self {
         Self {
             lock: Spinlock::zeroed(),
-            inode: [Inode::zeroed(); 50],
+            inode: [Inode::zeroed(); NINODE as usize],
         }
     }
 }

@@ -55,14 +55,12 @@ unsafe fn argfd(mut n: i32, mut pfd: *mut i32, mut pf: *mut *mut File) -> i32 {
 /// Allocate a file descriptor for the given file.
 /// Takes over file reference from caller on success.
 unsafe fn fdalloc(mut f: *mut File) -> i32 {
-    let mut fd: i32 = 0; // user pointer to struct stat
     let mut p: *mut proc_0 = myproc();
-    while fd < NOFILE {
+    for fd in 0..NOFILE {
         if (*p).ofile[fd as usize].is_null() {
             (*p).ofile[fd as usize] = f;
             return fd;
         }
-        fd += 1
     }
     -1
 }
@@ -121,7 +119,7 @@ pub unsafe fn sys_close() -> u64 {
 
 pub unsafe fn sys_fstat() -> u64 {
     let mut f: *mut File = ptr::null_mut();
-    let mut st: u64 = 0;
+    let mut st: u64 = 0; // user pointer to struct stat
     if argfd(0 as i32, ptr::null_mut(), &mut f) < 0 as i32 || argaddr(1 as i32, &mut st) < 0 as i32
     {
         return -(1 as i32) as u64;
