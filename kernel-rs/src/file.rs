@@ -67,7 +67,7 @@ impl File {
     pub unsafe fn dup(&mut self) -> *mut File {
         ftable.lock.acquire();
         if (*self).ref_0 < 1 as i32 {
-            panic(b"filedup\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(b"File::dup\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         (*self).ref_0 += 1;
         ftable.lock.release();
@@ -79,7 +79,7 @@ impl File {
         let mut ff: File = File::zeroed();
         ftable.lock.acquire();
         if (*self).ref_0 < 1 as i32 {
-            panic(b"fileclose\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(b"File::close\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         (*self).ref_0 -= 1;
         if (*self).ref_0 > 0 as i32 {
@@ -153,7 +153,7 @@ impl File {
             }
             (*(*self).ip).unlock();
         } else {
-            panic(b"fileread\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(b"File::read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         r
     }
@@ -210,7 +210,7 @@ impl File {
                 }
                 if r != n1 {
                     panic(
-                        b"short filewrite\x00" as *const u8 as *const libc::c_char
+                        b"short File::write\x00" as *const u8 as *const libc::c_char
                             as *mut libc::c_char,
                     );
                 }
@@ -218,7 +218,7 @@ impl File {
             }
             ret = if i == n { n } else { -(1 as i32) }
         } else {
-            panic(b"filewrite\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(b"File::write\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         ret
     }

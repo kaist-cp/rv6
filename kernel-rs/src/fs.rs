@@ -93,20 +93,20 @@ pub struct Dinode {
 /// rest of the file system code.
 ///
 /// * Allocation: an inode is allocated if its type (on disk)
-///   is non-zero. ialloc() allocates, and put() frees if
+///   is non-zero. ialloc() allocates, and Inode::put() frees if
 ///   the reference and link counts have fallen to zero.
 ///
 /// * Referencing in cache: an entry in the inode cache
 ///   is free if ip->ref is zero. Otherwise ip->ref tracks
 ///   the number of in-memory pointers to the entry (open
 ///   files and current directories). iget() finds or
-///   creates a cache entry and increments its ref; put()
+///   creates a cache entry and increments its ref; Inode::put()
 ///   decrements ref.
 ///
 /// * Valid: the information (type, size, &c) in an inode
 ///   cache entry is only correct when ip->valid is 1.
-///   lock() reads the inode from
-///   the disk and sets ip->valid, while put() clears
+///   Inode::lock() reads the inode from
+///   the disk and sets ip->valid, while Inode::put() clears
 ///   ip->valid if ip->ref has fallen to zero.
 ///
 /// * Locked: file system code may only examine and modify
@@ -120,7 +120,7 @@ pub struct Dinode {
 ///   (*ip).unlock()
 ///   (*ip).put()
 ///
-/// lock() is separate from iget() so that system calls can
+/// Inode::lock() is separate from iget() so that system calls can
 /// get a long-term reference to an inode (as for an open file)
 /// and only lock it for short periods (e.g., in read()).
 /// The separation also helps avoid deadlock and races during
@@ -211,7 +211,7 @@ impl Inode {
         let mut bp: *mut Buf = ptr::null_mut();
         let mut dip: *mut Dinode = ptr::null_mut();
         if (self as *mut Inode).is_null() || (*self).ref_0 < 1 as i32 {
-            panic(b"ilock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(b"Inode::lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         (*self).lock.acquire();
         if (*self).valid == 0 as i32 {
@@ -232,7 +232,7 @@ impl Inode {
             (*self).valid = 1 as i32;
             if (*self).typ as i32 == 0 as i32 {
                 panic(
-                    b"ilock: no type\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+                    b"Inode::lock: no type\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
                 );
             }
         };
@@ -242,7 +242,7 @@ impl Inode {
     pub unsafe fn unlock(&mut self) {
         if (self as *mut Inode).is_null() || (*self).lock.holding() == 0 || (*self).ref_0 < 1 as i32
         {
-            panic(b"iunlock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(b"Inode::unlock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         (*self).lock.release();
     }
@@ -252,7 +252,7 @@ impl Inode {
     /// be recycled.
     /// If that was the last reference and the inode has no links
     /// to it, free the inode (and its content) on disk.
-    /// All calls to put() must be inside a transaction in
+    /// All calls to Inode::put() must be inside a transaction in
     /// case it has to free the inode.
     pub unsafe fn put(&mut self) {
         icache.lock.acquire();
@@ -801,7 +801,7 @@ unsafe fn skipelem(mut path: *mut libc::c_char, mut name: *mut libc::c_char) -> 
 /// Look up and return the inode for a path name.
 /// If parent != 0, return the inode for the parent and copy the final
 /// path element into name, which must have room for DIRSIZ bytes.
-/// Must be called inside a transaction since it calls put().
+/// Must be called inside a transaction since it calls Inode::put().
 unsafe fn namex(
     mut path: *mut libc::c_char,
     mut nameiparent_0: i32,
