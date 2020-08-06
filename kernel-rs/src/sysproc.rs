@@ -3,6 +3,7 @@ use crate::{
     proc::{exit, fork, growproc, kill, myproc, sleep, wait},
     syscall::{argaddr, argint},
     trap::{ticks, tickslock},
+    utils::spin_loop,
 };
 
 pub unsafe fn sys_exit() -> u64 {
@@ -11,8 +12,9 @@ pub unsafe fn sys_exit() -> u64 {
         return -(1 as i32) as u64;
     }
     exit(n);
-    0 as i32 as u64
+    
     // not reached
+    spin_loop()
 }
 
 pub unsafe fn sys_getpid() -> u64 {
