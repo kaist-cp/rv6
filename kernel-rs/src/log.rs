@@ -52,7 +52,7 @@ pub struct Log {
 #[derive(Copy, Clone)]
 pub struct LogHeader {
     pub n: i32,
-    pub block: [i32; 30],
+    pub block: [i32; LOGSIZE as usize],
 }
 
 impl Log {
@@ -67,7 +67,7 @@ impl Log {
             dev: 0,
             lh: LogHeader {
                 n: 0,
-                block: [0; 30],
+                block: [0; LOGSIZE as usize],
             },
         }
     }
@@ -75,19 +75,21 @@ impl Log {
 
 pub static mut log: Log = Log::zeroed();
 
-pub unsafe fn initlog(mut dev: i32, mut sb: *mut Superblock) {
-    if ::core::mem::size_of::<LogHeader>() >= BSIZE as usize {
-        panic(
-            b"initlog: too big LogHeader\x00" as *const u8 as *const libc::c_char
-                as *mut libc::c_char,
-        );
+impl Superblock {
+    pub unsafe fn initlog(&mut self, mut dev: i32) {
+        if ::core::mem::size_of::<LogHeader>() >= BSIZE as usize {
+            panic(
+                b"initlog: too big LogHeader\x00" as *const u8 as *const libc::c_char
+                    as *mut libc::c_char,
+            );
+        }
+        log.lock
+            .initlock(b"log\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        log.start = (*self).logstart as i32;
+        log.size = (*self).nlog as i32;
+        log.dev = dev;
+        recover_from_log();
     }
-    log.lock
-        .initlock(b"log\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-    log.start = (*sb).logstart as i32;
-    log.size = (*sb).nlog as i32;
-    log.dev = dev;
-    recover_from_log();
 }
 
 /// Copy committed blocks from log to their home location

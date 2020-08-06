@@ -2,7 +2,7 @@ use crate::libc;
 use crate::{
     elf::{ElfHdr, ProgHdr, ELF_MAGIC, ELF_PROG_LOAD},
     file::Inode,
-    fs::{ilock, iunlockput, namei, readi},
+    fs::namei,
     log::{begin_op, end_op},
     param::MAXARG,
     printf::panic,
@@ -23,7 +23,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     let mut argc: usize = 0;
     let mut sz: usize = 0;
     let mut sp: usize = 0;
-    let mut ustack: [usize; 33] = [0; 33];
+    let mut ustack: [usize; MAXARG + 1] = [0; MAXARG + 1];
     let mut stackbase: usize = 0;
     let mut elf: ElfHdr = Default::default();
     let mut ip: *mut Inode = ptr::null_mut();
@@ -37,11 +37,10 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
         end_op();
         return -1;
     }
-    ilock(ip);
+    (*ip).lock();
 
     // Check ELF header
-    if readi(
-        ip,
+    if (*ip).read(
         0,
         &mut elf as *mut ElfHdr as usize,
         0 as u32,
@@ -61,8 +60,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                     current_block = 15768484401365413375;
                     break;
                 }
-                if readi(
-                    ip,
+                if (*ip).read(
                     0,
                     &mut ph as *mut ProgHdr as usize,
                     off as u32,
@@ -102,7 +100,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
             match current_block {
                 7080392026674647309 => {}
                 _ => {
-                    iunlockput(ip);
+                    (*ip).unlockput();
                     end_op();
                     ip = ptr::null_mut();
                     p = myproc();
@@ -215,7 +213,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
         proc_freepagetable(pagetable, sz);
     }
     if !ip.is_null() {
-        iunlockput(ip);
+        (*ip).unlockput();
         end_op();
     }
     -1
@@ -252,7 +250,7 @@ unsafe fn loadseg(
         } else {
             PGSIZE as u32
         };
-        if readi(ip, 0, pa, offset.wrapping_add(i), n) as u32 != n {
+        if (*ip).read(0, pa, offset.wrapping_add(i), n) as u32 != n {
             return -1;
         }
         i = (i as u32).wrapping_add(PGSIZE as u32) as u32 as u32

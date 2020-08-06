@@ -5,12 +5,8 @@ use crate::libc;
 use crate::{
     exec::exec,
     fcntl::FcntlFlags,
-    file::{filealloc, fileclose, filedup, fileread, filestat, filewrite},
     file::{File, Inode},
-    fs::{
-        dirlink, dirlookup, ialloc, ilock, iput, iunlock, iunlockput, namecmp, namei, nameiparent,
-        readi, writei,
-    },
+    fs::{dirlink, dirlookup, namecmp, namei, nameiparent},
     fs::{Dirent, DIRSIZ},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
@@ -28,6 +24,23 @@ pub const FD_DEVICE: u32 = 3;
 pub const FD_INODE: u32 = 2;
 pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
+
+impl File {
+    /// Allocate a file descriptor for the given file.
+    /// Takes over file reference from caller on success.
+    unsafe fn fdalloc(&mut self) -> i32 {
+        let mut fd: i32 = 0; // user pointer to struct stat
+        let mut p: *mut proc_0 = myproc();
+        while fd < NOFILE {
+            if (*p).ofile[fd as usize].is_null() {
+                (*p).ofile[fd as usize] = self;
+                return fd;
+            }
+            fd += 1
+        }
+        -1
+    }
+}
 
 /// Fetch the nth word-sized system call argument as a file descriptor
 /// and return both the descriptor and the corresponding struct file.
@@ -52,32 +65,17 @@ unsafe fn argfd(mut n: i32, mut pfd: *mut i32, mut pf: *mut *mut File) -> i32 {
     0
 }
 
-/// Allocate a file descriptor for the given file.
-/// Takes over file reference from caller on success.
-unsafe fn fdalloc(mut f: *mut File) -> i32 {
-    let mut fd: i32 = 0; // user pointer to struct stat
-    let mut p: *mut proc_0 = myproc();
-    while fd < NOFILE {
-        if (*p).ofile[fd as usize].is_null() {
-            (*p).ofile[fd as usize] = f;
-            return fd;
-        }
-        fd += 1
-    }
-    -1
-}
-
 pub unsafe fn sys_dup() -> usize {
     let mut f: *mut File = ptr::null_mut();
     let mut fd: i32 = 0;
     if argfd(0, ptr::null_mut(), &mut f) < 0 {
         return usize::MAX;
     }
-    fd = fdalloc(f);
+    fd = (*f).fdalloc();
     if fd < 0 {
         return usize::MAX;
     }
-    filedup(f);
+    (*f).dup();
     fd as usize
 }
 
@@ -88,7 +86,7 @@ pub unsafe fn sys_read() -> usize {
     if argfd(0, ptr::null_mut(), &mut f) < 0 || argint(2, &mut n) < 0 || argaddr(1, &mut p) < 0 {
         return usize::MAX;
     }
-    fileread(f, p, n) as usize
+    (*f).read(p, n) as usize
 }
 
 pub unsafe fn sys_write() -> usize {
@@ -98,7 +96,7 @@ pub unsafe fn sys_write() -> usize {
     if argfd(0, ptr::null_mut(), &mut f) < 0 || argint(2, &mut n) < 0 || argaddr(1, &mut p) < 0 {
         return usize::MAX;
     }
-    filewrite(f, p, n) as usize
+    (*f).write(p, n) as usize
 }
 
 pub unsafe fn sys_close() -> usize {
@@ -109,17 +107,19 @@ pub unsafe fn sys_close() -> usize {
     }
     let fresh0 = &mut (*myproc()).ofile[fd as usize];
     *fresh0 = ptr::null_mut();
-    fileclose(f);
+    (*f).close();
     0
 }
 
 pub unsafe fn sys_fstat() -> usize {
     let mut f: *mut File = ptr::null_mut();
+
+    // user pointer to struct stat
     let mut st: usize = 0;
     if argfd(0, ptr::null_mut(), &mut f) < 0 || argaddr(1, &mut st) < 0 {
         return usize::MAX;
     }
-    filestat(f, st) as usize
+    (*f).stat(st) as usize
 }
 
 /// Create the path new as a link to the same inode as old.
@@ -138,31 +138,31 @@ pub unsafe fn sys_link() -> usize {
         end_op();
         return usize::MAX;
     }
-    ilock(ip);
+    (*ip).lock();
     if (*ip).typ as i32 == T_DIR {
-        iunlockput(ip);
+        (*ip).unlockput();
         end_op();
         return usize::MAX;
     }
     (*ip).nlink += 1;
     (*ip).update();
-    iunlock(ip);
+    (*ip).unlock();
     dp = nameiparent(new.as_mut_ptr(), name.as_mut_ptr());
     if !dp.is_null() {
-        ilock(dp);
+        (*dp).lock();
         if (*dp).dev != (*ip).dev || dirlink(dp, name.as_mut_ptr(), (*ip).inum) < 0 {
-            iunlockput(dp);
+            (*dp).unlockput();
         } else {
-            iunlockput(dp);
-            iput(ip);
+            (*dp).unlockput();
+            (*ip).put();
             end_op();
             return 0;
         }
     }
-    ilock(ip);
+    (*ip).lock();
     (*ip).nlink -= 1;
     (*ip).update();
-    iunlockput(ip);
+    (*ip).unlockput();
     end_op();
     usize::MAX
 }
@@ -172,8 +172,7 @@ unsafe fn isdirempty(mut dp: *mut Inode) -> i32 {
     let mut de: Dirent = Default::default();
     let mut off = (2usize).wrapping_mul(::core::mem::size_of::<Dirent>()) as i32;
     while (off as u32) < (*dp).size {
-        if readi(
-            dp,
+        if (*dp).read(
             0,
             &mut de as *mut Dirent as usize,
             off as u32,
@@ -209,7 +208,7 @@ pub unsafe fn sys_unlink() -> usize {
         end_op();
         return usize::MAX;
     }
-    ilock(dp);
+    (*dp).lock();
 
     // Cannot unlink "." or "..".
     if !(namecmp(
@@ -223,7 +222,7 @@ pub unsafe fn sys_unlink() -> usize {
     {
         ip = dirlookup(dp, name.as_mut_ptr(), &mut off);
         if !ip.is_null() {
-            ilock(ip);
+            (*ip).lock();
             if ((*ip).nlink as i32) < 1 {
                 panic(
                     b"unlink: nlink < 1\x00" as *const u8 as *const libc::c_char
@@ -231,11 +230,10 @@ pub unsafe fn sys_unlink() -> usize {
                 );
             }
             if (*ip).typ as i32 == T_DIR && isdirempty(ip) == 0 {
-                iunlockput(ip);
+                (*ip).unlockput();
             } else {
                 ptr::write_bytes(&mut de as *mut Dirent, 0, 1);
-                if writei(
-                    dp,
+                if (*dp).write(
                     0,
                     &mut de as *mut Dirent as usize,
                     off,
@@ -252,16 +250,16 @@ pub unsafe fn sys_unlink() -> usize {
                     (*dp).nlink -= 1;
                     (*dp).update();
                 }
-                iunlockput(dp);
+                (*dp).unlockput();
                 (*ip).nlink -= 1;
                 (*ip).update();
-                iunlockput(ip);
+                (*ip).unlockput();
                 end_op();
                 return 0;
             }
         }
     }
-    iunlockput(dp);
+    (*dp).unlockput();
     end_op();
     usize::MAX
 }
@@ -279,22 +277,22 @@ unsafe fn create(
     if dp.is_null() {
         return ptr::null_mut();
     }
-    ilock(dp);
+    (*dp).lock();
     ip = dirlookup(dp, name.as_mut_ptr(), ptr::null_mut());
     if !ip.is_null() {
-        iunlockput(dp);
-        ilock(ip);
+        (*dp).unlockput();
+        (*ip).lock();
         if typ as i32 == T_FILE && ((*ip).typ as i32 == T_FILE || (*ip).typ as i32 == T_DEVICE) {
             return ip;
         }
-        iunlockput(ip);
+        (*ip).unlockput();
         return ptr::null_mut();
     }
-    ip = ialloc((*dp).dev, typ);
+    ip = Inode::alloc((*dp).dev, typ);
     if ip.is_null() {
-        panic(b"create: ialloc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic(b"create: Inode::alloc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    ilock(ip);
+    (*ip).lock();
     (*ip).major = major;
     (*ip).minor = minor;
     (*ip).nlink = 1 as i16;
@@ -324,7 +322,7 @@ unsafe fn create(
     if dirlink(dp, name.as_mut_ptr(), (*ip).inum) < 0 {
         panic(b"create: dirlink\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    iunlockput(dp);
+    (*dp).unlockput();
     ip
 }
 
@@ -353,27 +351,29 @@ pub unsafe fn sys_open() -> usize {
             end_op();
             return usize::MAX;
         }
-        ilock(ip);
+        (*ip).lock();
         if (*ip).typ as i32 == T_DIR && omode != FcntlFlags::O_RDONLY {
-            iunlockput(ip);
+            (*ip).unlockput();
             end_op();
             return usize::MAX;
         }
     }
-    if (*ip).typ as i32 == T_DEVICE && (((*ip).major as i32) < 0 || (*ip).major as i32 >= NDEV) {
-        iunlockput(ip);
+    if (*ip).typ as i32 == T_DEVICE
+        && (((*ip).major as i32) < 0 || (*ip).major as i32 >= NDEV)
+    {
+        (*ip).unlockput();
         end_op();
         return usize::MAX;
     }
-    f = filealloc();
+    f = File::alloc();
     if f.is_null() || {
-        fd = fdalloc(f);
+        fd = (*f).fdalloc();
         (fd) < 0
     } {
         if !f.is_null() {
-            fileclose(f);
+            (*f).close();
         }
-        iunlockput(ip);
+        (*ip).unlockput();
         end_op();
         return usize::MAX;
     }
@@ -388,7 +388,7 @@ pub unsafe fn sys_open() -> usize {
     (*f).readable = (!omode.intersects(FcntlFlags::O_WRONLY)) as i32 as libc::c_char;
     (*f).writable =
         omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR) as i32 as libc::c_char;
-    iunlock(ip);
+    (*ip).unlock();
     end_op();
     fd as usize
 }
@@ -404,7 +404,7 @@ pub unsafe fn sys_mkdir() -> usize {
         end_op();
         return usize::MAX;
     }
-    iunlockput(ip);
+    (*ip).unlockput();
     end_op();
     0
 }
@@ -431,7 +431,7 @@ pub unsafe fn sys_mknod() -> usize {
         end_op();
         return usize::MAX;
     }
-    iunlockput(ip);
+    (*ip).unlockput();
     end_op();
     0
 }
@@ -448,14 +448,14 @@ pub unsafe fn sys_chdir() -> usize {
         end_op();
         return usize::MAX;
     }
-    ilock(ip);
+    (*ip).lock();
     if (*ip).typ as i32 != T_DIR {
-        iunlockput(ip);
+        (*ip).unlockput();
         end_op();
         return usize::MAX;
     }
-    iunlock(ip);
-    iput((*p).cwd);
+    (*ip).unlock();
+    (*(*p).cwd).put();
     end_op();
     (*p).cwd = ip;
     0
@@ -550,16 +550,16 @@ pub unsafe fn sys_pipe() -> usize {
         return usize::MAX;
     }
     fd0 = -1;
-    fd0 = fdalloc(rf);
+    fd0 = (*rf).fdalloc();
     if fd0 < 0 || {
-        fd1 = fdalloc(wf);
+        fd1 = (*wf).fdalloc();
         (fd1) < 0
     } {
         if fd0 >= 0 {
             (*p).ofile[fd0 as usize] = ptr::null_mut()
         }
-        fileclose(rf);
-        fileclose(wf);
+        (*rf).close();
+        (*wf).close();
         return usize::MAX;
     }
     if copyout(
@@ -577,8 +577,8 @@ pub unsafe fn sys_pipe() -> usize {
     {
         (*p).ofile[fd0 as usize] = ptr::null_mut();
         (*p).ofile[fd1 as usize] = ptr::null_mut();
-        fileclose(rf);
-        fileclose(wf);
+        (*rf).close();
+        (*wf).close();
         return usize::MAX;
     }
     0
