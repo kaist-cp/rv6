@@ -464,7 +464,7 @@ pub unsafe fn sys_chdir() -> usize {
 pub unsafe fn sys_exec() -> usize {
     let mut current_block: usize;
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
-    let mut argv: [*mut libc::c_char; MAXARG as usize] = [ptr::null_mut(); MAXARG as usize];
+    let mut argv: [*mut libc::c_char; MAXARG] = [ptr::null_mut(); MAXARG];
     let mut i: i32 = 0;
     let mut uargv: usize = 0;
     let mut uarg: usize = 0;

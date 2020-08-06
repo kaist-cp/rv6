@@ -125,7 +125,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                                 current_block = 4567019141635105728;
                                 break;
                             }
-                            if argc >= MAXARG as usize {
+                            if argc >= MAXARG {
                                 current_block = 7080392026674647309;
                                 break;
                             }
