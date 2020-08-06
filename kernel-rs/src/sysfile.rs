@@ -5,9 +5,8 @@ use crate::libc;
 use crate::{
     exec::exec,
     fcntl::FcntlFlags,
-    file::filealloc,
     file::{File, Inode},
-    fs::{dirlink, dirlookup, ialloc, namecmp, namei, nameiparent},
+    fs::{dirlink, dirlookup, namecmp, namei, nameiparent},
     fs::{Dirent, DIRSIZ},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
@@ -296,9 +295,9 @@ unsafe fn create(
         (*ip).unlockput();
         return ptr::null_mut();
     }
-    ip = ialloc((*dp).dev, typ);
+    ip = Inode::alloc((*dp).dev, typ);
     if ip.is_null() {
-        panic(b"create: ialloc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic(b"create: Inode::alloc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     (*ip).lock();
     (*ip).major = major;
@@ -378,7 +377,7 @@ pub unsafe fn sys_open() -> u64 {
         end_op();
         return -(1 as i32) as u64;
     }
-    f = filealloc();
+    f = File::alloc();
     if f.is_null() || {
         fd = (*f).fdalloc();
         (fd) < 0 as i32

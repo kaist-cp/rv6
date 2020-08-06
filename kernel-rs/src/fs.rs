@@ -93,7 +93,7 @@ pub struct Dinode {
 /// rest of the file system code.
 ///
 /// * Allocation: an inode is allocated if its type (on disk)
-///   is non-zero. ialloc() allocates, and Inode::put() frees if
+///   is non-zero. Inode::alloc() allocates, and Inode::put() frees if
 ///   the reference and link counts have fallen to zero.
 ///
 /// * Referencing in cache: an entry in the inode cache
@@ -456,6 +456,29 @@ impl Inode {
         n as i32
     }
 
+    /// Allocate an inode on device dev.
+    /// Mark it as allocated by  giving it type type.
+    /// Returns an unlocked but allocated and referenced inode.
+    pub unsafe fn alloc(mut dev: u32, mut typ: i16) -> *mut Inode {
+        for inum in 1..sb.ninodes {
+            let bp = bread(dev, iblock(inum as i32, sb));
+            let dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
+                .offset((inum as u64).wrapping_rem(IPB as u64) as isize);
+            if (*dip).typ as i32 == 0 as i32 {
+                // a free inode
+                ptr::write_bytes(dip, 0, 1);
+                (*dip).typ = typ;
+
+                // mark it allocated on the disk
+                log_write(bp);
+                (*bp).release();
+                return iget(dev, inum as u32);
+            }
+            (*bp).release();
+        }
+        panic(b"Inode::alloc: no inodes\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    }
+
     pub const fn zeroed() -> Self {
         // TODO: transient measure
         Self {
@@ -597,29 +620,6 @@ pub unsafe fn iinit() {
             .lock
             .initlock(b"inode\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-}
-
-/// Allocate an inode on device dev.
-/// Mark it as allocated by  giving it type type.
-/// Returns an unlocked but allocated and referenced inode.
-pub unsafe fn ialloc(mut dev: u32, mut typ: i16) -> *mut Inode {
-    for inum in 1..sb.ninodes {
-        let bp = bread(dev, iblock(inum as i32, sb));
-        let dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-            .offset((inum as u64).wrapping_rem(IPB as u64) as isize);
-        if (*dip).typ as i32 == 0 as i32 {
-            // a free inode
-            ptr::write_bytes(dip, 0, 1);
-            (*dip).typ = typ;
-
-            // mark it allocated on the disk
-            log_write(bp);
-            (*bp).release();
-            return iget(dev, inum as u32);
-        }
-        (*bp).release();
-    }
-    panic(b"ialloc: no inodes\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
 
 /// Find the inode with number inum on device dev

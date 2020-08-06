@@ -223,6 +223,23 @@ impl File {
         ret
     }
 
+    /// Allocate a file structure.
+    pub unsafe fn alloc() -> *mut File {
+        let mut f: *mut File = ptr::null_mut();
+        ftable.lock.acquire();
+        f = ftable.file.as_mut_ptr();
+        while f < ftable.file.as_mut_ptr().offset(NFILE as isize) {
+            if (*f).ref_0 == 0 as i32 {
+                (*f).ref_0 = 1 as i32;
+                ftable.lock.release();
+                return f;
+            }
+            f = f.offset(1)
+        }
+        ftable.lock.release();
+        ptr::null_mut()
+    }
+
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
@@ -260,21 +277,4 @@ pub unsafe fn fileinit() {
     ftable
         .lock
         .initlock(b"ftable\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-}
-
-/// Allocate a file structure.
-pub unsafe fn filealloc() -> *mut File {
-    let mut f: *mut File = ptr::null_mut();
-    ftable.lock.acquire();
-    f = ftable.file.as_mut_ptr();
-    while f < ftable.file.as_mut_ptr().offset(NFILE as isize) {
-        if (*f).ref_0 == 0 as i32 {
-            (*f).ref_0 = 1 as i32;
-            ftable.lock.release();
-            return f;
-        }
-        f = f.offset(1)
-    }
-    ftable.lock.release();
-    ptr::null_mut()
 }
