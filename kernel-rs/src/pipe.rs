@@ -1,6 +1,7 @@
 use crate::libc;
 use crate::{
-    file::{filealloc, fileclose, File, FD_PIPE},
+    file::File,
+    fs::FD_PIPE,
     kalloc::{kalloc, kfree},
     proc::{myproc, proc_0, sleep, wakeup},
     spinlock::Spinlock,
@@ -134,9 +135,9 @@ pub unsafe fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {
     pi = ptr::null_mut();
     *f1 = ptr::null_mut();
     *f0 = *f1;
-    *f0 = filealloc();
+    *f0 = File::alloc();
     if !((*f0).is_null() || {
-        *f1 = filealloc();
+        *f1 = File::alloc();
         (*f1).is_null()
     }) {
         pi = kalloc() as *mut Pipe;
@@ -163,10 +164,10 @@ pub unsafe fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {
         kfree(pi as *mut libc::c_char as *mut libc::c_void);
     }
     if !(*f0).is_null() {
-        fileclose(*f0);
+        (*(*f0)).close();
     }
     if !(*f1).is_null() {
-        fileclose(*f1);
+        (*(*f1)).close();
     }
     -(1 as i32)
 }
