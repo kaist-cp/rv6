@@ -103,7 +103,7 @@ impl File {
 
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub unsafe fn stat(&mut self, mut addr: u64) -> i32 {
+    pub unsafe fn stat(&mut self, mut addr: usize) -> i32 {
         let mut p: *mut proc_0 = myproc();
         let mut st: Stat = Default::default();
         if (*self).typ as u32 == FD_INODE as i32 as u32
@@ -116,7 +116,7 @@ impl File {
                 (*p).pagetable,
                 addr,
                 &mut st as *mut Stat as *mut libc::c_char,
-                ::core::mem::size_of::<Stat>() as u64,
+                ::core::mem::size_of::<Stat>() as usize,
             ) < 0 as i32
             {
                 return -(1 as i32);
@@ -128,7 +128,7 @@ impl File {
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub unsafe fn read(&mut self, mut addr: u64, mut n: i32) -> i32 {
+    pub unsafe fn read(&mut self, mut addr: usize, mut n: i32) -> i32 {
         let mut r: i32 = 0;
         if (*self).readable as i32 == 0 as i32 {
             return -(1 as i32);
@@ -160,7 +160,7 @@ impl File {
 
     /// Write to file self.
     /// addr is a user virtual address.
-    pub unsafe fn write(&mut self, mut addr: u64, mut n: i32) -> i32 {
+    pub unsafe fn write(&mut self, mut addr: usize, mut n: i32) -> i32 {
         let mut r: i32 = 0;
         let mut ret: i32 = 0;
         if (*self).writable as i32 == 0 as i32 {
@@ -196,7 +196,7 @@ impl File {
                 (*(*self).ip).lock();
                 r = (*(*self).ip).write(
                     1 as i32,
-                    addr.wrapping_add(i as u64),
+                    addr.wrapping_add(i as usize),
                     (*self).off,
                     n1 as u32,
                 );

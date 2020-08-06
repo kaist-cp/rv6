@@ -201,7 +201,7 @@ impl Inode {
         if (*self).valid == 0 as i32 {
             bp = bread((*self).dev, sb.iblock((*self).inum as i32));
             dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-                .offset(((*self).inum as u64).wrapping_rem(IPB as u64) as isize);
+                .offset(((*self).inum as usize).wrapping_rem(IPB as usize) as isize);
             (*self).typ = (*dip).typ;
             (*self).major = (*dip).major;
             (*self).minor = (*dip).minor;
@@ -286,7 +286,7 @@ impl Inode {
             return addr;
         }
         bn = (bn as u32).wrapping_sub(NDIRECT as u32) as u32 as u32;
-        if (bn as u64) < NINDIRECT as u64 {
+        if (bn as usize) < NINDIRECT as usize {
             // Load indirect block, allocating if necessary.
             addr = (*self).addrs[NDIRECT as usize];
             if addr == 0 as i32 as u32 {
@@ -342,7 +342,7 @@ impl Inode {
     pub unsafe fn read(
         &mut self,
         mut user_dst: i32,
-        mut dst: u64,
+        mut dst: usize,
         mut off: u32,
         mut n: u32,
     ) -> i32 {
@@ -368,7 +368,7 @@ impl Inode {
                     .as_mut_ptr()
                     .offset(off.wrapping_rem(BSIZE as u32) as isize)
                     as *mut libc::c_void,
-                m as u64,
+                m as usize,
             ) == -(1 as i32)
             {
                 (*bp).release();
@@ -377,7 +377,7 @@ impl Inode {
                 (*bp).release();
                 tot = (tot as u32).wrapping_add(m) as u32 as u32;
                 off = (off as u32).wrapping_add(m) as u32 as u32;
-                dst = (dst as u64).wrapping_add(m as u64) as u64 as u64
+                dst = (dst as usize).wrapping_add(m as usize) as usize as usize
             }
         }
         n as i32
@@ -390,7 +390,7 @@ impl Inode {
     pub unsafe fn write(
         &mut self,
         mut user_src: i32,
-        mut src: u64,
+        mut src: usize,
         mut off: u32,
         mut n: u32,
     ) -> i32 {
@@ -398,7 +398,7 @@ impl Inode {
         if off > (*self).size || off.wrapping_add(n) < off {
             return -1;
         }
-        if off.wrapping_add(n) as u64 > MAXFILE.wrapping_mul(BSIZE) as u64 {
+        if off.wrapping_add(n) as usize > MAXFILE.wrapping_mul(BSIZE) as usize {
             return -1;
         }
         tot = 0 as i32 as u32;
@@ -416,7 +416,7 @@ impl Inode {
                     as *mut libc::c_void,
                 user_src,
                 src,
-                m as u64,
+                m as usize,
             ) == -(1 as i32)
             {
                 (*bp).release();
@@ -426,7 +426,7 @@ impl Inode {
                 (*bp).release();
                 tot = (tot as u32).wrapping_add(m) as u32 as u32;
                 off = (off as u32).wrapping_add(m) as u32 as u32;
-                src = (src as u64).wrapping_add(m as u64) as u64 as u64
+                src = (src as usize).wrapping_add(m as usize) as usize as usize
             }
         }
         if n > 0 as i32 as u32 {
@@ -448,7 +448,7 @@ impl Inode {
         for inum in 1..sb.ninodes {
             let bp = bread(dev, sb.iblock(inum as i32));
             let dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-                .offset((inum as u64).wrapping_rem(IPB as u64) as isize);
+                .offset((inum as usize).wrapping_rem(IPB as usize) as isize);
             if (*dip).typ as i32 == 0 as i32 {
                 // a free inode
                 ptr::write_bytes(dip, 0, 1);

@@ -25,7 +25,7 @@ pub unsafe fn sys_fork() -> usize {
 }
 
 pub unsafe fn sys_wait() -> usize {
-    let mut p: u64 = 0;
+    let mut p: usize = 0;
     if argaddr(0, &mut p) < 0 {
         return usize::MAX;
     }
