@@ -368,7 +368,7 @@ impl Inode {
                     .offset(off.wrapping_rem(BSIZE as u32) as isize)
                     as *mut libc::c_void,
                 m as usize,
-            ) == -(1)
+            ) == -1
             {
                 (*bp).release();
                 break;
@@ -416,7 +416,7 @@ impl Inode {
                 user_src,
                 src,
                 m as usize,
-            ) == -(1)
+            ) == -1
             {
                 (*bp).release();
                 break;
