@@ -79,8 +79,8 @@ unsafe fn consolewrite(mut user_src: i32, mut src: usize, mut n: i32) -> i32 {
             &mut c as *mut libc::c_char as *mut libc::c_void,
             user_src,
             src.wrapping_add(i as usize),
-            1 as i32 as usize,
-        ) == -(1 as i32)
+            1usize,
+        ) == -1
         {
             break;
         }
@@ -103,7 +103,7 @@ unsafe fn consoleread(mut user_dst: i32, mut dst: usize, mut n: i32) -> i32 {
         while cons.r == cons.w {
             if (*myproc()).killed != 0 {
                 cons.lock.release();
-                return -(1 as i32);
+                return -1;
             }
             sleep(&mut cons.r as *mut u32 as *mut libc::c_void, &mut cons.lock);
         }
@@ -126,8 +126,8 @@ unsafe fn consoleread(mut user_dst: i32, mut dst: usize, mut n: i32) -> i32 {
                 user_dst,
                 dst,
                 &mut cbuf as *mut libc::c_char as *mut libc::c_void,
-                1 as i32 as usize,
-            ) == -(1 as i32)
+                1usize,
+            ) == -1
             {
                 break;
             }
