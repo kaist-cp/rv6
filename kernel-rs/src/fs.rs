@@ -228,7 +228,7 @@ impl Inode {
                 (*self).addrs.as_mut_ptr() as *mut libc::c_void,
                 ::core::mem::size_of::<[u32; 13]>(),
             );
-            brelse(bp);
+            (*bp).release();
             (*self).valid = 1 as i32;
             if (*self).typ as i32 == 0 as i32 {
                 panic(
@@ -316,7 +316,7 @@ impl Inode {
                 *a.offset(bn as isize) = addr;
                 log_write(bp);
             }
-            brelse(bp);
+            (*bp).release();
             return addr;
         }
         panic(b"bmap: out of range\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -342,7 +342,7 @@ impl Inode {
                     bfree((*self).dev as i32, *a.offset(j as isize));
                 }
             }
-            brelse(bp);
+            (*bp).release();
             bfree((*self).dev as i32, (*self).addrs[NDIRECT as usize]);
             (*self).addrs[NDIRECT as usize] = 0 as i32 as u32
         }
@@ -386,10 +386,10 @@ impl Inode {
                 m as u64,
             ) == -(1 as i32)
             {
-                brelse(bp);
+                (*bp).release();
                 break;
             } else {
-                brelse(bp);
+                (*bp).release();
                 tot = (tot as u32).wrapping_add(m) as u32 as u32;
                 off = (off as u32).wrapping_add(m) as u32 as u32;
                 dst = (dst as u64).wrapping_add(m as u64) as u64 as u64
@@ -434,11 +434,11 @@ impl Inode {
                 m as u64,
             ) == -(1 as i32)
             {
-                brelse(bp);
+                (*bp).release();
                 break;
             } else {
                 log_write(bp);
-                brelse(bp);
+                (*bp).release();
                 tot = (tot as u32).wrapping_add(m) as u32 as u32;
                 off = (off as u32).wrapping_add(m) as u32 as u32;
                 src = (src as u64).wrapping_add(m as u64) as u64 as u64

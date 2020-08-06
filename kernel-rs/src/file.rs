@@ -91,7 +91,7 @@ impl File {
         (*self).typ = FD_NONE;
         ftable.lock.release();
         if ff.typ as u32 == FD_PIPE as i32 as u32 {
-            pipeclose(ff.pipe, ff.writable as i32);
+            (*ff.pipe).close(ff.writable as i32);
         } else if ff.typ as u32 == FD_INODE as i32 as u32
             || ff.typ as u32 == FD_DEVICE as i32 as u32
         {
@@ -134,7 +134,7 @@ impl File {
             return -(1 as i32);
         }
         if (*self).typ as u32 == FD_PIPE as i32 as u32 {
-            r = piperead((*self).pipe, addr, n)
+            r = (*(*self).pipe).read(addr, n)
         } else if (*self).typ as u32 == FD_DEVICE as i32 as u32 {
             if ((*self).major as i32) < 0 as i32
                 || (*self).major as i32 >= NDEV
@@ -167,7 +167,7 @@ impl File {
             return -1;
         }
         if (*self).typ as u32 == FD_PIPE as i32 as u32 {
-            ret = pipewrite((*self).pipe, addr, n)
+            ret = (*(*self).pipe).write(addr, n)
         } else if (*self).typ as u32 == FD_DEVICE as i32 as u32 {
             if ((*self).major as i32) < 0 as i32
                 || (*self).major as i32 >= NDEV

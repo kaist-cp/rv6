@@ -1,6 +1,7 @@
 use crate::libc;
 use crate::{
     file::{filealloc, File},
+    fs::FD_PIPE,
     kalloc::{kalloc, kfree},
     proc::{myproc, proc_0, sleep, wakeup},
     spinlock::Spinlock,
