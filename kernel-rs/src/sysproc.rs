@@ -5,77 +5,77 @@ use crate::{
     trap::{ticks, tickslock},
 };
 
-pub unsafe fn sys_exit() -> u64 {
+pub unsafe fn sys_exit() -> usize {
     let mut n: i32 = 0;
     if argint(0 as i32, &mut n) < 0 as i32 {
-        return -(1 as i32) as u64;
+        return -(1 as i32) as usize;
     }
     exit(n);
-    0 as i32 as u64
+    0 as i32 as usize
     // not reached
 }
 
-pub unsafe fn sys_getpid() -> u64 {
-    (*myproc()).pid as u64
+pub unsafe fn sys_getpid() -> usize {
+    (*myproc()).pid as usize
 }
 
-pub unsafe fn sys_fork() -> u64 {
-    fork() as u64
+pub unsafe fn sys_fork() -> usize {
+    fork() as usize
 }
 
-pub unsafe fn sys_wait() -> u64 {
-    let mut p: u64 = 0;
+pub unsafe fn sys_wait() -> usize {
+    let mut p: usize = 0;
     if argaddr(0 as i32, &mut p) < 0 as i32 {
-        return -(1 as i32) as u64;
+        return -(1 as i32) as usize;
     }
-    wait(p) as u64
+    wait(p) as usize
 }
 
-pub unsafe fn sys_sbrk() -> u64 {
+pub unsafe fn sys_sbrk() -> usize {
     let mut addr: i32 = 0;
     let mut n: i32 = 0;
     if argint(0 as i32, &mut n) < 0 as i32 {
-        return -(1 as i32) as u64;
+        return -(1 as i32) as usize;
     }
     addr = (*myproc()).sz as i32;
     if growproc(n) < 0 as i32 {
-        return -(1 as i32) as u64;
+        return -(1 as i32) as usize;
     }
-    addr as u64
+    addr as usize
 }
 
-pub unsafe fn sys_sleep() -> u64 {
+pub unsafe fn sys_sleep() -> usize {
     let mut n: i32 = 0;
     if argint(0 as i32, &mut n) < 0 as i32 {
-        return -(1 as i32) as u64;
+        return -(1 as i32) as usize;
     }
     tickslock.acquire();
     let ticks0 = ticks;
     while ticks.wrapping_sub(ticks0) < n as u32 {
         if (*myproc()).killed != 0 {
             tickslock.release();
-            return -(1 as i32) as u64;
+            return -(1 as i32) as usize;
         }
         sleep(&mut ticks as *mut u32 as *mut libc::c_void, &mut tickslock);
     }
     tickslock.release();
-    0 as i32 as u64
+    0 as i32 as usize
 }
 
-pub unsafe fn sys_kill() -> u64 {
+pub unsafe fn sys_kill() -> usize {
     let mut pid: i32 = 0;
     if argint(0 as i32, &mut pid) < 0 as i32 {
-        return -(1 as i32) as u64;
+        return -(1 as i32) as usize;
     }
-    kill(pid) as u64
+    kill(pid) as usize
 }
 
 /// return how many clock tick interrupts have occurred
 /// since start.
-pub unsafe fn sys_uptime() -> u64 {
+pub unsafe fn sys_uptime() -> usize {
     let mut xticks: u32 = 0;
     tickslock.acquire();
     xticks = ticks;
     tickslock.release();
-    xticks as u64
+    xticks as usize
 }

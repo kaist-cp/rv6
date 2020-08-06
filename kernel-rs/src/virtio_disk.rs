@@ -63,7 +63,7 @@ pub struct InflightInfo {
 pub struct virtio_blk_outhdr {
     pub typ: u32,
     pub reserved: u32,
-    pub sector: u64,
+    pub sector: usize,
 }
 
 impl Disk {
@@ -114,14 +114,14 @@ pub unsafe fn virtio_disk_init() {
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status);
 
     // negotiate features
-    let mut features: u64 = *(r(VIRTIO_MMIO_DEVICE_FEATURES)) as u64;
-    features &= !((1 as i32) << VIRTIO_BLK_F_RO) as u64;
-    features &= !((1 as i32) << VIRTIO_BLK_F_SCSI) as u64;
-    features &= !((1 as i32) << VIRTIO_BLK_F_CONFIG_WCE) as u64;
-    features &= !((1 as i32) << VIRTIO_BLK_F_MQ) as u64;
-    features &= !((1 as i32) << VIRTIO_F_ANY_LAYOUT) as u64;
-    features &= !((1 as i32) << VIRTIO_RING_F_EVENT_IDX) as u64;
-    features &= !((1 as i32) << VIRTIO_RING_F_INDIRECT_DESC) as u64;
+    let mut features: usize = *(r(VIRTIO_MMIO_DEVICE_FEATURES)) as usize;
+    features &= !((1 as i32) << VIRTIO_BLK_F_RO) as usize;
+    features &= !((1 as i32) << VIRTIO_BLK_F_SCSI) as usize;
+    features &= !((1 as i32) << VIRTIO_BLK_F_CONFIG_WCE) as usize;
+    features &= !((1 as i32) << VIRTIO_BLK_F_MQ) as usize;
+    features &= !((1 as i32) << VIRTIO_F_ANY_LAYOUT) as usize;
+    features &= !((1 as i32) << VIRTIO_RING_F_EVENT_IDX) as usize;
+    features &= !((1 as i32) << VIRTIO_RING_F_INDIRECT_DESC) as usize;
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_DRIVER_FEATURES), features as u32);
 
     // tell device that feature negotiation is complete.
@@ -152,7 +152,7 @@ pub unsafe fn virtio_disk_init() {
     ptr::write_bytes(disk.pages.as_mut_ptr(), 0, 1);
     ::core::ptr::write_volatile(
         r(VIRTIO_MMIO_QUEUE_PFN),
-        (disk.pages.as_mut_ptr() as u64 >> PGSHIFT) as u32,
+        (disk.pages.as_mut_ptr() as usize >> PGSHIFT) as u32,
     );
 
     // desc = pages -- num * VRingDesc
@@ -161,7 +161,7 @@ pub unsafe fn virtio_disk_init() {
 
     disk.desc = disk.pages.as_mut_ptr() as *mut VRingDesc;
     disk.avail = (disk.desc as *mut libc::c_char)
-        .offset((NUM as u64).wrapping_mul(::core::mem::size_of::<VRingDesc>() as u64) as isize)
+        .add((NUM as usize).wrapping_mul(::core::mem::size_of::<VRingDesc>()))
         as *mut u16;
     disk.used = disk.pages.as_mut_ptr().offset(PGSIZE as isize) as *mut UsedArea;
     for i in 0..NUM {
@@ -190,7 +190,7 @@ unsafe fn free_desc(mut i: i32) {
     if disk.free[i as usize] != 0 {
         panic(b"virtio_disk_intr 2\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
-    (*disk.desc.offset(i as isize)).addr = 0 as i32 as u64;
+    (*disk.desc.offset(i as isize)).addr = 0 as i32 as usize;
     disk.free[i as usize] = 1 as i32 as libc::c_char;
     wakeup(
         &mut *disk.free.as_mut_ptr().offset(0 as i32 as isize) as *mut libc::c_char
@@ -223,7 +223,7 @@ unsafe fn alloc3_desc(mut idx: *mut i32) -> i32 {
 }
 
 pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
-    let mut sector: u64 = (*b).blockno.wrapping_mul((BSIZE / 512 as i32) as u32) as u64;
+    let mut sector: usize = (*b).blockno.wrapping_mul((BSIZE / 512 as i32) as u32) as usize;
 
     disk.vdisk_lock.acquire();
 
@@ -259,12 +259,12 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     // buf0 is on a kernel stack, which is not direct mapped,
     // thus the call to kvmpa().
     (*disk.desc.offset(idx[0 as i32 as usize] as isize)).addr =
-        kvmpa(&mut buf0 as *mut virtio_blk_outhdr as u64);
+        kvmpa(&mut buf0 as *mut virtio_blk_outhdr as usize);
     (*disk.desc.offset(idx[0 as i32 as usize] as isize)).len =
-        ::core::mem::size_of::<virtio_blk_outhdr>() as u64 as u32;
+        ::core::mem::size_of::<virtio_blk_outhdr>() as u32;
     (*disk.desc.offset(idx[0 as i32 as usize] as isize)).flags = VRING_DESC_F_NEXT as u16;
     (*disk.desc.offset(idx[0 as i32 as usize] as isize)).next = idx[1 as i32 as usize] as u16;
-    (*disk.desc.offset(idx[1 as i32 as usize] as isize)).addr = (*b).data.as_mut_ptr() as u64;
+    (*disk.desc.offset(idx[1 as i32 as usize] as isize)).addr = (*b).data.as_mut_ptr() as usize;
     (*disk.desc.offset(idx[1 as i32 as usize] as isize)).len = BSIZE as u32;
     if write != 0 {
         // device writes b->data
@@ -284,7 +284,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
         .as_mut_ptr()
         .offset(*idx.as_mut_ptr().offset(0 as i32 as isize) as isize))
     .status as *mut libc::c_char
-        as u64;
+        as usize;
     (*disk.desc.offset(idx[2 as i32 as usize] as isize)).len = 1 as u32;
     // device writes the status
     (*disk.desc.offset(idx[2 as i32 as usize] as isize)).flags = VRING_DESC_F_WRITE as u16;

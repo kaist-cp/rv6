@@ -45,7 +45,7 @@ impl Pipe {
             (*self).lock.release();
         };
     }
-    pub unsafe fn write(&mut self, mut addr: u64, mut n: i32) -> i32 {
+    pub unsafe fn write(&mut self, mut addr: usize, mut n: i32) -> i32 {
         let mut i: i32 = 0;
         let mut ch: libc::c_char = 0;
         let mut pr: *mut proc_0 = myproc();
@@ -66,8 +66,8 @@ impl Pipe {
             if copyin(
                 (*pr).pagetable,
                 &mut ch,
-                addr.wrapping_add(i as u64),
-                1 as i32 as u64,
+                addr.wrapping_add(i as usize),
+                1 as i32 as usize,
             ) == -(1 as i32)
             {
                 break;
@@ -81,7 +81,7 @@ impl Pipe {
         (*self).lock.release();
         n
     }
-    pub unsafe fn read(&mut self, mut addr: u64, mut n: i32) -> i32 {
+    pub unsafe fn read(&mut self, mut addr: usize, mut n: i32) -> i32 {
         let mut i: i32 = 0;
         let mut pr: *mut proc_0 = myproc();
         let mut ch: libc::c_char = 0;
@@ -112,9 +112,9 @@ impl Pipe {
             ch = (*self).data[fresh1.wrapping_rem(PIPESIZE as u32) as usize];
             if copyout(
                 (*pr).pagetable,
-                addr.wrapping_add(i as u64),
+                addr.wrapping_add(i as usize),
                 &mut ch,
-                1 as i32 as u64,
+                1 as i32 as usize,
             ) == -(1 as i32)
             {
                 break;

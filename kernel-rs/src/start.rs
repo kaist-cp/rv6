@@ -29,18 +29,18 @@ impl Stack {
 pub static mut stack0: Stack = Stack::new();
 
 /// scratch area for timer interrupt, one per CPU.
-static mut mscratch0: [u64; NCPU as usize * 32] = [0; NCPU as usize * 32];
+static mut mscratch0: [usize; NCPU as usize * 32] = [0; NCPU as usize * 32];
 
 /// entry.S jumps here in machine mode on stack0.
 #[no_mangle]
 pub unsafe fn start() {
     // set M Previous Privilege mode to Supervisor, for mret.
-    let x = (r_mstatus() & !MSTATUS_MPP_MASK as u64) | MSTATUS_MPP_S as u64;
+    let x = (r_mstatus() & !MSTATUS_MPP_MASK as usize) | MSTATUS_MPP_S as usize;
     w_mstatus(x);
 
     // set M Exception Program Counter to main, for mret.
     // requires gcc -mcmodel=medany
-    w_mepc(kernel_main as usize as u64);
+    w_mepc(kernel_main as usize);
 
     // disable paging for now.
     w_satp(0);
@@ -69,24 +69,25 @@ unsafe fn timerinit() {
     // ask the CLINT for a timer interrupt.
     // cycles; about 1/10th second in qemu.
     let mut interval: i32 = 1000000;
-    *(clint_mtimecmp(id as u64) as *mut u64) =
-        (*(CLINT_MTIME as *mut u64)).wrapping_add(interval as u64);
+    *(clint_mtimecmp(id as usize) as *mut usize) =
+        (*(CLINT_MTIME as *mut usize)).wrapping_add(interval as usize);
 
     // prepare information in scratch[] for timervec.
     // scratch[0..3] : space for timervec to save registers.
     // scratch[4] : address of CLINT MTIMECMP register.
     // scratch[5] : desired interval (in cycles) between timer interrupts.
-    let mut scratch: *mut u64 = &mut *mscratch0.as_mut_ptr().offset(32 * id as isize) as *mut u64;
-    *scratch.offset(4) = clint_mtimecmp(id as u64);
-    *scratch.offset(5) = interval as u64;
-    w_mscratch(scratch as u64);
+    let mut scratch: *mut usize =
+        &mut *mscratch0.as_mut_ptr().offset(32 * id as isize) as *mut usize;
+    *scratch.offset(4) = clint_mtimecmp(id as usize);
+    *scratch.offset(5) = interval as usize;
+    w_mscratch(scratch as usize);
 
     // set the machine-mode trap handler.
-    w_mtvec(timervec as usize as _);
+    w_mtvec(timervec as _);
 
     // enable machine-mode interrupts.
-    w_mstatus(r_mstatus() | MSTATUS_MIE as u64);
+    w_mstatus(r_mstatus() | MSTATUS_MIE as usize);
 
     // enable machine-mode timer interrupts.
-    w_mie(r_mie() | MIE_MTIE as u64);
+    w_mie(r_mie() | MIE_MTIE as usize);
 }

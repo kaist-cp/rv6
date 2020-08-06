@@ -41,20 +41,20 @@ pub struct cpu {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Context {
-    pub ra: u64,
-    pub sp: u64,
-    pub s0: u64,
-    pub s1: u64,
-    pub s2: u64,
-    pub s3: u64,
-    pub s4: u64,
-    pub s5: u64,
-    pub s6: u64,
-    pub s7: u64,
-    pub s8: u64,
-    pub s9: u64,
-    pub s10: u64,
-    pub s11: u64,
+    pub ra: usize,
+    pub sp: usize,
+    pub s0: usize,
+    pub s1: usize,
+    pub s2: usize,
+    pub s3: usize,
+    pub s4: usize,
+    pub s5: usize,
+    pub s6: usize,
+    pub s7: usize,
+    pub s8: usize,
+    pub s9: usize,
+    pub s10: usize,
+    pub s11: usize,
 }
 
 /// Per-process state
@@ -67,8 +67,8 @@ pub struct proc_0 {
     pub killed: i32,
     pub xstate: i32,
     pub pid: i32,
-    pub kstack: u64,
-    pub sz: u64,
+    pub kstack: usize,
+    pub sz: usize,
     pub pagetable: pagetable_t,
     pub tf: *mut trapframe,
     pub context: Context,
@@ -93,42 +93,42 @@ pub struct proc_0 {
 /// the entire kernel call stack.
 #[derive(Copy, Clone)]
 pub struct trapframe {
-    pub kernel_satp: u64,
-    pub kernel_sp: u64,
-    pub kernel_trap: u64,
-    pub epc: u64,
-    pub kernel_hartid: u64,
-    pub ra: u64,
-    pub sp: u64,
-    pub gp: u64,
-    pub tp: u64,
-    pub t0: u64,
-    pub t1: u64,
-    pub t2: u64,
-    pub s0: u64,
-    pub s1: u64,
-    pub a0: u64,
-    pub a1: u64,
-    pub a2: u64,
-    pub a3: u64,
-    pub a4: u64,
-    pub a5: u64,
-    pub a6: u64,
-    pub a7: u64,
-    pub s2: u64,
-    pub s3: u64,
-    pub s4: u64,
-    pub s5: u64,
-    pub s6: u64,
-    pub s7: u64,
-    pub s8: u64,
-    pub s9: u64,
-    pub s10: u64,
-    pub s11: u64,
-    pub t3: u64,
-    pub t4: u64,
-    pub t5: u64,
-    pub t6: u64,
+    pub kernel_satp: usize,
+    pub kernel_sp: usize,
+    pub kernel_trap: usize,
+    pub epc: usize,
+    pub kernel_hartid: usize,
+    pub ra: usize,
+    pub sp: usize,
+    pub gp: usize,
+    pub tp: usize,
+    pub t0: usize,
+    pub t1: usize,
+    pub t2: usize,
+    pub s0: usize,
+    pub s1: usize,
+    pub a0: usize,
+    pub a1: usize,
+    pub a2: usize,
+    pub a3: usize,
+    pub a4: usize,
+    pub a5: usize,
+    pub a6: usize,
+    pub a7: usize,
+    pub s2: usize,
+    pub s3: usize,
+    pub s4: usize,
+    pub s5: usize,
+    pub s6: usize,
+    pub s7: usize,
+    pub s8: usize,
+    pub s9: usize,
+    pub s10: usize,
+    pub s11: usize,
+    pub t3: usize,
+    pub t4: usize,
+    pub t5: usize,
+    pub t6: usize,
 }
 
 impl cpu {
@@ -221,8 +221,9 @@ pub unsafe fn procinit() {
         if pa.is_null() {
             panic(b"kalloc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
-        let mut va: u64 = kstack(p.wrapping_offset_from(proc.as_mut_ptr()) as i64 as i32) as u64;
-        kvmmap(va, pa as u64, PGSIZE as u64, (PTE_R | PTE_W) as i32);
+        let mut va: usize =
+            kstack(p.wrapping_offset_from(proc.as_mut_ptr()) as i64 as i32) as usize;
+        kvmmap(va, pa as usize, PGSIZE as usize, (PTE_R | PTE_W) as i32);
         (*p).kstack = va;
         p = p.offset(1)
     }
@@ -268,7 +269,7 @@ pub unsafe fn allocpid() -> i32 {
 /// and return with p->lock held.
 /// If there are no free procs, return 0.
 unsafe fn allocproc() -> *mut proc_0 {
-    let mut current_block: u64;
+    let mut current_block: usize;
     let mut p = proc.as_mut_ptr();
     loop {
         if p >= &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
@@ -301,8 +302,8 @@ unsafe fn allocproc() -> *mut proc_0 {
             // Set up new context to start executing at forkret,
             // which returns to user space.
             ptr::write_bytes(&mut (*p).context as *mut Context, 0, 1);
-            (*p).context.ra = forkret as usize as u64;
-            (*p).context.sp = (*p).kstack.wrapping_add(PGSIZE as u64);
+            (*p).context.ra = forkret as usize;
+            (*p).context.sp = (*p).kstack.wrapping_add(PGSIZE as usize);
             p
         }
     }
@@ -320,7 +321,7 @@ unsafe fn freeproc(mut p: *mut proc_0) {
         proc_freepagetable((*p).pagetable, (*p).sz);
     }
     (*p).pagetable = 0 as pagetable_t;
-    (*p).sz = 0 as i32 as u64;
+    (*p).sz = 0 as i32 as usize;
     (*p).pid = 0 as i32;
     (*p).parent = ptr::null_mut();
     (*p).name[0 as i32 as usize] = 0 as i32 as libc::c_char;
@@ -344,18 +345,18 @@ pub unsafe fn proc_pagetable(mut p: *mut proc_0) -> pagetable_t {
     // to/from user space, so not PTE_U.
     mappages(
         pagetable,
-        TRAMPOLINE as u64,
-        PGSIZE as u64,
-        trampoline.as_mut_ptr() as u64,
+        TRAMPOLINE as usize,
+        PGSIZE as usize,
+        trampoline.as_mut_ptr() as usize,
         (PTE_R | PTE_X) as i32,
     );
 
     // map the trapframe just below TRAMPOLINE, for trampoline.S.
     mappages(
         pagetable,
-        TRAPFRAME as u64,
-        PGSIZE as u64,
-        (*p).tf as u64,
+        TRAPFRAME as usize,
+        PGSIZE as usize,
+        (*p).tf as usize,
         (PTE_R | PTE_W) as i32,
     );
     pagetable
@@ -363,10 +364,10 @@ pub unsafe fn proc_pagetable(mut p: *mut proc_0) -> pagetable_t {
 
 /// Free a process's page table, and free the
 /// physical memory it refers to.
-pub unsafe fn proc_freepagetable(mut pagetable: pagetable_t, mut sz: u64) {
-    uvmunmap(pagetable, TRAMPOLINE as u64, PGSIZE as u64, 0 as i32);
-    uvmunmap(pagetable, TRAPFRAME as u64, PGSIZE as u64, 0 as i32);
-    if sz > 0 as i32 as u64 {
+pub unsafe fn proc_freepagetable(mut pagetable: pagetable_t, mut sz: usize) {
+    uvmunmap(pagetable, TRAMPOLINE as usize, PGSIZE as usize, 0 as i32);
+    uvmunmap(pagetable, TRAPFRAME as usize, PGSIZE as usize, 0 as i32);
+    if sz > 0 as i32 as usize {
         uvmfree(pagetable, sz);
     };
 }
@@ -394,20 +395,20 @@ pub unsafe fn userinit() {
     uvminit(
         (*p).pagetable,
         initcode.as_mut_ptr(),
-        ::core::mem::size_of::<[u8; 51]>() as u64 as u32,
+        ::core::mem::size_of::<[u8; 51]>() as u32,
     );
-    (*p).sz = PGSIZE as u64;
+    (*p).sz = PGSIZE as usize;
 
     // prepare for the very first "return" from kernel to user.
     // user program counter
-    (*(*p).tf).epc = 0 as i32 as u64;
+    (*(*p).tf).epc = 0 as i32 as usize;
 
     // user stack pointer
-    (*(*p).tf).sp = PGSIZE as u64;
+    (*(*p).tf).sp = PGSIZE as usize;
     safestrcpy(
         (*p).name.as_mut_ptr(),
         b"initcode\x00" as *const u8 as *const libc::c_char,
-        ::core::mem::size_of::<[libc::c_char; 16]>() as u64 as i32,
+        ::core::mem::size_of::<[libc::c_char; 16]>() as i32,
     );
     (*p).cwd = namei(b"/\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     (*p).state = RUNNABLE;
@@ -422,17 +423,23 @@ pub unsafe fn growproc(n: i32) -> i32 {
     let sz = match n.cmp(&0) {
         Ordering::Equal => sz,
         Ordering::Greater => {
-            let sz = uvmalloc((*p).pagetable, sz as u64, sz.wrapping_add(n as u32) as u64) as u32;
+            let sz = uvmalloc(
+                (*p).pagetable,
+                sz as usize,
+                sz.wrapping_add(n as u32) as usize,
+            ) as u32;
             if sz == 0 {
                 return -1;
             }
             sz
         }
-        Ordering::Less => {
-            uvmdealloc((*p).pagetable, sz as u64, sz.wrapping_add(n as u32) as u64) as u32
-        }
+        Ordering::Less => uvmdealloc(
+            (*p).pagetable,
+            sz as usize,
+            sz.wrapping_add(n as u32) as usize,
+        ) as u32,
     };
-    (*p).sz = sz as u64;
+    (*p).sz = sz as usize;
     0 as i32
 }
 
@@ -462,7 +469,7 @@ pub unsafe fn fork() -> i32 {
     *(*np).tf = *(*p).tf;
 
     // Cause fork to return 0 in the child.
-    (*(*np).tf).a0 = 0 as i32 as u64;
+    (*(*np).tf).a0 = 0 as i32 as usize;
 
     // increment reference counts on open file descriptors.
     for i in 0..NOFILE {
@@ -474,7 +481,7 @@ pub unsafe fn fork() -> i32 {
     safestrcpy(
         (*np).name.as_mut_ptr(),
         (*p).name.as_mut_ptr(),
-        ::core::mem::size_of::<[libc::c_char; 16]>() as u64 as i32,
+        ::core::mem::size_of::<[libc::c_char; 16]>() as i32,
     );
     pid = (*np).pid;
     (*np).state = RUNNABLE;
@@ -570,7 +577,7 @@ pub unsafe fn exit(mut status: i32) {
 
 /// Wait for a child process to exit and return its pid.
 /// Return -1 if this process has no children.
-pub unsafe fn wait(mut addr: u64) -> i32 {
+pub unsafe fn wait(mut addr: usize) -> i32 {
     let mut p: *mut proc_0 = myproc();
 
     // hold p->lock for the whole time to avoid lost
@@ -592,12 +599,12 @@ pub unsafe fn wait(mut addr: u64) -> i32 {
                 if (*np).state as u32 == ZOMBIE as i32 as u32 {
                     // Found one.
                     let pid = (*np).pid;
-                    if addr != 0 as i32 as u64
+                    if addr != 0 as i32 as usize
                         && copyout(
                             (*p).pagetable,
                             addr,
                             &mut (*np).xstate as *mut i32 as *mut libc::c_char,
-                            ::core::mem::size_of::<i32>() as u64,
+                            ::core::mem::size_of::<i32>(),
                         ) < 0 as i32
                     {
                         (*np).lock.release();
@@ -802,19 +809,15 @@ pub unsafe fn kill(mut pid: i32) -> i32 {
 /// Returns 0 on success, -1 on error.
 pub unsafe fn either_copyout(
     mut user_dst: i32,
-    mut dst: u64,
+    mut dst: usize,
     mut src: *mut libc::c_void,
-    mut len: u64,
+    mut len: usize,
 ) -> i32 {
     let mut p: *mut proc_0 = myproc();
     if user_dst != 0 {
         copyout((*p).pagetable, dst, src as *mut libc::c_char, len)
     } else {
-        ptr::copy(
-            src,
-            dst as *mut libc::c_char as *mut libc::c_void,
-            len as usize,
-        );
+        ptr::copy(src, dst as *mut libc::c_char as *mut libc::c_void, len);
         0
     }
 }
@@ -825,18 +828,14 @@ pub unsafe fn either_copyout(
 pub unsafe fn either_copyin(
     mut dst: *mut libc::c_void,
     mut user_src: i32,
-    mut src: u64,
-    mut len: u64,
+    mut src: usize,
+    mut len: usize,
 ) -> i32 {
     let mut p: *mut proc_0 = myproc();
     if user_src != 0 {
         copyin((*p).pagetable, dst as *mut libc::c_char, src, len)
     } else {
-        ptr::copy(
-            src as *mut libc::c_char as *const libc::c_void,
-            dst,
-            len as usize,
-        );
+        ptr::copy(src as *mut libc::c_char as *const libc::c_void, dst, len);
         0
     }
 }
@@ -857,9 +856,9 @@ pub unsafe fn procdump() {
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
         if (*p).state as u32 != UNUSED as i32 as u32 {
             let state = if (*p).state as u32 >= 0 as i32 as u32
-                && ((*p).state as u64)
-                    < (::core::mem::size_of::<[*mut libc::c_char; 5]>() as u64)
-                        .wrapping_div(::core::mem::size_of::<*mut libc::c_char>() as u64)
+                && ((*p).state as usize)
+                    < (::core::mem::size_of::<[*mut libc::c_char; 5]>() as usize)
+                        .wrapping_div(::core::mem::size_of::<*mut libc::c_char>())
                 && !states[(*p).state as usize].is_null()
             {
                 states[(*p).state as usize]
