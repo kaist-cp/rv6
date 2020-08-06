@@ -1,7 +1,7 @@
 use crate::libc;
 use crate::{
-    file::{fileclose, filedup, File, Inode},
-    fs::{fsinit, iput, namei},
+    file::{File, Inode},
+    fs::{fsinit, namei},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
@@ -72,7 +72,7 @@ pub struct proc_0 {
     pub pagetable: pagetable_t,
     pub tf: *mut trapframe,
     context: Context,
-    pub ofile: [*mut File; 16],
+    pub ofile: [*mut File; NOFILE as usize],
     pub cwd: *mut Inode,
     pub name: [libc::c_char; 16],
 }
@@ -181,7 +181,7 @@ impl proc_0 {
             pagetable: ptr::null_mut(),
             tf: ptr::null_mut(),
             context: Context::zeroed(),
-            ofile: [ptr::null_mut(); 16],
+            ofile: [ptr::null_mut(); NOFILE as usize],
             cwd: ptr::null_mut(),
             name: [0; 16],
         }
@@ -199,7 +199,7 @@ pub const UNUSED: procstate = 0;
 static mut cpus: [cpu; NCPU as usize] = [cpu::zeroed(); NCPU as usize];
 
 #[export_name = "proc"]
-static mut proc: [proc_0; 64] = [proc_0::zeroed(); 64];
+static mut proc: [proc_0; NPROC as usize] = [proc_0::zeroed(); NPROC as usize];
 
 static mut initproc: *mut proc_0 = ptr::null_mut();
 static mut nextpid: i32 = 1;
@@ -467,7 +467,7 @@ pub unsafe fn fork() -> i32 {
     // increment reference counts on open file descriptors.
     for i in 0..NOFILE {
         if !(*p).ofile[i as usize].is_null() {
-            (*np).ofile[i as usize] = filedup((*p).ofile[i as usize])
+            (*np).ofile[i as usize] = (*(*p).ofile[i as usize]).dup()
         }
     }
     (*np).cwd = (*(*p).cwd).idup();
@@ -520,12 +520,12 @@ pub unsafe fn exit(mut status: i32) {
     for fd in 0..NOFILE {
         if !(*p).ofile[fd as usize].is_null() {
             let mut f: *mut File = (*p).ofile[fd as usize];
-            fileclose(f);
+            (*f).close();
             (*p).ofile[fd as usize] = ptr::null_mut();
         }
     }
     begin_op();
-    iput((*p).cwd);
+    (*(*p).cwd).put();
     end_op();
     (*p).cwd = ptr::null_mut();
 
