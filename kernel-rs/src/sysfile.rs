@@ -295,7 +295,7 @@ unsafe fn create(
     (*ip).lock();
     (*ip).major = major;
     (*ip).minor = minor;
-    (*ip).nlink = 1 as i16;
+    (*ip).nlink = 1;
     (*ip).update();
 
     // Create . and .. entries.
@@ -340,7 +340,7 @@ pub unsafe fn sys_open() -> usize {
     begin_op();
     let omode = FcntlFlags::from_bits_truncate(omode);
     if omode.contains(FcntlFlags::O_CREATE) {
-        ip = create(path.as_mut_ptr(), T_FILE as i16, 0 as i16, 0 as i16);
+        ip = create(path.as_mut_ptr(), T_FILE as i16, 0, 0);
         if ip.is_null() {
             end_op();
             return -1 as _;
@@ -380,7 +380,7 @@ pub unsafe fn sys_open() -> usize {
         (*f).major = (*ip).major
     } else {
         (*f).typ = FD_INODE;
-        (*f).off = 0 as u32
+        (*f).off = 0
     }
     (*f).ip = ip;
     (*f).readable = (!omode.intersects(FcntlFlags::O_WRONLY)) as i32 as libc::c_char;
@@ -396,7 +396,7 @@ pub unsafe fn sys_mkdir() -> usize {
     let mut ip: *mut Inode = ptr::null_mut();
     begin_op();
     if argstr(0, path.as_mut_ptr(), MAXPATH) < 0 || {
-        ip = create(path.as_mut_ptr(), T_DIR as i16, 0 as i16, 0 as i16);
+        ip = create(path.as_mut_ptr(), T_DIR as i16, 0, 0);
         ip.is_null()
     } {
         end_op();

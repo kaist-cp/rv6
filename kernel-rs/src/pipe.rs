@@ -144,8 +144,8 @@ pub unsafe fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {
         if !pi.is_null() {
             (*pi).readopen = 1;
             (*pi).writeopen = 1;
-            (*pi).nwrite = 0 as u32;
-            (*pi).nread = 0 as u32;
+            (*pi).nwrite = 0;
+            (*pi).nread = 0;
             (*pi)
                 .lock
                 .initlock(b"pipe\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);

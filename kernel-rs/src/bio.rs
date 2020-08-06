@@ -47,7 +47,7 @@ impl Buf {
         (*self).lock.release();
         bcache.lock.acquire();
         (*self).refcnt = (*self).refcnt.wrapping_sub(1);
-        if (*self).refcnt == 0 as u32 {
+        if (*self).refcnt == 0 {
             // no one is waiting for it.
             (*(*self).next).prev = (*self).prev;
             (*(*self).prev).next = (*self).next;
@@ -119,11 +119,11 @@ unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
     // Not cached; recycle an unused buffer.
     b = bcache.head.prev;
     while b != &mut bcache.head as *mut Buf {
-        if (*b).refcnt == 0 as u32 {
+        if (*b).refcnt == 0 {
             (*b).dev = dev;
             (*b).blockno = blockno;
             (*b).valid = 0;
-            (*b).refcnt = 1 as u32;
+            (*b).refcnt = 1;
             bcache.lock.release();
             (*b).lock.acquire();
             return b;

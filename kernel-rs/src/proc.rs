@@ -375,13 +375,9 @@ pub unsafe fn proc_freepagetable(mut pagetable: pagetable_t, mut sz: usize) {
 // a user program that calls exec("/init")
 // od -t xC initcode
 static mut initcode: [u8; 51] = [
-    0x17 as u8, 0x5 as u8, 0 as u8, 0 as u8, 0x13 as u8, 0x5 as u8, 0x5 as u8, 0x2 as u8,
-    0x97 as u8, 0x5 as u8, 0 as u8, 0 as u8, 0x93 as u8, 0x85 as u8, 0x5 as u8, 0x2 as u8,
-    0x9d as u8, 0x48 as u8, 0x73 as u8, 0 as u8, 0 as u8, 0 as u8, 0x89 as u8, 0x48 as u8,
-    0x73 as u8, 0 as u8, 0 as u8, 0 as u8, 0xef as u8, 0xf0 as u8, 0xbf as u8, 0xff as u8,
-    0x2f as u8, 0x69 as u8, 0x6e as u8, 0x69 as u8, 0x74 as u8, 0 as u8, 0 as u8, 0x1 as u8,
-    0x20 as u8, 0 as u8, 0 as u8, 0 as u8, 0 as u8, 0 as u8, 0 as u8, 0 as u8, 0 as u8, 0 as u8,
-    0 as u8,
+    0x17, 0x5, 0, 0, 0x13, 0x5, 0x5, 0x2, 0x97, 0x5, 0, 0, 0x93, 0x85, 0x5, 0x2, 0x9d, 0x48, 0x73,
+    0, 0, 0, 0x89, 0x48, 0x73, 0, 0, 0, 0xef, 0xf0, 0xbf, 0xff, 0x2f, 0x69, 0x6e, 0x69, 0x74, 0, 0,
+    0x1, 0x20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
 /// Set up first user process.
@@ -855,10 +851,9 @@ pub unsafe fn procdump() {
     let mut p = proc.as_mut_ptr();
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
         if (*p).state as u32 != UNUSED as i32 as u32 {
-            let state = if (*p).state as u32 >= 0 as u32
-                && ((*p).state as usize)
-                    < (::core::mem::size_of::<[*mut libc::c_char; 5]>() as usize)
-                        .wrapping_div(::core::mem::size_of::<*mut libc::c_char>())
+            let state = if ((*p).state as usize)
+                < (::core::mem::size_of::<[*mut libc::c_char; 5]>() as usize)
+                    .wrapping_div(::core::mem::size_of::<*mut libc::c_char>())
                 && !states[(*p).state as usize].is_null()
             {
                 states[(*p).state as usize]

@@ -95,13 +95,13 @@ impl InflightInfo {
 static mut disk: Disk = Disk::zeroed();
 
 pub unsafe fn virtio_disk_init() {
-    let mut status: u32 = 0 as u32;
+    let mut status: u32 = 0;
     disk.vdisk_lock
         .initlock(b"virtio_disk\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-    if *(r(VIRTIO_MMIO_MAGIC_VALUE)) != 0x74726976 as u32
-        || *(r(VIRTIO_MMIO_VERSION)) != 1 as u32
-        || *(r(VIRTIO_MMIO_DEVICE_ID)) != 2 as u32
-        || *(r(VIRTIO_MMIO_VENDOR_ID)) != 0x554d4551 as u32
+    if *(r(VIRTIO_MMIO_MAGIC_VALUE)) != 0x74726976
+        || *(r(VIRTIO_MMIO_VERSION)) != 1
+        || *(r(VIRTIO_MMIO_DEVICE_ID)) != 2
+        || *(r(VIRTIO_MMIO_VENDOR_ID)) != 0x554d4551
     {
         panic(
             b"could not find virtio disk\x00" as *const u8 as *const libc::c_char
@@ -137,7 +137,7 @@ pub unsafe fn virtio_disk_init() {
     // initialize queue 0.
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_SEL), 0);
     let mut max: u32 = *(r(VIRTIO_MMIO_QUEUE_NUM_MAX));
-    if max == 0 as u32 {
+    if max == 0 {
         panic(
             b"virtio disk has no queue 0\x00" as *const u8 as *const libc::c_char
                 as *mut libc::c_char,
@@ -250,7 +250,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
         // read the disk
         buf0.typ = VIRTIO_BLK_T_IN as u32
     }
-    buf0.reserved = 0 as u32;
+    buf0.reserved = 0;
     buf0.sector = sector;
 
     // buf0 is on a kernel stack, which is not direct mapped,
@@ -263,7 +263,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     (*disk.desc.offset(idx[1] as isize)).len = BSIZE as u32;
     if write != 0 {
         // device writes b->data
-        (*disk.desc.offset(idx[1] as isize)).flags = 0 as u16
+        (*disk.desc.offset(idx[1] as isize)).flags = 0
     } else {
         // device reads b->data
         (*disk.desc.offset(idx[1] as isize)).flags = VRING_DESC_F_WRITE as u16
@@ -279,10 +279,10 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
         .as_mut_ptr()
         .offset(*idx.as_mut_ptr().offset(0) as isize))
     .status as *mut libc::c_char as usize;
-    (*disk.desc.offset(idx[2] as isize)).len = 1 as u32;
+    (*disk.desc.offset(idx[2] as isize)).len = 1;
     // device writes the status
     (*disk.desc.offset(idx[2] as isize)).flags = VRING_DESC_F_WRITE as u16;
-    (*disk.desc.offset(idx[2] as isize)).next = 0 as u16;
+    (*disk.desc.offset(idx[2] as isize)).next = 0;
 
     // record struct Buf for virtio_disk_intr().
     (*b).disk = 1;

@@ -27,21 +27,21 @@ pub const VIRTIO0_IRQ: i32 = 1;
 /// local interrupt controller, which contains the timer.
 pub const CLINT: i64 = 0x2000000;
 pub const fn clint_mtimecmp(hartid: usize) -> usize {
-    (CLINT + 0x4000 as i64 + (8 * hartid) as i64) as usize
+    (CLINT + 0x4000 + (8 * hartid) as i64) as usize
 }
-pub const CLINT_MTIME: i64 = CLINT + 0xbff8 as i64;
+pub const CLINT_MTIME: i64 = CLINT + 0xbff8;
 
 /// qemu puts programmable interrupt controller here.
 pub const PLIC: i64 = 0xc000000;
 pub const PLIC_PENDING: i64 = PLIC + 0x1000;
 pub const fn plic_senable(hart: i32) -> i64 {
-    PLIC + 0x2080 as i64 + (hart * 0x100) as i64
+    PLIC + 0x2080 + (hart * 0x100) as i64
 }
 pub const fn plic_spriority(hart: i32) -> i64 {
-    PLIC + 0x201000 as i64 + (hart * 0x2000) as i64
+    PLIC + 0x201000 + (hart * 0x2000) as i64
 }
 pub const fn plic_sclaim(hart: i32) -> i64 {
-    PLIC + 0x201004 as i64 + (hart * 0x2000) as i64
+    PLIC + 0x201004 + (hart * 0x2000) as i64
 }
 
 /// the kernel expects there to be RAM

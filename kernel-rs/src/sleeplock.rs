@@ -29,7 +29,7 @@ impl Sleeplock {
         lk.lk
             .initlock(b"sleep lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         lk.name = name;
-        lk.locked = 0 as u32;
+        lk.locked = 0;
         lk.pid = 0;
 
         lk
@@ -40,7 +40,7 @@ impl Sleeplock {
             .lk
             .initlock(b"sleep lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         (*self).name = name;
-        (*self).locked = 0 as u32;
+        (*self).locked = 0;
         (*self).pid = 0;
     }
 
@@ -49,14 +49,14 @@ impl Sleeplock {
         while (*self).locked != 0 {
             sleep(self as *mut Sleeplock as *mut libc::c_void, &mut (*self).lk);
         }
-        (*self).locked = 1 as u32;
+        (*self).locked = 1;
         (*self).pid = (*myproc()).pid;
         (*self).lk.release();
     }
 
     pub unsafe fn release(&mut self) {
         (*self).lk.acquire();
-        (*self).locked = 0 as u32;
+        (*self).locked = 0;
         (*self).pid = 0;
         wakeup(self as *mut Sleeplock as *mut libc::c_void);
         (*self).lk.release();

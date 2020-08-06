@@ -27,7 +27,7 @@ impl Spinlock {
     /// Mutual exclusion spin locks.
     pub fn initlock(&mut self, mut name: *mut libc::c_char) {
         (*self).name = name;
-        (*self).locked = 0 as u32;
+        (*self).locked = 0;
         (*self).cpu = ptr::null_mut();
     }
 
@@ -44,9 +44,7 @@ impl Spinlock {
         //   a5 = 1
         //   s1 = &self->locked
         //   amoswap.w.aq a5, a5, (s1)
-        while ::core::intrinsics::atomic_xchg_acq(&mut (*self).locked as *mut u32, 1 as u32)
-            != 0 as u32
-        {}
+        while ::core::intrinsics::atomic_xchg_acq(&mut (*self).locked as *mut u32, 1) != 0 {}
 
         // Tell the C compiler and the processor to not move loads or stores
         // past this point, to ensure that the critical section's memory

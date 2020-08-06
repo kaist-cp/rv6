@@ -44,7 +44,7 @@ unsafe fn printint(mut xx: i32, mut base: i32, mut sign: i32) {
         i += 1;
         buf[fresh0 as usize] = digits[x.wrapping_rem(base as u32) as usize];
         x = (x as u32).wrapping_div(base as u32) as u32 as u32;
-        if x == 0 as u32 {
+        if x == 0 {
             break;
         }
     }

@@ -194,11 +194,11 @@ impl Inode {
     pub unsafe fn lock(&mut self) {
         let mut bp: *mut Buf = ptr::null_mut();
         let mut dip: *mut Dinode = ptr::null_mut();
-        if (self as *mut Inode).is_null() || (*self).ref_0 < 1 as i32 {
+        if (self as *mut Inode).is_null() || (*self).ref_0 < 1 {
             panic(b"Inode::lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         (*self).lock.acquire();
-        if (*self).valid == 0 as i32 {
+        if (*self).valid == 0 {
             bp = bread((*self).dev, sb.iblock((*self).inum as i32));
             dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
                 .offset(((*self).inum as usize).wrapping_rem(IPB as usize) as isize);
@@ -213,8 +213,8 @@ impl Inode {
                 ::core::mem::size_of::<[u32; 13]>(),
             );
             (*bp).release();
-            (*self).valid = 1 as i32;
-            if (*self).typ as i32 == 0 as i32 {
+            (*self).valid = 1;
+            if (*self).typ as i32 == 0 {
                 panic(
                     b"Inode::lock: no type\x00" as *const u8 as *const libc::c_char
                         as *mut libc::c_char,
@@ -225,8 +225,7 @@ impl Inode {
 
     /// Unlock the given inode.
     pub unsafe fn unlock(&mut self) {
-        if (self as *mut Inode).is_null() || (*self).lock.holding() == 0 || (*self).ref_0 < 1 as i32
-        {
+        if (self as *mut Inode).is_null() || (*self).lock.holding() == 0 || (*self).ref_0 < 1 {
             panic(b"Inode::unlock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         (*self).lock.release();
@@ -242,16 +241,16 @@ impl Inode {
     pub unsafe fn put(&mut self) {
         icache.lock.acquire();
 
-        if (*self).ref_0 == 1 as i32 && (*self).valid != 0 && (*self).nlink as i32 == 0 as i32 {
+        if (*self).ref_0 == 1 && (*self).valid != 0 && (*self).nlink as i32 == 0 {
             // inode has no links and no other references: truncate and free.
             // self->ref == 1 means no other process can have self locked,
             // so this acquiresleep() won't block (or deadlock).
             (*self).lock.acquire();
             icache.lock.release();
             self.itrunc();
-            (*self).typ = 0 as i32 as i16;
+            (*self).typ = 0;
             (*self).update();
-            (*self).valid = 0 as i32;
+            (*self).valid = 0;
             (*self).lock.release();
             icache.lock.acquire();
         }
@@ -279,7 +278,7 @@ impl Inode {
         let mut bp: *mut Buf = ptr::null_mut();
         if bn < NDIRECT as u32 {
             addr = (*self).addrs[bn as usize];
-            if addr == 0 as i32 as u32 {
+            if addr == 0 {
                 addr = balloc((*self).dev);
                 (*self).addrs[bn as usize] = addr
             }
@@ -289,14 +288,14 @@ impl Inode {
         if (bn as usize) < NINDIRECT as usize {
             // Load indirect block, allocating if necessary.
             addr = (*self).addrs[NDIRECT as usize];
-            if addr == 0 as i32 as u32 {
+            if addr == 0 {
                 addr = balloc((*self).dev);
                 (*self).addrs[NDIRECT as usize] = addr
             }
             bp = bread((*self).dev, addr);
             a = (*bp).data.as_mut_ptr() as *mut u32;
             addr = *a.offset(bn as isize);
-            if addr == 0 as i32 as u32 {
+            if addr == 0 {
                 addr = balloc((*self).dev);
                 *a.offset(bn as isize) = addr;
                 log_write(bp);
@@ -316,7 +315,7 @@ impl Inode {
         for i in 0..NDIRECT {
             if (*self).addrs[i as usize] != 0 {
                 bfree((*self).dev as i32, (*self).addrs[i as usize]);
-                (*self).addrs[i as usize] = 0 as i32 as u32
+                (*self).addrs[i as usize] = 0
             }
         }
         if (*self).addrs[NDIRECT as usize] != 0 {
@@ -329,9 +328,9 @@ impl Inode {
             }
             (*bp).release();
             bfree((*self).dev as i32, (*self).addrs[NDIRECT as usize]);
-            (*self).addrs[NDIRECT as usize] = 0 as i32 as u32
+            (*self).addrs[NDIRECT as usize] = 0
         }
-        (*self).size = 0 as i32 as u32;
+        (*self).size = 0;
         (*self).update();
     }
 
@@ -353,12 +352,12 @@ impl Inode {
         if off.wrapping_add(n) > (*self).size {
             n = (*self).size.wrapping_sub(off)
         }
-        tot = 0 as u32;
+        tot = 0;
         while tot < n {
             let bp = bread((*self).dev, self.bmap(off.wrapping_div(BSIZE as u32)));
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
-                (1024 as i32 as u32).wrapping_sub(off.wrapping_rem(1024 as i32 as u32)),
+                (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
             );
             if either_copyout(
                 user_dst,
@@ -369,7 +368,7 @@ impl Inode {
                     .offset(off.wrapping_rem(BSIZE as u32) as isize)
                     as *mut libc::c_void,
                 m as usize,
-            ) == -(1 as i32)
+            ) == -(1)
             {
                 (*bp).release();
                 break;
@@ -401,12 +400,12 @@ impl Inode {
         if off.wrapping_add(n) as usize > MAXFILE.wrapping_mul(BSIZE) as usize {
             return -1;
         }
-        tot = 0 as i32 as u32;
+        tot = 0;
         while tot < n {
             let bp = bread((*self).dev, self.bmap(off.wrapping_div(BSIZE as u32)));
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
-                (1024 as i32 as u32).wrapping_sub(off.wrapping_rem(1024 as i32 as u32)),
+                (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
             );
             if either_copyin(
                 (*bp)
@@ -417,7 +416,7 @@ impl Inode {
                 user_src,
                 src,
                 m as usize,
-            ) == -(1 as i32)
+            ) == -(1)
             {
                 (*bp).release();
                 break;
@@ -429,7 +428,7 @@ impl Inode {
                 src = (src as usize).wrapping_add(m as usize) as usize as usize
             }
         }
-        if n > 0 as i32 as u32 {
+        if n > 0 {
             if off > (*self).size {
                 (*self).size = off
             }
@@ -449,7 +448,7 @@ impl Inode {
             let bp = bread(dev, sb.iblock(inum as i32));
             let dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
                 .offset((inum as usize).wrapping_rem(IPB as usize) as isize);
-            if (*dip).typ as i32 == 0 as i32 {
+            if (*dip).typ as i32 == 0 {
                 // a free inode
                 ptr::write_bytes(dip, 0, 1);
                 (*dip).typ = typ;
@@ -514,7 +513,7 @@ impl Superblock {
     /// Read the super block.
     unsafe fn read(&mut self, mut dev: i32) {
         let mut bp: *mut Buf = ptr::null_mut();
-        bp = bread(dev as u32, 1 as u32);
+        bp = bread(dev as u32, 1);
         ptr::copy(
             (*bp).data.as_mut_ptr() as *const libc::c_void,
             self as *mut Superblock as *mut libc::c_void,

@@ -1,12 +1,12 @@
 use crate::libc;
 
 pub unsafe fn strncmp(mut p: *const libc::c_char, mut q: *const libc::c_char, mut n: u32) -> i32 {
-    while n > 0 as u32 && *p as i32 != 0 && *p as i32 == *q as i32 {
+    while n > 0 && *p as i32 != 0 && *p as i32 == *q as i32 {
         n = n.wrapping_sub(1);
         p = p.offset(1);
         q = q.offset(1)
     }
-    if n == 0 as u32 {
+    if n == 0 {
         return 0;
     }
     *p as u8 as i32 - *q as u8 as i32

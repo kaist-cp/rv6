@@ -43,7 +43,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     if (*ip).read(
         0,
         &mut elf as *mut ElfHdr as usize,
-        0 as u32,
+        0,
         ::core::mem::size_of::<ElfHdr>() as u32,
     ) as usize
         == ::core::mem::size_of::<ElfHdr>()

@@ -159,8 +159,7 @@ pub unsafe fn consoleintr(mut cin: i32) {
         // Kill line.
         m if m == ctrl('U') => {
             while cons.e != cons.w
-                && cons.buf[cons.e.wrapping_sub(1 as u32).wrapping_rem(INPUT_BUF as u32) as usize]
-                    as i32
+                && cons.buf[cons.e.wrapping_sub(1).wrapping_rem(INPUT_BUF as u32) as usize] as i32
                     != '\n' as i32
             {
                 cons.e = cons.e.wrapping_sub(1);
