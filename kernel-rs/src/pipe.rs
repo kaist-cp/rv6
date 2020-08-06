@@ -55,7 +55,7 @@ impl Pipe {
                 //DOC: pipewrite-full
                 if (*self).readopen == 0 as i32 || (*myproc()).killed != 0 {
                     (*self).lock.release();
-                    return -(1 as i32);
+                    return -1;
                 }
                 wakeup(&mut (*self).nread as *mut u32 as *mut libc::c_void);
                 sleep(
@@ -68,7 +68,7 @@ impl Pipe {
                 &mut ch,
                 addr.wrapping_add(i as usize),
                 1 as i32 as usize,
-            ) == -(1 as i32)
+            ) == -1
             {
                 break;
             }
@@ -92,7 +92,7 @@ impl Pipe {
         while (*self).nread == (*self).nwrite && (*self).writeopen != 0 {
             if (*myproc()).killed != 0 {
                 (*self).lock.release();
-                return -(1 as i32);
+                return -1;
             }
 
             //DOC: piperead-sleep
@@ -115,7 +115,7 @@ impl Pipe {
                 addr.wrapping_add(i as usize),
                 &mut ch,
                 1 as i32 as usize,
-            ) == -(1 as i32)
+            ) == -1
             {
                 break;
             }
@@ -168,5 +168,5 @@ pub unsafe fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {
     if !(*f1).is_null() {
         fileclose(*f1);
     }
-    -(1 as i32)
+    -1
 }

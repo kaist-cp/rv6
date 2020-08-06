@@ -68,7 +68,7 @@ pub unsafe extern "C" fn usertrap() {
         // system call
 
         if (*p).killed != 0 {
-            exit(-(1 as i32));
+            exit(-1);
         }
 
         // sepc points to the ecall instruction,
@@ -99,7 +99,7 @@ pub unsafe extern "C" fn usertrap() {
     }
 
     if (*p).killed != 0 {
-        exit(-(1 as i32));
+        exit(-1);
     }
 
     // give up the CPU if this is a timer interrupt.

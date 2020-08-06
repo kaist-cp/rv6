@@ -604,7 +604,7 @@ pub unsafe fn readi(
                 .as_mut_ptr()
                 .offset(off.wrapping_rem(BSIZE as u32) as isize) as *mut libc::c_void,
             m as usize,
-        ) == -(1 as i32)
+        ) == -1
         {
             (*bp).release();
             break;
@@ -651,7 +651,7 @@ pub unsafe fn writei(
             user_src,
             src,
             m as usize,
-        ) == -(1 as i32)
+        ) == -1
         {
             (*bp).release();
             break;
@@ -726,7 +726,7 @@ pub unsafe fn dirlink(mut dp: *mut Inode, mut name: *mut libc::c_char, mut inum:
     ip = dirlookup(dp, name, ptr::null_mut());
     if !ip.is_null() {
         iput(ip);
-        return -(1 as i32);
+        return -1;
     }
 
     // Look for an empty Dirent.

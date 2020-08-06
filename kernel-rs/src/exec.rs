@@ -35,7 +35,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     ip = namei(path);
     if ip.is_null() {
         end_op();
-        return -(1 as i32);
+        return -1;
     }
     ilock(ip);
 
@@ -222,7 +222,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
         iunlockput(ip);
         end_op();
     }
-    -(1 as i32)
+    -1
 }
 
 /// Load a program segment into pagetable at virtual address va.
@@ -257,7 +257,7 @@ unsafe fn loadseg(
             PGSIZE as u32
         };
         if readi(ip, 0 as i32, pa, offset.wrapping_add(i), n) as u32 != n {
-            return -(1 as i32);
+            return -1;
         }
         i = (i as u32).wrapping_add(PGSIZE as u32) as u32 as u32
     }

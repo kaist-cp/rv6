@@ -171,11 +171,11 @@ pub unsafe fn filestat(mut f: *mut File, mut addr: usize) -> i32 {
             ::core::mem::size_of::<Stat>(),
         ) < 0 as i32
         {
-            return -(1 as i32);
+            return -1;
         }
         return 0 as i32;
     }
-    -(1 as i32)
+    -1
 }
 
 /// Read from file f.
@@ -183,7 +183,7 @@ pub unsafe fn filestat(mut f: *mut File, mut addr: usize) -> i32 {
 pub unsafe fn fileread(mut f: *mut File, mut addr: usize, mut n: i32) -> i32 {
     let mut r: i32 = 0;
     if (*f).readable as i32 == 0 as i32 {
-        return -(1 as i32);
+        return -1;
     }
     if (*f).typ as u32 == FD_PIPE as i32 as u32 {
         r = (*((*f).pipe)).read(addr, n)
@@ -192,7 +192,7 @@ pub unsafe fn fileread(mut f: *mut File, mut addr: usize, mut n: i32) -> i32 {
             || (*f).major as i32 >= NDEV
             || devsw[(*f).major as usize].read.is_none()
         {
-            return -(1 as i32);
+            return -1;
         }
         r = devsw[(*f).major as usize]
             .read
@@ -268,7 +268,7 @@ pub unsafe fn filewrite(mut f: *mut File, mut addr: usize, mut n: i32) -> i32 {
             }
             i += r
         }
-        ret = if i == n { n } else { -(1 as i32) }
+        ret = if i == n { n } else { -1 }
     } else {
         panic(b"filewrite\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }

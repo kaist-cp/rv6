@@ -194,7 +194,7 @@ pub unsafe fn mappages(
     loop {
         let pte = walk(pagetable, a, 1 as i32);
         if pte.is_null() {
-            return -(1 as i32);
+            return -1;
         }
         if *pte & PTE_V as usize != 0 {
             panic(b"remap\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -432,7 +432,7 @@ pub unsafe fn uvmcopy(mut old: pagetable_t, mut new: pagetable_t, mut sz: usize)
         12349973810996921269 => 0 as i32,
         _ => {
             uvmunmap(new, 0 as i32 as usize, i, 1 as i32);
-            -(1 as i32)
+            -1
         }
     }
 }

@@ -453,14 +453,14 @@ pub unsafe fn fork() -> i32 {
     // Allocate process.
     np = allocproc();
     if np.is_null() {
-        return -(1 as i32);
+        return -1;
     }
 
     // Copy user memory from parent to child.
     if uvmcopy((*p).pagetable, (*np).pagetable, (*p).sz) < 0 as i32 {
         freeproc(np);
         (*np).lock.release();
-        return -(1 as i32);
+        return -1;
     }
     (*np).sz = (*p).sz;
     (*np).parent = p;
@@ -609,7 +609,7 @@ pub unsafe fn wait(mut addr: usize) -> i32 {
                     {
                         (*np).lock.release();
                         (*p).lock.release();
-                        return -(1 as i32);
+                        return -1;
                     }
                     freeproc(np);
                     (*np).lock.release();
@@ -624,7 +624,7 @@ pub unsafe fn wait(mut addr: usize) -> i32 {
         // No point waiting if we don't have any children.
         if havekids == 0 || (*p).killed != 0 {
             (*p).lock.release();
-            return -(1 as i32);
+            return -1;
         }
 
         // Wait for a child to exit.

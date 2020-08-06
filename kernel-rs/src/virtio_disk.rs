@@ -216,7 +216,7 @@ unsafe fn alloc3_desc(mut idx: *mut i32) -> i32 {
             for j in 0..i {
                 free_desc(*idx.offset(j as isize));
             }
-            return -(1 as i32);
+            return -1;
         }
     }
     0
