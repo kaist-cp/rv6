@@ -22,7 +22,7 @@ extern "C" {
 /*
  * the kernel's page table.
  */
-pub static mut kernel_pagetable: pagetable_t = 0 as *const usize as *mut usize;
+pub static mut kernel_pagetable: pagetable_t = ptr::null_mut();
 
 // trampoline.S
 /// create a direct-map page table for the kernel and
