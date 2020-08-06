@@ -116,7 +116,7 @@ pub unsafe fn sys_close() -> usize {
     let fresh0 = &mut (*myproc()).ofile[fd as usize];
     *fresh0 = ptr::null_mut();
     fileclose(f);
-    0 as usize
+    0usize
 }
 
 pub unsafe fn sys_fstat() -> usize {
@@ -165,7 +165,7 @@ pub unsafe fn sys_link() -> usize {
             iunlockput(dp);
             iput(ip);
             end_op();
-            return 0 as usize;
+            return 0usize;
         }
     }
     ilock(ip);
@@ -179,7 +179,7 @@ pub unsafe fn sys_link() -> usize {
 /// Is the directory dp empty except for "." and ".." ?
 unsafe fn isdirempty(mut dp: *mut Inode) -> i32 {
     let mut de: Dirent = Default::default();
-    let mut off = (2 as usize).wrapping_mul(::core::mem::size_of::<Dirent>()) as i32;
+    let mut off = (2usize).wrapping_mul(::core::mem::size_of::<Dirent>()) as i32;
     while (off as u32) < (*dp).size {
         if readi(
             dp,
@@ -454,7 +454,7 @@ pub unsafe fn sys_mknod() -> usize {
     }
     iunlockput(ip);
     end_op();
-    0 as usize
+    0usize
 }
 
 pub unsafe fn sys_chdir() -> usize {
@@ -479,7 +479,7 @@ pub unsafe fn sys_chdir() -> usize {
     iput((*p).cwd);
     end_op();
     (*p).cwd = ip;
-    0 as usize
+    0usize
 }
 
 pub unsafe fn sys_exec() -> usize {

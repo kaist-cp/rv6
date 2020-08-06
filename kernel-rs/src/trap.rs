@@ -73,7 +73,7 @@ pub unsafe extern "C" fn usertrap() {
 
         // sepc points to the ecall instruction,
         // but we want to return to the next instruction.
-        (*(*p).tf).epc = ((*(*p).tf).epc).wrapping_add(4 as usize);
+        (*(*p).tf).epc = ((*(*p).tf).epc).wrapping_add(4usize);
 
         // an interrupt will change sstatus &c registers,
         // so don't enable until done with those registers.

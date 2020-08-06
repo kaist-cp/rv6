@@ -457,10 +457,10 @@ pub unsafe fn copyout(
     mut src: *mut libc::c_char,
     mut len: usize,
 ) -> i32 {
-    while len > 0 as usize {
+    while len > 0usize {
         let mut va0 = dstva & !(PGSIZE - 1) as usize;
         let pa0 = walkaddr(pagetable, va0);
-        if pa0 == 0 as usize {
+        if pa0 == 0usize {
             return -1;
         }
         let mut n = (PGSIZE as usize).wrapping_sub(dstva.wrapping_sub(va0));
@@ -488,10 +488,10 @@ pub unsafe fn copyin(
     mut srcva: usize,
     mut len: usize,
 ) -> i32 {
-    while len > 0 as usize {
+    while len > 0usize {
         let mut va0 = srcva & !(PGSIZE - 1) as usize;
         let pa0 = walkaddr(pagetable, va0);
-        if pa0 == 0 as usize {
+        if pa0 == 0usize {
             return -1;
         }
         let mut n = (PGSIZE as usize).wrapping_sub(srcva.wrapping_sub(va0));
@@ -521,10 +521,10 @@ pub unsafe fn copyinstr(
     mut max: usize,
 ) -> i32 {
     let mut got_null: i32 = 0;
-    while got_null == 0 && max > 0 as usize {
+    while got_null == 0 && max > 0usize {
         let mut va0 = srcva & !(PGSIZE - 1) as usize;
         let pa0 = walkaddr(pagetable, va0);
-        if pa0 == 0 as usize {
+        if pa0 == 0usize {
             return -1;
         }
         let mut n = (PGSIZE as usize).wrapping_sub(srcva.wrapping_sub(va0));
@@ -533,7 +533,7 @@ pub unsafe fn copyinstr(
         }
         let mut p: *mut libc::c_char =
             pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut libc::c_char;
-        while n > 0 as usize {
+        while n > 0usize {
             if *p as i32 == '\u{0}' as i32 {
                 *dst = '\u{0}' as i32 as libc::c_char;
                 got_null = 1;
