@@ -1,9 +1,9 @@
 use crate::{
     libc,
+    printf::panic,
     proc::{exit, fork, growproc, kill, myproc, sleep, wait},
     syscall::{argaddr, argint},
     trap::{ticks, tickslock},
-    utils::spin_loop,
 };
 
 pub unsafe fn sys_exit() -> u64 {
@@ -13,8 +13,7 @@ pub unsafe fn sys_exit() -> u64 {
     }
     exit(n);
 
-    // not reached
-    spin_loop()
+    panic(b"sys_exit: not reached\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 }
 
 pub unsafe fn sys_getpid() -> u64 {
