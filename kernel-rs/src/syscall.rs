@@ -122,6 +122,6 @@ pub unsafe fn syscall() {
             (*p).name.as_mut_ptr(),
             num,
         );
-        (*(*p).tf).a0 = -1 as _
+        (*(*p).tf).a0 = usize::MAX
     };
 }

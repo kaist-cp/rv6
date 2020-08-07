@@ -69,11 +69,11 @@ pub unsafe fn sys_dup() -> usize {
     let mut f: *mut File = ptr::null_mut();
     let mut fd: i32 = 0;
     if argfd(0, ptr::null_mut(), &mut f) < 0 {
-        return -1 as _;
+        return usize::MAX;
     }
     fd = (*f).fdalloc();
     if fd < 0 {
-        return -1 as _;
+        return usize::MAX;
     }
     (*f).dup();
     fd as usize
@@ -84,7 +84,7 @@ pub unsafe fn sys_read() -> usize {
     let mut n: i32 = 0;
     let mut p: usize = 0;
     if argfd(0, ptr::null_mut(), &mut f) < 0 || argint(2, &mut n) < 0 || argaddr(1, &mut p) < 0 {
-        return -1 as _;
+        return usize::MAX;
     }
     (*f).read(p, n) as usize
 }
@@ -94,7 +94,7 @@ pub unsafe fn sys_write() -> usize {
     let mut n: i32 = 0;
     let mut p: usize = 0;
     if argfd(0, ptr::null_mut(), &mut f) < 0 || argint(2, &mut n) < 0 || argaddr(1, &mut p) < 0 {
-        return -1 as _;
+        return usize::MAX;
     }
     (*f).write(p, n) as usize
 }
@@ -103,7 +103,7 @@ pub unsafe fn sys_close() -> usize {
     let mut fd: i32 = 0;
     let mut f: *mut File = ptr::null_mut();
     if argfd(0, &mut fd, &mut f) < 0 {
-        return -1 as _;
+        return usize::MAX;
     }
     let fresh0 = &mut (*myproc()).ofile[fd as usize];
     *fresh0 = ptr::null_mut();
@@ -117,7 +117,7 @@ pub unsafe fn sys_fstat() -> usize {
     // user pointer to struct stat
     let mut st: usize = 0;
     if argfd(0, ptr::null_mut(), &mut f) < 0 || argaddr(1, &mut st) < 0 {
-        return -1 as _;
+        return usize::MAX;
     }
     (*f).stat(st) as usize
 }
@@ -130,19 +130,19 @@ pub unsafe fn sys_link() -> usize {
     let mut dp: *mut Inode = ptr::null_mut();
     let mut ip: *mut Inode = ptr::null_mut();
     if argstr(0, old.as_mut_ptr(), MAXPATH) < 0 || argstr(1, new.as_mut_ptr(), MAXPATH) < 0 {
-        return -1 as _;
+        return usize::MAX;
     }
     begin_op();
     ip = namei(old.as_mut_ptr());
     if ip.is_null() {
         end_op();
-        return -1 as _;
+        return usize::MAX;
     }
     (*ip).lock();
     if (*ip).typ as i32 == T_DIR {
         (*ip).unlockput();
         end_op();
-        return -1 as _;
+        return usize::MAX;
     }
     (*ip).nlink += 1;
     (*ip).update();
@@ -164,7 +164,7 @@ pub unsafe fn sys_link() -> usize {
     (*ip).update();
     (*ip).unlockput();
     end_op();
-    -1 as _
+    usize::MAX
 }
 
 /// Is the directory dp empty except for "." and ".." ?
@@ -200,13 +200,13 @@ pub unsafe fn sys_unlink() -> usize {
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut off: u32 = 0;
     if argstr(0, path.as_mut_ptr(), MAXPATH) < 0 {
-        return -1 as _;
+        return usize::MAX;
     }
     begin_op();
     dp = nameiparent(path.as_mut_ptr(), name.as_mut_ptr());
     if dp.is_null() {
         end_op();
-        return -1 as _;
+        return usize::MAX;
     }
     (*dp).lock();
 
@@ -261,7 +261,7 @@ pub unsafe fn sys_unlink() -> usize {
     }
     (*dp).unlockput();
     end_op();
-    -1 as _
+    usize::MAX
 }
 
 unsafe fn create(
@@ -335,7 +335,7 @@ pub unsafe fn sys_open() -> usize {
     let mut n: i32 = 0;
     n = argstr(0, path.as_mut_ptr(), MAXPATH);
     if n < 0 || argint(1, &mut omode) < 0 {
-        return -1 as _;
+        return usize::MAX;
     }
     begin_op();
     let omode = FcntlFlags::from_bits_truncate(omode);
@@ -343,25 +343,25 @@ pub unsafe fn sys_open() -> usize {
         ip = create(path.as_mut_ptr(), T_FILE as i16, 0, 0);
         if ip.is_null() {
             end_op();
-            return -1 as _;
+            return usize::MAX;
         }
     } else {
         ip = namei(path.as_mut_ptr());
         if ip.is_null() {
             end_op();
-            return -1 as _;
+            return usize::MAX;
         }
         (*ip).lock();
         if (*ip).typ as i32 == T_DIR && omode != FcntlFlags::O_RDONLY {
             (*ip).unlockput();
             end_op();
-            return -1 as _;
+            return usize::MAX;
         }
     }
     if (*ip).typ as i32 == T_DEVICE && (((*ip).major as i32) < 0 || (*ip).major as i32 >= NDEV) {
         (*ip).unlockput();
         end_op();
-        return -1 as _;
+        return usize::MAX;
     }
     f = File::alloc();
     if f.is_null() || {
@@ -373,7 +373,7 @@ pub unsafe fn sys_open() -> usize {
         }
         (*ip).unlockput();
         end_op();
-        return -1 as _;
+        return usize::MAX;
     }
     if (*ip).typ as i32 == T_DEVICE {
         (*f).typ = FD_DEVICE;
@@ -400,7 +400,7 @@ pub unsafe fn sys_mkdir() -> usize {
         ip.is_null()
     } {
         end_op();
-        return -1 as _;
+        return usize::MAX;
     }
     (*ip).unlockput();
     end_op();
@@ -427,7 +427,7 @@ pub unsafe fn sys_mknod() -> usize {
         }
     {
         end_op();
-        return -1 as _;
+        return usize::MAX;
     }
     (*ip).unlockput();
     end_op();
@@ -444,13 +444,13 @@ pub unsafe fn sys_chdir() -> usize {
         ip.is_null()
     } {
         end_op();
-        return -1 as _;
+        return usize::MAX;
     }
     (*ip).lock();
     if (*ip).typ as i32 != T_DIR {
         (*ip).unlockput();
         end_op();
-        return -1 as _;
+        return usize::MAX;
     }
     (*ip).unlock();
     (*(*p).cwd).put();
@@ -467,7 +467,7 @@ pub unsafe fn sys_exec() -> usize {
     let mut uargv: usize = 0;
     let mut uarg: usize = 0;
     if argstr(0, path.as_mut_ptr(), MAXPATH) < 0 || argaddr(1, &mut uargv) < 0 {
-        return -1 as _;
+        return usize::MAX;
     }
     ptr::write_bytes(argv.as_mut_ptr(), 0, 1);
     loop {
@@ -515,7 +515,7 @@ pub unsafe fn sys_exec() -> usize {
                 kfree(argv[i as usize] as *mut libc::c_void);
                 i += 1
             }
-            -1 as _
+            usize::MAX
         }
         _ => {
             let ret = exec(path.as_mut_ptr(), argv.as_mut_ptr());
@@ -542,10 +542,10 @@ pub unsafe fn sys_pipe() -> usize {
     let mut fd1: i32 = 0;
     let mut p: *mut proc_0 = myproc();
     if argaddr(0, &mut fdarray) < 0 {
-        return -1 as _;
+        return usize::MAX;
     }
     if pipealloc(&mut rf, &mut wf) < 0 {
-        return -1 as _;
+        return usize::MAX;
     }
     fd0 = -1;
     fd0 = (*rf).fdalloc();
@@ -558,7 +558,7 @@ pub unsafe fn sys_pipe() -> usize {
         }
         (*rf).close();
         (*wf).close();
-        return -1 as _;
+        return usize::MAX;
     }
     if copyout(
         (*p).pagetable,
@@ -577,7 +577,7 @@ pub unsafe fn sys_pipe() -> usize {
         (*p).ofile[fd1 as usize] = ptr::null_mut();
         (*rf).close();
         (*wf).close();
-        return -1 as _;
+        return usize::MAX;
     }
     0
 }
