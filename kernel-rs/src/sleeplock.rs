@@ -1,4 +1,4 @@
-/// Sleeping locks
+//! Sleeping locks
 use crate::libc;
 use crate::proc::{myproc, sleep, wakeup};
 use crate::spinlock::Spinlock;

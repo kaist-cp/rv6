@@ -1,4 +1,4 @@
-/// Simple logging that allows concurrent FS system calls.
+//! Simple logging that allows concurrent FS system calls.
 ///
 /// A log transaction contains the updates of multiple FS system
 /// calls. The logging system only commits when there are

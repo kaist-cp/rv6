@@ -1,4 +1,4 @@
-/// Support functions for system calls that involve file descriptors.
+//! Support functions for system calls that involve file descriptors.
 use crate::libc;
 use crate::{
     fs::{stati, BSIZE},

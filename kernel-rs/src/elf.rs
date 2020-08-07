@@ -1,4 +1,4 @@
-/// Format of an ELF executable file
+//! Format of an ELF executable file
 
 /// "\x7FELF" in little endian
 pub const ELF_MAGIC: u32 = 0x464c457f;

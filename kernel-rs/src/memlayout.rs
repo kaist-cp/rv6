@@ -1,5 +1,4 @@
-use crate::riscv::{MAXVA, PGSIZE};
-/// Physical memory layout
+//! Physical memory layout
 ///
 /// qemu -machine virt is set up like this,
 /// based on qemu's hw/riscv/virt.c:
@@ -16,6 +15,7 @@ use crate::riscv::{MAXVA, PGSIZE};
 /// 80000000 -- entry.S, then kernel text and data
 /// end -- start of kernel page allocation area
 /// PHYSTOP -- end RAM used by the kernel
+use crate::riscv::{MAXVA, PGSIZE};
 
 /// qemu puts UART registers here in physical memory.
 pub const UART0: usize = 0x10000000;
