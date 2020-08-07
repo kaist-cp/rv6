@@ -57,10 +57,10 @@ pub unsafe fn kinit() {
 /// kernel stacks, page-table pages,
 /// and pipe buffers. Allocates whole 4096-byte pages.
 pub unsafe fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: *mut libc::c_void) {
-    let mut p = ((pa_start as u64)
-        .wrapping_add(PGSIZE as u64)
-        .wrapping_sub(1 as i32 as u64)
-        & !(PGSIZE - 1 as i32) as u64) as *mut libc::c_char;
+    let mut p = ((pa_start as usize)
+        .wrapping_add(PGSIZE as usize)
+        .wrapping_sub(1)
+        & !(PGSIZE - 1) as usize) as *mut libc::c_char;
     while p.offset(PGSIZE as isize) <= pa_end as *mut libc::c_char {
         kfree(p as *mut libc::c_void);
         p = p.offset(PGSIZE as isize)
@@ -73,9 +73,9 @@ pub unsafe fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: *mut libc::
 /// initializing the allocator; see kinit above.)
 pub unsafe fn kfree(mut pa: *mut libc::c_void) {
     let mut r: *mut Run = ptr::null_mut();
-    if (pa as u64).wrapping_rem(PGSIZE as u64) != 0 as i32 as u64
+    if (pa as usize).wrapping_rem(PGSIZE as usize) != 0
         || (pa as *mut libc::c_char) < end.as_mut_ptr()
-        || pa as u64 >= PHYSTOP as u64
+        || pa as usize >= PHYSTOP as usize
     {
         panic(b"kfree\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }

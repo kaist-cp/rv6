@@ -33,20 +33,20 @@ impl Pipe {
     pub unsafe fn close(&mut self, mut writable: i32) {
         (*self).lock.acquire();
         if writable != 0 {
-            (*self).writeopen = 0 as i32;
+            (*self).writeopen = 0;
             wakeup(&mut (*self).nread as *mut u32 as *mut libc::c_void);
         } else {
-            (*self).readopen = 0 as i32;
+            (*self).readopen = 0;
             wakeup(&mut (*self).nwrite as *mut u32 as *mut libc::c_void);
         }
-        if (*self).readopen == 0 as i32 && (*self).writeopen == 0 as i32 {
+        if (*self).readopen == 0 && (*self).writeopen == 0 {
             (*self).lock.release();
             kfree(self as *mut Pipe as *mut libc::c_char as *mut libc::c_void);
         } else {
             (*self).lock.release();
         };
     }
-    pub unsafe fn write(&mut self, mut addr: u64, mut n: i32) -> i32 {
+    pub unsafe fn write(&mut self, mut addr: usize, mut n: i32) -> i32 {
         let mut i: i32 = 0;
         let mut ch: libc::c_char = 0;
         let mut pr: *mut proc_0 = myproc();
@@ -54,9 +54,9 @@ impl Pipe {
         while i < n {
             while (*self).nwrite == (*self).nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
-                if (*self).readopen == 0 as i32 || (*myproc()).killed != 0 {
+                if (*self).readopen == 0 || (*myproc()).killed != 0 {
                     (*self).lock.release();
-                    return -(1 as i32);
+                    return -1;
                 }
                 wakeup(&mut (*self).nread as *mut u32 as *mut libc::c_void);
                 sleep(
@@ -67,9 +67,9 @@ impl Pipe {
             if copyin(
                 (*pr).pagetable,
                 &mut ch,
-                addr.wrapping_add(i as u64),
-                1 as i32 as u64,
-            ) == -(1 as i32)
+                addr.wrapping_add(i as usize),
+                1usize,
+            ) == -1
             {
                 break;
             }
@@ -82,7 +82,7 @@ impl Pipe {
         (*self).lock.release();
         n
     }
-    pub unsafe fn read(&mut self, mut addr: u64, mut n: i32) -> i32 {
+    pub unsafe fn read(&mut self, mut addr: usize, mut n: i32) -> i32 {
         let mut i: i32 = 0;
         let mut pr: *mut proc_0 = myproc();
         let mut ch: libc::c_char = 0;
@@ -93,7 +93,7 @@ impl Pipe {
         while (*self).nread == (*self).nwrite && (*self).writeopen != 0 {
             if (*myproc()).killed != 0 {
                 (*self).lock.release();
-                return -(1 as i32);
+                return -1;
             }
 
             //DOC: piperead-sleep
@@ -113,10 +113,10 @@ impl Pipe {
             ch = (*self).data[fresh1.wrapping_rem(PIPESIZE as u32) as usize];
             if copyout(
                 (*pr).pagetable,
-                addr.wrapping_add(i as u64),
+                addr.wrapping_add(i as usize),
                 &mut ch,
-                1 as i32 as u64,
-            ) == -(1 as i32)
+                1usize,
+            ) == -1
             {
                 break;
             }
@@ -142,10 +142,10 @@ pub unsafe fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {
     }) {
         pi = kalloc() as *mut Pipe;
         if !pi.is_null() {
-            (*pi).readopen = 1 as i32;
-            (*pi).writeopen = 1 as i32;
-            (*pi).nwrite = 0 as u32;
-            (*pi).nread = 0 as u32;
+            (*pi).readopen = 1;
+            (*pi).writeopen = 1;
+            (*pi).nwrite = 0;
+            (*pi).nread = 0;
             (*pi)
                 .lock
                 .initlock(b"pipe\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -169,5 +169,5 @@ pub unsafe fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {
     if !(*f1).is_null() {
         (*(*f1)).close();
     }
-    -(1 as i32)
+    -1
 }

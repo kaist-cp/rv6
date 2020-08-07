@@ -71,7 +71,7 @@ pub const VIRTIO_RING_F_EVENT_IDX: i32 = 29;
 pub const NUM: i32 = 8;
 #[derive(Copy, Clone)]
 pub struct VRingDesc {
-    pub addr: u64,
+    pub addr: usize,
     pub len: u32,
     pub flags: u16,
     pub next: u16,

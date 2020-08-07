@@ -11,19 +11,18 @@ use crate::{
 /// the riscv Platform Level Interrupt Controller (PLIC).
 pub unsafe fn plicinit() {
     // set desired IRQ priorities non-zero (otherwise disabled).
-    *((PLIC + (UART0_IRQ * 4) as i64) as *mut u32) = 1 as i32 as u32;
-    *((PLIC + (VIRTIO0_IRQ * 4) as i64) as *mut u32) = 1 as i32 as u32;
+    *((PLIC + (UART0_IRQ * 4) as i64) as *mut u32) = 1;
+    *((PLIC + (VIRTIO0_IRQ * 4) as i64) as *mut u32) = 1;
 }
 
 pub unsafe fn plicinithart() {
     let mut hart: i32 = cpuid();
 
     // set uart's enable bit for this hart's S-mode.
-    *(plic_senable(hart) as *mut u32) =
-        ((1 as i32) << UART0_IRQ | (1 as i32) << VIRTIO0_IRQ) as u32;
+    *(plic_senable(hart) as *mut u32) = (1 << UART0_IRQ | 1 << VIRTIO0_IRQ) as u32;
 
     // set this hart's S-mode priority threshold to 0.
-    *(plic_spriority(hart) as *mut u32) = 0 as i32 as u32;
+    *(plic_spriority(hart) as *mut u32) = 0;
 }
 
 /// return a bitmap of which IRQs are waiting

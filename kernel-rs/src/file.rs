@@ -58,15 +58,15 @@ struct Ftable {
 /// map major device number to device functions.
 #[derive(Copy, Clone)]
 pub struct Devsw {
-    pub read: Option<unsafe fn(_: i32, _: u64, _: i32) -> i32>,
-    pub write: Option<unsafe fn(_: i32, _: u64, _: i32) -> i32>,
+    pub read: Option<unsafe fn(_: i32, _: usize, _: i32) -> i32>,
+    pub write: Option<unsafe fn(_: i32, _: usize, _: i32) -> i32>,
 }
 
 impl File {
     /// Increment ref count for file self.
     pub unsafe fn dup(&mut self) -> *mut File {
         ftable.lock.acquire();
-        if (*self).ref_0 < 1 as i32 {
+        if (*self).ref_0 < 1 {
             panic(b"File::dup\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         (*self).ref_0 += 1;
@@ -78,16 +78,16 @@ impl File {
     pub unsafe fn close(&mut self) {
         let mut ff: File = File::zeroed();
         ftable.lock.acquire();
-        if (*self).ref_0 < 1 as i32 {
+        if (*self).ref_0 < 1 {
             panic(b"File::close\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         (*self).ref_0 -= 1;
-        if (*self).ref_0 > 0 as i32 {
+        if (*self).ref_0 > 0 {
             ftable.lock.release();
             return;
         }
         ff = *self;
-        (*self).ref_0 = 0 as i32;
+        (*self).ref_0 = 0;
         (*self).typ = FD_NONE;
         ftable.lock.release();
         if ff.typ as u32 == FD_PIPE as i32 as u32 {
@@ -103,7 +103,7 @@ impl File {
 
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub unsafe fn stat(&mut self, mut addr: u64) -> i32 {
+    pub unsafe fn stat(&mut self, mut addr: usize) -> i32 {
         let mut p: *mut proc_0 = myproc();
         let mut st: Stat = Default::default();
         if (*self).typ as u32 == FD_INODE as i32 as u32
@@ -116,39 +116,39 @@ impl File {
                 (*p).pagetable,
                 addr,
                 &mut st as *mut Stat as *mut libc::c_char,
-                ::core::mem::size_of::<Stat>() as u64,
-            ) < 0 as i32
+                ::core::mem::size_of::<Stat>() as usize,
+            ) < 0
             {
-                return -(1 as i32);
+                return -1;
             }
-            return 0 as i32;
+            return 0;
         }
-        -(1 as i32)
+        -1
     }
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub unsafe fn read(&mut self, mut addr: u64, mut n: i32) -> i32 {
+    pub unsafe fn read(&mut self, mut addr: usize, mut n: i32) -> i32 {
         let mut r: i32 = 0;
-        if (*self).readable as i32 == 0 as i32 {
-            return -(1 as i32);
+        if (*self).readable as i32 == 0 {
+            return -1;
         }
         if (*self).typ as u32 == FD_PIPE as i32 as u32 {
             r = (*(*self).pipe).read(addr, n)
         } else if (*self).typ as u32 == FD_DEVICE as i32 as u32 {
-            if ((*self).major as i32) < 0 as i32
+            if ((*self).major as i32) < 0
                 || (*self).major as i32 >= NDEV
                 || devsw[(*self).major as usize].read.is_none()
             {
-                return -(1 as i32);
+                return -1;
             }
             r = devsw[(*self).major as usize]
                 .read
-                .expect("non-null function pointer")(1 as i32, addr, n)
+                .expect("non-null function pointer")(1, addr, n)
         } else if (*self).typ as u32 == FD_INODE as i32 as u32 {
             (*(*self).ip).lock();
-            r = (*(*self).ip).read(1 as i32, addr, (*self).off, n as u32);
-            if r > 0 as i32 {
+            r = (*(*self).ip).read(1, addr, (*self).off, n as u32);
+            if r > 0 {
                 (*self).off = ((*self).off as u32).wrapping_add(r as u32) as u32 as u32
             }
             (*(*self).ip).unlock();
@@ -160,16 +160,16 @@ impl File {
 
     /// Write to file self.
     /// addr is a user virtual address.
-    pub unsafe fn write(&mut self, mut addr: u64, mut n: i32) -> i32 {
+    pub unsafe fn write(&mut self, mut addr: usize, mut n: i32) -> i32 {
         let mut r: i32 = 0;
         let mut ret: i32 = 0;
-        if (*self).writable as i32 == 0 as i32 {
+        if (*self).writable as i32 == 0 {
             return -1;
         }
         if (*self).typ as u32 == FD_PIPE as i32 as u32 {
             ret = (*(*self).pipe).write(addr, n)
         } else if (*self).typ as u32 == FD_DEVICE as i32 as u32 {
-            if ((*self).major as i32) < 0 as i32
+            if ((*self).major as i32) < 0
                 || (*self).major as i32 >= NDEV
                 || devsw[(*self).major as usize].write.is_none()
             {
@@ -177,7 +177,7 @@ impl File {
             }
             ret = devsw[(*self).major as usize]
                 .write
-                .expect("non-null function pointer")(1 as i32, addr, n)
+                .expect("non-null function pointer")(1, addr, n)
         } else if (*self).typ as u32 == FD_INODE as i32 as u32 {
             // write a few blocks at a time to avoid exceeding
             // the maximum log transaction size, including
@@ -194,18 +194,13 @@ impl File {
                 }
                 begin_op();
                 (*(*self).ip).lock();
-                r = (*(*self).ip).write(
-                    1 as i32,
-                    addr.wrapping_add(i as u64),
-                    (*self).off,
-                    n1 as u32,
-                );
-                if r > 0 as i32 {
+                r = (*(*self).ip).write(1, addr.wrapping_add(i as usize), (*self).off, n1 as u32);
+                if r > 0 {
                     (*self).off = ((*self).off as u32).wrapping_add(r as u32) as u32
                 }
                 (*(*self).ip).unlock();
                 end_op();
-                if r < 0 as i32 {
+                if r < 0 {
                     break;
                 }
                 if r != n1 {
@@ -216,7 +211,7 @@ impl File {
                 }
                 i += r
             }
-            ret = if i == n { n } else { -(1 as i32) }
+            ret = if i == n { n } else { -1 }
         } else {
             panic(b"File::write\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
@@ -229,8 +224,8 @@ impl File {
         ftable.lock.acquire();
         f = ftable.file.as_mut_ptr();
         while f < ftable.file.as_mut_ptr().offset(NFILE as isize) {
-            if (*f).ref_0 == 0 as i32 {
-                (*f).ref_0 = 1 as i32;
+            if (*f).ref_0 == 0 {
+                (*f).ref_0 = 1;
                 ftable.lock.release();
                 return f;
             }

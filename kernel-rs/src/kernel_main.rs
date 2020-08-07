@@ -19,7 +19,7 @@ static mut started: AtomicBool = AtomicBool::new(false);
 /// start() jumps here in supervisor mode on all CPUs.
 #[export_name = "main"]
 pub unsafe fn kernel_main() {
-    if cpuid() == 0 as i32 {
+    if cpuid() == 0 {
         consoleinit();
         printfinit();
 
