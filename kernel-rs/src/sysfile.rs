@@ -1,6 +1,6 @@
-/// File-system system calls.
-/// Mostly argument checking, since we don't trust
-/// user code, and calls into file.c and fs.c.
+//! File-system system calls.
+//! Mostly argument checking, since we don't trust
+//! user code, and calls into file.c and fs.c.
 use crate::libc;
 use crate::{
     exec::exec,
@@ -532,9 +532,10 @@ pub unsafe fn sys_exec() -> usize {
     }
 }
 
-// user pointer to array of two integers
 pub unsafe fn sys_pipe() -> usize {
+    // user pointer to array of two integers
     let mut fdarray: usize = 0;
+
     let mut rf: *mut File = ptr::null_mut();
     let mut wf: *mut File = ptr::null_mut();
     let mut fd0: i32 = 0;

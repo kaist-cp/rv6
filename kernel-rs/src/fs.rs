@@ -1,14 +1,15 @@
-// File system implementation.  Five layers:
-//   + Blocks: allocator for raw disk blocks.
-//   + Log: crash recovery for multi-step updates.
-//   + Files: inode allocator, reading, writing, metadata.
-//   + Directories: inode with special contents (list of other inodes!)
-//   + Names: paths like /usr/rtm/xv6/fs.c for convenient naming.
-//
-// This file contains the low-level file system manipulation
-// routines.  The (higher-level) system call implementations
-// are in sysfile.c.
+//! File system implementation.  Five layers:
+//!   + Blocks: allocator for raw disk blocks.
+//!   + Log: crash recovery for multi-step updates.
+//!   + Files: inode allocator, reading, writing, metadata.
+//!   + Directories: inode with special contents (list of other inodes!)
+//!   + Names: paths like /usr/rtm/xv6/fs.c for convenient naming.
+//!
+//! This file contains the low-level file system manipulation
+//! routines.  The (higher-level) system call implementations
+//! are in sysfile.c.
 
+/// On-disk file system format used for both kernel and user programs are also included here.
 use crate::libc;
 use crate::{
     bio::bread,
@@ -25,12 +26,12 @@ use crate::{
 };
 use core::mem;
 use core::ptr;
+
 pub const FD_DEVICE: u32 = 3;
 pub const FD_INODE: u32 = 2;
 pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
 
-/// block size
 /// Disk layout:
 /// [ boot block | super block | log | inode blocks |
 ///                                          free bit map | data blocks]
@@ -39,13 +40,28 @@ pub const FD_NONE: u32 = 0;
 /// super block describes the disk layout:
 #[derive(Copy, Clone)]
 pub struct Superblock {
+    /// Must be FSMAGIC
     magic: u32,
+
+    /// Size of file system image (blocks)
     size: u32,
+
+    /// Number of data blocks
     nblocks: u32,
+
+    /// Number of inodes
     ninodes: u32,
+
+    /// Number of log blocks
     pub nlog: u32,
+
+    /// Block number of first log block
     pub logstart: u32,
+
+    /// Block number of first inode block
     inodestart: u32,
+
+    /// Block number of first free map block
     bmapstart: u32,
 }
 
@@ -63,11 +79,22 @@ pub struct Dirent {
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
 struct Dinode {
+    /// File type
     typ: i16,
+
+    /// Major device number (T_DEVICE only)
     major: i16,
+
+    /// Minor device number (T_DEVICE only)
     minor: i16,
+
+    /// Number of links to inode in file system
     nlink: i16,
+
+    /// Size of file (bytes)
     size: u32,
+
+    /// Data block addresses
     addrs: [u32; 13],
 }
 
@@ -243,15 +270,20 @@ impl Inode {
 
         if (*self).ref_0 == 1 && (*self).valid != 0 && (*self).nlink as i32 == 0 {
             // inode has no links and no other references: truncate and free.
+
             // self->ref == 1 means no other process can have self locked,
             // so this acquiresleep() won't block (or deadlock).
             (*self).lock.acquire();
+
             icache.lock.release();
+
             self.itrunc();
             (*self).typ = 0;
             (*self).update();
             (*self).valid = 0;
+
             (*self).lock.release();
+
             icache.lock.acquire();
         }
         (*self).ref_0 -= 1;
@@ -448,8 +480,9 @@ impl Inode {
             let bp = bread(dev, sb.iblock(inum as i32));
             let dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
                 .add((inum as usize).wrapping_rem(IPB as usize));
+
+            // a free inode
             if (*dip).typ as i32 == 0 {
-                // a free inode
                 ptr::write_bytes(dip, 0, 1);
                 (*dip).typ = typ;
 
@@ -483,8 +516,6 @@ impl Inode {
     }
 }
 
-/// On-disk file system format.
-/// Both the kernel and user programs use this header file.
 /// root i-number
 pub const ROOTINO: i32 = 1;
 
@@ -756,6 +787,7 @@ pub unsafe fn dirlink(mut dp: *mut Inode, mut name: *mut libc::c_char, mut inum:
 }
 
 /// Paths
+///
 /// Copy the next path element from path into name.
 /// Return a pointer to the element following the copied one.
 /// The returned path has no leading slashes,
@@ -808,6 +840,7 @@ unsafe fn namex(
 ) -> *mut Inode {
     let mut ip: *mut Inode = ptr::null_mut();
     let mut next: *mut Inode = ptr::null_mut();
+
     if *path as i32 == '/' as i32 {
         ip = iget(ROOTDEV as u32, ROOTINO as u32)
     } else {

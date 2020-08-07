@@ -1,3 +1,4 @@
+//! the riscv Platform Level Interrupt Controller (PLIC).
 use crate::{
     memlayout::{
         plic_sclaim, plic_senable, plic_spriority, PLIC, PLIC_PENDING, UART0_IRQ, VIRTIO0_IRQ,
@@ -5,10 +6,6 @@ use crate::{
     proc::cpuid,
 };
 
-/// local interrupt controller, which contains the timer.
-/// cycles since boot.
-///
-/// the riscv Platform Level Interrupt Controller (PLIC).
 pub unsafe fn plicinit() {
     // set desired IRQ priorities non-zero (otherwise disabled).
     *((PLIC + (UART0_IRQ * 4) as i64) as *mut u32) = 1;

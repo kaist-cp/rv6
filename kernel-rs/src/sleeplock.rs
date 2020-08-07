@@ -1,13 +1,24 @@
+//! Sleeping locks
 use crate::libc;
 use crate::proc::{myproc, sleep, wakeup};
 use crate::spinlock::Spinlock;
 use core::ptr;
 
+/// Long-term locks for processes
 #[derive(Copy, Clone)]
 pub struct Sleeplock {
+    /// Is the lock held?
     locked: u32,
+
+    /// spinlock protecting this sleep lock
     lk: Spinlock,
+
+    /// For debugging:  
+
+    /// Name of lock.
     name: *mut libc::c_char,
+
+    /// Process holding lock
     pid: i32,
 }
 
@@ -22,7 +33,6 @@ impl Sleeplock {
         }
     }
 
-    /// Sleeping locks
     pub unsafe fn new(name: *mut libc::c_char) -> Self {
         let mut lk = Self::zeroed();
 

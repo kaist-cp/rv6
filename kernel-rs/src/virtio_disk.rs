@@ -22,7 +22,6 @@ const fn r(r: i32) -> *mut u32 {
     (VIRTIO0 + r) as *mut u32
 }
 
-/// the address of virtio mmio register r.
 #[derive(Copy, Clone)]
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation
@@ -46,6 +45,7 @@ struct Disk {
     /// for use when completion interrupt arrives.
     /// indexed by first descriptor index of chain.
     info: [InflightInfo; NUM as usize],
+
     vdisk_lock: Spinlock,
 }
 
@@ -241,6 +241,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
 
     // format the three descriptors.
     // qemu's virtio-blk.c reads them.
+
     let mut buf0: virtio_blk_outhdr = Default::default();
 
     if write != 0 {
@@ -262,26 +263,32 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     (*disk.desc.offset(idx[1] as isize)).addr = (*b).data.as_mut_ptr() as usize;
     (*disk.desc.offset(idx[1] as isize)).len = BSIZE as u32;
     if write != 0 {
-        // device writes b->data
+        // device reads b->data
         (*disk.desc.offset(idx[1] as isize)).flags = 0
     } else {
-        // device reads b->data
+        // device writes b->data
         (*disk.desc.offset(idx[1] as isize)).flags = VRING_DESC_F_WRITE as u16
     }
 
     let fresh0 = &mut (*disk.desc.offset(idx[1] as isize)).flags;
+
     *fresh0 = (*fresh0 as i32 | VRING_DESC_F_NEXT) as u16;
+
     (*disk.desc.offset(idx[1] as isize)).next = idx[2] as u16;
 
     disk.info[idx[0] as usize].status = 0 as libc::c_char;
+
     (*disk.desc.offset(idx[2] as isize)).addr = &mut (*disk
         .info
         .as_mut_ptr()
         .offset(*idx.as_mut_ptr().offset(0) as isize))
     .status as *mut libc::c_char as usize;
+
     (*disk.desc.offset(idx[2] as isize)).len = 1;
+
     // device writes the status
     (*disk.desc.offset(idx[2] as isize)).flags = VRING_DESC_F_WRITE as u16;
+
     (*disk.desc.offset(idx[2] as isize)).next = 0;
 
     // record struct Buf for virtio_disk_intr().

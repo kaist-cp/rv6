@@ -6,14 +6,14 @@ pub unsafe fn r_mhartid() -> usize {
     x
 }
 
-// Machine Status Register, mstatus
+/// Machine Status Register, mstatus
 
-// previous mode.
+/// previous mode.
 pub const MSTATUS_MPP_MASK: i64 = (3) << 11;
 pub const MSTATUS_MPP_M: i64 = (3) << 11;
 pub const MSTATUS_MPP_S: i64 = (1) << 11;
 pub const MSTATUS_MPP_U: i64 = (0) << 11;
-// machine-mode interrupt enable.
+/// machine-mode interrupt enable.
 pub const MSTATUS_MIE: i64 = (1) << 3;
 
 #[inline]
@@ -76,6 +76,7 @@ pub unsafe fn w_sip(mut x: usize) {
 }
 
 /// Supervisor Interrupt Enable
+
 /// external
 pub const SIE_SEIE: i64 = (1) << 9;
 
@@ -98,6 +99,7 @@ pub unsafe fn w_sie(mut x: usize) {
 }
 
 /// Machine-mode Interrupt Enable
+
 /// external
 pub const MIE_MEIE: i64 = (1) << 11;
 
@@ -356,6 +358,7 @@ TODO: used directly in other file e.g., vm.rs
 */
 
 /// extract the three 9-bit page table indices from a virtual address.
+
 /// 9 bits
 pub const PXMASK: i32 = 0x1ff;
 
@@ -377,4 +380,6 @@ pub const MAXVA: i64 = (1) << (9 + 9 + 9 + 12 - 1);
 
 pub type pte_t = usize;
 pub type pde_t = usize;
+
+/// 512 PTEs
 pub type pagetable_t = *mut usize;

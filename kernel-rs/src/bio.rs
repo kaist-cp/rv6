@@ -81,6 +81,7 @@ pub unsafe fn binit() {
     bcache
         .lock
         .initlock(b"bcache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+
     // Create linked list of buffers
     bcache.head.prev = &mut bcache.head;
     bcache.head.next = &mut bcache.head;
@@ -104,6 +105,7 @@ unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
 
     let mut b: *mut Buf = ptr::null_mut();
     bcache.lock.acquire();
+
     // Is the block already cached?
     b = bcache.head.next;
     while b != &mut bcache.head as *mut Buf {

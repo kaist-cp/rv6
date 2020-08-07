@@ -7,6 +7,9 @@ use crate::{
     uart::{uartinit, uartputc},
 };
 
+/// input
+const INPUT_BUF: usize = 128;
+
 #[derive(Copy, Clone)]
 struct Console {
     lock: Spinlock,
@@ -52,6 +55,7 @@ const fn ctrl(x: char) -> i32 {
 
 /// send one character to the uart.
 pub unsafe fn consputc(mut c: i32) {
+    // from printf.rs
     if panicked != 0 {
         loop {}
     }
@@ -64,9 +68,6 @@ pub unsafe fn consputc(mut c: i32) {
         uartputc(c);
     };
 }
-
-/// input
-const INPUT_BUF: usize = 128;
 
 static mut cons: Console = Console::zeroed();
 

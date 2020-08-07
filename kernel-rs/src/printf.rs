@@ -1,7 +1,9 @@
+//! formatted console output -- printf, panic.
 use crate::console::consputc;
 use crate::libc;
 use crate::spinlock::Spinlock;
 
+/// lock to avoid interleaving concurrent printf's.
 #[derive(Copy, Clone)]
 struct PrintfLock {
     lock: Spinlock,
@@ -18,7 +20,6 @@ impl PrintfLock {
     }
 }
 
-/// formatted console output -- printf, panic.
 pub static mut panicked: i32 = 0;
 
 static mut pr: PrintfLock = PrintfLock::zeroed();
