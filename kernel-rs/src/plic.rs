@@ -1,4 +1,4 @@
-/// the riscv Platform Level Interrupt Controller (PLIC).
+//! the riscv Platform Level Interrupt Controller (PLIC).
 use crate::{
     memlayout::{
         plic_sclaim, plic_senable, plic_spriority, PLIC, PLIC_PENDING, UART0_IRQ, VIRTIO0_IRQ,

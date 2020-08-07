@@ -35,7 +35,7 @@ pub struct cpu {
     /// The process running on this cpu, or null
     pub proc: *mut proc,
 
-    /// swtch() her to enter scheduler()
+    /// swtch() here to enter scheduler()
     pub scheduler: Context,
 
     /// Depth of push_off() nesting

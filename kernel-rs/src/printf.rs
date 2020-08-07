@@ -1,4 +1,4 @@
-/// formatted console output -- printf, panic.
+//! formatted console output -- printf, panic.
 use crate::console::consputc;
 use crate::libc;
 use crate::spinlock::Spinlock;

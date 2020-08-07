@@ -1,4 +1,4 @@
-/// File system implementation.  Five layers:
+//! File system implementation.  Five layers:
 ///   + Blocks: allocator for raw disk blocks.
 ///   + Log: crash recovery for multi-step updates.
 ///   + Files: inode allocator, reading, writing, metadata.

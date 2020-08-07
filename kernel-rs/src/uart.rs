@@ -1,4 +1,4 @@
-/// low-level driver routines for 16550a UART.
+//! low-level driver routines for 16550a UART.
 use crate::console::consoleintr;
 use crate::memlayout::UART0;
 use core::ptr;
