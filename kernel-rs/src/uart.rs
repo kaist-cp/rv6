@@ -12,6 +12,13 @@ const fn reg(r: usize) -> *mut u8 {
     (UART0 + r) as *mut u8
 }
 
+unsafe fn read_reg(r: usize) -> u8 {
+    ptr::read_volatile(reg(r))
+}
+unsafe fn write_reg(r: usize, v: u8) {
+    ptr::write_volatile(reg(r), v)
+}
+
 /// the UART control registers.
 /// some have different meanings for
 /// read vs write.
@@ -37,13 +44,6 @@ const LCR: usize = 3;
 
 /// line status register
 const LSR: usize = 5;
-
-unsafe fn read_reg(r: usize) -> u8 {
-    ptr::read_volatile(reg(r))
-}
-unsafe fn write_reg(r: usize, v: u8) {
-    ptr::write_volatile(reg(r), v)
-}
 
 pub unsafe fn uartinit() {
     // disable interrupts.

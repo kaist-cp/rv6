@@ -6,7 +6,7 @@ use crate::{
     log::{begin_op, end_op},
     param::MAXARG,
     printf::panic,
-    proc::{myproc, proc_0, proc_freepagetable, proc_pagetable},
+    proc::{myproc, proc, proc_freepagetable, proc_pagetable},
     riscv::{pagetable_t, PGSIZE},
     string::{safestrcpy, strlen},
     vm::{copyout, uvmalloc, uvmclear, walkaddr},
@@ -18,8 +18,6 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     let mut current_block: usize;
     let mut s: *mut libc::c_char = ptr::null_mut();
     let mut last: *mut libc::c_char = ptr::null_mut();
-    let mut i: i32 = 0;
-    let mut off: i32 = 0;
     let mut argc: usize = 0;
     let mut sz: usize = 0;
     let mut sp: usize = 0;
@@ -30,7 +28,7 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
     let mut ph: ProgHdr = Default::default();
     let mut pagetable: pagetable_t = 0 as pagetable_t;
     let mut oldpagetable: pagetable_t = ptr::null_mut();
-    let mut p: *mut proc_0 = myproc();
+    let mut p: *mut proc = myproc();
     begin_op();
     ip = namei(path);
     if ip.is_null() {
@@ -53,13 +51,12 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
         if !pagetable.is_null() {
             // Load program into memory.
             sz = 0;
-            i = 0;
-            off = elf.phoff as i32;
-            loop {
-                if i >= elf.phnum as i32 {
-                    current_block = 15768484401365413375;
-                    break;
-                }
+            current_block = 15768484401365413375;
+            for i in 0..elf.phnum as usize {
+                let off = elf
+                    .phoff
+                    .wrapping_add(i * ::core::mem::size_of::<ProgHdr>());
+
                 if (*ip).read(
                     0,
                     &mut ph as *mut ProgHdr as usize,
@@ -89,14 +86,13 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
                         current_block = 7080392026674647309;
                         break;
                     }
-                    if loadseg(pagetable, ph.vaddr, ip, ph.off as u32, ph.filesz as u32) < 0 {
+                    if loadseg(pagetable, ph.vaddr, ip, ph.off as u32, ph.filesz as u32).is_err() {
                         current_block = 7080392026674647309;
                         break;
                     }
                 }
-                i += 1;
-                off = (off as usize).wrapping_add(::core::mem::size_of::<ProgHdr>()) as i32
             }
+
             match current_block {
                 7080392026674647309 => {}
                 _ => {
@@ -222,22 +218,23 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
 /// Load a program segment into pagetable at virtual address va.
 /// va must be page-aligned
 /// and the pages from va to va+sz must already be mapped.
-/// Returns 0 on success, -1 on failure.
+///
+/// Returns `Ok(())` on success, `Err(())` on failure.
 unsafe fn loadseg(
     mut pagetable: pagetable_t,
     mut va: usize,
     mut ip: *mut Inode,
     mut offset: u32,
     mut sz: u32,
-) -> i32 {
-    let mut i: u32 = 0;
+) -> Result<(), ()> {
     if va.wrapping_rem(PGSIZE as usize) != 0 {
         panic(
             b"loadseg: va must be page aligned\x00" as *const u8 as *const libc::c_char
                 as *mut libc::c_char,
         );
     }
-    while i < sz {
+
+    for i in num_iter::range_step(0, sz, PGSIZE as _) {
         let pa = walkaddr(pagetable, va.wrapping_add(i as usize));
         if pa == 0 {
             panic(
@@ -245,15 +242,17 @@ unsafe fn loadseg(
                     as *mut libc::c_char,
             );
         }
+
         let n = if sz.wrapping_sub(i) < PGSIZE as u32 {
             sz.wrapping_sub(i)
         } else {
             PGSIZE as u32
         };
+
         if (*ip).read(0, pa, offset.wrapping_add(i), n) as u32 != n {
-            return -1;
+            return Err(());
         }
-        i = (i as u32).wrapping_add(PGSIZE as u32) as u32 as u32
     }
-    0
+
+    Ok(())
 }
