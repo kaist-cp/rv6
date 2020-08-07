@@ -20,3 +20,4 @@ lto = true
 
 [dependencies]
 bitflags = "1.2.1"
+num-iter = { version = "0.1", default-features = false }

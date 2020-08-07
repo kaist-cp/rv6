@@ -3,7 +3,7 @@ use crate::{
     file::File,
     fs::FD_PIPE,
     kalloc::{kalloc, kfree},
-    proc::{myproc, proc_0, sleep, wakeup},
+    proc::{myproc, proc, sleep, wakeup},
     spinlock::Spinlock,
     vm::{copyin, copyout},
 };
@@ -49,7 +49,7 @@ impl Pipe {
     pub unsafe fn write(&mut self, mut addr: usize, mut n: i32) -> i32 {
         let mut i: i32 = 0;
         let mut ch: libc::c_char = 0;
-        let mut pr: *mut proc_0 = myproc();
+        let mut pr: *mut proc = myproc();
         (*self).lock.acquire();
         while i < n {
             while (*self).nwrite == (*self).nread.wrapping_add(PIPESIZE as u32) {
@@ -84,7 +84,7 @@ impl Pipe {
     }
     pub unsafe fn read(&mut self, mut addr: usize, mut n: i32) -> i32 {
         let mut i: i32 = 0;
-        let mut pr: *mut proc_0 = myproc();
+        let mut pr: *mut proc = myproc();
         let mut ch: libc::c_char = 0;
 
         (*self).lock.acquire();

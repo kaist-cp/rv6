@@ -17,7 +17,6 @@ use core::sync::atomic::{AtomicBool, Ordering};
 static mut started: AtomicBool = AtomicBool::new(false);
 
 /// start() jumps here in supervisor mode on all CPUs.
-#[export_name = "main"]
 pub unsafe fn kernel_main() {
     if cpuid() == 0 {
         consoleinit();
