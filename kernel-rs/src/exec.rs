@@ -231,12 +231,14 @@ unsafe fn loadseg(
     mut sz: u32,
 ) -> i32 {
     let mut i: u32 = 0;
+
     if va.wrapping_rem(PGSIZE as usize) != 0 {
         panic(
             b"loadseg: va must be page aligned\x00" as *const u8 as *const libc::c_char
                 as *mut libc::c_char,
         );
     }
+
     while i < sz {
         let pa = walkaddr(pagetable, va.wrapping_add(i as usize));
         if pa == 0 {

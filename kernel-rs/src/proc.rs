@@ -29,11 +29,19 @@ extern "C" {
     static mut trampoline: [libc::c_char; 0];
 }
 
+/// per-CPU-state
 #[derive(Copy, Clone)]
 pub struct cpu {
+    /// The process running on this cpu, or null
     pub proc_0: *mut proc_0,
+
+    /// swtch() her to enter scheduler()
     pub scheduler: Context,
+
+    /// Depth of push_off() nesting
     pub noff: i32,
+
+    /// Were interrupts enabled before push_off()?
     pub intena: i32,
 }
 
@@ -43,6 +51,8 @@ pub struct cpu {
 pub struct Context {
     pub ra: usize,
     pub sp: usize,
+
+    /// callee-saved
     pub s0: usize,
     pub s1: usize,
     pub s2: usize,
@@ -61,23 +71,52 @@ pub struct Context {
 #[derive(Copy, Clone)]
 pub struct proc_0 {
     lock: Spinlock,
+
+    /// p->lock must be held when using these:
+    /// Process state
     pub state: procstate,
+
+    /// Parent process
     parent: *mut proc_0,
+
+    /// If non-zero, sleeping on chan
     chan: *mut libc::c_void,
+
+    /// If non-zero, have been killed
     pub killed: i32,
+
+    /// Exit status to be returned to parent's wait
     xstate: i32,
+
+    /// Process ID
     pub pid: i32,
+
+    /// these are private to the process, so p->lock need not be held.
+    /// Bottom of kernel stack for this process
     pub kstack: usize,
+
+    /// Size of process memory (bytes)
     pub sz: usize,
+
+    /// Page table
     pub pagetable: pagetable_t,
+
+    /// data page for trampoline.S
     pub tf: *mut trapframe,
+
+    /// swtch() here to run process
     context: Context,
+
+    /// Open files
     pub ofile: [*mut File; NOFILE as usize],
+
+    /// Current directory
     pub cwd: *mut Inode,
+
+    /// Process name (debugging)
     pub name: [libc::c_char; 16],
 }
 
-/// Were interrupts enabled before push_off()?
 /// per-process data for the trap handling code in trampoline.S.
 /// sits in a page by itself just under the trampoline page in the
 /// user page table. not specially mapped in the kernel page table.
@@ -93,41 +132,112 @@ pub struct proc_0 {
 /// the entire kernel call stack.
 #[derive(Copy, Clone)]
 pub struct trapframe {
+    /// 0 - kernel page table
     pub kernel_satp: usize,
+
+    /// 8 - top of process's kernel stack
     pub kernel_sp: usize,
+
+    /// 16 - usertrap()
     pub kernel_trap: usize,
+
+    /// 24 - saved user program counter
     pub epc: usize,
+
+    /// 32 - saved kernel tp
     pub kernel_hartid: usize,
+
+    /// 40
     pub ra: usize,
+
+    /// 48
     pub sp: usize,
+
+    /// 56
     pub gp: usize,
+
+    /// 64
     pub tp: usize,
+
+    /// 72
     pub t0: usize,
+
+    /// 80
     pub t1: usize,
+
+    /// 88
     pub t2: usize,
+
+    /// 96
     pub s0: usize,
+
+    /// 104
     pub s1: usize,
+
+    /// 112
     pub a0: usize,
+
+    /// 120
     pub a1: usize,
+
+    /// 128
     pub a2: usize,
+
+    /// 136
     pub a3: usize,
+
+    /// 144
     pub a4: usize,
+
+    /// 152
     pub a5: usize,
+
+    /// 160
     pub a6: usize,
+
+    /// 168
     pub a7: usize,
+
+    /// 176
     pub s2: usize,
+
+    /// 184
     pub s3: usize,
+
+    /// 192
     pub s4: usize,
+
+    /// 200
     pub s5: usize,
+
+    /// 208
     pub s6: usize,
+
+    /// 216
     pub s7: usize,
+
+    /// 224
     pub s8: usize,
+
+    /// 232
     pub s9: usize,
+
+    /// 240
     pub s10: usize,
+
+    /// 248
     pub s11: usize,
+
+    /// 256
     pub t3: usize,
+
+    /// 264
     pub t4: usize,
+
+    /// 272
     pub t5: usize,
+
+    /// 280
     pub t6: usize,
 }
 
@@ -202,10 +312,10 @@ static mut cpus: [cpu; NCPU as usize] = [cpu::zeroed(); NCPU as usize];
 static mut proc: [proc_0; NPROC as usize] = [proc_0::zeroed(); NPROC as usize];
 
 static mut initproc: *mut proc_0 = ptr::null_mut();
+
 static mut nextpid: i32 = 1;
 static mut pid_lock: Spinlock = Spinlock::zeroed();
 
-// trampoline.S
 #[no_mangle]
 pub unsafe fn procinit() {
     pid_lock.initlock(b"nextpid\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -372,8 +482,8 @@ pub unsafe fn proc_freepagetable(mut pagetable: pagetable_t, mut sz: usize) {
     };
 }
 
-// a user program that calls exec("/init")
-// od -t xC initcode
+/// a user program that calls exec("/init")
+/// od -t xC initcode
 static mut initcode: [u8; 51] = [
     0x17, 0x5, 0, 0, 0x13, 0x5, 0x5, 0x2, 0x97, 0x5, 0, 0, 0x93, 0x85, 0x5, 0x2, 0x9d, 0x48, 0x73,
     0, 0, 0, 0x89, 0x48, 0x73, 0, 0, 0, 0xef, 0xf0, 0xbf, 0xff, 0x2f, 0x69, 0x6e, 0x69, 0x74, 0, 0,
@@ -643,6 +753,7 @@ pub unsafe fn scheduler() -> ! {
         // Avoid deadlock by ensuring that devices can interrupt.
         intr_on();
         let mut p = proc.as_mut_ptr();
+
         while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
             (*p).lock.acquire();
             if (*p).state as u32 == RUNNABLE as i32 as u32 {
@@ -652,6 +763,7 @@ pub unsafe fn scheduler() -> ! {
                 (*p).state = RUNNING;
                 (*c).proc_0 = p;
                 swtch(&mut (*c).scheduler, &mut (*p).context);
+
                 // Process is done running for now.
                 // It should have changed its p->state before coming back.
                 (*c).proc_0 = ptr::null_mut()
@@ -746,7 +858,7 @@ pub unsafe fn sleep(mut chan: *mut libc::c_void, mut lk: *mut Spinlock) {
     // Tidy up.
     (*p).chan = ptr::null_mut();
 
-    // reacquire original lock.
+    // Reacquire original lock.
     if lk != &mut (*p).lock as *mut Spinlock {
         (*p).lock.release();
         (*lk).acquire();
@@ -783,6 +895,7 @@ unsafe fn wakeup1(mut p: *mut proc_0) {
 /// to user space (see usertrap() in trap.c).
 pub unsafe fn kill(mut pid: i32) -> i32 {
     let mut p = proc.as_mut_ptr();
+
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc_0 {
         (*p).lock.acquire();
         if (*p).pid == pid {

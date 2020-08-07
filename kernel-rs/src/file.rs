@@ -1,3 +1,4 @@
+/// Support functions for system calls that involve file descriptors.
 use crate::libc;
 use crate::{
     fs::{stati, BSIZE},
@@ -18,24 +19,45 @@ pub const CONSOLE: isize = 1;
 #[derive(Copy, Clone)]
 pub struct File {
     pub typ: u32,
+
+    /// reference count
     ref_0: i32,
+
     pub readable: libc::c_char,
     pub writable: libc::c_char,
+
+    /// FD_PIPE
     pub pipe: *mut Pipe,
+
+    /// FD_INODE and FD_DEVICE
     pub ip: *mut Inode,
+
+    /// FD_INODE
     pub off: u32,
+
+    /// FD_DEVICE
     pub major: i16,
 }
 
-/// FD_DEVICE
 /// in-memory copy of an inode
 #[derive(Copy, Clone)]
 pub struct Inode {
+    /// Device number
     pub dev: u32,
+
+    /// Inode number
     pub inum: u32,
+
+    /// Reference count
     pub ref_0: i32,
+
+    /// protects everything below here
     pub lock: Sleeplock,
+
+    /// inode has been read from disk?
     pub valid: i32,
+
+    /// copy of disk inode
     pub typ: i16,
     pub major: i16,
     pub minor: i16,
@@ -63,6 +85,23 @@ pub struct Devsw {
 }
 
 impl File {
+    /// Allocate a file structure.
+    pub unsafe fn alloc() -> *mut File {
+        let mut f: *mut File = ptr::null_mut();
+        ftable.lock.acquire();
+        f = ftable.file.as_mut_ptr();
+        while f < ftable.file.as_mut_ptr().offset(NFILE as isize) {
+            if (*f).ref_0 == 0 {
+                (*f).ref_0 = 1;
+                ftable.lock.release();
+                return f;
+            }
+            f = f.offset(1)
+        }
+        ftable.lock.release();
+        ptr::null_mut()
+    }
+
     /// Increment ref count for file self.
     pub unsafe fn dup(&mut self) -> *mut File {
         ftable.lock.acquire();
@@ -216,23 +255,6 @@ impl File {
             panic(b"File::write\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
         ret
-    }
-
-    /// Allocate a file structure.
-    pub unsafe fn alloc() -> *mut File {
-        let mut f: *mut File = ptr::null_mut();
-        ftable.lock.acquire();
-        f = ftable.file.as_mut_ptr();
-        while f < ftable.file.as_mut_ptr().offset(NFILE as isize) {
-            if (*f).ref_0 == 0 {
-                (*f).ref_0 = 1;
-                ftable.lock.release();
-                return f;
-            }
-            f = f.offset(1)
-        }
-        ftable.lock.release();
-        ptr::null_mut()
     }
 
     // TODO: transient measure

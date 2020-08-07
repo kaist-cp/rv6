@@ -20,7 +20,9 @@ pub const VIRTIO_MMIO_DEVICE_ID: i32 = 0x008;
 
 /// 0x554d4551
 pub const VIRTIO_MMIO_VENDOR_ID: i32 = 0x00c;
+
 pub const VIRTIO_MMIO_DEVICE_FEATURES: i32 = 0x010;
+
 pub const VIRTIO_MMIO_DRIVER_FEATURES: i32 = 0x020;
 
 /// page size for PFN, write-only
@@ -38,6 +40,9 @@ pub const VIRTIO_MMIO_QUEUE_NUM: i32 = 0x038;
 /// physical page number for queue, read/write
 pub const VIRTIO_MMIO_QUEUE_PFN: i32 = 0x040;
 
+/// ready bit
+pub const VIRTIO_MMIO_QUEUE_READY: i32 = 0x044;
+
 /// write-only
 pub const VIRTIO_MMIO_QUEUE_NOTIFY: i32 = 0x050;
 
@@ -51,6 +56,7 @@ pub const VIRTIO_CONFIG_S_DRIVER_OK: i32 = 4;
 pub const VIRTIO_CONFIG_S_FEATURES_OK: i32 = 8;
 
 /// device feature bits
+
 /// Disk is read-only
 pub const VIRTIO_BLK_F_RO: i32 = 5;
 
@@ -62,8 +68,11 @@ pub const VIRTIO_BLK_F_CONFIG_WCE: i32 = 11;
 
 /// support more than one vq
 pub const VIRTIO_BLK_F_MQ: i32 = 12;
+
 pub const VIRTIO_F_ANY_LAYOUT: i32 = 27;
+
 pub const VIRTIO_RING_F_INDIRECT_DESC: i32 = 28;
+
 pub const VIRTIO_RING_F_EVENT_IDX: i32 = 29;
 
 /// this many virtio descriptors.
@@ -84,9 +93,9 @@ pub const VRING_DESC_F_NEXT: i32 = 1;
 pub const VRING_DESC_F_WRITE: i32 = 2;
 #[derive(Copy, Clone)]
 pub struct VRingUsedElem {
+    /// index of start of completed descriptor chain
     pub id: u32,
 
-    /// index of start of completed descriptor chain
     pub len: u32,
 }
 

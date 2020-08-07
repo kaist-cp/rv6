@@ -1,3 +1,6 @@
+/// Physical memory allocator, for user processes,
+/// kernel stacks, page-table pages,
+/// and pipe buffers. Allocates whole 4096-byte pages.
 use crate::libc;
 use crate::{
     memlayout::PHYSTOP,
@@ -7,10 +10,10 @@ use crate::{
 };
 use core::ptr;
 
-pub static mut end: [u8; 0] = [0; 0];
-
 /// first address after kernel.
 /// defined by kernel.ld.
+pub static mut end: [u8; 0] = [0; 0];
+
 #[derive(Copy, Clone)]
 struct Run {
     next: *mut Run,
@@ -53,9 +56,6 @@ pub unsafe fn kinit() {
     );
 }
 
-/// Physical memory allocator, for user processes,
-/// kernel stacks, page-table pages,
-/// and pipe buffers. Allocates whole 4096-byte pages.
 pub unsafe fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: *mut libc::c_void) {
     let mut p = ((pa_start as usize)
         .wrapping_add(PGSIZE as usize)

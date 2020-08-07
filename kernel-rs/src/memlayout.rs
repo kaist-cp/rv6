@@ -1,5 +1,6 @@
 use crate::riscv::{MAXVA, PGSIZE};
 /// Physical memory layout
+///
 /// qemu -machine virt is set up like this,
 /// based on qemu's hw/riscv/virt.c:
 ///
@@ -29,6 +30,8 @@ pub const CLINT: i64 = 0x2000000;
 pub const fn clint_mtimecmp(hartid: usize) -> usize {
     (CLINT + 0x4000 + (8 * hartid) as i64) as usize
 }
+
+/// cycles since boot.
 pub const CLINT_MTIME: i64 = CLINT + 0xbff8;
 
 /// qemu puts programmable interrupt controller here.
