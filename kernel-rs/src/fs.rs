@@ -1,13 +1,13 @@
 //! File system implementation.  Five layers:
-///   + Blocks: allocator for raw disk blocks.
-///   + Log: crash recovery for multi-step updates.
-///   + Files: inode allocator, reading, writing, metadata.
-///   + Directories: inode with special contents (list of other inodes!)
-///   + Names: paths like /usr/rtm/xv6/fs.c for convenient naming.
-///
-/// This file contains the low-level file system manipulation
-/// routines.  The (higher-level) system call implementations
-/// are in sysfile.c.
+//!   + Blocks: allocator for raw disk blocks.
+//!   + Log: crash recovery for multi-step updates.
+//!   + Files: inode allocator, reading, writing, metadata.
+//!   + Directories: inode with special contents (list of other inodes!)
+//!   + Names: paths like /usr/rtm/xv6/fs.c for convenient naming.
+//!
+//! This file contains the low-level file system manipulation
+//! routines.  The (higher-level) system call implementations
+//! are in sysfile.c.
 
 /// On-disk file system format used for both kernel and user programs are also included here.
 use crate::libc;

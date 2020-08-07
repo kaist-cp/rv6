@@ -1,6 +1,6 @@
 //! File-system system calls.
-/// Mostly argument checking, since we don't trust
-/// user code, and calls into file.c and fs.c.
+//! Mostly argument checking, since we don't trust
+//! user code, and calls into file.c and fs.c.
 use crate::libc;
 use crate::{
     exec::exec,
