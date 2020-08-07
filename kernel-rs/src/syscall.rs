@@ -1,7 +1,7 @@
 use crate::libc;
 use crate::{
     printf::{panic, printf},
-    proc::{myproc, proc_0},
+    proc::{myproc, proc},
     string::strlen,
     sysfile::*,
     sysproc::*,
@@ -10,7 +10,7 @@ use crate::{
 
 /// Fetch the usize at addr from the current process.
 pub unsafe fn fetchaddr(mut addr: usize, mut ip: *mut usize) -> i32 {
-    let mut p: *mut proc_0 = myproc();
+    let mut p: *mut proc = myproc();
     if addr >= (*p).sz || addr.wrapping_add(::core::mem::size_of::<usize>()) > (*p).sz {
         return -1;
     }
@@ -29,7 +29,7 @@ pub unsafe fn fetchaddr(mut addr: usize, mut ip: *mut usize) -> i32 {
 /// Fetch the nul-terminated string at addr from the current process.
 /// Returns length of string, not including nul, or -1 for error.
 pub unsafe fn fetchstr(mut addr: usize, mut buf: *mut libc::c_char, mut max: i32) -> i32 {
-    let mut p: *mut proc_0 = myproc();
+    let mut p: *mut proc = myproc();
     let mut err: i32 = copyinstr((*p).pagetable, buf, addr, max as usize);
     if err < 0 {
         return err;
@@ -38,7 +38,7 @@ pub unsafe fn fetchstr(mut addr: usize, mut buf: *mut libc::c_char, mut max: i32
 }
 
 unsafe fn argraw(mut n: i32) -> usize {
-    let mut p: *mut proc_0 = myproc();
+    let mut p: *mut proc = myproc();
     match n {
         0 => return (*(*p).tf).a0,
         1 => return (*(*p).tf).a1,
@@ -105,7 +105,7 @@ static mut syscalls: [Option<unsafe fn() -> usize>; 22] = unsafe {
 
 pub unsafe fn syscall() {
     let mut num: i32 = 0;
-    let mut p: *mut proc_0 = myproc();
+    let mut p: *mut proc = myproc();
     num = (*(*p).tf).a7 as i32;
     if num > 0
         && (num as usize)

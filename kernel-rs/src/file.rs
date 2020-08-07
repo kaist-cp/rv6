@@ -6,7 +6,7 @@ use crate::{
     param::{MAXOPBLOCKS, NDEV, NFILE},
     pipe::Pipe,
     printf::panic,
-    proc::{myproc, proc_0},
+    proc::{myproc, proc},
     sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::Stat,
@@ -143,7 +143,7 @@ impl File {
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
     pub unsafe fn stat(&mut self, mut addr: usize) -> i32 {
-        let mut p: *mut proc_0 = myproc();
+        let mut p: *mut proc = myproc();
         let mut st: Stat = Default::default();
         if (*self).typ as u32 == FD_INODE as i32 as u32
             || (*self).typ as u32 == FD_DEVICE as i32 as u32

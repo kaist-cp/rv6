@@ -13,7 +13,7 @@ use crate::{
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
     pipe::pipealloc,
     printf::panic,
-    proc::{myproc, proc_0},
+    proc::{myproc, proc},
     riscv::PGSIZE,
     stat::{T_DEVICE, T_DIR, T_FILE},
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
@@ -29,14 +29,13 @@ impl File {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
     unsafe fn fdalloc(&mut self) -> i32 {
-        let mut fd: i32 = 0;
-        let mut p: *mut proc_0 = myproc();
-        while fd < NOFILE {
+        let mut p: *mut proc = myproc();
+        for fd in 0..NOFILE {
+            // user pointer to struct stat
             if (*p).ofile[fd as usize].is_null() {
                 (*p).ofile[fd as usize] = self;
                 return fd;
             }
-            fd += 1
         }
         -1
     }
@@ -437,7 +436,7 @@ pub unsafe fn sys_mknod() -> usize {
 pub unsafe fn sys_chdir() -> usize {
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut ip: *mut Inode = ptr::null_mut();
-    let mut p: *mut proc_0 = myproc();
+    let mut p: *mut proc = myproc();
     begin_op();
     if argstr(0, path.as_mut_ptr(), MAXPATH) < 0 || {
         ip = namei(path.as_mut_ptr());
@@ -541,7 +540,7 @@ pub unsafe fn sys_pipe() -> usize {
     let mut wf: *mut File = ptr::null_mut();
     let mut fd0: i32 = 0;
     let mut fd1: i32 = 0;
-    let mut p: *mut proc_0 = myproc();
+    let mut p: *mut proc = myproc();
     if argaddr(0, &mut fdarray) < 0 {
         return usize::MAX;
     }

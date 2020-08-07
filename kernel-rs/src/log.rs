@@ -248,7 +248,6 @@ unsafe fn commit() {
 ///   log_write(bp)
 ///   (*bp).release()
 pub unsafe fn log_write(mut b: *mut Buf) {
-    let mut i: i32 = 0;
     if log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1 {
         panic(
             b"too big a transaction\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
@@ -261,19 +260,21 @@ pub unsafe fn log_write(mut b: *mut Buf) {
         );
     }
     log.lock.acquire();
-    while i < log.lh.n {
+    let mut absorbed = false;
+    for i in 0..log.lh.n {
         // log absorbtion
         if log.lh.block[i as usize] as u32 == (*b).blockno {
+            log.lh.block[i as usize] = (*b).blockno as i32;
+            absorbed = true;
             break;
         }
-        i += 1
     }
-    log.lh.block[i as usize] = (*b).blockno as i32;
 
     // Add new block to log?
-    if i == log.lh.n {
+    if !absorbed {
+        log.lh.block[log.lh.n as usize] = (*b).blockno as i32;
         (*b).pin();
-        log.lh.n += 1
+        log.lh.n += 1;
     }
     log.lock.release();
 }

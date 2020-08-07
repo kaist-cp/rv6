@@ -3,7 +3,7 @@ use crate::{
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     plic::{plic_claim, plic_complete},
     printf::{panic, printf},
-    proc::{cpuid, exit, myproc, proc_0, wakeup, yield_0, RUNNING},
+    proc::{cpuid, exit, myproc, proc, proc_yield, wakeup, RUNNING},
     riscv::{
         intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_sstatus,
         r_stval, r_tp, w_sepc, w_sip, w_sstatus, w_stvec, PGSIZE, SSTATUS_SPIE, SSTATUS_SPP,
@@ -60,7 +60,7 @@ pub unsafe extern "C" fn usertrap() {
     // since we're now in the kernel.
     w_stvec(kernelvec as _);
 
-    let mut p: *mut proc_0 = myproc();
+    let mut p: *mut proc = myproc();
 
     // save user program counter.
     (*(*p).tf).epc = r_sepc();
@@ -104,7 +104,7 @@ pub unsafe extern "C" fn usertrap() {
 
     // give up the CPU if this is a timer interrupt.
     if which_dev == 2 {
-        yield_0();
+        proc_yield();
     }
 
     usertrapret();
@@ -112,7 +112,7 @@ pub unsafe extern "C" fn usertrap() {
 
 /// return to user space
 pub unsafe fn usertrapret() {
-    let mut p: *mut proc_0 = myproc();
+    let mut p: *mut proc = myproc();
 
     // turn off interrupts, since we're switching
     // now from kerneltrap() to usertrap().
@@ -209,7 +209,7 @@ pub unsafe fn kerneltrap() {
 
     // give up the CPU if this is a timer interrupt.
     if which_dev == 2 && !myproc().is_null() && (*myproc()).state == RUNNING {
-        yield_0();
+        proc_yield();
     }
 
     // the yield() may have caused some traps to occur,
