@@ -43,12 +43,12 @@ pub unsafe fn kinit() {
 
     // To successfully boot rv6 and pass usertests, two printf()s with b"\x00"
     // and variable `a` are needed. See https://github.com/kaist-cp/rv6/issues/8
-    let a = 10;
+    // let a = 10;
     printf(b"\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-    printf(
-        b"\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-        a,
-    );
+    // printf(
+    //     b"\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+    //     a,
+    // );
 
     freerange(
         end.as_mut_ptr() as *mut libc::c_void,
@@ -81,7 +81,7 @@ pub unsafe fn kfree(mut pa: *mut libc::c_void) {
     }
 
     // Fill with junk to catch dangling refs.
-    ptr::write_bytes(pa as *mut libc::c_void, 1, PGSIZE as usize);
+    // ptr::write_bytes(pa as *mut libc::c_void, 1, PGSIZE as usize);
     r = pa as *mut Run;
     kmem.lock.acquire();
     (*r).next = kmem.freelist;

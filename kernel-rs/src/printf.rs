@@ -2,12 +2,78 @@
 use crate::console::consputc;
 use crate::libc;
 use crate::spinlock::Spinlock;
+use core::fmt;
 
 /// lock to avoid interleaving concurrent printf's.
 #[derive(Copy, Clone)]
 struct PrintfLock {
     lock: Spinlock,
     locking: i32,
+}
+
+pub struct Writer {
+    column_position: usize,
+    // prr: PrintfLock,
+}
+
+/// A global Writer instance that can be used for printing to the VGA text buffer.
+///
+/// Used by the print! and println! macros.
+pub static mut WRITER: Writer = Writer {
+    column_position: 0,
+    // prr: PrintfLock::zeroed(),
+};
+
+impl Writer {
+    pub fn write_string(&mut self, s: &str) {
+        for byte in s.bytes() {
+            match byte {
+                // printable ASCII byte or newline
+                0x20..=0x7e | b'\n' => unsafe{consputc(byte as i32 & 0xff)},
+                // not part of printable ASCII range
+                _ => unsafe{consputc(0xfe & 0xff)},
+            }
+        }
+    }
+}
+
+impl fmt::Write for Writer {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.write_string(s);
+        Ok(())
+    }
+}
+
+/// print! macro prints to the console
+
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => ($crate::printf::_print(format_args!($($arg)*)));
+}
+/// println! macro prints to the console
+
+#[macro_export]
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
+/// Prints the given formatted string to the VGA text buffer
+/// through the global WRITER instance.
+// #[doc(hidden)]
+pub unsafe fn _print(args: fmt::Arguments) {
+    let mut locking: i32 = 0;
+    locking = pr.locking;
+    if locking != 0 {
+        pr.lock.acquire();
+    }
+
+    use core::fmt::Write;
+    
+    WRITER.write_fmt(args).unwrap();
+    
+    if locking != 0 {
+        pr.lock.release();
+    };
 }
 
 impl PrintfLock {
