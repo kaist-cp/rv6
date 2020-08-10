@@ -311,9 +311,12 @@ pub const PGSIZE: i32 = 4096;
 /// bits of offset within a page
 pub const PGSHIFT: i32 = 12;
 
+#[inline]
 pub const fn pgroundup(sz: usize) -> usize {
     sz.wrapping_add(PGSIZE as usize).wrapping_sub(1) & (!(PGSIZE - 1) as usize)
 }
+
+#[inline]
 pub const fn pgrounddown(a: usize) -> usize {
     a & !(PGSIZE - 1) as usize
 }
@@ -329,14 +332,17 @@ pub const PTE_X: i64 = (1) << 3;
 pub const PTE_U: i64 = (1) << 4;
 
 /// shift a physical address to the right place for a PTE.
+#[inline]
 pub const fn pa2pte(pa: usize) -> usize {
     (pa >> 12) << 10
 }
 
+#[inline]
 pub const fn pte2pa(pte: pte_t) -> usize {
     (pte >> 10) << 12
 }
 
+#[inline]
 pub const fn pte_flags(pte: pte_t) -> usize {
     pte & 0x3FFusize
 }

@@ -4,8 +4,8 @@
 use crate::libc;
 use crate::{
     memlayout::PHYSTOP,
-    printf::{panic, printf},
-    riscv::{pgroundup, PGSIZE},
+    printf::panic,
+    riscv::PGSIZE,
     spinlock::Spinlock,
 };
 use core::ptr;
@@ -41,15 +41,6 @@ pub unsafe fn kinit() {
     kmem.lock
         .initlock(b"kmem\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 
-    // To successfully boot rv6 and pass usertests, two printf()s with b"\x00"
-    // and variable `a` are needed. See https://github.com/kaist-cp/rv6/issues/8
-    let a = 10;
-    printf(b"\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-    printf(
-        b"\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-        a,
-    );
-
     freerange(
         end.as_mut_ptr() as *mut libc::c_void,
         PHYSTOP as *mut libc::c_void,
@@ -57,7 +48,10 @@ pub unsafe fn kinit() {
 }
 
 pub unsafe fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: *mut libc::c_void) {
-    let mut p = pgroundup(pa_start as usize) as *mut libc::c_char;
+    let mut p = ((pa_start as usize)
+        .wrapping_add(PGSIZE as usize)	
+        .wrapping_sub(1)	
+        & !(PGSIZE - 1) as usize) as *mut libc::c_char;
     while p.offset(PGSIZE as isize) <= pa_end as *mut libc::c_char {
         kfree(p as *mut libc::c_void);
         p = p.offset(PGSIZE as isize)
