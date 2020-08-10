@@ -21,3 +21,4 @@ lto = true
 [dependencies]
 bitflags = "1.2.1"
 num-iter = { version = "0.1", default-features = false }
+scopeguard = { version = "1.1.0", default-features = false }
