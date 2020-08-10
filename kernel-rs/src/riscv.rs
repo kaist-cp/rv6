@@ -318,12 +318,6 @@ pub const fn pgrounddown(a: usize) -> usize {
     a & !(PGSIZE - 1) as usize
 }
 
-/*
-TODO: used directly in oter function e.g., uvmalloc in vm.rs
-#define PGROUNDUP(sz)  (((sz)+PGSIZE-1) & ~(PGSIZE-1))
-#define PGROUNDDOWN(a) (((a)) & ~(PGSIZE-1))
-*/
-
 /// valid
 pub const PTE_V: i64 = (1) << 0;
 
@@ -346,16 +340,6 @@ pub const fn pte2pa(pte: pte_t) -> usize {
 pub const fn pte_flags(pte: pte_t) -> usize {
     pte & 0x3FFusize
 }
-
-/*
-TODO: used directly in other file e.g., vm.rs
-
-#define PA2PTE(pa) ((((usize)pa) >> 12) << 10)
-
-#define PTE2PA(pte) (((pte) >> 10) << 12)
-
-#define PTE_FLAGS(pte) ((pte) & 0x3FF)
-*/
 
 /// extract the three 9-bit page table indices from a virtual address.
 
