@@ -32,7 +32,7 @@
 
   (Different shell)
   ```
-  (type this just once) chmod 777 ./rust-gdb
+  (type this just once) chmod 755 ./rust-gdb.sh
   ./rust-gdb kernel/kernel -ex "target remote :(port)"
   [e.g., ./rust-gdb kernel/kernel -ex "target remote :29556"]
   ```
