@@ -2,7 +2,12 @@
 //! kernel stacks, page-table pages,
 //! and pipe buffers. Allocates whole 4096-byte pages.
 use crate::libc;
-use crate::{memlayout::PHYSTOP, printf::panic, riscv::PGSIZE, spinlock::Spinlock};
+use crate::{
+    memlayout::PHYSTOP,
+    printf::panic,
+    riscv::{pgroundup, PGSIZE},
+    spinlock::Spinlock,
+};
 use core::ptr;
 
 /// first address after kernel.
@@ -36,17 +41,19 @@ pub unsafe fn kinit() {
     kmem.lock
         .initlock(b"kmem\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
 
+    // TODO: without this strange code, the kernel doesn't boot up.  Probably stack is not properly
+    // initialized at the beginning...
+    let mut protection = 0;
+    drop(protection);
+
     freerange(
         end.as_mut_ptr() as *mut libc::c_void,
         PHYSTOP as *mut libc::c_void,
     );
 }
 
-pub unsafe fn freerange(mut pa_start: *mut libc::c_void, mut pa_end: *mut libc::c_void) {
-    let mut p = ((pa_start as usize)
-        .wrapping_add(PGSIZE as usize)
-        .wrapping_sub(1)
-        & !(PGSIZE - 1) as usize) as *mut libc::c_char;
+pub unsafe fn freerange(pa_start: *mut libc::c_void, mut pa_end: *mut libc::c_void) {
+    let mut p = pgroundup(pa_start as usize) as *mut libc::c_char;
     while p.offset(PGSIZE as isize) <= pa_end as *mut libc::c_char {
         kfree(p as *mut libc::c_void);
         p = p.offset(PGSIZE as isize)
