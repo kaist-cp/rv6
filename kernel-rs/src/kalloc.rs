@@ -2,12 +2,7 @@
 //! kernel stacks, page-table pages,
 //! and pipe buffers. Allocates whole 4096-byte pages.
 use crate::libc;
-use crate::{
-    memlayout::PHYSTOP,
-    printf::{panic, printf},
-    riscv::PGSIZE,
-    spinlock::Spinlock,
-};
+use crate::{memlayout::PHYSTOP, printf::panic, riscv::PGSIZE, spinlock::Spinlock};
 use core::ptr;
 
 /// first address after kernel.
@@ -40,15 +35,6 @@ static mut kmem: Kmem = Kmem::zeroed();
 pub unsafe fn kinit() {
     kmem.lock
         .initlock(b"kmem\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-
-    // To successfully boot rv6 and pass usertests, two printf()s with b"\x00"
-    // and variable `a` are needed. See https://github.com/kaist-cp/rv6/issues/8
-    let a = 10;
-    printf(b"\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-    printf(
-        b"\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-        a,
-    );
 
     freerange(
         end.as_mut_ptr() as *mut libc::c_void,
