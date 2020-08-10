@@ -812,7 +812,7 @@ unsafe fn skipelem(mut path: *mut libc::c_char, mut name: *mut libc::c_char) -> 
     while *path as i32 != '/' as i32 && *path as i32 != 0 {
         path = path.offset(1)
     }
-    len = path.wrapping_offset_from(s) as i64 as i32;
+    len = path.offset_from(s) as i64 as i32;
     if len >= DIRSIZ as i32 {
         ptr::copy(s as *const libc::c_void, name as *mut libc::c_void, DIRSIZ);
     } else {
