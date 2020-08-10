@@ -73,7 +73,6 @@ pub struct Dirent {
 
 /// On-disk inode structure
 /// Both the kernel and user programs use this header file.
-#[derive(Copy, Clone)]
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
@@ -166,7 +165,6 @@ struct Dinode {
 /// An ip->lock sleep-lock protects all ip-> fields other than ref,
 /// dev, and inum.  One must hold ip->lock in order to
 /// read or write that inode's ip->valid, ip->size, ip->type, &c.
-#[derive(Copy, Clone)]
 struct Icache {
     lock: Spinlock,
     inode: [Inode; NINODE as usize],

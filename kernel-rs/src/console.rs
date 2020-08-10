@@ -10,7 +10,6 @@ use crate::{
 /// input
 const INPUT_BUF: usize = 128;
 
-#[derive(Copy, Clone)]
 struct Console {
     lock: Spinlock,
     buf: [libc::c_char; 128],

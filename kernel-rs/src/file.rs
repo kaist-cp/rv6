@@ -40,7 +40,6 @@ pub struct File {
 }
 
 /// in-memory copy of an inode
-#[derive(Copy, Clone)]
 pub struct Inode {
     /// Device number
     pub dev: u32,
@@ -71,7 +70,6 @@ pub const FD_INODE: u32 = 2;
 pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
 
-#[derive(Copy, Clone)]
 struct Ftable {
     lock: Spinlock,
     file: [File; NFILE as usize],

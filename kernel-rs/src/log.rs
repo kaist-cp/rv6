@@ -32,7 +32,6 @@ use crate::{
 };
 use core::ptr;
 
-#[derive(Copy, Clone)]
 struct Log {
     lock: Spinlock,
     start: i32,

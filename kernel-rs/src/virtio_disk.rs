@@ -16,13 +16,13 @@ use crate::{
     vm::kvmpa,
 };
 use core::ptr;
+use core::sync::atomic::{fence, Ordering};
 
 /// the address of virtio mmio register r.
 const fn r(r: i32) -> *mut u32 {
     (VIRTIO0 + r) as *mut u32
 }
 
-#[derive(Copy, Clone)]
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
@@ -302,7 +302,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
     *disk
         .avail
         .offset((2 + *disk.avail.offset(1isize) as i32 % NUM) as isize) = idx[0] as u16;
-    ::core::intrinsics::atomic_fence();
+    fence(Ordering::SeqCst);
     *disk.avail.offset(1isize) = (*disk.avail.offset(1isize) as i32 + 1) as u16;
 
     // value is queue number

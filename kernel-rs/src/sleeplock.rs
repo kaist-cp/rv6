@@ -5,7 +5,6 @@ use crate::spinlock::Spinlock;
 use core::ptr;
 
 /// Long-term locks for processes
-#[derive(Copy, Clone)]
 pub struct Sleeplock {
     /// Is the lock held?
     locked: u32,

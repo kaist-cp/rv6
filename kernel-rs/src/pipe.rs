@@ -11,7 +11,6 @@ use core::ptr;
 
 pub const PIPESIZE: i32 = 512;
 
-#[derive(Copy, Clone)]
 pub struct Pipe {
     pub lock: Spinlock,
     pub data: [libc::c_char; PIPESIZE as usize],

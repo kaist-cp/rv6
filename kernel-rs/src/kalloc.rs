@@ -19,7 +19,6 @@ struct Run {
     next: *mut Run,
 }
 
-#[derive(Copy, Clone)]
 struct Kmem {
     lock: Spinlock,
     freelist: *mut Run,

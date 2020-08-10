@@ -5,12 +5,12 @@ use crate::{
     riscv::{intr_get, intr_off, intr_on},
 };
 use core::ptr;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 /// Mutual exclusion lock.
-#[derive(Copy, Clone)]
 pub struct Spinlock {
     /// Is the lock held?
-    locked: u32,
+    locked: AtomicBool,
 
     /// For debugging:
 
@@ -25,7 +25,7 @@ impl Spinlock {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            locked: 0,
+            locked: AtomicBool::new(false),
             name: ptr::null_mut(),
             cpu: ptr::null_mut(),
         }
@@ -34,7 +34,7 @@ impl Spinlock {
     /// Mutual exclusion spin locks.
     pub fn initlock(&mut self, mut name: *mut libc::c_char) {
         (*self).name = name;
-        (*self).locked = 0;
+        (*self).locked = AtomicBool::new(false);
         (*self).cpu = ptr::null_mut();
     }
 
@@ -51,12 +51,19 @@ impl Spinlock {
         //   a5 = 1
         //   s1 = &self->locked
         //   amoswap.w.aq a5, a5, (s1)
-        while ::core::intrinsics::atomic_xchg_acq(&mut (*self).locked as *mut u32, 1) != 0 {}
+        while (*self)
+            .locked
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {}
 
         // Tell the C compiler and the processor to not move loads or stores
         // past this point, to ensure that the critical section's memory
         // references happen after the lock is acquired.
-        ::core::intrinsics::atomic_fence();
+        //
+        // TODO(@jeehoon): it's unnecessary.
+        //
+        // ::core::intrinsics::atomic_fence();
 
         // Record info about lock acquisition for holding() and debugging.
         (*self).cpu = mycpu();
@@ -73,7 +80,10 @@ impl Spinlock {
         // past this point, to ensure that all the stores in the critical
         // section are visible to other CPUs before the lock is released.
         // On RISC-V, this turns into a fence instruction.
-        ::core::intrinsics::atomic_fence();
+        //
+        // TODO(@jeehoon): it's unnecessary.
+        //
+        // ::core::intrinsics::atomic_fence();
 
         // Release the lock, equivalent to lk->locked = 0.
         // This code doesn't use a C assignment, since the C standard
@@ -82,7 +92,7 @@ impl Spinlock {
         // On RISC-V, sync_lock_release turns into an atomic swap:
         //   s1 = &lk->locked
         //   amoswap.w zero, zero, (s1)
-        ::core::intrinsics::atomic_store_rel(&mut (*self).locked, 0);
+        (*self).locked.store(false, Ordering::Release);
         pop_off();
     }
 
@@ -90,7 +100,7 @@ impl Spinlock {
     pub unsafe fn holding(&mut self) -> i32 {
         let mut r: i32 = 0;
         push_off();
-        r = ((*self).locked != 0 && (*self).cpu == mycpu()) as i32;
+        r = ((*self).locked.load(Ordering::Acquire) && (*self).cpu == mycpu()) as i32;
         pop_off();
         r
     }

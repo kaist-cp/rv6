@@ -68,7 +68,6 @@ pub struct Context {
 }
 
 /// Per-process state
-#[derive(Copy, Clone)]
 pub struct proc {
     lock: Spinlock,
 

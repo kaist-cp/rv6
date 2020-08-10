@@ -4,7 +4,6 @@ use crate::libc;
 use crate::spinlock::Spinlock;
 
 /// lock to avoid interleaving concurrent printf's.
-#[derive(Copy, Clone)]
 struct PrintfLock {
     lock: Spinlock,
     locking: i32,

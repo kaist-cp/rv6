@@ -12,15 +12,12 @@
     unused_unsafe,
     non_upper_case_globals
 )]
-#![feature(asm)]
 #![feature(llvm_asm)]
-#![feature(extern_types)]
 #![feature(c_variadic)]
-#![feature(core_intrinsics)]
 #![feature(ptr_offset_from)]
 #![feature(const_wrapping_int_methods)]
 #![feature(maybe_uninit_ref)]
-#![feature(const_fn)]
+#![feature(const_in_array_repeat_expressions)]
 
 // TODO(@jeehoonkang): we define `libc` module here because the `libc` crate doesn't work for the
 // `riscv64gc-unknown-none-elfhf` target.
