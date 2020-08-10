@@ -7,7 +7,7 @@ use crate::{
     param::MAXARG,
     printf::panic,
     proc::{myproc, proc, proc_freepagetable, proc_pagetable},
-    riscv::{pagetable_t, pgroundup, PGSIZE},
+    riscv::{pagetable_t, PGSIZE},
     string::{safestrcpy, strlen},
     vm::{copyout, uvmalloc, uvmclear, walkaddr},
 };
