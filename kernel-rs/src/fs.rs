@@ -311,10 +311,10 @@ impl Inode {
         bn = (bn as u32).wrapping_sub(NDIRECT as u32) as u32 as u32;
         if (bn as usize) < NINDIRECT as usize {
             // Load indirect block, allocating if necessary.
-            addr = (*self).addrs[NDIRECT as usize];
+            addr = (*self).addrs[NDIRECT];
             if addr == 0 {
                 addr = balloc((*self).dev);
-                (*self).addrs[NDIRECT as usize] = addr
+                (*self).addrs[NDIRECT] = addr
             }
             let bp: *mut Buf = bread((*self).dev, addr);
             let a: *mut u32 = (*bp).data.as_mut_ptr() as *mut u32;
@@ -337,13 +337,13 @@ impl Inode {
     /// not an open file or current directory).
     unsafe fn itrunc(&mut self) {
         for i in 0..NDIRECT {
-            if (*self).addrs[i as usize] != 0 {
+            if (*self).addrs[i] != 0 {
                 bfree((*self).dev as i32, (*self).addrs[i as usize]);
-                (*self).addrs[i as usize] = 0
+                (*self).addrs[i] = 0
             }
         }
-        if (*self).addrs[NDIRECT as usize] != 0 {
-            let bp = bread((*self).dev, (*self).addrs[NDIRECT as usize]);
+        if (*self).addrs[NDIRECT] != 0 {
+            let bp = bread((*self).dev, (*self).addrs[NDIRECT]);
             let a = (*bp).data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
                 if *a.offset(j as isize) != 0 {
@@ -351,8 +351,8 @@ impl Inode {
                 }
             }
             (*bp).release();
-            bfree((*self).dev as i32, (*self).addrs[NDIRECT as usize]);
-            (*self).addrs[NDIRECT as usize] = 0
+            bfree((*self).dev as i32, (*self).addrs[NDIRECT]);
+            (*self).addrs[NDIRECT] = 0
         }
         (*self).size = 0;
         (*self).update();
@@ -500,10 +500,10 @@ pub const ROOTINO: i32 = 1;
 /// block size
 pub const BSIZE: usize = 1024;
 pub const FSMAGIC: i32 = 0x10203040;
-pub const NDIRECT: i32 = 12;
+pub const NDIRECT: usize = 12;
 
 pub const NINDIRECT: i32 = BSIZE.wrapping_div(mem::size_of::<u32>()) as i32;
-pub const MAXFILE: usize = (NDIRECT as usize).wrapping_add(NINDIRECT as usize);
+pub const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT as usize);
 
 /// Inodes per block.
 pub const IPB: i32 = BSIZE.wrapping_div(mem::size_of::<Dinode>()) as i32;
