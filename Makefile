@@ -7,11 +7,11 @@ RUST_TARGET = riscv64gc-unknown-none-elfhf
 # XBUILD_MODE is needed because cargo xbuild doesn't have "--debug" option.
 # https://github.com/kaist-cp/rv6/pull/118
 ifeq (qemu-gdb, $(firstword $(MAKECMDGOALS)))
-RUST_MODE = debug
-XBUILD_MODE :=
+	RUST_MODE = debug
+	XBUILD_MODE :=
 else
-RUST_MODE = release
-XBUILD_MODE := --$(RUST_MODE)
+	RUST_MODE = release
+	XBUILD_MODE := --$(RUST_MODE)
 endif
 
 # OBJS = \
