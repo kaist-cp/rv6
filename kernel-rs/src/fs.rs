@@ -407,7 +407,7 @@ impl Inode {
         if off > (*self).size || off.wrapping_add(n) < off {
             return -1;
         }
-        if off.wrapping_add(n) as usize > MAXFILE.wrapping_mul(BSIZE) as usize {
+        if off.wrapping_add(n) as usize > (MAXFILE as usize).wrapping_mul(BSIZE) {
             return -1;
         }
         let mut tot: u32 = 0;
@@ -498,15 +498,15 @@ impl Inode {
 pub const ROOTINO: i32 = 1;
 
 /// block size
-pub const BSIZE: i32 = 1024;
+pub const BSIZE: usize = 1024;
 pub const FSMAGIC: i32 = 0x10203040;
 pub const NDIRECT: i32 = 12;
 
-pub const NINDIRECT: i32 = BSIZE.wrapping_div(mem::size_of::<u32>() as i32);
+pub const NINDIRECT: i32 = BSIZE.wrapping_div(mem::size_of::<u32>()) as i32;
 pub const MAXFILE: i32 = NDIRECT.wrapping_add(NINDIRECT);
 
 /// Inodes per block.
-pub const IPB: i32 = BSIZE.wrapping_div(mem::size_of::<Dinode>() as i32);
+pub const IPB: i32 = BSIZE.wrapping_div(mem::size_of::<Dinode>()) as i32;
 
 impl Superblock {
     /// Block containing inode i
@@ -546,7 +546,7 @@ impl Superblock {
 }
 
 /// Bitmap bits per block
-pub const BPB: i32 = BSIZE * 8;
+pub const BPB: i32 = BSIZE.wrapping_mul(8usize) as i32;
 
 /// Directory is a file containing a sequence of Dirent structures.
 pub const DIRSIZ: usize = 14;
@@ -567,7 +567,7 @@ pub unsafe fn fsinit(dev: i32) {
 /// Zero a block.
 unsafe fn bzero(dev: i32, bno: i32) {
     let bp: *mut Buf = bread(dev as u32, bno as u32);
-    ptr::write_bytes((*bp).data.as_mut_ptr(), 0, BSIZE as usize);
+    ptr::write_bytes((*bp).data.as_mut_ptr(), 0, BSIZE);
     log_write(bp);
     (*bp).release();
 }

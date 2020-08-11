@@ -76,7 +76,7 @@ static mut LOG: Log = Log::zeroed();
 
 impl Superblock {
     pub unsafe fn initlog(&mut self, dev: i32) {
-        if ::core::mem::size_of::<LogHeader>() >= BSIZE as usize {
+        if ::core::mem::size_of::<LogHeader>() >= BSIZE {
             panic(
                 b"initlog: too big LogHeader\x00" as *const u8 as *const libc::CChar
                     as *mut libc::CChar,
@@ -104,7 +104,7 @@ unsafe fn install_trans() {
         ptr::copy(
             (*lbuf).data.as_mut_ptr() as *const libc::CVoid,
             (*dbuf).data.as_mut_ptr() as *mut libc::CVoid,
-            BSIZE as usize,
+            BSIZE,
         );
 
         // write dst to disk
@@ -210,7 +210,7 @@ unsafe fn write_log() {
         ptr::copy(
             (*from).data.as_mut_ptr() as *const libc::CVoid,
             (*to).data.as_mut_ptr() as *mut libc::CVoid,
-            BSIZE as usize,
+            BSIZE,
         );
 
         // write the log
