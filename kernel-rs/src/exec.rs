@@ -14,23 +14,15 @@ use crate::{
 use core::ptr;
 
 pub unsafe fn exec(path: *mut libc::CChar, argv: *mut *mut libc::CChar) -> i32 {
-    let mut oldsz: usize = 0;
-    let mut s: *mut libc::CChar = ptr::null_mut();
-    let mut last: *mut libc::CChar = ptr::null_mut();
-    let mut argc: usize = 0;
     let mut sz: usize = 0;
-    let mut sp: usize = 0;
     let mut ustack: [usize; MAXARG + 1] = [0; MAXARG + 1];
-    let mut stackbase: usize = 0;
     let mut elf: ElfHdr = Default::default();
-    let mut ip: *mut Inode = ptr::null_mut();
     let mut ph: ProgHdr = Default::default();
     let mut pagetable: PagetableT = 0 as PagetableT;
-    let mut oldpagetable: PagetableT = ptr::null_mut();
     let mut p: *mut Proc = myproc();
 
     begin_op();
-    ip = namei(path);
+    let mut ip: *mut Inode = namei(path);
     if ip.is_null() {
         end_op();
         return -1;
@@ -101,7 +93,7 @@ pub unsafe fn exec(path: *mut libc::CChar, argv: *mut *mut libc::CChar) -> i32 {
             ip = ptr::null_mut();
 
             p = myproc();
-            oldsz = (*p).sz;
+            let oldsz: usize = (*p).sz;
 
             // Allocate two pages at the next page boundary.
             // Use the second as the user stack.
@@ -118,11 +110,11 @@ pub unsafe fn exec(path: *mut libc::CChar, argv: *mut *mut libc::CChar) -> i32 {
             });
             if sz != 0 {
                 uvmclear(pagetable, sz.wrapping_sub((2 * PGSIZE) as usize));
-                sp = sz;
-                stackbase = sp.wrapping_sub(PGSIZE as usize);
+                let mut sp: usize = sz;
+                let stackbase: usize = sp.wrapping_sub(PGSIZE as usize);
 
                 // Push argument strings, prepare rest of stack in ustack.
-                argc = 0;
+                let mut argc: usize = 0;
                 loop {
                     if (*argv.add(argc)).is_null() {
                         break;
@@ -174,8 +166,8 @@ pub unsafe fn exec(path: *mut libc::CChar, argv: *mut *mut libc::CChar) -> i32 {
                     (*(*p).tf).a1 = sp;
 
                     // Save program name for debugging.
-                    s = path;
-                    last = s;
+                    let mut s: *mut libc::CChar = path;
+                    let mut last: *mut libc::CChar = s;
                     while *s != 0 {
                         if *s as i32 == '/' as i32 {
                             last = s.offset(1isize)
@@ -189,7 +181,7 @@ pub unsafe fn exec(path: *mut libc::CChar, argv: *mut *mut libc::CChar) -> i32 {
                     );
 
                     // Commit to the user image.
-                    oldpagetable = (*p).pagetable;
+                    let oldpagetable: PagetableT = (*p).pagetable;
                     (*p).pagetable = pagetable;
                     (*p).sz = sz;
 

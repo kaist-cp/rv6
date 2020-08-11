@@ -85,9 +85,8 @@ pub struct Devsw {
 impl File {
     /// Allocate a file structure.
     pub unsafe fn alloc() -> *mut File {
-        let mut f: *mut File = ptr::null_mut();
         FTABLE.lock.acquire();
-        f = FTABLE.file.as_mut_ptr();
+        let mut f: *mut File = FTABLE.file.as_mut_ptr();
         while f < FTABLE.file.as_mut_ptr().offset(NFILE as isize) {
             if (*f).ref_0 == 0 {
                 (*f).ref_0 = 1;
@@ -113,7 +112,6 @@ impl File {
 
     /// Close file self.  (Decrement ref count, close when reaches 0.)
     pub unsafe fn close(&mut self) {
-        let mut ff: File = File::zeroed();
         FTABLE.lock.acquire();
         if (*self).ref_0 < 1 {
             panic(b"File::close\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
@@ -123,7 +121,7 @@ impl File {
             FTABLE.lock.release();
             return;
         }
-        ff = *self;
+        let ff: File = *self;
         (*self).ref_0 = 0;
         (*self).typ = FD_NONE;
         FTABLE.lock.release();
@@ -166,33 +164,33 @@ impl File {
     /// Read from file self.
     /// addr is a user virtual address.
     pub unsafe fn read(&mut self, addr: usize, n: i32) -> i32 {
-        let mut r: i32 = 0;
         if (*self).readable as i32 == 0 {
             return -1;
         }
-        if (*self).typ as u32 == FD_PIPE as i32 as u32 {
-            r = (*(*self).pipe).read(addr, n)
-        } else if (*self).typ as u32 == FD_DEVICE as i32 as u32 {
+
+        if (*self).typ == FD_PIPE {
+            (*(*self).pipe).read(addr, n)
+        } else if (*self).typ == FD_DEVICE {
             if ((*self).major as i32) < 0
                 || (*self).major as i32 >= NDEV
                 || DEVSW[(*self).major as usize].read.is_none()
             {
                 return -1;
             }
-            r = DEVSW[(*self).major as usize]
+            DEVSW[(*self).major as usize]
                 .read
                 .expect("non-null function pointer")(1, addr, n)
-        } else if (*self).typ as u32 == FD_INODE as i32 as u32 {
+        } else if (*self).typ == FD_INODE {
             (*(*self).ip).lock();
-            r = (*(*self).ip).read(1, addr, (*self).off, n as u32);
+            let r = (*(*self).ip).read(1, addr, (*self).off, n as u32);
             if r > 0 {
-                (*self).off = ((*self).off as u32).wrapping_add(r as u32) as u32 as u32
+                (*self).off = ((*self).off).wrapping_add(r as u32)
             }
             (*(*self).ip).unlock();
+            r
         } else {
             panic(b"File::read\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         }
-        r
     }
 
     /// Write to file self.
