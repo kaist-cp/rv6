@@ -32,8 +32,8 @@
 
   (Different shell)
   ```
-  ./rust-gdb.sh kernel/kernel -ex "target remote :[port]"
-  # e.g., ./rust-gdb.sh kernel/kernel -ex "target remote :29556"
+  gdb-multiarch kernel/kernel -ex "target remote :[port]"
+  # e.g., gdb-multiarch kernel/kernel -ex "target remote :29556"
   ```
 
 
