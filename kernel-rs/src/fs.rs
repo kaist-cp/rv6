@@ -516,7 +516,7 @@ impl Superblock {
 
     /// Block of free map containing bit for block b
     const fn bblock(self, b: u32) -> u32 {
-        b.wrapping_div(BPB as u32).wrapping_add(self.bmapstart)
+        b.wrapping_div(BPB).wrapping_add(self.bmapstart)
     }
 
     /// Read the super block.
@@ -546,7 +546,7 @@ impl Superblock {
 }
 
 /// Bitmap bits per block
-pub const BPB: i32 = BSIZE.wrapping_mul(8) as i32;
+pub const BPB: u32 = BSIZE.wrapping_mul(8) as u32;
 
 /// Directory is a file containing a sequence of Dirent structures.
 pub const DIRSIZ: usize = 14;
@@ -575,19 +575,19 @@ unsafe fn bzero(dev: i32, bno: i32) {
 /// Blocks.
 /// Allocate a zeroed disk block.
 unsafe fn balloc(dev: u32) -> u32 {
-    let mut b: i32 = 0;
-    let mut bi: i32 = 0;
-    while (b as u32) < SB.size {
+    let mut b: u32 = 0;
+    let mut bi: u32 = 0;
+    while b < SB.size {
         let mut bp: *mut Buf = bread(dev, SB.bblock(b as u32));
-        while bi < BPB && ((b + bi) as u32) < SB.size {
+        while bi < BPB && (b + bi) < SB.size {
             let m = (1) << (bi % 8);
             if (*bp).data[(bi / 8) as usize] as i32 & m == 0 {
                 // Is block free?
                 (*bp).data[(bi / 8) as usize] = ((*bp).data[(bi / 8) as usize] as i32 | m) as u8; // Mark block in use.
                 log_write(bp);
                 (*bp).release();
-                bzero(dev as i32, b + bi);
-                return (b + bi) as u32;
+                bzero(dev as i32, (b + bi) as i32);
+                return b + bi;
             }
             bi += 1
         }
@@ -600,7 +600,7 @@ unsafe fn balloc(dev: u32) -> u32 {
 /// Free a disk block.
 unsafe fn bfree(dev: i32, b: u32) {
     let mut bp: *mut Buf = bread(dev as u32, SB.bblock(b));
-    let bi: i32 = b.wrapping_rem(BPB as u32) as i32;
+    let bi: i32 = b.wrapping_rem(BPB) as i32;
     let m: i32 = (1) << (bi % 8);
     if (*bp).data[(bi / 8) as usize] as i32 & m == 0 {
         panic(b"freeing free block\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
