@@ -72,7 +72,7 @@ pub unsafe fn safestrcpy(
     os
 }
 
-pub unsafe fn strlen(mut s: *const libc::c_char) -> i32 {
+pub unsafe fn strlen(s: *const libc::c_char) -> i32 {
     let mut n: i32 = 0;
     while *s.offset(n as isize) != 0 {
         n += 1

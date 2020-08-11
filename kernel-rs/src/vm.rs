@@ -104,12 +104,12 @@ pub unsafe fn kvminithart() {
 ///   21..39 -- 9 bits of level-1 index.
 ///   12..20 -- 9 bits of level-0 index.
 ///    0..12 -- 12 bits of byte offset within the page.
-unsafe fn walk(mut pagetable: pagetable_t, mut va: usize, mut alloc: i32) -> *mut pte_t {
+unsafe fn walk(mut pagetable: pagetable_t, va: usize, alloc: i32) -> *mut pte_t {
     if va >= MAXVA as usize {
         panic(b"walk\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
     for level in (1..3).rev() {
-        let mut pte: *mut pte_t = &mut *pagetable.add(px(level, va)) as *mut usize;
+        let pte: *mut pte_t = &mut *pagetable.add(px(level, va)) as *mut usize;
         if *pte & PTE_V as usize != 0 {
             pagetable = pte2pa(*pte) as pagetable_t
         } else {
@@ -129,7 +129,7 @@ unsafe fn walk(mut pagetable: pagetable_t, mut va: usize, mut alloc: i32) -> *mu
 /// Look up a virtual address, return the physical address,
 /// or 0 if not mapped.
 /// Can only be used to look up user pages.
-pub unsafe fn walkaddr(mut pagetable: pagetable_t, mut va: usize) -> usize {
+pub unsafe fn walkaddr(pagetable: pagetable_t, va: usize) -> usize {
     let mut pte: *mut pte_t = ptr::null_mut();
     let mut pa: usize = 0;
     if va >= MAXVA as usize {
@@ -152,7 +152,7 @@ pub unsafe fn walkaddr(mut pagetable: pagetable_t, mut va: usize) -> usize {
 /// add a mapping to the kernel page table.
 /// only used when booting.
 /// does not flush TLB or enable paging.
-pub unsafe fn kvmmap(mut va: usize, mut pa: usize, mut sz: usize, mut perm: i32) {
+pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
     if mappages(kernel_pagetable, va, sz, pa, perm) != 0 {
         panic(b"kvmmap\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     };
@@ -162,8 +162,8 @@ pub unsafe fn kvmmap(mut va: usize, mut pa: usize, mut sz: usize, mut perm: i32)
 /// a physical address. only needed for
 /// addresses on the stack.
 /// assumes va is page aligned.
-pub unsafe fn kvmpa(mut va: usize) -> usize {
-    let mut off: usize = va.wrapping_rem(PGSIZE as usize);
+pub unsafe fn kvmpa(va: usize) -> usize {
+    let off: usize = va.wrapping_rem(PGSIZE as usize);
     let mut pte: *mut pte_t = ptr::null_mut();
     let mut pa: usize = 0;
     pte = walk(kernel_pagetable, va, 0);
@@ -182,11 +182,11 @@ pub unsafe fn kvmpa(mut va: usize) -> usize {
 /// be page-aligned. Returns 0 on success, -1 if walk() couldn't
 /// allocate a needed page-table page.
 pub unsafe fn mappages(
-    mut pagetable: pagetable_t,
-    mut va: usize,
-    mut size: usize,
+    pagetable: pagetable_t,
+    va: usize,
+    size: usize,
     mut pa: usize,
-    mut perm: i32,
+    perm: i32,
 ) -> i32 {
     let mut a = pgrounddown(va);
     let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
@@ -212,10 +212,10 @@ pub unsafe fn mappages(
 /// the given range must exist. Optionally free the
 /// physical memory.
 pub unsafe fn uvmunmap(
-    mut pagetable: pagetable_t,
-    mut va: usize,
-    mut size: usize,
-    mut do_free: i32,
+    pagetable: pagetable_t,
+    va: usize,
+    size: usize,
+    do_free: i32,
 ) {
     let mut pa: usize = 0;
     let mut a = pgrounddown(va);
@@ -272,7 +272,7 @@ pub unsafe fn uvmcreate() -> pagetable_t {
 /// Load the user initcode into address 0 of pagetable,
 /// for the very first process.
 /// sz must be less than a page.
-pub unsafe fn uvminit(mut pagetable: pagetable_t, mut src: *mut u8, mut sz: u32) {
+pub unsafe fn uvminit(pagetable: pagetable_t, src: *mut u8, sz: u32) {
     let mut mem: *mut libc::c_char = ptr::null_mut();
     if sz >= PGSIZE as u32 {
         panic(
@@ -298,7 +298,7 @@ pub unsafe fn uvminit(mut pagetable: pagetable_t, mut src: *mut u8, mut sz: u32)
 
 /// Allocate PTEs and physical memory to grow process from oldsz to
 /// newsz, which need not be page aligned.  Returns new size or 0 on error.
-pub unsafe fn uvmalloc(mut pagetable: pagetable_t, mut oldsz: usize, mut newsz: usize) -> usize {
+pub unsafe fn uvmalloc(pagetable: pagetable_t, mut oldsz: usize, newsz: usize) -> usize {
     if newsz < oldsz {
         return oldsz;
     }
@@ -332,11 +332,11 @@ pub unsafe fn uvmalloc(mut pagetable: pagetable_t, mut oldsz: usize, mut newsz: 
 /// newsz.  oldsz and newsz need not be page-aligned, nor does newsz
 /// need to be less than oldsz.  oldsz can be larger than the actual
 /// process size.  Returns the new process size.
-pub unsafe fn uvmdealloc(mut pagetable: pagetable_t, mut oldsz: usize, mut newsz: usize) -> usize {
+pub unsafe fn uvmdealloc(pagetable: pagetable_t, oldsz: usize, newsz: usize) -> usize {
     if newsz >= oldsz {
         return oldsz;
     }
-    let mut newup: usize = pgroundup(newsz);
+    let newup: usize = pgroundup(newsz);
     if newup < pgroundup(oldsz) {
         uvmunmap(pagetable, newup, oldsz.wrapping_sub(newup), 1);
     }
@@ -345,13 +345,13 @@ pub unsafe fn uvmdealloc(mut pagetable: pagetable_t, mut oldsz: usize, mut newsz
 
 /// Recursively free page-table pages.
 /// All leaf mappings must already have been removed.
-unsafe fn freewalk(mut pagetable: pagetable_t) {
+unsafe fn freewalk(pagetable: pagetable_t) {
     // there are 2^9 = 512 PTEs in a page table.
     for i in 0..512 {
-        let mut pte: pte_t = *pagetable.offset(i as isize);
+        let pte: pte_t = *pagetable.offset(i as isize);
         if pte & PTE_V as usize != 0 && pte & (PTE_R | PTE_W | PTE_X) as usize == 0 {
             // this PTE points to a lower-level page table.
-            let mut child: usize = pte2pa(pte);
+            let child: usize = pte2pa(pte);
             freewalk(child as pagetable_t);
             *pagetable.offset(i as isize) = 0
         } else if pte & PTE_V as usize != 0 {
@@ -363,7 +363,7 @@ unsafe fn freewalk(mut pagetable: pagetable_t) {
 
 /// Free user memory pages,
 /// then free page-table pages.
-pub unsafe fn uvmfree(mut pagetable: pagetable_t, mut sz: usize) {
+pub unsafe fn uvmfree(pagetable: pagetable_t, sz: usize) {
     uvmunmap(pagetable, 0, sz, 1);
     freewalk(pagetable);
 }
@@ -374,8 +374,8 @@ pub unsafe fn uvmfree(mut pagetable: pagetable_t, mut sz: usize) {
 /// physical memory.
 /// returns 0 on success, -1 on failure.
 /// frees any allocated pages on failure.
-pub unsafe fn uvmcopy(mut old: pagetable_t, mut new: pagetable_t, mut sz: usize) -> i32 {
-    let mut current_block: usize;
+pub unsafe fn uvmcopy(old: pagetable_t, new: pagetable_t, sz: usize) -> i32 {
+    let current_block: usize;
     let mut i: usize = 0;
     loop {
         if i >= sz {
@@ -426,7 +426,7 @@ pub unsafe fn uvmcopy(mut old: pagetable_t, mut new: pagetable_t, mut sz: usize)
 
 /// mark a PTE invalid for user access.
 /// used by exec for the user stack guard page.
-pub unsafe fn uvmclear(mut pagetable: pagetable_t, mut va: usize) {
+pub unsafe fn uvmclear(pagetable: pagetable_t, va: usize) {
     let mut pte: *mut pte_t = ptr::null_mut();
     pte = walk(pagetable, va, 0);
     if pte.is_null() {
@@ -439,13 +439,13 @@ pub unsafe fn uvmclear(mut pagetable: pagetable_t, mut va: usize) {
 /// Copy len bytes from src to virtual address dstva in a given page table.
 /// Return 0 on success, -1 on error.
 pub unsafe fn copyout(
-    mut pagetable: pagetable_t,
+    pagetable: pagetable_t,
     mut dstva: usize,
     mut src: *mut libc::c_char,
     mut len: usize,
 ) -> i32 {
     while len > 0 {
-        let mut va0 = pgrounddown(dstva);
+        let va0 = pgrounddown(dstva);
         let pa0 = walkaddr(pagetable, va0);
         if pa0 == 0 {
             return -1;
@@ -470,13 +470,13 @@ pub unsafe fn copyout(
 /// Copy len bytes to dst from virtual address srcva in a given page table.
 /// Return 0 on success, -1 on error.
 pub unsafe fn copyin(
-    mut pagetable: pagetable_t,
+    pagetable: pagetable_t,
     mut dst: *mut libc::c_char,
     mut srcva: usize,
     mut len: usize,
 ) -> i32 {
     while len > 0 {
-        let mut va0 = pgrounddown(srcva);
+        let va0 = pgrounddown(srcva);
         let pa0 = walkaddr(pagetable, va0);
         if pa0 == 0 {
             return -1;
@@ -502,14 +502,14 @@ pub unsafe fn copyin(
 /// until a '\0', or max.
 /// Return 0 on success, -1 on error.
 pub unsafe fn copyinstr(
-    mut pagetable: pagetable_t,
+    pagetable: pagetable_t,
     mut dst: *mut libc::c_char,
     mut srcva: usize,
     mut max: usize,
 ) -> i32 {
     let mut got_null: i32 = 0;
     while got_null == 0 && max > 0 {
-        let mut va0 = pgrounddown(srcva);
+        let va0 = pgrounddown(srcva);
         let pa0 = walkaddr(pagetable, va0);
         if pa0 == 0 {
             return -1;

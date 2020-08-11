@@ -44,7 +44,7 @@ impl Sleeplock {
         lk
     }
 
-    pub fn initlock(&mut self, mut name: *mut libc::c_char) {
+    pub fn initlock(&mut self, name: *mut libc::c_char) {
         (*self)
             .lk
             .initlock(b"sleep lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);

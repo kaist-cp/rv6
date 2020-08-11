@@ -32,7 +32,7 @@ impl Spinlock {
     }
 
     /// Mutual exclusion spin locks.
-    pub fn initlock(&mut self, mut name: *mut libc::c_char) {
+    pub fn initlock(&mut self, name: *mut libc::c_char) {
         (*self).name = name;
         (*self).locked = AtomicBool::new(false);
         (*self).cpu = ptr::null_mut();
@@ -110,7 +110,7 @@ impl Spinlock {
 /// it takes two pop_off()s to undo two push_off()s.  Also, if interrupts
 /// are initially off, then push_off, pop_off leaves them off.
 pub unsafe fn push_off() {
-    let mut old: i32 = intr_get();
+    let old: i32 = intr_get();
     intr_off();
     if (*(mycpu())).noff == 0 {
         (*(mycpu())).intena = old

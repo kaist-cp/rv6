@@ -9,8 +9,8 @@ use crate::{
 };
 
 /// Fetch the usize at addr from the current process.
-pub unsafe fn fetchaddr(mut addr: usize, mut ip: *mut usize) -> i32 {
-    let mut p: *mut proc = myproc();
+pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
+    let p: *mut proc = myproc();
     if addr >= (*p).sz || addr.wrapping_add(::core::mem::size_of::<usize>()) > (*p).sz {
         return -1;
     }
@@ -28,17 +28,17 @@ pub unsafe fn fetchaddr(mut addr: usize, mut ip: *mut usize) -> i32 {
 
 /// Fetch the nul-terminated string at addr from the current process.
 /// Returns length of string, not including nul, or -1 for error.
-pub unsafe fn fetchstr(mut addr: usize, mut buf: *mut libc::c_char, mut max: i32) -> i32 {
-    let mut p: *mut proc = myproc();
-    let mut err: i32 = copyinstr((*p).pagetable, buf, addr, max as usize);
+pub unsafe fn fetchstr(addr: usize, buf: *mut libc::c_char, max: i32) -> i32 {
+    let p: *mut proc = myproc();
+    let err: i32 = copyinstr((*p).pagetable, buf, addr, max as usize);
     if err < 0 {
         return err;
     }
     strlen(buf)
 }
 
-unsafe fn argraw(mut n: i32) -> usize {
-    let mut p: *mut proc = myproc();
+unsafe fn argraw(n: i32) -> usize {
+    let p: *mut proc = myproc();
     match n {
         0 => return (*(*p).tf).a0,
         1 => return (*(*p).tf).a1,
@@ -52,7 +52,7 @@ unsafe fn argraw(mut n: i32) -> usize {
 }
 
 /// Fetch the nth 32-bit system call argument.
-pub unsafe fn argint(mut n: i32, mut ip: *mut i32) -> i32 {
+pub unsafe fn argint(n: i32, ip: *mut i32) -> i32 {
     *ip = argraw(n) as i32;
     0
 }
@@ -60,7 +60,7 @@ pub unsafe fn argint(mut n: i32, mut ip: *mut i32) -> i32 {
 /// Retrieve an argument as a pointer.
 /// Doesn't check for legality, since
 /// copyin/copyout will do that.
-pub unsafe fn argaddr(mut n: i32, mut ip: *mut usize) -> i32 {
+pub unsafe fn argaddr(n: i32, ip: *mut usize) -> i32 {
     *ip = argraw(n);
     0
 }
@@ -68,7 +68,7 @@ pub unsafe fn argaddr(mut n: i32, mut ip: *mut usize) -> i32 {
 /// Fetch the nth word-sized system call argument as a null-terminated string.
 /// Copies into buf, at most max.
 /// Returns string length if OK (including nul), -1 if error.
-pub unsafe fn argstr(mut n: i32, mut buf: *mut libc::c_char, mut max: i32) -> i32 {
+pub unsafe fn argstr(n: i32, buf: *mut libc::c_char, max: i32) -> i32 {
     let mut addr: usize = 0;
     if argaddr(n, &mut addr) < 0 {
         return -1;

@@ -100,7 +100,7 @@ pub unsafe fn binit() {
 /// Look through buffer cache for block on device dev.
 /// If not found, allocate a buffer.
 /// In either case, return locked buffer.
-unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
+unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
     let bcache = BCACHE.get_mut();
 
     let mut b: *mut Buf = ptr::null_mut();
@@ -136,7 +136,7 @@ unsafe fn bget(mut dev: u32, mut blockno: u32) -> *mut Buf {
 }
 
 /// Return a locked buf with the contents of the indicated block.
-pub unsafe fn bread(mut dev: u32, mut blockno: u32) -> *mut Buf {
+pub unsafe fn bread(dev: u32, blockno: u32) -> *mut Buf {
     let mut b: *mut Buf = ptr::null_mut();
     b = bget(dev, blockno);
     if (*b).valid == 0 {

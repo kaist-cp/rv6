@@ -43,7 +43,7 @@ impl File {
 
 /// Fetch the nth word-sized system call argument as a file descriptor
 /// and return both the descriptor and the corresponding struct file.
-unsafe fn argfd(mut n: i32, mut pfd: *mut i32, mut pf: *mut *mut File) -> i32 {
+unsafe fn argfd(n: i32, pfd: *mut i32, pf: *mut *mut File) -> i32 {
     let mut fd: i32 = 0;
     let mut f: *mut File = ptr::null_mut();
     if argint(n, &mut fd) < 0 {
@@ -167,7 +167,7 @@ pub unsafe fn sys_link() -> usize {
 }
 
 /// Is the directory dp empty except for "." and ".." ?
-unsafe fn isdirempty(mut dp: *mut Inode) -> i32 {
+unsafe fn isdirempty(dp: *mut Inode) -> i32 {
     let mut de: Dirent = Default::default();
     let mut off = (2usize).wrapping_mul(::core::mem::size_of::<Dirent>()) as i32;
     while (off as u32) < (*dp).size {
@@ -264,10 +264,10 @@ pub unsafe fn sys_unlink() -> usize {
 }
 
 unsafe fn create(
-    mut path: *mut libc::c_char,
-    mut typ: i16,
-    mut major: i16,
-    mut minor: i16,
+    path: *mut libc::c_char,
+    typ: i16,
+    major: i16,
+    minor: i16,
 ) -> *mut Inode {
     let mut ip: *mut Inode = ptr::null_mut();
     let mut dp: *mut Inode = ptr::null_mut();
@@ -459,7 +459,7 @@ pub unsafe fn sys_chdir() -> usize {
 }
 
 pub unsafe fn sys_exec() -> usize {
-    let mut current_block: usize;
+    let current_block: usize;
     let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut argv: [*mut libc::c_char; MAXARG] = [ptr::null_mut(); MAXARG];
     let mut i: i32 = 0;

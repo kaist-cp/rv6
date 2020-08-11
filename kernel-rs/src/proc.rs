@@ -326,11 +326,11 @@ pub unsafe fn procinit() {
         // Allocate a page for the process's kernel stack.
         // Map it high in memory, followed by an invalid
         // guard page.
-        let mut pa: *mut libc::c_char = kalloc() as *mut libc::c_char;
+        let pa: *mut libc::c_char = kalloc() as *mut libc::c_char;
         if pa.is_null() {
             panic(b"kalloc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
         }
-        let mut va: usize = kstack(p.offset_from(proc.as_mut_ptr()) as i64 as i32) as usize;
+        let va: usize = kstack(p.offset_from(proc.as_mut_ptr()) as i64 as i32) as usize;
         kvmmap(va, pa as usize, PGSIZE as usize, (PTE_R | PTE_W) as i32);
         (*p).kstack = va;
         p = p.offset(1)
@@ -342,23 +342,23 @@ pub unsafe fn procinit() {
 /// to prevent race with process being moved
 /// to a different CPU.
 pub unsafe fn cpuid() -> i32 {
-    let mut id: i32 = r_tp() as i32;
+    let id: i32 = r_tp() as i32;
     id
 }
 
 /// Return this CPU's cpu struct.
 /// Interrupts must be disabled.
 pub unsafe fn mycpu() -> *mut cpu {
-    let mut id: i32 = cpuid();
-    let mut c: *mut cpu = &mut *cpus.as_mut_ptr().offset(id as isize) as *mut cpu;
+    let id: i32 = cpuid();
+    let c: *mut cpu = &mut *cpus.as_mut_ptr().offset(id as isize) as *mut cpu;
     c
 }
 
 /// Return the current struct proc *, or zero if none.
 pub unsafe fn myproc() -> *mut proc {
     push_off();
-    let mut c: *mut cpu = mycpu();
-    let mut p: *mut proc = (*c).proc;
+    let c: *mut cpu = mycpu();
+    let p: *mut proc = (*c).proc;
     pop_off();
     p
 }
@@ -377,7 +377,7 @@ unsafe fn allocpid() -> i32 {
 /// and return with p->lock held.
 /// If there are no free procs, return 0.
 unsafe fn allocproc() -> *mut proc {
-    let mut current_block: usize;
+    let current_block: usize;
     let mut p = proc.as_mut_ptr();
     loop {
         if p >= &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc {
@@ -441,7 +441,7 @@ unsafe fn freeproc(mut p: *mut proc) {
 
 /// Create a page table for a given process,
 /// with no user pages, but with trampoline pages.
-pub unsafe fn proc_pagetable(mut p: *mut proc) -> pagetable_t {
+pub unsafe fn proc_pagetable(p: *mut proc) -> pagetable_t {
     let mut pagetable: pagetable_t = ptr::null_mut();
 
     // An empty page table.
@@ -472,7 +472,7 @@ pub unsafe fn proc_pagetable(mut p: *mut proc) -> pagetable_t {
 
 /// Free a process's page table, and free the
 /// physical memory it refers to.
-pub unsafe fn proc_freepagetable(mut pagetable: pagetable_t, mut sz: usize) {
+pub unsafe fn proc_freepagetable(pagetable: pagetable_t, sz: usize) {
     uvmunmap(pagetable, TRAMPOLINE as usize, PGSIZE as usize, 0);
     uvmunmap(pagetable, TRAPFRAME as usize, PGSIZE as usize, 0);
     if sz > 0 {
@@ -552,7 +552,7 @@ pub unsafe fn growproc(n: i32) -> i32 {
 pub unsafe fn fork() -> i32 {
     let mut pid: i32 = 0;
     let mut np: *mut proc = ptr::null_mut();
-    let mut p: *mut proc = myproc();
+    let p: *mut proc = myproc();
 
     // Allocate process.
     np = allocproc();
@@ -595,7 +595,7 @@ pub unsafe fn fork() -> i32 {
 
 /// Pass p's abandoned children to init.
 /// Caller must hold p->lock.
-pub unsafe fn reparent(mut p: *mut proc) {
+pub unsafe fn reparent(p: *mut proc) {
     let mut pp = proc.as_mut_ptr();
     while pp < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc {
         // this code uses pp->parent without holding pp->lock.
@@ -621,7 +621,7 @@ pub unsafe fn reparent(mut p: *mut proc) {
 /// Exit the current process.  Does not return.
 /// An exited process remains in the zombie state
 /// until its parent calls wait().
-pub unsafe fn exit(mut status: i32) {
+pub unsafe fn exit(status: i32) {
     let mut p: *mut proc = myproc();
     if p == initproc {
         panic(b"init exiting\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
@@ -630,7 +630,7 @@ pub unsafe fn exit(mut status: i32) {
     // Close all open files.
     for fd in 0..NOFILE {
         if !(*p).ofile[fd as usize].is_null() {
-            let mut f: *mut File = (*p).ofile[fd as usize];
+            let f: *mut File = (*p).ofile[fd as usize];
             (*f).close();
             (*p).ofile[fd as usize] = ptr::null_mut();
         }
@@ -656,7 +656,7 @@ pub unsafe fn exit(mut status: i32) {
     // to a dead or wrong process; proc structs are never re-allocated
     // as anything else.
     (*p).lock.acquire();
-    let mut original_parent: *mut proc = (*p).parent;
+    let original_parent: *mut proc = (*p).parent;
     (*p).lock.release();
 
     // we need the parent's lock in order to wake it up from wait().
@@ -681,8 +681,8 @@ pub unsafe fn exit(mut status: i32) {
 
 /// Wait for a child process to exit and return its pid.
 /// Return -1 if this process has no children.
-pub unsafe fn wait(mut addr: usize) -> i32 {
-    let mut p: *mut proc = myproc();
+pub unsafe fn wait(addr: usize) -> i32 {
+    let p: *mut proc = myproc();
 
     // hold p->lock for the whole time to avoid lost
     // wakeups from a child's exit().
@@ -781,7 +781,7 @@ pub unsafe fn scheduler() -> ! {
 /// there's no process.
 unsafe fn sched() {
     let mut intena: i32 = 0;
-    let mut p: *mut proc = myproc();
+    let p: *mut proc = myproc();
     if (*p).lock.holding() == 0 {
         panic(b"sched p->lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
@@ -830,7 +830,7 @@ unsafe fn forkret() {
 
 /// Atomically release lock and sleep on chan.
 /// reacquires lock when awakened.
-pub unsafe fn sleep(mut chan: *mut libc::c_void, mut lk: *mut Spinlock) {
+pub unsafe fn sleep(chan: *mut libc::c_void, lk: *mut Spinlock) {
     let mut p: *mut proc = myproc();
 
     // Must acquire p->lock in order to
@@ -864,7 +864,7 @@ pub unsafe fn sleep(mut chan: *mut libc::c_void, mut lk: *mut Spinlock) {
 
 /// Wake up all processes sleeping on chan.
 /// Must be called without any p->lock.
-pub unsafe fn wakeup(mut chan: *mut libc::c_void) {
+pub unsafe fn wakeup(chan: *mut libc::c_void) {
     let mut p = proc.as_mut_ptr();
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc {
         (*p).lock.acquire();
@@ -890,7 +890,7 @@ unsafe fn wakeup1(mut p: *mut proc) {
 /// Kill the process with the given pid.
 /// The victim won't exit until it tries to return
 /// to user space (see usertrap() in trap.c).
-pub unsafe fn kill(mut pid: i32) -> i32 {
+pub unsafe fn kill(pid: i32) -> i32 {
     let mut p = proc.as_mut_ptr();
 
     while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut proc {
@@ -914,12 +914,12 @@ pub unsafe fn kill(mut pid: i32) -> i32 {
 /// depending on usr_dst.
 /// Returns 0 on success, -1 on error.
 pub unsafe fn either_copyout(
-    mut user_dst: i32,
-    mut dst: usize,
-    mut src: *mut libc::c_void,
-    mut len: usize,
+    user_dst: i32,
+    dst: usize,
+    src: *mut libc::c_void,
+    len: usize,
 ) -> i32 {
-    let mut p: *mut proc = myproc();
+    let p: *mut proc = myproc();
     if user_dst != 0 {
         copyout((*p).pagetable, dst, src as *mut libc::c_char, len)
     } else {
@@ -932,12 +932,12 @@ pub unsafe fn either_copyout(
 /// depending on usr_src.
 /// Returns 0 on success, -1 on error.
 pub unsafe fn either_copyin(
-    mut dst: *mut libc::c_void,
-    mut user_src: i32,
-    mut src: usize,
-    mut len: usize,
+    dst: *mut libc::c_void,
+    user_src: i32,
+    src: usize,
+    len: usize,
 ) -> i32 {
-    let mut p: *mut proc = myproc();
+    let p: *mut proc = myproc();
     if user_src != 0 {
         copyin((*p).pagetable, dst as *mut libc::c_char, src, len)
     } else {

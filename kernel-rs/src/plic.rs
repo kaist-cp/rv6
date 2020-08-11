@@ -13,7 +13,7 @@ pub unsafe fn plicinit() {
 }
 
 pub unsafe fn plicinithart() {
-    let mut hart: i32 = cpuid();
+    let hart: i32 = cpuid();
 
     // set uart's enable bit for this hart's S-mode.
     *(plic_senable(hart) as *mut u32) = (1 << UART0_IRQ | 1 << VIRTIO0_IRQ) as u32;
@@ -32,15 +32,15 @@ pub unsafe fn plic_pending() -> u32 {
 
 /// ask the PLIC what interrupt we should serve.
 pub unsafe fn plic_claim() -> i32 {
-    let mut hart: i32 = cpuid();
+    let hart: i32 = cpuid();
     //int irq = *(u32*)(PLIC + 0x201004);
-    let mut irq: i32 = *(plic_sclaim(hart) as *mut u32) as i32;
+    let irq: i32 = *(plic_sclaim(hart) as *mut u32) as i32;
     irq
 }
 
 /// tell the PLIC we've served this IRQ.
-pub unsafe fn plic_complete(mut irq: i32) {
-    let mut hart: i32 = cpuid();
+pub unsafe fn plic_complete(irq: i32) {
+    let hart: i32 = cpuid();
     //*(u32*)(PLIC + 0x201004) = irq;
     *(plic_sclaim(hart) as *mut u32) = irq as u32;
 }

@@ -140,8 +140,8 @@ impl File {
 
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub unsafe fn stat(&mut self, mut addr: usize) -> i32 {
-        let mut p: *mut proc = myproc();
+    pub unsafe fn stat(&mut self, addr: usize) -> i32 {
+        let p: *mut proc = myproc();
         let mut st: Stat = Default::default();
         if (*self).typ as u32 == FD_INODE as i32 as u32
             || (*self).typ as u32 == FD_DEVICE as i32 as u32
@@ -165,7 +165,7 @@ impl File {
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub unsafe fn read(&mut self, mut addr: usize, mut n: i32) -> i32 {
+    pub unsafe fn read(&mut self, addr: usize, n: i32) -> i32 {
         let mut r: i32 = 0;
         if (*self).readable as i32 == 0 {
             return -1;
@@ -197,7 +197,7 @@ impl File {
 
     /// Write to file self.
     /// addr is a user virtual address.
-    pub unsafe fn write(&mut self, mut addr: usize, mut n: i32) -> i32 {
+    pub unsafe fn write(&mut self, addr: usize, n: i32) -> i32 {
         let mut r: i32 = 0;
         let mut ret: i32 = 0;
         if (*self).writable as i32 == 0 {

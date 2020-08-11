@@ -23,7 +23,7 @@ pub unsafe fn r_mstatus() -> usize {
     x
 }
 #[inline]
-pub unsafe fn w_mstatus(mut x: usize) {
+pub unsafe fn w_mstatus(x: usize) {
     llvm_asm!("csrw mstatus, $0" : : "r" (x) : : "volatile");
 }
 
@@ -31,7 +31,7 @@ pub unsafe fn w_mstatus(mut x: usize) {
 /// instruction address to which a return from
 /// exception will go.
 #[inline]
-pub unsafe fn w_mepc(mut x: usize) {
+pub unsafe fn w_mepc(x: usize) {
     llvm_asm!("csrw mepc, $0" : : "r" (x) : : "volatile");
 }
 
@@ -59,7 +59,7 @@ pub unsafe fn r_sstatus() -> usize {
     x
 }
 #[inline]
-pub unsafe fn w_sstatus(mut x: usize) {
+pub unsafe fn w_sstatus(x: usize) {
     llvm_asm!("csrw sstatus, $0" : : "r" (x) : : "volatile");
 }
 
@@ -71,7 +71,7 @@ pub unsafe fn r_sip() -> usize {
     x
 }
 #[inline]
-pub unsafe fn w_sip(mut x: usize) {
+pub unsafe fn w_sip(x: usize) {
     llvm_asm!("csrw sip, $0" : : "r" (x) : : "volatile");
 }
 
@@ -94,7 +94,7 @@ pub unsafe fn r_sie() -> usize {
 }
 
 #[inline]
-pub unsafe fn w_sie(mut x: usize) {
+pub unsafe fn w_sie(x: usize) {
     llvm_asm!("csrw sie, $0" : : "r" (x) : : "volatile");
 }
 
@@ -116,7 +116,7 @@ pub unsafe fn r_mie() -> usize {
 }
 
 #[inline]
-pub unsafe fn w_mie(mut x: usize) {
+pub unsafe fn w_mie(x: usize) {
     llvm_asm!("csrw mie, $0" : : "r" (x) : : "volatile");
 }
 
@@ -124,7 +124,7 @@ pub unsafe fn w_mie(mut x: usize) {
 /// instruction address to which a return from
 /// exception will go.
 #[inline]
-pub unsafe fn w_sepc(mut x: usize) {
+pub unsafe fn w_sepc(x: usize) {
     llvm_asm!("csrw sepc, $0" : : "r" (x) : : "volatile");
 }
 
@@ -144,7 +144,7 @@ pub unsafe fn r_medeleg() -> usize {
 }
 
 #[inline]
-pub unsafe fn w_medeleg(mut x: usize) {
+pub unsafe fn w_medeleg(x: usize) {
     llvm_asm!("csrw medeleg, $0" : : "r" (x) : : "volatile");
 }
 
@@ -157,14 +157,14 @@ pub unsafe fn r_mideleg() -> usize {
 }
 
 #[inline]
-pub unsafe fn w_mideleg(mut x: usize) {
+pub unsafe fn w_mideleg(x: usize) {
     llvm_asm!("csrw mideleg, $0" : : "r" (x) : : "volatile");
 }
 
 /// Supervisor Trap-Vector Base Address
 /// low two bits are mode.
 #[inline]
-pub unsafe fn w_stvec(mut x: usize) {
+pub unsafe fn w_stvec(x: usize) {
     llvm_asm!("csrw stvec, $0" : : "r" (x) : : "volatile");
 }
 
@@ -177,7 +177,7 @@ pub unsafe fn r_stvec() -> usize {
 
 /// Machine-mode interrupt vector
 #[inline]
-pub unsafe fn w_mtvec(mut x: usize) {
+pub unsafe fn w_mtvec(x: usize) {
     llvm_asm!("csrw mtvec, $0" : : "r" (x) : : "volatile");
 }
 
@@ -191,7 +191,7 @@ pub const fn make_satp(pagetable: usize) -> usize {
 /// supervisor address translation and protection;
 /// holds the address of the page table.
 #[inline]
-pub unsafe fn w_satp(mut x: usize) {
+pub unsafe fn w_satp(x: usize) {
     llvm_asm!("csrw satp, $0" : : "r" (x) : : "volatile");
 }
 
@@ -204,12 +204,12 @@ pub unsafe fn r_satp() -> usize {
 
 /// Supervisor Scratch register, for early trap handler in trampoline.S.
 #[inline]
-pub unsafe fn w_sscratch(mut x: usize) {
+pub unsafe fn w_sscratch(x: usize) {
     llvm_asm!("csrw sscratch, %0" : : "r" (x) : : : "volatile");
 }
 
 #[inline]
-pub unsafe fn w_mscratch(mut x: usize) {
+pub unsafe fn w_mscratch(x: usize) {
     llvm_asm!("csrw mscratch, $0" : : "r" (x) : : "volatile");
 }
 
@@ -231,7 +231,7 @@ pub unsafe fn r_stval() -> usize {
 
 /// Machine-mode Counter-Enable
 #[inline]
-pub unsafe fn w_mcounteren(mut x: u64) {
+pub unsafe fn w_mcounteren(x: u64) {
     llvm_asm!("csrw mcounteren, %0" : : "r" (x)  : : : "volatile");
 }
 
@@ -266,7 +266,7 @@ pub unsafe fn intr_off() {
 /// are device interrupts enabled?
 #[inline]
 pub unsafe fn intr_get() -> i32 {
-    let mut x: usize = r_sstatus();
+    let x: usize = r_sstatus();
     (x & SSTATUS_SIE as usize != 0) as i32
 }
 
@@ -287,7 +287,7 @@ pub unsafe fn r_sp() -> usize {
 }
 
 #[inline]
-pub unsafe fn w_tp(mut x: usize) {
+pub unsafe fn w_tp(x: usize) {
     llvm_asm!("mv tp, $0" : : "r" (x) : : "volatile");
 }
 

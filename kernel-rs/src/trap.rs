@@ -153,12 +153,12 @@ pub unsafe fn usertrapret() {
     w_sepc((*(*p).tf).epc);
 
     // tell trampoline.S the user page table to switch to.
-    let mut satp: usize = make_satp((*p).pagetable as usize);
+    let satp: usize = make_satp((*p).pagetable as usize);
 
     // jump to trampoline.S at the top of memory, which
     // switches to the user page table, restores user registers,
     // and switches to user mode with sret.
-    let mut fn_0: usize =
+    let fn_0: usize =
         (TRAMPOLINE + userret.as_mut_ptr().offset_from(trampoline.as_mut_ptr()) as i64) as usize;
     let fn_0 = mem::transmute::<usize, unsafe extern "C" fn(_: usize, _: usize) -> ()>(fn_0);
     fn_0(TRAPFRAME as usize, satp);
@@ -169,9 +169,9 @@ pub unsafe fn usertrapret() {
 /// must be 4-byte aligned to fit in stvec.
 #[no_mangle]
 pub unsafe fn kerneltrap() {
-    let mut sepc: usize = r_sepc();
-    let mut sstatus: usize = r_sstatus();
-    let mut scause: usize = r_scause();
+    let sepc: usize = r_sepc();
+    let sstatus: usize = r_sstatus();
+    let scause: usize = r_scause();
 
     if sstatus & SSTATUS_SPP as usize == 0 {
         panic(
@@ -225,13 +225,13 @@ pub unsafe fn clockintr() {
 /// 1 if other device,
 /// 0 if not recognized.
 pub unsafe fn devintr() -> i32 {
-    let mut scause: usize = r_scause();
+    let scause: usize = r_scause();
 
     if scause & 0x8000000000000000 != 0 && scause & 0xff == 9 {
         // this is a supervisor external interrupt, via PLIC.
 
         // irq indicates which device interrupted.
-        let mut irq: i32 = plic_claim();
+        let irq: i32 = plic_claim();
 
         if irq == UART0_IRQ {
             uartintr();

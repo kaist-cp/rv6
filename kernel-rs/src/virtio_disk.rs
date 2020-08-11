@@ -114,7 +114,7 @@ pub unsafe fn virtio_disk_init() {
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status);
 
     // negotiate features
-    let mut features = *(r(VIRTIO_MMIO_DEVICE_FEATURES))
+    let features = *(r(VIRTIO_MMIO_DEVICE_FEATURES))
         & !(1 << VIRTIO_BLK_F_RO)
         & !(1 << VIRTIO_BLK_F_SCSI)
         & !(1 << VIRTIO_BLK_F_CONFIG_WCE)
@@ -136,7 +136,7 @@ pub unsafe fn virtio_disk_init() {
 
     // initialize queue 0.
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_SEL), 0);
-    let mut max: u32 = *(r(VIRTIO_MMIO_QUEUE_NUM_MAX));
+    let max: u32 = *(r(VIRTIO_MMIO_QUEUE_NUM_MAX));
     if max == 0 {
         panic(
             b"virtio disk has no queue 0\x00" as *const u8 as *const libc::c_char
@@ -184,7 +184,7 @@ unsafe fn alloc_desc() -> i32 {
 }
 
 /// mark a descriptor as free.
-unsafe fn free_desc(mut i: i32) {
+unsafe fn free_desc(i: i32) {
     if i >= NUM {
         panic(b"virtio_disk_intr 1\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     }
@@ -207,7 +207,7 @@ unsafe fn free_chain(mut i: i32) {
     }
 }
 
-unsafe fn alloc3_desc(mut idx: *mut i32) -> i32 {
+unsafe fn alloc3_desc(idx: *mut i32) -> i32 {
     for i in 0..3 {
         *idx.offset(i as isize) = alloc_desc();
         if *idx.offset(i as isize) < 0 {
@@ -220,8 +220,8 @@ unsafe fn alloc3_desc(mut idx: *mut i32) -> i32 {
     0
 }
 
-pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
-    let mut sector: usize = (*b).blockno.wrapping_mul((BSIZE / 512) as u32) as usize;
+pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
+    let sector: usize = (*b).blockno.wrapping_mul((BSIZE / 512) as u32) as usize;
 
     disk.vdisk_lock.acquire();
 
@@ -319,7 +319,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, mut write: i32) {
 pub unsafe fn virtio_disk_intr() {
     disk.vdisk_lock.acquire();
     while disk.used_idx as i32 % NUM != (*disk.used).id as i32 % NUM {
-        let mut id: i32 = (*disk.used).elems[disk.used_idx as usize].id as i32;
+        let id: i32 = (*disk.used).elems[disk.used_idx as usize].id as i32;
         if disk.info[id as usize].status as i32 != 0 {
             panic(
                 b"virtio_disk_intr status\x00" as *const u8 as *const libc::c_char

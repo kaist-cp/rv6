@@ -53,7 +53,7 @@ const fn ctrl(x: char) -> i32 {
 }
 
 /// send one character to the uart.
-pub unsafe fn consputc(mut c: i32) {
+pub unsafe fn consputc(c: i32) {
     // from printf.rs
     if panicked != 0 {
         loop {}
@@ -71,7 +71,7 @@ pub unsafe fn consputc(mut c: i32) {
 static mut cons: Console = Console::zeroed();
 
 /// user write()s to the console go here.
-unsafe fn consolewrite(mut user_src: i32, mut src: usize, mut n: i32) -> i32 {
+unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
     cons.lock.acquire();
     for i in 0..n {
         let mut c: libc::c_char = 0;
@@ -94,8 +94,8 @@ unsafe fn consolewrite(mut user_src: i32, mut src: usize, mut n: i32) -> i32 {
 /// copy (up to) a whole input line to dst.
 /// user_dist indicates whether dst is a user
 /// or kernel address.
-unsafe fn consoleread(mut user_dst: i32, mut dst: usize, mut n: i32) -> i32 {
-    let mut target: u32 = n as u32;
+unsafe fn consoleread(user_dst: i32, mut dst: usize, mut n: i32) -> i32 {
+    let target: u32 = n as u32;
     cons.lock.acquire();
     while n > 0 {
         // wait until interrupt handler has put some

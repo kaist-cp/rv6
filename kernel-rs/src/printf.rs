@@ -27,7 +27,7 @@ static mut digits: [libc::c_char; 17] = [
     48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102, 0,
 ];
 
-unsafe fn printint(mut xx: i32, mut base: i32, mut sign: i32) {
+unsafe fn printint(xx: i32, base: i32, mut sign: i32) {
     let mut buf: [libc::c_char; 16] = [0; 16];
     let mut i: i32 = 0;
     let mut x: u32 = 0;
@@ -77,7 +77,7 @@ unsafe fn printptr(mut x: usize) {
 }
 
 /// Print to the console. only understands %d, %x, %p, %s.
-pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
+pub unsafe extern "C" fn printf(fmt: *mut libc::c_char, args: ...) {
     let mut ap: ::core::ffi::VaListImpl;
     let mut i: i32 = 0;
     let mut locking: i32 = 0;
@@ -139,7 +139,7 @@ pub unsafe extern "C" fn printf(mut fmt: *mut libc::c_char, mut args: ...) {
     };
 }
 
-pub unsafe fn panic(mut s: *mut libc::c_char) -> ! {
+pub unsafe fn panic(s: *mut libc::c_char) -> ! {
     pr.locking = 0;
     printf(b"panic: \x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
     printf(s);

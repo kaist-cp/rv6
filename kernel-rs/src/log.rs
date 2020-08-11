@@ -75,7 +75,7 @@ impl Log {
 static mut log: Log = Log::zeroed();
 
 impl Superblock {
-    pub unsafe fn initlog(&mut self, mut dev: i32) {
+    pub unsafe fn initlog(&mut self, dev: i32) {
         if ::core::mem::size_of::<LogHeader>() >= BSIZE as usize {
             panic(
                 b"initlog: too big LogHeader\x00" as *const u8 as *const libc::c_char
@@ -95,10 +95,10 @@ impl Superblock {
 unsafe fn install_trans() {
     for tail in 0..log.lh.n {
         // read log block
-        let mut lbuf: *mut Buf = bread(log.dev as u32, (log.start + tail + 1) as u32);
+        let lbuf: *mut Buf = bread(log.dev as u32, (log.start + tail + 1) as u32);
 
         // read dst
-        let mut dbuf: *mut Buf = bread(log.dev as u32, log.lh.block[tail as usize] as u32);
+        let dbuf: *mut Buf = bread(log.dev as u32, log.lh.block[tail as usize] as u32);
 
         // copy block to dst
         ptr::copy(
@@ -117,8 +117,8 @@ unsafe fn install_trans() {
 
 /// Read the log header from disk into the in-memory log header
 unsafe fn read_head() {
-    let mut buf: *mut Buf = bread(log.dev as u32, log.start as u32);
-    let mut lh: *mut LogHeader = (*buf).data.as_mut_ptr() as *mut LogHeader;
+    let buf: *mut Buf = bread(log.dev as u32, log.start as u32);
+    let lh: *mut LogHeader = (*buf).data.as_mut_ptr() as *mut LogHeader;
     log.lh.n = (*lh).n;
     for i in 0..log.lh.n {
         log.lh.block[i as usize] = (*lh).block[i as usize];
@@ -130,7 +130,7 @@ unsafe fn read_head() {
 /// This is the true point at which the
 /// current transaction commits.
 unsafe fn write_head() {
-    let mut buf: *mut Buf = bread(log.dev as u32, log.start as u32);
+    let buf: *mut Buf = bread(log.dev as u32, log.start as u32);
     let mut hb: *mut LogHeader = (*buf).data.as_mut_ptr() as *mut LogHeader;
     (*hb).n = log.lh.n;
     for i in 0..log.lh.n {
@@ -202,10 +202,10 @@ pub unsafe fn end_op() {
 unsafe fn write_log() {
     for tail in 0..log.lh.n {
         // log block
-        let mut to: *mut Buf = bread(log.dev as u32, (log.start + tail + 1) as u32);
+        let to: *mut Buf = bread(log.dev as u32, (log.start + tail + 1) as u32);
 
         // cache block
-        let mut from: *mut Buf = bread(log.dev as u32, log.lh.block[tail as usize] as u32);
+        let from: *mut Buf = bread(log.dev as u32, log.lh.block[tail as usize] as u32);
 
         ptr::copy(
             (*from).data.as_mut_ptr() as *const libc::c_void,
@@ -246,7 +246,7 @@ unsafe fn commit() {
 ///   modify bp->data[]
 ///   log_write(bp)
 ///   (*bp).release()
-pub unsafe fn log_write(mut b: *mut Buf) {
+pub unsafe fn log_write(b: *mut Buf) {
     if log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1 {
         panic(
             b"too big a transaction\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,

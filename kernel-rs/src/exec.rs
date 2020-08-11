@@ -13,7 +13,7 @@ use crate::{
 };
 use core::ptr;
 
-pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char) -> i32 {
+pub unsafe fn exec(path: *mut libc::c_char, argv: *mut *mut libc::c_char) -> i32 {
     let mut oldsz: usize = 0;
     let mut s: *mut libc::c_char = ptr::null_mut();
     let mut last: *mut libc::c_char = ptr::null_mut();
@@ -215,11 +215,11 @@ pub unsafe fn exec(mut path: *mut libc::c_char, mut argv: *mut *mut libc::c_char
 ///
 /// Returns `Ok(())` on success, `Err(())` on failure.
 unsafe fn loadseg(
-    mut pagetable: pagetable_t,
-    mut va: usize,
-    mut ip: *mut Inode,
-    mut offset: u32,
-    mut sz: u32,
+    pagetable: pagetable_t,
+    va: usize,
+    ip: *mut Inode,
+    offset: u32,
+    sz: u32,
 ) -> Result<(), ()> {
     if va.wrapping_rem(PGSIZE as usize) != 0 {
         panic(

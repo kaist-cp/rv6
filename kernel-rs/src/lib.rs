@@ -7,7 +7,6 @@
     non_camel_case_types,
     elided_lifetimes_in_paths,
     unused_assignments,
-    unused_mut,
     dead_code,
     unused_unsafe,
     non_upper_case_globals
