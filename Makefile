@@ -3,7 +3,11 @@ U=user
 KR=kernel-rs
 
 RUST_TARGET=riscv64gc-unknown-none-elfhf
+ifeq (qemu-gdb,$(firstword $(MAKECMDGOALS)))
+RUST_MODE=debug
+else
 RUST_MODE=release
+endif
 
 # OBJS = \
 #   $K/entry.o \
@@ -94,8 +98,13 @@ $U/initcode: $U/initcode.S
 	$(OBJCOPY) -S -O binary $U/initcode.out $U/initcode
 	$(OBJDUMP) -S $U/initcode.o > $U/initcode.asm
 
+ifeq (qemu-gdb,$(firstword $(MAKECMDGOALS)))
+$(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a: $(shell find $(KR) -type f)
+	cargo xbuild --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json
+else
 $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a: $(shell find $(KR) -type f)
 	cargo xbuild --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json --$(RUST_MODE)
+endif
 
 tags: $(OBJS) _init
 	etags *.S *.c
