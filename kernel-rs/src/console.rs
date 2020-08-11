@@ -1,7 +1,7 @@
 use crate::libc;
 use crate::{
-    file::{devsw, CONSOLE},
-    printf::panicked,
+    file::{CONSOLE, DEVSW},
+    printf::PANICKED,
     proc::{either_copyin, either_copyout, myproc, procdump, sleep, wakeup},
     spinlock::Spinlock,
     uart::{uartinit, uartputc},
@@ -55,7 +55,7 @@ const fn ctrl(x: char) -> i32 {
 /// send one character to the uart.
 pub unsafe fn consputc(c: i32) {
     // from printf.rs
-    if panicked != 0 {
+    if PANICKED != 0 {
         loop {}
     }
     if c == BACKSPACE {
@@ -68,11 +68,11 @@ pub unsafe fn consputc(c: i32) {
     };
 }
 
-static mut cons: Console = Console::zeroed();
+static mut CONS: Console = Console::zeroed();
 
 /// user write()s to the console go here.
 unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
-    cons.lock.acquire();
+    CONS.lock.acquire();
     for i in 0..n {
         let mut c: libc::CChar = 0;
         if either_copyin(
@@ -86,7 +86,7 @@ unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
         }
         consputc(c as i32);
     }
-    cons.lock.release();
+    CONS.lock.release();
     n
 }
 
@@ -96,27 +96,27 @@ unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
 /// or kernel address.
 unsafe fn consoleread(user_dst: i32, mut dst: usize, mut n: i32) -> i32 {
     let target: u32 = n as u32;
-    cons.lock.acquire();
+    CONS.lock.acquire();
     while n > 0 {
         // wait until interrupt handler has put some
-        // input into cons.buffer.
-        while cons.r == cons.w {
+        // input into CONS.buffer.
+        while CONS.r == CONS.w {
             if (*myproc()).killed != 0 {
-                cons.lock.release();
+                CONS.lock.release();
                 return -1;
             }
-            sleep(&mut cons.r as *mut u32 as *mut libc::CVoid, &mut cons.lock);
+            sleep(&mut CONS.r as *mut u32 as *mut libc::CVoid, &mut CONS.lock);
         }
-        let fresh0 = cons.r;
-        cons.r = cons.r.wrapping_add(1);
-        let cin = cons.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
+        let fresh0 = CONS.r;
+        CONS.r = CONS.r.wrapping_add(1);
+        let cin = CONS.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
 
         // end-of-file
         if cin == ctrl('D') {
             if (n as u32) < target {
                 // Save ^D for next time, to make sure
                 // caller gets a 0-byte result.
-                cons.r = cons.r.wrapping_sub(1)
+                CONS.r = CONS.r.wrapping_sub(1)
             }
             break;
         } else {
@@ -140,16 +140,16 @@ unsafe fn consoleread(user_dst: i32, mut dst: usize, mut n: i32) -> i32 {
             }
         }
     }
-    cons.lock.release();
+    CONS.lock.release();
     target.wrapping_sub(n as u32) as i32
 }
 
 /// the console input interrupt handler.
 /// uartintr() calls this for input character.
-/// do erase/kill processing, append to cons.buf,
+/// do erase/kill processing, append to CONS.buf,
 /// wake up consoleread() if a whole line has arrived.
 pub unsafe fn consoleintr(mut cin: i32) {
-    cons.lock.acquire();
+    CONS.lock.acquire();
     match cin {
         // Print process list.
         m if m == ctrl('P') => {
@@ -158,57 +158,57 @@ pub unsafe fn consoleintr(mut cin: i32) {
 
         // Kill line.
         m if m == ctrl('U') => {
-            while cons.e != cons.w
-                && cons.buf[cons.e.wrapping_sub(1).wrapping_rem(INPUT_BUF as u32) as usize] as i32
+            while CONS.e != CONS.w
+                && CONS.buf[CONS.e.wrapping_sub(1).wrapping_rem(INPUT_BUF as u32) as usize] as i32
                     != '\n' as i32
             {
-                cons.e = cons.e.wrapping_sub(1);
+                CONS.e = CONS.e.wrapping_sub(1);
                 consputc(BACKSPACE);
             }
         }
 
         // Backspace
         m if m == ctrl('H') | '\x7f' as i32 => {
-            if cons.e != cons.w {
-                cons.e = cons.e.wrapping_sub(1);
+            if CONS.e != CONS.w {
+                CONS.e = CONS.e.wrapping_sub(1);
                 consputc(BACKSPACE);
             }
         }
         _ => {
-            if cin != 0 && cons.e.wrapping_sub(cons.r) < INPUT_BUF as u32 {
+            if cin != 0 && CONS.e.wrapping_sub(CONS.r) < INPUT_BUF as u32 {
                 cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
 
                 // echo back to the user.
                 consputc(cin);
 
                 // store for consumption by consoleread().
-                let fresh1 = cons.e;
-                cons.e = cons.e.wrapping_add(1);
-                cons.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = cin as libc::CChar;
+                let fresh1 = CONS.e;
+                CONS.e = CONS.e.wrapping_add(1);
+                CONS.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = cin as libc::CChar;
                 if cin == '\n' as i32
                     || cin == ctrl('D')
-                    || cons.e == cons.r.wrapping_add(INPUT_BUF as u32)
+                    || CONS.e == CONS.r.wrapping_add(INPUT_BUF as u32)
                 {
                     // wake up consoleread() if a whole line (or end-of-file)
                     // has arrived.
-                    cons.w = cons.e;
-                    wakeup(&mut cons.r as *mut u32 as *mut libc::CVoid);
+                    CONS.w = CONS.e;
+                    wakeup(&mut CONS.r as *mut u32 as *mut libc::CVoid);
                 }
             }
         }
     }
-    cons.lock.release();
+    CONS.lock.release();
 }
 
 pub unsafe fn consoleinit() {
-    cons.lock
-        .initlock(b"cons\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+    CONS.lock
+        .initlock(b"CONS\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     uartinit();
 
     // connect read and write system calls
     // to consoleread and consolewrite.
-    let fresh2 = &mut (*devsw.as_mut_ptr().offset(CONSOLE)).read;
+    let fresh2 = &mut (*DEVSW.as_mut_ptr().offset(CONSOLE)).read;
     *fresh2 = Some(consoleread as unsafe fn(_: i32, _: usize, _: i32) -> i32);
-    let fresh3 = &mut (*devsw.as_mut_ptr().offset(CONSOLE)).write;
+    let fresh3 = &mut (*DEVSW.as_mut_ptr().offset(CONSOLE)).write;
     *fresh3 = Some(consolewrite as unsafe fn(_: i32, _: usize, _: i32) -> i32);
 }

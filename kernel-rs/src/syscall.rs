@@ -76,7 +76,7 @@ pub unsafe fn argstr(n: i32, buf: *mut libc::CChar, max: i32) -> i32 {
     fetchstr(addr, buf, max)
 }
 
-static mut syscalls: [Option<unsafe fn() -> usize>; 22] = [
+static mut SYSCALLS: [Option<unsafe fn() -> usize>; 22] = [
     None,
     Some(sys_fork as unsafe fn() -> usize),
     Some(sys_exit as unsafe fn() -> usize),
@@ -109,9 +109,9 @@ pub unsafe fn syscall() {
         && (num as usize)
             < (::core::mem::size_of::<[Option<unsafe fn() -> usize>; 22]>())
                 .wrapping_div(::core::mem::size_of::<Option<unsafe fn() -> usize>>())
-        && syscalls[num as usize].is_some()
+        && SYSCALLS[num as usize].is_some()
     {
-        (*(*p).tf).a0 = syscalls[num as usize].expect("non-null function pointer")()
+        (*(*p).tf).a0 = SYSCALLS[num as usize].expect("non-null function pointer")()
     } else {
         printf(
             b"%d %s: unknown sys call %d\n\x00" as *const u8 as *const libc::CChar

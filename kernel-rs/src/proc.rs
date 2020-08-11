@@ -7,7 +7,7 @@ use crate::{
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     param::{NCPU, NOFILE, NPROC, ROOTDEV},
     printf::{panic, printf},
-    riscv::{intr_get, intr_on, PagetableT, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
+    riscv::{intr_get, intr_on, r_tp, PagetableT, PGSIZE, PTE_R, PTE_W, PTE_X},
     spinlock::{pop_off, push_off, Spinlock},
     string::safestrcpy,
     trap::usertrapret,
@@ -305,21 +305,21 @@ pub const RUNNABLE: Procstate = 2;
 pub const SLEEPING: Procstate = 1;
 pub const UNUSED: Procstate = 0;
 
-static mut cpus: [Cpu; NCPU as usize] = [Cpu::zeroed(); NCPU as usize];
+static mut CPUS: [Cpu; NCPU as usize] = [Cpu::zeroed(); NCPU as usize];
 
-static mut proc: [Proc; NPROC as usize] = [Proc::zeroed(); NPROC as usize];
+static mut PROC: [Proc; NPROC as usize] = [Proc::zeroed(); NPROC as usize];
 
-static mut initproc: *mut Proc = ptr::null_mut();
+static mut INITPROC: *mut Proc = ptr::null_mut();
 
-static mut nextpid: i32 = 1;
+static mut NEXTPID: i32 = 1;
 
-static mut pid_lock: Spinlock = Spinlock::zeroed();
+static mut PID_LOCK: Spinlock = Spinlock::zeroed();
 
 #[no_mangle]
 pub unsafe fn procinit() {
-    pid_lock.initlock(b"nextpid\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
-    let mut p = proc.as_mut_ptr();
-    while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
+    PID_LOCK.initlock(b"nextpid\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+    let mut p = PROC.as_mut_ptr();
+    while p < &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
         (*p).lock
             .initlock(b"proc\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
 
@@ -330,7 +330,7 @@ pub unsafe fn procinit() {
         if pa.is_null() {
             panic(b"kalloc\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         }
-        let va: usize = kstack(p.offset_from(proc.as_mut_ptr()) as i64 as i32) as usize;
+        let va: usize = kstack(p.offset_from(PROC.as_mut_ptr()) as i64 as i32) as usize;
         kvmmap(va, pa as usize, PGSIZE as usize, (PTE_R | PTE_W) as i32);
         (*p).kstack = va;
         p = p.offset(1)
@@ -350,7 +350,7 @@ pub unsafe fn cpuid() -> i32 {
 /// Interrupts must be disabled.
 pub unsafe fn mycpu() -> *mut Cpu {
     let id: i32 = cpuid();
-    let c: *mut Cpu = &mut *cpus.as_mut_ptr().offset(id as isize) as *mut Cpu;
+    let c: *mut Cpu = &mut *CPUS.as_mut_ptr().offset(id as isize) as *mut Cpu;
     c
 }
 
@@ -365,10 +365,10 @@ pub unsafe fn myproc() -> *mut Proc {
 
 unsafe fn allocpid() -> i32 {
     let mut pid: i32 = 0;
-    pid_lock.acquire();
-    pid = nextpid;
-    nextpid += 1;
-    pid_lock.release();
+    PID_LOCK.acquire();
+    pid = NEXTPID;
+    NEXTPID += 1;
+    PID_LOCK.release();
     pid
 }
 
@@ -378,9 +378,9 @@ unsafe fn allocpid() -> i32 {
 /// If there are no free procs, return 0.
 unsafe fn allocproc() -> *mut Proc {
     let current_block: usize;
-    let mut p = proc.as_mut_ptr();
+    let mut p = PROC.as_mut_ptr();
     loop {
-        if p >= &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
+        if p >= &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
             current_block = 7815301370352969686;
             break;
         }
@@ -482,7 +482,7 @@ pub unsafe fn proc_freepagetable(pagetable: PagetableT, sz: usize) {
 
 /// a user program that calls exec("/init")
 /// od -t xC initcode
-static mut initcode: [u8; 51] = [
+static mut INITCODE: [u8; 51] = [
     0x17, 0x5, 0, 0, 0x13, 0x5, 0x5, 0x2, 0x97, 0x5, 0, 0, 0x93, 0x85, 0x5, 0x2, 0x9d, 0x48, 0x73,
     0, 0, 0, 0x89, 0x48, 0x73, 0, 0, 0, 0xef, 0xf0, 0xbf, 0xff, 0x2f, 0x69, 0x6e, 0x69, 0x74, 0, 0,
     0x1, 0x20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -492,13 +492,13 @@ static mut initcode: [u8; 51] = [
 pub unsafe fn userinit() {
     let mut p: *mut Proc = ptr::null_mut();
     p = allocproc();
-    initproc = p;
+    INITPROC = p;
 
     // allocate one user page and copy init's instructions
     // and data into it.
     uvminit(
         (*p).pagetable,
-        initcode.as_mut_ptr(),
+        INITCODE.as_mut_ptr(),
         ::core::mem::size_of::<[u8; 51]>() as u32,
     );
     (*p).sz = PGSIZE as usize;
@@ -596,8 +596,8 @@ pub unsafe fn fork() -> i32 {
 /// Pass p's abandoned children to init.
 /// Caller must hold p->lock.
 pub unsafe fn reparent(p: *mut Proc) {
-    let mut pp = proc.as_mut_ptr();
-    while pp < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
+    let mut pp = PROC.as_mut_ptr();
+    while pp < &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
         // this code uses pp->parent without holding pp->lock.
         // acquiring the lock first could cause a deadlock
         // if pp or a child of pp were also in exit()
@@ -606,7 +606,7 @@ pub unsafe fn reparent(p: *mut Proc) {
             // pp->parent can't change between the check and the acquire()
             // because only the parent changes it, and we're the parent.
             (*pp).lock.acquire();
-            (*pp).parent = initproc;
+            (*pp).parent = INITPROC;
 
             // we should wake up init here, but that would require
             // initproc->lock, which would be a deadlock, since we hold
@@ -623,7 +623,7 @@ pub unsafe fn reparent(p: *mut Proc) {
 /// until its parent calls wait().
 pub unsafe fn exit(status: i32) {
     let mut p: *mut Proc = myproc();
-    if p == initproc {
+    if p == INITPROC {
         panic(b"init exiting\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     }
 
@@ -645,9 +645,9 @@ pub unsafe fn exit(status: i32) {
     // spinlock::acquired any other proc lock. so wake up init whether that's
     // necessary or not. init may miss this wakeup, but that seems
     // harmless.
-    (*initproc).lock.acquire();
-    wakeup1(initproc);
-    (*initproc).lock.release();
+    (*INITPROC).lock.acquire();
+    wakeup1(INITPROC);
+    (*INITPROC).lock.release();
 
     // grab a copy of p->parent, to ensure that we unlock the same
     // parent we locked. in case our parent gives us away to init while
@@ -690,8 +690,8 @@ pub unsafe fn wait(addr: usize) -> i32 {
     loop {
         // Scan through table looking for exited children.
         let mut havekids: i32 = 0;
-        let mut np = proc.as_mut_ptr();
-        while np < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
+        let mut np = PROC.as_mut_ptr();
+        while np < &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
             // this code uses np->parent without holding np->lock.
             // acquiring the lock first would cause a deadlock,
             // since np might be an ancestor, and we already hold p->lock.
@@ -750,9 +750,9 @@ pub unsafe fn scheduler() -> ! {
     loop {
         // Avoid deadlock by ensuring that devices can interrupt.
         intr_on();
-        let mut p = proc.as_mut_ptr();
+        let mut p = PROC.as_mut_ptr();
 
-        while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
+        while p < &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
             (*p).lock.acquire();
             if (*p).state as u32 == RUNNABLE as i32 as u32 {
                 // Switch to chosen process.  It is the process's job
@@ -814,15 +814,15 @@ pub unsafe fn proc_yield() {
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
 unsafe fn forkret() {
-    static mut first: i32 = 1;
+    static mut FIRST: i32 = 1;
 
     // Still holding p->lock from scheduler.
     (*(myproc as unsafe fn() -> *mut Proc)()).lock.release();
-    if first != 0 {
+    if FIRST != 0 {
         // File system initialization must be run in the context of a
         // regular process (e.g., because it calls sleep), and thus cannot
         // be run from main().
-        first = 0;
+        FIRST = 0;
         fsinit(ROOTDEV);
     }
     usertrapret();
@@ -865,8 +865,8 @@ pub unsafe fn sleep(chan: *mut libc::CVoid, lk: *mut Spinlock) {
 /// Wake up all processes sleeping on chan.
 /// Must be called without any p->lock.
 pub unsafe fn wakeup(chan: *mut libc::CVoid) {
-    let mut p = proc.as_mut_ptr();
-    while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
+    let mut p = PROC.as_mut_ptr();
+    while p < &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
         (*p).lock.acquire();
         if (*p).state as u32 == SLEEPING as u32 && (*p).chan == chan {
             (*p).state = RUNNABLE
@@ -891,9 +891,9 @@ unsafe fn wakeup1(mut p: *mut Proc) {
 /// The victim won't exit until it tries to return
 /// to user space (see usertrap() in trap.c).
 pub unsafe fn kill(pid: i32) -> i32 {
-    let mut p = proc.as_mut_ptr();
+    let mut p = PROC.as_mut_ptr();
 
-    while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
+    while p < &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
         (*p).lock.acquire();
         if (*p).pid == pid {
             (*p).killed = 1;
@@ -940,7 +940,7 @@ pub unsafe fn either_copyin(dst: *mut libc::CVoid, user_src: i32, src: usize, le
 /// Runs when user types ^P on console.
 /// No lock to avoid wedging a stuck machine further.
 pub unsafe fn procdump() {
-    static mut states: [*mut libc::CChar; 5] = [
+    static mut STATES: [*mut libc::CChar; 5] = [
         b"unused\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
         b"sleep \x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
         b"runble\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
@@ -948,15 +948,15 @@ pub unsafe fn procdump() {
         b"zombie\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
     ];
     printf(b"\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
-    let mut p = proc.as_mut_ptr();
-    while p < &mut *proc.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
+    let mut p = PROC.as_mut_ptr();
+    while p < &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
         if (*p).state as u32 != UNUSED as i32 as u32 {
             let state = if ((*p).state as usize)
                 < (::core::mem::size_of::<[*mut libc::CChar; 5]>() as usize)
                     .wrapping_div(::core::mem::size_of::<*mut libc::CChar>())
-                && !states[(*p).state as usize].is_null()
+                && !STATES[(*p).state as usize].is_null()
             {
-                states[(*p).state as usize]
+                STATES[(*p).state as usize]
             } else {
                 b"???\x00" as *const u8 as *const libc::CChar as *mut libc::CChar
             };

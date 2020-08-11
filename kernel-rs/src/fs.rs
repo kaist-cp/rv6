@@ -105,7 +105,7 @@ struct Dinode {
 /// list of blocks holding the file's content.
 ///
 /// The inodes are laid out sequentially on disk at
-/// sb.startinode. Each inode has a number, indicating its
+/// SB.startinode. Each inode has a number, indicating its
 /// position on the disk.
 ///
 /// The kernel keeps a cache of in-use inodes in memory
@@ -157,10 +157,10 @@ struct Dinode {
 /// have locked the inodes involved; this lets callers create
 /// multi-step atomic operations.
 ///
-/// The icache.lock spin-lock protects the allocation of icache
+/// The ICACHE.lock spin-lock protects the allocation of icache
 /// entries. Since ip->ref indicates whether an entry is free,
 /// and ip->dev and ip->inum indicate which i-node an entry
-/// holds, one must hold icache.lock while using any of those fields.
+/// holds, one must hold ICACHE.lock while using any of those fields.
 ///
 /// An ip->lock sleep-lock protects all ip-> fields other than ref,
 /// dev, and inum.  One must hold ip->lock in order to
@@ -188,7 +188,7 @@ impl Inode {
     pub unsafe fn update(&mut self) {
         let mut bp: *mut Buf = ptr::null_mut();
         let mut dip: *mut Dinode = ptr::null_mut();
-        bp = bread(self.dev, sb.iblock(self.inum as i32));
+        bp = bread(self.dev, SB.iblock(self.inum as i32));
         dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
             .add((self.inum as usize).wrapping_rem(IPB as usize));
         (*dip).typ = self.typ;
@@ -208,9 +208,9 @@ impl Inode {
     /// Increment reference count for ip.
     /// Returns ip to enable ip = idup(ip1) idiom.
     pub unsafe fn idup(&mut self) -> *mut Self {
-        icache.lock.acquire();
+        ICACHE.lock.acquire();
         self.ref_0 += 1;
-        icache.lock.release();
+        ICACHE.lock.release();
         self
     }
 
@@ -224,7 +224,7 @@ impl Inode {
         }
         (*self).lock.acquire();
         if (*self).valid == 0 {
-            bp = bread((*self).dev, sb.iblock((*self).inum as i32));
+            bp = bread((*self).dev, SB.iblock((*self).inum as i32));
             dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
                 .add(((*self).inum as usize).wrapping_rem(IPB as usize));
             (*self).typ = (*dip).typ;
@@ -264,7 +264,7 @@ impl Inode {
     /// All calls to Inode::put() must be inside a transaction in
     /// case it has to free the inode.
     pub unsafe fn put(&mut self) {
-        icache.lock.acquire();
+        ICACHE.lock.acquire();
 
         if (*self).ref_0 == 1 && (*self).valid != 0 && (*self).nlink as i32 == 0 {
             // inode has no links and no other references: truncate and free.
@@ -273,7 +273,7 @@ impl Inode {
             // so this acquiresleep() won't block (or deadlock).
             (*self).lock.acquire();
 
-            icache.lock.release();
+            ICACHE.lock.release();
 
             self.itrunc();
             (*self).typ = 0;
@@ -282,10 +282,10 @@ impl Inode {
 
             (*self).lock.release();
 
-            icache.lock.acquire();
+            ICACHE.lock.acquire();
         }
         (*self).ref_0 -= 1;
-        icache.lock.release();
+        ICACHE.lock.release();
     }
 
     /// Common idiom: unlock, then put.
@@ -462,8 +462,8 @@ impl Inode {
     /// Mark it as allocated by  giving it type type.
     /// Returns an unlocked but allocated and referenced inode.
     pub unsafe fn alloc(dev: u32, typ: i16) -> *mut Inode {
-        for inum in 1..sb.ninodes {
-            let bp = bread(dev, sb.iblock(inum as i32));
+        for inum in 1..SB.ninodes {
+            let bp = bread(dev, SB.iblock(inum as i32));
             let dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
                 .add((inum as usize).wrapping_rem(IPB as usize));
 
@@ -562,15 +562,15 @@ pub const DIRSIZ: usize = 14;
 
 /// there should be one superblock per disk device, but we run with
 /// only one device
-pub static mut sb: Superblock = Superblock::zeroed();
+pub static mut SB: Superblock = Superblock::zeroed();
 
 /// Init fs
 pub unsafe fn fsinit(dev: i32) {
-    sb.read(dev);
-    if sb.magic != FSMAGIC as u32 {
+    SB.read(dev);
+    if SB.magic != FSMAGIC as u32 {
         panic(b"invalid file system\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     }
-    sb.initlog(dev);
+    SB.initlog(dev);
 }
 
 /// Zero a block.
@@ -589,9 +589,9 @@ unsafe fn balloc(dev: u32) -> u32 {
     let mut bi: i32 = 0;
     let mut bp: *mut Buf = ptr::null_mut();
     bp = ptr::null_mut();
-    while (b as u32) < sb.size {
-        bp = bread(dev, sb.bblock(b as u32));
-        while bi < BPB && ((b + bi) as u32) < sb.size {
+    while (b as u32) < SB.size {
+        bp = bread(dev, SB.bblock(b as u32));
+        while bi < BPB && ((b + bi) as u32) < SB.size {
             let m = (1) << (bi % 8);
             if (*bp).data[(bi / 8) as usize] as i32 & m == 0 {
                 // Is block free?
@@ -614,7 +614,7 @@ unsafe fn bfree(dev: i32, b: u32) {
     let mut bp: *mut Buf = ptr::null_mut();
     let mut bi: i32 = 0;
     let mut m: i32 = 0;
-    bp = bread(dev as u32, sb.bblock(b));
+    bp = bread(dev as u32, SB.bblock(b));
     bi = b.wrapping_rem(BPB as u32) as i32;
     m = (1) << (bi % 8);
     if (*bp).data[(bi / 8) as usize] as i32 & m == 0 {
@@ -625,14 +625,14 @@ unsafe fn bfree(dev: i32, b: u32) {
     (*bp).release();
 }
 
-static mut icache: Icache = Icache::zeroed();
+static mut ICACHE: Icache = Icache::zeroed();
 
 pub unsafe fn iinit() {
-    icache
+    ICACHE
         .lock
-        .initlock(b"icache\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        .initlock(b"ICACHE\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     for i in 0..NINODE {
-        (*icache.inode.as_mut_ptr().offset(i as isize))
+        (*ICACHE.inode.as_mut_ptr().offset(i as isize))
             .lock
             .initlock(b"inode\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     }
@@ -645,15 +645,15 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
     let mut ip: *mut Inode = ptr::null_mut();
     let mut empty: *mut Inode = ptr::null_mut();
 
-    icache.lock.acquire();
+    ICACHE.lock.acquire();
 
     // Is the inode already cached?
     empty = ptr::null_mut();
-    ip = &mut *icache.inode.as_mut_ptr().offset(0) as *mut Inode;
-    while ip < &mut *icache.inode.as_mut_ptr().offset(NINODE as isize) as *mut Inode {
+    ip = &mut *ICACHE.inode.as_mut_ptr().offset(0) as *mut Inode;
+    while ip < &mut *ICACHE.inode.as_mut_ptr().offset(NINODE as isize) as *mut Inode {
         if (*ip).ref_0 > 0 && (*ip).dev == dev && (*ip).inum == inum {
             (*ip).ref_0 += 1;
-            icache.lock.release();
+            ICACHE.lock.release();
             return ip;
         }
         if empty.is_null() && (*ip).ref_0 == 0 {
@@ -672,7 +672,7 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
     (*ip).inum = inum;
     (*ip).ref_0 = 1;
     (*ip).valid = 0;
-    icache.lock.release();
+    ICACHE.lock.release();
     ip
 }
 

@@ -3,7 +3,7 @@ use crate::{
     printf::panic,
     proc::{exit, fork, growproc, kill, myproc, sleep, wait},
     syscall::{argaddr, argint},
-    trap::{ticks, tickslock},
+    trap::{TICKS, TICKSLOCK},
 };
 
 pub unsafe fn sys_exit() -> usize {
@@ -50,16 +50,16 @@ pub unsafe fn sys_sleep() -> usize {
     if argint(0, &mut n) < 0 {
         return usize::MAX;
     }
-    tickslock.acquire();
-    let ticks0 = ticks;
-    while ticks.wrapping_sub(ticks0) < n as u32 {
+    TICKSLOCK.acquire();
+    let ticks0 = TICKS;
+    while TICKS.wrapping_sub(ticks0) < n as u32 {
         if (*myproc()).killed != 0 {
-            tickslock.release();
+            TICKSLOCK.release();
             return usize::MAX;
         }
-        sleep(&mut ticks as *mut u32 as *mut libc::CVoid, &mut tickslock);
+        sleep(&mut TICKS as *mut u32 as *mut libc::CVoid, &mut TICKSLOCK);
     }
-    tickslock.release();
+    TICKSLOCK.release();
     0
 }
 
@@ -75,8 +75,8 @@ pub unsafe fn sys_kill() -> usize {
 /// since start.
 pub unsafe fn sys_uptime() -> usize {
     let mut xticks: u32 = 0;
-    tickslock.acquire();
-    xticks = ticks;
-    tickslock.release();
+    TICKSLOCK.acquire();
+    xticks = TICKS;
+    TICKSLOCK.release();
     xticks as usize
 }

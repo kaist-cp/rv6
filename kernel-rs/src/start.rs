@@ -29,7 +29,7 @@ impl Stack {
 pub static mut stack0: Stack = Stack::new();
 
 /// scratch area for timer interrupt, one per CPU.
-static mut mscratch0: [usize; NCPU as usize * 32] = [0; NCPU as usize * 32];
+static mut MSCRATCH0: [usize; NCPU as usize * 32] = [0; NCPU as usize * 32];
 
 /// entry.S jumps here in machine mode on stack0.
 #[no_mangle]
@@ -77,7 +77,7 @@ unsafe fn timerinit() {
     // scratch[0..3] : space for timervec to save registers.
     // scratch[4] : address of CLINT MTIMECMP register.
     // scratch[5] : desired interval (in cycles) between timer interrupts.
-    let scratch: *mut usize = &mut *mscratch0.as_mut_ptr().offset(32 * id as isize) as *mut usize;
+    let scratch: *mut usize = &mut *MSCRATCH0.as_mut_ptr().offset(32 * id as isize) as *mut usize;
     *scratch.offset(4) = clint_mtimecmp(id as usize);
     *scratch.offset(5) = interval as usize;
     w_mscratch(scratch as usize);

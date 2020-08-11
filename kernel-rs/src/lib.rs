@@ -3,11 +3,7 @@
 #![no_std]
 #![deny(warnings)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
-#![allow(
-    unused_assignments,
-    dead_code,
-    non_upper_case_globals
-)]
+#![allow(unused_assignments, dead_code)]
 #![feature(llvm_asm)]
 #![feature(c_variadic)]
 #![feature(ptr_offset_from)]

@@ -86,47 +86,47 @@ impl File {
     /// Allocate a file structure.
     pub unsafe fn alloc() -> *mut File {
         let mut f: *mut File = ptr::null_mut();
-        ftable.lock.acquire();
-        f = ftable.file.as_mut_ptr();
-        while f < ftable.file.as_mut_ptr().offset(NFILE as isize) {
+        FTABLE.lock.acquire();
+        f = FTABLE.file.as_mut_ptr();
+        while f < FTABLE.file.as_mut_ptr().offset(NFILE as isize) {
             if (*f).ref_0 == 0 {
                 (*f).ref_0 = 1;
-                ftable.lock.release();
+                FTABLE.lock.release();
                 return f;
             }
             f = f.offset(1)
         }
-        ftable.lock.release();
+        FTABLE.lock.release();
         ptr::null_mut()
     }
 
     /// Increment ref count for file self.
     pub unsafe fn dup(&mut self) -> *mut File {
-        ftable.lock.acquire();
+        FTABLE.lock.acquire();
         if (*self).ref_0 < 1 {
             panic(b"File::dup\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         }
         (*self).ref_0 += 1;
-        ftable.lock.release();
+        FTABLE.lock.release();
         self
     }
 
     /// Close file self.  (Decrement ref count, close when reaches 0.)
     pub unsafe fn close(&mut self) {
         let mut ff: File = File::zeroed();
-        ftable.lock.acquire();
+        FTABLE.lock.acquire();
         if (*self).ref_0 < 1 {
             panic(b"File::close\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         }
         (*self).ref_0 -= 1;
         if (*self).ref_0 > 0 {
-            ftable.lock.release();
+            FTABLE.lock.release();
             return;
         }
         ff = *self;
         (*self).ref_0 = 0;
         (*self).typ = FD_NONE;
-        ftable.lock.release();
+        FTABLE.lock.release();
         if ff.typ as u32 == FD_PIPE as i32 as u32 {
             (*ff.pipe).close(ff.writable as i32);
         } else if ff.typ as u32 == FD_INODE as i32 as u32
@@ -175,11 +175,11 @@ impl File {
         } else if (*self).typ as u32 == FD_DEVICE as i32 as u32 {
             if ((*self).major as i32) < 0
                 || (*self).major as i32 >= NDEV
-                || devsw[(*self).major as usize].read.is_none()
+                || DEVSW[(*self).major as usize].read.is_none()
             {
                 return -1;
             }
-            r = devsw[(*self).major as usize]
+            r = DEVSW[(*self).major as usize]
                 .read
                 .expect("non-null function pointer")(1, addr, n)
         } else if (*self).typ as u32 == FD_INODE as i32 as u32 {
@@ -208,11 +208,11 @@ impl File {
         } else if (*self).typ as u32 == FD_DEVICE as i32 as u32 {
             if ((*self).major as i32) < 0
                 || (*self).major as i32 >= NDEV
-                || devsw[(*self).major as usize].write.is_none()
+                || DEVSW[(*self).major as usize].write.is_none()
             {
                 return -1;
             }
-            ret = devsw[(*self).major as usize]
+            ret = DEVSW[(*self).major as usize]
                 .write
                 .expect("non-null function pointer")(1, addr, n)
         } else if (*self).typ as u32 == FD_INODE as i32 as u32 {
@@ -281,15 +281,15 @@ impl Ftable {
 }
 
 /// Support functions for system calls that involve file descriptors.
-pub static mut devsw: [Devsw; NDEV as usize] = [Devsw {
+pub static mut DEVSW: [Devsw; NDEV as usize] = [Devsw {
     read: None,
     write: None,
 }; NDEV as usize];
 
-static mut ftable: Ftable = Ftable::zeroed();
+static mut FTABLE: Ftable = Ftable::zeroed();
 
 pub unsafe fn fileinit() {
-    ftable
+    FTABLE
         .lock
-        .initlock(b"ftable\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        .initlock(b"FTABLE\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
 }

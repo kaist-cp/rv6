@@ -1,7 +1,7 @@
 use crate::libc;
 use crate::{
     printf::panic,
-    proc::{Cpu, mycpu},
+    proc::{mycpu, Cpu},
     riscv::{intr_get, intr_off, intr_on},
 };
 use core::ptr;

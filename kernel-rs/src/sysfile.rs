@@ -179,9 +179,7 @@ unsafe fn isdirempty(dp: *mut Inode) -> i32 {
         ) as usize
             != ::core::mem::size_of::<Dirent>()
         {
-            panic(
-                b"isdirempty: readi\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
-            );
+            panic(b"isdirempty: readi\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         }
         if de.inum as i32 != 0 {
             return 0;
@@ -224,8 +222,7 @@ pub unsafe fn sys_unlink() -> usize {
             (*ip).lock();
             if ((*ip).nlink as i32) < 1 {
                 panic(
-                    b"unlink: nlink < 1\x00" as *const u8 as *const libc::CChar
-                        as *mut libc::CChar,
+                    b"unlink: nlink < 1\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
                 );
             }
             if (*ip).typ as i32 == T_DIR && isdirempty(ip) == 0 {
