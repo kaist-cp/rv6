@@ -5,8 +5,10 @@ KR=kernel-rs
 RUST_TARGET=riscv64gc-unknown-none-elfhf
 ifeq (qemu-gdb,$(firstword $(MAKECMDGOALS)))
 RUST_MODE=debug
+XBUILD_RELEASE:=
 else
 RUST_MODE=release
+XBUILD_RELEASE:=--$(RUST_MODE)
 endif
 
 # OBJS = \
@@ -98,13 +100,8 @@ $U/initcode: $U/initcode.S
 	$(OBJCOPY) -S -O binary $U/initcode.out $U/initcode
 	$(OBJDUMP) -S $U/initcode.o > $U/initcode.asm
 
-ifeq (qemu-gdb,$(firstword $(MAKECMDGOALS)))
 $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a: $(shell find $(KR) -type f)
-	cargo xbuild --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json
-else
-$(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a: $(shell find $(KR) -type f)
-	cargo xbuild --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json --$(RUST_MODE)
-endif
+	cargo xbuild --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json $(XBUILD_RELEASE)
 
 tags: $(OBJS) _init
 	etags *.S *.c
