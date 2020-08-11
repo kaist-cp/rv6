@@ -50,7 +50,7 @@ pub const ELF_PROG_LOAD: u32 = 1;
 
 bitflags! {
     /// Flag bits for ProgHdr flags
-    pub struct ELF_PROG_FLAG: u32 {
+    pub struct ElfProgFlag: u32 {
         const EXEC = 1;
         const WRITE = 2;
         const READ = 4;

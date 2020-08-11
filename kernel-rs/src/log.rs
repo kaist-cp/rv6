@@ -78,12 +78,12 @@ impl Superblock {
     pub unsafe fn initlog(&mut self, dev: i32) {
         if ::core::mem::size_of::<LogHeader>() >= BSIZE as usize {
             panic(
-                b"initlog: too big LogHeader\x00" as *const u8 as *const libc::c_char
-                    as *mut libc::c_char,
+                b"initlog: too big LogHeader\x00" as *const u8 as *const libc::CChar
+                    as *mut libc::CChar,
             );
         }
         log.lock
-            .initlock(b"log\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            .initlock(b"log\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         log.start = (*self).logstart as i32;
         log.size = (*self).nlog as i32;
         log.dev = dev;
@@ -102,8 +102,8 @@ unsafe fn install_trans() {
 
         // copy block to dst
         ptr::copy(
-            (*lbuf).data.as_mut_ptr() as *const libc::c_void,
-            (*dbuf).data.as_mut_ptr() as *mut libc::c_void,
+            (*lbuf).data.as_mut_ptr() as *const libc::CVoid,
+            (*dbuf).data.as_mut_ptr() as *mut libc::CVoid,
             BSIZE as usize,
         );
 
@@ -159,7 +159,7 @@ pub unsafe fn begin_op() {
             // this op might exhaust log space; wait for commit.
             log.lh.n + (log.outstanding + 1) * MAXOPBLOCKS > LOGSIZE
         {
-            sleep(&mut log as *mut Log as *mut libc::c_void, &mut log.lock);
+            sleep(&mut log as *mut Log as *mut libc::CVoid, &mut log.lock);
         } else {
             log.outstanding += 1;
             log.lock.release();
@@ -175,7 +175,7 @@ pub unsafe fn end_op() {
     log.lock.acquire();
     log.outstanding -= 1;
     if log.committing != 0 {
-        panic(b"log.committing\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic(b"log.committing\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     }
     if log.outstanding == 0 {
         do_commit = 1;
@@ -184,7 +184,7 @@ pub unsafe fn end_op() {
         // begin_op() may be waiting for log space,
         // and decrementing log.outstanding has decreased
         // the amount of reserved space.
-        wakeup(&mut log as *mut Log as *mut libc::c_void);
+        wakeup(&mut log as *mut Log as *mut libc::CVoid);
     }
     log.lock.release();
     if do_commit != 0 {
@@ -193,7 +193,7 @@ pub unsafe fn end_op() {
         commit();
         log.lock.acquire();
         log.committing = 0;
-        wakeup(&mut log as *mut Log as *mut libc::c_void);
+        wakeup(&mut log as *mut Log as *mut libc::CVoid);
         log.lock.release();
     };
 }
@@ -208,8 +208,8 @@ unsafe fn write_log() {
         let from: *mut Buf = bread(log.dev as u32, log.lh.block[tail as usize] as u32);
 
         ptr::copy(
-            (*from).data.as_mut_ptr() as *const libc::c_void,
-            (*to).data.as_mut_ptr() as *mut libc::c_void,
+            (*from).data.as_mut_ptr() as *const libc::CVoid,
+            (*to).data.as_mut_ptr() as *mut libc::CVoid,
             BSIZE as usize,
         );
 
@@ -249,13 +249,13 @@ unsafe fn commit() {
 pub unsafe fn log_write(b: *mut Buf) {
     if log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1 {
         panic(
-            b"too big a transaction\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+            b"too big a transaction\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
         );
     }
     if log.outstanding < 1 {
         panic(
-            b"log_write outside of trans\x00" as *const u8 as *const libc::c_char
-                as *mut libc::c_char,
+            b"log_write outside of trans\x00" as *const u8 as *const libc::CChar
+                as *mut libc::CChar,
         );
     }
     log.lock.acquire();

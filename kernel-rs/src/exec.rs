@@ -6,17 +6,17 @@ use crate::{
     log::{begin_op, end_op},
     param::MAXARG,
     printf::panic,
-    proc::{myproc, proc, proc_freepagetable, proc_pagetable},
-    riscv::{pagetable_t, PGSIZE},
+    proc::{myproc, Proc, proc_freepagetable, proc_pagetable},
+    riscv::{PagetableT, PGSIZE},
     string::{safestrcpy, strlen},
     vm::{copyout, uvmalloc, uvmclear, walkaddr},
 };
 use core::ptr;
 
-pub unsafe fn exec(path: *mut libc::c_char, argv: *mut *mut libc::c_char) -> i32 {
+pub unsafe fn exec(path: *mut libc::CChar, argv: *mut *mut libc::CChar) -> i32 {
     let mut oldsz: usize = 0;
-    let mut s: *mut libc::c_char = ptr::null_mut();
-    let mut last: *mut libc::c_char = ptr::null_mut();
+    let mut s: *mut libc::CChar = ptr::null_mut();
+    let mut last: *mut libc::CChar = ptr::null_mut();
     let mut argc: usize = 0;
     let mut sz: usize = 0;
     let mut sp: usize = 0;
@@ -25,9 +25,9 @@ pub unsafe fn exec(path: *mut libc::c_char, argv: *mut *mut libc::c_char) -> i32
     let mut elf: ElfHdr = Default::default();
     let mut ip: *mut Inode = ptr::null_mut();
     let mut ph: ProgHdr = Default::default();
-    let mut pagetable: pagetable_t = 0 as pagetable_t;
-    let mut oldpagetable: pagetable_t = ptr::null_mut();
-    let mut p: *mut proc = myproc();
+    let mut pagetable: PagetableT = 0 as PagetableT;
+    let mut oldpagetable: PagetableT = ptr::null_mut();
+    let mut p: *mut Proc = myproc();
 
     begin_op();
     ip = namei(path);
@@ -162,7 +162,7 @@ pub unsafe fn exec(path: *mut libc::c_char, argv: *mut *mut libc::c_char) -> i32
                     && copyout(
                         pagetable,
                         sp,
-                        ustack.as_mut_ptr() as *mut libc::c_char,
+                        ustack.as_mut_ptr() as *mut libc::CChar,
                         argc.wrapping_add(1)
                             .wrapping_mul(::core::mem::size_of::<usize>()),
                     ) >= 0
@@ -185,7 +185,7 @@ pub unsafe fn exec(path: *mut libc::c_char, argv: *mut *mut libc::c_char) -> i32
                     safestrcpy(
                         (*p).name.as_mut_ptr(),
                         last,
-                        ::core::mem::size_of::<[libc::c_char; 16]>() as i32,
+                        ::core::mem::size_of::<[libc::CChar; 16]>() as i32,
                     );
 
                     // Commit to the user image.
@@ -215,7 +215,7 @@ pub unsafe fn exec(path: *mut libc::c_char, argv: *mut *mut libc::c_char) -> i32
 ///
 /// Returns `Ok(())` on success, `Err(())` on failure.
 unsafe fn loadseg(
-    pagetable: pagetable_t,
+    pagetable: PagetableT,
     va: usize,
     ip: *mut Inode,
     offset: u32,
@@ -223,8 +223,8 @@ unsafe fn loadseg(
 ) -> Result<(), ()> {
     if va.wrapping_rem(PGSIZE as usize) != 0 {
         panic(
-            b"loadseg: va must be page aligned\x00" as *const u8 as *const libc::c_char
-                as *mut libc::c_char,
+            b"loadseg: va must be page aligned\x00" as *const u8 as *const libc::CChar
+                as *mut libc::CChar,
         );
     }
 
@@ -232,8 +232,8 @@ unsafe fn loadseg(
         let pa = walkaddr(pagetable, va.wrapping_add(i as usize));
         if pa == 0 {
             panic(
-                b"loadseg: address should exist\x00" as *const u8 as *const libc::c_char
-                    as *mut libc::c_char,
+                b"loadseg: address should exist\x00" as *const u8 as *const libc::CChar
+                    as *mut libc::CChar,
             );
         }
 

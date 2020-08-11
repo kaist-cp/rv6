@@ -23,12 +23,12 @@ pub static mut panicked: i32 = 0;
 
 static mut pr: PrintfLock = PrintfLock::zeroed();
 
-static mut digits: [libc::c_char; 17] = [
+static mut digits: [libc::CChar; 17] = [
     48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102, 0,
 ];
 
 unsafe fn printint(xx: i32, base: i32, mut sign: i32) {
-    let mut buf: [libc::c_char; 16] = [0; 16];
+    let mut buf: [libc::CChar; 16] = [0; 16];
     let mut i: i32 = 0;
     let mut x: u32 = 0;
     if sign != 0 && {
@@ -51,7 +51,7 @@ unsafe fn printint(xx: i32, base: i32, mut sign: i32) {
     if sign != 0 {
         let fresh1 = i;
         i += 1;
-        buf[fresh1 as usize] = '-' as i32 as libc::c_char
+        buf[fresh1 as usize] = '-' as i32 as libc::CChar
     }
     loop {
         i -= 1;
@@ -77,7 +77,7 @@ unsafe fn printptr(mut x: usize) {
 }
 
 /// Print to the console. only understands %d, %x, %p, %s.
-pub unsafe extern "C" fn printf(fmt: *mut libc::c_char, args: ...) {
+pub unsafe extern "C" fn printf(fmt: *mut libc::CChar, args: ...) {
     let mut ap: ::core::ffi::VaListImpl<'_>;
     let mut i: i32 = 0;
     let mut locking: i32 = 0;
@@ -86,7 +86,7 @@ pub unsafe extern "C" fn printf(fmt: *mut libc::c_char, args: ...) {
         pr.lock.acquire();
     }
     if fmt.is_null() {
-        panic(b"null fmt\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic(b"null fmt\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     }
     ap = args.clone();
     loop {
@@ -113,9 +113,9 @@ pub unsafe extern "C" fn printf(fmt: *mut libc::c_char, args: ...) {
                     printptr(ap.as_va_list().arg::<usize>());
                 }
                 115 => {
-                    let mut s = ap.as_va_list().arg::<*mut libc::c_char>();
+                    let mut s = ap.as_va_list().arg::<*mut libc::CChar>();
                     if s.is_null() {
-                        s = b"(null)\x00" as *const u8 as *const libc::c_char as *mut libc::c_char
+                        s = b"(null)\x00" as *const u8 as *const libc::CChar as *mut libc::CChar
                     }
                     while *s != 0 {
                         consputc(*s as i32);
@@ -139,11 +139,11 @@ pub unsafe extern "C" fn printf(fmt: *mut libc::c_char, args: ...) {
     };
 }
 
-pub unsafe fn panic(s: *mut libc::c_char) -> ! {
+pub unsafe fn panic(s: *mut libc::CChar) -> ! {
     pr.locking = 0;
-    printf(b"panic: \x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    printf(b"panic: \x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     printf(s);
-    printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    printf(b"\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
 
     // freeze other CPUs
     ::core::ptr::write_volatile(&mut panicked as *mut i32, 1);
@@ -152,6 +152,6 @@ pub unsafe fn panic(s: *mut libc::c_char) -> ! {
 
 pub unsafe fn printfinit() {
     pr.lock
-        .initlock(b"pr\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        .initlock(b"pr\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     pr.locking = 1;
 }

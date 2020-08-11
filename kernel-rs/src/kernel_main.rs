@@ -22,11 +22,11 @@ pub unsafe fn kernel_main() {
         consoleinit();
         printfinit();
 
-        printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        printf(b"\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         printf(
-            b"rv6 kernel is booting\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+            b"rv6 kernel is booting\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
         );
-        printf(b"\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        printf(b"\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
 
         // physical page allocator
         kinit();
@@ -71,7 +71,7 @@ pub unsafe fn kernel_main() {
         while !started.load(Ordering::Acquire) {}
 
         printf(
-            b"hart %d starting\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+            b"hart %d starting\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
             cpuid(),
         );
 

@@ -338,12 +338,12 @@ pub const fn pa2pte(pa: usize) -> usize {
 }
 
 #[inline]
-pub const fn pte2pa(pte: pte_t) -> usize {
+pub const fn pte2pa(pte: PteT) -> usize {
     (pte >> 10) << 12
 }
 
 #[inline]
-pub const fn pte_flags(pte: pte_t) -> usize {
+pub const fn pte_flags(pte: PteT) -> usize {
     pte & 0x3FFusize
 }
 
@@ -368,8 +368,8 @@ pub fn px(level: i32, va: usize) -> usize {
 /// that have the high bit set.
 pub const MAXVA: i64 = (1) << (9 + 9 + 9 + 12 - 1);
 
-pub type pte_t = usize;
-pub type pde_t = usize;
+pub type PteT = usize;
+pub type PdeT = usize;
 
 /// 512 PTEs
-pub type pagetable_t = *mut usize;
+pub type PagetableT = *mut usize;

@@ -3,7 +3,7 @@ use crate::{
     file::File,
     fs::FD_PIPE,
     kalloc::{kalloc, kfree},
-    proc::{myproc, proc, sleep, wakeup},
+    proc::{myproc, Proc, sleep, wakeup},
     spinlock::Spinlock,
     vm::{copyin, copyout},
 };
@@ -13,7 +13,7 @@ pub const PIPESIZE: i32 = 512;
 
 pub struct Pipe {
     pub lock: Spinlock,
-    pub data: [libc::c_char; PIPESIZE as usize],
+    pub data: [libc::CChar; PIPESIZE as usize],
 
     /// number of bytes read
     pub nread: u32,
@@ -33,22 +33,22 @@ impl Pipe {
         (*self).lock.acquire();
         if writable != 0 {
             (*self).writeopen = 0;
-            wakeup(&mut (*self).nread as *mut u32 as *mut libc::c_void);
+            wakeup(&mut (*self).nread as *mut u32 as *mut libc::CVoid);
         } else {
             (*self).readopen = 0;
-            wakeup(&mut (*self).nwrite as *mut u32 as *mut libc::c_void);
+            wakeup(&mut (*self).nwrite as *mut u32 as *mut libc::CVoid);
         }
         if (*self).readopen == 0 && (*self).writeopen == 0 {
             (*self).lock.release();
-            kfree(self as *mut Pipe as *mut libc::c_char as *mut libc::c_void);
+            kfree(self as *mut Pipe as *mut libc::CChar as *mut libc::CVoid);
         } else {
             (*self).lock.release();
         };
     }
     pub unsafe fn write(&mut self, addr: usize, n: i32) -> i32 {
         let mut i: i32 = 0;
-        let mut ch: libc::c_char = 0;
-        let pr: *mut proc = myproc();
+        let mut ch: libc::CChar = 0;
+        let pr: *mut Proc = myproc();
         (*self).lock.acquire();
         while i < n {
             while (*self).nwrite == (*self).nread.wrapping_add(PIPESIZE as u32) {
@@ -57,9 +57,9 @@ impl Pipe {
                     (*self).lock.release();
                     return -1;
                 }
-                wakeup(&mut (*self).nread as *mut u32 as *mut libc::c_void);
+                wakeup(&mut (*self).nread as *mut u32 as *mut libc::CVoid);
                 sleep(
-                    &mut (*self).nwrite as *mut u32 as *mut libc::c_void,
+                    &mut (*self).nwrite as *mut u32 as *mut libc::CVoid,
                     &mut (*self).lock,
                 );
             }
@@ -77,14 +77,14 @@ impl Pipe {
             (*self).data[fresh0.wrapping_rem(PIPESIZE as u32) as usize] = ch;
             i += 1
         }
-        wakeup(&mut (*self).nread as *mut u32 as *mut libc::c_void);
+        wakeup(&mut (*self).nread as *mut u32 as *mut libc::CVoid);
         (*self).lock.release();
         n
     }
     pub unsafe fn read(&mut self, addr: usize, n: i32) -> i32 {
         let mut i: i32 = 0;
-        let pr: *mut proc = myproc();
-        let mut ch: libc::c_char = 0;
+        let pr: *mut Proc = myproc();
+        let mut ch: libc::CChar = 0;
 
         (*self).lock.acquire();
 
@@ -97,7 +97,7 @@ impl Pipe {
 
             //DOC: piperead-sleep
             sleep(
-                &mut (*self).nread as *mut u32 as *mut libc::c_void,
+                &mut (*self).nread as *mut u32 as *mut libc::CVoid,
                 &mut (*self).lock,
             );
         }
@@ -123,7 +123,7 @@ impl Pipe {
         }
 
         //DOC: piperead-wakeup
-        wakeup(&mut (*self).nwrite as *mut u32 as *mut libc::c_void);
+        wakeup(&mut (*self).nwrite as *mut u32 as *mut libc::CVoid);
         (*self).lock.release();
         i
     }
@@ -145,20 +145,20 @@ impl Pipe {
                 (*pi).nread = 0;
                 (*pi)
                     .lock
-                    .initlock(b"pipe\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+                    .initlock(b"pipe\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
                 (**f0).typ = FD_PIPE;
-                (**f0).readable = 1 as libc::c_char;
-                (**f0).writable = 0 as libc::c_char;
+                (**f0).readable = 1 as libc::CChar;
+                (**f0).writable = 0 as libc::CChar;
                 (**f0).pipe = pi;
                 (**f1).typ = FD_PIPE;
-                (**f1).readable = 0 as libc::c_char;
-                (**f1).writable = 1 as libc::c_char;
+                (**f1).readable = 0 as libc::CChar;
+                (**f1).writable = 1 as libc::CChar;
                 (**f1).pipe = pi;
                 return 0;
             }
         }
         if !pi.is_null() {
-            kfree(pi as *mut libc::c_char as *mut libc::c_void);
+            kfree(pi as *mut libc::CChar as *mut libc::CVoid);
         }
         if !(*f0).is_null() {
             (*(*f0)).close();

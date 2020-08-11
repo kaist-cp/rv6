@@ -1,7 +1,7 @@
 use crate::libc;
 use crate::{
     printf::panic,
-    proc::{cpu, mycpu},
+    proc::{Cpu, mycpu},
     riscv::{intr_get, intr_off, intr_on},
 };
 use core::ptr;
@@ -15,10 +15,10 @@ pub struct Spinlock {
     /// For debugging:
 
     /// Name of lock.
-    name: *mut libc::c_char,
+    name: *mut libc::CChar,
 
     /// The cpu holding the lock.
-    cpu: *mut cpu,
+    cpu: *mut Cpu,
 }
 
 impl Spinlock {
@@ -32,7 +32,7 @@ impl Spinlock {
     }
 
     /// Mutual exclusion spin locks.
-    pub fn initlock(&mut self, name: *mut libc::c_char) {
+    pub fn initlock(&mut self, name: *mut libc::CChar) {
         (*self).name = name;
         (*self).locked = AtomicBool::new(false);
         (*self).cpu = ptr::null_mut();
@@ -44,7 +44,7 @@ impl Spinlock {
         // disable interrupts to avoid deadlock.
         push_off();
         if self.holding() != 0 {
-            panic(b"acquire\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(b"acquire\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         }
 
         // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
@@ -72,7 +72,7 @@ impl Spinlock {
     /// Release the lock.
     pub unsafe fn release(&mut self) {
         if self.holding() == 0 {
-            panic(b"release\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(b"release\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         }
         (*self).cpu = ptr::null_mut();
 
@@ -118,15 +118,15 @@ pub unsafe fn push_off() {
     (*(mycpu())).noff += 1;
 }
 pub unsafe fn pop_off() {
-    let mut c: *mut cpu = mycpu();
+    let mut c: *mut Cpu = mycpu();
     if intr_get() != 0 {
         panic(
-            b"pop_off - interruptible\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+            b"pop_off - interruptible\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
         );
     }
     (*c).noff -= 1;
     if (*c).noff < 0 {
-        panic(b"pop_off\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic(b"pop_off\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     }
     if (*c).noff == 0 && (*c).intena != 0 {
         intr_on();

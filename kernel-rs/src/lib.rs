@@ -4,7 +4,6 @@
 #![deny(warnings)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 #![allow(
-    non_camel_case_types,
     unused_assignments,
     dead_code,
     non_upper_case_globals
@@ -22,8 +21,8 @@
 // Types are adopted from:
 // https://github.com/rust-lang/libc/blob/master/src/unix/linux_like/linux/gnu/b64/riscv64/mod.rs
 mod libc {
-    pub type c_void = core::ffi::c_void;
-    pub type c_char = u8;
+    pub type CVoid = core::ffi::c_void;
+    pub type CChar = u8;
 }
 
 mod bio;

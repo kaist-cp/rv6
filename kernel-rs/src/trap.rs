@@ -3,7 +3,7 @@ use crate::{
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     plic::{plic_claim, plic_complete},
     printf::{panic, printf},
-    proc::{cpuid, exit, myproc, proc, proc_yield, wakeup, RUNNING},
+    proc::{cpuid, exit, myproc, Proc, proc_yield, wakeup, RUNNING},
     riscv::{
         intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_sstatus,
         r_stval, r_tp, w_sepc, w_sip, w_sstatus, w_stvec, PGSIZE, SSTATUS_SPIE, SSTATUS_SPP,
@@ -18,13 +18,13 @@ use core::mem;
 extern "C" {
     // trampoline.S
     #[no_mangle]
-    static mut trampoline: [libc::c_char; 0];
+    static mut trampoline: [libc::CChar; 0];
 
     #[no_mangle]
-    static mut uservec: [libc::c_char; 0];
+    static mut uservec: [libc::CChar; 0];
 
     #[no_mangle]
-    static mut userret: [libc::c_char; 0];
+    static mut userret: [libc::CChar; 0];
 
     // in kernelvec.S, calls kerneltrap().
     #[no_mangle]
@@ -35,7 +35,7 @@ pub static mut tickslock: Spinlock = Spinlock::zeroed();
 pub static mut ticks: u32 = 0;
 
 pub unsafe fn trapinit() {
-    tickslock.initlock(b"time\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    tickslock.initlock(b"time\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
 }
 
 /// set up to take exceptions and traps while in the kernel.
@@ -51,8 +51,8 @@ pub unsafe extern "C" fn usertrap() {
 
     if r_sstatus() & SSTATUS_SPP as usize != 0 {
         panic(
-            b"usertrap: not from user mode\x00" as *const u8 as *const libc::c_char
-                as *mut libc::c_char,
+            b"usertrap: not from user mode\x00" as *const u8 as *const libc::CChar
+                as *mut libc::CChar,
         );
     }
 
@@ -60,7 +60,7 @@ pub unsafe extern "C" fn usertrap() {
     // since we're now in the kernel.
     w_stvec(kernelvec as _);
 
-    let mut p: *mut proc = myproc();
+    let mut p: *mut Proc = myproc();
 
     // save user program counter.
     (*(*p).tf).epc = r_sepc();
@@ -83,14 +83,14 @@ pub unsafe extern "C" fn usertrap() {
         which_dev = devintr();
         if which_dev == 0 {
             printf(
-                b"usertrap(): unexpected scause %p pid=%d\n\x00" as *const u8 as *const libc::c_char
-                    as *mut libc::c_char,
+                b"usertrap(): unexpected scause %p pid=%d\n\x00" as *const u8 as *const libc::CChar
+                    as *mut libc::CChar,
                 r_scause(),
                 (*p).pid,
             );
             printf(
-                b"            sepc=%p stval=%p\n\x00" as *const u8 as *const libc::c_char
-                    as *mut libc::c_char,
+                b"            sepc=%p stval=%p\n\x00" as *const u8 as *const libc::CChar
+                    as *mut libc::CChar,
                 r_sepc(),
                 r_stval(),
             );
@@ -112,7 +112,7 @@ pub unsafe extern "C" fn usertrap() {
 
 /// return to user space
 pub unsafe fn usertrapret() {
-    let mut p: *mut proc = myproc();
+    let mut p: *mut Proc = myproc();
 
     // turn off interrupts, since we're switching
     // now from kerneltrap() to usertrap().
@@ -175,30 +175,30 @@ pub unsafe fn kerneltrap() {
 
     if sstatus & SSTATUS_SPP as usize == 0 {
         panic(
-            b"kerneltrap: not from supervisor mode\x00" as *const u8 as *const libc::c_char
-                as *mut libc::c_char,
+            b"kerneltrap: not from supervisor mode\x00" as *const u8 as *const libc::CChar
+                as *mut libc::CChar,
         );
     }
 
     if intr_get() != 0 {
         panic(
-            b"kerneltrap: interrupts enabled\x00" as *const u8 as *const libc::c_char
-                as *mut libc::c_char,
+            b"kerneltrap: interrupts enabled\x00" as *const u8 as *const libc::CChar
+                as *mut libc::CChar,
         );
     }
 
     let which_dev = devintr();
     if which_dev == 0 {
         printf(
-            b"scause %p\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+            b"scause %p\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
             scause,
         );
         printf(
-            b"sepc=%p stval=%p\n\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+            b"sepc=%p stval=%p\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
             r_sepc(),
             r_stval(),
         );
-        panic(b"kerneltrap\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic(b"kerneltrap\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     }
 
     // give up the CPU if this is a timer interrupt.
@@ -215,7 +215,7 @@ pub unsafe fn kerneltrap() {
 pub unsafe fn clockintr() {
     tickslock.acquire();
     ticks = ticks.wrapping_add(1);
-    wakeup(&mut ticks as *mut u32 as *mut libc::c_void);
+    wakeup(&mut ticks as *mut u32 as *mut libc::CVoid);
     tickslock.release();
 }
 

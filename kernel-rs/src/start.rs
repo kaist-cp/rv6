@@ -17,7 +17,7 @@ extern "C" {
 
 /// entry.S needs one stack per CPU.
 #[repr(align(16))]
-pub struct Stack([libc::c_char; 4096 * NCPU as usize]);
+pub struct Stack([libc::CChar; 4096 * NCPU as usize]);
 
 impl Stack {
     const fn new() -> Self {

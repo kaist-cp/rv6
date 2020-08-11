@@ -1,6 +1,6 @@
 use crate::libc;
 
-pub unsafe fn strncmp(mut p: *const libc::c_char, mut q: *const libc::c_char, mut n: u32) -> i32 {
+pub unsafe fn strncmp(mut p: *const libc::CChar, mut q: *const libc::CChar, mut n: u32) -> i32 {
     while n > 0 && *p as i32 != 0 && *p as i32 == *q as i32 {
         n = n.wrapping_sub(1);
         p = p.offset(1);
@@ -13,10 +13,10 @@ pub unsafe fn strncmp(mut p: *const libc::c_char, mut q: *const libc::c_char, mu
 }
 
 pub unsafe fn strncpy(
-    mut s: *mut libc::c_char,
-    mut t: *const libc::c_char,
+    mut s: *mut libc::CChar,
+    mut t: *const libc::CChar,
     mut n: i32,
-) -> *mut libc::c_char {
+) -> *mut libc::CChar {
     let os = s;
     loop {
         let fresh5 = n;
@@ -40,17 +40,17 @@ pub unsafe fn strncpy(
         }
         let fresh9 = s;
         s = s.offset(1);
-        *fresh9 = 0 as libc::c_char
+        *fresh9 = 0 as libc::CChar
     }
     os
 }
 
 /// Like strncpy but guaranteed to NUL-terminate.
 pub unsafe fn safestrcpy(
-    mut s: *mut libc::c_char,
-    mut t: *const libc::c_char,
+    mut s: *mut libc::CChar,
+    mut t: *const libc::CChar,
     mut n: i32,
-) -> *mut libc::c_char {
+) -> *mut libc::CChar {
     let os = s;
     if n <= 0 {
         return os;
@@ -68,11 +68,11 @@ pub unsafe fn safestrcpy(
             break;
         }
     }
-    *s = 0 as libc::c_char;
+    *s = 0 as libc::CChar;
     os
 }
 
-pub unsafe fn strlen(s: *const libc::c_char) -> i32 {
+pub unsafe fn strlen(s: *const libc::CChar) -> i32 {
     let mut n: i32 = 0;
     while *s.offset(n as isize) != 0 {
         n += 1

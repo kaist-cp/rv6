@@ -15,7 +15,7 @@ pub struct Sleeplock {
     /// For debugging:  
 
     /// Name of lock.
-    name: *mut libc::c_char,
+    name: *mut libc::CChar,
 
     /// Process holding lock
     pid: i32,
@@ -32,11 +32,11 @@ impl Sleeplock {
         }
     }
 
-    pub unsafe fn new(name: *mut libc::c_char) -> Self {
+    pub unsafe fn new(name: *mut libc::CChar) -> Self {
         let mut lk = Self::zeroed();
 
         lk.lk
-            .initlock(b"sleep lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            .initlock(b"sleep lock\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         lk.name = name;
         lk.locked = 0;
         lk.pid = 0;
@@ -44,10 +44,10 @@ impl Sleeplock {
         lk
     }
 
-    pub fn initlock(&mut self, name: *mut libc::c_char) {
+    pub fn initlock(&mut self, name: *mut libc::CChar) {
         (*self)
             .lk
-            .initlock(b"sleep lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            .initlock(b"sleep lock\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         (*self).name = name;
         (*self).locked = 0;
         (*self).pid = 0;
@@ -56,7 +56,7 @@ impl Sleeplock {
     pub unsafe fn acquire(&mut self) {
         (*self).lk.acquire();
         while (*self).locked != 0 {
-            sleep(self as *mut Sleeplock as *mut libc::c_void, &mut (*self).lk);
+            sleep(self as *mut Sleeplock as *mut libc::CVoid, &mut (*self).lk);
         }
         (*self).locked = 1;
         (*self).pid = (*myproc()).pid;
@@ -67,7 +67,7 @@ impl Sleeplock {
         (*self).lk.acquire();
         (*self).locked = 0;
         (*self).pid = 0;
-        wakeup(self as *mut Sleeplock as *mut libc::c_void);
+        wakeup(self as *mut Sleeplock as *mut libc::CVoid);
         (*self).lk.release();
     }
 

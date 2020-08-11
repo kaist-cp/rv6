@@ -13,7 +13,7 @@ use crate::{
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
     pipe::Pipe,
     printf::panic,
-    proc::{myproc, proc},
+    proc::{myproc, Proc},
     riscv::PGSIZE,
     stat::{T_DEVICE, T_DIR, T_FILE},
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
@@ -29,7 +29,7 @@ impl File {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
     unsafe fn fdalloc(&mut self) -> i32 {
-        let mut p: *mut proc = myproc();
+        let mut p: *mut Proc = myproc();
         for fd in 0..NOFILE {
             // user pointer to struct stat
             if (*p).ofile[fd as usize].is_null() {
@@ -123,9 +123,9 @@ pub unsafe fn sys_fstat() -> usize {
 
 /// Create the path new as a link to the same inode as old.
 pub unsafe fn sys_link() -> usize {
-    let mut name: [libc::c_char; DIRSIZ] = [0; DIRSIZ];
-    let mut new: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
-    let mut old: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
+    let mut name: [libc::CChar; DIRSIZ] = [0; DIRSIZ];
+    let mut new: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
+    let mut old: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut dp: *mut Inode = ptr::null_mut();
     let mut ip: *mut Inode = ptr::null_mut();
     if argstr(0, old.as_mut_ptr(), MAXPATH) < 0 || argstr(1, new.as_mut_ptr(), MAXPATH) < 0 {
@@ -180,7 +180,7 @@ unsafe fn isdirempty(dp: *mut Inode) -> i32 {
             != ::core::mem::size_of::<Dirent>()
         {
             panic(
-                b"isdirempty: readi\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+                b"isdirempty: readi\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
             );
         }
         if de.inum as i32 != 0 {
@@ -195,8 +195,8 @@ pub unsafe fn sys_unlink() -> usize {
     let mut ip: *mut Inode = ptr::null_mut();
     let mut dp: *mut Inode = ptr::null_mut();
     let mut de: Dirent = Default::default();
-    let mut name: [libc::c_char; DIRSIZ] = [0; DIRSIZ];
-    let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
+    let mut name: [libc::CChar; DIRSIZ] = [0; DIRSIZ];
+    let mut path: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut off: u32 = 0;
     if argstr(0, path.as_mut_ptr(), MAXPATH) < 0 {
         return usize::MAX;
@@ -212,11 +212,11 @@ pub unsafe fn sys_unlink() -> usize {
     // Cannot unlink "." or "..".
     if !(namecmp(
         name.as_mut_ptr(),
-        b".\x00" as *const u8 as *const libc::c_char,
+        b".\x00" as *const u8 as *const libc::CChar,
     ) == 0
         || namecmp(
             name.as_mut_ptr(),
-            b"..\x00" as *const u8 as *const libc::c_char,
+            b"..\x00" as *const u8 as *const libc::CChar,
         ) == 0)
     {
         ip = dirlookup(dp, name.as_mut_ptr(), &mut off);
@@ -224,8 +224,8 @@ pub unsafe fn sys_unlink() -> usize {
             (*ip).lock();
             if ((*ip).nlink as i32) < 1 {
                 panic(
-                    b"unlink: nlink < 1\x00" as *const u8 as *const libc::c_char
-                        as *mut libc::c_char,
+                    b"unlink: nlink < 1\x00" as *const u8 as *const libc::CChar
+                        as *mut libc::CChar,
                 );
             }
             if (*ip).typ as i32 == T_DIR && isdirempty(ip) == 0 {
@@ -241,8 +241,8 @@ pub unsafe fn sys_unlink() -> usize {
                     != ::core::mem::size_of::<Dirent>()
                 {
                     panic(
-                        b"unlink: writei\x00" as *const u8 as *const libc::c_char
-                            as *mut libc::c_char,
+                        b"unlink: writei\x00" as *const u8 as *const libc::CChar
+                            as *mut libc::CChar,
                     );
                 }
                 if (*ip).typ as i32 == T_DIR {
@@ -263,10 +263,10 @@ pub unsafe fn sys_unlink() -> usize {
     usize::MAX
 }
 
-unsafe fn create(path: *mut libc::c_char, typ: i16, major: i16, minor: i16) -> *mut Inode {
+unsafe fn create(path: *mut libc::CChar, typ: i16, major: i16, minor: i16) -> *mut Inode {
     let mut ip: *mut Inode = ptr::null_mut();
     let mut dp: *mut Inode = ptr::null_mut();
-    let mut name: [libc::c_char; DIRSIZ] = [0; DIRSIZ];
+    let mut name: [libc::CChar; DIRSIZ] = [0; DIRSIZ];
     dp = nameiparent(path, name.as_mut_ptr());
     if dp.is_null() {
         return ptr::null_mut();
@@ -284,7 +284,7 @@ unsafe fn create(path: *mut libc::c_char, typ: i16, major: i16, minor: i16) -> *
     }
     ip = Inode::alloc((*dp).dev, typ);
     if ip.is_null() {
-        panic(b"create: Inode::alloc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic(b"create: Inode::alloc\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     }
     (*ip).lock();
     (*ip).major = major;
@@ -301,27 +301,27 @@ unsafe fn create(path: *mut libc::c_char, typ: i16, major: i16, minor: i16) -> *
         // No ip->nlink++ for ".": avoid cyclic ref count.
         if dirlink(
             ip,
-            b".\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+            b".\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
             (*ip).inum,
         ) < 0
             || dirlink(
                 ip,
-                b"..\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+                b"..\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
                 (*dp).inum,
             ) < 0
         {
-            panic(b"create dots\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(b"create dots\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         }
     }
     if dirlink(dp, name.as_mut_ptr(), (*ip).inum) < 0 {
-        panic(b"create: dirlink\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic(b"create: dirlink\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     }
     (*dp).unlockput();
     ip
 }
 
 pub unsafe fn sys_open() -> usize {
-    let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
+    let mut path: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut fd: i32 = 0;
     let mut omode: i32 = 0;
     let mut f: *mut File = ptr::null_mut();
@@ -377,16 +377,16 @@ pub unsafe fn sys_open() -> usize {
         (*f).off = 0
     }
     (*f).ip = ip;
-    (*f).readable = (!omode.intersects(FcntlFlags::O_WRONLY)) as i32 as libc::c_char;
+    (*f).readable = (!omode.intersects(FcntlFlags::O_WRONLY)) as i32 as libc::CChar;
     (*f).writable =
-        omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR) as i32 as libc::c_char;
+        omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR) as i32 as libc::CChar;
     (*ip).unlock();
     end_op();
     fd as usize
 }
 
 pub unsafe fn sys_mkdir() -> usize {
-    let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
+    let mut path: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut ip: *mut Inode = ptr::null_mut();
     begin_op();
     if argstr(0, path.as_mut_ptr(), MAXPATH) < 0 || {
@@ -403,7 +403,7 @@ pub unsafe fn sys_mkdir() -> usize {
 
 pub unsafe fn sys_mknod() -> usize {
     let mut ip: *mut Inode = ptr::null_mut();
-    let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
+    let mut path: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut major: i32 = 0;
     let mut minor: i32 = 0;
     begin_op();
@@ -429,9 +429,9 @@ pub unsafe fn sys_mknod() -> usize {
 }
 
 pub unsafe fn sys_chdir() -> usize {
-    let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
+    let mut path: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut ip: *mut Inode = ptr::null_mut();
-    let mut p: *mut proc = myproc();
+    let mut p: *mut Proc = myproc();
     begin_op();
     if argstr(0, path.as_mut_ptr(), MAXPATH) < 0 || {
         ip = namei(path.as_mut_ptr());
@@ -455,8 +455,8 @@ pub unsafe fn sys_chdir() -> usize {
 
 pub unsafe fn sys_exec() -> usize {
     let current_block: usize;
-    let mut path: [libc::c_char; MAXPATH as usize] = [0; MAXPATH as usize];
-    let mut argv: [*mut libc::c_char; MAXARG] = [ptr::null_mut(); MAXARG];
+    let mut path: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
+    let mut argv: [*mut libc::CChar; MAXARG] = [ptr::null_mut(); MAXARG];
     let mut i: i32 = 0;
     let mut uargv: usize = 0;
     let mut uarg: usize = 0;
@@ -466,8 +466,8 @@ pub unsafe fn sys_exec() -> usize {
     ptr::write_bytes(argv.as_mut_ptr(), 0, 1);
     loop {
         if i as usize
-            >= (::core::mem::size_of::<[*mut libc::c_char; 32]>())
-                .wrapping_div(::core::mem::size_of::<*mut libc::c_char>())
+            >= (::core::mem::size_of::<[*mut libc::CChar; 32]>())
+                .wrapping_div(::core::mem::size_of::<*mut libc::CChar>())
         {
             current_block = 12646643519710607562;
             break;
@@ -485,10 +485,10 @@ pub unsafe fn sys_exec() -> usize {
             current_block = 6009453772311597924;
             break;
         } else {
-            argv[i as usize] = kalloc() as *mut libc::c_char;
+            argv[i as usize] = kalloc() as *mut libc::CChar;
             if argv[i as usize].is_null() {
                 panic(
-                    b"sys_exec kalloc\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
+                    b"sys_exec kalloc\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
                 );
             }
             if fetchstr(uarg, argv[i as usize], PGSIZE) < 0 {
@@ -502,11 +502,11 @@ pub unsafe fn sys_exec() -> usize {
         12646643519710607562 => {
             i = 0;
             while (i as usize)
-                < (::core::mem::size_of::<[*mut libc::c_char; 32]>())
-                    .wrapping_div(::core::mem::size_of::<*mut libc::c_char>())
+                < (::core::mem::size_of::<[*mut libc::CChar; 32]>())
+                    .wrapping_div(::core::mem::size_of::<*mut libc::CChar>())
                 && !argv[i as usize].is_null()
             {
-                kfree(argv[i as usize] as *mut libc::c_void);
+                kfree(argv[i as usize] as *mut libc::CVoid);
                 i += 1
             }
             usize::MAX
@@ -515,11 +515,11 @@ pub unsafe fn sys_exec() -> usize {
             let ret = exec(path.as_mut_ptr(), argv.as_mut_ptr());
             i = 0;
             while (i as usize)
-                < (::core::mem::size_of::<[*mut libc::c_char; 32]>())
-                    .wrapping_div(::core::mem::size_of::<*mut libc::c_char>())
+                < (::core::mem::size_of::<[*mut libc::CChar; 32]>())
+                    .wrapping_div(::core::mem::size_of::<*mut libc::CChar>())
                 && !argv[i as usize].is_null()
             {
-                kfree(argv[i as usize] as *mut libc::c_void);
+                kfree(argv[i as usize] as *mut libc::CVoid);
                 i += 1
             }
             ret as usize
@@ -535,7 +535,7 @@ pub unsafe fn sys_pipe() -> usize {
     let mut wf: *mut File = ptr::null_mut();
     let mut fd0: i32 = 0;
     let mut fd1: i32 = 0;
-    let mut p: *mut proc = myproc();
+    let mut p: *mut Proc = myproc();
     if argaddr(0, &mut fdarray) < 0 {
         return usize::MAX;
     }
@@ -558,13 +558,13 @@ pub unsafe fn sys_pipe() -> usize {
     if copyout(
         (*p).pagetable,
         fdarray,
-        &mut fd0 as *mut i32 as *mut libc::c_char,
+        &mut fd0 as *mut i32 as *mut libc::CChar,
         ::core::mem::size_of::<i32>(),
     ) < 0
         || copyout(
             (*p).pagetable,
             fdarray.wrapping_add(::core::mem::size_of::<i32>()),
-            &mut fd1 as *mut i32 as *mut libc::c_char,
+            &mut fd1 as *mut i32 as *mut libc::CChar,
             ::core::mem::size_of::<i32>(),
         ) < 0
     {
