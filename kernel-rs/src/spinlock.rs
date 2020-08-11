@@ -1,4 +1,3 @@
-use crate::libc;
 use crate::{
     printf::panic,
     proc::{mycpu, Cpu},
@@ -15,7 +14,7 @@ pub struct Spinlock {
     /// For debugging:
 
     /// Name of lock.
-    name: *mut libc::CChar,
+    name: *mut u8,
 
     /// The cpu holding the lock.
     cpu: *mut Cpu,
@@ -32,7 +31,7 @@ impl Spinlock {
     }
 
     /// Mutual exclusion spin locks.
-    pub fn initlock(&mut self, name: *mut libc::CChar) {
+    pub fn initlock(&mut self, name: *mut u8) {
         (*self).name = name;
         (*self).locked = AtomicBool::new(false);
         (*self).cpu = ptr::null_mut();
@@ -44,7 +43,7 @@ impl Spinlock {
         // disable interrupts to avoid deadlock.
         push_off();
         if self.holding() != 0 {
-            panic(b"acquire\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+            panic(b"acquire\x00" as *const u8 as *mut u8);
         }
 
         // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
@@ -72,7 +71,7 @@ impl Spinlock {
     /// Release the lock.
     pub unsafe fn release(&mut self) {
         if self.holding() == 0 {
-            panic(b"release\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+            panic(b"release\x00" as *const u8 as *mut u8);
         }
         (*self).cpu = ptr::null_mut();
 
@@ -119,13 +118,11 @@ pub unsafe fn push_off() {
 pub unsafe fn pop_off() {
     let mut c: *mut Cpu = mycpu();
     if intr_get() != 0 {
-        panic(
-            b"pop_off - interruptible\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
-        );
+        panic(b"pop_off - interruptible\x00" as *const u8 as *mut u8);
     }
     (*c).noff -= 1;
     if (*c).noff < 0 {
-        panic(b"pop_off\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        panic(b"pop_off\x00" as *const u8 as *mut u8);
     }
     if (*c).noff == 0 && (*c).intena != 0 {
         intr_on();

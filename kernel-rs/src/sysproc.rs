@@ -13,7 +13,7 @@ pub unsafe fn sys_exit() -> usize {
     }
     exit(n);
 
-    panic(b"sys_exit: not reached\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+    panic(b"sys_exit: not reached\x00" as *const u8 as *mut u8);
 }
 
 pub unsafe fn sys_getpid() -> usize {

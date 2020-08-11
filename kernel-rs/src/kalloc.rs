@@ -37,8 +37,7 @@ impl Kmem {
 static mut KMEM: Kmem = Kmem::zeroed();
 
 pub unsafe fn kinit() {
-    KMEM.lock
-        .initlock(b"KMEM\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+    KMEM.lock.initlock(b"KMEM\x00" as *const u8 as *mut u8);
 
     // TODO: without this strange code, the kernel doesn't boot up.  Probably stack is not properly
     // initialized at the beginning...
@@ -52,8 +51,8 @@ pub unsafe fn kinit() {
 }
 
 pub unsafe fn freerange(pa_start: *mut libc::CVoid, pa_end: *mut libc::CVoid) {
-    let mut p = pgroundup(pa_start as usize) as *mut libc::CChar;
-    while p.offset(PGSIZE as isize) <= pa_end as *mut libc::CChar {
+    let mut p = pgroundup(pa_start as usize) as *mut u8;
+    while p.offset(PGSIZE as isize) <= pa_end as *mut u8 {
         kfree(p as *mut libc::CVoid);
         p = p.offset(PGSIZE as isize)
     }
@@ -65,10 +64,10 @@ pub unsafe fn freerange(pa_start: *mut libc::CVoid, pa_end: *mut libc::CVoid) {
 /// initializing the allocator; see kinit above.)
 pub unsafe fn kfree(pa: *mut libc::CVoid) {
     if (pa as usize).wrapping_rem(PGSIZE as usize) != 0
-        || (pa as *mut libc::CChar) < END.as_mut_ptr()
+        || (pa as *mut u8) < END.as_mut_ptr()
         || pa as usize >= PHYSTOP as usize
     {
-        panic(b"kfree\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        panic(b"kfree\x00" as *const u8 as *mut u8);
     }
 
     // Fill with junk to catch dangling refs.
@@ -92,11 +91,7 @@ pub unsafe fn kalloc() -> *mut libc::CVoid {
     KMEM.lock.release();
     if !r.is_null() {
         // fill with junk
-        ptr::write_bytes(
-            r as *mut libc::CChar as *mut libc::CVoid,
-            5,
-            PGSIZE as usize,
-        );
+        ptr::write_bytes(r as *mut u8 as *mut libc::CVoid, 5, PGSIZE as usize);
     }
     r as *mut libc::CVoid
 }

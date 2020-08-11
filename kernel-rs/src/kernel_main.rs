@@ -1,4 +1,3 @@
-use crate::libc;
 use crate::{
     bio::binit,
     console::consoleinit,
@@ -22,11 +21,9 @@ pub unsafe fn kernel_main() {
         consoleinit();
         printfinit();
 
-        printf(b"\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
-        printf(
-            b"rv6 kernel is booting\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
-        );
-        printf(b"\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        printf(b"\n\x00" as *const u8 as *mut u8);
+        printf(b"rv6 kernel is booting\n\x00" as *const u8 as *mut u8);
+        printf(b"\n\x00" as *const u8 as *mut u8);
 
         // physical page allocator
         kinit();
@@ -70,10 +67,7 @@ pub unsafe fn kernel_main() {
     } else {
         while !STARTED.load(Ordering::Acquire) {}
 
-        printf(
-            b"hart %d starting\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
-            cpuid(),
-        );
+        printf(b"hart %d starting\n\x00" as *const u8 as *mut u8, cpuid());
 
         // turn on paging
         kvminithart();
