@@ -2,7 +2,8 @@ use crate::libc;
 use crate::{
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     plic::{plic_claim, plic_complete},
-    printf::{panic, printf},
+    printf::panic,
+    println,
     proc::{cpuid, exit, myproc, proc_yield, wakeup, Proc, RUNNING},
     riscv::{
         intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_sstatus,
@@ -79,15 +80,15 @@ pub unsafe extern "C" fn usertrap() {
     } else {
         which_dev = devintr();
         if which_dev == 0 {
-            printf(
-                b"usertrap(): unexpected scause %p pid=%d\n\x00" as *const u8 as *mut u8,
-                r_scause(),
-                (*p).pid,
+            println!(
+                "usertrap(): unexpected scause {:018p} pid={}",
+                r_scause() as *const u8,
+                (*p).pid
             );
-            printf(
-                b"            sepc=%p stval=%p\n\x00" as *const u8 as *mut u8,
-                r_sepc(),
-                r_stval(),
+            println!(
+                "            sepc={:018p} stval={:018p}",
+                r_sepc() as *const u8,
+                r_stval() as *const u8
             );
             (*p).killed = 1
         }
@@ -178,11 +179,11 @@ pub unsafe fn kerneltrap() {
 
     let which_dev = devintr();
     if which_dev == 0 {
-        printf(b"scause %p\n\x00" as *const u8 as *mut u8, scause);
-        printf(
-            b"sepc=%p stval=%p\n\x00" as *const u8 as *mut u8,
-            r_sepc(),
-            r_stval(),
+        println!("scause {:018p}", scause as *const u8);
+        println!(
+            "sepc={:018p} stval={:018p}",
+            r_sepc() as *const u8,
+            r_stval() as *const u8
         );
         panic(b"kerneltrap\x00" as *const u8 as *mut u8);
     }

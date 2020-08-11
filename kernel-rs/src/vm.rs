@@ -2,7 +2,8 @@ use crate::libc;
 use crate::{
     kalloc::{kalloc, kfree},
     memlayout::{CLINT, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
-    printf::{panic, printf},
+    printf::panic,
+    println,
     riscv::{
         make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, sfence_vma, w_satp,
         PagetableT, PdeT, PteT, MAXVA, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
@@ -202,7 +203,7 @@ pub unsafe fn uvmunmap(pagetable: PagetableT, va: usize, size: usize, do_free: i
             panic(b"uvmunmap: walk\x00" as *const u8 as *mut u8);
         }
         if *pte & PTE_V == 0 {
-            printf(b"va=%p pte=%p\n\x00" as *const u8 as *mut u8, a, *pte);
+            println!("va={:018p} pte={:018p}", a as *const u8, *pte as *const u8);
             panic(b"uvmunmap: not mapped\x00" as *const u8 as *mut u8);
         }
         if pte_flags(*pte) == PTE_V {
