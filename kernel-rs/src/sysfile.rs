@@ -11,7 +11,7 @@ use crate::{
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
-    pipe::pipealloc,
+    pipe::Pipe,
     printf::panic,
     proc::{myproc, proc},
     riscv::PGSIZE,
@@ -539,7 +539,7 @@ pub unsafe fn sys_pipe() -> usize {
     if argaddr(0, &mut fdarray) < 0 {
         return usize::MAX;
     }
-    if pipealloc(&mut rf, &mut wf) < 0 {
+    if Pipe::alloc(&mut rf, &mut wf) < 0 {
         return usize::MAX;
     }
     fd0 = -1;
