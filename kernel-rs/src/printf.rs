@@ -30,15 +30,14 @@ static mut DIGITS: [libc::CChar; 17] = [
 unsafe fn printint(xx: i32, base: i32, mut sign: i32) {
     let mut buf: [libc::CChar; 16] = [0; 16];
     let mut i: i32 = 0;
-    let mut x: u32 = 0;
-    if sign != 0 && {
+    let mut x: u32 = if sign != 0 && {
         sign = (xx < 0) as i32;
         (sign) != 0
     } {
-        x = -xx as u32
+        -xx as u32
     } else {
-        x = xx as u32
-    }
+        xx as u32
+    };
     loop {
         let fresh0 = i;
         i += 1;
@@ -80,8 +79,7 @@ unsafe fn printptr(mut x: usize) {
 pub unsafe extern "C" fn printf(fmt: *mut libc::CChar, args: ...) {
     let mut ap: ::core::ffi::VaListImpl<'_>;
     let mut i: i32 = 0;
-    let mut locking: i32 = 0;
-    locking = PR.locking;
+    let locking: i32 = PR.locking;
     if locking != 0 {
         PR.lock.acquire();
     }
