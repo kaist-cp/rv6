@@ -1,9 +1,18 @@
-K=kernel
-U=user
-KR=kernel-rs
+K = kernel
+U = user
+KR = kernel-rs
 
-RUST_TARGET=riscv64gc-unknown-none-elfhf
-RUST_MODE=release
+RUST_TARGET = riscv64gc-unknown-none-elfhf
+# $(firstword $(MAKECMDGOALS)) is fragile!
+# XBUILD_MODE is needed because cargo xbuild doesn't have "--debug" option.
+# https://github.com/kaist-cp/rv6/pull/118
+ifeq (qemu-gdb, $(firstword $(MAKECMDGOALS)))
+	RUST_MODE = debug
+	XBUILD_MODE :=
+else
+	RUST_MODE = release
+	XBUILD_MODE := --$(RUST_MODE)
+endif
 
 # OBJS = \
 #   $K/entry.o \
@@ -95,7 +104,7 @@ $U/initcode: $U/initcode.S
 	$(OBJDUMP) -S $U/initcode.o > $U/initcode.asm
 
 $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a: $(shell find $(KR) -type f)
-	cargo xbuild --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json --$(RUST_MODE)
+	cargo xbuild --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json $(XBUILD_MODE)
 
 tags: $(OBJS) _init
 	etags *.S *.c
