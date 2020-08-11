@@ -309,7 +309,7 @@ impl Inode {
             return addr;
         }
         bn = (bn as u32).wrapping_sub(NDIRECT as u32) as u32 as u32;
-        if (bn as usize) < NINDIRECT as usize {
+        if (bn as usize) < NINDIRECT {
             // Load indirect block, allocating if necessary.
             addr = (*self).addrs[NDIRECT];
             if addr == 0 {
@@ -346,8 +346,8 @@ impl Inode {
             let bp = bread((*self).dev, (*self).addrs[NDIRECT]);
             let a = (*bp).data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
-                if *a.offset(j as isize) != 0 {
-                    bfree((*self).dev as i32, *a.offset(j as isize));
+                if *a.add(j) != 0 {
+                    bfree((*self).dev as i32, *a.add(j));
                 }
             }
             (*bp).release();
@@ -502,8 +502,8 @@ pub const BSIZE: usize = 1024;
 pub const FSMAGIC: i32 = 0x10203040;
 pub const NDIRECT: usize = 12;
 
-pub const NINDIRECT: i32 = BSIZE.wrapping_div(mem::size_of::<u32>()) as i32;
-pub const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT as usize);
+pub const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
+pub const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
 
 /// Inodes per block.
 pub const IPB: i32 = BSIZE.wrapping_div(mem::size_of::<Dinode>()) as i32;
