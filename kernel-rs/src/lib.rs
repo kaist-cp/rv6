@@ -3,6 +3,8 @@
 #![no_std]
 #![deny(warnings)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
+// Required to delete features in xv6 for removing #![allow(dead_code)]. Instead, we chose to remain #![allow(dead_code)]:
+// https://github.com/kaist-cp/rv6/issues/120
 #![allow(dead_code)]
 #![feature(llvm_asm)]
 #![feature(c_variadic)]
