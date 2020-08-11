@@ -546,7 +546,7 @@ impl Superblock {
 }
 
 /// Bitmap bits per block
-pub const BPB: i32 = BSIZE.wrapping_mul(8usize) as i32;
+pub const BPB: i32 = BSIZE.wrapping_mul(8) as i32;
 
 /// Directory is a file containing a sequence of Dirent structures.
 pub const DIRSIZ: usize = 14;
