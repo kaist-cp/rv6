@@ -3,6 +3,7 @@
 #![no_std]
 #![deny(warnings)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
+// Required for unused features in xv6 (see https://github.com/kaist-cp/rv6/issues/120 for details).
 #![allow(dead_code)]
 #![feature(llvm_asm)]
 #![feature(c_variadic)]
