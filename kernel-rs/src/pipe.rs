@@ -127,46 +127,45 @@ impl Pipe {
         (*self).lock.release();
         i
     }
-}
-
-pub unsafe fn pipealloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {
-    let mut pi: *mut Pipe = ptr::null_mut();
-    pi = ptr::null_mut();
-    *f1 = ptr::null_mut();
-    *f0 = *f1;
-    *f0 = File::alloc();
-    if !((*f0).is_null() || {
-        *f1 = File::alloc();
-        (*f1).is_null()
-    }) {
-        pi = kalloc() as *mut Pipe;
-        if !pi.is_null() {
-            (*pi).readopen = 1;
-            (*pi).writeopen = 1;
-            (*pi).nwrite = 0;
-            (*pi).nread = 0;
-            (*pi)
-                .lock
-                .initlock(b"pipe\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
-            (**f0).typ = FD_PIPE;
-            (**f0).readable = 1 as libc::c_char;
-            (**f0).writable = 0 as libc::c_char;
-            (**f0).pipe = pi;
-            (**f1).typ = FD_PIPE;
-            (**f1).readable = 0 as libc::c_char;
-            (**f1).writable = 1 as libc::c_char;
-            (**f1).pipe = pi;
-            return 0;
+    pub unsafe fn alloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {
+        let mut pi: *mut Pipe = ptr::null_mut();
+        pi = ptr::null_mut();
+        *f1 = ptr::null_mut();
+        *f0 = *f1;
+        *f0 = File::alloc();
+        if !((*f0).is_null() || {
+            *f1 = File::alloc();
+            (*f1).is_null()
+        }) {
+            pi = kalloc() as *mut Pipe;
+            if !pi.is_null() {
+                (*pi).readopen = 1;
+                (*pi).writeopen = 1;
+                (*pi).nwrite = 0;
+                (*pi).nread = 0;
+                (*pi)
+                    .lock
+                    .initlock(b"pipe\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+                (**f0).typ = FD_PIPE;
+                (**f0).readable = 1 as libc::c_char;
+                (**f0).writable = 0 as libc::c_char;
+                (**f0).pipe = pi;
+                (**f1).typ = FD_PIPE;
+                (**f1).readable = 0 as libc::c_char;
+                (**f1).writable = 1 as libc::c_char;
+                (**f1).pipe = pi;
+                return 0;
+            }
         }
+        if !pi.is_null() {
+            kfree(pi as *mut libc::c_char as *mut libc::c_void);
+        }
+        if !(*f0).is_null() {
+            (*(*f0)).close();
+        }
+        if !(*f1).is_null() {
+            (*(*f1)).close();
+        }
+        -1
     }
-    if !pi.is_null() {
-        kfree(pi as *mut libc::c_char as *mut libc::c_void);
-    }
-    if !(*f0).is_null() {
-        (*(*f0)).close();
-    }
-    if !(*f1).is_null() {
-        (*(*f1)).close();
-    }
-    -1
 }
