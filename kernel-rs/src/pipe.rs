@@ -13,7 +13,7 @@ pub const PIPESIZE: i32 = 512;
 
 pub struct Pipe {
     pub lock: Spinlock,
-    pub data: [libc::CChar; PIPESIZE as usize],
+    pub data: [u8; PIPESIZE as usize],
 
     /// number of bytes read
     pub nread: u32,
@@ -40,14 +40,14 @@ impl Pipe {
         }
         if (*self).readopen == 0 && (*self).writeopen == 0 {
             (*self).lock.release();
-            kfree(self as *mut Pipe as *mut libc::CChar as *mut libc::CVoid);
+            kfree(self as *mut Pipe as *mut u8 as *mut libc::CVoid);
         } else {
             (*self).lock.release();
         };
     }
     pub unsafe fn write(&mut self, addr: usize, n: i32) -> i32 {
         let mut i: i32 = 0;
-        let mut ch: libc::CChar = 0;
+        let mut ch: u8 = 0;
         let proc: *mut Proc = myproc();
         (*self).lock.acquire();
         while i < n {
@@ -108,7 +108,7 @@ impl Pipe {
             }
             let fresh1 = (*self).nread;
             (*self).nread = (*self).nread.wrapping_add(1);
-            let mut ch: libc::CChar = (*self).data[fresh1.wrapping_rem(PIPESIZE as u32) as usize];
+            let mut ch: u8 = (*self).data[fresh1.wrapping_rem(PIPESIZE as u32) as usize];
             if copyout(
                 (*proc).pagetable,
                 addr.wrapping_add(i as usize),
@@ -141,22 +141,20 @@ impl Pipe {
                 (*pi).writeopen = 1;
                 (*pi).nwrite = 0;
                 (*pi).nread = 0;
-                (*pi)
-                    .lock
-                    .initlock(b"pipe\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+                (*pi).lock.initlock(b"pipe\x00" as *const u8 as *mut u8);
                 (**f0).typ = FD_PIPE;
-                (**f0).readable = 1 as libc::CChar;
-                (**f0).writable = 0 as libc::CChar;
+                (**f0).readable = 1 as u8;
+                (**f0).writable = 0 as u8;
                 (**f0).pipe = pi;
                 (**f1).typ = FD_PIPE;
-                (**f1).readable = 0 as libc::CChar;
-                (**f1).writable = 1 as libc::CChar;
+                (**f1).readable = 0 as u8;
+                (**f1).writable = 1 as u8;
                 (**f1).pipe = pi;
                 return 0;
             }
         }
         if !pi.is_null() {
-            kfree(pi as *mut libc::CChar as *mut libc::CVoid);
+            kfree(pi as *mut u8 as *mut libc::CVoid);
         }
         if !(*f0).is_null() {
             (*(*f0)).close();

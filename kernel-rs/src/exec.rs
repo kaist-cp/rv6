@@ -1,4 +1,3 @@
-use crate::libc;
 use crate::{
     elf::{ElfHdr, ProgHdr, ELF_MAGIC, ELF_PROG_LOAD},
     file::Inode,
@@ -13,7 +12,7 @@ use crate::{
 };
 use core::ptr;
 
-pub unsafe fn exec(path: *mut libc::CChar, argv: *mut *mut libc::CChar) -> i32 {
+pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
     let mut sz: usize = 0;
     let mut ustack: [usize; MAXARG + 1] = [0; MAXARG + 1];
     let mut elf: ElfHdr = Default::default();
@@ -154,7 +153,7 @@ pub unsafe fn exec(path: *mut libc::CChar, argv: *mut *mut libc::CChar) -> i32 {
                     && copyout(
                         pagetable,
                         sp,
-                        ustack.as_mut_ptr() as *mut libc::CChar,
+                        ustack.as_mut_ptr() as *mut u8,
                         argc.wrapping_add(1)
                             .wrapping_mul(::core::mem::size_of::<usize>()),
                     ) >= 0
@@ -166,8 +165,8 @@ pub unsafe fn exec(path: *mut libc::CChar, argv: *mut *mut libc::CChar) -> i32 {
                     (*(*p).tf).a1 = sp;
 
                     // Save program name for debugging.
-                    let mut s: *mut libc::CChar = path;
-                    let mut last: *mut libc::CChar = s;
+                    let mut s: *mut u8 = path;
+                    let mut last: *mut u8 = s;
                     while *s != 0 {
                         if *s as i32 == '/' as i32 {
                             last = s.offset(1isize)
@@ -177,7 +176,7 @@ pub unsafe fn exec(path: *mut libc::CChar, argv: *mut *mut libc::CChar) -> i32 {
                     safestrcpy(
                         (*p).name.as_mut_ptr(),
                         last,
-                        ::core::mem::size_of::<[libc::CChar; 16]>() as i32,
+                        ::core::mem::size_of::<[u8; 16]>() as i32,
                     );
 
                     // Commit to the user image.
@@ -214,19 +213,13 @@ unsafe fn loadseg(
     sz: u32,
 ) -> Result<(), ()> {
     if va.wrapping_rem(PGSIZE as usize) != 0 {
-        panic(
-            b"loadseg: va must be page aligned\x00" as *const u8 as *const libc::CChar
-                as *mut libc::CChar,
-        );
+        panic(b"loadseg: va must be page aligned\x00" as *const u8 as *mut u8);
     }
 
     for i in num_iter::range_step(0, sz, PGSIZE as _) {
         let pa = walkaddr(pagetable, va.wrapping_add(i as usize));
         if pa == 0 {
-            panic(
-                b"loadseg: address should exist\x00" as *const u8 as *const libc::CChar
-                    as *mut libc::CChar,
-            );
+            panic(b"loadseg: address should exist\x00" as *const u8 as *mut u8);
         }
 
         let n = if sz.wrapping_sub(i) < PGSIZE as u32 {

@@ -18,13 +18,13 @@ use core::mem;
 extern "C" {
     // trampoline.S
     #[no_mangle]
-    static mut trampoline: [libc::CChar; 0];
+    static mut trampoline: [u8; 0];
 
     #[no_mangle]
-    static mut uservec: [libc::CChar; 0];
+    static mut uservec: [u8; 0];
 
     #[no_mangle]
-    static mut userret: [libc::CChar; 0];
+    static mut userret: [u8; 0];
 
     // in kernelvec.S, calls kerneltrap().
     #[no_mangle]
@@ -35,7 +35,7 @@ pub static mut TICKSLOCK: Spinlock = Spinlock::zeroed();
 pub static mut TICKS: u32 = 0;
 
 pub unsafe fn trapinit() {
-    TICKSLOCK.initlock(b"time\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+    TICKSLOCK.initlock(b"time\x00" as *const u8 as *mut u8);
 }
 
 /// set up to take exceptions and traps while in the kernel.
@@ -50,10 +50,7 @@ pub unsafe extern "C" fn usertrap() {
     let mut which_dev: i32 = 0;
 
     if r_sstatus() & SSTATUS_SPP as usize != 0 {
-        panic(
-            b"usertrap: not from user mode\x00" as *const u8 as *const libc::CChar
-                as *mut libc::CChar,
-        );
+        panic(b"usertrap: not from user mode\x00" as *const u8 as *mut u8);
     }
 
     // send interrupts and exceptions to kerneltrap(),
@@ -83,14 +80,12 @@ pub unsafe extern "C" fn usertrap() {
         which_dev = devintr();
         if which_dev == 0 {
             printf(
-                b"usertrap(): unexpected scause %p pid=%d\n\x00" as *const u8 as *const libc::CChar
-                    as *mut libc::CChar,
+                b"usertrap(): unexpected scause %p pid=%d\n\x00" as *const u8 as *mut u8,
                 r_scause(),
                 (*p).pid,
             );
             printf(
-                b"            sepc=%p stval=%p\n\x00" as *const u8 as *const libc::CChar
-                    as *mut libc::CChar,
+                b"            sepc=%p stval=%p\n\x00" as *const u8 as *mut u8,
                 r_sepc(),
                 r_stval(),
             );
@@ -174,31 +169,22 @@ pub unsafe fn kerneltrap() {
     let scause: usize = r_scause();
 
     if sstatus & SSTATUS_SPP as usize == 0 {
-        panic(
-            b"kerneltrap: not from supervisor mode\x00" as *const u8 as *const libc::CChar
-                as *mut libc::CChar,
-        );
+        panic(b"kerneltrap: not from supervisor mode\x00" as *const u8 as *mut u8);
     }
 
     if intr_get() != 0 {
-        panic(
-            b"kerneltrap: interrupts enabled\x00" as *const u8 as *const libc::CChar
-                as *mut libc::CChar,
-        );
+        panic(b"kerneltrap: interrupts enabled\x00" as *const u8 as *mut u8);
     }
 
     let which_dev = devintr();
     if which_dev == 0 {
+        printf(b"scause %p\n\x00" as *const u8 as *mut u8, scause);
         printf(
-            b"scause %p\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
-            scause,
-        );
-        printf(
-            b"sepc=%p stval=%p\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
+            b"sepc=%p stval=%p\n\x00" as *const u8 as *mut u8,
             r_sepc(),
             r_stval(),
         );
-        panic(b"kerneltrap\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        panic(b"kerneltrap\x00" as *const u8 as *mut u8);
     }
 
     // give up the CPU if this is a timer interrupt.

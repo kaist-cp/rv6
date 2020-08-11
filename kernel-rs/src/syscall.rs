@@ -1,4 +1,3 @@
-use crate::libc;
 use crate::{
     printf::{panic, printf},
     proc::{myproc, Proc},
@@ -16,7 +15,7 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
     }
     if copyin(
         (*p).pagetable,
-        ip as *mut libc::CChar,
+        ip as *mut u8,
         addr,
         ::core::mem::size_of::<usize>(),
     ) != 0
@@ -28,7 +27,7 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
 
 /// Fetch the nul-terminated string at addr from the current process.
 /// Returns length of string, not including nul, or -1 for error.
-pub unsafe fn fetchstr(addr: usize, buf: *mut libc::CChar, max: i32) -> i32 {
+pub unsafe fn fetchstr(addr: usize, buf: *mut u8, max: i32) -> i32 {
     let p: *mut Proc = myproc();
     let err: i32 = copyinstr((*p).pagetable, buf, addr, max as usize);
     if err < 0 {
@@ -48,7 +47,7 @@ unsafe fn argraw(n: i32) -> usize {
         5 => return (*(*p).tf).a5,
         _ => {}
     }
-    panic(b"argraw\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+    panic(b"argraw\x00" as *const u8 as *mut u8);
 }
 
 /// Fetch the nth 32-bit system call argument.
@@ -68,7 +67,7 @@ pub unsafe fn argaddr(n: i32, ip: *mut usize) -> i32 {
 /// Fetch the nth word-sized system call argument as a null-terminated string.
 /// Copies into buf, at most max.
 /// Returns string length if OK (including nul), -1 if error.
-pub unsafe fn argstr(n: i32, buf: *mut libc::CChar, max: i32) -> i32 {
+pub unsafe fn argstr(n: i32, buf: *mut u8, max: i32) -> i32 {
     let mut addr: usize = 0;
     if argaddr(n, &mut addr) < 0 {
         return -1;
@@ -113,8 +112,7 @@ pub unsafe fn syscall() {
         (*(*p).tf).a0 = SYSCALLS[num as usize].expect("non-null function pointer")()
     } else {
         printf(
-            b"%d %s: unknown sys call %d\n\x00" as *const u8 as *const libc::CChar
-                as *mut libc::CChar,
+            b"%d %s: unknown sys call %d\n\x00" as *const u8 as *mut u8,
             (*p).pid,
             (*p).name.as_mut_ptr(),
             num,

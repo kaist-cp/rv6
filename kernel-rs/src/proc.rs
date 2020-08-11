@@ -26,7 +26,7 @@ extern "C" {
 
     // trampoline.S
     #[no_mangle]
-    static mut trampoline: [libc::CChar; 0];
+    static mut trampoline: [u8; 0];
 }
 
 /// per-CPU-state
@@ -113,7 +113,7 @@ pub struct Proc {
     pub cwd: *mut Inode,
 
     /// Process name (debugging)
-    pub name: [libc::CChar; 16],
+    pub name: [u8; 16],
 }
 
 /// per-process data for the trap handling code in trampoline.S.
@@ -317,18 +317,17 @@ static mut PID_LOCK: Spinlock = Spinlock::zeroed();
 
 #[no_mangle]
 pub unsafe fn procinit() {
-    PID_LOCK.initlock(b"nextpid\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+    PID_LOCK.initlock(b"nextpid\x00" as *const u8 as *mut u8);
     let mut p = PROC.as_mut_ptr();
     while p < &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
-        (*p).lock
-            .initlock(b"proc\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        (*p).lock.initlock(b"proc\x00" as *const u8 as *mut u8);
 
         // Allocate a page for the process's kernel stack.
         // Map it high in memory, followed by an invalid
         // guard page.
-        let pa: *mut libc::CChar = kalloc() as *mut libc::CChar;
+        let pa: *mut u8 = kalloc() as *mut u8;
         if pa.is_null() {
-            panic(b"kalloc\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+            panic(b"kalloc\x00" as *const u8 as *mut u8);
         }
         let va: usize = kstack(p.offset_from(PROC.as_mut_ptr()) as i64 as i32) as usize;
         kvmmap(va, pa as usize, PGSIZE as usize, (PTE_R | PTE_W) as i32);
@@ -431,7 +430,7 @@ unsafe fn freeproc(mut p: *mut Proc) {
     (*p).sz = 0;
     (*p).pid = 0;
     (*p).parent = ptr::null_mut();
-    (*p).name[0] = 0 as libc::CChar;
+    (*p).name[0] = 0 as u8;
     (*p).chan = ptr::null_mut();
     (*p).killed = 0;
     (*p).xstate = 0;
@@ -507,10 +506,10 @@ pub unsafe fn userinit() {
     (*(*p).tf).sp = PGSIZE as usize;
     safestrcpy(
         (*p).name.as_mut_ptr(),
-        b"initcode\x00" as *const u8 as *const libc::CChar,
-        ::core::mem::size_of::<[libc::CChar; 16]>() as i32,
+        b"initcode\x00" as *const u8,
+        ::core::mem::size_of::<[u8; 16]>() as i32,
     );
-    (*p).cwd = namei(b"/\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+    (*p).cwd = namei(b"/\x00" as *const u8 as *mut u8);
     (*p).state = RUNNABLE;
     (*p).lock.release();
 }
@@ -579,7 +578,7 @@ pub unsafe fn fork() -> i32 {
     safestrcpy(
         (*np).name.as_mut_ptr(),
         (*p).name.as_mut_ptr(),
-        ::core::mem::size_of::<[libc::CChar; 16]>() as i32,
+        ::core::mem::size_of::<[u8; 16]>() as i32,
     );
     let pid: i32 = (*np).pid;
     (*np).state = RUNNABLE;
@@ -618,7 +617,7 @@ pub unsafe fn reparent(p: *mut Proc) {
 pub unsafe fn exit(status: i32) {
     let mut p: *mut Proc = myproc();
     if p == INITPROC {
-        panic(b"init exiting\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        panic(b"init exiting\x00" as *const u8 as *mut u8);
     }
 
     // Close all open files.
@@ -670,7 +669,7 @@ pub unsafe fn exit(status: i32) {
 
     // Jump into the scheduler, never to return.
     sched();
-    panic(b"zombie exit\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+    panic(b"zombie exit\x00" as *const u8 as *mut u8);
 }
 
 /// Wait for a child process to exit and return its pid.
@@ -701,7 +700,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
                         && copyout(
                             (*p).pagetable,
                             addr,
-                            &mut (*np).xstate as *mut i32 as *mut libc::CChar,
+                            &mut (*np).xstate as *mut i32 as *mut u8,
                             ::core::mem::size_of::<i32>(),
                         ) < 0
                     {
@@ -776,16 +775,16 @@ pub unsafe fn scheduler() -> ! {
 unsafe fn sched() {
     let p: *mut Proc = myproc();
     if (*p).lock.holding() == 0 {
-        panic(b"sched p->lock\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        panic(b"sched p->lock\x00" as *const u8 as *mut u8);
     }
     if (*mycpu()).noff != 1 {
-        panic(b"sched locks\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        panic(b"sched locks\x00" as *const u8 as *mut u8);
     }
     if (*p).state as u32 == RUNNING as i32 as u32 {
-        panic(b"sched running\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        panic(b"sched running\x00" as *const u8 as *mut u8);
     }
     if intr_get() != 0 {
-        panic(b"sched interruptible\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        panic(b"sched interruptible\x00" as *const u8 as *mut u8);
     }
     let intena: i32 = (*mycpu()).intena;
     swtch(
@@ -873,7 +872,7 @@ pub unsafe fn wakeup(chan: *mut libc::CVoid) {
 /// Caller must hold p->lock.
 unsafe fn wakeup1(mut p: *mut Proc) {
     if (*p).lock.holding() == 0 {
-        panic(b"wakeup1\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        panic(b"wakeup1\x00" as *const u8 as *mut u8);
     }
     if (*p).chan == p as *mut libc::CVoid && (*p).state as u32 == SLEEPING as u32 {
         (*p).state = RUNNABLE
@@ -909,9 +908,9 @@ pub unsafe fn kill(pid: i32) -> i32 {
 pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: *mut libc::CVoid, len: usize) -> i32 {
     let p: *mut Proc = myproc();
     if user_dst != 0 {
-        copyout((*p).pagetable, dst, src as *mut libc::CChar, len)
+        copyout((*p).pagetable, dst, src as *mut u8, len)
     } else {
-        ptr::copy(src, dst as *mut libc::CChar as *mut libc::CVoid, len);
+        ptr::copy(src, dst as *mut u8 as *mut libc::CVoid, len);
         0
     }
 }
@@ -922,9 +921,9 @@ pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: *mut libc::CVoid, l
 pub unsafe fn either_copyin(dst: *mut libc::CVoid, user_src: i32, src: usize, len: usize) -> i32 {
     let p: *mut Proc = myproc();
     if user_src != 0 {
-        copyin((*p).pagetable, dst as *mut libc::CChar, src, len)
+        copyin((*p).pagetable, dst as *mut u8, src, len)
     } else {
-        ptr::copy(src as *mut libc::CChar as *const libc::CVoid, dst, len);
+        ptr::copy(src as *mut u8 as *const libc::CVoid, dst, len);
         0
     }
 }
@@ -933,33 +932,33 @@ pub unsafe fn either_copyin(dst: *mut libc::CVoid, user_src: i32, src: usize, le
 /// Runs when user types ^P on console.
 /// No lock to avoid wedging a stuck machine further.
 pub unsafe fn procdump() {
-    static mut STATES: [*mut libc::CChar; 5] = [
-        b"unused\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
-        b"sleep \x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
-        b"runble\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
-        b"run   \x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
-        b"zombie\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
+    static mut STATES: [*mut u8; 5] = [
+        b"unused\x00" as *const u8 as *mut u8,
+        b"sleep \x00" as *const u8 as *mut u8,
+        b"runble\x00" as *const u8 as *mut u8,
+        b"run   \x00" as *const u8 as *mut u8,
+        b"zombie\x00" as *const u8 as *mut u8,
     ];
-    printf(b"\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+    printf(b"\n\x00" as *const u8 as *mut u8);
     let mut p = PROC.as_mut_ptr();
     while p < &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
         if (*p).state as u32 != UNUSED as i32 as u32 {
             let state = if ((*p).state as usize)
-                < (::core::mem::size_of::<[*mut libc::CChar; 5]>() as usize)
-                    .wrapping_div(::core::mem::size_of::<*mut libc::CChar>())
+                < (::core::mem::size_of::<[*mut u8; 5]>() as usize)
+                    .wrapping_div(::core::mem::size_of::<*mut u8>())
                 && !STATES[(*p).state as usize].is_null()
             {
                 STATES[(*p).state as usize]
             } else {
-                b"???\x00" as *const u8 as *const libc::CChar as *mut libc::CChar
+                b"???\x00" as *const u8 as *mut u8
             };
             printf(
-                b"%d %s %s\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
+                b"%d %s %s\x00" as *const u8 as *mut u8,
                 (*p).pid,
                 state,
                 (*p).name.as_mut_ptr(),
             );
-            printf(b"\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+            printf(b"\n\x00" as *const u8 as *mut u8);
         }
         p = p.offset(1)
     }

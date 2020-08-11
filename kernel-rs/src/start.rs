@@ -1,4 +1,3 @@
-use crate::libc;
 use crate::{
     kernel_main::kernel_main,
     memlayout::{clint_mtimecmp, CLINT_MTIME},
@@ -17,7 +16,7 @@ extern "C" {
 
 /// entry.S needs one stack per CPU.
 #[repr(align(16))]
-pub struct Stack([libc::CChar; 4096 * NCPU as usize]);
+pub struct Stack([u8; 4096 * NCPU as usize]);
 
 impl Stack {
     const fn new() -> Self {
