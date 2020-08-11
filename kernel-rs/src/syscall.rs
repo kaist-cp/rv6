@@ -102,9 +102,8 @@ static mut SYSCALLS: [Option<unsafe fn() -> usize>; 22] = [
 ];
 
 pub unsafe fn syscall() {
-    let mut num: i32 = 0;
     let mut p: *mut Proc = myproc();
-    num = (*(*p).tf).a7 as i32;
+    let num: i32 = (*(*p).tf).a7 as i32;
     if num > 0
         && (num as usize)
             < (::core::mem::size_of::<[Option<unsafe fn() -> usize>; 22]>())

@@ -130,12 +130,10 @@ unsafe fn walk(mut pagetable: PagetableT, va: usize, alloc: i32) -> *mut PteT {
 /// or 0 if not mapped.
 /// Can only be used to look up user pages.
 pub unsafe fn walkaddr(pagetable: PagetableT, va: usize) -> usize {
-    let mut pte: *mut PteT = ptr::null_mut();
-    let mut pa: usize = 0;
     if va >= MAXVA as usize {
         return 0;
     }
-    pte = walk(pagetable, va, 0);
+    let pte: *mut PteT = walk(pagetable, va, 0);
     if pte.is_null() {
         return 0;
     }
@@ -145,7 +143,7 @@ pub unsafe fn walkaddr(pagetable: PagetableT, va: usize) -> usize {
     if *pte & PTE_U as usize == 0 {
         return 0;
     }
-    pa = pte2pa(*pte);
+    let pa: usize = pte2pa(*pte);
     pa
 }
 
@@ -164,16 +162,14 @@ pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
 /// assumes va is page aligned.
 pub unsafe fn kvmpa(va: usize) -> usize {
     let off: usize = va.wrapping_rem(PGSIZE as usize);
-    let mut pte: *mut PteT = ptr::null_mut();
-    let mut pa: usize = 0;
-    pte = walk(KERNEL_PAGETABLE, va, 0);
+    let pte: *mut PteT = walk(KERNEL_PAGETABLE, va, 0);
     if pte.is_null() {
         panic(b"kvmpa\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     }
     if *pte & PTE_V as usize == 0 {
         panic(b"kvmpa\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     }
-    pa = pte2pa(*pte);
+    let pa: usize = pte2pa(*pte);
     pa.wrapping_add(off)
 }
 
@@ -250,8 +246,7 @@ pub unsafe fn uvmunmap(pagetable: PagetableT, va: usize, size: usize, do_free: i
 
 /// create an empty user page table.
 pub unsafe fn uvmcreate() -> PagetableT {
-    let mut pagetable: PagetableT = ptr::null_mut();
-    pagetable = kalloc() as PagetableT;
+    let pagetable: PagetableT = kalloc() as PagetableT;
     if pagetable.is_null() {
         panic(
             b"uvmcreate: out of memory\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
@@ -265,13 +260,12 @@ pub unsafe fn uvmcreate() -> PagetableT {
 /// for the very first process.
 /// sz must be less than a page.
 pub unsafe fn uvminit(pagetable: PagetableT, src: *mut u8, sz: u32) {
-    let mut mem: *mut libc::CChar = ptr::null_mut();
     if sz >= PGSIZE as u32 {
         panic(
             b"inituvm: more than a page\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
         );
     }
-    mem = kalloc() as *mut libc::CChar;
+    let mem: *mut libc::CChar = kalloc() as *mut libc::CChar;
     ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE as usize);
     mappages(
         pagetable,
@@ -418,8 +412,7 @@ pub unsafe fn uvmcopy(old: PagetableT, new: PagetableT, sz: usize) -> i32 {
 /// mark a PTE invalid for user access.
 /// used by exec for the user stack guard page.
 pub unsafe fn uvmclear(pagetable: PagetableT, va: usize) {
-    let mut pte: *mut PteT = ptr::null_mut();
-    pte = walk(pagetable, va, 0);
+    let pte: *mut PteT = walk(pagetable, va, 0);
     if pte.is_null() {
         panic(b"uvmclear\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     }

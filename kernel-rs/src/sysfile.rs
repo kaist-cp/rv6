@@ -66,11 +66,10 @@ unsafe fn argfd(n: i32, pfd: *mut i32, pf: *mut *mut File) -> i32 {
 
 pub unsafe fn sys_dup() -> usize {
     let mut f: *mut File = ptr::null_mut();
-    let mut fd: i32 = 0;
     if argfd(0, ptr::null_mut(), &mut f) < 0 {
         return usize::MAX;
     }
-    fd = (*f).fdalloc();
+    let fd: i32 = (*f).fdalloc();
     if fd < 0 {
         return usize::MAX;
     }
@@ -126,13 +125,11 @@ pub unsafe fn sys_link() -> usize {
     let mut name: [libc::CChar; DIRSIZ] = [0; DIRSIZ];
     let mut new: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut old: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
-    let mut dp: *mut Inode = ptr::null_mut();
-    let mut ip: *mut Inode = ptr::null_mut();
     if argstr(0, old.as_mut_ptr(), MAXPATH) < 0 || argstr(1, new.as_mut_ptr(), MAXPATH) < 0 {
         return usize::MAX;
     }
     begin_op();
-    ip = namei(old.as_mut_ptr());
+    let mut ip: *mut Inode = namei(old.as_mut_ptr());
     if ip.is_null() {
         end_op();
         return usize::MAX;
@@ -146,7 +143,7 @@ pub unsafe fn sys_link() -> usize {
     (*ip).nlink += 1;
     (*ip).update();
     (*ip).unlock();
-    dp = nameiparent(new.as_mut_ptr(), name.as_mut_ptr());
+    let dp: *mut Inode = nameiparent(new.as_mut_ptr(), name.as_mut_ptr());
     if !dp.is_null() {
         (*dp).lock();
         if (*dp).dev != (*ip).dev || dirlink(dp, name.as_mut_ptr(), (*ip).inum) < 0 {
@@ -190,8 +187,6 @@ unsafe fn isdirempty(dp: *mut Inode) -> i32 {
 }
 
 pub unsafe fn sys_unlink() -> usize {
-    let mut ip: *mut Inode = ptr::null_mut();
-    let mut dp: *mut Inode = ptr::null_mut();
     let mut de: Dirent = Default::default();
     let mut name: [libc::CChar; DIRSIZ] = [0; DIRSIZ];
     let mut path: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
@@ -200,7 +195,7 @@ pub unsafe fn sys_unlink() -> usize {
         return usize::MAX;
     }
     begin_op();
-    dp = nameiparent(path.as_mut_ptr(), name.as_mut_ptr());
+    let mut dp: *mut Inode = nameiparent(path.as_mut_ptr(), name.as_mut_ptr());
     if dp.is_null() {
         end_op();
         return usize::MAX;
@@ -217,7 +212,7 @@ pub unsafe fn sys_unlink() -> usize {
             b"..\x00" as *const u8 as *const libc::CChar,
         ) == 0)
     {
-        ip = dirlookup(dp, name.as_mut_ptr(), &mut off);
+        let mut ip: *mut Inode = dirlookup(dp, name.as_mut_ptr(), &mut off);
         if !ip.is_null() {
             (*ip).lock();
             if ((*ip).nlink as i32) < 1 {
@@ -261,15 +256,13 @@ pub unsafe fn sys_unlink() -> usize {
 }
 
 unsafe fn create(path: *mut libc::CChar, typ: i16, major: i16, minor: i16) -> *mut Inode {
-    let mut ip: *mut Inode = ptr::null_mut();
-    let mut dp: *mut Inode = ptr::null_mut();
     let mut name: [libc::CChar; DIRSIZ] = [0; DIRSIZ];
-    dp = nameiparent(path, name.as_mut_ptr());
+    let mut dp: *mut Inode = nameiparent(path, name.as_mut_ptr());
     if dp.is_null() {
         return ptr::null_mut();
     }
     (*dp).lock();
-    ip = dirlookup(dp, name.as_mut_ptr(), ptr::null_mut());
+    let mut ip: *mut Inode = dirlookup(dp, name.as_mut_ptr(), ptr::null_mut());
     if !ip.is_null() {
         (*dp).unlockput();
         (*ip).lock();
@@ -321,10 +314,8 @@ pub unsafe fn sys_open() -> usize {
     let mut path: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
     let mut fd: i32 = 0;
     let mut omode: i32 = 0;
-    let mut f: *mut File = ptr::null_mut();
-    let mut ip: *mut Inode = ptr::null_mut();
-    let mut n: i32 = 0;
-    n = argstr(0, path.as_mut_ptr(), MAXPATH);
+    let ip: *mut Inode;
+    let n: i32 = argstr(0, path.as_mut_ptr(), MAXPATH);
     if n < 0 || argint(1, &mut omode) < 0 {
         return usize::MAX;
     }
@@ -354,7 +345,7 @@ pub unsafe fn sys_open() -> usize {
         end_op();
         return usize::MAX;
     }
-    f = File::alloc();
+    let mut f: *mut File = File::alloc();
     if f.is_null() || {
         fd = (*f).fdalloc();
         (fd) < 0
@@ -530,7 +521,6 @@ pub unsafe fn sys_pipe() -> usize {
 
     let mut rf: *mut File = ptr::null_mut();
     let mut wf: *mut File = ptr::null_mut();
-    let mut fd0: i32 = 0;
     let mut fd1: i32 = 0;
     let mut p: *mut Proc = myproc();
     if argaddr(0, &mut fdarray) < 0 {
@@ -539,8 +529,7 @@ pub unsafe fn sys_pipe() -> usize {
     if Pipe::alloc(&mut rf, &mut wf) < 0 {
         return usize::MAX;
     }
-    fd0 = -1;
-    fd0 = (*rf).fdalloc();
+    let mut fd0: i32 = (*rf).fdalloc();
     if fd0 < 0 || {
         fd1 = (*wf).fdalloc();
         (fd1) < 0

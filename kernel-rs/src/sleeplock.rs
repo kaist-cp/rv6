@@ -72,9 +72,8 @@ impl Sleeplock {
     }
 
     pub unsafe fn holding(&mut self) -> i32 {
-        let mut r: i32 = 0;
         (*self).lk.acquire();
-        r = ((*self).locked != 0 && (*self).pid == (*myproc()).pid) as i32;
+        let r: i32 = ((*self).locked != 0 && (*self).pid == (*myproc()).pid) as i32;
         (*self).lk.release();
         r
     }

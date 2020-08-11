@@ -33,12 +33,11 @@ pub unsafe fn sys_wait() -> usize {
 }
 
 pub unsafe fn sys_sbrk() -> usize {
-    let mut addr: i32 = 0;
     let mut n: i32 = 0;
     if argint(0, &mut n) < 0 {
         return usize::MAX;
     }
-    addr = (*myproc()).sz as i32;
+    let addr: i32 = (*myproc()).sz as i32;
     if growproc(n) < 0 {
         return usize::MAX;
     }
@@ -74,9 +73,8 @@ pub unsafe fn sys_kill() -> usize {
 /// return how many clock tick interrupts have occurred
 /// since start.
 pub unsafe fn sys_uptime() -> usize {
-    let mut xticks: u32 = 0;
     TICKSLOCK.acquire();
-    xticks = TICKS;
+    let xticks: u32 = TICKS;
     TICKSLOCK.release();
     xticks as usize
 }
