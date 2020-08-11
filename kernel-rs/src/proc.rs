@@ -7,6 +7,7 @@ use crate::{
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     param::{NCPU, NOFILE, NPROC, ROOTDEV},
     printf::{panic, printf},
+    println,
     riscv::{intr_get, intr_on, r_tp, PagetableT, PGSIZE, PTE_R, PTE_W, PTE_X},
     spinlock::{pop_off, push_off, RawSpinlock},
     string::safestrcpy,
@@ -907,32 +908,13 @@ pub unsafe fn either_copyin(dst: *mut libc::CVoid, user_src: i32, src: usize, le
 /// Runs when user types ^P on console.
 /// No lock to avoid wedging a stuck machine further.
 pub unsafe fn procdump() {
-    static mut STATES: [*mut u8; 5] = [
-        b"unused\x00" as *const u8 as *mut u8,
-        b"sleep \x00" as *const u8 as *mut u8,
-        b"runble\x00" as *const u8 as *mut u8,
-        b"run   \x00" as *const u8 as *mut u8,
-        b"zombie\x00" as *const u8 as *mut u8,
-    ];
-    printf(b"\n\x00" as *const u8 as *mut u8);
+    static mut STATES: [&str; 5] = ["unused", "sleep ", "runble", "run   ", "zombie"];
+    println!();
     for p in &mut PROC[..] {
         if p.state as u32 != UNUSED as i32 as u32 {
-            let state = if (p.state as usize)
-                < (::core::mem::size_of::<[*mut u8; 5]>() as usize)
-                    .wrapping_div(::core::mem::size_of::<*mut u8>())
-                && !STATES[p.state as usize].is_null()
-            {
-                STATES[p.state as usize]
-            } else {
-                b"???\x00" as *const u8 as *mut u8
-            };
-            printf(
-                b"%d %s %s\x00" as *const u8 as *mut u8,
-                p.pid,
-                state,
-                p.name.as_mut_ptr(),
-            );
-            printf(b"\n\x00" as *const u8 as *mut u8);
+            let state = STATES.get(p.state as usize).unwrap_or(&"???");
+            println!("{} {} ", p.pid, state);
+            printf(b"%s\n" as *const _, p.name);
         }
     }
 }

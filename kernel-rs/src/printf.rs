@@ -1,6 +1,48 @@
 //! formatted console output -- printf, panic.
 use crate::console::consputc;
 use crate::spinlock::RawSpinlock;
+use core::fmt;
+
+pub struct Writer {}
+
+impl fmt::Write for Writer {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        for c in s.bytes() {
+            unsafe {
+                consputc(c as _);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// print! macro prints to the console
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => ($crate::printf::_print(format_args!($($arg)*)));
+}
+
+/// println! macro prints to the console
+#[macro_export]
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
+
+/// Prints the given formatted string to the VGA text buffer
+/// through the global WRITER instance.
+#[doc(hidden)]
+pub unsafe fn _print(args: fmt::Arguments<'_>) {
+    use core::fmt::Write;
+    let locking: i32 = PR.locking;
+    if locking != 0 {
+        PR.lock.acquire();
+    }
+    (Writer {}).write_fmt(args).unwrap();
+    if locking != 0 {
+        PR.lock.release();
+    }
+}
 
 /// lock to avoid interleaving concurrent printf's.
 struct PrintfLock {
@@ -75,7 +117,7 @@ unsafe fn printptr(mut x: usize) {
 }
 
 /// Print to the console. only understands %d, %x, %p, %s.
-pub unsafe extern "C" fn printf(fmt: *mut u8, args: ...) {
+pub unsafe extern "C" fn printf(fmt: *const u8, args: ...) {
     let mut ap: ::core::ffi::VaListImpl<'_>;
     let mut i: i32 = 0;
     let locking: i32 = PR.locking;
@@ -133,14 +175,14 @@ pub unsafe extern "C" fn printf(fmt: *mut u8, args: ...) {
     }
     if locking != 0 {
         PR.lock.release();
-    };
+    }
 }
 
 pub unsafe fn panic(s: *mut u8) -> ! {
     PR.locking = 0;
-    printf(b"panic: \x00" as *const u8 as *mut u8);
+    print!("panic: ");
     printf(s);
-    printf(b"\n\x00" as *const u8 as *mut u8);
+    println!();
 
     // freeze other CPUs
     ::core::ptr::write_volatile(&mut PANICKED as *mut i32, 1);

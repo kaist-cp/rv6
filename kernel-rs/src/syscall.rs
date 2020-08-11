@@ -1,5 +1,6 @@
 use crate::{
-    printf::{panic, printf},
+    printf::panic,
+    println,
     proc::{myproc, Proc},
     string::strlen,
     sysfile::*,
@@ -111,11 +112,11 @@ pub unsafe fn syscall() {
     {
         (*(*p).tf).a0 = SYSCALLS[num as usize].expect("non-null function pointer")()
     } else {
-        printf(
-            b"%d %s: unknown sys call %d\n\x00" as *const u8 as *mut u8,
+        println!(
+            "{} {:p}: unknown sys call {}",
             (*p).pid,
             (*p).name.as_mut_ptr(),
-            num,
+            num
         );
         (*(*p).tf).a0 = usize::MAX
     };
