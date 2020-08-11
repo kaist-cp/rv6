@@ -188,7 +188,7 @@ impl Inode {
     pub unsafe fn update(&mut self) {
         let bp: *mut Buf = bread(self.dev, SB.iblock(self.inum as i32));
         let mut dip: *mut Dinode = ((*bp).data.as_mut_ptr() as *mut Dinode)
-            .add((self.inum as usize).wrapping_rem(IPB as usize));
+            .add((self.inum as usize).wrapping_rem(IPB));
         (*dip).typ = self.typ;
         (*dip).major = self.major;
         (*dip).minor = self.minor;
@@ -222,7 +222,7 @@ impl Inode {
         if (*self).valid == 0 {
             let bp: *mut Buf = bread((*self).dev, SB.iblock((*self).inum as i32));
             let dip: *mut Dinode = ((*bp).data.as_mut_ptr() as *mut Dinode)
-                .add(((*self).inum as usize).wrapping_rem(IPB as usize));
+                .add(((*self).inum as usize).wrapping_rem(IPB));
             (*self).typ = (*dip).typ;
             (*self).major = (*dip).major;
             (*self).minor = (*dip).minor;
@@ -457,7 +457,7 @@ impl Inode {
         for inum in 1..SB.ninodes {
             let bp = bread(dev, SB.iblock(inum as i32));
             let dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-                .add((inum as usize).wrapping_rem(IPB as usize));
+                .add((inum as usize).wrapping_rem(IPB));
 
             // a free inode
             if (*dip).typ as i32 == 0 {
@@ -506,12 +506,12 @@ pub const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
 pub const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
 
 /// Inodes per block.
-pub const IPB: i32 = BSIZE.wrapping_div(mem::size_of::<Dinode>()) as i32;
+pub const IPB: usize = BSIZE.wrapping_div(mem::size_of::<Dinode>());
 
 impl Superblock {
     /// Block containing inode i
     const fn iblock(self, i: i32) -> u32 {
-        i.wrapping_div(IPB).wrapping_add(self.inodestart as i32) as u32
+        i.wrapping_div(IPB as i32).wrapping_add(self.inodestart as i32) as u32
     }
 
     /// Block of free map containing bit for block b
