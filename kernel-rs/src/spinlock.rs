@@ -98,9 +98,8 @@ impl Spinlock {
 
     /// Check whether this cpu is holding the lock.
     pub unsafe fn holding(&mut self) -> i32 {
-        let mut r: i32 = 0;
         push_off();
-        r = ((*self).locked.load(Ordering::Acquire) && (*self).cpu == mycpu()) as i32;
+        let r: i32 = ((*self).locked.load(Ordering::Acquire) && (*self).cpu == mycpu()) as i32;
         pop_off();
         r
     }

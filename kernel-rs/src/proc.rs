@@ -364,9 +364,8 @@ pub unsafe fn myproc() -> *mut Proc {
 }
 
 unsafe fn allocpid() -> i32 {
-    let mut pid: i32 = 0;
     PID_LOCK.acquire();
-    pid = NEXTPID;
+    let pid: i32 = NEXTPID;
     NEXTPID += 1;
     PID_LOCK.release();
     pid
@@ -442,10 +441,8 @@ unsafe fn freeproc(mut p: *mut Proc) {
 /// Create a page table for a given process,
 /// with no user pages, but with trampoline pages.
 pub unsafe fn proc_pagetable(p: *mut Proc) -> PagetableT {
-    let mut pagetable: PagetableT = ptr::null_mut();
-
     // An empty page table.
-    pagetable = uvmcreate();
+    let pagetable: PagetableT = uvmcreate();
 
     // map the trampoline code (for system call return)
     // at the highest user virtual address.
