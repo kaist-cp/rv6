@@ -490,8 +490,7 @@ static mut INITCODE: [u8; 51] = [
 
 /// Set up first user process.
 pub unsafe fn userinit() {
-    let mut p: *mut Proc = ptr::null_mut();
-    p = allocproc();
+    let mut p: *mut Proc = allocproc();
     INITPROC = p;
 
     // allocate one user page and copy init's instructions
@@ -550,12 +549,10 @@ pub unsafe fn growproc(n: i32) -> i32 {
 /// Create a new process, copying the parent.
 /// Sets up child kernel stack to return as if from fork() system call.
 pub unsafe fn fork() -> i32 {
-    let mut pid: i32 = 0;
-    let mut np: *mut Proc = ptr::null_mut();
     let p: *mut Proc = myproc();
 
     // Allocate process.
-    np = allocproc();
+    let mut np: *mut Proc = allocproc();
     if np.is_null() {
         return -1;
     }
@@ -587,7 +584,7 @@ pub unsafe fn fork() -> i32 {
         (*p).name.as_mut_ptr(),
         ::core::mem::size_of::<[libc::CChar; 16]>() as i32,
     );
-    pid = (*np).pid;
+    let pid: i32 = (*np).pid;
     (*np).state = RUNNABLE;
     (*np).lock.release();
     pid
@@ -780,7 +777,6 @@ pub unsafe fn scheduler() -> ! {
 /// break in the few places where a lock is held but
 /// there's no process.
 unsafe fn sched() {
-    let mut intena: i32 = 0;
     let p: *mut Proc = myproc();
     if (*p).lock.holding() == 0 {
         panic(b"sched p->lock\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
@@ -794,7 +790,7 @@ unsafe fn sched() {
     if intr_get() != 0 {
         panic(b"sched interruptible\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     }
-    intena = (*mycpu()).intena;
+    let intena: i32 = (*mycpu()).intena;
     swtch(
         &mut (*p).context,
         &mut (*(mycpu as unsafe fn() -> *mut Cpu)()).scheduler,

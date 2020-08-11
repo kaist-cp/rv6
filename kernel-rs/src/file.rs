@@ -196,24 +196,22 @@ impl File {
     /// Write to file self.
     /// addr is a user virtual address.
     pub unsafe fn write(&mut self, addr: usize, n: i32) -> i32 {
-        let mut r: i32 = 0;
-        let mut ret: i32 = 0;
         if (*self).writable as i32 == 0 {
             return -1;
         }
-        if (*self).typ as u32 == FD_PIPE as i32 as u32 {
-            ret = (*(*self).pipe).write(addr, n)
-        } else if (*self).typ as u32 == FD_DEVICE as i32 as u32 {
+        if (*self).typ as u32 == FD_PIPE {
+            (*(*self).pipe).write(addr, n)
+        } else if (*self).typ == FD_DEVICE {
             if ((*self).major as i32) < 0
                 || (*self).major as i32 >= NDEV
                 || DEVSW[(*self).major as usize].write.is_none()
             {
                 return -1;
             }
-            ret = DEVSW[(*self).major as usize]
+            DEVSW[(*self).major as usize]
                 .write
                 .expect("non-null function pointer")(1, addr, n)
-        } else if (*self).typ as u32 == FD_INODE as i32 as u32 {
+        } else if (*self).typ == FD_INODE {
             // write a few blocks at a time to avoid exceeding
             // the maximum log transaction size, including
             // i-node, indirect block, allocation blocks,
@@ -229,9 +227,10 @@ impl File {
                 }
                 begin_op();
                 (*(*self).ip).lock();
-                r = (*(*self).ip).write(1, addr.wrapping_add(i as usize), (*self).off, n1 as u32);
+                let r: i32 =
+                    (*(*self).ip).write(1, addr.wrapping_add(i as usize), (*self).off, n1 as u32);
                 if r > 0 {
-                    (*self).off = ((*self).off as u32).wrapping_add(r as u32) as u32
+                    (*self).off = ((*self).off).wrapping_add(r as u32)
                 }
                 (*(*self).ip).unlock();
                 end_op();
@@ -246,11 +245,14 @@ impl File {
                 }
                 i += r
             }
-            ret = if i == n { n } else { -1 }
+            if i == n {
+                n
+            } else {
+                -1
+            }
         } else {
             panic(b"File::write\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         }
-        ret
     }
 
     // TODO: transient measure

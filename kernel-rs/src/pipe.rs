@@ -84,7 +84,6 @@ impl Pipe {
     pub unsafe fn read(&mut self, addr: usize, n: i32) -> i32 {
         let mut i: i32 = 0;
         let proc: *mut Proc = myproc();
-        let mut ch: libc::CChar = 0;
 
         (*self).lock.acquire();
 
@@ -109,7 +108,7 @@ impl Pipe {
             }
             let fresh1 = (*self).nread;
             (*self).nread = (*self).nread.wrapping_add(1);
-            ch = (*self).data[fresh1.wrapping_rem(PIPESIZE as u32) as usize];
+            let mut ch: libc::CChar = (*self).data[fresh1.wrapping_rem(PIPESIZE as u32) as usize];
             if copyout(
                 (*proc).pagetable,
                 addr.wrapping_add(i as usize),
@@ -129,7 +128,6 @@ impl Pipe {
     }
     pub unsafe fn alloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {
         let mut pi: *mut Pipe = ptr::null_mut();
-        pi = ptr::null_mut();
         *f1 = ptr::null_mut();
         *f0 = *f1;
         *f0 = File::alloc();
