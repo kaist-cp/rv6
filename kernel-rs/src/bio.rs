@@ -3,7 +3,6 @@ use crate::{
     buf::Buf, param::NBUF, printf::panic, spinlock::Spinlock, virtio_disk::virtio_disk_rw,
 };
 use core::mem::MaybeUninit;
-use core::ptr;
 
 /// Buffer cache.
 ///
@@ -77,7 +76,6 @@ impl Buf {
 pub unsafe fn binit() {
     let bcache = BCACHE.get_mut();
 
-    let mut b: *mut Buf = ptr::null_mut();
     bcache
         .lock
         .initlock(b"bcache\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
@@ -85,7 +83,7 @@ pub unsafe fn binit() {
     // Create linked list of buffers
     bcache.head.prev = &mut bcache.head;
     bcache.head.next = &mut bcache.head;
-    b = bcache.buf.as_mut_ptr();
+    let mut b: *mut Buf = bcache.buf.as_mut_ptr();
     while b < bcache.buf.as_mut_ptr().offset(NBUF as isize) {
         (*b).next = bcache.head.next;
         (*b).prev = &mut bcache.head;
@@ -103,11 +101,10 @@ pub unsafe fn binit() {
 unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
     let bcache = BCACHE.get_mut();
 
-    let mut b: *mut Buf = ptr::null_mut();
     bcache.lock.acquire();
 
     // Is the block already cached?
-    b = bcache.head.next;
+    let mut b: *mut Buf = bcache.head.next;
     while b != &mut bcache.head as *mut Buf {
         if (*b).dev == dev && (*b).blockno == blockno {
             (*b).refcnt = (*b).refcnt.wrapping_add(1);
@@ -137,8 +134,7 @@ unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
 
 /// Return a locked buf with the contents of the indicated block.
 pub unsafe fn bread(dev: u32, blockno: u32) -> *mut Buf {
-    let mut b: *mut Buf = ptr::null_mut();
-    b = bget(dev, blockno);
+    let mut b: *mut Buf = bget(dev, blockno);
     if (*b).valid == 0 {
         virtio_disk_rw(b, 0);
         (*b).valid = 1
