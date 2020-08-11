@@ -19,11 +19,11 @@ impl PrintfLock {
     }
 }
 
-pub static mut panicked: i32 = 0;
+pub static mut PANICKED: i32 = 0;
 
-static mut pr: PrintfLock = PrintfLock::zeroed();
+static mut PR: PrintfLock = PrintfLock::zeroed();
 
-static mut digits: [libc::CChar; 17] = [
+static mut DIGITS: [libc::CChar; 17] = [
     48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102, 0,
 ];
 
@@ -42,7 +42,7 @@ unsafe fn printint(xx: i32, base: i32, mut sign: i32) {
     loop {
         let fresh0 = i;
         i += 1;
-        buf[fresh0 as usize] = digits[x.wrapping_rem(base as u32) as usize];
+        buf[fresh0 as usize] = DIGITS[x.wrapping_rem(base as u32) as usize];
         x = (x as u32).wrapping_div(base as u32) as u32 as u32;
         if x == 0 {
             break;
@@ -67,7 +67,7 @@ unsafe fn printptr(mut x: usize) {
     consputc('x' as i32);
     for _i in 0..(::core::mem::size_of::<usize>()).wrapping_mul(2) {
         consputc(
-            digits[(x
+            DIGITS[(x
                 >> (::core::mem::size_of::<usize>())
                     .wrapping_mul(8)
                     .wrapping_sub(4))] as i32,
@@ -81,9 +81,9 @@ pub unsafe extern "C" fn printf(fmt: *mut libc::CChar, args: ...) {
     let mut ap: ::core::ffi::VaListImpl<'_>;
     let mut i: i32 = 0;
     let mut locking: i32 = 0;
-    locking = pr.locking;
+    locking = PR.locking;
     if locking != 0 {
-        pr.lock.acquire();
+        PR.lock.acquire();
     }
     if fmt.is_null() {
         panic(b"null fmt\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
@@ -135,23 +135,23 @@ pub unsafe extern "C" fn printf(fmt: *mut libc::CChar, args: ...) {
         i += 1
     }
     if locking != 0 {
-        pr.lock.release();
+        PR.lock.release();
     };
 }
 
 pub unsafe fn panic(s: *mut libc::CChar) -> ! {
-    pr.locking = 0;
+    PR.locking = 0;
     printf(b"panic: \x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     printf(s);
     printf(b"\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
 
     // freeze other CPUs
-    ::core::ptr::write_volatile(&mut panicked as *mut i32, 1);
+    ::core::ptr::write_volatile(&mut PANICKED as *mut i32, 1);
     loop {}
 }
 
 pub unsafe fn printfinit() {
-    pr.lock
-        .initlock(b"pr\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
-    pr.locking = 1;
+    PR.lock
+        .initlock(b"PR\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+    PR.locking = 1;
 }

@@ -14,7 +14,7 @@ use crate::{
 };
 use core::sync::atomic::{AtomicBool, Ordering};
 
-static mut started: AtomicBool = AtomicBool::new(false);
+static mut STARTED: AtomicBool = AtomicBool::new(false);
 
 /// start() jumps here in supervisor mode on all CPUs.
 pub unsafe fn kernel_main() {
@@ -66,9 +66,9 @@ pub unsafe fn kernel_main() {
 
         // first user process
         userinit();
-        started.store(true, Ordering::Release);
+        STARTED.store(true, Ordering::Release);
     } else {
-        while !started.load(Ordering::Acquire) {}
+        while !STARTED.load(Ordering::Acquire) {}
 
         printf(
             b"hart %d starting\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,

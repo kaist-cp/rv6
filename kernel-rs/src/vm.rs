@@ -4,8 +4,8 @@ use crate::{
     memlayout::{CLINT, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     printf::{panic, printf},
     riscv::{
-        make_satp, pa2pte, PagetableT, PdeT, pgrounddown, pgroundup, pte2pa, pte_flags, PteT,
-        px, sfence_vma, w_satp, MAXVA, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
+        make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, sfence_vma, w_satp,
+        PagetableT, PdeT, PteT, MAXVA, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
     },
 };
 use core::ptr;
@@ -22,15 +22,15 @@ extern "C" {
 /*
  * the kernel's page table.
  */
-pub static mut kernel_pagetable: PagetableT = ptr::null_mut();
+pub static mut KERNEL_PAGETABLE: PagetableT = ptr::null_mut();
 
 // trampoline.S
 /// create a direct-map page table for the kernel and
 /// turn on paging. called early, in supervisor mode.
 /// the page allocator is already initialized.
 pub unsafe fn kvminit() {
-    kernel_pagetable = kalloc() as PagetableT;
-    ptr::write_bytes(kernel_pagetable as *mut libc::CVoid, 0, PGSIZE as usize);
+    KERNEL_PAGETABLE = kalloc() as PagetableT;
+    ptr::write_bytes(KERNEL_PAGETABLE as *mut libc::CVoid, 0, PGSIZE as usize);
 
     // uart registers
     kvmmap(UART0, UART0, PGSIZE as usize, (PTE_R | PTE_W) as i32);
@@ -88,7 +88,7 @@ pub unsafe fn kvminit() {
 /// Switch h/w page table register to the kernel's page table,
 /// and enable paging.
 pub unsafe fn kvminithart() {
-    w_satp(make_satp(kernel_pagetable as usize));
+    w_satp(make_satp(KERNEL_PAGETABLE as usize));
     sfence_vma();
 }
 
@@ -153,7 +153,7 @@ pub unsafe fn walkaddr(pagetable: PagetableT, va: usize) -> usize {
 /// only used when booting.
 /// does not flush TLB or enable paging.
 pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
-    if mappages(kernel_pagetable, va, sz, pa, perm) != 0 {
+    if mappages(KERNEL_PAGETABLE, va, sz, pa, perm) != 0 {
         panic(b"kvmmap\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     };
 }
@@ -166,7 +166,7 @@ pub unsafe fn kvmpa(va: usize) -> usize {
     let off: usize = va.wrapping_rem(PGSIZE as usize);
     let mut pte: *mut PteT = ptr::null_mut();
     let mut pa: usize = 0;
-    pte = walk(kernel_pagetable, va, 0);
+    pte = walk(KERNEL_PAGETABLE, va, 0);
     if pte.is_null() {
         panic(b"kvmpa\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     }
@@ -227,14 +227,12 @@ pub unsafe fn uvmunmap(pagetable: PagetableT, va: usize, size: usize, do_free: i
                 *pte,
             );
             panic(
-                b"uvmunmap: not mapped\x00" as *const u8 as *const libc::CChar
-                    as *mut libc::CChar,
+                b"uvmunmap: not mapped\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
             );
         }
         if pte_flags(*pte) == PTE_V as usize {
             panic(
-                b"uvmunmap: not a leaf\x00" as *const u8 as *const libc::CChar
-                    as *mut libc::CChar,
+                b"uvmunmap: not a leaf\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
             );
         }
         if do_free != 0 {
@@ -256,8 +254,7 @@ pub unsafe fn uvmcreate() -> PagetableT {
     pagetable = kalloc() as PagetableT;
     if pagetable.is_null() {
         panic(
-            b"uvmcreate: out of memory\x00" as *const u8 as *const libc::CChar
-                as *mut libc::CChar,
+            b"uvmcreate: out of memory\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
         );
     }
     ptr::write_bytes(pagetable as *mut libc::CVoid, 0, PGSIZE as usize);
@@ -271,8 +268,7 @@ pub unsafe fn uvminit(pagetable: PagetableT, src: *mut u8, sz: u32) {
     let mut mem: *mut libc::CChar = ptr::null_mut();
     if sz >= PGSIZE as u32 {
         panic(
-            b"inituvm: more than a page\x00" as *const u8 as *const libc::CChar
-                as *mut libc::CChar,
+            b"inituvm: more than a page\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
         );
     }
     mem = kalloc() as *mut libc::CChar;
@@ -513,8 +509,7 @@ pub unsafe fn copyinstr(
         if n > max {
             n = max
         }
-        let mut p: *mut libc::CChar =
-            pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut libc::CChar;
+        let mut p: *mut libc::CChar = pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut libc::CChar;
         while n > 0 {
             if *p as i32 == '\u{0}' as i32 {
                 *dst = '\u{0}' as i32 as libc::CChar;

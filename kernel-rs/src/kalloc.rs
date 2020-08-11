@@ -12,7 +12,7 @@ use core::ptr;
 
 /// first address after kernel.
 /// defined by kernel.ld.
-pub static mut end: [u8; 0] = [0; 0];
+pub static mut END: [u8; 0] = [0; 0];
 
 #[derive(Copy, Clone)]
 struct Run {
@@ -34,11 +34,11 @@ impl Kmem {
     }
 }
 
-static mut kmem: Kmem = Kmem::zeroed();
+static mut KMEM: Kmem = Kmem::zeroed();
 
 pub unsafe fn kinit() {
-    kmem.lock
-        .initlock(b"kmem\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+    KMEM.lock
+        .initlock(b"KMEM\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
 
     // TODO: without this strange code, the kernel doesn't boot up.  Probably stack is not properly
     // initialized at the beginning...
@@ -46,7 +46,7 @@ pub unsafe fn kinit() {
     drop(protection);
 
     freerange(
-        end.as_mut_ptr() as *mut libc::CVoid,
+        END.as_mut_ptr() as *mut libc::CVoid,
         PHYSTOP as *mut libc::CVoid,
     );
 }
@@ -66,7 +66,7 @@ pub unsafe fn freerange(pa_start: *mut libc::CVoid, pa_end: *mut libc::CVoid) {
 pub unsafe fn kfree(pa: *mut libc::CVoid) {
     let mut r: *mut Run = ptr::null_mut();
     if (pa as usize).wrapping_rem(PGSIZE as usize) != 0
-        || (pa as *mut libc::CChar) < end.as_mut_ptr()
+        || (pa as *mut libc::CChar) < END.as_mut_ptr()
         || pa as usize >= PHYSTOP as usize
     {
         panic(b"kfree\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
@@ -75,10 +75,10 @@ pub unsafe fn kfree(pa: *mut libc::CVoid) {
     // Fill with junk to catch dangling refs.
     ptr::write_bytes(pa as *mut libc::CVoid, 1, PGSIZE as usize);
     r = pa as *mut Run;
-    kmem.lock.acquire();
-    (*r).next = kmem.freelist;
-    kmem.freelist = r;
-    kmem.lock.release();
+    KMEM.lock.acquire();
+    (*r).next = KMEM.freelist;
+    KMEM.freelist = r;
+    KMEM.lock.release();
 }
 
 /// Allocate one 4096-byte page of physical memory.
@@ -86,12 +86,12 @@ pub unsafe fn kfree(pa: *mut libc::CVoid) {
 /// Returns 0 if the memory cannot be allocated.
 pub unsafe fn kalloc() -> *mut libc::CVoid {
     let mut r: *mut Run = ptr::null_mut();
-    kmem.lock.acquire();
-    r = kmem.freelist;
+    KMEM.lock.acquire();
+    r = KMEM.freelist;
     if !r.is_null() {
-        kmem.freelist = (*r).next
+        KMEM.freelist = (*r).next
     }
-    kmem.lock.release();
+    KMEM.lock.release();
     if !r.is_null() {
         // fill with junk
         ptr::write_bytes(

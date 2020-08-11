@@ -6,7 +6,7 @@ use crate::{
     log::{begin_op, end_op},
     param::MAXARG,
     printf::panic,
-    proc::{myproc, Proc, proc_freepagetable, proc_pagetable},
+    proc::{myproc, proc_freepagetable, proc_pagetable, Proc},
     riscv::{PagetableT, PGSIZE},
     string::{safestrcpy, strlen},
     vm::{copyout, uvmalloc, uvmclear, walkaddr},
