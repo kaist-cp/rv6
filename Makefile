@@ -1,14 +1,17 @@
-K=kernel
-U=user
-KR=kernel-rs
+K = kernel
+U = user
+KR = kernel-rs
 
-RUST_TARGET=riscv64gc-unknown-none-elfhf
+RUST_TARGET = riscv64gc-unknown-none-elfhf
+# $(firstword $(MAKECMDGOALS)) is fragile!
+# XBUILD_MODE is needed because cargo xbuild doesn't have "--debug" option.
+# https://github.com/kaist-cp/rv6/pull/118
 ifeq (qemu-gdb,$(firstword $(MAKECMDGOALS)))
-RUST_MODE=debug
-XBUILD_RELEASE:=
+RUST_MODE = debug
+XBUILD_MODE :=
 else
-RUST_MODE=release
-XBUILD_RELEASE:=--$(RUST_MODE)
+RUST_MODE = release
+XBUILD_MODE := --$(RUST_MODE)
 endif
 
 # OBJS = \
@@ -101,7 +104,7 @@ $U/initcode: $U/initcode.S
 	$(OBJDUMP) -S $U/initcode.o > $U/initcode.asm
 
 $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a: $(shell find $(KR) -type f)
-	cargo xbuild --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json $(XBUILD_RELEASE)
+	cargo xbuild --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json $(XBUILD_MODE)
 
 tags: $(OBJS) _init
 	etags *.S *.c
@@ -134,7 +137,7 @@ mkfs/mkfs: mkfs/mkfs.c $K/fs.h
 # http://www.gnu.org/software/make/manual/html_node/Chained-Rules.html
 .PRECIOUS: %.o
 
-UPROGS=\
+UPROGS = \
 	$U/_cat\
 	$U/_echo\
 	$U/_forktest\
@@ -195,7 +198,7 @@ qemu-gdb: $K/kernel .gdbinit fs.img
 # rename it to rev0 or rev1 or so on and then
 # check in that version.
 
-EXTRA=\
+EXTRA = \
 	mkfs.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
 	ln.c ls.c mkdir.c rm.c stressfs.c usertests.c wc.c zombie.c\
 	printf.c umalloc.c\
