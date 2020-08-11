@@ -13,7 +13,7 @@ pub unsafe fn sys_exit() -> usize {
     }
     exit(n);
 
-    panic(b"sys_exit: not reached\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    panic(b"sys_exit: not reached\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
 }
 
 pub unsafe fn sys_getpid() -> usize {
@@ -57,7 +57,7 @@ pub unsafe fn sys_sleep() -> usize {
             tickslock.release();
             return usize::MAX;
         }
-        sleep(&mut ticks as *mut u32 as *mut libc::c_void, &mut tickslock);
+        sleep(&mut ticks as *mut u32 as *mut libc::CVoid, &mut tickslock);
     }
     tickslock.release();
     0

@@ -1,7 +1,7 @@
 use crate::libc;
 use crate::{
     printf::{panic, printf},
-    proc::{myproc, proc},
+    proc::{myproc, Proc},
     string::strlen,
     sysfile::*,
     sysproc::*,
@@ -10,13 +10,13 @@ use crate::{
 
 /// Fetch the usize at addr from the current process.
 pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
-    let p: *mut proc = myproc();
+    let p: *mut Proc = myproc();
     if addr >= (*p).sz || addr.wrapping_add(::core::mem::size_of::<usize>()) > (*p).sz {
         return -1;
     }
     if copyin(
         (*p).pagetable,
-        ip as *mut libc::c_char,
+        ip as *mut libc::CChar,
         addr,
         ::core::mem::size_of::<usize>(),
     ) != 0
@@ -28,8 +28,8 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
 
 /// Fetch the nul-terminated string at addr from the current process.
 /// Returns length of string, not including nul, or -1 for error.
-pub unsafe fn fetchstr(addr: usize, buf: *mut libc::c_char, max: i32) -> i32 {
-    let p: *mut proc = myproc();
+pub unsafe fn fetchstr(addr: usize, buf: *mut libc::CChar, max: i32) -> i32 {
+    let p: *mut Proc = myproc();
     let err: i32 = copyinstr((*p).pagetable, buf, addr, max as usize);
     if err < 0 {
         return err;
@@ -38,7 +38,7 @@ pub unsafe fn fetchstr(addr: usize, buf: *mut libc::c_char, max: i32) -> i32 {
 }
 
 unsafe fn argraw(n: i32) -> usize {
-    let p: *mut proc = myproc();
+    let p: *mut Proc = myproc();
     match n {
         0 => return (*(*p).tf).a0,
         1 => return (*(*p).tf).a1,
@@ -48,7 +48,7 @@ unsafe fn argraw(n: i32) -> usize {
         5 => return (*(*p).tf).a5,
         _ => {}
     }
-    panic(b"argraw\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    panic(b"argraw\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
 }
 
 /// Fetch the nth 32-bit system call argument.
@@ -68,7 +68,7 @@ pub unsafe fn argaddr(n: i32, ip: *mut usize) -> i32 {
 /// Fetch the nth word-sized system call argument as a null-terminated string.
 /// Copies into buf, at most max.
 /// Returns string length if OK (including nul), -1 if error.
-pub unsafe fn argstr(n: i32, buf: *mut libc::c_char, max: i32) -> i32 {
+pub unsafe fn argstr(n: i32, buf: *mut libc::CChar, max: i32) -> i32 {
     let mut addr: usize = 0;
     if argaddr(n, &mut addr) < 0 {
         return -1;
@@ -103,7 +103,7 @@ static mut syscalls: [Option<unsafe fn() -> usize>; 22] = [
 
 pub unsafe fn syscall() {
     let mut num: i32 = 0;
-    let mut p: *mut proc = myproc();
+    let mut p: *mut Proc = myproc();
     num = (*(*p).tf).a7 as i32;
     if num > 0
         && (num as usize)
@@ -114,8 +114,8 @@ pub unsafe fn syscall() {
         (*(*p).tf).a0 = syscalls[num as usize].expect("non-null function pointer")()
     } else {
         printf(
-            b"%d %s: unknown sys call %d\n\x00" as *const u8 as *const libc::c_char
-                as *mut libc::c_char,
+            b"%d %s: unknown sys call %d\n\x00" as *const u8 as *const libc::CChar
+                as *mut libc::CChar,
             (*p).pid,
             (*p).name.as_mut_ptr(),
             num,

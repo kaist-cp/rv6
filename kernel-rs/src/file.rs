@@ -6,7 +6,7 @@ use crate::{
     param::{MAXOPBLOCKS, NDEV, NFILE},
     pipe::Pipe,
     printf::panic,
-    proc::{myproc, proc},
+    proc::{myproc, Proc},
     sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::Stat,
@@ -23,8 +23,8 @@ pub struct File {
     /// reference count
     ref_0: i32,
 
-    pub readable: libc::c_char,
-    pub writable: libc::c_char,
+    pub readable: libc::CChar,
+    pub writable: libc::CChar,
 
     /// FD_PIPE
     pub pipe: *mut Pipe,
@@ -104,7 +104,7 @@ impl File {
     pub unsafe fn dup(&mut self) -> *mut File {
         ftable.lock.acquire();
         if (*self).ref_0 < 1 {
-            panic(b"File::dup\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(b"File::dup\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         }
         (*self).ref_0 += 1;
         ftable.lock.release();
@@ -116,7 +116,7 @@ impl File {
         let mut ff: File = File::zeroed();
         ftable.lock.acquire();
         if (*self).ref_0 < 1 {
-            panic(b"File::close\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(b"File::close\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         }
         (*self).ref_0 -= 1;
         if (*self).ref_0 > 0 {
@@ -141,7 +141,7 @@ impl File {
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
     pub unsafe fn stat(&mut self, addr: usize) -> i32 {
-        let p: *mut proc = myproc();
+        let p: *mut Proc = myproc();
         let mut st: Stat = Default::default();
         if (*self).typ as u32 == FD_INODE as i32 as u32
             || (*self).typ as u32 == FD_DEVICE as i32 as u32
@@ -152,7 +152,7 @@ impl File {
             if copyout(
                 (*p).pagetable,
                 addr,
-                &mut st as *mut Stat as *mut libc::c_char,
+                &mut st as *mut Stat as *mut libc::CChar,
                 ::core::mem::size_of::<Stat>() as usize,
             ) < 0
             {
@@ -190,7 +190,7 @@ impl File {
             }
             (*(*self).ip).unlock();
         } else {
-            panic(b"File::read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(b"File::read\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         }
         r
     }
@@ -242,15 +242,15 @@ impl File {
                 }
                 if r != n1 {
                     panic(
-                        b"short File::write\x00" as *const u8 as *const libc::c_char
-                            as *mut libc::c_char,
+                        b"short File::write\x00" as *const u8 as *const libc::CChar
+                            as *mut libc::CChar,
                     );
                 }
                 i += r
             }
             ret = if i == n { n } else { -1 }
         } else {
-            panic(b"File::write\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(b"File::write\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         }
         ret
     }
@@ -291,5 +291,5 @@ static mut ftable: Ftable = Ftable::zeroed();
 pub unsafe fn fileinit() {
     ftable
         .lock
-        .initlock(b"ftable\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        .initlock(b"ftable\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
 }

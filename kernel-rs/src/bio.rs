@@ -31,7 +31,7 @@ impl Buf {
     /// Write self's contents to disk.  Must be locked.
     pub unsafe fn write(&mut self) {
         if (*self).lock.holding() == 0 {
-            panic(b"bwrite\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(b"bwrite\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         }
         virtio_disk_rw(self, 1);
     }
@@ -42,7 +42,7 @@ impl Buf {
         let bcache = BCACHE.get_mut();
 
         if (*self).lock.holding() == 0 {
-            panic(b"release\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic(b"release\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         }
         (*self).lock.release();
         bcache.lock.acquire();
@@ -80,7 +80,7 @@ pub unsafe fn binit() {
     let mut b: *mut Buf = ptr::null_mut();
     bcache
         .lock
-        .initlock(b"bcache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        .initlock(b"bcache\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
 
     // Create linked list of buffers
     bcache.head.prev = &mut bcache.head;
@@ -90,7 +90,7 @@ pub unsafe fn binit() {
         (*b).next = bcache.head.next;
         (*b).prev = &mut bcache.head;
         (*b).lock
-            .initlock(b"buffer\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            .initlock(b"buffer\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         (*bcache.head.next).prev = b;
         bcache.head.next = b;
         b = b.offset(1)
@@ -132,7 +132,7 @@ unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
         }
         b = (*b).prev
     }
-    panic(b"bget: no buffers\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    panic(b"bget: no buffers\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
 }
 
 /// Return a locked buf with the contents of the indicated block.
