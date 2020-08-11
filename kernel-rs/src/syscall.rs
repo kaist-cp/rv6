@@ -76,32 +76,30 @@ pub unsafe fn argstr(n: i32, buf: *mut libc::c_char, max: i32) -> i32 {
     fetchstr(addr, buf, max)
 }
 
-static mut syscalls: [Option<unsafe fn() -> usize>; 22] = unsafe {
-    [
-        None,
-        Some(sys_fork as unsafe fn() -> usize),
-        Some(sys_exit as unsafe fn() -> usize),
-        Some(sys_wait as unsafe fn() -> usize),
-        Some(sys_pipe as unsafe fn() -> usize),
-        Some(sys_read as unsafe fn() -> usize),
-        Some(sys_kill as unsafe fn() -> usize),
-        Some(sys_exec as unsafe fn() -> usize),
-        Some(sys_fstat as unsafe fn() -> usize),
-        Some(sys_chdir as unsafe fn() -> usize),
-        Some(sys_dup as unsafe fn() -> usize),
-        Some(sys_getpid as unsafe fn() -> usize),
-        Some(sys_sbrk as unsafe fn() -> usize),
-        Some(sys_sleep as unsafe fn() -> usize),
-        Some(sys_uptime as unsafe fn() -> usize),
-        Some(sys_open as unsafe fn() -> usize),
-        Some(sys_write as unsafe fn() -> usize),
-        Some(sys_mknod as unsafe fn() -> usize),
-        Some(sys_unlink as unsafe fn() -> usize),
-        Some(sys_link as unsafe fn() -> usize),
-        Some(sys_mkdir as unsafe fn() -> usize),
-        Some(sys_close as unsafe fn() -> usize),
-    ]
-};
+static mut syscalls: [Option<unsafe fn() -> usize>; 22] = [
+    None,
+    Some(sys_fork as unsafe fn() -> usize),
+    Some(sys_exit as unsafe fn() -> usize),
+    Some(sys_wait as unsafe fn() -> usize),
+    Some(sys_pipe as unsafe fn() -> usize),
+    Some(sys_read as unsafe fn() -> usize),
+    Some(sys_kill as unsafe fn() -> usize),
+    Some(sys_exec as unsafe fn() -> usize),
+    Some(sys_fstat as unsafe fn() -> usize),
+    Some(sys_chdir as unsafe fn() -> usize),
+    Some(sys_dup as unsafe fn() -> usize),
+    Some(sys_getpid as unsafe fn() -> usize),
+    Some(sys_sbrk as unsafe fn() -> usize),
+    Some(sys_sleep as unsafe fn() -> usize),
+    Some(sys_uptime as unsafe fn() -> usize),
+    Some(sys_open as unsafe fn() -> usize),
+    Some(sys_write as unsafe fn() -> usize),
+    Some(sys_mknod as unsafe fn() -> usize),
+    Some(sys_unlink as unsafe fn() -> usize),
+    Some(sys_link as unsafe fn() -> usize),
+    Some(sys_mkdir as unsafe fn() -> usize),
+    Some(sys_close as unsafe fn() -> usize),
+];
 
 pub unsafe fn syscall() {
     let mut num: i32 = 0;

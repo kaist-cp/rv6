@@ -211,12 +211,7 @@ pub unsafe fn mappages(
 /// Remove mappings from a page table. The mappings in
 /// the given range must exist. Optionally free the
 /// physical memory.
-pub unsafe fn uvmunmap(
-    pagetable: pagetable_t,
-    va: usize,
-    size: usize,
-    do_free: i32,
-) {
+pub unsafe fn uvmunmap(pagetable: pagetable_t, va: usize, size: usize, do_free: i32) {
     let mut pa: usize = 0;
     let mut a = pgrounddown(va);
     let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));

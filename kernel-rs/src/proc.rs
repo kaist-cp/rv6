@@ -913,12 +913,7 @@ pub unsafe fn kill(pid: i32) -> i32 {
 /// Copy to either a user address, or kernel address,
 /// depending on usr_dst.
 /// Returns 0 on success, -1 on error.
-pub unsafe fn either_copyout(
-    user_dst: i32,
-    dst: usize,
-    src: *mut libc::c_void,
-    len: usize,
-) -> i32 {
+pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: *mut libc::c_void, len: usize) -> i32 {
     let p: *mut proc = myproc();
     if user_dst != 0 {
         copyout((*p).pagetable, dst, src as *mut libc::c_char, len)
@@ -931,12 +926,7 @@ pub unsafe fn either_copyout(
 /// Copy from either a user address, or kernel address,
 /// depending on usr_src.
 /// Returns 0 on success, -1 on error.
-pub unsafe fn either_copyin(
-    dst: *mut libc::c_void,
-    user_src: i32,
-    src: usize,
-    len: usize,
-) -> i32 {
+pub unsafe fn either_copyin(dst: *mut libc::c_void, user_src: i32, src: usize, len: usize) -> i32 {
     let p: *mut proc = myproc();
     if user_src != 0 {
         copyin((*p).pagetable, dst as *mut libc::c_char, src, len)

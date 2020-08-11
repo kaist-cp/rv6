@@ -78,7 +78,7 @@ unsafe fn printptr(mut x: usize) {
 
 /// Print to the console. only understands %d, %x, %p, %s.
 pub unsafe extern "C" fn printf(fmt: *mut libc::c_char, args: ...) {
-    let mut ap: ::core::ffi::VaListImpl;
+    let mut ap: ::core::ffi::VaListImpl<'_>;
     let mut i: i32 = 0;
     let mut locking: i32 = 0;
     locking = pr.locking;

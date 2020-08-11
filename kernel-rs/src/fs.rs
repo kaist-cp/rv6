@@ -368,13 +368,7 @@ impl Inode {
     /// Caller must hold self->lock.
     /// If user_dst==1, then dst is a user virtual address;
     /// otherwise, dst is a kernel address.
-    pub unsafe fn read(
-        &mut self,
-        user_dst: i32,
-        mut dst: usize,
-        mut off: u32,
-        mut n: u32,
-    ) -> i32 {
+    pub unsafe fn read(&mut self, user_dst: i32, mut dst: usize, mut off: u32, mut n: u32) -> i32 {
         let mut tot: u32 = 0;
         if off > (*self).size || off.wrapping_add(n) < off {
             return -1;
@@ -416,13 +410,7 @@ impl Inode {
     /// Caller must hold self->lock.
     /// If user_src==1, then src is a user virtual address;
     /// otherwise, src is a kernel address.
-    pub unsafe fn write(
-        &mut self,
-        user_src: i32,
-        mut src: usize,
-        mut off: u32,
-        n: u32,
-    ) -> i32 {
+    pub unsafe fn write(&mut self, user_src: i32, mut src: usize, mut off: u32, n: u32) -> i32 {
         let mut tot: u32 = 0;
         if off > (*self).size || off.wrapping_add(n) < off {
             return -1;
@@ -705,11 +693,7 @@ pub unsafe fn namecmp(s: *const libc::c_char, t: *const libc::c_char) -> i32 {
 
 /// Look for a directory entry in a directory.
 /// If found, set *poff to byte offset of entry.
-pub unsafe fn dirlookup(
-    dp: *mut Inode,
-    name: *mut libc::c_char,
-    poff: *mut u32,
-) -> *mut Inode {
+pub unsafe fn dirlookup(dp: *mut Inode, name: *mut libc::c_char, poff: *mut u32) -> *mut Inode {
     let mut off: u32 = 0;
     let mut de: Dirent = Default::default();
     if (*dp).typ as i32 != T_DIR {

@@ -263,12 +263,7 @@ pub unsafe fn sys_unlink() -> usize {
     usize::MAX
 }
 
-unsafe fn create(
-    path: *mut libc::c_char,
-    typ: i16,
-    major: i16,
-    minor: i16,
-) -> *mut Inode {
+unsafe fn create(path: *mut libc::c_char, typ: i16, major: i16, minor: i16) -> *mut Inode {
     let mut ip: *mut Inode = ptr::null_mut();
     let mut dp: *mut Inode = ptr::null_mut();
     let mut name: [libc::c_char; DIRSIZ] = [0; DIRSIZ];
