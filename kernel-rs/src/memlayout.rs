@@ -55,7 +55,7 @@ pub const PHYSTOP: usize = KERNBASE.wrapping_add(128 * 1024 * 1024);
 
 /// map the trampoline page to the highest address,
 /// in both user and kernel space.
-pub const TRAMPOLINE: i64 = MAXVA - PGSIZE as i64;
+pub const TRAMPOLINE: i64 = MAXVA as i64 - PGSIZE as i64;
 
 /// map kernel stacks beneath the trampoline,
 /// each surrounded by invalid guard pages.

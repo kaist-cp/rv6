@@ -366,7 +366,7 @@ pub fn px(level: i32, va: usize) -> usize {
 /// MAXVA is actually one bit less than the max allowed by
 /// Sv39, to avoid having to sign-extend virtual addresses
 /// that have the high bit set.
-pub const MAXVA: i64 = (1) << (9 + 9 + 9 + 12 - 1);
+pub const MAXVA: usize = (1) << (9 + 9 + 9 + 12 - 1);
 
 pub type PteT = usize;
 pub type PdeT = usize;

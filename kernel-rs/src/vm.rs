@@ -105,7 +105,7 @@ pub unsafe fn kvminithart() {
 ///   12..20 -- 9 bits of level-0 index.
 ///    0..12 -- 12 bits of byte offset within the page.
 unsafe fn walk(mut pagetable: PagetableT, va: usize, alloc: i32) -> *mut PteT {
-    if va >= MAXVA as usize {
+    if va >= MAXVA {
         panic(b"walk\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     }
     for level in (1..3).rev() {
@@ -130,7 +130,7 @@ unsafe fn walk(mut pagetable: PagetableT, va: usize, alloc: i32) -> *mut PteT {
 /// or 0 if not mapped.
 /// Can only be used to look up user pages.
 pub unsafe fn walkaddr(pagetable: PagetableT, va: usize) -> usize {
-    if va >= MAXVA as usize {
+    if va >= MAXVA {
         return 0;
     }
     let pte: *mut PteT = walk(pagetable, va, 0);
