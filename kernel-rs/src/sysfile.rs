@@ -32,9 +32,9 @@ impl File {
         let mut p: *mut Proc = myproc();
         for fd in 0..NOFILE {
             // user pointer to struct stat
-            if (*p).ofile[fd as usize].is_null() {
-                (*p).ofile[fd as usize] = self;
-                return fd;
+            if (*p).ofile[fd].is_null() {
+                (*p).ofile[fd] = self;
+                return fd as i32;
             }
         }
         -1
@@ -49,7 +49,7 @@ unsafe fn argfd(n: i32, pfd: *mut i32, pf: *mut *mut File) -> i32 {
     if argint(n, &mut fd) < 0 {
         return -1;
     }
-    if fd < 0 || fd >= NOFILE || {
+    if fd < 0 || fd >= NOFILE as i32 || {
         f = (*myproc()).ofile[fd as usize];
         f.is_null()
     } {

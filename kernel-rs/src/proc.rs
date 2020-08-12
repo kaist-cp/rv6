@@ -107,7 +107,7 @@ pub struct Proc {
     context: Context,
 
     /// Open files
-    pub ofile: [*mut File; NOFILE as usize],
+    pub ofile: [*mut File; NOFILE],
 
     /// Current directory
     pub cwd: *mut Inode,
@@ -290,7 +290,7 @@ impl Proc {
             pagetable: ptr::null_mut(),
             tf: ptr::null_mut(),
             context: Context::zeroed(),
-            ofile: [ptr::null_mut(); NOFILE as usize],
+            ofile: [ptr::null_mut(); NOFILE],
             cwd: ptr::null_mut(),
             name: [0; 16],
         }
@@ -623,10 +623,10 @@ pub unsafe fn exit(status: i32) {
 
     // Close all open files.
     for fd in 0..NOFILE {
-        if !(*p).ofile[fd as usize].is_null() {
-            let f: *mut File = (*p).ofile[fd as usize];
+        if !(*p).ofile[fd].is_null() {
+            let f: *mut File = (*p).ofile[fd];
             (*f).close();
-            (*p).ofile[fd as usize] = ptr::null_mut();
+            (*p).ofile[fd] = ptr::null_mut();
         }
     }
     begin_op();
