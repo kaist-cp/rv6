@@ -9,7 +9,7 @@ use crate::{
 pub unsafe fn plicinit() {
     // set desired IRQ priorities non-zero (otherwise disabled).
     *((PLIC.wrapping_add(UART0_IRQ.wrapping_mul(4))) as *mut u32) = 1;
-    *((PLIC as i64 + (VIRTIO0_IRQ * 4) as i64) as *mut u32) = 1;
+    *((PLIC as i32 + VIRTIO0_IRQ * 4) as *mut u32) = 1;
 }
 
 pub unsafe fn plicinithart() {
