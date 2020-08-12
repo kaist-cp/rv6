@@ -49,7 +49,7 @@ unsafe fn printint(xx: i32, base: i32, mut sign: i32) {
     if sign != 0 {
         let fresh1 = i;
         i += 1;
-        buf[fresh1 as usize] = '-' as i32 as u8
+        buf[fresh1 as usize] = b'-'
     }
     loop {
         i -= 1;

@@ -430,7 +430,7 @@ unsafe fn freeproc(mut p: *mut Proc) {
     (*p).sz = 0;
     (*p).pid = 0;
     (*p).parent = ptr::null_mut();
-    (*p).name[0] = 0 as u8;
+    (*p).name[0] = 0;
     (*p).chan = ptr::null_mut();
     (*p).killed = 0;
     (*p).xstate = 0;

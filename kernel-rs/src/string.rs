@@ -7,7 +7,7 @@ pub unsafe fn strncmp(mut p: *const u8, mut q: *const u8, mut n: u32) -> i32 {
     if n == 0 {
         return 0;
     }
-    *p as u8 as i32 - *q as u8 as i32
+    *p as i32 - *q as i32
 }
 
 pub unsafe fn strncpy(mut s: *mut u8, mut t: *const u8, mut n: i32) -> *mut u8 {
@@ -34,7 +34,7 @@ pub unsafe fn strncpy(mut s: *mut u8, mut t: *const u8, mut n: i32) -> *mut u8 {
         }
         let fresh9 = s;
         s = s.offset(1);
-        *fresh9 = 0 as u8
+        *fresh9 = 0
     }
     os
 }
@@ -58,7 +58,7 @@ pub unsafe fn safestrcpy(mut s: *mut u8, mut t: *const u8, mut n: i32) -> *mut u
             break;
         }
     }
-    *s = 0 as u8;
+    *s = 0;
     os
 }
 

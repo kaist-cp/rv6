@@ -774,7 +774,7 @@ unsafe fn skipelem(mut path: *mut u8, name: *mut u8) -> *mut u8 {
             name as *mut libc::CVoid,
             len as usize,
         );
-        *name.offset(len as isize) = 0 as u8
+        *name.offset(len as isize) = 0
     }
     while *path as i32 == '/' as i32 {
         path = path.offset(1)
