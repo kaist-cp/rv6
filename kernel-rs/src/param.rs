@@ -11,7 +11,7 @@ pub const NOFILE: usize = 16;
 pub const NFILE: usize = 100;
 
 /// maximum number of active i-nodes
-pub const NINODE: i32 = 50;
+pub const NINODE: usize = 50;
 
 /// maximum major device number
 pub const NDEV: i32 = 10;

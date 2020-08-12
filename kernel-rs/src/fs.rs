@@ -167,7 +167,7 @@ struct Dinode {
 /// read or write that inode's ip->valid, ip->size, ip->type, &c.
 struct Icache {
     lock: Spinlock,
-    inode: [Inode; NINODE as usize],
+    inode: [Inode; NINODE],
 }
 
 impl Icache {
@@ -175,7 +175,7 @@ impl Icache {
     pub const fn zeroed() -> Self {
         Self {
             lock: Spinlock::zeroed(),
-            inode: [Inode::zeroed(); NINODE as usize],
+            inode: [Inode::zeroed(); NINODE],
         }
     }
 }
@@ -617,7 +617,7 @@ pub unsafe fn iinit() {
         .lock
         .initlock(b"ICACHE\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     for i in 0..NINODE {
-        (*ICACHE.inode.as_mut_ptr().offset(i as isize))
+        (*ICACHE.inode.as_mut_ptr().add(i))
             .lock
             .initlock(b"inode\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     }
@@ -632,7 +632,7 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
     // Is the inode already cached?
     let mut empty: *mut Inode = ptr::null_mut();
     let mut ip: *mut Inode = &mut *ICACHE.inode.as_mut_ptr().offset(0) as *mut Inode;
-    while ip < &mut *ICACHE.inode.as_mut_ptr().offset(NINODE as isize) as *mut Inode {
+    while ip < &mut *ICACHE.inode.as_mut_ptr().add(NINODE) as *mut Inode {
         if (*ip).ref_0 > 0 && (*ip).dev == dev && (*ip).inum == inum {
             (*ip).ref_0 += 1;
             ICACHE.lock.release();
