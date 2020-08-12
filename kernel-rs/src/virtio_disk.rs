@@ -20,7 +20,7 @@ use core::sync::atomic::{fence, Ordering};
 
 /// the address of virtio mmio register r.
 const fn r(r: i32) -> *mut u32 {
-    (VIRTIO0 + r) as *mut u32
+    VIRTIO0.wrapping_add(r as usize) as *mut u32
 }
 
 // It needs repr(C) because it's struct for in-disk representation

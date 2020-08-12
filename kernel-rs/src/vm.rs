@@ -37,8 +37,8 @@ pub unsafe fn kvminit() {
 
     // virtio mmio disk interface
     kvmmap(
-        VIRTIO0 as usize,
-        VIRTIO0 as usize,
+        VIRTIO0,
+        VIRTIO0,
         PGSIZE,
         (PTE_R | PTE_W) as i32,
     );
