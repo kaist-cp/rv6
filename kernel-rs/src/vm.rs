@@ -30,16 +30,16 @@ pub static mut KERNEL_PAGETABLE: PagetableT = ptr::null_mut();
 /// the page allocator is already initialized.
 pub unsafe fn kvminit() {
     KERNEL_PAGETABLE = kalloc() as PagetableT;
-    ptr::write_bytes(KERNEL_PAGETABLE as *mut libc::CVoid, 0, PGSIZE as usize);
+    ptr::write_bytes(KERNEL_PAGETABLE as *mut libc::CVoid, 0, PGSIZE);
 
     // uart registers
-    kvmmap(UART0, UART0, PGSIZE as usize, (PTE_R | PTE_W) as i32);
+    kvmmap(UART0, UART0, PGSIZE, (PTE_R | PTE_W) as i32);
 
     // virtio mmio disk interface
     kvmmap(
         VIRTIO0 as usize,
         VIRTIO0 as usize,
-        PGSIZE as usize,
+        PGSIZE,
         (PTE_R | PTE_W) as i32,
     );
 
@@ -80,7 +80,7 @@ pub unsafe fn kvminit() {
     kvmmap(
         TRAMPOLINE as usize,
         trampoline.as_mut_ptr() as usize,
-        PGSIZE as usize,
+        PGSIZE,
         (PTE_R | PTE_X) as i32,
     );
 }
@@ -119,7 +119,7 @@ unsafe fn walk(mut pagetable: PagetableT, va: usize, alloc: i32) -> *mut PteT {
             } {
                 return ptr::null_mut();
             }
-            ptr::write_bytes(pagetable as *mut libc::CVoid, 0, PGSIZE as usize);
+            ptr::write_bytes(pagetable as *mut libc::CVoid, 0, PGSIZE);
             *pte = pa2pte(pagetable as usize) | PTE_V as usize
         }
     }
@@ -161,7 +161,7 @@ pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
 /// addresses on the stack.
 /// assumes va is page aligned.
 pub unsafe fn kvmpa(va: usize) -> usize {
-    let off: usize = va.wrapping_rem(PGSIZE as usize);
+    let off: usize = va.wrapping_rem(PGSIZE);
     let pte: *mut PteT = walk(KERNEL_PAGETABLE, va, 0);
     if pte.is_null() {
         panic(b"kvmpa\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
@@ -198,8 +198,8 @@ pub unsafe fn mappages(
         if a == last {
             break;
         }
-        a = a.wrapping_add(PGSIZE as usize);
-        pa = pa.wrapping_add(PGSIZE as usize);
+        a = a.wrapping_add(PGSIZE);
+        pa = pa.wrapping_add(PGSIZE);
     }
     0
 }
@@ -239,8 +239,8 @@ pub unsafe fn uvmunmap(pagetable: PagetableT, va: usize, size: usize, do_free: i
         if a == last {
             break;
         }
-        a = a.wrapping_add(PGSIZE as usize);
-        pa = pa.wrapping_add(PGSIZE as usize);
+        a = a.wrapping_add(PGSIZE);
+        pa = pa.wrapping_add(PGSIZE);
     }
 }
 
@@ -252,7 +252,7 @@ pub unsafe fn uvmcreate() -> PagetableT {
             b"uvmcreate: out of memory\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
         );
     }
-    ptr::write_bytes(pagetable as *mut libc::CVoid, 0, PGSIZE as usize);
+    ptr::write_bytes(pagetable as *mut libc::CVoid, 0, PGSIZE);
     pagetable
 }
 
@@ -266,11 +266,11 @@ pub unsafe fn uvminit(pagetable: PagetableT, src: *mut u8, sz: u32) {
         );
     }
     let mem: *mut libc::CChar = kalloc() as *mut libc::CChar;
-    ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE as usize);
+    ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
     mappages(
         pagetable,
         0,
-        PGSIZE as usize,
+        PGSIZE,
         mem as usize,
         (PTE_W | PTE_R | PTE_X | PTE_U) as i32,
     );
@@ -295,11 +295,11 @@ pub unsafe fn uvmalloc(pagetable: PagetableT, mut oldsz: usize, newsz: usize) ->
             uvmdealloc(pagetable, a, oldsz);
             return 0;
         }
-        ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE as usize);
+        ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
         if mappages(
             pagetable,
             a,
-            PGSIZE as usize,
+            PGSIZE,
             mem as usize,
             (PTE_W | PTE_X | PTE_R | PTE_U) as i32,
         ) != 0
@@ -308,7 +308,7 @@ pub unsafe fn uvmalloc(pagetable: PagetableT, mut oldsz: usize, newsz: usize) ->
             uvmdealloc(pagetable, a, oldsz);
             return 0;
         }
-        a = a.wrapping_add(PGSIZE as usize);
+        a = a.wrapping_add(PGSIZE);
     }
     newsz
 }
@@ -390,14 +390,14 @@ pub unsafe fn uvmcopy(old: PagetableT, new: PagetableT, sz: usize) -> i32 {
         ptr::copy(
             pa as *mut libc::CChar as *const libc::CVoid,
             mem as *mut libc::CVoid,
-            PGSIZE as usize,
+            PGSIZE,
         );
-        if mappages(new, i, PGSIZE as usize, mem as usize, flags as i32) != 0 {
+        if mappages(new, i, PGSIZE, mem as usize, flags as i32) != 0 {
             kfree(mem as *mut libc::CVoid);
             current_block = 9000140654394160520;
             break;
         } else {
-            i = i.wrapping_add(PGSIZE as usize);
+            i = i.wrapping_add(PGSIZE);
         }
     }
     match current_block {
@@ -434,7 +434,7 @@ pub unsafe fn copyout(
         if pa0 == 0 {
             return -1;
         }
-        let mut n = (PGSIZE as usize).wrapping_sub(dstva.wrapping_sub(va0));
+        let mut n = PGSIZE.wrapping_sub(dstva.wrapping_sub(va0));
         if n > len {
             n = len
         }
@@ -445,7 +445,7 @@ pub unsafe fn copyout(
         );
         len = len.wrapping_sub(n);
         src = src.add(n);
-        dstva = va0.wrapping_add(PGSIZE as usize);
+        dstva = va0.wrapping_add(PGSIZE);
     }
     0
 }
@@ -465,7 +465,7 @@ pub unsafe fn copyin(
         if pa0 == 0 {
             return -1;
         }
-        let mut n = (PGSIZE as usize).wrapping_sub(srcva.wrapping_sub(va0));
+        let mut n = PGSIZE.wrapping_sub(srcva.wrapping_sub(va0));
         if n > len {
             n = len
         }
@@ -476,7 +476,7 @@ pub unsafe fn copyin(
         );
         len = len.wrapping_sub(n);
         dst = dst.add(n);
-        srcva = va0.wrapping_add(PGSIZE as usize)
+        srcva = va0.wrapping_add(PGSIZE)
     }
     0
 }
@@ -498,7 +498,7 @@ pub unsafe fn copyinstr(
         if pa0 == 0 {
             return -1;
         }
-        let mut n = (PGSIZE as usize).wrapping_sub(srcva.wrapping_sub(va0));
+        let mut n = PGSIZE.wrapping_sub(srcva.wrapping_sub(va0));
         if n > max {
             n = max
         }
@@ -516,7 +516,7 @@ pub unsafe fn copyinstr(
                 dst = dst.offset(1)
             }
         }
-        srcva = va0.wrapping_add(PGSIZE as usize)
+        srcva = va0.wrapping_add(PGSIZE)
     }
     if got_null != 0 {
         0
