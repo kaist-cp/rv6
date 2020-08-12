@@ -79,7 +79,7 @@ pub unsafe fn exec(path: *mut libc::CChar, argv: *mut *mut libc::CChar) -> i32 {
                     if sz == 0 {
                         return -1;
                     }
-                    if ph.vaddr.wrapping_rem(PGSIZE as usize) != 0 {
+                    if ph.vaddr.wrapping_rem(PGSIZE) != 0 {
                         return -1;
                     }
                     if loadseg(pagetable, ph.vaddr, ip, ph.off as u32, ph.filesz as u32).is_err() {
@@ -97,8 +97,8 @@ pub unsafe fn exec(path: *mut libc::CChar, argv: *mut *mut libc::CChar) -> i32 {
 
             // Allocate two pages at the next page boundary.
             // Use the second as the user stack.
-            sz = sz.wrapping_add(PGSIZE as usize).wrapping_sub(1) & !(PGSIZE - 1) as usize;
-            sz = uvmalloc(pagetable, sz, sz.wrapping_add((2 * PGSIZE) as usize));
+            sz = sz.wrapping_add(PGSIZE).wrapping_sub(1) & !PGSIZE.wrapping_sub(1);
+            sz = uvmalloc(pagetable, sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)));
             let _op = scopeguard::guard((pagetable, sz, ip), |(pagetable, sz, ip)| {
                 if !pagetable.is_null() {
                     proc_freepagetable(pagetable, sz);
@@ -109,9 +109,9 @@ pub unsafe fn exec(path: *mut libc::CChar, argv: *mut *mut libc::CChar) -> i32 {
                 }
             });
             if sz != 0 {
-                uvmclear(pagetable, sz.wrapping_sub((2 * PGSIZE) as usize));
+                uvmclear(pagetable, sz.wrapping_sub(2usize.wrapping_mul(PGSIZE)));
                 let mut sp: usize = sz;
-                let stackbase: usize = sp.wrapping_sub(PGSIZE as usize);
+                let stackbase: usize = sp.wrapping_sub(PGSIZE);
 
                 // Push argument strings, prepare rest of stack in ustack.
                 let mut argc: usize = 0;
@@ -213,7 +213,7 @@ unsafe fn loadseg(
     offset: u32,
     sz: u32,
 ) -> Result<(), ()> {
-    if va.wrapping_rem(PGSIZE as usize) != 0 {
+    if va.wrapping_rem(PGSIZE) != 0 {
         panic(
             b"loadseg: va must be page aligned\x00" as *const u8 as *const libc::CChar
                 as *mut libc::CChar,
