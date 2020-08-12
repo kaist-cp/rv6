@@ -84,11 +84,11 @@ impl<T> RawLock<T> {
     }
 }
 
-pub struct LockGuard<'s, T> {
-    lock: &'s RawLock<T>,
-    // token: &'s RawLock<T>,
-    _marker: PhantomData<*const ()>,
-}
+// pub struct LockGuard<'s, T> {
+//     lock: &'s RawLock<T>,
+//     // token: &'s RawLock<T>,
+//     _marker: PhantomData<*const ()>,
+// }
 
 // 여기부터는 원래 Spinlock
 
