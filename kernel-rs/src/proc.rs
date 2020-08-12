@@ -307,7 +307,7 @@ pub const UNUSED: Procstate = 0;
 
 static mut CPUS: [Cpu; NCPU as usize] = [Cpu::zeroed(); NCPU as usize];
 
-static mut PROC: [Proc; NPROC as usize] = [Proc::zeroed(); NPROC as usize];
+static mut PROC: [Proc; NPROC] = [Proc::zeroed(); NPROC];
 
 static mut INITPROC: *mut Proc = ptr::null_mut();
 
@@ -319,7 +319,7 @@ static mut PID_LOCK: Spinlock = Spinlock::zeroed();
 pub unsafe fn procinit() {
     PID_LOCK.initlock(b"nextpid\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     let mut p = PROC.as_mut_ptr();
-    while p < &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
+    while p < &mut *PROC.as_mut_ptr().add(NPROC) as *mut Proc {
         (*p).lock
             .initlock(b"proc\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
 
@@ -379,7 +379,7 @@ unsafe fn allocproc() -> *mut Proc {
     let current_block: usize;
     let mut p = PROC.as_mut_ptr();
     loop {
-        if p >= &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
+        if p >= &mut *PROC.as_mut_ptr().add(NPROC) as *mut Proc {
             current_block = 7815301370352969686;
             break;
         }
@@ -591,7 +591,7 @@ pub unsafe fn fork() -> i32 {
 /// Caller must hold p->lock.
 pub unsafe fn reparent(p: *mut Proc) {
     let mut pp = PROC.as_mut_ptr();
-    while pp < &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
+    while pp < &mut *PROC.as_mut_ptr().add(NPROC) as *mut Proc {
         // this code uses pp->parent without holding pp->lock.
         // acquiring the lock first could cause a deadlock
         // if pp or a child of pp were also in exit()
@@ -685,7 +685,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
         // Scan through table looking for exited children.
         let mut havekids: i32 = 0;
         let mut np = PROC.as_mut_ptr();
-        while np < &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
+        while np < &mut *PROC.as_mut_ptr().add(NPROC) as *mut Proc {
             // this code uses np->parent without holding np->lock.
             // acquiring the lock first would cause a deadlock,
             // since np might be an ancestor, and we already hold p->lock.
@@ -746,7 +746,7 @@ pub unsafe fn scheduler() -> ! {
         intr_on();
         let mut p = PROC.as_mut_ptr();
 
-        while p < &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
+        while p < &mut *PROC.as_mut_ptr().add(NPROC) as *mut Proc {
             (*p).lock.acquire();
             if (*p).state as u32 == RUNNABLE as i32 as u32 {
                 // Switch to chosen process.  It is the process's job
@@ -859,7 +859,7 @@ pub unsafe fn sleep(chan: *mut libc::CVoid, lk: *mut Spinlock) {
 /// Must be called without any p->lock.
 pub unsafe fn wakeup(chan: *mut libc::CVoid) {
     let mut p = PROC.as_mut_ptr();
-    while p < &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
+    while p < &mut *PROC.as_mut_ptr().add(NPROC) as *mut Proc {
         (*p).lock.acquire();
         if (*p).state as u32 == SLEEPING as u32 && (*p).chan == chan {
             (*p).state = RUNNABLE
@@ -886,7 +886,7 @@ unsafe fn wakeup1(mut p: *mut Proc) {
 pub unsafe fn kill(pid: i32) -> i32 {
     let mut p = PROC.as_mut_ptr();
 
-    while p < &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
+    while p < &mut *PROC.as_mut_ptr().add(NPROC) as *mut Proc {
         (*p).lock.acquire();
         if (*p).pid == pid {
             (*p).killed = 1;
@@ -942,7 +942,7 @@ pub unsafe fn procdump() {
     ];
     printf(b"\n\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     let mut p = PROC.as_mut_ptr();
-    while p < &mut *PROC.as_mut_ptr().offset(NPROC as isize) as *mut Proc {
+    while p < &mut *PROC.as_mut_ptr().add(NPROC) as *mut Proc {
         if (*p).state as u32 != UNUSED as i32 as u32 {
             let state = if ((*p).state as usize)
                 < (::core::mem::size_of::<[*mut libc::CChar; 5]>() as usize)

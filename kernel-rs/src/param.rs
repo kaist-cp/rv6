@@ -1,5 +1,5 @@
 /// maximum number of processes
-pub const NPROC: i32 = 64;
+pub const NPROC: usize = 64;
 
 /// maximum number of CPUs
 pub const NCPU: i32 = 8;
