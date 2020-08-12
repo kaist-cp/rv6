@@ -331,7 +331,7 @@ pub unsafe fn procinit() {
             panic(b"kalloc\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
         }
         let va: usize = kstack(p.offset_from(PROC.as_mut_ptr()) as i64 as i32) as usize;
-        kvmmap(va, pa as usize, PGSIZE as usize, (PTE_R | PTE_W) as i32);
+        kvmmap(va, pa as usize, PGSIZE, (PTE_R | PTE_W) as i32);
         (*p).kstack = va;
         p = p.offset(1)
     }
@@ -410,7 +410,7 @@ unsafe fn allocproc() -> *mut Proc {
             // which returns to user space.
             ptr::write_bytes(&mut (*p).context as *mut Context, 0, 1);
             (*p).context.ra = forkret as usize;
-            (*p).context.sp = (*p).kstack.wrapping_add(PGSIZE as usize);
+            (*p).context.sp = (*p).kstack.wrapping_add(PGSIZE);
             p
         }
     }
@@ -451,7 +451,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PagetableT {
     mappages(
         pagetable,
         TRAMPOLINE as usize,
-        PGSIZE as usize,
+        PGSIZE,
         trampoline.as_mut_ptr() as usize,
         (PTE_R | PTE_X) as i32,
     );
@@ -460,7 +460,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PagetableT {
     mappages(
         pagetable,
         TRAPFRAME as usize,
-        PGSIZE as usize,
+        PGSIZE,
         (*p).tf as usize,
         (PTE_R | PTE_W) as i32,
     );
@@ -470,8 +470,8 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PagetableT {
 /// Free a process's page table, and free the
 /// physical memory it refers to.
 pub unsafe fn proc_freepagetable(pagetable: PagetableT, sz: usize) {
-    uvmunmap(pagetable, TRAMPOLINE as usize, PGSIZE as usize, 0);
-    uvmunmap(pagetable, TRAPFRAME as usize, PGSIZE as usize, 0);
+    uvmunmap(pagetable, TRAMPOLINE as usize, PGSIZE, 0);
+    uvmunmap(pagetable, TRAPFRAME as usize, PGSIZE, 0);
     if sz > 0 {
         uvmfree(pagetable, sz);
     };
@@ -497,14 +497,14 @@ pub unsafe fn userinit() {
         INITCODE.as_mut_ptr(),
         ::core::mem::size_of::<[u8; 51]>() as u32,
     );
-    (*p).sz = PGSIZE as usize;
+    (*p).sz = PGSIZE;
 
     // prepare for the very first "return" from kernel to user.
     // user program counter
     (*(*p).tf).epc = 0;
 
     // user stack pointer
-    (*(*p).tf).sp = PGSIZE as usize;
+    (*(*p).tf).sp = PGSIZE;
     safestrcpy(
         (*p).name.as_mut_ptr(),
         b"initcode\x00" as *const u8 as *const libc::CChar,
