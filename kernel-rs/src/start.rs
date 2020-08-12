@@ -69,9 +69,9 @@ unsafe fn timerinit() {
     // ask the CLINT for a timer interrupt.
 
     // cycles; about 1/10th second in qemu.
-    let interval: i32 = 1000000;
+    let interval: usize = 1000000;
     *(clint_mtimecmp(id as usize) as *mut usize) =
-        (*(CLINT_MTIME as *mut usize)).wrapping_add(interval as usize);
+        (*(CLINT_MTIME as *mut usize)).wrapping_add(interval);
 
     // prepare information in scratch[] for timervec.
     // scratch[0..3] : space for timervec to save registers.
@@ -79,7 +79,7 @@ unsafe fn timerinit() {
     // scratch[5] : desired interval (in cycles) between timer interrupts.
     let scratch: *mut usize = &mut *MSCRATCH0.as_mut_ptr().offset(32 * id as isize) as *mut usize;
     *scratch.offset(4) = clint_mtimecmp(id as usize);
-    *scratch.offset(5) = interval as usize;
+    *scratch.offset(5) = interval;
     w_mscratch(scratch as usize);
 
     // set the machine-mode trap handler.

@@ -32,7 +32,7 @@ pub const fn clint_mtimecmp(hartid: usize) -> usize {
 }
 
 /// cycles since boot.
-pub const CLINT_MTIME: i64 = CLINT as i64 + 0xbff8;
+pub const CLINT_MTIME: usize = CLINT.wrapping_add(0xbff8);
 
 /// qemu puts programmable interrupt controller here.
 pub const PLIC: usize = 0xc000000;
