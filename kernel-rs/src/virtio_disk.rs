@@ -32,7 +32,7 @@ struct Disk {
     /// this is a global instead of allocated because it must
     /// be multiple contiguous pages, which kalloc()
     /// doesn't support, and page aligned.
-    pages: [libc::CChar; 2 * PGSIZE as usize],
+    pages: [libc::CChar; 2usize.wrapping_mul(PGSIZE)],
     desc: *mut VRingDesc,
     avail: *mut u16,
     used: *mut UsedArea,

@@ -130,7 +130,7 @@ pub unsafe fn usertrapret() {
     (*(*p).tf).kernel_satp = r_satp();
 
     // process's kernel stack
-    (*(*p).tf).kernel_sp = (*p).kstack.wrapping_add(PGSIZE as usize);
+    (*(*p).tf).kernel_sp = (*p).kstack.wrapping_add(PGSIZE);
     (*(*p).tf).kernel_trap = usertrap as usize;
 
     // hartid for cpuid()
