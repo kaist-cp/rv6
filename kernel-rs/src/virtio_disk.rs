@@ -157,7 +157,7 @@ pub unsafe fn virtio_disk_init() {
         as *mut u16;
     DISK.used = DISK.pages.as_mut_ptr().offset(PGSIZE as isize) as *mut UsedArea;
     for i in 0..NUM {
-        DISK.free[i as usize] = 1 as u8;
+        DISK.free[i as usize] = 1;
     }
 
     // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
@@ -167,7 +167,7 @@ pub unsafe fn virtio_disk_init() {
 unsafe fn alloc_desc() -> i32 {
     for i in 0..NUM {
         if DISK.free[i as usize] != 0 {
-            DISK.free[i as usize] = 0 as u8;
+            DISK.free[i as usize] = 0;
             return i;
         }
     }
@@ -183,7 +183,7 @@ unsafe fn free_desc(i: i32) {
         panic(b"virtio_disk_intr 2\x00" as *const u8 as *mut u8);
     }
     (*DISK.desc.offset(i as isize)).addr = 0;
-    DISK.free[i as usize] = 1 as u8;
+    DISK.free[i as usize] = 1;
     wakeup(&mut *DISK.free.as_mut_ptr().offset(0) as *mut u8 as *mut libc::CVoid);
 }
 
@@ -267,7 +267,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
 
     (*DISK.desc.offset(idx[1] as isize)).next = idx[2] as u16;
 
-    DISK.info[idx[0] as usize].status = 0 as u8;
+    DISK.info[idx[0] as usize].status = 0;
 
     (*DISK.desc.offset(idx[2] as isize)).addr = &mut (*DISK
         .info

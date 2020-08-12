@@ -143,12 +143,12 @@ impl Pipe {
                 (*pi).nread = 0;
                 (*pi).lock.initlock(b"pipe\x00" as *const u8 as *mut u8);
                 (**f0).typ = FD_PIPE;
-                (**f0).readable = 1 as u8;
-                (**f0).writable = 0 as u8;
+                (**f0).readable = 1;
+                (**f0).writable = 0;
                 (**f0).pipe = pi;
                 (**f1).typ = FD_PIPE;
-                (**f1).readable = 0 as u8;
-                (**f1).writable = 1 as u8;
+                (**f1).readable = 0;
+                (**f1).writable = 1;
                 (**f1).pipe = pi;
                 return 0;
             }

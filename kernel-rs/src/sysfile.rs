@@ -346,8 +346,8 @@ pub unsafe fn sys_open() -> usize {
         (*f).off = 0
     }
     (*f).ip = ip;
-    (*f).readable = (!omode.intersects(FcntlFlags::O_WRONLY)) as i32 as u8;
-    (*f).writable = omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR) as i32 as u8;
+    (*f).readable = (!omode.intersects(FcntlFlags::O_WRONLY)) as u8;
+    (*f).writable = omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR) as u8;
     (*ip).unlock();
     end_op();
     fd as usize
