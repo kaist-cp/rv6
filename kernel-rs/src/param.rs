@@ -8,7 +8,7 @@ pub const NCPU: usize = 8;
 pub const NOFILE: usize = 16;
 
 /// open files per system
-pub const NFILE: i32 = 100;
+pub const NFILE: usize = 100;
 
 /// maximum number of active i-nodes
 pub const NINODE: i32 = 50;

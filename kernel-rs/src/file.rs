@@ -72,7 +72,7 @@ pub const FD_NONE: u32 = 0;
 
 struct Ftable {
     lock: Spinlock,
-    file: [File; NFILE as usize],
+    file: [File; NFILE],
 }
 
 /// map major device number to device functions.
@@ -87,7 +87,7 @@ impl File {
     pub unsafe fn alloc() -> *mut File {
         FTABLE.lock.acquire();
         let mut f: *mut File = FTABLE.file.as_mut_ptr();
-        while f < FTABLE.file.as_mut_ptr().offset(NFILE as isize) {
+        while f < FTABLE.file.as_mut_ptr().add(NFILE) {
             if (*f).ref_0 == 0 {
                 (*f).ref_0 = 1;
                 FTABLE.lock.release();
@@ -275,7 +275,7 @@ impl Ftable {
     pub const fn zeroed() -> Self {
         Self {
             lock: Spinlock::zeroed(),
-            file: [File::zeroed(); NFILE as usize],
+            file: [File::zeroed(); NFILE],
         }
     }
 }
