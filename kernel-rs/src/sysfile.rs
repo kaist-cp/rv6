@@ -123,9 +123,9 @@ pub unsafe fn sys_fstat() -> usize {
 /// Create the path new as a link to the same inode as old.
 pub unsafe fn sys_link() -> usize {
     let mut name: [libc::CChar; DIRSIZ] = [0; DIRSIZ];
-    let mut new: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
-    let mut old: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
-    if argstr(0, old.as_mut_ptr(), MAXPATH) < 0 || argstr(1, new.as_mut_ptr(), MAXPATH) < 0 {
+    let mut new: [libc::CChar; MAXPATH] = [0; MAXPATH];
+    let mut old: [libc::CChar; MAXPATH] = [0; MAXPATH];
+    if argstr(0, old.as_mut_ptr(), MAXPATH as i32) < 0 || argstr(1, new.as_mut_ptr(), MAXPATH as i32) < 0 {
         return usize::MAX;
     }
     begin_op();
@@ -189,9 +189,9 @@ unsafe fn isdirempty(dp: *mut Inode) -> i32 {
 pub unsafe fn sys_unlink() -> usize {
     let mut de: Dirent = Default::default();
     let mut name: [libc::CChar; DIRSIZ] = [0; DIRSIZ];
-    let mut path: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
+    let mut path: [libc::CChar; MAXPATH] = [0; MAXPATH];
     let mut off: u32 = 0;
-    if argstr(0, path.as_mut_ptr(), MAXPATH) < 0 {
+    if argstr(0, path.as_mut_ptr(), MAXPATH as i32) < 0 {
         return usize::MAX;
     }
     begin_op();
@@ -311,11 +311,11 @@ unsafe fn create(path: *mut libc::CChar, typ: i16, major: i16, minor: i16) -> *m
 }
 
 pub unsafe fn sys_open() -> usize {
-    let mut path: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
+    let mut path: [libc::CChar; MAXPATH] = [0; MAXPATH];
     let mut fd: i32 = 0;
     let mut omode: i32 = 0;
     let ip: *mut Inode;
-    let n: i32 = argstr(0, path.as_mut_ptr(), MAXPATH);
+    let n: i32 = argstr(0, path.as_mut_ptr(), MAXPATH as i32);
     if n < 0 || argint(1, &mut omode) < 0 {
         return usize::MAX;
     }
@@ -374,10 +374,10 @@ pub unsafe fn sys_open() -> usize {
 }
 
 pub unsafe fn sys_mkdir() -> usize {
-    let mut path: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
+    let mut path: [libc::CChar; MAXPATH] = [0; MAXPATH];
     let mut ip: *mut Inode = ptr::null_mut();
     begin_op();
-    if argstr(0, path.as_mut_ptr(), MAXPATH) < 0 || {
+    if argstr(0, path.as_mut_ptr(), MAXPATH as i32) < 0 || {
         ip = create(path.as_mut_ptr(), T_DIR as i16, 0, 0);
         ip.is_null()
     } {
@@ -391,11 +391,11 @@ pub unsafe fn sys_mkdir() -> usize {
 
 pub unsafe fn sys_mknod() -> usize {
     let mut ip: *mut Inode = ptr::null_mut();
-    let mut path: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
+    let mut path: [libc::CChar; MAXPATH] = [0; MAXPATH];
     let mut major: i32 = 0;
     let mut minor: i32 = 0;
     begin_op();
-    if argstr(0, path.as_mut_ptr(), MAXPATH) < 0
+    if argstr(0, path.as_mut_ptr(), MAXPATH as i32) < 0
         || argint(1, &mut major) < 0
         || argint(2, &mut minor) < 0
         || {
@@ -417,11 +417,11 @@ pub unsafe fn sys_mknod() -> usize {
 }
 
 pub unsafe fn sys_chdir() -> usize {
-    let mut path: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
+    let mut path: [libc::CChar; MAXPATH] = [0; MAXPATH];
     let mut ip: *mut Inode = ptr::null_mut();
     let mut p: *mut Proc = myproc();
     begin_op();
-    if argstr(0, path.as_mut_ptr(), MAXPATH) < 0 || {
+    if argstr(0, path.as_mut_ptr(), MAXPATH as i32) < 0 || {
         ip = namei(path.as_mut_ptr());
         ip.is_null()
     } {
@@ -443,12 +443,12 @@ pub unsafe fn sys_chdir() -> usize {
 
 pub unsafe fn sys_exec() -> usize {
     let current_block: usize;
-    let mut path: [libc::CChar; MAXPATH as usize] = [0; MAXPATH as usize];
+    let mut path: [libc::CChar; MAXPATH] = [0; MAXPATH];
     let mut argv: [*mut libc::CChar; MAXARG] = [ptr::null_mut(); MAXARG];
     let mut i: i32 = 0;
     let mut uargv: usize = 0;
     let mut uarg: usize = 0;
-    if argstr(0, path.as_mut_ptr(), MAXPATH) < 0 || argaddr(1, &mut uargv) < 0 {
+    if argstr(0, path.as_mut_ptr(), MAXPATH as i32) < 0 || argaddr(1, &mut uargv) < 0 {
         return usize::MAX;
     }
     ptr::write_bytes(argv.as_mut_ptr(), 0, 1);

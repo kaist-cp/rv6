@@ -36,4 +36,4 @@ pub const NBUF: i32 = MAXOPBLOCKS * 3;
 pub const FSSIZE: i32 = 1000;
 
 /// maximum file path name
-pub const MAXPATH: i32 = 128;
+pub const MAXPATH: usize = 128;
