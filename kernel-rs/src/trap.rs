@@ -161,7 +161,7 @@ pub unsafe fn usertrapret() {
     let fn_0: usize =
         TRAMPOLINE.wrapping_add(userret.as_mut_ptr().offset_from(trampoline.as_mut_ptr()) as usize);
     let fn_0 = mem::transmute::<usize, unsafe extern "C" fn(_: usize, _: usize) -> ()>(fn_0);
-    fn_0(TRAPFRAME as usize, satp);
+    fn_0(TRAPFRAME, satp);
 }
 
 /// interrupts and exceptions from kernel code go here via kernelvec,

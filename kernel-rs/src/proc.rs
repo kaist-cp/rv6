@@ -459,7 +459,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PagetableT {
     // map the trapframe just below TRAMPOLINE, for trampoline.S.
     mappages(
         pagetable,
-        TRAPFRAME as usize,
+        TRAPFRAME,
         PGSIZE,
         (*p).tf as usize,
         (PTE_R | PTE_W) as i32,
@@ -471,7 +471,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PagetableT {
 /// physical memory it refers to.
 pub unsafe fn proc_freepagetable(pagetable: PagetableT, sz: usize) {
     uvmunmap(pagetable, TRAMPOLINE, PGSIZE, 0);
-    uvmunmap(pagetable, TRAPFRAME as usize, PGSIZE, 0);
+    uvmunmap(pagetable, TRAPFRAME, PGSIZE, 0);
     if sz > 0 {
         uvmfree(pagetable, sz);
     };

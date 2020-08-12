@@ -72,4 +72,4 @@ pub const fn kstack(p: i32) -> i64 {
 ///   ...
 ///   TRAPFRAME (p->tf, used by the trampoline)
 ///   TRAMPOLINE (the same page as in the kernel)
-pub const TRAPFRAME: i64 = TRAMPOLINE as i64 - PGSIZE as i64;
+pub const TRAPFRAME: usize = TRAMPOLINE.wrapping_sub(PGSIZE);
