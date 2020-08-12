@@ -495,7 +495,7 @@ impl Inode {
 }
 
 /// root i-number
-pub const ROOTINO: i32 = 1;
+pub const ROOTINO: u32 = 1;
 
 /// block size
 pub const BSIZE: usize = 1024;
@@ -801,7 +801,7 @@ unsafe fn namex(
     let mut ip: *mut Inode;
 
     if *path as i32 == '/' as i32 {
-        ip = iget(ROOTDEV as u32, ROOTINO as u32)
+        ip = iget(ROOTDEV as u32, ROOTINO)
     } else {
         ip = (*(*myproc()).cwd).idup()
     }
