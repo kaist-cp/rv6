@@ -305,7 +305,7 @@ pub const RUNNABLE: Procstate = 2;
 pub const SLEEPING: Procstate = 1;
 pub const UNUSED: Procstate = 0;
 
-static mut CPUS: [Cpu; NCPU as usize] = [Cpu::zeroed(); NCPU as usize];
+static mut CPUS: [Cpu; NCPU] = [Cpu::zeroed(); NCPU];
 
 static mut PROC: [Proc; NPROC] = [Proc::zeroed(); NPROC];
 

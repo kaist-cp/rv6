@@ -17,11 +17,11 @@ extern "C" {
 
 /// entry.S needs one stack per CPU.
 #[repr(align(16))]
-pub struct Stack([libc::CChar; 4096 * NCPU as usize]);
+pub struct Stack([libc::CChar; NCPU.wrapping_mul(4096)]);
 
 impl Stack {
     const fn new() -> Self {
-        Self([0; 4096 * NCPU as usize])
+        Self([0; NCPU.wrapping_mul(4096)])
     }
 }
 
@@ -29,7 +29,7 @@ impl Stack {
 pub static mut stack0: Stack = Stack::new();
 
 /// scratch area for timer interrupt, one per CPU.
-static mut MSCRATCH0: [usize; NCPU as usize * 32] = [0; NCPU as usize * 32];
+static mut MSCRATCH0: [usize; NCPU.wrapping_mul(32)] = [0; NCPU.wrapping_mul(32)];
 
 /// entry.S jumps here in machine mode on stack0.
 #[no_mangle]

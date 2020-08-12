@@ -2,7 +2,7 @@
 pub const NPROC: usize = 64;
 
 /// maximum number of CPUs
-pub const NCPU: i32 = 8;
+pub const NCPU: usize = 8;
 
 /// open files per process
 pub const NOFILE: i32 = 16;
