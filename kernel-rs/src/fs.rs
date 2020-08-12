@@ -558,7 +558,7 @@ pub static mut SB: Superblock = Superblock::zeroed();
 /// Init fs
 pub unsafe fn fsinit(dev: i32) {
     SB.read(dev);
-    if SB.magic != FSMAGIC as u32 {
+    if SB.magic != FSMAGIC {
         panic(b"invalid file system\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
     }
     SB.initlog(dev);
