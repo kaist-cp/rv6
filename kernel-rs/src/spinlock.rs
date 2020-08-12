@@ -5,6 +5,7 @@ use crate::{
 };
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
+use core::ops::{Deref, DerefMut};
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 /// Mutual exclusion lock.
@@ -150,6 +151,19 @@ impl<T> SpinLockGuard<'_, T> {
 impl<T> Drop for SpinLockGuard<'_, T> {
     fn drop(&mut self) {
         unsafe { self.lock.unlock() };
+    }
+}
+
+impl<T> Deref for SpinLockGuard<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.lock.data.get() }
+    }
+}
+
+impl<T> DerefMut for SpinLockGuard<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *self.lock.data.get() }
     }
 }
 
