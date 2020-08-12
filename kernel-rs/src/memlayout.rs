@@ -26,13 +26,13 @@ pub const VIRTIO0: usize = 0x10001000;
 pub const VIRTIO0_IRQ: i32 = 1;
 
 /// local interrupt controller, which contains the timer.
-pub const CLINT: i64 = 0x2000000;
+pub const CLINT: usize = 0x2000000;
 pub const fn clint_mtimecmp(hartid: usize) -> usize {
-    (CLINT + 0x4000 + (8 * hartid) as i64) as usize
+    CLINT.wrapping_add(0x4000).wrapping_add(hartid.wrapping_mul(8))
 }
 
 /// cycles since boot.
-pub const CLINT_MTIME: i64 = CLINT + 0xbff8;
+pub const CLINT_MTIME: i64 = CLINT as i64 + 0xbff8;
 
 /// qemu puts programmable interrupt controller here.
 pub const PLIC: usize = 0xc000000;

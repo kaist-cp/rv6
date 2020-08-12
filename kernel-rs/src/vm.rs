@@ -45,8 +45,8 @@ pub unsafe fn kvminit() {
 
     // CLINT
     kvmmap(
-        CLINT as usize,
-        CLINT as usize,
+        CLINT,
+        CLINT,
         0x10000,
         (PTE_R | PTE_W) as i32,
     );
