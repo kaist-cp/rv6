@@ -313,12 +313,12 @@ pub const PGSHIFT: i32 = 12;
 
 #[inline]
 pub const fn pgroundup(sz: usize) -> usize {
-    sz.wrapping_add(PGSIZE).wrapping_sub(1) & !(PGSIZE.wrapping_sub(1))
+    sz.wrapping_add(PGSIZE).wrapping_sub(1) & !PGSIZE.wrapping_sub(1)
 }
 
 #[inline]
 pub const fn pgrounddown(a: usize) -> usize {
-    a & !(PGSIZE.wrapping_sub(1))
+    a & !PGSIZE.wrapping_sub(1)
 }
 
 /// valid
