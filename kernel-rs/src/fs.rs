@@ -186,7 +186,7 @@ impl Inode {
     /// that lives on disk, since i-node cache is write-through.
     /// Caller must hold ip->lock.
     pub unsafe fn update(&mut self) {
-        let bp: *mut Buf = bread(self.dev, SB.iblock(self.inum as i32));
+        let bp: *mut Buf = bread(self.dev, SB.iblock(self.inum));
         let mut dip: *mut Dinode = ((*bp).data.as_mut_ptr() as *mut Dinode)
             .add((self.inum as usize).wrapping_rem(IPB));
         (*dip).typ = self.typ;
@@ -220,7 +220,7 @@ impl Inode {
         }
         (*self).lock.acquire();
         if (*self).valid == 0 {
-            let bp: *mut Buf = bread((*self).dev, SB.iblock((*self).inum as i32));
+            let bp: *mut Buf = bread((*self).dev, SB.iblock((*self).inum));
             let dip: *mut Dinode = ((*bp).data.as_mut_ptr() as *mut Dinode)
                 .add(((*self).inum as usize).wrapping_rem(IPB));
             (*self).typ = (*dip).typ;
@@ -455,7 +455,7 @@ impl Inode {
     /// Returns an unlocked but allocated and referenced inode.
     pub unsafe fn alloc(dev: u32, typ: i16) -> *mut Inode {
         for inum in 1..SB.ninodes {
-            let bp = bread(dev, SB.iblock(inum as i32));
+            let bp = bread(dev, SB.iblock(inum));
             let dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
                 .add((inum as usize).wrapping_rem(IPB));
 
@@ -510,8 +510,8 @@ pub const IPB: usize = BSIZE.wrapping_div(mem::size_of::<Dinode>());
 
 impl Superblock {
     /// Block containing inode i
-    const fn iblock(self, i: i32) -> u32 {
-        i.wrapping_div(IPB as i32).wrapping_add(self.inodestart as i32) as u32
+    const fn iblock(self, i: u32) -> u32 {
+        i.wrapping_div(IPB as u32).wrapping_add(self.inodestart as u32)
     }
 
     /// Block of free map containing bit for block b
@@ -578,7 +578,7 @@ unsafe fn balloc(dev: u32) -> u32 {
     let mut b: u32 = 0;
     let mut bi: u32 = 0;
     while b < SB.size {
-        let mut bp: *mut Buf = bread(dev, SB.bblock(b as u32));
+        let mut bp: *mut Buf = bread(dev, SB.bblock(b));
         while bi < BPB && (b + bi) < SB.size {
             let m = (1) << (bi % 8);
             if (*bp).data[(bi / 8) as usize] as i32 & m == 0 {
