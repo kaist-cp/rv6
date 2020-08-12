@@ -36,7 +36,7 @@ pub const CLINT_MTIME: usize = CLINT.wrapping_add(0xbff8);
 
 /// qemu puts programmable interrupt controller here.
 pub const PLIC: usize = 0xc000000;
-pub const PLIC_PENDING: i64 = PLIC as i64 + 0x1000;
+pub const PLIC_PENDING: usize = PLIC.wrapping_add(0x1000);
 pub const fn plic_senable(hart: i32) -> i64 {
     PLIC as i64 + 0x2080 + (hart * 0x100) as i64
 }

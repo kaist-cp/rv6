@@ -24,10 +24,10 @@ pub unsafe fn plicinithart() {
 
 /// return a bitmap of which IRQs are waiting
 /// to be served.
-pub unsafe fn plic_pending() -> u32 {
+pub unsafe fn plic_pending() -> usize {
     //mask = *(u32*)(PLIC + 0x1000);
     //mask |= (u32)*(u32*)(PLIC + 0x1004) << 32;
-    *(PLIC_PENDING as *mut u32)
+    *(PLIC_PENDING as *mut usize)
 }
 
 /// ask the PLIC what interrupt we should serve.
