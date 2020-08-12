@@ -19,7 +19,7 @@ use crate::riscv::{MAXVA, PGSIZE};
 
 /// qemu puts UART registers here in physical memory.
 pub const UART0: usize = 0x10000000;
-pub const UART0_IRQ: i32 = 10;
+pub const UART0_IRQ: usize = 10;
 
 /// virtio mmio interface
 pub const VIRTIO0: i32 = 0x10001000;

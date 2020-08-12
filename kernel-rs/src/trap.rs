@@ -233,7 +233,7 @@ pub unsafe fn devintr() -> i32 {
         // irq indicates which device interrupted.
         let irq: i32 = plic_claim();
 
-        if irq == UART0_IRQ {
+        if irq == UART0_IRQ as i32 {
             uartintr();
         } else if irq == VIRTIO0_IRQ {
             virtio_disk_intr();
