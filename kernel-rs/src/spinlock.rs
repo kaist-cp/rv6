@@ -130,8 +130,10 @@ impl<T> Spinlock<T> {
         self.data.into_inner()
     }
 
-    pub unsafe fn lock(&mut self) -> SpinLockGuard<'_, T> {
-        self.lock.acquire();
+    pub fn lock(&mut self) -> SpinLockGuard<'_, T> {
+        unsafe {
+            self.lock.acquire();
+        }
         SpinLockGuard {
             lock: self,
             _marker: PhantomData,
