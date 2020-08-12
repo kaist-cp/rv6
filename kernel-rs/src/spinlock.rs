@@ -3,8 +3,94 @@ use crate::{
     proc::{mycpu, Cpu},
     riscv::{intr_get, intr_off, intr_on},
 };
+use core::cell::UnsafeCell;
+use core::marker::PhantomData;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
+/// Mutual exclusion lock.
+pub struct RawLock<T> {
+    /// Is the lock held?
+    locked: AtomicBool,
+
+    /// Data lock is protecting
+    data: UnsafeCell<T>,
+
+    /// For debugging:
+
+    /// Name of lock.
+    name: *mut u8,
+
+    /// The cpu holding the lock.
+    cpu: *mut Cpu,
+}
+
+unsafe impl<T: Send> Send for RawLock<T> {}
+unsafe impl<T: Send> Sync for RawLock<T> {}
+
+impl<T> RawLock<T> {
+    pub const fn zeroed(data: T) -> Self {
+        Self {
+            locked: AtomicBool::new(false),
+            data: UnsafeCell::new(data),
+            name: ptr::null_mut(),
+            cpu: ptr::null_mut(),
+        }
+    }
+
+    pub fn into_inner(self) -> T {
+        self.data.into_inner()
+    }
+
+    // pub fn lock(&self) -> LockGuard<T> {
+    //     // let token = self.clone();
+    //     LockGuard {
+    //         lock: self,
+    //         _marker: PhantomData,
+    //     }
+    // }
+
+    pub unsafe fn acquire(&mut self) {
+        push_off();
+        if self.holding() != 0 {
+            panic(b"acquire\x00" as *const u8 as *mut u8);
+        }
+
+        while (*self)
+            .locked
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {}
+
+        (*self).cpu = mycpu();
+    }
+
+    /// Release the lock.
+    pub unsafe fn release(&mut self) {
+        if self.holding() == 0 {
+            panic(b"release\x00" as *const u8 as *mut u8);
+        }
+        (*self).cpu = ptr::null_mut();
+
+        (*self).locked.store(false, Ordering::Release);
+        pop_off();
+    }
+
+    /// Check whether this cpu is holding the lock.
+    pub unsafe fn holding(&mut self) -> i32 {
+        push_off();
+        let r: i32 = ((*self).locked.load(Ordering::Acquire) && (*self).cpu == mycpu()) as i32;
+        pop_off();
+        r
+    }
+}
+
+pub struct LockGuard<'s, T> {
+    lock: &'s RawLock<T>,
+    // token: &'s RawLock<T>,
+    _marker: PhantomData<*const ()>,
+}
+
+// 여기부터는 원래 Spinlock
 
 /// Mutual exclusion lock.
 pub struct Spinlock {
