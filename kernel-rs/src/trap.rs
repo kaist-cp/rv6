@@ -228,7 +228,7 @@ pub unsafe fn devintr() -> i32 {
     let scause: usize = r_scause();
 
     if scause & 0x8000000000000000 != 0 && scause & 0xff == 9 {
-        // this is a supervisor external interrupt, via PLIC.
+        // this is a supervisor external interrupt, via .
 
         // irq indicates which device interrupted.
         let irq: i32 = plic_claim();

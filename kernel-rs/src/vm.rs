@@ -53,8 +53,8 @@ pub unsafe fn kvminit() {
 
     // PLIC
     kvmmap(
-        PLIC as usize,
-        PLIC as usize,
+        PLIC,
+        PLIC,
         0x400000,
         (PTE_R | PTE_W) as i32,
     );
