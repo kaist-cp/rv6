@@ -78,7 +78,7 @@ pub unsafe fn kvminit() {
     // map the trampoline for trap entry/exit to
     // the highest virtual address in the kernel.
     kvmmap(
-        TRAMPOLINE as usize,
+        TRAMPOLINE,
         trampoline.as_mut_ptr() as usize,
         PGSIZE,
         (PTE_R | PTE_X) as i32,

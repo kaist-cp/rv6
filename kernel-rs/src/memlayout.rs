@@ -55,12 +55,12 @@ pub const PHYSTOP: usize = KERNBASE.wrapping_add(128 * 1024 * 1024);
 
 /// map the trampoline page to the highest address,
 /// in both user and kernel space.
-pub const TRAMPOLINE: i64 = MAXVA as i64 - PGSIZE as i64;
+pub const TRAMPOLINE: usize = MAXVA.wrapping_sub(PGSIZE);
 
 /// map kernel stacks beneath the trampoline,
 /// each surrounded by invalid guard pages.
 pub const fn kstack(p: i32) -> i64 {
-    TRAMPOLINE - ((p + 1) * 2 * PGSIZE as i32) as i64
+    TRAMPOLINE as i64 - ((p + 1) * 2 * PGSIZE as i32) as i64
 }
 
 /// User memory layout.
@@ -72,4 +72,4 @@ pub const fn kstack(p: i32) -> i64 {
 ///   ...
 ///   TRAPFRAME (p->tf, used by the trampoline)
 ///   TRAMPOLINE (the same page as in the kernel)
-pub const TRAPFRAME: i64 = TRAMPOLINE - PGSIZE as i64;
+pub const TRAPFRAME: i64 = TRAMPOLINE as i64 - PGSIZE as i64;

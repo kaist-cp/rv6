@@ -450,7 +450,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PagetableT {
     // to/from user space, so not PTE_U.
     mappages(
         pagetable,
-        TRAMPOLINE as usize,
+        TRAMPOLINE,
         PGSIZE,
         trampoline.as_mut_ptr() as usize,
         (PTE_R | PTE_X) as i32,
@@ -470,7 +470,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PagetableT {
 /// Free a process's page table, and free the
 /// physical memory it refers to.
 pub unsafe fn proc_freepagetable(pagetable: PagetableT, sz: usize) {
-    uvmunmap(pagetable, TRAMPOLINE as usize, PGSIZE, 0);
+    uvmunmap(pagetable, TRAMPOLINE, PGSIZE, 0);
     uvmunmap(pagetable, TRAPFRAME as usize, PGSIZE, 0);
     if sz > 0 {
         uvmfree(pagetable, sz);

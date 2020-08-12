@@ -120,7 +120,7 @@ pub unsafe fn usertrapret() {
 
     // send syscalls, interrupts, and exceptions to trampoline.S
     w_stvec(
-        (TRAMPOLINE + uservec.as_mut_ptr().offset_from(trampoline.as_mut_ptr()) as i64) as usize,
+        TRAMPOLINE.wrapping_add(uservec.as_mut_ptr().offset_from(trampoline.as_mut_ptr()) as usize),
     );
 
     // set up trapframe values that uservec will need when
@@ -159,7 +159,7 @@ pub unsafe fn usertrapret() {
     // switches to the user page table, restores user registers,
     // and switches to user mode with sret.
     let fn_0: usize =
-        (TRAMPOLINE + userret.as_mut_ptr().offset_from(trampoline.as_mut_ptr()) as i64) as usize;
+        TRAMPOLINE.wrapping_add(userret.as_mut_ptr().offset_from(trampoline.as_mut_ptr()) as usize);
     let fn_0 = mem::transmute::<usize, unsafe extern "C" fn(_: usize, _: usize) -> ()>(fn_0);
     fn_0(TRAPFRAME as usize, satp);
 }
