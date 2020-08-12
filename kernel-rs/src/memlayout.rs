@@ -50,8 +50,8 @@ pub const fn plic_sclaim(hart: i32) -> usize {
 /// the kernel expects there to be RAM
 /// for use by the kernel and user pages
 /// from physical address 0x80000000 to PHYSTOP.
-pub const KERNBASE: i64 = 0x80000000;
-pub const PHYSTOP: i64 = KERNBASE + (128 * 1024 * 1024);
+pub const KERNBASE: usize = 0x80000000;
+pub const PHYSTOP: i64 = KERNBASE as i64 + (128 * 1024 * 1024);
 
 /// map the trampoline page to the highest address,
 /// in both user and kernel space.

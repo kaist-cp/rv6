@@ -61,9 +61,9 @@ pub unsafe fn kvminit() {
 
     // map kernel text executable and read-only.
     kvmmap(
-        KERNBASE as usize,
-        KERNBASE as usize,
-        (etext.as_mut_ptr() as usize).wrapping_sub(KERNBASE as usize),
+        KERNBASE,
+        KERNBASE,
+        (etext.as_mut_ptr() as usize).wrapping_sub(KERNBASE),
         (PTE_R | PTE_X) as i32,
     );
 
