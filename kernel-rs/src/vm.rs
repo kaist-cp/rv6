@@ -71,7 +71,7 @@ pub unsafe fn kvminit() {
     kvmmap(
         etext.as_mut_ptr() as usize,
         etext.as_mut_ptr() as usize,
-        (PHYSTOP as usize).wrapping_sub(etext.as_mut_ptr() as usize),
+        (PHYSTOP).wrapping_sub(etext.as_mut_ptr() as usize),
         (PTE_R | PTE_W) as i32,
     );
 
