@@ -207,8 +207,8 @@ pub unsafe fn consoleinit() {
 
     // connect read and write system calls
     // to consoleread and consolewrite.
-    let fresh2 = &mut (*DEVSW.as_mut_ptr().offset(CONSOLE)).read;
+    let fresh2 = &mut (*DEVSW.as_mut_ptr().add(CONSOLE)).read;
     *fresh2 = Some(consoleread as unsafe fn(_: i32, _: usize, _: i32) -> i32);
-    let fresh3 = &mut (*DEVSW.as_mut_ptr().offset(CONSOLE)).write;
+    let fresh3 = &mut (*DEVSW.as_mut_ptr().add(CONSOLE)).write;
     *fresh3 = Some(consolewrite as unsafe fn(_: i32, _: usize, _: i32) -> i32);
 }
