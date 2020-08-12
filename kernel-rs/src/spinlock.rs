@@ -8,12 +8,9 @@ use core::marker::PhantomData;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 /// Mutual exclusion lock.
-pub struct RawLock<T> {
+pub struct RawSpinlock {
     /// Is the lock held?
     locked: AtomicBool,
-
-    /// Data lock is protecting
-    data: UnsafeCell<T>,
 
     /// For debugging:
 
@@ -24,43 +21,51 @@ pub struct RawLock<T> {
     cpu: *mut Cpu,
 }
 
-unsafe impl<T: Send> Send for RawLock<T> {}
-unsafe impl<T: Send> Sync for RawLock<T> {}
-
-impl<T> RawLock<T> {
-    pub const fn zeroed(data: T) -> Self {
+impl RawSpinlock {
+    // TODO: transient measure
+    pub const fn zeroed() -> Self {
         Self {
             locked: AtomicBool::new(false),
-            data: UnsafeCell::new(data),
             name: ptr::null_mut(),
             cpu: ptr::null_mut(),
         }
     }
 
-    pub fn into_inner(self) -> T {
-        self.data.into_inner()
+    /// Mutual exclusion spin locks.
+    pub fn initlock(&mut self, name: *mut u8) {
+        (*self).name = name;
+        (*self).locked = AtomicBool::new(false);
+        (*self).cpu = ptr::null_mut();
     }
 
-    // pub fn lock(&self) -> LockGuard<T> {
-    //     // let token = self.clone();
-    //     LockGuard {
-    //         lock: self,
-    //         _marker: PhantomData,
-    //     }
-    // }
-
+    /// Acquire the lock.
+    /// Loops (spins) until the lock is acquired.
     pub unsafe fn acquire(&mut self) {
+        // disable interrupts to avoid deadlock.
         push_off();
         if self.holding() != 0 {
             panic(b"acquire\x00" as *const u8 as *mut u8);
         }
 
+        // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
+        //   a5 = 1
+        //   s1 = &self->locked
+        //   amoswap.w.aq a5, a5, (s1)
         while (*self)
             .locked
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {}
 
+        // Tell the C compiler and the processor to not move loads or stores
+        // past this point, to ensure that the critical section's memory
+        // references happen after the lock is acquired.
+        //
+        // TODO(@jeehoon): it's unnecessary.
+        //
+        // ::core::intrinsics::atomic_fence();
+
+        // Record info about lock acquisition for holding() and debugging.
         (*self).cpu = mycpu();
     }
 
@@ -71,6 +76,22 @@ impl<T> RawLock<T> {
         }
         (*self).cpu = ptr::null_mut();
 
+        // Tell the C compiler and the CPU to not move loads or stores
+        // past this point, to ensure that all the stores in the critical
+        // section are visible to other CPUs before the lock is released.
+        // On RISC-V, this turns into a fence instruction.
+        //
+        // TODO(@jeehoon): it's unnecessary.
+        //
+        // ::core::intrinsics::atomic_fence();
+
+        // Release the lock, equivalent to lk->locked = 0.
+        // This code doesn't use a C assignment, since the C standard
+        // implies that an assignment might be implemented with
+        // multiple store instructions.
+        // On RISC-V, sync_lock_release turns into an atomic swap:
+        //   s1 = &lk->locked
+        //   amoswap.w zero, zero, (s1)
         (*self).locked.store(false, Ordering::Release);
         pop_off();
     }
@@ -84,11 +105,53 @@ impl<T> RawLock<T> {
     }
 }
 
-// pub struct LockGuard<'s, T> {
-//     lock: &'s RawLock<T>,
-//     // token: &'s RawLock<T>,
-//     _marker: PhantomData<*const ()>,
-// }
+pub struct SpinLockGuard<'s, T> {
+    lock: &'s mut NewSpinlock<T>,
+    // token: &'s RawLock<T>,
+    _marker: PhantomData<*const ()>,
+}
+
+pub struct NewSpinlock<T> {
+    lock: RawSpinlock,
+    data: UnsafeCell<T>,
+}
+
+impl<T> NewSpinlock<T> {
+    pub fn new(data: T) -> Self {
+        Self {
+            lock: RawSpinlock::zeroed(),
+            data: UnsafeCell::new(data),
+        }
+    }
+
+    pub fn into_inner(self) -> T {
+        self.data.into_inner()
+    }
+
+    pub unsafe fn lock(&mut self) -> SpinLockGuard<'_, T> {
+        self.lock.acquire();
+        SpinLockGuard {
+            lock: self,
+            _marker: PhantomData,
+        }
+    }
+
+    pub unsafe fn unlock(&mut self) {
+        self.lock.release();
+    }
+}
+
+impl<T> SpinLockGuard<'_, T> {
+    pub fn raw(&mut self) -> usize {
+        self.lock as *const _ as usize
+    }
+}
+
+impl<T> Drop for SpinLockGuard<'_, T> {
+    fn drop(&mut self) {
+        unsafe { self.lock.unlock() };
+    }
+}
 
 // 여기부터는 원래 Spinlock
 
