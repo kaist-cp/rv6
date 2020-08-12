@@ -43,8 +43,8 @@ pub const fn plic_senable(hart: i32) -> usize {
 pub const fn plic_spriority(hart: i32) -> usize {
     PLIC.wrapping_add(0x201000).wrapping_add((hart as usize).wrapping_mul(0x2000))
 }
-pub const fn plic_sclaim(hart: i32) -> i64 {
-    PLIC as i64 + 0x201004 + (hart * 0x2000) as i64
+pub const fn plic_sclaim(hart: i32) -> usize {
+    PLIC.wrapping_add(0x201004).wrapping_add((hart as usize).wrapping_mul(0x2000))
 }
 
 /// the kernel expects there to be RAM
