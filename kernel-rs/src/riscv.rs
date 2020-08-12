@@ -306,19 +306,19 @@ pub unsafe fn sfence_vma() {
 }
 
 /// bytes per page
-pub const PGSIZE: i32 = 4096;
+pub const PGSIZE: usize = 4096;
 
 /// bits of offset within a page
 pub const PGSHIFT: i32 = 12;
 
 #[inline]
 pub const fn pgroundup(sz: usize) -> usize {
-    sz.wrapping_add(PGSIZE as usize).wrapping_sub(1) & (!(PGSIZE - 1) as usize)
+    sz.wrapping_add(PGSIZE).wrapping_sub(1) & !(PGSIZE.wrapping_sub(1))
 }
 
 #[inline]
 pub const fn pgrounddown(a: usize) -> usize {
-    a & !(PGSIZE - 1) as usize
+    a & !(PGSIZE.wrapping_sub(1))
 }
 
 /// valid

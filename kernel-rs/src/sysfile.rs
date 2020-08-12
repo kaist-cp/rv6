@@ -479,7 +479,7 @@ pub unsafe fn sys_exec() -> usize {
                     b"sys_exec kalloc\x00" as *const u8 as *const libc::CChar as *mut libc::CChar,
                 );
             }
-            if fetchstr(uarg, argv[i as usize], PGSIZE) < 0 {
+            if fetchstr(uarg, argv[i as usize], PGSIZE as i32) < 0 {
                 current_block = 12646643519710607562;
                 break;
             }
