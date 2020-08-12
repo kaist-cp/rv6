@@ -68,7 +68,7 @@ pub unsafe fn exec(path: *mut libc::CChar, argv: *mut *mut libc::CChar) -> i32 {
                 {
                     return -1;
                 }
-                if ph.typ == ELF_PROG_LOAD as u32 {
+                if ph.typ == ELF_PROG_LOAD {
                     if ph.memsz < ph.filesz {
                         return -1;
                     }
