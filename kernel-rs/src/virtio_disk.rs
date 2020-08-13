@@ -11,7 +11,7 @@ use crate::{
     printf::panic,
     proc::{sleep, wakeup},
     riscv::{PGSHIFT, PGSIZE},
-    spinlock::Spinlock,
+    spinlock::RawSpinlock,
     virtio::*,
     vm::kvmpa,
 };
@@ -46,7 +46,7 @@ struct Disk {
     /// indexed by first descriptor index of chain.
     info: [InflightInfo; NUM as usize],
 
-    vdisk_lock: Spinlock,
+    vdisk_lock: RawSpinlock,
 }
 
 #[derive(Copy, Clone)]
@@ -77,7 +77,7 @@ impl Disk {
             free: [0; NUM as usize],
             used_idx: 0,
             info: [InflightInfo::zeroed(); NUM as usize],
-            vdisk_lock: Spinlock::zeroed(),
+            vdisk_lock: RawSpinlock::zeroed(),
         }
     }
 }

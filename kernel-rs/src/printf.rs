@@ -1,10 +1,10 @@
 //! formatted console output -- printf, panic.
 use crate::console::consputc;
-use crate::spinlock::Spinlock;
+use crate::spinlock::RawSpinlock;
 
 /// lock to avoid interleaving concurrent printf's.
 struct PrintfLock {
-    lock: Spinlock,
+    lock: RawSpinlock,
     locking: i32,
 }
 
@@ -12,7 +12,7 @@ impl PrintfLock {
     // TODO: transient measure
     const fn zeroed() -> Self {
         Self {
-            lock: Spinlock::zeroed(),
+            lock: RawSpinlock::zeroed(),
             locking: 0,
         }
     }

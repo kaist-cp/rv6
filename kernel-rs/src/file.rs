@@ -7,7 +7,7 @@ use crate::{
     printf::panic,
     proc::{myproc, Proc},
     sleeplock::Sleeplock,
-    spinlock::Spinlock,
+    spinlock::RawSpinlock,
     stat::Stat,
     vm::copyout,
 };
@@ -70,7 +70,7 @@ pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
 
 struct Ftable {
-    lock: Spinlock,
+    lock: RawSpinlock,
     file: [File; NFILE as usize],
 }
 
@@ -270,7 +270,7 @@ impl Ftable {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            lock: Spinlock::zeroed(),
+            lock: RawSpinlock::zeroed(),
             file: [File::zeroed(); NFILE as usize],
         }
     }

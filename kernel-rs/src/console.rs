@@ -3,7 +3,7 @@ use crate::{
     file::{CONSOLE, DEVSW},
     printf::PANICKED,
     proc::{either_copyin, either_copyout, myproc, procdump, sleep, wakeup},
-    spinlock::Spinlock,
+    spinlock::RawSpinlock,
     uart::{uartinit, uartputc},
 };
 
@@ -11,7 +11,7 @@ use crate::{
 const INPUT_BUF: usize = 128;
 
 struct Console {
-    lock: Spinlock,
+    lock: RawSpinlock,
     buf: [u8; 128],
 
     /// Read index
@@ -28,7 +28,7 @@ impl Console {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            lock: Spinlock::zeroed(),
+            lock: RawSpinlock::zeroed(),
             buf: [0; INPUT_BUF],
             r: 0,
             w: 0,

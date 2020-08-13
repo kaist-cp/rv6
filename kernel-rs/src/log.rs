@@ -28,12 +28,12 @@ use crate::{
     param::{LOGSIZE, MAXOPBLOCKS},
     printf::panic,
     proc::{sleep, wakeup},
-    spinlock::Spinlock,
+    spinlock::RawSpinlock,
 };
 use core::ptr;
 
 struct Log {
-    lock: Spinlock,
+    lock: RawSpinlock,
     start: i32,
     size: i32,
 
@@ -58,7 +58,7 @@ impl Log {
     // TODO: transient measure
     const fn zeroed() -> Self {
         Self {
-            lock: Spinlock::zeroed(),
+            lock: RawSpinlock::zeroed(),
             start: 0,
             size: 0,
             outstanding: 0,

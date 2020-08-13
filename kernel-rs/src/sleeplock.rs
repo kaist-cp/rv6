@@ -1,7 +1,7 @@
 //! Sleeping locks
 use crate::libc;
 use crate::proc::{myproc, sleep, wakeup};
-use crate::spinlock::Spinlock;
+use crate::spinlock::RawSpinlock;
 use core::ptr;
 
 /// Long-term locks for processes
@@ -10,7 +10,7 @@ pub struct Sleeplock {
     locked: u32,
 
     /// spinlock protecting this sleep lock
-    lk: Spinlock,
+    lk: RawSpinlock,
 
     /// For debugging:  
 
@@ -26,7 +26,7 @@ impl Sleeplock {
     pub const fn zeroed() -> Self {
         Self {
             locked: 0,
-            lk: Spinlock::zeroed(),
+            lk: RawSpinlock::zeroed(),
             name: ptr::null_mut(),
             pid: 0,
         }

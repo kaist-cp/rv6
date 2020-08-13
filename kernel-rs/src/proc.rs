@@ -8,7 +8,7 @@ use crate::{
     param::{NCPU, NOFILE, NPROC, ROOTDEV},
     printf::{panic, printf},
     riscv::{intr_get, intr_on, r_tp, PagetableT, PGSIZE, PTE_R, PTE_W, PTE_X},
-    spinlock::{pop_off, push_off, Spinlock},
+    spinlock::{pop_off, push_off, RawSpinlock},
     string::safestrcpy,
     trap::usertrapret,
     vm::{
@@ -69,7 +69,7 @@ pub struct Context {
 
 /// Per-process state
 pub struct Proc {
-    lock: Spinlock,
+    lock: RawSpinlock,
 
     /// p->lock must be held when using these:
     /// Process state
@@ -278,7 +278,7 @@ impl Proc {
     // TODO: transient measure
     const fn zeroed() -> Self {
         Self {
-            lock: Spinlock::zeroed(),
+            lock: RawSpinlock::zeroed(),
             state: UNUSED,
             parent: ptr::null_mut(),
             chan: ptr::null_mut(),
@@ -313,7 +313,7 @@ static mut INITPROC: *mut Proc = ptr::null_mut();
 
 static mut NEXTPID: i32 = 1;
 
-static mut PID_LOCK: Spinlock = Spinlock::zeroed();
+static mut PID_LOCK: RawSpinlock = RawSpinlock::zeroed();
 
 #[no_mangle]
 pub unsafe fn procinit() {
@@ -822,7 +822,7 @@ unsafe fn forkret() {
 
 /// Atomically release lock and sleep on chan.
 /// reacquires lock when awakened.
-pub unsafe fn sleep(chan: *mut libc::CVoid, lk: *mut Spinlock) {
+pub unsafe fn sleep(chan: *mut libc::CVoid, lk: *mut RawSpinlock) {
     let mut p: *mut Proc = myproc();
 
     // Must acquire p->lock in order to
@@ -833,7 +833,7 @@ pub unsafe fn sleep(chan: *mut libc::CVoid, lk: *mut Spinlock) {
     // so it's okay to release lk.
 
     //DOC: sleeplock0
-    if lk != &mut (*p).lock as *mut Spinlock {
+    if lk != &mut (*p).lock as *mut RawSpinlock {
         //DOC: sleeplock1
         (*p).lock.acquire();
         (*lk).release();
@@ -848,7 +848,7 @@ pub unsafe fn sleep(chan: *mut libc::CVoid, lk: *mut Spinlock) {
     (*p).chan = ptr::null_mut();
 
     // Reacquire original lock.
-    if lk != &mut (*p).lock as *mut Spinlock {
+    if lk != &mut (*p).lock as *mut RawSpinlock {
         (*p).lock.release();
         (*lk).acquire();
     };

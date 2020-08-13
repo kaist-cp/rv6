@@ -6,7 +6,7 @@ use crate::{
     memlayout::PHYSTOP,
     printf::panic,
     riscv::{pgroundup, PGSIZE},
-    spinlock::Spinlock,
+    spinlock::RawSpinlock,
 };
 use core::ptr;
 
@@ -23,7 +23,7 @@ struct Run {
 }
 
 struct Kmem {
-    lock: Spinlock,
+    lock: RawSpinlock,
     freelist: *mut Run,
 }
 
@@ -31,7 +31,7 @@ impl Kmem {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            lock: Spinlock::zeroed(),
+            lock: RawSpinlock::zeroed(),
             freelist: ptr::null_mut(),
         }
     }

@@ -8,7 +8,7 @@ use crate::{
         intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_sstatus,
         r_stval, r_tp, w_sepc, w_sip, w_sstatus, w_stvec, PGSIZE, SSTATUS_SPIE, SSTATUS_SPP,
     },
-    spinlock::Spinlock,
+    spinlock::RawSpinlock,
     syscall::syscall,
     uart::uartintr,
     virtio_disk::virtio_disk_intr,
@@ -31,7 +31,7 @@ extern "C" {
     fn kernelvec();
 }
 
-pub static mut TICKSLOCK: Spinlock = Spinlock::zeroed();
+pub static mut TICKSLOCK: RawSpinlock = RawSpinlock::zeroed();
 pub static mut TICKS: u32 = 0;
 
 pub unsafe fn trapinit() {

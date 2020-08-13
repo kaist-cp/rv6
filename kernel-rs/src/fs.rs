@@ -20,7 +20,7 @@ use crate::{
     printf::panic,
     proc::{either_copyin, either_copyout, myproc},
     sleeplock::Sleeplock,
-    spinlock::Spinlock,
+    spinlock::RawSpinlock,
     stat::{Stat, T_DIR},
     string::{strncmp, strncpy},
 };
@@ -166,7 +166,7 @@ struct Dinode {
 /// dev, and inum.  One must hold ip->lock in order to
 /// read or write that inode's ip->valid, ip->size, ip->type, &c.
 struct Icache {
-    lock: Spinlock,
+    lock: RawSpinlock,
     inode: [Inode; NINODE as usize],
 }
 
@@ -174,7 +174,7 @@ impl Icache {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            lock: Spinlock::zeroed(),
+            lock: RawSpinlock::zeroed(),
             inode: [Inode::zeroed(); NINODE as usize],
         }
     }
