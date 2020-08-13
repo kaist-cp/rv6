@@ -217,12 +217,12 @@ impl File {
             // and 2 blocks of slop for non-aligned writes.
             // this really belongs lower down, since write()
             // might be writing a device like the console.
-            let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * (BSIZE as i32);
+            let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
             let mut i: i32 = 0;
             while i < n {
                 let mut n1: i32 = n - i;
-                if n1 > max {
-                    n1 = max
+                if n1 > max as i32 {
+                    n1 = max as i32
                 }
                 begin_op();
                 (*(*self).ip).lock();

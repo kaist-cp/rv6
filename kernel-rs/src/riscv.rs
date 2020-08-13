@@ -182,10 +182,10 @@ pub unsafe fn w_mtvec(x: usize) {
 }
 
 /// use riscv's sv39 page table scheme.
-pub const SATP_SV39: i64 = (8) << 60;
+pub const SATP_SV39: usize = (8) << 60;
 
 pub const fn make_satp(pagetable: usize) -> usize {
-    SATP_SV39 as usize | pagetable >> 12
+    SATP_SV39 | pagetable >> 12
 }
 
 /// supervisor address translation and protection;
