@@ -25,7 +25,7 @@ SECTIONS
     *(.data)
   }
   .bss : {
-    *(.bss)
+    *(.bss*)
     *(.sbss*)
      PROVIDE(end = .);
   }
