@@ -201,7 +201,7 @@ pub unsafe fn consoleintr(mut cin: i32) {
 }
 
 pub unsafe fn consoleinit() {
-    CONS.lock.initlock(b"CONS\x00" as *const u8 as *mut u8);
+    CONS.lock.initlock("CONS");
     uartinit();
 
     // connect read and write system calls

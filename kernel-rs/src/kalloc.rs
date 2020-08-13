@@ -39,7 +39,7 @@ impl Kmem {
 static mut KMEM: Kmem = Kmem::zeroed();
 
 pub unsafe fn kinit() {
-    KMEM.lock.initlock(b"KMEM\x00" as *const u8 as *mut u8);
+    KMEM.lock.initlock("KMEM");
 
     freerange(
         end.as_mut_ptr() as *mut libc::CVoid,

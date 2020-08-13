@@ -282,5 +282,5 @@ pub static mut DEVSW: [Devsw; NDEV] = [Devsw {
 static mut FTABLE: Ftable = Ftable::zeroed();
 
 pub unsafe fn fileinit() {
-    FTABLE.lock.initlock(b"FTABLE\x00" as *const u8 as *mut u8);
+    FTABLE.lock.initlock("FTABLE");
 }

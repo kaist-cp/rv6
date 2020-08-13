@@ -79,6 +79,6 @@ pub static mut PANICKED: i32 = 0;
 static mut PR: PrintfLock = PrintfLock::zeroed();
 
 pub unsafe fn printfinit() {
-    PR.lock.initlock(b"PR\x00" as *const u8 as *mut u8);
+    PR.lock.initlock("PR");
     PR.locking = 1;
 }

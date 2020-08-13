@@ -78,7 +78,7 @@ impl Superblock {
         if ::core::mem::size_of::<LogHeader>() >= BSIZE {
             panic!("initlog: too big LogHeader");
         }
-        LOG.lock.initlock(b"LOG\x00" as *const u8 as *mut u8);
+        LOG.lock.initlock("LOG");
         LOG.start = (*self).logstart as i32;
         LOG.size = (*self).nlog as i32;
         LOG.dev = dev;

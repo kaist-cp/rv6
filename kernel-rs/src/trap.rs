@@ -35,7 +35,7 @@ pub static mut TICKSLOCK: RawSpinlock = RawSpinlock::zeroed();
 pub static mut TICKS: u32 = 0;
 
 pub unsafe fn trapinit() {
-    TICKSLOCK.initlock(b"time\x00" as *const u8 as *mut u8);
+    TICKSLOCK.initlock("time");
 }
 
 /// set up to take exceptions and traps while in the kernel.
