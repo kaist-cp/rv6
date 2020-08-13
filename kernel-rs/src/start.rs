@@ -34,7 +34,7 @@ static mut MSCRATCH0: [usize; NCPU.wrapping_mul(32)] = [0; NCPU.wrapping_mul(32)
 #[no_mangle]
 pub unsafe fn start() {
     // set M Previous Privilege mode to Supervisor, for mret.
-    let x = (r_mstatus() & !MSTATUS_MPP_MASK as usize) | MSTATUS_MPP_S as usize;
+    let x = (r_mstatus() & !MSTATUS_MPP_MASK) | MSTATUS_MPP_S;
     w_mstatus(x);
 
     // set M Exception Program Counter to main, for mret.
@@ -85,7 +85,7 @@ unsafe fn timerinit() {
     w_mtvec(timervec as _);
 
     // enable machine-mode interrupts.
-    w_mstatus(r_mstatus() | MSTATUS_MIE as usize);
+    w_mstatus(r_mstatus() | MSTATUS_MIE);
 
     // enable machine-mode timer interrupts.
     w_mie(r_mie() | MIE_MTIE as usize);

@@ -9,12 +9,12 @@ pub unsafe fn r_mhartid() -> usize {
 /// Machine Status Register, mstatus
 
 /// previous mode.
-pub const MSTATUS_MPP_MASK: i64 = (3) << 11;
-pub const MSTATUS_MPP_M: i64 = (3) << 11;
-pub const MSTATUS_MPP_S: i64 = (1) << 11;
-pub const MSTATUS_MPP_U: i64 = (0) << 11;
+pub const MSTATUS_MPP_MASK: usize = (3) << 11;
+pub const MSTATUS_MPP_M: usize = (3) << 11;
+pub const MSTATUS_MPP_S: usize = (1) << 11;
+pub const MSTATUS_MPP_U: usize = (0) << 11;
 /// machine-mode interrupt enable.
-pub const MSTATUS_MIE: i64 = (1) << 3;
+pub const MSTATUS_MIE: usize = (1) << 3;
 
 #[inline]
 pub unsafe fn r_mstatus() -> usize {
