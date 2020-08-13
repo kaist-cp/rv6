@@ -80,14 +80,12 @@ pub unsafe fn binit() {
     // Create linked list of buffers
     bcache.head.prev = &mut bcache.head;
     bcache.head.next = &mut bcache.head;
-    let mut b: *mut Buf = bcache.buf.as_mut_ptr();
-    while b < bcache.buf.as_mut_ptr().add(NBUF) {
+    for b in &mut bcache.buf[..] {
         (*b).next = bcache.head.next;
         (*b).prev = &mut bcache.head;
         (*b).lock.initlock(b"buffer\x00" as *const u8 as *mut u8);
         (*bcache.head.next).prev = b;
         bcache.head.next = b;
-        b = b.offset(1)
     }
 }
 

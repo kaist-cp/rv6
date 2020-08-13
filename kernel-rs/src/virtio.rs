@@ -87,7 +87,7 @@ pub struct VRingDesc {
 }
 
 /// chained with another descriptor
-pub const VRING_DESC_F_NEXT: u16= 1;
+pub const VRING_DESC_F_NEXT: u16 = 1;
 
 /// device writes (vs read)
 pub const VRING_DESC_F_WRITE: u16 = 2;

@@ -55,9 +55,9 @@ pub unsafe fn kinit() {
 
 pub unsafe fn freerange(pa_start: *mut libc::CVoid, pa_end: *mut libc::CVoid) {
     let mut p = pgroundup(pa_start as usize) as *mut u8;
-    while p.offset(PGSIZE as isize) <= pa_end as *mut u8 {
+    while p.add(PGSIZE) <= pa_end as *mut u8 {
         kfree(p as *mut libc::CVoid);
-        p = p.offset(PGSIZE as isize)
+        p = p.add(PGSIZE)
     }
 }
 
