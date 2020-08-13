@@ -17,7 +17,6 @@ use crate::{
     file::Inode,
     log::log_write,
     param::{NINODE, ROOTDEV},
-    printf::panic,
     proc::{either_copyin, either_copyout, myproc},
     sleeplock::Sleeplock,
     spinlock::RawSpinlock,
@@ -216,7 +215,7 @@ impl Inode {
     /// Reads the inode from disk if necessary.
     pub unsafe fn lock(&mut self) {
         if (self as *mut Inode).is_null() || (*self).ref_0 < 1 {
-            panic(b"Inode::lock\x00" as *const u8 as *mut u8);
+            panic!("Inode::lock");
         }
         (*self).lock.acquire();
         if (*self).valid == 0 {
@@ -236,7 +235,7 @@ impl Inode {
             (*bp).release();
             (*self).valid = 1;
             if (*self).typ as i32 == 0 {
-                panic(b"Inode::lock: no type\x00" as *const u8 as *mut u8);
+                panic!("Inode::lock: no type");
             }
         };
     }
@@ -244,7 +243,7 @@ impl Inode {
     /// Unlock the given inode.
     pub unsafe fn unlock(&mut self) {
         if (self as *mut Inode).is_null() || (*self).lock.holding() == 0 || (*self).ref_0 < 1 {
-            panic(b"Inode::unlock\x00" as *const u8 as *mut u8);
+            panic!("Inode::unlock");
         }
         (*self).lock.release();
     }
@@ -324,7 +323,7 @@ impl Inode {
             (*bp).release();
             return addr;
         }
-        panic(b"bmap: out of range\x00" as *const u8 as *mut u8);
+        panic!("bmap: out of range");
     }
 
     /// Truncate inode (discard contents).
@@ -468,7 +467,7 @@ impl Inode {
             }
             (*bp).release();
         }
-        panic(b"Inode::alloc: no inodes\x00" as *const u8 as *mut u8);
+        panic!("Inode::alloc: no inodes");
     }
 
     pub const fn zeroed() -> Self {
@@ -555,7 +554,7 @@ pub static mut SB: Superblock = Superblock::zeroed();
 pub unsafe fn fsinit(dev: i32) {
     SB.read(dev);
     if SB.magic != FSMAGIC {
-        panic(b"invalid file system\x00" as *const u8 as *mut u8);
+        panic!("invalid file system");
     }
     SB.initlog(dev);
 }
@@ -590,7 +589,7 @@ unsafe fn balloc(dev: u32) -> u32 {
         (*bp).release();
         b += BPB
     }
-    panic(b"balloc: out of blocks\x00" as *const u8 as *mut u8);
+    panic!("balloc: out of blocks");
 }
 
 /// Free a disk block.
@@ -599,7 +598,7 @@ unsafe fn bfree(dev: i32, b: u32) {
     let bi: i32 = b.wrapping_rem(BPB) as i32;
     let m: i32 = (1) << (bi % 8);
     if (*bp).data[(bi / 8) as usize] as i32 & m == 0 {
-        panic(b"freeing free block\x00" as *const u8 as *mut u8);
+        panic!("freeing free block");
     }
     (*bp).data[(bi / 8) as usize] = ((*bp).data[(bi / 8) as usize] as i32 & !m) as u8;
     log_write(bp);
@@ -639,7 +638,7 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
 
     // Recycle an inode cache entry.
     if empty.is_null() {
-        panic(b"iget: no inodes\x00" as *const u8 as *mut u8);
+        panic!("iget: no inodes");
     }
     let ip = empty;
     (*ip).dev = dev;
@@ -671,7 +670,7 @@ pub unsafe fn dirlookup(dp: *mut Inode, name: *mut u8, poff: *mut u32) -> *mut I
     let mut off: u32 = 0;
     let mut de: Dirent = Default::default();
     if (*dp).typ as i32 != T_DIR {
-        panic(b"dirlookup not DIR\x00" as *const u8 as *mut u8);
+        panic!("dirlookup not DIR");
     }
     while off < (*dp).size {
         if (*dp).read(
@@ -682,7 +681,7 @@ pub unsafe fn dirlookup(dp: *mut Inode, name: *mut u8, poff: *mut u32) -> *mut I
         ) as usize
             != ::core::mem::size_of::<Dirent>()
         {
-            panic(b"dirlookup read\x00" as *const u8 as *mut u8);
+            panic!("dirlookup read");
         }
         if de.inum as i32 != 0 && namecmp(name, de.name.as_mut_ptr()) == 0 {
             // entry matches path element
@@ -718,7 +717,7 @@ pub unsafe fn dirlink(dp: *mut Inode, name: *mut u8, inum: u32) -> i32 {
         ) as usize
             != ::core::mem::size_of::<Dirent>()
         {
-            panic(b"dirlink read\x00" as *const u8 as *mut u8);
+            panic!("dirlink read");
         }
         if de.inum as i32 == 0 {
             break;
@@ -735,7 +734,7 @@ pub unsafe fn dirlink(dp: *mut Inode, name: *mut u8, inum: u32) -> i32 {
     ) as usize
         != ::core::mem::size_of::<Dirent>()
     {
-        panic(b"dirlink\x00" as *const u8 as *mut u8);
+        panic!("dirlink");
     }
     0
 }

@@ -12,7 +12,6 @@ use crate::{
     log::{begin_op, end_op},
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
     pipe::Pipe,
-    printf::panic,
     proc::{myproc, Proc},
     riscv::PGSIZE,
     stat::{T_DEVICE, T_DIR, T_FILE},
@@ -178,7 +177,7 @@ unsafe fn isdirempty(dp: *mut Inode) -> i32 {
         ) as usize
             != ::core::mem::size_of::<Dirent>()
         {
-            panic(b"isdirempty: readi\x00" as *const u8 as *mut u8);
+            panic!("isdirempty: readi");
         }
         if de.inum as i32 != 0 {
             return 0;
@@ -212,7 +211,7 @@ pub unsafe fn sys_unlink() -> usize {
         if !ip.is_null() {
             (*ip).lock();
             if ((*ip).nlink as i32) < 1 {
-                panic(b"unlink: nlink < 1\x00" as *const u8 as *mut u8);
+                panic!("unlink: nlink < 1");
             }
             if (*ip).typ as i32 == T_DIR && isdirempty(ip) == 0 {
                 (*ip).unlockput();
@@ -226,7 +225,7 @@ pub unsafe fn sys_unlink() -> usize {
                 ) as usize
                     != ::core::mem::size_of::<Dirent>()
                 {
-                    panic(b"unlink: writei\x00" as *const u8 as *mut u8);
+                    panic!("unlink: writei");
                 }
                 if (*ip).typ as i32 == T_DIR {
                     (*dp).nlink -= 1;
@@ -265,7 +264,7 @@ unsafe fn create(path: *mut u8, typ: i16, major: i16, minor: i16) -> *mut Inode 
     }
     ip = Inode::alloc((*dp).dev, typ);
     if ip.is_null() {
-        panic(b"create: Inode::alloc\x00" as *const u8 as *mut u8);
+        panic!("create: Inode::alloc");
     }
     (*ip).lock();
     (*ip).major = major;
@@ -283,11 +282,11 @@ unsafe fn create(path: *mut u8, typ: i16, major: i16, minor: i16) -> *mut Inode 
         if dirlink(ip, b".\x00" as *const u8 as *mut u8, (*ip).inum) < 0
             || dirlink(ip, b"..\x00" as *const u8 as *mut u8, (*dp).inum) < 0
         {
-            panic(b"create dots\x00" as *const u8 as *mut u8);
+            panic!("create dots");
         }
     }
     if dirlink(dp, name.as_mut_ptr(), (*ip).inum) < 0 {
-        panic(b"create: dirlink\x00" as *const u8 as *mut u8);
+        panic!("create: dirlink");
     }
     (*dp).unlockput();
     ip
@@ -457,7 +456,7 @@ pub unsafe fn sys_exec() -> usize {
         } else {
             argv[i as usize] = kalloc() as *mut u8;
             if argv[i as usize].is_null() {
-                panic(b"sys_exec kalloc\x00" as *const u8 as *mut u8);
+                panic!("sys_exec kalloc");
             }
             if fetchstr(uarg, argv[i as usize], PGSIZE as i32) < 0 {
                 current_block = 12646643519710607562;

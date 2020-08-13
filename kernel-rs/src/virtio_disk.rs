@@ -8,7 +8,6 @@ use crate::{
     buf::Buf,
     fs::BSIZE,
     memlayout::VIRTIO0,
-    printf::panic,
     proc::{sleep, wakeup},
     riscv::{PGSHIFT, PGSIZE},
     spinlock::RawSpinlock,
@@ -103,7 +102,7 @@ pub unsafe fn virtio_disk_init() {
         || *(r(VIRTIO_MMIO_DEVICE_ID)) != 2
         || *(r(VIRTIO_MMIO_VENDOR_ID)) != 0x554d4551
     {
-        panic(b"could not find virtio disk\x00" as *const u8 as *mut u8);
+        panic!("could not find virtio disk");
     }
     status |= VIRTIO_CONFIG_S_ACKNOWLEDGE;
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status);
@@ -135,10 +134,10 @@ pub unsafe fn virtio_disk_init() {
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_SEL), 0);
     let max: u32 = *(r(VIRTIO_MMIO_QUEUE_NUM_MAX));
     if max == 0 {
-        panic(b"virtio disk has no queue 0\x00" as *const u8 as *mut u8);
+        panic!("virtio disk has no queue 0");
     }
     if max < NUM as u32 {
-        panic(b"virtio disk max queue too short\x00" as *const u8 as *mut u8);
+        panic!("virtio disk max queue too short");
     }
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_NUM), NUM as u32);
     ptr::write_bytes(DISK.pages.as_mut_ptr(), 0, 1);
@@ -176,10 +175,10 @@ unsafe fn alloc_desc() -> i32 {
 /// mark a descriptor as free.
 unsafe fn free_desc(i: i32) {
     if i >= NUM as i32 {
-        panic(b"virtio_disk_intr 1\x00" as *const u8 as *mut u8);
+        panic!("virtio_disk_intr 1");
     }
     if DISK.free[i as usize] != 0 {
-        panic(b"virtio_disk_intr 2\x00" as *const u8 as *mut u8);
+        panic!("virtio_disk_intr 2");
     }
     (*DISK.desc.offset(i as isize)).addr = 0;
     DISK.free[i as usize] = 1;
@@ -312,7 +311,7 @@ pub unsafe fn virtio_disk_intr() {
     {
         let id: usize = (*DISK.used).elems[DISK.used_idx as usize].id as usize;
         if DISK.info[id].status as i32 != 0 {
-            panic(b"virtio_disk_intr status\x00" as *const u8 as *mut u8);
+            panic!("virtio_disk_intr status");
         }
         (*DISK.info[id].b).disk = 0;
 

@@ -2,7 +2,6 @@ use crate::libc;
 use crate::{
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     plic::{plic_claim, plic_complete},
-    printf::panic,
     println,
     proc::{cpuid, exit, myproc, proc_yield, wakeup, Proc, RUNNING},
     riscv::{
@@ -51,7 +50,7 @@ pub unsafe extern "C" fn usertrap() {
     let mut which_dev: i32 = 0;
 
     if r_sstatus() & SSTATUS_SPP != 0 {
-        panic(b"usertrap: not from user mode\x00" as *const u8 as *mut u8);
+        panic!("usertrap: not from user mode");
     }
 
     // send interrupts and exceptions to kerneltrap(),
@@ -170,11 +169,11 @@ pub unsafe fn kerneltrap() {
     let scause: usize = r_scause();
 
     if sstatus & SSTATUS_SPP == 0 {
-        panic(b"kerneltrap: not from supervisor mode\x00" as *const u8 as *mut u8);
+        panic!("kerneltrap: not from supervisor mode");
     }
 
     if intr_get() != 0 {
-        panic(b"kerneltrap: interrupts enabled\x00" as *const u8 as *mut u8);
+        panic!("kerneltrap: interrupts enabled");
     }
 
     let which_dev = devintr();
@@ -185,7 +184,7 @@ pub unsafe fn kerneltrap() {
             r_sepc() as *const u8,
             r_stval() as *const u8
         );
-        panic(b"kerneltrap\x00" as *const u8 as *mut u8);
+        panic!("kerneltrap");
     }
 
     // give up the CPU if this is a timer interrupt.

@@ -1,6 +1,4 @@
-use crate::{
-    buf::Buf, param::NBUF, printf::panic, spinlock::RawSpinlock, virtio_disk::virtio_disk_rw,
-};
+use crate::{buf::Buf, param::NBUF, spinlock::RawSpinlock, virtio_disk::virtio_disk_rw};
 use core::mem::MaybeUninit;
 
 /// Buffer cache.
@@ -29,7 +27,7 @@ impl Buf {
     /// Write self's contents to disk.  Must be locked.
     pub unsafe fn write(&mut self) {
         if (*self).lock.holding() == 0 {
-            panic(b"bwrite\x00" as *const u8 as *mut u8);
+            panic!("bwrite");
         }
         virtio_disk_rw(self, 1);
     }
@@ -40,7 +38,7 @@ impl Buf {
         let bcache = BCACHE.get_mut();
 
         if (*self).lock.holding() == 0 {
-            panic(b"release\x00" as *const u8 as *mut u8);
+            panic!("brelease");
         }
         (*self).lock.release();
         bcache.lock.acquire();
@@ -123,7 +121,7 @@ unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
         }
         b = (*b).prev
     }
-    panic(b"bget: no buffers\x00" as *const u8 as *mut u8);
+    panic!("bget: no buffers");
 }
 
 /// Return a locked buf with the contents of the indicated block.

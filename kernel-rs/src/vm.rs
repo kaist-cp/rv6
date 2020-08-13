@@ -2,7 +2,6 @@ use crate::libc;
 use crate::{
     kalloc::{kalloc, kfree},
     memlayout::{CLINT, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
-    printf::panic,
     println,
     riscv::{
         make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, sfence_vma, w_satp,
@@ -92,7 +91,7 @@ pub unsafe fn kvminithart() {
 ///    0..12 -- 12 bits of byte offset within the page.
 unsafe fn walk(mut pagetable: PagetableT, va: usize, alloc: i32) -> *mut PteT {
     if va >= MAXVA {
-        panic(b"walk\x00" as *const u8 as *mut u8);
+        panic!("walk");
     }
     for level in (1..3).rev() {
         let pte: *mut PteT = &mut *pagetable.add(px(level, va)) as *mut usize;
@@ -138,7 +137,7 @@ pub unsafe fn walkaddr(pagetable: PagetableT, va: usize) -> usize {
 /// does not flush TLB or enable paging.
 pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
     if mappages(KERNEL_PAGETABLE, va, sz, pa, perm) != 0 {
-        panic(b"kvmmap\x00" as *const u8 as *mut u8);
+        panic!("kvmmap");
     };
 }
 
@@ -150,10 +149,10 @@ pub unsafe fn kvmpa(va: usize) -> usize {
     let off: usize = va.wrapping_rem(PGSIZE);
     let pte: *mut PteT = walk(KERNEL_PAGETABLE, va, 0);
     if pte.is_null() {
-        panic(b"kvmpa\x00" as *const u8 as *mut u8);
+        panic!("kvmpa");
     }
     if *pte & PTE_V == 0 {
-        panic(b"kvmpa\x00" as *const u8 as *mut u8);
+        panic!("kvmpa");
     }
     let pa: usize = pte2pa(*pte);
     pa.wrapping_add(off)
@@ -178,7 +177,7 @@ pub unsafe fn mappages(
             return -1;
         }
         if *pte & PTE_V != 0 {
-            panic(b"remap\x00" as *const u8 as *mut u8);
+            panic!("remap");
         }
         *pte = pa2pte(pa) | perm as usize | PTE_V;
         if a == last {
@@ -200,14 +199,14 @@ pub unsafe fn uvmunmap(pagetable: PagetableT, va: usize, size: usize, do_free: i
     loop {
         let pte = walk(pagetable, a, 0);
         if pte.is_null() {
-            panic(b"uvmunmap: walk\x00" as *const u8 as *mut u8);
+            panic!("uvmunmap: walk");
         }
         if *pte & PTE_V == 0 {
             println!("va={:018p} pte={:018p}", a as *const u8, *pte as *const u8);
-            panic(b"uvmunmap: not mapped\x00" as *const u8 as *mut u8);
+            panic!("uvmunmap: not mapped");
         }
         if pte_flags(*pte) == PTE_V {
-            panic(b"uvmunmap: not a leaf\x00" as *const u8 as *mut u8);
+            panic!("uvmunmap: not a leaf");
         }
         if do_free != 0 {
             pa = pte2pa(*pte);
@@ -226,7 +225,7 @@ pub unsafe fn uvmunmap(pagetable: PagetableT, va: usize, size: usize, do_free: i
 pub unsafe fn uvmcreate() -> PagetableT {
     let pagetable: PagetableT = kalloc() as PagetableT;
     if pagetable.is_null() {
-        panic(b"uvmcreate: out of memory\x00" as *const u8 as *mut u8);
+        panic!("uvmcreate: out of memory");
     }
     ptr::write_bytes(pagetable as *mut libc::CVoid, 0, PGSIZE);
     pagetable
@@ -237,7 +236,7 @@ pub unsafe fn uvmcreate() -> PagetableT {
 /// sz must be less than a page.
 pub unsafe fn uvminit(pagetable: PagetableT, src: *mut u8, sz: u32) {
     if sz >= PGSIZE as u32 {
-        panic(b"inituvm: more than a page\x00" as *const u8 as *mut u8);
+        panic!("inituvm: more than a page");
     }
     let mem: *mut u8 = kalloc() as *mut u8;
     ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
@@ -314,7 +313,7 @@ unsafe fn freewalk(pagetable: PagetableT) {
             freewalk(child as PagetableT);
             *pagetable.offset(i) = 0
         } else if pte & PTE_V != 0 {
-            panic(b"freewalk: leaf\x00" as *const u8 as *mut u8);
+            panic!("freewalk: leaf");
         }
     }
     kfree(pagetable as *mut libc::CVoid);
@@ -343,10 +342,10 @@ pub unsafe fn uvmcopy(old: PagetableT, new: PagetableT, sz: usize) -> i32 {
         }
         let pte = walk(old, i, 0);
         if pte.is_null() {
-            panic(b"uvmcopy: pte should exist\x00" as *const u8 as *mut u8);
+            panic!("uvmcopy: pte should exist");
         }
         if *pte & PTE_V == 0 {
-            panic(b"uvmcopy: page not present\x00" as *const u8 as *mut u8);
+            panic!("uvmcopy: page not present");
         }
         let pa = pte2pa(*pte);
         let flags = pte_flags(*pte) as u32;
@@ -382,7 +381,7 @@ pub unsafe fn uvmcopy(old: PagetableT, new: PagetableT, sz: usize) -> i32 {
 pub unsafe fn uvmclear(pagetable: PagetableT, va: usize) {
     let pte: *mut PteT = walk(pagetable, va, 0);
     if pte.is_null() {
-        panic(b"uvmclear\x00" as *const u8 as *mut u8);
+        panic!("uvmclear");
     }
     *pte &= !PTE_U as usize;
 }

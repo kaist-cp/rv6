@@ -1,5 +1,4 @@
 use crate::{
-    printf::panic,
     proc::{mycpu, Cpu},
     riscv::{intr_get, intr_off, intr_on},
 };
@@ -45,7 +44,7 @@ impl RawSpinlock {
         // disable interrupts to avoid deadlock.
         push_off();
         if self.holding() != 0 {
-            panic(b"acquire\x00" as *const u8 as *mut u8);
+            panic!("acquire");
         }
 
         // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
@@ -73,7 +72,7 @@ impl RawSpinlock {
     /// Release the lock.
     pub unsafe fn release(&mut self) {
         if self.holding() == 0 {
-            panic(b"release\x00" as *const u8 as *mut u8);
+            panic!("release");
         }
         (*self).cpu = ptr::null_mut();
 
@@ -181,11 +180,11 @@ pub unsafe fn push_off() {
 pub unsafe fn pop_off() {
     let mut c: *mut Cpu = mycpu();
     if intr_get() != 0 {
-        panic(b"pop_off - interruptible\x00" as *const u8 as *mut u8);
+        panic!("pop_off - interruptible");
     }
     (*c).noff -= 1;
     if (*c).noff < 0 {
-        panic(b"pop_off\x00" as *const u8 as *mut u8);
+        panic!("pop_off");
     }
     if (*c).noff == 0 && (*c).intena != 0 {
         intr_on();
@@ -229,7 +228,7 @@ impl OldSpinlock {
         // disable interrupts to avoid deadlock.
         push_off();
         if self.holding() != 0 {
-            panic(b"acquire\x00" as *const u8 as *mut u8);
+            panic!("acquire");
         }
 
         // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
@@ -257,7 +256,7 @@ impl OldSpinlock {
     /// Release the lock.
     pub unsafe fn release(&mut self) {
         if self.holding() == 0 {
-            panic(b"release\x00" as *const u8 as *mut u8);
+            panic!("release");
         }
         (*self).cpu = ptr::null_mut();
 

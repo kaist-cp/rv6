@@ -6,7 +6,6 @@ use crate::{
     log::{begin_op, end_op},
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     param::{NCPU, NOFILE, NPROC, ROOTDEV},
-    printf::{panic, printf},
     println,
     riscv::{intr_get, intr_on, r_tp, PagetableT, PGSIZE, PTE_R, PTE_W, PTE_X},
     spinlock::{pop_off, push_off, RawSpinlock},
@@ -19,6 +18,7 @@ use crate::{
 };
 use core::cmp::Ordering;
 use core::ptr;
+use core::str;
 
 extern "C" {
     // swtch.S
@@ -327,7 +327,7 @@ pub unsafe fn procinit() {
         // guard page.
         let pa: *mut u8 = kalloc() as *mut u8;
         if pa.is_null() {
-            panic(b"kalloc\x00" as *const u8 as *mut u8);
+            panic!("kalloc");
         }
         let va: usize = kstack(i as _);
         kvmmap(va, pa as usize, PGSIZE, PTE_R | PTE_W);
@@ -602,7 +602,7 @@ pub unsafe fn reparent(p: *mut Proc) {
 pub unsafe fn exit(status: i32) {
     let mut p: *mut Proc = myproc();
     if p == INITPROC {
-        panic(b"init exiting\x00" as *const u8 as *mut u8);
+        panic!("init exiting");
     }
 
     // Close all open files.
@@ -654,7 +654,7 @@ pub unsafe fn exit(status: i32) {
 
     // Jump into the scheduler, never to return.
     sched();
-    panic(b"zombie exit\x00" as *const u8 as *mut u8);
+    panic!("zombie exit");
 }
 
 /// Wait for a child process to exit and return its pid.
@@ -756,16 +756,16 @@ pub unsafe fn scheduler() -> ! {
 unsafe fn sched() {
     let p: *mut Proc = myproc();
     if (*p).lock.holding() == 0 {
-        panic(b"sched p->lock\x00" as *const u8 as *mut u8);
+        panic!("sched p->lock");
     }
     if (*mycpu()).noff != 1 {
-        panic(b"sched locks\x00" as *const u8 as *mut u8);
+        panic!("sched locks");
     }
     if (*p).state as u32 == RUNNING as i32 as u32 {
-        panic(b"sched running\x00" as *const u8 as *mut u8);
+        panic!("sched running");
     }
     if intr_get() != 0 {
-        panic(b"sched interruptible\x00" as *const u8 as *mut u8);
+        panic!("sched interruptible");
     }
     let intena: i32 = (*mycpu()).intena;
     swtch(
@@ -851,7 +851,7 @@ pub unsafe fn wakeup(chan: *mut libc::CVoid) {
 /// Caller must hold p->lock.
 unsafe fn wakeup1(mut p: *mut Proc) {
     if (*p).lock.holding() == 0 {
-        panic(b"wakeup1\x00" as *const u8 as *mut u8);
+        panic!("wakeup1");
     }
     if (*p).chan == p as *mut libc::CVoid && (*p).state as u32 == SLEEPING as u32 {
         (*p).state = RUNNABLE
@@ -913,8 +913,12 @@ pub unsafe fn procdump() {
     for p in &mut PROC[..] {
         if p.state as u32 != UNUSED as i32 as u32 {
             let state = STATES.get(p.state as usize).unwrap_or(&"???");
-            println!("{} {} ", p.pid, state);
-            printf(b"%s\n" as *const _, p.name);
+            println!(
+                "{} {} {}",
+                p.pid,
+                state,
+                str::from_utf8(&p.name).unwrap_or("???")
+            );
         }
     }
 }

@@ -4,7 +4,6 @@ use crate::{
     log::{begin_op, end_op},
     param::{MAXOPBLOCKS, NDEV, NFILE},
     pipe::Pipe,
-    printf::panic,
     proc::{myproc, Proc},
     sleeplock::Sleeplock,
     spinlock::RawSpinlock,
@@ -100,7 +99,7 @@ impl File {
     pub unsafe fn dup(&mut self) -> *mut File {
         FTABLE.lock.acquire();
         if (*self).ref_0 < 1 {
-            panic(b"File::dup\x00" as *const u8 as *mut u8);
+            panic!("File::dup");
         }
         (*self).ref_0 += 1;
         FTABLE.lock.release();
@@ -111,7 +110,7 @@ impl File {
     pub unsafe fn close(&mut self) {
         FTABLE.lock.acquire();
         if (*self).ref_0 < 1 {
-            panic(b"File::close\x00" as *const u8 as *mut u8);
+            panic!("File::close");
         }
         (*self).ref_0 -= 1;
         if (*self).ref_0 > 0 {
@@ -186,7 +185,7 @@ impl File {
             (*(*self).ip).unlock();
             r
         } else {
-            panic(b"File::read\x00" as *const u8 as *mut u8);
+            panic!("File::read");
         }
     }
 
@@ -235,7 +234,7 @@ impl File {
                     break;
                 }
                 if r != n1 {
-                    panic(b"short File::write\x00" as *const u8 as *mut u8);
+                    panic!("short File::write");
                 }
                 i += r
             }
@@ -245,7 +244,7 @@ impl File {
                 -1
             }
         } else {
-            panic(b"File::write\x00" as *const u8 as *mut u8);
+            panic!("File::write");
         }
     }
 
