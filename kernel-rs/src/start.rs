@@ -63,14 +63,13 @@ pub unsafe fn start() {
 /// which turns them into software interrupts for devintr() in trap.c.
 unsafe fn timerinit() {
     // each CPU has a separate source of timer interrupts.
-    let id: i32 = r_mhartid() as i32;
+    let id = r_mhartid();
 
     // ask the CLINT for a timer interrupt.
 
     // cycles; about 1/10th second in qemu.
     let interval: usize = 1000000;
-    *(clint_mtimecmp(id as usize) as *mut usize) =
-        (*(CLINT_MTIME as *mut usize)).wrapping_add(interval);
+    *(clint_mtimecmp(id) as *mut usize) = (*(CLINT_MTIME as *mut usize)).wrapping_add(interval);
 
     // prepare information in scratch[] for timervec.
     // scratch[0..3] : space for timervec to save registers.
