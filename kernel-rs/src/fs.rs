@@ -305,7 +305,7 @@ impl Inode {
             }
             return addr;
         }
-        bn = (bn as u32).wrapping_sub(NDIRECT as u32) as u32 as u32;
+        bn = (bn).wrapping_sub(NDIRECT as u32);
         if (bn as usize) < NINDIRECT {
             // Load indirect block, allocating if necessary.
             addr = (*self).addrs[NDIRECT];

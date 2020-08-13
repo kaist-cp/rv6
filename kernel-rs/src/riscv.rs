@@ -309,7 +309,7 @@ pub unsafe fn sfence_vma() {
 pub const PGSIZE: usize = 4096;
 
 /// bits of offset within a page
-pub const PGSHIFT: i32 = 12;
+pub const PGSHIFT: usize = 12;
 
 #[inline]
 pub const fn pgroundup(sz: usize) -> usize {
@@ -350,16 +350,16 @@ pub const fn pte_flags(pte: PteT) -> usize {
 /// extract the three 9-bit page table indices from a virtual address.
 
 /// 9 bits
-pub const PXMASK: i32 = 0x1ff;
+pub const PXMASK: usize = 0x1ff;
 
 #[inline]
-fn pxshift(level: i32) -> i32 {
+fn pxshift(level: usize) -> usize {
     PGSHIFT + 9 * level
 }
 
 #[inline]
-pub fn px(level: i32, va: usize) -> usize {
-    (va >> pxshift(level) as usize) & PXMASK as usize
+pub fn px(level: usize, va: usize) -> usize {
+    (va >> pxshift(level)) & PXMASK
 }
 
 /// one beyond the highest possible virtual address.

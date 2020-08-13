@@ -311,7 +311,7 @@ unsafe fn freewalk(pagetable: PagetableT) {
             // this PTE points to a lower-level page table.
             let child: usize = pte2pa(pte);
             freewalk(child as PagetableT);
-            *pagetable.offset(i as isize) = 0
+            *pagetable.offset(i) = 0
         } else if pte & PTE_V as usize != 0 {
             panic(b"freewalk: leaf\x00" as *const u8 as *mut u8);
         }
