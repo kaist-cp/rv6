@@ -625,8 +625,7 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
 
     // Is the inode already cached?
     let mut empty: *mut Inode = ptr::null_mut();
-    let mut ip: *mut Inode = &mut *ICACHE.inode.as_mut_ptr().offset(0) as *mut Inode;
-    while ip < &mut *ICACHE.inode.as_mut_ptr().add(NINODE) as *mut Inode {
+    for ip in &mut ICACHE.inode[..] {
         if (*ip).ref_0 > 0 && (*ip).dev == dev && (*ip).inum == inum {
             (*ip).ref_0 += 1;
             ICACHE.lock.release();
@@ -636,14 +635,13 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
             // Remember empty slot.
             empty = ip
         }
-        ip = ip.offset(1)
     }
 
     // Recycle an inode cache entry.
     if empty.is_null() {
         panic(b"iget: no inodes\x00" as *const u8 as *mut u8);
     }
-    ip = empty;
+    let ip = empty;
     (*ip).dev = dev;
     (*ip).inum = inum;
     (*ip).ref_0 = 1;

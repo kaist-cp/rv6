@@ -152,8 +152,7 @@ pub unsafe fn virtio_disk_init() {
     // used = pages + 4096 -- 2 * u16, then num * vRingUsedElem
 
     DISK.desc = DISK.pages.as_mut_ptr() as *mut VRingDesc;
-    DISK.avail = (DISK.desc as *mut u8)
-        .add(NUM.wrapping_mul(::core::mem::size_of::<VRingDesc>()))
+    DISK.avail = (DISK.desc as *mut u8).add(NUM.wrapping_mul(::core::mem::size_of::<VRingDesc>()))
         as *mut u16;
     DISK.used = DISK.pages.as_mut_ptr().add(PGSIZE) as *mut UsedArea;
     for i in 0..NUM {
@@ -263,7 +262,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
 
     let fresh0 = &mut (*DISK.desc.offset(idx[1] as isize)).flags;
 
-    *fresh0 = *fresh0 | VRING_DESC_F_NEXT;
+    *fresh0 |= VRING_DESC_F_NEXT;
 
     (*DISK.desc.offset(idx[1] as isize)).next = idx[2] as u16;
 
@@ -309,7 +308,8 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
 }
 pub unsafe fn virtio_disk_intr() {
     DISK.vdisk_lock.acquire();
-    while (DISK.used_idx as usize).wrapping_rem(NUM) != ((*DISK.used).id as usize).wrapping_rem(NUM) {
+    while (DISK.used_idx as usize).wrapping_rem(NUM) != ((*DISK.used).id as usize).wrapping_rem(NUM)
+    {
         let id: usize = (*DISK.used).elems[DISK.used_idx as usize].id as usize;
         if DISK.info[id].status as i32 != 0 {
             panic(b"virtio_disk_intr status\x00" as *const u8 as *mut u8);
