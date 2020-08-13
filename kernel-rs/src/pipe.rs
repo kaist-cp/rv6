@@ -141,7 +141,7 @@ impl Pipe {
                 (*pi).writeopen = 1;
                 (*pi).nwrite = 0;
                 (*pi).nread = 0;
-                (*pi).lock.initlock(b"pipe\x00" as *const u8 as *mut u8);
+                (*pi).lock.initlock("pipe");
                 (**f0).typ = FD_PIPE;
                 (**f0).readable = 1;
                 (**f0).writable = 0;

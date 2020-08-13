@@ -35,7 +35,7 @@ impl Sleeplock {
     pub unsafe fn new(name: *mut u8) -> Self {
         let mut lk = Self::zeroed();
 
-        lk.lk.initlock(b"sleep lock\x00" as *const u8 as *mut u8);
+        lk.lk.initlock("sleep lock");
         lk.name = name;
         lk.locked = 0;
         lk.pid = 0;
@@ -44,9 +44,7 @@ impl Sleeplock {
     }
 
     pub fn initlock(&mut self, name: *mut u8) {
-        (*self)
-            .lk
-            .initlock(b"sleep lock\x00" as *const u8 as *mut u8);
+        (*self).lk.initlock("sleep lock");
         (*self).name = name;
         (*self).locked = 0;
         (*self).pid = 0;

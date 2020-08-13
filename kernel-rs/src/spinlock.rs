@@ -15,7 +15,7 @@ pub struct RawSpinlock {
     /// For debugging:
 
     /// Name of lock.
-    name: *mut u8,
+    name: &'static str,
 
     /// The cpu holding the lock.
     cpu: *mut Cpu,
@@ -26,13 +26,13 @@ impl RawSpinlock {
     pub const fn zeroed() -> Self {
         Self {
             locked: AtomicBool::new(false),
-            name: ptr::null_mut(),
+            name: "",
             cpu: ptr::null_mut(),
         }
     }
 
     /// Mutual exclusion spin locks.
-    pub fn initlock(&mut self, name: *mut u8) {
+    pub fn initlock(&mut self, name: &'static str) {
         (*self).name = name;
         (*self).locked = AtomicBool::new(false);
         (*self).cpu = ptr::null_mut();
@@ -117,7 +117,7 @@ pub struct Spinlock<T> {
 }
 
 impl<T> Spinlock<T> {
-    pub fn new(name: *mut u8, data: T) -> Self {
+    pub fn new(name: &'static str, data: T) -> Self {
         let mut lock = RawSpinlock::zeroed();
         lock.initlock(name);
         Self {

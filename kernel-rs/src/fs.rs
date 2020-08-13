@@ -608,7 +608,7 @@ unsafe fn bfree(dev: i32, b: u32) {
 static mut ICACHE: Icache = Icache::zeroed();
 
 pub unsafe fn iinit() {
-    ICACHE.lock.initlock(b"ICACHE\x00" as *const u8 as *mut u8);
+    ICACHE.lock.initlock("ICACHE");
     for i in 0..NINODE {
         (*ICACHE.inode.as_mut_ptr().add(i))
             .lock

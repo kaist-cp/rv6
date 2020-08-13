@@ -73,7 +73,7 @@ impl Buf {
 pub unsafe fn binit() {
     let bcache = BCACHE.get_mut();
 
-    bcache.lock.initlock(b"bcache\x00" as *const u8 as *mut u8);
+    bcache.lock.initlock("bcache");
 
     // Create linked list of buffers
     bcache.head.prev = &mut bcache.head;

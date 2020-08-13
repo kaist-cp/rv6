@@ -95,8 +95,7 @@ static mut DISK: Disk = Disk::zeroed();
 
 pub unsafe fn virtio_disk_init() {
     let mut status: u32 = 0;
-    DISK.vdisk_lock
-        .initlock(b"virtio_disk\x00" as *const u8 as *mut u8);
+    DISK.vdisk_lock.initlock("virtio_disk");
     if *(r(VIRTIO_MMIO_MAGIC_VALUE)) != 0x74726976
         || *(r(VIRTIO_MMIO_VERSION)) != 1
         || *(r(VIRTIO_MMIO_DEVICE_ID)) != 2

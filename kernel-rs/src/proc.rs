@@ -318,9 +318,9 @@ static mut PID_LOCK: RawSpinlock = RawSpinlock::zeroed();
 
 #[no_mangle]
 pub unsafe fn procinit() {
-    PID_LOCK.initlock(b"nextpid\x00" as *const u8 as *mut u8);
+    PID_LOCK.initlock("nextpid");
     for (i, p) in PROC.iter_mut().enumerate() {
-        p.lock.initlock(b"proc\x00" as *const u8 as *mut u8);
+        p.lock.initlock("proc");
 
         // Allocate a page for the process's kernel stack.
         // Map it high in memory, followed by an invalid
