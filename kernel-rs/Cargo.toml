@@ -13,11 +13,11 @@ test = []
 
 [profile.dev]
 panic = "abort"
-lto = true
 
 [profile.release]
 panic = "abort"
 lto = true
+debug = true
 
 [dependencies]
 bitflags = "1.2.1"
