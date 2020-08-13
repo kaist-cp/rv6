@@ -329,7 +329,7 @@ pub unsafe fn procinit() {
         if pa.is_null() {
             panic(b"kalloc\x00" as *const u8 as *mut u8);
         }
-        let va: usize = kstack(p.offset_from(PROC.as_mut_ptr()) as i64 as i32) as usize;
+        let va: usize = kstack(p.offset_from(PROC.as_mut_ptr()) as usize);
         kvmmap(va, pa as usize, PGSIZE, PTE_R | PTE_W);
         (*p).kstack = va;
         p = p.offset(1)
