@@ -51,7 +51,7 @@ struct Log {
 #[derive(Copy, Clone)]
 struct LogHeader {
     n: i32,
-    block: [i32; LOGSIZE as usize],
+    block: [i32; LOGSIZE],
 }
 
 impl Log {
@@ -66,7 +66,7 @@ impl Log {
             dev: 0,
             lh: LogHeader {
                 n: 0,
-                block: [0; LOGSIZE as usize],
+                block: [0; LOGSIZE],
             },
         }
     }
@@ -153,7 +153,7 @@ pub unsafe fn begin_op() {
     loop {
         if LOG.committing != 0 ||
             // this op might exhaust log space; wait for commit.
-            LOG.lh.n + (LOG.outstanding + 1) * MAXOPBLOCKS > LOGSIZE
+            LOG.lh.n + (LOG.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
         {
             sleep(&mut LOG as *mut Log as *mut libc::CVoid, &mut LOG.lock);
         } else {
@@ -243,7 +243,7 @@ unsafe fn commit() {
 ///   log_write(bp)
 ///   (*bp).release()
 pub unsafe fn log_write(b: *mut Buf) {
-    if LOG.lh.n >= LOGSIZE || LOG.lh.n >= LOG.size - 1 {
+    if LOG.lh.n >= LOGSIZE as i32 || LOG.lh.n >= LOG.size as i32 - 1 {
         panic(b"too big a transaction\x00" as *const u8 as *mut u8);
     }
     if LOG.outstanding < 1 {

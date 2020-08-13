@@ -24,13 +24,13 @@ pub const MAXARG: usize = 32;
 
 /// max # of blocks any FS op writes
 /// Will be handled in #31
-pub const MAXOPBLOCKS: i32 = 10;
+pub const MAXOPBLOCKS: usize = 10;
 
 /// max data blocks in on-disk log
-pub const LOGSIZE: i32 = MAXOPBLOCKS * 3;
+pub const LOGSIZE: usize = MAXOPBLOCKS * 3;
 
 /// size of disk block cache
-pub const NBUF: i32 = MAXOPBLOCKS * 3;
+pub const NBUF: i32 = MAXOPBLOCKS as i32 * 3;
 
 /// size of file system in blocks
 pub const FSSIZE: i32 = 1000;
