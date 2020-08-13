@@ -26,6 +26,7 @@ mod bio;
 mod buf;
 mod console;
 mod elf;
+mod etrace;
 mod exec;
 mod fcntl;
 mod file;

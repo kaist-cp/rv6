@@ -38,42 +38,36 @@ pub unsafe fn fetchstr(addr: usize, buf: *mut u8, max: i32) -> i32 {
 }
 
 unsafe fn argraw(n: i32) -> usize {
-    let p: *mut Proc = myproc();
+    let p = myproc();
     match n {
-        0 => return (*(*p).tf).a0,
-        1 => return (*(*p).tf).a1,
-        2 => return (*(*p).tf).a2,
-        3 => return (*(*p).tf).a3,
-        4 => return (*(*p).tf).a4,
-        5 => return (*(*p).tf).a5,
-        _ => {}
+        0 => (*(*p).tf).a0,
+        1 => (*(*p).tf).a1,
+        2 => (*(*p).tf).a2,
+        3 => (*(*p).tf).a3,
+        4 => (*(*p).tf).a4,
+        5 => (*(*p).tf).a5,
+        _ => panic!("argraw"),
     }
-    panic!("argraw");
 }
 
 /// Fetch the nth 32-bit system call argument.
-pub unsafe fn argint(n: i32, ip: *mut i32) -> i32 {
-    *ip = argraw(n) as i32;
-    0
+pub unsafe fn argint(n: i32) -> Result<i32, ()> {
+    Ok(argraw(n) as i32)
 }
 
 /// Retrieve an argument as a pointer.
 /// Doesn't check for legality, since
 /// copyin/copyout will do that.
-pub unsafe fn argaddr(n: i32, ip: *mut usize) -> i32 {
-    *ip = argraw(n);
-    0
+pub unsafe fn argaddr(n: i32) -> Result<usize, ()> {
+    Ok(argraw(n))
 }
 
 /// Fetch the nth word-sized system call argument as a null-terminated string.
 /// Copies into buf, at most max.
 /// Returns string length if OK (including nul), -1 if error.
-pub unsafe fn argstr(n: i32, buf: *mut u8, max: i32) -> i32 {
-    let mut addr: usize = 0;
-    if argaddr(n, &mut addr) < 0 {
-        return -1;
-    }
-    fetchstr(addr, buf, max)
+pub unsafe fn argstr(n: i32, buf: *mut u8, max: i32) -> Result<i32, ()> {
+    let addr = argaddr(n)?;
+    Ok(fetchstr(addr, buf, max))
 }
 
 static mut SYSCALLS: [Option<unsafe fn() -> usize>; 22] = [
