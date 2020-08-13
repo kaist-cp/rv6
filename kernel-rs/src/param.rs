@@ -30,7 +30,7 @@ pub const MAXOPBLOCKS: usize = 10;
 pub const LOGSIZE: usize = MAXOPBLOCKS * 3;
 
 /// size of disk block cache
-pub const NBUF: i32 = MAXOPBLOCKS as i32 * 3;
+pub const NBUF: usize = MAXOPBLOCKS * 3;
 
 /// size of file system in blocks
 pub const FSSIZE: i32 = 1000;
