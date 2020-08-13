@@ -88,5 +88,5 @@ unsafe fn timerinit() {
     w_mstatus(r_mstatus() | MSTATUS_MIE);
 
     // enable machine-mode timer interrupts.
-    w_mie(r_mie() | MIE_MTIE as usize);
+    w_mie(r_mie() | MIE_MTIE);
 }

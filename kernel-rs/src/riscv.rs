@@ -78,13 +78,13 @@ pub unsafe fn w_sip(x: usize) {
 /// Supervisor Interrupt Enable
 
 /// external
-pub const SIE_SEIE: i64 = (1) << 9;
+pub const SIE_SEIE: usize = (1) << 9;
 
 /// timer
-pub const SIE_STIE: i64 = (1) << 5;
+pub const SIE_STIE: usize = (1) << 5;
 
 /// software
-pub const SIE_SSIE: i64 = (1) << 1;
+pub const SIE_SSIE: usize = (1) << 1;
 
 #[inline]
 pub unsafe fn r_sie() -> usize {
@@ -101,13 +101,13 @@ pub unsafe fn w_sie(x: usize) {
 /// Machine-mode Interrupt Enable
 
 /// external
-pub const MIE_MEIE: i64 = (1) << 11;
+pub const MIE_MEIE: usize = (1) << 11;
 
 /// timer
-pub const MIE_MTIE: i64 = (1) << 7;
+pub const MIE_MTIE: usize = (1) << 7;
 
 /// software
-pub const MIE_MSIE: i64 = (1) << 3;
+pub const MIE_MSIE: usize = (1) << 3;
 #[inline]
 pub unsafe fn r_mie() -> usize {
     let mut x: usize;
@@ -253,7 +253,7 @@ pub unsafe fn r_time() -> u64 {
 /// enable device interrupts
 #[inline]
 pub unsafe fn intr_on() {
-    w_sie(r_sie() | SIE_SEIE as usize | SIE_STIE as usize | SIE_SSIE as usize);
+    w_sie(r_sie() | SIE_SEIE | SIE_STIE | SIE_SSIE);
     w_sstatus(r_sstatus() | SSTATUS_SIE);
 }
 
