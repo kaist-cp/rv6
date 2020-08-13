@@ -27,7 +27,7 @@ impl RawSpinlock {
     pub const fn init(name: *mut u8) -> Self {
         Self {
             locked: AtomicBool::new(false),
-            name: name,
+            name,
             cpu: ptr::null_mut(),
         }
     }
