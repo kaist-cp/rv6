@@ -322,14 +322,14 @@ pub const fn pgrounddown(a: usize) -> usize {
 }
 
 /// valid
-pub const PTE_V: i64 = (1) << 0;
+pub const PTE_V: usize = (1) << 0;
 
-pub const PTE_R: i64 = (1) << 1;
-pub const PTE_W: i64 = (1) << 2;
-pub const PTE_X: i64 = (1) << 3;
+pub const PTE_R: i32 = (1) << 1;
+pub const PTE_W: i32 = (1) << 2;
+pub const PTE_X: i32 = (1) << 3;
 
 /// 1 -> user can access
-pub const PTE_U: i64 = (1) << 4;
+pub const PTE_U: i32 = (1) << 4;
 
 /// shift a physical address to the right place for a PTE.
 #[inline]
