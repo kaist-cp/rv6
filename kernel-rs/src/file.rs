@@ -85,14 +85,12 @@ impl File {
     /// Allocate a file structure.
     pub unsafe fn alloc() -> *mut File {
         FTABLE.lock.acquire();
-        let mut f: *mut File = FTABLE.file.as_mut_ptr();
-        while f < FTABLE.file.as_mut_ptr().add(NFILE) {
+        for f in &mut FTABLE.file[..] {
             if (*f).ref_0 == 0 {
                 (*f).ref_0 = 1;
                 FTABLE.lock.release();
                 return f;
             }
-            f = f.offset(1)
         }
         FTABLE.lock.release();
         ptr::null_mut()

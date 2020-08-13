@@ -262,7 +262,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
 
     let fresh0 = &mut (*DISK.desc.offset(idx[1] as isize)).flags;
 
-    *fresh0 = *fresh0 | VRING_DESC_F_NEXT;
+    *fresh0 |= VRING_DESC_F_NEXT;
 
     (*DISK.desc.offset(idx[1] as isize)).next = idx[2] as u16;
 
