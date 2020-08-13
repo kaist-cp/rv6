@@ -49,7 +49,7 @@ pub unsafe fn trapinithart() {
 pub unsafe extern "C" fn usertrap() {
     let mut which_dev: i32 = 0;
 
-    if r_sstatus() & SSTATUS_SPP as usize != 0 {
+    if r_sstatus() & SSTATUS_SPP != 0 {
         panic(b"usertrap: not from user mode\x00" as *const u8 as *mut u8);
     }
 
@@ -138,10 +138,10 @@ pub unsafe fn usertrapret() {
     let mut x: usize = r_sstatus();
 
     // clear SPP to 0 for user mode
-    x &= !SSTATUS_SPP as usize;
+    x &= !SSTATUS_SPP;
 
     // enable interrupts in user mode
-    x |= SSTATUS_SPIE as usize;
+    x |= SSTATUS_SPIE;
     w_sstatus(x);
 
     // set S Exception Program Counter to the saved user pc.
@@ -168,7 +168,7 @@ pub unsafe fn kerneltrap() {
     let sstatus: usize = r_sstatus();
     let scause: usize = r_scause();
 
-    if sstatus & SSTATUS_SPP as usize == 0 {
+    if sstatus & SSTATUS_SPP == 0 {
         panic(b"kerneltrap: not from supervisor mode\x00" as *const u8 as *mut u8);
     }
 

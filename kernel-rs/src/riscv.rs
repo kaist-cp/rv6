@@ -38,19 +38,19 @@ pub unsafe fn w_mepc(x: usize) {
 /// Supervisor Status Register, sstatus
 
 /// Previous mode, 1=Supervisor, 0=User
-pub const SSTATUS_SPP: i64 = (1) << 8;
+pub const SSTATUS_SPP: usize = (1) << 8;
 
 /// Supervisor Previous Interrupt Enable
-pub const SSTATUS_SPIE: i64 = (1) << 5;
+pub const SSTATUS_SPIE: usize = (1) << 5;
 
 /// User Previous Interrupt Enable
-pub const SSTATUS_UPIE: i64 = (1) << 4;
+pub const SSTATUS_UPIE: usize = (1) << 4;
 
 /// Supervisor Interrupt Enable
-pub const SSTATUS_SIE: i64 = (1) << 1;
+pub const SSTATUS_SIE: usize = (1) << 1;
 
 /// User Interrupt Enable
-pub const SSTATUS_UIE: i64 = (1) << 0;
+pub const SSTATUS_UIE: usize = (1) << 0;
 
 #[inline]
 pub unsafe fn r_sstatus() -> usize {
@@ -254,20 +254,20 @@ pub unsafe fn r_time() -> u64 {
 #[inline]
 pub unsafe fn intr_on() {
     w_sie(r_sie() | SIE_SEIE as usize | SIE_STIE as usize | SIE_SSIE as usize);
-    w_sstatus(r_sstatus() | SSTATUS_SIE as usize);
+    w_sstatus(r_sstatus() | SSTATUS_SIE);
 }
 
 /// disable device interrupts
 #[inline]
 pub unsafe fn intr_off() {
-    w_sstatus(r_sstatus() & !SSTATUS_SIE as usize);
+    w_sstatus(r_sstatus() & !SSTATUS_SIE);
 }
 
 /// are device interrupts enabled?
 #[inline]
 pub unsafe fn intr_get() -> i32 {
     let x: usize = r_sstatus();
-    (x & SSTATUS_SIE as usize != 0) as i32
+    (x & SSTATUS_SIE != 0) as i32
 }
 
 /// read and write tp, the thread pointer, which holds
