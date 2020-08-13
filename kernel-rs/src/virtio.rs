@@ -77,7 +77,7 @@ pub const VIRTIO_RING_F_EVENT_IDX: i32 = 29;
 
 /// this many virtio descriptors.
 /// must be a power of two.
-pub const NUM: i32 = 8;
+pub const NUM: usize = 8;
 #[derive(Copy, Clone)]
 pub struct VRingDesc {
     pub addr: usize,
@@ -113,5 +113,5 @@ pub const VIRTIO_BLK_T_OUT: i32 = 1;
 pub struct UsedArea {
     pub flags: u16,
     pub id: u16,
-    pub elems: [VRingUsedElem; NUM as usize],
+    pub elems: [VRingUsedElem; NUM],
 }
