@@ -6,6 +6,7 @@ use crate::{
     sysproc::*,
     vm::{copyin, copyinstr},
 };
+use core::str;
 
 /// Fetch the usize at addr from the current process.
 pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
@@ -112,9 +113,9 @@ pub unsafe fn syscall() {
         (*(*p).tf).a0 = SYSCALLS[num as usize].expect("non-null function pointer")()
     } else {
         println!(
-            "{} {:p}: unknown sys call {}",
+            "{} {}: unknown sys call {}",
             (*p).pid,
-            (*p).name.as_mut_ptr(),
+            str::from_utf8(&(*p).name).unwrap_or("???"),
             num
         );
         (*(*p).tf).a0 = usize::MAX
