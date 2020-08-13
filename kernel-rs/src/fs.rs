@@ -610,9 +610,7 @@ static mut ICACHE: Icache = Icache::zeroed();
 pub unsafe fn iinit() {
     ICACHE.lock.initlock("ICACHE");
     for i in 0..NINODE {
-        (*ICACHE.inode.as_mut_ptr().add(i))
-            .lock
-            .initlock(b"inode\x00" as *const u8 as *mut u8);
+        (*ICACHE.inode.as_mut_ptr().add(i)).lock.initlock("inode");
     }
 }
 

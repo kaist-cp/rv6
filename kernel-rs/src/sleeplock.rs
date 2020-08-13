@@ -2,7 +2,6 @@
 use crate::libc;
 use crate::proc::{myproc, sleep, wakeup};
 use crate::spinlock::RawSpinlock;
-use core::ptr;
 
 /// Long-term locks for processes
 pub struct Sleeplock {
@@ -15,7 +14,7 @@ pub struct Sleeplock {
     /// For debugging:  
 
     /// Name of lock.
-    name: *mut u8,
+    name: &'static str,
 
     /// Process holding lock
     pid: i32,
@@ -27,12 +26,12 @@ impl Sleeplock {
         Self {
             locked: 0,
             lk: RawSpinlock::zeroed(),
-            name: ptr::null_mut(),
+            name: "",
             pid: 0,
         }
     }
 
-    pub unsafe fn new(name: *mut u8) -> Self {
+    pub unsafe fn new(name: &'static str) -> Self {
         let mut lk = Self::zeroed();
 
         lk.lk.initlock("sleep lock");
@@ -43,7 +42,7 @@ impl Sleeplock {
         lk
     }
 
-    pub fn initlock(&mut self, name: *mut u8) {
+    pub fn initlock(&mut self, name: &'static str) {
         (*self).lk.initlock("sleep lock");
         (*self).name = name;
         (*self).locked = 0;

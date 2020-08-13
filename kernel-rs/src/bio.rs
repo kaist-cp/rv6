@@ -81,7 +81,7 @@ pub unsafe fn binit() {
     for b in &mut bcache.buf[..] {
         (*b).next = bcache.head.next;
         (*b).prev = &mut bcache.head;
-        (*b).lock.initlock(b"buffer\x00" as *const u8 as *mut u8);
+        (*b).lock.initlock("buffer");
         (*bcache.head.next).prev = b;
         bcache.head.next = b;
     }
