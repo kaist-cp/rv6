@@ -68,7 +68,7 @@ pub unsafe fn freerange(pa_start: *mut libc::CVoid, pa_end: *mut libc::CVoid) {
 pub unsafe fn kfree(pa: *mut libc::CVoid) {
     if (pa as usize).wrapping_rem(PGSIZE as usize) != 0
         || (pa as *mut u8) < end.as_mut_ptr()
-        || pa as usize >= PHYSTOP as usize
+        || pa as usize >= PHYSTOP
     {
         panic(b"kfree\x00" as *const u8 as *mut u8);
     }

@@ -306,19 +306,19 @@ pub unsafe fn sfence_vma() {
 }
 
 /// bytes per page
-pub const PGSIZE: i32 = 4096;
+pub const PGSIZE: usize = 4096;
 
 /// bits of offset within a page
 pub const PGSHIFT: i32 = 12;
 
 #[inline]
 pub const fn pgroundup(sz: usize) -> usize {
-    sz.wrapping_add(PGSIZE as usize).wrapping_sub(1) & (!(PGSIZE - 1) as usize)
+    sz.wrapping_add(PGSIZE).wrapping_sub(1) & !PGSIZE.wrapping_sub(1)
 }
 
 #[inline]
 pub const fn pgrounddown(a: usize) -> usize {
-    a & !(PGSIZE - 1) as usize
+    a & !PGSIZE.wrapping_sub(1)
 }
 
 /// valid
@@ -366,7 +366,7 @@ pub fn px(level: i32, va: usize) -> usize {
 /// MAXVA is actually one bit less than the max allowed by
 /// Sv39, to avoid having to sign-extend virtual addresses
 /// that have the high bit set.
-pub const MAXVA: i64 = (1) << (9 + 9 + 9 + 12 - 1);
+pub const MAXVA: usize = (1) << (9 + 9 + 9 + 12 - 1);
 
 pub type PteT = usize;
 pub type PdeT = usize;

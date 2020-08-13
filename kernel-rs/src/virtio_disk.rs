@@ -20,7 +20,7 @@ use core::sync::atomic::{fence, Ordering};
 
 /// the address of virtio mmio register r.
 const fn r(r: i32) -> *mut u32 {
-    (VIRTIO0 + r) as *mut u32
+    VIRTIO0.wrapping_add(r as usize) as *mut u32
 }
 
 // It needs repr(C) because it's struct for in-disk representation
@@ -32,7 +32,7 @@ struct Disk {
     /// this is a global instead of allocated because it must
     /// be multiple contiguous pages, which kalloc()
     /// doesn't support, and page aligned.
-    pages: [u8; 2 * PGSIZE as usize],
+    pages: [u8; 2usize.wrapping_mul(PGSIZE)],
     desc: *mut VRingDesc,
     avail: *mut u16,
     used: *mut UsedArea,

@@ -115,7 +115,7 @@ pub unsafe fn usertrapret() {
 
     // send syscalls, interrupts, and exceptions to trampoline.S
     w_stvec(
-        (TRAMPOLINE + uservec.as_mut_ptr().offset_from(trampoline.as_mut_ptr()) as i64) as usize,
+        TRAMPOLINE.wrapping_add(uservec.as_mut_ptr().offset_from(trampoline.as_mut_ptr()) as usize),
     );
 
     // set up trapframe values that uservec will need when
@@ -125,7 +125,7 @@ pub unsafe fn usertrapret() {
     (*(*p).tf).kernel_satp = r_satp();
 
     // process's kernel stack
-    (*(*p).tf).kernel_sp = (*p).kstack.wrapping_add(PGSIZE as usize);
+    (*(*p).tf).kernel_sp = (*p).kstack.wrapping_add(PGSIZE);
     (*(*p).tf).kernel_trap = usertrap as usize;
 
     // hartid for cpuid()
@@ -154,9 +154,9 @@ pub unsafe fn usertrapret() {
     // switches to the user page table, restores user registers,
     // and switches to user mode with sret.
     let fn_0: usize =
-        (TRAMPOLINE + userret.as_mut_ptr().offset_from(trampoline.as_mut_ptr()) as i64) as usize;
+        TRAMPOLINE.wrapping_add(userret.as_mut_ptr().offset_from(trampoline.as_mut_ptr()) as usize);
     let fn_0 = mem::transmute::<usize, unsafe extern "C" fn(_: usize, _: usize) -> ()>(fn_0);
-    fn_0(TRAPFRAME as usize, satp);
+    fn_0(TRAPFRAME, satp);
 }
 
 /// interrupts and exceptions from kernel code go here via kernelvec,
@@ -214,12 +214,12 @@ pub unsafe fn devintr() -> i32 {
     let scause: usize = r_scause();
 
     if scause & 0x8000000000000000 != 0 && scause & 0xff == 9 {
-        // this is a supervisor external interrupt, via PLIC.
+        // this is a supervisor external interrupt, via .
 
         // irq indicates which device interrupted.
         let irq: i32 = plic_claim();
 
-        if irq == UART0_IRQ {
+        if irq == UART0_IRQ as i32 {
             uartintr();
         } else if irq == VIRTIO0_IRQ {
             virtio_disk_intr();
