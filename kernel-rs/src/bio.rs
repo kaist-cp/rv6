@@ -17,7 +17,7 @@ use core::mem::MaybeUninit;
 /// * Only one process at a time can use a buffer, so do not keep them longer than necessary.
 struct Bcache {
     lock: RawSpinlock,
-    buf: [Buf; NBUF as usize],
+    buf: [Buf; NBUF],
 
     // Linked list of all buffers, through prev/next.  head.next is most recently used.
     head: Buf,
@@ -81,7 +81,7 @@ pub unsafe fn binit() {
     bcache.head.prev = &mut bcache.head;
     bcache.head.next = &mut bcache.head;
     let mut b: *mut Buf = bcache.buf.as_mut_ptr();
-    while b < bcache.buf.as_mut_ptr().offset(NBUF as isize) {
+    while b < bcache.buf.as_mut_ptr().add(NBUF) {
         (*b).next = bcache.head.next;
         (*b).prev = &mut bcache.head;
         (*b).lock.initlock(b"buffer\x00" as *const u8 as *mut u8);
