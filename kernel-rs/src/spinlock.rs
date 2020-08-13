@@ -119,9 +119,10 @@ pub struct Spinlock<T> {
 
 impl<T> Spinlock<T> {
     pub fn new(name: *mut u8, data: T) -> Self {
-        let mut newlock: RawSpinlock;
+        let mut newlock = RawSpinlock::zeroed();
+        newlock.initlock(name);
         Self {
-            lock: newlock.initlock(name),
+            lock: newlock,
             data: UnsafeCell::new(data),
         }
     }
