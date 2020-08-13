@@ -64,8 +64,8 @@ pub const TRAMPOLINE: usize = MAXVA.wrapping_sub(PGSIZE);
 
 /// map kernel stacks beneath the trampoline,
 /// each surrounded by invalid guard pages.
-pub const fn kstack(p: i32) -> i64 {
-    TRAMPOLINE as i64 - ((p + 1) * 2 * PGSIZE as i32) as i64
+pub const fn kstack(p: usize) -> usize {
+    TRAMPOLINE - ((p + 1) * 2 * PGSIZE)
 }
 
 /// User memory layout.

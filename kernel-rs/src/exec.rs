@@ -169,7 +169,7 @@ pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
                     let mut last: *mut u8 = s;
                     while *s != 0 {
                         if *s as i32 == '/' as i32 {
-                            last = s.offset(1isize)
+                            last = s.offset(1)
                         }
                         s = s.offset(1)
                     }

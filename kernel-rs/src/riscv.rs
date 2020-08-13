@@ -182,10 +182,10 @@ pub unsafe fn w_mtvec(x: usize) {
 }
 
 /// use riscv's sv39 page table scheme.
-pub const SATP_SV39: i64 = (8) << 60;
+pub const SATP_SV39: usize = (8) << 60;
 
 pub const fn make_satp(pagetable: usize) -> usize {
-    SATP_SV39 as usize | pagetable >> 12
+    SATP_SV39 | pagetable >> 12
 }
 
 /// supervisor address translation and protection;
@@ -309,7 +309,7 @@ pub unsafe fn sfence_vma() {
 pub const PGSIZE: usize = 4096;
 
 /// bits of offset within a page
-pub const PGSHIFT: i32 = 12;
+pub const PGSHIFT: usize = 12;
 
 #[inline]
 pub const fn pgroundup(sz: usize) -> usize {
@@ -322,14 +322,14 @@ pub const fn pgrounddown(a: usize) -> usize {
 }
 
 /// valid
-pub const PTE_V: i64 = (1) << 0;
+pub const PTE_V: usize = (1) << 0;
 
-pub const PTE_R: i64 = (1) << 1;
-pub const PTE_W: i64 = (1) << 2;
-pub const PTE_X: i64 = (1) << 3;
+pub const PTE_R: i32 = (1) << 1;
+pub const PTE_W: i32 = (1) << 2;
+pub const PTE_X: i32 = (1) << 3;
 
 /// 1 -> user can access
-pub const PTE_U: i64 = (1) << 4;
+pub const PTE_U: i32 = (1) << 4;
 
 /// shift a physical address to the right place for a PTE.
 #[inline]
@@ -350,16 +350,16 @@ pub const fn pte_flags(pte: PteT) -> usize {
 /// extract the three 9-bit page table indices from a virtual address.
 
 /// 9 bits
-pub const PXMASK: i32 = 0x1ff;
+pub const PXMASK: usize = 0x1ff;
 
 #[inline]
-fn pxshift(level: i32) -> i32 {
+fn pxshift(level: usize) -> usize {
     PGSHIFT + 9 * level
 }
 
 #[inline]
-pub fn px(level: i32, va: usize) -> usize {
-    (va >> pxshift(level) as usize) & PXMASK as usize
+pub fn px(level: usize, va: usize) -> usize {
+    (va >> pxshift(level)) & PXMASK
 }
 
 /// one beyond the highest possible virtual address.

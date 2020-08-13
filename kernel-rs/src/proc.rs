@@ -328,8 +328,8 @@ pub unsafe fn procinit() {
         if pa.is_null() {
             panic(b"kalloc\x00" as *const u8 as *mut u8);
         }
-        let va: usize = kstack(i as _) as usize;
-        kvmmap(va, pa as usize, PGSIZE, (PTE_R | PTE_W) as i32);
+        let va: usize = kstack(i as _);
+        kvmmap(va, pa as usize, PGSIZE, PTE_R | PTE_W);
         p.kstack = va;
     }
     kvminithart();
@@ -438,7 +438,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PagetableT {
         TRAMPOLINE,
         PGSIZE,
         trampoline.as_mut_ptr() as usize,
-        (PTE_R | PTE_X) as i32,
+        PTE_R | PTE_X,
     );
 
     // map the trapframe just below TRAMPOLINE, for trampoline.S.
@@ -447,7 +447,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PagetableT {
         TRAPFRAME,
         PGSIZE,
         (*p).tf as usize,
-        (PTE_R | PTE_W) as i32,
+        PTE_R | PTE_W,
     );
     pagetable
 }
