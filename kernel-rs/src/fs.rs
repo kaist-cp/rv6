@@ -20,12 +20,13 @@ use crate::{
     printf::panic,
     proc::{either_copyin, either_copyout, myproc},
     sleeplock::Sleeplock,
-    spinlock::Spinlock,
+    // spinlock::RawSpinlock,
     stat::{Stat, T_DIR},
     string::{strncmp, strncpy},
 };
+use crate::spinlock::{ Spinlock };
 use core::mem;
-use core::ptr;
+use core::{ops::{DerefMut}, ptr};
 
 pub const FD_DEVICE: u32 = 3;
 pub const FD_INODE: u32 = 2;
@@ -166,16 +167,20 @@ struct Dinode {
 /// dev, and inum.  One must hold ip->lock in order to
 /// read or write that inode's ip->valid, ip->size, ip->type, &c.
 struct Icache {
-    lock: Spinlock,
-    inode: [Inode; NINODE as usize],
+    inode: Spinlock<[Inode; NINODE as usize]>,
 }
 
 impl Icache {
     // TODO: transient measure
+    // pub const fn zeroed() -> Self {
+    //     Self {
+    //         lock: Spinlock::zeroed(),
+    //         inode: [Inode::zeroed(); NINODE as usize],
+    //     }
+    // }
     pub const fn zeroed() -> Self {
         Self {
-            lock: Spinlock::zeroed(),
-            inode: [Inode::zeroed(); NINODE as usize],
+            inode: Spinlock::new( [Inode::zeroed(); NINODE as usize])
         }
     }
 }
@@ -206,9 +211,11 @@ impl Inode {
     /// Increment reference count for ip.
     /// Returns ip to enable ip = idup(ip1) idiom.
     pub unsafe fn idup(&mut self) -> *mut Self {
-        ICACHE.lock.acquire();
+        // ICACHE.lock.acquire();
+        let lockguard = ICACHE.inode.lock();
         self.ref_0 += 1;
-        ICACHE.lock.release();
+        // ICACHE.lock.release();
+        drop(lockguard);
         self
     }
 
@@ -257,7 +264,8 @@ impl Inode {
     /// All calls to Inode::put() must be inside a transaction in
     /// case it has to free the inode.
     pub unsafe fn put(&mut self) {
-        ICACHE.lock.acquire();
+        // ICACHE.lock.acquire();
+        let mut lockguard = ICACHE.inode.lock();
 
         if (*self).ref_0 == 1 && (*self).valid != 0 && (*self).nlink as i32 == 0 {
             // inode has no links and no other references: truncate and free.
@@ -266,7 +274,8 @@ impl Inode {
             // so this acquiresleep() won't block (or deadlock).
             (*self).lock.acquire();
 
-            ICACHE.lock.release();
+            // ICACHE.lock.release();
+            drop(lockguard);
 
             self.itrunc();
             (*self).typ = 0;
@@ -275,10 +284,10 @@ impl Inode {
 
             (*self).lock.release();
 
-            ICACHE.lock.acquire();
+            lockguard = ICACHE.inode.lock();
         }
         (*self).ref_0 -= 1;
-        ICACHE.lock.release();
+        drop(lockguard);
     }
 
     /// Common idiom: unlock, then put.
@@ -608,27 +617,31 @@ unsafe fn bfree(dev: i32, b: u32) {
 static mut ICACHE: Icache = Icache::zeroed();
 
 pub unsafe fn iinit() {
-    ICACHE.lock.initlock(b"ICACHE\x00" as *const u8 as *mut u8);
+    // ICACHE.lock.initlock(b"ICACHE\x00" as *const u8 as *mut u8);
+    ICACHE.inode.init_name(b"ICACHE\x00" as *const u8 as *mut u8);
+    let mut lockguard = ICACHE.inode.lock();
     for i in 0..NINODE {
-        (*ICACHE.inode.as_mut_ptr().offset(i as isize))
+        (*lockguard.deref_mut().as_mut_ptr().offset(i as isize))
             .lock
             .initlock(b"inode\x00" as *const u8 as *mut u8);
     }
+    drop(lockguard);  
 }
 
 /// Find the inode with number inum on device dev
 /// and return the in-memory copy. Does not lock
 /// the inode and does not read it from disk.
 unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
-    ICACHE.lock.acquire();
+    // ICACHE.lock.acquire();
+    let mut lockguard = ICACHE.inode.lock();
 
     // Is the inode already cached?
     let mut empty: *mut Inode = ptr::null_mut();
-    let mut ip: *mut Inode = &mut *ICACHE.inode.as_mut_ptr().offset(0) as *mut Inode;
-    while ip < &mut *ICACHE.inode.as_mut_ptr().offset(NINODE as isize) as *mut Inode {
+    let mut ip: *mut Inode = &mut *lockguard.deref_mut().as_mut_ptr().offset(0) as *mut Inode;
+    while ip < &mut *lockguard.deref_mut().as_mut_ptr().offset(NINODE as isize) as *mut Inode {
         if (*ip).ref_0 > 0 && (*ip).dev == dev && (*ip).inum == inum {
             (*ip).ref_0 += 1;
-            ICACHE.lock.release();
+            drop(lockguard);
             return ip;
         }
         if empty.is_null() && (*ip).ref_0 == 0 {
@@ -647,7 +660,7 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
     (*ip).inum = inum;
     (*ip).ref_0 = 1;
     (*ip).valid = 0;
-    ICACHE.lock.release();
+    drop(lockguard);
     ip
 }
 
