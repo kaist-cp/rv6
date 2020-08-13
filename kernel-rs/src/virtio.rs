@@ -10,70 +10,70 @@
 // from qemu virtio_mmio.h
 
 /// 0x74726976
-pub const VIRTIO_MMIO_MAGIC_VALUE: i32 = 0x000;
+pub const VIRTIO_MMIO_MAGIC_VALUE: usize = 0x000;
 
 /// version; 1 is legacy
-pub const VIRTIO_MMIO_VERSION: i32 = 0x004;
+pub const VIRTIO_MMIO_VERSION: usize = 0x004;
 
 /// device type; 1 is net, 2 is disk
-pub const VIRTIO_MMIO_DEVICE_ID: i32 = 0x008;
+pub const VIRTIO_MMIO_DEVICE_ID: usize = 0x008;
 
 /// 0x554d4551
-pub const VIRTIO_MMIO_VENDOR_ID: i32 = 0x00c;
+pub const VIRTIO_MMIO_VENDOR_ID: usize = 0x00c;
 
-pub const VIRTIO_MMIO_DEVICE_FEATURES: i32 = 0x010;
+pub const VIRTIO_MMIO_DEVICE_FEATURES: usize = 0x010;
 
-pub const VIRTIO_MMIO_DRIVER_FEATURES: i32 = 0x020;
+pub const VIRTIO_MMIO_DRIVER_FEATURES: usize = 0x020;
 
 /// page size for PFN, write-only
-pub const VIRTIO_MMIO_GUEST_PAGE_SIZE: i32 = 0x028;
+pub const VIRTIO_MMIO_GUEST_PAGE_SIZE: usize = 0x028;
 
 /// select queue, write-only
-pub const VIRTIO_MMIO_QUEUE_SEL: i32 = 0x030;
+pub const VIRTIO_MMIO_QUEUE_SEL: usize = 0x030;
 
 /// max size of current queue, read-only
-pub const VIRTIO_MMIO_QUEUE_NUM_MAX: i32 = 0x034;
+pub const VIRTIO_MMIO_QUEUE_NUM_MAX: usize = 0x034;
 
 /// size of current queue, write-only
-pub const VIRTIO_MMIO_QUEUE_NUM: i32 = 0x038;
+pub const VIRTIO_MMIO_QUEUE_NUM: usize = 0x038;
 
 /// physical page number for queue, read/write
-pub const VIRTIO_MMIO_QUEUE_PFN: i32 = 0x040;
+pub const VIRTIO_MMIO_QUEUE_PFN: usize = 0x040;
 
 /// ready bit
-pub const VIRTIO_MMIO_QUEUE_READY: i32 = 0x044;
+pub const VIRTIO_MMIO_QUEUE_READY: usize = 0x044;
 
 /// write-only
-pub const VIRTIO_MMIO_QUEUE_NOTIFY: i32 = 0x050;
+pub const VIRTIO_MMIO_QUEUE_NOTIFY: usize = 0x050;
 
 /// read/write
-pub const VIRTIO_MMIO_STATUS: i32 = 0x070;
+pub const VIRTIO_MMIO_STATUS: usize = 0x070;
 
 /// status register bits, from qemu virtio_config.h
-pub const VIRTIO_CONFIG_S_ACKNOWLEDGE: i32 = 1;
-pub const VIRTIO_CONFIG_S_DRIVER: i32 = 2;
-pub const VIRTIO_CONFIG_S_DRIVER_OK: i32 = 4;
-pub const VIRTIO_CONFIG_S_FEATURES_OK: i32 = 8;
+pub const VIRTIO_CONFIG_S_ACKNOWLEDGE: u32 = 1;
+pub const VIRTIO_CONFIG_S_DRIVER: u32 = 2;
+pub const VIRTIO_CONFIG_S_DRIVER_OK: u32 = 4;
+pub const VIRTIO_CONFIG_S_FEATURES_OK: u32 = 8;
 
 /// device feature bits
 
 /// Disk is read-only
-pub const VIRTIO_BLK_F_RO: i32 = 5;
+pub const VIRTIO_BLK_F_RO: u32 = 5;
 
 /// Supports scsi command passthru
-pub const VIRTIO_BLK_F_SCSI: i32 = 7;
+pub const VIRTIO_BLK_F_SCSI: u32 = 7;
 
 /// Writeback mode available in config
-pub const VIRTIO_BLK_F_CONFIG_WCE: i32 = 11;
+pub const VIRTIO_BLK_F_CONFIG_WCE: u32 = 11;
 
 /// support more than one vq
-pub const VIRTIO_BLK_F_MQ: i32 = 12;
+pub const VIRTIO_BLK_F_MQ: u32 = 12;
 
-pub const VIRTIO_F_ANY_LAYOUT: i32 = 27;
+pub const VIRTIO_F_ANY_LAYOUT: u32 = 27;
 
-pub const VIRTIO_RING_F_INDIRECT_DESC: i32 = 28;
+pub const VIRTIO_RING_F_INDIRECT_DESC: u32 = 28;
 
-pub const VIRTIO_RING_F_EVENT_IDX: i32 = 29;
+pub const VIRTIO_RING_F_EVENT_IDX: u32 = 29;
 
 /// this many virtio descriptors.
 /// must be a power of two.
@@ -87,10 +87,10 @@ pub struct VRingDesc {
 }
 
 /// chained with another descriptor
-pub const VRING_DESC_F_NEXT: i32 = 1;
+pub const VRING_DESC_F_NEXT: u16= 1;
 
 /// device writes (vs read)
-pub const VRING_DESC_F_WRITE: i32 = 2;
+pub const VRING_DESC_F_WRITE: u16 = 2;
 #[derive(Copy, Clone)]
 pub struct VRingUsedElem {
     /// index of start of completed descriptor chain
@@ -101,10 +101,10 @@ pub struct VRingUsedElem {
 
 /// for disk ops
 /// read the disk
-pub const VIRTIO_BLK_T_IN: i32 = 0;
+pub const VIRTIO_BLK_T_IN: u32 = 0;
 
 /// write the disk
-pub const VIRTIO_BLK_T_OUT: i32 = 1;
+pub const VIRTIO_BLK_T_OUT: u32 = 1;
 #[derive(Copy, Clone)]
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation

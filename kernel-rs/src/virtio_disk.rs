@@ -19,8 +19,8 @@ use core::ptr;
 use core::sync::atomic::{fence, Ordering};
 
 /// the address of virtio mmio register r.
-const fn r(r: i32) -> *mut u32 {
-    VIRTIO0.wrapping_add(r as usize) as *mut u32
+const fn r(r: usize) -> *mut u32 {
+    VIRTIO0.wrapping_add(r) as *mut u32
 }
 
 // It needs repr(C) because it's struct for in-disk representation
@@ -105,9 +105,9 @@ pub unsafe fn virtio_disk_init() {
     {
         panic(b"could not find virtio disk\x00" as *const u8 as *mut u8);
     }
-    status |= VIRTIO_CONFIG_S_ACKNOWLEDGE as u32;
+    status |= VIRTIO_CONFIG_S_ACKNOWLEDGE;
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status);
-    status |= VIRTIO_CONFIG_S_DRIVER as u32;
+    status |= VIRTIO_CONFIG_S_DRIVER;
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status);
 
     // negotiate features
@@ -123,11 +123,11 @@ pub unsafe fn virtio_disk_init() {
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_DRIVER_FEATURES), features);
 
     // tell device that feature negotiation is complete.
-    status |= VIRTIO_CONFIG_S_FEATURES_OK as u32;
+    status |= VIRTIO_CONFIG_S_FEATURES_OK;
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status);
 
     // tell device we're completely ready.
-    status |= VIRTIO_CONFIG_S_DRIVER_OK as u32;
+    status |= VIRTIO_CONFIG_S_DRIVER_OK;
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status);
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_GUEST_PAGE_SIZE), PGSIZE as u32);
 
@@ -153,11 +153,11 @@ pub unsafe fn virtio_disk_init() {
 
     DISK.desc = DISK.pages.as_mut_ptr() as *mut VRingDesc;
     DISK.avail = (DISK.desc as *mut u8)
-        .add((NUM as usize).wrapping_mul(::core::mem::size_of::<VRingDesc>()))
+        .add(NUM.wrapping_mul(::core::mem::size_of::<VRingDesc>()))
         as *mut u16;
-    DISK.used = DISK.pages.as_mut_ptr().offset(PGSIZE as isize) as *mut UsedArea;
+    DISK.used = DISK.pages.as_mut_ptr().add(PGSIZE) as *mut UsedArea;
     for i in 0..NUM {
-        DISK.free[i as usize] = 1;
+        DISK.free[i] = 1;
     }
 
     // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
@@ -191,7 +191,7 @@ unsafe fn free_desc(i: i32) {
 unsafe fn free_chain(mut i: i32) {
     loop {
         free_desc(i);
-        if (*DISK.desc.offset(i as isize)).flags as i32 & VRING_DESC_F_NEXT == 0 {
+        if (*DISK.desc.offset(i as isize)).flags & VRING_DESC_F_NEXT == 0 {
             break;
         }
         i = (*DISK.desc.offset(i as isize)).next as i32
@@ -237,10 +237,10 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
 
     if write != 0 {
         // write the disk
-        buf0.typ = VIRTIO_BLK_T_OUT as u32
+        buf0.typ = VIRTIO_BLK_T_OUT
     } else {
         // read the disk
-        buf0.typ = VIRTIO_BLK_T_IN as u32
+        buf0.typ = VIRTIO_BLK_T_IN
     }
     buf0.reserved = 0;
     buf0.sector = sector;
@@ -249,7 +249,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
     // thus the call to kvmpa().
     (*DISK.desc.offset(idx[0] as isize)).addr = kvmpa(&mut buf0 as *mut virtio_blk_outhdr as usize);
     (*DISK.desc.offset(idx[0] as isize)).len = ::core::mem::size_of::<virtio_blk_outhdr>() as u32;
-    (*DISK.desc.offset(idx[0] as isize)).flags = VRING_DESC_F_NEXT as u16;
+    (*DISK.desc.offset(idx[0] as isize)).flags = VRING_DESC_F_NEXT;
     (*DISK.desc.offset(idx[0] as isize)).next = idx[1] as u16;
     (*DISK.desc.offset(idx[1] as isize)).addr = (*b).data.as_mut_ptr() as usize;
     (*DISK.desc.offset(idx[1] as isize)).len = BSIZE as u32;
@@ -263,7 +263,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
 
     let fresh0 = &mut (*DISK.desc.offset(idx[1] as isize)).flags;
 
-    *fresh0 = (*fresh0 as i32 | VRING_DESC_F_NEXT) as u16;
+    *fresh0 = *fresh0 | VRING_DESC_F_NEXT;
 
     (*DISK.desc.offset(idx[1] as isize)).next = idx[2] as u16;
 
@@ -278,7 +278,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
     (*DISK.desc.offset(idx[2] as isize)).len = 1;
 
     // device writes the status
-    (*DISK.desc.offset(idx[2] as isize)).flags = VRING_DESC_F_WRITE as u16;
+    (*DISK.desc.offset(idx[2] as isize)).flags = VRING_DESC_F_WRITE;
 
     (*DISK.desc.offset(idx[2] as isize)).next = 0;
 
