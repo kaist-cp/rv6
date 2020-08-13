@@ -122,7 +122,7 @@ impl<T> Spinlock<T> {
         let mut lock = RawSpinlock::zeroed();
         lock.initlock(name);
         Self {
-            lock: lock,
+            lock,
             data: UnsafeCell::new(data),
         }
     }
@@ -191,8 +191,6 @@ pub unsafe fn pop_off() {
         intr_on();
     };
 }
-
-
 
 /// Mutual exclusion lock.
 pub struct OldSpinlock {
@@ -291,4 +289,3 @@ impl OldSpinlock {
         r
     }
 }
-
