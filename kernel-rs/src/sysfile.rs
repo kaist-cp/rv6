@@ -125,7 +125,9 @@ pub unsafe fn sys_link() -> usize {
     let mut name: [libc::CChar; DIRSIZ] = [0; DIRSIZ];
     let mut new: [libc::CChar; MAXPATH] = [0; MAXPATH];
     let mut old: [libc::CChar; MAXPATH] = [0; MAXPATH];
-    if argstr(0, old.as_mut_ptr(), MAXPATH as i32) < 0 || argstr(1, new.as_mut_ptr(), MAXPATH as i32) < 0 {
+    if argstr(0, old.as_mut_ptr(), MAXPATH as i32) < 0
+        || argstr(1, new.as_mut_ptr(), MAXPATH as i32) < 0
+    {
         return usize::MAX;
     }
     begin_op();

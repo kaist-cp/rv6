@@ -28,7 +28,9 @@ pub const VIRTIO0_IRQ: i32 = 1;
 /// local interrupt controller, which contains the timer.
 pub const CLINT: usize = 0x2000000;
 pub const fn clint_mtimecmp(hartid: usize) -> usize {
-    CLINT.wrapping_add(0x4000).wrapping_add(hartid.wrapping_mul(8))
+    CLINT
+        .wrapping_add(0x4000)
+        .wrapping_add(hartid.wrapping_mul(8))
 }
 
 /// cycles since boot.
@@ -38,13 +40,16 @@ pub const CLINT_MTIME: usize = CLINT.wrapping_add(0xbff8);
 pub const PLIC: usize = 0xc000000;
 pub const PLIC_PENDING: usize = PLIC.wrapping_add(0x1000);
 pub const fn plic_senable(hart: i32) -> usize {
-    PLIC.wrapping_add(0x2080).wrapping_add((hart as usize).wrapping_mul(0x100))
+    PLIC.wrapping_add(0x2080)
+        .wrapping_add((hart as usize).wrapping_mul(0x100))
 }
 pub const fn plic_spriority(hart: i32) -> usize {
-    PLIC.wrapping_add(0x201000).wrapping_add((hart as usize).wrapping_mul(0x2000))
+    PLIC.wrapping_add(0x201000)
+        .wrapping_add((hart as usize).wrapping_mul(0x2000))
 }
 pub const fn plic_sclaim(hart: i32) -> usize {
-    PLIC.wrapping_add(0x201004).wrapping_add((hart as usize).wrapping_mul(0x2000))
+    PLIC.wrapping_add(0x201004)
+        .wrapping_add((hart as usize).wrapping_mul(0x2000))
 }
 
 /// the kernel expects there to be RAM

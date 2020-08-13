@@ -36,28 +36,13 @@ pub unsafe fn kvminit() {
     kvmmap(UART0, UART0, PGSIZE, (PTE_R | PTE_W) as i32);
 
     // virtio mmio disk interface
-    kvmmap(
-        VIRTIO0,
-        VIRTIO0,
-        PGSIZE,
-        (PTE_R | PTE_W) as i32,
-    );
+    kvmmap(VIRTIO0, VIRTIO0, PGSIZE, (PTE_R | PTE_W) as i32);
 
     // CLINT
-    kvmmap(
-        CLINT,
-        CLINT,
-        0x10000,
-        (PTE_R | PTE_W) as i32,
-    );
+    kvmmap(CLINT, CLINT, 0x10000, (PTE_R | PTE_W) as i32);
 
     // PLIC
-    kvmmap(
-        PLIC,
-        PLIC,
-        0x400000,
-        (PTE_R | PTE_W) as i32,
-    );
+    kvmmap(PLIC, PLIC, 0x400000, (PTE_R | PTE_W) as i32);
 
     // map kernel text executable and read-only.
     kvmmap(

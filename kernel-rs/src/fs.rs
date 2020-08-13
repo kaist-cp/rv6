@@ -187,8 +187,8 @@ impl Inode {
     /// Caller must hold ip->lock.
     pub unsafe fn update(&mut self) {
         let bp: *mut Buf = bread(self.dev, SB.iblock(self.inum));
-        let mut dip: *mut Dinode = ((*bp).data.as_mut_ptr() as *mut Dinode)
-            .add((self.inum as usize).wrapping_rem(IPB));
+        let mut dip: *mut Dinode =
+            ((*bp).data.as_mut_ptr() as *mut Dinode).add((self.inum as usize).wrapping_rem(IPB));
         (*dip).typ = self.typ;
         (*dip).major = self.major;
         (*dip).minor = self.minor;
@@ -456,8 +456,8 @@ impl Inode {
     pub unsafe fn alloc(dev: u32, typ: i16) -> *mut Inode {
         for inum in 1..SB.ninodes {
             let bp = bread(dev, SB.iblock(inum));
-            let dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-                .add((inum as usize).wrapping_rem(IPB));
+            let dip =
+                ((*bp).data.as_mut_ptr() as *mut Dinode).add((inum as usize).wrapping_rem(IPB));
 
             // a free inode
             if (*dip).typ as i32 == 0 {
@@ -511,7 +511,8 @@ pub const IPB: usize = BSIZE.wrapping_div(mem::size_of::<Dinode>());
 impl Superblock {
     /// Block containing inode i
     const fn iblock(self, i: u32) -> u32 {
-        i.wrapping_div(IPB as u32).wrapping_add(self.inodestart as u32)
+        i.wrapping_div(IPB as u32)
+            .wrapping_add(self.inodestart as u32)
     }
 
     /// Block of free map containing bit for block b
