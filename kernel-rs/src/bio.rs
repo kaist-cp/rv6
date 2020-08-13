@@ -1,6 +1,5 @@
-use crate::libc;
 use crate::{
-    buf::Buf, param::NBUF, printf::panic, spinlock::Spinlock, virtio_disk::virtio_disk_rw,
+    buf::Buf, param::NBUF, printf::panic, spinlock::RawSpinlock, virtio_disk::virtio_disk_rw,
 };
 use core::mem::MaybeUninit;
 
@@ -17,7 +16,7 @@ use core::mem::MaybeUninit;
 /// * Do not use the buffer after calling release.
 /// * Only one process at a time can use a buffer, so do not keep them longer than necessary.
 struct Bcache {
-    lock: Spinlock,
+    lock: RawSpinlock,
     buf: [Buf; NBUF as usize],
 
     // Linked list of all buffers, through prev/next.  head.next is most recently used.
@@ -30,7 +29,7 @@ impl Buf {
     /// Write self's contents to disk.  Must be locked.
     pub unsafe fn write(&mut self) {
         if (*self).lock.holding() == 0 {
-            panic(b"bwrite\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+            panic(b"bwrite\x00" as *const u8 as *mut u8);
         }
         virtio_disk_rw(self, 1);
     }
@@ -41,7 +40,7 @@ impl Buf {
         let bcache = BCACHE.get_mut();
 
         if (*self).lock.holding() == 0 {
-            panic(b"release\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+            panic(b"release\x00" as *const u8 as *mut u8);
         }
         (*self).lock.release();
         bcache.lock.acquire();
@@ -76,9 +75,7 @@ impl Buf {
 pub unsafe fn binit() {
     let bcache = BCACHE.get_mut();
 
-    bcache
-        .lock
-        .initlock(b"bcache\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+    bcache.lock.initlock(b"bcache\x00" as *const u8 as *mut u8);
 
     // Create linked list of buffers
     bcache.head.prev = &mut bcache.head;
@@ -87,8 +84,7 @@ pub unsafe fn binit() {
     while b < bcache.buf.as_mut_ptr().offset(NBUF as isize) {
         (*b).next = bcache.head.next;
         (*b).prev = &mut bcache.head;
-        (*b).lock
-            .initlock(b"buffer\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        (*b).lock.initlock(b"buffer\x00" as *const u8 as *mut u8);
         (*bcache.head.next).prev = b;
         bcache.head.next = b;
         b = b.offset(1)
@@ -129,7 +125,7 @@ unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
         }
         b = (*b).prev
     }
-    panic(b"bget: no buffers\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+    panic(b"bget: no buffers\x00" as *const u8 as *mut u8);
 }
 
 /// Return a locked buf with the contents of the indicated block.

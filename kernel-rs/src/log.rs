@@ -28,12 +28,12 @@ use crate::{
     param::{LOGSIZE, MAXOPBLOCKS},
     printf::panic,
     proc::{sleep, wakeup},
-    spinlock::Spinlock,
+    spinlock::RawSpinlock,
 };
 use core::ptr;
 
 struct Log {
-    lock: Spinlock,
+    lock: RawSpinlock,
     start: i32,
     size: i32,
 
@@ -58,7 +58,7 @@ impl Log {
     // TODO: transient measure
     const fn zeroed() -> Self {
         Self {
-            lock: Spinlock::zeroed(),
+            lock: RawSpinlock::zeroed(),
             start: 0,
             size: 0,
             outstanding: 0,
@@ -77,13 +77,9 @@ static mut LOG: Log = Log::zeroed();
 impl Superblock {
     pub unsafe fn initlog(&mut self, dev: i32) {
         if ::core::mem::size_of::<LogHeader>() >= BSIZE {
-            panic(
-                b"initlog: too big LogHeader\x00" as *const u8 as *const libc::CChar
-                    as *mut libc::CChar,
-            );
+            panic(b"initlog: too big LogHeader\x00" as *const u8 as *mut u8);
         }
-        LOG.lock
-            .initlock(b"LOG\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        LOG.lock.initlock(b"LOG\x00" as *const u8 as *mut u8);
         LOG.start = (*self).logstart as i32;
         LOG.size = (*self).nlog as i32;
         LOG.dev = dev;
@@ -175,7 +171,7 @@ pub unsafe fn end_op() {
     LOG.lock.acquire();
     LOG.outstanding -= 1;
     if LOG.committing != 0 {
-        panic(b"LOG.committing\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        panic(b"LOG.committing\x00" as *const u8 as *mut u8);
     }
     if LOG.outstanding == 0 {
         do_commit = 1;
@@ -248,13 +244,10 @@ unsafe fn commit() {
 ///   (*bp).release()
 pub unsafe fn log_write(b: *mut Buf) {
     if LOG.lh.n >= LOGSIZE || LOG.lh.n >= LOG.size - 1 {
-        panic(b"too big a transaction\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        panic(b"too big a transaction\x00" as *const u8 as *mut u8);
     }
     if LOG.outstanding < 1 {
-        panic(
-            b"log_write outside of trans\x00" as *const u8 as *const libc::CChar
-                as *mut libc::CChar,
-        );
+        panic(b"log_write outside of trans\x00" as *const u8 as *mut u8);
     }
     LOG.lock.acquire();
     let mut absorbed = false;

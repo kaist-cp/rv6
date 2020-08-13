@@ -3,7 +3,7 @@ use crate::{
     file::{CONSOLE, DEVSW},
     printf::PANICKED,
     proc::{either_copyin, either_copyout, myproc, procdump, sleep, wakeup},
-    spinlock::Spinlock,
+    spinlock::RawSpinlock,
     uart::{uartinit, uartputc},
 };
 
@@ -11,8 +11,8 @@ use crate::{
 const INPUT_BUF: usize = 128;
 
 struct Console {
-    lock: Spinlock,
-    buf: [libc::CChar; 128],
+    lock: RawSpinlock,
+    buf: [u8; 128],
 
     /// Read index
     r: u32,
@@ -28,7 +28,7 @@ impl Console {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            lock: Spinlock::zeroed(),
+            lock: RawSpinlock::zeroed(),
             buf: [0; INPUT_BUF],
             r: 0,
             w: 0,
@@ -74,9 +74,9 @@ static mut CONS: Console = Console::zeroed();
 unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
     CONS.lock.acquire();
     for i in 0..n {
-        let mut c: libc::CChar = 0;
+        let mut c: u8 = 0;
         if either_copyin(
-            &mut c as *mut libc::CChar as *mut libc::CVoid,
+            &mut c as *mut u8 as *mut libc::CVoid,
             user_src,
             src.wrapping_add(i as usize),
             1usize,
@@ -121,11 +121,11 @@ unsafe fn consoleread(user_dst: i32, mut dst: usize, mut n: i32) -> i32 {
             break;
         } else {
             // copy the input byte to the user-space buffer.
-            let mut cbuf = cin as libc::CChar;
+            let mut cbuf = cin as u8;
             if either_copyout(
                 user_dst,
                 dst,
-                &mut cbuf as *mut libc::CChar as *mut libc::CVoid,
+                &mut cbuf as *mut u8 as *mut libc::CVoid,
                 1usize,
             ) == -1
             {
@@ -184,7 +184,7 @@ pub unsafe fn consoleintr(mut cin: i32) {
                 // store for consumption by consoleread().
                 let fresh1 = CONS.e;
                 CONS.e = CONS.e.wrapping_add(1);
-                CONS.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = cin as libc::CChar;
+                CONS.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = cin as u8;
                 if cin == '\n' as i32
                     || cin == ctrl('D')
                     || CONS.e == CONS.r.wrapping_add(INPUT_BUF as u32)
@@ -201,8 +201,7 @@ pub unsafe fn consoleintr(mut cin: i32) {
 }
 
 pub unsafe fn consoleinit() {
-    CONS.lock
-        .initlock(b"CONS\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+    CONS.lock.initlock(b"CONS\x00" as *const u8 as *mut u8);
     uartinit();
 
     // connect read and write system calls

@@ -1,5 +1,4 @@
 //! Support functions for system calls that involve file descriptors.
-use crate::libc;
 use crate::{
     fs::{stati, BSIZE},
     log::{begin_op, end_op},
@@ -8,7 +7,7 @@ use crate::{
     printf::panic,
     proc::{myproc, Proc},
     sleeplock::Sleeplock,
-    spinlock::Spinlock,
+    spinlock::RawSpinlock,
     stat::Stat,
     vm::copyout,
 };
@@ -23,8 +22,8 @@ pub struct File {
     /// reference count
     ref_0: i32,
 
-    pub readable: libc::CChar,
-    pub writable: libc::CChar,
+    pub readable: u8,
+    pub writable: u8,
 
     /// FD_PIPE
     pub pipe: *mut Pipe,
@@ -71,7 +70,7 @@ pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
 
 struct Ftable {
-    lock: Spinlock,
+    lock: RawSpinlock,
     file: [File; NFILE],
 }
 
@@ -103,7 +102,7 @@ impl File {
     pub unsafe fn dup(&mut self) -> *mut File {
         FTABLE.lock.acquire();
         if (*self).ref_0 < 1 {
-            panic(b"File::dup\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+            panic(b"File::dup\x00" as *const u8 as *mut u8);
         }
         (*self).ref_0 += 1;
         FTABLE.lock.release();
@@ -114,7 +113,7 @@ impl File {
     pub unsafe fn close(&mut self) {
         FTABLE.lock.acquire();
         if (*self).ref_0 < 1 {
-            panic(b"File::close\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+            panic(b"File::close\x00" as *const u8 as *mut u8);
         }
         (*self).ref_0 -= 1;
         if (*self).ref_0 > 0 {
@@ -150,7 +149,7 @@ impl File {
             if copyout(
                 (*p).pagetable,
                 addr,
-                &mut st as *mut Stat as *mut libc::CChar,
+                &mut st as *mut Stat as *mut u8,
                 ::core::mem::size_of::<Stat>() as usize,
             ) < 0
             {
@@ -189,7 +188,7 @@ impl File {
             (*(*self).ip).unlock();
             r
         } else {
-            panic(b"File::read\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+            panic(b"File::read\x00" as *const u8 as *mut u8);
         }
     }
 
@@ -238,10 +237,7 @@ impl File {
                     break;
                 }
                 if r != n1 {
-                    panic(
-                        b"short File::write\x00" as *const u8 as *const libc::CChar
-                            as *mut libc::CChar,
-                    );
+                    panic(b"short File::write\x00" as *const u8 as *mut u8);
                 }
                 i += r
             }
@@ -251,7 +247,7 @@ impl File {
                 -1
             }
         } else {
-            panic(b"File::write\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+            panic(b"File::write\x00" as *const u8 as *mut u8);
         }
     }
 
@@ -274,7 +270,7 @@ impl Ftable {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            lock: Spinlock::zeroed(),
+            lock: RawSpinlock::zeroed(),
             file: [File::zeroed(); NFILE],
         }
     }
@@ -289,7 +285,5 @@ pub static mut DEVSW: [Devsw; NDEV as usize] = [Devsw {
 static mut FTABLE: Ftable = Ftable::zeroed();
 
 pub unsafe fn fileinit() {
-    FTABLE
-        .lock
-        .initlock(b"FTABLE\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+    FTABLE.lock.initlock(b"FTABLE\x00" as *const u8 as *mut u8);
 }

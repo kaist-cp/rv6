@@ -1,7 +1,7 @@
 //! Sleeping locks
 use crate::libc;
 use crate::proc::{myproc, sleep, wakeup};
-use crate::spinlock::Spinlock;
+use crate::spinlock::RawSpinlock;
 use core::ptr;
 
 /// Long-term locks for processes
@@ -10,12 +10,12 @@ pub struct Sleeplock {
     locked: u32,
 
     /// spinlock protecting this sleep lock
-    lk: Spinlock,
+    lk: RawSpinlock,
 
     /// For debugging:  
 
     /// Name of lock.
-    name: *mut libc::CChar,
+    name: *mut u8,
 
     /// Process holding lock
     pid: i32,
@@ -26,17 +26,16 @@ impl Sleeplock {
     pub const fn zeroed() -> Self {
         Self {
             locked: 0,
-            lk: Spinlock::zeroed(),
+            lk: RawSpinlock::zeroed(),
             name: ptr::null_mut(),
             pid: 0,
         }
     }
 
-    pub unsafe fn new(name: *mut libc::CChar) -> Self {
+    pub unsafe fn new(name: *mut u8) -> Self {
         let mut lk = Self::zeroed();
 
-        lk.lk
-            .initlock(b"sleep lock\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+        lk.lk.initlock(b"sleep lock\x00" as *const u8 as *mut u8);
         lk.name = name;
         lk.locked = 0;
         lk.pid = 0;
@@ -44,10 +43,10 @@ impl Sleeplock {
         lk
     }
 
-    pub fn initlock(&mut self, name: *mut libc::CChar) {
+    pub fn initlock(&mut self, name: *mut u8) {
         (*self)
             .lk
-            .initlock(b"sleep lock\x00" as *const u8 as *const libc::CChar as *mut libc::CChar);
+            .initlock(b"sleep lock\x00" as *const u8 as *mut u8);
         (*self).name = name;
         (*self).locked = 0;
         (*self).pid = 0;
