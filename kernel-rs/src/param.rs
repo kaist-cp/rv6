@@ -14,7 +14,7 @@ pub const NFILE: usize = 100;
 pub const NINODE: usize = 50;
 
 /// maximum major device number
-pub const NDEV: i32 = 10;
+pub const NDEV: usize = 10;
 
 /// device number of file system root disk
 pub const ROOTDEV: i32 = 1;

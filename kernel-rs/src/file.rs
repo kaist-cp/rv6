@@ -170,8 +170,8 @@ impl File {
         if (*self).typ == FD_PIPE {
             (*(*self).pipe).read(addr, n)
         } else if (*self).typ == FD_DEVICE {
-            if ((*self).major as i32) < 0
-                || (*self).major as i32 >= NDEV
+            if ((*self).major) < 0
+                || (*self).major as usize >= NDEV
                 || DEVSW[(*self).major as usize].read.is_none()
             {
                 return -1;
@@ -201,8 +201,8 @@ impl File {
         if (*self).typ as u32 == FD_PIPE {
             (*(*self).pipe).write(addr, n)
         } else if (*self).typ == FD_DEVICE {
-            if ((*self).major as i32) < 0
-                || (*self).major as i32 >= NDEV
+            if ((*self).major) < 0
+                || (*self).major as usize >= NDEV
                 || DEVSW[(*self).major as usize].write.is_none()
             {
                 return -1;
@@ -277,10 +277,10 @@ impl Ftable {
 }
 
 /// Support functions for system calls that involve file descriptors.
-pub static mut DEVSW: [Devsw; NDEV as usize] = [Devsw {
+pub static mut DEVSW: [Devsw; NDEV] = [Devsw {
     read: None,
     write: None,
-}; NDEV as usize];
+}; NDEV];
 
 static mut FTABLE: Ftable = Ftable::zeroed();
 
