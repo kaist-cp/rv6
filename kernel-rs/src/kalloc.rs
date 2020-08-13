@@ -4,7 +4,6 @@
 use crate::libc;
 use crate::{
     memlayout::PHYSTOP,
-    printf::panic,
     riscv::{pgroundup, PGSIZE},
     spinlock::RawSpinlock,
 };
@@ -42,11 +41,6 @@ static mut KMEM: Kmem = Kmem::zeroed();
 pub unsafe fn kinit() {
     KMEM.lock.initlock(b"KMEM\x00" as *const u8 as *mut u8);
 
-    // TODO: without this strange code, the kernel doesn't boot up.  Probably stack is not properly
-    // initialized at the beginning...
-    let protection = 0;
-    drop(protection);
-
     freerange(
         end.as_mut_ptr() as *mut libc::CVoid,
         PHYSTOP as *mut libc::CVoid,
@@ -70,7 +64,7 @@ pub unsafe fn kfree(pa: *mut libc::CVoid) {
         || (pa as *mut u8) < end.as_mut_ptr()
         || pa as usize >= PHYSTOP
     {
-        panic(b"kfree\x00" as *const u8 as *mut u8);
+        panic!("kfree");
     }
 
     // Fill with junk to catch dangling refs.

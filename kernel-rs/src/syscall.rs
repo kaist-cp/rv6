@@ -1,5 +1,4 @@
 use crate::{
-    printf::panic,
     println,
     proc::{myproc, Proc},
     string::strlen,
@@ -48,7 +47,7 @@ unsafe fn argraw(n: i32) -> usize {
         5 => return (*(*p).tf).a5,
         _ => {}
     }
-    panic(b"argraw\x00" as *const u8 as *mut u8);
+    panic!("argraw");
 }
 
 /// Fetch the nth 32-bit system call argument.

@@ -1,6 +1,5 @@
 use crate::{
     libc,
-    printf::panic,
     proc::{exit, fork, growproc, kill, myproc, sleep, wait},
     syscall::{argaddr, argint},
     trap::{TICKS, TICKSLOCK},
@@ -13,7 +12,7 @@ pub unsafe fn sys_exit() -> usize {
     }
     exit(n);
 
-    panic(b"sys_exit: not reached\x00" as *const u8 as *mut u8);
+    panic!("sys_exit: not reached");
 }
 
 pub unsafe fn sys_getpid() -> usize {
