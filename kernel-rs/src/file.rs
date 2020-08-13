@@ -7,7 +7,7 @@ use crate::{
     printf::panic,
     proc::{myproc, Proc},
     sleeplock::Sleeplock,
-    spinlock::RawSpinlock,
+    spinlock::Spinlock,
     stat::Stat,
     vm::copyout,
 };
@@ -70,8 +70,7 @@ pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
 
 struct Ftable {
-    lock: RawSpinlock,
-    file: [File; NFILE],
+    file: Spinlock<[File; NFILE]>,
 }
 
 /// map major device number to device functions.
@@ -84,46 +83,42 @@ pub struct Devsw {
 impl File {
     /// Allocate a file structure.
     pub unsafe fn alloc() -> *mut File {
-        FTABLE.lock.acquire();
-        let mut f: *mut File = FTABLE.file.as_mut_ptr();
-        while f < FTABLE.file.as_mut_ptr().add(NFILE) {
+        let mut file = FTABLE.file.lock();
+        let mut f: *mut File = file.as_mut_ptr();
+        while f < file.as_mut_ptr().add(NFILE) {
             if (*f).ref_0 == 0 {
                 (*f).ref_0 = 1;
-                FTABLE.lock.release();
                 return f;
             }
             f = f.offset(1)
         }
-        FTABLE.lock.release();
         ptr::null_mut()
     }
 
     /// Increment ref count for file self.
     pub unsafe fn dup(&mut self) -> *mut File {
-        FTABLE.lock.acquire();
+        FTABLE.file.lock();
         if (*self).ref_0 < 1 {
             panic(b"File::dup\x00" as *const u8 as *mut u8);
         }
         (*self).ref_0 += 1;
-        FTABLE.lock.release();
         self
     }
 
     /// Close file self.  (Decrement ref count, close when reaches 0.)
     pub unsafe fn close(&mut self) {
-        FTABLE.lock.acquire();
+        let file = FTABLE.file.lock();
         if (*self).ref_0 < 1 {
             panic(b"File::close\x00" as *const u8 as *mut u8);
         }
         (*self).ref_0 -= 1;
         if (*self).ref_0 > 0 {
-            FTABLE.lock.release();
             return;
         }
         let ff: File = *self;
         (*self).ref_0 = 0;
         (*self).typ = FD_NONE;
-        FTABLE.lock.release();
+        drop(file);
         if ff.typ as u32 == FD_PIPE as i32 as u32 {
             (*ff.pipe).close(ff.writable as i32);
         } else if ff.typ as u32 == FD_INODE as i32 as u32
@@ -270,8 +265,10 @@ impl Ftable {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            lock: RawSpinlock::zeroed(),
-            file: [File::zeroed(); NFILE],
+            file: Spinlock::new(
+                b"FTABLE\x00" as *const u8 as *mut u8,
+                [File::zeroed(); NFILE],
+            ),
         }
     }
 }
@@ -283,7 +280,3 @@ pub static mut DEVSW: [Devsw; NDEV as usize] = [Devsw {
 }; NDEV as usize];
 
 static mut FTABLE: Ftable = Ftable::zeroed();
-
-pub unsafe fn fileinit() {
-    FTABLE.lock.initlock(b"FTABLE\x00" as *const u8 as *mut u8);
-}
