@@ -4,7 +4,7 @@ use crate::{
     fs::FD_PIPE,
     kalloc::{kalloc, kfree},
     proc::{myproc, sleep, wakeup, Proc},
-    spinlock::Spinlock,
+    spinlock::RawSpinlock,
     vm::{copyin, copyout},
 };
 use core::ptr;
@@ -12,7 +12,7 @@ use core::ptr;
 pub const PIPESIZE: i32 = 512;
 
 pub struct Pipe {
-    pub lock: Spinlock,
+    pub lock: RawSpinlock,
     pub data: [u8; PIPESIZE as usize],
 
     /// number of bytes read

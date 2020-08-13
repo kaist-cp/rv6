@@ -1,5 +1,5 @@
 use crate::{
-    buf::Buf, param::NBUF, printf::panic, spinlock::Spinlock, virtio_disk::virtio_disk_rw,
+    buf::Buf, param::NBUF, printf::panic, spinlock::RawSpinlock, virtio_disk::virtio_disk_rw,
 };
 use core::mem::MaybeUninit;
 
@@ -16,7 +16,7 @@ use core::mem::MaybeUninit;
 /// * Do not use the buffer after calling release.
 /// * Only one process at a time can use a buffer, so do not keep them longer than necessary.
 struct Bcache {
-    lock: Spinlock,
+    lock: RawSpinlock,
     buf: [Buf; NBUF as usize],
 
     // Linked list of all buffers, through prev/next.  head.next is most recently used.

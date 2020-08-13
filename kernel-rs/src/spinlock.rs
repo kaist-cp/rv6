@@ -24,6 +24,15 @@ pub struct RawSpinlock {
 
 impl RawSpinlock {
     // TODO: transient measure
+    pub const fn init(name: *mut u8) -> Self {
+        Self {
+            locked: AtomicBool::new(false),
+            name: name,
+            cpu: ptr::null_mut(),
+        }
+    }
+
+    // will remove after refactor
     pub const fn zeroed() -> Self {
         Self {
             locked: AtomicBool::new(false),
@@ -118,15 +127,11 @@ pub struct Spinlock<T> {
 }
 
 impl<T> Spinlock<T> {
-    pub const fn new(data: T) -> Self {
+    pub const fn new(name: *mut u8, data: T) -> Self {
         Self {
-            lock: RawSpinlock::zeroed(),
+            lock: RawSpinlock::init(name),
             data: UnsafeCell::new(data),
         }
-    }
-
-    pub fn init_name(&mut self, name: *mut u8){
-        self.lock.initlock(name);
     }
 
     pub fn into_inner(self) -> T {

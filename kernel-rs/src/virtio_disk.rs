@@ -11,7 +11,7 @@ use crate::{
     printf::panic,
     proc::{sleep, wakeup},
     riscv::{PGSHIFT, PGSIZE},
-    spinlock::Spinlock,
+    spinlock::RawSpinlock,
     virtio::*,
     vm::kvmpa,
 };
@@ -20,7 +20,7 @@ use core::sync::atomic::{fence, Ordering};
 
 /// the address of virtio mmio register r.
 const fn r(r: i32) -> *mut u32 {
-    (VIRTIO0 + r) as *mut u32
+    VIRTIO0.wrapping_add(r as usize) as *mut u32
 }
 
 // It needs repr(C) because it's struct for in-disk representation
@@ -32,7 +32,7 @@ struct Disk {
     /// this is a global instead of allocated because it must
     /// be multiple contiguous pages, which kalloc()
     /// doesn't support, and page aligned.
-    pages: [u8; 2 * PGSIZE as usize],
+    pages: [u8; 2usize.wrapping_mul(PGSIZE)],
     desc: *mut VRingDesc,
     avail: *mut u16,
     used: *mut UsedArea,
@@ -46,7 +46,7 @@ struct Disk {
     /// indexed by first descriptor index of chain.
     info: [InflightInfo; NUM as usize],
 
-    vdisk_lock: Spinlock,
+    vdisk_lock: RawSpinlock,
 }
 
 #[derive(Copy, Clone)]
@@ -77,7 +77,7 @@ impl Disk {
             free: [0; NUM as usize],
             used_idx: 0,
             info: [InflightInfo::zeroed(); NUM as usize],
-            vdisk_lock: Spinlock::zeroed(),
+            vdisk_lock: RawSpinlock::zeroed(),
         }
     }
 }

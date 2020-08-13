@@ -7,13 +7,13 @@ use crate::{
     printf::panic,
     proc::{myproc, Proc},
     sleeplock::Sleeplock,
-    spinlock::Spinlock,
+    spinlock::RawSpinlock,
     stat::Stat,
     vm::copyout,
 };
 use core::ptr;
 
-pub const CONSOLE: isize = 1;
+pub const CONSOLE: usize = 1;
 
 #[derive(Copy, Clone)]
 pub struct File {
@@ -70,8 +70,8 @@ pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
 
 struct Ftable {
-    lock: Spinlock,
-    file: [File; NFILE as usize],
+    lock: RawSpinlock,
+    file: [File; NFILE],
 }
 
 /// map major device number to device functions.
@@ -86,7 +86,7 @@ impl File {
     pub unsafe fn alloc() -> *mut File {
         FTABLE.lock.acquire();
         let mut f: *mut File = FTABLE.file.as_mut_ptr();
-        while f < FTABLE.file.as_mut_ptr().offset(NFILE as isize) {
+        while f < FTABLE.file.as_mut_ptr().add(NFILE) {
             if (*f).ref_0 == 0 {
                 (*f).ref_0 = 1;
                 FTABLE.lock.release();
@@ -217,7 +217,7 @@ impl File {
             // and 2 blocks of slop for non-aligned writes.
             // this really belongs lower down, since write()
             // might be writing a device like the console.
-            let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
+            let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * (BSIZE as i32);
             let mut i: i32 = 0;
             while i < n {
                 let mut n1: i32 = n - i;
@@ -270,8 +270,8 @@ impl Ftable {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            lock: Spinlock::zeroed(),
-            file: [File::zeroed(); NFILE as usize],
+            lock: RawSpinlock::zeroed(),
+            file: [File::zeroed(); NFILE],
         }
     }
 }

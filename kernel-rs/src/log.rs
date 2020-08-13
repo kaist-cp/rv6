@@ -28,12 +28,12 @@ use crate::{
     param::{LOGSIZE, MAXOPBLOCKS},
     printf::panic,
     proc::{sleep, wakeup},
-    spinlock::Spinlock,
+    spinlock::RawSpinlock,
 };
 use core::ptr;
 
 struct Log {
-    lock: Spinlock,
+    lock: RawSpinlock,
     start: i32,
     size: i32,
 
@@ -58,7 +58,7 @@ impl Log {
     // TODO: transient measure
     const fn zeroed() -> Self {
         Self {
-            lock: Spinlock::zeroed(),
+            lock: RawSpinlock::zeroed(),
             start: 0,
             size: 0,
             outstanding: 0,
@@ -76,7 +76,7 @@ static mut LOG: Log = Log::zeroed();
 
 impl Superblock {
     pub unsafe fn initlog(&mut self, dev: i32) {
-        if ::core::mem::size_of::<LogHeader>() >= BSIZE as usize {
+        if ::core::mem::size_of::<LogHeader>() >= BSIZE {
             panic(b"initlog: too big LogHeader\x00" as *const u8 as *mut u8);
         }
         LOG.lock.initlock(b"LOG\x00" as *const u8 as *mut u8);
@@ -100,7 +100,7 @@ unsafe fn install_trans() {
         ptr::copy(
             (*lbuf).data.as_mut_ptr() as *const libc::CVoid,
             (*dbuf).data.as_mut_ptr() as *mut libc::CVoid,
-            BSIZE as usize,
+            BSIZE,
         );
 
         // write dst to disk
@@ -206,7 +206,7 @@ unsafe fn write_log() {
         ptr::copy(
             (*from).data.as_mut_ptr() as *const libc::CVoid,
             (*to).data.as_mut_ptr() as *mut libc::CVoid,
-            BSIZE as usize,
+            BSIZE,
         );
 
         // write the log

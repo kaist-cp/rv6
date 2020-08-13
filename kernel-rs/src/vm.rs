@@ -30,40 +30,25 @@ pub static mut KERNEL_PAGETABLE: PagetableT = ptr::null_mut();
 /// the page allocator is already initialized.
 pub unsafe fn kvminit() {
     KERNEL_PAGETABLE = kalloc() as PagetableT;
-    ptr::write_bytes(KERNEL_PAGETABLE as *mut libc::CVoid, 0, PGSIZE as usize);
+    ptr::write_bytes(KERNEL_PAGETABLE as *mut libc::CVoid, 0, PGSIZE);
 
     // uart registers
-    kvmmap(UART0, UART0, PGSIZE as usize, (PTE_R | PTE_W) as i32);
+    kvmmap(UART0, UART0, PGSIZE, (PTE_R | PTE_W) as i32);
 
     // virtio mmio disk interface
-    kvmmap(
-        VIRTIO0 as usize,
-        VIRTIO0 as usize,
-        PGSIZE as usize,
-        (PTE_R | PTE_W) as i32,
-    );
+    kvmmap(VIRTIO0, VIRTIO0, PGSIZE, (PTE_R | PTE_W) as i32);
 
     // CLINT
-    kvmmap(
-        CLINT as usize,
-        CLINT as usize,
-        0x10000,
-        (PTE_R | PTE_W) as i32,
-    );
+    kvmmap(CLINT, CLINT, 0x10000, (PTE_R | PTE_W) as i32);
 
     // PLIC
-    kvmmap(
-        PLIC as usize,
-        PLIC as usize,
-        0x400000,
-        (PTE_R | PTE_W) as i32,
-    );
+    kvmmap(PLIC, PLIC, 0x400000, (PTE_R | PTE_W) as i32);
 
     // map kernel text executable and read-only.
     kvmmap(
-        KERNBASE as usize,
-        KERNBASE as usize,
-        (etext.as_mut_ptr() as usize).wrapping_sub(KERNBASE as usize),
+        KERNBASE,
+        KERNBASE,
+        (etext.as_mut_ptr() as usize).wrapping_sub(KERNBASE),
         (PTE_R | PTE_X) as i32,
     );
 
@@ -71,16 +56,16 @@ pub unsafe fn kvminit() {
     kvmmap(
         etext.as_mut_ptr() as usize,
         etext.as_mut_ptr() as usize,
-        (PHYSTOP as usize).wrapping_sub(etext.as_mut_ptr() as usize),
+        (PHYSTOP).wrapping_sub(etext.as_mut_ptr() as usize),
         (PTE_R | PTE_W) as i32,
     );
 
     // map the trampoline for trap entry/exit to
     // the highest virtual address in the kernel.
     kvmmap(
-        TRAMPOLINE as usize,
+        TRAMPOLINE,
         trampoline.as_mut_ptr() as usize,
-        PGSIZE as usize,
+        PGSIZE,
         (PTE_R | PTE_X) as i32,
     );
 }
@@ -105,7 +90,7 @@ pub unsafe fn kvminithart() {
 ///   12..20 -- 9 bits of level-0 index.
 ///    0..12 -- 12 bits of byte offset within the page.
 unsafe fn walk(mut pagetable: PagetableT, va: usize, alloc: i32) -> *mut PteT {
-    if va >= MAXVA as usize {
+    if va >= MAXVA {
         panic(b"walk\x00" as *const u8 as *mut u8);
     }
     for level in (1..3).rev() {
@@ -119,7 +104,7 @@ unsafe fn walk(mut pagetable: PagetableT, va: usize, alloc: i32) -> *mut PteT {
             } {
                 return ptr::null_mut();
             }
-            ptr::write_bytes(pagetable as *mut libc::CVoid, 0, PGSIZE as usize);
+            ptr::write_bytes(pagetable as *mut libc::CVoid, 0, PGSIZE);
             *pte = pa2pte(pagetable as usize) | PTE_V as usize
         }
     }
@@ -130,7 +115,7 @@ unsafe fn walk(mut pagetable: PagetableT, va: usize, alloc: i32) -> *mut PteT {
 /// or 0 if not mapped.
 /// Can only be used to look up user pages.
 pub unsafe fn walkaddr(pagetable: PagetableT, va: usize) -> usize {
-    if va >= MAXVA as usize {
+    if va >= MAXVA {
         return 0;
     }
     let pte: *mut PteT = walk(pagetable, va, 0);
@@ -161,7 +146,7 @@ pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
 /// addresses on the stack.
 /// assumes va is page aligned.
 pub unsafe fn kvmpa(va: usize) -> usize {
-    let off: usize = va.wrapping_rem(PGSIZE as usize);
+    let off: usize = va.wrapping_rem(PGSIZE);
     let pte: *mut PteT = walk(KERNEL_PAGETABLE, va, 0);
     if pte.is_null() {
         panic(b"kvmpa\x00" as *const u8 as *mut u8);
@@ -198,8 +183,8 @@ pub unsafe fn mappages(
         if a == last {
             break;
         }
-        a = a.wrapping_add(PGSIZE as usize);
-        pa = pa.wrapping_add(PGSIZE as usize);
+        a = a.wrapping_add(PGSIZE);
+        pa = pa.wrapping_add(PGSIZE);
     }
     0
 }
@@ -231,8 +216,8 @@ pub unsafe fn uvmunmap(pagetable: PagetableT, va: usize, size: usize, do_free: i
         if a == last {
             break;
         }
-        a = a.wrapping_add(PGSIZE as usize);
-        pa = pa.wrapping_add(PGSIZE as usize);
+        a = a.wrapping_add(PGSIZE);
+        pa = pa.wrapping_add(PGSIZE);
     }
 }
 
@@ -242,7 +227,7 @@ pub unsafe fn uvmcreate() -> PagetableT {
     if pagetable.is_null() {
         panic(b"uvmcreate: out of memory\x00" as *const u8 as *mut u8);
     }
-    ptr::write_bytes(pagetable as *mut libc::CVoid, 0, PGSIZE as usize);
+    ptr::write_bytes(pagetable as *mut libc::CVoid, 0, PGSIZE);
     pagetable
 }
 
@@ -254,11 +239,11 @@ pub unsafe fn uvminit(pagetable: PagetableT, src: *mut u8, sz: u32) {
         panic(b"inituvm: more than a page\x00" as *const u8 as *mut u8);
     }
     let mem: *mut u8 = kalloc() as *mut u8;
-    ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE as usize);
+    ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
     mappages(
         pagetable,
         0,
-        PGSIZE as usize,
+        PGSIZE,
         mem as usize,
         (PTE_W | PTE_R | PTE_X | PTE_U) as i32,
     );
@@ -283,11 +268,11 @@ pub unsafe fn uvmalloc(pagetable: PagetableT, mut oldsz: usize, newsz: usize) ->
             uvmdealloc(pagetable, a, oldsz);
             return 0;
         }
-        ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE as usize);
+        ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
         if mappages(
             pagetable,
             a,
-            PGSIZE as usize,
+            PGSIZE,
             mem as usize,
             (PTE_W | PTE_X | PTE_R | PTE_U) as i32,
         ) != 0
@@ -296,7 +281,7 @@ pub unsafe fn uvmalloc(pagetable: PagetableT, mut oldsz: usize, newsz: usize) ->
             uvmdealloc(pagetable, a, oldsz);
             return 0;
         }
-        a = a.wrapping_add(PGSIZE as usize);
+        a = a.wrapping_add(PGSIZE);
     }
     newsz
 }
@@ -372,14 +357,14 @@ pub unsafe fn uvmcopy(old: PagetableT, new: PagetableT, sz: usize) -> i32 {
         ptr::copy(
             pa as *mut u8 as *const libc::CVoid,
             mem as *mut libc::CVoid,
-            PGSIZE as usize,
+            PGSIZE,
         );
-        if mappages(new, i, PGSIZE as usize, mem as usize, flags as i32) != 0 {
+        if mappages(new, i, PGSIZE, mem as usize, flags as i32) != 0 {
             kfree(mem as *mut libc::CVoid);
             current_block = 9000140654394160520;
             break;
         } else {
-            i = i.wrapping_add(PGSIZE as usize);
+            i = i.wrapping_add(PGSIZE);
         }
     }
     match current_block {
@@ -416,7 +401,7 @@ pub unsafe fn copyout(
         if pa0 == 0 {
             return -1;
         }
-        let mut n = (PGSIZE as usize).wrapping_sub(dstva.wrapping_sub(va0));
+        let mut n = PGSIZE.wrapping_sub(dstva.wrapping_sub(va0));
         if n > len {
             n = len
         }
@@ -427,7 +412,7 @@ pub unsafe fn copyout(
         );
         len = len.wrapping_sub(n);
         src = src.add(n);
-        dstva = va0.wrapping_add(PGSIZE as usize);
+        dstva = va0.wrapping_add(PGSIZE);
     }
     0
 }
@@ -447,7 +432,7 @@ pub unsafe fn copyin(
         if pa0 == 0 {
             return -1;
         }
-        let mut n = (PGSIZE as usize).wrapping_sub(srcva.wrapping_sub(va0));
+        let mut n = PGSIZE.wrapping_sub(srcva.wrapping_sub(va0));
         if n > len {
             n = len
         }
@@ -458,7 +443,7 @@ pub unsafe fn copyin(
         );
         len = len.wrapping_sub(n);
         dst = dst.add(n);
-        srcva = va0.wrapping_add(PGSIZE as usize)
+        srcva = va0.wrapping_add(PGSIZE)
     }
     0
 }
@@ -480,7 +465,7 @@ pub unsafe fn copyinstr(
         if pa0 == 0 {
             return -1;
         }
-        let mut n = (PGSIZE as usize).wrapping_sub(srcva.wrapping_sub(va0));
+        let mut n = PGSIZE.wrapping_sub(srcva.wrapping_sub(va0));
         if n > max {
             n = max
         }
@@ -498,7 +483,7 @@ pub unsafe fn copyinstr(
                 dst = dst.offset(1)
             }
         }
-        srcva = va0.wrapping_add(PGSIZE as usize)
+        srcva = va0.wrapping_add(PGSIZE)
     }
     if got_null != 0 {
         0
