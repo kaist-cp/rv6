@@ -153,7 +153,7 @@ pub unsafe fn begin_op() {
     loop {
         if LOG.committing != 0 ||
             // this op might exhaust log space; wait for commit.
-            LOG.lh.n + (LOG.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
+            LOG.lh.n + (LOG.outstanding + 1) * MAXOPBLOCKS > LOGSIZE as i32
         {
             sleep(&mut LOG as *mut Log as *mut libc::CVoid, &mut LOG.lock);
         } else {
