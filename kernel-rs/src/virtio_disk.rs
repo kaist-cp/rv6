@@ -166,9 +166,9 @@ pub unsafe fn virtio_disk_init() {
 /// find a free descriptor, mark it non-free, return its index.
 unsafe fn alloc_desc() -> i32 {
     for i in 0..NUM {
-        if DISK.free[i as usize] != 0 {
-            DISK.free[i as usize] = 0;
-            return i;
+        if DISK.free[i] != 0 {
+            DISK.free[i] = 0;
+            return i as i32;
         }
     }
     -1
@@ -176,7 +176,7 @@ unsafe fn alloc_desc() -> i32 {
 
 /// mark a descriptor as free.
 unsafe fn free_desc(i: i32) {
-    if i >= NUM {
+    if i >= NUM as i32 {
         panic(b"virtio_disk_intr 1\x00" as *const u8 as *mut u8);
     }
     if DISK.free[i as usize] != 0 {
@@ -292,9 +292,9 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
     // we only tell device the first index in our chain of descriptors.
     *DISK
         .avail
-        .offset((2 + *DISK.avail.offset(1isize) as i32 % NUM) as isize) = idx[0] as u16;
+        .add(((*DISK.avail.add(1) as usize).wrapping_rem(NUM)).wrapping_add(2)) = idx[0] as u16;
     fence(Ordering::SeqCst);
-    *DISK.avail.offset(1isize) = (*DISK.avail.offset(1isize) as i32 + 1) as u16;
+    *DISK.avail.add(1) = (*DISK.avail.add(1) as i32 + 1) as u16;
 
     // value is queue number
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_NOTIFY), 0);
@@ -309,17 +309,17 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
 }
 pub unsafe fn virtio_disk_intr() {
     DISK.vdisk_lock.acquire();
-    while DISK.used_idx as i32 % NUM != (*DISK.used).id as i32 % NUM {
-        let id: i32 = (*DISK.used).elems[DISK.used_idx as usize].id as i32;
-        if DISK.info[id as usize].status as i32 != 0 {
+    while (DISK.used_idx as usize).wrapping_rem(NUM) != ((*DISK.used).id as usize).wrapping_rem(NUM) {
+        let id: usize = (*DISK.used).elems[DISK.used_idx as usize].id as usize;
+        if DISK.info[id].status as i32 != 0 {
             panic(b"virtio_disk_intr status\x00" as *const u8 as *mut u8);
         }
-        (*DISK.info[id as usize].b).disk = 0;
+        (*DISK.info[id].b).disk = 0;
 
         // disk is done with Buf
-        wakeup(DISK.info[id as usize].b as *mut libc::CVoid);
+        wakeup(DISK.info[id].b as *mut libc::CVoid);
 
-        DISK.used_idx = ((DISK.used_idx as i32 + 1) % NUM) as u16
+        DISK.used_idx = (DISK.used_idx.wrapping_add(1)).wrapping_rem(NUM as u16)
     }
     DISK.vdisk_lock.release();
 }
