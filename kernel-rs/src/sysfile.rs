@@ -323,7 +323,7 @@ pub unsafe fn sys_open() -> usize {
             return usize::MAX;
         }
     }
-    if (*ip).typ as i32 == T_DEVICE && (((*ip).major as i32) < 0 || (*ip).major as i32 >= NDEV) {
+    if (*ip).typ as i32 == T_DEVICE && (((*ip).major) < 0 || (*ip).major as usize >= NDEV) {
         (*ip).unlockput();
         end_op();
         return usize::MAX;
