@@ -259,6 +259,7 @@ impl Inode {
     pub unsafe fn put(&mut self) {
         let inode = ICACHE.inode.lock();
 
+        let _inode;
         if (*self).ref_0 == 1 && (*self).valid != 0 && (*self).nlink as i32 == 0 {
             // inode has no links and no other references: truncate and free.
 
@@ -275,7 +276,7 @@ impl Inode {
 
             (*self).lock.release();
 
-            ICACHE.inode.lock();
+            _inode = ICACHE.inode.lock();
         }
         (*self).ref_0 -= 1;
     }
@@ -614,7 +615,6 @@ pub unsafe fn iinit() {
             .lock
             .initlock(b"inode\x00" as *const u8 as *mut u8);
     }
-    drop(inode);
 }
 
 /// Find the inode with number inum on device dev
@@ -629,7 +629,6 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
     while ip < &mut *inode.as_mut_ptr().add(NINODE) as *mut Inode {
         if (*ip).ref_0 > 0 && (*ip).dev == dev && (*ip).inum == inum {
             (*ip).ref_0 += 1;
-            drop(inode);
             return ip;
         }
         if empty.is_null() && (*ip).ref_0 == 0 {
@@ -648,7 +647,6 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
     (*ip).inum = inum;
     (*ip).ref_0 = 1;
     (*ip).valid = 0;
-    drop(inode);
     ip
 }
 
