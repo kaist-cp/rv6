@@ -83,7 +83,7 @@ pub struct Cpu {
 /// the entire kernel call stack.
 #[derive(Copy, Clone)]
 pub struct Trapframe {
-    /// 0 - kernel page table
+    /// 0 - kernel page table (satp: Supervisor Address Translation and Protection)
     pub kernel_satp: usize,
 
     /// 8 - top of process's kernel stack
