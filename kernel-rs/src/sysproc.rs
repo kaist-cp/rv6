@@ -1,6 +1,6 @@
 use crate::{
     libc, ok_or,
-    proc::{exit, fork, resizeproc, kill, myproc, sleep, wait},
+    proc::{exit, fork, kill, myproc, resizeproc, sleep, wait},
     syscall::{argaddr, argint},
     trap::{TICKS, TICKSLOCK},
 };
