@@ -143,8 +143,8 @@ macro_rules! try_err_from {
 /// ```
 /// // This code either prints the error and exits (if error) or prints the result (if ok)
 /// let unwrapped = ok_or!(result, example_error_identifier, {
-/// 	eprintln!("Fatal error: \"{}\"", example_error_identifier);
-/// 	std::process::exit(1);
+///     eprintln!("Fatal error: \"{}\"", example_error_identifier);
+///     std::process::exit(1);
 /// });
 /// println!("Result: \"{}\"", unwrapped);
 /// ```

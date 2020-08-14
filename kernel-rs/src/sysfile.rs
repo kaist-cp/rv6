@@ -19,7 +19,9 @@ use crate::{
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
     vm::copyout,
 };
+use core::mem;
 use core::ptr;
+
 pub const FD_DEVICE: u32 = 3;
 pub const FD_INODE: u32 = 2;
 pub const FD_PIPE: u32 = 1;
@@ -147,22 +149,22 @@ pub unsafe fn sys_link() -> usize {
 /// Is the directory dp empty except for "." and ".." ?
 unsafe fn isdirempty(dp: *mut Inode) -> i32 {
     let mut de: Dirent = Default::default();
-    let mut off = (2usize).wrapping_mul(::core::mem::size_of::<Dirent>()) as i32;
+    let mut off = (2usize).wrapping_mul(mem::size_of::<Dirent>()) as i32;
     while (off as u32) < (*dp).size {
         if (*dp).read(
             0,
             &mut de as *mut Dirent as usize,
             off as u32,
-            ::core::mem::size_of::<Dirent>() as u32,
+            mem::size_of::<Dirent>() as u32,
         ) as usize
-            != ::core::mem::size_of::<Dirent>()
+            != mem::size_of::<Dirent>()
         {
             panic!("isdirempty: readi");
         }
         if de.inum as i32 != 0 {
             return 0;
         }
-        off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>()) as i32
+        off = (off as usize).wrapping_add(mem::size_of::<Dirent>()) as i32
     }
     1
 }
@@ -202,9 +204,9 @@ pub unsafe fn sys_unlink() -> usize {
                     0,
                     &mut de as *mut Dirent as usize,
                     off,
-                    ::core::mem::size_of::<Dirent>() as u32,
+                    mem::size_of::<Dirent>() as u32,
                 ) as usize
-                    != ::core::mem::size_of::<Dirent>()
+                    != mem::size_of::<Dirent>()
                 {
                     panic!("unlink: writei");
                 }
@@ -402,76 +404,52 @@ pub unsafe fn sys_chdir() -> usize {
 }
 
 pub unsafe fn sys_exec() -> usize {
-    let current_block: usize;
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
     let mut argv: [*mut u8; MAXARG] = [ptr::null_mut(); MAXARG];
-    let mut i: i32 = 0;
-    let mut uarg: usize = 0;
     let _ = ok_or!(
         argstr(0, path.as_mut_ptr(), MAXPATH as i32),
         return usize::MAX
     );
     let uargv = ok_or!(argaddr(1), return usize::MAX);
-    ptr::write_bytes(argv.as_mut_ptr(), 0, 1);
-    loop {
-        if i as usize
-            >= (::core::mem::size_of::<[*mut u8; 32]>())
-                .wrapping_div(::core::mem::size_of::<*mut u8>())
-        {
-            current_block = 12646643519710607562;
+
+    let mut success = false;
+    for (i, arg) in argv.iter_mut().enumerate() {
+        let mut uarg = 0;
+        if fetchaddr(uargv + mem::size_of::<usize>() * i, &mut uarg as *mut usize) < 0 {
             break;
         }
-        if fetchaddr(
-            uargv.wrapping_add((::core::mem::size_of::<usize>()).wrapping_mul(i as usize)),
-            &mut uarg as *mut usize,
-        ) < 0
-        {
-            current_block = 12646643519710607562;
-            break;
-        }
+
         if uarg == 0 {
-            argv[i as usize] = ptr::null_mut();
-            current_block = 6009453772311597924;
+            *arg = ptr::null_mut();
+            success = true;
             break;
-        } else {
-            argv[i as usize] = kalloc() as *mut u8;
-            if argv[i as usize].is_null() {
-                panic!("sys_exec kalloc");
-            }
-            if fetchstr(uarg, argv[i as usize], PGSIZE as i32) < 0 {
-                current_block = 12646643519710607562;
-                break;
-            }
-            i += 1
+        }
+
+        *arg = kalloc() as *mut u8;
+        if arg.is_null() {
+            panic!("sys_exec kalloc");
+        }
+
+        if fetchstr(uarg, *arg, PGSIZE as i32) < 0 {
+            break;
         }
     }
-    match current_block {
-        12646643519710607562 => {
-            i = 0;
-            while (i as usize)
-                < (::core::mem::size_of::<[*mut u8; 32]>())
-                    .wrapping_div(::core::mem::size_of::<*mut u8>())
-                && !argv[i as usize].is_null()
-            {
-                kfree(argv[i as usize] as *mut libc::CVoid);
-                i += 1
-            }
-            usize::MAX
+
+    let ret = if success {
+        exec(path.as_mut_ptr(), argv.as_mut_ptr()) as usize
+    } else {
+        usize::MAX
+    };
+
+    for arg in &mut argv[..] {
+        if arg.is_null() {
+            break;
         }
-        _ => {
-            let ret = exec(path.as_mut_ptr(), argv.as_mut_ptr());
-            i = 0;
-            while (i as usize)
-                < (::core::mem::size_of::<[*mut u8; 32]>())
-                    .wrapping_div(::core::mem::size_of::<*mut u8>())
-                && !argv[i as usize].is_null()
-            {
-                kfree(argv[i as usize] as *mut libc::CVoid);
-                i += 1
-            }
-            ret as usize
-        }
+
+        kfree(*arg as *mut libc::CVoid);
     }
+
+    ret
 }
 
 pub unsafe fn sys_pipe() -> usize {
@@ -500,13 +478,13 @@ pub unsafe fn sys_pipe() -> usize {
         (*p).pagetable,
         fdarray,
         &mut fd0 as *mut i32 as *mut u8,
-        ::core::mem::size_of::<i32>(),
+        mem::size_of::<i32>(),
     ) < 0
         || copyout(
             (*p).pagetable,
-            fdarray.wrapping_add(::core::mem::size_of::<i32>()),
+            fdarray.wrapping_add(mem::size_of::<i32>()),
             &mut fd1 as *mut i32 as *mut u8,
-            ::core::mem::size_of::<i32>(),
+            mem::size_of::<i32>(),
         ) < 0
     {
         (*p).ofile[fd0 as usize] = ptr::null_mut();

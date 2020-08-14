@@ -191,7 +191,7 @@ unsafe fn free_chain(mut i: i32) {
         if (*DISK.desc.offset(i as isize)).flags & VRING_DESC_F_NEXT == 0 {
             break;
         }
-        i = (*DISK.desc.offset(i as isize)).next as i32
+        i = (*DISK.desc.offset(i as isize)).next as i32;
     }
 }
 
