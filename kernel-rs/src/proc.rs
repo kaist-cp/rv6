@@ -509,27 +509,19 @@ pub unsafe fn userinit() {
 /// Return 0 on success, -1 on failure.
 pub unsafe fn growproc(n: i32) -> i32 {
     let mut p: *mut Proc = myproc();
-    let sz = (*p).sz as u32;
+    let sz = (*p).sz;
     let sz = match n.cmp(&0) {
         Ordering::Equal => sz,
         Ordering::Greater => {
-            let sz = uvmalloc(
-                (*p).pagetable,
-                sz as usize,
-                sz.wrapping_add(n as u32) as usize,
-            ) as u32;
+            let sz = uvmalloc((*p).pagetable, sz, sz.wrapping_add(n as usize));
             if sz == 0 {
                 return -1;
             }
             sz
         }
-        Ordering::Less => uvmdealloc(
-            (*p).pagetable,
-            sz as usize,
-            sz.wrapping_add(n as u32) as usize,
-        ) as u32,
+        Ordering::Less => uvmdealloc((*p).pagetable, sz, sz.wrapping_add(n as usize)),
     };
-    (*p).sz = sz as usize;
+    (*p).sz = sz;
     0
 }
 

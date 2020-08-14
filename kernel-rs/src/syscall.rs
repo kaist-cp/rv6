@@ -28,16 +28,16 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
 
 /// Fetch the nul-terminated string at addr from the current process.
 /// Returns length of string, not including nul, or -1 for error.
-pub unsafe fn fetchstr(addr: usize, buf: *mut u8, max: i32) -> i32 {
+pub unsafe fn fetchstr(addr: usize, buf: *mut u8, max: usize) -> i32 {
     let p: *mut Proc = myproc();
-    let err: i32 = copyinstr((*p).pagetable, buf, addr, max as usize);
+    let err: i32 = copyinstr((*p).pagetable, buf, addr, max);
     if err < 0 {
         return err;
     }
     strlen(buf)
 }
 
-unsafe fn argraw(n: i32) -> usize {
+unsafe fn argraw(n: usize) -> usize {
     let p = myproc();
     match n {
         0 => (*(*p).tf).a0,
@@ -51,21 +51,21 @@ unsafe fn argraw(n: i32) -> usize {
 }
 
 /// Fetch the nth 32-bit system call argument.
-pub unsafe fn argint(n: i32) -> Result<i32, ()> {
+pub unsafe fn argint(n: usize) -> Result<i32, ()> {
     Ok(argraw(n) as i32)
 }
 
 /// Retrieve an argument as a pointer.
 /// Doesn't check for legality, since
 /// copyin/copyout will do that.
-pub unsafe fn argaddr(n: i32) -> Result<usize, ()> {
+pub unsafe fn argaddr(n: usize) -> Result<usize, ()> {
     Ok(argraw(n))
 }
 
 /// Fetch the nth word-sized system call argument as a null-terminated string.
 /// Copies into buf, at most max.
 /// Returns string length if OK (including nul), -1 if error.
-pub unsafe fn argstr(n: i32, buf: *mut u8, max: i32) -> Result<i32, ()> {
+pub unsafe fn argstr(n: usize, buf: *mut u8, max: usize) -> Result<i32, ()> {
     let addr = argaddr(n)?;
     Ok(fetchstr(addr, buf, max))
 }

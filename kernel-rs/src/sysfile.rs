@@ -45,7 +45,7 @@ impl File {
 
 /// Fetch the nth word-sized system call argument as a file descriptor
 /// and return both the descriptor and the corresponding struct file.
-unsafe fn argfd(n: i32) -> Result<(i32, *mut File), ()> {
+unsafe fn argfd(n: usize) -> Result<(i32, *mut File), ()> {
     let fd = argint(n)?;
     if fd < 0 || fd >= NOFILE as i32 {
         return Err(());
@@ -103,14 +103,8 @@ pub unsafe fn sys_link() -> usize {
     let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
     let mut new: [u8; MAXPATH as usize] = [0; MAXPATH];
     let mut old: [u8; MAXPATH as usize] = [0; MAXPATH];
-    let _ = ok_or!(
-        argstr(0, old.as_mut_ptr(), MAXPATH as i32),
-        return usize::MAX
-    );
-    let _ = ok_or!(
-        argstr(1, new.as_mut_ptr(), MAXPATH as i32),
-        return usize::MAX
-    );
+    let _ = ok_or!(argstr(0, old.as_mut_ptr(), MAXPATH), return usize::MAX);
+    let _ = ok_or!(argstr(1, new.as_mut_ptr(), MAXPATH), return usize::MAX);
     begin_op();
     let mut ip: *mut Inode = namei(old.as_mut_ptr());
     if ip.is_null() {
@@ -174,10 +168,7 @@ pub unsafe fn sys_unlink() -> usize {
     let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
     let mut off: u32 = 0;
-    let _ = ok_or!(
-        argstr(0, path.as_mut_ptr(), MAXPATH as i32),
-        return usize::MAX
-    );
+    let _ = ok_or!(argstr(0, path.as_mut_ptr(), MAXPATH), return usize::MAX);
     begin_op();
     let mut dp: *mut Inode = nameiparent(path.as_mut_ptr(), name.as_mut_ptr());
     if dp.is_null() {
@@ -279,10 +270,7 @@ pub unsafe fn sys_open() -> usize {
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
     let mut fd: i32 = 0;
     let ip: *mut Inode;
-    let _ = ok_or!(
-        argstr(0, path.as_mut_ptr(), MAXPATH as i32),
-        return usize::MAX
-    );
+    let _ = ok_or!(argstr(0, path.as_mut_ptr(), MAXPATH), return usize::MAX);
     let omode = ok_or!(argint(1), return usize::MAX);
     begin_op();
     let omode = FcntlFlags::from_bits_truncate(omode);
@@ -341,7 +329,7 @@ pub unsafe fn sys_mkdir() -> usize {
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
     let mut ip: *mut Inode = ptr::null_mut();
     begin_op();
-    if argstr(0, path.as_mut_ptr(), MAXPATH as i32).is_err() || {
+    if argstr(0, path.as_mut_ptr(), MAXPATH).is_err() || {
         ip = create(path.as_mut_ptr(), T_DIR as i16, 0, 0);
         ip.is_null()
     } {
@@ -359,10 +347,7 @@ pub unsafe fn sys_mknod() -> usize {
     let _end_op = scopeguard::guard((), |_| {
         end_op();
     });
-    let _ = ok_or!(
-        argstr(0, path.as_mut_ptr(), MAXPATH as i32),
-        return usize::MAX
-    );
+    let _ = ok_or!(argstr(0, path.as_mut_ptr(), MAXPATH), return usize::MAX);
     let major = ok_or!(argint(1), return usize::MAX);
     let minor = ok_or!(argint(2), return usize::MAX);
     let ip = create(
@@ -383,7 +368,7 @@ pub unsafe fn sys_chdir() -> usize {
     let mut ip: *mut Inode = ptr::null_mut();
     let mut p: *mut Proc = myproc();
     begin_op();
-    if argstr(0, path.as_mut_ptr(), MAXPATH as i32).is_err() || {
+    if argstr(0, path.as_mut_ptr(), MAXPATH).is_err() || {
         ip = namei(path.as_mut_ptr());
         ip.is_null()
     } {
@@ -406,10 +391,7 @@ pub unsafe fn sys_chdir() -> usize {
 pub unsafe fn sys_exec() -> usize {
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
     let mut argv: [*mut u8; MAXARG] = [ptr::null_mut(); MAXARG];
-    let _ = ok_or!(
-        argstr(0, path.as_mut_ptr(), MAXPATH as i32),
-        return usize::MAX
-    );
+    let _ = ok_or!(argstr(0, path.as_mut_ptr(), MAXPATH), return usize::MAX);
     let uargv = ok_or!(argaddr(1), return usize::MAX);
 
     let mut success = false;
@@ -430,7 +412,7 @@ pub unsafe fn sys_exec() -> usize {
             panic!("sys_exec kalloc");
         }
 
-        if fetchstr(uarg, *arg, PGSIZE as i32) < 0 {
+        if fetchstr(uarg, *arg, PGSIZE) < 0 {
             break;
         }
     }
