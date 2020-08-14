@@ -34,7 +34,7 @@ static mut MSCRATCH0: [usize; NCPU.wrapping_mul(32)] = [0; NCPU.wrapping_mul(32)
 #[no_mangle]
 pub unsafe fn start() {
     // set M Previous Privilege mode to Supervisor, for mret.
-    let x = (r_mstatus() & !MSTATUS_MPP_MASK as usize) | MSTATUS_MPP_S as usize;
+    let x = (r_mstatus() & !MSTATUS_MPP_MASK) | MSTATUS_MPP_S;
     w_mstatus(x);
 
     // set M Exception Program Counter to main, for mret.
@@ -63,14 +63,13 @@ pub unsafe fn start() {
 /// which turns them into software interrupts for devintr() in trap.c.
 unsafe fn timerinit() {
     // each CPU has a separate source of timer interrupts.
-    let id: i32 = r_mhartid() as i32;
+    let id = r_mhartid();
 
     // ask the CLINT for a timer interrupt.
 
     // cycles; about 1/10th second in qemu.
     let interval: usize = 1000000;
-    *(clint_mtimecmp(id as usize) as *mut usize) =
-        (*(CLINT_MTIME as *mut usize)).wrapping_add(interval);
+    *(clint_mtimecmp(id) as *mut usize) = (*(CLINT_MTIME as *mut usize)).wrapping_add(interval);
 
     // prepare information in scratch[] for timervec.
     // scratch[0..3] : space for timervec to save registers.
@@ -85,8 +84,8 @@ unsafe fn timerinit() {
     w_mtvec(timervec as _);
 
     // enable machine-mode interrupts.
-    w_mstatus(r_mstatus() | MSTATUS_MIE as usize);
+    w_mstatus(r_mstatus() | MSTATUS_MIE);
 
     // enable machine-mode timer interrupts.
-    w_mie(r_mie() | MIE_MTIE as usize);
+    w_mie(r_mie() | MIE_MTIE);
 }

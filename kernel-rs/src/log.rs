@@ -26,7 +26,6 @@ use crate::{
     buf::Buf,
     fs::{Superblock, BSIZE},
     param::{LOGSIZE, MAXOPBLOCKS},
-    printf::panic,
     proc::{sleep, wakeup},
     spinlock::RawSpinlock,
 };
@@ -51,7 +50,7 @@ struct Log {
 #[derive(Copy, Clone)]
 struct LogHeader {
     n: i32,
-    block: [i32; LOGSIZE as usize],
+    block: [i32; LOGSIZE],
 }
 
 impl Log {
@@ -66,7 +65,7 @@ impl Log {
             dev: 0,
             lh: LogHeader {
                 n: 0,
-                block: [0; LOGSIZE as usize],
+                block: [0; LOGSIZE],
             },
         }
     }
@@ -77,9 +76,9 @@ static mut LOG: Log = Log::zeroed();
 impl Superblock {
     pub unsafe fn initlog(&mut self, dev: i32) {
         if ::core::mem::size_of::<LogHeader>() >= BSIZE {
-            panic(b"initlog: too big LogHeader\x00" as *const u8 as *mut u8);
+            panic!("initlog: too big LogHeader");
         }
-        LOG.lock.initlock(b"LOG\x00" as *const u8 as *mut u8);
+        LOG.lock.initlock("LOG");
         LOG.start = (*self).logstart as i32;
         LOG.size = (*self).nlog as i32;
         LOG.dev = dev;
@@ -153,7 +152,7 @@ pub unsafe fn begin_op() {
     loop {
         if LOG.committing != 0 ||
             // this op might exhaust log space; wait for commit.
-            LOG.lh.n + (LOG.outstanding + 1) * MAXOPBLOCKS > LOGSIZE
+            LOG.lh.n + (LOG.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
         {
             sleep(&mut LOG as *mut Log as *mut libc::CVoid, &mut LOG.lock);
         } else {
@@ -171,7 +170,7 @@ pub unsafe fn end_op() {
     LOG.lock.acquire();
     LOG.outstanding -= 1;
     if LOG.committing != 0 {
-        panic(b"LOG.committing\x00" as *const u8 as *mut u8);
+        panic!("LOG.committing");
     }
     if LOG.outstanding == 0 {
         do_commit = 1;
@@ -243,11 +242,11 @@ unsafe fn commit() {
 ///   log_write(bp)
 ///   (*bp).release()
 pub unsafe fn log_write(b: *mut Buf) {
-    if LOG.lh.n >= LOGSIZE || LOG.lh.n >= LOG.size - 1 {
-        panic(b"too big a transaction\x00" as *const u8 as *mut u8);
+    if LOG.lh.n >= LOGSIZE as i32 || LOG.lh.n >= LOG.size as i32 - 1 {
+        panic!("too big a transaction");
     }
     if LOG.outstanding < 1 {
-        panic(b"log_write outside of trans\x00" as *const u8 as *mut u8);
+        panic!("log_write outside of trans");
     }
     LOG.lock.acquire();
     let mut absorbed = false;

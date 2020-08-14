@@ -4,14 +4,13 @@ use crate::{
     log::{begin_op, end_op},
     param::{MAXOPBLOCKS, NDEV, NFILE},
     pipe::Pipe,
-    printf::panic,
     proc::{myproc, Proc},
     sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::Stat,
     vm::copyout,
 };
-use core::ptr;
+use core::{ops::DerefMut, ptr};
 
 pub const CONSOLE: usize = 1;
 
@@ -84,13 +83,11 @@ impl File {
     /// Allocate a file structure.
     pub unsafe fn alloc() -> *mut File {
         let mut file = FTABLE.file.lock();
-        let mut f: *mut File = file.as_mut_ptr();
-        while f < file.as_mut_ptr().add(NFILE) {
+        for f in &mut file.deref_mut()[..] {
             if (*f).ref_0 == 0 {
                 (*f).ref_0 = 1;
                 return f;
             }
-            f = f.offset(1)
         }
         ptr::null_mut()
     }
@@ -99,7 +96,7 @@ impl File {
     pub unsafe fn dup(&mut self) -> *mut File {
         FTABLE.file.lock();
         if (*self).ref_0 < 1 {
-            panic(b"File::dup\x00" as *const u8 as *mut u8);
+            panic!("File::dup");
         }
         (*self).ref_0 += 1;
         self
@@ -109,7 +106,7 @@ impl File {
     pub unsafe fn close(&mut self) {
         let file = FTABLE.file.lock();
         if (*self).ref_0 < 1 {
-            panic(b"File::close\x00" as *const u8 as *mut u8);
+            panic!("File::close");
         }
         (*self).ref_0 -= 1;
         if (*self).ref_0 > 0 {
@@ -165,8 +162,8 @@ impl File {
         if (*self).typ == FD_PIPE {
             (*(*self).pipe).read(addr, n)
         } else if (*self).typ == FD_DEVICE {
-            if ((*self).major as i32) < 0
-                || (*self).major as i32 >= NDEV
+            if ((*self).major) < 0
+                || (*self).major as usize >= NDEV
                 || DEVSW[(*self).major as usize].read.is_none()
             {
                 return -1;
@@ -183,7 +180,7 @@ impl File {
             (*(*self).ip).unlock();
             r
         } else {
-            panic(b"File::read\x00" as *const u8 as *mut u8);
+            panic!("File::read");
         }
     }
 
@@ -196,8 +193,8 @@ impl File {
         if (*self).typ as u32 == FD_PIPE {
             (*(*self).pipe).write(addr, n)
         } else if (*self).typ == FD_DEVICE {
-            if ((*self).major as i32) < 0
-                || (*self).major as i32 >= NDEV
+            if ((*self).major) < 0
+                || (*self).major as usize >= NDEV
                 || DEVSW[(*self).major as usize].write.is_none()
             {
                 return -1;
@@ -212,12 +209,12 @@ impl File {
             // and 2 blocks of slop for non-aligned writes.
             // this really belongs lower down, since write()
             // might be writing a device like the console.
-            let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * (BSIZE as i32);
+            let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
             let mut i: i32 = 0;
             while i < n {
                 let mut n1: i32 = n - i;
-                if n1 > max {
-                    n1 = max
+                if n1 > max as i32 {
+                    n1 = max as i32
                 }
                 begin_op();
                 (*(*self).ip).lock();
@@ -232,7 +229,7 @@ impl File {
                     break;
                 }
                 if r != n1 {
-                    panic(b"short File::write\x00" as *const u8 as *mut u8);
+                    panic!("short File::write");
                 }
                 i += r
             }
@@ -242,7 +239,7 @@ impl File {
                 -1
             }
         } else {
-            panic(b"File::write\x00" as *const u8 as *mut u8);
+            panic!("File::write");
         }
     }
 
@@ -266,7 +263,7 @@ impl Ftable {
     pub const fn zeroed() -> Self {
         Self {
             file: Spinlock::new(
-                b"FTABLE\x00" as *const u8 as *mut u8,
+                "FTABLE",
                 [File::zeroed(); NFILE],
             ),
         }
@@ -274,9 +271,9 @@ impl Ftable {
 }
 
 /// Support functions for system calls that involve file descriptors.
-pub static mut DEVSW: [Devsw; NDEV as usize] = [Devsw {
+pub static mut DEVSW: [Devsw; NDEV] = [Devsw {
     read: None,
     write: None,
-}; NDEV as usize];
+}; NDEV];
 
 static mut FTABLE: Ftable = Ftable::zeroed();

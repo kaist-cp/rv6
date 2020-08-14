@@ -1,5 +1,4 @@
 use crate::{
-    printf::panic,
     proc::{mycpu, Cpu},
     riscv::{intr_get, intr_off, intr_on},
 };
@@ -16,7 +15,7 @@ pub struct RawSpinlock {
     /// For debugging:
 
     /// Name of lock.
-    name: *mut u8,
+    name: &'static str,
 
     /// The cpu holding the lock.
     cpu: *mut Cpu,
@@ -24,7 +23,7 @@ pub struct RawSpinlock {
 
 impl RawSpinlock {
     // TODO: transient measure
-    pub const fn init(name: *mut u8) -> Self {
+    pub const fn init(name: &'static str) -> Self {
         Self {
             locked: AtomicBool::new(false),
             name,
@@ -36,13 +35,13 @@ impl RawSpinlock {
     pub const fn zeroed() -> Self {
         Self {
             locked: AtomicBool::new(false),
-            name: ptr::null_mut(),
+            name: "",
             cpu: ptr::null_mut(),
         }
     }
 
     /// Mutual exclusion spin locks.
-    pub fn initlock(&mut self, name: *mut u8) {
+    pub fn initlock(&mut self, name: &'static str) {
         (*self).name = name;
         (*self).locked = AtomicBool::new(false);
         (*self).cpu = ptr::null_mut();
@@ -54,7 +53,7 @@ impl RawSpinlock {
         // disable interrupts to avoid deadlock.
         push_off();
         if self.holding() != 0 {
-            panic(b"acquire\x00" as *const u8 as *mut u8);
+            panic!("acquire");
         }
 
         // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
@@ -82,7 +81,7 @@ impl RawSpinlock {
     /// Release the lock.
     pub unsafe fn release(&mut self) {
         if self.holding() == 0 {
-            panic(b"release\x00" as *const u8 as *mut u8);
+            panic!("release");
         }
         (*self).cpu = ptr::null_mut();
 
@@ -127,7 +126,7 @@ pub struct Spinlock<T> {
 }
 
 impl<T> Spinlock<T> {
-    pub const fn new(name: *mut u8, data: T) -> Self {
+    pub const fn new(name: &'static str, data: T) -> Self {
         Self {
             lock: RawSpinlock::init(name),
             data: UnsafeCell::new(data),
@@ -188,11 +187,11 @@ pub unsafe fn push_off() {
 pub unsafe fn pop_off() {
     let mut c: *mut Cpu = mycpu();
     if intr_get() != 0 {
-        panic(b"pop_off - interruptible\x00" as *const u8 as *mut u8);
+        panic!("pop_off - interruptible");
     }
     (*c).noff -= 1;
     if (*c).noff < 0 {
-        panic(b"pop_off\x00" as *const u8 as *mut u8);
+        panic!("pop_off");
     }
     if (*c).noff == 0 && (*c).intena != 0 {
         intr_on();

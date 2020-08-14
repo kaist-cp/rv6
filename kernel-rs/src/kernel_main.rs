@@ -4,7 +4,8 @@ use crate::{
     fs::iinit,
     kalloc::kinit,
     plic::{plicinit, plicinithart},
-    printf::{printf, printfinit},
+    printf::printfinit,
+    println,
     proc::{cpuid, procinit, scheduler, userinit},
     trap::{trapinit, trapinithart},
     virtio_disk::virtio_disk_init,
@@ -20,9 +21,9 @@ pub unsafe fn kernel_main() {
         consoleinit();
         printfinit();
 
-        printf(b"\n\x00" as *const u8 as *mut u8);
-        printf(b"rv6 kernel is booting\n\x00" as *const u8 as *mut u8);
-        printf(b"\n\x00" as *const u8 as *mut u8);
+        println!();
+        println!("rv6 kernel is booting");
+        println!();
 
         // physical page allocator
         kinit();
@@ -63,7 +64,7 @@ pub unsafe fn kernel_main() {
     } else {
         while !STARTED.load(Ordering::Acquire) {}
 
-        printf(b"hart %d starting\n\x00" as *const u8 as *mut u8, cpuid());
+        println!("hart {} starting", cpuid());
 
         // turn on paging
         kvminithart();

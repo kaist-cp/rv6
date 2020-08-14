@@ -21,10 +21,12 @@ mod libc {
     pub type CVoid = core::ffi::c_void;
 }
 
+mod abort;
 mod bio;
 mod buf;
 mod console;
 mod elf;
+mod etrace;
 mod exec;
 mod fcntl;
 mod file;
@@ -33,7 +35,6 @@ mod kalloc;
 mod kernel_main;
 mod log;
 mod memlayout;
-mod panic;
 mod param;
 mod pipe;
 mod plic;

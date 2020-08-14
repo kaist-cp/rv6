@@ -9,12 +9,12 @@ pub unsafe fn r_mhartid() -> usize {
 /// Machine Status Register, mstatus
 
 /// previous mode.
-pub const MSTATUS_MPP_MASK: i64 = (3) << 11;
-pub const MSTATUS_MPP_M: i64 = (3) << 11;
-pub const MSTATUS_MPP_S: i64 = (1) << 11;
-pub const MSTATUS_MPP_U: i64 = (0) << 11;
+pub const MSTATUS_MPP_MASK: usize = (3) << 11;
+pub const MSTATUS_MPP_M: usize = (3) << 11;
+pub const MSTATUS_MPP_S: usize = (1) << 11;
+pub const MSTATUS_MPP_U: usize = (0) << 11;
 /// machine-mode interrupt enable.
-pub const MSTATUS_MIE: i64 = (1) << 3;
+pub const MSTATUS_MIE: usize = (1) << 3;
 
 #[inline]
 pub unsafe fn r_mstatus() -> usize {
@@ -38,19 +38,19 @@ pub unsafe fn w_mepc(x: usize) {
 /// Supervisor Status Register, sstatus
 
 /// Previous mode, 1=Supervisor, 0=User
-pub const SSTATUS_SPP: i64 = (1) << 8;
+pub const SSTATUS_SPP: usize = (1) << 8;
 
 /// Supervisor Previous Interrupt Enable
-pub const SSTATUS_SPIE: i64 = (1) << 5;
+pub const SSTATUS_SPIE: usize = (1) << 5;
 
 /// User Previous Interrupt Enable
-pub const SSTATUS_UPIE: i64 = (1) << 4;
+pub const SSTATUS_UPIE: usize = (1) << 4;
 
 /// Supervisor Interrupt Enable
-pub const SSTATUS_SIE: i64 = (1) << 1;
+pub const SSTATUS_SIE: usize = (1) << 1;
 
 /// User Interrupt Enable
-pub const SSTATUS_UIE: i64 = (1) << 0;
+pub const SSTATUS_UIE: usize = (1) << 0;
 
 #[inline]
 pub unsafe fn r_sstatus() -> usize {
@@ -78,13 +78,13 @@ pub unsafe fn w_sip(x: usize) {
 /// Supervisor Interrupt Enable
 
 /// external
-pub const SIE_SEIE: i64 = (1) << 9;
+pub const SIE_SEIE: usize = (1) << 9;
 
 /// timer
-pub const SIE_STIE: i64 = (1) << 5;
+pub const SIE_STIE: usize = (1) << 5;
 
 /// software
-pub const SIE_SSIE: i64 = (1) << 1;
+pub const SIE_SSIE: usize = (1) << 1;
 
 #[inline]
 pub unsafe fn r_sie() -> usize {
@@ -101,13 +101,13 @@ pub unsafe fn w_sie(x: usize) {
 /// Machine-mode Interrupt Enable
 
 /// external
-pub const MIE_MEIE: i64 = (1) << 11;
+pub const MIE_MEIE: usize = (1) << 11;
 
 /// timer
-pub const MIE_MTIE: i64 = (1) << 7;
+pub const MIE_MTIE: usize = (1) << 7;
 
 /// software
-pub const MIE_MSIE: i64 = (1) << 3;
+pub const MIE_MSIE: usize = (1) << 3;
 #[inline]
 pub unsafe fn r_mie() -> usize {
     let mut x: usize;
@@ -182,10 +182,10 @@ pub unsafe fn w_mtvec(x: usize) {
 }
 
 /// use riscv's sv39 page table scheme.
-pub const SATP_SV39: i64 = (8) << 60;
+pub const SATP_SV39: usize = (8) << 60;
 
 pub const fn make_satp(pagetable: usize) -> usize {
-    SATP_SV39 as usize | pagetable >> 12
+    SATP_SV39 | pagetable >> 12
 }
 
 /// supervisor address translation and protection;
@@ -253,21 +253,21 @@ pub unsafe fn r_time() -> u64 {
 /// enable device interrupts
 #[inline]
 pub unsafe fn intr_on() {
-    w_sie(r_sie() | SIE_SEIE as usize | SIE_STIE as usize | SIE_SSIE as usize);
-    w_sstatus(r_sstatus() | SSTATUS_SIE as usize);
+    w_sie(r_sie() | SIE_SEIE | SIE_STIE | SIE_SSIE);
+    w_sstatus(r_sstatus() | SSTATUS_SIE);
 }
 
 /// disable device interrupts
 #[inline]
 pub unsafe fn intr_off() {
-    w_sstatus(r_sstatus() & !SSTATUS_SIE as usize);
+    w_sstatus(r_sstatus() & !SSTATUS_SIE);
 }
 
 /// are device interrupts enabled?
 #[inline]
 pub unsafe fn intr_get() -> i32 {
     let x: usize = r_sstatus();
-    (x & SSTATUS_SIE as usize != 0) as i32
+    (x & SSTATUS_SIE != 0) as i32
 }
 
 /// read and write tp, the thread pointer, which holds
@@ -309,7 +309,7 @@ pub unsafe fn sfence_vma() {
 pub const PGSIZE: usize = 4096;
 
 /// bits of offset within a page
-pub const PGSHIFT: i32 = 12;
+pub const PGSHIFT: usize = 12;
 
 #[inline]
 pub const fn pgroundup(sz: usize) -> usize {
@@ -322,14 +322,14 @@ pub const fn pgrounddown(a: usize) -> usize {
 }
 
 /// valid
-pub const PTE_V: i64 = (1) << 0;
+pub const PTE_V: usize = (1) << 0;
 
-pub const PTE_R: i64 = (1) << 1;
-pub const PTE_W: i64 = (1) << 2;
-pub const PTE_X: i64 = (1) << 3;
+pub const PTE_R: i32 = (1) << 1;
+pub const PTE_W: i32 = (1) << 2;
+pub const PTE_X: i32 = (1) << 3;
 
 /// 1 -> user can access
-pub const PTE_U: i64 = (1) << 4;
+pub const PTE_U: i32 = (1) << 4;
 
 /// shift a physical address to the right place for a PTE.
 #[inline]
@@ -350,16 +350,16 @@ pub const fn pte_flags(pte: PteT) -> usize {
 /// extract the three 9-bit page table indices from a virtual address.
 
 /// 9 bits
-pub const PXMASK: i32 = 0x1ff;
+pub const PXMASK: usize = 0x1ff;
 
 #[inline]
-fn pxshift(level: i32) -> i32 {
+fn pxshift(level: usize) -> usize {
     PGSHIFT + 9 * level
 }
 
 #[inline]
-pub fn px(level: i32, va: usize) -> usize {
-    (va >> pxshift(level) as usize) & PXMASK as usize
+pub fn px(level: usize, va: usize) -> usize {
+    (va >> pxshift(level)) & PXMASK
 }
 
 /// one beyond the highest possible virtual address.

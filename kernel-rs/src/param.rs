@@ -14,7 +14,7 @@ pub const NFILE: usize = 100;
 pub const NINODE: usize = 50;
 
 /// maximum major device number
-pub const NDEV: i32 = 10;
+pub const NDEV: usize = 10;
 
 /// device number of file system root disk
 pub const ROOTDEV: i32 = 1;
@@ -24,16 +24,16 @@ pub const MAXARG: usize = 32;
 
 /// max # of blocks any FS op writes
 /// Will be handled in #31
-pub const MAXOPBLOCKS: i32 = 10;
+pub const MAXOPBLOCKS: usize = 10;
 
 /// max data blocks in on-disk log
-pub const LOGSIZE: i32 = MAXOPBLOCKS * 3;
+pub const LOGSIZE: usize = MAXOPBLOCKS * 3;
 
 /// size of disk block cache
-pub const NBUF: i32 = MAXOPBLOCKS * 3;
+pub const NBUF: usize = MAXOPBLOCKS * 3;
 
 /// size of file system in blocks
-pub const FSSIZE: i32 = 1000;
+pub const FSSIZE: usize = 1000;
 
 /// maximum file path name
 pub const MAXPATH: usize = 128;

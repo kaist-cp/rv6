@@ -2,7 +2,7 @@ use crate::libc;
 use crate::{
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     plic::{plic_claim, plic_complete},
-    printf::{panic, printf},
+    println,
     proc::{cpuid, exit, myproc, proc_yield, wakeup, Proc, RUNNING},
     riscv::{
         intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_sstatus,
@@ -35,7 +35,7 @@ pub static mut TICKSLOCK: RawSpinlock = RawSpinlock::zeroed();
 pub static mut TICKS: u32 = 0;
 
 pub unsafe fn trapinit() {
-    TICKSLOCK.initlock(b"time\x00" as *const u8 as *mut u8);
+    TICKSLOCK.initlock("time");
 }
 
 /// set up to take exceptions and traps while in the kernel.
@@ -49,8 +49,8 @@ pub unsafe fn trapinithart() {
 pub unsafe extern "C" fn usertrap() {
     let mut which_dev: i32 = 0;
 
-    if r_sstatus() & SSTATUS_SPP as usize != 0 {
-        panic(b"usertrap: not from user mode\x00" as *const u8 as *mut u8);
+    if r_sstatus() & SSTATUS_SPP != 0 {
+        panic!("usertrap: not from user mode");
     }
 
     // send interrupts and exceptions to kerneltrap(),
@@ -79,15 +79,15 @@ pub unsafe extern "C" fn usertrap() {
     } else {
         which_dev = devintr();
         if which_dev == 0 {
-            printf(
-                b"usertrap(): unexpected scause %p pid=%d\n\x00" as *const u8 as *mut u8,
-                r_scause(),
-                (*p).pid,
+            println!(
+                "usertrap(): unexpected scause {:018p} pid={}",
+                r_scause() as *const u8,
+                (*p).pid
             );
-            printf(
-                b"            sepc=%p stval=%p\n\x00" as *const u8 as *mut u8,
-                r_sepc(),
-                r_stval(),
+            println!(
+                "            sepc={:018p} stval={:018p}",
+                r_sepc() as *const u8,
+                r_stval() as *const u8
             );
             (*p).killed = 1
         }
@@ -138,10 +138,10 @@ pub unsafe fn usertrapret() {
     let mut x: usize = r_sstatus();
 
     // clear SPP to 0 for user mode
-    x &= !SSTATUS_SPP as usize;
+    x &= !SSTATUS_SPP;
 
     // enable interrupts in user mode
-    x |= SSTATUS_SPIE as usize;
+    x |= SSTATUS_SPIE;
     w_sstatus(x);
 
     // set S Exception Program Counter to the saved user pc.
@@ -168,23 +168,23 @@ pub unsafe fn kerneltrap() {
     let sstatus: usize = r_sstatus();
     let scause: usize = r_scause();
 
-    if sstatus & SSTATUS_SPP as usize == 0 {
-        panic(b"kerneltrap: not from supervisor mode\x00" as *const u8 as *mut u8);
+    if sstatus & SSTATUS_SPP == 0 {
+        panic!("kerneltrap: not from supervisor mode");
     }
 
     if intr_get() != 0 {
-        panic(b"kerneltrap: interrupts enabled\x00" as *const u8 as *mut u8);
+        panic!("kerneltrap: interrupts enabled");
     }
 
     let which_dev = devintr();
     if which_dev == 0 {
-        printf(b"scause %p\n\x00" as *const u8 as *mut u8, scause);
-        printf(
-            b"sepc=%p stval=%p\n\x00" as *const u8 as *mut u8,
-            r_sepc(),
-            r_stval(),
+        println!("scause {:018p}", scause as *const u8);
+        println!(
+            "sepc={:018p} stval={:018p}",
+            r_sepc() as *const u8,
+            r_stval() as *const u8
         );
-        panic(b"kerneltrap\x00" as *const u8 as *mut u8);
+        panic!("kerneltrap");
     }
 
     // give up the CPU if this is a timer interrupt.

@@ -1,19 +1,15 @@
 use crate::{
-    libc,
-    printf::panic,
+    libc, ok_or,
     proc::{exit, fork, growproc, kill, myproc, sleep, wait},
     syscall::{argaddr, argint},
     trap::{TICKS, TICKSLOCK},
 };
 
 pub unsafe fn sys_exit() -> usize {
-    let mut n: i32 = 0;
-    if argint(0, &mut n) < 0 {
-        return usize::MAX;
-    }
+    let n = ok_or!(argint(0), return usize::MAX);
     exit(n);
 
-    panic(b"sys_exit: not reached\x00" as *const u8 as *mut u8);
+    panic!("sys_exit: not reached");
 }
 
 pub unsafe fn sys_getpid() -> usize {
@@ -25,18 +21,12 @@ pub unsafe fn sys_fork() -> usize {
 }
 
 pub unsafe fn sys_wait() -> usize {
-    let mut p: usize = 0;
-    if argaddr(0, &mut p) < 0 {
-        return usize::MAX;
-    }
+    let p = ok_or!(argaddr(0), return usize::MAX);
     wait(p) as _
 }
 
 pub unsafe fn sys_sbrk() -> usize {
-    let mut n: i32 = 0;
-    if argint(0, &mut n) < 0 {
-        return usize::MAX;
-    }
+    let n = ok_or!(argint(0), return usize::MAX);
     let addr: i32 = (*myproc()).sz as i32;
     if growproc(n) < 0 {
         return usize::MAX;
@@ -45,10 +35,7 @@ pub unsafe fn sys_sbrk() -> usize {
 }
 
 pub unsafe fn sys_sleep() -> usize {
-    let mut n: i32 = 0;
-    if argint(0, &mut n) < 0 {
-        return usize::MAX;
-    }
+    let n = ok_or!(argint(0), return usize::MAX);
     TICKSLOCK.acquire();
     let ticks0 = TICKS;
     while TICKS.wrapping_sub(ticks0) < n as u32 {
@@ -63,10 +50,7 @@ pub unsafe fn sys_sleep() -> usize {
 }
 
 pub unsafe fn sys_kill() -> usize {
-    let mut pid: i32 = 0;
-    if argint(0, &mut pid) < 0 {
-        return usize::MAX;
-    }
+    let pid = ok_or!(argint(0), return usize::MAX);
     kill(pid) as usize
 }
 

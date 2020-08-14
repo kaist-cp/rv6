@@ -4,7 +4,6 @@ use crate::{
     fs::namei,
     log::{begin_op, end_op},
     param::MAXARG,
-    printf::panic,
     proc::{myproc, proc_freepagetable, proc_pagetable, Proc},
     riscv::{PagetableT, PGSIZE},
     string::{safestrcpy, strlen},
@@ -169,7 +168,7 @@ pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
                     let mut last: *mut u8 = s;
                     while *s != 0 {
                         if *s as i32 == '/' as i32 {
-                            last = s.offset(1isize)
+                            last = s.offset(1)
                         }
                         s = s.offset(1)
                     }
@@ -213,13 +212,13 @@ unsafe fn loadseg(
     sz: u32,
 ) -> Result<(), ()> {
     if va.wrapping_rem(PGSIZE) != 0 {
-        panic(b"loadseg: va must be page aligned\x00" as *const u8 as *mut u8);
+        panic!("loadseg: va msut be page aligned");
     }
 
     for i in num_iter::range_step(0, sz, PGSIZE as _) {
         let pa = walkaddr(pagetable, va.wrapping_add(i as usize));
         if pa == 0 {
-            panic(b"loadseg: address should exist\x00" as *const u8 as *mut u8);
+            panic!("loadseg: address should exist");
         }
 
         let n = if sz.wrapping_sub(i) < PGSIZE as u32 {

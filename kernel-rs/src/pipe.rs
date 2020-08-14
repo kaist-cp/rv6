@@ -9,11 +9,11 @@ use crate::{
 };
 use core::ptr;
 
-pub const PIPESIZE: i32 = 512;
+pub const PIPESIZE: usize = 512;
 
 pub struct Pipe {
     pub lock: RawSpinlock,
-    pub data: [u8; PIPESIZE as usize],
+    pub data: [u8; PIPESIZE],
 
     /// number of bytes read
     pub nread: u32,
@@ -74,7 +74,7 @@ impl Pipe {
             }
             let fresh0 = (*self).nwrite;
             (*self).nwrite = (*self).nwrite.wrapping_add(1);
-            (*self).data[fresh0.wrapping_rem(PIPESIZE as u32) as usize] = ch;
+            (*self).data[(fresh0 as usize).wrapping_rem(PIPESIZE)] = ch;
             i += 1
         }
         wakeup(&mut (*self).nread as *mut u32 as *mut libc::CVoid);
@@ -108,7 +108,7 @@ impl Pipe {
             }
             let fresh1 = (*self).nread;
             (*self).nread = (*self).nread.wrapping_add(1);
-            let mut ch: u8 = (*self).data[fresh1.wrapping_rem(PIPESIZE as u32) as usize];
+            let mut ch: u8 = (*self).data[(fresh1 as usize).wrapping_rem(PIPESIZE)];
             if copyout(
                 (*proc).pagetable,
                 addr.wrapping_add(i as usize),
@@ -141,7 +141,7 @@ impl Pipe {
                 (*pi).writeopen = 1;
                 (*pi).nwrite = 0;
                 (*pi).nread = 0;
-                (*pi).lock.initlock(b"pipe\x00" as *const u8 as *mut u8);
+                (*pi).lock.initlock("pipe");
                 (**f0).typ = FD_PIPE;
                 (**f0).readable = 1;
                 (**f0).writable = 0;
