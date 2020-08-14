@@ -5,7 +5,9 @@ use crate::{
     proc::{either_copyin, either_copyout, myproc, procdump, sleep, wakeup},
     spinlock::RawSpinlock,
     uart::{uartinit, uartputc},
+    utils::spin_loop,
 };
+use core::sync::atomic::Ordering;
 
 /// input
 const INPUT_BUF: usize = 128;
@@ -55,8 +57,8 @@ const fn ctrl(x: char) -> i32 {
 /// send one character to the uart.
 pub unsafe fn consputc(c: i32) {
     // from printf.rs
-    if PANICKED != 0 {
-        loop {}
+    if PANICKED.load(Ordering::Acquire) {
+        spin_loop();
     }
     if c == BACKSPACE {
         // if the user typed backspace, overwrite with a space.
