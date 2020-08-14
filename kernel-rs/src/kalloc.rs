@@ -5,9 +5,9 @@ use crate::libc;
 use crate::{
     memlayout::PHYSTOP,
     riscv::{pgroundup, PGSIZE},
-    spinlock::RawSpinlock,
+    spinlock::Spinlock,
 };
-use core::ptr;
+use core::{ops::DerefMut, ptr, mem};
 
 extern "C" {
     // first address after kernel.
@@ -22,16 +22,17 @@ struct Run {
 }
 
 struct Kmem {
-    lock: RawSpinlock,
-    freelist: *mut Run,
+    freelist: Spinlock<*mut Run>,
 }
 
 impl Kmem {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            lock: RawSpinlock::zeroed(),
-            freelist: ptr::null_mut(),
+            freelist: Spinlock::new(
+                "KMEM",
+                ptr::null_mut(),
+            ),
         }
     }
 }
@@ -39,8 +40,6 @@ impl Kmem {
 static mut KMEM: Kmem = Kmem::zeroed();
 
 pub unsafe fn kinit() {
-    KMEM.lock.initlock("KMEM");
-
     freerange(
         end.as_mut_ptr() as *mut libc::CVoid,
         PHYSTOP as *mut libc::CVoid,
@@ -70,25 +69,26 @@ pub unsafe fn kfree(pa: *mut libc::CVoid) {
     // Fill with junk to catch dangling refs.
     ptr::write_bytes(pa as *mut libc::CVoid, 1, PGSIZE);
     let mut r: *mut Run = pa as *mut Run;
-    KMEM.lock.acquire();
-    (*r).next = KMEM.freelist;
-    KMEM.freelist = r;
-    KMEM.lock.release();
+    let mut freelist = KMEM.freelist.lock();
+    (*r).next = freelist.raw() as *mut Run;
+    // let data = freelist.deref_mut();
+    // *data = r;
+    let _ = mem::replace(freelist.deref_mut(), r);
 }
 
 /// Allocate one 4096-byte page of physical memory.
 /// Returns a pointer that the kernel can use.
 /// Returns 0 if the memory cannot be allocated.
 pub unsafe fn kalloc() -> *mut libc::CVoid {
-    KMEM.lock.acquire();
-    let r: *mut Run = KMEM.freelist;
+    let mut freelist = KMEM.freelist.lock();
+    let r = freelist.deref_mut();
     if !r.is_null() {
-        KMEM.freelist = (*r).next
+        // *r = (*(*r)).next;
+        let _ = mem::replace(r, (*(*r)).next);
     }
-    KMEM.lock.release();
     if !r.is_null() {
         // fill with junk
-        ptr::write_bytes(r as *mut u8 as *mut libc::CVoid, 5, PGSIZE);
+        ptr::write_bytes(*r as *mut u8 as *mut libc::CVoid, 5, PGSIZE);
     }
-    r as *mut libc::CVoid
+    *r as *mut libc::CVoid
 }
