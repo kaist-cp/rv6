@@ -94,7 +94,7 @@ impl File {
 
     /// Increment ref count for file self.
     pub unsafe fn dup(&mut self) -> *mut File {
-        FTABLE.file.lock();
+        let _file = FTABLE.file.lock();
         if (*self).ref_0 < 1 {
             panic!("File::dup");
         }

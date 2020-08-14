@@ -203,7 +203,7 @@ impl Inode {
     /// Increment reference count for ip.
     /// Returns ip to enable ip = idup(ip1) idiom.
     pub unsafe fn idup(&mut self) -> *mut Self {
-        ICACHE.inode.lock();
+        let _inode = ICACHE.inode.lock();
         self.ref_0 += 1;
         self
     }
@@ -253,9 +253,8 @@ impl Inode {
     /// All calls to Inode::put() must be inside a transaction in
     /// case it has to free the inode.
     pub unsafe fn put(&mut self) {
-        let inode = ICACHE.inode.lock();
+        let mut inode = ICACHE.inode.lock();
 
-        let _inode;
         if (*self).ref_0 == 1 && (*self).valid != 0 && (*self).nlink as i32 == 0 {
             // inode has no links and no other references: truncate and free.
 
@@ -272,9 +271,10 @@ impl Inode {
 
             (*self).lock.release();
 
-            _inode = ICACHE.inode.lock();
+            inode = ICACHE.inode.lock();
         }
         (*self).ref_0 -= 1;
+        drop(inode);
     }
 
     /// Common idiom: unlock, then put.

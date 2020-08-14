@@ -116,7 +116,6 @@ impl RawSpinlock {
 
 pub struct SpinLockGuard<'s, T> {
     lock: &'s mut Spinlock<T>,
-    // token: &'s RawLock<T>,
     _marker: PhantomData<*const ()>,
 }
 
