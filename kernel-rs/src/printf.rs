@@ -1,7 +1,10 @@
 //! formatted console output -- printf, panic.
 use crate::console::consputc;
-use crate::spinlock::RawSpinlock;
-use core::fmt;
+use crate::spinlock::Spinlock;
+use core::{
+    fmt, mem,
+    ops::{Deref, DerefMut},
+};
 
 pub struct Writer {}
 
@@ -34,14 +37,11 @@ macro_rules! println {
 #[doc(hidden)]
 pub unsafe fn _print(args: fmt::Arguments<'_>) {
     use core::fmt::Write;
-    let locking: i32 = PR.locking;
-    if locking != 0 {
-        PR.lock.acquire();
+    let locking = PR.locking.lock();
+    if *(locking.deref()) == 0 {
+        drop(locking)
     }
     (Writer {}).write_fmt(args).unwrap();
-    if locking != 0 {
-        PR.lock.release();
-    }
 }
 
 /// Handles panic.
@@ -49,7 +49,7 @@ pub unsafe fn _print(args: fmt::Arguments<'_>) {
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
     unsafe {
-        PR.locking = 0;
+        let _ = mem::replace(PR.locking.lock().deref_mut(), 1);
         println!("{}", info);
 
         // freeze other CPUs
@@ -60,16 +60,14 @@ fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
 
 /// lock to avoid interleaving concurrent printf's.
 struct PrintfLock {
-    lock: RawSpinlock,
-    locking: i32,
+    locking: Spinlock<i32>,
 }
 
 impl PrintfLock {
     // TODO: transient measure
     const fn zeroed() -> Self {
         Self {
-            lock: RawSpinlock::zeroed(),
-            locking: 0,
+            locking: Spinlock::new("PR", 0),
         }
     }
 }
@@ -79,6 +77,5 @@ pub static mut PANICKED: i32 = 0;
 static mut PR: PrintfLock = PrintfLock::zeroed();
 
 pub unsafe fn printfinit() {
-    PR.lock.initlock("PR");
-    PR.locking = 1;
+    let _ = mem::replace(PR.locking.lock().deref_mut(), 1);
 }
