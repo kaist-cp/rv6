@@ -3,7 +3,7 @@ use crate::{
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     plic::{plic_claim, plic_complete},
     println,
-    proc::{cpuid, exit, myproc, proc_yield, wakeup, Proc, RUNNING},
+    proc::{cpuid, exit, myproc, proc_yield, wakeup, Proc, Procstate},
     riscv::{
         intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_sstatus,
         r_stval, r_tp, w_sepc, w_sip, w_sstatus, w_stvec, PGSIZE, SSTATUS_SPIE, SSTATUS_SPP,
@@ -188,8 +188,11 @@ pub unsafe fn kerneltrap() {
     }
 
     // give up the CPU if this is a timer interrupt.
-    if which_dev == 2 && !myproc().is_null() && (*myproc()).state == RUNNING {
-        proc_yield();
+    if which_dev == 2 && !myproc().is_null() {
+        match (*myproc()).state {
+            Procstate::RUNNING => proc_yield(),
+            _ => (),
+        }
     }
 
     // the yield() may have caused some traps to occur,
