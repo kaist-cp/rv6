@@ -507,7 +507,7 @@ pub unsafe fn userinit() {
 
 /// Grow or shrink user memory by n bytes.
 /// Return 0 on success, -1 on failure.
-pub unsafe fn growproc(n: i32) -> i32 {
+pub unsafe fn resizeproc(n: i32) -> i32 {
     let mut p: *mut Proc = myproc();
     let sz = (*p).sz;
     let sz = match n.cmp(&0) {
