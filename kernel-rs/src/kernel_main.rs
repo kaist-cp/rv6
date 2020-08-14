@@ -1,7 +1,6 @@
 use crate::{
     bio::binit,
     console::consoleinit,
-    file::fileinit,
     fs::iinit,
     kalloc::kinit,
     plic::{plicinit, plicinithart},
@@ -55,9 +54,6 @@ pub unsafe fn kernel_main() {
 
         // inode cache
         iinit();
-
-        // file table
-        fileinit();
 
         // emulated hard disk
         virtio_disk_init();
