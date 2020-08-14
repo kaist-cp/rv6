@@ -787,7 +787,7 @@ unsafe fn namex(mut path: *mut u8, nameiparent_0: i32, name: *mut u8) -> *mut In
     if *path as i32 == '/' as i32 {
         ip = iget(ROOTDEV as u32, ROOTINO)
     } else {
-        ip = (*(*myproc()).cwd).idup()
+        ip = (*(*myproc()).current_working_dir).idup()
     }
     loop {
         path = skipelem(path, name);
