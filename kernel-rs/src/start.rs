@@ -15,12 +15,12 @@ extern "C" {
 }
 
 /// entry.S needs one stack per CPU.
-#[repr(align(16))]
-pub struct Stack([u8; 4096 * NCPU as usize]);
+#[repr(C, align(16))]
+pub struct Stack([u8; 4096 * NCPU]);
 
 impl Stack {
     const fn new() -> Self {
-        Self([0; NCPU.wrapping_mul(4096)])
+        Self([0; 4096 * NCPU])
     }
 }
 
@@ -28,7 +28,7 @@ impl Stack {
 pub static mut stack0: Stack = Stack::new();
 
 /// scratch area for timer interrupt, one per CPU.
-static mut MSCRATCH0: [usize; NCPU.wrapping_mul(32)] = [0; NCPU.wrapping_mul(32)];
+static mut MSCRATCH0: [usize; NCPU * 32] = [0; NCPU * 32];
 
 /// entry.S jumps here in machine mode on stack0.
 #[no_mangle]
@@ -37,8 +37,7 @@ pub unsafe fn start() {
     let x = (r_mstatus() & !MSTATUS_MPP_MASK) | MSTATUS_MPP_S;
     w_mstatus(x);
 
-    // set M Exception Program Counter to main, for mret.
-    // requires gcc -mcmodel=medany
+    // set M Exception Program Counter to main, for mret.  requires gcc -mcmodel=medany
     w_mepc(kernel_main as usize);
 
     // disable paging for now.
@@ -66,19 +65,17 @@ unsafe fn timerinit() {
     let id = r_mhartid();
 
     // ask the CLINT for a timer interrupt.
-
-    // cycles; about 1/10th second in qemu.
-    let interval: usize = 1000000;
-    *(clint_mtimecmp(id) as *mut usize) = (*(CLINT_MTIME as *mut usize)).wrapping_add(interval);
+    let interval: usize = 1_000_000; // cycles; about 1/10th second in qemu.
+    *(clint_mtimecmp(id) as *mut usize) = (*(CLINT_MTIME as *mut usize)) + interval;
 
     // prepare information in scratch[] for timervec.
     // scratch[0..3] : space for timervec to save registers.
     // scratch[4] : address of CLINT MTIMECMP register.
     // scratch[5] : desired interval (in cycles) between timer interrupts.
-    let scratch: *mut usize = &mut *MSCRATCH0.as_mut_ptr().offset(32 * id as isize) as *mut usize;
-    *scratch.offset(4) = clint_mtimecmp(id as usize);
-    *scratch.offset(5) = interval;
-    w_mscratch(scratch as usize);
+    let scratch = &mut MSCRATCH0[(32 * id)..];
+    *scratch.get_unchecked_mut(4) = clint_mtimecmp(id);
+    *scratch.get_unchecked_mut(5) = interval;
+    w_mscratch(&scratch[0] as *const _ as usize);
 
     // set the machine-mode trap handler.
     w_mtvec(timervec as _);

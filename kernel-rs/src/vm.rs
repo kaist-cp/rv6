@@ -8,7 +8,9 @@ use crate::{
         PagetableT, PdeT, PteT, MAXVA, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
     },
 };
+use core::mem;
 use core::ptr;
+
 extern "C" {
     // kernel.ld sets this to end of kernel code.
     #[no_mangle]
@@ -333,13 +335,7 @@ pub unsafe fn uvmfree(pagetable: PagetableT, sz: usize) {
 /// returns 0 on success, -1 on failure.
 /// frees any allocated pages on failure.
 pub unsafe fn uvmcopy(old: PagetableT, new: PagetableT, sz: usize) -> i32 {
-    let current_block: usize;
-    let mut i: usize = 0;
-    loop {
-        if i >= sz {
-            current_block = 12349973810996921269;
-            break;
-        }
+    for i in num_iter::range_step(0, sz, PGSIZE) {
         let pte = walk(old, i, 0);
         if pte.is_null() {
             panic!("uvmcopy: pte should exist");
@@ -347,12 +343,14 @@ pub unsafe fn uvmcopy(old: PagetableT, new: PagetableT, sz: usize) -> i32 {
         if *pte & PTE_V == 0 {
             panic!("uvmcopy: page not present");
         }
+        let cleanup = scopeguard::guard((), |_| {
+            uvmunmap(new, 0, i, 1);
+        });
         let pa = pte2pa(*pte);
         let flags = pte_flags(*pte) as u32;
         let mem = kalloc() as *mut u8;
         if mem.is_null() {
-            current_block = 9000140654394160520;
-            break;
+            return -1;
         }
         ptr::copy(
             pa as *mut u8 as *const libc::CVoid,
@@ -361,19 +359,12 @@ pub unsafe fn uvmcopy(old: PagetableT, new: PagetableT, sz: usize) -> i32 {
         );
         if mappages(new, i, PGSIZE, mem as usize, flags as i32) != 0 {
             kfree(mem as *mut libc::CVoid);
-            current_block = 9000140654394160520;
-            break;
-        } else {
-            i = i.wrapping_add(PGSIZE);
+            return -1;
         }
+        mem::forget(cleanup);
     }
-    match current_block {
-        12349973810996921269 => 0,
-        _ => {
-            uvmunmap(new, 0, i, 1);
-            -1
-        }
-    }
+
+    0
 }
 
 /// mark a PTE invalid for user access.

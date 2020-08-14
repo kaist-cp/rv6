@@ -2,6 +2,7 @@
 use crate::console::consputc;
 use crate::spinlock::RawSpinlock;
 use core::fmt;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 pub struct Writer {}
 
@@ -53,7 +54,7 @@ fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
         println!("{}", info);
 
         // freeze other CPUs
-        ::core::ptr::write_volatile(&mut PANICKED as *mut i32, 1);
+        PANICKED.store(true, Ordering::Release);
     }
     crate::utils::spin_loop()
 }
@@ -74,7 +75,7 @@ impl PrintfLock {
     }
 }
 
-pub static mut PANICKED: i32 = 0;
+pub static mut PANICKED: AtomicBool = AtomicBool::new(false);
 
 static mut PR: PrintfLock = PrintfLock::zeroed();
 
