@@ -73,12 +73,12 @@ pub struct Cpu {
 /// user page table. Not specially mapped in the kernel page table.
 /// The sscratch register points here.
 /// uservec in trampoline.S saves user registers in the Trapframe,
-/// then initializes registers from the trapframe's
+/// then initializes registers from the Trapframe's
 /// kernel_sp, kernel_hartid, kernel_satp, and jumps to kernel_trap.
 /// usertrapret() and userret in trampoline.S set up
-/// the trapframe's kernel_*, restore user registers from the
-/// trapframe, switch to the user page table, and enter user space.
-/// The trapframe includes callee-saved user registers like s0-s11 because the
+/// the Trapframe's kernel_*, restore user registers from the
+/// Trapframe, switch to the user page table, and enter user space.
+/// The Trapframe includes callee-saved user registers like s0-s11 because the
 /// return-to-user path via usertrapret() doesn't return through
 /// the entire kernel call stack.
 #[derive(Copy, Clone)]
@@ -92,7 +92,7 @@ pub struct Trapframe {
     /// 16 - usertrap()
     pub kernel_trap: usize,
 
-    /// 24 - saved user program counter
+    /// 24 - saved user program counter (ecp: Exception Program Counter)
     pub epc: usize,
 
     /// 32 - saved kernel tp
@@ -379,7 +379,7 @@ unsafe fn allocproc() -> *mut Proc {
         if p.state as u32 == UNUSED as u32 {
             p.pid = allocpid();
 
-            // Allocate a trapframe page.
+            // Allocate a Trapframe page.
             p.tf = kalloc() as *mut Trapframe;
             if p.tf.is_null() {
                 p.lock.release();
@@ -442,7 +442,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PagetableT {
         PTE_R | PTE_X,
     );
 
-    // map the trapframe just below TRAMPOLINE, for trampoline.S.
+    // map the Trapframe just below TRAMPOLINE, for trampoline.S.
     mappages(
         pagetable,
         TRAPFRAME,

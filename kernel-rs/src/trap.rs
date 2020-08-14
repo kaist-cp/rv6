@@ -118,7 +118,7 @@ pub unsafe fn usertrapret() {
         TRAMPOLINE.wrapping_add(uservec.as_mut_ptr().offset_from(trampoline.as_mut_ptr()) as usize),
     );
 
-    // set up trapframe values that uservec will need when
+    // set up Trapframe values that uservec will need when
     // the process next re-enters the kernel.
 
     // kernel page table
