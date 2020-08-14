@@ -43,7 +43,7 @@ pub struct Cpu {
     pub noff: i32,
 
     /// Were interrupts enabled before push_off()?
-    pub interrupt_enabled: i32,
+    pub interrupt_enabled: bool,
 }
 
 /// Saved registers for kernel context switches.
@@ -248,7 +248,7 @@ impl Cpu {
             proc: ptr::null_mut(),
             scheduler: Context::zeroed(),
             noff: 0,
-            interrupt_enabled: 0,
+            interrupt_enabled: false,
         }
     }
 }
@@ -764,10 +764,10 @@ unsafe fn sched() {
     if (*p).state as u32 == RUNNING as i32 as u32 {
         panic!("sched running");
     }
-    if intr_get() != 0 {
+    if intr_get() == true {
         panic!("sched interruptible");
     }
-    let interrupt_enabled: i32 = (*mycpu()).interrupt_enabled;
+    let interrupt_enabled: bool = (*mycpu()).interrupt_enabled;
     swtch(
         &mut (*p).context,
         &mut (*(mycpu as unsafe fn() -> *mut Cpu)()).scheduler,

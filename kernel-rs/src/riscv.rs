@@ -265,9 +265,9 @@ pub unsafe fn intr_off() {
 
 /// are device interrupts enabled?
 #[inline]
-pub unsafe fn intr_get() -> i32 {
+pub unsafe fn intr_get() -> bool {
     let x: usize = r_sstatus();
-    (x & SSTATUS_SIE != 0) as i32
+    x & SSTATUS_SIE != 0
 }
 
 /// read and write tp, the thread pointer, which holds
