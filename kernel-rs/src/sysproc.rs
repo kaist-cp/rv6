@@ -1,6 +1,6 @@
 use crate::{
     libc, ok_or,
-    proc::{exit, fork, growproc, kill, myproc, sleep, wait},
+    proc::{exit, fork, resizeproc, kill, myproc, sleep, wait},
     syscall::{argaddr, argint},
     trap::{TICKS, TICKSLOCK},
 };
@@ -28,7 +28,7 @@ pub unsafe fn sys_wait() -> usize {
 pub unsafe fn sys_sbrk() -> usize {
     let n = ok_or!(argint(0), return usize::MAX);
     let addr: i32 = (*myproc()).sz as i32;
-    if growproc(n) < 0 {
+    if resizeproc(n) < 0 {
         return usize::MAX;
     }
     addr as usize
