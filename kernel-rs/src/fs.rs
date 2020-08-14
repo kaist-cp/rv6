@@ -172,10 +172,7 @@ impl Icache {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            inode: Spinlock::new(
-                "ICACHE",
-                [Inode::zeroed(); NINODE],
-            ),
+            inode: Spinlock::new("ICACHE", [Inode::zeroed(); NINODE]),
         }
     }
 }
@@ -610,9 +607,7 @@ static mut ICACHE: Icache = Icache::zeroed();
 pub unsafe fn iinit() {
     let mut inode = ICACHE.inode.lock();
     for i in 0..NINODE {
-        (*inode.as_mut_ptr().add(i))
-            .lock
-            .initlock("inode");
+        (*inode.as_mut_ptr().add(i)).lock.initlock("inode");
     }
 }
 

@@ -262,10 +262,7 @@ impl Ftable {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            file: Spinlock::new(
-                "FTABLE",
-                [File::zeroed(); NFILE],
-            ),
+            file: Spinlock::new("FTABLE", [File::zeroed(); NFILE]),
         }
     }
 }
