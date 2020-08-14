@@ -34,8 +34,8 @@ impl File {
         let mut p: *mut Proc = myproc();
         for fd in 0..NOFILE {
             // user pointer to struct stat
-            if (*p).ofile[fd].is_null() {
-                (*p).ofile[fd] = self;
+            if (*p).open_file[fd].is_null() {
+                (*p).open_file[fd] = self;
                 return fd as i32;
             }
         }
@@ -51,7 +51,7 @@ unsafe fn argfd(n: i32) -> Result<(i32, *mut File), ()> {
         return Err(());
     }
 
-    let f = (*myproc()).ofile[fd as usize];
+    let f = (*myproc()).open_file[fd as usize];
     if f.is_null() {
         return Err(());
     }
@@ -85,7 +85,7 @@ pub unsafe fn sys_write() -> usize {
 
 pub unsafe fn sys_close() -> usize {
     let (fd, f) = ok_or!(argfd(0), return usize::MAX);
-    let fresh0 = &mut (*myproc()).ofile[fd as usize];
+    let fresh0 = &mut (*myproc()).open_file[fd as usize];
     *fresh0 = ptr::null_mut();
     (*f).close();
     0
@@ -397,9 +397,9 @@ pub unsafe fn sys_chdir() -> usize {
         return usize::MAX;
     }
     (*ip).unlock();
-    (*(*p).cwd).put();
+    (*(*p).current_working_dir).put();
     end_op();
-    (*p).cwd = ip;
+    (*p).current_working_dir = ip;
     0
 }
 
@@ -468,7 +468,7 @@ pub unsafe fn sys_pipe() -> usize {
         (fd1) < 0
     } {
         if fd0 >= 0 {
-            (*p).ofile[fd0 as usize] = ptr::null_mut()
+            (*p).open_file[fd0 as usize] = ptr::null_mut()
         }
         (*rf).close();
         (*wf).close();
@@ -487,8 +487,8 @@ pub unsafe fn sys_pipe() -> usize {
             mem::size_of::<i32>(),
         ) < 0
     {
-        (*p).ofile[fd0 as usize] = ptr::null_mut();
-        (*p).ofile[fd1 as usize] = ptr::null_mut();
+        (*p).open_file[fd0 as usize] = ptr::null_mut();
+        (*p).open_file[fd1 as usize] = ptr::null_mut();
         (*rf).close();
         (*wf).close();
         return usize::MAX;
