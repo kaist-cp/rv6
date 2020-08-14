@@ -206,7 +206,7 @@ pub struct Proc {
     lock: RawSpinlock,
 
     /// p->lock must be held when using these:
-    
+
     /// Process state.
     pub state: Procstate,
 
@@ -226,7 +226,7 @@ pub struct Proc {
     pub pid: i32,
 
     /// These are private to the process, so p->lock need not be held.
-    
+
     /// Bottom of kernel stack for this process.
     pub kstack: usize,
 
