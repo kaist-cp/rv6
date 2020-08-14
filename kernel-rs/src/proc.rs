@@ -30,22 +30,6 @@ extern "C" {
     static mut trampoline: [u8; 0];
 }
 
-/// Per-CPU-state.
-#[derive(Copy, Clone)]
-pub struct Cpu {
-    /// The process running on this cpu, or null.
-    pub proc: *mut Proc,
-
-    /// swtch() here to enter scheduler().
-    pub scheduler: Context,
-
-    /// Depth of push_off() nesting.
-    pub noff: i32,
-
-    /// Were interrupts enabled before push_off()?
-    pub interrupt_enabled: bool,
-}
-
 /// Saved registers for kernel context switches.
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -68,66 +52,33 @@ pub struct Context {
     pub s11: usize,
 }
 
-/// Per-process state
-pub struct Proc {
-    lock: RawSpinlock,
+/// Per-CPU-state.
+#[derive(Copy, Clone)]
+pub struct Cpu {
+    /// The process running on this cpu, or null.
+    pub proc: *mut Proc,
 
-    /// p->lock must be held when using these:
-    /// Process state
-    pub state: Procstate,
+    /// swtch() here to enter scheduler().
+    pub scheduler: Context,
 
-    /// Parent process
-    parent: *mut Proc,
+    /// Depth of push_off() nesting.
+    pub noff: i32,
 
-    /// If non-zero, sleeping on chan
-    chan: *mut libc::CVoid,
-
-    /// If non-zero, have been killed
-    pub killed: i32,
-
-    /// Exit status to be returned to parent's wait
-    xstate: i32,
-
-    /// Process ID
-    pub pid: i32,
-
-    /// these are private to the process, so p->lock need not be held.
-    /// Bottom of kernel stack for this process
-    pub kstack: usize,
-
-    /// Size of process memory (bytes)
-    pub sz: usize,
-
-    /// Page table
-    pub pagetable: PagetableT,
-
-    /// data page for trampoline.S
-    pub tf: *mut Trapframe,
-
-    /// swtch() here to run process
-    context: Context,
-
-    /// Open files
-    pub ofile: [*mut File; NOFILE],
-
-    /// Current directory
-    pub cwd: *mut Inode,
-
-    /// Process name (debugging)
-    pub name: [u8; 16],
+    /// Were interrupts enabled before push_off()?
+    pub interrupt_enabled: bool,
 }
 
-/// per-process data for the trap handling code in trampoline.S.
-/// sits in a page by itself just under the trampoline page in the
-/// user page table. not specially mapped in the kernel page table.
-/// the sscratch register points here.
+/// Per-process data for the trap handling code in trampoline.S.
+/// Sits in a page by itself just under the trampoline page in the
+/// user page table. Not specially mapped in the kernel page table.
+/// The sscratch register points here.
 /// uservec in trampoline.S saves user registers in the Trapframe,
 /// then initializes registers from the trapframe's
 /// kernel_sp, kernel_hartid, kernel_satp, and jumps to kernel_trap.
 /// usertrapret() and userret in trampoline.S set up
 /// the trapframe's kernel_*, restore user registers from the
 /// trapframe, switch to the user page table, and enter user space.
-/// the trapframe includes callee-saved user registers like s0-s11 because the
+/// The trapframe includes callee-saved user registers like s0-s11 because the
 /// return-to-user path via usertrapret() doesn't return through
 /// the entire kernel call stack.
 #[derive(Copy, Clone)]
@@ -239,6 +190,55 @@ pub struct Trapframe {
 
     /// 280
     pub t6: usize,
+}
+
+/// Per-process state
+pub struct Proc {
+    lock: RawSpinlock,
+
+    /// p->lock must be held when using these:
+    /// Process state
+    pub state: Procstate,
+
+    /// Parent process
+    parent: *mut Proc,
+
+    /// If non-zero, sleeping on chan
+    chan: *mut libc::CVoid,
+
+    /// If non-zero, have been killed
+    pub killed: i32,
+
+    /// Exit status to be returned to parent's wait
+    xstate: i32,
+
+    /// Process ID
+    pub pid: i32,
+
+    /// these are private to the process, so p->lock need not be held.
+    /// Bottom of kernel stack for this process
+    pub kstack: usize,
+
+    /// Size of process memory (bytes)
+    pub sz: usize,
+
+    /// Page table
+    pub pagetable: PagetableT,
+
+    /// data page for trampoline.S
+    pub tf: *mut Trapframe,
+
+    /// swtch() here to run process
+    context: Context,
+
+    /// Open files
+    pub ofile: [*mut File; NOFILE],
+
+    /// Current directory
+    pub cwd: *mut Inode,
+
+    /// Process name (debugging)
+    pub name: [u8; 16],
 }
 
 impl Cpu {
