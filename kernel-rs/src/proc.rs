@@ -30,20 +30,20 @@ extern "C" {
     static mut trampoline: [u8; 0];
 }
 
-/// per-CPU-state
+/// Per-CPU-state.
 #[derive(Copy, Clone)]
 pub struct Cpu {
-    /// The process running on this cpu, or null
+    /// The process running on this cpu, or null.
     pub proc: *mut Proc,
 
-    /// swtch() here to enter scheduler()
+    /// swtch() here to enter scheduler().
     pub scheduler: Context,
 
-    /// Depth of push_off() nesting
+    /// Depth of push_off() nesting.
     pub noff: i32,
 
     /// Were interrupts enabled before push_off()?
-    pub intena: i32,
+    pub interrupt_enabled: i32,
 }
 
 /// Saved registers for kernel context switches.
@@ -248,7 +248,7 @@ impl Cpu {
             proc: ptr::null_mut(),
             scheduler: Context::zeroed(),
             noff: 0,
-            intena: 0,
+            interrupt_enabled: 0,
         }
     }
 }
@@ -748,9 +748,9 @@ pub unsafe fn scheduler() -> ! {
 
 /// Switch to scheduler.  Must hold only p->lock
 /// and have changed proc->state. Saves and restores
-/// intena because intena is a property of this
+/// interrupt_enabled because interrupt_enabled is a property of this
 /// kernel thread, not this CPU. It should
-/// be proc->intena and proc->noff, but that would
+/// be proc->interrupt_enabled and proc->noff, but that would
 /// break in the few places where a lock is held but
 /// there's no process.
 unsafe fn sched() {
@@ -767,12 +767,12 @@ unsafe fn sched() {
     if intr_get() != 0 {
         panic!("sched interruptible");
     }
-    let intena: i32 = (*mycpu()).intena;
+    let interrupt_enabled: i32 = (*mycpu()).interrupt_enabled;
     swtch(
         &mut (*p).context,
         &mut (*(mycpu as unsafe fn() -> *mut Cpu)()).scheduler,
     );
-    (*mycpu()).intena = intena;
+    (*mycpu()).interrupt_enabled = interrupt_enabled;
 }
 
 /// Give up the CPU for one scheduling round.

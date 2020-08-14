@@ -173,7 +173,7 @@ pub unsafe fn push_off() {
     let old: i32 = intr_get();
     intr_off();
     if (*(mycpu())).noff == 0 {
-        (*(mycpu())).intena = old
+        (*(mycpu())).interrupt_enabled = old
     }
     (*(mycpu())).noff += 1;
 }
@@ -186,7 +186,7 @@ pub unsafe fn pop_off() {
     if (*c).noff < 0 {
         panic!("pop_off");
     }
-    if (*c).noff == 0 && (*c).intena != 0 {
+    if (*c).noff == 0 && (*c).interrupt_enabled != 0 {
         intr_on();
     };
 }
