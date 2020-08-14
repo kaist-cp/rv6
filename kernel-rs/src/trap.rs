@@ -220,9 +220,9 @@ pub unsafe fn devintr() -> i32 {
         // this is a supervisor external interrupt, via .
 
         // irq indicates which device interrupted.
-        let irq: i32 = plic_claim();
+        let irq: usize = plic_claim();
 
-        if irq == UART0_IRQ as i32 {
+        if irq == UART0_IRQ {
             uartintr();
         } else if irq == VIRTIO0_IRQ {
             virtio_disk_intr();

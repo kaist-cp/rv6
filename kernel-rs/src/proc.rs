@@ -342,16 +342,16 @@ pub unsafe fn procinit() {
 /// Must be called with interrupts disabled,
 /// to prevent race with process being moved
 /// to a different CPU.
-pub unsafe fn cpuid() -> i32 {
-    let id: i32 = r_tp() as i32;
+pub unsafe fn cpuid() -> usize {
+    let id: usize = r_tp();
     id
 }
 
 /// Return this CPU's cpu struct.
 /// Interrupts must be disabled.
 pub unsafe fn mycpu() -> *mut Cpu {
-    let id: i32 = cpuid();
-    let c: *mut Cpu = &mut *CPUS.as_mut_ptr().offset(id as isize) as *mut Cpu;
+    let id: usize = cpuid();
+    let c: *mut Cpu = &mut *CPUS.as_mut_ptr().add(id) as *mut Cpu;
     c
 }
 
