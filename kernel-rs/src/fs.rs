@@ -19,12 +19,12 @@ use crate::{
     param::{NINODE, ROOTDEV},
     proc::{either_copyin, either_copyout, myproc},
     sleeplock::Sleeplock,
-    spinlock::RawSpinlock,
+    spinlock::Spinlock,
     stat::{Stat, T_DIR},
     string::{strncmp, strncpy},
 };
 use core::mem;
-use core::ptr;
+use core::{ops::DerefMut, ptr};
 
 pub const FD_DEVICE: u32 = 3;
 pub const FD_INODE: u32 = 2;
@@ -165,16 +165,14 @@ struct Dinode {
 /// dev, and inum.  One must hold ip->lock in order to
 /// read or write that inode's ip->valid, ip->size, ip->type, &c.
 struct Icache {
-    lock: RawSpinlock,
-    inode: [Inode; NINODE],
+    inode: Spinlock<[Inode; NINODE]>,
 }
 
 impl Icache {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            lock: RawSpinlock::zeroed(),
-            inode: [Inode::zeroed(); NINODE],
+            inode: Spinlock::new("ICACHE", [Inode::zeroed(); NINODE]),
         }
     }
 }
@@ -205,9 +203,8 @@ impl Inode {
     /// Increment reference count for ip.
     /// Returns ip to enable ip = idup(ip1) idiom.
     pub unsafe fn idup(&mut self) -> *mut Self {
-        ICACHE.lock.acquire();
+        let _inode = ICACHE.inode.lock();
         self.ref_0 += 1;
-        ICACHE.lock.release();
         self
     }
 
@@ -256,7 +253,7 @@ impl Inode {
     /// All calls to Inode::put() must be inside a transaction in
     /// case it has to free the inode.
     pub unsafe fn put(&mut self) {
-        ICACHE.lock.acquire();
+        let mut inode = ICACHE.inode.lock();
 
         if (*self).ref_0 == 1 && (*self).valid != 0 && (*self).nlink as i32 == 0 {
             // inode has no links and no other references: truncate and free.
@@ -265,7 +262,7 @@ impl Inode {
             // so this acquiresleep() won't block (or deadlock).
             (*self).lock.acquire();
 
-            ICACHE.lock.release();
+            drop(inode);
 
             self.itrunc();
             (*self).typ = 0;
@@ -274,10 +271,10 @@ impl Inode {
 
             (*self).lock.release();
 
-            ICACHE.lock.acquire();
+            inode = ICACHE.inode.lock();
         }
         (*self).ref_0 -= 1;
-        ICACHE.lock.release();
+        drop(inode);
     }
 
     /// Common idiom: unlock, then put.
@@ -608,9 +605,13 @@ unsafe fn bfree(dev: i32, b: u32) {
 static mut ICACHE: Icache = Icache::zeroed();
 
 pub unsafe fn iinit() {
-    ICACHE.lock.initlock("ICACHE");
+    let mut inode = ICACHE.inode.lock();
     for i in 0..NINODE {
-        (*ICACHE.inode.as_mut_ptr().add(i)).lock.initlock("inode");
+        inode
+            .deref_mut()
+            .get_unchecked_mut(i)
+            .lock
+            .initlock("inode");
     }
 }
 
@@ -618,14 +619,13 @@ pub unsafe fn iinit() {
 /// and return the in-memory copy. Does not lock
 /// the inode and does not read it from disk.
 unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
-    ICACHE.lock.acquire();
+    let mut inode = ICACHE.inode.lock();
 
     // Is the inode already cached?
     let mut empty: *mut Inode = ptr::null_mut();
-    for ip in &mut ICACHE.inode[..] {
+    for ip in &mut inode.deref_mut()[..] {
         if (*ip).ref_0 > 0 && (*ip).dev == dev && (*ip).inum == inum {
             (*ip).ref_0 += 1;
-            ICACHE.lock.release();
             return ip;
         }
         if empty.is_null() && (*ip).ref_0 == 0 {
@@ -643,7 +643,6 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
     (*ip).inum = inum;
     (*ip).ref_0 = 1;
     (*ip).valid = 0;
-    ICACHE.lock.release();
     ip
 }
 
