@@ -172,7 +172,7 @@ pub unsafe fn kerneltrap() {
         panic!("kerneltrap: not from supervisor mode");
     }
 
-    if intr_get() == true {
+    if intr_get() {
         panic!("kerneltrap: interrupts enabled");
     }
 

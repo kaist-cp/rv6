@@ -176,7 +176,7 @@ impl<T> DerefMut for SpinLockGuard<'_, T> {
 /// it takes two pop_off()s to undo two push_off()s.  Also, if interrupts
 /// are initially off, then push_off, pop_off leaves them off.
 pub unsafe fn push_off() {
-    let old: bool = intr_get();
+    let old = intr_get();
     intr_off();
     if (*(mycpu())).noff == 0 {
         (*(mycpu())).interrupt_enabled = old
@@ -185,7 +185,7 @@ pub unsafe fn push_off() {
 }
 pub unsafe fn pop_off() {
     let mut c: *mut Cpu = mycpu();
-    if intr_get() == true {
+    if intr_get() {
         panic!("pop_off - interruptible");
     }
     (*c).noff -= 1;
