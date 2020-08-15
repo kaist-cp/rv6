@@ -835,10 +835,8 @@ pub unsafe fn sleep(chan: *mut libc::CVoid, lk: *mut RawSpinlock) {
 pub unsafe fn wakeup(chan: *mut libc::CVoid) {
     for p in &mut PROC[..] {
         p.lock.acquire();
-        if p.chan == chan {
-            if p.state == Procstate::SLEEPING {
-                p.state = Procstate::RUNNABLE
-            }
+        if p.chan == chan && p.state == Procstate::SLEEPING {
+            p.state = Procstate::RUNNABLE
         }
         p.lock.release();
     }
@@ -850,10 +848,8 @@ unsafe fn wakeup1(mut p: *mut Proc) {
     if (*p).lock.holding() == 0 {
         panic!("wakeup1");
     }
-    if (*p).chan == p as *mut libc::CVoid {
-        if (*p).state == Procstate::SLEEPING {
-            (*p).state = Procstate::RUNNABLE
-        }
+    if (*p).chan == p as *mut libc::CVoid && (*p).state == Procstate::SLEEPING {
+        (*p).state = Procstate::RUNNABLE
     }
 }
 
