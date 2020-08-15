@@ -192,7 +192,7 @@ pub struct Trapframe {
     pub t6: usize,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Procstate {
     ZOMBIE,
     RUNNING,
@@ -213,8 +213,8 @@ pub struct Proc {
     /// Parent process.
     parent: *mut Proc,
 
-    /// If non-zero, sleeping on channel.
-    channel: *mut libc::CVoid,
+    /// If non-zero, sleeping on chan.
+    chan: *mut libc::CVoid,
 
     /// If non-zero, have been killed.
     pub killed: i32,
@@ -243,10 +243,10 @@ pub struct Proc {
     context: Context,
 
     /// Open files.
-    pub open_file: [*mut File; NOFILE],
+    pub open_files: [*mut File; NOFILE],
 
     /// Current directory.
-    pub current_working_dir: *mut Inode,
+    pub cwd: *mut Inode,
 
     /// Process name (debugging).
     pub name: [u8; 16],
@@ -293,7 +293,7 @@ impl Proc {
             lock: RawSpinlock::zeroed(),
             state: Procstate::UNUSED,
             parent: ptr::null_mut(),
-            channel: ptr::null_mut(),
+            chan: ptr::null_mut(),
             killed: 0,
             xstate: 0,
             pid: 0,
@@ -302,8 +302,8 @@ impl Proc {
             pagetable: ptr::null_mut(),
             tf: ptr::null_mut(),
             context: Context::zeroed(),
-            open_file: [ptr::null_mut(); NOFILE],
-            current_working_dir: ptr::null_mut(),
+            open_files: [ptr::null_mut(); NOFILE],
+            cwd: ptr::null_mut(),
             name: [0; 16],
         }
     }
@@ -379,7 +379,7 @@ unsafe fn allocpid() -> i32 {
 unsafe fn allocproc() -> *mut Proc {
     for p in &mut PROC[..] {
         p.lock.acquire();
-        if let Procstate::UNUSED = p.state {
+        if p.state == Procstate::UNUSED {
             p.pid = allocpid();
 
             // Allocate a Trapframe page.
@@ -421,7 +421,7 @@ unsafe fn freeproc(mut p: *mut Proc) {
     (*p).pid = 0;
     (*p).parent = ptr::null_mut();
     (*p).name[0] = 0;
-    (*p).channel = ptr::null_mut();
+    (*p).chan = ptr::null_mut();
     (*p).killed = 0;
     (*p).xstate = 0;
     (*p).state = Procstate::UNUSED;
@@ -500,7 +500,7 @@ pub unsafe fn userinit() {
         b"initcode\x00" as *const u8,
         ::core::mem::size_of::<[u8; 16]>() as i32,
     );
-    (*p).current_working_dir = namei(b"/\x00" as *const u8 as *mut u8);
+    (*p).cwd = namei(b"/\x00" as *const u8 as *mut u8);
     (*p).state = Procstate::RUNNABLE;
     (*p).lock.release();
 }
@@ -553,11 +553,11 @@ pub unsafe fn fork() -> i32 {
 
     // increment reference counts on open file descriptors.
     for i in 0..NOFILE {
-        if !(*p).open_file[i as usize].is_null() {
-            (*np).open_file[i as usize] = (*(*p).open_file[i as usize]).dup()
+        if !(*p).open_files[i as usize].is_null() {
+            (*np).open_files[i as usize] = (*(*p).open_files[i as usize]).dup()
         }
     }
-    (*np).current_working_dir = (*(*p).current_working_dir).idup();
+    (*np).cwd = (*(*p).cwd).idup();
     safestrcpy(
         (*np).name.as_mut_ptr(),
         (*p).name.as_mut_ptr(),
@@ -603,16 +603,16 @@ pub unsafe fn exit(status: i32) {
 
     // Close all open files.
     for fd in 0..NOFILE {
-        if !(*p).open_file[fd].is_null() {
-            let f: *mut File = (*p).open_file[fd];
+        if !(*p).open_files[fd].is_null() {
+            let f: *mut File = (*p).open_files[fd];
             (*f).close();
-            (*p).open_file[fd] = ptr::null_mut();
+            (*p).open_files[fd] = ptr::null_mut();
         }
     }
     begin_op();
-    (*(*p).current_working_dir).put();
+    (*(*p).cwd).put();
     end_op();
-    (*p).current_working_dir = ptr::null_mut();
+    (*p).cwd = ptr::null_mut();
 
     // We might re-parent a child to init. We can't be precise about
     // waking up init, since we can't acquire its lock once we've
@@ -673,7 +673,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
                 // because only the parent changes it, and we're the parent.
                 np.lock.acquire();
                 havekids = 1;
-                if let Procstate::ZOMBIE = np.state {
+                if np.state == Procstate::ZOMBIE {
                     let pid = np.pid;
                     if addr != 0
                         && copyout(
@@ -724,7 +724,7 @@ pub unsafe fn scheduler() -> ! {
 
         for p in &mut PROC[..] {
             p.lock.acquire();
-            if let Procstate::RUNNABLE = p.state {
+            if p.state == Procstate::RUNNABLE {
                 // Switch to chosen process.  It is the process's job
                 // to release its lock and then reacquire it
                 // before jumping back to us.
@@ -756,13 +756,13 @@ unsafe fn sched() {
     if (*mycpu()).noff != 1 {
         panic!("sched locks");
     }
-    if let Procstate::RUNNING = (*p).state {
+    if (*p).state == Procstate::RUNNING {
         panic!("sched running");
     }
-    if intr_get() == true {
+    if intr_get() {
         panic!("sched interruptible");
     }
-    let interrupt_enabled: bool = (*mycpu()).interrupt_enabled;
+    let interrupt_enabled = (*mycpu()).interrupt_enabled;
     swtch(
         &mut (*p).context,
         &mut (*(mycpu as unsafe fn() -> *mut Cpu)()).scheduler,
@@ -796,9 +796,9 @@ unsafe fn forkret() {
     usertrapret();
 }
 
-/// Atomically release lock and sleep on channel.
+/// Atomically release lock and sleep on chan.
 /// Reacquires lock when awakened.
-pub unsafe fn sleep(channel: *mut libc::CVoid, lk: *mut RawSpinlock) {
+pub unsafe fn sleep(chan: *mut libc::CVoid, lk: *mut RawSpinlock) {
     let mut p: *mut Proc = myproc();
 
     // Must acquire p->lock in order to
@@ -816,12 +816,12 @@ pub unsafe fn sleep(channel: *mut libc::CVoid, lk: *mut RawSpinlock) {
     }
 
     // Go to sleep.
-    (*p).channel = channel;
+    (*p).chan = chan;
     (*p).state = Procstate::SLEEPING;
     sched();
 
     // Tidy up.
-    (*p).channel = ptr::null_mut();
+    (*p).chan = ptr::null_mut();
 
     // Reacquire original lock.
     if lk != &mut (*p).lock as *mut RawSpinlock {
@@ -830,13 +830,13 @@ pub unsafe fn sleep(channel: *mut libc::CVoid, lk: *mut RawSpinlock) {
     };
 }
 
-/// Wake up all processes sleeping on channel.
+/// Wake up all processes sleeping on chan.
 /// Must be called without any p->lock.
-pub unsafe fn wakeup(channel: *mut libc::CVoid) {
+pub unsafe fn wakeup(chan: *mut libc::CVoid) {
     for p in &mut PROC[..] {
         p.lock.acquire();
-        if p.channel == channel {
-            if let Procstate::SLEEPING = p.state {
+        if p.chan == chan {
+            if p.state == Procstate::SLEEPING {
                 p.state = Procstate::RUNNABLE
             }
         }
@@ -850,8 +850,8 @@ unsafe fn wakeup1(mut p: *mut Proc) {
     if (*p).lock.holding() == 0 {
         panic!("wakeup1");
     }
-    if (*p).channel == p as *mut libc::CVoid {
-        if let Procstate::SLEEPING = (*p).state {
+    if (*p).chan == p as *mut libc::CVoid {
+        if (*p).state == Procstate::SLEEPING {
             (*p).state = Procstate::RUNNABLE
         }
     }
@@ -865,7 +865,7 @@ pub unsafe fn kill(pid: i32) -> i32 {
         p.lock.acquire();
         if p.pid == pid {
             p.killed = 1;
-            if let Procstate::SLEEPING = p.state {
+            if p.state == Procstate::SLEEPING {
                 // Wake process from sleep().
                 p.state = Procstate::RUNNABLE
             }
@@ -910,17 +910,14 @@ pub unsafe fn procdump() {
     static mut STATES: [&str; 5] = ["unused", "sleep ", "runble", "run   ", "zombie"];
     println!();
     for p in &mut PROC[..] {
-        match p.state {
-            Procstate::UNUSED => (),
-            _ => {
-                let state = STATES.get(p.state as usize).unwrap_or(&"???");
-                println!(
-                    "{} {} {}",
-                    p.pid,
-                    state,
-                    str::from_utf8(&p.name).unwrap_or("???")
-                );
-            }
+        if p.state != Procstate::UNUSED {
+            let state = STATES.get(p.state as usize).unwrap_or(&"???");
+            println!(
+                "{} {} {}",
+                p.pid,
+                state,
+                str::from_utf8(&p.name).unwrap_or("???")
+            );
         }
     }
 }
