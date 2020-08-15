@@ -75,7 +75,7 @@ impl PrintfLock {
     }
 }
 
-pub static mut PANICKED: AtomicBool = AtomicBool::new(false);
+pub static PANICKED: AtomicBool = AtomicBool::new(false);
 
 static mut PR: PrintfLock = PrintfLock::zeroed();
 

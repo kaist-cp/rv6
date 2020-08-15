@@ -13,7 +13,7 @@ use crate::{
 };
 use core::sync::atomic::{AtomicBool, Ordering};
 
-static mut STARTED: AtomicBool = AtomicBool::new(false);
+static STARTED: AtomicBool = AtomicBool::new(false);
 
 /// start() jumps here in supervisor mode on all CPUs.
 pub unsafe fn kernel_main() {
