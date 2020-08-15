@@ -192,7 +192,7 @@ pub unsafe fn pop_off() {
     if (*c).noff < 0 {
         panic!("pop_off");
     }
-    if (*c).noff == 0 && (*c).interrupt_enabled == true {
+    if (*c).noff == 0 && (*c).interrupt_enabled {
         intr_on();
     };
 }

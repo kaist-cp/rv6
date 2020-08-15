@@ -188,11 +188,8 @@ pub unsafe fn kerneltrap() {
     }
 
     // give up the CPU if this is a timer interrupt.
-    if which_dev == 2 && !myproc().is_null() {
-        match (*myproc()).state {
-            Procstate::RUNNING => proc_yield(),
-            _ => (),
-        }
+    if which_dev == 2 && !myproc().is_null() && (*myproc()).state == Procstate::RUNNING {
+        proc_yield()
     }
 
     // the yield() may have caused some traps to occur,
