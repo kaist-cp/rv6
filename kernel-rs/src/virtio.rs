@@ -1,10 +1,10 @@
-/// virtio device definitions.
-/// for both the mmio interface, and virtio descriptors.
-/// only tested with qemu.
-/// this is the "legacy" virtio interface.
-///
-/// the virtio spec:
-/// https:///docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.pdf
+//! virtio device definitions.
+//! for both the mmio interface, and virtio descriptors.
+//! only tested with qemu.
+//! this is the "legacy" virtio interface.
+//!
+//! the virtio spec:
+//! https:///docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.pdf
 
 // virtio mmio control registers, mapped starting at 0x10001000.
 // from qemu virtio_mmio.h
@@ -49,31 +49,36 @@ pub const VIRTIO_MMIO_QUEUE_NOTIFY: usize = 0x050;
 /// read/write
 pub const VIRTIO_MMIO_STATUS: usize = 0x070;
 
-/// status register bits, from qemu virtio_config.h
-pub const VIRTIO_CONFIG_S_ACKNOWLEDGE: u32 = 1;
-pub const VIRTIO_CONFIG_S_DRIVER: u32 = 2;
-pub const VIRTIO_CONFIG_S_DRIVER_OK: u32 = 4;
-pub const VIRTIO_CONFIG_S_FEATURES_OK: u32 = 8;
+bitflags! {
+    /// Status register bits, from qemu virtio_config.h
+    pub struct VirtIOStatus: u32 {
+        const ACKNOWLEDGE = 0b0001;
+        const DRIVER = 0b0010;
+        const DRIVER_OK = 0b0100;
+        const FEATURES_OK = 0b1000;
+    }
+}
 
-/// device feature bits
+bitflags! {
+    // Device feature bits
+    pub struct VirtIOFeatures: u32 {
+        /// Disk is read-only
+        const BLK_F_RO = 1 << 5;
 
-/// Disk is read-only
-pub const VIRTIO_BLK_F_RO: u32 = 5;
+        /// Supports scsi command passthru
+        const BLK_F_SCSI = 1 << 7;
 
-/// Supports scsi command passthru
-pub const VIRTIO_BLK_F_SCSI: u32 = 7;
+        /// Writeback mode available in config
+        const BLK_F_CONFIG_WCE = 1 << 11;
 
-/// Writeback mode available in config
-pub const VIRTIO_BLK_F_CONFIG_WCE: u32 = 11;
+        /// support more than one vq
+        const BLK_F_MQ = 1 << 12;
 
-/// support more than one vq
-pub const VIRTIO_BLK_F_MQ: u32 = 12;
-
-pub const VIRTIO_F_ANY_LAYOUT: u32 = 27;
-
-pub const VIRTIO_RING_F_INDIRECT_DESC: u32 = 28;
-
-pub const VIRTIO_RING_F_EVENT_IDX: u32 = 29;
+        const F_ANY_LAYOUT = 1 << 27;
+        const RING_F_INDIRECT_DESC = 1 << 28;
+        const RING_F_EVENT_IDX = 1 << 29;
+    }
+}
 
 /// this many virtio descriptors.
 /// must be a power of two.
