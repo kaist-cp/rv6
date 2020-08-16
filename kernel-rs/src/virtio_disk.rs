@@ -94,7 +94,7 @@ impl InflightInfo {
 static mut DISK: Disk = Disk::zeroed();
 
 pub unsafe fn virtio_disk_init() {
-    let mut status: u32 = 0;
+    let mut status: VirtIOStatus = VirtIOStatus::empty();
     DISK.vdisk_lock.initlock("virtio_disk");
     if *(r(VIRTIO_MMIO_MAGIC_VALUE)) != 0x74726976
         || *(r(VIRTIO_MMIO_VERSION)) != 1
@@ -103,30 +103,31 @@ pub unsafe fn virtio_disk_init() {
     {
         panic!("could not find virtio disk");
     }
-    status |= VIRTIO_CONFIG_S_ACKNOWLEDGE;
-    ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status);
-    status |= VIRTIO_CONFIG_S_DRIVER;
-    ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status);
+    status.insert(VirtIOStatus::ACKNOWLEDGE);
+    ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status.bits());
+    status.insert(VirtIOStatus::DRIVER);
+    ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status.bits());
 
     // negotiate features
-    let features = *(r(VIRTIO_MMIO_DEVICE_FEATURES))
-        & !(1 << VIRTIO_BLK_F_RO)
-        & !(1 << VIRTIO_BLK_F_SCSI)
-        & !(1 << VIRTIO_BLK_F_CONFIG_WCE)
-        & !(1 << VIRTIO_BLK_F_MQ)
-        & !(1 << VIRTIO_F_ANY_LAYOUT)
-        & !(1 << VIRTIO_RING_F_EVENT_IDX)
-        & !(1 << VIRTIO_RING_F_INDIRECT_DESC);
+    let mut features = VirtIOFeatures::from_bits_unchecked(*(r(VIRTIO_MMIO_DEVICE_FEATURES)));
 
-    ::core::ptr::write_volatile(r(VIRTIO_MMIO_DRIVER_FEATURES), features);
+    features.remove(VirtIOFeatures::BLK_F_RO);
+    features.remove(VirtIOFeatures::BLK_F_SCSI);
+    features.remove(VirtIOFeatures::BLK_F_CONFIG_WCE);
+    features.remove(VirtIOFeatures::BLK_F_MQ);
+    features.remove(VirtIOFeatures::F_ANY_LAYOUT);
+    features.remove(VirtIOFeatures::RING_F_EVENT_IDX);
+    features.remove(VirtIOFeatures::RING_F_INDIRECT_DESC);
+
+    ::core::ptr::write_volatile(r(VIRTIO_MMIO_DRIVER_FEATURES), features.bits());
 
     // tell device that feature negotiation is complete.
-    status |= VIRTIO_CONFIG_S_FEATURES_OK;
-    ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status);
+    status.insert(VirtIOStatus::FEATURES_OK);
+    ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status.bits());
 
     // tell device we're completely ready.
-    status |= VIRTIO_CONFIG_S_DRIVER_OK;
-    ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status);
+    status.insert(VirtIOStatus::DRIVER_OK);
+    ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status.bits());
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_GUEST_PAGE_SIZE), PGSIZE as u32);
 
     // initialize queue 0.
