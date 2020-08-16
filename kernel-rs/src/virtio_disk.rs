@@ -8,6 +8,7 @@ use crate::{
     buf::Buf,
     fs::BSIZE,
     memlayout::VIRTIO0,
+    page::Page,
     proc::{sleep, wakeup},
     riscv::{PGSHIFT, PGSIZE},
     spinlock::RawSpinlock,
@@ -22,16 +23,13 @@ const fn r(r: usize) -> *mut u32 {
     VIRTIO0.wrapping_add(r) as *mut u32
 }
 
-// It needs repr(C) because it's struct for in-disk representation
-// which should follow C(=machine) representation
-// https://github.com/kaist-cp/rv6/issues/52
-#[repr(C, align(4096))]
+/// Memory for virtio descriptors `&c` for queue 0.
+///
+/// This is a global instead of allocated because it must be multiple contiguous pages, which
+/// `kalloc()` doesn't support, and page aligned.
+static mut VIRTQUEUE: [Page; 2] = [Page::DEFAULT, Page::DEFAULT];
+
 struct Disk {
-    /// memory for virtio descriptors &c for queue 0.
-    /// this is a global instead of allocated because it must
-    /// be multiple contiguous pages, which kalloc()
-    /// doesn't support, and page aligned.
-    pages: [u8; 2usize.wrapping_mul(PGSIZE)],
     desc: *mut VRingDesc,
     avail: *mut u16,
     used: *mut UsedArea,
@@ -69,7 +67,6 @@ impl Disk {
     // TODO: transient measure
     const fn zeroed() -> Self {
         Self {
-            pages: [0; 8192],
             desc: ptr::null_mut(),
             avail: ptr::null_mut(),
             used: ptr::null_mut(),
@@ -140,20 +137,20 @@ pub unsafe fn virtio_disk_init() {
         panic!("virtio disk max queue too short");
     }
     ::core::ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_NUM), NUM as u32);
-    ptr::write_bytes(DISK.pages.as_mut_ptr(), 0, 1);
+    ptr::write_bytes(&mut VIRTQUEUE, 0, 1);
     ::core::ptr::write_volatile(
         r(VIRTIO_MMIO_QUEUE_PFN),
-        (DISK.pages.as_mut_ptr() as usize >> PGSHIFT) as u32,
+        (VIRTQUEUE.as_mut_ptr() as usize >> PGSHIFT) as u32,
     );
 
     // desc = pages -- num * VRingDesc
     // avail = pages + 0x40 -- 2 * u16, then num * u16
     // used = pages + 4096 -- 2 * u16, then num * vRingUsedElem
 
-    DISK.desc = DISK.pages.as_mut_ptr() as *mut VRingDesc;
+    DISK.desc = VIRTQUEUE.as_mut_ptr() as *mut VRingDesc;
     DISK.avail = (DISK.desc as *mut u8).add(NUM.wrapping_mul(::core::mem::size_of::<VRingDesc>()))
         as *mut u16;
-    DISK.used = DISK.pages.as_mut_ptr().add(PGSIZE) as *mut UsedArea;
+    DISK.used = VIRTQUEUE[1].as_mut_ptr() as *mut UsedArea;
     for i in 0..NUM {
         DISK.free[i] = 1;
     }

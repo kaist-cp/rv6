@@ -35,6 +35,7 @@ mod kalloc;
 mod kernel_main;
 mod log;
 mod memlayout;
+mod page;
 mod param;
 mod pipe;
 mod plic;
