@@ -87,15 +87,20 @@ pub const NUM: usize = 8;
 pub struct VRingDesc {
     pub addr: usize,
     pub len: u32,
-    pub flags: u16,
+    pub flags: VRingDescFlags,
     pub next: u16,
 }
 
-/// chained with another descriptor
-pub const VRING_DESC_F_NEXT: u16 = 1;
+bitflags! {
+    pub struct VRingDescFlags: u16 {
+        /// chained with another descriptor
+        const NEXT = 0b01;
 
-/// device writes (vs read)
-pub const VRING_DESC_F_WRITE: u16 = 2;
+        /// device writes (vs read)
+        const WRITE = 0b10;
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct VRingUsedElem {
     /// index of start of completed descriptor chain
