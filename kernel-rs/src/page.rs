@@ -15,7 +15,7 @@ impl Page {
 
 impl Deref for Page {
     type Target = [u8; PGSIZE];
-    
+
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
