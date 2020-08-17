@@ -158,14 +158,14 @@ pub unsafe fn virtio_disk_init() {
 }
 
 /// find a free descriptor, mark it non-free, return its index.
-unsafe fn alloc_desc() -> i32 {
+unsafe fn alloc_desc() -> Option<i32> {
     for i in 0..NUM {
         if DISK.free[i] != 0 {
             DISK.free[i] = 0;
-            return i as i32;
+            return Some(i as _);
         }
     }
-    -1
+    None
 }
 
 /// mark a descriptor as free.
@@ -192,17 +192,22 @@ unsafe fn free_chain(mut i: i32) {
     }
 }
 
-unsafe fn alloc3_desc(idx: *mut i32) -> i32 {
+unsafe fn alloc3_desc() -> Option<[i32; 3]> {
+    let mut idx = [0; 3];
+
     for i in 0..3 {
-        *idx.offset(i as isize) = alloc_desc();
-        if *idx.offset(i as isize) < 0 {
-            for j in 0..i {
-                free_desc(*idx.offset(j as isize));
+        match alloc_desc() {
+            Some(desc) => idx[i] = desc,
+            None => {
+                for j in 0..i {
+                    free_desc(idx[j]);
+                }
+                return None;
             }
-            return -1;
         }
     }
-    0
+    
+    Some(idx)
 }
 
 pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
@@ -215,14 +220,15 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
     // the data, one for a 1-byte status result.
 
     // allocate the three descriptors.
-    let mut idx: [i32; 3] = [0; 3];
-
-    while alloc3_desc(idx.as_mut_ptr()) != 0 {
-        sleep(
-            &mut *DISK.free.as_mut_ptr().offset(0) as *mut u8 as *mut libc::CVoid,
-            &mut DISK.vdisk_lock,
-        );
-    }
+    let idx = loop {
+        match alloc3_desc() {
+            Some(idx) => break idx,
+            None => sleep(
+                DISK.free.as_mut_ptr() as *mut libc::CVoid,
+                &mut DISK.vdisk_lock,
+            ),
+        }
+    };
 
     // format the three descriptors.
     // qemu's virtio-blk.c reads them.
@@ -266,7 +272,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
     (*DISK.desc.offset(idx[2] as isize)).addr = &mut (*DISK
         .info
         .as_mut_ptr()
-        .offset(*idx.as_mut_ptr().offset(0) as isize))
+        .offset(idx[0] as isize))
     .status as *mut u8 as usize;
 
     (*DISK.desc.offset(idx[2] as isize)).len = 1;
