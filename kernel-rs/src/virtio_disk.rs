@@ -101,9 +101,9 @@ pub unsafe fn virtio_disk_init() {
         panic!("could not find virtio disk");
     }
     status.insert(VirtIOStatus::ACKNOWLEDGE);
-    ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status.bits());
+    ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status.bits());
     status.insert(VirtIOStatus::DRIVER);
-    ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status.bits());
+    ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status.bits());
 
     // negotiate features
     let mut features = VirtIOFeatures::from_bits_unchecked(*(r(VIRTIO_MMIO_DEVICE_FEATURES)));
@@ -116,19 +116,19 @@ pub unsafe fn virtio_disk_init() {
     features.remove(VirtIOFeatures::RING_F_EVENT_IDX);
     features.remove(VirtIOFeatures::RING_F_INDIRECT_DESC);
 
-    ::core::ptr::write_volatile(r(VIRTIO_MMIO_DRIVER_FEATURES), features.bits());
+    ptr::write_volatile(r(VIRTIO_MMIO_DRIVER_FEATURES), features.bits());
 
     // tell device that feature negotiation is complete.
     status.insert(VirtIOStatus::FEATURES_OK);
-    ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status.bits());
+    ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status.bits());
 
     // tell device we're completely ready.
     status.insert(VirtIOStatus::DRIVER_OK);
-    ::core::ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status.bits());
-    ::core::ptr::write_volatile(r(VIRTIO_MMIO_GUEST_PAGE_SIZE), PGSIZE as u32);
+    ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status.bits());
+    ptr::write_volatile(r(VIRTIO_MMIO_GUEST_PAGE_SIZE), PGSIZE as u32);
 
     // initialize queue 0.
-    ::core::ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_SEL), 0);
+    ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_SEL), 0);
     let max: u32 = *(r(VIRTIO_MMIO_QUEUE_NUM_MAX));
     if max == 0 {
         panic!("virtio disk has no queue 0");
@@ -136,9 +136,9 @@ pub unsafe fn virtio_disk_init() {
     if max < NUM as u32 {
         panic!("virtio disk max queue too short");
     }
-    ::core::ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_NUM), NUM as u32);
+    ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_NUM), NUM as u32);
     ptr::write_bytes(&mut VIRTQUEUE, 0, 1);
-    ::core::ptr::write_volatile(
+    ptr::write_volatile(
         r(VIRTIO_MMIO_QUEUE_PFN),
         (VIRTQUEUE.as_mut_ptr() as usize >> PGSHIFT) as u32,
     );
@@ -148,8 +148,7 @@ pub unsafe fn virtio_disk_init() {
     // used = pages + 4096 -- 2 * u16, then num * vRingUsedElem
 
     DISK.desc = VIRTQUEUE.as_mut_ptr() as *mut VRingDesc;
-    DISK.avail = (DISK.desc as *mut u8).add(NUM.wrapping_mul(::core::mem::size_of::<VRingDesc>()))
-        as *mut u16;
+    DISK.avail = DISK.desc.add(NUM) as *mut u16;
     DISK.used = VIRTQUEUE[1].as_mut_ptr() as *mut UsedArea;
     for i in 0..NUM {
         DISK.free[i] = 1;
