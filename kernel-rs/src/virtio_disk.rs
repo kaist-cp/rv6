@@ -15,6 +15,7 @@ use crate::{
     virtio::*,
     vm::kvmpa,
 };
+use core::mem;
 use core::ptr;
 use core::sync::atomic::{fence, Ordering};
 
@@ -52,15 +53,26 @@ struct InflightInfo {
     status: u8,
 }
 
-#[derive(Default, Copy, Clone)]
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
-struct virtio_blk_outhdr {
+struct VirtIOBlockOutHeader {
     typ: u32,
     reserved: u32,
     sector: usize,
+}
+
+impl VirtIOBlockOutHeader {
+    fn new(write: bool, sector: usize) -> Self {
+        let typ = if write {
+            VIRTIO_BLK_T_OUT
+        } else {
+            VIRTIO_BLK_T_IN
+        };
+
+        Self { typ, reserved: 0, sector }
+    }
 }
 
 impl Disk {
@@ -232,23 +244,12 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
 
     // format the three descriptors.
     // qemu's virtio-blk.c reads them.
-
-    let mut buf0: virtio_blk_outhdr = Default::default();
-
-    if write != 0 {
-        // write the disk
-        buf0.typ = VIRTIO_BLK_T_OUT
-    } else {
-        // read the disk
-        buf0.typ = VIRTIO_BLK_T_IN
-    }
-    buf0.reserved = 0;
-    buf0.sector = sector;
+    let mut buf0 = VirtIOBlockOutHeader::new(write != 0, sector);
 
     // buf0 is on a kernel stack, which is not direct mapped,
     // thus the call to kvmpa().
-    (*DISK.desc.offset(idx[0] as isize)).addr = kvmpa(&mut buf0 as *mut virtio_blk_outhdr as usize);
-    (*DISK.desc.offset(idx[0] as isize)).len = ::core::mem::size_of::<virtio_blk_outhdr>() as u32;
+    (*DISK.desc.offset(idx[0] as isize)).addr = kvmpa(&mut buf0 as *mut _ as usize);
+    (*DISK.desc.offset(idx[0] as isize)).len = mem::size_of::<VirtIOBlockOutHeader>() as u32;
     (*DISK.desc.offset(idx[0] as isize)).flags = VRING_DESC_F_NEXT;
     (*DISK.desc.offset(idx[0] as isize)).next = idx[1] as u16;
     (*DISK.desc.offset(idx[1] as isize)).addr = (*b).data.as_mut_ptr() as usize;
@@ -297,7 +298,7 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
     *DISK.avail.add(1) = (*DISK.avail.add(1) as i32 + 1) as u16;
 
     // value is queue number
-    ::core::ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_NOTIFY), 0);
+    ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_NOTIFY), 0);
 
     // Wait for virtio_disk_intr() to say request has finished.
     while (*b).disk == 1 {
