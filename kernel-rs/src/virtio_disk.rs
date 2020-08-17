@@ -32,19 +32,33 @@ static mut VIRTQUEUE: [Page; 2] = [Page::DEFAULT, Page::DEFAULT];
 
 struct Disk {
     desc: *mut [VRingDesc; NUM],
-    avail: *mut [u16; 2 + NUM],
+    avail: *mut AvailableRing,
     used: *mut [UsedArea; NUM],
 
     /// our own book-keeping.
-    free: [u8; NUM as usize],
+    free: [u8; NUM],
     used_idx: u16,
 
     /// track info about in-flight operations,
     /// for use when completion interrupt arrives.
     /// indexed by first descriptor index of chain.
-    info: [InflightInfo; NUM as usize],
+    info: [InflightInfo; NUM],
 
     vdisk_lock: RawSpinlock,
+}
+
+// It needs repr(C) because it's struct for in-disk representation
+// which should follow C(=machine) representation
+// https://github.com/kaist-cp/rv6/issues/52
+#[repr(C)]
+struct AvailableRing {
+    flags: u16,
+
+    /// tells the device how far to look in `ring`.
+    idx: u16,
+
+    /// `desc` indices the device should process.
+    ring: [u16; NUM],
 }
 
 #[derive(Copy, Clone)]
@@ -86,9 +100,9 @@ impl Disk {
             desc: ptr::null_mut(),
             avail: ptr::null_mut(),
             used: ptr::null_mut(),
-            free: [0; NUM as usize],
+            free: [0; NUM],
             used_idx: 0,
-            info: [InflightInfo::zeroed(); NUM as usize],
+            info: [InflightInfo::zeroed(); NUM],
             vdisk_lock: RawSpinlock::zeroed(),
         }
     }
@@ -229,7 +243,7 @@ unsafe fn alloc3_desc() -> Option<[i32; 3]> {
     Some(idx)
 }
 
-pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
+pub unsafe fn virtio_disk_rw(b: *mut Buf, write: i32) {
     let sector: usize = (*b).blockno.wrapping_mul((BSIZE / 512) as u32) as usize;
 
     DISK.vdisk_lock.acquire();
@@ -288,13 +302,10 @@ pub unsafe fn virtio_disk_rw(mut b: *mut Buf, write: i32) {
     (*b).disk = 1;
     DISK.info[idx[0] as usize].b = b;
 
-    // avail[0] is flags
-    // avail[1] tells the device how far to look in avail[2...].
-    // avail[2...] are desc[] indices the device should process.
     // we only tell device the first index in our chain of descriptors.
-    (*DISK.avail)[2 + (*DISK.avail)[1] as usize % NUM] = idx[0] as u16;
+    (*DISK.avail).ring[(*DISK.avail).idx as usize % NUM] = idx[0] as u16;
     fence(Ordering::SeqCst);
-    (*DISK.avail)[1] += 1;
+    (*DISK.avail).idx += 1;
 
     // value is queue number
     ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_NOTIFY), 0);
