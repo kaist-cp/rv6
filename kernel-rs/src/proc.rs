@@ -918,11 +918,10 @@ pub unsafe fn procdump() {
     println!();
     for p in &mut PROC[..] {
         if p.state != Procstate::UNUSED {
-            let state = Procstate::to_str(&p.state);
             println!(
                 "{} {} {}",
                 p.pid,
-                state,
+                Procstate::to_str(&p.state),
                 str::from_utf8(&p.name).unwrap_or("???")
             );
         }
