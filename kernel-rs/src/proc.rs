@@ -72,13 +72,13 @@ pub struct Cpu {
 /// Sits in a page by itself just under the trampoline page in the
 /// user page table. Not specially mapped in the kernel page table.
 /// The sscratch register points here.
-/// uservec in trampoline.S saves user registers in the Trapframe,
-/// then initializes registers from the Trapframe's
+/// uservec in trampoline.S saves user registers in the trapframe,
+/// then initializes registers from the trapframe's
 /// kernel_sp, kernel_hartid, kernel_satp, and jumps to kernel_trap.
 /// usertrapret() and userret in trampoline.S set up
-/// the Trapframe's kernel_*, restore user registers from the
-/// Trapframe, switch to the user page table, and enter user space.
-/// The Trapframe includes callee-saved user registers like s0-s11 because the
+/// the trapframe's kernel_*, restore user registers from the
+/// trapframe, switch to the user page table, and enter user space.
+/// The trapframe includes callee-saved user registers like s0-s11 because the
 /// return-to-user path via usertrapret() doesn't return through
 /// the entire kernel call stack.
 #[derive(Copy, Clone)]
@@ -286,6 +286,18 @@ impl Context {
     }
 }
 
+impl Procstate {
+    fn to_str(&self) -> &'static str {
+        match self {
+            Procstate::UNUSED => "unused",
+            Procstate::SLEEPING => "sleep ",
+            Procstate::RUNNABLE => "runble",
+            Procstate::RUNNING => "run   ",
+            Procstate::ZOMBIE => "zombie",
+        }
+    }
+}
+
 impl Proc {
     // TODO: transient measure
     const fn zeroed() -> Self {
@@ -382,7 +394,7 @@ unsafe fn allocproc() -> *mut Proc {
         if p.state == Procstate::UNUSED {
             p.pid = allocpid();
 
-            // Allocate a Trapframe page.
+            // Allocate a trapframe page.
             p.tf = kalloc() as *mut Trapframe;
             if p.tf.is_null() {
                 p.lock.release();
@@ -445,7 +457,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PagetableT {
         PTE_R | PTE_X,
     );
 
-    // Map the Trapframe just below TRAMPOLINE, for trampoline.S.
+    // Map the trapframe just below TRAMPOLINE, for trampoline.S.
     mappages(
         pagetable,
         TRAPFRAME,
@@ -903,11 +915,10 @@ pub unsafe fn either_copyin(dst: *mut libc::CVoid, user_src: i32, src: usize, le
 /// Runs when user types ^P on console.
 /// No lock to avoid wedging a stuck machine further.
 pub unsafe fn procdump() {
-    static mut STATES: [&str; 5] = ["unused", "sleep ", "runble", "run   ", "zombie"];
     println!();
     for p in &mut PROC[..] {
         if p.state != Procstate::UNUSED {
-            let state = STATES.get(p.state as usize).unwrap_or(&"???");
+            let state = Procstate::to_str(&p.state);
             println!(
                 "{} {} {}",
                 p.pid,
