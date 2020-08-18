@@ -89,7 +89,7 @@ pub unsafe extern "C" fn usertrap() {
                 r_sepc() as *const u8,
                 r_stval() as *const u8
             );
-            (*p).killed = 1
+            (*p).killed = 1;
         }
     }
 
@@ -118,7 +118,7 @@ pub unsafe fn usertrapret() {
         TRAMPOLINE.wrapping_add(uservec.as_mut_ptr().offset_from(trampoline.as_mut_ptr()) as usize),
     );
 
-    // set up Trapframe values that uservec will need when
+    // set up trapframe values that uservec will need when
     // the process next re-enters the kernel.
 
     // kernel page table
@@ -189,7 +189,7 @@ pub unsafe fn kerneltrap() {
 
     // give up the CPU if this is a timer interrupt.
     if which_dev == 2 && !myproc().is_null() && (*myproc()).state == Procstate::RUNNING {
-        proc_yield()
+        proc_yield();
     }
 
     // the yield() may have caused some traps to occur,
