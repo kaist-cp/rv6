@@ -1,10 +1,7 @@
 //! formatted console output -- printf, panic.
 use crate::console::consputc;
 use crate::spinlock::Spinlock;
-use core::{
-    fmt, mem,
-    ops::{Deref, DerefMut},
-};
+use core::fmt;
 
 pub struct Writer {}
 
@@ -37,9 +34,9 @@ macro_rules! println {
 #[doc(hidden)]
 pub unsafe fn _print(args: fmt::Arguments<'_>) {
     use core::fmt::Write;
-    let locking = PR.locking.lock();
-    if *(locking.deref()) == 0 {
-        drop(locking)
+    let _locking;
+    if *PR.locking.get_unchecked() != 0 {
+        _locking = PR.locking.lock();
     }
     (Writer {}).write_fmt(args).unwrap();
 }
@@ -49,7 +46,7 @@ pub unsafe fn _print(args: fmt::Arguments<'_>) {
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
     unsafe {
-        let _ = mem::replace(PR.locking.lock().deref_mut(), 1);
+        *PR.locking.lock() = 1;
         println!("{}", info);
 
         // freeze other CPUs
@@ -77,5 +74,5 @@ pub static mut PANICKED: i32 = 0;
 static mut PR: PrintfLock = PrintfLock::zeroed();
 
 pub unsafe fn printfinit() {
-    let _ = mem::replace(PR.locking.lock().deref_mut(), 1);
+    *PR.locking.lock() = 1;
 }

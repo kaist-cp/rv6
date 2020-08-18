@@ -145,6 +145,10 @@ impl<T> Spinlock<T> {
             _marker: PhantomData,
         }
     }
+
+    pub unsafe fn get_unchecked(&self) -> &T {
+        &*self.data.get()
+    }
 }
 
 impl<T> SpinLockGuard<'_, T> {
