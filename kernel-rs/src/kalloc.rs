@@ -7,7 +7,7 @@ use crate::{
     riscv::{pgroundup, PGSIZE},
     spinlock::Spinlock,
 };
-use core::{ops::DerefMut, ptr, mem};
+use core::{ops::DerefMut, ptr};
 
 extern "C" {
     // first address after kernel.
@@ -29,10 +29,7 @@ impl Kmem {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            freelist: Spinlock::new(
-                "KMEM",
-                ptr::null_mut(),
-            ),
+            freelist: Spinlock::new("KMEM", ptr::null_mut()),
         }
     }
 }
@@ -70,10 +67,8 @@ pub unsafe fn kfree(pa: *mut libc::CVoid) {
     ptr::write_bytes(pa as *mut libc::CVoid, 1, PGSIZE);
     let mut r: *mut Run = pa as *mut Run;
     let mut freelist = KMEM.freelist.lock();
-    (*r).next = freelist.raw() as *mut Run;
-    // let data = freelist.deref_mut();
-    // *data = r;
-    let _ = mem::replace(freelist.deref_mut(), r);
+    (*r).next = *(freelist.deref_mut()) as *mut Run;
+    *(freelist.deref_mut()) = r;
 }
 
 /// Allocate one 4096-byte page of physical memory.
@@ -81,14 +76,14 @@ pub unsafe fn kfree(pa: *mut libc::CVoid) {
 /// Returns 0 if the memory cannot be allocated.
 pub unsafe fn kalloc() -> *mut libc::CVoid {
     let mut freelist = KMEM.freelist.lock();
-    let r = freelist.deref_mut();
-    if !r.is_null() {
-        // *r = (*(*r)).next;
-        let _ = mem::replace(r, (*(*r)).next);
+    let data = freelist.deref_mut();
+    let r = *data;
+    if !data.is_null() {
+        *data = (*(*data)).next;
     }
     if !r.is_null() {
         // fill with junk
-        ptr::write_bytes(*r as *mut u8 as *mut libc::CVoid, 5, PGSIZE);
+        ptr::write_bytes(r as *mut u8 as *mut libc::CVoid, 5, PGSIZE);
     }
-    *r as *mut libc::CVoid
+    r as *mut libc::CVoid
 }
