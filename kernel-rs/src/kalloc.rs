@@ -21,7 +21,7 @@ struct Run {
     next: *mut Run,
 }
 
-static mut FREELIST: Spinlock<*mut Run> = Spinlock::new("FREELIST", ptr::null_mut());
+static mut KMEM: Spinlock<*mut Run> = Spinlock::new("KMEM", ptr::null_mut());
 
 pub unsafe fn kinit() {
     freerange(
@@ -53,7 +53,7 @@ pub unsafe fn kfree(pa: *mut libc::CVoid) {
     // Fill with junk to catch dangling refs.
     ptr::write_bytes(pa as *mut libc::CVoid, 1, PGSIZE);
     let mut r: *mut Run = pa as *mut Run;
-    let mut freelist = FREELIST.lock();
+    let mut freelist = KMEM.lock();
     (*r).next = *(freelist.deref_mut()) as *mut Run;
     *(freelist.deref_mut()) = r;
 }
@@ -62,7 +62,7 @@ pub unsafe fn kfree(pa: *mut libc::CVoid) {
 /// Returns a pointer that the kernel can use.
 /// Returns 0 if the memory cannot be allocated.
 pub unsafe fn kalloc() -> *mut libc::CVoid {
-    let mut freelist = FREELIST.lock();
+    let mut freelist = KMEM.lock();
     let data = freelist.deref_mut();
     let r = *data;
     if !data.is_null() {
