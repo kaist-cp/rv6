@@ -81,6 +81,7 @@ pub unsafe fn kalloc() -> *mut libc::CVoid {
     if !data.is_null() {
         *data = (*(*data)).next;
     }
+    drop(freelist);
     if !r.is_null() {
         // fill with junk
         ptr::write_bytes(r as *mut u8 as *mut libc::CVoid, 5, PGSIZE);
