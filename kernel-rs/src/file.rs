@@ -68,10 +68,6 @@ pub const FD_INODE: u32 = 2;
 pub const FD_PIPE: u32 = 1;
 pub const FD_NONE: u32 = 0;
 
-struct Ftable {
-    file: Spinlock<[File; NFILE]>,
-}
-
 /// map major device number to device functions.
 #[derive(Copy, Clone)]
 pub struct Devsw {
@@ -79,10 +75,17 @@ pub struct Devsw {
     pub write: Option<unsafe fn(_: i32, _: usize, _: i32) -> i32>,
 }
 
+pub static mut DEVSW: [Devsw; NDEV] = [Devsw {
+    read: None,
+    write: None,
+}; NDEV];
+
+static mut FTABLE: Spinlock<[File; NFILE]> = Spinlock::new("FTABLE", [File::zeroed(); NFILE]);
+
 impl File {
     /// Allocate a file structure.
     pub unsafe fn alloc() -> *mut File {
-        let mut file = FTABLE.file.lock();
+        let mut file = FTABLE.lock();
         for f in &mut file.deref_mut()[..] {
             if (*f).ref_0 == 0 {
                 (*f).ref_0 = 1;
@@ -94,7 +97,7 @@ impl File {
 
     /// Increment ref count for file self.
     pub unsafe fn dup(&mut self) -> *mut File {
-        let _file = FTABLE.file.lock();
+        let _file = FTABLE.lock();
         if (*self).ref_0 < 1 {
             panic!("File::dup");
         }
@@ -104,7 +107,7 @@ impl File {
 
     /// Close file self.  (Decrement ref count, close when reaches 0.)
     pub unsafe fn close(&mut self) {
-        let file = FTABLE.file.lock();
+        let file = FTABLE.lock();
         if (*self).ref_0 < 1 {
             panic!("File::close");
         }
@@ -257,20 +260,3 @@ impl File {
         }
     }
 }
-
-impl Ftable {
-    // TODO: transient measure
-    pub const fn zeroed() -> Self {
-        Self {
-            file: Spinlock::new("FTABLE", [File::zeroed(); NFILE]),
-        }
-    }
-}
-
-/// Support functions for system calls that involve file descriptors.
-pub static mut DEVSW: [Devsw; NDEV] = [Devsw {
-    read: None,
-    write: None,
-}; NDEV];
-
-static mut FTABLE: Ftable = Ftable::zeroed();

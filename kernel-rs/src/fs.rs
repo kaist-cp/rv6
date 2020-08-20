@@ -164,18 +164,8 @@ struct Dinode {
 /// An ip->lock sleep-lock protects all ip-> fields other than ref,
 /// dev, and inum.  One must hold ip->lock in order to
 /// read or write that inode's ip->valid, ip->size, ip->type, &c.
-struct Icache {
-    inode: Spinlock<[Inode; NINODE]>,
-}
 
-impl Icache {
-    // TODO: transient measure
-    pub const fn zeroed() -> Self {
-        Self {
-            inode: Spinlock::new("ICACHE", [Inode::zeroed(); NINODE]),
-        }
-    }
-}
+static mut ICACHE: Spinlock<[Inode; NINODE]> = Spinlock::new("ICACHE", [Inode::zeroed(); NINODE]);
 
 impl Inode {
     /// Copy a modified in-memory inode to disk.
@@ -203,7 +193,7 @@ impl Inode {
     /// Increment reference count for ip.
     /// Returns ip to enable ip = idup(ip1) idiom.
     pub unsafe fn idup(&mut self) -> *mut Self {
-        let _inode = ICACHE.inode.lock();
+        let _inode = ICACHE.lock();
         self.ref_0 += 1;
         self
     }
@@ -253,7 +243,7 @@ impl Inode {
     /// All calls to Inode::put() must be inside a transaction in
     /// case it has to free the inode.
     pub unsafe fn put(&mut self) {
-        let mut inode = ICACHE.inode.lock();
+        let mut inode = ICACHE.lock();
 
         if (*self).ref_0 == 1 && (*self).valid != 0 && (*self).nlink as i32 == 0 {
             // inode has no links and no other references: truncate and free.
@@ -271,7 +261,7 @@ impl Inode {
 
             (*self).lock.release();
 
-            inode = ICACHE.inode.lock();
+            inode = ICACHE.lock();
         }
         (*self).ref_0 -= 1;
         drop(inode);
@@ -602,10 +592,8 @@ unsafe fn bfree(dev: i32, b: u32) {
     (*bp).release();
 }
 
-static mut ICACHE: Icache = Icache::zeroed();
-
 pub unsafe fn iinit() {
-    let mut inode = ICACHE.inode.lock();
+    let mut inode = ICACHE.lock();
     for i in 0..NINODE {
         inode
             .deref_mut()
@@ -619,7 +607,7 @@ pub unsafe fn iinit() {
 /// and return the in-memory copy. Does not lock
 /// the inode and does not read it from disk.
 unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
-    let mut inode = ICACHE.inode.lock();
+    let mut inode = ICACHE.lock();
 
     // Is the inode already cached?
     let mut empty: *mut Inode = ptr::null_mut();
