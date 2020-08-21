@@ -63,13 +63,15 @@ pub unsafe fn kfree(pa: *mut libc::CVoid) {
 /// Returns a pointer that the kernel can use.
 /// Returns 0 if the memory cannot be allocated.
 pub unsafe fn kalloc() -> *mut libc::CVoid {
-    let mut freelist = KMEM.lock();
-    if freelist.is_null() {
-        return ptr::null_mut();
-    }
-    let next = (**freelist).next;
-    let ret = mem::replace(&mut *freelist, next) as _;
-    
+    let ret = {
+        let mut freelist = KMEM.lock();
+        if freelist.is_null() {
+            return ptr::null_mut();
+        }
+        let next = (**freelist).next;
+        mem::replace(&mut *freelist, next) as _
+    };
+
     // fill with junk
     ptr::write_bytes(ret, 5, PGSIZE);
     ret
