@@ -7,7 +7,9 @@ use crate::{
     riscv::{pgroundup, PGSIZE},
     spinlock::Spinlock,
 };
-use core::{ops::DerefMut, ptr};
+
+use core::mem;
+use core::ptr;
 
 extern "C" {
     // first address after kernel.
@@ -16,7 +18,6 @@ extern "C" {
     static mut end: [u8; 0];
 }
 
-#[derive(Copy, Clone)]
 struct Run {
     next: *mut Run,
 }
@@ -52,10 +53,10 @@ pub unsafe fn kfree(pa: *mut libc::CVoid) {
 
     // Fill with junk to catch dangling refs.
     ptr::write_bytes(pa as *mut libc::CVoid, 1, PGSIZE);
-    let mut r: *mut Run = pa as *mut Run;
+    let mut r = pa as *mut Run;
     let mut freelist = KMEM.lock();
-    (*r).next = *(freelist.deref_mut()) as *mut Run;
-    *(freelist.deref_mut()) = r;
+    (*r).next = *freelist;
+    *freelist = r;
 }
 
 /// Allocate one 4096-byte page of physical memory.
@@ -63,15 +64,13 @@ pub unsafe fn kfree(pa: *mut libc::CVoid) {
 /// Returns 0 if the memory cannot be allocated.
 pub unsafe fn kalloc() -> *mut libc::CVoid {
     let mut freelist = KMEM.lock();
-    let data = freelist.deref_mut();
-    let r = *data;
-    if !data.is_null() {
-        *data = (*(*data)).next;
+    if freelist.is_null() {
+        return ptr::null_mut();
     }
-    drop(freelist);
-    if !r.is_null() {
-        // fill with junk
-        ptr::write_bytes(r as *mut u8 as *mut libc::CVoid, 5, PGSIZE);
-    }
-    r as *mut libc::CVoid
+    let next = (**freelist).next;
+    let ret = mem::replace(&mut *freelist, next) as _;
+    
+    // fill with junk
+    ptr::write_bytes(ret, 5, PGSIZE);
+    ret
 }
