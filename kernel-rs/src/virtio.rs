@@ -9,45 +9,35 @@
 // virtio mmio control registers, mapped starting at 0x10001000.
 // from qemu virtio_mmio.h
 
-/// 0x74726976
-pub const VIRTIO_MMIO_MAGIC_VALUE: usize = 0x000;
-
-/// version; 1 is legacy
-pub const VIRTIO_MMIO_VERSION: usize = 0x004;
-
-/// device type; 1 is net, 2 is disk
-pub const VIRTIO_MMIO_DEVICE_ID: usize = 0x008;
-
-/// 0x554d4551
-pub const VIRTIO_MMIO_VENDOR_ID: usize = 0x00c;
-
-pub const VIRTIO_MMIO_DEVICE_FEATURES: usize = 0x010;
-
-pub const VIRTIO_MMIO_DRIVER_FEATURES: usize = 0x020;
-
-/// page size for PFN, write-only
-pub const VIRTIO_MMIO_GUEST_PAGE_SIZE: usize = 0x028;
-
-/// select queue, write-only
-pub const VIRTIO_MMIO_QUEUE_SEL: usize = 0x030;
-
-/// max size of current queue, read-only
-pub const VIRTIO_MMIO_QUEUE_NUM_MAX: usize = 0x034;
-
-/// size of current queue, write-only
-pub const VIRTIO_MMIO_QUEUE_NUM: usize = 0x038;
-
-/// physical page number for queue, read/write
-pub const VIRTIO_MMIO_QUEUE_PFN: usize = 0x040;
-
-/// ready bit
-pub const VIRTIO_MMIO_QUEUE_READY: usize = 0x044;
-
-/// write-only
-pub const VIRTIO_MMIO_QUEUE_NOTIFY: usize = 0x050;
-
-/// read/write
-pub const VIRTIO_MMIO_STATUS: usize = 0x070;
+#[repr(usize)]
+pub enum MmioRegs {
+    /// 0x74726976
+    MagicValue = 0x000,
+    /// version; 1 is legacy
+    Version = 0x004,
+    /// device type; 1 is net, 2 is disk
+    DeviceId = 0x008,
+    /// 0x554d4551
+    VendorId = 0x00c,
+    DeviceFeatures = 0x010,
+    DriverFeatures = 0x020,
+    /// page size for PFN, write-only
+    GuestPageSize = 0x028,
+    /// select queue, write-only
+    QueueSel = 0x030,
+    /// max size of current queue, read-only
+    QueueNumMax = 0x034,
+    /// size of current queue, write-only
+    QueueNum = 0x038,
+    /// physical page number for queue, read/write
+    QueuePfn = 0x040,
+    /// ready bit
+    QueueReady = 0x044,
+    /// write-only
+    QueueNotify = 0x050,
+    /// read/write
+    Status = 0x070,
+}
 
 bitflags! {
     /// Status register bits, from qemu virtio_config.h

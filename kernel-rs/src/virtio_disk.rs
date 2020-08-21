@@ -19,9 +19,14 @@ use core::mem;
 use core::ptr;
 use core::sync::atomic::{fence, Ordering};
 
-/// the address of virtio mmio register r.
-const fn r(r: usize) -> *mut u32 {
-    VIRTIO0.wrapping_add(r) as *mut u32
+impl MmioRegs {
+    unsafe fn read(self) -> u32 {
+        ptr::read_volatile((VIRTIO0 as *mut u8).add(self as _) as _)
+    }
+
+    unsafe fn write(self, src: u32) {
+        ptr::write_volatile((VIRTIO0 as *mut u8).add(self as _) as _, src)
+    }
 }
 
 /// Memory for virtio descriptors `&c` for queue 0.
@@ -123,55 +128,54 @@ static mut DISK: Disk = Disk::zeroed();
 pub unsafe fn virtio_disk_init() {
     let mut status: VirtIOStatus = VirtIOStatus::empty();
     DISK.vdisk_lock.initlock("virtio_disk");
-    if *(r(VIRTIO_MMIO_MAGIC_VALUE)) != 0x74726976
-        || *(r(VIRTIO_MMIO_VERSION)) != 1
-        || *(r(VIRTIO_MMIO_DEVICE_ID)) != 2
-        || *(r(VIRTIO_MMIO_VENDOR_ID)) != 0x554d4551
+    if MmioRegs::MagicValue.read() != 0x74726976
+        || MmioRegs::Version.read() != 1
+        || MmioRegs::DeviceId.read() != 2
+        || MmioRegs::VendorId.read() != 0x554d4551
     {
         panic!("could not find virtio disk");
     }
     status.insert(VirtIOStatus::ACKNOWLEDGE);
-    ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status.bits());
+    MmioRegs::Status.write(status.bits());
     status.insert(VirtIOStatus::DRIVER);
-    ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status.bits());
+    MmioRegs::Status.write(status.bits());
 
     // negotiate features
-    let mut features = VirtIOFeatures::from_bits_unchecked(*(r(VIRTIO_MMIO_DEVICE_FEATURES)));
+    let mut features = VirtIOFeatures::from_bits_unchecked(MmioRegs::DeviceFeatures.read());
 
-    features.remove(VirtIOFeatures::BLK_F_RO);
-    features.remove(VirtIOFeatures::BLK_F_SCSI);
-    features.remove(VirtIOFeatures::BLK_F_CONFIG_WCE);
-    features.remove(VirtIOFeatures::BLK_F_MQ);
-    features.remove(VirtIOFeatures::F_ANY_LAYOUT);
-    features.remove(VirtIOFeatures::RING_F_EVENT_IDX);
-    features.remove(VirtIOFeatures::RING_F_INDIRECT_DESC);
+    features.remove(
+        VirtIOFeatures::BLK_F_RO
+            | VirtIOFeatures::BLK_F_SCSI
+            | VirtIOFeatures::BLK_F_CONFIG_WCE
+            | VirtIOFeatures::BLK_F_MQ
+            | VirtIOFeatures::F_ANY_LAYOUT
+            | VirtIOFeatures::RING_F_EVENT_IDX
+            | VirtIOFeatures::RING_F_INDIRECT_DESC,
+    );
 
-    ptr::write_volatile(r(VIRTIO_MMIO_DRIVER_FEATURES), features.bits());
+    MmioRegs::DriverFeatures.write(features.bits());
 
     // tell device that feature negotiation is complete.
     status.insert(VirtIOStatus::FEATURES_OK);
-    ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status.bits());
+    MmioRegs::Status.write(status.bits());
 
     // tell device we're completely ready.
     status.insert(VirtIOStatus::DRIVER_OK);
-    ptr::write_volatile(r(VIRTIO_MMIO_STATUS), status.bits());
-    ptr::write_volatile(r(VIRTIO_MMIO_GUEST_PAGE_SIZE), PGSIZE as u32);
+    MmioRegs::Status.write(status.bits());
+    MmioRegs::GuestPageSize.write(PGSIZE as _);
 
     // initialize queue 0.
-    ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_SEL), 0);
-    let max: u32 = *(r(VIRTIO_MMIO_QUEUE_NUM_MAX));
+    MmioRegs::QueueSel.write(0);
+    let max = MmioRegs::QueueNumMax.read();
     if max == 0 {
         panic!("virtio disk has no queue 0");
     }
     if max < NUM as u32 {
         panic!("virtio disk max queue too short");
     }
-    ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_NUM), NUM as u32);
+    MmioRegs::QueueNum.write(NUM as _);
     ptr::write_bytes(&mut VIRTQUEUE, 0, 1);
-    ptr::write_volatile(
-        r(VIRTIO_MMIO_QUEUE_PFN),
-        (VIRTQUEUE.as_mut_ptr() as usize >> PGSHIFT) as u32,
-    );
+    MmioRegs::QueuePfn.write((VIRTQUEUE.as_mut_ptr() as usize >> PGSHIFT) as _);
 
     // desc = pages -- num * VRingDesc
     // avail = pages + 0x40 -- 2 * u16, then num * u16
@@ -308,7 +312,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: i32) {
     (*DISK.avail).idx += 1;
 
     // value is queue number
-    ptr::write_volatile(r(VIRTIO_MMIO_QUEUE_NOTIFY), 0);
+    MmioRegs::QueueNotify.write(0);
 
     // Wait for virtio_disk_intr() to say request has finished.
     while (*b).disk == 1 {
