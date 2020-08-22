@@ -7,7 +7,10 @@
   sudo apt install gcc-riscv64-linux-gnu qemu-system-misc gdb-multiarch
 
   rustup component add rust-src
-  cargo install cargo-xbuild
+  
+  # Older nightly needs cargo-xbuild version 0.5.35.
+  cargo install cargo-xbuild --version 0.5.35
+  [https://github.com/kaist-cp/rv6/issues/162]
   ```
 
 - Compile rv6.
