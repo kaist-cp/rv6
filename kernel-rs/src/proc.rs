@@ -351,20 +351,21 @@ pub unsafe fn procinit() {
     kvminithart();
 }
 
-/// Must be called with interrupts disabled,
-/// to prevent race with process being moved
-/// to a different CPU.
-pub unsafe fn cpuid() -> usize {
-    let id: usize = r_tp();
-    id
+/// Return this CPU's ID.
+///
+/// It is safe to call this function with interrupts enabled, but returned id may not be the 
+/// current CPU since the scheduler can move the process to another CPU on time interrupt.
+pub fn cpuid() -> usize {
+    unsafe { r_tp() }
 }
 
 /// Return this CPU's cpu struct.
-/// Interrupts must be disabled.
-pub unsafe fn mycpu() -> *mut Cpu {
+///
+/// It is safe to call this function with interrupts enabled, but returned address may not be the 
+/// current CPU since the scheduler can move the process to another CPU on time interrupt.
+pub fn mycpu() -> *mut Cpu {
     let id: usize = cpuid();
-    let c: *mut Cpu = &mut *CPUS.as_mut_ptr().add(id) as *mut Cpu;
-    c
+    unsafe { &mut CPUS[id] as *mut Cpu }
 }
 
 /// Return the current struct Proc *, or zero if none.
@@ -762,7 +763,7 @@ pub unsafe fn scheduler() -> ! {
 /// there's no process.
 unsafe fn sched() {
     let p: *mut Proc = myproc();
-    if (*p).lock.holding() == 0 {
+    if !(*p).lock.holding() {
         panic!("sched p->lock");
     }
     if (*mycpu()).noff != 1 {
@@ -857,7 +858,7 @@ pub unsafe fn wakeup(chan: *mut libc::CVoid) {
 /// Wake up p if it is sleeping in wait(); used by exit().
 /// Caller must hold p->lock.
 unsafe fn wakeup1(mut p: *mut Proc) {
-    if (*p).lock.holding() == 0 {
+    if !(*p).lock.holding() {
         panic!("wakeup1");
     }
     if (*p).chan == p as *mut libc::CVoid && (*p).state == Procstate::SLEEPING {
