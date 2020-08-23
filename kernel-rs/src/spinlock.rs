@@ -6,65 +6,63 @@ use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicPtr, Ordering, spin_loop_hint};
+
 /// Mutual exclusion lock.
 pub struct RawSpinlock {
-    /// Is the lock held?
-    locked: AtomicBool,
-
-    /// For debugging:
-
     /// Name of lock.
     name: &'static str,
 
-    /// The cpu holding the lock.
-    cpu: *mut Cpu,
+    /// If the lock is held, contains the pointer of `Cpu`.
+    /// Otherwise, contains null.
+    ///
+    /// Records info about lock acquisition for holding() and debugging.
+    locked: AtomicPtr<Cpu>,
 }
 
 impl RawSpinlock {
     // TODO: transient measure
     pub const fn init(name: &'static str) -> Self {
         Self {
-            locked: AtomicBool::new(false),
+            locked: AtomicPtr::new(ptr::null_mut()),
             name,
-            cpu: ptr::null_mut(),
         }
     }
 
     // will remove after refactor
     pub const fn zeroed() -> Self {
         Self {
-            locked: AtomicBool::new(false),
+            locked: AtomicPtr::new(ptr::null_mut()),
             name: "",
-            cpu: ptr::null_mut(),
         }
     }
 
     /// Mutual exclusion spin locks.
     pub fn initlock(&mut self, name: &'static str) {
-        (*self).name = name;
-        (*self).locked = AtomicBool::new(false);
-        (*self).cpu = ptr::null_mut();
+        self.name = name;
+        self.locked = AtomicPtr::new(ptr::null_mut());
     }
 
     /// Acquire the lock.
     /// Loops (spins) until the lock is acquired.
-    pub unsafe fn acquire(&mut self) {
+    pub fn acquire(&self) {
         // disable interrupts to avoid deadlock.
         push_off();
-        if self.holding() != 0 {
-            panic!("acquire");
+        if self.holding() {
+            panic!("acquire {}", self.name);
         }
 
         // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
         //   a5 = 1
         //   s1 = &self->locked
         //   amoswap.w.aq a5, a5, (s1)
-        while (*self)
+        while self
             .locked
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .compare_exchange(ptr::null_mut(), mycpu(), Ordering::Acquire, Ordering::Relaxed)
             .is_err()
-        {}
+        {
+            spin_loop_hint();
+        }
 
         // Tell the C compiler and the processor to not move loads or stores
         // past this point, to ensure that the critical section's memory
@@ -73,17 +71,13 @@ impl RawSpinlock {
         // TODO(@jeehoon): it's unnecessary.
         //
         // ::core::intrinsics::atomic_fence();
-
-        // Record info about lock acquisition for holding() and debugging.
-        (*self).cpu = mycpu();
     }
 
     /// Release the lock.
-    pub unsafe fn release(&mut self) {
-        if self.holding() == 0 {
-            panic!("release");
+    pub fn release(&self) {
+        if !self.holding() {
+            panic!("release {}", self.name);
         }
-        (*self).cpu = ptr::null_mut();
 
         // Tell the C compiler and the CPU to not move loads or stores
         // past this point, to ensure that all the stores in the critical
@@ -101,21 +95,21 @@ impl RawSpinlock {
         // On RISC-V, sync_lock_release turns into an atomic swap:
         //   s1 = &lk->locked
         //   amoswap.w zero, zero, (s1)
-        (*self).locked.store(false, Ordering::Release);
+        self.locked.store(ptr::null_mut(), Ordering::Release);
         pop_off();
     }
 
     /// Check whether this cpu is holding the lock.
-    pub unsafe fn holding(&mut self) -> i32 {
-        push_off();
-        let r: i32 = ((*self).locked.load(Ordering::Acquire) && (*self).cpu == mycpu()) as i32;
-        pop_off();
-        r
+    ///
+    /// May return incorrect false if interrupt is enabled. However, if lock is currectly hold by
+    /// this CPU using `acquire`, it always return true.
+    pub fn holding(&self) -> bool {
+        self.locked.load(Ordering::Relaxed) == mycpu()
     }
 }
 
 pub struct SpinLockGuard<'s, T> {
-    lock: &'s mut Spinlock<T>,
+    lock: &'s Spinlock<T>,
     _marker: PhantomData<*const ()>,
 }
 
@@ -136,10 +130,9 @@ impl<T> Spinlock<T> {
         self.data.into_inner()
     }
 
-    pub fn lock(&mut self) -> SpinLockGuard<'_, T> {
-        unsafe {
-            self.lock.acquire();
-        }
+    pub fn lock(&self) -> SpinLockGuard<'_, T> {
+        self.lock.acquire();
+
         SpinLockGuard {
             lock: self,
             _marker: PhantomData,
@@ -148,14 +141,14 @@ impl<T> Spinlock<T> {
 }
 
 impl<T> SpinLockGuard<'_, T> {
-    pub fn raw(&mut self) -> usize {
+    pub fn raw(&self) -> usize {
         self.lock as *const _ as usize
     }
 }
 
 impl<T> Drop for SpinLockGuard<'_, T> {
     fn drop(&mut self) {
-        unsafe { self.lock.lock.release() };
+        self.lock.lock.release();
     }
 }
 
@@ -175,24 +168,29 @@ impl<T> DerefMut for SpinLockGuard<'_, T> {
 /// push_off/pop_off are like intr_off()/intr_on() except that they are matched:
 /// it takes two pop_off()s to undo two push_off()s.  Also, if interrupts
 /// are initially off, then push_off, pop_off leaves them off.
-pub unsafe fn push_off() {
-    let old = intr_get();
-    intr_off();
-    if (*(mycpu())).noff == 0 {
-        (*(mycpu())).interrupt_enabled = old
+pub fn push_off() {
+    unsafe {
+        let old = intr_get();
+        intr_off();
+        if (*(mycpu())).noff == 0 {
+            (*(mycpu())).interrupt_enabled = old
+        }
+        (*(mycpu())).noff += 1;
     }
-    (*(mycpu())).noff += 1;
 }
-pub unsafe fn pop_off() {
-    let mut c: *mut Cpu = mycpu();
-    if intr_get() {
-        panic!("pop_off - interruptible");
+
+pub fn pop_off() {
+    unsafe {
+        let mut c: *mut Cpu = mycpu();
+        if intr_get() {
+            panic!("pop_off - interruptible");
+        }
+        (*c).noff -= 1;
+        if (*c).noff < 0 {
+            panic!("pop_off");
+        }
+        if (*c).noff == 0 && (*c).interrupt_enabled {
+            intr_on();
+        }
     }
-    (*c).noff -= 1;
-    if (*c).noff < 0 {
-        panic!("pop_off");
-    }
-    if (*c).noff == 0 && (*c).interrupt_enabled {
-        intr_on();
-    };
 }
