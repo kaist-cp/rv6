@@ -6,7 +6,7 @@ use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr;
-use core::sync::atomic::{AtomicPtr, Ordering, spin_loop_hint};
+use core::sync::atomic::{spin_loop_hint, AtomicPtr, Ordering};
 
 /// Mutual exclusion lock.
 pub struct RawSpinlock {
@@ -47,7 +47,9 @@ impl RawSpinlock {
     /// Loops (spins) until the lock is acquired.
     pub fn acquire(&self) {
         // disable interrupts to avoid deadlock.
-        push_off();
+        unsafe {
+            push_off();
+        }
         if self.holding() {
             panic!("acquire {}", self.name);
         }
@@ -58,7 +60,12 @@ impl RawSpinlock {
         //   amoswap.w.aq a5, a5, (s1)
         while self
             .locked
-            .compare_exchange(ptr::null_mut(), mycpu(), Ordering::Acquire, Ordering::Relaxed)
+            .compare_exchange(
+                ptr::null_mut(),
+                mycpu(),
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            )
             .is_err()
         {
             spin_loop_hint();
@@ -96,7 +103,9 @@ impl RawSpinlock {
         //   s1 = &lk->locked
         //   amoswap.w zero, zero, (s1)
         self.locked.store(ptr::null_mut(), Ordering::Release);
-        pop_off();
+        unsafe {
+            pop_off();
+        }
     }
 
     /// Check whether this cpu is holding the lock.
@@ -173,29 +182,25 @@ impl<T> DerefMut for SpinLockGuard<'_, T> {
 /// push_off/pop_off are like intr_off()/intr_on() except that they are matched:
 /// it takes two pop_off()s to undo two push_off()s.  Also, if interrupts
 /// are initially off, then push_off, pop_off leaves them off.
-pub fn push_off() {
-    unsafe {
-        let old = intr_get();
-        intr_off();
-        if (*(mycpu())).noff == 0 {
-            (*(mycpu())).interrupt_enabled = old
-        }
-        (*(mycpu())).noff += 1;
+pub unsafe fn push_off() {
+    let old = intr_get();
+    intr_off();
+    if (*(mycpu())).noff == 0 {
+        (*(mycpu())).interrupt_enabled = old
     }
+    (*(mycpu())).noff += 1;
 }
 
-pub fn pop_off() {
-    unsafe {
-        let mut c: *mut Cpu = mycpu();
-        if intr_get() {
-            panic!("pop_off - interruptible");
-        }
-        (*c).noff -= 1;
-        if (*c).noff < 0 {
-            panic!("pop_off");
-        }
-        if (*c).noff == 0 && (*c).interrupt_enabled {
-            intr_on();
-        }
+pub unsafe fn pop_off() {
+    let mut c: *mut Cpu = mycpu();
+    if intr_get() {
+        panic!("pop_off - interruptible");
+    }
+    (*c).noff -= 1;
+    if (*c).noff < 0 {
+        panic!("pop_off");
+    }
+    if (*c).noff == 0 && (*c).interrupt_enabled {
+        intr_on();
     }
 }

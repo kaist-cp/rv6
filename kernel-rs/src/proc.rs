@@ -353,7 +353,7 @@ pub unsafe fn procinit() {
 
 /// Return this CPU's ID.
 ///
-/// It is safe to call this function with interrupts enabled, but returned id may not be the 
+/// It is safe to call this function with interrupts enabled, but returned id may not be the
 /// current CPU since the scheduler can move the process to another CPU on time interrupt.
 pub fn cpuid() -> usize {
     unsafe { r_tp() }
@@ -361,7 +361,7 @@ pub fn cpuid() -> usize {
 
 /// Return this CPU's cpu struct.
 ///
-/// It is safe to call this function with interrupts enabled, but returned address may not be the 
+/// It is safe to call this function with interrupts enabled, but returned address may not be the
 /// current CPU since the scheduler can move the process to another CPU on time interrupt.
 pub fn mycpu() -> *mut Cpu {
     let id: usize = cpuid();
