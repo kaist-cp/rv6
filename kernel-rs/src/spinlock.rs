@@ -109,11 +109,13 @@ impl RawSpinlock {
     }
 
     /// Check whether this cpu is holding the lock.
-    ///
-    /// May return incorrect false if interrupt is enabled. However, if lock is currectly hold by
-    /// this CPU using `acquire`, it always return true.
     pub fn holding(&self) -> bool {
-        self.locked.load(Ordering::Relaxed) == mycpu()
+        unsafe {
+            push_off();
+            let ret = self.locked.load(Ordering::Relaxed) == mycpu();
+            pop_off();
+            ret
+        }
     }
 }
 
