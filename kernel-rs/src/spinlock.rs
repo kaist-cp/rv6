@@ -113,10 +113,15 @@ pub struct SpinLockGuard<'s, T> {
     _marker: PhantomData<*const ()>,
 }
 
+// Do not implement Send; lock must be unlocked by the CPU that acquired it.
+unsafe impl<'s, T: Sync> Sync for SpinLockGuard<'s, T> {}
+
 pub struct Spinlock<T> {
     lock: RawSpinlock,
     data: UnsafeCell<T>,
 }
+
+unsafe impl<T: Send> Sync for Spinlock<T> {}
 
 impl<T> Spinlock<T> {
     pub const fn new(name: &'static str, data: T) -> Self {
