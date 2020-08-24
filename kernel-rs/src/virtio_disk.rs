@@ -128,10 +128,10 @@ static mut DISK: Disk = Disk::zeroed();
 pub unsafe fn virtio_disk_init() {
     let mut status: VirtIOStatus = VirtIOStatus::empty();
     DISK.vdisk_lock.initlock("virtio_disk");
-    if MmioRegs::MagicValue.read() != 0x74726976
-        || MmioRegs::Version.read() != 1
-        || MmioRegs::DeviceId.read() != 2
-        || MmioRegs::VendorId.read() != 0x554d4551
+    if !(MmioRegs::MagicValue.read() == 0x74726976
+        && MmioRegs::Version.read() == 1
+        && MmioRegs::DeviceId.read() == 2
+        && MmioRegs::VendorId.read() == 0x554d4551)
     {
         panic!("could not find virtio disk");
     }
@@ -184,8 +184,8 @@ pub unsafe fn virtio_disk_init() {
     DISK.desc = VIRTQUEUE[0].as_mut_ptr() as _;
     DISK.avail = (VIRTQUEUE[0].as_mut_ptr() as *mut VRingDesc).add(NUM) as _;
     DISK.used = VIRTQUEUE[1].as_mut_ptr() as _;
-    for i in 0..NUM {
-        DISK.free[i] = 1;
+    for free in &mut DISK.free {
+        *free = 1;
     }
 
     // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
