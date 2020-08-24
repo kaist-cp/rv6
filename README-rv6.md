@@ -59,7 +59,7 @@
     + Set breakpoint to `kinit()`
     
       ```
-      b foo
+      b kinit
       ```
     
     + Set breakpoint to specific address (e.g., `0x8049000`)
