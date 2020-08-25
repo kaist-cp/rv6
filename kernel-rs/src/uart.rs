@@ -25,9 +25,9 @@ enum UartCtrlRegs {
     LCR,
     /// Line Status Register.
     LSR,
-    /// LSB for baud rate.
+    /// LSB for baud rate of 38.4K.
     LSB,
-    /// MSB for baud rate.
+    /// MSB for baud rate of 38.4K.
     MSB,
 }
 
