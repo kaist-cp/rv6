@@ -29,7 +29,7 @@ impl Buf {
         if (*self).lock.holding() == 0 {
             panic!("bwrite");
         }
-        virtio_disk_rw(self, 1);
+        virtio_disk_rw(self, true);
     }
 
     /// Release a locked buffer.
@@ -128,7 +128,7 @@ unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
 pub unsafe fn bread(dev: u32, blockno: u32) -> *mut Buf {
     let mut b: *mut Buf = bget(dev, blockno);
     if (*b).valid == 0 {
-        virtio_disk_rw(b, 0);
+        virtio_disk_rw(b, false);
         (*b).valid = 1
     }
     b
