@@ -87,8 +87,8 @@ pub unsafe fn uartputc(c: i32) {
 
 /// Read one input character from the UART.
 /// Return -1 if none is waiting.
-pub unsafe fn uartgetc() -> i32 {
-    if LSR.read() & 0x1 != 0 {
+unsafe fn uartgetc() -> i32 {
+    if LSR.read() & 0x01 != 0 {
         // Input data is ready.
         RHR.read() as i32
     } else {
