@@ -37,11 +37,11 @@ impl UartCtrlRegs {
     /// address of one of the registers.
     unsafe fn reg(self) -> *mut u8 {
         match self {
-            RHR | THR | LSB => (UART0 as *mut u8).add(0 as _),
-            IER | MSB => (UART0 as *mut u8).add(1 as _),
-            FCR | ISR => (UART0 as *mut u8).add(2 as _),
-            LCR => (UART0 as *mut u8).add(3 as _),
-            LSR => (UART0 as *mut u8).add(5 as _),
+            RHR | THR | LSB => UART0 as *mut u8,
+            IER | MSB => (UART0 as *mut u8).add(1),
+            FCR | ISR => (UART0 as *mut u8).add(2),
+            LCR => (UART0 as *mut u8).add(3),
+            LSR => (UART0 as *mut u8).add(5),
         }
     }
 
