@@ -31,10 +31,10 @@ enum UartCtrlRegs {
     MSB,
 }
 
-/// the UART control registers are memory-mapped
-/// at address UART0. this macro returns the
-/// address of one of the registers.
 impl UartCtrlRegs {
+    /// The UART control registers are memory-mapped
+    /// at address UART0. This macro returns the
+    /// address of one of the registers.
     unsafe fn reg(self) -> *mut u8 {
         match self {
             RHR | THR | LSB => (UART0 as *mut u8).add(0 as _),
@@ -55,10 +55,10 @@ impl UartCtrlRegs {
 }
 
 pub unsafe fn uartinit() {
-    // disable interrupts.
+    // Disable interrupts.
     IER.write(0x00);
 
-    // special mode to set baud rate.
+    // Special mode to set baud rate.
     LCR.write(0x80);
 
     // LSB for baud rate of 38.4K.
@@ -67,29 +67,29 @@ pub unsafe fn uartinit() {
     // MSB for baud rate of 38.4K.
     MSB.write(0x00);
 
-    // leave set-baud mode,
+    // Leave set-baud mode,
     // and set word length to 8 bits, no parity.
     LCR.write(0x03);
 
-    // reset and enable FIFOs.
+    // Reset and enable FIFOs.
     FCR.write(0x07);
 
-    // enable receive interrupts.
+    // Enable receive interrupts.
     IER.write(0x01);
 }
 
-/// write one output character to the UART.
+/// Write one output character to the UART.
 pub unsafe fn uartputc(c: i32) {
-    // wait for Transmit Holding Empty to be set in LSR.
+    // Wait for Transmit Holding Empty to be set in LSR.
     while LSR.read() & 1 << 5 == 0 {}
     THR.write(c as u8);
 }
 
-/// read one input character from the UART.
-/// return -1 if none is waiting.
+/// Read one input character from the UART.
+/// Return -1 if none is waiting.
 pub unsafe fn uartgetc() -> i32 {
     if LSR.read() & 0x1 != 0 {
-        // input data is ready.
+        // Input data is ready.
         RHR.read() as i32
     } else {
         -1
