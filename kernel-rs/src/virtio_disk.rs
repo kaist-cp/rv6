@@ -42,7 +42,7 @@ struct Disk {
     used: *mut [UsedArea; NUM],
 
     /// our own book-keeping.
-    free: [bool; NUM],
+    free: [bool; NUM], // TODO : Disk can be implemented using bitmap
     used_idx: u16,
 
     /// track info about in-flight operations,
@@ -53,6 +53,9 @@ struct Disk {
     vdisk_lock: RawSpinlock,
 }
 
+// It needs repr(C) because it's read by device
+// https://docs.oasis-open.org/virtio/virtio/v1.1/csprd01/virtio-v1.1-csprd01.html#x1-380006
+#[repr(C)]
 struct AvailableRing {
     flags: u16,
 
