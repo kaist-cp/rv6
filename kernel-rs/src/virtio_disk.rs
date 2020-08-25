@@ -237,8 +237,8 @@ unsafe fn alloc3_desc() -> Option<[i32; 3]> {
         match alloc_desc() {
             Some(desc) => idx[i] = desc,
             None => {
-                for j in 0..i {
-                    free_desc(idx[j]);
+                for j in idx.iter().take(i) {
+                    free_desc(*j);
                 }
                 return None;
             }
