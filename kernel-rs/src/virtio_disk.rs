@@ -53,10 +53,6 @@ struct Disk {
     vdisk_lock: RawSpinlock,
 }
 
-// It needs repr(C) because it's struct for in-disk representation
-// which should follow C(=machine) representation
-// https://github.com/kaist-cp/rv6/issues/52
-#[repr(C)]
 struct AvailableRing {
     flags: u16,
 
