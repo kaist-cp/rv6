@@ -10,7 +10,7 @@ use crate::{
     },
     spinlock::RawSpinlock,
     syscall::syscall,
-    uart::UART,
+    uart::Uart,
     virtio_disk::virtio_disk_intr,
 };
 use core::mem;
@@ -220,7 +220,7 @@ pub unsafe fn devintr() -> i32 {
         let irq: usize = plic_claim();
 
         if irq == UART0_IRQ {
-            UART::intr();
+            Uart::intr();
         } else if irq == VIRTIO0_IRQ {
             virtio_disk_intr();
         }
