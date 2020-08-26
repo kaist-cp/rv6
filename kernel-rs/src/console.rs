@@ -37,7 +37,7 @@ impl Console {
     }
 
     /// send one character to the uart.
-    pub unsafe fn putc(c: i32) {
+    pub unsafe fn consputc(c: i32) {
         // from printf.rs
         if PANICKED.load(Ordering::Acquire) {
             spin_loop();
@@ -64,7 +64,7 @@ impl Console {
             {
                 break;
             }
-            Console::putc(c as i32);
+            Console::consputc(c as i32);
         }
     }
 
@@ -137,7 +137,7 @@ impl Console {
                         != '\n' as i32
                 {
                     self.e = self.e.wrapping_sub(1);
-                    Console::putc(BACKSPACE);
+                    Console::consputc(BACKSPACE);
                 }
             }
 
@@ -145,7 +145,7 @@ impl Console {
             m if m == ctrl('H') | '\x7f' as i32 => {
                 if self.e != self.w {
                     self.e = self.e.wrapping_sub(1);
-                    Console::putc(BACKSPACE);
+                    Console::consputc(BACKSPACE);
                 }
             }
             _ => {
@@ -153,7 +153,7 @@ impl Console {
                     cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
 
                     // echo back to the user.
-                    Console::putc(cin);
+                    Console::consputc(cin);
 
                     // store for consumption by consoleread().
                     let fresh1 = self.e;
