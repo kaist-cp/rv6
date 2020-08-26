@@ -3,7 +3,7 @@ use crate::{
     file::{CONSOLE, DEVSW},
     printf::PANICKED,
     proc::{either_copyin, either_copyout, myproc, procdump, sleep, wakeup},
-    spinlock::RawSpinlock,
+    spinlock::{RawSpinlock, Spinlock},
     uart::{uartinit, uartputc},
     utils::spin_loop,
 };
@@ -13,7 +13,6 @@ use core::sync::atomic::Ordering;
 const INPUT_BUF: usize = 128;
 
 struct Console {
-    lock: RawSpinlock,
     buf: [u8; 128],
 
     /// Read index
@@ -30,7 +29,6 @@ impl Console {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            lock: RawSpinlock::zeroed(),
             buf: [0; INPUT_BUF],
             r: 0,
             w: 0,
@@ -70,11 +68,11 @@ pub unsafe fn consputc(c: i32) {
     };
 }
 
-static mut CONS: Console = Console::zeroed();
+static mut CONS: Spinlock<Console> = Spinlock::new("CONS", Console::zeroed());
 
 /// user write()s to the console go here.
 unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
-    CONS.lock.acquire();
+    let _console = CONS.lock();
     for i in 0..n {
         let mut c: u8 = 0;
         if either_copyin(
@@ -88,7 +86,6 @@ unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
         }
         consputc(c as i32);
     }
-    CONS.lock.release();
     n
 }
 
@@ -98,27 +95,29 @@ unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
 /// or kernel address.
 unsafe fn consoleread(user_dst: i32, mut dst: usize, mut n: i32) -> i32 {
     let target: u32 = n as u32;
-    CONS.lock.acquire();
+    let mut console = CONS.lock();
     while n > 0 {
         // wait until interrupt handler has put some
         // input into CONS.buffer.
-        while CONS.r == CONS.w {
+        while console.r == console.w {
             if (*myproc()).killed != 0 {
-                CONS.lock.release();
                 return -1;
             }
-            sleep(&mut CONS.r as *mut u32 as *mut libc::CVoid, &mut CONS.lock);
+            sleep(
+                &mut console.r as *mut u32 as *mut libc::CVoid,
+                console.raw() as *mut RawSpinlock,
+            );
         }
-        let fresh0 = CONS.r;
-        CONS.r = CONS.r.wrapping_add(1);
-        let cin = CONS.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
+        let fresh0 = console.r;
+        console.r = console.r.wrapping_add(1);
+        let cin = console.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
 
         // end-of-file
         if cin == ctrl('D') {
             if (n as u32) < target {
                 // Save ^D for next time, to make sure
                 // caller gets a 0-byte result.
-                CONS.r = CONS.r.wrapping_sub(1)
+                console.r = console.r.wrapping_sub(1)
             }
             break;
         } else {
@@ -142,7 +141,6 @@ unsafe fn consoleread(user_dst: i32, mut dst: usize, mut n: i32) -> i32 {
             }
         }
     }
-    CONS.lock.release();
     target.wrapping_sub(n as u32) as i32
 }
 
@@ -151,7 +149,7 @@ unsafe fn consoleread(user_dst: i32, mut dst: usize, mut n: i32) -> i32 {
 /// do erase/kill processing, append to CONS.buf,
 /// wake up consoleread() if a whole line has arrived.
 pub unsafe fn consoleintr(mut cin: i32) {
-    CONS.lock.acquire();
+    let mut console = CONS.lock();
     match cin {
         // Print process list.
         m if m == ctrl('P') => {
@@ -160,50 +158,49 @@ pub unsafe fn consoleintr(mut cin: i32) {
 
         // Kill line.
         m if m == ctrl('U') => {
-            while CONS.e != CONS.w
-                && CONS.buf[CONS.e.wrapping_sub(1).wrapping_rem(INPUT_BUF as u32) as usize] as i32
+            while console.e != console.w
+                && console.buf[console.e.wrapping_sub(1).wrapping_rem(INPUT_BUF as u32) as usize]
+                    as i32
                     != '\n' as i32
             {
-                CONS.e = CONS.e.wrapping_sub(1);
+                console.e = console.e.wrapping_sub(1);
                 consputc(BACKSPACE);
             }
         }
 
         // Backspace
         m if m == ctrl('H') | '\x7f' as i32 => {
-            if CONS.e != CONS.w {
-                CONS.e = CONS.e.wrapping_sub(1);
+            if console.e != console.w {
+                console.e = console.e.wrapping_sub(1);
                 consputc(BACKSPACE);
             }
         }
         _ => {
-            if cin != 0 && CONS.e.wrapping_sub(CONS.r) < INPUT_BUF as u32 {
+            if cin != 0 && console.e.wrapping_sub(console.r) < INPUT_BUF as u32 {
                 cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
 
                 // echo back to the user.
                 consputc(cin);
 
                 // store for consumption by consoleread().
-                let fresh1 = CONS.e;
-                CONS.e = CONS.e.wrapping_add(1);
-                CONS.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = cin as u8;
+                let fresh1 = console.e;
+                console.e = console.e.wrapping_add(1);
+                console.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = cin as u8;
                 if cin == '\n' as i32
                     || cin == ctrl('D')
-                    || CONS.e == CONS.r.wrapping_add(INPUT_BUF as u32)
+                    || console.e == console.r.wrapping_add(INPUT_BUF as u32)
                 {
                     // wake up consoleread() if a whole line (or end-of-file)
                     // has arrived.
-                    CONS.w = CONS.e;
-                    wakeup(&mut CONS.r as *mut u32 as *mut libc::CVoid);
+                    console.w = console.e;
+                    wakeup(&mut console.r as *mut u32 as *mut libc::CVoid);
                 }
             }
         }
     }
-    CONS.lock.release();
 }
 
 pub unsafe fn consoleinit() {
-    CONS.lock.initlock("CONS");
     uartinit();
 
     // connect read and write system calls

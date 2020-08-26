@@ -98,10 +98,7 @@ static mut SYSCALLS: [Option<unsafe fn() -> usize>; 22] = [
 pub unsafe fn syscall() {
     let mut p: *mut Proc = myproc();
     let num: i32 = (*(*p).tf).a7 as i32;
-    if num > 0
-        && (num as usize) < SYSCALLS.len()
-        && SYSCALLS[num as usize].is_some()
-    {
+    if num > 0 && (num as usize) < SYSCALLS.len() && SYSCALLS[num as usize].is_some() {
         (*(*p).tf).a0 = SYSCALLS[num as usize].expect("non-null function pointer")()
     } else {
         println!(
