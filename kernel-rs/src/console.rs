@@ -35,6 +35,79 @@ impl Console {
             e: 0,
         }
     }
+
+    fn write(&self, user_src: i32, src: usize, n: i32) {
+        for i in 0..n {
+            let mut c: u8 = 0;
+            if unsafe {
+                either_copyin(
+                    &mut c as *mut u8 as *mut libc::CVoid,
+                    user_src,
+                    src.wrapping_add(i as usize),
+                    1usize,
+                )
+            } == -1
+            {
+                break;
+            }
+            unsafe { consputc(c as i32) };
+        }
+    }
+
+    fn read(&mut self, user_dst: i32, mut dst: usize, mut n: i32, lk: usize) -> i32 {
+        let target = n as u32;
+        while n > 0 {
+            // wait until interrupt handler has put some
+            // input into CONS.buffer.
+            while self.r == self.w {
+                if unsafe { (*myproc()).killed } != 0 {
+                    return -1;
+                }
+                // TODO: need to change "RawSpinlock" after refactoring "sleep()" function in proc.rs
+                unsafe {
+                    sleep(
+                        &mut self.r as *mut u32 as *mut libc::CVoid,
+                        lk as *mut RawSpinlock,
+                    )
+                };
+            }
+            let fresh0 = self.r;
+            self.r = self.r.wrapping_add(1);
+            let cin = self.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
+
+            // end-of-file
+            if cin == ctrl('D') {
+                if (n as u32) < target {
+                    // Save ^D for next time, to make sure
+                    // caller gets a 0-byte result.
+                    self.r = self.r.wrapping_sub(1)
+                }
+                break;
+            } else {
+                // copy the input byte to the user-space buffer.
+                let mut cbuf = cin as u8;
+                if unsafe {
+                    either_copyout(
+                        user_dst,
+                        dst,
+                        &mut cbuf as *mut u8 as *mut libc::CVoid,
+                        1usize,
+                    )
+                } == -1
+                {
+                    break;
+                }
+                dst = dst.wrapping_add(1);
+                n -= 1;
+                if cin == '\n' as i32 {
+                    // a whole line has arrived, return to
+                    // the user-level read().
+                    break;
+                }
+            }
+        }
+        target.wrapping_sub(n as u32) as i32
+    }
 }
 
 /// Console input and output, to the uart.
@@ -71,21 +144,9 @@ pub unsafe fn consputc(c: i32) {
 static CONS: Spinlock<Console> = Spinlock::new("CONS", Console::zeroed());
 
 /// user write()s to the console go here.
-unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
-    let _console = CONS.lock();
-    for i in 0..n {
-        let mut c: u8 = 0;
-        if either_copyin(
-            &mut c as *mut u8 as *mut libc::CVoid,
-            user_src,
-            src.wrapping_add(i as usize),
-            1usize,
-        ) == -1
-        {
-            break;
-        }
-        consputc(c as i32);
-    }
+fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
+    let console = CONS.lock();
+    console.write(user_src, src, n);
     n
 }
 
@@ -93,56 +154,10 @@ unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
 /// copy (up to) a whole input line to dst.
 /// user_dist indicates whether dst is a user
 /// or kernel address.
-unsafe fn consoleread(user_dst: i32, mut dst: usize, mut n: i32) -> i32 {
-    let target = n as u32;
+fn consoleread(user_dst: i32, dst: usize, n: i32) -> i32 {
     let mut console = CONS.lock();
-    while n > 0 {
-        // wait until interrupt handler has put some
-        // input into CONS.buffer.
-        while console.r == console.w {
-            if (*myproc()).killed != 0 {
-                return -1;
-            }
-            // TODO: need to change "RawSpinlock" after refactoring "sleep()" function in proc.rs
-            sleep(
-                &mut console.r as *mut u32 as *mut libc::CVoid,
-                console.raw() as *mut RawSpinlock,
-            );
-        }
-        let fresh0 = console.r;
-        console.r = console.r.wrapping_add(1);
-        let cin = console.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
-
-        // end-of-file
-        if cin == ctrl('D') {
-            if (n as u32) < target {
-                // Save ^D for next time, to make sure
-                // caller gets a 0-byte result.
-                console.r = console.r.wrapping_sub(1)
-            }
-            break;
-        } else {
-            // copy the input byte to the user-space buffer.
-            let mut cbuf = cin as u8;
-            if either_copyout(
-                user_dst,
-                dst,
-                &mut cbuf as *mut u8 as *mut libc::CVoid,
-                1usize,
-            ) == -1
-            {
-                break;
-            }
-            dst = dst.wrapping_add(1);
-            n -= 1;
-            if cin == '\n' as i32 {
-                // a whole line has arrived, return to
-                // the user-level read().
-                break;
-            }
-        }
-    }
-    target.wrapping_sub(n as u32) as i32
+    let lk = console.raw();
+    console.read(user_dst, dst, n, lk)
 }
 
 /// the console input interrupt handler.
