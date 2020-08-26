@@ -103,6 +103,7 @@ unsafe fn consoleread(user_dst: i32, mut dst: usize, mut n: i32) -> i32 {
             if (*myproc()).killed != 0 {
                 return -1;
             }
+            // TODO: need to change "RawSpinlock" after refactoring "sleep()" function in proc.rs
             sleep(
                 &mut console.r as *mut u32 as *mut libc::CVoid,
                 console.raw() as *mut RawSpinlock,
