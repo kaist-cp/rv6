@@ -12,7 +12,7 @@ use core::sync::atomic::Ordering;
 /// input
 const INPUT_BUF: usize = 128;
 
-struct Console {
+pub(crate) struct Console {
     buf: [u8; 128],
 
     /// Read index
@@ -36,6 +36,22 @@ impl Console {
         }
     }
 
+    /// send one character to the uart.
+    pub unsafe fn putc(c: i32) {
+        // from printf.rs
+        if PANICKED.load(Ordering::Acquire) {
+            spin_loop();
+        }
+        if c == BACKSPACE {
+            // if the user typed backspace, overwrite with a space.
+            uartputc('\u{8}' as i32);
+            uartputc(' ' as i32);
+            uartputc('\u{8}' as i32);
+        } else {
+            uartputc(c);
+        };
+    }
+
     unsafe fn write(&self, user_src: i32, src: usize, n: i32) {
         for i in 0..n {
             let mut c: u8 = 0;
@@ -48,7 +64,7 @@ impl Console {
             {
                 break;
             }
-            consputc(c as i32);
+            Console::putc(c as i32);
         }
     }
 
@@ -105,6 +121,57 @@ impl Console {
         }
         target.wrapping_sub(n as u32) as i32
     }
+
+    unsafe fn intr(&mut self, mut cin: i32) {
+        match cin {
+            // Print process list.
+            m if m == ctrl('P') => {
+                procdump();
+            }
+
+            // Kill line.
+            m if m == ctrl('U') => {
+                while self.e != self.w
+                    && self.buf[self.e.wrapping_sub(1).wrapping_rem(INPUT_BUF as u32) as usize]
+                        as i32
+                        != '\n' as i32
+                {
+                    self.e = self.e.wrapping_sub(1);
+                    Console::putc(BACKSPACE);
+                }
+            }
+
+            // Backspace
+            m if m == ctrl('H') | '\x7f' as i32 => {
+                if self.e != self.w {
+                    self.e = self.e.wrapping_sub(1);
+                    Console::putc(BACKSPACE);
+                }
+            }
+            _ => {
+                if cin != 0 && self.e.wrapping_sub(self.r) < INPUT_BUF as u32 {
+                    cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
+
+                    // echo back to the user.
+                    Console::putc(cin);
+
+                    // store for consumption by consoleread().
+                    let fresh1 = self.e;
+                    self.e = self.e.wrapping_add(1);
+                    self.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = cin as u8;
+                    if cin == '\n' as i32
+                        || cin == ctrl('D')
+                        || self.e == self.r.wrapping_add(INPUT_BUF as u32)
+                    {
+                        // wake up consoleread() if a whole line (or end-of-file)
+                        // has arrived.
+                        self.w = self.e;
+                        wakeup(&mut self.r as *mut u32 as *mut libc::CVoid);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Console input and output, to the uart.
@@ -120,22 +187,6 @@ const BACKSPACE: i32 = 0x100;
 /// Control-x
 const fn ctrl(x: char) -> i32 {
     x as i32 - '@' as i32
-}
-
-/// send one character to the uart.
-pub unsafe fn consputc(c: i32) {
-    // from printf.rs
-    if PANICKED.load(Ordering::Acquire) {
-        spin_loop();
-    }
-    if c == BACKSPACE {
-        // if the user typed backspace, overwrite with a space.
-        uartputc('\u{8}' as i32);
-        uartputc(' ' as i32);
-        uartputc('\u{8}' as i32);
-    } else {
-        uartputc(c);
-    };
 }
 
 static CONS: Spinlock<Console> = Spinlock::new("CONS", Console::zeroed());
@@ -163,56 +214,9 @@ fn consoleread(user_dst: i32, dst: usize, n: i32) -> i32 {
 /// uartintr() calls this for input character.
 /// do erase/kill processing, append to CONS.buf,
 /// wake up consoleread() if a whole line has arrived.
-pub unsafe fn consoleintr(mut cin: i32) {
+pub unsafe fn consoleintr(cin: i32) {
     let mut console = CONS.lock();
-    match cin {
-        // Print process list.
-        m if m == ctrl('P') => {
-            procdump();
-        }
-
-        // Kill line.
-        m if m == ctrl('U') => {
-            while console.e != console.w
-                && console.buf[console.e.wrapping_sub(1).wrapping_rem(INPUT_BUF as u32) as usize]
-                    as i32
-                    != '\n' as i32
-            {
-                console.e = console.e.wrapping_sub(1);
-                consputc(BACKSPACE);
-            }
-        }
-
-        // Backspace
-        m if m == ctrl('H') | '\x7f' as i32 => {
-            if console.e != console.w {
-                console.e = console.e.wrapping_sub(1);
-                consputc(BACKSPACE);
-            }
-        }
-        _ => {
-            if cin != 0 && console.e.wrapping_sub(console.r) < INPUT_BUF as u32 {
-                cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
-
-                // echo back to the user.
-                consputc(cin);
-
-                // store for consumption by consoleread().
-                let fresh1 = console.e;
-                console.e = console.e.wrapping_add(1);
-                console.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = cin as u8;
-                if cin == '\n' as i32
-                    || cin == ctrl('D')
-                    || console.e == console.r.wrapping_add(INPUT_BUF as u32)
-                {
-                    // wake up consoleread() if a whole line (or end-of-file)
-                    // has arrived.
-                    console.w = console.e;
-                    wakeup(&mut console.r as *mut u32 as *mut libc::CVoid);
-                }
-            }
-        }
-    }
+    console.intr(cin);
 }
 
 pub unsafe fn consoleinit() {

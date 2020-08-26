@@ -1,5 +1,5 @@
 //! formatted console output -- printf, panic.
-use crate::console::consputc;
+use crate::console::Console;
 use crate::spinlock::RawSpinlock;
 use core::fmt;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -10,7 +10,7 @@ impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for c in s.bytes() {
             unsafe {
-                consputc(c as _);
+                Console::putc(c as _);
             }
         }
         Ok(())
