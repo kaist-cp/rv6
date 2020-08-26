@@ -38,19 +38,19 @@ impl UartCtrlRegs {
     unsafe fn reg(self) -> *mut u8 {
         match self {
             RHR | THR | LSB => UART0 as *mut u8,
-            IER | MSB => (UART0 as *mut u8).add(1),
-            FCR | ISR => (UART0 as *mut u8).add(2),
-            LCR => (UART0 as *mut u8).add(3),
-            LSR => (UART0 as *mut u8).add(5),
+            IER | MSB => (UART0 +1) as *mut u8,
+            FCR | ISR => (UART0 +2) as *mut u8,
+            LCR => (UART0 +3) as *mut u8,
+            LSR => (UART0 +5) as *mut u8,
         }
     }
 
-    unsafe fn read(self) -> u8 {
-        ptr::read_volatile(self.reg())
+    fn read(self) -> u8 {
+        unsafe { ptr::read_volatile(self.reg()) }
     }
 
-    unsafe fn write(self, v: u8) {
-        ptr::write_volatile(self.reg(), v)
+    fn write(self, v: u8) {
+        unsafe { ptr::write_volatile(self.reg(), v) }
     }
 }
 
@@ -79,7 +79,7 @@ pub unsafe fn uartinit() {
 }
 
 /// Write one output character to the UART.
-pub unsafe fn uartputc(c: i32) {
+pub fn uartputc(c: i32) {
     // Wait for Transmit Holding Empty to be set in LSR.
     while LSR.read() & 1 << 5 == 0 {}
     THR.write(c as u8);
@@ -87,7 +87,7 @@ pub unsafe fn uartputc(c: i32) {
 
 /// Read one input character from the UART.
 /// Return -1 if none is waiting.
-unsafe fn uartgetc() -> i32 {
+fn uartgetc() -> i32 {
     if LSR.read() & 0x01 != 0 {
         // Input data is ready.
         RHR.read() as i32
@@ -97,12 +97,12 @@ unsafe fn uartgetc() -> i32 {
 }
 
 /// trap.c calls here when the uart interrupts.
-pub unsafe fn uartintr() {
+pub fn uartintr() {
     loop {
         let c = uartgetc();
         if c == -1 {
             break;
         }
-        consoleintr(c);
+        unsafe { consoleintr(c); }
     }
 }
