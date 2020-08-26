@@ -192,11 +192,9 @@ const fn ctrl(x: char) -> i32 {
 static CONS: Spinlock<Console> = Spinlock::new("CONS", Console::zeroed());
 
 /// user write()s to the console go here.
-fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
+unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
     let console = CONS.lock();
-    unsafe {
-        console.write(user_src, src, n);
-    }
+    console.write(user_src, src, n);
     n
 }
 
@@ -204,10 +202,10 @@ fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
 /// copy (up to) a whole input line to dst.
 /// user_dist indicates whether dst is a user
 /// or kernel address.
-fn consoleread(user_dst: i32, dst: usize, n: i32) -> i32 {
+unsafe fn consoleread(user_dst: i32, dst: usize, n: i32) -> i32 {
     let mut console = CONS.lock();
     let lk = console.raw() as *mut RawSpinlock;
-    unsafe { console.read(user_dst, dst, n, lk) }
+    console.read(user_dst, dst, n, lk)
 }
 
 /// the console input interrupt handler.
