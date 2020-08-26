@@ -4,7 +4,8 @@ use crate::{
     printf::PANICKED,
     proc::{either_copyin, either_copyout, myproc, procdump, sleep, wakeup},
     spinlock::RawSpinlock,
-    uart::{uartinit, uartputc},
+    uart::uartinit,
+    uart::UART,
     utils::spin_loop,
 };
 use core::sync::atomic::Ordering;
@@ -62,11 +63,11 @@ pub unsafe fn consputc(c: i32) {
     }
     if c == BACKSPACE {
         // if the user typed backspace, overwrite with a space.
-        uartputc('\u{8}' as i32);
-        uartputc(' ' as i32);
-        uartputc('\u{8}' as i32);
+        UART::putc('\u{8}' as i32);
+        UART::putc(' ' as i32);
+        UART::putc('\u{8}' as i32);
     } else {
-        uartputc(c);
+        UART::putc(c);
     };
 }
 
