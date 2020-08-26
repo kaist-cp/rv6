@@ -103,6 +103,8 @@ pub fn uartintr() {
         if c == -1 {
             break;
         }
-        unsafe { consoleintr(c); }
+        unsafe {
+            consoleintr(c);
+        }
     }
 }
