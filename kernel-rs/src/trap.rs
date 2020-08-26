@@ -1,4 +1,3 @@
-use crate::libc;
 use crate::{
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     plic::{plic_claim, plic_complete},
@@ -201,7 +200,7 @@ pub unsafe fn kerneltrap() {
 pub unsafe fn clockintr() {
     TICKSLOCK.acquire();
     TICKS = TICKS.wrapping_add(1);
-    wakeup(&mut TICKS as *mut u32 as *mut libc::CVoid);
+    wakeup(&mut TICKS as *mut u32 as _);
     TICKSLOCK.release();
 }
 

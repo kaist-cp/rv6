@@ -214,7 +214,7 @@ pub struct Proc {
     parent: *mut Proc,
 
     /// If non-zero, sleeping on chan.
-    chan: *mut libc::CVoid,
+    chan: *mut usize,
 
     /// If non-zero, have been killed.
     pub killed: i32,
@@ -717,7 +717,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
 
         // Wait for a child to exit.
         //DOC: wait-sleep
-        sleep(p as *mut libc::CVoid, &mut (*p).lock);
+        sleep(p as _, &mut (*p).lock);
     }
 }
 
@@ -811,7 +811,7 @@ unsafe fn forkret() {
 
 /// Atomically release lock and sleep on chan.
 /// Reacquires lock when awakened.
-pub unsafe fn sleep(chan: *mut libc::CVoid, lk: *mut RawSpinlock) {
+pub unsafe fn sleep(chan: *mut usize, lk: *mut RawSpinlock) {
     let mut p: *mut Proc = myproc();
 
     // Must acquire p->lock in order to
@@ -845,7 +845,7 @@ pub unsafe fn sleep(chan: *mut libc::CVoid, lk: *mut RawSpinlock) {
 
 /// Wake up all processes sleeping on chan.
 /// Must be called without any p->lock.
-pub unsafe fn wakeup(chan: *mut libc::CVoid) {
+pub unsafe fn wakeup(chan: *mut usize) {
     for p in &mut PROC[..] {
         p.lock.acquire();
         if p.chan == chan && p.state == Procstate::SLEEPING {
@@ -861,7 +861,7 @@ unsafe fn wakeup1(mut p: *mut Proc) {
     if !(*p).lock.holding() {
         panic!("wakeup1");
     }
-    if (*p).chan == p as *mut libc::CVoid && (*p).state == Procstate::SLEEPING {
+    if (*p).chan == p as _ && (*p).state == Procstate::SLEEPING {
         (*p).state = Procstate::RUNNABLE
     }
 }

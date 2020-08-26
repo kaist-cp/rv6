@@ -154,7 +154,7 @@ pub unsafe fn begin_op() {
             // this op might exhaust log space; wait for commit.
             LOG.lh.n + (LOG.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
         {
-            sleep(&mut LOG as *mut Log as *mut libc::CVoid, &mut LOG.lock);
+            sleep(&mut LOG as *mut Log as _, &mut LOG.lock);
         } else {
             LOG.outstanding += 1;
             LOG.lock.release();
@@ -179,7 +179,7 @@ pub unsafe fn end_op() {
         // begin_op() may be waiting for LOG space,
         // and decrementing log.outstanding has decreased
         // the amount of reserved space.
-        wakeup(&mut LOG as *mut Log as *mut libc::CVoid);
+        wakeup(&mut LOG as *mut Log as _);
     }
     LOG.lock.release();
     if do_commit != 0 {
@@ -188,7 +188,7 @@ pub unsafe fn end_op() {
         commit();
         LOG.lock.acquire();
         LOG.committing = 0;
-        wakeup(&mut LOG as *mut Log as *mut libc::CVoid);
+        wakeup(&mut LOG as *mut Log as _);
         LOG.lock.release();
     };
 }

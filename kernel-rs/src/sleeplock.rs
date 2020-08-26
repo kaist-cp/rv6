@@ -1,5 +1,4 @@
 //! Sleeping locks
-use crate::libc;
 use crate::proc::{myproc, sleep, wakeup};
 use crate::spinlock::RawSpinlock;
 
@@ -52,7 +51,7 @@ impl Sleeplock {
     pub unsafe fn acquire(&mut self) {
         (*self).lk.acquire();
         while (*self).locked != 0 {
-            sleep(self as *mut Sleeplock as *mut libc::CVoid, &mut (*self).lk);
+            sleep(self as *mut Sleeplock as _, &mut (*self).lk);
         }
         (*self).locked = 1;
         (*self).pid = (*myproc()).pid;
@@ -63,7 +62,7 @@ impl Sleeplock {
         (*self).lk.acquire();
         (*self).locked = 0;
         (*self).pid = 0;
-        wakeup(self as *mut Sleeplock as *mut libc::CVoid);
+        wakeup(self as *mut Sleeplock as _);
         (*self).lk.release();
     }
 

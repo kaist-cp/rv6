@@ -3,7 +3,6 @@
 /// qemu presents a "legacy" virtio interface.
 ///
 /// qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
-use crate::libc;
 use crate::{
     buf::Buf,
     fs::BSIZE,
@@ -212,7 +211,7 @@ unsafe fn free_desc(i: i32) {
     }
     (*DISK.desc)[i as usize].addr = 0;
     DISK.free[i as usize] = true;
-    wakeup(&mut DISK.free as *mut _ as *mut libc::CVoid);
+    wakeup(&mut DISK.free as *mut _ as _);
 }
 
 /// free a chain of descriptors.
@@ -260,10 +259,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
     let idx = loop {
         match alloc3_desc() {
             Some(idx) => break idx,
-            None => sleep(
-                DISK.free.as_mut_ptr() as *mut libc::CVoid,
-                &mut DISK.vdisk_lock,
-            ),
+            None => sleep(DISK.free.as_mut_ptr() as _, &mut DISK.vdisk_lock),
         }
     };
 
@@ -316,7 +312,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
 
     // Wait for virtio_disk_intr() to say request has finished.
     while (*b).disk == 1 {
-        sleep(b as *mut libc::CVoid, &mut DISK.vdisk_lock);
+        sleep(b as _, &mut DISK.vdisk_lock);
     }
     DISK.info[idx[0] as usize].b = ptr::null_mut();
     free_chain(idx[0]);
@@ -335,7 +331,7 @@ pub unsafe fn virtio_disk_intr() {
         (*DISK.info[id].b).disk = 0;
 
         // disk is done with Buf
-        wakeup(DISK.info[id].b as *mut libc::CVoid);
+        wakeup(DISK.info[id].b as _);
 
         DISK.used_idx = (DISK.used_idx.wrapping_add(1)).wrapping_rem(NUM as _)
     }
