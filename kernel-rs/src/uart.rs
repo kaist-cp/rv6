@@ -54,6 +54,45 @@ impl UartCtrlRegs {
     }
 }
 
+pub struct UART;
+
+impl UART {
+    pub unsafe fn new() -> Self {
+        UART
+    }
+
+    /// Write one output character to the UART.
+    pub fn putc(c: i32) {
+        // Wait for Transmit Holding Empty to be set in LSR.
+        while LSR.read() & 1 << 5 == 0 {}
+        THR.write(c as u8);
+    }
+
+    /// Read one input character from the UART.
+    /// Return -1 if none is waiting.
+    fn getc() -> i32 {
+        if LSR.read() & 0x01 != 0 {
+            // Input data is ready.
+            RHR.read() as i32
+        } else {
+            -1
+        }
+    }
+
+    /// trap.c calls here when the uart interrupts.
+    pub fn intr() {
+        loop {
+            let c = UART::getc();
+            if c == -1 {
+                break;
+            }
+            unsafe {
+                consoleintr(c);
+            }
+        }
+    }
+}
+
 pub fn uartinit() {
     // Disable interrupts.
     IER.write(0x00);
@@ -76,35 +115,4 @@ pub fn uartinit() {
 
     // Enable receive interrupts.
     IER.write(0x01);
-}
-
-/// Write one output character to the UART.
-pub fn uartputc(c: i32) {
-    // Wait for Transmit Holding Empty to be set in LSR.
-    while LSR.read() & 1 << 5 == 0 {}
-    THR.write(c as u8);
-}
-
-/// Read one input character from the UART.
-/// Return -1 if none is waiting.
-fn uartgetc() -> i32 {
-    if LSR.read() & 0x01 != 0 {
-        // Input data is ready.
-        RHR.read() as i32
-    } else {
-        -1
-    }
-}
-
-/// trap.c calls here when the uart interrupts.
-pub fn uartintr() {
-    loop {
-        let c = uartgetc();
-        if c == -1 {
-            break;
-        }
-        unsafe {
-            consoleintr(c);
-        }
-    }
 }
