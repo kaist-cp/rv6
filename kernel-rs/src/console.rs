@@ -4,7 +4,7 @@ use crate::{
     printf::PANICKED,
     proc::{either_copyin, either_copyout, myproc, procdump, sleep, wakeup},
     spinlock::{RawSpinlock, Spinlock},
-    uart::{uartinit, uartputc},
+    uart::Uart,
     utils::spin_loop,
 };
 use core::sync::atomic::Ordering;
@@ -45,11 +45,11 @@ impl Console {
         }
         if c == BACKSPACE {
             // if the user typed backspace, overwrite with a space.
-            uartputc('\u{8}' as i32);
-            uartputc(' ' as i32);
-            uartputc('\u{8}' as i32);
+            Uart::putc('\u{8}' as i32);
+            Uart::putc(' ' as i32);
+            Uart::putc('\u{8}' as i32);
         } else {
-            uartputc(c);
+            Uart::putc(c);
         };
     }
 
@@ -219,7 +219,7 @@ pub unsafe fn consoleintr(cin: i32) {
 }
 
 pub unsafe fn consoleinit() {
-    uartinit();
+    Uart::new();
 
     // connect read and write system calls
     // to consoleread and consolewrite.
