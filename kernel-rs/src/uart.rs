@@ -3,7 +3,7 @@ use crate::console::consoleintr;
 use crate::memlayout::UART0;
 use core::ptr;
 
-use self::UartCtrlRegs::{FCR, IER, ISR, LCR, LSR, RBR, RHR, THR};
+use self::UartCtrlRegs::{FCR, IER, ISR, LCR, LSR, RBR, THR};
 
 /// The UART control registers.
 /// Some have different meanings for
@@ -11,8 +11,8 @@ use self::UartCtrlRegs::{FCR, IER, ISR, LCR, LSR, RBR, RHR, THR};
 /// http://byterunner.com/16550.html
 #[repr(usize)]
 enum UartCtrlRegs {
-    /// Receive Holding Register (for input bytes).
-    RHR,
+    /// Recieve Buffer Register.
+    RBR,
     /// Transmit Holding Register (for output bytes).
     THR,
     /// Interrupt Enable Register.
@@ -25,8 +25,6 @@ enum UartCtrlRegs {
     LCR,
     /// Line Status Register.
     LSR,
-    /// Recieve Buffer Register.
-    RBR,
 }
 
 impl UartCtrlRegs {
@@ -35,7 +33,7 @@ impl UartCtrlRegs {
     /// address of one of the registers.
     fn reg(self) -> *mut u8 {
         match self {
-            RHR | THR | RBR => UART0 as *mut u8,
+            THR | RBR => UART0 as *mut u8,
             IER => (UART0 + 1) as *mut u8,
             FCR | ISR => (UART0 + 2) as *mut u8,
             LCR => (UART0 + 3) as *mut u8,
@@ -95,7 +93,7 @@ impl Uart {
     fn getc() -> i32 {
         if LSR.read() & 0x01 != 0 {
             // Input data is ready.
-            RHR.read() as i32
+            RBR.read() as i32
         } else {
             -1
         }
