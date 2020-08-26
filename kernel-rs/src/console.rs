@@ -27,7 +27,7 @@ struct Console {
 
 impl Console {
     // TODO: transient measure
-    pub const fn zeroed() -> Self {
+    const fn zeroed() -> Self {
         Self {
             buf: [0; INPUT_BUF],
             r: 0,
@@ -94,7 +94,7 @@ unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
 /// user_dist indicates whether dst is a user
 /// or kernel address.
 unsafe fn consoleread(user_dst: i32, mut dst: usize, mut n: i32) -> i32 {
-    let target: u32 = n as u32;
+    let target = n as u32;
     let mut console = CONS.lock();
     while n > 0 {
         // wait until interrupt handler has put some
