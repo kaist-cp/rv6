@@ -36,40 +36,39 @@ impl Console {
         }
     }
 
-    fn write(&self, user_src: i32, src: usize, n: i32) {
+    unsafe fn write(&self, user_src: i32, src: usize, n: i32) {
         for i in 0..n {
             let mut c: u8 = 0;
-            if unsafe {
-                either_copyin(
-                    &mut c as *mut u8 as *mut libc::CVoid,
-                    user_src,
-                    src.wrapping_add(i as usize),
-                    1usize,
-                )
-            } == -1
+            if either_copyin(
+                &mut c as *mut u8 as *mut libc::CVoid,
+                user_src,
+                src.wrapping_add(i as usize),
+                1usize,
+            ) == -1
             {
                 break;
             }
-            unsafe { consputc(c as i32) };
+            consputc(c as i32);
         }
     }
 
-    fn read(&mut self, user_dst: i32, mut dst: usize, mut n: i32, lk: usize) -> i32 {
+    unsafe fn read(
+        &mut self,
+        user_dst: i32,
+        mut dst: usize,
+        mut n: i32,
+        lk: *mut RawSpinlock,
+    ) -> i32 {
         let target = n as u32;
         while n > 0 {
             // wait until interrupt handler has put some
             // input into CONS.buffer.
             while self.r == self.w {
-                if unsafe { (*myproc()).killed } != 0 {
+                if (*myproc()).killed != 0 {
                     return -1;
                 }
                 // TODO: need to change "RawSpinlock" after refactoring "sleep()" function in proc.rs
-                unsafe {
-                    sleep(
-                        &mut self.r as *mut u32 as *mut libc::CVoid,
-                        lk as *mut RawSpinlock,
-                    )
-                };
+                sleep(&mut self.r as *mut u32 as *mut libc::CVoid, lk);
             }
             let fresh0 = self.r;
             self.r = self.r.wrapping_add(1);
@@ -86,14 +85,12 @@ impl Console {
             } else {
                 // copy the input byte to the user-space buffer.
                 let mut cbuf = cin as u8;
-                if unsafe {
-                    either_copyout(
-                        user_dst,
-                        dst,
-                        &mut cbuf as *mut u8 as *mut libc::CVoid,
-                        1usize,
-                    )
-                } == -1
+                if either_copyout(
+                    user_dst,
+                    dst,
+                    &mut cbuf as *mut u8 as *mut libc::CVoid,
+                    1usize,
+                ) == -1
                 {
                     break;
                 }
@@ -146,7 +143,9 @@ static CONS: Spinlock<Console> = Spinlock::new("CONS", Console::zeroed());
 /// user write()s to the console go here.
 fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
     let console = CONS.lock();
-    console.write(user_src, src, n);
+    unsafe {
+        console.write(user_src, src, n);
+    }
     n
 }
 
@@ -156,8 +155,8 @@ fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
 /// or kernel address.
 fn consoleread(user_dst: i32, dst: usize, n: i32) -> i32 {
     let mut console = CONS.lock();
-    let lk = console.raw();
-    console.read(user_dst, dst, n, lk)
+    let lk = console.raw() as *mut RawSpinlock;
+    unsafe { console.read(user_dst, dst, n, lk) }
 }
 
 /// the console input interrupt handler.
