@@ -35,13 +35,13 @@ impl UartCtrlRegs {
     /// The UART control registers are memory-mapped
     /// at address UART0. This macro returns the
     /// address of one of the registers.
-    unsafe fn reg(self) -> *mut u8 {
+    fn reg(self) -> *mut u8 {
         match self {
             RHR | THR | LSB => UART0 as *mut u8,
-            IER | MSB => (UART0 +1) as *mut u8,
-            FCR | ISR => (UART0 +2) as *mut u8,
-            LCR => (UART0 +3) as *mut u8,
-            LSR => (UART0 +5) as *mut u8,
+            IER | MSB => (UART0 + 1) as *mut u8,
+            FCR | ISR => (UART0 + 2) as *mut u8,
+            LCR => (UART0 + 3) as *mut u8,
+            LSR => (UART0 + 5) as *mut u8,
         }
     }
 
