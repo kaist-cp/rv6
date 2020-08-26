@@ -38,7 +38,7 @@ impl Console {
 
     /// send one character to the uart.
     // TODO: This function should receive `&mut self`. Need to consider printf.rs and #148.
-    pub unsafe fn consputc(c: i32) {
+    pub unsafe fn putc(c: i32) {
         // from printf.rs
         if PANICKED.load(Ordering::Acquire) {
             spin_loop();
@@ -65,7 +65,7 @@ impl Console {
             {
                 break;
             }
-            Console::consputc(c as i32);
+            Console::putc(c as i32);
         }
     }
 
@@ -138,7 +138,7 @@ impl Console {
                         != '\n' as i32
                 {
                     self.e = self.e.wrapping_sub(1);
-                    Console::consputc(BACKSPACE);
+                    Console::putc(BACKSPACE);
                 }
             }
 
@@ -146,7 +146,7 @@ impl Console {
             m if m == ctrl('H') | '\x7f' as i32 => {
                 if self.e != self.w {
                     self.e = self.e.wrapping_sub(1);
-                    Console::consputc(BACKSPACE);
+                    Console::putc(BACKSPACE);
                 }
             }
             _ => {
@@ -154,7 +154,7 @@ impl Console {
                     cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
 
                     // echo back to the user.
-                    Console::consputc(cin);
+                    Console::putc(cin);
 
                     // store for consumption by consoleread().
                     let fresh1 = self.e;
