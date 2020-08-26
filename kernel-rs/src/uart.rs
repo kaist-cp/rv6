@@ -3,7 +3,7 @@ use crate::console::consoleintr;
 use crate::memlayout::UART0;
 use core::ptr;
 
-use self::UartCtrlRegs::{FCR, IER, ISR, LCR, LSB, LSR, MSB, RHR, THR};
+use self::UartCtrlRegs::{FCR, IER, ISR, LCR, LSR, RBR, RHR, THR};
 
 /// The UART control registers.
 /// Some have different meanings for
@@ -25,10 +25,8 @@ enum UartCtrlRegs {
     LCR,
     /// Line Status Register.
     LSR,
-    /// LSB for baud rate of 38.4K.
-    LSB,
-    /// MSB for baud rate of 38.4K.
-    MSB,
+    /// Recieve Buffer Register.
+    RBR,
 }
 
 impl UartCtrlRegs {
@@ -37,8 +35,8 @@ impl UartCtrlRegs {
     /// address of one of the registers.
     fn reg(self) -> *mut u8 {
         match self {
-            RHR | THR | LSB => UART0 as *mut u8,
-            IER | MSB => (UART0 + 1) as *mut u8,
+            RHR | THR | RBR => UART0 as *mut u8,
+            IER => (UART0 + 1) as *mut u8,
             FCR | ISR => (UART0 + 2) as *mut u8,
             LCR => (UART0 + 3) as *mut u8,
             LSR => (UART0 + 5) as *mut u8,
@@ -54,14 +52,37 @@ impl UartCtrlRegs {
     }
 }
 
-pub struct UART;
+pub struct Uart;
 
-impl UART {
+impl Uart {
     pub unsafe fn new() -> Self {
-        UART
+        // Disable interrupts.
+        IER.write(0x00);
+
+        // Special mode to set baud rate.
+        LCR.write(0x80);
+
+        // LSB for baud rate of 38.4K.
+        RBR.write(0x03);
+
+        // MSB for baud rate of 38.4K.
+        IER.write(0x00);
+
+        // Leave set-baud mode,
+        // and set word length to 8 bits, no parity.
+        LCR.write(0x03);
+
+        // Reset and enable FIFOs.
+        FCR.write(0x07);
+
+        // Enable receive interrupts.
+        IER.write(0x01);
+
+        Uart
     }
 
     /// Write one output character to the UART.
+    /// TODO: should get &mut self - need to refactor when encapsulate Uart into Console.
     pub fn putc(c: i32) {
         // Wait for Transmit Holding Empty to be set in LSR.
         while LSR.read() & 1 << 5 == 0 {}
@@ -70,6 +91,7 @@ impl UART {
 
     /// Read one input character from the UART.
     /// Return -1 if none is waiting.
+    /// TODO: should get &mut self - need to refactor when encapsulate Uart into Console.
     fn getc() -> i32 {
         if LSR.read() & 0x01 != 0 {
             // Input data is ready.
@@ -82,7 +104,7 @@ impl UART {
     /// trap.c calls here when the uart interrupts.
     pub fn intr() {
         loop {
-            let c = UART::getc();
+            let c = Uart::getc();
             if c == -1 {
                 break;
             }
@@ -91,28 +113,4 @@ impl UART {
             }
         }
     }
-}
-
-pub fn uartinit() {
-    // Disable interrupts.
-    IER.write(0x00);
-
-    // Special mode to set baud rate.
-    LCR.write(0x80);
-
-    // LSB for baud rate of 38.4K.
-    LSB.write(0x03);
-
-    // MSB for baud rate of 38.4K.
-    MSB.write(0x00);
-
-    // Leave set-baud mode,
-    // and set word length to 8 bits, no parity.
-    LCR.write(0x03);
-
-    // Reset and enable FIFOs.
-    FCR.write(0x07);
-
-    // Enable receive interrupts.
-    IER.write(0x01);
 }
