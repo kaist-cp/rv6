@@ -54,7 +54,7 @@ impl UartCtrlRegs {
     }
 }
 
-pub unsafe fn uartinit() {
+pub fn uartinit() {
     // Disable interrupts.
     IER.write(0x00);
 
