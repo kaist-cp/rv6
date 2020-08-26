@@ -12,7 +12,7 @@ use core::sync::atomic::Ordering;
 /// input
 const INPUT_BUF: usize = 128;
 
-pub(crate) struct Console {
+pub struct Console {
     buf: [u8; 128],
 
     /// Read index
