@@ -1,6 +1,6 @@
 //! formatted console output -- printf, panic.
 use crate::console::Console;
-use crate::spinlock::RawSpinlock;
+use crate::spinlock::Spinlock;
 use core::fmt;
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -16,6 +16,9 @@ impl fmt::Write for Writer {
         Ok(())
     }
 }
+
+/// Lock to avoid interleaving concurrent printf's.
+static WRITER: Spinlock<Writer> = Spinlock::new("WRITER", Writer {});
 
 /// print! macro prints to the console
 #[macro_export]
@@ -33,15 +36,11 @@ macro_rules! println {
 /// Prints the given formatted string to the VGA text buffer
 /// through the global WRITER instance.
 #[doc(hidden)]
-pub unsafe fn _print(args: fmt::Arguments<'_>) {
+pub fn _print(args: fmt::Arguments<'_>) {
     use core::fmt::Write;
-    let locking: i32 = PR.locking;
-    if locking != 0 {
-        PR.lock.acquire();
-    }
-    (Writer {}).write_fmt(args).unwrap();
-    if locking != 0 {
-        PR.lock.release();
+    if LOCKING.load(Ordering::SeqCst) {
+        let mut writer = WRITER.lock();
+        writer.write_fmt(args).unwrap();
     }
 }
 
@@ -49,8 +48,8 @@ pub unsafe fn _print(args: fmt::Arguments<'_>) {
 #[cfg(not(test))]
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
-    unsafe {
-        PR.locking = 0;
+    {
+        LOCKING.store(false, Ordering::Release);
         println!("{}", info);
 
         // freeze other CPUs
@@ -59,27 +58,10 @@ fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
     crate::utils::spin_loop()
 }
 
-/// lock to avoid interleaving concurrent printf's.
-struct PrintfLock {
-    lock: RawSpinlock,
-    locking: i32,
-}
-
-impl PrintfLock {
-    // TODO: transient measure
-    const fn zeroed() -> Self {
-        Self {
-            lock: RawSpinlock::zeroed(),
-            locking: 0,
-        }
-    }
-}
-
+/// TODO: Need appropriate comment.
 pub static PANICKED: AtomicBool = AtomicBool::new(false);
+pub static LOCKING: AtomicBool = AtomicBool::new(true);
 
-static mut PR: PrintfLock = PrintfLock::zeroed();
-
-pub unsafe fn printfinit() {
-    PR.lock.initlock("PR");
-    PR.locking = 1;
+pub fn printfinit() {
+    LOCKING.store(true, Ordering::Release);
 }
