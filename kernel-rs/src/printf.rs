@@ -1,4 +1,4 @@
-//! formatted console output -- printf, panic.
+//! formatted console output -- println, panic.
 use crate::console::Console;
 use crate::spinlock::Spinlock;
 use core::fmt;
@@ -17,24 +17,20 @@ impl fmt::Write for Writer {
     }
 }
 
+/// The global WRITER.
 /// Lock to avoid interleaving concurrent printf's.
 static WRITER: Spinlock<Writer> = Spinlock::new("WRITER", Writer {});
 
-/// print! macro prints to the console
-#[macro_export]
-macro_rules! print {
-    ($($arg:tt)*) => ($crate::printf::_print(format_args!($($arg)*)));
+/// TODO: Need appropriate comments.
+pub static PANICKED: AtomicBool = AtomicBool::new(false);
+pub static LOCKING: AtomicBool = AtomicBool::new(true);
+
+/// TODO: Need appropriate comments.
+pub fn printfinit() {
+    LOCKING.store(true, Ordering::SeqCst);
 }
 
-/// println! macro prints to the console
-#[macro_export]
-macro_rules! println {
-    () => ($crate::print!("\n"));
-    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
-}
-
-/// Prints the given formatted string to the VGA text buffer
-/// through the global WRITER instance.
+/// Prints the given formatted string with the global WRITER.
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments<'_>) {
     use core::fmt::Write;
@@ -44,24 +40,29 @@ pub fn _print(args: fmt::Arguments<'_>) {
     }
 }
 
+/// print! macro prints to the console.
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => ($crate::printf::_print(format_args!($($arg)*)));
+}
+
+/// println! macro prints to the console.
+#[macro_export]
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
+
 /// Handles panic.
 #[cfg(not(test))]
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
     {
-        LOCKING.store(false, Ordering::Release);
+        LOCKING.store(false, Ordering::SeqCst);
         println!("{}", info);
 
-        // freeze other CPUs
+        // Freeze other CPUs.
         PANICKED.store(true, Ordering::Release);
     }
     crate::utils::spin_loop()
-}
-
-/// TODO: Need appropriate comment.
-pub static PANICKED: AtomicBool = AtomicBool::new(false);
-pub static LOCKING: AtomicBool = AtomicBool::new(true);
-
-pub fn printfinit() {
-    LOCKING.store(true, Ordering::Release);
 }
