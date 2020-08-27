@@ -4,7 +4,7 @@ use crate::spinlock::Spinlock;
 use core::fmt;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-pub struct Writer {}
+struct Writer {}
 
 impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
@@ -23,7 +23,7 @@ static WRITER: Spinlock<Writer> = Spinlock::new("WRITER", Writer {});
 
 /// TODO: Need appropriate comments.
 pub static PANICKED: AtomicBool = AtomicBool::new(false);
-pub static LOCKING: AtomicBool = AtomicBool::new(true);
+static LOCKING: AtomicBool = AtomicBool::new(true);
 
 /// TODO: Need appropriate comments.
 pub fn printfinit() {
