@@ -19,6 +19,8 @@ use core::mem;
 use core::ptr;
 use core::sync::atomic::{fence, Ordering};
 
+use arrayvec::ArrayVec;
+
 impl MmioRegs {
     unsafe fn read(self) -> u32 {
         ptr::read_volatile((VIRTIO0 as *mut u8).add(self as _) as _)
@@ -37,12 +39,10 @@ impl MmioRegs {
 static mut VIRTQUEUE: [Page; 2] = [Page::DEFAULT, Page::DEFAULT];
 
 struct Disk {
-    desc: *mut [VRingDesc; NUM],
+    desc: DescriptorPool,
     avail: *mut AvailableRing,
     used: *mut [UsedArea; NUM],
 
-    /// our own book-keeping.
-    free: [bool; NUM], // TODO : Disk can be implemented using bitmap
     used_idx: u16,
 
     /// track info about in-flight operations,
@@ -51,6 +51,18 @@ struct Disk {
     info: [InflightInfo; NUM],
 
     vdisk_lock: RawSpinlock,
+}
+
+struct DescriptorPool {
+    desc: *mut [VRingDesc; NUM],
+
+    /// our own book-keeping.
+    free: [bool; NUM], // TODO : Disk can be implemented using bitmap
+}
+
+#[derive(Debug)]
+struct Descriptor {
+    idx: usize,
 }
 
 // It needs repr(C) because it's read by device
@@ -98,14 +110,103 @@ impl VirtIOBlockOutHeader {
     }
 }
 
+impl Descriptor {
+    unsafe fn new(idx: usize) -> Self {
+        Self { idx }
+    }
+}
+
+impl DescriptorPool {
+    const fn zeroed() -> Self {
+        Self {
+            desc: ptr::null_mut(),
+            free: [false; NUM],
+        }
+    }
+
+    fn new(page: *mut Page) -> Self {
+        Self {
+            desc: page as _,
+            free: [true; NUM],
+        }
+    }
+
+    /// find a free descriptor, mark it non-free, return its index.
+    fn alloc(&mut self) -> Option<Descriptor> {
+        for (idx, free) in self.free.iter_mut().enumerate() {
+            if *free {
+                *free = false;
+                return Some(unsafe { Descriptor::new(idx) });
+            }
+        }
+
+        None
+    }
+
+    fn alloc3(&mut self) -> Option<[Descriptor; 3]> {
+        let mut descs = ArrayVec::new();
+
+        for _ in 0..3 {
+            match self.alloc() {
+                Some(desc) => descs.push(desc),
+                None => {
+                    for desc in descs {
+                        self.free(desc);
+                    }
+                    return None;
+                }
+            }
+        }
+
+        Some(descs.into_inner().unwrap())
+    }
+
+    /// mark a descriptor as free.
+    fn free(&mut self, desc: Descriptor) {
+        let Descriptor { idx } = desc;
+        assert!(idx < NUM, "virtio_disk_intr 1");
+        assert!(!self.free[idx], "virtio_disk_intr 2");
+
+        unsafe {
+            (*self.desc)[idx].addr = 0;
+            self.free[idx] = true;
+            wakeup(&mut self.free as *mut _ as _);
+        }
+    }
+
+    /// free a chain of descriptors.
+    // TODO: this is unsafe; we can remove this.
+    unsafe fn free_chain(&mut self, mut desc: Descriptor) {
+        loop {
+            let idx = desc.idx;
+            self.free(desc);
+
+            if !(*self.desc)[idx].flags.contains(VRingDescFlags::NEXT) {
+                break;
+            }
+
+            desc = Descriptor {
+                idx: (*self.desc)[idx].next as _,
+            };
+        }
+    }
+
+    fn get(&self, desc: &Descriptor) -> &VRingDesc {
+        unsafe { &(*self.desc)[desc.idx] }
+    }
+
+    fn get_mut(&self, desc: &mut Descriptor) -> &mut VRingDesc {
+        unsafe { &mut (*self.desc)[desc.idx] }
+    }
+}
+
 impl Disk {
     // TODO: transient measure
     const fn zeroed() -> Self {
         Self {
-            desc: ptr::null_mut(),
+            desc: DescriptorPool::zeroed(),
             avail: ptr::null_mut(),
             used: ptr::null_mut(),
-            free: [false; NUM],
             used_idx: 0,
             info: [InflightInfo::zeroed(); NUM],
             vdisk_lock: RawSpinlock::zeroed(),
@@ -181,70 +282,11 @@ pub unsafe fn virtio_disk_init() {
     // avail = pages + 0x40 -- 2 * u16, then num * u16
     // used = pages + 4096 -- 2 * u16, then num * vRingUsedElem
 
-    DISK.desc = VIRTQUEUE[0].as_mut_ptr() as _;
+    DISK.desc = DescriptorPool::new(&mut VIRTQUEUE[0]);
     DISK.avail = (VIRTQUEUE[0].as_mut_ptr() as *mut VRingDesc).add(NUM) as _;
     DISK.used = VIRTQUEUE[1].as_mut_ptr() as _;
-    for free in &mut DISK.free {
-        *free = true;
-    }
 
     // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
-}
-
-/// find a free descriptor, mark it non-free, return its index.
-unsafe fn alloc_desc() -> Option<i32> {
-    for i in 0..NUM {
-        if DISK.free[i] {
-            DISK.free[i] = false;
-            return Some(i as _);
-        }
-    }
-    None
-}
-
-/// mark a descriptor as free.
-unsafe fn free_desc(i: i32) {
-    if i >= NUM as i32 {
-        panic!("virtio_disk_intr 1");
-    }
-    if DISK.free[i as usize] {
-        panic!("virtio_disk_intr 2");
-    }
-    (*DISK.desc)[i as usize].addr = 0;
-    DISK.free[i as usize] = true;
-    wakeup(&mut DISK.free as *mut _ as *mut libc::CVoid);
-}
-
-/// free a chain of descriptors.
-unsafe fn free_chain(mut i: i32) {
-    loop {
-        free_desc(i);
-        if !(*DISK.desc)[i as usize]
-            .flags
-            .contains(VRingDescFlags::NEXT)
-        {
-            break;
-        }
-        i = (*DISK.desc)[i as usize].next as i32;
-    }
-}
-
-unsafe fn alloc3_desc() -> Option<[i32; 3]> {
-    let mut idx = [0; 3];
-
-    for i in 0..3 {
-        match alloc_desc() {
-            Some(desc) => idx[i] = desc,
-            None => {
-                for j in idx.iter().take(i) {
-                    free_desc(*j);
-                }
-                return None;
-            }
-        }
-    }
-
-    Some(idx)
 }
 
 pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
@@ -257,11 +299,11 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
     // the data, one for a 1-byte status result.
 
     // allocate the three descriptors.
-    let idx = loop {
-        match alloc3_desc() {
+    let mut desc = loop {
+        match DISK.desc.alloc3() {
             Some(idx) => break idx,
             None => sleep(
-                DISK.free.as_mut_ptr() as *mut libc::CVoid,
+                DISK.desc.free.as_mut_ptr() as *mut libc::CVoid,
                 &mut DISK.vdisk_lock,
             ),
         }
@@ -273,15 +315,15 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
 
     // buf0 is on a kernel stack, which is not direct mapped,
     // thus the call to kvmpa().
-    (*DISK.desc)[idx[0] as usize] = VRingDesc {
+    *DISK.desc.get_mut(&mut desc[0]) = VRingDesc {
         addr: kvmpa(&mut buf0 as *mut _ as _),
         len: mem::size_of::<VirtIOBlockOutHeader>() as _,
         flags: VRingDescFlags::NEXT,
-        next: idx[1] as _,
+        next: desc[1].idx as _,
     };
 
     // device reads/writes b->data
-    (*DISK.desc)[idx[1] as usize] = VRingDesc {
+    *DISK.desc.get_mut(&mut desc[1]) = VRingDesc {
         addr: (*b).data.as_mut_ptr() as _,
         len: BSIZE as _,
         flags: if write {
@@ -289,14 +331,14 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
         } else {
             VRingDescFlags::NEXT | VRingDescFlags::WRITE
         },
-        next: idx[2] as _,
+        next: desc[2].idx as _,
     };
 
-    DISK.info[idx[0] as usize].status = false;
+    DISK.info[desc[0].idx].status = false;
 
     // device writes the status
-    (*DISK.desc)[idx[2] as usize] = VRingDesc {
-        addr: &mut DISK.info[idx[0] as usize].status as *mut _ as _,
+    *DISK.desc.get_mut(&mut desc[2]) = VRingDesc {
+        addr: &mut DISK.info[desc[0].idx].status as *mut _ as _,
         len: 1,
         flags: VRingDescFlags::WRITE,
         next: 0,
@@ -304,10 +346,10 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
 
     // record struct Buf for virtio_disk_intr().
     (*b).disk = 1;
-    DISK.info[idx[0] as usize].b = b;
+    DISK.info[desc[0].idx].b = b;
 
     // we only tell device the first index in our chain of descriptors.
-    (*DISK.avail).ring[(*DISK.avail).idx as usize % NUM] = idx[0] as _;
+    (*DISK.avail).ring[(*DISK.avail).idx as usize % NUM] = desc[0].idx as _;
     fence(Ordering::SeqCst);
     (*DISK.avail).idx += 1;
 
@@ -318,8 +360,9 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
     while (*b).disk == 1 {
         sleep(b as *mut libc::CVoid, &mut DISK.vdisk_lock);
     }
-    DISK.info[idx[0] as usize].b = ptr::null_mut();
-    free_chain(idx[0]);
+    DISK.info[desc[0].idx].b = ptr::null_mut();
+    let [first_desc, ..] = desc;
+    DISK.desc.free_chain(first_desc);
     DISK.vdisk_lock.release();
 }
 
