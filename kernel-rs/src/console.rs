@@ -44,10 +44,10 @@ pub static mut LOCKING: bool = false;
 #[doc(hidden)]
 pub unsafe fn _print(args: fmt::Arguments<'_>) {
     use core::fmt::Write;
-    let mut _lock;
+    
     if LOCKING != true {
-        _lock = CONS.lock();
-        _lock.write_fmt(args).unwrap();
+        let mut lock = CONS.lock();
+        lock.write_fmt(args).unwrap();
     }
     // (Writer {})
     else{
