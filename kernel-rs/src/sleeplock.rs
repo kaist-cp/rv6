@@ -1,22 +1,20 @@
 //! Sleeping locks
 use crate::libc;
 use crate::proc::{myproc, sleep, wakeup};
-use crate::spinlock::Spinlock;
-use core::ptr;
+use crate::spinlock::RawSpinlock;
 
 /// Long-term locks for processes
-#[derive(Copy, Clone)]
 pub struct Sleeplock {
     /// Is the lock held?
     locked: u32,
 
     /// spinlock protecting this sleep lock
-    lk: Spinlock,
+    lk: RawSpinlock,
 
     /// For debugging:  
 
     /// Name of lock.
-    name: *mut libc::c_char,
+    name: &'static str,
 
     /// Process holding lock
     pid: i32,
@@ -27,17 +25,16 @@ impl Sleeplock {
     pub const fn zeroed() -> Self {
         Self {
             locked: 0,
-            lk: Spinlock::zeroed(),
-            name: ptr::null_mut(),
+            lk: RawSpinlock::zeroed(),
+            name: "",
             pid: 0,
         }
     }
 
-    pub unsafe fn new(name: *mut libc::c_char) -> Self {
+    pub unsafe fn new(name: &'static str) -> Self {
         let mut lk = Self::zeroed();
 
-        lk.lk
-            .initlock(b"sleep lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        lk.lk.initlock("sleep lock");
         lk.name = name;
         lk.locked = 0;
         lk.pid = 0;
@@ -45,10 +42,8 @@ impl Sleeplock {
         lk
     }
 
-    pub fn initlock(&mut self, mut name: *mut libc::c_char) {
-        (*self)
-            .lk
-            .initlock(b"sleep lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    pub fn initlock(&mut self, name: &'static str) {
+        (*self).lk.initlock("sleep lock");
         (*self).name = name;
         (*self).locked = 0;
         (*self).pid = 0;
@@ -57,7 +52,7 @@ impl Sleeplock {
     pub unsafe fn acquire(&mut self) {
         (*self).lk.acquire();
         while (*self).locked != 0 {
-            sleep(self as *mut Sleeplock as *mut libc::c_void, &mut (*self).lk);
+            sleep(self as *mut Sleeplock as *mut libc::CVoid, &mut (*self).lk);
         }
         (*self).locked = 1;
         (*self).pid = (*myproc()).pid;
@@ -68,14 +63,13 @@ impl Sleeplock {
         (*self).lk.acquire();
         (*self).locked = 0;
         (*self).pid = 0;
-        wakeup(self as *mut Sleeplock as *mut libc::c_void);
+        wakeup(self as *mut Sleeplock as *mut libc::CVoid);
         (*self).lk.release();
     }
 
     pub unsafe fn holding(&mut self) -> i32 {
-        let mut r: i32 = 0;
         (*self).lk.acquire();
-        r = ((*self).locked != 0 && (*self).pid == (*myproc()).pid) as i32;
+        let r: i32 = ((*self).locked != 0 && (*self).pid == (*myproc()).pid) as i32;
         (*self).lk.release();
         r
     }

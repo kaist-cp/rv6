@@ -1,6 +1,4 @@
-use crate::libc;
-
-pub unsafe fn strncmp(mut p: *const libc::c_char, mut q: *const libc::c_char, mut n: u32) -> i32 {
+pub unsafe fn strncmp(mut p: *const u8, mut q: *const u8, mut n: u32) -> i32 {
     while n > 0 && *p as i32 != 0 && *p as i32 == *q as i32 {
         n = n.wrapping_sub(1);
         p = p.offset(1);
@@ -9,14 +7,10 @@ pub unsafe fn strncmp(mut p: *const libc::c_char, mut q: *const libc::c_char, mu
     if n == 0 {
         return 0;
     }
-    *p as u8 as i32 - *q as u8 as i32
+    *p as i32 - *q as i32
 }
 
-pub unsafe fn strncpy(
-    mut s: *mut libc::c_char,
-    mut t: *const libc::c_char,
-    mut n: i32,
-) -> *mut libc::c_char {
+pub unsafe fn strncpy(mut s: *mut u8, mut t: *const u8, mut n: i32) -> *mut u8 {
     let os = s;
     loop {
         let fresh5 = n;
@@ -40,17 +34,13 @@ pub unsafe fn strncpy(
         }
         let fresh9 = s;
         s = s.offset(1);
-        *fresh9 = 0 as libc::c_char
+        *fresh9 = 0
     }
     os
 }
 
 /// Like strncpy but guaranteed to NUL-terminate.
-pub unsafe fn safestrcpy(
-    mut s: *mut libc::c_char,
-    mut t: *const libc::c_char,
-    mut n: i32,
-) -> *mut libc::c_char {
+pub unsafe fn safestrcpy(mut s: *mut u8, mut t: *const u8, mut n: i32) -> *mut u8 {
     let os = s;
     if n <= 0 {
         return os;
@@ -68,11 +58,11 @@ pub unsafe fn safestrcpy(
             break;
         }
     }
-    *s = 0 as libc::c_char;
+    *s = 0;
     os
 }
 
-pub unsafe fn strlen(mut s: *const libc::c_char) -> i32 {
+pub unsafe fn strlen(s: *const u8) -> i32 {
     let mut n: i32 = 0;
     while *s.offset(n as isize) != 0 {
         n += 1

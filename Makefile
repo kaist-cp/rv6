@@ -1,9 +1,10 @@
-K=kernel
-U=user
-KR=kernel-rs
+K = kernel
+U = user
+KR = kernel-rs
 
-RUST_TARGET=riscv64gc-unknown-none-elfhf
-RUST_MODE=release
+RUST_TARGET = riscv64gc-unknown-none-elfhf
+RUST_MODE = debug
+XBUILD_MODE =
 
 # OBJS = \
 #   $K/entry.o \
@@ -95,7 +96,7 @@ $U/initcode: $U/initcode.S
 	$(OBJDUMP) -S $U/initcode.o > $U/initcode.asm
 
 $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a: $(shell find $(KR) -type f)
-	cargo xbuild --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json --$(RUST_MODE)
+	cargo xbuild --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json $(XBUILD_MODE)
 
 tags: $(OBJS) _init
 	etags *.S *.c

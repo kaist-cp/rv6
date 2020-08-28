@@ -8,12 +8,12 @@ use crate::{
 
 pub unsafe fn plicinit() {
     // set desired IRQ priorities non-zero (otherwise disabled).
-    *((PLIC + (UART0_IRQ * 4) as i64) as *mut u32) = 1;
-    *((PLIC + (VIRTIO0_IRQ * 4) as i64) as *mut u32) = 1;
+    *((PLIC.wrapping_add(UART0_IRQ.wrapping_mul(4))) as *mut u32) = 1;
+    *((PLIC + VIRTIO0_IRQ * 4) as *mut u32) = 1;
 }
 
 pub unsafe fn plicinithart() {
-    let mut hart: i32 = cpuid();
+    let hart: usize = cpuid();
 
     // set uart's enable bit for this hart's S-mode.
     *(plic_senable(hart) as *mut u32) = (1 << UART0_IRQ | 1 << VIRTIO0_IRQ) as u32;
@@ -24,23 +24,23 @@ pub unsafe fn plicinithart() {
 
 /// return a bitmap of which IRQs are waiting
 /// to be served.
-pub unsafe fn plic_pending() -> u32 {
+pub unsafe fn plic_pending() -> usize {
     //mask = *(u32*)(PLIC + 0x1000);
     //mask |= (u32)*(u32*)(PLIC + 0x1004) << 32;
-    *(PLIC_PENDING as *mut u32)
+    *(PLIC_PENDING as *mut usize)
 }
 
 /// ask the PLIC what interrupt we should serve.
-pub unsafe fn plic_claim() -> i32 {
-    let mut hart: i32 = cpuid();
+pub unsafe fn plic_claim() -> usize {
+    let hart: usize = cpuid();
     //int irq = *(u32*)(PLIC + 0x201004);
-    let mut irq: i32 = *(plic_sclaim(hart) as *mut u32) as i32;
+    let irq: usize = *(plic_sclaim(hart) as *mut usize);
     irq
 }
 
 /// tell the PLIC we've served this IRQ.
-pub unsafe fn plic_complete(mut irq: i32) {
-    let mut hart: i32 = cpuid();
+pub unsafe fn plic_complete(irq: usize) {
+    let hart: usize = cpuid();
     //*(u32*)(PLIC + 0x201004) = irq;
-    *(plic_sclaim(hart) as *mut u32) = irq as u32;
+    *(plic_sclaim(hart) as *mut usize) = irq;
 }

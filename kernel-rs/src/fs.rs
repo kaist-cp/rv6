@@ -17,7 +17,6 @@ use crate::{
     file::Inode,
     log::log_write,
     param::{NINODE, ROOTDEV},
-    printf::panic,
     proc::{either_copyin, either_copyout, myproc},
     sleeplock::Sleeplock,
     spinlock::Spinlock,
@@ -25,7 +24,7 @@ use crate::{
     string::{strncmp, strncpy},
 };
 use core::mem;
-use core::ptr;
+use core::{ops::DerefMut, ptr};
 
 pub const FD_DEVICE: u32 = 3;
 pub const FD_INODE: u32 = 2;
@@ -68,12 +67,11 @@ pub struct Superblock {
 #[derive(Default, Copy, Clone)]
 pub struct Dirent {
     pub inum: u16,
-    name: [libc::c_char; DIRSIZ],
+    name: [u8; DIRSIZ],
 }
 
 /// On-disk inode structure
 /// Both the kernel and user programs use this header file.
-#[derive(Copy, Clone)]
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
@@ -106,7 +104,7 @@ struct Dinode {
 /// list of blocks holding the file's content.
 ///
 /// The inodes are laid out sequentially on disk at
-/// sb.startinode. Each inode has a number, indicating its
+/// SB.startinode. Each inode has a number, indicating its
 /// position on the disk.
 ///
 /// The kernel keeps a cache of in-use inodes in memory
@@ -158,29 +156,16 @@ struct Dinode {
 /// have locked the inodes involved; this lets callers create
 /// multi-step atomic operations.
 ///
-/// The icache.lock spin-lock protects the allocation of icache
+/// The ICACHE.lock spin-lock protects the allocation of icache
 /// entries. Since ip->ref indicates whether an entry is free,
 /// and ip->dev and ip->inum indicate which i-node an entry
-/// holds, one must hold icache.lock while using any of those fields.
+/// holds, one must hold ICACHE.lock while using any of those fields.
 ///
 /// An ip->lock sleep-lock protects all ip-> fields other than ref,
 /// dev, and inum.  One must hold ip->lock in order to
 /// read or write that inode's ip->valid, ip->size, ip->type, &c.
-#[derive(Copy, Clone)]
-struct Icache {
-    lock: Spinlock,
-    inode: [Inode; NINODE as usize],
-}
 
-impl Icache {
-    // TODO: transient measure
-    pub const fn zeroed() -> Self {
-        Self {
-            lock: Spinlock::zeroed(),
-            inode: [Inode::zeroed(); NINODE as usize],
-        }
-    }
-}
+static mut ICACHE: Spinlock<[Inode; NINODE]> = Spinlock::new("ICACHE", [Inode::zeroed(); NINODE]);
 
 impl Inode {
     /// Copy a modified in-memory inode to disk.
@@ -188,19 +173,17 @@ impl Inode {
     /// that lives on disk, since i-node cache is write-through.
     /// Caller must hold ip->lock.
     pub unsafe fn update(&mut self) {
-        let mut bp: *mut Buf = ptr::null_mut();
-        let mut dip: *mut Dinode = ptr::null_mut();
-        bp = bread(self.dev, sb.iblock(self.inum as i32));
-        dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-            .add((self.inum as usize).wrapping_rem(IPB as usize));
+        let bp: *mut Buf = bread(self.dev, SB.iblock(self.inum));
+        let mut dip: *mut Dinode =
+            ((*bp).data.as_mut_ptr() as *mut Dinode).add((self.inum as usize).wrapping_rem(IPB));
         (*dip).typ = self.typ;
         (*dip).major = self.major;
         (*dip).minor = self.minor;
         (*dip).nlink = self.nlink;
         (*dip).size = self.size;
         ptr::copy(
-            self.addrs.as_mut_ptr() as *const libc::c_void,
-            (*dip).addrs.as_mut_ptr() as *mut libc::c_void,
+            self.addrs.as_mut_ptr() as *const libc::CVoid,
+            (*dip).addrs.as_mut_ptr() as *mut libc::CVoid,
             ::core::mem::size_of::<[u32; 13]>(),
         );
         log_write(bp);
@@ -210,42 +193,36 @@ impl Inode {
     /// Increment reference count for ip.
     /// Returns ip to enable ip = idup(ip1) idiom.
     pub unsafe fn idup(&mut self) -> *mut Self {
-        icache.lock.acquire();
+        let _inode = ICACHE.lock();
         self.ref_0 += 1;
-        icache.lock.release();
         self
     }
 
     /// Lock the given inode.
     /// Reads the inode from disk if necessary.
     pub unsafe fn lock(&mut self) {
-        let mut bp: *mut Buf = ptr::null_mut();
-        let mut dip: *mut Dinode = ptr::null_mut();
         if (self as *mut Inode).is_null() || (*self).ref_0 < 1 {
-            panic(b"Inode::lock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic!("Inode::lock");
         }
         (*self).lock.acquire();
         if (*self).valid == 0 {
-            bp = bread((*self).dev, sb.iblock((*self).inum as i32));
-            dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-                .add(((*self).inum as usize).wrapping_rem(IPB as usize));
+            let bp: *mut Buf = bread((*self).dev, SB.iblock((*self).inum));
+            let dip: *mut Dinode = ((*bp).data.as_mut_ptr() as *mut Dinode)
+                .add(((*self).inum as usize).wrapping_rem(IPB));
             (*self).typ = (*dip).typ;
             (*self).major = (*dip).major;
             (*self).minor = (*dip).minor;
             (*self).nlink = (*dip).nlink;
             (*self).size = (*dip).size;
             ptr::copy(
-                (*dip).addrs.as_mut_ptr() as *const libc::c_void,
-                (*self).addrs.as_mut_ptr() as *mut libc::c_void,
+                (*dip).addrs.as_mut_ptr() as *const libc::CVoid,
+                (*self).addrs.as_mut_ptr() as *mut libc::CVoid,
                 ::core::mem::size_of::<[u32; 13]>(),
             );
             (*bp).release();
             (*self).valid = 1;
             if (*self).typ as i32 == 0 {
-                panic(
-                    b"Inode::lock: no type\x00" as *const u8 as *const libc::c_char
-                        as *mut libc::c_char,
-                );
+                panic!("Inode::lock: no type");
             }
         };
     }
@@ -253,7 +230,7 @@ impl Inode {
     /// Unlock the given inode.
     pub unsafe fn unlock(&mut self) {
         if (self as *mut Inode).is_null() || (*self).lock.holding() == 0 || (*self).ref_0 < 1 {
-            panic(b"Inode::unlock\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic!("Inode::unlock");
         }
         (*self).lock.release();
     }
@@ -266,7 +243,7 @@ impl Inode {
     /// All calls to Inode::put() must be inside a transaction in
     /// case it has to free the inode.
     pub unsafe fn put(&mut self) {
-        icache.lock.acquire();
+        let mut inode = ICACHE.lock();
 
         if (*self).ref_0 == 1 && (*self).valid != 0 && (*self).nlink as i32 == 0 {
             // inode has no links and no other references: truncate and free.
@@ -275,7 +252,7 @@ impl Inode {
             // so this acquiresleep() won't block (or deadlock).
             (*self).lock.acquire();
 
-            icache.lock.release();
+            drop(inode);
 
             self.itrunc();
             (*self).typ = 0;
@@ -284,10 +261,10 @@ impl Inode {
 
             (*self).lock.release();
 
-            icache.lock.acquire();
+            inode = ICACHE.lock();
         }
         (*self).ref_0 -= 1;
-        icache.lock.release();
+        drop(inode);
     }
 
     /// Common idiom: unlock, then put.
@@ -305,9 +282,7 @@ impl Inode {
     /// Return the disk block address of the nth block in inode self.
     /// If there is no such block, bmap allocates one.
     unsafe fn bmap(&mut self, mut bn: u32) -> u32 {
-        let mut addr: u32 = 0;
-        let mut a: *mut u32 = ptr::null_mut();
-        let mut bp: *mut Buf = ptr::null_mut();
+        let mut addr: u32;
         if bn < NDIRECT as u32 {
             addr = (*self).addrs[bn as usize];
             if addr == 0 {
@@ -316,16 +291,16 @@ impl Inode {
             }
             return addr;
         }
-        bn = (bn as u32).wrapping_sub(NDIRECT as u32) as u32 as u32;
-        if (bn as usize) < NINDIRECT as usize {
+        bn = (bn).wrapping_sub(NDIRECT as u32);
+        if (bn as usize) < NINDIRECT {
             // Load indirect block, allocating if necessary.
-            addr = (*self).addrs[NDIRECT as usize];
+            addr = (*self).addrs[NDIRECT];
             if addr == 0 {
                 addr = balloc((*self).dev);
-                (*self).addrs[NDIRECT as usize] = addr
+                (*self).addrs[NDIRECT] = addr
             }
-            bp = bread((*self).dev, addr);
-            a = (*bp).data.as_mut_ptr() as *mut u32;
+            let bp: *mut Buf = bread((*self).dev, addr);
+            let a: *mut u32 = (*bp).data.as_mut_ptr() as *mut u32;
             addr = *a.offset(bn as isize);
             if addr == 0 {
                 addr = balloc((*self).dev);
@@ -335,7 +310,7 @@ impl Inode {
             (*bp).release();
             return addr;
         }
-        panic(b"bmap: out of range\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic!("bmap: out of range");
     }
 
     /// Truncate inode (discard contents).
@@ -345,22 +320,22 @@ impl Inode {
     /// not an open file or current directory).
     unsafe fn itrunc(&mut self) {
         for i in 0..NDIRECT {
-            if (*self).addrs[i as usize] != 0 {
+            if (*self).addrs[i] != 0 {
                 bfree((*self).dev as i32, (*self).addrs[i as usize]);
-                (*self).addrs[i as usize] = 0
+                (*self).addrs[i] = 0
             }
         }
-        if (*self).addrs[NDIRECT as usize] != 0 {
-            let bp = bread((*self).dev, (*self).addrs[NDIRECT as usize]);
+        if (*self).addrs[NDIRECT] != 0 {
+            let bp = bread((*self).dev, (*self).addrs[NDIRECT]);
             let a = (*bp).data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
-                if *a.offset(j as isize) != 0 {
-                    bfree((*self).dev as i32, *a.offset(j as isize));
+                if *a.add(j) != 0 {
+                    bfree((*self).dev as i32, *a.add(j));
                 }
             }
             (*bp).release();
-            bfree((*self).dev as i32, (*self).addrs[NDIRECT as usize]);
-            (*self).addrs[NDIRECT as usize] = 0
+            bfree((*self).dev as i32, (*self).addrs[NDIRECT]);
+            (*self).addrs[NDIRECT] = 0
         }
         (*self).size = 0;
         (*self).update();
@@ -370,21 +345,14 @@ impl Inode {
     /// Caller must hold self->lock.
     /// If user_dst==1, then dst is a user virtual address;
     /// otherwise, dst is a kernel address.
-    pub unsafe fn read(
-        &mut self,
-        mut user_dst: i32,
-        mut dst: usize,
-        mut off: u32,
-        mut n: u32,
-    ) -> i32 {
-        let mut tot: u32 = 0;
+    pub unsafe fn read(&mut self, user_dst: i32, mut dst: usize, mut off: u32, mut n: u32) -> i32 {
         if off > (*self).size || off.wrapping_add(n) < off {
             return -1;
         }
         if off.wrapping_add(n) > (*self).size {
             n = (*self).size.wrapping_sub(off)
         }
-        tot = 0;
+        let mut tot: u32 = 0;
         while tot < n {
             let bp = bread((*self).dev, self.bmap(off.wrapping_div(BSIZE as u32)));
             let m = core::cmp::min(
@@ -398,7 +366,7 @@ impl Inode {
                     .data
                     .as_mut_ptr()
                     .offset(off.wrapping_rem(BSIZE as u32) as isize)
-                    as *mut libc::c_void,
+                    as *mut libc::CVoid,
                 m as usize,
             ) == -1
             {
@@ -418,21 +386,14 @@ impl Inode {
     /// Caller must hold self->lock.
     /// If user_src==1, then src is a user virtual address;
     /// otherwise, src is a kernel address.
-    pub unsafe fn write(
-        &mut self,
-        mut user_src: i32,
-        mut src: usize,
-        mut off: u32,
-        mut n: u32,
-    ) -> i32 {
-        let mut tot: u32 = 0;
+    pub unsafe fn write(&mut self, user_src: i32, mut src: usize, mut off: u32, n: u32) -> i32 {
         if off > (*self).size || off.wrapping_add(n) < off {
             return -1;
         }
-        if off.wrapping_add(n) as usize > MAXFILE.wrapping_mul(BSIZE) as usize {
+        if off.wrapping_add(n) as usize > MAXFILE.wrapping_mul(BSIZE) {
             return -1;
         }
-        tot = 0;
+        let mut tot: u32 = 0;
         while tot < n {
             let bp = bread((*self).dev, self.bmap(off.wrapping_div(BSIZE as u32)));
             let m = core::cmp::min(
@@ -444,7 +405,7 @@ impl Inode {
                     .data
                     .as_mut_ptr()
                     .offset(off.wrapping_rem(BSIZE as u32) as isize)
-                    as *mut libc::c_void,
+                    as *mut libc::CVoid,
                 user_src,
                 src,
                 m as usize,
@@ -475,11 +436,11 @@ impl Inode {
     /// Allocate an inode on device dev.
     /// Mark it as allocated by  giving it type type.
     /// Returns an unlocked but allocated and referenced inode.
-    pub unsafe fn alloc(mut dev: u32, mut typ: i16) -> *mut Inode {
-        for inum in 1..sb.ninodes {
-            let bp = bread(dev, sb.iblock(inum as i32));
-            let dip = ((*bp).data.as_mut_ptr() as *mut Dinode)
-                .add((inum as usize).wrapping_rem(IPB as usize));
+    pub unsafe fn alloc(dev: u32, typ: i16) -> *mut Inode {
+        for inum in 1..SB.ninodes {
+            let bp = bread(dev, SB.iblock(inum));
+            let dip =
+                ((*bp).data.as_mut_ptr() as *mut Dinode).add((inum as usize).wrapping_rem(IPB));
 
             // a free inode
             if (*dip).typ as i32 == 0 {
@@ -493,9 +454,7 @@ impl Inode {
             }
             (*bp).release();
         }
-        panic(
-            b"Inode::alloc: no inodes\x00" as *const u8 as *const libc::c_char as *mut libc::c_char,
-        );
+        panic!("Inode::alloc: no inodes");
     }
 
     pub const fn zeroed() -> Self {
@@ -517,37 +476,37 @@ impl Inode {
 }
 
 /// root i-number
-pub const ROOTINO: i32 = 1;
+pub const ROOTINO: u32 = 1;
 
 /// block size
-pub const BSIZE: i32 = 1024;
-pub const FSMAGIC: i32 = 0x10203040;
-pub const NDIRECT: i32 = 12;
+pub const BSIZE: usize = 1024;
+pub const FSMAGIC: u32 = 0x10203040;
+pub const NDIRECT: usize = 12;
 
-pub const NINDIRECT: i32 = BSIZE.wrapping_div(mem::size_of::<u32>() as i32);
-pub const MAXFILE: i32 = NDIRECT.wrapping_add(NINDIRECT);
+pub const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
+pub const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
 
 /// Inodes per block.
-pub const IPB: i32 = BSIZE.wrapping_div(mem::size_of::<Dinode>() as i32);
+pub const IPB: usize = BSIZE.wrapping_div(mem::size_of::<Dinode>());
 
 impl Superblock {
     /// Block containing inode i
-    const fn iblock(self, i: i32) -> u32 {
-        i.wrapping_div(IPB).wrapping_add(self.inodestart as i32) as u32
+    const fn iblock(self, i: u32) -> u32 {
+        i.wrapping_div(IPB as u32)
+            .wrapping_add(self.inodestart as u32)
     }
 
     /// Block of free map containing bit for block b
     const fn bblock(self, b: u32) -> u32 {
-        b.wrapping_div(BPB as u32).wrapping_add(self.bmapstart)
+        b.wrapping_div(BPB).wrapping_add(self.bmapstart)
     }
 
     /// Read the super block.
-    unsafe fn read(&mut self, mut dev: i32) {
-        let mut bp: *mut Buf = ptr::null_mut();
-        bp = bread(dev as u32, 1);
+    unsafe fn read(&mut self, dev: i32) {
+        let bp: *mut Buf = bread(dev as u32, 1);
         ptr::copy(
-            (*bp).data.as_mut_ptr() as *const libc::c_void,
-            self as *mut Superblock as *mut libc::c_void,
+            (*bp).data.as_mut_ptr() as *const libc::CVoid,
+            self as *mut Superblock as *mut libc::CVoid,
             ::core::mem::size_of::<Superblock>(),
         );
         (*bp).release();
@@ -569,130 +528,115 @@ impl Superblock {
 }
 
 /// Bitmap bits per block
-pub const BPB: i32 = BSIZE * 8;
+pub const BPB: u32 = BSIZE.wrapping_mul(8) as u32;
 
 /// Directory is a file containing a sequence of Dirent structures.
 pub const DIRSIZ: usize = 14;
 
 /// there should be one superblock per disk device, but we run with
 /// only one device
-pub static mut sb: Superblock = Superblock::zeroed();
+pub static mut SB: Superblock = Superblock::zeroed();
 
 /// Init fs
-pub unsafe fn fsinit(mut dev: i32) {
-    sb.read(dev);
-    if sb.magic != FSMAGIC as u32 {
-        panic(b"invalid file system\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+pub unsafe fn fsinit(dev: i32) {
+    SB.read(dev);
+    if SB.magic != FSMAGIC {
+        panic!("invalid file system");
     }
-    sb.initlog(dev);
+    SB.initlog(dev);
 }
 
 /// Zero a block.
-unsafe fn bzero(mut dev: i32, mut bno: i32) {
-    let mut bp: *mut Buf = ptr::null_mut();
-    bp = bread(dev as u32, bno as u32);
-    ptr::write_bytes((*bp).data.as_mut_ptr(), 0, BSIZE as usize);
+unsafe fn bzero(dev: i32, bno: i32) {
+    let bp: *mut Buf = bread(dev as u32, bno as u32);
+    ptr::write_bytes((*bp).data.as_mut_ptr(), 0, BSIZE);
     log_write(bp);
     (*bp).release();
 }
 
 /// Blocks.
 /// Allocate a zeroed disk block.
-unsafe fn balloc(mut dev: u32) -> u32 {
-    let mut b: i32 = 0;
-    let mut bi: i32 = 0;
-    let mut bp: *mut Buf = ptr::null_mut();
-    bp = ptr::null_mut();
-    while (b as u32) < sb.size {
-        bp = bread(dev, sb.bblock(b as u32));
-        while bi < BPB && ((b + bi) as u32) < sb.size {
+unsafe fn balloc(dev: u32) -> u32 {
+    let mut b: u32 = 0;
+    let mut bi: u32 = 0;
+    while b < SB.size {
+        let mut bp: *mut Buf = bread(dev, SB.bblock(b));
+        while bi < BPB && (b + bi) < SB.size {
             let m = (1) << (bi % 8);
             if (*bp).data[(bi / 8) as usize] as i32 & m == 0 {
                 // Is block free?
                 (*bp).data[(bi / 8) as usize] = ((*bp).data[(bi / 8) as usize] as i32 | m) as u8; // Mark block in use.
                 log_write(bp);
                 (*bp).release();
-                bzero(dev as i32, b + bi);
-                return (b + bi) as u32;
+                bzero(dev as i32, (b + bi) as i32);
+                return b + bi;
             }
             bi += 1
         }
         (*bp).release();
         b += BPB
     }
-    panic(b"balloc: out of blocks\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    panic!("balloc: out of blocks");
 }
 
 /// Free a disk block.
-unsafe fn bfree(mut dev: i32, mut b: u32) {
-    let mut bp: *mut Buf = ptr::null_mut();
-    let mut bi: i32 = 0;
-    let mut m: i32 = 0;
-    bp = bread(dev as u32, sb.bblock(b));
-    bi = b.wrapping_rem(BPB as u32) as i32;
-    m = (1) << (bi % 8);
+unsafe fn bfree(dev: i32, b: u32) {
+    let mut bp: *mut Buf = bread(dev as u32, SB.bblock(b));
+    let bi: i32 = b.wrapping_rem(BPB) as i32;
+    let m: i32 = (1) << (bi % 8);
     if (*bp).data[(bi / 8) as usize] as i32 & m == 0 {
-        panic(b"freeing free block\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic!("freeing free block");
     }
     (*bp).data[(bi / 8) as usize] = ((*bp).data[(bi / 8) as usize] as i32 & !m) as u8;
     log_write(bp);
     (*bp).release();
 }
 
-static mut icache: Icache = Icache::zeroed();
-
 pub unsafe fn iinit() {
-    icache
-        .lock
-        .initlock(b"icache\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+    let mut inode = ICACHE.lock();
     for i in 0..NINODE {
-        (*icache.inode.as_mut_ptr().offset(i as isize))
+        inode
+            .deref_mut()
+            .get_unchecked_mut(i)
             .lock
-            .initlock(b"inode\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            .initlock("inode");
     }
 }
 
 /// Find the inode with number inum on device dev
 /// and return the in-memory copy. Does not lock
 /// the inode and does not read it from disk.
-unsafe fn iget(mut dev: u32, mut inum: u32) -> *mut Inode {
-    let mut ip: *mut Inode = ptr::null_mut();
-    let mut empty: *mut Inode = ptr::null_mut();
-
-    icache.lock.acquire();
+unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
+    let mut inode = ICACHE.lock();
 
     // Is the inode already cached?
-    empty = ptr::null_mut();
-    ip = &mut *icache.inode.as_mut_ptr().offset(0) as *mut Inode;
-    while ip < &mut *icache.inode.as_mut_ptr().offset(NINODE as isize) as *mut Inode {
+    let mut empty: *mut Inode = ptr::null_mut();
+    for ip in &mut inode.deref_mut()[..] {
         if (*ip).ref_0 > 0 && (*ip).dev == dev && (*ip).inum == inum {
             (*ip).ref_0 += 1;
-            icache.lock.release();
             return ip;
         }
         if empty.is_null() && (*ip).ref_0 == 0 {
             // Remember empty slot.
             empty = ip
         }
-        ip = ip.offset(1)
     }
 
     // Recycle an inode cache entry.
     if empty.is_null() {
-        panic(b"iget: no inodes\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic!("iget: no inodes");
     }
-    ip = empty;
+    let ip = empty;
     (*ip).dev = dev;
     (*ip).inum = inum;
     (*ip).ref_0 = 1;
     (*ip).valid = 0;
-    icache.lock.release();
     ip
 }
 
 /// Copy stat information from inode.
 /// Caller must hold ip->lock.
-pub unsafe fn stati(mut ip: *mut Inode, mut st: *mut Stat) {
+pub unsafe fn stati(ip: *mut Inode, mut st: *mut Stat) {
     (*st).dev = (*ip).dev as i32;
     (*st).ino = (*ip).inum;
     (*st).typ = (*ip).typ;
@@ -701,21 +645,17 @@ pub unsafe fn stati(mut ip: *mut Inode, mut st: *mut Stat) {
 }
 
 /// Directories
-pub unsafe fn namecmp(mut s: *const libc::c_char, mut t: *const libc::c_char) -> i32 {
+pub unsafe fn namecmp(s: *const u8, t: *const u8) -> i32 {
     strncmp(s, t, DIRSIZ as u32)
 }
 
 /// Look for a directory entry in a directory.
 /// If found, set *poff to byte offset of entry.
-pub unsafe fn dirlookup(
-    mut dp: *mut Inode,
-    mut name: *mut libc::c_char,
-    mut poff: *mut u32,
-) -> *mut Inode {
+pub unsafe fn dirlookup(dp: *mut Inode, name: *mut u8, poff: *mut u32) -> *mut Inode {
     let mut off: u32 = 0;
     let mut de: Dirent = Default::default();
     if (*dp).typ as i32 != T_DIR {
-        panic(b"dirlookup not DIR\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic!("dirlookup not DIR");
     }
     while off < (*dp).size {
         if (*dp).read(
@@ -726,7 +666,7 @@ pub unsafe fn dirlookup(
         ) as usize
             != ::core::mem::size_of::<Dirent>()
         {
-            panic(b"dirlookup read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic!("dirlookup read");
         }
         if de.inum as i32 != 0 && namecmp(name, de.name.as_mut_ptr()) == 0 {
             // entry matches path element
@@ -741,20 +681,18 @@ pub unsafe fn dirlookup(
 }
 
 /// Write a new directory entry (name, inum) into the directory dp.
-pub unsafe fn dirlink(mut dp: *mut Inode, mut name: *mut libc::c_char, mut inum: u32) -> i32 {
-    let mut off: i32 = 0;
+pub unsafe fn dirlink(dp: *mut Inode, name: *mut u8, inum: u32) -> i32 {
     let mut de: Dirent = Default::default();
-    let mut ip: *mut Inode = ptr::null_mut();
 
     // Check that name is not present.
-    ip = dirlookup(dp, name, ptr::null_mut());
+    let ip: *mut Inode = dirlookup(dp, name, ptr::null_mut());
     if !ip.is_null() {
         (*ip).put();
         return -1;
     }
 
     // Look for an empty Dirent.
-    off = 0;
+    let mut off: i32 = 0;
     while (off as u32) < (*dp).size {
         if (*dp).read(
             0,
@@ -764,7 +702,7 @@ pub unsafe fn dirlink(mut dp: *mut Inode, mut name: *mut libc::c_char, mut inum:
         ) as usize
             != ::core::mem::size_of::<Dirent>()
         {
-            panic(b"dirlink read\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+            panic!("dirlink read");
         }
         if de.inum as i32 == 0 {
             break;
@@ -781,7 +719,7 @@ pub unsafe fn dirlink(mut dp: *mut Inode, mut name: *mut libc::c_char, mut inum:
     ) as usize
         != ::core::mem::size_of::<Dirent>()
     {
-        panic(b"dirlink\x00" as *const u8 as *const libc::c_char as *mut libc::c_char);
+        panic!("dirlink");
     }
     0
 }
@@ -799,29 +737,27 @@ pub unsafe fn dirlink(mut dp: *mut Inode, mut name: *mut libc::c_char, mut inum:
 ///   skipelem("///a//bb", name) = "bb", setting name = "a"
 ///   skipelem("a", name) = "", setting name = "a"
 ///   skipelem("", name) = skipelem("////", name) = 0
-unsafe fn skipelem(mut path: *mut libc::c_char, mut name: *mut libc::c_char) -> *mut libc::c_char {
-    let mut s: *mut libc::c_char = ptr::null_mut();
-    let mut len: i32 = 0;
+unsafe fn skipelem(mut path: *mut u8, name: *mut u8) -> *mut u8 {
     while *path as i32 == '/' as i32 {
         path = path.offset(1)
     }
     if *path as i32 == 0 {
         return ptr::null_mut();
     }
-    s = path;
+    let s: *mut u8 = path;
     while *path as i32 != '/' as i32 && *path as i32 != 0 {
         path = path.offset(1)
     }
-    len = path.wrapping_offset_from(s) as i64 as i32;
+    let len: i32 = path.offset_from(s) as i64 as i32;
     if len >= DIRSIZ as i32 {
-        ptr::copy(s as *const libc::c_void, name as *mut libc::c_void, DIRSIZ);
+        ptr::copy(s as *const libc::CVoid, name as *mut libc::CVoid, DIRSIZ);
     } else {
         ptr::copy(
-            s as *const libc::c_void,
-            name as *mut libc::c_void,
+            s as *const libc::CVoid,
+            name as *mut libc::CVoid,
             len as usize,
         );
-        *name.offset(len as isize) = 0 as libc::c_char
+        *name.offset(len as isize) = 0
     }
     while *path as i32 == '/' as i32 {
         path = path.offset(1)
@@ -833,16 +769,11 @@ unsafe fn skipelem(mut path: *mut libc::c_char, mut name: *mut libc::c_char) -> 
 /// If parent != 0, return the inode for the parent and copy the final
 /// path element into name, which must have room for DIRSIZ bytes.
 /// Must be called inside a transaction since it calls Inode::put().
-unsafe fn namex(
-    mut path: *mut libc::c_char,
-    mut nameiparent_0: i32,
-    mut name: *mut libc::c_char,
-) -> *mut Inode {
-    let mut ip: *mut Inode = ptr::null_mut();
-    let mut next: *mut Inode = ptr::null_mut();
+unsafe fn namex(mut path: *mut u8, nameiparent_0: i32, name: *mut u8) -> *mut Inode {
+    let mut ip: *mut Inode;
 
     if *path as i32 == '/' as i32 {
-        ip = iget(ROOTDEV as u32, ROOTINO as u32)
+        ip = iget(ROOTDEV as u32, ROOTINO)
     } else {
         ip = (*(*myproc()).cwd).idup()
     }
@@ -861,7 +792,7 @@ unsafe fn namex(
             (*ip).unlock();
             return ip;
         }
-        next = dirlookup(ip, name, ptr::null_mut());
+        let next: *mut Inode = dirlookup(ip, name, ptr::null_mut());
         if next.is_null() {
             (*ip).unlockput();
             return ptr::null_mut();
@@ -876,11 +807,11 @@ unsafe fn namex(
     ip
 }
 
-pub unsafe fn namei(mut path: *mut libc::c_char) -> *mut Inode {
-    let mut name: [libc::c_char; DIRSIZ] = [0; DIRSIZ];
+pub unsafe fn namei(path: *mut u8) -> *mut Inode {
+    let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
     namex(path, 0, name.as_mut_ptr())
 }
 
-pub unsafe fn nameiparent(mut path: *mut libc::c_char, mut name: *mut libc::c_char) -> *mut Inode {
+pub unsafe fn nameiparent(path: *mut u8, name: *mut u8) -> *mut Inode {
     namex(path, 1, name)
 }

@@ -19,48 +19,53 @@ use crate::riscv::{MAXVA, PGSIZE};
 
 /// qemu puts UART registers here in physical memory.
 pub const UART0: usize = 0x10000000;
-pub const UART0_IRQ: i32 = 10;
+pub const UART0_IRQ: usize = 10;
 
 /// virtio mmio interface
-pub const VIRTIO0: i32 = 0x10001000;
-pub const VIRTIO0_IRQ: i32 = 1;
+pub const VIRTIO0: usize = 0x10001000;
+pub const VIRTIO0_IRQ: usize = 1;
 
 /// local interrupt controller, which contains the timer.
-pub const CLINT: i64 = 0x2000000;
+pub const CLINT: usize = 0x2000000;
 pub const fn clint_mtimecmp(hartid: usize) -> usize {
-    (CLINT + 0x4000 + (8 * hartid) as i64) as usize
+    CLINT
+        .wrapping_add(0x4000)
+        .wrapping_add(hartid.wrapping_mul(8))
 }
 
 /// cycles since boot.
-pub const CLINT_MTIME: i64 = CLINT + 0xbff8;
+pub const CLINT_MTIME: usize = CLINT.wrapping_add(0xbff8);
 
 /// qemu puts programmable interrupt controller here.
-pub const PLIC: i64 = 0xc000000;
-pub const PLIC_PENDING: i64 = PLIC + 0x1000;
-pub const fn plic_senable(hart: i32) -> i64 {
-    PLIC + 0x2080 + (hart * 0x100) as i64
+pub const PLIC: usize = 0xc000000;
+pub const PLIC_PENDING: usize = PLIC.wrapping_add(0x1000);
+pub const fn plic_senable(hart: usize) -> usize {
+    PLIC.wrapping_add(0x2080)
+        .wrapping_add((hart).wrapping_mul(0x100))
 }
-pub const fn plic_spriority(hart: i32) -> i64 {
-    PLIC + 0x201000 + (hart * 0x2000) as i64
+pub const fn plic_spriority(hart: usize) -> usize {
+    PLIC.wrapping_add(0x201000)
+        .wrapping_add((hart).wrapping_mul(0x2000))
 }
-pub const fn plic_sclaim(hart: i32) -> i64 {
-    PLIC + 0x201004 + (hart * 0x2000) as i64
+pub const fn plic_sclaim(hart: usize) -> usize {
+    PLIC.wrapping_add(0x201004)
+        .wrapping_add((hart).wrapping_mul(0x2000))
 }
 
 /// the kernel expects there to be RAM
 /// for use by the kernel and user pages
 /// from physical address 0x80000000 to PHYSTOP.
-pub const KERNBASE: i64 = 0x80000000;
-pub const PHYSTOP: i64 = KERNBASE + (128 * 1024 * 1024);
+pub const KERNBASE: usize = 0x80000000;
+pub const PHYSTOP: usize = KERNBASE.wrapping_add(128 * 1024 * 1024);
 
 /// map the trampoline page to the highest address,
 /// in both user and kernel space.
-pub const TRAMPOLINE: i64 = MAXVA - PGSIZE as i64;
+pub const TRAMPOLINE: usize = MAXVA.wrapping_sub(PGSIZE);
 
 /// map kernel stacks beneath the trampoline,
 /// each surrounded by invalid guard pages.
-pub const fn kstack(p: i32) -> i64 {
-    TRAMPOLINE - ((p + 1) * 2 * PGSIZE) as i64
+pub const fn kstack(p: usize) -> usize {
+    TRAMPOLINE - ((p + 1) * 2 * PGSIZE)
 }
 
 /// User memory layout.
@@ -72,4 +77,4 @@ pub const fn kstack(p: i32) -> i64 {
 ///   ...
 ///   TRAPFRAME (p->tf, used by the trampoline)
 ///   TRAMPOLINE (the same page as in the kernel)
-pub const TRAPFRAME: i64 = TRAMPOLINE - PGSIZE as i64;
+pub const TRAPFRAME: usize = TRAMPOLINE.wrapping_sub(PGSIZE);

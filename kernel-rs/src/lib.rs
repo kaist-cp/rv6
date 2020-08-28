@@ -3,25 +3,14 @@
 #![no_std]
 #![deny(warnings)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
-#![allow(
-    non_camel_case_types,
-    elided_lifetimes_in_paths,
-    unused_assignments,
-    unused_mut,
-    dead_code,
-    unused_unsafe,
-    non_upper_case_globals
-)]
-#![feature(asm)]
+// Required for unused features in xv6 (see https://github.com/kaist-cp/rv6/issues/120 for details).
+#![allow(dead_code)]
 #![feature(llvm_asm)]
-#![feature(extern_types)]
 #![feature(c_variadic)]
-#![feature(core_intrinsics)]
-#![feature(ptr_wrapping_offset_from)]
-#![feature(const_if_match)]
+#![feature(ptr_offset_from)]
 #![feature(const_wrapping_int_methods)]
 #![feature(maybe_uninit_ref)]
-#![feature(const_fn)]
+#![feature(const_in_array_repeat_expressions)]
 
 // TODO(@jeehoonkang): we define `libc` module here because the `libc` crate doesn't work for the
 // `riscv64gc-unknown-none-elfhf` target.
@@ -29,14 +18,15 @@
 // Types are adopted from:
 // https://github.com/rust-lang/libc/blob/master/src/unix/linux_like/linux/gnu/b64/riscv64/mod.rs
 mod libc {
-    pub type c_void = core::ffi::c_void;
-    pub type c_char = u8;
+    pub type CVoid = core::ffi::c_void;
 }
 
+mod abort;
 mod bio;
 mod buf;
 mod console;
 mod elf;
+mod etrace;
 mod exec;
 mod fcntl;
 mod file;
@@ -45,7 +35,7 @@ mod kalloc;
 mod kernel_main;
 mod log;
 mod memlayout;
-mod panic;
+mod page;
 mod param;
 mod pipe;
 mod plic;
@@ -66,14 +56,6 @@ mod utils;
 mod virtio;
 mod virtio_disk;
 mod vm;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
 
 #[macro_use]
 extern crate bitflags;
