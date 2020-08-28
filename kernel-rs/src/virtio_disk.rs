@@ -137,6 +137,14 @@ impl DerefMut for Descriptor {
     }
 }
 
+impl Drop for Descriptor {
+    fn drop(&mut self) {
+        // HACK(@efenniht): we really need linear type here:
+        // https://github.com/rust-lang/rfcs/issues/814
+        panic!("Descriptor must never drop: use DescriptorPool::free instead.");
+    }
+}
+
 impl DescriptorPool {
     const fn zeroed() -> Self {
         Self {
@@ -195,6 +203,7 @@ impl DescriptorPool {
             self.free[idx] = true;
             wakeup(&mut self.free as *mut _ as _);
         }
+        mem::forget(desc);
     }
 }
 
