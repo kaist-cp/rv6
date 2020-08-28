@@ -1,15 +1,15 @@
-//! formatted console output -- printf, panic.
-use crate::console::{CONS, Console};
+//! formatted console output -- println, panic.
+use crate::console::{Console, CONS};
 use core::fmt;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-/// print! macro prints to the console
+/// print! macro prints to the console.
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => ($crate::printf::_print(format_args!($($arg)*)));
 }
 
-/// println! macro prints to the console
+/// println! macro prints to the console.
 #[macro_export]
 macro_rules! println {
     () => ($crate::print!("\n"));
@@ -21,12 +21,11 @@ macro_rules! println {
 #[doc(hidden)]
 pub unsafe fn _print(args: fmt::Arguments<'_>) {
     use core::fmt::Write;
-    
+
     if LOCKING.load(Ordering::Acquire) != false {
         let mut lock = CONS.lock();
         lock.write_fmt(args).unwrap();
-    }
-    else{
+    } else {
         Console::zeroed().write_fmt(args).unwrap();
     }
 }
@@ -39,7 +38,7 @@ fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
         LOCKING.store(false, Ordering::Release);
         println!("{}", info);
 
-        // freeze other CPUs
+        // Freeze other CPUs.
         PANICKED.store(true, Ordering::Release);
     }
     crate::utils::spin_loop()

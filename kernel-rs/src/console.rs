@@ -7,8 +7,8 @@ use crate::{
     uart::Uart,
     utils::spin_loop,
 };
-use core::sync::atomic::Ordering;
 use core::fmt;
+use core::sync::atomic::Ordering;
 
 /// input
 const INPUT_BUF: usize = 128;
@@ -31,9 +31,7 @@ pub struct Console {
 impl fmt::Write for Console {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for c in s.bytes() {
-            unsafe {
-                self.putc(c as _);
-            }
+            self.putc(c as _);
         }
         Ok(())
     }
@@ -52,7 +50,7 @@ impl Console {
     }
 
     /// send one character to the uart.
-    pub unsafe fn putc(&mut self, c: i32) {
+    pub fn putc(&mut self, c: i32) {
         // from printf.rs
         if PANICKED.load(Ordering::Acquire) {
             spin_loop();
