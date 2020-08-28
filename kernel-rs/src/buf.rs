@@ -1,11 +1,12 @@
 use crate::sleeplock::Sleeplock;
+use core::sync::atomic::AtomicI32;
 
 pub struct Buf {
     /// has data been read from disk?
     pub valid: i32,
 
     /// does disk "own" buf?
-    pub disk: i32,
+    pub disk: AtomicI32,
     pub dev: u32,
     pub blockno: u32,
     pub lock: Sleeplock,

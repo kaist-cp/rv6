@@ -303,7 +303,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
     };
 
     // record struct Buf for virtio_disk_intr().
-    (*b).disk = 1;
+    (*b).disk.store(1, Ordering::SeqCst);
     DISK.info[idx[0] as usize].b = b;
 
     // we only tell device the first index in our chain of descriptors.
@@ -315,7 +315,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
     MmioRegs::QueueNotify.write(0);
 
     // Wait for virtio_disk_intr() to say request has finished.
-    while (*b).disk == 1 {
+    while (*b).disk.load(Ordering::SeqCst) == 1 {
         sleep(b as *mut libc::CVoid, &mut DISK.vdisk_lock);
     }
     DISK.info[idx[0] as usize].b = ptr::null_mut();
@@ -332,7 +332,7 @@ pub unsafe fn virtio_disk_intr() {
         if DISK.info[id].status {
             panic!("virtio_disk_intr status");
         }
-        (*DISK.info[id].b).disk = 0;
+        (*DISK.info[id].b).disk.store(0, Ordering::SeqCst);
 
         // disk is done with Buf
         wakeup(DISK.info[id].b as *mut libc::CVoid);
