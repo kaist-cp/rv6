@@ -8,6 +8,7 @@ use crate::{
     utils::spin_loop,
 };
 use core::sync::atomic::Ordering;
+use core::fmt;
 
 /// input
 const INPUT_BUF: usize = 128;
@@ -25,6 +26,33 @@ pub struct Console {
     e: u32,
 
     uart: Uart,
+}
+
+impl fmt::Write for Console {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        for c in s.bytes() {
+            unsafe {
+                self.putc(c as _);
+            }
+        }
+        Ok(())
+    }
+}
+pub static mut LOCKING: bool = false;
+/// Prints the given formatted string to the VGA text buffer
+/// through the global WRITER instance.
+#[doc(hidden)]
+pub unsafe fn _print(args: fmt::Arguments<'_>) {
+    use core::fmt::Write;
+    let mut _lock;
+    if LOCKING != true {
+        _lock = CONS.lock();
+        _lock.write_fmt(args).unwrap();
+    }
+    // (Writer {})
+    else{
+        Console::zeroed().write_fmt(args).unwrap();
+    }
 }
 
 impl Console {
@@ -193,7 +221,7 @@ const fn ctrl(x: char) -> i32 {
     x as i32 - '@' as i32
 }
 
-pub static CONS: Spinlock<Console> = Spinlock::new("CONS", Console::zeroed());
+pub static mut CONS: Spinlock<Console> = Spinlock::new("CONS", Console::zeroed());
 
 /// user write()s to the console go here.
 unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
