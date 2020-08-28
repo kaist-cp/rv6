@@ -11,6 +11,7 @@
 #![feature(const_wrapping_int_methods)]
 #![feature(maybe_uninit_ref)]
 #![feature(const_in_array_repeat_expressions)]
+#![feature(array_value_iter)]
 
 // TODO(@jeehoonkang): we define `libc` module here because the `libc` crate doesn't work for the
 // `riscv64gc-unknown-none-elfhf` target.

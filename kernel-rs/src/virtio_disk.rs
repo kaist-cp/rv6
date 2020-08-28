@@ -15,6 +15,8 @@ use crate::{
     virtio::*,
     vm::kvmpa,
 };
+
+use core::array::IntoIter;
 use core::mem;
 use core::ptr;
 use core::sync::atomic::{fence, Ordering};
@@ -171,23 +173,6 @@ impl DescriptorPool {
             (*self.desc)[idx].addr = 0;
             self.free[idx] = true;
             wakeup(&mut self.free as *mut _ as _);
-        }
-    }
-
-    /// free a chain of descriptors.
-    // TODO: this is unsafe; we can remove this.
-    unsafe fn free_chain(&mut self, mut desc: Descriptor) {
-        loop {
-            let idx = desc.idx;
-            self.free(desc);
-
-            if !(*self.desc)[idx].flags.contains(VRingDescFlags::NEXT) {
-                break;
-            }
-
-            desc = Descriptor {
-                idx: (*self.desc)[idx].next as _,
-            };
         }
     }
 
@@ -361,8 +346,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
         sleep(b as *mut libc::CVoid, &mut DISK.vdisk_lock);
     }
     DISK.info[desc[0].idx].b = ptr::null_mut();
-    let [first_desc, ..] = desc;
-    DISK.desc.free_chain(first_desc);
+    IntoIter::new(desc).for_each(|desc| DISK.desc.free(desc));
     DISK.vdisk_lock.release();
 }
 
