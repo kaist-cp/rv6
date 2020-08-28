@@ -9,7 +9,7 @@ struct Writer {}
 impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for c in s.bytes() {
-            unsafe {
+            {
                 Console::putc(c as _);
             }
         }

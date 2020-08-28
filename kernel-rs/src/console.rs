@@ -38,7 +38,7 @@ impl Console {
 
     /// send one character to the uart.
     // TODO: This function should receive `&mut self`. Need to consider printf.rs and #148.
-    pub unsafe fn putc(c: i32) {
+    pub fn putc(c: i32) {
         // from printf.rs
         if PANICKED.load(Ordering::Acquire) {
             spin_loop();
