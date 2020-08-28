@@ -18,6 +18,7 @@ use crate::{
 
 use core::array::IntoIter;
 use core::mem;
+use core::ops::{Deref, DerefMut};
 use core::ptr;
 use core::sync::atomic::{fence, Ordering};
 
@@ -62,9 +63,13 @@ struct DescriptorPool {
     free: [bool; NUM], // TODO : Disk can be implemented using bitmap
 }
 
+/// A descriptor allocated by driver.
+///
+/// Invariant: `ptr` must indicate `idx`-th descriptor of the original pool.
 #[derive(Debug)]
 struct Descriptor {
     idx: usize,
+    ptr: *mut VRingDesc,
 }
 
 // It needs repr(C) because it's read by device
@@ -113,8 +118,22 @@ impl VirtIOBlockOutHeader {
 }
 
 impl Descriptor {
-    unsafe fn new(idx: usize) -> Self {
-        Self { idx }
+    unsafe fn new(idx: usize, ptr: *mut VRingDesc) -> Self {
+        Self { idx, ptr }
+    }
+}
+
+impl Deref for Descriptor {
+    type Target = VRingDesc;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.ptr }
+    }
+}
+
+impl DerefMut for Descriptor {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *self.ptr }
     }
 }
 
@@ -138,7 +157,7 @@ impl DescriptorPool {
         for (idx, free) in self.free.iter_mut().enumerate() {
             if *free {
                 *free = false;
-                return Some(unsafe { Descriptor::new(idx) });
+                return Some(unsafe { Descriptor::new(idx, &mut (*self.desc)[idx]) });
             }
         }
 
@@ -165,23 +184,17 @@ impl DescriptorPool {
 
     /// mark a descriptor as free.
     fn free(&mut self, desc: Descriptor) {
-        let Descriptor { idx } = desc;
-        assert!(idx < NUM, "virtio_disk_intr 1");
-        assert!(!self.free[idx], "virtio_disk_intr 2");
-
+        let Descriptor { idx, ptr } = desc;
         unsafe {
+            assert!(
+                (*self.desc).as_mut_ptr_range().contains(&ptr),
+                "virtio_disk_intr 1",
+            );
+            assert!(!self.free[idx], "virtio_disk_intr 2");
             (*self.desc)[idx].addr = 0;
             self.free[idx] = true;
             wakeup(&mut self.free as *mut _ as _);
         }
-    }
-
-    fn get(&self, desc: &Descriptor) -> &VRingDesc {
-        unsafe { &(*self.desc)[desc.idx] }
-    }
-
-    fn get_mut(&self, desc: &mut Descriptor) -> &mut VRingDesc {
-        unsafe { &mut (*self.desc)[desc.idx] }
     }
 }
 
@@ -300,7 +313,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
 
     // buf0 is on a kernel stack, which is not direct mapped,
     // thus the call to kvmpa().
-    *DISK.desc.get_mut(&mut desc[0]) = VRingDesc {
+    *desc[0] = VRingDesc {
         addr: kvmpa(&mut buf0 as *mut _ as _),
         len: mem::size_of::<VirtIOBlockOutHeader>() as _,
         flags: VRingDescFlags::NEXT,
@@ -308,7 +321,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
     };
 
     // device reads/writes b->data
-    *DISK.desc.get_mut(&mut desc[1]) = VRingDesc {
+    *desc[1] = VRingDesc {
         addr: (*b).data.as_mut_ptr() as _,
         len: BSIZE as _,
         flags: if write {
@@ -322,7 +335,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
     DISK.info[desc[0].idx].status = false;
 
     // device writes the status
-    *DISK.desc.get_mut(&mut desc[2]) = VRingDesc {
+    *desc[2] = VRingDesc {
         addr: &mut DISK.info[desc[0].idx].status as *mut _ as _,
         len: 1,
         flags: VRingDescFlags::WRITE,
