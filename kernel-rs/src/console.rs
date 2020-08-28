@@ -8,6 +8,7 @@ use crate::{
     utils::spin_loop,
 };
 use core::sync::atomic::Ordering;
+use core::fmt;
 
 /// input
 const INPUT_BUF: usize = 128;
@@ -23,37 +24,50 @@ pub struct Console {
 
     /// Edit index
     e: u32,
+
+    uart: Uart,
+}
+
+impl fmt::Write for Console {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        for c in s.bytes() {
+            unsafe {
+                self.putc(c as _);
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Console {
     // TODO: transient measure
-    const fn zeroed() -> Self {
+    pub const fn zeroed() -> Self {
         Self {
             buf: [0; INPUT_BUF],
             r: 0,
             w: 0,
             e: 0,
+            uart: Uart,
         }
     }
 
     /// send one character to the uart.
-    // TODO: This function should receive `&mut self`. Need to consider printf.rs and #148.
-    pub unsafe fn putc(c: i32) {
+    pub unsafe fn putc(&mut self, c: i32) {
         // from printf.rs
         if PANICKED.load(Ordering::Acquire) {
             spin_loop();
         }
         if c == BACKSPACE {
             // if the user typed backspace, overwrite with a space.
-            Uart::putc('\u{8}' as i32);
-            Uart::putc(' ' as i32);
-            Uart::putc('\u{8}' as i32);
+            self.uart.putc('\u{8}' as i32);
+            self.uart.putc(' ' as i32);
+            self.uart.putc('\u{8}' as i32);
         } else {
-            Uart::putc(c);
+            self.uart.putc(c);
         };
     }
 
-    unsafe fn write(&self, user_src: i32, src: usize, n: i32) {
+    unsafe fn write(&mut self, user_src: i32, src: usize, n: i32) {
         for i in 0..n {
             let mut c: u8 = 0;
             if either_copyin(
@@ -65,7 +79,7 @@ impl Console {
             {
                 break;
             }
-            Console::putc(c as i32);
+            self.putc(c as i32);
         }
     }
 
@@ -138,7 +152,7 @@ impl Console {
                         != '\n' as i32
                 {
                     self.e = self.e.wrapping_sub(1);
-                    Console::putc(BACKSPACE);
+                    self.putc(BACKSPACE);
                 }
             }
 
@@ -146,7 +160,7 @@ impl Console {
             m if m == ctrl('H') | '\x7f' as i32 => {
                 if self.e != self.w {
                     self.e = self.e.wrapping_sub(1);
-                    Console::putc(BACKSPACE);
+                    self.putc(BACKSPACE);
                 }
             }
             _ => {
@@ -154,7 +168,7 @@ impl Console {
                     cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
 
                     // echo back to the user.
-                    Console::putc(cin);
+                    self.putc(cin);
 
                     // store for consumption by consoleread().
                     let fresh1 = self.e;
@@ -190,11 +204,11 @@ const fn ctrl(x: char) -> i32 {
     x as i32 - '@' as i32
 }
 
-static CONS: Spinlock<Console> = Spinlock::new("CONS", Console::zeroed());
+pub static mut CONS: Spinlock<Console> = Spinlock::new("CONS", Console::zeroed());
 
 /// user write()s to the console go here.
 unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
-    let console = CONS.lock();
+    let mut console = CONS.lock();
     console.write(user_src, src, n);
     n
 }

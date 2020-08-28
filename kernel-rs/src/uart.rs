@@ -81,7 +81,7 @@ impl Uart {
 
     /// Write one output character to the UART.
     /// TODO: should get &mut self - need to refactor when encapsulate Uart into Console.
-    pub fn putc(c: i32) {
+    pub fn putc(&self, c: i32) {
         // Wait for Transmit Holding Empty to be set in LSR.
         while LSR.read() & 1 << 5 == 0 {}
         THR.write(c as u8);

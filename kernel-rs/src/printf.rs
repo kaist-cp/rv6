@@ -1,21 +1,7 @@
 //! formatted console output -- printf, panic.
-use crate::console::Console;
-use crate::spinlock::RawSpinlock;
+use crate::console::{CONS, Console};
 use core::fmt;
 use core::sync::atomic::{AtomicBool, Ordering};
-
-pub struct Writer {}
-
-impl fmt::Write for Writer {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        for c in s.bytes() {
-            unsafe {
-                Console::putc(c as _);
-            }
-        }
-        Ok(())
-    }
-}
 
 /// print! macro prints to the console
 #[macro_export]
@@ -35,13 +21,13 @@ macro_rules! println {
 #[doc(hidden)]
 pub unsafe fn _print(args: fmt::Arguments<'_>) {
     use core::fmt::Write;
-    let locking: i32 = PR.locking;
-    if locking != 0 {
-        PR.lock.acquire();
+    
+    if LOCKING.load(Ordering::Acquire) != false {
+        let mut lock = CONS.lock();
+        lock.write_fmt(args).unwrap();
     }
-    (Writer {}).write_fmt(args).unwrap();
-    if locking != 0 {
-        PR.lock.release();
+    else{
+        Console::zeroed().write_fmt(args).unwrap();
     }
 }
 
@@ -50,7 +36,7 @@ pub unsafe fn _print(args: fmt::Arguments<'_>) {
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
     unsafe {
-        PR.locking = 0;
+        LOCKING.store(false, Ordering::Release);
         println!("{}", info);
 
         // freeze other CPUs
@@ -59,27 +45,9 @@ fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
     crate::utils::spin_loop()
 }
 
-/// lock to avoid interleaving concurrent printf's.
-struct PrintfLock {
-    lock: RawSpinlock,
-    locking: i32,
-}
-
-impl PrintfLock {
-    // TODO: transient measure
-    const fn zeroed() -> Self {
-        Self {
-            lock: RawSpinlock::zeroed(),
-            locking: 0,
-        }
-    }
-}
-
 pub static PANICKED: AtomicBool = AtomicBool::new(false);
-
-static mut PR: PrintfLock = PrintfLock::zeroed();
+pub static mut LOCKING: AtomicBool = AtomicBool::new(false);
 
 pub unsafe fn printfinit() {
-    PR.lock.initlock("PR");
-    PR.locking = 1;
+    LOCKING.store(true, Ordering::Release);
 }
