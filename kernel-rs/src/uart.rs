@@ -50,10 +50,15 @@ impl UartCtrlRegs {
     }
 }
 
-pub struct Uart;
+pub struct Uart(());
 
 impl Uart {
-    pub unsafe fn new() -> Self {
+    // Constructor of Uart.
+    pub const fn zeroed() -> Self {
+        Uart(())
+    }
+
+    pub unsafe fn new() {
         // Disable interrupts.
         IER.write(0x00);
 
@@ -75,8 +80,6 @@ impl Uart {
 
         // Enable receive interrupts.
         IER.write(0x01);
-
-        Uart
     }
 
     /// Write one output character to the UART.

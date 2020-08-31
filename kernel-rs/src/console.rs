@@ -45,13 +45,13 @@ impl Console {
             r: 0,
             w: 0,
             e: 0,
-            uart: Uart,
+            uart: Uart::zeroed(),
         }
     }
 
     pub unsafe fn consoleinit() {
         Uart::new();
-    
+
         // Connect read and write system calls
         // to consoleread and consolewrite.
         let fresh2 = &mut (*DEVSW.as_mut_ptr().add(CONSOLE)).read;
