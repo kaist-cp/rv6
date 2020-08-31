@@ -66,6 +66,8 @@ struct DescriptorPool {
 /// A descriptor allocated by driver.
 ///
 /// Invariant: `ptr` must indicate `idx`-th descriptor of the original pool.
+// TODO(@efenniht): `ptr` is redundant as the base pointer is stored in the pool. But if we remove
+// it, the invariant of this type indirectly depends on the original pool (not appeared as a field).
 #[derive(Debug)]
 struct Descriptor {
     idx: usize,
@@ -172,7 +174,7 @@ impl DescriptorPool {
         None
     }
 
-    fn alloc3(&mut self) -> Option<[Descriptor; 3]> {
+    fn alloc_three_sectors(&mut self) -> Option<[Descriptor; 3]> {
         let mut descs = ArrayVec::new();
 
         for _ in 0..3 {
@@ -307,7 +309,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
 
     // allocate the three descriptors.
     let mut desc = loop {
-        match DISK.desc.alloc3() {
+        match DISK.desc.alloc_three_sectors() {
             Some(idx) => break idx,
             None => sleep(
                 DISK.desc.free.as_mut_ptr() as *mut libc::CVoid,
