@@ -49,7 +49,7 @@ impl Console {
         }
     }
 
-    pub unsafe fn consoleinit() {
+    pub unsafe fn init() {
         Uart::new();
 
         // Connect read and write system calls
