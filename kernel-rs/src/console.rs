@@ -213,7 +213,7 @@ const fn ctrl(x: char) -> i32 {
     x as i32 - '@' as i32
 }
 
-pub static mut CONS: Spinlock<Console> = Spinlock::new("CONS", Console::zeroed());
+pub static CONS: Spinlock<Console> = Spinlock::new("CONS", Console::zeroed());
 
 /// User write()s to the console go here.
 unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
