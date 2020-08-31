@@ -3,17 +3,11 @@ use crate::console::{Console, CONS};
 use core::fmt;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-/// print! macro prints to the console.
-#[macro_export]
-macro_rules! print {
-    ($($arg:tt)*) => ($crate::printf::_print(format_args!($($arg)*)));
-}
+pub static PANICKED: AtomicBool = AtomicBool::new(false);
+pub static LOCKING: AtomicBool = AtomicBool::new(false);
 
-/// println! macro prints to the console.
-#[macro_export]
-macro_rules! println {
-    () => ($crate::print!("\n"));
-    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+pub fn printfinit() {
+    LOCKING.store(true, Ordering::Release);
 }
 
 /// Prints the given formatted string with the Console.
@@ -30,6 +24,19 @@ pub fn _print(args: fmt::Arguments<'_>) {
     }
 }
 
+/// print! macro prints to the console.
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => ($crate::printf::_print(format_args!($($arg)*)));
+}
+
+/// println! macro prints to the console.
+#[macro_export]
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
+
 /// Handles panic.
 #[cfg(not(test))]
 #[panic_handler]
@@ -41,11 +48,4 @@ fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
     PANICKED.store(true, Ordering::Release);
 
     crate::utils::spin_loop()
-}
-
-pub static PANICKED: AtomicBool = AtomicBool::new(false);
-pub static LOCKING: AtomicBool = AtomicBool::new(false);
-
-pub fn printfinit() {
-    LOCKING.store(true, Ordering::Release);
 }
