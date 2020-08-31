@@ -16,16 +16,16 @@ macro_rules! println {
     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
 
-/// Prints the given formatted string to the VGA text buffer
-/// through the global WRITER instance.
+/// Prints the given formatted string with the Console.
 #[doc(hidden)]
-pub unsafe fn _print(args: fmt::Arguments<'_>) {
+pub fn _print(args: fmt::Arguments<'_>) {
     use core::fmt::Write;
 
-    if LOCKING.load(Ordering::Acquire) != false {
+    if LOCKING.load(Ordering::Relaxed) {
         let mut lock = CONS.lock();
         lock.write_fmt(args).unwrap();
     } else {
+        // TODO: Need to find another method or change the function name when modifying the 'zeroed()' part.
         Console::zeroed().write_fmt(args).unwrap();
     }
 }
@@ -34,19 +34,18 @@ pub unsafe fn _print(args: fmt::Arguments<'_>) {
 #[cfg(not(test))]
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
-    unsafe {
-        LOCKING.store(false, Ordering::Release);
-        println!("{}", info);
+    LOCKING.store(false, Ordering::Relaxed);
+    println!("{}", info);
 
-        // Freeze other CPUs.
-        PANICKED.store(true, Ordering::Release);
-    }
+    // Freeze other CPUs.
+    PANICKED.store(true, Ordering::Release);
+
     crate::utils::spin_loop()
 }
 
 pub static PANICKED: AtomicBool = AtomicBool::new(false);
-pub static mut LOCKING: AtomicBool = AtomicBool::new(false);
+pub static LOCKING: AtomicBool = AtomicBool::new(false);
 
-pub unsafe fn printfinit() {
+pub fn printfinit() {
     LOCKING.store(true, Ordering::Release);
 }
