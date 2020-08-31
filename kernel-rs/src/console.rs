@@ -49,6 +49,17 @@ impl Console {
         }
     }
 
+    pub unsafe fn consoleinit() {
+        Uart::new();
+    
+        // connect read and write system calls
+        // to consoleread and consolewrite.
+        let fresh2 = &mut (*DEVSW.as_mut_ptr().add(CONSOLE)).read;
+        *fresh2 = Some(consoleread as unsafe fn(_: i32, _: usize, _: i32) -> i32);
+        let fresh3 = &mut (*DEVSW.as_mut_ptr().add(CONSOLE)).write;
+        *fresh3 = Some(consolewrite as unsafe fn(_: i32, _: usize, _: i32) -> i32);
+    }
+
     /// send one character to the uart.
     pub fn putc(&mut self, c: i32) {
         // from printf.rs
@@ -228,15 +239,4 @@ unsafe fn consoleread(user_dst: i32, dst: usize, n: i32) -> i32 {
 pub unsafe fn consoleintr(cin: i32) {
     let mut console = CONS.lock();
     console.intr(cin);
-}
-
-pub unsafe fn consoleinit() {
-    Uart::new();
-
-    // connect read and write system calls
-    // to consoleread and consolewrite.
-    let fresh2 = &mut (*DEVSW.as_mut_ptr().add(CONSOLE)).read;
-    *fresh2 = Some(consoleread as unsafe fn(_: i32, _: usize, _: i32) -> i32);
-    let fresh3 = &mut (*DEVSW.as_mut_ptr().add(CONSOLE)).write;
-    *fresh3 = Some(consolewrite as unsafe fn(_: i32, _: usize, _: i32) -> i32);
 }
