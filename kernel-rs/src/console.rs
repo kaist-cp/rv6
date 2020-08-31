@@ -10,11 +10,11 @@ use crate::{
 use core::fmt;
 use core::sync::atomic::Ordering;
 
-/// input
+/// Size of console input buffer.
 const INPUT_BUF: usize = 128;
 
 pub struct Console {
-    buf: [u8; 128],
+    buf: [u8; INPUT_BUF],
 
     /// Read index
     r: u32,
