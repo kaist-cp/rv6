@@ -83,7 +83,6 @@ impl Uart {
     }
 
     /// Write one output character to the UART.
-    /// TODO: should get &mut self - need to refactor when encapsulate Uart into Console.
     pub fn putc(&self, c: i32) {
         // Wait for Transmit Holding Empty to be set in LSR.
         while LSR.read() & 1 << 5 == 0 {}
@@ -92,7 +91,7 @@ impl Uart {
 
     /// Read one input character from the UART.
     /// Return -1 if none is waiting.
-    /// TODO: should get &mut self - need to refactor when encapsulate Uart into Console.
+    /// TODO: should get &self - need to refactor when encapsulate Uart into Console.
     fn getc() -> i32 {
         if LSR.read() & 0x01 != 0 {
             // Input data is ready.
