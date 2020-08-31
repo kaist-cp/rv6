@@ -52,7 +52,7 @@ impl Console {
     pub unsafe fn consoleinit() {
         Uart::new();
     
-        // connect read and write system calls
+        // Connect read and write system calls
         // to consoleread and consolewrite.
         let fresh2 = &mut (*DEVSW.as_mut_ptr().add(CONSOLE)).read;
         *fresh2 = Some(consoleread as unsafe fn(_: i32, _: usize, _: i32) -> i32);
@@ -60,14 +60,14 @@ impl Console {
         *fresh3 = Some(consolewrite as unsafe fn(_: i32, _: usize, _: i32) -> i32);
     }
 
-    /// send one character to the uart.
+    /// Send one character to the uart.
     pub fn putc(&mut self, c: i32) {
-        // from printf.rs
+        // From printf.rs.
         if PANICKED.load(Ordering::Acquire) {
             spin_loop();
         }
         if c == BACKSPACE {
-            // if the user typed backspace, overwrite with a space.
+            // If the user typed backspace, overwrite with a space.
             self.uart.putc('\u{8}' as i32);
             self.uart.putc(' ' as i32);
             self.uart.putc('\u{8}' as i32);
@@ -101,7 +101,7 @@ impl Console {
     ) -> i32 {
         let target = n as u32;
         while n > 0 {
-            // wait until interrupt handler has put some
+            // Wait until interrupt handler has put some
             // input into CONS.buffer.
             while self.r == self.w {
                 if (*myproc()).killed != 0 {
@@ -123,7 +123,7 @@ impl Console {
                 }
                 break;
             } else {
-                // copy the input byte to the user-space buffer.
+                // Copy the input byte to the user-space buffer.
                 let mut cbuf = cin as u8;
                 if either_copyout(
                     user_dst,
@@ -137,7 +137,7 @@ impl Console {
                 dst = dst.wrapping_add(1);
                 n -= 1;
                 if cin == '\n' as i32 {
-                    // a whole line has arrived, return to
+                    // A whole line has arrived, return to
                     // the user-level read().
                     break;
                 }
@@ -176,10 +176,10 @@ impl Console {
                 if cin != 0 && self.e.wrapping_sub(self.r) < INPUT_BUF as u32 {
                     cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
 
-                    // echo back to the user.
+                    // Echo back to the user.
                     self.putc(cin);
 
-                    // store for consumption by consoleread().
+                    // Store for consumption by consoleread().
                     let fresh1 = self.e;
                     self.e = self.e.wrapping_add(1);
                     self.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = cin as u8;
@@ -187,7 +187,7 @@ impl Console {
                         || cin == ctrl('D')
                         || self.e == self.r.wrapping_add(INPUT_BUF as u32)
                     {
-                        // wake up consoleread() if a whole line (or end-of-file)
+                        // Wake up consoleread() if a whole line (or end-of-file)
                         // has arrived.
                         self.w = self.e;
                         wakeup(&mut self.r as *mut u32 as *mut libc::CVoid);
@@ -215,16 +215,16 @@ const fn ctrl(x: char) -> i32 {
 
 pub static mut CONS: Spinlock<Console> = Spinlock::new("CONS", Console::zeroed());
 
-/// user write()s to the console go here.
+/// User write()s to the console go here.
 unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
     let mut console = CONS.lock();
     console.write(user_src, src, n);
     n
 }
 
-/// user read()s from the console go here.
-/// copy (up to) a whole input line to dst.
-/// user_dist indicates whether dst is a user
+/// User read()s from the console go here.
+/// Copy (up to) a whole input line to dst.
+/// User_dist indicates whether dst is a user
 /// or kernel address.
 unsafe fn consoleread(user_dst: i32, dst: usize, n: i32) -> i32 {
     let mut console = CONS.lock();
@@ -232,9 +232,9 @@ unsafe fn consoleread(user_dst: i32, dst: usize, n: i32) -> i32 {
     console.read(user_dst, dst, n, lk)
 }
 
-/// the console input interrupt handler.
+/// The console input interrupt handler.
 /// uartintr() calls this for input character.
-/// do erase/kill processing, append to CONS.buf,
+/// Do erase/kill processing, append to CONS.buf,
 /// wake up consoleread() if a whole line has arrived.
 pub unsafe fn consoleintr(cin: i32) {
     let mut console = CONS.lock();
