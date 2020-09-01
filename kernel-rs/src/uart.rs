@@ -50,10 +50,15 @@ impl UartCtrlRegs {
     }
 }
 
-pub struct Uart;
+pub struct Uart(());
 
 impl Uart {
-    pub unsafe fn new() -> Self {
+    // Constructor of Uart.
+    pub const fn zeroed() -> Self {
+        Uart(())
+    }
+
+    pub unsafe fn new() {
         // Disable interrupts.
         IER.write(0x00);
 
@@ -75,13 +80,10 @@ impl Uart {
 
         // Enable receive interrupts.
         IER.write(0x01);
-
-        Uart
     }
 
     /// Write one output character to the UART.
-    /// TODO: should get &mut self - need to refactor when encapsulate Uart into Console.
-    pub fn putc(c: i32) {
+    pub fn putc(&self, c: i32) {
         // Wait for Transmit Holding Empty to be set in LSR.
         while LSR.read() & 1 << 5 == 0 {}
         THR.write(c as u8);
@@ -89,7 +91,7 @@ impl Uart {
 
     /// Read one input character from the UART.
     /// Return -1 if none is waiting.
-    /// TODO: should get &mut self - need to refactor when encapsulate Uart into Console.
+    /// TODO: should get &self - need to refactor when encapsulate Uart into Console.
     fn getc() -> i32 {
         if LSR.read() & 0x01 != 0 {
             // Input data is ready.

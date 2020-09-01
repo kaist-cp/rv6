@@ -1,6 +1,6 @@
 use crate::{
     bio::binit,
-    console::consoleinit,
+    console::Console,
     fs::iinit,
     kalloc::kinit,
     plic::{plicinit, plicinithart},
@@ -18,7 +18,7 @@ static STARTED: AtomicBool = AtomicBool::new(false);
 /// start() jumps here in supervisor mode on all CPUs.
 pub unsafe fn kernel_main() {
     if cpuid() == 0 {
-        consoleinit();
+        Console::init();
         printfinit();
 
         println!();
