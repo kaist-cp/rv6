@@ -22,13 +22,13 @@
 //! Log appends are synchronous.
 use crate::libc;
 use crate::{
-    bio::bread,
-    buf::Buf,
+    bio::{bread, BufGuard},
     fs::{Superblock, BSIZE},
     param::{LOGSIZE, MAXOPBLOCKS},
     proc::{sleep, wakeup},
     spinlock::RawSpinlock,
 };
+use core::ops::DerefMut;
 use core::ptr;
 
 struct Log {
@@ -90,49 +90,49 @@ impl Superblock {
 unsafe fn install_trans() {
     for tail in 0..LOG.lh.n {
         // read log block
-        let lbuf: *mut Buf = bread(LOG.dev as u32, (LOG.start + tail + 1) as u32);
+        let mut lbuf = bread(LOG.dev as u32, (LOG.start + tail + 1) as u32);
 
         // read dst
-        let dbuf: *mut Buf = bread(LOG.dev as u32, LOG.lh.block[tail as usize] as u32);
+        let mut dbuf = bread(LOG.dev as u32, LOG.lh.block[tail as usize] as u32);
 
         // copy block to dst
         ptr::copy(
-            (*lbuf).data.as_mut_ptr() as *const libc::CVoid,
-            (*dbuf).data.as_mut_ptr() as *mut libc::CVoid,
+            lbuf.guard.deref_mut().inner.as_mut_ptr() as *const libc::CVoid,
+            dbuf.guard.deref_mut().inner.as_mut_ptr() as *mut libc::CVoid,
             BSIZE,
         );
 
         // write dst to disk
-        (*dbuf).write();
-        (*dbuf).unpin();
-        (*lbuf).release();
-        (*dbuf).release();
+        dbuf.write();
+        dbuf.unpin();
+        lbuf.release();
+        dbuf.release();
     }
 }
 
 /// Read the log header from disk into the in-memory log header
 unsafe fn read_head() {
-    let buf: *mut Buf = bread(LOG.dev as u32, LOG.start as u32);
-    let lh: *mut LogHeader = (*buf).data.as_mut_ptr() as *mut LogHeader;
+    let mut buf = bread(LOG.dev as u32, LOG.start as u32);
+    let lh: *mut LogHeader = buf.guard.deref_mut().inner.as_mut_ptr() as *mut LogHeader;
     LOG.lh.n = (*lh).n;
     for i in 0..LOG.lh.n {
         LOG.lh.block[i as usize] = (*lh).block[i as usize];
     }
-    (*buf).release();
+    buf.release();
 }
 
 /// Write in-memory log header to disk.
 /// This is the true point at which the
 /// current transaction commits.
 unsafe fn write_head() {
-    let buf: *mut Buf = bread(LOG.dev as u32, LOG.start as u32);
-    let mut hb: *mut LogHeader = (*buf).data.as_mut_ptr() as *mut LogHeader;
+    let mut buf = bread(LOG.dev as u32, LOG.start as u32);
+    let mut hb: *mut LogHeader = buf.guard.deref_mut().inner.as_mut_ptr() as *mut LogHeader;
     (*hb).n = LOG.lh.n;
     for i in 0..LOG.lh.n {
         (*hb).block[i as usize] = LOG.lh.block[i as usize];
     }
-    (*buf).write();
-    (*buf).release();
+    buf.write();
+    buf.release();
 }
 
 unsafe fn recover_from_log() {
@@ -197,21 +197,21 @@ pub unsafe fn end_op() {
 unsafe fn write_log() {
     for tail in 0..LOG.lh.n {
         // log block
-        let to: *mut Buf = bread(LOG.dev as u32, (LOG.start + tail + 1) as u32);
+        let mut to = bread(LOG.dev as u32, (LOG.start + tail + 1) as u32);
 
         // cache block
-        let from: *mut Buf = bread(LOG.dev as u32, LOG.lh.block[tail as usize] as u32);
+        let mut from = bread(LOG.dev as u32, LOG.lh.block[tail as usize] as u32);
 
         ptr::copy(
-            (*from).data.as_mut_ptr() as *const libc::CVoid,
-            (*to).data.as_mut_ptr() as *mut libc::CVoid,
+            from.guard.deref_mut().inner.as_mut_ptr() as *const libc::CVoid,
+            to.guard.deref_mut().inner.as_mut_ptr() as *mut libc::CVoid,
             BSIZE,
         );
 
         // write the log
-        (*to).write();
-        (*from).release();
-        (*to).release();
+        to.write();
+        from.release();
+        to.release();
     }
 }
 
@@ -241,7 +241,7 @@ unsafe fn commit() {
 ///   modify bp->data[]
 ///   log_write(bp)
 ///   (*bp).release()
-pub unsafe fn log_write(b: *mut Buf) {
+pub unsafe fn log_write(mut b: BufGuard<'_>) -> BufGuard<'_> {
     if LOG.lh.n >= LOGSIZE as i32 || LOG.lh.n >= LOG.size as i32 - 1 {
         panic!("too big a transaction");
     }
@@ -252,8 +252,8 @@ pub unsafe fn log_write(b: *mut Buf) {
     let mut absorbed = false;
     for i in 0..LOG.lh.n {
         // log absorbtion
-        if LOG.lh.block[i as usize] as u32 == (*b).blockno {
-            LOG.lh.block[i as usize] = (*b).blockno as i32;
+        if LOG.lh.block[i as usize] as u32 == (*b.entry).blockno {
+            LOG.lh.block[i as usize] = (*b.entry).blockno as i32;
             absorbed = true;
             break;
         }
@@ -261,9 +261,10 @@ pub unsafe fn log_write(b: *mut Buf) {
 
     // Add new block to log?
     if !absorbed {
-        LOG.lh.block[LOG.lh.n as usize] = (*b).blockno as i32;
-        (*b).pin();
+        LOG.lh.block[LOG.lh.n as usize] = (*b.entry).blockno as i32;
+        b.pin();
         LOG.lh.n += 1;
     }
     LOG.lock.release();
+    b
 }

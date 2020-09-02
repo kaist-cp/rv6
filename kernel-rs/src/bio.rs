@@ -1,4 +1,10 @@
-use crate::{buf::Buf, param::NBUF, spinlock::RawSpinlock, virtio_disk::virtio_disk_rw};
+use crate::{
+    buf::{Buf, BufBlock},
+    param::NBUF,
+    sleeplock::SleepLockGuard,
+    spinlock::RawSpinlock,
+    virtio_disk::virtio_disk_rw,
+};
 use core::mem::MaybeUninit;
 
 /// Buffer cache.
@@ -23,13 +29,15 @@ struct Bcache {
 
 static mut BCACHE: MaybeUninit<Bcache> = MaybeUninit::uninit();
 
-impl Buf {
+pub struct BufGuard<'a> {
+    pub guard: SleepLockGuard<'a, BufBlock>,
+    pub entry: *mut Buf,
+}
+
+impl BufGuard<'_> {
     /// Write self's contents to disk.  Must be locked.
     pub unsafe fn write(&mut self) {
-        if (*self).lock.holding() == 0 {
-            panic!("bwrite");
-        }
-        virtio_disk_rw(self, true);
+        virtio_disk_rw(self as *mut BufGuard<'_>, true);
     }
 
     /// Release a locked buffer.
@@ -37,20 +45,18 @@ impl Buf {
     pub unsafe fn release(&mut self) {
         let bcache = BCACHE.get_mut();
 
-        if (*self).lock.holding() == 0 {
-            panic!("brelease");
-        }
-        (*self).lock.release();
+        self.guard.unlock();
         bcache.lock.acquire();
-        (*self).refcnt = (*self).refcnt.wrapping_sub(1);
-        if (*self).refcnt == 0 {
+        let mut buf = &mut *self.entry;
+        (*buf).refcnt = (*buf).refcnt.wrapping_sub(1);
+        if (*buf).refcnt == 0 {
             // no one is waiting for it.
-            (*(*self).next).prev = (*self).prev;
-            (*(*self).prev).next = (*self).next;
-            (*self).next = bcache.head.next;
-            (*self).prev = &mut bcache.head;
-            (*bcache.head.next).prev = self;
-            bcache.head.next = self
+            (*(*buf).next).prev = (*buf).prev;
+            (*(*buf).prev).next = (*buf).next;
+            (*buf).next = bcache.head.next;
+            (*buf).prev = &mut bcache.head;
+            (*bcache.head.next).prev = buf as *mut Buf;
+            bcache.head.next = buf as *mut Buf
         }
         bcache.lock.release();
     }
@@ -58,14 +64,14 @@ impl Buf {
         let bcache = BCACHE.get_mut();
 
         bcache.lock.acquire();
-        (*self).refcnt = (*self).refcnt.wrapping_add(1);
+        (*self.entry).refcnt = (*self.entry).refcnt.wrapping_add(1);
         bcache.lock.release();
     }
     pub unsafe fn unpin(&mut self) {
         let bcache = BCACHE.get_mut();
 
         bcache.lock.acquire();
-        (*self).refcnt = (*self).refcnt.wrapping_sub(1);
+        (*self.entry).refcnt = (*self.entry).refcnt.wrapping_sub(1);
         bcache.lock.release();
     }
 }
@@ -81,7 +87,7 @@ pub unsafe fn binit() {
     for b in &mut bcache.buf[..] {
         (*b).next = bcache.head.next;
         (*b).prev = &mut bcache.head;
-        (*b).lock.initlock("buffer");
+        (*b).data.initlock("buffer");
         (*bcache.head.next).prev = b;
         bcache.head.next = b;
     }
@@ -90,7 +96,7 @@ pub unsafe fn binit() {
 /// Look through buffer cache for block on device dev.
 /// If not found, allocate a buffer.
 /// In either case, return locked buffer.
-unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
+unsafe fn bget(dev: u32, blockno: u32) -> BufGuard<'static> {
     let bcache = BCACHE.get_mut();
 
     bcache.lock.acquire();
@@ -101,8 +107,10 @@ unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
         if (*b).dev == dev && (*b).blockno == blockno {
             (*b).refcnt = (*b).refcnt.wrapping_add(1);
             bcache.lock.release();
-            (*b).lock.acquire();
-            return b;
+            return BufGuard {
+                guard: (*b).data.lock(),
+                entry: b as *mut Buf,
+            };
         }
         b = (*b).next
     }
@@ -116,8 +124,10 @@ unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
             (*b).valid = 0;
             (*b).refcnt = 1;
             bcache.lock.release();
-            (*b).lock.acquire();
-            return b;
+            return BufGuard {
+                guard: (*b).data.lock(),
+                entry: b as *mut Buf,
+            };
         }
         b = (*b).prev
     }
@@ -125,11 +135,11 @@ unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
 }
 
 /// Return a locked buf with the contents of the indicated block.
-pub unsafe fn bread(dev: u32, blockno: u32) -> *mut Buf {
-    let mut b: *mut Buf = bget(dev, blockno);
-    if (*b).valid == 0 {
-        virtio_disk_rw(b, false);
-        (*b).valid = 1
+pub unsafe fn bread(dev: u32, blockno: u32) -> BufGuard<'static> {
+    let mut b = bget(dev, blockno);
+    if (*b.entry).valid == 0 {
+        virtio_disk_rw(&mut b as *mut BufGuard<'_>, false);
+        (*b.entry).valid = 1
     }
     b
 }
