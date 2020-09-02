@@ -5,6 +5,7 @@
 /// qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 use crate::libc;
 use crate::{
+    bio::BufGuard,
     buf::Buf,
     fs::BSIZE,
     memlayout::VIRTIO0,
@@ -298,7 +299,8 @@ pub unsafe fn virtio_disk_init() {
     // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
 }
 
-pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
+pub unsafe fn virtio_disk_rw(bufguard: *mut BufGuard<'_>, write: bool) {
+    let mut b = (*bufguard).entry;
     let sector: usize = (*b).blockno.wrapping_mul((BSIZE / 512) as u32) as _;
 
     DISK.vdisk_lock.acquire();
@@ -333,7 +335,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
 
     // device reads/writes b->data
     *desc[1] = VRingDesc {
-        addr: (*b).data.as_mut_ptr() as _,
+        addr: (*bufguard).guard.deref_mut().inner.as_mut_ptr() as _,
         len: BSIZE as _,
         flags: if write {
             VRingDescFlags::NEXT
