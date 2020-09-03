@@ -299,10 +299,7 @@ pub unsafe fn virtio_disk_init() {
 }
 
 pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
-    let sector: usize = (*b)
-        .blockno
-        .load(Ordering::Relaxed)
-        .wrapping_mul((BSIZE / 512) as u32) as _;
+    let sector: usize = (*b).blockno.wrapping_mul((BSIZE / 512) as u32) as _;
 
     DISK.vdisk_lock.acquire();
 
