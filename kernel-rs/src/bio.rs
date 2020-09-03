@@ -11,126 +11,44 @@
 //! * Do not use the buffer after calling release.
 //! * Only one process at a time can use a buffer, so do not keep them longer than necessary.
 
-use crate::{buf::Buf, param::NBUF, spinlock::RawSpinlock, virtio_disk::virtio_disk_rw};
-use core::mem::MaybeUninit;
+use crate::{buf::Buf, param::NBUF, spinlock::Spinlock};
 
-struct Bcache {
-    lock: RawSpinlock,
-    buf: [Buf; NBUF],
+pub struct Bcache {
+    pub buf: [Buf; NBUF],
 
     // Linked list of all buffers, through prev/next.  head.next is most recently used.
-    head: Buf,
+    pub head: Buf,
 }
 
-static mut BCACHE: MaybeUninit<Bcache> = MaybeUninit::uninit();
+pub static mut BCACHE: Spinlock<Bcache> = Spinlock::new("BCACHE", Bcache::zeroed());
 
-impl Buf {
-    /// Write self's contents to disk.  Must be locked.
-    pub unsafe fn write(&mut self) {
-        if (*self).lock.holding() == 0 {
-            panic!("bwrite");
+impl Bcache {
+    // TODO:transient measure.
+    pub const fn zeroed() -> Self {
+        Self {
+            buf: [Buf::zeroed(); NBUF],
+            head: Buf::zeroed(),
         }
-        virtio_disk_rw(self, true);
     }
 
-    /// Release a locked buffer.
-    /// Move to the head of the MRU list.
-    pub unsafe fn release(&mut self) {
-        let bcache = BCACHE.get_mut();
-
-        if (*self).lock.holding() == 0 {
-            panic!("brelease");
+    pub fn init(&mut self) {
+        // Create linked list of buffers.
+        self.head.prev = &mut self.head;
+        self.head.next = &mut self.head;
+        for b in &mut self.buf[..] {
+            (*b).next = self.head.next;
+            (*b).prev = &mut self.head;
+            (*b).lock.initlock("buffer");
+            unsafe { (*self.head.next).prev = b; }
+            self.head.next = b;
         }
-        (*self).lock.release();
-        bcache.lock.acquire();
-        (*self).refcnt = (*self).refcnt.wrapping_sub(1);
-        if (*self).refcnt == 0 {
-            // No one is waiting for it.
-            (*(*self).next).prev = (*self).prev;
-            (*(*self).prev).next = (*self).next;
-            (*self).next = bcache.head.next;
-            (*self).prev = &mut bcache.head;
-            (*bcache.head.next).prev = self;
-            bcache.head.next = self
-        }
-        bcache.lock.release();
-    }
-    pub unsafe fn pin(&mut self) {
-        let bcache = BCACHE.get_mut();
-
-        bcache.lock.acquire();
-        (*self).refcnt = (*self).refcnt.wrapping_add(1);
-        bcache.lock.release();
-    }
-    pub unsafe fn unpin(&mut self) {
-        let bcache = BCACHE.get_mut();
-
-        bcache.lock.acquire();
-        (*self).refcnt = (*self).refcnt.wrapping_sub(1);
-        bcache.lock.release();
     }
 }
 
 pub unsafe fn binit() {
-    let bcache = BCACHE.get_mut();
+    // let bcache = BCACHE.get_mut();
+    // bcache.lock.initlock("bcache");
 
-    bcache.lock.initlock("bcache");
-
-    // Create linked list of buffers.
-    bcache.head.prev = &mut bcache.head;
-    bcache.head.next = &mut bcache.head;
-    for b in &mut bcache.buf[..] {
-        (*b).next = bcache.head.next;
-        (*b).prev = &mut bcache.head;
-        (*b).lock.initlock("buffer");
-        (*bcache.head.next).prev = b;
-        bcache.head.next = b;
-    }
-}
-
-/// Look through buffer cache for block on device dev.
-/// If not found, allocate a buffer.
-/// In either case, return locked buffer.
-unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
-    let bcache = BCACHE.get_mut();
-
-    bcache.lock.acquire();
-
-    // Is the block already cached?
-    let mut b: *mut Buf = bcache.head.next;
-    while b != &mut bcache.head as *mut Buf {
-        if (*b).dev == dev && (*b).blockno == blockno {
-            (*b).refcnt = (*b).refcnt.wrapping_add(1);
-            bcache.lock.release();
-            (*b).lock.acquire();
-            return b;
-        }
-        b = (*b).next
-    }
-
-    // Not cached; recycle an unused buffer.
-    b = bcache.head.prev;
-    while b != &mut bcache.head as *mut Buf {
-        if (*b).refcnt == 0 {
-            (*b).dev = dev;
-            (*b).blockno = blockno;
-            (*b).valid = 0;
-            (*b).refcnt = 1;
-            bcache.lock.release();
-            (*b).lock.acquire();
-            return b;
-        }
-        b = (*b).prev
-    }
-    panic!("bget: no buffers");
-}
-
-/// Return a locked buf with the contents of the indicated block.
-pub unsafe fn bread(dev: u32, blockno: u32) -> *mut Buf {
-    let mut b: *mut Buf = bget(dev, blockno);
-    if (*b).valid == 0 {
-        virtio_disk_rw(b, false);
-        (*b).valid = 1
-    }
-    b
+    let mut bcache = BCACHE.lock();
+    bcache.init();
 }
