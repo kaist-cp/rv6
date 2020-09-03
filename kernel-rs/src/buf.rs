@@ -1,4 +1,4 @@
-use crate::sleeplock::SleeplockWIP;
+use crate::sleeplock::Sleeplock;
 
 pub struct Buf {
     /// has data been read from disk?
@@ -8,6 +8,7 @@ pub struct Buf {
     pub disk: i32,
     pub dev: u32,
     pub blockno: u32,
+    pub lock: Sleeplock,
     pub refcnt: u32,
 
     /// LRU cache list
@@ -16,9 +17,5 @@ pub struct Buf {
 
     /// disk queue
     qnext: *mut Buf,
-    pub data: SleeplockWIP<BufBlock>,
-}
-
-pub struct BufBlock {
-    pub inner: [u8; 1024],
+    pub data: [u8; 1024],
 }
