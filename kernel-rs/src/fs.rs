@@ -12,7 +12,7 @@
 /// On-disk file system format used for both kernel and user programs are also included here.
 use crate::libc;
 use crate::{
-    buf::{Buf, bread},
+    buf::{bread, Buf},
     file::Inode,
     log::log_write,
     param::{NINODE, ROOTDEV},
