@@ -2,7 +2,7 @@ use crate::libc;
 use crate::{
     file::{CONSOLE, DEVSW},
     printf::PANICKED,
-    proc::{either_copyin, either_copyout, myproc, procdump, sleep, wakeup},
+    proc::{either_copyin, either_copyout, myproc, procdump, Wchan},
     spinlock::{RawSpinlock, Spinlock},
     uart::Uart,
     utils::spin_loop,
@@ -108,7 +108,7 @@ impl Console {
                     return -1;
                 }
                 // TODO: need to change "RawSpinlock" after refactoring "sleep()" function in proc.rs
-                sleep(&mut self.r as *mut u32 as *mut libc::CVoid, lk);
+                Wchan::new(&mut self.r as *mut u32 as *mut libc::CVoid).sleep(lk);
             }
             let fresh0 = self.r;
             self.r = self.r.wrapping_add(1);
@@ -190,7 +190,7 @@ impl Console {
                         // Wake up consoleread() if a whole line (or end-of-file)
                         // has arrived.
                         self.w = self.e;
-                        wakeup(&mut self.r as *mut u32 as *mut libc::CVoid);
+                        Wchan::new(&mut self.r as *mut u32 as *mut libc::CVoid).wakeup();
                     }
                 }
             }

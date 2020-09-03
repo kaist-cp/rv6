@@ -9,7 +9,7 @@ use crate::{
     fs::BSIZE,
     memlayout::VIRTIO0,
     page::Page,
-    proc::{sleep, wakeup},
+    proc::Wchan,
     riscv::{PGSHIFT, PGSIZE},
     spinlock::RawSpinlock,
     virtio::*,
@@ -203,7 +203,7 @@ impl DescriptorPool {
             assert!(!self.free[idx], "virtio_disk_intr 2");
             (*self.desc)[idx].addr = 0;
             self.free[idx] = true;
-            wakeup(&mut self.free as *mut _ as _);
+            Wchan::new(&mut self.free as *mut _ as _).wakeup();
         }
         mem::forget(desc);
     }
@@ -311,10 +311,8 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
     let mut desc = loop {
         match DISK.desc.alloc_three_sectors() {
             Some(idx) => break idx,
-            None => sleep(
-                DISK.desc.free.as_mut_ptr() as *mut libc::CVoid,
-                &mut DISK.vdisk_lock,
-            ),
+            None => Wchan::new(DISK.desc.free.as_mut_ptr() as *mut libc::CVoid)
+                .sleep(&mut DISK.vdisk_lock),
         }
     };
 
@@ -367,7 +365,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
 
     // Wait for virtio_disk_intr() to say request has finished.
     while (*b).inner.disk {
-        sleep(b as *mut libc::CVoid, &mut DISK.vdisk_lock);
+        Wchan::new(b as *mut libc::CVoid).sleep(&mut DISK.vdisk_lock);
     }
     DISK.info[desc[0].idx].b = ptr::null_mut();
     IntoIter::new(desc).for_each(|desc| DISK.desc.free(desc));
@@ -386,7 +384,7 @@ pub unsafe fn virtio_disk_intr() {
         (*DISK.info[id].b).inner.disk = false;
 
         // Disk is done with Buf.
-        wakeup(DISK.info[id].b as *mut libc::CVoid);
+        Wchan::new(DISK.info[id].b as *mut libc::CVoid).wakeup();
 
         DISK.used_idx = (DISK.used_idx.wrapping_add(1)).wrapping_rem(NUM as _)
     }
