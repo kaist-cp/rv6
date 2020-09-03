@@ -1,4 +1,5 @@
 use crate::sleeplock::Sleeplock;
+use crate::fs::BSIZE;
 
 pub struct Buf {
     /// has data been read from disk?
@@ -17,5 +18,5 @@ pub struct Buf {
 
     /// disk queue
     qnext: *mut Buf,
-    pub data: [u8; 1024],
+    pub data: [u8; BSIZE],
 }
