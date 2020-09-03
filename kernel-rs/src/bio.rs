@@ -29,6 +29,7 @@ struct Bcache {
 
 static mut BCACHE: MaybeUninit<Bcache> = MaybeUninit::uninit();
 
+/// Buffer which acquired sleeplock
 pub struct BufGuard<'a> {
     pub guard: SleepLockGuard<'a, BufBlock>,
     pub entry: *mut Buf,
@@ -42,12 +43,11 @@ impl BufGuard<'_> {
 
     /// Release a locked buffer.
     /// Move to the head of the MRU list.
-    pub unsafe fn release(&mut self) {
+    pub unsafe fn release(self) {
         let bcache = BCACHE.get_mut();
-
-        self.guard.unlock();
-        bcache.lock.acquire();
         let mut buf = &mut *self.entry;
+        drop(self);
+        bcache.lock.acquire();
         (*buf).refcnt = (*buf).refcnt.wrapping_sub(1);
         if (*buf).refcnt == 0 {
             // no one is waiting for it.

@@ -1,23 +1,10 @@
 //! Sleeping locks
 use crate::libc;
 use crate::proc::{myproc, sleep, wakeup};
-use crate::spinlock::RawSpinlock;
+use crate::spinlock::{RawSpinlock, Spinlock};
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
-use core::sync::atomic::{AtomicI32, Ordering};
-
-struct SleeplockInfo {
-    /// For debugging:  
-
-    /// Name of lock.
-    name: &'static str,
-
-    /// If the lock is held, contains `pid`.
-    /// Otherwise, contains -1.
-    /// Process holding lock
-    pid: AtomicI32,
-}
 
 pub struct SleepLockGuard<'s, T> {
     lock: &'s SleeplockWIP<T>,
@@ -29,21 +16,15 @@ unsafe impl<'s, T: Sync> Sync for SleepLockGuard<'s, T> {}
 
 /// Long-term locks for processes
 pub struct SleeplockWIP<T> {
-    /// spinlock protecting this sleep lock
-    rawlock: RawSpinlock,
+    spinlock: Spinlock<i32>,
     data: UnsafeCell<T>,
-    info: SleeplockInfo,
 }
 
 unsafe impl<T: Send> Sync for SleeplockWIP<T> {}
 
 impl<T> SleeplockWIP<T> {
     pub fn initlock(&mut self, name: &'static str) {
-        (*self).rawlock.initlock("sleep lock");
-        (*self).info = SleeplockInfo {
-            name,
-            pid: AtomicI32::new(-1),
-        };
+        (*self).spinlock = Spinlock::new(name, -1);
     }
 
     pub fn into_inner(self) -> T {
@@ -51,15 +32,14 @@ impl<T> SleeplockWIP<T> {
     }
 
     pub unsafe fn lock(&mut self) -> SleepLockGuard<'_, T> {
-        self.rawlock.acquire();
-        while (*self).info.pid.load(Ordering::Acquire) != -1 {
-            sleep(
-                self as *mut SleeplockWIP<T> as *mut libc::CVoid,
-                &mut (*self).rawlock,
-            );
+        let chan = self as *mut SleeplockWIP<T> as *mut libc::CVoid;
+
+        let mut guard = self.spinlock.lock();
+        while *guard != -1 {
+            sleep(chan, guard.raw() as *mut RawSpinlock);
         }
-        (*self).info.pid.store((*myproc()).pid, Ordering::Release);
-        self.rawlock.release();
+        *guard = (*myproc()).pid;
+        drop(guard);
         SleepLockGuard {
             lock: self,
             _marker: PhantomData,
@@ -71,20 +51,16 @@ impl<T> SleepLockGuard<'_, T> {
     pub fn raw(&self) -> usize {
         self.lock as *const _ as usize
     }
-
-    pub fn unlock(&mut self) {
-        self.lock.rawlock.acquire();
-        self.lock.info.pid.store(-1, Ordering::Release);
-        unsafe {
-            wakeup(self.raw() as *mut SleeplockWIP<T> as *mut libc::CVoid);
-        }
-        self.lock.rawlock.release();
-    }
 }
 
 impl<T> Drop for SleepLockGuard<'_, T> {
     fn drop(&mut self) {
-        self.unlock();
+        let mut guard = self.lock.spinlock.lock();
+        *guard = -1;
+        unsafe {
+            wakeup(self.raw() as *mut SleeplockWIP<T> as *mut libc::CVoid);
+        }
+        drop(guard);
     }
 }
 
