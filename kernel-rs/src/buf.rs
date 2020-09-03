@@ -4,6 +4,7 @@ use crate::sleeplock::Sleeplock;
 use crate::virtio_disk::virtio_disk_rw;
 
 use core::ptr;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 pub struct Buf {
     /// Has data been read from disk?
@@ -12,7 +13,7 @@ pub struct Buf {
     /// Does disk "own" buf?
     pub disk: bool,
     pub dev: u32,
-    pub blockno: u32,
+    pub blockno: AtomicU32,
     pub lock: Sleeplock,
     pub refcnt: u32,
 
@@ -29,7 +30,7 @@ impl Buf {
             valid: false,
             disk: false,
             dev: 0,
-            blockno: 0,
+            blockno: AtomicU32::new(0),
             lock: Sleeplock::zeroed(),
             refcnt: 0,
 
@@ -88,7 +89,7 @@ impl Buf {
         // Is the block already cached?
         let mut b: *mut Self = bcache.head.next;
         while b != &mut bcache.head {
-            if (*b).dev == dev && (*b).blockno == blockno {
+            if (*b).dev == dev && (*b).blockno.load(Ordering::Relaxed) == blockno {
                 (*b).refcnt = (*b).refcnt.wrapping_add(1);
                 drop(bcache);
                 (*b).lock.acquire();
@@ -102,7 +103,7 @@ impl Buf {
         while b != &mut bcache.head {
             if (*b).refcnt == 0 {
                 (*b).dev = dev;
-                (*b).blockno = blockno;
+                (*b).blockno.store(blockno, Ordering::Relaxed);
                 (*b).valid = false;
                 (*b).refcnt = 1;
                 drop(bcache);
