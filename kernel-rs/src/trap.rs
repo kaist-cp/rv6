@@ -3,7 +3,7 @@ use crate::{
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     plic::{plic_claim, plic_complete},
     println,
-    proc::{cpuid, exit, myproc, proc_yield, wakeup, Proc, Procstate},
+    proc::{cpuid, exit, myproc, proc_yield, Proc, Procstate, Wchan},
     riscv::{
         intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp,
         w_sepc, w_sip, w_stvec, Sstatus, PGSIZE,
@@ -201,7 +201,7 @@ pub unsafe fn kerneltrap() {
 pub unsafe fn clockintr() {
     TICKSLOCK.acquire();
     TICKS = TICKS.wrapping_add(1);
-    wakeup(&mut TICKS as *mut u32 as *mut libc::CVoid);
+    Wchan::new(&mut TICKS as *mut u32 as *mut libc::CVoid).wakeup();
     TICKSLOCK.release();
 }
 

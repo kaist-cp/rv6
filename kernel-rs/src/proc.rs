@@ -201,6 +201,63 @@ pub enum Procstate {
     UNUSED,
 }
 
+#[derive(PartialEq)]
+pub struct Wchan {
+    addr: *mut libc::CVoid,
+}
+
+impl Wchan {
+    pub const fn new(addr: *mut libc::CVoid) -> Self {
+        Self { addr }
+    }
+
+    /// Atomically release lock and sleep on chan.
+    /// Reacquires lock when awakened.
+    pub unsafe fn sleep(self, lk: *mut RawSpinlock) {
+        let mut p: *mut Proc = myproc();
+
+        // Must acquire p->lock in order to
+        // change p->state and then call sched.
+        // Once we hold p->lock, we can be
+        // guaranteed that we won't miss any wakeup
+        // (wakeup locks p->lock),
+        // so it's okay to release lk.
+
+        //DOC: sleeplock0
+        if lk != &mut (*p).lock as *mut RawSpinlock {
+            //DOC: sleeplock1
+            (*p).lock.acquire();
+            (*lk).release();
+        }
+
+        // Go to sleep.
+        (*p).chan = self;
+        (*p).state = Procstate::SLEEPING;
+        sched();
+
+        // Tidy up.
+        (*p).chan = Wchan::new(ptr::null_mut());
+
+        // Reacquire original lock.
+        if lk != &mut (*p).lock as *mut RawSpinlock {
+            (*p).lock.release();
+            (*lk).acquire();
+        };
+    }
+
+    /// Wake up all processes sleeping on chan.
+    /// Must be called without any p->lock.
+    pub unsafe fn wakeup(self) {
+        for p in &mut PROC[..] {
+            p.lock.acquire();
+            if p.chan == self && p.state == Procstate::SLEEPING {
+                p.state = Procstate::RUNNABLE
+            }
+            p.lock.release();
+        }
+    }
+}
+
 /// Per-process state.
 pub struct Proc {
     lock: RawSpinlock,
@@ -214,7 +271,7 @@ pub struct Proc {
     parent: *mut Proc,
 
     /// If non-zero, sleeping on chan.
-    chan: *mut libc::CVoid,
+    chan: Wchan,
 
     /// If non-zero, have been killed.
     pub killed: i32,
@@ -305,7 +362,7 @@ impl Proc {
             lock: RawSpinlock::zeroed(),
             state: Procstate::UNUSED,
             parent: ptr::null_mut(),
-            chan: ptr::null_mut(),
+            chan: Wchan::new(ptr::null_mut()),
             killed: 0,
             xstate: 0,
             pid: 0,
@@ -434,7 +491,7 @@ unsafe fn freeproc(mut p: *mut Proc) {
     (*p).pid = 0;
     (*p).parent = ptr::null_mut();
     (*p).name[0] = 0;
-    (*p).chan = ptr::null_mut();
+    (*p).chan = Wchan::new(ptr::null_mut());
     (*p).killed = 0;
     (*p).xstate = 0;
     (*p).state = Procstate::UNUSED;
@@ -717,7 +774,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
 
         // Wait for a child to exit.
         //DOC: wait-sleep
-        sleep(p as *mut libc::CVoid, &mut (*p).lock);
+        sleep(Wchan::new(p as *mut libc::CVoid), &mut (*p).lock);
     }
 }
 
@@ -811,7 +868,7 @@ unsafe fn forkret() {
 
 /// Atomically release lock and sleep on chan.
 /// Reacquires lock when awakened.
-pub unsafe fn sleep(chan: *mut libc::CVoid, lk: *mut RawSpinlock) {
+pub unsafe fn sleep(chan: Wchan, lk: *mut RawSpinlock) {
     let mut p: *mut Proc = myproc();
 
     // Must acquire p->lock in order to
@@ -834,7 +891,7 @@ pub unsafe fn sleep(chan: *mut libc::CVoid, lk: *mut RawSpinlock) {
     sched();
 
     // Tidy up.
-    (*p).chan = ptr::null_mut();
+    (*p).chan = Wchan::new(ptr::null_mut());
 
     // Reacquire original lock.
     if lk != &mut (*p).lock as *mut RawSpinlock {
@@ -845,7 +902,7 @@ pub unsafe fn sleep(chan: *mut libc::CVoid, lk: *mut RawSpinlock) {
 
 /// Wake up all processes sleeping on chan.
 /// Must be called without any p->lock.
-pub unsafe fn wakeup(chan: *mut libc::CVoid) {
+pub unsafe fn wakeup(chan: Wchan) {
     for p in &mut PROC[..] {
         p.lock.acquire();
         if p.chan == chan && p.state == Procstate::SLEEPING {
@@ -861,7 +918,7 @@ unsafe fn wakeup1(mut p: *mut Proc) {
     if !(*p).lock.holding() {
         panic!("wakeup1");
     }
-    if (*p).chan == p as *mut libc::CVoid && (*p).state == Procstate::SLEEPING {
+    if (*p).chan == Wchan::new(p as *mut libc::CVoid) && (*p).state == Procstate::SLEEPING {
         (*p).state = Procstate::RUNNABLE
     }
 }
