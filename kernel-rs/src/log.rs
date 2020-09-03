@@ -22,7 +22,7 @@
 //! Log appends are synchronous.
 use crate::libc;
 use crate::{
-    buf::{bread, Buf},
+    buf::Buf,
     fs::{Superblock, BSIZE},
     param::{LOGSIZE, MAXOPBLOCKS},
     proc::{sleep, wakeup},
@@ -89,10 +89,10 @@ impl Superblock {
 unsafe fn install_trans() {
     for tail in 0..LOG.lh.n {
         // read log block
-        let lbuf: *mut Buf = bread(LOG.dev as u32, (LOG.start + tail + 1) as u32);
+        let lbuf: *mut Buf = Buf::bread(LOG.dev as u32, (LOG.start + tail + 1) as u32);
 
         // read dst
-        let dbuf: *mut Buf = bread(LOG.dev as u32, LOG.lh.block[tail as usize] as u32);
+        let dbuf: *mut Buf = Buf::bread(LOG.dev as u32, LOG.lh.block[tail as usize] as u32);
 
         // copy block to dst
         ptr::copy(
@@ -111,7 +111,7 @@ unsafe fn install_trans() {
 
 /// Read the log header from disk into the in-memory log header
 unsafe fn read_head() {
-    let buf: *mut Buf = bread(LOG.dev as u32, LOG.start as u32);
+    let buf: *mut Buf = Buf::bread(LOG.dev as u32, LOG.start as u32);
     let lh: *mut LogHeader = (*buf).data.as_mut_ptr() as *mut LogHeader;
     LOG.lh.n = (*lh).n;
     for i in 0..LOG.lh.n {
@@ -124,7 +124,7 @@ unsafe fn read_head() {
 /// This is the true point at which the
 /// current transaction commits.
 unsafe fn write_head() {
-    let buf: *mut Buf = bread(LOG.dev as u32, LOG.start as u32);
+    let buf: *mut Buf = Buf::bread(LOG.dev as u32, LOG.start as u32);
     let mut hb: *mut LogHeader = (*buf).data.as_mut_ptr() as *mut LogHeader;
     (*hb).n = LOG.lh.n;
     for i in 0..LOG.lh.n {
@@ -196,10 +196,10 @@ pub unsafe fn end_op() {
 unsafe fn write_log() {
     for tail in 0..LOG.lh.n {
         // log block
-        let to: *mut Buf = bread(LOG.dev as u32, (LOG.start + tail + 1) as u32);
+        let to: *mut Buf = Buf::bread(LOG.dev as u32, (LOG.start + tail + 1) as u32);
 
         // cache block
-        let from: *mut Buf = bread(LOG.dev as u32, LOG.lh.block[tail as usize] as u32);
+        let from: *mut Buf = Buf::bread(LOG.dev as u32, LOG.lh.block[tail as usize] as u32);
 
         ptr::copy(
             (*from).data.as_mut_ptr() as *const libc::CVoid,
@@ -236,7 +236,7 @@ unsafe fn commit() {
 /// commit()/write_log() will do the disk write.
 ///
 /// log_write() replaces write(); a typical use is:
-///   bp = bread(...)
+///   bp = Buf::bread(...)
 ///   modify bp->data[]
 ///   log_write(bp)
 ///   (*bp).release()
