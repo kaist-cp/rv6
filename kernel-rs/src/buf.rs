@@ -79,49 +79,47 @@ impl Buf {
         (*self).refcnt = (*self).refcnt.wrapping_sub(1);
         drop(bcache);
     }
-}
+    /// Look through buffer cache for block on device dev.
+    /// If not found, allocate a buffer.
+    /// In either case, return locked buffer.
+    unsafe fn bget(dev: u32, blockno: u32) -> *mut Self {
+        let mut bcache = BCACHE.lock();
 
-/// Look through buffer cache for block on device dev.
-/// If not found, allocate a buffer.
-/// In either case, return locked buffer.
-unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
-    let mut bcache = BCACHE.lock();
-
-    // Is the block already cached?
-    let mut b: *mut Buf = bcache.head.next;
-    while b != &mut bcache.head as *mut Buf {
-        if (*b).dev == dev && (*b).blockno == blockno {
-            (*b).refcnt = (*b).refcnt.wrapping_add(1);
-            drop(bcache);
-            (*b).lock.acquire();
-            return b;
+        // Is the block already cached?
+        let mut b: *mut Self = bcache.head.next;
+        while b != &mut bcache.head {
+            if (*b).dev == dev && (*b).blockno == blockno {
+                (*b).refcnt = (*b).refcnt.wrapping_add(1);
+                drop(bcache);
+                (*b).lock.acquire();
+                return b;
+            }
+            b = (*b).next
         }
-        b = (*b).next
-    }
 
-    // Not cached; recycle an unused buffer.
-    b = bcache.head.prev;
-    while b != &mut bcache.head as *mut Buf {
-        if (*b).refcnt == 0 {
-            (*b).dev = dev;
-            (*b).blockno = blockno;
-            (*b).valid = false;
-            (*b).refcnt = 1;
-            drop(bcache);
-            (*b).lock.acquire();
-            return b;
+        // Not cached; recycle an unused buffer.
+        b = bcache.head.prev;
+        while b != &mut bcache.head {
+            if (*b).refcnt == 0 {
+                (*b).dev = dev;
+                (*b).blockno = blockno;
+                (*b).valid = false;
+                (*b).refcnt = 1;
+                drop(bcache);
+                (*b).lock.acquire();
+                return b;
+            }
+            b = (*b).prev
         }
-        b = (*b).prev
+        panic!("bget: no buffers");
     }
-    panic!("bget: no buffers");
-}
-
-/// Return a locked buf with the contents of the indicated block.
-pub unsafe fn bread(dev: u32, blockno: u32) -> *mut Buf {
-    let mut b: *mut Buf = bget(dev, blockno);
-    if !(*b).valid {
-        virtio_disk_rw(b, false);
-        (*b).valid = true
+    /// Return a locked buf with the contents of the indicated block.
+    pub unsafe fn bread(dev: u32, blockno: u32) -> *mut Self {
+        let b: *mut Self = Buf::bget(dev, blockno);
+        if !(*b).valid {
+            virtio_disk_rw(b, false);
+            (*b).valid = true
+        }
+        b
     }
-    b
 }

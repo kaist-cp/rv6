@@ -48,9 +48,6 @@ impl Bcache {
 }
 
 pub unsafe fn binit() {
-    // let bcache = BCACHE.get_mut();
-    // bcache.lock.initlock("bcache");
-
     let mut bcache = BCACHE.lock();
     bcache.init();
 }
