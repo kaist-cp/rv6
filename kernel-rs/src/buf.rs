@@ -20,8 +20,6 @@ pub struct Buf {
     pub prev: *mut Buf,
     pub next: *mut Buf,
 
-    /// Disk queue.
-    qnext: *mut Buf,
     pub data: [u8; BSIZE],
 }
 
@@ -38,7 +36,6 @@ impl Buf {
             prev: ptr::null_mut(),
             next: ptr::null_mut(),
         
-            qnext: ptr::null_mut(),
             data: [0; BSIZE],
         }
     }
