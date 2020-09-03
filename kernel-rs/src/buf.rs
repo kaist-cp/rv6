@@ -1,6 +1,6 @@
-use crate::sleeplock::Sleeplock;
-use crate::fs::BSIZE;
 use crate::bio::BCACHE;
+use crate::fs::BSIZE;
+use crate::sleeplock::Sleeplock;
 use crate::virtio_disk::virtio_disk_rw;
 
 use core::ptr;
@@ -32,10 +32,10 @@ impl Buf {
             blockno: 0,
             lock: Sleeplock::zeroed(),
             refcnt: 0,
-        
+
             prev: ptr::null_mut(),
             next: ptr::null_mut(),
-        
+
             data: [0; BSIZE],
         }
     }
@@ -67,7 +67,7 @@ impl Buf {
             bcache.head.next = self
         }
     }
-    
+
     pub unsafe fn pin(&mut self) {
         let bcache = BCACHE.lock();
         (*self).refcnt = (*self).refcnt.wrapping_add(1);

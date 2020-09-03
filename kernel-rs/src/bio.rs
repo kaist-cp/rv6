@@ -39,7 +39,9 @@ impl Bcache {
             (*b).next = self.head.next;
             (*b).prev = &mut self.head;
             (*b).lock.initlock("buffer");
-            unsafe { (*self.head.next).prev = b; }
+            unsafe {
+                (*self.head.next).prev = b;
+            }
             self.head.next = b;
         }
     }
