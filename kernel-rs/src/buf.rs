@@ -13,9 +13,9 @@ pub struct Buf {
     /// LRU cache list
     pub prev: *mut Buf,
     pub next: *mut Buf,
-    
+
     /// disk queue
-    qnext: *mut BufBlock,
+    qnext: *mut Buf,
     pub data: SleeplockWIP<BufBlock>,
 }
 
