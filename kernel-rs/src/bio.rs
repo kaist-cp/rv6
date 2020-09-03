@@ -44,7 +44,7 @@ impl Buf {
         bcache.lock.acquire();
         (*self).refcnt = (*self).refcnt.wrapping_sub(1);
         if (*self).refcnt == 0 {
-            // no one is waiting for it.
+            // No one is waiting for it.
             (*(*self).next).prev = (*self).prev;
             (*(*self).prev).next = (*self).next;
             (*self).next = bcache.head.next;
@@ -75,7 +75,7 @@ pub unsafe fn binit() {
 
     bcache.lock.initlock("bcache");
 
-    // Create linked list of buffers
+    // Create linked list of buffers.
     bcache.head.prev = &mut bcache.head;
     bcache.head.next = &mut bcache.head;
     for b in &mut bcache.buf[..] {
