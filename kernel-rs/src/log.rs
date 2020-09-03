@@ -29,7 +29,6 @@ use crate::{
     spinlock::RawSpinlock,
 };
 use core::ptr;
-use core::sync::atomic::Ordering;
 
 struct Log {
     lock: RawSpinlock,
@@ -252,8 +251,8 @@ pub unsafe fn log_write(b: *mut Buf) {
     let mut absorbed = false;
     for i in 0..LOG.lh.n {
         // log absorbtion
-        if LOG.lh.block[i as usize] as u32 == (*b).blockno.load(Ordering::Relaxed) {
-            LOG.lh.block[i as usize] = (*b).blockno.load(Ordering::Relaxed) as i32;
+        if LOG.lh.block[i as usize] as u32 == (*b).blockno {
+            LOG.lh.block[i as usize] = (*b).blockno as i32;
             absorbed = true;
             break;
         }
@@ -261,7 +260,7 @@ pub unsafe fn log_write(b: *mut Buf) {
 
     // Add new block to log?
     if !absorbed {
-        LOG.lh.block[LOG.lh.n as usize] = (*b).blockno.load(Ordering::Relaxed) as i32;
+        LOG.lh.block[LOG.lh.n as usize] = (*b).blockno as i32;
         (*b).pin();
         LOG.lh.n += 1;
     }
