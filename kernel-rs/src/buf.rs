@@ -7,10 +7,10 @@ use core::ptr;
 
 pub struct Buf {
     /// Has data been read from disk?
-    pub valid: i32,
+    pub valid: bool,
 
     /// Does disk "own" buf?
-    pub disk: i32,
+    pub disk: bool,
     pub dev: u32,
     pub blockno: u32,
     pub lock: Sleeplock,
@@ -28,8 +28,8 @@ pub struct Buf {
 impl Buf {
     pub const fn zeroed() -> Self {
         Self {
-            valid: 0,
-            disk: 0,
+            valid: false,
+            disk: false,
             dev: 0,
             blockno: 0,
             lock: Sleeplock::zeroed(),
@@ -108,7 +108,7 @@ unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
         if (*b).refcnt == 0 {
             (*b).dev = dev;
             (*b).blockno = blockno;
-            (*b).valid = 0;
+            (*b).valid = false;
             (*b).refcnt = 1;
             drop(bcache);
             (*b).lock.acquire();
@@ -122,9 +122,9 @@ unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
 /// Return a locked buf with the contents of the indicated block.
 pub unsafe fn bread(dev: u32, blockno: u32) -> *mut Buf {
     let mut b: *mut Buf = bget(dev, blockno);
-    if (*b).valid == 0 {
+    if !(*b).valid {
         virtio_disk_rw(b, false);
-        (*b).valid = 1
+        (*b).valid = true
     }
     b
 }
