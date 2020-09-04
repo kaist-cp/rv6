@@ -13,7 +13,10 @@ use crate::{
     uart::Uart,
     virtio_disk::virtio_disk_intr,
 };
-use core::{ops::{BitAndAssign, BitOrAssign, Not}, mem};
+use core::{
+    mem,
+    ops::{BitAndAssign, BitOrAssign, Not},
+};
 
 extern "C" {
     // trampoline.S

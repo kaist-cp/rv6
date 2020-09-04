@@ -34,7 +34,9 @@ static mut MSCRATCH0: [usize; NCPU * 32] = [0; NCPU * 32];
 #[no_mangle]
 pub unsafe fn start() {
     // set M Previous Privilege mode to Supervisor, for mret.
-    let x = Mstatus::read().bitand(Mstatus::MPP_MASK.not()).bitor(Mstatus::MPP_S);
+    let x = Mstatus::read()
+        .bitand(Mstatus::MPP_MASK.not())
+        .bitor(Mstatus::MPP_S);
     x.write();
 
     // set M Exception Program Counter to main, for mret.  requires gcc -mcmodel=medany
