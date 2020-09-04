@@ -22,6 +22,7 @@
 //! Log appends are synchronous.
 use crate::libc;
 use crate::{
+    bio::{bpin, bunpin, brelease},
     buf::Buf,
     fs::{Superblock, BSIZE},
     param::{LOGSIZE, MAXOPBLOCKS},
@@ -103,9 +104,9 @@ unsafe fn install_trans() {
 
         // Write dst to disk.
         (*dbuf).write();
-        (*dbuf).unpin();
-        (*lbuf).release();
-        (*dbuf).release();
+        bunpin(&mut *dbuf);
+        brelease(&mut *lbuf);
+        brelease(&mut *dbuf);
     }
 }
 
@@ -117,7 +118,7 @@ unsafe fn read_head() {
     for i in 0..LOG.lh.n {
         LOG.lh.block[i as usize] = (*lh).block[i as usize];
     }
-    (*buf).release();
+    brelease(&mut *buf);
 }
 
 /// Write in-memory log header to disk.
@@ -131,7 +132,7 @@ unsafe fn write_head() {
         (*hb).block[i as usize] = LOG.lh.block[i as usize];
     }
     (*buf).write();
-    (*buf).release();
+    brelease(&mut *buf);
 }
 
 unsafe fn recover_from_log() {
@@ -209,8 +210,8 @@ unsafe fn write_log() {
 
         // Write the log.
         (*to).write();
-        (*from).release();
-        (*to).release();
+        brelease(&mut *from);
+        brelease(&mut *to);
     }
 }
 
@@ -261,7 +262,7 @@ pub unsafe fn log_write(b: *mut Buf) {
     // Add new block to log?
     if !absorbed {
         LOG.lh.block[LOG.lh.n as usize] = (*b).blockno as i32;
-        (*b).pin();
+        bpin(&mut *b);
         LOG.lh.n += 1;
     }
     LOG.lock.release();

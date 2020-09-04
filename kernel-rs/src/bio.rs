@@ -45,9 +45,88 @@ impl Bcache {
             self.head.next = b;
         }
     }
+
+    /// Look through buffer cache for block on device dev.
+    /// If not found, allocate a buffer.
+    /// In either case, return locked buffer.
+    unsafe fn get(&mut self, dev: u32, blockno: u32) -> *mut Buf {
+        // Is the block already cached?
+        let mut b: *mut Buf = self.head.next;
+        while b != &mut self.head {
+            if (*b).dev == dev && (*b).blockno == blockno {
+                (*b).refcnt = (*b).refcnt.wrapping_add(1);
+                return b;
+            }
+            b = (*b).next
+        }
+
+        // Not cached; recycle an unused buffer.
+        b = self.head.prev;
+        while b != &mut self.head {
+            if (*b).refcnt == 0 {
+                (*b).dev = dev;
+                (*b).blockno = blockno;
+                (*b).bufinner.valid = false;
+                (*b).refcnt = 1;
+                return b;
+            }
+            b = (*b).prev
+        }
+        panic!("get: no buffers");
+    }
+
+    /// Release a locked buffer.
+    /// Move to the head of the MRU list.
+    pub unsafe fn release(&mut self, buf: &mut Buf) {
+        buf.refcnt = buf.refcnt.wrapping_sub(1);
+        if buf.refcnt == 0 {
+            // No one is waiting for it.
+            (*buf.next).prev = buf.prev;
+            (*buf.prev).next = buf.next;
+            buf.next = self.head.next;
+            buf.prev = &mut self.head;
+            (*self.head.next).prev = buf;
+            self.head.next = buf
+        }
+    }
+
+    pub unsafe fn pin(&mut self, buf: &mut Buf) {
+        buf.refcnt = buf.refcnt.wrapping_add(1);
+    }
+
+    pub unsafe fn unpin(&mut self, buf: &mut Buf) {
+        buf.refcnt = buf.refcnt.wrapping_sub(1);
+    }
 }
 
 pub unsafe fn binit() {
     let mut bcache = BCACHE.lock();
     bcache.init();
+}
+
+pub unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
+    let buf = BCACHE.lock().get(dev, blockno);
+    (*buf).lock.acquire();
+    return buf;
+}
+
+pub unsafe fn brelease(buf: &mut Buf) {
+    if buf.lock.holding() == 0 {
+        panic!("brelease");
+    }
+    buf.lock.release();
+    let mut bcache = BCACHE.lock();
+    bcache.release(buf);
+}
+
+pub unsafe fn bpin(buf: &mut Buf) {
+    let mut bcache = BCACHE.lock();
+    bcache.pin(buf);
+    drop(bcache);
+}
+
+pub unsafe fn bunpin(buf: &mut Buf) {
+    let mut bcache = BCACHE.lock();
+    bcache.unpin(buf);
+    drop(bcache);
 }

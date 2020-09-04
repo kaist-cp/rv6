@@ -12,6 +12,7 @@
 /// On-disk file system format used for both kernel and user programs are also included here.
 use crate::libc;
 use crate::{
+    bio::brelease,
     buf::Buf,
     file::Inode,
     log::log_write,
@@ -173,8 +174,8 @@ impl Inode {
     /// Caller must hold ip->lock.
     pub unsafe fn update(&mut self) {
         let bp: *mut Buf = Buf::read(self.dev, SB.iblock(self.inum));
-        let mut dip: *mut Dinode =
-            ((*bp).bufinner.data.as_mut_ptr() as *mut Dinode).add((self.inum as usize).wrapping_rem(IPB));
+        let mut dip: *mut Dinode = ((*bp).bufinner.data.as_mut_ptr() as *mut Dinode)
+            .add((self.inum as usize).wrapping_rem(IPB));
         (*dip).typ = self.typ;
         (*dip).major = self.major;
         (*dip).minor = self.minor;
@@ -186,7 +187,7 @@ impl Inode {
             ::core::mem::size_of::<[u32; 13]>(),
         );
         log_write(bp);
-        (*bp).release();
+        brelease(&mut *bp);
     }
 
     /// Increment reference count for ip.
@@ -218,7 +219,7 @@ impl Inode {
                 (*self).addrs.as_mut_ptr() as *mut libc::CVoid,
                 ::core::mem::size_of::<[u32; 13]>(),
             );
-            (*bp).release();
+            brelease(&mut *bp);
             (*self).valid = 1;
             if (*self).typ as i32 == 0 {
                 panic!("Inode::lock: no type");
@@ -306,7 +307,7 @@ impl Inode {
                 *a.offset(bn as isize) = addr;
                 log_write(bp);
             }
-            (*bp).release();
+            brelease(&mut *bp);
             return addr;
         }
         panic!("bmap: out of range");
@@ -332,7 +333,7 @@ impl Inode {
                     bfree((*self).dev as i32, *a.add(j));
                 }
             }
-            (*bp).release();
+            brelease(&mut *bp);
             bfree((*self).dev as i32, (*self).addrs[NDIRECT]);
             (*self).addrs[NDIRECT] = 0
         }
@@ -362,17 +363,18 @@ impl Inode {
                 user_dst,
                 dst,
                 (*bp)
-                    .bufinner.data
+                    .bufinner
+                    .data
                     .as_mut_ptr()
                     .offset(off.wrapping_rem(BSIZE as u32) as isize)
                     as *mut libc::CVoid,
                 m as usize,
             ) == -1
             {
-                (*bp).release();
+                brelease(&mut *bp);
                 break;
             } else {
-                (*bp).release();
+                brelease(&mut *bp);
                 tot = (tot as u32).wrapping_add(m) as u32 as u32;
                 off = (off as u32).wrapping_add(m) as u32 as u32;
                 dst = (dst as usize).wrapping_add(m as usize) as usize as usize
@@ -401,7 +403,8 @@ impl Inode {
             );
             if either_copyin(
                 (*bp)
-                    .bufinner.data
+                    .bufinner
+                    .data
                     .as_mut_ptr()
                     .offset(off.wrapping_rem(BSIZE as u32) as isize)
                     as *mut libc::CVoid,
@@ -410,11 +413,11 @@ impl Inode {
                 m as usize,
             ) == -1
             {
-                (*bp).release();
+                brelease(&mut *bp);
                 break;
             } else {
                 log_write(bp);
-                (*bp).release();
+                brelease(&mut *bp);
                 tot = (tot as u32).wrapping_add(m) as u32 as u32;
                 off = (off as u32).wrapping_add(m) as u32 as u32;
                 src = (src as usize).wrapping_add(m as usize) as usize as usize
@@ -438,8 +441,8 @@ impl Inode {
     pub unsafe fn alloc(dev: u32, typ: i16) -> *mut Inode {
         for inum in 1..SB.ninodes {
             let bp = Buf::read(dev, SB.iblock(inum));
-            let dip =
-                ((*bp).bufinner.data.as_mut_ptr() as *mut Dinode).add((inum as usize).wrapping_rem(IPB));
+            let dip = ((*bp).bufinner.data.as_mut_ptr() as *mut Dinode)
+                .add((inum as usize).wrapping_rem(IPB));
 
             // a free inode
             if (*dip).typ as i32 == 0 {
@@ -448,10 +451,10 @@ impl Inode {
 
                 // mark it allocated on the disk
                 log_write(bp);
-                (*bp).release();
+                brelease(&mut *bp);
                 return iget(dev, inum as u32);
             }
-            (*bp).release();
+            brelease(&mut *bp);
         }
         panic!("Inode::alloc: no inodes");
     }
@@ -508,7 +511,7 @@ impl Superblock {
             self as *mut Superblock as *mut libc::CVoid,
             ::core::mem::size_of::<Superblock>(),
         );
-        (*bp).release();
+        brelease(&mut *bp);
     }
 
     // TODO: transient measure
@@ -550,7 +553,7 @@ unsafe fn bzero(dev: i32, bno: i32) {
     let bp: *mut Buf = Buf::read(dev as u32, bno as u32);
     ptr::write_bytes((*bp).bufinner.data.as_mut_ptr(), 0, BSIZE);
     log_write(bp);
-    (*bp).release();
+    brelease(&mut *bp);
 }
 
 /// Blocks.
@@ -564,15 +567,16 @@ unsafe fn balloc(dev: u32) -> u32 {
             let m = (1) << (bi % 8);
             if (*bp).bufinner.data[(bi / 8) as usize] as i32 & m == 0 {
                 // Is block free?
-                (*bp).bufinner.data[(bi / 8) as usize] = ((*bp).bufinner.data[(bi / 8) as usize] as i32 | m) as u8; // Mark block in use.
+                (*bp).bufinner.data[(bi / 8) as usize] =
+                    ((*bp).bufinner.data[(bi / 8) as usize] as i32 | m) as u8; // Mark block in use.
                 log_write(bp);
-                (*bp).release();
+                brelease(&mut *bp);
                 bzero(dev as i32, (b + bi) as i32);
                 return b + bi;
             }
             bi += 1
         }
-        (*bp).release();
+        brelease(&mut *bp);
         b += BPB
     }
     panic!("balloc: out of blocks");
@@ -586,9 +590,10 @@ unsafe fn bfree(dev: i32, b: u32) {
     if (*bp).bufinner.data[(bi / 8) as usize] as i32 & m == 0 {
         panic!("freeing free block");
     }
-    (*bp).bufinner.data[(bi / 8) as usize] = ((*bp).bufinner.data[(bi / 8) as usize] as i32 & !m) as u8;
+    (*bp).bufinner.data[(bi / 8) as usize] =
+        ((*bp).bufinner.data[(bi / 8) as usize] as i32 & !m) as u8;
     log_write(bp);
-    (*bp).release();
+    brelease(&mut *bp);
 }
 
 pub unsafe fn iinit() {
