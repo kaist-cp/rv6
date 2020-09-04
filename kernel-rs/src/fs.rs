@@ -174,7 +174,7 @@ impl Inode {
     /// Caller must hold ip->lock.
     pub unsafe fn update(&mut self) {
         let bp: *mut Buf = Buf::read(self.dev, SB.iblock(self.inum));
-        let mut dip: *mut Dinode = ((*bp).bufinner.data.as_mut_ptr() as *mut Dinode)
+        let mut dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
             .add((self.inum as usize).wrapping_rem(IPB));
         (*dip).typ = self.typ;
         (*dip).major = self.major;
@@ -207,7 +207,7 @@ impl Inode {
         (*self).lock.acquire();
         if (*self).valid == 0 {
             let bp: *mut Buf = Buf::read((*self).dev, SB.iblock((*self).inum));
-            let dip: *mut Dinode = ((*bp).bufinner.data.as_mut_ptr() as *mut Dinode)
+            let dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
                 .add(((*self).inum as usize).wrapping_rem(IPB));
             (*self).typ = (*dip).typ;
             (*self).major = (*dip).major;
@@ -300,7 +300,7 @@ impl Inode {
                 (*self).addrs[NDIRECT] = addr
             }
             let bp: *mut Buf = Buf::read((*self).dev, addr);
-            let a: *mut u32 = (*bp).bufinner.data.as_mut_ptr() as *mut u32;
+            let a: *mut u32 = (*bp).inner.data.as_mut_ptr() as *mut u32;
             addr = *a.offset(bn as isize);
             if addr == 0 {
                 addr = balloc((*self).dev);
@@ -327,7 +327,7 @@ impl Inode {
         }
         if (*self).addrs[NDIRECT] != 0 {
             let bp = Buf::read((*self).dev, (*self).addrs[NDIRECT]);
-            let a = (*bp).bufinner.data.as_mut_ptr() as *mut u32;
+            let a = (*bp).inner.data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
                 if *a.add(j) != 0 {
                     bfree((*self).dev as i32, *a.add(j));
@@ -363,7 +363,7 @@ impl Inode {
                 user_dst,
                 dst,
                 (*bp)
-                    .bufinner
+                    .inner
                     .data
                     .as_mut_ptr()
                     .offset(off.wrapping_rem(BSIZE as u32) as isize)
@@ -403,7 +403,7 @@ impl Inode {
             );
             if either_copyin(
                 (*bp)
-                    .bufinner
+                    .inner
                     .data
                     .as_mut_ptr()
                     .offset(off.wrapping_rem(BSIZE as u32) as isize)
@@ -441,7 +441,7 @@ impl Inode {
     pub unsafe fn alloc(dev: u32, typ: i16) -> *mut Inode {
         for inum in 1..SB.ninodes {
             let bp = Buf::read(dev, SB.iblock(inum));
-            let dip = ((*bp).bufinner.data.as_mut_ptr() as *mut Dinode)
+            let dip = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
                 .add((inum as usize).wrapping_rem(IPB));
 
             // a free inode
@@ -507,7 +507,7 @@ impl Superblock {
     unsafe fn read(&mut self, dev: i32) {
         let bp: *mut Buf = Buf::read(dev as u32, 1);
         ptr::copy(
-            (*bp).bufinner.data.as_mut_ptr() as *const libc::CVoid,
+            (*bp).inner.data.as_mut_ptr() as *const libc::CVoid,
             self as *mut Superblock as *mut libc::CVoid,
             ::core::mem::size_of::<Superblock>(),
         );
@@ -551,7 +551,7 @@ pub unsafe fn fsinit(dev: i32) {
 /// Zero a block.
 unsafe fn bzero(dev: i32, bno: i32) {
     let bp: *mut Buf = Buf::read(dev as u32, bno as u32);
-    ptr::write_bytes((*bp).bufinner.data.as_mut_ptr(), 0, BSIZE);
+    ptr::write_bytes((*bp).inner.data.as_mut_ptr(), 0, BSIZE);
     log_write(bp);
     brelease(&mut *bp);
 }
@@ -565,10 +565,10 @@ unsafe fn balloc(dev: u32) -> u32 {
         let mut bp: *mut Buf = Buf::read(dev, SB.bblock(b));
         while bi < BPB && (b + bi) < SB.size {
             let m = (1) << (bi % 8);
-            if (*bp).bufinner.data[(bi / 8) as usize] as i32 & m == 0 {
+            if (*bp).inner.data[(bi / 8) as usize] as i32 & m == 0 {
                 // Is block free?
-                (*bp).bufinner.data[(bi / 8) as usize] =
-                    ((*bp).bufinner.data[(bi / 8) as usize] as i32 | m) as u8; // Mark block in use.
+                (*bp).inner.data[(bi / 8) as usize] =
+                    ((*bp).inner.data[(bi / 8) as usize] as i32 | m) as u8; // Mark block in use.
                 log_write(bp);
                 brelease(&mut *bp);
                 bzero(dev as i32, (b + bi) as i32);
@@ -587,11 +587,10 @@ unsafe fn bfree(dev: i32, b: u32) {
     let mut bp: *mut Buf = Buf::read(dev as u32, SB.bblock(b));
     let bi: i32 = b.wrapping_rem(BPB) as i32;
     let m: i32 = (1) << (bi % 8);
-    if (*bp).bufinner.data[(bi / 8) as usize] as i32 & m == 0 {
+    if (*bp).inner.data[(bi / 8) as usize] as i32 & m == 0 {
         panic!("freeing free block");
     }
-    (*bp).bufinner.data[(bi / 8) as usize] =
-        ((*bp).bufinner.data[(bi / 8) as usize] as i32 & !m) as u8;
+    (*bp).inner.data[(bi / 8) as usize] = ((*bp).inner.data[(bi / 8) as usize] as i32 & !m) as u8;
     log_write(bp);
     brelease(&mut *bp);
 }
