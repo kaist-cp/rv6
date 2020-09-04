@@ -5,8 +5,8 @@ use crate::{
     println,
     proc::{cpuid, exit, myproc, proc_yield, wakeup, Proc, Procstate},
     riscv::{
-        intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_sstatus,
-        r_stval, r_tp, w_sepc, w_sip, w_sstatus, w_stvec, PGSIZE, SSTATUS_SPIE, SSTATUS_SPP,
+        intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, Sstatus,
+        r_stval, r_tp, w_sepc, w_sip, w_stvec, PGSIZE, 
     },
     spinlock::RawSpinlock,
     syscall::syscall,
@@ -49,7 +49,7 @@ pub unsafe fn trapinithart() {
 pub unsafe extern "C" fn usertrap() {
     let mut which_dev: i32 = 0;
 
-    if r_sstatus() & SSTATUS_SPP != 0 {
+    if Sstatus::r_sstatus() & Sstatus::SPP != Sstatus::ZERO {
         panic!("usertrap: not from user mode");
     }
 
@@ -135,14 +135,14 @@ pub unsafe fn usertrapret() {
     // to get to user space.
 
     // set S Previous Privilege mode to User.
-    let mut x: usize = r_sstatus();
+    let mut x = Sstatus::r_sstatus();
 
     // clear SPP to 0 for user mode
-    x &= !SSTATUS_SPP;
+    x &= !Sstatus::SPP;
 
     // enable interrupts in user mode
-    x |= SSTATUS_SPIE;
-    w_sstatus(x);
+    x |= Sstatus::SPIE;
+    x.w_sstatus();
 
     // set S Exception Program Counter to the saved user pc.
     w_sepc((*(*p).tf).epc);
@@ -165,10 +165,10 @@ pub unsafe fn usertrapret() {
 #[no_mangle]
 pub unsafe fn kerneltrap() {
     let sepc: usize = r_sepc();
-    let sstatus: usize = r_sstatus();
+    let sstatus = Sstatus::r_sstatus();
     let scause: usize = r_scause();
 
-    if sstatus & SSTATUS_SPP == 0 {
+    if sstatus & Sstatus::SPP == Sstatus::ZERO {
         panic!("kerneltrap: not from supervisor mode");
     }
 
@@ -195,7 +195,7 @@ pub unsafe fn kerneltrap() {
     // the yield() may have caused some traps to occur,
     // so restore trap registers for use by kernelvec.S's sepc instruction.
     w_sepc(sepc);
-    w_sstatus(sstatus);
+    sstatus.w_sstatus();
 }
 
 pub unsafe fn clockintr() {
