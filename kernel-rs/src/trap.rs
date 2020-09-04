@@ -5,8 +5,8 @@ use crate::{
     println,
     proc::{cpuid, exit, myproc, proc_yield, wakeup, Proc, Procstate},
     riscv::{
-        intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, Sstatus,
-        r_stval, r_tp, w_sepc, w_sip, w_stvec, PGSIZE, 
+        intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp,
+        w_sepc, w_sip, w_stvec, Sstatus, PGSIZE,
     },
     spinlock::RawSpinlock,
     syscall::syscall,
