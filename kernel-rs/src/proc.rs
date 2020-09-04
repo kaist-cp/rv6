@@ -213,7 +213,7 @@ impl WaitChannel {
 
     /// Atomically release lock and sleep on chan.
     /// Reacquires lock when awakened.
-    pub unsafe fn sleep(self, lk: *mut RawSpinlock) {
+    pub unsafe fn sleep(&self, lk: *mut RawSpinlock) {
         let mut p: *mut Proc = myproc();
 
         // Must acquire p->lock in order to
@@ -236,7 +236,7 @@ impl WaitChannel {
         sched();
 
         // Tidy up.
-        (*p).chan = WaitChannel::new(ptr::null_mut());
+        (*p).chan = ptr::null();
 
         // Reacquire original lock.
         if lk != &mut (*p).lock as *mut RawSpinlock {
@@ -247,10 +247,10 @@ impl WaitChannel {
 
     /// Wake up all processes sleeping on chan.
     /// Must be called without any p->lock.
-    pub unsafe fn wakeup(self) {
+    pub unsafe fn wakeup(&self) {
         for p in &mut PROC[..] {
             p.lock.acquire();
-            if p.chan == self && p.state == Procstate::SLEEPING {
+            if !p.chan.is_null() && *p.chan == *self && p.state == Procstate::SLEEPING {
                 p.state = Procstate::RUNNABLE
             }
             p.lock.release();
@@ -271,7 +271,7 @@ pub struct Proc {
     parent: *mut Proc,
 
     /// If non-zero, sleeping on chan.
-    chan: WaitChannel,
+    chan: *const WaitChannel,
 
     /// If non-zero, have been killed.
     pub killed: i32,
@@ -362,7 +362,7 @@ impl Proc {
             lock: RawSpinlock::zeroed(),
             state: Procstate::UNUSED,
             parent: ptr::null_mut(),
-            chan: WaitChannel::new(ptr::null_mut()),
+            chan: ptr::null(),
             killed: 0,
             xstate: 0,
             pid: 0,
@@ -491,7 +491,7 @@ unsafe fn freeproc(mut p: *mut Proc) {
     (*p).pid = 0;
     (*p).parent = ptr::null_mut();
     (*p).name[0] = 0;
-    (*p).chan = WaitChannel::new(ptr::null_mut());
+    (*p).chan = ptr::null();
     (*p).killed = 0;
     (*p).xstate = 0;
     (*p).state = Procstate::UNUSED;
@@ -872,7 +872,10 @@ unsafe fn wakeup1(mut p: *mut Proc) {
     if !(*p).lock.holding() {
         panic!("wakeup1");
     }
-    if (*p).chan == WaitChannel::new(p as *mut _) && (*p).state == Procstate::SLEEPING {
+    if !(*p).chan.is_null()
+        && *(*p).chan == WaitChannel::new(p as *mut _)
+        && (*p).state == Procstate::SLEEPING
+    {
         (*p).state = Procstate::RUNNABLE
     }
 }
