@@ -3,7 +3,6 @@
 /// qemu presents a "legacy" virtio interface.
 ///
 /// qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
-use crate::libc;
 use crate::{
     buf::Buf,
     fs::BSIZE,
@@ -311,8 +310,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
     let mut desc = loop {
         match DISK.desc.alloc_three_sectors() {
             Some(idx) => break idx,
-            None => Wchan::new(DISK.desc.free.as_mut_ptr() as *mut libc::CVoid)
-                .sleep(&mut DISK.vdisk_lock),
+            None => Wchan::new(DISK.desc.free.as_mut_ptr() as *mut _).sleep(&mut DISK.vdisk_lock),
         }
     };
 
@@ -365,7 +363,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
 
     // Wait for virtio_disk_intr() to say request has finished.
     while (*b).inner.disk {
-        Wchan::new(b as *mut libc::CVoid).sleep(&mut DISK.vdisk_lock);
+        Wchan::new(b as *mut _).sleep(&mut DISK.vdisk_lock);
     }
     DISK.info[desc[0].idx].b = ptr::null_mut();
     IntoIter::new(desc).for_each(|desc| DISK.desc.free(desc));
@@ -384,7 +382,7 @@ pub unsafe fn virtio_disk_intr() {
         (*DISK.info[id].b).inner.disk = false;
 
         // Disk is done with Buf.
-        Wchan::new(DISK.info[id].b as *mut libc::CVoid).wakeup();
+        Wchan::new(DISK.info[id].b as *mut _).wakeup();
 
         DISK.used_idx = (DISK.used_idx.wrapping_add(1)).wrapping_rem(NUM as _)
     }

@@ -33,10 +33,10 @@ impl Pipe {
         (*self).lock.acquire();
         if writable != 0 {
             (*self).writeopen = 0;
-            Wchan::new(&mut (*self).nread as *mut u32 as *mut libc::CVoid).wakeup();
+            Wchan::new(&mut (*self).nread as *mut u32 as *mut _).wakeup();
         } else {
             (*self).readopen = 0;
-            Wchan::new(&mut (*self).nwrite as *mut u32 as *mut libc::CVoid).wakeup();
+            Wchan::new(&mut (*self).nwrite as *mut u32 as *mut _).wakeup();
         }
         if (*self).readopen == 0 && (*self).writeopen == 0 {
             (*self).lock.release();
@@ -57,9 +57,8 @@ impl Pipe {
                     (*self).lock.release();
                     return -1;
                 }
-                Wchan::new(&mut (*self).nread as *mut u32 as *mut libc::CVoid).wakeup();
-                Wchan::new(&mut (*self).nwrite as *mut u32 as *mut libc::CVoid)
-                    .sleep(&mut (*self).lock);
+                Wchan::new(&mut (*self).nread as *mut u32 as *mut _).wakeup();
+                Wchan::new(&mut (*self).nwrite as *mut u32 as *mut _).sleep(&mut (*self).lock);
             }
             if copyin(
                 (*proc).pagetable,
@@ -75,7 +74,7 @@ impl Pipe {
             (*self).data[(fresh0 as usize).wrapping_rem(PIPESIZE)] = ch;
             i += 1
         }
-        Wchan::new(&mut (*self).nread as *mut u32 as *mut libc::CVoid).wakeup();
+        Wchan::new(&mut (*self).nread as *mut u32 as *mut _).wakeup();
         (*self).lock.release();
         n
     }
@@ -93,7 +92,7 @@ impl Pipe {
             }
 
             //DOC: piperead-sleep
-            Wchan::new(&mut (*self).nread as *mut u32 as *mut libc::CVoid).sleep(&mut (*self).lock);
+            Wchan::new(&mut (*self).nread as *mut u32 as *mut _).sleep(&mut (*self).lock);
         }
 
         //DOC: piperead-copy
@@ -117,7 +116,7 @@ impl Pipe {
         }
 
         //DOC: piperead-wakeup
-        Wchan::new(&mut (*self).nwrite as *mut u32 as *mut libc::CVoid).wakeup();
+        Wchan::new(&mut (*self).nwrite as *mut u32 as *mut _).wakeup();
         (*self).lock.release();
         i
     }

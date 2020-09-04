@@ -203,11 +203,11 @@ pub enum Procstate {
 
 #[derive(PartialEq)]
 pub struct Wchan {
-    addr: *mut libc::CVoid,
+    addr: *mut usize,
 }
 
 impl Wchan {
-    pub const fn new(addr: *mut libc::CVoid) -> Self {
+    pub const fn new(addr: *mut usize) -> Self {
         Self { addr }
     }
 
@@ -774,7 +774,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
 
         // Wait for a child to exit.
         //DOC: wait-sleep
-        Wchan::new(p as *mut libc::CVoid).sleep(&mut (*p).lock);
+        Wchan::new(p as *mut _).sleep(&mut (*p).lock);
     }
 }
 
@@ -872,7 +872,7 @@ unsafe fn wakeup1(mut p: *mut Proc) {
     if !(*p).lock.holding() {
         panic!("wakeup1");
     }
-    if (*p).chan == Wchan::new(p as *mut libc::CVoid) && (*p).state == Procstate::SLEEPING {
+    if (*p).chan == Wchan::new(p as *mut _) && (*p).state == Procstate::SLEEPING {
         (*p).state = Procstate::RUNNABLE
     }
 }
