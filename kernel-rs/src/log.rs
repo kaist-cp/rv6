@@ -96,8 +96,8 @@ unsafe fn install_trans() {
 
         // Copy block to dst.
         ptr::copy(
-            (*lbuf).data.as_mut_ptr() as *const libc::CVoid,
-            (*dbuf).data.as_mut_ptr() as *mut libc::CVoid,
+            (*lbuf).bufinner.data.as_mut_ptr() as *const libc::CVoid,
+            (*dbuf).bufinner.data.as_mut_ptr() as *mut libc::CVoid,
             BSIZE,
         );
 
@@ -112,7 +112,7 @@ unsafe fn install_trans() {
 /// Read the log header from disk into the in-memory log header.
 unsafe fn read_head() {
     let buf: *mut Buf = Buf::read(LOG.dev as u32, LOG.start as u32);
-    let lh: *mut LogHeader = (*buf).data.as_mut_ptr() as *mut LogHeader;
+    let lh: *mut LogHeader = (*buf).bufinner.data.as_mut_ptr() as *mut LogHeader;
     LOG.lh.n = (*lh).n;
     for i in 0..LOG.lh.n {
         LOG.lh.block[i as usize] = (*lh).block[i as usize];
@@ -125,7 +125,7 @@ unsafe fn read_head() {
 /// current transaction commits.
 unsafe fn write_head() {
     let buf: *mut Buf = Buf::read(LOG.dev as u32, LOG.start as u32);
-    let mut hb: *mut LogHeader = (*buf).data.as_mut_ptr() as *mut LogHeader;
+    let mut hb: *mut LogHeader = (*buf).bufinner.data.as_mut_ptr() as *mut LogHeader;
     (*hb).n = LOG.lh.n;
     for i in 0..LOG.lh.n {
         (*hb).block[i as usize] = LOG.lh.block[i as usize];
@@ -202,8 +202,8 @@ unsafe fn write_log() {
         let from: *mut Buf = Buf::read(LOG.dev as u32, LOG.lh.block[tail as usize] as u32);
 
         ptr::copy(
-            (*from).data.as_mut_ptr() as *const libc::CVoid,
-            (*to).data.as_mut_ptr() as *mut libc::CVoid,
+            (*from).bufinner.data.as_mut_ptr() as *const libc::CVoid,
+            (*to).bufinner.data.as_mut_ptr() as *mut libc::CVoid,
             BSIZE,
         );
 

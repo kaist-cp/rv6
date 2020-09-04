@@ -6,8 +6,6 @@ pub struct Buf {
     /// Has data been read from disk?
     pub valid: bool,
 
-    /// Does disk "own" buf?
-    pub disk: bool,
     pub dev: u32,
     pub blockno: u32,
     pub lock: Sleeplock,
@@ -17,14 +15,28 @@ pub struct Buf {
     pub prev: *mut Buf,
     pub next: *mut Buf,
 
+    pub bufinner: BufInner,
+}
+
+pub struct BufInner {
+    /// Does disk "own" buf?
+    pub disk: bool,
     pub data: [u8; BSIZE],
+}
+
+impl BufInner {
+    pub const fn zeroed() -> Self {
+        Self {
+            disk: false,
+            data: [0; BSIZE],
+        }
+    }
 }
 
 impl Buf {
     pub const fn zeroed() -> Self {
         Self {
             valid: false,
-            disk: false,
             dev: 0,
             blockno: 0,
             lock: Sleeplock::zeroed(),
@@ -33,7 +45,7 @@ impl Buf {
             prev: ptr::null_mut(),
             next: ptr::null_mut(),
 
-            data: [0; BSIZE],
+            bufinner: BufInner::zeroed(),
         }
     }
 
