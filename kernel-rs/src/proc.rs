@@ -774,7 +774,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
 
         // Wait for a child to exit.
         //DOC: wait-sleep
-        sleep(Wchan::new(p as *mut libc::CVoid), &mut (*p).lock);
+        Wchan::new(p as *mut libc::CVoid).sleep(&mut (*p).lock);
     }
 }
 
@@ -864,52 +864,6 @@ unsafe fn forkret() {
         fsinit(ROOTDEV);
     }
     usertrapret();
-}
-
-/// Atomically release lock and sleep on chan.
-/// Reacquires lock when awakened.
-pub unsafe fn sleep(chan: Wchan, lk: *mut RawSpinlock) {
-    let mut p: *mut Proc = myproc();
-
-    // Must acquire p->lock in order to
-    // change p->state and then call sched.
-    // Once we hold p->lock, we can be
-    // guaranteed that we won't miss any wakeup
-    // (wakeup locks p->lock),
-    // so it's okay to release lk.
-
-    //DOC: sleeplock0
-    if lk != &mut (*p).lock as *mut RawSpinlock {
-        //DOC: sleeplock1
-        (*p).lock.acquire();
-        (*lk).release();
-    }
-
-    // Go to sleep.
-    (*p).chan = chan;
-    (*p).state = Procstate::SLEEPING;
-    sched();
-
-    // Tidy up.
-    (*p).chan = Wchan::new(ptr::null_mut());
-
-    // Reacquire original lock.
-    if lk != &mut (*p).lock as *mut RawSpinlock {
-        (*p).lock.release();
-        (*lk).acquire();
-    };
-}
-
-/// Wake up all processes sleeping on chan.
-/// Must be called without any p->lock.
-pub unsafe fn wakeup(chan: Wchan) {
-    for p in &mut PROC[..] {
-        p.lock.acquire();
-        if p.chan == chan && p.state == Procstate::SLEEPING {
-            p.state = Procstate::RUNNABLE
-        }
-        p.lock.release();
-    }
 }
 
 /// Wake up p if it is sleeping in wait(); used by exit().
