@@ -1,5 +1,5 @@
 use crate::{
-    libc, ok_or,
+    ok_or,
     proc::{exit, fork, kill, myproc, resizeproc, wait, Wchan},
     syscall::{argaddr, argint},
     trap::{TICKS, TICKSLOCK},
@@ -43,7 +43,7 @@ pub unsafe fn sys_sleep() -> usize {
             TICKSLOCK.release();
             return usize::MAX;
         }
-        Wchan::new(&mut TICKS as *mut u32 as *mut libc::CVoid).sleep(&mut TICKSLOCK);
+        Wchan::new(&mut TICKS as *mut u32 as *mut _).sleep(&mut TICKSLOCK);
     }
     TICKSLOCK.release();
     0
