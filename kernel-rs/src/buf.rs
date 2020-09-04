@@ -12,7 +12,7 @@ pub struct Buf {
     pub prev: *mut Buf,
     pub next: *mut Buf,
 
-    pub bufinner: BufInner,
+    pub inner: BufInner,
 }
 
 impl Buf {
@@ -26,7 +26,7 @@ impl Buf {
             prev: ptr::null_mut(),
             next: ptr::null_mut(),
 
-            bufinner: BufInner::zeroed(),
+            inner: BufInner::zeroed(),
         }
     }
 
@@ -41,9 +41,9 @@ impl Buf {
     /// Return a locked buf with the contents of the indicated block.
     pub unsafe fn read(dev: u32, blockno: u32) -> *mut Self {
         let b: *mut Self = bget(dev, blockno);
-        if !(*b).bufinner.valid {
+        if !(*b).inner.valid {
             virtio_disk_rw(b, false);
-            (*b).bufinner.valid = true
+            (*b).inner.valid = true
         }
         b
     }

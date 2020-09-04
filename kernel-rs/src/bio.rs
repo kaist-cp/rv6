@@ -66,7 +66,7 @@ impl Bcache {
             if (*b).refcnt == 0 {
                 (*b).dev = dev;
                 (*b).blockno = blockno;
-                (*b).bufinner.valid = false;
+                (*b).inner.valid = false;
                 (*b).refcnt = 1;
                 return b;
             }
