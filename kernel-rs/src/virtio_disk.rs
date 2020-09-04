@@ -1,5 +1,5 @@
-/// driver for qemu's virtio disk device.
-/// uses qemu's mmio interface to virtio.
+/// Driver for qemu's virtio disk device.
+/// Uses qemu's mmio interface to virtio.
 /// qemu presents a "legacy" virtio interface.
 ///
 /// qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
@@ -48,7 +48,7 @@ struct Disk {
 
     used_idx: u16,
 
-    /// track info about in-flight operations,
+    /// Track info about in-flight operations,
     /// for use when completion interrupt arrives.
     /// indexed by first descriptor index of chain.
     info: [InflightInfo; NUM],
@@ -59,7 +59,7 @@ struct Disk {
 struct DescriptorPool {
     desc: *mut [VRingDesc; NUM],
 
-    /// our own book-keeping.
+    /// Our own book-keeping.
     free: [bool; NUM], // TODO : Disk can be implemented using bitmap
 }
 
@@ -74,13 +74,13 @@ struct Descriptor {
     ptr: *mut VRingDesc,
 }
 
-// It needs repr(C) because it's read by device
+// It needs repr(C) because it's read by device.
 // https://docs.oasis-open.org/virtio/virtio/v1.1/csprd01/virtio-v1.1-csprd01.html#x1-380006
 #[repr(C)]
 struct AvailableRing {
     flags: u16,
 
-    /// tells the device how far to look in `ring`.
+    /// Tells the device how far to look in `ring`.
     idx: u16,
 
     /// `desc` indices the device should process.
@@ -162,7 +162,7 @@ impl DescriptorPool {
         }
     }
 
-    /// find a free descriptor, mark it non-free, return its index.
+    /// Find a free descriptor, mark it non-free, return its index.
     fn alloc(&mut self) -> Option<Descriptor> {
         for (idx, free) in self.free.iter_mut().enumerate() {
             if *free {
@@ -192,7 +192,7 @@ impl DescriptorPool {
         Some(descs.into_inner().unwrap())
     }
 
-    /// mark a descriptor as free.
+    /// Mark a descriptor as free.
     fn free(&mut self, desc: Descriptor) {
         let Descriptor { idx, ptr } = desc;
         unsafe {
@@ -250,7 +250,7 @@ pub unsafe fn virtio_disk_init() {
     status.insert(VirtIOStatus::DRIVER);
     MmioRegs::Status.write(status.bits());
 
-    // negotiate features
+    // Negotiate features
     let mut features = VirtIOFeatures::from_bits_unchecked(MmioRegs::DeviceFeatures.read());
 
     features.remove(
@@ -265,16 +265,16 @@ pub unsafe fn virtio_disk_init() {
 
     MmioRegs::DriverFeatures.write(features.bits());
 
-    // tell device that feature negotiation is complete.
+    // Tell device that feature negotiation is complete.
     status.insert(VirtIOStatus::FEATURES_OK);
     MmioRegs::Status.write(status.bits());
 
-    // tell device we're completely ready.
+    // Tell device we're completely ready.
     status.insert(VirtIOStatus::DRIVER_OK);
     MmioRegs::Status.write(status.bits());
     MmioRegs::GuestPageSize.write(PGSIZE as _);
 
-    // initialize queue 0.
+    // Initialize queue 0.
     MmioRegs::QueueSel.write(0);
     let max = MmioRegs::QueueNumMax.read();
     if max == 0 {
@@ -303,11 +303,11 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
 
     DISK.vdisk_lock.acquire();
 
-    // the spec says that legacy block operations use three
+    // The spec says that legacy block operations use three
     // descriptors: one for type/reserved/sector, one for
     // the data, one for a 1-byte status result.
 
-    // allocate the three descriptors.
+    // Allocate the three descriptors.
     let mut desc = loop {
         match DISK.desc.alloc_three_sectors() {
             Some(idx) => break idx,
@@ -318,7 +318,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
         }
     };
 
-    // format the three descriptors.
+    // Format the three descriptors.
     // qemu's virtio-blk.c reads them.
     let mut buf0 = VirtIOBlockOutHeader::new(write, sector);
 
@@ -331,7 +331,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
         next: desc[1].idx as _,
     };
 
-    // device reads/writes b->data
+    // Device reads/writes b->data
     *desc[1] = VRingDesc {
         addr: (*b).data.as_mut_ptr() as _,
         len: BSIZE as _,
@@ -345,7 +345,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
 
     DISK.info[desc[0].idx].status = false;
 
-    // device writes the status
+    // Device writes the status
     *desc[2] = VRingDesc {
         addr: &mut DISK.info[desc[0].idx].status as *mut _ as _,
         len: 1,
@@ -353,16 +353,16 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
         next: 0,
     };
 
-    // record struct Buf for virtio_disk_intr().
+    // Record struct Buf for virtio_disk_intr().
     (*b).disk = true;
     DISK.info[desc[0].idx].b = b;
 
-    // we only tell device the first index in our chain of descriptors.
+    // We only tell device the first index in our chain of descriptors.
     (*DISK.avail).ring[(*DISK.avail).idx as usize % NUM] = desc[0].idx as _;
     fence(Ordering::SeqCst);
     (*DISK.avail).idx += 1;
 
-    // value is queue number
+    // Value is queue number.
     MmioRegs::QueueNotify.write(0);
 
     // Wait for virtio_disk_intr() to say request has finished.
@@ -385,7 +385,7 @@ pub unsafe fn virtio_disk_intr() {
         }
         (*DISK.info[id].b).disk = false;
 
-        // disk is done with Buf
+        // Disk is done with Buf.
         wakeup(DISK.info[id].b as *mut libc::CVoid);
 
         DISK.used_idx = (DISK.used_idx.wrapping_add(1)).wrapping_rem(NUM as _)

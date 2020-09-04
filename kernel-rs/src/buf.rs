@@ -1,7 +1,4 @@
-use crate::bio::BCACHE;
-use crate::fs::BSIZE;
-use crate::sleeplock::Sleeplock;
-use crate::virtio_disk::virtio_disk_rw;
+use crate::{bio::BCACHE, fs::BSIZE, sleeplock::Sleeplock, virtio_disk::virtio_disk_rw};
 
 use core::ptr;
 
@@ -82,7 +79,7 @@ impl Buf {
     /// Look through buffer cache for block on device dev.
     /// If not found, allocate a buffer.
     /// In either case, return locked buffer.
-    unsafe fn bget(dev: u32, blockno: u32) -> *mut Self {
+    unsafe fn get(dev: u32, blockno: u32) -> *mut Self {
         let mut bcache = BCACHE.lock();
 
         // Is the block already cached?
@@ -111,11 +108,11 @@ impl Buf {
             }
             b = (*b).prev
         }
-        panic!("bget: no buffers");
+        panic!("get: no buffers");
     }
     /// Return a locked buf with the contents of the indicated block.
-    pub unsafe fn bread(dev: u32, blockno: u32) -> *mut Self {
-        let b: *mut Self = Buf::bget(dev, blockno);
+    pub unsafe fn read(dev: u32, blockno: u32) -> *mut Self {
+        let b: *mut Self = Buf::get(dev, blockno);
         if !(*b).valid {
             virtio_disk_rw(b, false);
             (*b).valid = true
