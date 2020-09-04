@@ -1,5 +1,5 @@
 //! Sleeping locks
-use crate::proc::{myproc, Wchan};
+use crate::proc::{myproc, WaitChannel};
 use crate::spinlock::{RawSpinlock, Spinlock};
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
@@ -35,7 +35,7 @@ impl<T> SleeplockWIP<T> {
 
         let mut guard = self.spinlock.lock();
         while *guard != -1 {
-            Wchan::new(chan as *mut _).sleep(guard.raw() as *mut RawSpinlock);
+            WaitChannel::new(chan as *mut _).sleep(guard.raw() as *mut RawSpinlock);
         }
         *guard = (*myproc()).pid;
         drop(guard);
@@ -57,7 +57,7 @@ impl<T> Drop for SleepLockGuard<'_, T> {
         let mut guard = self.lock.spinlock.lock();
         *guard = -1;
         unsafe {
-            Wchan::new(self.raw() as *mut SleeplockWIP<T> as *mut _).wakeup();
+            WaitChannel::new(self.raw() as *mut SleeplockWIP<T> as *mut _).wakeup();
         }
         drop(guard);
     }
@@ -125,7 +125,7 @@ impl Sleeplock {
     pub unsafe fn acquire(&mut self) {
         (*self).lk.acquire();
         while (*self).locked != 0 {
-            Wchan::new(self as *mut Sleeplock as *mut _).sleep(&mut (*self).lk);
+            WaitChannel::new(self as *mut Sleeplock as *mut _).sleep(&mut (*self).lk);
         }
         (*self).locked = 1;
         (*self).pid = (*myproc()).pid;
@@ -136,7 +136,7 @@ impl Sleeplock {
         (*self).lk.acquire();
         (*self).locked = 0;
         (*self).pid = 0;
-        Wchan::new(self as *mut Sleeplock as *mut _).wakeup();
+        WaitChannel::new(self as *mut Sleeplock as *mut _).wakeup();
         (*self).lk.release();
     }
 

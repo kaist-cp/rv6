@@ -202,11 +202,11 @@ pub enum Procstate {
 }
 
 #[derive(PartialEq)]
-pub struct Wchan {
+pub struct WaitChannel {
     addr: *mut usize,
 }
 
-impl Wchan {
+impl WaitChannel {
     pub const fn new(addr: *mut usize) -> Self {
         Self { addr }
     }
@@ -236,7 +236,7 @@ impl Wchan {
         sched();
 
         // Tidy up.
-        (*p).chan = Wchan::new(ptr::null_mut());
+        (*p).chan = WaitChannel::new(ptr::null_mut());
 
         // Reacquire original lock.
         if lk != &mut (*p).lock as *mut RawSpinlock {
@@ -271,7 +271,7 @@ pub struct Proc {
     parent: *mut Proc,
 
     /// If non-zero, sleeping on chan.
-    chan: Wchan,
+    chan: WaitChannel,
 
     /// If non-zero, have been killed.
     pub killed: i32,
@@ -362,7 +362,7 @@ impl Proc {
             lock: RawSpinlock::zeroed(),
             state: Procstate::UNUSED,
             parent: ptr::null_mut(),
-            chan: Wchan::new(ptr::null_mut()),
+            chan: WaitChannel::new(ptr::null_mut()),
             killed: 0,
             xstate: 0,
             pid: 0,
@@ -491,7 +491,7 @@ unsafe fn freeproc(mut p: *mut Proc) {
     (*p).pid = 0;
     (*p).parent = ptr::null_mut();
     (*p).name[0] = 0;
-    (*p).chan = Wchan::new(ptr::null_mut());
+    (*p).chan = WaitChannel::new(ptr::null_mut());
     (*p).killed = 0;
     (*p).xstate = 0;
     (*p).state = Procstate::UNUSED;
@@ -774,7 +774,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
 
         // Wait for a child to exit.
         //DOC: wait-sleep
-        Wchan::new(p as *mut _).sleep(&mut (*p).lock);
+        WaitChannel::new(p as *mut _).sleep(&mut (*p).lock);
     }
 }
 
@@ -872,7 +872,7 @@ unsafe fn wakeup1(mut p: *mut Proc) {
     if !(*p).lock.holding() {
         panic!("wakeup1");
     }
-    if (*p).chan == Wchan::new(p as *mut _) && (*p).state == Procstate::SLEEPING {
+    if (*p).chan == WaitChannel::new(p as *mut _) && (*p).state == Procstate::SLEEPING {
         (*p).state = Procstate::RUNNABLE
     }
 }
