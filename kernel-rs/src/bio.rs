@@ -5,7 +5,7 @@
 //! synchronization point for disk blocks used by multiple processes.
 //!
 //! Interface:
-//! * To get a buffer for a particular disk block, call bread.
+//! * To get a buffer for a particular disk block, call read.
 //! * After changing buffer data, call bwrite to write it to disk.
 //! * When done with the buffer, call release.
 //! * Do not use the buffer after calling release.
@@ -36,9 +36,9 @@ impl Bcache {
         self.head.prev = &mut self.head;
         self.head.next = &mut self.head;
         for b in &mut self.buf[..] {
-            (*b).next = self.head.next;
-            (*b).prev = &mut self.head;
-            (*b).lock.initlock("buffer");
+            b.next = self.head.next;
+            b.prev = &mut self.head;
+            b.lock.initlock("buffer");
             unsafe {
                 (*self.head.next).prev = b;
             }

@@ -35,10 +35,10 @@ struct Log {
     start: i32,
     size: i32,
 
-    /// how many FS sys calls are executing.
+    /// How many FS sys calls are executing?
     outstanding: i32,
 
-    /// in commit(), please wait.
+    /// In commit(), please wait.
     committing: i32,
     dev: i32,
     lh: LogHeader,
@@ -85,23 +85,23 @@ impl Superblock {
     }
 }
 
-/// Copy committed blocks from log to their home location
+/// Copy committed blocks from log to their home location.
 unsafe fn install_trans() {
     for tail in 0..LOG.lh.n {
-        // read log block
-        let lbuf: *mut Buf = Buf::bread(LOG.dev as u32, (LOG.start + tail + 1) as u32);
+        // Read log block.
+        let lbuf: *mut Buf = Buf::read(LOG.dev as u32, (LOG.start + tail + 1) as u32);
 
-        // read dst
-        let dbuf: *mut Buf = Buf::bread(LOG.dev as u32, LOG.lh.block[tail as usize] as u32);
+        // Read dst.
+        let dbuf: *mut Buf = Buf::read(LOG.dev as u32, LOG.lh.block[tail as usize] as u32);
 
-        // copy block to dst
+        // Copy block to dst.
         ptr::copy(
             (*lbuf).data.as_mut_ptr() as *const libc::CVoid,
             (*dbuf).data.as_mut_ptr() as *mut libc::CVoid,
             BSIZE,
         );
 
-        // write dst to disk
+        // Write dst to disk.
         (*dbuf).write();
         (*dbuf).unpin();
         (*lbuf).release();
@@ -109,9 +109,9 @@ unsafe fn install_trans() {
     }
 }
 
-/// Read the log header from disk into the in-memory log header
+/// Read the log header from disk into the in-memory log header.
 unsafe fn read_head() {
-    let buf: *mut Buf = Buf::bread(LOG.dev as u32, LOG.start as u32);
+    let buf: *mut Buf = Buf::read(LOG.dev as u32, LOG.start as u32);
     let lh: *mut LogHeader = (*buf).data.as_mut_ptr() as *mut LogHeader;
     LOG.lh.n = (*lh).n;
     for i in 0..LOG.lh.n {
@@ -124,7 +124,7 @@ unsafe fn read_head() {
 /// This is the true point at which the
 /// current transaction commits.
 unsafe fn write_head() {
-    let buf: *mut Buf = Buf::bread(LOG.dev as u32, LOG.start as u32);
+    let buf: *mut Buf = Buf::read(LOG.dev as u32, LOG.start as u32);
     let mut hb: *mut LogHeader = (*buf).data.as_mut_ptr() as *mut LogHeader;
     (*hb).n = LOG.lh.n;
     for i in 0..LOG.lh.n {
@@ -137,20 +137,20 @@ unsafe fn write_head() {
 unsafe fn recover_from_log() {
     read_head();
 
-    // if committed, copy from log to disk
+    // If committed, copy from log to disk.
     install_trans();
     LOG.lh.n = 0;
 
-    // clear the log
+    // Clear the log.
     write_head();
 }
 
-/// called at the start of each FS system call.
+/// Called at the start of each FS system call.
 pub unsafe fn begin_op() {
     LOG.lock.acquire();
     loop {
         if LOG.committing != 0 ||
-            // this op might exhaust log space; wait for commit.
+            // This op might exhaust log space; wait for commit.
             LOG.lh.n + (LOG.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
         {
             sleep(&mut LOG as *mut Log as *mut libc::CVoid, &mut LOG.lock);
@@ -162,8 +162,8 @@ pub unsafe fn begin_op() {
     }
 }
 
-/// called at the end of each FS system call.
-/// commits if this was the last outstanding operation.
+/// Called at the end of each FS system call.
+/// Commits if this was the last outstanding operation.
 pub unsafe fn end_op() {
     let mut do_commit: i32 = 0;
     LOG.lock.acquire();
@@ -182,7 +182,7 @@ pub unsafe fn end_op() {
     }
     LOG.lock.release();
     if do_commit != 0 {
-        // call commit w/o holding locks, since not allowed
+        // Call commit w/o holding locks, since not allowed
         // to sleep with locks.
         commit();
         LOG.lock.acquire();
@@ -195,11 +195,11 @@ pub unsafe fn end_op() {
 /// Copy modified blocks from cache to LOG.
 unsafe fn write_log() {
     for tail in 0..LOG.lh.n {
-        // log block
-        let to: *mut Buf = Buf::bread(LOG.dev as u32, (LOG.start + tail + 1) as u32);
+        // Log block.
+        let to: *mut Buf = Buf::read(LOG.dev as u32, (LOG.start + tail + 1) as u32);
 
-        // cache block
-        let from: *mut Buf = Buf::bread(LOG.dev as u32, LOG.lh.block[tail as usize] as u32);
+        // Cache block.
+        let from: *mut Buf = Buf::read(LOG.dev as u32, LOG.lh.block[tail as usize] as u32);
 
         ptr::copy(
             (*from).data.as_mut_ptr() as *const libc::CVoid,
@@ -207,7 +207,7 @@ unsafe fn write_log() {
             BSIZE,
         );
 
-        // write the log
+        // Write the log.
         (*to).write();
         (*from).release();
         (*to).release();
@@ -216,17 +216,17 @@ unsafe fn write_log() {
 
 unsafe fn commit() {
     if LOG.lh.n > 0 {
-        // Write modified blocks from cache to LOG
+        // Write modified blocks from cache to LOG.
         write_log();
 
-        // Write header to disk -- the real commit
+        // Write header to disk -- the real commit.
         write_head();
 
-        // Now install writes to home locations
+        // Now install writes to home locations.
         install_trans();
         LOG.lh.n = 0;
 
-        // Erase the transaction from the LOG
+        // Erase the transaction from the LOG.
         write_head();
     };
 }
@@ -236,7 +236,7 @@ unsafe fn commit() {
 /// commit()/write_log() will do the disk write.
 ///
 /// log_write() replaces write(); a typical use is:
-///   bp = Buf::bread(...)
+///   bp = Buf::read(...)
 ///   modify bp->data[]
 ///   log_write(bp)
 ///   (*bp).release()
@@ -250,7 +250,7 @@ pub unsafe fn log_write(b: *mut Buf) {
     LOG.lock.acquire();
     let mut absorbed = false;
     for i in 0..LOG.lh.n {
-        // log absorbtion
+        // Log absorbtion.
         if LOG.lh.block[i as usize] as u32 == (*b).blockno {
             LOG.lh.block[i as usize] = (*b).blockno as i32;
             absorbed = true;
