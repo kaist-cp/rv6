@@ -202,13 +202,11 @@ pub enum Procstate {
 }
 
 #[derive(PartialEq)]
-pub struct WaitChannel {
-    addr: *mut usize,
-}
+pub struct WaitChannel {}
 
 impl WaitChannel {
-    pub const fn new(addr: *mut usize) -> Self {
-        Self { addr }
+    pub const fn new() -> Self {
+        Self { }
     }
 
     /// Atomically release lock and sleep on chan.
@@ -777,7 +775,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
 
         // Wait for a child to exit.
         //DOC: wait-sleep
-        WaitChannel::new(p as *mut _).sleep(&mut (*p).lock);
+        WaitChannel::new().sleep(&mut (*p).lock);
     }
 }
 
@@ -876,7 +874,7 @@ unsafe fn wakeup1(mut p: *mut Proc) {
         panic!("wakeup1");
     }
     if !(*p).chan.is_null()
-        && *(*p).chan == WaitChannel::new(p as *mut _)
+        && *(*p).chan == WaitChannel::new()
         && (*p).state == Procstate::SLEEPING
     {
         (*p).state = Procstate::RUNNABLE

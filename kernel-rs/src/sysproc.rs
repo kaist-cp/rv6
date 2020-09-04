@@ -43,7 +43,7 @@ pub unsafe fn sys_sleep() -> usize {
             TICKSLOCK.release();
             return usize::MAX;
         }
-        WaitChannel::new(&mut TICKS as *mut u32 as *mut _).sleep(&mut TICKSLOCK);
+        WaitChannel::new().sleep(&mut TICKSLOCK);
     }
     TICKSLOCK.release();
     0
