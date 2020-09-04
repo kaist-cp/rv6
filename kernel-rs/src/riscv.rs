@@ -1,3 +1,5 @@
+use core::ops::{BitAnd, BitOr, Not};
+
 /// which hart (core) is this?
 #[inline]
 pub unsafe fn r_mhartid() -> usize {
@@ -276,14 +278,14 @@ pub unsafe fn r_time() -> u64 {
 /// enable device interrupts
 #[inline]
 pub unsafe fn intr_on() {
-    (SIE::r_sie() | SIE::SEIE | SIE::STIE | SIE::SSIE).w_sie();
-    (Sstatus::read() | Sstatus::SIE).write();
+    SIE::r_sie().bitor(SIE::SEIE).bitor(SIE::STIE).bitor(SIE::SSIE).w_sie();
+    Sstatus::read().bitor(Sstatus::SIE).write();
 }
 
 /// disable device interrupts
 #[inline]
 pub unsafe fn intr_off() {
-    (Sstatus::read() & !Sstatus::SIE).write();
+    Sstatus::read().bitand(Sstatus::SIE.not()).write();
 }
 
 /// are device interrupts enabled?
