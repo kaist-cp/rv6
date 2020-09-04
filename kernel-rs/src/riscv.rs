@@ -1,6 +1,6 @@
 use core::ops::{BitAnd, BitOr, Not};
 
-/// which hart (core) is this?
+/// Which hart (core) is this?
 #[inline]
 pub unsafe fn r_mhartid() -> usize {
     let mut x: usize;
@@ -9,14 +9,14 @@ pub unsafe fn r_mhartid() -> usize {
 }
 
 bitflags! {
-    /// Machine Status Register, mstatus
+    /// Machine Status Register, mstatus.
     pub struct Mstatus: usize {
-        /// previous mode.
+        /// Previous mode.
         const MPP_MASK = (3) << 11;
         const MPP_M = (3) << 11;
         const MPP_S = (1) << 11;
         const MPP_U = (0) << 11;
-        /// machine-mode interrupt enable.
+        /// Machine-mode interrupt enable.
         const MIE = (1) << 3;
     }
 }
@@ -34,7 +34,7 @@ impl Mstatus {
     }
 }
 
-/// machine exception program counter, holds the
+/// Machine exception program counter, holds the
 /// instruction address to which a return from
 /// exception will go.
 #[inline]
@@ -43,7 +43,7 @@ pub unsafe fn w_mepc(x: usize) {
 }
 
 bitflags! {
-    /// Supervisor Status Register, sstatus
+    /// Supervisor Status Register, sstatus.
     pub struct Sstatus: usize {
         /// Previous mode, 1=Supervisor, 0=User
         const SPP = (1) << 8;
@@ -76,7 +76,7 @@ impl Sstatus {
     }
 }
 
-/// Supervisor Interrupt Pending
+/// Supervisor Interrupt Pending.
 #[inline]
 pub unsafe fn r_sip() -> usize {
     let mut x: usize;
@@ -89,7 +89,7 @@ pub unsafe fn w_sip(x: usize) {
 }
 
 bitflags! {
-    /// Supervisor Interrupt Enable
+    /// Supervisor Interrupt Enable.
     pub struct SIE: usize {
         /// external
         const SEIE = (1) << 9;
@@ -145,7 +145,7 @@ impl MIE {
     }
 }
 
-/// machine exception program counter, holds the
+/// Machine exception program counter, holds the
 /// instruction address to which a return from
 /// exception will go.
 #[inline]
@@ -160,7 +160,7 @@ pub unsafe fn r_sepc() -> usize {
     x
 }
 
-/// Machine Exception Delegation
+/// Machine Exception Delegation.
 #[inline]
 pub unsafe fn r_medeleg() -> usize {
     let mut x: usize;
@@ -173,7 +173,7 @@ pub unsafe fn w_medeleg(x: usize) {
     llvm_asm!("csrw medeleg, $0" : : "r" (x) : : "volatile");
 }
 
-/// Machine Interrupt Delegation
+/// Machine Interrupt Delegation.
 #[inline]
 pub unsafe fn r_mideleg() -> usize {
     let mut x: usize;
@@ -200,20 +200,20 @@ pub unsafe fn r_stvec() -> usize {
     x
 }
 
-/// Machine-mode interrupt vector
+/// Machine-mode interrupt vector.
 #[inline]
 pub unsafe fn w_mtvec(x: usize) {
     llvm_asm!("csrw mtvec, $0" : : "r" (x) : : "volatile");
 }
 
-/// use riscv's sv39 page table scheme.
+/// Use riscv's sv39 page table scheme.
 pub const SATP_SV39: usize = (8) << 60;
 
 pub const fn make_satp(pagetable: usize) -> usize {
     SATP_SV39 | pagetable >> 12
 }
 
-/// supervisor address translation and protection;
+/// Supervisor address translation and protection;
 /// holds the address of the page table.
 #[inline]
 pub unsafe fn w_satp(x: usize) {
@@ -238,7 +238,7 @@ pub unsafe fn w_mscratch(x: usize) {
     llvm_asm!("csrw mscratch, $0" : : "r" (x) : : "volatile");
 }
 
-/// Supervisor Trap Cause
+/// Supervisor Trap Cause.
 #[inline]
 pub unsafe fn r_scause() -> usize {
     let mut x: usize;
@@ -246,7 +246,7 @@ pub unsafe fn r_scause() -> usize {
     x
 }
 
-/// Supervisor Trap Value
+/// Supervisor Trap Value.
 #[inline]
 pub unsafe fn r_stval() -> usize {
     let mut x: usize;
@@ -254,7 +254,7 @@ pub unsafe fn r_stval() -> usize {
     x
 }
 
-/// Machine-mode Counter-Enable
+/// Machine-mode Counter-Enable.
 #[inline]
 pub unsafe fn w_mcounteren(x: u64) {
     llvm_asm!("csrw mcounteren, %0" : : "r" (x)  : : : "volatile");
@@ -267,7 +267,7 @@ pub unsafe fn r_mcounteren() -> u64 {
     x
 }
 
-/// machine-mode cycle counter
+/// Machine-mode cycle counter.
 #[inline]
 pub unsafe fn r_time() -> u64 {
     let mut x: u64;
@@ -275,7 +275,7 @@ pub unsafe fn r_time() -> u64 {
     x
 }
 
-/// enable device interrupts
+/// Enable device interrupts.
 #[inline]
 pub unsafe fn intr_on() {
     SIE::r_sie()
@@ -286,19 +286,19 @@ pub unsafe fn intr_on() {
     Sstatus::read().bitor(Sstatus::SIE).write();
 }
 
-/// disable device interrupts
+/// Disable device interrupts.
 #[inline]
 pub unsafe fn intr_off() {
     Sstatus::read().bitand(Sstatus::SIE.not()).write();
 }
 
-/// are device interrupts enabled?
+/// Are device interrupts enabled?
 #[inline]
 pub unsafe fn intr_get() -> bool {
     Sstatus::read().contains(Sstatus::SIE)
 }
 
-/// read and write tp, the thread pointer, which holds
+/// Read and write tp, the thread pointer, which holds
 /// this core's hartid (core number), the index into cpus[].
 #[inline]
 pub unsafe fn r_tp() -> usize {
@@ -326,17 +326,17 @@ pub unsafe fn r_ra() -> usize {
     x
 }
 
-/// flush the TLB.
+/// Flush the TLB.
 #[inline]
 pub unsafe fn sfence_vma() {
-    // the zero, zero means flush all TLB entries.
+    // The zero, zero means flush all TLB entries.
     llvm_asm!("sfence.vma zero, zero" : : : : "volatile");
 }
 
-/// bytes per page
+/// Bytes per page.
 pub const PGSIZE: usize = 4096;
 
-/// bits of offset within a page
+/// Bits of offset within a page.
 pub const PGSHIFT: usize = 12;
 
 #[inline]
@@ -359,7 +359,7 @@ pub const PTE_X: i32 = (1) << 3;
 /// 1 -> user can access
 pub const PTE_U: i32 = (1) << 4;
 
-/// shift a physical address to the right place for a PTE.
+/// Shift a physical address to the right place for a PTE.
 #[inline]
 pub const fn pa2pte(pa: usize) -> usize {
     (pa >> 12) << 10
@@ -375,7 +375,7 @@ pub const fn pte_flags(pte: PteT) -> usize {
     pte & 0x3FFusize
 }
 
-/// extract the three 9-bit page table indices from a virtual address.
+/// Extract the three 9-bit page table indices from a virtual address.
 
 /// 9 bits
 pub const PXMASK: usize = 0x1ff;
@@ -390,7 +390,7 @@ pub fn px(level: usize, va: usize) -> usize {
     (va >> pxshift(level)) & PXMASK
 }
 
-/// one beyond the highest possible virtual address.
+/// One beyond the highest possible virtual address.
 /// MAXVA is actually one bit less than the max allowed by
 /// Sv39, to avoid having to sign-extend virtual addresses
 /// that have the high bit set.
