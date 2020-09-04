@@ -26,7 +26,7 @@ use crate::{
     buf::Buf,
     fs::{Superblock, BSIZE},
     param::{LOGSIZE, MAXOPBLOCKS},
-    proc::Wchan,
+    proc::WaitChannel,
     spinlock::RawSpinlock,
 };
 use core::ptr;
@@ -154,7 +154,7 @@ pub unsafe fn begin_op() {
             // This op might exhaust log space; wait for commit.
             LOG.lh.n + (LOG.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
         {
-            Wchan::new(&mut LOG as *mut Log as *mut _).sleep(&mut LOG.lock);
+            WaitChannel::new(&mut LOG as *mut Log as *mut _).sleep(&mut LOG.lock);
         } else {
             LOG.outstanding += 1;
             LOG.lock.release();
@@ -179,7 +179,7 @@ pub unsafe fn end_op() {
         // begin_op() may be waiting for LOG space,
         // and decrementing log.outstanding has decreased
         // the amount of reserved space.
-        Wchan::new(&mut LOG as *mut Log as *mut _).wakeup();
+        WaitChannel::new(&mut LOG as *mut Log as *mut _).wakeup();
     }
     LOG.lock.release();
     if do_commit != 0 {
@@ -188,7 +188,7 @@ pub unsafe fn end_op() {
         commit();
         LOG.lock.acquire();
         LOG.committing = 0;
-        Wchan::new(&mut LOG as *mut Log as *mut _).wakeup();
+        WaitChannel::new(&mut LOG as *mut Log as *mut _).wakeup();
         LOG.lock.release();
     };
 }
