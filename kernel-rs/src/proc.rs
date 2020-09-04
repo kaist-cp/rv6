@@ -257,6 +257,17 @@ impl WaitChannel {
             p.lock.release();
         }
     }
+
+    /// Wake up p if it is sleeping in wait(); used by exit().
+    /// Caller must hold p->lock.
+    unsafe fn wakeup_proc(&self, mut p: *mut Proc) {
+        if !(*p).lock.holding() {
+            panic!("wakeup_proc");
+        }
+        if (*p).chan == self as _ && (*p).state == Procstate::SLEEPING {
+            (*p).state = Procstate::RUNNABLE
+        }
+    }
 }
 
 /// Per-process state.
@@ -691,7 +702,7 @@ pub unsafe fn exit(status: i32) {
     // necessary or not. init may miss this wakeup, but that seems
     // harmless.
     (*INITPROC).lock.acquire();
-    wakeup1(INITPROC);
+    (*(INITPROC as *const WaitChannel)).wakeup_proc(INITPROC);
     (*INITPROC).lock.release();
 
     // Grab a copy of p->parent, to ensure that we unlock the same
@@ -714,7 +725,7 @@ pub unsafe fn exit(status: i32) {
     reparent(p);
 
     // Parent might be sleeping in wait().
-    wakeup1(original_parent);
+    (*(original_parent as *const WaitChannel)).wakeup_proc(original_parent);
     (*p).xstate = status;
     (*p).state = Procstate::ZOMBIE;
     (*original_parent).lock.release();
@@ -775,7 +786,8 @@ pub unsafe fn wait(addr: usize) -> i32 {
 
         // Wait for a child to exit.
         //DOC: wait-sleep
-        WaitChannel::new().sleep(&mut (*p).lock);
+        // WaitChannel::new().sleep(&mut (*p).lock);
+        (*(p as *const WaitChannel)).sleep(&mut (*p).lock);
     }
 }
 
@@ -865,18 +877,6 @@ unsafe fn forkret() {
         fsinit(ROOTDEV);
     }
     usertrapret();
-}
-
-/// Wake up p if it is sleeping in wait(); used by exit().
-/// Caller must hold p->lock.
-unsafe fn wakeup1(mut p: *mut Proc) {
-    if !(*p).lock.holding() {
-        panic!("wakeup1");
-    }
-    if !(*p).chan.is_null() && *(*p).chan == WaitChannel::new() && (*p).state == Procstate::SLEEPING
-    {
-        (*p).state = Procstate::RUNNABLE
-    }
 }
 
 /// Kill the process with the given pid.
