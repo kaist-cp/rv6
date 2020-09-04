@@ -213,6 +213,9 @@ impl WaitChannel {
 
     /// Atomically release lock and sleep on chan.
     /// Reacquires lock when awakened.
+    // TODO(@kimjungwow): lk is not SpinLockGuard yet because
+    // 1. Some static mut variables are still not Spinlock<T> but RawSpinlock
+    // 2. Sleeplock doesn't have Spinlock<T>
     pub unsafe fn sleep(&self, lk: *mut RawSpinlock) {
         let mut p: *mut Proc = myproc();
 
