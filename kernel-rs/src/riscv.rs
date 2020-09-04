@@ -278,7 +278,11 @@ pub unsafe fn r_time() -> u64 {
 /// enable device interrupts
 #[inline]
 pub unsafe fn intr_on() {
-    SIE::r_sie().bitor(SIE::SEIE).bitor(SIE::STIE).bitor(SIE::SSIE).w_sie();
+    SIE::r_sie()
+        .bitor(SIE::SEIE)
+        .bitor(SIE::STIE)
+        .bitor(SIE::SSIE)
+        .w_sie();
     Sstatus::read().bitor(Sstatus::SIE).write();
 }
 
