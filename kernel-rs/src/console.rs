@@ -26,6 +26,8 @@ pub struct Console {
     e: u32,
 
     uart: Uart,
+
+    chan: WaitChannel,
 }
 
 impl fmt::Write for Console {
@@ -46,6 +48,7 @@ impl Console {
             w: 0,
             e: 0,
             uart: Uart::zeroed(),
+            chan: WaitChannel::new(),
         }
     }
 
@@ -108,7 +111,7 @@ impl Console {
                     return -1;
                 }
                 // TODO: need to change "RawSpinlock" after refactoring "sleep()" function in proc.rs
-                WaitChannel::new().sleep(lk);
+                self.chan.sleep(lk);
             }
             let fresh0 = self.r;
             self.r = self.r.wrapping_add(1);
@@ -190,7 +193,7 @@ impl Console {
                         // Wake up consoleread() if a whole line (or end-of-file)
                         // has arrived.
                         self.w = self.e;
-                        WaitChannel::new().wakeup();
+                        self.chan.wakeup();
                     }
                 }
             }

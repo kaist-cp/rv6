@@ -206,7 +206,7 @@ pub struct WaitChannel {}
 
 impl WaitChannel {
     pub const fn new() -> Self {
-        Self { }
+        Self {}
     }
 
     /// Atomically release lock and sleep on chan.
@@ -873,9 +873,7 @@ unsafe fn wakeup1(mut p: *mut Proc) {
     if !(*p).lock.holding() {
         panic!("wakeup1");
     }
-    if !(*p).chan.is_null()
-        && *(*p).chan == WaitChannel::new()
-        && (*p).state == Procstate::SLEEPING
+    if !(*p).chan.is_null() && *(*p).chan == WaitChannel::new() && (*p).state == Procstate::SLEEPING
     {
         (*p).state = Procstate::RUNNABLE
     }

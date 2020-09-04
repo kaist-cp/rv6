@@ -1,4 +1,4 @@
-use crate::{bio::bget, fs::BSIZE, sleeplock::Sleeplock, virtio_disk::virtio_disk_rw};
+use crate::{bio::bget, fs::BSIZE, proc::WaitChannel, sleeplock::Sleeplock, virtio_disk::virtio_disk_rw};
 
 use core::ptr;
 
@@ -7,6 +7,7 @@ pub struct Buf {
     pub blockno: u32,
     pub lock: Sleeplock,
     pub refcnt: u32,
+    pub chan: WaitChannel,
 
     /// LRU cache list.
     pub prev: *mut Buf,
@@ -22,6 +23,7 @@ impl Buf {
             blockno: 0,
             lock: Sleeplock::zeroed(),
             refcnt: 0,
+            chan: WaitChannel::new(),
 
             prev: ptr::null_mut(),
             next: ptr::null_mut(),
