@@ -13,10 +13,7 @@ use crate::{
     uart::Uart,
     virtio_disk::virtio_disk_intr,
 };
-use core::{
-    mem,
-    ops::{BitAndAssign, BitOrAssign, Not},
-};
+use core::mem;
 
 extern "C" {
     // trampoline.S
@@ -141,10 +138,10 @@ pub unsafe fn usertrapret() {
     let mut x = Sstatus::read();
 
     // clear SPP to 0 for user mode
-    x.bitand_assign(Sstatus::SPP.not());
+    x.remove(Sstatus::SPP);
 
     // enable interrupts in user mode
-    x.bitor_assign(Sstatus::SPIE);
+    x.insert(Sstatus::SPIE);
     x.write();
 
     // set S Exception Program Counter to the saved user pc.
@@ -171,7 +168,7 @@ pub unsafe fn kerneltrap() {
     let sstatus = Sstatus::read();
     let scause = r_scause();
 
-    if sstatus.contains(Sstatus::SPP).not() {
+    if !sstatus.contains(Sstatus::SPP) {
         panic!("kerneltrap: not from supervisor mode");
     }
 

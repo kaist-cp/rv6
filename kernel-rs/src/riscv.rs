@@ -1,5 +1,3 @@
-use core::ops::{BitAnd, BitOr, Not};
-
 /// Which hart (core) is this?
 #[inline]
 pub unsafe fn r_mhartid() -> usize {
@@ -105,14 +103,14 @@ bitflags! {
 
 impl SIE {
     #[inline]
-    pub unsafe fn r_sie() -> Self {
+    pub unsafe fn read() -> Self {
         let mut x;
         llvm_asm!("csrr $0, sie" : "=r" (x) : : : "volatile");
         x
     }
 
     #[inline]
-    pub unsafe fn w_sie(self) {
+    pub unsafe fn write(self) {
         llvm_asm!("csrw sie, $0" : : "r" (self) : : "volatile");
     }
 }
@@ -133,14 +131,14 @@ bitflags! {
 
 impl MIE {
     #[inline]
-    pub unsafe fn r_mie() -> Self {
+    pub unsafe fn read() -> Self {
         let mut x;
         llvm_asm!("csrr $0, mie" : "=r" (x) : : : "volatile");
         x
     }
 
     #[inline]
-    pub unsafe fn w_mie(self) {
+    pub unsafe fn write(self) {
         llvm_asm!("csrw mie, $0" : : "r" (self) : : "volatile");
     }
 }
@@ -278,18 +276,22 @@ pub unsafe fn r_time() -> u64 {
 /// Enable device interrupts.
 #[inline]
 pub unsafe fn intr_on() {
-    SIE::r_sie()
-        .bitor(SIE::SEIE)
-        .bitor(SIE::STIE)
-        .bitor(SIE::SSIE)
-        .w_sie();
-    Sstatus::read().bitor(Sstatus::SIE).write();
+    let mut x = SIE::read();
+    x.insert(SIE::SEIE);
+    x.insert(SIE::STIE);
+    x.insert(SIE::SSIE);
+    x.write();
+    let mut y = Sstatus::read();
+    y.insert(Sstatus::SIE);
+    y.write();
 }
 
 /// Disable device interrupts.
 #[inline]
 pub unsafe fn intr_off() {
-    Sstatus::read().bitand(Sstatus::SIE.not()).write();
+    let mut x = Sstatus::read();
+    x.remove(Sstatus::SIE);
+    x.write();
 }
 
 /// Are device interrupts enabled?

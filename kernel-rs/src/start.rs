@@ -6,7 +6,6 @@ use crate::{
         r_mhartid, w_medeleg, w_mepc, w_mideleg, w_mscratch, w_mtvec, w_satp, w_tp, Mstatus, MIE,
     },
 };
-use core::ops::{BitAnd, BitOr, Not};
 
 extern "C" {
     // assembly code in kernelvec.S for machine-mode timer interrupt.
@@ -34,9 +33,9 @@ static mut MSCRATCH0: [usize; NCPU * 32] = [0; NCPU * 32];
 #[no_mangle]
 pub unsafe fn start() {
     // set M Previous Privilege mode to Supervisor, for mret.
-    let x = Mstatus::read()
-        .bitand(Mstatus::MPP_MASK.not())
-        .bitor(Mstatus::MPP_S);
+    let mut x = Mstatus::read();
+    x.remove(Mstatus::MPP_MASK);
+    x.insert(Mstatus::MPP_S);
     x.write();
 
     // set M Exception Program Counter to main, for mret.  requires gcc -mcmodel=medany
@@ -83,8 +82,12 @@ unsafe fn timerinit() {
     w_mtvec(timervec as _);
 
     // enable machine-mode interrupts.
-    Mstatus::read().bitor(Mstatus::MIE).write();
+    let mut x = Mstatus::read();
+    x.insert(Mstatus::MIE);
+    x.write();
 
     // enable machine-mode timer interrupts.
-    MIE::r_mie().bitor(MIE::MTIE).w_mie();
+    let mut y = MIE::read();
+    y.insert(MIE::MTIE);
+    y.write();
 }
