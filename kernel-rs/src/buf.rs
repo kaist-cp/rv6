@@ -1,9 +1,4 @@
-use crate::{
-    bio::bget,
-    fs::BSIZE,
-    sleeplock::Sleeplock,
-    virtio_disk::virtio_disk_rw,
-};
+use crate::{bio::bget, fs::BSIZE, sleeplock::Sleeplock, virtio_disk::virtio_disk_rw};
 
 use core::ptr;
 

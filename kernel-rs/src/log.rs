@@ -22,7 +22,7 @@
 //! Log appends are synchronous.
 use crate::libc;
 use crate::{
-    bio::{bpin, bunpin, brelease},
+    bio::{bpin, brelease, bunpin},
     buf::Buf,
     fs::{Superblock, BSIZE},
     param::{LOGSIZE, MAXOPBLOCKS},
