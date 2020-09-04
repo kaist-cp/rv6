@@ -33,8 +33,8 @@ static mut MSCRATCH0: [usize; NCPU * 32] = [0; NCPU * 32];
 #[no_mangle]
 pub unsafe fn start() {
     // set M Previous Privilege mode to Supervisor, for mret.
-    let x = (Mstatus::r_mstatus() & !Mstatus::MPP_MASK) | Mstatus::MPP_S;
-    x.w_mstatus();
+    let x = (Mstatus::read() & !Mstatus::MPP_MASK) | Mstatus::MPP_S;
+    x.write();
 
     // set M Exception Program Counter to main, for mret.  requires gcc -mcmodel=medany
     w_mepc(kernel_main as usize);
@@ -80,7 +80,7 @@ unsafe fn timerinit() {
     w_mtvec(timervec as _);
 
     // enable machine-mode interrupts.
-    (Mstatus::r_mstatus() | Mstatus::MIE).w_mstatus();
+    (Mstatus::read() | Mstatus::MIE).write();
 
     // enable machine-mode timer interrupts.
     (MIE::r_mie() | MIE::MTIE).w_mie();
