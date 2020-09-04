@@ -21,13 +21,13 @@ bitflags! {
 
 impl Mstatus {
     #[inline]
-    pub unsafe fn r_mstatus() -> Self {
+    pub unsafe fn read() -> Self {
         let mut x;
         llvm_asm!("csrr $0, mstatus" : "=r" (x) : : : "volatile");
         x
     }
     #[inline]
-    pub unsafe fn w_mstatus(self) {
+    pub unsafe fn write(self) {
         llvm_asm!("csrw mstatus, $0" : : "r" (self) : : "volatile");
     }
 }
@@ -57,22 +57,19 @@ bitflags! {
 
         /// User Interrupt Enable
         const UIE = (1) << 0;
-
-        /// zero
-        const ZERO = 0;
     }
 
 }
 
 impl Sstatus {
     #[inline]
-    pub unsafe fn r_sstatus() -> Self {
+    pub unsafe fn read() -> Self {
         let mut x;
         llvm_asm!("csrr $0, sstatus" : "=r" (x) : : : "volatile");
         x
     }
     #[inline]
-    pub unsafe fn w_sstatus(self) {
+    pub unsafe fn write(self) {
         llvm_asm!("csrw sstatus, $0" : : "r" (self) : : "volatile");
     }
 }
@@ -280,19 +277,19 @@ pub unsafe fn r_time() -> u64 {
 #[inline]
 pub unsafe fn intr_on() {
     (SIE::r_sie() | SIE::SEIE | SIE::STIE | SIE::SSIE).w_sie();
-    (Sstatus::r_sstatus() | Sstatus::SIE).w_sstatus();
+    (Sstatus::read() | Sstatus::SIE).write();
 }
 
 /// disable device interrupts
 #[inline]
 pub unsafe fn intr_off() {
-    (Sstatus::r_sstatus() & !Sstatus::SIE).w_sstatus();
+    (Sstatus::read() & !Sstatus::SIE).write();
 }
 
 /// are device interrupts enabled?
 #[inline]
 pub unsafe fn intr_get() -> bool {
-    Sstatus::r_sstatus() & Sstatus::SIE != Sstatus::ZERO
+    Sstatus::read().contains(Sstatus::SIE)
 }
 
 /// read and write tp, the thread pointer, which holds

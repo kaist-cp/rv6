@@ -49,7 +49,7 @@ pub unsafe fn trapinithart() {
 pub unsafe extern "C" fn usertrap() {
     let mut which_dev: i32 = 0;
 
-    if Sstatus::r_sstatus() & Sstatus::SPP != Sstatus::ZERO {
+    if Sstatus::read().contains(Sstatus::SPP) {
         panic!("usertrap: not from user mode");
     }
 
@@ -135,14 +135,14 @@ pub unsafe fn usertrapret() {
     // to get to user space.
 
     // set S Previous Privilege mode to User.
-    let mut x = Sstatus::r_sstatus();
+    let mut x = Sstatus::read();
 
     // clear SPP to 0 for user mode
     x &= !Sstatus::SPP;
 
     // enable interrupts in user mode
     x |= Sstatus::SPIE;
-    x.w_sstatus();
+    x.write();
 
     // set S Exception Program Counter to the saved user pc.
     w_sepc((*(*p).tf).epc);
@@ -165,10 +165,10 @@ pub unsafe fn usertrapret() {
 #[no_mangle]
 pub unsafe fn kerneltrap() {
     let sepc: usize = r_sepc();
-    let sstatus = Sstatus::r_sstatus();
+    let sstatus = Sstatus::read();
     let scause: usize = r_scause();
 
-    if sstatus & Sstatus::SPP == Sstatus::ZERO {
+    if !sstatus.contains(Sstatus::SPP) {
         panic!("kerneltrap: not from supervisor mode");
     }
 
@@ -195,7 +195,7 @@ pub unsafe fn kerneltrap() {
     // the yield() may have caused some traps to occur,
     // so restore trap registers for use by kernelvec.S's sepc instruction.
     w_sepc(sepc);
-    sstatus.w_sstatus();
+    sstatus.write();
 }
 
 pub unsafe fn clockintr() {
