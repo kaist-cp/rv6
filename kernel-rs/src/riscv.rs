@@ -61,7 +61,7 @@ bitflags! {
         /// zero
         const ZERO = 0;
     }
-    
+
 }
 
 impl Sstatus {
