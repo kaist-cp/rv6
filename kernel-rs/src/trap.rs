@@ -200,7 +200,7 @@ pub unsafe fn kerneltrap() {
 pub unsafe fn clockintr() {
     TICKSLOCK.acquire();
     TICKS = TICKS.wrapping_add(1);
-    WaitChannel::new(&mut TICKS as *mut u32 as *mut _).wakeup();
+    WaitChannel::new().wakeup();
     TICKSLOCK.release();
 }
 

@@ -108,7 +108,7 @@ impl Console {
                     return -1;
                 }
                 // TODO: need to change "RawSpinlock" after refactoring "sleep()" function in proc.rs
-                WaitChannel::new(&mut self.r as *mut u32 as *mut _).sleep(lk);
+                WaitChannel::new().sleep(lk);
             }
             let fresh0 = self.r;
             self.r = self.r.wrapping_add(1);
@@ -190,7 +190,7 @@ impl Console {
                         // Wake up consoleread() if a whole line (or end-of-file)
                         // has arrived.
                         self.w = self.e;
-                        WaitChannel::new(&mut self.r as *mut u32 as *mut _).wakeup();
+                        WaitChannel::new().wakeup();
                     }
                 }
             }

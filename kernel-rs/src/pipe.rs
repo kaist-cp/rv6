@@ -33,10 +33,10 @@ impl Pipe {
         (*self).lock.acquire();
         if writable != 0 {
             (*self).writeopen = 0;
-            WaitChannel::new(&mut (*self).nread as *mut u32 as *mut _).wakeup();
+            WaitChannel::new().wakeup();
         } else {
             (*self).readopen = 0;
-            WaitChannel::new(&mut (*self).nwrite as *mut u32 as *mut _).wakeup();
+            WaitChannel::new().wakeup();
         }
         if (*self).readopen == 0 && (*self).writeopen == 0 {
             (*self).lock.release();
@@ -57,8 +57,8 @@ impl Pipe {
                     (*self).lock.release();
                     return -1;
                 }
-                WaitChannel::new(&mut (*self).nread as *mut u32 as *mut _).wakeup();
-                WaitChannel::new(&mut (*self).nwrite as *mut u32 as *mut _)
+                WaitChannel::new().wakeup();
+                WaitChannel::new()
                     .sleep(&mut (*self).lock);
             }
             if copyin(
@@ -75,7 +75,7 @@ impl Pipe {
             (*self).data[(fresh0 as usize).wrapping_rem(PIPESIZE)] = ch;
             i += 1
         }
-        WaitChannel::new(&mut (*self).nread as *mut u32 as *mut _).wakeup();
+        WaitChannel::new().wakeup();
         (*self).lock.release();
         n
     }
@@ -93,7 +93,7 @@ impl Pipe {
             }
 
             //DOC: piperead-sleep
-            WaitChannel::new(&mut (*self).nread as *mut u32 as *mut _).sleep(&mut (*self).lock);
+            WaitChannel::new().sleep(&mut (*self).lock);
         }
 
         //DOC: piperead-copy
@@ -117,7 +117,7 @@ impl Pipe {
         }
 
         //DOC: piperead-wakeup
-        WaitChannel::new(&mut (*self).nwrite as *mut u32 as *mut _).wakeup();
+        WaitChannel::new().wakeup();
         (*self).lock.release();
         i
     }

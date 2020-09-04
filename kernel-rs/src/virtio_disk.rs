@@ -202,7 +202,7 @@ impl DescriptorPool {
             assert!(!self.free[idx], "virtio_disk_intr 2");
             (*self.desc)[idx].addr = 0;
             self.free[idx] = true;
-            WaitChannel::new(&mut self.free as *mut _ as _).wakeup();
+            WaitChannel::new().wakeup();
         }
         mem::forget(desc);
     }
@@ -311,7 +311,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
         match DISK.desc.alloc_three_sectors() {
             Some(idx) => break idx,
             None => {
-                WaitChannel::new(DISK.desc.free.as_mut_ptr() as *mut _).sleep(&mut DISK.vdisk_lock)
+                WaitChannel::new().sleep(&mut DISK.vdisk_lock)
             }
         }
     };
@@ -364,13 +364,8 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
     MmioRegs::QueueNotify.write(0);
 
     // Wait for virtio_disk_intr() to say request has finished.
-<<<<<<< HEAD
     while (*b).inner.disk {
-        Wchan::new(b as *mut _).sleep(&mut DISK.vdisk_lock);
-=======
-    while (*b).inner.disk {
-        WaitChannel::new(b as *mut _).sleep(&mut DISK.vdisk_lock);
->>>>>>> Wchan -> Waitchannel
+        WaitChannel::new().sleep(&mut DISK.vdisk_lock);
     }
     DISK.info[desc[0].idx].b = ptr::null_mut();
     IntoIter::new(desc).for_each(|desc| DISK.desc.free(desc));
@@ -389,7 +384,7 @@ pub unsafe fn virtio_disk_intr() {
         (*DISK.info[id].b).inner.disk = false;
 
         // Disk is done with Buf.
-        WaitChannel::new(DISK.info[id].b as *mut _).wakeup();
+        WaitChannel::new().wakeup();
 
         DISK.used_idx = (DISK.used_idx.wrapping_add(1)).wrapping_rem(NUM as _)
     }
