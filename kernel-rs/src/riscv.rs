@@ -6,26 +6,49 @@ pub unsafe fn r_mhartid() -> usize {
     x
 }
 
-/// Machine Status Register, mstatus
-
-/// previous mode.
-pub const MSTATUS_MPP_MASK: usize = (3) << 11;
-pub const MSTATUS_MPP_M: usize = (3) << 11;
-pub const MSTATUS_MPP_S: usize = (1) << 11;
-pub const MSTATUS_MPP_U: usize = (0) << 11;
-/// machine-mode interrupt enable.
-pub const MSTATUS_MIE: usize = (1) << 3;
-
-#[inline]
-pub unsafe fn r_mstatus() -> usize {
-    let mut x: usize;
-    llvm_asm!("csrr $0, mstatus" : "=r" (x) : : : "volatile");
-    x
+bitflags! {
+    /// Machine Status Register, mstatus
+    pub struct Mstatus: usize {
+        /// previous mode.
+        const MPP_MASK = (3) << 11;
+        const MPP_M = (3) << 11;
+        const MPP_S = (1) << 11;
+        const MPP_U = (0) << 11;
+        /// machine-mode interrupt enable.
+        const MIE = (1) << 3;
+    }
 }
-#[inline]
-pub unsafe fn w_mstatus(x: usize) {
-    llvm_asm!("csrw mstatus, $0" : : "r" (x) : : "volatile");
+// /// previous mode.
+// pub const MSTATUS_MPP_MASK: usize = (3) << 11;
+// pub const MSTATUS_MPP_M: usize = (3) << 11;
+// pub const MSTATUS_MPP_S: usize = (1) << 11;
+// pub const MSTATUS_MPP_U: usize = (0) << 11;
+// /// machine-mode interrupt enable.
+// pub const MSTATUS_MIE: usize = (1) << 3;
+
+impl Mstatus {
+    #[inline]
+    pub unsafe fn r_mstatus() -> Mstatus {
+        let mut x: Mstatus;
+        llvm_asm!("csrr $0, mstatus" : "=r" (x) : : : "volatile");
+        x
+    }
+    #[inline]
+    pub unsafe fn w_mstatus(x: Mstatus) {
+        llvm_asm!("csrw mstatus, $0" : : "r" (x) : : "volatile");
+    }
 }
+
+// #[inline]
+// pub unsafe fn r_mstatus() -> usize {
+//     let mut x: usize;
+//     llvm_asm!("csrr $0, mstatus" : "=r" (x) : : : "volatile");
+//     x
+// }
+// #[inline]
+// pub unsafe fn w_mstatus(x: usize) {
+//     llvm_asm!("csrw mstatus, $0" : : "r" (x) : : "volatile");
+// }
 
 /// machine exception program counter, holds the
 /// instruction address to which a return from
