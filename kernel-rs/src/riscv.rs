@@ -3,7 +3,7 @@ use core::ops::{BitAnd, BitOr, Not};
 /// Which hart (core) is this?
 #[inline]
 pub unsafe fn r_mhartid() -> usize {
-    let mut x: usize;
+    let mut x;
     llvm_asm!("csrr $0, mhartid" : "=r" (x) : : : "volatile");
     x
 }
@@ -79,7 +79,7 @@ impl Sstatus {
 /// Supervisor Interrupt Pending.
 #[inline]
 pub unsafe fn r_sip() -> usize {
-    let mut x: usize;
+    let mut x;
     llvm_asm!("csrr $0, sip" : "=r" (x) : : : "volatile");
     x
 }
@@ -155,7 +155,7 @@ pub unsafe fn w_sepc(x: usize) {
 
 #[inline]
 pub unsafe fn r_sepc() -> usize {
-    let mut x: usize;
+    let mut x;
     llvm_asm!("csrr $0, sepc" : "=r" (x) : : : "volatile");
     x
 }
@@ -163,7 +163,7 @@ pub unsafe fn r_sepc() -> usize {
 /// Machine Exception Delegation.
 #[inline]
 pub unsafe fn r_medeleg() -> usize {
-    let mut x: usize;
+    let mut x;
     llvm_asm!("csrr %0, medeleg" : "=r" (x) : : : "volatile");
     x
 }
@@ -176,7 +176,7 @@ pub unsafe fn w_medeleg(x: usize) {
 /// Machine Interrupt Delegation.
 #[inline]
 pub unsafe fn r_mideleg() -> usize {
-    let mut x: usize;
+    let mut x;
     llvm_asm!("csrr %0, mideleg" : "=r" (x) : : : "volatile");
     x
 }
@@ -195,7 +195,7 @@ pub unsafe fn w_stvec(x: usize) {
 
 #[inline]
 pub unsafe fn r_stvec() -> usize {
-    let mut x: usize;
+    let mut x;
     llvm_asm!("csrr %0, stvec" : "=r" (x) : : : "volatile");
     x
 }
@@ -222,7 +222,7 @@ pub unsafe fn w_satp(x: usize) {
 
 #[inline]
 pub unsafe fn r_satp() -> usize {
-    let mut x: usize;
+    let mut x;
     llvm_asm!("csrr $0, satp" : "=r" (x) : : : "volatile");
     x
 }
@@ -241,7 +241,7 @@ pub unsafe fn w_mscratch(x: usize) {
 /// Supervisor Trap Cause.
 #[inline]
 pub unsafe fn r_scause() -> usize {
-    let mut x: usize;
+    let mut x;
     llvm_asm!("csrr $0, scause" : "=r" (x) : : : "volatile");
     x
 }
@@ -249,7 +249,7 @@ pub unsafe fn r_scause() -> usize {
 /// Supervisor Trap Value.
 #[inline]
 pub unsafe fn r_stval() -> usize {
-    let mut x: usize;
+    let mut x;
     llvm_asm!("csrr $0, stval" : "=r" (x) : : : "volatile");
     x
 }
@@ -262,7 +262,7 @@ pub unsafe fn w_mcounteren(x: u64) {
 
 #[inline]
 pub unsafe fn r_mcounteren() -> u64 {
-    let mut x: u64;
+    let mut x;
     llvm_asm!("csrr %0, mcounteren" : "=r" (x) : : : "volatile");
     x
 }
@@ -270,7 +270,7 @@ pub unsafe fn r_mcounteren() -> u64 {
 /// Machine-mode cycle counter.
 #[inline]
 pub unsafe fn r_time() -> u64 {
-    let mut x: u64;
+    let mut x;
     llvm_asm!("csrr %0, time" : "=r" (x) : : : "volatile");
     x
 }
@@ -302,14 +302,14 @@ pub unsafe fn intr_get() -> bool {
 /// this core's hartid (core number), the index into cpus[].
 #[inline]
 pub unsafe fn r_tp() -> usize {
-    let mut x: usize;
+    let mut x;
     llvm_asm!("mv $0, tp" : "=r" (x) : : : "volatile");
     x
 }
 
 #[inline]
 pub unsafe fn r_sp() -> usize {
-    let mut x: usize;
+    let mut x;
     llvm_asm!("mv %0, sp" : "=r" (x) : : : "volatile");
     x
 }
@@ -321,7 +321,7 @@ pub unsafe fn w_tp(x: usize) {
 
 #[inline]
 pub unsafe fn r_ra() -> usize {
-    let mut x: usize;
+    let mut x;
     llvm_asm!("mv %0, ra" : "=r" (x) : : : "volatile");
     x
 }
