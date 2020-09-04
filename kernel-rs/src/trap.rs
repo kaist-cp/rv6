@@ -32,6 +32,7 @@ extern "C" {
 
 pub static mut TICKSLOCK: RawSpinlock = RawSpinlock::zeroed();
 pub static mut TICKS: u32 = 0;
+pub static mut TICKSWAITCHANNEL: WaitChannel = WaitChannel::new();
 
 pub unsafe fn trapinit() {
     TICKSLOCK.initlock("time");
@@ -200,7 +201,7 @@ pub unsafe fn kerneltrap() {
 pub unsafe fn clockintr() {
     TICKSLOCK.acquire();
     TICKS = TICKS.wrapping_add(1);
-    WaitChannel::new().wakeup();
+    TICKSWAITCHANNEL.wakeup();
     TICKSLOCK.release();
 }
 

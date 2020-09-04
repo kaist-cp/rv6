@@ -1,8 +1,8 @@
 use crate::{
     ok_or,
-    proc::{exit, fork, kill, myproc, resizeproc, wait, WaitChannel},
+    proc::{exit, fork, kill, myproc, resizeproc, wait},
     syscall::{argaddr, argint},
-    trap::{TICKS, TICKSLOCK},
+    trap::{TICKS, TICKSLOCK, TICKSWAITCHANNEL},
 };
 
 pub unsafe fn sys_exit() -> usize {
@@ -43,7 +43,7 @@ pub unsafe fn sys_sleep() -> usize {
             TICKSLOCK.release();
             return usize::MAX;
         }
-        WaitChannel::new().sleep(&mut TICKSLOCK);
+        TICKSWAITCHANNEL.sleep(&mut TICKSLOCK);
     }
     TICKSLOCK.release();
     0

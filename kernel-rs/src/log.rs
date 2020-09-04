@@ -43,6 +43,8 @@ struct Log {
     committing: i32,
     dev: i32,
     lh: LogHeader,
+
+    chan: WaitChannel,
 }
 
 /// Contents of the header block, used for both the on-disk header block
@@ -67,6 +69,7 @@ impl Log {
                 n: 0,
                 block: [0; LOGSIZE],
             },
+            chan: WaitChannel::new(),
         }
     }
 }
@@ -154,7 +157,7 @@ pub unsafe fn begin_op() {
             // This op might exhaust log space; wait for commit.
             LOG.lh.n + (LOG.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
         {
-            WaitChannel::new().sleep(&mut LOG.lock);
+            LOG.chan.sleep(&mut LOG.lock);
         } else {
             LOG.outstanding += 1;
             LOG.lock.release();
@@ -179,7 +182,7 @@ pub unsafe fn end_op() {
         // begin_op() may be waiting for LOG space,
         // and decrementing log.outstanding has decreased
         // the amount of reserved space.
-        WaitChannel::new().wakeup();
+        LOG.chan.wakeup();
     }
     LOG.lock.release();
     if do_commit != 0 {
@@ -188,7 +191,7 @@ pub unsafe fn end_op() {
         commit();
         LOG.lock.acquire();
         LOG.committing = 0;
-        WaitChannel::new().wakeup();
+        LOG.chan.wakeup();
         LOG.lock.release();
     };
 }
