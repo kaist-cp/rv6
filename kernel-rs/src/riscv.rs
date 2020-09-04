@@ -18,37 +18,19 @@ bitflags! {
         const MIE = (1) << 3;
     }
 }
-// /// previous mode.
-// pub const MSTATUS_MPP_MASK: usize = (3) << 11;
-// pub const MSTATUS_MPP_M: usize = (3) << 11;
-// pub const MSTATUS_MPP_S: usize = (1) << 11;
-// pub const MSTATUS_MPP_U: usize = (0) << 11;
-// /// machine-mode interrupt enable.
-// pub const MSTATUS_MIE: usize = (1) << 3;
 
 impl Mstatus {
     #[inline]
-    pub unsafe fn r_mstatus() -> Mstatus {
-        let mut x: Mstatus;
+    pub unsafe fn r_mstatus() -> Self {
+        let mut x;
         llvm_asm!("csrr $0, mstatus" : "=r" (x) : : : "volatile");
         x
     }
     #[inline]
-    pub unsafe fn w_mstatus(x: Mstatus) {
-        llvm_asm!("csrw mstatus, $0" : : "r" (x) : : "volatile");
+    pub unsafe fn w_mstatus(self) {
+        llvm_asm!("csrw mstatus, $0" : : "r" (self) : : "volatile");
     }
 }
-
-// #[inline]
-// pub unsafe fn r_mstatus() -> usize {
-//     let mut x: usize;
-//     llvm_asm!("csrr $0, mstatus" : "=r" (x) : : : "volatile");
-//     x
-// }
-// #[inline]
-// pub unsafe fn w_mstatus(x: usize) {
-//     llvm_asm!("csrw mstatus, $0" : : "r" (x) : : "volatile");
-// }
 
 /// machine exception program counter, holds the
 /// instruction address to which a return from
@@ -58,32 +40,41 @@ pub unsafe fn w_mepc(x: usize) {
     llvm_asm!("csrw mepc, $0" : : "r" (x) : : "volatile");
 }
 
-/// Supervisor Status Register, sstatus
+bitflags! {
+    /// Supervisor Status Register, sstatus
+    pub struct Sstatus: usize {
+        /// Previous mode, 1=Supervisor, 0=User
+        const SPP = (1) << 8;
 
-/// Previous mode, 1=Supervisor, 0=User
-pub const SSTATUS_SPP: usize = (1) << 8;
+        /// Supervisor Previous Interrupt Enable
+        const SPIE = (1) << 5;
 
-/// Supervisor Previous Interrupt Enable
-pub const SSTATUS_SPIE: usize = (1) << 5;
+        /// User Previous Interrupt Enable
+        const UPIE = (1) << 4;
 
-/// User Previous Interrupt Enable
-pub const SSTATUS_UPIE: usize = (1) << 4;
+        /// Supervisor Interrupt Enable
+        const SIE = (1) << 1;
 
-/// Supervisor Interrupt Enable
-pub const SSTATUS_SIE: usize = (1) << 1;
+        /// User Interrupt Enable
+        const UIE = (1) << 0;
 
-/// User Interrupt Enable
-pub const SSTATUS_UIE: usize = (1) << 0;
-
-#[inline]
-pub unsafe fn r_sstatus() -> usize {
-    let mut x: usize;
-    llvm_asm!("csrr $0, sstatus" : "=r" (x) : : : "volatile");
-    x
+        /// zero
+        const ZERO = 0;
+    }
+    
 }
-#[inline]
-pub unsafe fn w_sstatus(x: usize) {
-    llvm_asm!("csrw sstatus, $0" : : "r" (x) : : "volatile");
+
+impl Sstatus {
+    #[inline]
+    pub unsafe fn r_sstatus() -> Self {
+        let mut x;
+        llvm_asm!("csrr $0, sstatus" : "=r" (x) : : : "volatile");
+        x
+    }
+    #[inline]
+    pub unsafe fn w_sstatus(self) {
+        llvm_asm!("csrw sstatus, $0" : : "r" (self) : : "volatile");
+    }
 }
 
 /// Supervisor Interrupt Pending
@@ -98,49 +89,61 @@ pub unsafe fn w_sip(x: usize) {
     llvm_asm!("csrw sip, $0" : : "r" (x) : : "volatile");
 }
 
-/// Supervisor Interrupt Enable
+bitflags! {
+    /// Supervisor Interrupt Enable
+    pub struct SIE: usize {
+        /// external
+        const SEIE = (1) << 9;
 
-/// external
-pub const SIE_SEIE: usize = (1) << 9;
+        /// timer
+        const STIE = (1) << 5;
 
-/// timer
-pub const SIE_STIE: usize = (1) << 5;
+        /// software
+        const SSIE = (1) << 1;
 
-/// software
-pub const SIE_SSIE: usize = (1) << 1;
-
-#[inline]
-pub unsafe fn r_sie() -> usize {
-    let mut x: usize;
-    llvm_asm!("csrr $0, sie" : "=r" (x) : : : "volatile");
-    x
+    }
 }
 
-#[inline]
-pub unsafe fn w_sie(x: usize) {
-    llvm_asm!("csrw sie, $0" : : "r" (x) : : "volatile");
+impl SIE {
+    #[inline]
+    pub unsafe fn r_sie() -> Self {
+        let mut x;
+        llvm_asm!("csrr $0, sie" : "=r" (x) : : : "volatile");
+        x
+    }
+
+    #[inline]
+    pub unsafe fn w_sie(self) {
+        llvm_asm!("csrw sie, $0" : : "r" (self) : : "volatile");
+    }
 }
 
-/// Machine-mode Interrupt Enable
+bitflags! {
+    /// Machine-mode Interrupt Enable
+    pub struct MIE: usize {
+        /// external
+        const MEIE = (1) << 11;
 
-/// external
-pub const MIE_MEIE: usize = (1) << 11;
+        /// timer
+        const MTIE = (1) << 7;
 
-/// timer
-pub const MIE_MTIE: usize = (1) << 7;
-
-/// software
-pub const MIE_MSIE: usize = (1) << 3;
-#[inline]
-pub unsafe fn r_mie() -> usize {
-    let mut x: usize;
-    llvm_asm!("csrr $0, mie" : "=r" (x) : : : "volatile");
-    x
+        /// software
+        const MSIE = (1) << 3;
+    }
 }
 
-#[inline]
-pub unsafe fn w_mie(x: usize) {
-    llvm_asm!("csrw mie, $0" : : "r" (x) : : "volatile");
+impl MIE {
+    #[inline]
+    pub unsafe fn r_mie() -> Self {
+        let mut x;
+        llvm_asm!("csrr $0, mie" : "=r" (x) : : : "volatile");
+        x
+    }
+
+    #[inline]
+    pub unsafe fn w_mie(self) {
+        llvm_asm!("csrw mie, $0" : : "r" (self) : : "volatile");
+    }
 }
 
 /// machine exception program counter, holds the
@@ -276,21 +279,20 @@ pub unsafe fn r_time() -> u64 {
 /// enable device interrupts
 #[inline]
 pub unsafe fn intr_on() {
-    w_sie(r_sie() | SIE_SEIE | SIE_STIE | SIE_SSIE);
-    w_sstatus(r_sstatus() | SSTATUS_SIE);
+    (SIE::r_sie() | SIE::SEIE | SIE::STIE | SIE::SSIE).w_sie();
+    (Sstatus::r_sstatus() | Sstatus::SIE).w_sstatus();
 }
 
 /// disable device interrupts
 #[inline]
 pub unsafe fn intr_off() {
-    w_sstatus(r_sstatus() & !SSTATUS_SIE);
+    (Sstatus::r_sstatus() & !Sstatus::SIE).w_sstatus();
 }
 
 /// are device interrupts enabled?
 #[inline]
 pub unsafe fn intr_get() -> bool {
-    let x: usize = r_sstatus();
-    x & SSTATUS_SIE != 0
+    Sstatus::r_sstatus() & Sstatus::SIE != Sstatus::ZERO
 }
 
 /// read and write tp, the thread pointer, which holds

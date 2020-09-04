@@ -3,8 +3,8 @@ use crate::{
     memlayout::{clint_mtimecmp, CLINT_MTIME},
     param::NCPU,
     riscv::{
-        r_mhartid, r_mie, w_medeleg, w_mepc, w_mideleg, w_mie, w_mscratch, w_mtvec, w_satp, w_tp,
-        Mstatus, MIE_MTIE,
+        r_mhartid, w_medeleg, w_mepc, w_mideleg, w_mscratch, w_mtvec, w_satp, w_tp,
+        Mstatus, MIE
     },
 };
 
@@ -35,7 +35,7 @@ static mut MSCRATCH0: [usize; NCPU * 32] = [0; NCPU * 32];
 pub unsafe fn start() {
     // set M Previous Privilege mode to Supervisor, for mret.
     let x = (Mstatus::r_mstatus() & !Mstatus::MPP_MASK) | Mstatus::MPP_S;
-    Mstatus::w_mstatus(x);
+    x.w_mstatus();
 
     // set M Exception Program Counter to main, for mret.  requires gcc -mcmodel=medany
     w_mepc(kernel_main as usize);
@@ -81,8 +81,8 @@ unsafe fn timerinit() {
     w_mtvec(timervec as _);
 
     // enable machine-mode interrupts.
-    Mstatus::w_mstatus(Mstatus::r_mstatus() | Mstatus::MIE);
+    (Mstatus::r_mstatus() | Mstatus::MIE).w_mstatus();
 
     // enable machine-mode timer interrupts.
-    w_mie(r_mie() | MIE_MTIE);
+    (MIE::r_mie() | MIE::MTIE).w_mie();
 }
