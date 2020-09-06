@@ -33,7 +33,7 @@ impl<T> SleeplockWIP<T> {
         self.data.into_inner()
     }
 
-    pub unsafe fn lock(&mut self) -> SleepLockGuard<'_, T> {
+    pub unsafe fn lock(&self) -> SleepLockGuard<'_, T> {
         let mut guard = self.spinlock.lock();
         while *guard != -1 {
             self.waitchannel.sleep(guard.raw() as *mut RawSpinlock);
