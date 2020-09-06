@@ -27,7 +27,8 @@ pub struct Pipe {
     /// write fd is still open
     pub writeopen: i32,
 
-    chan: WaitChannel,
+    readwaitchan: WaitChannel,
+    writewaitchan: WaitChannel,
 }
 
 impl Pipe {
@@ -35,10 +36,10 @@ impl Pipe {
         (*self).lock.acquire();
         if writable != 0 {
             (*self).writeopen = 0;
-            self.chan.wakeup();
+            self.readwaitchan.wakeup();
         } else {
             (*self).readopen = 0;
-            self.chan.wakeup();
+            self.writewaitchan.wakeup();
         }
         if (*self).readopen == 0 && (*self).writeopen == 0 {
             (*self).lock.release();
@@ -59,8 +60,8 @@ impl Pipe {
                     (*self).lock.release();
                     return -1;
                 }
-                self.chan.wakeup();
-                self.chan.sleep(&mut (*self).lock);
+                self.readwaitchan.wakeup();
+                self.writewaitchan.sleep(&mut (*self).lock);
             }
             if copyin(
                 (*proc).pagetable,
@@ -76,7 +77,7 @@ impl Pipe {
             (*self).data[(fresh0 as usize).wrapping_rem(PIPESIZE)] = ch;
             i += 1
         }
-        self.chan.wakeup();
+        self.readwaitchan.wakeup();
         (*self).lock.release();
         n
     }
@@ -94,7 +95,7 @@ impl Pipe {
             }
 
             //DOC: piperead-sleep
-            self.chan.sleep(&mut (*self).lock);
+            self.readwaitchan.sleep(&mut (*self).lock);
         }
 
         //DOC: piperead-copy
@@ -118,7 +119,7 @@ impl Pipe {
         }
 
         //DOC: piperead-wakeup
-        self.chan.wakeup();
+        self.writewaitchan.wakeup();
         (*self).lock.release();
         i
     }
@@ -138,10 +139,11 @@ impl Pipe {
                 (*pi).nwrite = 0;
                 (*pi).nread = 0;
                 (*pi).lock.initlock("pipe");
-                (*pi).chan = WaitChannel::new();
                 (**f0).typ = FD_PIPE;
                 (**f0).readable = 1;
+                (*pi).readwaitchan = WaitChannel::new();
                 (**f0).writable = 0;
+                (*pi).writewaitchan = WaitChannel::new();
                 (**f0).pipe = pi;
                 (**f1).typ = FD_PIPE;
                 (**f1).readable = 0;
