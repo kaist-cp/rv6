@@ -16,18 +16,19 @@ const INPUT_BUF: usize = 128;
 pub struct Console {
     buf: [u8; INPUT_BUF],
 
-    /// Read index
+    /// Read index.
     r: u32,
 
-    /// Write index
+    /// Write index.
     w: u32,
 
-    /// Edit index
+    /// Edit index.
     e: u32,
 
     uart: Uart,
 
-    chan: WaitChannel,
+    /// WaitChannel saying there are some input in console buffer.
+    read_waitchannel: WaitChannel,
 }
 
 impl fmt::Write for Console {
@@ -48,7 +49,7 @@ impl Console {
             w: 0,
             e: 0,
             uart: Uart::zeroed(),
-            chan: WaitChannel::new(),
+            read_waitchannel: WaitChannel::new(),
         }
     }
 
@@ -111,7 +112,7 @@ impl Console {
                     return -1;
                 }
                 // TODO: need to change "RawSpinlock" after refactoring "sleep()" function in proc.rs
-                self.chan.sleep(lk);
+                self.read_waitchannel.sleep(lk);
             }
             let fresh0 = self.r;
             self.r = self.r.wrapping_add(1);
@@ -193,7 +194,7 @@ impl Console {
                         // Wake up consoleread() if a whole line (or end-of-file)
                         // has arrived.
                         self.w = self.e;
-                        self.chan.wakeup();
+                        self.read_waitchannel.wakeup();
                     }
                 }
             }

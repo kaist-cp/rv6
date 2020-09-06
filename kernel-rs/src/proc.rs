@@ -260,7 +260,7 @@ impl WaitChannel {
 
     /// Wake up p if it is sleeping in wait(); used by exit().
     /// Caller must hold p->lock.
-    unsafe fn wakeup_proc(&self, mut p: *mut Proc) {
+    unsafe fn wakeup_proc(&self, p: *mut Proc) {
         if !(*p).lock.holding() {
             panic!("wakeup_proc");
         }
@@ -786,7 +786,6 @@ pub unsafe fn wait(addr: usize) -> i32 {
 
         // Wait for a child to exit.
         //DOC: wait-sleep
-        // WaitChannel::new().sleep(&mut (*p).lock);
         (*(p as *const WaitChannel)).sleep(&mut (*p).lock);
     }
 }

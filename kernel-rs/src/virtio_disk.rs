@@ -61,7 +61,8 @@ struct DescriptorPool {
     /// Our own book-keeping.
     free: [bool; NUM], // TODO : Disk can be implemented using bitmap
 
-    chan: WaitChannel,
+    /// WaitChannel saying some Descriptors are freed.
+    free_desc_waitchannel: WaitChannel,
 }
 
 /// A descriptor allocated by driver.
@@ -153,7 +154,7 @@ impl DescriptorPool {
         Self {
             desc: ptr::null_mut(),
             free: [false; NUM],
-            chan: WaitChannel::new(),
+            free_desc_waitchannel: WaitChannel::new(),
         }
     }
 
@@ -161,7 +162,7 @@ impl DescriptorPool {
         Self {
             desc: page as _,
             free: [true; NUM],
-            chan: WaitChannel::new(),
+            free_desc_waitchannel: WaitChannel::new(),
         }
     }
 
@@ -206,7 +207,7 @@ impl DescriptorPool {
             assert!(!self.free[idx], "virtio_disk_intr 2");
             (*self.desc)[idx].addr = 0;
             self.free[idx] = true;
-            self.chan.wakeup();
+            self.free_desc_waitchannel.wakeup();
         }
         mem::forget(desc);
     }
@@ -314,7 +315,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
     let mut desc = loop {
         match DISK.desc.alloc_three_sectors() {
             Some(idx) => break idx,
-            None => DISK.desc.chan.sleep(&mut DISK.vdisk_lock),
+            None => DISK.desc.free_desc_waitchannel.sleep(&mut DISK.vdisk_lock),
         }
     };
 
@@ -367,7 +368,7 @@ pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
 
     // Wait for virtio_disk_intr() to say request has finished.
     while (*b).inner.disk {
-        (*b).chan.sleep(&mut DISK.vdisk_lock);
+        (*b).vdisk_request_waitchannel.sleep(&mut DISK.vdisk_lock);
     }
     DISK.info[desc[0].idx].b = ptr::null_mut();
     IntoIter::new(desc).for_each(|desc| DISK.desc.free(desc));
@@ -386,7 +387,7 @@ pub unsafe fn virtio_disk_intr() {
         (*DISK.info[id].b).inner.disk = false;
 
         // Disk is done with Buf.
-        (*DISK.info[id].b).chan.wakeup();
+        (*DISK.info[id].b).vdisk_request_waitchannel.wakeup();
 
         DISK.used_idx = (DISK.used_idx.wrapping_add(1)).wrapping_rem(NUM as _)
     }
