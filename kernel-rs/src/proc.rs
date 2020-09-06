@@ -248,13 +248,15 @@ impl WaitChannel {
 
     /// Wake up all processes sleeping on chan.
     /// Must be called without any p->lock.
-    pub unsafe fn wakeup(&self) {
-        for p in &mut PROC[..] {
-            p.lock.acquire();
-            if !p.chan.is_null() && *p.chan == *self && p.state == Procstate::SLEEPING {
-                p.state = Procstate::RUNNABLE
+    pub fn wakeup(&self) {
+        unsafe {
+            for p in &mut PROC[..] {
+                p.lock.acquire();
+                if !p.chan.is_null() && *p.chan == *self && p.state == Procstate::SLEEPING {
+                    p.state = Procstate::RUNNABLE
+                }
+                p.lock.release();
             }
-            p.lock.release();
         }
     }
 

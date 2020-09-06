@@ -57,9 +57,7 @@ impl<T> Drop for SleepLockGuard<'_, T> {
     fn drop(&mut self) {
         let mut guard = self.lock.spinlock.lock();
         *guard = -1;
-        unsafe {
-            self.lock.waitchannel.wakeup();
-        }
+        self.lock.waitchannel.wakeup();
         drop(guard);
     }
 }
