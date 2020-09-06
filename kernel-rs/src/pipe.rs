@@ -15,20 +15,23 @@ pub struct Pipe {
     pub lock: RawSpinlock,
     pub data: [u8; PIPESIZE],
 
-    /// number of bytes read
+    /// Number of bytes read.
     pub nread: u32,
 
-    /// number of bytes written
+    /// Number of bytes written.
     pub nwrite: u32,
 
-    /// read fd is still open
+    /// Read fd is still open.
     pub readopen: i32,
 
-    /// write fd is still open
+    /// Write fd is still open.
     pub writeopen: i32,
 
-    readwaitchan: WaitChannel,
-    writewaitchan: WaitChannel,
+    /// WaitChannel for saying there are unread bytes in Pipe.data.
+    read_waitchannel: WaitChannel,
+
+    /// WaitChannel for saying all bytes in Pipe.data are already read.
+    write_waitchannel: WaitChannel,
 }
 
 impl Pipe {
@@ -36,10 +39,10 @@ impl Pipe {
         (*self).lock.acquire();
         if writable != 0 {
             (*self).writeopen = 0;
-            self.readwaitchan.wakeup();
+            self.read_waitchannel.wakeup();
         } else {
             (*self).readopen = 0;
-            self.writewaitchan.wakeup();
+            self.write_waitchannel.wakeup();
         }
         if (*self).readopen == 0 && (*self).writeopen == 0 {
             (*self).lock.release();
@@ -60,8 +63,8 @@ impl Pipe {
                     (*self).lock.release();
                     return -1;
                 }
-                self.readwaitchan.wakeup();
-                self.writewaitchan.sleep(&mut (*self).lock);
+                self.read_waitchannel.wakeup();
+                self.write_waitchannel.sleep(&mut (*self).lock);
             }
             if copyin(
                 (*proc).pagetable,
@@ -77,7 +80,7 @@ impl Pipe {
             (*self).data[(fresh0 as usize).wrapping_rem(PIPESIZE)] = ch;
             i += 1
         }
-        self.readwaitchan.wakeup();
+        self.read_waitchannel.wakeup();
         (*self).lock.release();
         n
     }
@@ -95,7 +98,7 @@ impl Pipe {
             }
 
             //DOC: piperead-sleep
-            self.readwaitchan.sleep(&mut (*self).lock);
+            self.read_waitchannel.sleep(&mut (*self).lock);
         }
 
         //DOC: piperead-copy
@@ -119,7 +122,7 @@ impl Pipe {
         }
 
         //DOC: piperead-wakeup
-        self.writewaitchan.wakeup();
+        self.write_waitchannel.wakeup();
         (*self).lock.release();
         i
     }
@@ -141,9 +144,9 @@ impl Pipe {
                 (*pi).lock.initlock("pipe");
                 (**f0).typ = FD_PIPE;
                 (**f0).readable = 1;
-                (*pi).readwaitchan = WaitChannel::new();
+                (*pi).read_waitchannel = WaitChannel::new();
                 (**f0).writable = 0;
-                (*pi).writewaitchan = WaitChannel::new();
+                (*pi).write_waitchannel = WaitChannel::new();
                 (**f0).pipe = pi;
                 (**f1).typ = FD_PIPE;
                 (**f1).readable = 0;

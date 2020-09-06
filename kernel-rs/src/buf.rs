@@ -9,7 +9,8 @@ pub struct Buf {
     pub blockno: u32,
     pub lock: Sleeplock,
     pub refcnt: u32,
-    pub chan: WaitChannel,
+    /// WaitChannel saying virtio_disk request is done.
+    pub vdisk_request_waitchannel: WaitChannel,
 
     /// LRU cache list.
     pub prev: *mut Buf,
@@ -25,7 +26,7 @@ impl Buf {
             blockno: 0,
             lock: Sleeplock::zeroed(),
             refcnt: 0,
-            chan: WaitChannel::new(),
+            vdisk_request_waitchannel: WaitChannel::new(),
 
             prev: ptr::null_mut(),
             next: ptr::null_mut(),

@@ -17,7 +17,8 @@ unsafe impl<'s, T: Sync> Sync for SleepLockGuard<'s, T> {}
 pub struct SleeplockWIP<T> {
     spinlock: Spinlock<i32>,
     data: UnsafeCell<T>,
-    chan: WaitChannel,
+    /// WaitChannel saying spinlock is relased.
+    waitchannel: WaitChannel,
 }
 
 unsafe impl<T: Send> Sync for SleeplockWIP<T> {}
@@ -25,7 +26,7 @@ unsafe impl<T: Send> Sync for SleeplockWIP<T> {}
 impl<T> SleeplockWIP<T> {
     pub fn initlock(&mut self, name: &'static str) {
         self.spinlock = Spinlock::new(name, -1);
-        self.chan = WaitChannel::new();
+        self.waitchannel = WaitChannel::new();
     }
 
     pub fn into_inner(self) -> T {
@@ -35,7 +36,7 @@ impl<T> SleeplockWIP<T> {
     pub unsafe fn lock(&mut self) -> SleepLockGuard<'_, T> {
         let mut guard = self.spinlock.lock();
         while *guard != -1 {
-            self.chan.sleep(guard.raw() as *mut RawSpinlock);
+            self.waitchannel.sleep(guard.raw() as *mut RawSpinlock);
         }
         *guard = (*myproc()).pid;
         drop(guard);
@@ -57,7 +58,7 @@ impl<T> Drop for SleepLockGuard<'_, T> {
         let mut guard = self.lock.spinlock.lock();
         *guard = -1;
         unsafe {
-            self.lock.chan.wakeup();
+            self.lock.waitchannel.wakeup();
         }
         drop(guard);
     }
@@ -92,7 +93,8 @@ pub struct Sleeplock {
     /// Process holding lock
     pid: i32,
 
-    chan: WaitChannel,
+    /// WaitChannel saying lk is relased.
+    waitchannel: WaitChannel,
 }
 
 impl Sleeplock {
@@ -103,7 +105,7 @@ impl Sleeplock {
             lk: RawSpinlock::zeroed(),
             name: "",
             pid: 0,
-            chan: WaitChannel::new(),
+            waitchannel: WaitChannel::new(),
         }
     }
 
@@ -128,7 +130,7 @@ impl Sleeplock {
     pub unsafe fn acquire(&mut self) {
         (*self).lk.acquire();
         while (*self).locked != 0 {
-            (*self).chan.sleep(&mut (*self).lk);
+            (*self).waitchannel.sleep(&mut (*self).lk);
         }
         (*self).locked = 1;
         (*self).pid = (*myproc()).pid;
@@ -139,7 +141,7 @@ impl Sleeplock {
         (*self).lk.acquire();
         (*self).locked = 0;
         (*self).pid = 0;
-        (*self).chan.wakeup();
+        (*self).waitchannel.wakeup();
         (*self).lk.release();
     }
 
