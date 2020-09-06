@@ -209,7 +209,7 @@ impl WaitChannel {
         Self {}
     }
 
-    /// Atomically release lock and sleep on chan.
+    /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
     // TODO(@kimjungwow): lk is not SpinLockGuard yet because
     // 1. Some static mut variables are still not Spinlock<T> but RawSpinlock
@@ -232,12 +232,12 @@ impl WaitChannel {
         }
 
         // Go to sleep.
-        (*p).chan = self;
+        (*p).waitchannel = self;
         (*p).state = Procstate::SLEEPING;
         sched();
 
         // Tidy up.
-        (*p).chan = ptr::null();
+        (*p).waitchannel = ptr::null();
 
         // Reacquire original lock.
         if lk != &mut (*p).lock as *mut RawSpinlock {
@@ -246,13 +246,13 @@ impl WaitChannel {
         };
     }
 
-    /// Wake up all processes sleeping on chan.
+    /// Wake up all processes sleeping on waitchannel.
     /// Must be called without any p->lock.
     pub fn wakeup(&self) {
         unsafe {
             for p in &mut PROC[..] {
                 p.lock.acquire();
-                if !p.chan.is_null() && *p.chan == *self && p.state == Procstate::SLEEPING {
+                if !p.waitchannel.is_null() && *p.waitchannel == *self && p.state == Procstate::SLEEPING {
                     p.state = Procstate::RUNNABLE
                 }
                 p.lock.release();
@@ -266,7 +266,7 @@ impl WaitChannel {
         if !(*p).lock.holding() {
             panic!("wakeup_proc");
         }
-        if (*p).chan == self as _ && (*p).state == Procstate::SLEEPING {
+        if (*p).waitchannel == self as _ && (*p).state == Procstate::SLEEPING {
             (*p).state = Procstate::RUNNABLE
         }
     }
@@ -284,8 +284,8 @@ pub struct Proc {
     /// Parent process.
     parent: *mut Proc,
 
-    /// If non-zero, sleeping on chan.
-    chan: *const WaitChannel,
+    /// If non-zero, sleeping on waitchannel.
+    waitchannel: *const WaitChannel,
 
     /// If non-zero, have been killed.
     pub killed: i32,
@@ -376,7 +376,7 @@ impl Proc {
             lock: RawSpinlock::zeroed(),
             state: Procstate::UNUSED,
             parent: ptr::null_mut(),
-            chan: ptr::null(),
+            waitchannel: ptr::null(),
             killed: 0,
             xstate: 0,
             pid: 0,
@@ -505,7 +505,7 @@ unsafe fn freeproc(mut p: *mut Proc) {
     (*p).pid = 0;
     (*p).parent = ptr::null_mut();
     (*p).name[0] = 0;
-    (*p).chan = ptr::null();
+    (*p).waitchannel = ptr::null();
     (*p).killed = 0;
     (*p).xstate = 0;
     (*p).state = Procstate::UNUSED;
