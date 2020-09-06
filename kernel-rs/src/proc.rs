@@ -252,7 +252,10 @@ impl WaitChannel {
         unsafe {
             for p in &mut PROC[..] {
                 p.lock.acquire();
-                if !p.waitchannel.is_null() && *p.waitchannel == *self && p.state == Procstate::SLEEPING {
+                if !p.waitchannel.is_null()
+                    && *p.waitchannel == *self
+                    && p.state == Procstate::SLEEPING
+                {
                     p.state = Procstate::RUNNABLE
                 }
                 p.lock.release();
@@ -286,6 +289,9 @@ pub struct Proc {
 
     /// If non-zero, sleeping on waitchannel.
     waitchannel: *const WaitChannel,
+
+    /// Waitchannel saying child proc is dead.
+    child_waitchannel: WaitChannel,
 
     /// If non-zero, have been killed.
     pub killed: i32,
@@ -376,6 +382,7 @@ impl Proc {
             lock: RawSpinlock::zeroed(),
             state: Procstate::UNUSED,
             parent: ptr::null_mut(),
+            child_waitchannel: WaitChannel::new(),
             waitchannel: ptr::null(),
             killed: 0,
             xstate: 0,
@@ -704,7 +711,7 @@ pub unsafe fn exit(status: i32) {
     // necessary or not. init may miss this wakeup, but that seems
     // harmless.
     (*INITPROC).lock.acquire();
-    (*(INITPROC as *const WaitChannel)).wakeup_proc(INITPROC);
+    (*INITPROC).child_waitchannel.wakeup_proc(INITPROC);
     (*INITPROC).lock.release();
 
     // Grab a copy of p->parent, to ensure that we unlock the same
@@ -727,7 +734,9 @@ pub unsafe fn exit(status: i32) {
     reparent(p);
 
     // Parent might be sleeping in wait().
-    (*(original_parent as *const WaitChannel)).wakeup_proc(original_parent);
+    (*original_parent)
+        .child_waitchannel
+        .wakeup_proc(original_parent);
     (*p).xstate = status;
     (*p).state = Procstate::ZOMBIE;
     (*original_parent).lock.release();
@@ -788,7 +797,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
 
         // Wait for a child to exit.
         //DOC: wait-sleep
-        (*(p as *const WaitChannel)).sleep(&mut (*p).lock);
+        (*p).child_waitchannel.sleep(&mut (*p).lock);
     }
 }
 
