@@ -401,8 +401,6 @@ static mut PROC: [Proc; NPROC] = [Proc::zeroed(); NPROC];
 
 static mut INITPROC: *mut Proc = ptr::null_mut();
 
-static mut NEXTPID: Spinlock<i32> = Spinlock::new("nextpid", 1);
-
 #[no_mangle]
 pub unsafe fn procinit() {
     for (i, p) in PROC.iter_mut().enumerate() {
@@ -448,7 +446,9 @@ pub unsafe fn myproc() -> *mut Proc {
     p
 }
 
-unsafe fn allocpid() -> i32 {
+fn allocpid() -> i32 {
+    static NEXTPID: Spinlock<i32> = Spinlock::new("nextpid", 1);
+
     let mut pid = NEXTPID.lock();
     let ret = *pid;
     *pid += 1;
