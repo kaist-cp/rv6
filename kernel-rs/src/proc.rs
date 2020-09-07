@@ -8,7 +8,7 @@ use crate::{
     param::{NCPU, NOFILE, NPROC, ROOTDEV},
     println,
     riscv::{intr_get, intr_on, r_tp, PagetableT, PGSIZE, PTE_R, PTE_W, PTE_X},
-    spinlock::{pop_off, push_off, RawSpinlock},
+    spinlock::{pop_off, push_off, RawSpinlock, Spinlock},
     string::safestrcpy,
     trap::usertrapret,
     vm::{
@@ -401,13 +401,10 @@ static mut PROC: [Proc; NPROC] = [Proc::zeroed(); NPROC];
 
 static mut INITPROC: *mut Proc = ptr::null_mut();
 
-static mut NEXTPID: i32 = 1;
-
-static mut PID_LOCK: RawSpinlock = RawSpinlock::zeroed();
+static mut NEXTPID: Spinlock<i32> = Spinlock::new("nextpid", 1);
 
 #[no_mangle]
 pub unsafe fn procinit() {
-    PID_LOCK.initlock("nextpid");
     for (i, p) in PROC.iter_mut().enumerate() {
         p.lock.initlock("proc");
 
@@ -452,11 +449,10 @@ pub unsafe fn myproc() -> *mut Proc {
 }
 
 unsafe fn allocpid() -> i32 {
-    PID_LOCK.acquire();
-    let pid = NEXTPID;
-    NEXTPID += 1;
-    PID_LOCK.release();
-    pid
+    let mut pid = NEXTPID.lock();
+    let ret = *pid;
+    *pid += 1;
+    ret
 }
 
 /// Look in the process table for an UNUSED proc.
