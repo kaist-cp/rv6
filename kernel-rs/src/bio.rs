@@ -13,25 +13,25 @@
 
 use crate::{buf::Buf, param::NBUF, spinlock::Spinlock};
 
-pub struct Bcache {
+struct Bcache {
     pub buf: [Buf; NBUF],
 
     // Linked list of all buffers, through prev/next.  head.next is most recently used.
     pub head: Buf,
 }
 
-pub static mut BCACHE: Spinlock<Bcache> = Spinlock::new("BCACHE", Bcache::zeroed());
+static mut BCACHE: Spinlock<Bcache> = Spinlock::new("BCACHE", Bcache::zeroed());
 
 impl Bcache {
     // TODO:transient measure.
-    pub const fn zeroed() -> Self {
+    const fn zeroed() -> Self {
         Self {
             buf: [Buf::zeroed(); NBUF],
             head: Buf::zeroed(),
         }
     }
 
-    pub fn init(&mut self) {
+    fn init(&mut self) {
         // Create linked list of buffers.
         self.head.prev = &mut self.head;
         self.head.next = &mut self.head;
@@ -77,7 +77,7 @@ impl Bcache {
 
     /// Release a locked buffer.
     /// Move to the head of the MRU list.
-    pub unsafe fn release(&mut self, buf: &mut Buf) {
+    unsafe fn release(&mut self, buf: &mut Buf) {
         buf.refcnt = buf.refcnt.wrapping_sub(1);
         if buf.refcnt == 0 {
             // No one is waiting for it.
@@ -90,11 +90,11 @@ impl Bcache {
         }
     }
 
-    pub unsafe fn pin(&mut self, buf: &mut Buf) {
+    unsafe fn pin(&mut self, buf: &mut Buf) {
         buf.refcnt = buf.refcnt.wrapping_add(1);
     }
 
-    pub unsafe fn unpin(&mut self, buf: &mut Buf) {
+    unsafe fn unpin(&mut self, buf: &mut Buf) {
         buf.refcnt = buf.refcnt.wrapping_sub(1);
     }
 }

@@ -64,7 +64,7 @@ pub struct BufInner {
 }
 
 impl BufInner {
-    pub const fn zeroed() -> Self {
+    const fn zeroed() -> Self {
         Self {
             valid: false,
             disk: false,
