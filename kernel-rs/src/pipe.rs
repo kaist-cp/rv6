@@ -9,23 +9,23 @@ use crate::{
 };
 use core::ptr;
 
-pub const PIPESIZE: usize = 512;
+const PIPESIZE: usize = 512;
 
 pub struct Pipe {
-    pub lock: RawSpinlock,
-    pub data: [u8; PIPESIZE],
+    lock: RawSpinlock,
+    data: [u8; PIPESIZE],
 
     /// Number of bytes read.
-    pub nread: u32,
+    nread: u32,
 
     /// Number of bytes written.
-    pub nwrite: u32,
+    nwrite: u32,
 
     /// Read fd is still open.
-    pub readopen: i32,
+    readopen: i32,
 
     /// Write fd is still open.
-    pub writeopen: i32,
+    writeopen: i32,
 
     /// WaitChannel for saying there are unread bytes in Pipe.data.
     read_waitchannel: WaitChannel,
