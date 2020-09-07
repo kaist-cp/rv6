@@ -39,7 +39,7 @@ pub unsafe fn sys_sleep() -> usize {
     TICKSLOCK.acquire();
     let ticks0 = TICKS;
     while TICKS.wrapping_sub(ticks0) < n as u32 {
-        if (*myproc()).killed != 0 {
+        if (*myproc()).killed {
             TICKSLOCK.release();
             return usize::MAX;
         }
