@@ -435,25 +435,25 @@ pub unsafe fn sys_exec() -> usize {
 }
 
 pub unsafe fn sys_pipe() -> usize {
-    let mut rf: *mut File = ptr::null_mut();
-    let mut wf: *mut File = ptr::null_mut();
+    let mut pipereader: *mut File = ptr::null_mut();
+    let mut pipewriter: *mut File = ptr::null_mut();
     let mut fd1: i32 = 0;
     let mut p: *mut Proc = myproc();
     // user pointer to array of two integers
     let fdarray = ok_or!(argaddr(0), return usize::MAX);
-    if Pipe::alloc(&mut rf, &mut wf) < 0 {
+    if Pipe::alloc(&mut pipereader, &mut pipewriter) < 0 {
         return usize::MAX;
     }
-    let mut fd0: i32 = (*rf).fdalloc();
+    let mut fd0: i32 = (*pipereader).fdalloc();
     if fd0 < 0 || {
-        fd1 = (*wf).fdalloc();
+        fd1 = (*pipewriter).fdalloc();
         (fd1) < 0
     } {
         if fd0 >= 0 {
             (*p).open_files[fd0 as usize] = ptr::null_mut()
         }
-        (*rf).close();
-        (*wf).close();
+        (*pipereader).close();
+        (*pipewriter).close();
         return usize::MAX;
     }
     if copyout(
@@ -471,8 +471,8 @@ pub unsafe fn sys_pipe() -> usize {
     {
         (*p).open_files[fd0 as usize] = ptr::null_mut();
         (*p).open_files[fd1 as usize] = ptr::null_mut();
-        (*rf).close();
-        (*wf).close();
+        (*pipereader).close();
+        (*pipewriter).close();
         return usize::MAX;
     }
     0
