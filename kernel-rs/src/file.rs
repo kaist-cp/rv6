@@ -21,8 +21,8 @@ pub struct File {
     /// reference count
     ref_0: i32,
 
-    pub readable: u8,
-    pub writable: u8,
+    pub readable: bool,
+    pub writable: bool,
 
     /// FD_PIPE
     pub pipe: *mut Pipe,
@@ -120,7 +120,7 @@ impl File {
         (*self).typ = FD_NONE;
         drop(file);
         if ff.typ as u32 == FD_PIPE as i32 as u32 {
-            (*ff.pipe).close(ff.writable as i32);
+            (*ff.pipe).close(ff.writable as bool);
         } else if ff.typ as u32 == FD_INODE as i32 as u32
             || ff.typ as u32 == FD_DEVICE as i32 as u32
         {
@@ -251,8 +251,8 @@ impl File {
         Self {
             typ: FD_NONE,
             ref_0: 0,
-            readable: 0,
-            writable: 0,
+            readable: false,
+            writable: false,
             pipe: ptr::null_mut(),
             ip: ptr::null_mut(),
             off: 0,

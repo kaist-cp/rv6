@@ -35,9 +35,9 @@ pub struct Pipe {
 }
 
 impl Pipe {
-    pub unsafe fn close(&mut self, writable: i32) {
+    pub unsafe fn close(&mut self, writable: bool) {
         (*self).lock.acquire();
-        if writable != 0 {
+        if writable {
             (*self).writeopen = false;
             self.read_waitchannel.wakeup();
         } else {
@@ -143,14 +143,14 @@ impl Pipe {
                 (*pi).nread = 0;
                 (*pi).lock.initlock("pipe");
                 (**f0).typ = FD_PIPE;
-                (**f0).readable = 1;
+                (**f0).readable = true;
                 (*pi).read_waitchannel = WaitChannel::new();
-                (**f0).writable = 0;
+                (**f0).writable = false;
                 (*pi).write_waitchannel = WaitChannel::new();
                 (**f0).pipe = pi;
                 (**f1).typ = FD_PIPE;
-                (**f1).readable = 0;
-                (**f1).writable = 1;
+                (**f1).readable = false;
+                (**f1).writable = true;
                 (**f1).pipe = pi;
                 return 0;
             }
