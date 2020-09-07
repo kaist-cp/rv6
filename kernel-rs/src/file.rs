@@ -158,7 +158,7 @@ impl File {
     /// Read from file self.
     /// addr is a user virtual address.
     pub unsafe fn read(&mut self, addr: usize, n: i32) -> i32 {
-        if (*self).readable as i32 == 0 {
+        if !(*self).readable {
             return -1;
         }
 
@@ -190,7 +190,7 @@ impl File {
     /// Write to file self.
     /// addr is a user virtual address.
     pub unsafe fn write(&mut self, addr: usize, n: i32) -> i32 {
-        if (*self).writable as i32 == 0 {
+        if !(*self).writable {
             return -1;
         }
         if (*self).typ as u32 == FD_PIPE {
