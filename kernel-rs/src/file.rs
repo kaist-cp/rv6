@@ -119,11 +119,9 @@ impl File {
         (*self).ref_0 = 0;
         (*self).typ = FD_NONE;
         drop(file);
-        if ff.typ as u32 == FD_PIPE as i32 as u32 {
-            (*ff.pipe).close(ff.writable as bool);
-        } else if ff.typ as u32 == FD_INODE as i32 as u32
-            || ff.typ as u32 == FD_DEVICE as i32 as u32
-        {
+        if ff.typ == FD_PIPE {
+            (*ff.pipe).close(ff.writable);
+        } else if ff.typ == FD_INODE || ff.typ == FD_DEVICE {
             begin_op();
             (*ff.ip).put();
             end_op();
@@ -135,9 +133,7 @@ impl File {
     pub unsafe fn stat(&mut self, addr: usize) -> i32 {
         let p: *mut Proc = myproc();
         let mut st: Stat = Default::default();
-        if (*self).typ as u32 == FD_INODE as i32 as u32
-            || (*self).typ as u32 == FD_DEVICE as i32 as u32
-        {
+        if (*self).typ == FD_INODE || (*self).typ == FD_DEVICE {
             (*(*self).ip).lock();
             stati((*self).ip, &mut st);
             (*(*self).ip).unlock();
@@ -193,7 +189,7 @@ impl File {
         if !(*self).writable {
             return -1;
         }
-        if (*self).typ as u32 == FD_PIPE {
+        if (*self).typ == FD_PIPE {
             (*(*self).pipe).write(addr, n)
         } else if (*self).typ == FD_DEVICE {
             if ((*self).major) < 0
@@ -212,16 +208,16 @@ impl File {
             // and 2 blocks of slop for non-aligned writes.
             // this really belongs lower down, since write()
             // might be writing a device like the console.
-            let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
+            let max = ((MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE) as i32;
             let mut i: i32 = 0;
             while i < n {
-                let mut n1: i32 = n - i;
-                if n1 > max as i32 {
-                    n1 = max as i32
+                let mut n1 = n - i;
+                if n1 > max {
+                    n1 = max
                 }
                 begin_op();
                 (*(*self).ip).lock();
-                let r: i32 =
+                let r =
                     (*(*self).ip).write(1, addr.wrapping_add(i as usize), (*self).off, n1 as u32);
                 if r > 0 {
                     (*self).off = ((*self).off).wrapping_add(r as u32)
