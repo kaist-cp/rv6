@@ -201,7 +201,6 @@ pub enum Procstate {
     UNUSED,
 }
 
-#[derive(PartialEq)]
 pub struct WaitChannel {}
 
 impl WaitChannel {
@@ -252,10 +251,7 @@ impl WaitChannel {
         unsafe {
             for p in &mut PROC[..] {
                 p.lock.acquire();
-                if !p.waitchannel.is_null()
-                    && *p.waitchannel == *self
-                    && p.state == Procstate::SLEEPING
-                {
+                if p.waitchannel == self as _ && p.state == Procstate::SLEEPING {
                     p.state = Procstate::RUNNABLE
                 }
                 p.lock.release();
