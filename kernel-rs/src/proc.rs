@@ -786,7 +786,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
         }
 
         // No point waiting if we don't have any children.
-        if havekids || (*p).killed {
+        if !havekids || (*p).killed {
             (*p).lock.release();
             return -1;
         }
