@@ -37,7 +37,7 @@ pub struct Context {
     pub ra: usize,
     pub sp: usize,
 
-    /// callee-saved
+    /// Callee-saved
     pub s0: usize,
     pub s1: usize,
     pub s2: usize,
@@ -414,11 +414,11 @@ pub unsafe fn procinit() {
         // Allocate a page for the process's kernel stack.
         // Map it high in memory, followed by an invalid
         // guard page.
-        let pa: *mut u8 = kalloc() as *mut u8;
+        let pa = kalloc() as *mut u8;
         if pa.is_null() {
             panic!("kalloc");
         }
-        let va: usize = kstack(i as _);
+        let va: usize = kstack(i);
         kvmmap(va, pa as usize, PGSIZE, PTE_R | PTE_W);
         p.kstack = va;
     }
@@ -445,15 +445,15 @@ pub fn mycpu() -> *mut Cpu {
 /// Return the current struct Proc *, or zero if none.
 pub unsafe fn myproc() -> *mut Proc {
     push_off();
-    let c: *mut Cpu = mycpu();
-    let p: *mut Proc = (*c).proc;
+    let c = mycpu();
+    let p = (*c).proc;
     pop_off();
     p
 }
 
 unsafe fn allocpid() -> i32 {
     PID_LOCK.acquire();
-    let pid: i32 = NEXTPID;
+    let pid = NEXTPID;
     NEXTPID += 1;
     PID_LOCK.release();
     pid
@@ -563,7 +563,7 @@ static mut INITCODE: [u8; 51] = [
 
 /// Set up first user process.
 pub unsafe fn userinit() {
-    let mut p: *mut Proc = allocproc();
+    let mut p = allocproc();
     INITPROC = p;
 
     // Allocate one user page and copy init's instructions
@@ -595,7 +595,7 @@ pub unsafe fn userinit() {
 /// Grow or shrink user memory by n bytes.
 /// Return 0 on success, -1 on failure.
 pub unsafe fn resizeproc(n: i32) -> i32 {
-    let mut p: *mut Proc = myproc();
+    let mut p = myproc();
     let sz = (*p).sz;
     let sz = match n.cmp(&0) {
         Ordering::Equal => sz,
@@ -615,10 +615,10 @@ pub unsafe fn resizeproc(n: i32) -> i32 {
 /// Create a new process, copying the parent.
 /// Sets up child kernel stack to return as if from fork() system call.
 pub unsafe fn fork() -> i32 {
-    let p: *mut Proc = myproc();
+    let p = myproc();
 
     // Allocate process.
-    let mut np: *mut Proc = allocproc();
+    let mut np = allocproc();
     if np.is_null() {
         return -1;
     }
@@ -632,16 +632,16 @@ pub unsafe fn fork() -> i32 {
     (*np).sz = (*p).sz;
     (*np).parent = p;
 
-    // copy saved user registers.
+    // Copy saved user registers.
     *(*np).tf = *(*p).tf;
 
     // Cause fork to return 0 in the child.
     (*(*np).tf).a0 = 0;
 
-    // increment reference counts on open file descriptors.
+    // Increment reference counts on open file descriptors.
     for i in 0..NOFILE {
-        if !(*p).open_files[i as usize].is_null() {
-            (*np).open_files[i as usize] = (*(*p).open_files[i as usize]).dup()
+        if !(*p).open_files[i].is_null() {
+            (*np).open_files[i] = (*(*p).open_files[i]).dup()
         }
     }
     (*np).cwd = (*(*p).cwd).idup();
@@ -650,7 +650,7 @@ pub unsafe fn fork() -> i32 {
         (*p).name.as_mut_ptr(),
         ::core::mem::size_of::<[u8; 16]>() as i32,
     );
-    let pid: i32 = (*np).pid;
+    let pid = (*np).pid;
     (*np).state = Procstate::RUNNABLE;
     (*np).lock.release();
     pid
@@ -683,7 +683,7 @@ pub unsafe fn reparent(p: *mut Proc) {
 /// An exited process remains in the zombie state
 /// until its parent calls wait().
 pub unsafe fn exit(status: i32) {
-    let mut p: *mut Proc = myproc();
+    let mut p = myproc();
     if p == INITPROC {
         panic!("init exiting");
     }
@@ -717,7 +717,7 @@ pub unsafe fn exit(status: i32) {
     // to a dead or wrong process; proc structs are never re-allocated
     // as anything else.
     (*p).lock.acquire();
-    let original_parent: *mut Proc = (*p).parent;
+    let original_parent = (*p).parent;
     (*p).lock.release();
 
     // We need the parent's lock in order to wake it up from wait().
@@ -752,7 +752,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
     (*p).lock.acquire();
     loop {
         // Scan through table looking for exited children.
-        let mut havekids: i32 = 0;
+        let mut havekids = false;
         for np in &mut PROC[..] {
             // This code uses np->parent without holding np->lock.
             // Acquiring the lock first would cause a deadlock,
@@ -761,7 +761,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
                 // np->parent can't change between the check and the acquire()
                 // because only the parent changes it, and we're the parent.
                 np.lock.acquire();
-                havekids = 1;
+                havekids = true;
                 if np.state == Procstate::ZOMBIE {
                     let pid = np.pid;
                     if addr != 0
@@ -786,7 +786,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
         }
 
         // No point waiting if we don't have any children.
-        if havekids == 0 || (*p).killed {
+        if havekids || (*p).killed {
             (*p).lock.release();
             return -1;
         }
@@ -805,7 +805,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
 ///  - eventually that process transfers control
 ///    via swtch back to the scheduler.
 pub unsafe fn scheduler() -> ! {
-    let mut c: *mut Cpu = mycpu();
+    let mut c = mycpu();
     (*c).proc = ptr::null_mut();
     loop {
         // Avoid deadlock by ensuring that devices can interrupt.
@@ -838,7 +838,7 @@ pub unsafe fn scheduler() -> ! {
 /// break in the few places where a lock is held but
 /// there's no process.
 unsafe fn sched() {
-    let p: *mut Proc = myproc();
+    let p = myproc();
     if !(*p).lock.holding() {
         panic!("sched p->lock");
     }
@@ -861,7 +861,7 @@ unsafe fn sched() {
 
 /// Give up the CPU for one scheduling round.
 pub unsafe fn proc_yield() {
-    let mut p: *mut Proc = myproc();
+    let mut p = myproc();
     (*p).lock.acquire();
     (*p).state = Procstate::RUNNABLE;
     sched();
@@ -909,7 +909,7 @@ pub unsafe fn kill(pid: i32) -> i32 {
 /// depending on usr_dst.
 /// Returns 0 on success, -1 on error.
 pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: *mut libc::CVoid, len: usize) -> i32 {
-    let p: *mut Proc = myproc();
+    let p = myproc();
     if user_dst != 0 {
         copyout((*p).pagetable, dst, src as *mut u8, len)
     } else {
@@ -922,7 +922,7 @@ pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: *mut libc::CVoid, l
 /// depending on usr_src.
 /// Returns 0 on success, -1 on error.
 pub unsafe fn either_copyin(dst: *mut libc::CVoid, user_src: i32, src: usize, len: usize) -> i32 {
-    let p: *mut Proc = myproc();
+    let p = myproc();
     if user_src != 0 {
         copyin((*p).pagetable, dst as *mut u8, src, len)
     } else {
