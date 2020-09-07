@@ -107,7 +107,7 @@ pub unsafe fn binit() {
 pub unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
     let buf = BCACHE.lock().get(dev, blockno);
     (*buf).lock.acquire();
-    return buf;
+    buf
 }
 
 pub unsafe fn brelease(buf: &mut Buf) {
