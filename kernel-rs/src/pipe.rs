@@ -22,10 +22,10 @@ pub struct Pipe {
     nwrite: u32,
 
     /// Read fd is still open.
-    readopen: i32,
+    readopen: bool,
 
     /// Write fd is still open.
-    writeopen: i32,
+    writeopen: bool,
 
     /// WaitChannel for saying there are unread bytes in Pipe.data.
     read_waitchannel: WaitChannel,
@@ -38,13 +38,13 @@ impl Pipe {
     pub unsafe fn close(&mut self, writable: i32) {
         (*self).lock.acquire();
         if writable != 0 {
-            (*self).writeopen = 0;
+            (*self).writeopen = false;
             self.read_waitchannel.wakeup();
         } else {
-            (*self).readopen = 0;
+            (*self).readopen = false;
             self.write_waitchannel.wakeup();
         }
-        if (*self).readopen == 0 && (*self).writeopen == 0 {
+        if !(*self).readopen && !(*self).writeopen {
             (*self).lock.release();
             kfree(self as *mut Pipe as *mut u8 as *mut libc::CVoid);
         } else {
@@ -59,7 +59,7 @@ impl Pipe {
         while i < n {
             while (*self).nwrite == (*self).nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
-                if (*self).readopen == 0 || (*myproc()).killed {
+                if !(*self).readopen || (*myproc()).killed {
                     (*self).lock.release();
                     return -1;
                 }
@@ -91,7 +91,7 @@ impl Pipe {
         (*self).lock.acquire();
 
         //DOC: pipe-empty
-        while (*self).nread == (*self).nwrite && (*self).writeopen != 0 {
+        while (*self).nread == (*self).nwrite && (*self).writeopen {
             if (*myproc()).killed {
                 (*self).lock.release();
                 return -1;
@@ -137,8 +137,8 @@ impl Pipe {
         }) {
             pi = kalloc() as *mut Pipe;
             if !pi.is_null() {
-                (*pi).readopen = 1;
-                (*pi).writeopen = 1;
+                (*pi).readopen = true;
+                (*pi).writeopen = true;
                 (*pi).nwrite = 0;
                 (*pi).nread = 0;
                 (*pi).lock.initlock("pipe");
