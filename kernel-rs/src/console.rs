@@ -108,7 +108,7 @@ impl Console {
             // Wait until interrupt handler has put some
             // input into CONS.buffer.
             while self.r == self.w {
-                if (*myproc()).killed != 0 {
+                if (*myproc()).killed {
                     return -1;
                 }
                 // TODO: need to change "RawSpinlock" after refactoring "sleep()" function in proc.rs

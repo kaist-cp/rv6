@@ -59,7 +59,7 @@ impl Pipe {
         while i < n {
             while (*self).nwrite == (*self).nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
-                if (*self).readopen == 0 || (*myproc()).killed != 0 {
+                if (*self).readopen == 0 || (*myproc()).killed {
                     (*self).lock.release();
                     return -1;
                 }
@@ -92,7 +92,7 @@ impl Pipe {
 
         //DOC: pipe-empty
         while (*self).nread == (*self).nwrite && (*self).writeopen != 0 {
-            if (*myproc()).killed != 0 {
+            if (*myproc()).killed {
                 (*self).lock.release();
                 return -1;
             }

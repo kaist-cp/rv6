@@ -290,7 +290,7 @@ pub struct Proc {
     child_waitchannel: WaitChannel,
 
     /// If non-zero, have been killed.
-    pub killed: i32,
+    pub killed: bool,
 
     /// Exit status to be returned to parent's wait.
     xstate: i32,
@@ -380,7 +380,7 @@ impl Proc {
             parent: ptr::null_mut(),
             child_waitchannel: WaitChannel::new(),
             waitchannel: ptr::null(),
-            killed: 0,
+            killed: false,
             xstate: 0,
             pid: 0,
             kstack: 0,
@@ -509,7 +509,7 @@ unsafe fn freeproc(mut p: *mut Proc) {
     (*p).parent = ptr::null_mut();
     (*p).name[0] = 0;
     (*p).waitchannel = ptr::null();
-    (*p).killed = 0;
+    (*p).killed = false;
     (*p).xstate = 0;
     (*p).state = Procstate::UNUSED;
 }
@@ -786,7 +786,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
         }
 
         // No point waiting if we don't have any children.
-        if havekids == 0 || (*p).killed != 0 {
+        if havekids == 0 || (*p).killed {
             (*p).lock.release();
             return -1;
         }
@@ -892,7 +892,7 @@ pub unsafe fn kill(pid: i32) -> i32 {
     for p in &mut PROC[..] {
         p.lock.acquire();
         if p.pid == pid {
-            p.killed = 1;
+            p.killed = true;
             if p.state == Procstate::SLEEPING {
                 // Wake process from sleep().
                 p.state = Procstate::RUNNABLE
