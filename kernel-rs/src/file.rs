@@ -118,7 +118,7 @@ impl File {
         if self.ref_0 > 0 {
             return;
         }
-        let ff: File = *self;
+        let mut ff: File = *self;
         self.ref_0 = 0;
         self.typ = Filetype::NONE;
         drop(file);
