@@ -142,11 +142,11 @@ impl Pipe {
                 (*pi).nwrite = 0;
                 (*pi).nread = 0;
                 (*pi).lock.initlock("pipe");
-                (**f0).typ = FD_PIPE;
-                (**f0).readable = true;
                 (*pi).read_waitchannel = WaitChannel::new();
-                (**f0).writable = false;
                 (*pi).write_waitchannel = WaitChannel::new();
+                (**f0).typ = FD_PIPE;
+                (**f0).readable = true;                
+                (**f0).writable = false;                
                 (**f0).pipe = pi;
                 (**f1).typ = FD_PIPE;
                 (**f1).readable = false;
