@@ -37,6 +37,7 @@ pub struct Pipe {
 }
 
 impl Pipe {
+    //TODO : `n` should be u32
     pub unsafe fn read(&self, addr: usize, n: i32) -> i32 {
         loop {
             let mut inner = self.inner.lock();
@@ -89,6 +90,7 @@ impl Pipe {
     }
 }
 
+// TODO: Remove Copy and Clone
 #[derive(Copy, Clone)]
 pub struct AllocatedPipe {
     ptr: *mut Pipe,
