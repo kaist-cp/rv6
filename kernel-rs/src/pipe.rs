@@ -36,35 +36,35 @@ pub struct Pipe {
 
 impl Pipe {
     pub unsafe fn close(&mut self, writable: bool) {
-        (*self).lock.acquire();
+        self.lock.acquire();
         if writable {
-            (*self).writeopen = false;
+            self.writeopen = false;
             self.read_waitchannel.wakeup();
         } else {
-            (*self).readopen = false;
+            self.readopen = false;
             self.write_waitchannel.wakeup();
         }
-        if !(*self).readopen && !(*self).writeopen {
-            (*self).lock.release();
+        if !self.readopen && !self.writeopen {
+            self.lock.release();
             kfree(self as *mut Pipe as *mut u8 as *mut libc::CVoid);
         } else {
-            (*self).lock.release();
+            self.lock.release();
         };
     }
     pub unsafe fn write(&mut self, addr: usize, n: i32) -> i32 {
         let mut i = 0;
         let mut ch: u8 = 0;
         let proc = myproc();
-        (*self).lock.acquire();
+        self.lock.acquire();
         while i < n {
-            while (*self).nwrite == (*self).nread.wrapping_add(PIPESIZE as u32) {
+            while self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
-                if !(*self).readopen || (*myproc()).killed {
-                    (*self).lock.release();
+                if !self.readopen || (*myproc()).killed {
+                    self.lock.release();
                     return -1;
                 }
                 self.read_waitchannel.wakeup();
-                self.write_waitchannel.sleep(&mut (*self).lock);
+                self.write_waitchannel.sleep(&mut self.lock);
             }
             if copyin(
                 (*proc).pagetable,
@@ -75,40 +75,40 @@ impl Pipe {
             {
                 break;
             }
-            let fresh0 = (*self).nwrite;
-            (*self).nwrite = (*self).nwrite.wrapping_add(1);
-            (*self).data[(fresh0 as usize).wrapping_rem(PIPESIZE)] = ch;
+            let fresh0 = self.nwrite;
+            self.nwrite = self.nwrite.wrapping_add(1);
+            self.data[(fresh0 as usize).wrapping_rem(PIPESIZE)] = ch;
             i += 1
         }
         self.read_waitchannel.wakeup();
-        (*self).lock.release();
+        self.lock.release();
         n
     }
     pub unsafe fn read(&mut self, addr: usize, n: i32) -> i32 {
         let mut i = 0;
         let proc = myproc();
 
-        (*self).lock.acquire();
+        self.lock.acquire();
 
         //DOC: pipe-empty
-        while (*self).nread == (*self).nwrite && (*self).writeopen {
+        while self.nread == self.nwrite && self.writeopen {
             if (*myproc()).killed {
-                (*self).lock.release();
+                self.lock.release();
                 return -1;
             }
 
             //DOC: piperead-sleep
-            self.read_waitchannel.sleep(&mut (*self).lock);
+            self.read_waitchannel.sleep(&mut self.lock);
         }
 
         //DOC: piperead-copy
         while i < n {
-            if (*self).nread == (*self).nwrite {
+            if self.nread == self.nwrite {
                 break;
             }
-            let fresh1 = (*self).nread;
-            (*self).nread = (*self).nread.wrapping_add(1);
-            let mut ch: u8 = (*self).data[(fresh1 as usize).wrapping_rem(PIPESIZE)];
+            let fresh1 = self.nread;
+            self.nread = self.nread.wrapping_add(1);
+            let mut ch: u8 = self.data[(fresh1 as usize).wrapping_rem(PIPESIZE)];
             if copyout(
                 (*proc).pagetable,
                 addr.wrapping_add(i as usize),
@@ -123,7 +123,7 @@ impl Pipe {
 
         //DOC: piperead-wakeup
         self.write_waitchannel.wakeup();
-        (*self).lock.release();
+        self.lock.release();
         i
     }
     pub unsafe fn alloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {

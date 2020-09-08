@@ -98,26 +98,26 @@ impl File {
     /// Increment ref count for file self.
     pub unsafe fn dup(&mut self) -> *mut File {
         let _file = FTABLE.lock();
-        if (*self).ref_0 < 1 {
+        if self.ref_0 < 1 {
             panic!("File::dup");
         }
-        (*self).ref_0 += 1;
+        self.ref_0 += 1;
         self
     }
 
     /// Close file self.  (Decrement ref count, close when reaches 0.)
     pub unsafe fn close(&mut self) {
         let file = FTABLE.lock();
-        if (*self).ref_0 < 1 {
+        if self.ref_0 < 1 {
             panic!("File::close");
         }
-        (*self).ref_0 -= 1;
-        if (*self).ref_0 > 0 {
+        self.ref_0 -= 1;
+        if self.ref_0 > 0 {
             return;
         }
         let ff: File = *self;
-        (*self).ref_0 = 0;
-        (*self).typ = FD_NONE;
+        self.ref_0 = 0;
+        self.typ = FD_NONE;
         drop(file);
         if ff.typ == FD_PIPE {
             (*ff.pipe).close(ff.writable);
@@ -133,10 +133,10 @@ impl File {
     pub unsafe fn stat(&mut self, addr: usize) -> i32 {
         let p: *mut Proc = myproc();
         let mut st: Stat = Default::default();
-        if (*self).typ == FD_INODE || (*self).typ == FD_DEVICE {
-            (*(*self).ip).lock();
-            stati((*self).ip, &mut st);
-            (*(*self).ip).unlock();
+        if self.typ == FD_INODE || self.typ == FD_DEVICE {
+            (*self.ip).lock();
+            stati(self.ip, &mut st);
+            (*self.ip).unlock();
             if copyout(
                 (*p).pagetable,
                 addr,
@@ -154,29 +154,29 @@ impl File {
     /// Read from file self.
     /// addr is a user virtual address.
     pub unsafe fn read(&mut self, addr: usize, n: i32) -> i32 {
-        if !(*self).readable {
+        if !self.readable {
             return -1;
         }
 
-        if (*self).typ == FD_PIPE {
-            (*(*self).pipe).read(addr, n)
-        } else if (*self).typ == FD_DEVICE {
-            if ((*self).major) < 0
-                || (*self).major as usize >= NDEV
-                || DEVSW[(*self).major as usize].read.is_none()
+        if self.typ == FD_PIPE {
+            (*self.pipe).read(addr, n)
+        } else if self.typ == FD_DEVICE {
+            if (self.major) < 0
+                || self.major as usize >= NDEV
+                || DEVSW[self.major as usize].read.is_none()
             {
                 return -1;
             }
-            DEVSW[(*self).major as usize]
+            DEVSW[self.major as usize]
                 .read
                 .expect("non-null function pointer")(1, addr, n)
-        } else if (*self).typ == FD_INODE {
-            (*(*self).ip).lock();
-            let r = (*(*self).ip).read(1, addr, (*self).off, n as u32);
+        } else if self.typ == FD_INODE {
+            (*self.ip).lock();
+            let r = (*self.ip).read(1, addr, self.off, n as u32);
             if r > 0 {
-                (*self).off = ((*self).off).wrapping_add(r as u32)
+                self.off = (self.off).wrapping_add(r as u32)
             }
-            (*(*self).ip).unlock();
+            (*self.ip).unlock();
             r
         } else {
             panic!("File::read");
@@ -186,22 +186,22 @@ impl File {
     /// Write to file self.
     /// addr is a user virtual address.
     pub unsafe fn write(&mut self, addr: usize, n: i32) -> i32 {
-        if !(*self).writable {
+        if !self.writable {
             return -1;
         }
-        if (*self).typ == FD_PIPE {
-            (*(*self).pipe).write(addr, n)
-        } else if (*self).typ == FD_DEVICE {
-            if ((*self).major) < 0
-                || (*self).major as usize >= NDEV
-                || DEVSW[(*self).major as usize].write.is_none()
+        if self.typ == FD_PIPE {
+            (*self.pipe).write(addr, n)
+        } else if self.typ == FD_DEVICE {
+            if (self.major) < 0
+                || self.major as usize >= NDEV
+                || DEVSW[self.major as usize].write.is_none()
             {
                 return -1;
             }
-            DEVSW[(*self).major as usize]
+            DEVSW[self.major as usize]
                 .write
                 .expect("non-null function pointer")(1, addr, n)
-        } else if (*self).typ == FD_INODE {
+        } else if self.typ == FD_INODE {
             // write a few blocks at a time to avoid exceeding
             // the maximum log transaction size, including
             // i-node, indirect block, allocation blocks,
@@ -214,13 +214,13 @@ impl File {
                 // TODO : rename `n1`
                 let n1 = cmp::min(n - i, max as i32);
                 begin_op();
-                (*(*self).ip).lock();
+                (*self.ip).lock();
                 let r =
-                    (*(*self).ip).write(1, addr.wrapping_add(i as usize), (*self).off, n1 as u32);
+                    (*self.ip).write(1, addr.wrapping_add(i as usize), self.off, n1 as u32);
                 if r > 0 {
-                    (*self).off = ((*self).off).wrapping_add(r as u32)
+                    self.off = (self.off).wrapping_add(r as u32)
                 }
-                (*(*self).ip).unlock();
+                (*self.ip).unlock();
                 end_op();
                 if r < 0 {
                     break;
