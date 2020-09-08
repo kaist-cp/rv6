@@ -435,9 +435,7 @@ pub unsafe fn sys_pipe() -> usize {
     // user pointer to array of two integers
     let fdarray = ok_or!(argaddr(0), return usize::MAX);
     let (pipereader, pipewriter) = ok_or!(AllocatedPipe::alloc(), return usize::MAX);
-        Ok((r, w)) => (r, w),
-        Err(()) => return usize::MAX,
-    };
+    
     let mut fd0: i32 = (*pipereader).fdalloc();
     if fd0 < 0 || {
         fd1 = (*pipewriter).fdalloc();
