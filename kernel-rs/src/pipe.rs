@@ -1,7 +1,6 @@
 use crate::libc;
 use crate::{
-    file::File,
-    fs::FD_PIPE,
+    file::{File, Filetype},
     kalloc::{kalloc, kfree},
     proc::{myproc, WaitChannel},
     spinlock::RawSpinlock,
@@ -144,11 +143,11 @@ impl Pipe {
                 (*pi).lock.initlock("pipe");
                 (*pi).read_waitchannel = WaitChannel::new();
                 (*pi).write_waitchannel = WaitChannel::new();
-                (**f0).typ = FD_PIPE;
-                (**f0).readable = true;                
-                (**f0).writable = false;                
+                (**f0).typ = Filetype::PIPE;
+                (**f0).readable = true;
+                (**f0).writable = false;
                 (**f0).pipe = pi;
-                (**f1).typ = FD_PIPE;
+                (**f1).typ = Filetype::PIPE;
                 (**f1).readable = false;
                 (**f1).writable = true;
                 (**f1).pipe = pi;
