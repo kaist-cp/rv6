@@ -10,7 +10,7 @@ use crate::{
     stat::Stat,
     vm::copyout,
 };
-use core::{ops::DerefMut, ptr};
+use core::{ops::DerefMut, ptr, cmp};
 
 pub const CONSOLE: usize = 1;
 
@@ -211,10 +211,8 @@ impl File {
             let max = ((MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE) as i32;
             let mut i: i32 = 0;
             while i < n {
-                let mut n1 = n - i;
-                if n1 > max {
-                    n1 = max
-                }
+                // TODO : rename `n1`
+                let n1 = cmp::min(n - i, max);
                 begin_op();
                 (*(*self).ip).lock();
                 let r =
