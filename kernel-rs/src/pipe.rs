@@ -37,38 +37,44 @@ pub struct Pipe {
 }
 
 impl Pipe {
+    /// PipeInner::try_read() tries to read as much as possible.
+    /// Pipe::read() executes try_read() until all bytes in pipe are read.
     //TODO : `n` should be u32
     pub unsafe fn read(&self, addr: usize, n: i32) -> i32 {
         loop {
             let mut inner = self.inner.lock();
             match inner.try_read(addr, n) {
                 Ok(r) => {
-                    //DOC: piperead-wakeup
-                    self.write_waitchannel.wakeup();
-                    return r;
-                }
-                Err(PipeError::WaitForIO { .. }) => {
-                    //DOC: piperead-sleep
-                    self.read_waitchannel.sleep(inner.raw() as _);
+                    if r < 0 {
+                        //DOC: piperead-sleep
+                        self.read_waitchannel.sleep(inner.raw() as _);
+                    } else {
+                        //DOC: piperead-wakeup
+                        self.write_waitchannel.wakeup();
+                        return r;
+                    }
                 }
                 _ => return -1,
             }
         }
     }
 
+    /// PipeInner::try_write() tries to write as much as possible.
+    /// Pipe::write() executes try_write() until `n` bytes are written.
     pub unsafe fn write(&self, addr: usize, n: i32) -> i32 {
         let mut written: i32 = 0;
         loop {
             let mut inner = self.inner.lock();
-            match inner.try_write(addr + written as usize, n + written) {
+            match inner.try_write(addr + written as usize, n - written) {
                 Ok(r) => {
-                    self.read_waitchannel.wakeup();
-                    return written + r;
-                }
-                Err(PipeError::WaitForIO { moved }) => {
-                    self.read_waitchannel.wakeup();
-                    self.write_waitchannel.sleep(inner.raw() as _);
-                    written += moved;
+                    written += r;
+                    if written < n {
+                        self.read_waitchannel.wakeup();
+                        self.write_waitchannel.sleep(inner.raw() as _);
+                    } else {
+                        self.read_waitchannel.wakeup();
+                        return written;
+                    }
                 }
                 _ => return -1,
             }
@@ -166,22 +172,17 @@ impl AllocatedPipe {
     }
 }
 
-pub enum PipeError {
-    WaitForIO { moved: i32 },
-    InvalidStatus,
-}
-
 impl PipeInner {
-    unsafe fn try_write(&mut self, addr: usize, n: i32) -> Result<i32, PipeError> {
+    unsafe fn try_write(&mut self, addr: usize, n: i32) -> Result<i32, ()> {
         let mut ch: u8 = 0;
         let proc = myproc();
         for i in 0..n {
             if self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
                 if !self.readopen || (*myproc()).killed {
-                    return Err(PipeError::InvalidStatus);
+                    return Err(());
                 }
-                return Err(PipeError::WaitForIO { moved: i });
+                return Ok(i);
             }
             if copyin(
                 (*proc).pagetable,
@@ -197,15 +198,15 @@ impl PipeInner {
         }
         Ok(n)
     }
-    unsafe fn try_read(&mut self, addr: usize, n: i32) -> Result<i32, PipeError> {
+    unsafe fn try_read(&mut self, addr: usize, n: i32) -> Result<i32, ()> {
         let proc = myproc();
 
         //DOC: pipe-empty
         if self.nread == self.nwrite && self.writeopen {
             if (*myproc()).killed {
-                return Err(PipeError::InvalidStatus);
+                return Err(());
             }
-            return Err(PipeError::WaitForIO { moved: 0 });
+            return Ok(-1);
         }
 
         //DOC: piperead-copy
