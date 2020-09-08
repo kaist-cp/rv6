@@ -46,7 +46,7 @@ impl Pipe {
                     self.write_waitchannel.wakeup();
                     return r;
                 }
-                Err(PipeError::WaitForIO) => {
+                Err(PipeError::WaitForIO { .. }) => {
                     //DOC: piperead-sleep
                     self.read_waitchannel.sleep(inner.raw() as _);
                 }
@@ -55,16 +55,18 @@ impl Pipe {
         }
     }
     pub unsafe fn write(&self, addr: usize, n: i32) -> i32 {
+        let mut written: i32 = 0;
         loop {
             let mut inner = self.inner.lock();
-            match inner.try_write(addr, n) {
+            match inner.try_write(addr + written as usize, n + written) {
                 Ok(r) => {
                     self.read_waitchannel.wakeup();
-                    return r;
+                    return written + r;
                 }
-                Err(PipeError::WaitForIO) => {
+                Err(PipeError::WaitForIO { moved }) => {
                     self.read_waitchannel.wakeup();
                     self.write_waitchannel.sleep(inner.raw() as _);
+                    written += moved;
                 }
                 _ => return -1,
             }
@@ -160,7 +162,7 @@ impl AllocatedPipe {
 }
 
 pub enum PipeError {
-    WaitForIO,
+    WaitForIO { moved: i32 },
     InvalidStatus,
 }
 
@@ -174,7 +176,7 @@ impl PipeInner {
                 if !self.readopen || (*myproc()).killed {
                     return Err(PipeError::InvalidStatus);
                 }
-                return Err(PipeError::WaitForIO);
+                return Err(PipeError::WaitForIO { moved: i });
             }
             if copyin(
                 (*proc).pagetable,
@@ -198,7 +200,7 @@ impl PipeInner {
             if (*myproc()).killed {
                 return Err(PipeError::InvalidStatus);
             }
-            return Err(PipeError::WaitForIO);
+            return Err(PipeError::WaitForIO { moved: 0 });
         }
 
         //DOC: piperead-copy
