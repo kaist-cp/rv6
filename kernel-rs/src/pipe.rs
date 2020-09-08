@@ -125,6 +125,7 @@ impl Pipe {
         self.lock.release();
         i
     }
+    //TODO : make alloc() return Result<(*mut File, *mut File), ()>
     pub unsafe fn alloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {
         let mut pi: *mut Pipe = ptr::null_mut();
         *f1 = ptr::null_mut();
