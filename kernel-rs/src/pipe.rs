@@ -54,6 +54,7 @@ impl Pipe {
             }
         }
     }
+
     pub unsafe fn write(&self, addr: usize, n: i32) -> i32 {
         let mut written: i32 = 0;
         loop {
@@ -208,7 +209,7 @@ impl PipeInner {
             if self.nread == self.nwrite {
                 return Ok(i);
             }
-            let mut ch: u8 = self.data[self.nread as usize % PIPESIZE];
+            let mut ch = self.data[self.nread as usize % PIPESIZE];
             self.nread = self.nread.wrapping_add(1);
             if copyout(
                 (*proc).pagetable,
