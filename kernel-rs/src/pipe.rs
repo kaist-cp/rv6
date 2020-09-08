@@ -3,15 +3,14 @@ use crate::{
     file::{File, Filetype},
     kalloc::{kalloc, kfree},
     proc::{myproc, WaitChannel},
-    spinlock::RawSpinlock,
+    spinlock::Spinlock,
     vm::{copyin, copyout},
 };
-use core::ptr;
+use core::{ops::Deref, ptr};
 
 const PIPESIZE: usize = 512;
 
-pub struct Pipe {
-    lock: RawSpinlock,
+struct PipeInner {
     data: [u8; PIPESIZE],
 
     /// Number of bytes read.
@@ -25,6 +24,10 @@ pub struct Pipe {
 
     /// Write fd is still open.
     writeopen: bool,
+}
+
+pub struct Pipe {
+    inner: Spinlock<PipeInner>,
 
     /// WaitChannel for saying there are unread bytes in Pipe.data.
     read_waitchannel: WaitChannel,
@@ -34,36 +37,144 @@ pub struct Pipe {
 }
 
 impl Pipe {
-    pub unsafe fn close(&mut self, writable: bool) {
-        self.lock.acquire();
+    pub unsafe fn read(&self, addr: usize, n: i32) -> i32 {
+        loop {
+            let mut inner = self.inner.lock();
+            match inner.try_read(addr, n) {
+                Ok(r) => {
+                    //DOC: piperead-wakeup
+                    self.write_waitchannel.wakeup();
+                    return r;
+                }
+                Err(PipeError::WaitForIO) => {
+                    //DOC: piperead-sleep
+                    self.read_waitchannel.sleep(inner.raw() as _);
+                }
+                _ => return -1,
+            }
+        }
+    }
+    pub unsafe fn write(&self, addr: usize, n: i32) -> i32 {
+        loop {
+            let mut inner = self.inner.lock();
+            match inner.try_write(addr, n) {
+                Ok(r) => {
+                    self.read_waitchannel.wakeup();
+                    return r;
+                }
+                Err(PipeError::WaitForIO) => {
+                    self.read_waitchannel.wakeup();
+                    self.write_waitchannel.sleep(inner.raw() as _);
+                }
+                _ => return -1,
+            }
+        }
+    }
+
+    unsafe fn close(&mut self, writable: bool) -> bool {
+        let mut inner = self.inner.lock();
+
         if writable {
-            self.writeopen = false;
+            inner.writeopen = false;
             self.read_waitchannel.wakeup();
         } else {
-            self.readopen = false;
+            inner.readopen = false;
             self.write_waitchannel.wakeup();
         }
-        if !self.readopen && !self.writeopen {
-            self.lock.release();
-            kfree(self as *mut Pipe as *mut u8 as *mut libc::CVoid);
-        } else {
-            self.lock.release();
-        };
+
+        !inner.readopen && !inner.writeopen
     }
-    pub unsafe fn write(&mut self, addr: usize, n: i32) -> i32 {
-        let mut i = 0;
+}
+
+#[derive(Copy, Clone)]
+pub struct AllocatedPipe {
+    ptr: *mut Pipe,
+}
+
+impl Deref for AllocatedPipe {
+    type Target = Pipe;
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.ptr }
+    }
+}
+
+impl AllocatedPipe {
+    pub const fn zeroed() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    pub unsafe fn alloc() -> Result<(*mut File, *mut File), ()> {
+        let f0 = File::alloc();
+        if f0.is_null() {
+            return Err(());
+        }
+
+        let f1 = File::alloc();
+        if f1.is_null() {
+            (*f0).close();
+            return Err(());
+        }
+
+        let ptr = kalloc() as *mut Pipe;
+        if ptr.is_null() {
+            (*f0).close();
+            (*f1).close();
+            return Err(());
+        }
+
+        //TODO: Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`
+        *ptr = Pipe {
+            inner: Spinlock::new(
+                "pipe",
+                PipeInner {
+                    data: [0; PIPESIZE],
+                    nwrite: 0,
+                    nread: 0,
+                    readopen: true,
+                    writeopen: true,
+                },
+            ),
+            read_waitchannel: WaitChannel::new(),
+            write_waitchannel: WaitChannel::new(),
+        };
+
+        (*f0).typ = Filetype::PIPE;
+        (*f0).readable = true;
+        (*f0).writable = false;
+        (*f0).pipe = Self { ptr };
+        (*f1).typ = Filetype::PIPE;
+        (*f1).readable = false;
+        (*f1).writable = true;
+        (*f1).pipe = Self { ptr };
+
+        Ok((f0, f1))
+    }
+
+    pub unsafe fn close(&self, writable: bool) {
+        if (*self.ptr).close(writable) {
+            kfree(self.ptr as *mut Pipe as *mut u8 as *mut libc::CVoid);
+        }
+    }
+}
+
+pub enum PipeError {
+    WaitForIO,
+    InvalidStatus,
+}
+
+impl PipeInner {
+    unsafe fn try_write(&mut self, addr: usize, n: i32) -> Result<i32, PipeError> {
         let mut ch: u8 = 0;
         let proc = myproc();
-        self.lock.acquire();
-        while i < n {
-            while self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
+        for i in 0..n {
+            if self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
                 if !self.readopen || (*myproc()).killed {
-                    self.lock.release();
-                    return -1;
+                    return Err(PipeError::InvalidStatus);
                 }
-                self.read_waitchannel.wakeup();
-                self.write_waitchannel.sleep(&mut self.lock);
+                return Err(PipeError::WaitForIO);
             }
             if copyin(
                 (*proc).pagetable,
@@ -74,40 +185,29 @@ impl Pipe {
             {
                 break;
             }
-            let fresh0 = self.nwrite;
+            self.data[self.nwrite as usize % PIPESIZE] = ch;
             self.nwrite = self.nwrite.wrapping_add(1);
-            self.data[(fresh0 as usize).wrapping_rem(PIPESIZE)] = ch;
-            i += 1
         }
-        self.read_waitchannel.wakeup();
-        self.lock.release();
-        n
+        Ok(n)
     }
-    pub unsafe fn read(&mut self, addr: usize, n: i32) -> i32 {
-        let mut i = 0;
+    unsafe fn try_read(&mut self, addr: usize, n: i32) -> Result<i32, PipeError> {
         let proc = myproc();
 
-        self.lock.acquire();
-
         //DOC: pipe-empty
-        while self.nread == self.nwrite && self.writeopen {
+        if self.nread == self.nwrite && self.writeopen {
             if (*myproc()).killed {
-                self.lock.release();
-                return -1;
+                return Err(PipeError::InvalidStatus);
             }
-
-            //DOC: piperead-sleep
-            self.read_waitchannel.sleep(&mut self.lock);
+            return Err(PipeError::WaitForIO);
         }
 
         //DOC: piperead-copy
-        while i < n {
+        for i in 0..n {
             if self.nread == self.nwrite {
-                break;
+                return Ok(i);
             }
-            let fresh1 = self.nread;
+            let mut ch: u8 = self.data[self.nread as usize % PIPESIZE];
             self.nread = self.nread.wrapping_add(1);
-            let mut ch: u8 = self.data[(fresh1 as usize).wrapping_rem(PIPESIZE)];
             if copyout(
                 (*proc).pagetable,
                 addr.wrapping_add(i as usize),
@@ -115,55 +215,9 @@ impl Pipe {
                 1usize,
             ) == -1
             {
-                break;
-            }
-            i += 1
-        }
-
-        //DOC: piperead-wakeup
-        self.write_waitchannel.wakeup();
-        self.lock.release();
-        i
-    }
-    //TODO : make alloc() return Result<(*mut File, *mut File), ()>
-    pub unsafe fn alloc(mut f0: *mut *mut File, mut f1: *mut *mut File) -> i32 {
-        let mut pi: *mut Pipe = ptr::null_mut();
-        *f1 = ptr::null_mut();
-        *f0 = *f1;
-        *f0 = File::alloc();
-        if !((*f0).is_null() || {
-            *f1 = File::alloc();
-            (*f1).is_null()
-        }) {
-            pi = kalloc() as *mut Pipe;
-            if !pi.is_null() {
-                (*pi).readopen = true;
-                (*pi).writeopen = true;
-                (*pi).nwrite = 0;
-                (*pi).nread = 0;
-                (*pi).lock.initlock("pipe");
-                (*pi).read_waitchannel = WaitChannel::new();
-                (*pi).write_waitchannel = WaitChannel::new();
-                (**f0).typ = Filetype::PIPE;
-                (**f0).readable = true;
-                (**f0).writable = false;
-                (**f0).pipe = pi;
-                (**f1).typ = Filetype::PIPE;
-                (**f1).readable = false;
-                (**f1).writable = true;
-                (**f1).pipe = pi;
-                return 0;
+                return Ok(i);
             }
         }
-        if !pi.is_null() {
-            kfree(pi as *mut u8 as *mut libc::CVoid);
-        }
-        if !(*f0).is_null() {
-            (*(*f0)).close();
-        }
-        if !(*f1).is_null() {
-            (*(*f1)).close();
-        }
-        -1
+        Ok(n)
     }
 }
