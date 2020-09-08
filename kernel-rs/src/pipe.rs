@@ -158,7 +158,8 @@ impl AllocatedPipe {
         Ok((f0, f1))
     }
 
-    pub unsafe fn close(&self, writable: bool) {
+    // TODO: use `Drop` instead of `close`
+    pub unsafe fn close(&mut self, writable: bool) {
         if (*self.ptr).close(writable) {
             kfree(self.ptr as *mut Pipe as *mut u8 as *mut libc::CVoid);
         }
