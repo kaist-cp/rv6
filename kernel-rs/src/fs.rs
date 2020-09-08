@@ -26,11 +26,6 @@ use crate::{
 use core::mem;
 use core::{ops::DerefMut, ptr};
 
-pub const FD_DEVICE: u32 = 3;
-pub const FD_INODE: u32 = 2;
-pub const FD_PIPE: u32 = 1;
-pub const FD_NONE: u32 = 0;
-
 /// Disk layout:
 /// [ boot block | super block | log | inode blocks |
 ///                                          free bit map | data blocks]

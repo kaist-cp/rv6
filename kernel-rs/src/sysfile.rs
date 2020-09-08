@@ -5,7 +5,7 @@ use crate::libc;
 use crate::{
     exec::exec,
     fcntl::FcntlFlags,
-    file::{File, Inode},
+    file::{File, Filetype, Inode},
     fs::{dirlink, dirlookup, namecmp, namei, nameiparent},
     fs::{Dirent, DIRSIZ},
     kalloc::{kalloc, kfree},
@@ -21,11 +21,6 @@ use crate::{
 };
 use core::mem;
 use core::ptr;
-
-pub const FD_DEVICE: u32 = 3;
-pub const FD_INODE: u32 = 2;
-pub const FD_PIPE: u32 = 1;
-pub const FD_NONE: u32 = 0;
 
 impl File {
     /// Allocate a file descriptor for the given file.
@@ -311,10 +306,10 @@ pub unsafe fn sys_open() -> usize {
         return usize::MAX;
     }
     if (*ip).typ as i32 == T_DEVICE {
-        (*f).typ = FD_DEVICE;
+        (*f).typ = Filetype::DEVICE;
         (*f).major = (*ip).major
     } else {
-        (*f).typ = FD_INODE;
+        (*f).typ = Filetype::INODE;
         (*f).off = 0
     }
     (*f).ip = ip;
