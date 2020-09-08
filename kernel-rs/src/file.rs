@@ -208,11 +208,11 @@ impl File {
             // and 2 blocks of slop for non-aligned writes.
             // this really belongs lower down, since write()
             // might be writing a device like the console.
-            let max = ((MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE) as i32;
+            let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
             let mut i: i32 = 0;
             while i < n {
                 // TODO : rename `n1`
-                let n1 = cmp::min(n - i, max);
+                let n1 = cmp::min(n - i, max as i32);
                 begin_op();
                 (*(*self).ip).lock();
                 let r =
