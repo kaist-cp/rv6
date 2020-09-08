@@ -75,7 +75,7 @@ impl Pipe {
         }
     }
 
-    unsafe fn close(&mut self, writable: bool) -> bool {
+    unsafe fn close(&self, writable: bool) -> bool {
         let mut inner = self.inner.lock();
 
         if writable {
@@ -86,6 +86,7 @@ impl Pipe {
             self.write_waitchannel.wakeup();
         }
 
+        // Return whether pipe would be freed or not
         !inner.readopen && !inner.writeopen
     }
 }
