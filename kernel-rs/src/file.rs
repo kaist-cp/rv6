@@ -3,7 +3,7 @@ use crate::{
     fs::{stati, BSIZE},
     log::{begin_op, end_op},
     param::{MAXOPBLOCKS, NDEV, NFILE},
-    pipe::Pipe,
+    pipe::AllocatedPipe,
     proc::{myproc, Proc},
     sleeplock::Sleeplock,
     spinlock::Spinlock,
@@ -25,7 +25,7 @@ pub struct File {
     pub writable: bool,
 
     /// Filetype::PIPE
-    pub pipe: *mut Pipe,
+    pub pipe: AllocatedPipe,
 
     /// Filetype::INODE and Filetype::DEVICE
     pub ip: *mut Inode,
@@ -123,7 +123,7 @@ impl File {
         self.typ = Filetype::NONE;
         drop(file);
         match ff.typ {
-            Filetype::PIPE => (*ff.pipe).close(ff.writable),
+            Filetype::PIPE => ff.pipe.close(ff.writable),
             Filetype::INODE | Filetype::DEVICE => {
                 begin_op();
                 (*ff.ip).put();
@@ -164,7 +164,7 @@ impl File {
         }
 
         if self.typ == Filetype::PIPE {
-            (*self.pipe).read(addr, n)
+            self.pipe.read(addr, n)
         } else if self.typ == Filetype::DEVICE {
             if (self.major) < 0
                 || self.major as usize >= NDEV
@@ -195,7 +195,7 @@ impl File {
             return -1;
         }
         if self.typ == Filetype::PIPE {
-            (*self.pipe).write(addr, n)
+            self.pipe.write(addr, n)
         } else if self.typ == Filetype::DEVICE {
             if (self.major) < 0
                 || self.major as usize >= NDEV
@@ -251,7 +251,7 @@ impl File {
             ref_0: 0,
             readable: false,
             writable: false,
-            pipe: ptr::null_mut(),
+            pipe: AllocatedPipe::zeroed(),
             ip: ptr::null_mut(),
             off: 0,
             major: 0,

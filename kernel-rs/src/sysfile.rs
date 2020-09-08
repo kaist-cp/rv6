@@ -12,7 +12,7 @@ use crate::{
     log::{begin_op, end_op},
     ok_or,
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
-    pipe::Pipe,
+    pipe::AllocatedPipe,
     proc::{myproc, Proc},
     riscv::PGSIZE,
     stat::{T_DEVICE, T_DIR, T_FILE},
@@ -430,15 +430,14 @@ pub unsafe fn sys_exec() -> usize {
 }
 
 pub unsafe fn sys_pipe() -> usize {
-    let mut pipereader: *mut File = ptr::null_mut();
-    let mut pipewriter: *mut File = ptr::null_mut();
     let mut fd1: i32 = 0;
     let mut p: *mut Proc = myproc();
     // user pointer to array of two integers
     let fdarray = ok_or!(argaddr(0), return usize::MAX);
-    if Pipe::alloc(&mut pipereader, &mut pipewriter) < 0 {
-        return usize::MAX;
-    }
+    let (pipereader, pipewriter) = match AllocatedPipe::alloc() {
+        Ok((r, w)) => (r, w),
+        Err(()) => return usize::MAX,
+    };
     let mut fd0: i32 = (*pipereader).fdalloc();
     if fd0 < 0 || {
         fd1 = (*pipewriter).fdalloc();
