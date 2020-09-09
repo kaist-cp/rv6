@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    file::{RcFile, Filetype},
+    file::{Filetype, RcFile},
     kalloc::{kalloc, kfree},
     proc::{myproc, WaitChannel},
     spinlock::Spinlock,

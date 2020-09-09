@@ -33,9 +33,7 @@ impl<T> RcPool<T> {
     // TODO: Make a RcPool trait and move this there.
     pub unsafe fn dup(&mut self, rc: &UntaggedRc<T>) -> UntaggedRc<T> {
         (*rc.ptr).ref_cnt += 1;
-        UntaggedRc {
-            ptr: rc.ptr,
-        }
+        UntaggedRc { ptr: rc.ptr }
     }
 }
 
@@ -64,15 +62,15 @@ pub trait Pool {
     type Data: 'static;
     type PoolBox: 'static;
 
-    fn alloc(&mut self, val: Self::Data) -> Option<Self::PoolBox>;
-    unsafe fn dealloc(&mut self, pbox: Self::PoolBox);
+    fn alloc(&self, val: Self::Data) -> Option<Self::PoolBox>;
+    unsafe fn dealloc(&self, pbox: Self::PoolBox);
 }
 
-impl<T: 'static> Pool for RcPool<T> {
+impl<T: 'static> Pool for Spinlock<RcPool<T>> {
     type Data = T;
     type PoolBox = UntaggedRc<T>;
-    fn alloc(&mut self, val: T) -> Option<UntaggedRc<T>> {
-        for entry in self.inner.iter_mut() {
+    fn alloc(&self, val: T) -> Option<UntaggedRc<T>> {
+        for entry in self.lock().inner.iter_mut() {
             if entry.ref_cnt == 0 {
                 entry.ref_cnt = 1;
                 entry.data.write(val);
@@ -85,15 +83,23 @@ impl<T: 'static> Pool for RcPool<T> {
 
     /// # Safety
     ///  - `rc` must be allocated from `self`.
-    unsafe fn dealloc(&mut self, rc: UntaggedRc<T>) {
-        let entry = &mut *rc.ptr;
+    unsafe fn dealloc(&self, rc: UntaggedRc<T>) {
+        let val = {
+            let _guard = self.lock();
+            let entry = &mut *rc.ptr;
 
-        entry.ref_cnt -= 1;
-        if entry.ref_cnt == 0 {
-            core::ptr::drop_in_place(&mut entry.data);
-        }
+            entry.ref_cnt -= 1;
+            if entry.ref_cnt == 0 {
+                Some(entry.data.read())
+            } else {
+                None
+            }
+        };
 
-        core::mem::forget(rc);
+        mem::forget(rc);
+
+        // Drop AFTER the pool lock is released, as dropping val may cause the current thread sleep.
+        mem::drop(val);
     }
 }
 
@@ -146,7 +152,7 @@ where
         // SAFETY: We can ensure the box is allocated from `P::REF` by the invariant of PoolRef.
         unsafe {
             let pbox = ManuallyDrop::take(&mut self.alloc);
-            P::deref().lock().dealloc(pbox);
+            P::deref().dealloc(pbox);
         }
     }
 }
@@ -160,10 +166,10 @@ where
 pub unsafe trait PoolRef: Sized {
     type P: Pool + 'static;
 
-    fn deref() -> &'static Spinlock<Self::P>;
+    fn deref() -> &'static Self::P;
 
     fn alloc(val: <Self::P as Pool>::Data) -> Option<TaggedBox<Self, <Self::P as Pool>::Data>> {
-        let alloc = Self::deref().lock().alloc(val)?;
+        let alloc = Self::deref().alloc(val)?;
         Some(TaggedBox {
             alloc: ManuallyDrop::new(alloc),
             _marker: PhantomData,

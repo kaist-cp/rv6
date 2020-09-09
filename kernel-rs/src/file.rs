@@ -4,12 +4,12 @@ use crate::{
     log::{begin_op, end_op},
     param::{MAXOPBLOCKS, NDEV},
     pipe::AllocatedPipe,
+    pool::{PoolRef, RcPool, TaggedBox},
     proc::{myproc, Proc},
     sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::Stat,
     vm::copyout,
-    pool::{RcPool, PoolRef, TaggedBox},
 };
 use core::{cmp, ptr};
 
@@ -90,8 +90,8 @@ static FTABLE: Spinlock<RcPool<File>> = Spinlock::new("FTABLE", RcPool::new());
 
 pub struct FTableRef(());
 unsafe impl PoolRef for FTableRef {
-    type P = RcPool<File>;
-    fn deref() -> &'static Spinlock<Self::P> {
+    type P = Spinlock<RcPool<File>>;
+    fn deref() -> &'static Self::P {
         &FTABLE
     }
 }

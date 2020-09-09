@@ -10,11 +10,12 @@ use crate::{
     fs::{Dirent, DIRSIZ},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
-    ok_or, some_or,
+    ok_or,
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
     pipe::AllocatedPipe,
     proc::{myproc, Proc},
     riscv::PGSIZE,
+    some_or,
     stat::{T_DEVICE, T_DIR, T_FILE},
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
     vm::copyout,
@@ -285,11 +286,23 @@ pub unsafe fn sys_open() -> usize {
         end_op();
         return usize::MAX;
     }
-    let mut f = some_or!(RcFile::alloc(), {
+    let f = some_or!(RcFile::alloc(), {
         (*ip).unlockput();
         end_op();
         return usize::MAX;
     });
+
+    let fd = match f.fdalloc() {
+        Ok(fd) => fd,
+        Err(f) => {
+            drop(f);
+            (*ip).unlockput();
+            end_op();
+            return usize::MAX;
+        }
+    };
+
+    let f = (*myproc()).open_files[fd as usize].as_mut().unwrap();
 
     if (*ip).typ as i32 == T_DEVICE {
         (*f).typ = Filetype::DEVICE;
@@ -301,16 +314,6 @@ pub unsafe fn sys_open() -> usize {
     (*f).ip = ip;
     (*f).readable = !omode.intersects(FcntlFlags::O_WRONLY);
     (*f).writable = omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR);
-
-    let fd = match f.fdalloc() {
-        Ok(fd) => fd,
-        Err(f) => {
-            drop(f);
-            (*ip).unlockput();
-            end_op();
-            return usize::MAX;
-        }
-    };
 
     (*ip).unlock();
     end_op();
