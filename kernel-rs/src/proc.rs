@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    file::{RcFile, Inode},
+    file::{Inode, RcFile},
     fs::{fsinit, namei},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
