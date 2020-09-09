@@ -13,6 +13,7 @@
 #![feature(const_in_array_repeat_expressions)]
 #![feature(array_value_iter)]
 #![feature(slice_ptr_range)]
+#![feature(maybe_uninit_extra)]
 
 // TODO(@jeehoonkang): we define `libc` module here because the `libc` crate doesn't work for the
 // `riscv64gc-unknown-none-elfhf` target.
@@ -43,6 +44,7 @@ mod pipe;
 mod plic;
 mod printf;
 mod proc;
+mod rcpool;
 mod riscv;
 mod sleeplock;
 mod spinlock;
