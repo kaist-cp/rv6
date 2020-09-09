@@ -2,19 +2,19 @@
 use crate::{
     fs::{stati, BSIZE},
     log::{begin_op, end_op},
-    param::{MAXOPBLOCKS, NDEV, NFILE},
+    param::{MAXOPBLOCKS, NDEV},
     pipe::AllocatedPipe,
     proc::{myproc, Proc},
     sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::Stat,
     vm::copyout,
+    pool::{RcPool, PoolRef, TaggedBox},
 };
-use core::{cmp, ops::DerefMut, ptr};
+use core::{cmp, ptr};
 
 pub const CONSOLE: usize = 1;
 
-#[derive(Copy, Clone)]
 pub struct File {
     pub typ: Filetype,
 
@@ -36,6 +36,9 @@ pub struct File {
     /// Filetype::DEVICE
     pub major: i16,
 }
+
+// TODO: will be infered as we wrap *mut Pipe and *mut Inode.
+unsafe impl Send for File {}
 
 /// in-memory copy of an inode
 pub struct Inode {
@@ -83,56 +86,31 @@ pub static mut DEVSW: [Devsw; NDEV] = [Devsw {
     write: None,
 }; NDEV];
 
-static mut FTABLE: Spinlock<[File; NFILE]> = Spinlock::new("FTABLE", [File::zeroed(); NFILE]);
+static FTABLE: Spinlock<RcPool<File>> = Spinlock::new("FTABLE", RcPool::new());
 
-impl File {
+pub struct FTableRef(());
+unsafe impl PoolRef for FTableRef {
+    type P = RcPool<File>;
+    fn deref() -> &'static Spinlock<Self::P> {
+        &FTABLE
+    }
+}
+
+pub type RcFile = TaggedBox<FTableRef, File>;
+
+impl RcFile {
     /// Allocate a file structure.
-    pub unsafe fn alloc() -> *mut File {
-        let mut file = FTABLE.lock();
-        for f in &mut file.deref_mut()[..] {
-            if (*f).ref_0 == 0 {
-                (*f).ref_0 = 1;
-                return f;
-            }
-        }
-        ptr::null_mut()
+    pub fn alloc() -> Option<Self> {
+        FTableRef::alloc(File::zeroed())
     }
 
     /// Increment ref count for file self.
-    pub unsafe fn dup(&mut self) -> *mut File {
-        let _file = FTABLE.lock();
-        if self.ref_0 < 1 {
-            panic!("File::dup");
-        }
-        self.ref_0 += 1;
-        self
+    pub fn dup(&self) -> Self {
+        unsafe { RcFile::from_unchecked(FTABLE.lock().dup(&*self)) }
     }
+}
 
-    /// Close file self.  (Decrement ref count, close when reaches 0.)
-    pub unsafe fn close(&mut self) {
-        let file = FTABLE.lock();
-        if self.ref_0 < 1 {
-            panic!("File::close");
-        }
-        self.ref_0 -= 1;
-        if self.ref_0 > 0 {
-            return;
-        }
-        let mut ff: File = *self;
-        self.ref_0 = 0;
-        self.typ = Filetype::NONE;
-        drop(file);
-        match ff.typ {
-            Filetype::PIPE => ff.pipe.close(ff.writable),
-            Filetype::INODE | Filetype::DEVICE => {
-                begin_op();
-                (*ff.ip).put();
-                end_op();
-            }
-            _ => (),
-        }
-    }
-
+impl File {
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
     pub unsafe fn stat(&mut self, addr: usize) -> i32 {
@@ -255,6 +233,23 @@ impl File {
             ip: ptr::null_mut(),
             off: 0,
             major: 0,
+        }
+    }
+}
+
+impl Drop for File {
+    fn drop(&mut self) {
+        // TODO: Reasoning why.
+        unsafe {
+            match self.typ {
+                Filetype::PIPE => self.pipe.close(self.writable),
+                Filetype::INODE | Filetype::DEVICE => {
+                    begin_op();
+                    (*self.ip).put();
+                    end_op();
+                }
+                _ => (),
+            }
         }
     }
 }

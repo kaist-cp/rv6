@@ -5,12 +5,12 @@ use crate::libc;
 use crate::{
     exec::exec,
     fcntl::FcntlFlags,
-    file::{File, Filetype, Inode},
+    file::{Filetype, Inode, RcFile},
     fs::{dirlink, dirlookup, namecmp, namei, nameiparent},
     fs::{Dirent, DIRSIZ},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
-    ok_or,
+    ok_or, some_or,
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
     pipe::AllocatedPipe,
     proc::{myproc, Proc},
@@ -22,45 +22,40 @@ use crate::{
 use core::mem;
 use core::ptr;
 
-impl File {
+impl RcFile {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
-    unsafe fn fdalloc(&mut self) -> i32 {
+    unsafe fn fdalloc(self) -> Result<i32, Self> {
         let mut p: *mut Proc = myproc();
         for fd in 0..NOFILE {
             // user pointer to struct stat
-            if (*p).open_files[fd].is_null() {
-                (*p).open_files[fd] = self;
-                return fd as i32;
+            if (*p).open_files[fd].is_none() {
+                (*p).open_files[fd] = Some(self);
+                return Ok(fd as i32);
             }
         }
-        -1
+        Err(self)
     }
 }
 
 /// Fetch the nth word-sized system call argument as a file descriptor
 /// and return both the descriptor and the corresponding struct file.
-unsafe fn argfd(n: usize) -> Result<(i32, *mut File), ()> {
+unsafe fn argfd(n: usize) -> Result<(i32, *mut RcFile), ()> {
     let fd = argint(n)?;
     if fd < 0 || fd >= NOFILE as i32 {
         return Err(());
     }
 
-    let f = (*myproc()).open_files[fd as usize];
-    if f.is_null() {
-        return Err(());
-    }
+    let f = some_or!(&mut (*myproc()).open_files[fd as usize], return Err(()));
 
     Ok((fd, f))
 }
 
 pub unsafe fn sys_dup() -> usize {
     let (_, f) = ok_or!(argfd(0), return usize::MAX);
-    let fd: i32 = (*f).fdalloc();
-    if fd < 0 {
-        return usize::MAX;
-    }
-    (*f).dup();
+    let newfile = (*f).dup();
+
+    let fd = ok_or!(newfile.fdalloc(), return usize::MAX);
     fd as usize
 }
 
@@ -79,10 +74,8 @@ pub unsafe fn sys_write() -> usize {
 }
 
 pub unsafe fn sys_close() -> usize {
-    let (fd, f) = ok_or!(argfd(0), return usize::MAX);
-    let fresh0 = &mut (*myproc()).open_files[fd as usize];
-    *fresh0 = ptr::null_mut();
-    (*f).close();
+    let (fd, _) = ok_or!(argfd(0), return usize::MAX);
+    (*myproc()).open_files[fd as usize] = None;
     0
 }
 
@@ -263,7 +256,6 @@ unsafe fn create(path: *mut u8, typ: i16, major: i16, minor: i16) -> *mut Inode 
 
 pub unsafe fn sys_open() -> usize {
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
-    let mut fd: i32 = 0;
     let ip: *mut Inode;
     let _ = ok_or!(argstr(0, path.as_mut_ptr(), MAXPATH), return usize::MAX);
     let omode = ok_or!(argint(1), return usize::MAX);
@@ -293,18 +285,12 @@ pub unsafe fn sys_open() -> usize {
         end_op();
         return usize::MAX;
     }
-    let mut f: *mut File = File::alloc();
-    if f.is_null() || {
-        fd = (*f).fdalloc();
-        (fd) < 0
-    } {
-        if !f.is_null() {
-            (*f).close();
-        }
+    let mut f = some_or!(RcFile::alloc(), {
         (*ip).unlockput();
         end_op();
         return usize::MAX;
-    }
+    });
+
     if (*ip).typ as i32 == T_DEVICE {
         (*f).typ = Filetype::DEVICE;
         (*f).major = (*ip).major
@@ -315,6 +301,17 @@ pub unsafe fn sys_open() -> usize {
     (*f).ip = ip;
     (*f).readable = !omode.intersects(FcntlFlags::O_WRONLY);
     (*f).writable = omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR);
+
+    let fd = match f.fdalloc() {
+        Ok(fd) => fd,
+        Err(f) => {
+            drop(f);
+            (*ip).unlockput();
+            end_op();
+            return usize::MAX;
+        }
+    };
+
     (*ip).unlock();
     end_op();
     fd as usize
@@ -430,24 +427,17 @@ pub unsafe fn sys_exec() -> usize {
 }
 
 pub unsafe fn sys_pipe() -> usize {
-    let mut fd1: i32 = 0;
     let mut p: *mut Proc = myproc();
     // user pointer to array of two integers
     let fdarray = ok_or!(argaddr(0), return usize::MAX);
     let (pipereader, pipewriter) = ok_or!(AllocatedPipe::alloc(), return usize::MAX);
 
-    let mut fd0: i32 = (*pipereader).fdalloc();
-    if fd0 < 0 || {
-        fd1 = (*pipewriter).fdalloc();
-        (fd1) < 0
-    } {
-        if fd0 >= 0 {
-            (*p).open_files[fd0 as usize] = ptr::null_mut()
-        }
-        (*pipereader).close();
-        (*pipewriter).close();
+    let mut fd0 = ok_or!(pipereader.fdalloc(), return usize::MAX);
+    let mut fd1 = ok_or!(pipewriter.fdalloc(), {
+        (*p).open_files[fd0 as usize] = None;
         return usize::MAX;
-    }
+    });
+
     if copyout(
         (*p).pagetable,
         fdarray,
@@ -461,10 +451,8 @@ pub unsafe fn sys_pipe() -> usize {
             mem::size_of::<i32>(),
         ) < 0
     {
-        (*p).open_files[fd0 as usize] = ptr::null_mut();
-        (*p).open_files[fd1 as usize] = ptr::null_mut();
-        (*pipereader).close();
-        (*pipewriter).close();
+        (*p).open_files[fd0 as usize] = None;
+        (*p).open_files[fd1 as usize] = None;
         return usize::MAX;
     }
     0

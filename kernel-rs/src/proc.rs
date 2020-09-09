@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    file::{File, Inode},
+    file::{RcFile, Inode},
     fs::{fsinit, namei},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
@@ -316,7 +316,7 @@ pub struct Proc {
     context: Context,
 
     /// Open files.
-    pub open_files: [*mut File; NOFILE],
+    pub open_files: [Option<RcFile>; NOFILE],
 
     /// Current directory.
     pub cwd: *mut Inode,
@@ -388,7 +388,7 @@ impl Proc {
             pagetable: ptr::null_mut(),
             tf: ptr::null_mut(),
             context: Context::zeroed(),
-            open_files: [ptr::null_mut(); NOFILE],
+            open_files: [None; NOFILE],
             cwd: ptr::null_mut(),
             name: [0; 16],
         }
@@ -636,8 +636,8 @@ pub unsafe fn fork() -> i32 {
 
     // Increment reference counts on open file descriptors.
     for i in 0..NOFILE {
-        if !(*p).open_files[i].is_null() {
-            (*np).open_files[i] = (*(*p).open_files[i]).dup()
+        if let Some(file) = &(*p).open_files[i] {
+            (*np).open_files[i] = Some(file.dup())
         }
     }
     (*np).cwd = (*(*p).cwd).idup();
@@ -685,12 +685,8 @@ pub unsafe fn exit(status: i32) {
     }
 
     // Close all open files.
-    for fd in 0..NOFILE {
-        if !(*p).open_files[fd].is_null() {
-            let f: *mut File = (*p).open_files[fd];
-            (*f).close();
-            (*p).open_files[fd] = ptr::null_mut();
-        }
+    for file in &mut (*p).open_files {
+        *file = None;
     }
     begin_op();
     (*(*p).cwd).put();
