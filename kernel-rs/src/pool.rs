@@ -2,10 +2,11 @@ use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop, MaybeUninit};
 use core::ops::{Deref, DerefMut};
 
+use crate::param::NFILE;
 use crate::spinlock::Spinlock;
 
 // TODO: We can use min_const_generics feature instead, but recent nightly fails to compile.
-const CAPACITY: usize = 100;
+const CAPACITY: usize = NFILE;
 
 struct RcEntry<T> {
     ref_cnt: usize,
