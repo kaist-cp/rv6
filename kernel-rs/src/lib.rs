@@ -44,7 +44,7 @@ mod pipe;
 mod plic;
 mod printf;
 mod proc;
-mod rcpool;
+mod pool;
 mod riscv;
 mod sleeplock;
 mod spinlock;

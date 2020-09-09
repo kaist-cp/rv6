@@ -12,11 +12,11 @@ struct RcEntry<T> {
     data: MaybeUninit<T>,
 }
 
-struct RcPool<T> {
+pub struct RcPool<T> {
     inner: [RcEntry<T>; CAPACITY],
 }
 
-struct UntaggedRc<T> {
+pub struct UntaggedRc<T> {
     ptr: *mut RcEntry<T>,
 }
 
@@ -29,12 +29,27 @@ impl<T> RcPool<T> {
             }; CAPACITY],
         }
     }
+
+    // TODO: Make a RcPool trait and move this there.
+    pub unsafe fn dup(&mut self, rc: &UntaggedRc<T>) -> UntaggedRc<T> {
+        (*rc.ptr).ref_cnt += 1;
+        UntaggedRc {
+            ptr: rc.ptr,
+        }
+    }
 }
 
 impl<T> Deref for UntaggedRc<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         unsafe { (*self.ptr).data.get_ref() }
+    }
+}
+
+// TODO: This may cause UB; remove after refactoring File::{read, write}.
+impl<T> DerefMut for UntaggedRc<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { (*self.ptr).data.get_mut() }
     }
 }
 
@@ -59,6 +74,7 @@ impl<T: 'static> Pool for RcPool<T> {
     fn alloc(&mut self, val: T) -> Option<UntaggedRc<T>> {
         for entry in self.inner.iter_mut() {
             if entry.ref_cnt == 0 {
+                entry.ref_cnt = 1;
                 entry.data.write(val);
                 return Some(UntaggedRc { ptr: entry });
             }
@@ -71,6 +87,7 @@ impl<T: 'static> Pool for RcPool<T> {
     ///  - `rc` must be allocated from `self`.
     unsafe fn dealloc(&mut self, rc: UntaggedRc<T>) {
         let entry = &mut *rc.ptr;
+
         entry.ref_cnt -= 1;
         if entry.ref_cnt == 0 {
             core::ptr::drop_in_place(&mut entry.data);
@@ -82,42 +99,54 @@ impl<T: 'static> Pool for RcPool<T> {
 
 /// Allocation from `P`.
 #[repr(transparent)]
-pub struct TaggedBox<P: PoolRef, A: 'static>
+pub struct TaggedBox<P: PoolRef, T: 'static>
 where
-    P::P: Pool<PoolBox = A>,
+    P::P: Pool<Data = T>,
 {
-    alloc: ManuallyDrop<A>,
+    alloc: ManuallyDrop<<P::P as Pool>::PoolBox>,
     _marker: PhantomData<P>,
 }
 
-impl<P: PoolRef, A: 'static> Deref for TaggedBox<P, A>
+impl<P: PoolRef, T: 'static> TaggedBox<P, T>
 where
-    P::P: Pool<PoolBox = A>,
+    P::P: Pool<Data = T>,
 {
-    type Target = A;
+    pub unsafe fn from_unchecked(pbox: <P::P as Pool>::PoolBox) -> Self {
+        Self {
+            alloc: ManuallyDrop::new(pbox),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<P: PoolRef, T: 'static> Deref for TaggedBox<P, T>
+where
+    P::P: Pool<Data = T>,
+{
+    type Target = <P::P as Pool>::PoolBox;
     fn deref(&self) -> &Self::Target {
         &self.alloc
     }
 }
 
-impl<P: PoolRef, A: 'static> DerefMut for TaggedBox<P, A>
+impl<P: PoolRef, T: 'static> DerefMut for TaggedBox<P, T>
 where
-    P::P: Pool<PoolBox = A>,
+    P::P: Pool<Data = T>,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.alloc
     }
 }
 
-impl<P: PoolRef, A: 'static> Drop for TaggedBox<P, A>
+impl<P: PoolRef, T: 'static> Drop for TaggedBox<P, T>
 where
-    P::P: Pool<PoolBox = A>,
+    P::P: Pool<Data = T>,
 {
     fn drop(&mut self) {
         // SAFETY: We can ensure the box is allocated from `P::REF` by the invariant of PoolRef.
         unsafe {
             let pbox = ManuallyDrop::take(&mut self.alloc);
-            P::REF.lock().dealloc(pbox);
+            P::deref().lock().dealloc(pbox);
         }
     }
 }
@@ -130,17 +159,18 @@ where
 /// There should be at most one implementation of PoolRef for each REF.
 pub unsafe trait PoolRef: Sized {
     type P: Pool + 'static;
-    const REF: &'static Spinlock<Self::P>;
 
-    fn alloc(val: <Self::P as Pool>::Data) -> Option<TaggedBox<Self, <Self::P as Pool>::PoolBox>> {
-        let alloc = Self::REF.lock().alloc(val)?;
+    fn deref() -> &'static Spinlock<Self::P>;
+
+    fn alloc(val: <Self::P as Pool>::Data) -> Option<TaggedBox<Self, <Self::P as Pool>::Data>> {
+        let alloc = Self::deref().lock().alloc(val)?;
         Some(TaggedBox {
             alloc: ManuallyDrop::new(alloc),
             _marker: PhantomData,
         })
     }
 
-    fn dealloc(tbox: TaggedBox<Self, <Self::P as Pool>::PoolBox>) {
+    fn dealloc(tbox: TaggedBox<Self, <Self::P as Pool>::Data>) {
         mem::drop(tbox);
     }
 }
