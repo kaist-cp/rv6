@@ -41,8 +41,8 @@ impl Pipe {
     /// Pipe::read() executes try_read() until all bytes in pipe are read.
     //TODO : `n` should be u32
     pub unsafe fn read(&self, addr: usize, n: i32) -> i32 {
+        let mut inner = self.inner.lock();
         loop {
-            let mut inner = self.inner.lock();
             match inner.try_read(addr, n) {
                 Ok(r) => {
                     if r < 0 {
@@ -63,16 +63,15 @@ impl Pipe {
     /// Pipe::write() executes try_write() until `n` bytes are written.
     pub unsafe fn write(&self, addr: usize, n: i32) -> i32 {
         let mut written: i32 = 0;
+        let mut inner = self.inner.lock();
         loop {
-            let mut inner = self.inner.lock();
             match inner.try_write(addr + written as usize, n - written) {
                 Ok(r) => {
                     written += r;
+                    self.read_waitchannel.wakeup();
                     if written < n {
-                        self.read_waitchannel.wakeup();
                         self.write_waitchannel.sleep(inner.raw() as _);
                     } else {
-                        self.read_waitchannel.wakeup();
                         return written;
                     }
                 }
