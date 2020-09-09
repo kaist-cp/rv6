@@ -45,14 +45,13 @@ impl Pipe {
         loop {
             match inner.try_read(addr, n) {
                 Ok(r) => {
-                    if r < 0 {
-                        //DOC: piperead-sleep
-                        self.read_waitchannel.sleep(inner.raw() as _);
-                    } else {
-                        //DOC: piperead-wakeup
-                        self.write_waitchannel.wakeup();
-                        return r;
-                    }
+                    //DOC: piperead-wakeup
+                    self.write_waitchannel.wakeup();
+                    return r;
+                }
+                Err(PipeError::WaitForIO) => {
+                    //DOC: piperead-sleep
+                    self.read_waitchannel.sleep(inner.raw() as _);
                 }
                 _ => return -1,
             }
@@ -171,6 +170,11 @@ impl AllocatedPipe {
     }
 }
 
+pub enum PipeError {
+    WaitForIO,
+    InvalidStatus,
+}
+
 impl PipeInner {
     unsafe fn try_write(&mut self, addr: usize, n: i32) -> Result<i32, ()> {
         let mut ch: u8 = 0;
@@ -178,7 +182,7 @@ impl PipeInner {
         for i in 0..n {
             if self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
-                if !self.readopen || (*myproc()).killed {
+                if !self.readopen || (*proc).killed {
                     return Err(());
                 }
                 return Ok(i);
@@ -197,15 +201,16 @@ impl PipeInner {
         }
         Ok(n)
     }
-    unsafe fn try_read(&mut self, addr: usize, n: i32) -> Result<i32, ()> {
+
+    unsafe fn try_read(&mut self, addr: usize, n: i32) -> Result<i32, PipeError> {
         let proc = myproc();
 
         //DOC: pipe-empty
         if self.nread == self.nwrite && self.writeopen {
-            if (*myproc()).killed {
-                return Err(());
+            if (*proc).killed {
+                return Err(PipeError::InvalidStatus);
             }
-            return Ok(-1);
+            return Err(PipeError::WaitForIO);
         }
 
         //DOC: piperead-copy
