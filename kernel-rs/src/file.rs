@@ -89,9 +89,11 @@ pub static mut DEVSW: [Devsw; NDEV] = [Devsw {
 static FTABLE: Spinlock<RcPool<File>> = Spinlock::new("FTABLE", RcPool::new());
 
 pub struct FTableRef(());
+
+// SAFETY: We have only one `PoolRef` pointing `FTABLE`.
 unsafe impl PoolRef for FTableRef {
-    type P = Spinlock<RcPool<File>>;
-    fn deref() -> &'static Self::P {
+    type Target = Spinlock<RcPool<File>>;
+    fn deref() -> &'static Self::Target {
         &FTABLE
     }
 }
@@ -101,11 +103,13 @@ pub type RcFile = TaggedBox<FTableRef, File>;
 impl RcFile {
     /// Allocate a file structure.
     pub fn alloc() -> Option<Self> {
+        // TODO: idiomatic initialization.
         FTableRef::alloc(File::zeroed())
     }
 
-    /// Increment ref count for file self.
+    /// Increment reference count of the file.
     pub fn dup(&self) -> Self {
+        // SAFETY: `self` is allocated from `FTABLE`, ensured by given type parameter `FTableRef`.
         unsafe { RcFile::from_unchecked(FTABLE.lock().dup(&*self)) }
     }
 }

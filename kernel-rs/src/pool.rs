@@ -13,6 +13,7 @@ struct RcEntry<T> {
     data: MaybeUninit<T>,
 }
 
+/// A homogeneous memory allocator equipped with reference counts.
 pub struct RcPool<T> {
     inner: [RcEntry<T>; CAPACITY],
 }
@@ -31,6 +32,9 @@ impl<T> RcPool<T> {
         }
     }
 
+    /// # Safety
+    ///
+    /// `rc` must be allocated from `self`.
     // TODO: Make a RcPool trait and move this there.
     pub unsafe fn dup(&mut self, rc: &UntaggedRc<T>) -> UntaggedRc<T> {
         (*rc.ptr).ref_cnt += 1;
@@ -52,24 +56,35 @@ impl<T> DerefMut for UntaggedRc<T> {
     }
 }
 
-// impl Drop for Rc, panic.
 impl<T> Drop for UntaggedRc<T> {
     fn drop(&mut self) {
-        panic!("You cannot drop UntaggedRc -- use RcPool::dealloc() instead.");
+        // HACK(@efenniht): we really need linear type here:
+        // https://github.com/rust-lang/rfcs/issues/814
+        panic!("UntaggedRc must never drop: use RcPool::dealloc instead.");
     }
 }
 
+/// A homogeneous memory allocator, equipped with the box type representing an allocation.
 pub trait Pool {
+    /// The value type of the allocator.
     type Data: 'static;
+
+    /// The box type of the allocator.
     type PoolBox: 'static;
 
+    /// Failable allocation.
     fn alloc(&self, val: Self::Data) -> Option<Self::PoolBox>;
+
+    /// # Safety
+    ///
+    /// `pbox` must be allocated from the pool.
     unsafe fn dealloc(&self, pbox: Self::PoolBox);
 }
 
 impl<T: 'static> Pool for Spinlock<RcPool<T>> {
     type Data = T;
     type PoolBox = UntaggedRc<T>;
+
     fn alloc(&self, val: T) -> Option<UntaggedRc<T>> {
         for entry in self.lock().inner.iter_mut() {
             if entry.ref_cnt == 0 {
@@ -83,7 +98,8 @@ impl<T: 'static> Pool for Spinlock<RcPool<T>> {
     }
 
     /// # Safety
-    ///  - `rc` must be allocated from `self`.
+    ///
+    /// `rc` must be allocated from `self`.
     unsafe fn dealloc(&self, rc: UntaggedRc<T>) {
         let val = {
             let _guard = self.lock();
@@ -104,21 +120,52 @@ impl<T: 'static> Pool for Spinlock<RcPool<T>> {
     }
 }
 
+/// A zero-sized reference of the `Pool`, represented in a type.
+///
+/// Ensures the safety of `dealloc` by PoolRef type parameter of TaggedBox. See
+/// https://ferrous-systems.com/blog/zero-sized-references/ for details.
+///
+/// # Safety
+///
+/// There should be at most one implementation of PoolRef for each Pool.
+pub unsafe trait PoolRef: Sized {
+    type Target: Pool + 'static;
+
+    fn deref() -> &'static Self::Target;
+
+    fn alloc(
+        val: <Self::Target as Pool>::Data,
+    ) -> Option<TaggedBox<Self, <Self::Target as Pool>::Data>> {
+        let alloc = Self::deref().alloc(val)?;
+        Some(TaggedBox {
+            alloc: ManuallyDrop::new(alloc),
+            _marker: PhantomData,
+        })
+    }
+
+    fn dealloc(tbox: TaggedBox<Self, <Self::Target as Pool>::Data>) {
+        mem::drop(tbox);
+    }
+}
+
 /// Allocation from `P`.
 #[repr(transparent)]
 pub struct TaggedBox<P: PoolRef, T: 'static>
 where
-    P::P: Pool<Data = T>,
+    P::Target: Pool<Data = T>,
 {
-    alloc: ManuallyDrop<<P::P as Pool>::PoolBox>,
+    alloc: ManuallyDrop<<P::Target as Pool>::PoolBox>,
     _marker: PhantomData<P>,
 }
 
 impl<P: PoolRef, T: 'static> TaggedBox<P, T>
 where
-    P::P: Pool<Data = T>,
+    P::Target: Pool<Data = T>,
 {
-    pub unsafe fn from_unchecked(pbox: <P::P as Pool>::PoolBox) -> Self {
+    /// # Safety
+    ///
+    /// `pbox` must be allocated from `P`.
+    pub unsafe fn from_unchecked(pbox: <P::Target as Pool>::PoolBox) -> Self {
         Self {
             alloc: ManuallyDrop::new(pbox),
             _marker: PhantomData,
@@ -128,9 +175,9 @@ where
 
 impl<P: PoolRef, T: 'static> Deref for TaggedBox<P, T>
 where
-    P::P: Pool<Data = T>,
+    P::Target: Pool<Data = T>,
 {
-    type Target = <P::P as Pool>::PoolBox;
+    type Target = <P::Target as Pool>::PoolBox;
     fn deref(&self) -> &Self::Target {
         &self.alloc
     }
@@ -138,7 +185,7 @@ where
 
 impl<P: PoolRef, T: 'static> DerefMut for TaggedBox<P, T>
 where
-    P::P: Pool<Data = T>,
+    P::Target: Pool<Data = T>,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.alloc
@@ -147,37 +194,13 @@ where
 
 impl<P: PoolRef, T: 'static> Drop for TaggedBox<P, T>
 where
-    P::P: Pool<Data = T>,
+    P::Target: Pool<Data = T>,
 {
     fn drop(&mut self) {
-        // SAFETY: We can ensure the box is allocated from `P::REF` by the invariant of PoolRef.
+        // SAFETY: We can ensure the box is allocated from `P` by the invariant of PoolRef.
         unsafe {
             let pbox = ManuallyDrop::take(&mut self.alloc);
             P::deref().dealloc(pbox);
         }
-    }
-}
-
-/// A zero-sized reference of the `Pool`, represented in a type.
-///
-/// See https://ferrous-systems.com/blog/zero-sized-references/.
-///
-/// # Safety
-/// There should be at most one implementation of PoolRef for each REF.
-pub unsafe trait PoolRef: Sized {
-    type P: Pool + 'static;
-
-    fn deref() -> &'static Self::P;
-
-    fn alloc(val: <Self::P as Pool>::Data) -> Option<TaggedBox<Self, <Self::P as Pool>::Data>> {
-        let alloc = Self::deref().alloc(val)?;
-        Some(TaggedBox {
-            alloc: ManuallyDrop::new(alloc),
-            _marker: PhantomData,
-        })
-    }
-
-    fn dealloc(tbox: TaggedBox<Self, <Self::P as Pool>::Data>) {
-        mem::drop(tbox);
     }
 }
