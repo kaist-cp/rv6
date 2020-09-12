@@ -2,11 +2,7 @@ use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop, MaybeUninit};
 use core::ops::{Deref, DerefMut};
 
-use crate::param::NFILE;
 use crate::spinlock::Spinlock;
-
-// TODO: We can use min_const_generics feature instead, but recent nightly fails to compile.
-const CAPACITY: usize = NFILE;
 
 struct RcEntry<T> {
     ref_cnt: usize,
@@ -14,7 +10,7 @@ struct RcEntry<T> {
 }
 
 /// A homogeneous memory allocator equipped with reference counts.
-pub struct RcPool<T> {
+pub struct RcPool<T, const CAPACITY: usize> {
     inner: [RcEntry<T>; CAPACITY],
 }
 
@@ -22,7 +18,7 @@ pub struct UntaggedRc<T> {
     ptr: *mut RcEntry<T>,
 }
 
-impl<T> RcPool<T> {
+impl<T, const CAPACITY: usize> RcPool<T, CAPACITY> {
     pub const fn new() -> Self {
         Self {
             inner: [RcEntry {
@@ -81,7 +77,7 @@ pub trait Pool {
     unsafe fn dealloc(&self, pbox: Self::PoolBox);
 }
 
-impl<T: 'static> Pool for Spinlock<RcPool<T>> {
+impl<T: 'static, const CAPACITY: usize> Pool for Spinlock<RcPool<T, CAPACITY>> {
     type Data = T;
     type PoolBox = UntaggedRc<T>;
 

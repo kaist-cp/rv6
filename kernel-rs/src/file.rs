@@ -2,7 +2,7 @@
 use crate::{
     fs::{stati, BSIZE},
     log::{begin_op, end_op},
-    param::{MAXOPBLOCKS, NDEV},
+    param::{MAXOPBLOCKS, NDEV, NFILE},
     pipe::AllocatedPipe,
     pool::{PoolRef, RcPool, TaggedBox},
     proc::{myproc, Proc},
@@ -86,13 +86,13 @@ pub static mut DEVSW: [Devsw; NDEV] = [Devsw {
     write: None,
 }; NDEV];
 
-static FTABLE: Spinlock<RcPool<File>> = Spinlock::new("FTABLE", RcPool::new());
+static FTABLE: Spinlock<RcPool<File, NFILE>> = Spinlock::new("FTABLE", RcPool::new());
 
 pub struct FTableRef(());
 
 // SAFETY: We have only one `PoolRef` pointing `FTABLE`.
 unsafe impl PoolRef for FTableRef {
-    type Target = Spinlock<RcPool<File>>;
+    type Target = Spinlock<RcPool<File, NFILE>>;
     fn deref() -> &'static Self::Target {
         &FTABLE
     }
