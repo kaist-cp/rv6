@@ -26,12 +26,16 @@ scopeguard = { version = "1.1.0", default-features = false }
 arrayvec = { version = "0.5.1",  default-features = false }
 
 # Compile options for sysroot packages.
+# Cargo currently warns package `compiler_builtins` is not a dependency.
+# It is a bug, those options actually work well.
 [profile.dev.package.core]
 opt-level = 3
 debug-assertions = false
 codegen-units = 16
+overflow-checks = false
 
 [profile.dev.package.compiler_builtins]
 opt-level = 3
 debug-assertions = false
 codegen-units = 16
+overflow-checks = false
