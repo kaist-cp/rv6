@@ -13,6 +13,7 @@
 #![feature(array_value_iter)]
 #![feature(slice_ptr_range)]
 #![feature(maybe_uninit_extra)]
+#![feature(min_const_generics)]
 
 // TODO(@jeehoonkang): we define `libc` module here because the `libc` crate doesn't work for the
 // `riscv64gc-unknown-none-elfhf` target.
