@@ -25,9 +25,9 @@ num-iter = { version = "0.1", default-features = false }
 scopeguard = { version = "1.1.0", default-features = false }
 arrayvec = { version = "0.5.1",  default-features = false }
 
-# Compile options for sysroot packages.
-# Cargo currently warns package `compiler_builtins` is not a dependency.
-# It is a bug, those options actually work well.
+# Compiler options for sysroot packages.
+# Cargo currently warns following packages are not dependencies.
+# This is a bug, those options actually work well.
 [profile.dev.package.core]
 opt-level = 3
 debug-assertions = false
