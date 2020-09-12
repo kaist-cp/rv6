@@ -7,7 +7,6 @@
 #![allow(dead_code)]
 #![feature(llvm_asm)]
 #![feature(c_variadic)]
-#![feature(ptr_offset_from)]
 #![feature(const_wrapping_int_methods)]
 #![feature(maybe_uninit_ref)]
 #![feature(const_in_array_repeat_expressions)]

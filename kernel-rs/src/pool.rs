@@ -45,14 +45,14 @@ impl<T> RcPool<T> {
 impl<T> Deref for UntaggedRc<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
-        unsafe { (*self.ptr).data.get_ref() }
+        unsafe { (*self.ptr).data.assume_init_ref() }
     }
 }
 
 // TODO: This may cause UB; remove after refactoring File::{read, write}.
 impl<T> DerefMut for UntaggedRc<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { (*self.ptr).data.get_mut() }
+        unsafe { (*self.ptr).data.assume_init_mut() }
     }
 }
 
