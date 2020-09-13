@@ -3,7 +3,15 @@ U = user
 KR = kernel-rs
 
 RUST_TARGET = riscv64gc-unknown-none-elfhf
+ifndef RUST_MODE
 RUST_MODE = debug
+endif
+
+ifeq ($(RUST_MODE),release)
+CARGOFLAGS = --release
+else
+CARGOFLAGS =
+endif
 
 # OBJS = \
 #   $K/entry.o \
@@ -95,7 +103,7 @@ $U/initcode: $U/initcode.S
 	$(OBJDUMP) -S $U/initcode.o > $U/initcode.asm
 
 $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a: $(shell find $(KR) -type f)
-	cargo build --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json
+	cargo build --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json $(CARGOFLAGS)
 
 tags: $(OBJS) _init
 	etags *.S *.c
