@@ -13,8 +13,6 @@ use crate::{
 };
 use core::cmp;
 
-pub const CONSOLE: usize = 1;
-
 pub struct File {
     pub typ: Filetype,
 
