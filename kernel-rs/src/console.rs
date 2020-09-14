@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    file::{CONSOLE, DEVSW},
+    file::DEVSW,
     printf::PANICKED,
     proc::{either_copyin, either_copyout, myproc, procdump, WaitChannel},
     spinlock::{RawSpinlock, Spinlock},
@@ -10,6 +10,7 @@ use crate::{
 use core::fmt;
 use core::sync::atomic::Ordering;
 
+const CONSOLE: usize = 1;
 /// Size of console input buffer.
 const INPUT_BUF: usize = 128;
 
