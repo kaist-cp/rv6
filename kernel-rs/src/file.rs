@@ -11,7 +11,7 @@ use crate::{
     stat::Stat,
     vm::copyout,
 };
-use core::{cmp, ptr};
+use core::cmp;
 
 pub const CONSOLE: usize = 1;
 
@@ -23,18 +23,6 @@ pub struct File {
 
     pub readable: bool,
     pub writable: bool,
-
-    /// Filetype::PIPE
-    pub pipe: AllocatedPipe,
-
-    /// Filetype::INODE and Filetype::DEVICE
-    pub ip: *mut Inode,
-
-    /// Filetype::INODE
-    pub off: u32,
-
-    /// Filetype::DEVICE
-    pub major: i16,
 }
 
 // TODO: will be infered as we wrap *mut Pipe and *mut Inode.
@@ -66,12 +54,12 @@ pub struct Inode {
     pub addrs: [u32; 13],
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone)]
 pub enum Filetype {
     NONE,
-    PIPE,
-    INODE,
-    DEVICE,
+    PIPE { pipe: AllocatedPipe },
+    INODE { ip: *mut Inode, off: u32 },
+    DEVICE { ip: *mut Inode, major: i16 },
 }
 
 /// map major device number to device functions.
@@ -120,54 +108,56 @@ impl File {
     pub unsafe fn stat(&mut self, addr: usize) -> i32 {
         let p: *mut Proc = myproc();
         let mut st: Stat = Default::default();
-        if self.typ == Filetype::INODE || self.typ == Filetype::DEVICE {
-            (*self.ip).lock();
-            stati(self.ip, &mut st);
-            (*self.ip).unlock();
-            if copyout(
-                (*p).pagetable,
-                addr,
-                &mut st as *mut Stat as *mut u8,
-                ::core::mem::size_of::<Stat>() as usize,
-            ) < 0
-            {
-                return -1;
+        return match self.typ {
+            Filetype::INODE { ip, .. } | Filetype::DEVICE { ip, .. } => {
+                (*ip).lock();
+                stati(ip, &mut st);
+                (*ip).unlock();
+                if copyout(
+                    (*p).pagetable,
+                    addr,
+                    &mut st as *mut Stat as *mut u8,
+                    ::core::mem::size_of::<Stat>() as usize,
+                ) < 0
+                {
+                    -1
+                } else {
+                    0
+                }
             }
-            return 0;
-        }
-        -1
+            _ => -1,
+        };
     }
 
     /// Read from file self.
     /// addr is a user virtual address.
+    // #[allow(unused_assignments)]
     pub unsafe fn read(&mut self, addr: usize, n: i32) -> i32 {
         if !self.readable {
             return -1;
         }
 
-        if self.typ == Filetype::PIPE {
-            self.pipe.read(addr, n)
-        } else if self.typ == Filetype::DEVICE {
-            if (self.major) < 0
-                || self.major as usize >= NDEV
-                || DEVSW[self.major as usize].read.is_none()
-            {
-                return -1;
+        return match &mut self.typ {
+            Filetype::PIPE { pipe } => pipe.read(addr, n),
+            Filetype::INODE { ip, off, .. } => {
+                (**ip).lock();
+                let r = (**ip).read(1, addr, *off, n as u32);
+                if r > 0 {
+                    *off = off.wrapping_add(r as u32);
+                }
+                (**ip).unlock();
+                r
             }
-            DEVSW[self.major as usize]
-                .read
-                .expect("non-null function pointer")(1, addr, n)
-        } else if self.typ == Filetype::INODE {
-            (*self.ip).lock();
-            let r = (*self.ip).read(1, addr, self.off, n as u32);
-            if r > 0 {
-                self.off = (self.off).wrapping_add(r as u32)
+            Filetype::DEVICE { major, .. } => {
+                if *major < 0 || *major as usize >= NDEV || DEVSW[*major as usize].read.is_none() {
+                    return -1;
+                }
+                DEVSW[*major as usize]
+                    .read
+                    .expect("non-null function pointer")(1, addr, n)
             }
-            (*self.ip).unlock();
-            r
-        } else {
-            panic!("File::read");
-        }
+            _ => panic!("File::read"),
+        };
     }
 
     /// Write to file self.
@@ -176,54 +166,54 @@ impl File {
         if !self.writable {
             return -1;
         }
-        if self.typ == Filetype::PIPE {
-            self.pipe.write(addr, n)
-        } else if self.typ == Filetype::DEVICE {
-            if (self.major) < 0
-                || self.major as usize >= NDEV
-                || DEVSW[self.major as usize].write.is_none()
-            {
-                return -1;
-            }
-            DEVSW[self.major as usize]
-                .write
-                .expect("non-null function pointer")(1, addr, n)
-        } else if self.typ == Filetype::INODE {
-            // write a few blocks at a time to avoid exceeding
-            // the maximum log transaction size, including
-            // i-node, indirect block, allocation blocks,
-            // and 2 blocks of slop for non-aligned writes.
-            // this really belongs lower down, since write()
-            // might be writing a device like the console.
-            let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
-            let mut i: i32 = 0;
-            while i < n {
-                // TODO : rename `n1`
-                let n1 = cmp::min(n - i, max as i32);
-                begin_op();
-                (*self.ip).lock();
-                let r = (*self.ip).write(1, addr.wrapping_add(i as usize), self.off, n1 as u32);
-                if r > 0 {
-                    self.off = (self.off).wrapping_add(r as u32)
+
+        return match &mut self.typ {
+            Filetype::PIPE { pipe } => pipe.write(addr, n),
+            Filetype::INODE { ip, off, .. } => {
+                // write a few blocks at a time to avoid exceeding
+                // the maximum log transaction size, including
+                // i-node, indirect block, allocation blocks,
+                // and 2 blocks of slop for non-aligned writes.
+                // this really belongs lower down, since write()
+                // might be writing a device like the console.
+                let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
+                let mut i: i32 = 0;
+                while i < n {
+                    // TODO : rename `n1`
+                    let n1 = cmp::min(n - i, max as i32);
+                    begin_op();
+                    (**ip).lock();
+
+                    let r = (**ip).write(1, addr.wrapping_add(i as usize), *off, n1 as u32);
+                    if r > 0 {
+                        *off = off.wrapping_add(r as u32);
+                    }
+                    (**ip).unlock();
+                    end_op();
+                    if r < 0 {
+                        break;
+                    }
+                    if r != n1 {
+                        panic!("short File::write");
+                    }
+                    i += r
                 }
-                (*self.ip).unlock();
-                end_op();
-                if r < 0 {
-                    break;
+                if i == n {
+                    n
+                } else {
+                    -1
                 }
-                if r != n1 {
-                    panic!("short File::write");
+            }
+            Filetype::DEVICE { major, .. } => {
+                if *major < 0 || *major as usize >= NDEV || DEVSW[*major as usize].write.is_none() {
+                    return -1;
                 }
-                i += r
+                DEVSW[*major as usize]
+                    .write
+                    .expect("non-null function pointer")(1, addr, n)
             }
-            if i == n {
-                n
-            } else {
-                -1
-            }
-        } else {
-            panic!("File::write");
-        }
+            _ => panic!("File::read"),
+        };
     }
 
     // TODO: transient measure
@@ -233,10 +223,6 @@ impl File {
             ref_0: 0,
             readable: false,
             writable: false,
-            pipe: AllocatedPipe::zeroed(),
-            ip: ptr::null_mut(),
-            off: 0,
-            major: 0,
         }
     }
 }
@@ -246,10 +232,10 @@ impl Drop for File {
         // TODO: Reasoning why.
         unsafe {
             match self.typ {
-                Filetype::PIPE => self.pipe.close(self.writable),
-                Filetype::INODE | Filetype::DEVICE => {
+                Filetype::PIPE { mut pipe } => pipe.close(self.writable),
+                Filetype::INODE { ip, .. } | Filetype::DEVICE { ip, .. } => {
                     begin_op();
-                    (*self.ip).put();
+                    (*ip).put();
                     end_op();
                 }
                 _ => (),
