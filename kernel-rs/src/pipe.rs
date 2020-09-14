@@ -141,14 +141,12 @@ impl AllocatedPipe {
         };
 
         // FIXME: You cannot get the mutable reference of Rc.
-        (*f0).typ = Filetype::PIPE;
+        (*f0).typ = Filetype::PIPE { pipe: Self { ptr } };
         (*f0).readable = true;
         (*f0).writable = false;
-        (*f0).pipe = Self { ptr };
-        (*f1).typ = Filetype::PIPE;
+        (*f1).typ = Filetype::PIPE { pipe: Self { ptr } };
         (*f1).readable = false;
         (*f1).writable = true;
-        (*f1).pipe = Self { ptr };
 
         Ok((f0, f1))
     }

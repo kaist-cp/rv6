@@ -305,13 +305,13 @@ pub unsafe fn sys_open() -> usize {
     let f = (*myproc()).open_files[fd as usize].as_mut().unwrap();
 
     if (*ip).typ as i32 == T_DEVICE {
-        (*f).typ = Filetype::DEVICE;
-        (*f).major = (*ip).major
+        (*f).typ = Filetype::DEVICE {
+            ip,
+            major: (*ip).major,
+        };
     } else {
-        (*f).typ = Filetype::INODE;
-        (*f).off = 0
+        (*f).typ = Filetype::INODE { ip, off: 0 };
     }
-    (*f).ip = ip;
     (*f).readable = !omode.intersects(FcntlFlags::O_WRONLY);
     (*f).writable = omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR);
 
