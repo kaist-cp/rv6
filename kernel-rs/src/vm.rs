@@ -1,15 +1,14 @@
-use crate::libc;
 use crate::{
     kalloc::{kalloc, kfree},
     memlayout::{CLINT, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     println,
     riscv::{
         make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, sfence_vma, w_satp,
-        PagetableT, PdeT, PteT, MAXVA, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
+        PagetableT, PdeT, PteT, MAXVA, PGSIZE, PTESIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
     },
 };
-use core::mem;
-use core::ptr;
+use crate::{libc, page::Page};
+use core::{mem, ops::Deref, ops::DerefMut, ptr};
 
 extern "C" {
     // kernel.ld sets this to end of kernel code.
@@ -21,18 +20,129 @@ extern "C" {
     static mut trampoline: [u8; 0];
 }
 
+pub struct PageTableEntry {
+    inner: PteT,
+}
+
+impl PageTableEntry {
+    /// Creates a page table entry from the inner representation.
+    ///
+    /// # Safety
+    ///
+    /// Improper use of this function may lead to memory problems. For example, a double-free may
+    /// occur if the function is called twice on the same raw pointer.
+    pub unsafe fn from_raw(inner: PteT) -> Self {
+        Self { inner }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.inner & PTE_V != 0
+    }
+
+    pub fn set_valid(&mut self) {
+        self.inner |= PTE_V;
+    }
+
+    pub fn set_inner(&mut self, inner: PteT) {
+        self.inner = inner;
+    }
+
+    pub unsafe fn as_page(&self) -> &Page {
+        &*(pte2pa(self.inner) as *const Page)
+    }
+
+    pub unsafe fn as_table(&self) -> &RawPageTable {
+        &*(pte2pa(self.inner) as *const RawPageTable)
+    }
+
+    pub unsafe fn as_table_mut(&mut self) -> &mut RawPageTable {
+        &mut *(pte2pa(self.inner) as *mut RawPageTable)
+    }
+}
+
+impl Drop for PageTableEntry {
+    fn drop(&mut self) {
+        panic!("`PageTableEntry` should not be dropped.");
+    }
+}
+
+pub struct RawPageTable {
+    inner: [PageTableEntry; PTESIZE],
+}
+
+impl Deref for RawPageTable {
+    type Target = [PageTableEntry; PTESIZE];
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for RawPageTable {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+pub struct PageTable {
+    ptr: *mut RawPageTable,
+}
+
+impl PageTable {
+    pub const unsafe fn raw() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    pub fn init(&mut self, page: *mut RawPageTable) {
+        unsafe {
+            ptr::write_bytes(page as *mut libc::CVoid, 0, PGSIZE);
+        }
+        self.ptr = page;
+    }
+
+    pub fn from_raw(ptr: *mut RawPageTable) -> Self {
+        Self { ptr }
+    }
+
+    pub fn into_page(self) -> *mut RawPageTable {
+        let ret = self.ptr;
+        mem::forget(self);
+        ret
+    }
+}
+
+impl Deref for PageTable {
+    type Target = RawPageTable;
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.ptr }
+    }
+}
+
+impl DerefMut for PageTable {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *self.ptr }
+    }
+}
+
+impl Drop for PageTable {
+    fn drop(&mut self) {
+        panic!("`PageTable` should not be dropped.");
+    }
+}
+
 /*
- * the kernel's page table.
+ * The kernel's page table.
  */
-pub static mut KERNEL_PAGETABLE: PagetableT = ptr::null_mut();
+pub static mut KERNEL_PAGETABLE: PageTable = unsafe { PageTable::raw() };
 
 // trampoline.S
-/// create a direct-map page table for the kernel and
-/// turn on paging. called early, in supervisor mode.
-/// the page allocator is already initialized.
+/// Create a direct-map page table for the kernel and
+/// turn on paging. Called early, in supervisor mode.
+/// The page allocator is already initialized.
 pub unsafe fn kvminit() {
-    KERNEL_PAGETABLE = kalloc() as PagetableT;
-    ptr::write_bytes(KERNEL_PAGETABLE as *mut libc::CVoid, 0, PGSIZE);
+    let page = kalloc() as *mut RawPageTable;
+    KERNEL_PAGETABLE.init(page);
 
     // uart registers
     kvmmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);
@@ -46,7 +156,7 @@ pub unsafe fn kvminit() {
     // PLIC
     kvmmap(PLIC, PLIC, 0x400000, PTE_R | PTE_W);
 
-    // map kernel text executable and read-only.
+    // Map kernel text executable and read-only.
     kvmmap(
         KERNBASE,
         KERNBASE,
@@ -54,7 +164,7 @@ pub unsafe fn kvminit() {
         PTE_R | PTE_X,
     );
 
-    // map kernel data and the physical RAM we'll make use of.
+    // Map kernel data and the physical RAM we'll make use of.
     kvmmap(
         etext.as_mut_ptr() as usize,
         etext.as_mut_ptr() as usize,
@@ -62,7 +172,7 @@ pub unsafe fn kvminit() {
         PTE_R | PTE_W,
     );
 
-    // map the trampoline for trap entry/exit to
+    // Map the trampoline for trap entry/exit to
     // the highest virtual address in the kernel.
     kvmmap(
         TRAMPOLINE,
@@ -75,12 +185,55 @@ pub unsafe fn kvminit() {
 /// Switch h/w page table register to the kernel's page table,
 /// and enable paging.
 pub unsafe fn kvminithart() {
-    w_satp(make_satp(KERNEL_PAGETABLE as usize));
+    w_satp(make_satp(KERNEL_PAGETABLE.ptr as usize));
     sfence_vma();
 }
 
+// TODO: replace fn walk to this function after change all pagetables to struct.
 /// Return the address of the PTE in page table pagetable
-/// that corresponds to virtual address va.  If alloc!=0,
+/// that corresponds to virtual address va. If alloc!=0,
+/// create any required page-table pages.
+///
+/// The risc-v Sv39 scheme has three levels of page-table
+/// pages. A page-table page contains 512 64-bit PTEs.
+/// A 64-bit virtual address is split into five fields:
+///   39..63 -- must be zero.
+///   30..38 -- 9 bits of level-2 index.
+///   21..39 -- 9 bits of level-1 index.
+///   12..20 -- 9 bits of level-0 index.
+///    0..12 -- 12 bits of byte offset within the page.
+unsafe fn walk_temp(
+    mut pagetable: &mut RawPageTable,
+    va: usize,
+    alloc: i32,
+) -> Option<&mut PageTableEntry> {
+    if va >= MAXVA {
+        panic!("walk");
+    }
+    for level in (1..3).rev() {
+        let pte = &mut pagetable[px(level, va)];
+        if pte.is_valid() {
+            pagetable = pte.as_table_mut();
+        } else {
+            if alloc == 0 {
+                return None;
+            }
+            let k = kalloc();
+            if k.is_null() {
+                return None;
+            }
+
+            ptr::write_bytes(k as *mut libc::CVoid, 0, PGSIZE);
+            pte.set_inner(pa2pte(k as usize));
+            pte.set_valid();
+            pagetable = pte.as_table_mut();
+        }
+    }
+    Some(&mut pagetable[px(0, va)])
+}
+
+/// Return the address of the PTE in page table pagetable
+/// that corresponds to virtual address va. If alloc!=0,
 /// create any required page-table pages.
 ///
 /// The risc-v Sv39 scheme has three levels of page-table
@@ -134,30 +287,64 @@ pub unsafe fn walkaddr(pagetable: PagetableT, va: usize) -> usize {
     pa
 }
 
-/// add a mapping to the kernel page table.
-/// only used when booting.
-/// does not flush TLB or enable paging.
+/// Add a mapping to the kernel page table.
+/// Only used when booting.
+/// Does not flush TLB or enable paging.
 pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
-    if mappages(KERNEL_PAGETABLE, va, sz, pa, perm) != 0 {
+    if !mappages_temp(&mut KERNEL_PAGETABLE, va, sz, pa, perm) {
         panic!("kvmmap");
     };
 }
 
-/// translate a kernel virtual address to
-/// a physical address. only needed for
+/// Translate a kernel virtual address to
+/// a physical address. Only needed for
 /// addresses on the stack.
-/// assumes va is page aligned.
+/// Assumes va is page aligned.
 pub unsafe fn kvmpa(va: usize) -> usize {
     let off: usize = va.wrapping_rem(PGSIZE);
-    let pte: *mut PteT = walk(KERNEL_PAGETABLE, va, 0);
-    if pte.is_null() {
+    let pte_op = walk_temp(&mut KERNEL_PAGETABLE, va, 0);
+    if pte_op.is_none() {
         panic!("kvmpa");
     }
-    if *pte & PTE_V == 0 {
+    let pte = pte_op.unwrap();
+    if !pte.is_valid() {
         panic!("kvmpa");
     }
-    let pa: usize = pte2pa(*pte);
+    let pa = pte.as_page() as *const _ as usize;
     pa.wrapping_add(off)
+}
+
+// TODO: replace fn walk to this function after change all pagetables to struct.
+/// Create PTEs for virtual addresses starting at va that refer to
+/// physical addresses starting at pa. va and size might not
+/// be page-aligned. Returns true on success, false if walk() couldn't
+/// allocate a needed page-table page.
+pub unsafe fn mappages_temp(
+    pagetable: &mut PageTable,
+    va: usize,
+    size: usize,
+    mut pa: usize,
+    perm: i32,
+) -> bool {
+    let mut a = pgrounddown(va);
+    let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
+    loop {
+        let pte_op = walk_temp(pagetable, a, 1);
+        if pte_op.is_none() {
+            return false;
+        }
+        let pte = pte_op.unwrap();
+        if pte.is_valid() {
+            panic!("remap");
+        }
+        pte.set_inner(pa2pte(pa) | perm as usize | PTE_V);
+        if a == last {
+            break;
+        }
+        a = a.wrapping_add(PGSIZE);
+        pa = pa.wrapping_add(PGSIZE);
+    }
+    true
 }
 
 /// Create PTEs for virtual addresses starting at va that refer to
@@ -223,7 +410,7 @@ pub unsafe fn uvmunmap(pagetable: PagetableT, va: usize, size: usize, do_free: i
     }
 }
 
-/// create an empty user page table.
+/// Create an empty user page table.
 pub unsafe fn uvmcreate() -> PagetableT {
     let pagetable: PagetableT = kalloc() as PagetableT;
     if pagetable.is_null() {
@@ -306,11 +493,11 @@ pub unsafe fn uvmdealloc(pagetable: PagetableT, oldsz: usize, newsz: usize) -> u
 /// Recursively free page-table pages.
 /// All leaf mappings must already have been removed.
 unsafe fn freewalk(pagetable: PagetableT) {
-    // there are 2^9 = 512 PTEs in a page table.
+    // There are 2^9 = 512 PTEs in a page table.
     for i in 0..512 {
         let pte: PteT = *pagetable.offset(i as isize);
         if pte & PTE_V as usize != 0 && pte & (PTE_R | PTE_W | PTE_X) as usize == 0 {
-            // this PTE points to a lower-level page table.
+            // This PTE points to a lower-level page table.
             let child: usize = pte2pa(pte);
             freewalk(child as PagetableT);
             *pagetable.offset(i) = 0
@@ -332,8 +519,8 @@ pub unsafe fn uvmfree(pagetable: PagetableT, sz: usize) {
 /// its memory into a child's page table.
 /// Copies both the page table and the
 /// physical memory.
-/// returns 0 on success, -1 on failure.
-/// frees any allocated pages on failure.
+/// Returns 0 on success, -1 on failure.
+/// Frees any allocated pages on failure.
 pub unsafe fn uvmcopy(old: PagetableT, new: PagetableT, sz: usize) -> i32 {
     for i in num_iter::range_step(0, sz, PGSIZE) {
         let pte = walk(old, i, 0);
@@ -367,8 +554,8 @@ pub unsafe fn uvmcopy(old: PagetableT, new: PagetableT, sz: usize) -> i32 {
     0
 }
 
-/// mark a PTE invalid for user access.
-/// used by exec for the user stack guard page.
+/// Mark a PTE invalid for user access.
+/// Used by exec for the user stack guard page.
 pub unsafe fn uvmclear(pagetable: PagetableT, va: usize) {
     let pte: *mut PteT = walk(pagetable, va, 0);
     if pte.is_null() {
