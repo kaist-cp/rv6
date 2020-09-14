@@ -108,7 +108,8 @@ impl File {
     pub unsafe fn stat(&mut self, addr: usize) -> i32 {
         let p: *mut Proc = myproc();
         let mut st: Stat = Default::default();
-        return match self.typ {
+
+        match self.typ {
             Filetype::INODE { ip, .. } | Filetype::DEVICE { ip, .. } => {
                 (*ip).lock();
                 stati(ip, &mut st);
@@ -126,20 +127,20 @@ impl File {
                 }
             }
             _ => -1,
-        };
+        }
     }
 
     /// Read from file self.
     /// addr is a user virtual address.
-    // #[allow(unused_assignments)]
     pub unsafe fn read(&mut self, addr: usize, n: i32) -> i32 {
         if !self.readable {
             return -1;
         }
 
-        return match &mut self.typ {
+        // Use &mut self.typ because read() "changes" FileType::INODE.off during holding ip's lock.
+        match &mut self.typ {
             Filetype::PIPE { pipe } => pipe.read(addr, n),
-            Filetype::INODE { ip, off, .. } => {
+            Filetype::INODE { ip, off } => {
                 (**ip).lock();
                 let r = (**ip).read(1, addr, *off, n as u32);
                 if r > 0 {
@@ -157,7 +158,7 @@ impl File {
                     .expect("non-null function pointer")(1, addr, n)
             }
             _ => panic!("File::read"),
-        };
+        }
     }
 
     /// Write to file self.
@@ -167,9 +168,10 @@ impl File {
             return -1;
         }
 
-        return match &mut self.typ {
+        // Use &mut self.typ because write() "changes" FileType::INODE.off during holding ip's lock.
+        match &mut self.typ {
             Filetype::PIPE { pipe } => pipe.write(addr, n),
-            Filetype::INODE { ip, off, .. } => {
+            Filetype::INODE { ip, off } => {
                 // write a few blocks at a time to avoid exceeding
                 // the maximum log transaction size, including
                 // i-node, indirect block, allocation blocks,
@@ -179,12 +181,16 @@ impl File {
                 let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
                 let mut i: i32 = 0;
                 while i < n {
-                    // TODO : rename `n1`
-                    let n1 = cmp::min(n - i, max as i32);
+                    let bytes_to_write = cmp::min(n - i, max as i32);
                     begin_op();
                     (**ip).lock();
 
-                    let r = (**ip).write(1, addr.wrapping_add(i as usize), *off, n1 as u32);
+                    let r = (**ip).write(
+                        1,
+                        addr.wrapping_add(i as usize),
+                        *off,
+                        bytes_to_write as u32,
+                    );
                     if r > 0 {
                         *off = off.wrapping_add(r as u32);
                     }
@@ -193,7 +199,7 @@ impl File {
                     if r < 0 {
                         break;
                     }
-                    if r != n1 {
+                    if r != bytes_to_write {
                         panic!("short File::write");
                     }
                     i += r
@@ -213,7 +219,7 @@ impl File {
                     .expect("non-null function pointer")(1, addr, n)
             }
             _ => panic!("File::read"),
-        };
+        }
     }
 
     // TODO: transient measure
