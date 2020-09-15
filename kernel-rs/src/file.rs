@@ -48,7 +48,6 @@ pub struct Inode {
     pub addrs: [u32; 13],
 }
 
-#[derive(Copy, Clone)]
 pub enum Filetype {
     NONE,
     PIPE { pipe: AllocatedPipe },
