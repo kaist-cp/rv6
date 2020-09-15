@@ -190,18 +190,14 @@ impl File {
                     (**ip).unlock();
                     end_op();
                     if r < 0 {
-                        break;
+                        return -1;
                     }
                     if r != bytes_to_write {
                         panic!("short File::write");
                     }
                     i += r
                 }
-                if i == n {
-                    n
-                } else {
-                    -1
-                }
+                n
             }
             FileType::Device { major, .. } => {
                 if *major < 0 || *major as usize >= NDEV || DEVSW[*major as usize].write.is_none() {
