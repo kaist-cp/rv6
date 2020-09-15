@@ -58,7 +58,7 @@ impl Uart {
         Uart(())
     }
 
-    pub unsafe fn new() {
+    pub unsafe fn init() {
         // Disable interrupts.
         IER.write(0x00);
 
