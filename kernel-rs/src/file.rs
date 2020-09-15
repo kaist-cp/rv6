@@ -14,7 +14,7 @@ use crate::{
 use core::cmp;
 
 pub struct File {
-    pub typ: Filetype,
+    pub typ: FileType,
     pub readable: bool,
     pub writable: bool,
 }
@@ -48,11 +48,11 @@ pub struct Inode {
     pub addrs: [u32; 13],
 }
 
-pub enum Filetype {
-    NONE,
-    PIPE { pipe: AllocatedPipe },
-    INODE { ip: *mut Inode, off: u32 },
-    DEVICE { ip: *mut Inode, major: i16 },
+pub enum FileType {
+    None,
+    Pipe { pipe: AllocatedPipe },
+    Inode { ip: *mut Inode, off: u32 },
+    Device { ip: *mut Inode, major: i16 },
 }
 
 /// map major device number to device functions.
@@ -103,7 +103,7 @@ impl File {
         let mut st: Stat = Default::default();
 
         match self.typ {
-            Filetype::INODE { ip, .. } | Filetype::DEVICE { ip, .. } => {
+            FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                 (*ip).lock();
                 stati(ip, &mut st);
                 (*ip).unlock();
@@ -130,10 +130,10 @@ impl File {
             return -1;
         }
 
-        // Use &mut self.typ because read() "changes" FileType::INODE.off during holding ip's lock.
+        // Use &mut self.typ because read() "changes" FileType::Inode.off during holding ip's lock.
         match &mut self.typ {
-            Filetype::PIPE { pipe } => pipe.read(addr, n),
-            Filetype::INODE { ip, off } => {
+            FileType::Pipe { pipe } => pipe.read(addr, n),
+            FileType::Inode { ip, off } => {
                 (**ip).lock();
                 let r = (**ip).read(1, addr, *off, n as u32);
                 if r > 0 {
@@ -142,7 +142,7 @@ impl File {
                 (**ip).unlock();
                 r
             }
-            Filetype::DEVICE { major, .. } => {
+            FileType::Device { major, .. } => {
                 if *major < 0 || *major as usize >= NDEV || DEVSW[*major as usize].read.is_none() {
                     return -1;
                 }
@@ -161,10 +161,10 @@ impl File {
             return -1;
         }
 
-        // Use &mut self.typ because write() "changes" FileType::INODE.off during holding ip's lock.
+        // Use &mut self.typ because write() "changes" FileType::Inode.off during holding ip's lock.
         match &mut self.typ {
-            Filetype::PIPE { pipe } => pipe.write(addr, n),
-            Filetype::INODE { ip, off } => {
+            FileType::Pipe { pipe } => pipe.write(addr, n),
+            FileType::Inode { ip, off } => {
                 // write a few blocks at a time to avoid exceeding
                 // the maximum log transaction size, including
                 // i-node, indirect block, allocation blocks,
@@ -203,7 +203,7 @@ impl File {
                     -1
                 }
             }
-            Filetype::DEVICE { major, .. } => {
+            FileType::Device { major, .. } => {
                 if *major < 0 || *major as usize >= NDEV || DEVSW[*major as usize].write.is_none() {
                     return -1;
                 }
@@ -218,7 +218,7 @@ impl File {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            typ: Filetype::NONE,
+            typ: FileType::None,
             readable: false,
             writable: false,
         }
@@ -230,8 +230,8 @@ impl Drop for File {
         // TODO: Reasoning why.
         unsafe {
             match self.typ {
-                Filetype::PIPE { mut pipe } => pipe.close(self.writable),
-                Filetype::INODE { ip, .. } | Filetype::DEVICE { ip, .. } => {
+                FileType::Pipe { mut pipe } => pipe.close(self.writable),
+                FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                     begin_op();
                     (*ip).put();
                     end_op();
