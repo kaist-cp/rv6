@@ -10,7 +10,6 @@ use crate::{
 use core::fmt;
 use core::sync::atomic::Ordering;
 
-const CONSOLE: usize = 1;
 /// Size of console input buffer.
 const INPUT_BUF: usize = 128;
 
@@ -59,9 +58,10 @@ impl Console {
 
         // Connect read and write system calls
         // to consoleread and consolewrite.
-        let fresh2 = &mut (*DEVSW.as_mut_ptr().add(CONSOLE)).read;
+        let console = DEVSW.as_mut_ptr().add(1);
+        let fresh2 = &mut (*console).read;
         *fresh2 = Some(consoleread as unsafe fn(_: i32, _: usize, _: i32) -> i32);
-        let fresh3 = &mut (*DEVSW.as_mut_ptr().add(CONSOLE)).write;
+        let fresh3 = &mut (*console).write;
         *fresh3 = Some(consolewrite as unsafe fn(_: i32, _: usize, _: i32) -> i32);
     }
 
