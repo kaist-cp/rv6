@@ -5,7 +5,7 @@ use crate::libc;
 use crate::{
     exec::exec,
     fcntl::FcntlFlags,
-    file::{Filetype, Inode, RcFile},
+    file::{FileType, Inode, RcFile},
     fs::{dirlink, dirlookup, namecmp, namei, nameiparent},
     fs::{Dirent, DIRSIZ},
     kalloc::{kalloc, kfree},
@@ -305,12 +305,12 @@ pub unsafe fn sys_open() -> usize {
     let f = (*myproc()).open_files[fd as usize].as_mut().unwrap();
 
     if (*ip).typ as i32 == T_DEVICE {
-        (*f).typ = Filetype::DEVICE {
+        (*f).typ = FileType::Device {
             ip,
             major: (*ip).major,
         };
     } else {
-        (*f).typ = Filetype::INODE { ip, off: 0 };
+        (*f).typ = FileType::Inode { ip, off: 0 };
     }
     (*f).readable = !omode.intersects(FcntlFlags::O_WRONLY);
     (*f).writable = omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR);
