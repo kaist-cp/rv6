@@ -15,10 +15,6 @@ use core::cmp;
 
 pub struct File {
     pub typ: Filetype,
-
-    /// reference count
-    ref_0: i32,
-
     pub readable: bool,
     pub writable: bool,
 }
@@ -224,7 +220,6 @@ impl File {
     pub const fn zeroed() -> Self {
         Self {
             typ: Filetype::NONE,
-            ref_0: 0,
             readable: false,
             writable: false,
         }
