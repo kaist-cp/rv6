@@ -550,7 +550,7 @@ pub static mut PROCPOOL: ProcessPool = ProcessPool::zeroed();
 static mut INITPROC: *mut Proc = ptr::null_mut();
 
 #[no_mangle]
-pub unsafe fn init_process_system() {
+pub unsafe fn init_process_pool() {
     PROCPOOL.init();
     kvminithart();
 }
