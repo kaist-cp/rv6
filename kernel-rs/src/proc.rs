@@ -398,7 +398,7 @@ impl Proc {
 static mut CPUS: [Cpu; NCPU] = [Cpu::zeroed(); NCPU];
 
 /// Process pool type containing & managing whole processes.
-struct ProcessPool {
+pub struct ProcessPool {
     process: [Proc; NPROC],
 }
 
@@ -430,38 +430,81 @@ impl ProcessPool {
     /// If found, initialize state required to run in the kernel,
     /// and return with p->lock held.
     /// If there are no free procs, return 0.
-    unsafe fn allocproc(&mut self) -> *mut Proc{
+    unsafe fn allocproc(&mut self) -> *mut Proc {
         for p in self.process.iter_mut() {
             p.lock.acquire();
-        if p.state == Procstate::UNUSED {
-            p.pid = allocpid();
+            if p.state == Procstate::UNUSED {
+                p.pid = allocpid();
 
-            // Allocate a trapframe page.
-            p.tf = kalloc() as *mut Trapframe;
-            if p.tf.is_null() {
-                p.lock.release();
-                return ptr::null_mut();
+                // Allocate a trapframe page.
+                p.tf = kalloc() as *mut Trapframe;
+                if p.tf.is_null() {
+                    p.lock.release();
+                    return ptr::null_mut();
+                }
+
+                // An empty user page table.
+                p.pagetable = proc_pagetable(p);
+
+                // Set up new context to start executing at forkret,
+                // which returns to user space.
+                ptr::write_bytes(&mut (*p).context as *mut Context, 0, 1);
+                p.context.ra = forkret as usize;
+                p.context.sp = p.kstack.wrapping_add(PGSIZE);
+                return p;
             }
-
-            // An empty user page table.
-            p.pagetable = proc_pagetable(p);
-
-            // Set up new context to start executing at forkret,
-            // which returns to user space.
-            ptr::write_bytes(&mut (*p).context as *mut Context, 0, 1);
-            p.context.ra = forkret as usize;
-            p.context.sp = p.kstack.wrapping_add(PGSIZE);
-            return p;
-        }
-        p.lock.release();
+            p.lock.release();
         }
 
         ptr::null_mut()
     }
+
+    /// Pass p's abandoned children to init.
+    /// Caller must hold p->lock.
+    pub unsafe fn init_parent(&mut self, p: *mut Proc) {
+        for pp in self.process.iter_mut() {
+            // This code uses pp->parent without holding pp->lock.
+            // Acquiring the lock first could cause a deadlock
+            // if pp or a child of pp were also in exit()
+            // and about to try to lock p.
+            if pp.parent == p {
+                // pp->parent can't change between the check and the acquire()
+                // because only the parent changes it, and we're the parent.
+                pp.lock.acquire();
+                pp.parent = INITPROC;
+
+                // We should wake up init here, but that would require
+                // initproc->lock, which would be a deadlock, since we hold
+                // the lock on one of init's children (pp). This is why
+                // exit() always wakes init (before acquiring any locks).
+                pp.lock.release();
+            }
+        }
+    }
+
+    /// Kill the process with the given pid.
+    /// The victim won't exit until it tries to return
+    /// to user space (see usertrap() in trap.c).
+    pub unsafe fn kill_process(&mut self, pid: i32) -> i32 {
+        for p in &mut self.process.iter_mut() {
+            p.lock.acquire();
+            if p.pid == pid {
+                p.killed = true;
+                if p.state == Procstate::SLEEPING {
+                    // Wake process from sleep().
+                    p.state = Procstate::RUNNABLE
+                }
+                p.lock.release();
+                return 0;
+            }
+            p.lock.release();
+        }
+        -1
+    }
 }
 
 /// Current process pool.
-static mut PROCPOOL: ProcessPool = ProcessPool::zeroed();
+pub static mut PROCPOOL: ProcessPool = ProcessPool::zeroed();
 
 static mut INITPROC: *mut Proc = ptr::null_mut();
 
@@ -670,29 +713,6 @@ pub unsafe fn fork() -> i32 {
     pid
 }
 
-/// Pass p's abandoned children to init.
-/// Caller must hold p->lock.
-pub unsafe fn reparent(p: *mut Proc) {
-    for pp in &mut PROCPOOL.process {
-        // This code uses pp->parent without holding pp->lock.
-        // Acquiring the lock first could cause a deadlock
-        // if pp or a child of pp were also in exit()
-        // and about to try to lock p.
-        if pp.parent == p {
-            // pp->parent can't change between the check and the acquire()
-            // because only the parent changes it, and we're the parent.
-            pp.lock.acquire();
-            pp.parent = INITPROC;
-
-            // We should wake up init here, but that would require
-            // initproc->lock, which would be a deadlock, since we hold
-            // the lock on one of init's children (pp). This is why
-            // exit() always wakes init (before acquiring any locks).
-            pp.lock.release();
-        }
-    }
-}
-
 /// Exit the current process.  Does not return.
 /// An exited process remains in the zombie state
 /// until its parent calls wait().
@@ -737,7 +757,7 @@ pub unsafe fn exit(status: i32) {
     (*p).lock.acquire();
 
     // Give any children to init.
-    reparent(p);
+    PROCPOOL.init_parent(p);
 
     // Parent might be sleeping in wait().
     (*original_parent)
@@ -893,26 +913,6 @@ unsafe fn forkret() {
         fsinit(ROOTDEV);
     }
     usertrapret();
-}
-
-/// Kill the process with the given pid.
-/// The victim won't exit until it tries to return
-/// to user space (see usertrap() in trap.c).
-pub unsafe fn kill(pid: i32) -> i32 {
-    for p in &mut PROCPOOL.process {
-        p.lock.acquire();
-        if p.pid == pid {
-            p.killed = true;
-            if p.state == Procstate::SLEEPING {
-                // Wake process from sleep().
-                p.state = Procstate::RUNNABLE
-            }
-            p.lock.release();
-            return 0;
-        }
-        p.lock.release();
-    }
-    -1
 }
 
 /// Copy to either a user address, or kernel address,
