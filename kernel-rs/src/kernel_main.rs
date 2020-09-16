@@ -6,7 +6,7 @@ use crate::{
     plic::{plicinit, plicinithart},
     printf::printfinit,
     println,
-    proc::{cpuid, init_process_system, scheduler, userinit},
+    proc::{cpuid, init_process_pool, scheduler, userinit},
     trap::{trapinit, trapinithart},
     virtio_disk::virtio_disk_init,
     vm::{kvminit, kvminithart},
@@ -25,40 +25,40 @@ pub unsafe fn kernel_main() {
         println!("rv6 kernel is booting");
         println!();
 
-        // physical page allocator
+        // Physical page allocator.
         kinit();
 
-        // create kernel page table
+        // Create kernel page table.
         kvminit();
 
-        // turn on paging
+        // Turn on paging.
         kvminithart();
 
-        // process table
-        init_process_system();
+        // Process pool.
+        init_process_pool();
 
-        // trap vectors
+        // Trap vectors.
         trapinit();
 
-        // install kernel trap vector
+        // Install kernel trap vector.
         trapinithart();
 
-        // set up interrupt controller
+        // Set up interrupt controller.
         plicinit();
 
-        // ask PLIC for device interrupts
+        // Ask PLIC for device interrupts.
         plicinithart();
 
-        // buffer cache
+        // Buffer cache.
         binit();
 
-        // inode cache
+        // Inode cache.
         iinit();
 
-        // emulated hard disk
+        // Emulated hard disk.
         virtio_disk_init();
 
-        // first user process
+        // First user process.
         userinit();
         STARTED.store(true, Ordering::Release);
     } else {
@@ -66,13 +66,13 @@ pub unsafe fn kernel_main() {
 
         println!("hart {} starting", cpuid());
 
-        // turn on paging
+        // Turn on paging.
         kvminithart();
 
-        // install kernel trap vector
+        // Install kernel trap vector.
         trapinithart();
 
-        // ask PLIC for device interrupts
+        // Ask PLIC for device interrupts.
         plicinithart();
     }
 
