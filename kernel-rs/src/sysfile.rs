@@ -64,14 +64,14 @@ pub unsafe fn sys_read() -> usize {
     let (_, f) = ok_or!(argfd(0), return usize::MAX);
     let n = ok_or!(argint(2), return usize::MAX);
     let p = ok_or!(argaddr(1), return usize::MAX);
-    (*f).read(p, n) as usize
+    ok_or!((*f).read(p, n), return usize::MAX)
 }
 
 pub unsafe fn sys_write() -> usize {
     let (_, f) = ok_or!(argfd(0), return usize::MAX);
     let n = ok_or!(argint(2), return usize::MAX);
     let p = ok_or!(argaddr(1), return usize::MAX);
-    (*f).write(p, n) as usize
+    ok_or!((*f).write(p, n), return usize::MAX)
 }
 
 pub unsafe fn sys_close() -> usize {
@@ -84,7 +84,7 @@ pub unsafe fn sys_fstat() -> usize {
     let (_, f) = ok_or!(argfd(0), return usize::MAX);
     // user pointer to struct stat
     let st = ok_or!(argaddr(1), return usize::MAX);
-    (*f).stat(st) as usize
+    ok_or!((*f).stat(st), return usize::MAX)
 }
 
 /// Create the path new as a link to the same inode as old.

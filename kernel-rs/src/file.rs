@@ -98,7 +98,7 @@ impl RcFile {
 impl File {
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub unsafe fn stat(&mut self, addr: usize) -> i32 {
+    pub unsafe fn stat(&mut self, addr: usize) -> Result<usize, ()> {
         let p: *mut Proc = myproc();
         let mut st: Stat = Default::default();
 
@@ -114,20 +114,20 @@ impl File {
                     ::core::mem::size_of::<Stat>() as usize,
                 ) < 0
                 {
-                    -1
+                    Err(())
                 } else {
-                    0
+                    Ok(0)
                 }
             }
-            _ => -1,
+            _ => Err(()),
         }
     }
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub unsafe fn read(&mut self, addr: usize, n: i32) -> i32 {
+    pub unsafe fn read(&mut self, addr: usize, n: i32) -> Result<usize, ()> {
         if !self.readable {
-            return -1;
+            return Err(());
         }
 
         // Use &mut self.typ because read() "changes" FileType::Inode.off during holding ip's lock.
@@ -140,15 +140,16 @@ impl File {
                     *off = off.wrapping_add(r as u32);
                 }
                 (**ip).unlock();
-                r
+                Ok(r as usize)
             }
             FileType::Device { major, .. } => {
                 if *major < 0 || *major as usize >= NDEV || DEVSW[*major as usize].read.is_none() {
-                    return -1;
+                    return Err(());
                 }
-                DEVSW[*major as usize]
+                Ok(DEVSW[*major as usize]
                     .read
                     .expect("non-null function pointer")(1, addr, n)
+                    as usize)
             }
             _ => panic!("File::read"),
         }
@@ -156,9 +157,9 @@ impl File {
 
     /// Write to file self.
     /// addr is a user virtual address.
-    pub unsafe fn write(&mut self, addr: usize, n: i32) -> i32 {
+    pub unsafe fn write(&mut self, addr: usize, n: i32) -> Result<usize, ()> {
         if !self.writable {
-            return -1;
+            return Err(());
         }
 
         // Use &mut self.typ because write() "changes" FileType::Inode.off during holding ip's lock.
@@ -190,22 +191,23 @@ impl File {
                     (**ip).unlock();
                     end_op();
                     if r < 0 {
-                        return -1;
+                        return Err(());
                     }
                     if r != bytes_to_write {
                         panic!("short File::write");
                     }
                     i += r
                 }
-                n
+                Ok(n as usize)
             }
             FileType::Device { major, .. } => {
                 if *major < 0 || *major as usize >= NDEV || DEVSW[*major as usize].write.is_none() {
-                    return -1;
+                    return Err(());
                 }
-                DEVSW[*major as usize]
+                Ok(DEVSW[*major as usize]
                     .write
                     .expect("non-null function pointer")(1, addr, n)
+                    as usize)
             }
             _ => panic!("File::read"),
         }
