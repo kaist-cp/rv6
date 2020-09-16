@@ -6,7 +6,7 @@ use crate::{
     plic::{plicinit, plicinithart},
     printf::printfinit,
     println,
-    proc::{cpuid, procinit, scheduler, userinit},
+    proc::{cpuid, init_process_system, scheduler, userinit},
     trap::{trapinit, trapinithart},
     virtio_disk::virtio_disk_init,
     vm::{kvminit, kvminithart},
@@ -35,7 +35,7 @@ pub unsafe fn kernel_main() {
         kvminithart();
 
         // process table
-        procinit();
+        init_process_system();
 
         // trap vectors
         trapinit();
