@@ -453,7 +453,7 @@ impl ProcessPool {
 
     /// Pass p's abandoned children to init.
     /// Caller must hold p->lock.
-    pub unsafe fn init_parent(&mut self, p: *mut Proc) {
+    unsafe fn init_parent(&mut self, p: *mut Proc) {
         for pp in self.process.iter_mut() {
             // This code uses pp->parent without holding pp->lock.
             // Acquiring the lock first could cause a deadlock
@@ -505,7 +505,7 @@ impl ProcessPool {
             p.lock.release();
         }
     }
-    pub fn run_processes(&mut self, c: *mut Cpu) {
+    fn run_processes(&mut self, c: *mut Cpu) {
         for p in self.process.iter_mut() {
             p.lock.acquire();
             if p.state == Procstate::RUNNABLE {
