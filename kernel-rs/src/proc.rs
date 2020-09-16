@@ -424,8 +424,8 @@ impl ProcessSystem {
     /// Look in the process system for an UNUSED proc.
     /// If found, initialize state required to run in the kernel,
     /// and return with p->lock held.
-    /// If there are no free procs, return 0.
-    unsafe fn alloc(&mut self) -> *mut Proc {
+    /// If there are no free procs, return ptr::null_mut().
+    unsafe fn alloc_proc(&mut self) -> *mut Proc {
         for p in self.process.iter_mut() {
             p.lock.acquire();
             if p.state == Procstate::UNUSED {
@@ -664,7 +664,7 @@ static mut INITCODE: [u8; 51] = [
 
 /// Set up first user process.
 pub unsafe fn userinit() {
-    let mut p = PROCSYS.alloc();
+    let mut p = PROCPOOL.alloc_proc();
     INITPROC = p;
 
     // Allocate one user page and copy init's instructions
@@ -719,7 +719,7 @@ pub unsafe fn fork() -> i32 {
     let p = myproc();
 
     // Allocate process.
-    let mut np = PROCSYS.alloc();
+    let mut np = PROCPOOL.alloc_proc();
     if np.is_null() {
         return -1;
     }
