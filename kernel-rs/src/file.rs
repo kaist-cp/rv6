@@ -15,8 +15,8 @@ use core::cmp;
 
 pub struct File {
     pub typ: FileType,
-    pub readable: bool,
-    pub writable: bool,
+    readable: bool,
+    writable: bool,
 }
 
 // TODO: will be infered as we wrap *mut Pipe and *mut Inode.
@@ -218,6 +218,14 @@ impl File {
             readable: false,
             writable: false,
         }
+    }
+
+    pub fn set_writable(&mut self, writable: bool) {
+        self.writable = writable;
+    }
+
+    pub fn set_readable(&mut self, readable: bool) {
+        self.readable = readable;
     }
 }
 
