@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    file::{FileType, RcFile},
+    file::RcFile,
     kalloc::{kalloc, kfree},
     proc::{myproc, WaitChannel},
     spinlock::Spinlock,
@@ -141,10 +141,10 @@ impl AllocatedPipe {
         };
 
         // FIXME: You cannot get the mutable reference of Rc.
-        (*f0).typ = FileType::Pipe { pipe: Self { ptr } };
+        (*f0).set_filetype_pipe(AllocatedPipe { ptr });
         (*f0).set_readable(true);
         (*f0).set_writable(false);
-        (*f1).typ = FileType::Pipe { pipe: Self { ptr } };
+        (*f1).set_filetype_pipe(AllocatedPipe { ptr });
         (*f1).set_readable(false);
         (*f1).set_writable(true);
 
