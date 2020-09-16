@@ -173,15 +173,14 @@ impl File {
                 // this really belongs lower down, since write()
                 // might be writing a device like the console.
                 let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
-                let mut i: i32 = 0;
-                while i < n {
-                    let bytes_to_write = cmp::min(n - i, max as i32);
+                for bytes_written in (0..n).step_by(max) {
+                    let bytes_to_write = cmp::min(n - bytes_written, max as i32);
                     begin_op();
                     (**ip).lock();
 
                     let r = (**ip).write(
                         1,
-                        addr.wrapping_add(i as usize),
+                        addr.wrapping_add(bytes_written as usize),
                         *off,
                         bytes_to_write as u32,
                     );
@@ -196,7 +195,6 @@ impl File {
                     if r != bytes_to_write {
                         panic!("short File::write");
                     }
-                    i += r
                 }
                 Ok(n as usize)
             }
