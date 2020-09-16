@@ -2,7 +2,7 @@ use crate::libc;
 use crate::{
     file::{Devsw, DEVSW},
     printf::PANICKED,
-    proc::{either_copyin, either_copyout, myproc, procdump, WaitChannel},
+    proc::{either_copyin, either_copyout, myproc, WaitChannel, PROCPOOL},
     spinlock::{RawSpinlock, Spinlock},
     uart::Uart,
     utils::spin_loop,
@@ -155,7 +155,7 @@ impl Console {
         match cin {
             // Print process list.
             m if m == ctrl('P') => {
-                procdump();
+                PROCPOOL.debug();
             }
 
             // Kill line.

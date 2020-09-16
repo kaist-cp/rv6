@@ -248,9 +248,7 @@ impl WaitChannel {
     /// Wake up all processes sleeping on waitchannel.
     /// Must be called without any p->lock.
     pub fn wakeup(&self) {
-        unsafe {
-            PROCPOOL.wakeup_pool(self)
-        }
+        unsafe { PROCPOOL.wakeup_pool(self) }
     }
 
     /// Wake up p if it is sleeping in wait(); used by exit().
@@ -480,7 +478,7 @@ impl ProcessPool {
     /// The victim won't exit until it tries to return
     /// to user space (see usertrap() in trap.c).
     pub unsafe fn kill_process(&mut self, pid: i32) -> i32 {
-        for p in &mut self.process.iter_mut() {
+        for p in self.process.iter_mut() {
             p.lock.acquire();
             if p.pid == pid {
                 p.killed = true;
@@ -499,13 +497,29 @@ impl ProcessPool {
     /// Wake up all processes sleeping on waitchannel.
     /// Must be called without any p->lock.
     pub fn wakeup_pool(&mut self, targetchannel: &WaitChannel) {
-        for p in &mut self.process {
+        for p in self.process.iter_mut() {
             p.lock.acquire();
             if p.waitchannel == targetchannel as _ && p.state == Procstate::SLEEPING {
                 p.state = Procstate::RUNNABLE
             }
             p.lock.release();
-        
+        }
+    }
+
+    /// Print a process listing to console.  For debugging.
+    /// Runs when user types ^P on console.
+    /// No lock to avoid wedging a stuck machine further.
+    pub unsafe fn debug(&mut self) {
+        println!();
+        for p in self.process.iter_mut() {
+            if p.state != Procstate::UNUSED {
+                println!(
+                    "{} {} {}",
+                    p.pid,
+                    Procstate::to_str(&p.state),
+                    str::from_utf8(&p.name).unwrap_or("???")
+                );
+            }
         }
     }
 }
@@ -788,7 +802,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
     // Wakeups from a child's exit().
     (*p).lock.acquire();
     loop {
-        // Scan through table looking for exited children.
+        // Scan through pool looking for exited children.
         let mut havekids = false;
         for np in &mut PROCPOOL.process {
             // This code uses np->parent without holding np->lock.
@@ -945,22 +959,5 @@ pub unsafe fn either_copyin(dst: *mut libc::CVoid, user_src: i32, src: usize, le
     } else {
         ptr::copy(src as *mut u8 as *const libc::CVoid, dst, len);
         0
-    }
-}
-
-/// Print a process listing to console.  For debugging.
-/// Runs when user types ^P on console.
-/// No lock to avoid wedging a stuck machine further.
-pub unsafe fn procdump() {
-    println!();
-    for p in &mut PROCPOOL.process {
-        if p.state != Procstate::UNUSED {
-            println!(
-                "{} {} {}",
-                p.pid,
-                Procstate::to_str(&p.state),
-                str::from_utf8(&p.name).unwrap_or("???")
-            );
-        }
     }
 }
