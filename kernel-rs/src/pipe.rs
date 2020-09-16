@@ -40,41 +40,41 @@ impl Pipe {
     /// PipeInner::try_read() tries to read as much as possible.
     /// Pipe::read() executes try_read() until all bytes in pipe are read.
     //TODO : `n` should be u32
-    pub unsafe fn read(&self, addr: usize, n: i32) -> i32 {
+    pub unsafe fn read(&self, addr: usize, n: i32) -> Result<usize, ()> {
         let mut inner = self.inner.lock();
         loop {
             match inner.try_read(addr, n) {
                 Ok(r) => {
                     //DOC: piperead-wakeup
                     self.write_waitchannel.wakeup();
-                    return r;
+                    return Ok(r);
                 }
                 Err(PipeError::WaitForIO) => {
                     //DOC: piperead-sleep
                     self.read_waitchannel.sleep(inner.raw() as _);
                 }
-                _ => return -1,
+                _ => return Err(()),
             }
         }
     }
 
     /// PipeInner::try_write() tries to write as much as possible.
     /// Pipe::write() executes try_write() until `n` bytes are written.
-    pub unsafe fn write(&self, addr: usize, n: i32) -> i32 {
+    pub unsafe fn write(&self, addr: usize, n: i32) -> Result<usize, ()> {
         let mut written: i32 = 0;
         let mut inner = self.inner.lock();
         loop {
             match inner.try_write(addr + written as usize, n - written) {
                 Ok(r) => {
-                    written += r;
+                    written += r as i32;
                     self.read_waitchannel.wakeup();
                     if written < n {
                         self.write_waitchannel.sleep(inner.raw() as _);
                     } else {
-                        return written;
+                        return Ok(written as usize);
                     }
                 }
-                _ => return -1,
+                _ => return Err(()),
             }
         }
     }
@@ -165,10 +165,10 @@ pub enum PipeError {
 }
 
 impl PipeInner {
-    unsafe fn try_write(&mut self, addr: usize, n: i32) -> Result<i32, ()> {
+    unsafe fn try_write(&mut self, addr: usize, n: i32) -> Result<usize, ()> {
         let mut ch: u8 = 0;
         let proc = myproc();
-        for i in 0..n {
+        for i in 0..n as usize {
             if self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
                 if !self.readopen || (*proc).killed {
@@ -176,22 +176,16 @@ impl PipeInner {
                 }
                 return Ok(i);
             }
-            if copyin(
-                (*proc).pagetable,
-                &mut ch,
-                addr.wrapping_add(i as usize),
-                1usize,
-            ) == -1
-            {
+            if copyin((*proc).pagetable, &mut ch, addr.wrapping_add(i), 1usize) == -1 {
                 break;
             }
             self.data[self.nwrite as usize % PIPESIZE] = ch;
             self.nwrite = self.nwrite.wrapping_add(1);
         }
-        Ok(n)
+        Ok(n as usize)
     }
 
-    unsafe fn try_read(&mut self, addr: usize, n: i32) -> Result<i32, PipeError> {
+    unsafe fn try_read(&mut self, addr: usize, n: i32) -> Result<usize, PipeError> {
         let proc = myproc();
 
         //DOC: pipe-empty
@@ -203,22 +197,16 @@ impl PipeInner {
         }
 
         //DOC: piperead-copy
-        for i in 0..n {
+        for i in 0..n as usize {
             if self.nread == self.nwrite {
                 return Ok(i);
             }
             let mut ch = self.data[self.nread as usize % PIPESIZE];
             self.nread = self.nread.wrapping_add(1);
-            if copyout(
-                (*proc).pagetable,
-                addr.wrapping_add(i as usize),
-                &mut ch,
-                1usize,
-            ) == -1
-            {
+            if copyout((*proc).pagetable, addr.wrapping_add(i), &mut ch, 1usize) == -1 {
                 return Ok(i);
             }
         }
-        Ok(n)
+        Ok(n as usize)
     }
 }
