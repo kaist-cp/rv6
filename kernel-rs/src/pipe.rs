@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    file::RcFile,
+    file::{File, FileType, RcFile},
     kalloc::{kalloc, kfree},
     proc::{myproc, WaitChannel},
     spinlock::Spinlock,
@@ -116,9 +116,6 @@ impl AllocatedPipe {
     }
 
     pub unsafe fn alloc() -> Result<(RcFile, RcFile), ()> {
-        let mut f0 = RcFile::alloc().ok_or(())?;
-        let mut f1 = RcFile::alloc().ok_or(())?;
-
         let ptr = kalloc() as *mut Pipe;
         if ptr.is_null() {
             return Err(());
@@ -140,13 +137,22 @@ impl AllocatedPipe {
             write_waitchannel: WaitChannel::new(),
         };
 
-        // FIXME: You cannot get the mutable reference of Rc.
-        (*f0).set_filetype_pipe(AllocatedPipe { ptr });
-        (*f0).set_readable(true);
-        (*f0).set_writable(false);
-        (*f1).set_filetype_pipe(AllocatedPipe { ptr });
-        (*f1).set_readable(false);
-        (*f1).set_writable(true);
+        let f0 = RcFile::alloc(File::new(
+            FileType::Pipe {
+                pipe: AllocatedPipe { ptr },
+            },
+            true,
+            false,
+        ))
+        .ok_or(())?;
+        let f1 = RcFile::alloc(File::new(
+            FileType::Pipe {
+                pipe: AllocatedPipe { ptr },
+            },
+            false,
+            true,
+        ))
+        .ok_or(())?;
 
         Ok((f0, f1))
     }

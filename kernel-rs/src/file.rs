@@ -83,9 +83,9 @@ pub type RcFile = TaggedBox<FTableRef, File>;
 
 impl RcFile {
     /// Allocate a file structure.
-    pub fn alloc() -> Option<Self> {
+    pub fn alloc(file: File) -> Option<Self> {
         // TODO: idiomatic initialization.
-        FTableRef::alloc(File::zeroed())
+        FTableRef::alloc(file)
     }
 
     /// Increment reference count of the file.
@@ -220,24 +220,12 @@ impl File {
         }
     }
 
-    pub fn set_writable(&mut self, writable: bool) {
-        self.writable = writable;
-    }
-
-    pub fn set_readable(&mut self, readable: bool) {
-        self.readable = readable;
-    }
-
-    pub fn set_filetype_pipe(&mut self, pipe: AllocatedPipe) {
-        self.typ = FileType::Pipe { pipe };
-    }
-
-    pub fn set_filetype_device(&mut self, ip: *mut Inode, major: i16) {
-        self.typ = FileType::Device { ip, major };
-    }
-
-    pub fn set_filetype_inode(&mut self, ip: *mut Inode) {
-        self.typ = FileType::Inode { ip, off: 0 };
+    pub const fn new(typ: FileType, readable: bool, writable: bool) -> Self {
+        Self {
+            typ,
+            readable,
+            writable,
+        }
     }
 }
 

@@ -5,7 +5,7 @@ use crate::libc;
 use crate::{
     exec::exec,
     fcntl::FcntlFlags,
-    file::{Inode, RcFile},
+    file::{File, FileType, Inode, RcFile},
     fs::{dirlink, dirlookup, namecmp, namei, nameiparent},
     fs::{Dirent, DIRSIZ},
     kalloc::{kalloc, kfree},
@@ -286,11 +286,36 @@ pub unsafe fn sys_open() -> usize {
         end_op();
         return usize::MAX;
     }
-    let f = some_or!(RcFile::alloc(), {
-        (*ip).unlockput();
-        end_op();
-        return usize::MAX;
-    });
+    let f = if (*ip).typ as i32 == T_DEVICE {
+        some_or!(
+            RcFile::alloc(File::new(
+                FileType::Device {
+                    ip,
+                    major: (*ip).major
+                },
+                !omode.intersects(FcntlFlags::O_WRONLY),
+                omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)
+            )),
+            {
+                (*ip).unlockput();
+                end_op();
+                return usize::MAX;
+            }
+        )
+    } else {
+        some_or!(
+            RcFile::alloc(File::new(
+                FileType::Inode { ip, off: 0 },
+                !omode.intersects(FcntlFlags::O_WRONLY),
+                omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)
+            )),
+            {
+                (*ip).unlockput();
+                end_op();
+                return usize::MAX;
+            }
+        )
+    };
 
     let fd = match f.fdalloc() {
         Ok(fd) => fd,
@@ -301,16 +326,6 @@ pub unsafe fn sys_open() -> usize {
             return usize::MAX;
         }
     };
-
-    let f = (*myproc()).open_files[fd as usize].as_mut().unwrap();
-
-    if (*ip).typ as i32 == T_DEVICE {
-        (*f).set_filetype_device(ip, (*ip).major);
-    } else {
-        (*f).set_filetype_inode(ip);
-    }
-    (*f).set_readable(!omode.intersects(FcntlFlags::O_WRONLY));
-    (*f).set_writable(omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR));
 
     (*ip).unlock();
     end_op();
