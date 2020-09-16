@@ -3,7 +3,7 @@ use crate::{
     fs::{stati, BSIZE},
     log::{begin_op, end_op},
     param::{MAXOPBLOCKS, NDEV, NFILE},
-    pipe::AllocatedPipe,
+    pipe::{AllocatedPipe, Pipe},
     pool::{PoolRef, RcPool, TaggedBox},
     proc::{myproc, Proc},
     sleeplock::Sleeplock,
@@ -14,7 +14,7 @@ use crate::{
 use core::cmp;
 
 pub struct File {
-    pub typ: FileType,
+    typ: FileType,
     readable: bool,
     writable: bool,
 }
@@ -226,6 +226,18 @@ impl File {
 
     pub fn set_readable(&mut self, readable: bool) {
         self.readable = readable;
+    }
+
+    pub fn set_filetype_pipe(&mut self, ptr: *mut Pipe) {
+        self.typ = FileType::Pipe { pipe: AllocatedPipe { ptr } };
+    }
+
+    pub fn set_filetype_device(&mut self, ip: *mut Inode, major: i16) {
+        self.typ = FileType::Device { ip, major };
+    }
+    
+    pub fn set_filetype_inode(&mut self, ip: *mut Inode) {
+        self.typ = FileType::Inode { ip, off: 0 };
     }
 }
 
