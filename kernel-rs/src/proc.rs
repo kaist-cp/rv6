@@ -385,6 +385,19 @@ impl Proc {
             name: [0; 16],
         }
     }
+    
+    /// Allocate a page for the process's kernel stack.
+    /// Map it high in memory, followed by an invalid
+    /// guard page.
+    unsafe fn palloc(&mut self, i: usize) {    
+        let pa = kalloc() as *mut u8;
+        if pa.is_null() {
+            panic!("kalloc");
+        }
+        let va: usize = kstack(i);
+        kvmmap(va, pa as usize, PGSIZE, PTE_R | PTE_W);
+        self.kstack = va;
+    }
 }
 
 static mut CPUS: [Cpu; NCPU] = [Cpu::zeroed(); NCPU];
@@ -404,17 +417,7 @@ impl ProcessPool {
     unsafe fn init(&mut self) {
         for (i, p) in self.process.iter_mut().enumerate() {
             p.lock.initlock("proc");
-
-            // Allocate a page for the process's kernel stack.
-            // Map it high in memory, followed by an invalid
-            // guard page.
-            let pa = kalloc() as *mut u8;
-            if pa.is_null() {
-                panic!("kalloc");
-            }
-            let va: usize = kstack(i);
-            kvmmap(va, pa as usize, PGSIZE, PTE_R | PTE_W);
-            p.kstack = va;
+            p.palloc(i);
         }
     }
 
