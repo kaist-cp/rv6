@@ -312,8 +312,8 @@ pub unsafe fn sys_open() -> usize {
     } else {
         (*f).typ = FileType::Inode { ip, off: 0 };
     }
-    (*f).readable = !omode.intersects(FcntlFlags::O_WRONLY);
-    (*f).writable = omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR);
+    (*f).set_readable(!omode.intersects(FcntlFlags::O_WRONLY));
+    (*f).set_writable(omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR));
 
     (*ip).unlock();
     end_op();
