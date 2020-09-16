@@ -249,7 +249,7 @@ impl WaitChannel {
     /// Must be called without any p->lock.
     pub fn wakeup(&self) {
         unsafe {
-            for p in &mut PROC[..] {
+            for p in &mut PROC.process {
                 p.lock.acquire();
                 if p.waitchannel == self as _ && p.state == Procstate::SLEEPING {
                     p.state = Procstate::RUNNABLE
@@ -397,26 +397,43 @@ impl Proc {
 
 static mut CPUS: [Cpu; NCPU] = [Cpu::zeroed(); NCPU];
 
-static mut PROC: [Proc; NPROC] = [Proc::zeroed(); NPROC];
+/// System containing & managing whole processes.
+struct ProcessSystem {
+    process: [Proc; NPROC],
+}
+
+impl ProcessSystem {
+    const fn zeroed() -> Self {
+        Self {
+            process: [Proc::zeroed(); NPROC],
+        }
+    }
+
+    unsafe fn init(&mut self) {
+        for (i, p) in self.process.iter_mut().enumerate() {
+            p.lock.initlock("proc");
+
+            // Allocate a page for the process's kernel stack.
+            // Map it high in memory, followed by an invalid
+            // guard page.
+            let pa = kalloc() as *mut u8;
+            if pa.is_null() {
+                panic!("kalloc");
+            }
+            let va: usize = kstack(i);
+            kvmmap(va, pa as usize, PGSIZE, PTE_R | PTE_W);
+            p.kstack = va;
+        }
+    }
+}
+
+static mut PROC: ProcessSystem = ProcessSystem::zeroed();
 
 static mut INITPROC: *mut Proc = ptr::null_mut();
 
 #[no_mangle]
 pub unsafe fn procinit() {
-    for (i, p) in PROC.iter_mut().enumerate() {
-        p.lock.initlock("proc");
-
-        // Allocate a page for the process's kernel stack.
-        // Map it high in memory, followed by an invalid
-        // guard page.
-        let pa = kalloc() as *mut u8;
-        if pa.is_null() {
-            panic!("kalloc");
-        }
-        let va: usize = kstack(i);
-        kvmmap(va, pa as usize, PGSIZE, PTE_R | PTE_W);
-        p.kstack = va;
-    }
+    PROC.init();
     kvminithart();
 }
 
@@ -460,7 +477,7 @@ fn allocpid() -> i32 {
 /// and return with p->lock held.
 /// If there are no free procs, return 0.
 unsafe fn allocproc() -> *mut Proc {
-    for p in &mut PROC[..] {
+    for p in &mut PROC.process {
         p.lock.acquire();
         if p.state == Procstate::UNUSED {
             p.pid = allocpid();
@@ -655,7 +672,7 @@ pub unsafe fn fork() -> i32 {
 /// Pass p's abandoned children to init.
 /// Caller must hold p->lock.
 pub unsafe fn reparent(p: *mut Proc) {
-    for pp in &mut PROC[..] {
+    for pp in &mut PROC.process {
         // This code uses pp->parent without holding pp->lock.
         // Acquiring the lock first could cause a deadlock
         // if pp or a child of pp were also in exit()
@@ -745,7 +762,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
     loop {
         // Scan through table looking for exited children.
         let mut havekids = false;
-        for np in &mut PROC[..] {
+        for np in &mut PROC.process {
             // This code uses np->parent without holding np->lock.
             // Acquiring the lock first would cause a deadlock,
             // since np might be an ancestor, and we already hold p->lock.
@@ -803,7 +820,7 @@ pub unsafe fn scheduler() -> ! {
         // Avoid deadlock by ensuring that devices can interrupt.
         intr_on();
 
-        for p in &mut PROC[..] {
+        for p in &mut PROC.process {
             p.lock.acquire();
             if p.state == Procstate::RUNNABLE {
                 // Switch to chosen process.  It is the process's job
@@ -881,7 +898,7 @@ unsafe fn forkret() {
 /// The victim won't exit until it tries to return
 /// to user space (see usertrap() in trap.c).
 pub unsafe fn kill(pid: i32) -> i32 {
-    for p in &mut PROC[..] {
+    for p in &mut PROC.process {
         p.lock.acquire();
         if p.pid == pid {
             p.killed = true;
@@ -928,7 +945,7 @@ pub unsafe fn either_copyin(dst: *mut libc::CVoid, user_src: i32, src: usize, le
 /// No lock to avoid wedging a stuck machine further.
 pub unsafe fn procdump() {
     println!();
-    for p in &mut PROC[..] {
+    for p in &mut PROC.process {
         if p.state != Procstate::UNUSED {
             println!(
                 "{} {} {}",
