@@ -249,7 +249,7 @@ impl WaitChannel {
     /// Must be called without any p->lock.
     pub fn wakeup(&self) {
         unsafe {
-            for p in &mut PROC.process {
+            for p in &mut PROCPOOL.process {
                 p.lock.acquire();
                 if p.waitchannel == self as _ && p.state == Procstate::SLEEPING {
                     p.state = Procstate::RUNNABLE
@@ -397,12 +397,12 @@ impl Proc {
 
 static mut CPUS: [Cpu; NCPU] = [Cpu::zeroed(); NCPU];
 
-/// Process System type containing & managing whole processes.
-struct ProcessSystem {
+/// Process pool type containing & managing whole processes.
+struct ProcessPool {
     process: [Proc; NPROC],
 }
 
-impl ProcessSystem {
+impl ProcessPool {
     const fn zeroed() -> Self {
         Self {
             process: [Proc::zeroed(); NPROC],
@@ -426,17 +426,48 @@ impl ProcessSystem {
         }
     }
 
+    /// Look in the process pool for an UNUSED proc.
+    /// If found, initialize state required to run in the kernel,
+    /// and return with p->lock held.
+    /// If there are no free procs, return 0.
+    unsafe fn allocproc(&mut self) -> *mut Proc{
+        for p in self.process.iter_mut() {
+            p.lock.acquire();
+        if p.state == Procstate::UNUSED {
+            p.pid = allocpid();
 
+            // Allocate a trapframe page.
+            p.tf = kalloc() as *mut Trapframe;
+            if p.tf.is_null() {
+                p.lock.release();
+                return ptr::null_mut();
+            }
+
+            // An empty user page table.
+            p.pagetable = proc_pagetable(p);
+
+            // Set up new context to start executing at forkret,
+            // which returns to user space.
+            ptr::write_bytes(&mut (*p).context as *mut Context, 0, 1);
+            p.context.ra = forkret as usize;
+            p.context.sp = p.kstack.wrapping_add(PGSIZE);
+            return p;
+        }
+        p.lock.release();
+        }
+
+        ptr::null_mut()
+    }
 }
 
-/// Current Process System.
-static mut PROC: ProcessSystem = ProcessSystem::zeroed();
+/// Current process pool.
+static mut PROCPOOL: ProcessPool = ProcessPool::zeroed();
 
 static mut INITPROC: *mut Proc = ptr::null_mut();
 
 #[no_mangle]
 pub unsafe fn init_process_system() {
-    PROC.init();
+    PROCPOOL.init();
     kvminithart();
 }
 
@@ -473,39 +504,6 @@ fn allocpid() -> i32 {
     let ret = *pid;
     *pid += 1;
     ret
-}
-
-/// Look in the process table for an UNUSED proc.
-/// If found, initialize state required to run in the kernel,
-/// and return with p->lock held.
-/// If there are no free procs, return 0.
-unsafe fn allocproc() -> *mut Proc {
-    for p in &mut PROC.process {
-        p.lock.acquire();
-        if p.state == Procstate::UNUSED {
-            p.pid = allocpid();
-
-            // Allocate a trapframe page.
-            p.tf = kalloc() as *mut Trapframe;
-            if p.tf.is_null() {
-                p.lock.release();
-                return ptr::null_mut();
-            }
-
-            // An empty user page table.
-            p.pagetable = proc_pagetable(p);
-
-            // Set up new context to start executing at forkret,
-            // which returns to user space.
-            ptr::write_bytes(&mut (*p).context as *mut Context, 0, 1);
-            p.context.ra = forkret as usize;
-            p.context.sp = p.kstack.wrapping_add(PGSIZE);
-            return p;
-        }
-        p.lock.release();
-    }
-
-    ptr::null_mut()
 }
 
 /// Free a proc structure and the data hanging from it,
@@ -579,7 +577,7 @@ static mut INITCODE: [u8; 51] = [
 
 /// Set up first user process.
 pub unsafe fn userinit() {
-    let mut p = allocproc();
+    let mut p = PROCPOOL.allocproc();
     INITPROC = p;
 
     // Allocate one user page and copy init's instructions
@@ -634,7 +632,7 @@ pub unsafe fn fork() -> i32 {
     let p = myproc();
 
     // Allocate process.
-    let mut np = allocproc();
+    let mut np = PROCPOOL.allocproc();
     if np.is_null() {
         return -1;
     }
@@ -675,7 +673,7 @@ pub unsafe fn fork() -> i32 {
 /// Pass p's abandoned children to init.
 /// Caller must hold p->lock.
 pub unsafe fn reparent(p: *mut Proc) {
-    for pp in &mut PROC.process {
+    for pp in &mut PROCPOOL.process {
         // This code uses pp->parent without holding pp->lock.
         // Acquiring the lock first could cause a deadlock
         // if pp or a child of pp were also in exit()
@@ -765,7 +763,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
     loop {
         // Scan through table looking for exited children.
         let mut havekids = false;
-        for np in &mut PROC.process {
+        for np in &mut PROCPOOL.process {
             // This code uses np->parent without holding np->lock.
             // Acquiring the lock first would cause a deadlock,
             // since np might be an ancestor, and we already hold p->lock.
@@ -823,7 +821,7 @@ pub unsafe fn scheduler() -> ! {
         // Avoid deadlock by ensuring that devices can interrupt.
         intr_on();
 
-        for p in &mut PROC.process {
+        for p in &mut PROCPOOL.process {
             p.lock.acquire();
             if p.state == Procstate::RUNNABLE {
                 // Switch to chosen process.  It is the process's job
@@ -901,7 +899,7 @@ unsafe fn forkret() {
 /// The victim won't exit until it tries to return
 /// to user space (see usertrap() in trap.c).
 pub unsafe fn kill(pid: i32) -> i32 {
-    for p in &mut PROC.process {
+    for p in &mut PROCPOOL.process {
         p.lock.acquire();
         if p.pid == pid {
             p.killed = true;
@@ -948,7 +946,7 @@ pub unsafe fn either_copyin(dst: *mut libc::CVoid, user_src: i32, src: usize, le
 /// No lock to avoid wedging a stuck machine further.
 pub unsafe fn procdump() {
     println!();
-    for p in &mut PROC.process {
+    for p in &mut PROCPOOL.process {
         if p.state != Procstate::UNUSED {
             println!(
                 "{} {} {}",
