@@ -397,7 +397,7 @@ impl Proc {
 
 static mut CPUS: [Cpu; NCPU] = [Cpu::zeroed(); NCPU];
 
-/// System containing & managing whole processes.
+/// Process System type containing & managing whole processes.
 struct ProcessSystem {
     process: [Proc; NPROC],
 }
@@ -425,14 +425,17 @@ impl ProcessSystem {
             p.kstack = va;
         }
     }
+
+
 }
 
+/// Current Process System.
 static mut PROC: ProcessSystem = ProcessSystem::zeroed();
 
 static mut INITPROC: *mut Proc = ptr::null_mut();
 
 #[no_mangle]
-pub unsafe fn procinit() {
+pub unsafe fn init_process_system() {
     PROC.init();
     kvminithart();
 }
