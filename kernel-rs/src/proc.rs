@@ -385,11 +385,11 @@ impl Proc {
             name: [0; 16],
         }
     }
-    
+
     /// Allocate a page for the process's kernel stack.
     /// Map it high in memory, followed by an invalid
     /// guard page.
-    unsafe fn palloc(&mut self, i: usize) {    
+    unsafe fn palloc(&mut self, i: usize) {
         let pa = kalloc() as *mut u8;
         if pa.is_null() {
             panic!("kalloc");
@@ -553,8 +553,8 @@ pub static mut PROCSYS: ProcessSystem = ProcessSystem::zeroed();
 static mut INITPROC: *mut Proc = ptr::null_mut();
 
 #[no_mangle]
-pub unsafe fn init_process_pool() {
-    PROCSYS.init();
+pub unsafe fn process_pool_init() {
+    PROCPOOL.init();
     kvminithart();
 }
 
