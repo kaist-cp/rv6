@@ -292,8 +292,7 @@ pub unsafe fn sys_open() -> usize {
             RcFile::alloc(File::new(
                 FileType::Device {
                     ip,
-                    // @kimjungwow : if (*ip).major is negative i16, make it NDEV so that no device will be accessed by below `major`.
-                    major: u16::try_from((*ip).major).unwrap_or(NDEV as u16)
+                    major: (*ip).major
                 },
                 !omode.intersects(FcntlFlags::O_WRONLY),
                 omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)
@@ -357,6 +356,7 @@ pub unsafe fn sys_mknod() -> usize {
         end_op();
     });
     let _ = ok_or!(argstr(0, path.as_mut_ptr(), MAXPATH), return usize::MAX);
+    // @kimjungwow : if ok_or returns negative i32 , make it NDEV so that no device will be accessed by below `major`.
     let major = u16::try_from(ok_or!(argint(1), return usize::MAX)).unwrap_or(NDEV as u16);
     let minor = u16::try_from(ok_or!(argint(2), return usize::MAX)).unwrap_or(NDEV as u16);
     let ip = create(path.as_mut_ptr(), T_DEVICE as i16, major, minor);
