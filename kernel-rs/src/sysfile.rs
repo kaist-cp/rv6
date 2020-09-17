@@ -20,6 +20,7 @@ use crate::{
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
     vm::copyout,
 };
+use core::convert::TryFrom;
 use core::mem;
 use core::ptr;
 
@@ -291,7 +292,8 @@ pub unsafe fn sys_open() -> usize {
             RcFile::alloc(File::new(
                 FileType::Device {
                     ip,
-                    major: (*ip).major
+                    // @kimjungwow : if (*ip).major is negative i16, make it NDEV so that no device will be accessed by below `major`.
+                    major: u16::try_from((*ip).major).unwrap_or(NDEV as u16)
                 },
                 !omode.intersects(FcntlFlags::O_WRONLY),
                 omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)

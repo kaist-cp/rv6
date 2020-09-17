@@ -53,7 +53,7 @@ pub enum FileType {
     None,
     Pipe { pipe: AllocatedPipe },
     Inode { ip: *mut Inode, off: u32 },
-    Device { ip: *mut Inode, major: i16 },
+    Device { ip: *mut Inode, major: u16 },
 }
 
 /// map major device number to device functions.
@@ -143,15 +143,12 @@ impl File {
                 (**ip).unlock();
                 Ok(r as usize)
             }
-            FileType::Device { major, .. } => {
-                if *major < 0 || *major as usize >= NDEV || DEVSW[*major as usize].read.is_none() {
-                    return Err(());
-                }
-                Ok(DEVSW[*major as usize]
-                    .read
-                    .expect("non-null function pointer")(1, addr, n)
-                    as usize)
-            }
+            FileType::Device { major, .. } => DEVSW
+                .get(*major as usize)
+                .and_then(|dev| {
+                    Some(dev.read.expect("non-null function pointer")(1, addr, n) as usize)
+                })
+                .ok_or(()),
             _ => panic!("File::read"),
         }
     }
@@ -199,15 +196,12 @@ impl File {
                 }
                 Ok(n as usize)
             }
-            FileType::Device { major, .. } => {
-                if *major < 0 || *major as usize >= NDEV || DEVSW[*major as usize].write.is_none() {
-                    return Err(());
-                }
-                Ok(DEVSW[*major as usize]
-                    .write
-                    .expect("non-null function pointer")(1, addr, n)
-                    as usize)
-            }
+            FileType::Device { major, .. } => DEVSW
+                .get(*major as usize)
+                .and_then(|dev| {
+                    Some(dev.write.expect("non-null function pointer")(1, addr, n) as usize)
+                })
+                .ok_or(()),
             _ => panic!("File::read"),
         }
     }
