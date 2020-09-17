@@ -40,7 +40,7 @@ impl Pipe {
     /// PipeInner::try_read() tries to read as much as possible.
     /// Pipe::read() executes try_read() until all bytes in pipe are read.
     //TODO : `n` should be u32
-    pub unsafe fn read(&self, addr: usize, n: i32) -> Result<usize, ()> {
+    pub unsafe fn read(&self, addr: usize, n: u32) -> Result<usize, ()> {
         let mut inner = self.inner.lock();
         loop {
             match inner.try_read(addr, n) {
@@ -60,13 +60,13 @@ impl Pipe {
 
     /// PipeInner::try_write() tries to write as much as possible.
     /// Pipe::write() executes try_write() until `n` bytes are written.
-    pub unsafe fn write(&self, addr: usize, n: i32) -> Result<usize, ()> {
-        let mut written: i32 = 0;
+    pub unsafe fn write(&self, addr: usize, n: u32) -> Result<usize, ()> {
+        let mut written: u32 = 0;
         let mut inner = self.inner.lock();
         loop {
             match inner.try_write(addr + written as usize, n - written) {
                 Ok(r) => {
-                    written += r as i32;
+                    written += r as u32;
                     self.read_waitchannel.wakeup();
                     if written < n {
                         self.write_waitchannel.sleep(inner.raw() as _);
@@ -171,7 +171,7 @@ pub enum PipeError {
 }
 
 impl PipeInner {
-    unsafe fn try_write(&mut self, addr: usize, n: i32) -> Result<usize, ()> {
+    unsafe fn try_write(&mut self, addr: usize, n: u32) -> Result<usize, ()> {
         let mut ch: u8 = 0;
         let proc = myproc();
         for i in 0..n as usize {
@@ -191,7 +191,7 @@ impl PipeInner {
         Ok(n as usize)
     }
 
-    unsafe fn try_read(&mut self, addr: usize, n: i32) -> Result<usize, PipeError> {
+    unsafe fn try_read(&mut self, addr: usize, n: u32) -> Result<usize, PipeError> {
         let proc = myproc();
 
         //DOC: pipe-empty

@@ -12,6 +12,7 @@ use crate::{
     vm::copyout,
 };
 use core::cmp;
+use core::convert::TryFrom;
 
 pub struct File {
     typ: FileType,
@@ -132,7 +133,7 @@ impl File {
 
         // Use &mut self.typ because read() "changes" FileType::Inode.off during holding ip's lock.
         match &mut self.typ {
-            FileType::Pipe { pipe } => pipe.read(addr, n),
+            FileType::Pipe { pipe } => pipe.read(addr, u32::try_from(n).unwrap_or(0)),
             FileType::Inode { ip, off } => {
                 (**ip).lock();
                 let r = (**ip).read(1, addr, *off, n as u32);
@@ -164,7 +165,7 @@ impl File {
 
         // Use &mut self.typ because write() "changes" FileType::Inode.off during holding ip's lock.
         match &mut self.typ {
-            FileType::Pipe { pipe } => pipe.write(addr, n),
+            FileType::Pipe { pipe } => pipe.write(addr, u32::try_from(n).unwrap_or(0)),
             FileType::Inode { ip, off } => {
                 // write a few blocks at a time to avoid exceeding
                 // the maximum log transaction size, including
