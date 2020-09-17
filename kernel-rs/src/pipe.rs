@@ -149,7 +149,7 @@ impl AllocatedPipe {
             None
         })
         .ok_or(())?;
-        
+
         let f1 = RcFile::alloc(File::new(
             FileType::Pipe {
                 pipe: AllocatedPipe { ptr },
