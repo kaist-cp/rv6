@@ -76,10 +76,10 @@ struct Dinode {
     typ: i16,
 
     /// Major device number (T_DEVICE only)
-    major: i16,
+    major: u16,
 
     /// Minor device number (T_DEVICE only)
-    minor: i16,
+    minor: u16,
 
     /// Number of links to inode in file system
     nlink: i16,

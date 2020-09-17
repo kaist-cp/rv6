@@ -209,7 +209,7 @@ pub unsafe fn sys_unlink() -> usize {
     usize::MAX
 }
 
-unsafe fn create(path: *mut u8, typ: i16, major: i16, minor: i16) -> *mut Inode {
+unsafe fn create(path: *mut u8, typ: i16, major: u16, minor: u16) -> *mut Inode {
     let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
     let mut dp: *mut Inode = nameiparent(path, name.as_mut_ptr());
     if dp.is_null() {
@@ -282,7 +282,7 @@ pub unsafe fn sys_open() -> usize {
             return usize::MAX;
         }
     }
-    if (*ip).typ as i32 == T_DEVICE && (((*ip).major) < 0 || (*ip).major as usize >= NDEV) {
+    if (*ip).typ as i32 == T_DEVICE && ((*ip).major as usize >= NDEV) {
         (*ip).unlockput();
         end_op();
         return usize::MAX;
@@ -357,14 +357,9 @@ pub unsafe fn sys_mknod() -> usize {
         end_op();
     });
     let _ = ok_or!(argstr(0, path.as_mut_ptr(), MAXPATH), return usize::MAX);
-    let major = ok_or!(argint(1), return usize::MAX);
-    let minor = ok_or!(argint(2), return usize::MAX);
-    let ip = create(
-        path.as_mut_ptr(),
-        T_DEVICE as i16,
-        major as i16,
-        minor as i16,
-    );
+    let major = u16::try_from(ok_or!(argint(1), return usize::MAX)).unwrap_or(NDEV as u16);
+    let minor = u16::try_from(ok_or!(argint(2), return usize::MAX)).unwrap_or(NDEV as u16);
+    let ip = create(path.as_mut_ptr(), T_DEVICE as i16, major, minor);
     if ip.is_null() {
         return usize::MAX;
     }
