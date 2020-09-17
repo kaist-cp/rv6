@@ -144,7 +144,12 @@ impl AllocatedPipe {
             true,
             false,
         ))
+        .or_else(|| {
+            kfree(ptr as *mut libc::CVoid);
+            None
+        })
         .ok_or(())?;
+        
         let f1 = RcFile::alloc(File::new(
             FileType::Pipe {
                 pipe: AllocatedPipe { ptr },
@@ -152,6 +157,11 @@ impl AllocatedPipe {
             false,
             true,
         ))
+        .or_else(|| {
+            kfree(ptr as *mut libc::CVoid);
+            drop(&f0);
+            None
+        })
         .ok_or(())?;
 
         Ok((f0, f1))
