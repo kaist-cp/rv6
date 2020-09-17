@@ -42,8 +42,8 @@ pub struct Inode {
 
     /// copy of disk inode
     pub typ: i16,
-    pub major: i16,
-    pub minor: i16,
+    pub major: u16,
+    pub minor: u16,
     pub nlink: i16,
     pub size: u32,
     pub addrs: [u32; 13],
