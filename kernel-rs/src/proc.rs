@@ -508,7 +508,7 @@ impl ProcessSystem {
             p.lock.release();
         }
     }
-    fn run_processes(&mut self, c: *mut Cpu) {
+    unsafe fn run_processes(&mut self, c: *mut Cpu) {
         for p in self.process.iter_mut() {
             p.lock.acquire();
             if p.state == Procstate::RUNNABLE {
@@ -516,14 +516,12 @@ impl ProcessSystem {
                 // to release its lock and then reacquire it
                 // before jumping back to us.
                 p.state = Procstate::RUNNING;
-                unsafe {
-                    (*c).proc = p;
-                    swtch(&mut (*c).scheduler, &mut p.context);
+                (*c).proc = p;
+                swtch(&mut (*c).scheduler, &mut p.context);
 
-                    // Process is done running for now.
-                    // It should have changed its p->state before coming back.
-                    (*c).proc = ptr::null_mut()
-                }
+                // Process is done running for now.
+                // It should have changed its p->state before coming back.
+                (*c).proc = ptr::null_mut()
             }
             p.lock.release();
         }
