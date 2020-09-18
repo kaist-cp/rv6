@@ -34,7 +34,7 @@ pub unsafe fn kernel_main() {
         // Turn on paging.
         kvminithart();
 
-        // Process pool.
+        // Process system.
         init_process_pool();
 
         // Trap vectors.

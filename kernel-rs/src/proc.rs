@@ -248,7 +248,7 @@ impl WaitChannel {
     /// Wake up all processes sleeping on waitchannel.
     /// Must be called without any p->lock.
     pub fn wakeup(&self) {
-        unsafe { PROCPOOL.wakeup_pool(self) }
+        unsafe { PROCSYS.wakeup_pool(self) }
     }
 
     /// Wake up p if it is sleeping in wait(); used by exit().
@@ -402,12 +402,12 @@ impl Proc {
 
 static mut CPUS: [Cpu; NCPU] = [Cpu::zeroed(); NCPU];
 
-/// Process pool type containing & managing whole processes.
-pub struct ProcessPool {
+/// Process system type containing & managing whole processes.
+pub struct ProcessSystem {
     process: [Proc; NPROC],
 }
 
-impl ProcessPool {
+impl ProcessSystem {
     const fn zeroed() -> Self {
         Self {
             process: [Proc::zeroed(); NPROC],
@@ -421,11 +421,11 @@ impl ProcessPool {
         }
     }
 
-    /// Look in the process pool for an UNUSED proc.
+    /// Look in the process system for an UNUSED proc.
     /// If found, initialize state required to run in the kernel,
     /// and return with p->lock held.
     /// If there are no free procs, return 0.
-    unsafe fn allocproc(&mut self) -> *mut Proc {
+    unsafe fn alloc(&mut self) -> *mut Proc {
         for p in self.process.iter_mut() {
             p.lock.acquire();
             if p.state == Procstate::UNUSED {
@@ -456,7 +456,7 @@ impl ProcessPool {
 
     /// Pass p's abandoned children to init.
     /// Caller must hold p->lock.
-    unsafe fn init_parent(&mut self, p: *mut Proc) {
+    unsafe fn reparent(&mut self, p: *mut Proc) {
         for pp in self.process.iter_mut() {
             // This code uses pp->parent without holding pp->lock.
             // Acquiring the lock first could cause a deadlock
@@ -480,7 +480,7 @@ impl ProcessPool {
     /// Kill the process with the given pid.
     /// The victim won't exit until it tries to return
     /// to user space (see usertrap() in trap.c).
-    pub unsafe fn kill_process(&mut self, pid: i32) -> i32 {
+    pub unsafe fn kill(&mut self, pid: i32) -> i32 {
         for p in self.process.iter_mut() {
             p.lock.acquire();
             if p.pid == pid {
@@ -499,10 +499,10 @@ impl ProcessPool {
 
     /// Wake up all processes sleeping on waitchannel.
     /// Must be called without any p->lock.
-    pub fn wakeup_pool(&mut self, targetchannel: &WaitChannel) {
+    pub fn wakeup_pool(&mut self, target: &WaitChannel) {
         for p in self.process.iter_mut() {
             p.lock.acquire();
-            if p.waitchannel == targetchannel as _ && p.state == Procstate::SLEEPING {
+            if p.waitchannel == target as _ && p.state == Procstate::SLEEPING {
                 p.state = Procstate::RUNNABLE
             }
             p.lock.release();
@@ -532,7 +532,7 @@ impl ProcessPool {
     /// Print a process listing to console.  For debugging.
     /// Runs when user types ^P on console.
     /// No lock to avoid wedging a stuck machine further.
-    pub unsafe fn debug(&mut self) {
+    pub unsafe fn dump(&mut self) {
         println!();
         for p in self.process.iter_mut() {
             if p.state != Procstate::UNUSED {
@@ -547,14 +547,14 @@ impl ProcessPool {
     }
 }
 
-/// Current process pool.
-pub static mut PROCPOOL: ProcessPool = ProcessPool::zeroed();
+/// Current process system.
+pub static mut PROCSYS: ProcessSystem = ProcessSystem::zeroed();
 
 static mut INITPROC: *mut Proc = ptr::null_mut();
 
 #[no_mangle]
 pub unsafe fn init_process_pool() {
-    PROCPOOL.init();
+    PROCSYS.init();
     kvminithart();
 }
 
@@ -664,7 +664,7 @@ static mut INITCODE: [u8; 51] = [
 
 /// Set up first user process.
 pub unsafe fn userinit() {
-    let mut p = PROCPOOL.allocproc();
+    let mut p = PROCSYS.alloc();
     INITPROC = p;
 
     // Allocate one user page and copy init's instructions
@@ -719,7 +719,7 @@ pub unsafe fn fork() -> i32 {
     let p = myproc();
 
     // Allocate process.
-    let mut np = PROCPOOL.allocproc();
+    let mut np = PROCSYS.alloc();
     if np.is_null() {
         return -1;
     }
@@ -801,7 +801,7 @@ pub unsafe fn exit(status: i32) {
     (*p).lock.acquire();
 
     // Give any children to init.
-    PROCPOOL.init_parent(p);
+    PROCSYS.reparent(p);
 
     // Parent might be sleeping in wait().
     (*original_parent)
@@ -827,7 +827,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
     loop {
         // Scan through pool looking for exited children.
         let mut havekids = false;
-        for np in &mut PROCPOOL.process {
+        for np in &mut PROCSYS.process {
             // This code uses np->parent without holding np->lock.
             // Acquiring the lock first would cause a deadlock,
             // since np might be an ancestor, and we already hold p->lock.
@@ -885,7 +885,7 @@ pub unsafe fn scheduler() -> ! {
         // Avoid deadlock by ensuring that devices can interrupt.
         intr_on();
 
-        PROCPOOL.run_processes(c);
+        PROCSYS.run_processes(c);
     }
 }
 
