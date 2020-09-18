@@ -553,8 +553,8 @@ pub static mut PROCSYS: ProcessSystem = ProcessSystem::zeroed();
 static mut INITPROC: *mut Proc = ptr::null_mut();
 
 #[no_mangle]
-pub unsafe fn process_pool_init() {
-    PROCPOOL.init();
+pub unsafe fn process_system_init() {
+    PROCSYS.init();
     kvminithart();
 }
 

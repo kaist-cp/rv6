@@ -6,7 +6,7 @@ use crate::{
     plic::{plicinit, plicinithart},
     printf::printfinit,
     println,
-    proc::{cpuid, process_pool_init, scheduler, userinit},
+    proc::{cpuid, process_system_init, scheduler, userinit},
     trap::{trapinit, trapinithart},
     virtio_disk::virtio_disk_init,
     vm::{kvminit, kvminithart},
@@ -33,14 +33,6 @@ pub unsafe fn kernel_main() {
 
         // Turn on paging.
         kvminithart();
-
-<<<<<<< HEAD
-        // Process system.
-        init_process_pool();
-=======
-        // Process pool.
-        process_pool_init();
->>>>>>> init_process_pool to process_pool_init
 
         // Trap vectors.
         trapinit();
