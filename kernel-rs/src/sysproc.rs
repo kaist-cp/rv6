@@ -1,6 +1,6 @@
 use crate::{
     ok_or,
-    proc::{exit, fork, myproc, resizeproc, wait, PROCPOOL},
+    proc::{exit, fork, myproc, resizeproc, wait, PROCSYS},
     syscall::{argaddr, argint},
     trap::{TICKS, TICKSLOCK, TICKSWAITCHANNEL},
 };
@@ -51,7 +51,7 @@ pub unsafe fn sys_sleep() -> usize {
 
 pub unsafe fn sys_kill() -> usize {
     let pid = ok_or!(argint(0), return usize::MAX);
-    PROCPOOL.kill_process(pid) as usize
+    PROCSYS.kill(pid) as usize
 }
 
 /// return how many clock tick interrupts have occurred
