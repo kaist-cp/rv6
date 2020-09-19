@@ -198,7 +198,6 @@ pub unsafe fn kvminithart() {
     sfence_vma();
 }
 
-// TODO: replace fn walk to this function after change all pagetables to struct.
 /// Return the address of the PTE in page table pagetable
 /// that corresponds to virtual address va. If alloc!=0,
 /// create any required page-table pages.
@@ -284,7 +283,6 @@ pub unsafe fn kvmpa(va: usize) -> usize {
     pa.wrapping_add(off)
 }
 
-// TODO: replace fn walk to this function after change all pagetables to struct.
 /// Create PTEs for virtual addresses starting at va that refer to
 /// physical addresses starting at pa. va and size might not
 /// be page-aligned. Returns true on success, false if walk() couldn't
@@ -426,9 +424,7 @@ unsafe fn freewalk(pagetable: &mut RawPageTable) {
         let pte = &mut pagetable[i];
         if pte.check_flag(PTE_V) && !pte.check_flag((PTE_R | PTE_W | PTE_X) as usize) {
             // This PTE points to a lower-level page table.
-            // let child = pte.get_pa();
             freewalk(pte.as_table_mut());
-            // *pagetable.offset(i) = 0
             pte.set_inner(0);
         } else if pte.check_flag(PTE_V) {
             panic!("freewalk: leaf");
@@ -464,7 +460,7 @@ pub unsafe fn uvmcopy(old: &mut RawPageTable, mut new: &mut RawPageTable, sz: us
             uvmunmap(ptable, 0, i, 1);
         });
         let pa = pte.get_pa();
-        let flags = pte.get_flags() as u32; //pte_flags(*pte) as u32;
+        let flags = pte.get_flags() as u32;
         let mem = kalloc() as *mut u8;
         if mem.is_null() {
             return -1;
