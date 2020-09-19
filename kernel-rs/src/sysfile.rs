@@ -346,9 +346,8 @@ pub unsafe fn sys_mknod() -> usize {
         end_op();
     });
     let _ = ok_or!(argstr(0, path.as_mut_ptr(), MAXPATH), return usize::MAX);
-    // @kimjungwow : if ok_or returns negative i32 , make it NDEV so that no device will be accessed by below `major`.
-    let major = u16::try_from(ok_or!(argint(1), return usize::MAX)).unwrap_or(NDEV as u16);
-    let minor = u16::try_from(ok_or!(argint(2), return usize::MAX)).unwrap_or(NDEV as u16);
+    let major = ok_or!(argint(1), return usize::MAX) as u16;
+    let minor = ok_or!(argint(2), return usize::MAX) as u16;
     let ip = create(path.as_mut_ptr(), T_DEVICE as i16, major, minor);
     if ip.is_null() {
         return usize::MAX;
