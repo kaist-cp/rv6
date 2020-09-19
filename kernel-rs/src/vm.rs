@@ -211,7 +211,7 @@ pub unsafe fn kvminithart() {
 ///   21..39 -- 9 bits of level-1 index.
 ///   12..20 -- 9 bits of level-0 index.
 ///    0..12 -- 12 bits of byte offset within the page.
-unsafe fn walk_temp(
+unsafe fn walk(
     mut pagetable: &mut RawPageTable,
     va: usize,
     alloc: i32,
@@ -248,7 +248,7 @@ pub unsafe fn walkaddr(pagetable: &mut RawPageTable, va: usize) -> usize {
     if va >= MAXVA {
         return 0;
     }
-    let pte_op = walk_temp(pagetable, va, 0);
+    let pte_op = walk(pagetable, va, 0);
     if pte_op.is_none() {
         return 0;
     }
@@ -266,7 +266,7 @@ pub unsafe fn walkaddr(pagetable: &mut RawPageTable, va: usize) -> usize {
 /// Only used when booting.
 /// Does not flush TLB or enable paging.
 pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
-    if !mappages_temp(&mut KERNEL_PAGETABLE, va, sz, pa, perm) {
+    if !mappages(&mut KERNEL_PAGETABLE, va, sz, pa, perm) {
         panic!("kvmmap");
     };
 }
@@ -277,7 +277,7 @@ pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
 /// Assumes va is page aligned.
 pub unsafe fn kvmpa(va: usize) -> usize {
     let off: usize = va.wrapping_rem(PGSIZE);
-    let pte = walk_temp(&mut KERNEL_PAGETABLE, va, 0)
+    let pte = walk(&mut KERNEL_PAGETABLE, va, 0)
         .filter(|pte| pte.check_flag(PTE_V))
         .expect("kvmpa");
     let pa = pte.as_page() as *const _ as usize;
@@ -289,7 +289,7 @@ pub unsafe fn kvmpa(va: usize) -> usize {
 /// physical addresses starting at pa. va and size might not
 /// be page-aligned. Returns true on success, false if walk() couldn't
 /// allocate a needed page-table page.
-pub unsafe fn mappages_temp(
+pub unsafe fn mappages(
     pagetable: &mut RawPageTable,
     va: usize,
     size: usize,
@@ -299,7 +299,7 @@ pub unsafe fn mappages_temp(
     let mut a = pgrounddown(va);
     let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
     loop {
-        let pte = some_or!(walk_temp(pagetable, a, 1), return false);
+        let pte = some_or!(walk(pagetable, a, 1), return false);
         if pte.check_flag(PTE_V) {
             panic!("remap");
         }
@@ -321,7 +321,7 @@ pub unsafe fn uvmunmap(pagetable: &mut RawPageTable, va: usize, size: usize, do_
     let mut a = pgrounddown(va);
     let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
     loop {
-        let pte_op = walk_temp(pagetable, a, 0);
+        let pte_op = walk(pagetable, a, 0);
         if pte_op.is_none() {
             panic!("uvmunmap: walk");
         }
@@ -358,7 +358,7 @@ pub unsafe fn uvminit(pagetable: &mut PageTable, src: *mut u8, sz: u32) {
     }
     let mem: *mut u8 = kalloc() as *mut u8;
     ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
-    mappages_temp(
+    mappages(
         pagetable,
         0,
         PGSIZE,
@@ -387,7 +387,7 @@ pub unsafe fn uvmalloc(pagetable: &mut PageTable, mut oldsz: usize, newsz: usize
             return None;
         }
         ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
-        if !mappages_temp(
+        if !mappages(
             pagetable,
             a,
             PGSIZE,
@@ -452,7 +452,7 @@ pub unsafe fn uvmfree(pagetable: &mut RawPageTable, sz: usize) {
 /// Frees any allocated pages on failure.
 pub unsafe fn uvmcopy(old: &mut RawPageTable, mut new: &mut RawPageTable, sz: usize) -> i32 {
     for i in num_iter::range_step(0, sz, PGSIZE) {
-        let pte_op = walk_temp(old, i, 0);
+        let pte_op = walk(old, i, 0);
         if pte_op.is_none() {
             panic!("uvmcopy: pte should exist");
         }
@@ -474,7 +474,7 @@ pub unsafe fn uvmcopy(old: &mut RawPageTable, mut new: &mut RawPageTable, sz: us
             mem as *mut libc::CVoid,
             PGSIZE,
         );
-        if !mappages_temp(*new_ptable, i, PGSIZE, mem as usize, flags as i32) {
+        if !mappages(*new_ptable, i, PGSIZE, mem as usize, flags as i32) {
             kfree(mem as *mut libc::CVoid);
             return -1;
         }
@@ -487,7 +487,7 @@ pub unsafe fn uvmcopy(old: &mut RawPageTable, mut new: &mut RawPageTable, sz: us
 /// Mark a PTE invalid for user access.
 /// Used by exec for the user stack guard page.
 pub unsafe fn uvmclear(pagetable: &mut RawPageTable, va: usize) {
-    let pte_op = walk_temp(pagetable, va, 0);
+    let pte_op = walk(pagetable, va, 0);
     if pte_op.is_none() {
         panic!("uvmclear");
     }

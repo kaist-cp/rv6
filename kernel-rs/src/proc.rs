@@ -16,7 +16,7 @@ use crate::{
         uvmunmap,
     },
 };
-use crate::{libc, vm::mappages_temp, vm::PageTable};
+use crate::{libc, vm::mappages, vm::PageTable};
 use core::cmp::Ordering;
 use core::ptr;
 use core::str;
@@ -805,7 +805,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable {
     // at the highest user virtual address.
     // Only the supervisor uses it, on the way
     // to/from user space, so not PTE_U.
-    mappages_temp(
+    mappages(
         &mut pagetable,
         TRAMPOLINE,
         PGSIZE,
@@ -814,7 +814,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable {
     );
 
     // Map the trapframe just below TRAMPOLINE, for trampoline.S.
-    mappages_temp(
+    mappages(
         &mut pagetable,
         TRAPFRAME,
         PGSIZE,
