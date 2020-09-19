@@ -173,7 +173,12 @@ impl PipeInner {
                 }
                 return Ok(i);
             }
-            if copyin((*proc).pagetable, &mut ch, addr.wrapping_add(i), 1usize) == -1 {
+            if copyin(
+                &mut (*proc).pagetable,
+                &mut ch,
+                addr.wrapping_add(i),
+                1usize,
+            ) == -1 {
                 break;
             }
             self.data[self.nwrite as usize % PIPESIZE] = ch;
@@ -200,7 +205,7 @@ impl PipeInner {
             }
             let mut ch = self.data[self.nread as usize % PIPESIZE];
             self.nread = self.nread.wrapping_add(1);
-            if copyout((*proc).pagetable, addr.wrapping_add(i), &mut ch, 1usize) == -1 {
+            if copyout(&mut (*proc).pagetable, addr.wrapping_add(i), &mut ch, 1usize) == -1 {
                 return Ok(i);
             }
         }

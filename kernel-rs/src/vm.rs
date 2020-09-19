@@ -3,8 +3,8 @@ use crate::{
     memlayout::{CLINT, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     println,
     riscv::{
-        make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, sfence_vma, w_satp,
-        PagetableT, PdeT, PteT, MAXVA, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
+        make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, sfence_vma, w_satp, PteT,
+        MAXVA, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
     },
     some_or,
 };
@@ -103,7 +103,7 @@ impl PageTable {
     }
 
     pub fn init(&mut self) {
-        let page = unsafe{ kalloc() } as *mut RawPageTable;
+        let page = unsafe { kalloc() } as *mut RawPageTable;
         if page.is_null() {
             panic!("PageTable init: out of memory");
         }
@@ -126,7 +126,6 @@ impl PageTable {
     pub fn is_null(&self) -> bool {
         self.ptr.is_null()
     }
-
 }
 
 impl Deref for PageTable {
@@ -242,59 +241,25 @@ unsafe fn walk_temp(
     Some(&mut pagetable[px(0, va)])
 }
 
-/// Return the address of the PTE in page table pagetable
-/// that corresponds to virtual address va. If alloc!=0,
-/// create any required page-table pages.
-///
-/// The risc-v Sv39 scheme has three levels of page-table
-/// pages. A page-table page contains 512 64-bit PTEs.
-/// A 64-bit virtual address is split into five fields:
-///   39..63 -- must be zero.
-///   30..38 -- 9 bits of level-2 index.
-///   21..39 -- 9 bits of level-1 index.
-///   12..20 -- 9 bits of level-0 index.
-///    0..12 -- 12 bits of byte offset within the page.
-unsafe fn walk(mut pagetable: PagetableT, va: usize, alloc: i32) -> *mut PteT {
-    if va >= MAXVA {
-        panic!("walk");
-    }
-    for level in (1..3).rev() {
-        let pte: *mut PteT = &mut *pagetable.add(px(level, va)) as *mut usize;
-        if *pte & PTE_V != 0 {
-            pagetable = pte2pa(*pte) as PagetableT
-        } else {
-            if alloc == 0 || {
-                pagetable = kalloc() as *mut PdeT;
-                pagetable.is_null()
-            } {
-                return ptr::null_mut();
-            }
-            ptr::write_bytes(pagetable as *mut libc::CVoid, 0, PGSIZE);
-            *pte = pa2pte(pagetable as usize) | PTE_V
-        }
-    }
-    &mut *pagetable.add(px(0, va)) as *mut usize
-}
-
 /// Look up a virtual address, return the physical address,
 /// or 0 if not mapped.
 /// Can only be used to look up user pages.
-pub unsafe fn walkaddr(pagetable: PagetableT, va: usize) -> usize {
+pub unsafe fn walkaddr(pagetable: &mut RawPageTable, va: usize) -> usize {
     if va >= MAXVA {
         return 0;
     }
-    let pte: *mut PteT = walk(pagetable, va, 0);
-    if pte.is_null() {
+    let pte_op = walk_temp(pagetable, va, 0);
+    if pte_op.is_none() {
         return 0;
     }
-    if *pte & PTE_V == 0 {
+    let pte = pte_op.unwrap();
+    if !pte.check_flag(PTE_V) {
         return 0;
     }
-    if *pte & PTE_U as usize == 0 {
+    if !pte.check_flag(PTE_U as usize) {
         return 0;
     }
-    let pa: usize = pte2pa(*pte);
-    pa
+    pte.get_pa()
 }
 
 /// Add a mapping to the kernel page table.
@@ -325,7 +290,7 @@ pub unsafe fn kvmpa(va: usize) -> usize {
 /// be page-aligned. Returns true on success, false if walk() couldn't
 /// allocate a needed page-table page.
 pub unsafe fn mappages_temp(
-    pagetable: &mut PageTable,
+    pagetable: &mut RawPageTable,
     va: usize,
     size: usize,
     mut pa: usize,
@@ -348,89 +313,52 @@ pub unsafe fn mappages_temp(
     true
 }
 
-/// Create PTEs for virtual addresses starting at va that refer to
-/// physical addresses starting at pa. va and size might not
-/// be page-aligned. Returns 0 on success, -1 if walk() couldn't
-/// allocate a needed page-table page.
-pub unsafe fn mappages(
-    pagetable: PagetableT,
-    va: usize,
-    size: usize,
-    mut pa: usize,
-    perm: i32,
-) -> i32 {
-    let mut a = pgrounddown(va);
-    let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
-    loop {
-        let pte = walk(pagetable, a, 1);
-        if pte.is_null() {
-            return -1;
-        }
-        if *pte & PTE_V != 0 {
-            panic!("remap");
-        }
-        *pte = pa2pte(pa) | perm as usize | PTE_V;
-        if a == last {
-            break;
-        }
-        a = a.wrapping_add(PGSIZE);
-        pa = pa.wrapping_add(PGSIZE);
-    }
-    0
-}
-
 /// Remove mappings from a page table. The mappings in
 /// the given range must exist. Optionally free the
 /// physical memory.
-pub unsafe fn uvmunmap(pagetable: PagetableT, va: usize, size: usize, do_free: i32) {
+pub unsafe fn uvmunmap(pagetable: &mut RawPageTable, va: usize, size: usize, do_free: i32) {
     let mut pa: usize = 0;
     let mut a = pgrounddown(va);
     let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
     loop {
-        let pte = walk(pagetable, a, 0);
-        if pte.is_null() {
+        let pte_op = walk_temp(pagetable, a, 0);
+        if pte_op.is_none() {
             panic!("uvmunmap: walk");
         }
-        if *pte & PTE_V == 0 {
-            println!("va={:018p} pte={:018p}", a as *const u8, *pte as *const u8);
+        let pte = pte_op.unwrap();
+        if !pte.check_flag(PTE_V) {
+            println!(
+                "va={:018p} pte={:018p}",
+                a as *const u8, pte.inner as *const u8
+            );
             panic!("uvmunmap: not mapped");
         }
-        if pte_flags(*pte) == PTE_V {
+        if pte.get_flags() == PTE_V {
             panic!("uvmunmap: not a leaf");
         }
         if do_free != 0 {
-            pa = pte2pa(*pte);
+            pa = pte.get_pa();
             kfree(pa as *mut libc::CVoid);
         }
-        *pte = 0 as PteT;
+        pte.set_inner(0);
         if a == last {
             break;
         }
         a = a.wrapping_add(PGSIZE);
         pa = pa.wrapping_add(PGSIZE);
     }
-}
-
-/// Create an empty user page table.
-pub unsafe fn uvmcreate() -> PagetableT {
-    let pagetable: PagetableT = kalloc() as PagetableT;
-    if pagetable.is_null() {
-        panic!("uvmcreate: out of memory");
-    }
-    ptr::write_bytes(pagetable as *mut libc::CVoid, 0, PGSIZE);
-    pagetable
 }
 
 /// Load the user initcode into address 0 of pagetable,
 /// for the very first process.
 /// sz must be less than a page.
-pub unsafe fn uvminit(pagetable: PagetableT, src: *mut u8, sz: u32) {
+pub unsafe fn uvminit(pagetable: &mut PageTable, src: *mut u8, sz: u32) {
     if sz >= PGSIZE as u32 {
         panic!("inituvm: more than a page");
     }
     let mem: *mut u8 = kalloc() as *mut u8;
     ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
-    mappages(
+    mappages_temp(
         pagetable,
         0,
         PGSIZE,
@@ -445,10 +373,10 @@ pub unsafe fn uvminit(pagetable: PagetableT, src: *mut u8, sz: u32) {
 }
 
 /// Allocate PTEs and physical memory to grow process from oldsz to
-/// newsz, which need not be page aligned.  Returns new size or 0 on error.
-pub unsafe fn uvmalloc(pagetable: PagetableT, mut oldsz: usize, newsz: usize) -> usize {
+/// newsz, which need not be page aligned.  Returns Some(new size) or None on error.
+pub unsafe fn uvmalloc(pagetable: &mut PageTable, mut oldsz: usize, newsz: usize) -> Option<usize> {
     if newsz < oldsz {
-        return oldsz;
+        return Some(oldsz);
     }
     oldsz = pgroundup(oldsz);
     let mut a = oldsz;
@@ -456,31 +384,30 @@ pub unsafe fn uvmalloc(pagetable: PagetableT, mut oldsz: usize, newsz: usize) ->
         let mem = kalloc() as *mut u8;
         if mem.is_null() {
             uvmdealloc(pagetable, a, oldsz);
-            return 0;
+            return None;
         }
         ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
-        if mappages(
+        if !mappages_temp(
             pagetable,
             a,
             PGSIZE,
             mem as usize,
             PTE_W | PTE_X | PTE_R | PTE_U,
-        ) != 0
-        {
+        ) {
             kfree(mem as *mut libc::CVoid);
             uvmdealloc(pagetable, a, oldsz);
-            return 0;
+            return None;
         }
         a = a.wrapping_add(PGSIZE);
     }
-    newsz
+    Some(newsz)
 }
 
 /// Deallocate user pages to bring the process size from oldsz to
 /// newsz.  oldsz and newsz need not be page-aligned, nor does newsz
 /// need to be less than oldsz.  oldsz can be larger than the actual
 /// process size.  Returns the new process size.
-pub unsafe fn uvmdealloc(pagetable: PagetableT, oldsz: usize, newsz: usize) -> usize {
+pub unsafe fn uvmdealloc(pagetable: &mut PageTable, oldsz: usize, newsz: usize) -> usize {
     if newsz >= oldsz {
         return oldsz;
     }
@@ -493,25 +420,26 @@ pub unsafe fn uvmdealloc(pagetable: PagetableT, oldsz: usize, newsz: usize) -> u
 
 /// Recursively free page-table pages.
 /// All leaf mappings must already have been removed.
-unsafe fn freewalk(pagetable: PagetableT) {
+unsafe fn freewalk(pagetable: &mut RawPageTable) {
     // There are 2^9 = 512 PTEs in a page table.
     for i in 0..512 {
-        let pte: PteT = *pagetable.offset(i as isize);
-        if pte & PTE_V as usize != 0 && pte & (PTE_R | PTE_W | PTE_X) as usize == 0 {
+        let pte = &mut pagetable[i];
+        if pte.check_flag(PTE_V) && !pte.check_flag((PTE_R | PTE_W | PTE_X) as usize) {
             // This PTE points to a lower-level page table.
-            let child: usize = pte2pa(pte);
-            freewalk(child as PagetableT);
-            *pagetable.offset(i) = 0
-        } else if pte & PTE_V != 0 {
+            // let child = pte.get_pa();
+            freewalk(pte.as_table_mut());
+            // *pagetable.offset(i) = 0
+            pte.set_inner(0);
+        } else if pte.check_flag(PTE_V) {
             panic!("freewalk: leaf");
         }
     }
-    kfree(pagetable as *mut libc::CVoid);
+    kfree(pagetable.as_mut_ptr() as *mut libc::CVoid);
 }
 
 /// Free user memory pages,
 /// then free page-table pages.
-pub unsafe fn uvmfree(pagetable: PagetableT, sz: usize) {
+pub unsafe fn uvmfree(pagetable: &mut RawPageTable, sz: usize) {
     uvmunmap(pagetable, 0, sz, 1);
     freewalk(pagetable);
 }
@@ -522,20 +450,21 @@ pub unsafe fn uvmfree(pagetable: PagetableT, sz: usize) {
 /// physical memory.
 /// Returns 0 on success, -1 on failure.
 /// Frees any allocated pages on failure.
-pub unsafe fn uvmcopy(old: PagetableT, new: PagetableT, sz: usize) -> i32 {
+pub unsafe fn uvmcopy(old: &mut RawPageTable, mut new: &mut RawPageTable, sz: usize) -> i32 {
     for i in num_iter::range_step(0, sz, PGSIZE) {
-        let pte = walk(old, i, 0);
-        if pte.is_null() {
+        let pte_op = walk_temp(old, i, 0);
+        if pte_op.is_none() {
             panic!("uvmcopy: pte should exist");
         }
-        if *pte & PTE_V == 0 {
+        let pte = pte_op.unwrap();
+        if !pte.check_flag(PTE_V) {
             panic!("uvmcopy: page not present");
         }
-        let cleanup = scopeguard::guard((), |_| {
-            uvmunmap(new, 0, i, 1);
+        let mut new_ptable = scopeguard::guard(new, |ptable| {
+            uvmunmap(ptable, 0, i, 1);
         });
-        let pa = pte2pa(*pte);
-        let flags = pte_flags(*pte) as u32;
+        let pa = pte.get_pa();
+        let flags = pte.get_flags() as u32; //pte_flags(*pte) as u32;
         let mem = kalloc() as *mut u8;
         if mem.is_null() {
             return -1;
@@ -545,11 +474,11 @@ pub unsafe fn uvmcopy(old: PagetableT, new: PagetableT, sz: usize) -> i32 {
             mem as *mut libc::CVoid,
             PGSIZE,
         );
-        if mappages(new, i, PGSIZE, mem as usize, flags as i32) != 0 {
+        if !mappages_temp(*new_ptable, i, PGSIZE, mem as usize, flags as i32) {
             kfree(mem as *mut libc::CVoid);
             return -1;
         }
-        mem::forget(cleanup);
+        new = scopeguard::ScopeGuard::into_inner(new_ptable);
     }
 
     0
@@ -557,19 +486,19 @@ pub unsafe fn uvmcopy(old: PagetableT, new: PagetableT, sz: usize) -> i32 {
 
 /// Mark a PTE invalid for user access.
 /// Used by exec for the user stack guard page.
-pub unsafe fn uvmclear(pagetable: PagetableT, va: usize) {
-    let pte: *mut PteT = walk(pagetable, va, 0);
-    if pte.is_null() {
+pub unsafe fn uvmclear(pagetable: &mut RawPageTable, va: usize) {
+    let pte_op = walk_temp(pagetable, va, 0);
+    if pte_op.is_none() {
         panic!("uvmclear");
     }
-    *pte &= !PTE_U as usize;
+    pte_op.unwrap().set_invalid(PTE_U as usize)
 }
 
 /// Copy from kernel to user.
 /// Copy len bytes from src to virtual address dstva in a given page table.
 /// Return 0 on success, -1 on error.
 pub unsafe fn copyout(
-    pagetable: PagetableT,
+    pagetable: &mut RawPageTable,
     mut dstva: usize,
     mut src: *mut u8,
     mut len: usize,
@@ -600,7 +529,7 @@ pub unsafe fn copyout(
 /// Copy len bytes to dst from virtual address srcva in a given page table.
 /// Return 0 on success, -1 on error.
 pub unsafe fn copyin(
-    pagetable: PagetableT,
+    pagetable: &mut RawPageTable,
     mut dst: *mut u8,
     mut srcva: usize,
     mut len: usize,
@@ -632,7 +561,7 @@ pub unsafe fn copyin(
 /// until a '\0', or max.
 /// Return 0 on success, -1 on error.
 pub unsafe fn copyinstr(
-    pagetable: PagetableT,
+    pagetable: &mut RawPageTable,
     mut dst: *mut u8,
     mut srcva: usize,
     mut max: usize,

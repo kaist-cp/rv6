@@ -109,7 +109,7 @@ impl File {
                 stati(ip, &mut st);
                 (*ip).unlock();
                 if copyout(
-                    (*p).pagetable,
+                    &mut (*p).pagetable,
                     addr,
                     &mut st as *mut Stat as *mut u8,
                     ::core::mem::size_of::<Stat>() as usize,

@@ -1,4 +1,3 @@
-use crate::libc;
 use crate::{
     file::{Inode, RcFile},
     fs::{fsinit, namei},
@@ -8,15 +7,16 @@ use crate::{
     ok_or,
     param::{NCPU, NOFILE, NPROC, ROOTDEV},
     println,
-    riscv::{intr_get, intr_on, r_tp, PagetableT, PGSIZE, PTE_R, PTE_W, PTE_X},
+    riscv::{intr_get, intr_on, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
     spinlock::{pop_off, push_off, RawSpinlock, Spinlock},
     string::safestrcpy,
     trap::usertrapret,
     vm::{
-        copyin, copyout, kvminithart, kvmmap, mappages, uvmalloc, uvmcopy, uvmcreate, uvmdealloc,
-        uvmfree, uvminit, uvmunmap,
+        copyin, copyout, kvminithart, kvmmap, uvmalloc, uvmcopy, uvmdealloc, uvmfree, uvminit,
+        uvmunmap,
     },
 };
+use crate::{libc, vm::mappages_temp, vm::PageTable};
 use core::cmp::Ordering;
 use core::ptr;
 use core::str;
@@ -300,7 +300,7 @@ pub struct Proc {
     pub sz: usize,
 
     /// Page table.
-    pub pagetable: PagetableT,
+    pub pagetable: PageTable,
 
     /// Data page for trampoline.S.
     pub tf: *mut Trapframe,
@@ -378,7 +378,7 @@ impl Proc {
             pid: 0,
             kstack: 0,
             sz: 0,
-            pagetable: ptr::null_mut(),
+            pagetable: unsafe { PageTable::raw() },
             tf: ptr::null_mut(),
             context: Context::zeroed(),
             open_files: [None; NOFILE],
@@ -542,7 +542,7 @@ impl ProcessSystem {
         // Allocate one user page and copy init's instructions
         // and data into it.
         uvminit(
-            (*p).pagetable,
+            &mut (*p).pagetable,
             INITCODE.as_mut_ptr(),
             ::core::mem::size_of::<[u8; 51]>() as u32,
         );
@@ -574,7 +574,7 @@ impl ProcessSystem {
         let mut np = ok_or!(self.alloc(), return -1);
 
         // Copy user memory from parent to child.
-        if uvmcopy((*p).pagetable, (*np).pagetable, (*p).sz) < 0 {
+        if uvmcopy(&mut (*p).pagetable, &mut (*np).pagetable, (*p).sz) < 0 {
             freeproc(np);
             (*np).lock.release();
             return -1;
@@ -630,7 +630,7 @@ impl ProcessSystem {
                         let pid = np.pid;
                         if addr != 0
                             && copyout(
-                                (*p).pagetable,
+                                &mut (*p).pagetable,
                                 addr,
                                 &mut np.xstate as *mut i32 as *mut u8,
                                 ::core::mem::size_of::<i32>(),
@@ -780,9 +780,9 @@ unsafe fn freeproc(mut p: *mut Proc) {
     }
     (*p).tf = ptr::null_mut();
     if !(*p).pagetable.is_null() {
-        proc_freepagetable((*p).pagetable, (*p).sz);
+        proc_freepagetable(&mut (*p).pagetable, (*p).sz);
     }
-    (*p).pagetable = 0 as PagetableT;
+    (*p).pagetable = PageTable::raw();
     (*p).sz = 0;
     (*p).pid = 0;
     (*p).parent = ptr::null_mut();
@@ -795,16 +795,18 @@ unsafe fn freeproc(mut p: *mut Proc) {
 
 /// Create a page table for a given process,
 /// with no user pages, but with trampoline pages.
-pub unsafe fn proc_pagetable(p: *mut Proc) -> PagetableT {
+pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable {
     // An empty page table.
-    let pagetable: PagetableT = uvmcreate();
+    let mut pagetable = PageTable::raw();
+    pagetable.init();
+    // let mut pagetable = uvmcreate();
 
     // Map the trampoline code (for system call return)
     // at the highest user virtual address.
     // Only the supervisor uses it, on the way
     // to/from user space, so not PTE_U.
-    mappages(
-        pagetable,
+    mappages_temp(
+        &mut pagetable,
         TRAMPOLINE,
         PGSIZE,
         trampoline.as_mut_ptr() as usize,
@@ -812,19 +814,20 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PagetableT {
     );
 
     // Map the trapframe just below TRAMPOLINE, for trampoline.S.
-    mappages(
-        pagetable,
+    mappages_temp(
+        &mut pagetable,
         TRAPFRAME,
         PGSIZE,
         (*p).tf as usize,
         PTE_R | PTE_W,
     );
+
     pagetable
 }
 
 /// Free a process's page table, and free the
 /// physical memory it refers to.
-pub unsafe fn proc_freepagetable(pagetable: PagetableT, sz: usize) {
+pub unsafe fn proc_freepagetable(pagetable: &mut PageTable, sz: usize) {
     uvmunmap(pagetable, TRAMPOLINE, PGSIZE, 0);
     uvmunmap(pagetable, TRAPFRAME, PGSIZE, 0);
     if sz > 0 {
@@ -848,13 +851,13 @@ pub unsafe fn resizeproc(n: i32) -> i32 {
     let sz = match n.cmp(&0) {
         Ordering::Equal => sz,
         Ordering::Greater => {
-            let sz = uvmalloc((*p).pagetable, sz, sz.wrapping_add(n as usize));
-            if sz == 0 {
+            let sz = uvmalloc(&mut (*p).pagetable, sz, sz.wrapping_add(n as usize));
+            if sz.is_none() {
                 return -1;
             }
-            sz
+            sz.unwrap()
         }
-        Ordering::Less => uvmdealloc((*p).pagetable, sz, sz.wrapping_add(n as usize)),
+        Ordering::Less => uvmdealloc(&mut (*p).pagetable, sz, sz.wrapping_add(n as usize)),
     };
     (*p).sz = sz;
     0
@@ -954,7 +957,7 @@ unsafe fn forkret() {
 pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: *mut libc::CVoid, len: usize) -> i32 {
     let p = myproc();
     if user_dst != 0 {
-        copyout((*p).pagetable, dst, src as *mut u8, len)
+        copyout(&mut (*p).pagetable, dst, src as *mut u8, len)
     } else {
         ptr::copy(src, dst as *mut u8 as *mut libc::CVoid, len);
         0
@@ -967,7 +970,7 @@ pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: *mut libc::CVoid, l
 pub unsafe fn either_copyin(dst: *mut libc::CVoid, user_src: i32, src: usize, len: usize) -> i32 {
     let p = myproc();
     if user_src != 0 {
-        copyin((*p).pagetable, dst as *mut u8, src, len)
+        copyin(&mut (*p).pagetable, dst as *mut u8, src, len)
     } else {
         ptr::copy(src as *mut u8 as *const libc::CVoid, dst, len);
         0
