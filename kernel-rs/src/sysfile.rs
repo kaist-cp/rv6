@@ -442,13 +442,13 @@ pub unsafe fn sys_pipe() -> usize {
     });
 
     if copyout(
-        (*p).pagetable,
+        &mut (*p).pagetable,
         fdarray,
         &mut fd0 as *mut i32 as *mut u8,
         mem::size_of::<i32>(),
     ) < 0
         || copyout(
-            (*p).pagetable,
+            &mut (*p).pagetable,
             fdarray.wrapping_add(mem::size_of::<i32>()),
             &mut fd1 as *mut i32 as *mut u8,
             mem::size_of::<i32>(),
