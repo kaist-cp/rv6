@@ -4,7 +4,7 @@ use crate::{
     println,
     riscv::{
         make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, sfence_vma, w_satp,
-        PagetableT, PdeT, PteT, MAXVA, PGSIZE, PTESIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
+        PagetableT, PdeT, PteT, MAXVA, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
     },
     some_or,
 };
@@ -73,12 +73,13 @@ impl PageTableEntry {
     }
 }
 
+const PTSIZE: usize = PGSIZE / mem::size_of::<PageTableEntry>();
 pub struct RawPageTable {
-    inner: [PageTableEntry; PTESIZE],
+    inner: [PageTableEntry; PTSIZE],
 }
 
 impl Deref for RawPageTable {
-    type Target = [PageTableEntry; PTESIZE];
+    type Target = [PageTableEntry; PTSIZE];
     fn deref(&self) -> &Self::Target {
         &self.inner
     }

@@ -1,6 +1,3 @@
-use crate::vm::PageTableEntry;
-use core::mem;
-
 /// Which hart (core) is this?
 #[inline]
 pub unsafe fn r_mhartid() -> usize {
@@ -406,4 +403,3 @@ pub type PdeT = usize;
 
 /// 512 PTEs
 pub type PagetableT = *mut usize;
-pub const PTESIZE: usize = PGSIZE / mem::size_of::<PageTableEntry>();
