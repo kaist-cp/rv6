@@ -555,19 +555,19 @@ pub unsafe fn copyin(
 /// Copy a null-terminated string from user to kernel.
 /// Copy bytes to dst from virtual address srcva in a given page table,
 /// until a '\0', or max.
-/// Return 0 on success, -1 on error.
+/// Return OK(()) on success, Err(()) on error.
 pub unsafe fn copyinstr(
     pagetable: &mut RawPageTable,
     mut dst: *mut u8,
     mut srcva: usize,
     mut max: usize,
-) -> i32 {
+) -> Result<(), ()> {
     let mut got_null: i32 = 0;
     while got_null == 0 && max > 0 {
         let va0 = pgrounddown(srcva);
         let pa0 = walkaddr(pagetable, va0);
         if pa0 == 0 {
-            return -1;
+            return Err(());
         }
         let mut n = PGSIZE.wrapping_sub(srcva.wrapping_sub(va0));
         if n > max {
@@ -590,8 +590,8 @@ pub unsafe fn copyinstr(
         srcva = va0.wrapping_add(PGSIZE)
     }
     if got_null != 0 {
-        0
+        Ok(())
     } else {
-        -1
+        Err(())
     }
 }

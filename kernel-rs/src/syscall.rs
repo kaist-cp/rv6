@@ -30,9 +30,9 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
 /// Returns length of string, not including nul, or -1 for error.
 pub unsafe fn fetchstr(addr: usize, buf: *mut u8, max: usize) -> i32 {
     let p: *mut Proc = myproc();
-    let err: i32 = copyinstr(&mut (*p).pagetable, buf, addr, max);
-    if err < 0 {
-        return err;
+    let err = copyinstr(&mut (*p).pagetable, buf, addr, max);
+    if err.is_err() {
+        return -1;
     }
     strlen(buf)
 }
