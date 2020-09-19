@@ -19,7 +19,8 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
         ip as *mut u8,
         addr,
         ::core::mem::size_of::<usize>(),
-    ) != 0
+    )
+    .is_err()
     {
         return -1;
     }

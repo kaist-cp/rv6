@@ -970,7 +970,7 @@ pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: *mut libc::CVoid, l
 pub unsafe fn either_copyin(dst: *mut libc::CVoid, user_src: i32, src: usize, len: usize) -> i32 {
     let p = myproc();
     if user_src != 0 {
-        copyin(&mut (*p).pagetable, dst as *mut u8, src, len)
+        copyin(&mut (*p).pagetable, dst as *mut u8, src, len).map_or(-1, |_v| 0)
     } else {
         ptr::copy(src as *mut u8 as *const libc::CVoid, dst, len);
         0

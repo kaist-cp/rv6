@@ -523,18 +523,18 @@ pub unsafe fn copyout(
 
 /// Copy from user to kernel.
 /// Copy len bytes to dst from virtual address srcva in a given page table.
-/// Return 0 on success, -1 on error.
+/// Return Ok(()) on success, Err(()) on error.
 pub unsafe fn copyin(
     pagetable: &mut RawPageTable,
     mut dst: *mut u8,
     mut srcva: usize,
     mut len: usize,
-) -> i32 {
+) -> Result<(), ()> {
     while len > 0 {
         let va0 = pgrounddown(srcva);
         let pa0 = walkaddr(pagetable, va0);
         if pa0 == 0 {
-            return -1;
+            return Err(());
         }
         let mut n = PGSIZE.wrapping_sub(srcva.wrapping_sub(va0));
         if n > len {
@@ -549,7 +549,7 @@ pub unsafe fn copyin(
         dst = dst.add(n);
         srcva = va0.wrapping_add(PGSIZE)
     }
-    0
+    Ok(())
 }
 
 /// Copy a null-terminated string from user to kernel.
