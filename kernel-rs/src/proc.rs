@@ -852,7 +852,7 @@ pub unsafe fn resizeproc(n: i32) -> i32 {
         Ordering::Equal => sz,
         Ordering::Greater => {
             let sz = uvmalloc(&mut (*p).pagetable, sz, sz.wrapping_add(n as usize));
-            if sz.is_none() {
+            if sz.is_err() {
                 return -1;
             }
             sz.unwrap()

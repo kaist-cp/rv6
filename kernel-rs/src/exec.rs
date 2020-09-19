@@ -79,7 +79,7 @@ pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
                 return -1;
             }
             let sz_op = uvmalloc(pt, *sz, ph.vaddr.wrapping_add(ph.memsz));
-            if sz_op.is_none() {
+            if sz_op.is_err() {
                 return -1;
             }
             *sz = sz_op.unwrap();
@@ -103,7 +103,7 @@ pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
     *sz = sz.wrapping_add(PGSIZE).wrapping_sub(1) & !PGSIZE.wrapping_sub(1);
     let sz_op = uvmalloc(pt, *sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)));
 
-    if sz_op.is_none() {
+    if sz_op.is_err() {
         return -1;
     }
 

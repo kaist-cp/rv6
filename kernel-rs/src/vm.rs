@@ -371,10 +371,10 @@ pub unsafe fn uvminit(pagetable: &mut PageTable, src: *mut u8, sz: u32) {
 }
 
 /// Allocate PTEs and physical memory to grow process from oldsz to
-/// newsz, which need not be page aligned.  Returns Some(new size) or None on error.
-pub unsafe fn uvmalloc(pagetable: &mut PageTable, mut oldsz: usize, newsz: usize) -> Option<usize> {
+/// newsz, which need not be page aligned.  Returns Ok(new size) or Err(()) on error.
+pub unsafe fn uvmalloc(pagetable: &mut PageTable, mut oldsz: usize, newsz: usize) -> Result<usize, ()> {
     if newsz < oldsz {
-        return Some(oldsz);
+        return Ok(oldsz);
     }
     oldsz = pgroundup(oldsz);
     let mut a = oldsz;
@@ -382,7 +382,7 @@ pub unsafe fn uvmalloc(pagetable: &mut PageTable, mut oldsz: usize, newsz: usize
         let mem = kalloc() as *mut u8;
         if mem.is_null() {
             uvmdealloc(pagetable, a, oldsz);
-            return None;
+            return Err(());
         }
         ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
         if !mappages(
@@ -394,11 +394,11 @@ pub unsafe fn uvmalloc(pagetable: &mut PageTable, mut oldsz: usize, newsz: usize
         ) {
             kfree(mem as *mut libc::CVoid);
             uvmdealloc(pagetable, a, oldsz);
-            return None;
+            return Err(());
         }
         a = a.wrapping_add(PGSIZE);
     }
-    Some(newsz)
+    Ok(newsz)
 }
 
 /// Deallocate user pages to bring the process size from oldsz to
