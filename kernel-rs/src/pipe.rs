@@ -40,7 +40,7 @@ impl Pipe {
     /// PipeInner::try_read() tries to read as much as possible.
     /// Pipe::read() executes try_read() until all bytes in pipe are read.
     //TODO : `n` should be u32
-    pub unsafe fn read(&self, addr: usize, n: u32) -> Result<usize, ()> {
+    pub unsafe fn read(&self, addr: usize, n: usize) -> Result<usize, ()> {
         let mut inner = self.inner.lock();
         loop {
             match inner.try_read(addr, n) {
@@ -60,18 +60,18 @@ impl Pipe {
 
     /// PipeInner::try_write() tries to write as much as possible.
     /// Pipe::write() executes try_write() until `n` bytes are written.
-    pub unsafe fn write(&self, addr: usize, n: u32) -> Result<usize, ()> {
-        let mut written: u32 = 0;
+    pub unsafe fn write(&self, addr: usize, n: usize) -> Result<usize, ()> {
+        let mut written = 0;
         let mut inner = self.inner.lock();
         loop {
-            match inner.try_write(addr + written as usize, n - written) {
+            match inner.try_write(addr + written, n - written) {
                 Ok(r) => {
-                    written += r as u32;
+                    written += r;
                     self.read_waitchannel.wakeup();
                     if written < n {
                         self.write_waitchannel.sleep(inner.raw() as _);
                     } else {
-                        return Ok(written as usize);
+                        return Ok(written);
                     }
                 }
                 _ => return Err(()),
@@ -165,10 +165,10 @@ pub enum PipeError {
 }
 
 impl PipeInner {
-    unsafe fn try_write(&mut self, addr: usize, n: u32) -> Result<usize, ()> {
+    unsafe fn try_write(&mut self, addr: usize, n: usize) -> Result<usize, ()> {
         let mut ch: u8 = 0;
         let proc = myproc();
-        for i in 0..n as usize {
+        for i in 0..n {
             if self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
                 if !self.readopen || (*proc).killed {
@@ -182,10 +182,10 @@ impl PipeInner {
             self.data[self.nwrite as usize % PIPESIZE] = ch;
             self.nwrite = self.nwrite.wrapping_add(1);
         }
-        Ok(n as usize)
+        Ok(n)
     }
 
-    unsafe fn try_read(&mut self, addr: usize, n: u32) -> Result<usize, PipeError> {
+    unsafe fn try_read(&mut self, addr: usize, n: usize) -> Result<usize, PipeError> {
         let proc = myproc();
 
         //DOC: pipe-empty
@@ -197,7 +197,7 @@ impl PipeInner {
         }
 
         //DOC: piperead-copy
-        for i in 0..n as usize {
+        for i in 0..n {
             if self.nread == self.nwrite {
                 return Ok(i);
             }
@@ -207,6 +207,6 @@ impl PipeInner {
                 return Ok(i);
             }
         }
-        Ok(n as usize)
+        Ok(n)
     }
 }
