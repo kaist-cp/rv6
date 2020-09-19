@@ -99,7 +99,7 @@ impl RcFile {
 impl File {
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub unsafe fn stat(&mut self, addr: usize) -> Result<usize, ()> {
+    pub unsafe fn stat(&mut self, addr: usize) -> Result<(), ()> {
         let p: *mut Proc = myproc();
         let mut st: Stat = Default::default();
 
@@ -117,7 +117,7 @@ impl File {
                 {
                     Err(())
                 } else {
-                    Ok(0)
+                    Ok(())
                 }
             }
             _ => Err(()),
