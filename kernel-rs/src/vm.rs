@@ -6,6 +6,7 @@ use crate::{
         make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, sfence_vma, w_satp,
         PagetableT, PdeT, PteT, MAXVA, PGSIZE, PTESIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
     },
+    some_or,
 };
 use crate::{libc, page::Page};
 use core::{mem, ops::Deref, ops::DerefMut, ptr};
@@ -31,38 +32,44 @@ impl PageTableEntry {
     ///
     /// Improper use of this function may lead to memory problems. For example, a double-free may
     /// occur if the function is called twice on the same raw pointer.
-    pub unsafe fn from_raw(inner: PteT) -> Self {
+    unsafe fn from_raw(inner: PteT) -> Self {
         Self { inner }
     }
 
-    pub fn is_valid(&self) -> bool {
-        self.inner & PTE_V != 0
+    fn check_flag(&self, flag: usize) -> bool {
+        self.inner & flag != 0
     }
 
-    pub fn set_valid(&mut self) {
-        self.inner |= PTE_V;
+    fn set_valid(&mut self, flag: usize) {
+        self.inner |= flag;
     }
 
-    pub fn set_inner(&mut self, inner: PteT) {
+    fn set_invalid(&mut self, flag: usize) {
+        self.inner &= !flag;
+    }
+
+    fn set_inner(&mut self, inner: PteT) {
         self.inner = inner;
     }
 
-    pub unsafe fn as_page(&self) -> &Page {
+    fn get_pa(&self) -> usize {
+        pte2pa(self.inner)
+    }
+
+    fn get_flags(&self) -> usize {
+        pte_flags(self.inner)
+    }
+
+    unsafe fn as_page(&self) -> &Page {
         &*(pte2pa(self.inner) as *const Page)
     }
 
-    pub unsafe fn as_table(&self) -> &RawPageTable {
+    unsafe fn as_table(&self) -> &RawPageTable {
         &*(pte2pa(self.inner) as *const RawPageTable)
     }
 
-    pub unsafe fn as_table_mut(&mut self) -> &mut RawPageTable {
+    unsafe fn as_table_mut(&mut self) -> &mut RawPageTable {
         &mut *(pte2pa(self.inner) as *mut RawPageTable)
-    }
-}
-
-impl Drop for PageTableEntry {
-    fn drop(&mut self) {
-        panic!("`PageTableEntry` should not be dropped.");
     }
 }
 
@@ -122,12 +129,6 @@ impl Deref for PageTable {
 impl DerefMut for PageTable {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.ptr }
-    }
-}
-
-impl Drop for PageTable {
-    fn drop(&mut self) {
-        panic!("`PageTable` should not be dropped.");
     }
 }
 
@@ -212,7 +213,7 @@ unsafe fn walk_temp(
     }
     for level in (1..3).rev() {
         let pte = &mut pagetable[px(level, va)];
-        if pte.is_valid() {
+        if pte.check_flag(PTE_V) {
             pagetable = pte.as_table_mut();
         } else {
             if alloc == 0 {
@@ -225,7 +226,7 @@ unsafe fn walk_temp(
 
             ptr::write_bytes(k as *mut libc::CVoid, 0, PGSIZE);
             pte.set_inner(pa2pte(k as usize));
-            pte.set_valid();
+            pte.set_valid(PTE_V);
             pagetable = pte.as_table_mut();
         }
     }
@@ -302,14 +303,9 @@ pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
 /// Assumes va is page aligned.
 pub unsafe fn kvmpa(va: usize) -> usize {
     let off: usize = va.wrapping_rem(PGSIZE);
-    let pte_op = walk_temp(&mut KERNEL_PAGETABLE, va, 0);
-    if pte_op.is_none() {
-        panic!("kvmpa");
-    }
-    let pte = pte_op.unwrap();
-    if !pte.is_valid() {
-        panic!("kvmpa");
-    }
+    let pte = walk_temp(&mut KERNEL_PAGETABLE, va, 0)
+        .filter(|pte| pte.check_flag(PTE_V))
+        .expect("kvmpa");
     let pa = pte.as_page() as *const _ as usize;
     pa.wrapping_add(off)
 }
@@ -329,12 +325,8 @@ pub unsafe fn mappages_temp(
     let mut a = pgrounddown(va);
     let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
     loop {
-        let pte_op = walk_temp(pagetable, a, 1);
-        if pte_op.is_none() {
-            return false;
-        }
-        let pte = pte_op.unwrap();
-        if pte.is_valid() {
+        let pte = some_or!(walk_temp(pagetable, a, 1), return false);
+        if pte.check_flag(PTE_V) {
             panic!("remap");
         }
         pte.set_inner(pa2pte(pa) | perm as usize | PTE_V);
