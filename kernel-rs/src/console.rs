@@ -1,6 +1,6 @@
 use crate::libc;
 use crate::{
-    file::DEVSW,
+    file::{Devsw, DEVSW},
     printf::PANICKED,
     proc::{either_copyin, either_copyout, myproc, procdump, WaitChannel},
     spinlock::{RawSpinlock, Spinlock},
@@ -59,10 +59,10 @@ impl Console {
 
         // Connect read and write system calls
         // to consoleread and consolewrite.
-        let fresh2 = &mut (*DEVSW.as_mut_ptr().add(CONSOLE_IN_DEVSW)).read;
-        *fresh2 = Some(consoleread as unsafe fn(_: i32, _: usize, _: i32) -> i32);
-        let fresh3 = &mut (*DEVSW.as_mut_ptr().add(CONSOLE_IN_DEVSW)).write;
-        *fresh3 = Some(consolewrite as unsafe fn(_: i32, _: usize, _: i32) -> i32);
+        DEVSW[CONSOLE_IN_DEVSW] = Devsw {
+            read: Some(consoleread),
+            write: Some(consolewrite),
+        };
     }
 
     /// Send one character to the uart.
