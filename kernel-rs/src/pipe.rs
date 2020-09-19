@@ -178,7 +178,9 @@ impl PipeInner {
                 &mut ch,
                 addr.wrapping_add(i),
                 1usize,
-            ) == -1 {
+            )
+            .is_err()
+            {
                 break;
             }
             self.data[self.nwrite as usize % PIPESIZE] = ch;
