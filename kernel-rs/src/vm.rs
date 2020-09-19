@@ -92,7 +92,7 @@ impl DerefMut for RawPageTable {
 }
 
 pub struct PageTable {
-    ptr: *mut RawPageTable,
+    pub ptr: *mut RawPageTable,
 }
 
 impl PageTable {
@@ -102,7 +102,11 @@ impl PageTable {
         }
     }
 
-    pub fn init(&mut self, page: *mut RawPageTable) {
+    pub fn init(&mut self) {
+        let page = unsafe{ kalloc() } as *mut RawPageTable;
+        if page.is_null() {
+            panic!("PageTable init: out of memory");
+        }
         unsafe {
             ptr::write_bytes(page as *mut libc::CVoid, 0, PGSIZE);
         }
@@ -113,11 +117,16 @@ impl PageTable {
         Self { ptr }
     }
 
-    pub fn into_page(self) -> *mut RawPageTable {
+    pub fn into_raw(self) -> *mut RawPageTable {
         let ret = self.ptr;
         mem::forget(self);
         ret
     }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
 }
 
 impl Deref for PageTable {
@@ -133,9 +142,9 @@ impl DerefMut for PageTable {
     }
 }
 
-/*
- * The kernel's page table.
- */
+///
+/// The kernel's page table.
+///
 pub static mut KERNEL_PAGETABLE: PageTable = unsafe { PageTable::raw() };
 
 // trampoline.S
@@ -143,8 +152,7 @@ pub static mut KERNEL_PAGETABLE: PageTable = unsafe { PageTable::raw() };
 /// turn on paging. Called early, in supervisor mode.
 /// The page allocator is already initialized.
 pub unsafe fn kvminit() {
-    let page = kalloc() as *mut RawPageTable;
-    KERNEL_PAGETABLE.init(page);
+    KERNEL_PAGETABLE.init();
 
     // uart registers
     kvmmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);
