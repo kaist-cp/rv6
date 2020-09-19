@@ -444,9 +444,13 @@ pub unsafe fn uvmfree(pagetable: &mut RawPageTable, sz: usize) {
 /// its memory into a child's page table.
 /// Copies both the page table and the
 /// physical memory.
-/// Returns 0 on success, -1 on failure.
+/// Returns Ok(()) on success, Err(()) on failure.
 /// Frees any allocated pages on failure.
-pub unsafe fn uvmcopy(old: &mut RawPageTable, mut new: &mut RawPageTable, sz: usize) -> i32 {
+pub unsafe fn uvmcopy(
+    old: &mut RawPageTable,
+    mut new: &mut RawPageTable,
+    sz: usize,
+) -> Result<(), ()> {
     for i in num_iter::range_step(0, sz, PGSIZE) {
         let pte_op = walk(old, i, 0);
         if pte_op.is_none() {
@@ -463,7 +467,7 @@ pub unsafe fn uvmcopy(old: &mut RawPageTable, mut new: &mut RawPageTable, sz: us
         let flags = pte.get_flags() as u32;
         let mem = kalloc() as *mut u8;
         if mem.is_null() {
-            return -1;
+            return Err(());
         }
         ptr::copy(
             pa as *mut u8 as *const libc::CVoid,
@@ -472,12 +476,12 @@ pub unsafe fn uvmcopy(old: &mut RawPageTable, mut new: &mut RawPageTable, sz: us
         );
         if !mappages(*new_ptable, i, PGSIZE, mem as usize, flags as i32) {
             kfree(mem as *mut libc::CVoid);
-            return -1;
+            return Err(());
         }
         new = scopeguard::ScopeGuard::into_inner(new_ptable);
     }
 
-    0
+    Ok(())
 }
 
 /// Mark a PTE invalid for user access.

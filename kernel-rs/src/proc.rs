@@ -574,7 +574,7 @@ impl ProcessSystem {
         let mut np = ok_or!(self.alloc(), return -1);
 
         // Copy user memory from parent to child.
-        if uvmcopy(&mut (*p).pagetable, &mut (*np).pagetable, (*p).sz) < 0 {
+        if uvmcopy(&mut (*p).pagetable, &mut (*np).pagetable, (*p).sz).is_err() {
             freeproc(np);
             (*np).lock.release();
             return -1;
