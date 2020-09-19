@@ -15,7 +15,7 @@ use core::cmp;
 use core::convert::TryFrom;
 
 pub struct File {
-    typ: FileType,
+    pub typ: FileType,
     readable: bool,
     writable: bool,
 }
@@ -84,9 +84,9 @@ pub type RcFile = TaggedBox<FTableRef, File>;
 
 impl RcFile {
     /// Allocate a file structure.
-    pub fn alloc(file: File) -> Option<Self> {
+    pub fn alloc(readable: bool, writable: bool) -> Option<Self> {
         // TODO: idiomatic initialization.
-        FTableRef::alloc(file)
+        FTableRef::alloc(File::init(readable, writable))
     }
 
     /// Increment reference count of the file.
@@ -207,17 +207,9 @@ impl File {
     }
 
     // TODO: transient measure
-    pub const fn zeroed() -> Self {
+    pub const fn init(readable: bool, writable: bool) -> Self {
         Self {
             typ: FileType::None,
-            readable: false,
-            writable: false,
-        }
-    }
-
-    pub const fn new(typ: FileType, readable: bool, writable: bool) -> Self {
-        Self {
-            typ,
             readable,
             writable,
         }

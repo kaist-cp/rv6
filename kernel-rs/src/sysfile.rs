@@ -5,7 +5,7 @@ use crate::libc;
 use crate::{
     exec::exec,
     fcntl::FcntlFlags,
-    file::{File, FileType, Inode, RcFile},
+    file::{FileType, Inode, RcFile},
     fs::{dirlink, dirlookup, namecmp, namei, nameiparent},
     fs::{Dirent, DIRSIZ},
     kalloc::{kalloc, kfree},
@@ -287,37 +287,17 @@ pub unsafe fn sys_open() -> usize {
         end_op();
         return usize::MAX;
     }
-    let f = if (*ip).typ as i32 == T_DEVICE {
-        some_or!(
-            RcFile::alloc(File::new(
-                FileType::Device {
-                    ip,
-                    major: (*ip).major
-                },
-                !omode.intersects(FcntlFlags::O_WRONLY),
-                omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)
-            )),
-            {
-                (*ip).unlockput();
-                end_op();
-                return usize::MAX;
-            }
-        )
-    } else {
-        some_or!(
-            RcFile::alloc(File::new(
-                FileType::Inode { ip, off: 0 },
-                !omode.intersects(FcntlFlags::O_WRONLY),
-                omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)
-            )),
-            {
-                (*ip).unlockput();
-                end_op();
-                return usize::MAX;
-            }
-        )
-    };
-
+    let f = some_or!(
+        RcFile::alloc(
+            !omode.intersects(FcntlFlags::O_WRONLY),
+            omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)
+        ),
+        {
+            (*ip).unlockput();
+            end_op();
+            return usize::MAX;
+        }
+    );
     let fd = match f.fdalloc() {
         Ok(fd) => fd,
         Err(f) => {
@@ -327,6 +307,16 @@ pub unsafe fn sys_open() -> usize {
             return usize::MAX;
         }
     };
+    let f = (*myproc()).open_files[fd as usize].as_mut().unwrap();
+
+    if (*ip).typ as i32 == T_DEVICE {
+        (*f).typ = FileType::Device {
+            ip,
+            major: (*ip).major,
+        };
+    } else {
+        (*f).typ = FileType::Inode { ip, off: 0 };
+    }
 
     (*ip).unlock();
     end_op();
