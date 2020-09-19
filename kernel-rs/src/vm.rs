@@ -492,18 +492,18 @@ pub unsafe fn uvmclear(pagetable: &mut RawPageTable, va: usize) {
 
 /// Copy from kernel to user.
 /// Copy len bytes from src to virtual address dstva in a given page table.
-/// Return 0 on success, -1 on error.
+/// Return Ok(()) on success, Err(()) on error.
 pub unsafe fn copyout(
     pagetable: &mut RawPageTable,
     mut dstva: usize,
     mut src: *mut u8,
     mut len: usize,
-) -> i32 {
+) -> Result<(), ()> {
     while len > 0 {
         let va0 = pgrounddown(dstva);
         let pa0 = walkaddr(pagetable, va0);
         if pa0 == 0 {
-            return -1;
+            return Err(());
         }
         let mut n = PGSIZE.wrapping_sub(dstva.wrapping_sub(va0));
         if n > len {
@@ -518,7 +518,7 @@ pub unsafe fn copyout(
         src = src.add(n);
         dstva = va0.wrapping_add(PGSIZE);
     }
-    0
+    Ok(())
 }
 
 /// Copy from user to kernel.

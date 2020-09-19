@@ -133,7 +133,8 @@ pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
             sp,
             *argv.add(argc),
             (strlen(*argv.add(argc)) + 1) as usize,
-        ) < 0
+        )
+        .is_err()
         {
             return -1;
         }
@@ -156,7 +157,8 @@ pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
             ustack.as_mut_ptr() as *mut u8,
             argc.wrapping_add(1)
                 .wrapping_mul(::core::mem::size_of::<usize>()),
-        ) >= 0
+        )
+        .is_ok()
     {
         let (pt, sz) = scopeguard::ScopeGuard::into_inner(ptable_guard);
         // arguments to user main(argc, argv)

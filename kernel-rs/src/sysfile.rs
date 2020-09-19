@@ -446,13 +446,15 @@ pub unsafe fn sys_pipe() -> usize {
         fdarray,
         &mut fd0 as *mut i32 as *mut u8,
         mem::size_of::<i32>(),
-    ) < 0
+    )
+    .is_err()
         || copyout(
             &mut (*p).pagetable,
             fdarray.wrapping_add(mem::size_of::<i32>()),
             &mut fd1 as *mut i32 as *mut u8,
             mem::size_of::<i32>(),
-        ) < 0
+        )
+        .is_err()
     {
         (*p).open_files[fd0 as usize] = None;
         (*p).open_files[fd1 as usize] = None;

@@ -634,7 +634,7 @@ impl ProcessSystem {
                                 addr,
                                 &mut np.xstate as *mut i32 as *mut u8,
                                 ::core::mem::size_of::<i32>(),
-                            ) < 0
+                            ).is_err()
                         {
                             np.lock.release();
                             (*p).lock.release();
@@ -957,7 +957,7 @@ unsafe fn forkret() {
 pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: *mut libc::CVoid, len: usize) -> i32 {
     let p = myproc();
     if user_dst != 0 {
-        copyout(&mut (*p).pagetable, dst, src as *mut u8, len)
+        copyout(&mut (*p).pagetable, dst, src as *mut u8, len).map_or(-1, |_v| 0)
     } else {
         ptr::copy(src, dst as *mut u8 as *mut libc::CVoid, len);
         0
