@@ -113,7 +113,7 @@ impl File {
                     addr,
                     &mut st as *mut Stat as *mut u8,
                     ::core::mem::size_of::<Stat>() as usize,
-                ) < 0
+                ).is_err()
                 {
                     Err(())
                 } else {
