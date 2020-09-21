@@ -281,7 +281,7 @@ pub struct Proc {
     /// Waitchannel saying child proc is dead.
     child_waitchannel: WaitChannel,
 
-    /// If non-zero, have been killed.
+    /// If true, the process have been killed.
     pub killed: bool,
 
     /// Exit status to be returned to parent's wait.
@@ -405,12 +405,18 @@ static mut CPUS: [Cpu; NCPU] = [Cpu::zeroed(); NCPU];
 /// Process system type containing & managing whole processes.
 pub struct ProcessSystem {
     process_pool: [Proc; NPROC],
+    initial_proc: *mut Proc,
+}
+
+pub enum ProcSysError {
+    NoFreeProcs,
 }
 
 impl ProcessSystem {
     const fn zeroed() -> Self {
         Self {
             process_pool: [Proc::zeroed(); NPROC],
+            initial_proc: ptr::null_mut(),
         }
     }
 
@@ -425,7 +431,7 @@ impl ProcessSystem {
     /// If found, initialize state required to run in the kernel,
     /// and return with p->lock held.
     /// If there are no free procs, return 0.
-    unsafe fn alloc(&mut self) -> *mut Proc {
+    unsafe fn alloc(&mut self) -> Result<*mut Proc, ProcSysError> {
         for p in self.process_pool.iter_mut() {
             p.lock.acquire();
             if p.state == Procstate::UNUSED {
@@ -435,7 +441,7 @@ impl ProcessSystem {
                 p.tf = kalloc() as *mut Trapframe;
                 if p.tf.is_null() {
                     p.lock.release();
-                    return ptr::null_mut();
+                    return Ok(ptr::null_mut());
                 }
 
                 // An empty user page table.
@@ -446,12 +452,12 @@ impl ProcessSystem {
                 ptr::write_bytes(&mut (*p).context as *mut Context, 0, 1);
                 p.context.ra = forkret as usize;
                 p.context.sp = p.kstack.wrapping_add(PGSIZE);
-                return p;
+                return Ok(p);
             }
             p.lock.release();
         }
 
-        ptr::null_mut()
+        Err(ProcSysError::NoFreeProcs)
     }
 
     /// Pass p's abandoned children to init.
@@ -466,10 +472,10 @@ impl ProcessSystem {
                 // pp->parent can't change between the check and the acquire()
                 // because only the parent changes it, and we're the parent.
                 pp.lock.acquire();
-                pp.parent = INITPROC;
+                pp.parent = self.initial_proc;
 
                 // We should wake up init here, but that would require
-                // initproc->lock, which would be a deadlock, since we hold
+                // PROCSYS.initial_proc->lock, which would be a deadlock, since we hold
                 // the lock on one of init's children (pp). This is why
                 // exit() always wakes init (before acquiring any locks).
                 pp.lock.release();
@@ -497,31 +503,13 @@ impl ProcessSystem {
         -1
     }
 
-    /// Wake up all processes sleeping on waitchannel.
+    /// Wake up all processes in the pool sleeping on waitchannel.
     /// Must be called without any p->lock.
     pub fn wakeup_pool(&mut self, target: &WaitChannel) {
         for p in self.process_pool.iter_mut() {
             p.lock.acquire();
             if p.waitchannel == target as _ && p.state == Procstate::SLEEPING {
                 p.state = Procstate::RUNNABLE
-            }
-            p.lock.release();
-        }
-    }
-    unsafe fn run_processes(&mut self, c: *mut Cpu) {
-        for p in self.process_pool.iter_mut() {
-            p.lock.acquire();
-            if p.state == Procstate::RUNNABLE {
-                // Switch to chosen process.  It is the process's job
-                // to release its lock and then reacquire it
-                // before jumping back to us.
-                p.state = Procstate::RUNNING;
-                (*c).proc = p;
-                swtch(&mut (*c).scheduler, &mut p.context);
-
-                // Process is done running for now.
-                // It should have changed its p->state before coming back.
-                (*c).proc = ptr::null_mut()
             }
             p.lock.release();
         }
@@ -547,8 +535,6 @@ impl ProcessSystem {
 
 /// Current process system.
 pub static mut PROCSYS: ProcessSystem = ProcessSystem::zeroed();
-
-static mut INITPROC: *mut Proc = ptr::null_mut();
 
 #[no_mangle]
 pub unsafe fn process_system_init() {
@@ -662,8 +648,12 @@ static mut INITCODE: [u8; 51] = [
 
 /// Set up first user process.
 pub unsafe fn userinit() {
-    let mut p = PROCPOOL.alloc_proc();
-    INITPROC = p;
+    let mut p = match PROCSYS.alloc() {
+        Ok(proc) => proc,
+        _ => ptr::null_mut(),
+    };
+
+    PROCSYS.initial_proc = p;
 
     // Allocate one user page and copy init's instructions
     // and data into it.
@@ -717,7 +707,10 @@ pub unsafe fn fork() -> i32 {
     let p = myproc();
 
     // Allocate process.
-    let mut np = PROCPOOL.alloc_proc();
+    let mut np = match PROCSYS.alloc() {
+        Ok(proc) => proc,
+        _ => ptr::null_mut(),
+    };
     if np.is_null() {
         return -1;
     }
@@ -760,7 +753,7 @@ pub unsafe fn fork() -> i32 {
 /// until its parent calls wait().
 pub unsafe fn exit(status: i32) {
     let mut p = myproc();
-    if p == INITPROC {
+    if p == PROCSYS.initial_proc {
         panic!("init exiting");
     }
 
@@ -778,9 +771,11 @@ pub unsafe fn exit(status: i32) {
     // spinlock::acquired any other proc lock. so wake up init whether that's
     // necessary or not. init may miss this wakeup, but that seems
     // harmless.
-    (*INITPROC).lock.acquire();
-    (*INITPROC).child_waitchannel.wakeup_proc(INITPROC);
-    (*INITPROC).lock.release();
+    (*PROCSYS.initial_proc).lock.acquire();
+    (*PROCSYS.initial_proc)
+        .child_waitchannel
+        .wakeup_proc(PROCSYS.initial_proc);
+    (*PROCSYS.initial_proc).lock.release();
 
     // Grab a copy of p->parent, to ensure that we unlock the same
     // parent we locked. in case our parent gives us away to init while
