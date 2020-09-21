@@ -883,7 +883,22 @@ pub unsafe fn scheduler() -> ! {
         // Avoid deadlock by ensuring that devices can interrupt.
         intr_on();
 
-        PROCSYS.run_processes(c);
+        for p in PROCSYS.process_pool.iter_mut() {
+            p.lock.acquire();
+            if p.state == Procstate::RUNNABLE {
+                // Switch to chosen process.  It is the process's job
+                // to release its lock and then reacquire it
+                // before jumping back to us.
+                p.state = Procstate::RUNNING;
+                (*c).proc = p;
+                swtch(&mut (*c).scheduler, &mut p.context);
+
+                // Process is done running for now.
+                // It should have changed its p->state before coming back.
+                (*c).proc = ptr::null_mut()
+            }
+            p.lock.release();
+        }
     }
 }
 
