@@ -92,112 +92,6 @@ impl DerefMut for RawPageTable {
 }
 
 impl RawPageTable {
-    /// Copy from kernel to user.
-    /// Copy len bytes from src to virtual address dstva in a given page table.
-    /// Return Ok(()) on success, Err(()) on error.
-    pub unsafe fn copyout(
-        &mut self,
-        mut dstva: usize,
-        mut src: *mut u8,
-        mut len: usize,
-    ) -> Result<(), ()> {
-        while len > 0 {
-            let va0 = pgrounddown(dstva);
-            let pa0 = self.walkaddr(va0);
-            if pa0 == 0 {
-                return Err(());
-            }
-            let mut n = PGSIZE.wrapping_sub(dstva.wrapping_sub(va0));
-            if n > len {
-                n = len
-            }
-            ptr::copy(
-                src as *const libc::CVoid,
-                pa0.wrapping_add(dstva.wrapping_sub(va0)) as *mut libc::CVoid,
-                n,
-            );
-            len = len.wrapping_sub(n);
-            src = src.add(n);
-            dstva = va0.wrapping_add(PGSIZE);
-        }
-        Ok(())
-    }
-
-    /// Copy from user to kernel.
-    /// Copy len bytes to dst from virtual address srcva in a given page table.
-    /// Return Ok(()) on success, Err(()) on error.
-    pub unsafe fn copyin(
-        &mut self,
-        mut dst: *mut u8,
-        mut srcva: usize,
-        mut len: usize,
-    ) -> Result<(), ()> {
-        while len > 0 {
-            let va0 = pgrounddown(srcva);
-            let pa0 = self.walkaddr(va0);
-            if pa0 == 0 {
-                return Err(());
-            }
-            let mut n = PGSIZE.wrapping_sub(srcva.wrapping_sub(va0));
-            if n > len {
-                n = len
-            }
-            ptr::copy(
-                pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut libc::CVoid,
-                dst as *mut libc::CVoid,
-                n,
-            );
-            len = len.wrapping_sub(n);
-            dst = dst.add(n);
-            srcva = va0.wrapping_add(PGSIZE)
-        }
-        Ok(())
-    }
-
-    /// Copy a null-terminated string from user to kernel.
-    /// Copy bytes to dst from virtual address srcva in a given page table,
-    /// until a '\0', or max.
-    /// Return OK(()) on success, Err(()) on error.
-    pub unsafe fn copyinstr(
-        &mut self,
-        mut dst: *mut u8,
-        mut srcva: usize,
-        mut max: usize,
-    ) -> Result<(), ()> {
-        let mut got_null: i32 = 0;
-        while got_null == 0 && max > 0 {
-            let va0 = pgrounddown(srcva);
-            let pa0 = self.walkaddr(va0);
-            if pa0 == 0 {
-                return Err(());
-            }
-            let mut n = PGSIZE.wrapping_sub(srcva.wrapping_sub(va0));
-            if n > max {
-                n = max
-            }
-            let mut p: *mut u8 = pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut u8;
-            while n > 0 {
-                if *p as i32 == '\u{0}' as i32 {
-                    *dst = '\u{0}' as i32 as u8;
-                    got_null = 1;
-                    break;
-                } else {
-                    *dst = *p;
-                    n = n.wrapping_sub(1);
-                    max = max.wrapping_sub(1);
-                    p = p.offset(1);
-                    dst = dst.offset(1)
-                }
-            }
-            srcva = va0.wrapping_add(PGSIZE)
-        }
-        if got_null != 0 {
-            Ok(())
-        } else {
-            Err(())
-        }
-    }
-
     /// Look up a virtual address, return the physical address,
     /// or 0 if not mapped.
     /// Can only be used to look up user pages.
@@ -433,6 +327,111 @@ impl RawPageTable {
         pte_op.unwrap().set_invalid(PTE_U as usize)
     }
 
+    /// Copy from kernel to user.
+    /// Copy len bytes from src to virtual address dstva in a given page table.
+    /// Return Ok(()) on success, Err(()) on error.
+    pub unsafe fn copyout(
+        &mut self,
+        mut dstva: usize,
+        mut src: *mut u8,
+        mut len: usize,
+    ) -> Result<(), ()> {
+        while len > 0 {
+            let va0 = pgrounddown(dstva);
+            let pa0 = self.walkaddr(va0);
+            if pa0 == 0 {
+                return Err(());
+            }
+            let mut n = PGSIZE.wrapping_sub(dstva.wrapping_sub(va0));
+            if n > len {
+                n = len
+            }
+            ptr::copy(
+                src as *const libc::CVoid,
+                pa0.wrapping_add(dstva.wrapping_sub(va0)) as *mut libc::CVoid,
+                n,
+            );
+            len = len.wrapping_sub(n);
+            src = src.add(n);
+            dstva = va0.wrapping_add(PGSIZE);
+        }
+        Ok(())
+    }
+
+    /// Copy from user to kernel.
+    /// Copy len bytes to dst from virtual address srcva in a given page table.
+    /// Return Ok(()) on success, Err(()) on error.
+    pub unsafe fn copyin(
+        &mut self,
+        mut dst: *mut u8,
+        mut srcva: usize,
+        mut len: usize,
+    ) -> Result<(), ()> {
+        while len > 0 {
+            let va0 = pgrounddown(srcva);
+            let pa0 = self.walkaddr(va0);
+            if pa0 == 0 {
+                return Err(());
+            }
+            let mut n = PGSIZE.wrapping_sub(srcva.wrapping_sub(va0));
+            if n > len {
+                n = len
+            }
+            ptr::copy(
+                pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut libc::CVoid,
+                dst as *mut libc::CVoid,
+                n,
+            );
+            len = len.wrapping_sub(n);
+            dst = dst.add(n);
+            srcva = va0.wrapping_add(PGSIZE)
+        }
+        Ok(())
+    }
+
+    /// Copy a null-terminated string from user to kernel.
+    /// Copy bytes to dst from virtual address srcva in a given page table,
+    /// until a '\0', or max.
+    /// Return OK(()) on success, Err(()) on error.
+    pub unsafe fn copyinstr(
+        &mut self,
+        mut dst: *mut u8,
+        mut srcva: usize,
+        mut max: usize,
+    ) -> Result<(), ()> {
+        let mut got_null: i32 = 0;
+        while got_null == 0 && max > 0 {
+            let va0 = pgrounddown(srcva);
+            let pa0 = self.walkaddr(va0);
+            if pa0 == 0 {
+                return Err(());
+            }
+            let mut n = PGSIZE.wrapping_sub(srcva.wrapping_sub(va0));
+            if n > max {
+                n = max
+            }
+            let mut p: *mut u8 = pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut u8;
+            while n > 0 {
+                if *p as i32 == '\u{0}' as i32 {
+                    *dst = '\u{0}' as i32 as u8;
+                    got_null = 1;
+                    break;
+                } else {
+                    *dst = *p;
+                    n = n.wrapping_sub(1);
+                    max = max.wrapping_sub(1);
+                    p = p.offset(1);
+                    dst = dst.offset(1)
+                }
+            }
+            srcva = va0.wrapping_add(PGSIZE)
+        }
+        if got_null != 0 {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
 }
 
 pub struct PageTable {
@@ -583,7 +582,6 @@ unsafe fn walk(
     }
     Some(&mut pagetable[px(0, va)])
 }
-
 
 /// Add a mapping to the kernel page table.
 /// Only used when booting.
