@@ -809,7 +809,6 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable {
 
     // Map the trapframe just below TRAMPOLINE, for trampoline.S.
     pagetable.mappages(TRAPFRAME, PGSIZE, (*p).tf as usize, PTE_R | PTE_W);
-
     pagetable
 }
 
