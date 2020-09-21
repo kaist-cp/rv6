@@ -8,7 +8,7 @@ use crate::{
     riscv::PGSIZE,
     string::{safestrcpy, strlen},
     vm::PageTable,
-    vm::{copyout, uvmalloc, uvmclear, walkaddr},
+    vm::{uvmalloc, uvmclear, walkaddr},
 };
 
 pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
@@ -128,13 +128,9 @@ pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
         if sp < stackbase {
             return -1;
         }
-        if copyout(
-            pt,
-            sp,
-            *argv.add(argc),
-            (strlen(*argv.add(argc)) + 1) as usize,
-        )
-        .is_err()
+        if pt
+            .copyout(sp, *argv.add(argc), (strlen(*argv.add(argc)) + 1) as usize)
+            .is_err()
         {
             return -1;
         }
@@ -151,14 +147,14 @@ pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
     sp = sp.wrapping_sub(sp.wrapping_rem(16));
 
     if sp >= stackbase
-        && copyout(
-            pt,
-            sp,
-            ustack.as_mut_ptr() as *mut u8,
-            argc.wrapping_add(1)
-                .wrapping_mul(::core::mem::size_of::<usize>()),
-        )
-        .is_ok()
+        && pt
+            .copyout(
+                sp,
+                ustack.as_mut_ptr() as *mut u8,
+                argc.wrapping_add(1)
+                    .wrapping_mul(::core::mem::size_of::<usize>()),
+            )
+            .is_ok()
     {
         let (pt, sz) = scopeguard::ScopeGuard::into_inner(ptable_guard);
         // arguments to user main(argc, argv)

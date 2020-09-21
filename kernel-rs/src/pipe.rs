@@ -4,7 +4,6 @@ use crate::{
     kalloc::{kalloc, kfree},
     proc::{myproc, WaitChannel},
     spinlock::Spinlock,
-    vm::{copyin, copyout},
 };
 use core::{ops::Deref, ptr};
 
@@ -173,8 +172,7 @@ impl PipeInner {
                 }
                 return Ok(i);
             }
-            if copyin(
-                &mut (*proc).pagetable,
+            if (*proc).pagetable.copyin(
                 &mut ch,
                 addr.wrapping_add(i),
                 1usize,
@@ -207,7 +205,7 @@ impl PipeInner {
             }
             let mut ch = self.data[self.nread as usize % PIPESIZE];
             self.nread = self.nread.wrapping_add(1);
-            if copyout(&mut (*proc).pagetable, addr.wrapping_add(i), &mut ch, 1usize).is_err() {
+            if (*proc).pagetable.copyout(addr.wrapping_add(i), &mut ch, 1usize).is_err() {
                 return Ok(i);
             }
         }

@@ -4,7 +4,6 @@ use crate::{
     string::strlen,
     sysfile::*,
     sysproc::*,
-    vm::{copyin, copyinstr},
 };
 use core::str;
 
@@ -14,8 +13,7 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
     if addr >= (*p).sz || addr.wrapping_add(::core::mem::size_of::<usize>()) > (*p).sz {
         return -1;
     }
-    if copyin(
-        &mut (*p).pagetable,
+    if (*p).pagetable.copyin(
         ip as *mut u8,
         addr,
         ::core::mem::size_of::<usize>(),
@@ -31,7 +29,7 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
 /// Returns length of string, not including nul, or -1 for error.
 pub unsafe fn fetchstr(addr: usize, buf: *mut u8, max: usize) -> i32 {
     let p: *mut Proc = myproc();
-    let err = copyinstr(&mut (*p).pagetable, buf, addr, max);
+    let err = (*p).pagetable.copyinstr(buf, addr, max);
     if err.is_err() {
         return -1;
     }

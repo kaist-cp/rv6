@@ -18,7 +18,6 @@ use crate::{
     some_or,
     stat::{T_DEVICE, T_DIR, T_FILE},
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
-    vm::copyout,
 };
 
 use core::mem;
@@ -441,20 +440,22 @@ pub unsafe fn sys_pipe() -> usize {
         return usize::MAX;
     });
 
-    if copyout(
-        &mut (*p).pagetable,
-        fdarray,
-        &mut fd0 as *mut i32 as *mut u8,
-        mem::size_of::<i32>(),
-    )
-    .is_err()
-        || copyout(
-            &mut (*p).pagetable,
-            fdarray.wrapping_add(mem::size_of::<i32>()),
-            &mut fd1 as *mut i32 as *mut u8,
+    if (*p)
+        .pagetable
+        .copyout(
+            fdarray,
+            &mut fd0 as *mut i32 as *mut u8,
             mem::size_of::<i32>(),
         )
         .is_err()
+        || (*p)
+            .pagetable
+            .copyout(
+                fdarray.wrapping_add(mem::size_of::<i32>()),
+                &mut fd1 as *mut i32 as *mut u8,
+                mem::size_of::<i32>(),
+            )
+            .is_err()
     {
         (*p).open_files[fd0 as usize] = None;
         (*p).open_files[fd1 as usize] = None;
