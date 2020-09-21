@@ -404,29 +404,29 @@ static mut CPUS: [Cpu; NCPU] = [Cpu::zeroed(); NCPU];
 
 /// Process system type containing & managing whole processes.
 pub struct ProcessSystem {
-    process: [Proc; NPROC],
+    process_pool: [Proc; NPROC],
 }
 
 impl ProcessSystem {
     const fn zeroed() -> Self {
         Self {
-            process: [Proc::zeroed(); NPROC],
+            process_pool: [Proc::zeroed(); NPROC],
         }
     }
 
     unsafe fn init(&mut self) {
-        for (i, p) in self.process.iter_mut().enumerate() {
+        for (i, p) in self.process_pool.iter_mut().enumerate() {
             p.lock.initlock("proc");
             p.palloc(i);
         }
     }
 
-    /// Look in the process system for an UNUSED proc.
+    /// Look into process system for an UNUSED proc.
     /// If found, initialize state required to run in the kernel,
     /// and return with p->lock held.
-    /// If there are no free procs, return ptr::null_mut().
-    unsafe fn alloc_proc(&mut self) -> *mut Proc {
-        for p in self.process.iter_mut() {
+    /// If there are no free procs, return 0.
+    unsafe fn alloc(&mut self) -> *mut Proc {
+        for p in self.process_pool.iter_mut() {
             p.lock.acquire();
             if p.state == Procstate::UNUSED {
                 p.pid = allocpid();
@@ -457,7 +457,7 @@ impl ProcessSystem {
     /// Pass p's abandoned children to init.
     /// Caller must hold p->lock.
     unsafe fn reparent(&mut self, p: *mut Proc) {
-        for pp in self.process.iter_mut() {
+        for pp in self.process_pool.iter_mut() {
             // This code uses pp->parent without holding pp->lock.
             // Acquiring the lock first could cause a deadlock
             // if pp or a child of pp were also in exit()
@@ -481,7 +481,7 @@ impl ProcessSystem {
     /// The victim won't exit until it tries to return
     /// to user space (see usertrap() in trap.c).
     pub unsafe fn kill(&mut self, pid: i32) -> i32 {
-        for p in self.process.iter_mut() {
+        for p in self.process_pool.iter_mut() {
             p.lock.acquire();
             if p.pid == pid {
                 p.killed = true;
@@ -500,7 +500,7 @@ impl ProcessSystem {
     /// Wake up all processes sleeping on waitchannel.
     /// Must be called without any p->lock.
     pub fn wakeup_pool(&mut self, target: &WaitChannel) {
-        for p in self.process.iter_mut() {
+        for p in self.process_pool.iter_mut() {
             p.lock.acquire();
             if p.waitchannel == target as _ && p.state == Procstate::SLEEPING {
                 p.state = Procstate::RUNNABLE
@@ -509,7 +509,7 @@ impl ProcessSystem {
         }
     }
     unsafe fn run_processes(&mut self, c: *mut Cpu) {
-        for p in self.process.iter_mut() {
+        for p in self.process_pool.iter_mut() {
             p.lock.acquire();
             if p.state == Procstate::RUNNABLE {
                 // Switch to chosen process.  It is the process's job
@@ -532,7 +532,7 @@ impl ProcessSystem {
     /// No lock to avoid wedging a stuck machine further.
     pub unsafe fn dump(&mut self) {
         println!();
-        for p in self.process.iter_mut() {
+        for p in self.process_pool.iter_mut() {
             if p.state != Procstate::UNUSED {
                 println!(
                     "{} {} {}",
@@ -825,7 +825,7 @@ pub unsafe fn wait(addr: usize) -> i32 {
     loop {
         // Scan through pool looking for exited children.
         let mut havekids = false;
-        for np in &mut PROCSYS.process {
+        for np in &mut PROCSYS.process_pool {
             // This code uses np->parent without holding np->lock.
             // Acquiring the lock first would cause a deadlock,
             // since np might be an ancestor, and we already hold p->lock.
