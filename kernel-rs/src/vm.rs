@@ -60,8 +60,8 @@ impl PageTableEntry {
         pte_flags(self.inner)
     }
 
-    unsafe fn as_page(&self) -> &Page {
-        &*(pte2pa(self.inner) as *const Page)
+    fn as_page(&self) -> &Page {
+        unsafe { &*(pte2pa(self.inner) as *const Page) }
     }
 
     unsafe fn as_table(&self) -> &RawPageTable {
@@ -117,13 +117,7 @@ impl RawPageTable {
     /// physical addresses starting at pa. va and size might not
     /// be page-aligned. Returns true on success, false if walk() couldn't
     /// allocate a needed page-table page.
-    pub unsafe fn mappages(
-        &mut self,
-        va: usize,
-        size: usize,
-        mut pa: usize,
-        perm: i32,
-    ) -> bool {
+    pub unsafe fn mappages(&mut self, va: usize, size: usize, mut pa: usize, perm: i32) -> bool {
         let mut a = pgrounddown(va);
         let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
         loop {
@@ -140,7 +134,6 @@ impl RawPageTable {
         }
         true
     }
-
 
     /// Recursively free page-table pages.
     /// All leaf mappings must already have been removed.
@@ -204,12 +197,7 @@ impl RawPageTable {
         }
         let mem: *mut u8 = kalloc() as *mut u8;
         ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
-        self.mappages(
-            0,
-            PGSIZE,
-            mem as usize,
-            PTE_W | PTE_R | PTE_X | PTE_U,
-        );
+        self.mappages(0, PGSIZE, mem as usize, PTE_W | PTE_R | PTE_X | PTE_U);
         ptr::copy(
             src as *const libc::CVoid,
             mem as *mut libc::CVoid,
@@ -219,11 +207,7 @@ impl RawPageTable {
 
     /// Allocate PTEs and physical memory to grow process from oldsz to
     /// newsz, which need not be page aligned.  Returns Ok(new size) or Err(()) on error.
-    pub unsafe fn uvmalloc(
-        &mut self,
-        mut oldsz: usize,
-        newsz: usize,
-    ) -> Result<usize, ()> {
+    pub unsafe fn uvmalloc(&mut self, mut oldsz: usize, newsz: usize) -> Result<usize, ()> {
         if newsz < oldsz {
             return Ok(oldsz);
         }
@@ -236,12 +220,7 @@ impl RawPageTable {
                 return Err(());
             }
             ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
-            if !self.mappages(
-                a,
-                PGSIZE,
-                mem as usize,
-                PTE_W | PTE_X | PTE_R | PTE_U,
-            ) {
+            if !self.mappages(a, PGSIZE, mem as usize, PTE_W | PTE_X | PTE_R | PTE_U) {
                 kfree(mem as *mut libc::CVoid);
                 self.uvmdealloc(a, oldsz);
                 return Err(());
@@ -279,11 +258,7 @@ impl RawPageTable {
     /// physical memory.
     /// Returns Ok(()) on success, Err(()) on failure.
     /// Frees any allocated pages on failure.
-    pub unsafe fn uvmcopy(
-        &mut self,
-        mut new: &mut RawPageTable,
-        sz: usize,
-    ) -> Result<(), ()> {
+    pub unsafe fn uvmcopy(&mut self, mut new: &mut RawPageTable, sz: usize) -> Result<(), ()> {
         for i in num_iter::range_step(0, sz, PGSIZE) {
             let pte_op = walk(self, i, 0);
             if pte_op.is_none() {
@@ -439,7 +414,7 @@ pub struct PageTable {
 }
 
 impl PageTable {
-    pub const unsafe fn raw() -> Self {
+    pub const unsafe fn null() -> Self {
         Self {
             ptr: ptr::null_mut(),
         }
@@ -487,7 +462,7 @@ impl DerefMut for PageTable {
 ///
 /// The kernel's page table.
 ///
-pub static mut KERNEL_PAGETABLE: PageTable = unsafe { PageTable::raw() };
+pub static mut KERNEL_PAGETABLE: PageTable = unsafe { PageTable::null() };
 
 // trampoline.S
 /// Create a direct-map page table for the kernel and
