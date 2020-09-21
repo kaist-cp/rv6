@@ -11,7 +11,7 @@ use crate::{
     spinlock::{pop_off, push_off, RawSpinlock, Spinlock},
     string::safestrcpy,
     trap::usertrapret,
-    vm::{kvminithart, kvmmap, uvmalloc, uvmcopy, uvmdealloc, uvmfree, uvminit, uvmunmap},
+    vm::{kvminithart, kvmmap,},
 };
 use crate::{libc, vm::PageTable};
 use core::cmp::Ordering;
@@ -538,8 +538,7 @@ impl ProcessSystem {
 
         // Allocate one user page and copy init's instructions
         // and data into it.
-        uvminit(
-            &mut (*p).pagetable,
+        (*p).pagetable.uvminit(
             INITCODE.as_mut_ptr(),
             ::core::mem::size_of::<[u8; 51]>() as u32,
         );
@@ -571,7 +570,7 @@ impl ProcessSystem {
         let mut np = ok_or!(self.alloc(), return -1);
 
         // Copy user memory from parent to child.
-        if uvmcopy(&mut (*p).pagetable, &mut (*np).pagetable, (*p).sz).is_err() {
+        if (*p).pagetable.uvmcopy(&mut (*np).pagetable, (*p).sz).is_err() {
             freeproc(np);
             (*np).lock.release();
             return -1;
@@ -822,10 +821,10 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable {
 /// Free a process's page table, and free the
 /// physical memory it refers to.
 pub unsafe fn proc_freepagetable(pagetable: &mut PageTable, sz: usize) {
-    uvmunmap(pagetable, TRAMPOLINE, PGSIZE, 0);
-    uvmunmap(pagetable, TRAPFRAME, PGSIZE, 0);
+    pagetable.uvmunmap(TRAMPOLINE, PGSIZE, 0);
+    pagetable.uvmunmap(TRAPFRAME, PGSIZE, 0);
     if sz > 0 {
-        uvmfree(pagetable, sz);
+        pagetable.uvmfree(sz);
     };
 }
 
@@ -845,13 +844,13 @@ pub unsafe fn resizeproc(n: i32) -> i32 {
     let sz = match n.cmp(&0) {
         Ordering::Equal => sz,
         Ordering::Greater => {
-            let sz = uvmalloc(&mut (*p).pagetable, sz, sz.wrapping_add(n as usize));
+            let sz = (*p).pagetable.uvmalloc(sz, sz.wrapping_add(n as usize));
             if sz.is_err() {
                 return -1;
             }
             sz.unwrap()
         }
-        Ordering::Less => uvmdealloc(&mut (*p).pagetable, sz, sz.wrapping_add(n as usize)),
+        Ordering::Less => (*p).pagetable.uvmdealloc(sz, sz.wrapping_add(n as usize)),
     };
     (*p).sz = sz;
     0

@@ -265,6 +265,174 @@ impl RawPageTable {
         kfree(self.as_mut_ptr() as *mut libc::CVoid);
     }
 
+    /// Remove mappings from a page table. The mappings in
+    /// the given range must exist. Optionally free the
+    /// physical memory.
+    pub unsafe fn uvmunmap(&mut self, va: usize, size: usize, do_free: i32) {
+        let mut pa: usize = 0;
+        let mut a = pgrounddown(va);
+        let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
+        loop {
+            let pte_op = walk(self, a, 0);
+            if pte_op.is_none() {
+                panic!("uvmunmap: walk");
+            }
+            let pte = pte_op.unwrap();
+            if !pte.check_flag(PTE_V) {
+                println!(
+                    "va={:018p} pte={:018p}",
+                    a as *const u8, pte.inner as *const u8
+                );
+                panic!("uvmunmap: not mapped");
+            }
+            if pte.get_flags() == PTE_V {
+                panic!("uvmunmap: not a leaf");
+            }
+            if do_free != 0 {
+                pa = pte.get_pa();
+                kfree(pa as *mut libc::CVoid);
+            }
+            pte.set_inner(0);
+            if a == last {
+                break;
+            }
+            a = a.wrapping_add(PGSIZE);
+            pa = pa.wrapping_add(PGSIZE);
+        }
+    }
+
+    /// Load the user initcode into address 0 of pagetable,
+    /// for the very first process.
+    /// sz must be less than a page.
+    pub unsafe fn uvminit(&mut self, src: *mut u8, sz: u32) {
+        if sz >= PGSIZE as u32 {
+            panic!("inituvm: more than a page");
+        }
+        let mem: *mut u8 = kalloc() as *mut u8;
+        ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
+        self.mappages(
+            0,
+            PGSIZE,
+            mem as usize,
+            PTE_W | PTE_R | PTE_X | PTE_U,
+        );
+        ptr::copy(
+            src as *const libc::CVoid,
+            mem as *mut libc::CVoid,
+            sz as usize,
+        );
+    }
+
+    /// Allocate PTEs and physical memory to grow process from oldsz to
+    /// newsz, which need not be page aligned.  Returns Ok(new size) or Err(()) on error.
+    pub unsafe fn uvmalloc(
+        &mut self,
+        mut oldsz: usize,
+        newsz: usize,
+    ) -> Result<usize, ()> {
+        if newsz < oldsz {
+            return Ok(oldsz);
+        }
+        oldsz = pgroundup(oldsz);
+        let mut a = oldsz;
+        while a < newsz {
+            let mem = kalloc() as *mut u8;
+            if mem.is_null() {
+                self.uvmdealloc(a, oldsz);
+                return Err(());
+            }
+            ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
+            if !self.mappages(
+                a,
+                PGSIZE,
+                mem as usize,
+                PTE_W | PTE_X | PTE_R | PTE_U,
+            ) {
+                kfree(mem as *mut libc::CVoid);
+                self.uvmdealloc(a, oldsz);
+                return Err(());
+            }
+            a = a.wrapping_add(PGSIZE);
+        }
+        Ok(newsz)
+    }
+
+    /// Deallocate user pages to bring the process size from oldsz to
+    /// newsz.  oldsz and newsz need not be page-aligned, nor does newsz
+    /// need to be less than oldsz.  oldsz can be larger than the actual
+    /// process size.  Returns the new process size.
+    pub unsafe fn uvmdealloc(&mut self, oldsz: usize, newsz: usize) -> usize {
+        if newsz >= oldsz {
+            return oldsz;
+        }
+        let newup: usize = pgroundup(newsz);
+        if newup < pgroundup(oldsz) {
+            self.uvmunmap(newup, oldsz.wrapping_sub(newup), 1);
+        }
+        newsz
+    }
+
+    /// Free user memory pages,
+    /// then free page-table pages.
+    pub unsafe fn uvmfree(&mut self, sz: usize) {
+        self.uvmunmap(0, sz, 1);
+        self.freewalk();
+    }
+
+    /// Given a parent process's page table, copy
+    /// its memory into a child's page table.
+    /// Copies both the page table and the
+    /// physical memory.
+    /// Returns Ok(()) on success, Err(()) on failure.
+    /// Frees any allocated pages on failure.
+    pub unsafe fn uvmcopy(
+        &mut self,
+        mut new: &mut RawPageTable,
+        sz: usize,
+    ) -> Result<(), ()> {
+        for i in num_iter::range_step(0, sz, PGSIZE) {
+            let pte_op = walk(self, i, 0);
+            if pte_op.is_none() {
+                panic!("uvmcopy: pte should exist");
+            }
+            let pte = pte_op.unwrap();
+            if !pte.check_flag(PTE_V) {
+                panic!("uvmcopy: page not present");
+            }
+            let mut new_ptable = scopeguard::guard(new, |ptable| {
+                ptable.uvmunmap(0, i, 1);
+            });
+            let pa = pte.get_pa();
+            let flags = pte.get_flags() as u32;
+            let mem = kalloc() as *mut u8;
+            if mem.is_null() {
+                return Err(());
+            }
+            ptr::copy(
+                pa as *mut u8 as *const libc::CVoid,
+                mem as *mut libc::CVoid,
+                PGSIZE,
+            );
+            if !(*new_ptable).mappages(i, PGSIZE, mem as usize, flags as i32) {
+                kfree(mem as *mut libc::CVoid);
+                return Err(());
+            }
+            new = scopeguard::ScopeGuard::into_inner(new_ptable);
+        }
+
+        Ok(())
+    }
+
+    /// Mark a PTE invalid for user access.
+    /// Used by exec for the user stack guard page.
+    pub unsafe fn uvmclear(&mut self, va: usize) {
+        let pte_op = walk(self, va, 0);
+        if pte_op.is_none() {
+            panic!("uvmclear");
+        }
+        pte_op.unwrap().set_invalid(PTE_U as usize)
+    }
+
 }
 
 pub struct PageTable {
@@ -437,172 +605,4 @@ pub unsafe fn kvmpa(va: usize) -> usize {
         .expect("kvmpa");
     let pa = pte.as_page() as *const _ as usize;
     pa.wrapping_add(off)
-}
-
-/// Remove mappings from a page table. The mappings in
-/// the given range must exist. Optionally free the
-/// physical memory.
-pub unsafe fn uvmunmap(pagetable: &mut RawPageTable, va: usize, size: usize, do_free: i32) {
-    let mut pa: usize = 0;
-    let mut a = pgrounddown(va);
-    let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
-    loop {
-        let pte_op = walk(pagetable, a, 0);
-        if pte_op.is_none() {
-            panic!("uvmunmap: walk");
-        }
-        let pte = pte_op.unwrap();
-        if !pte.check_flag(PTE_V) {
-            println!(
-                "va={:018p} pte={:018p}",
-                a as *const u8, pte.inner as *const u8
-            );
-            panic!("uvmunmap: not mapped");
-        }
-        if pte.get_flags() == PTE_V {
-            panic!("uvmunmap: not a leaf");
-        }
-        if do_free != 0 {
-            pa = pte.get_pa();
-            kfree(pa as *mut libc::CVoid);
-        }
-        pte.set_inner(0);
-        if a == last {
-            break;
-        }
-        a = a.wrapping_add(PGSIZE);
-        pa = pa.wrapping_add(PGSIZE);
-    }
-}
-
-/// Load the user initcode into address 0 of pagetable,
-/// for the very first process.
-/// sz must be less than a page.
-pub unsafe fn uvminit(pagetable: &mut PageTable, src: *mut u8, sz: u32) {
-    if sz >= PGSIZE as u32 {
-        panic!("inituvm: more than a page");
-    }
-    let mem: *mut u8 = kalloc() as *mut u8;
-    ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
-    pagetable.mappages(
-        0,
-        PGSIZE,
-        mem as usize,
-        PTE_W | PTE_R | PTE_X | PTE_U,
-    );
-    ptr::copy(
-        src as *const libc::CVoid,
-        mem as *mut libc::CVoid,
-        sz as usize,
-    );
-}
-
-/// Allocate PTEs and physical memory to grow process from oldsz to
-/// newsz, which need not be page aligned.  Returns Ok(new size) or Err(()) on error.
-pub unsafe fn uvmalloc(
-    pagetable: &mut PageTable,
-    mut oldsz: usize,
-    newsz: usize,
-) -> Result<usize, ()> {
-    if newsz < oldsz {
-        return Ok(oldsz);
-    }
-    oldsz = pgroundup(oldsz);
-    let mut a = oldsz;
-    while a < newsz {
-        let mem = kalloc() as *mut u8;
-        if mem.is_null() {
-            uvmdealloc(pagetable, a, oldsz);
-            return Err(());
-        }
-        ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
-        if !pagetable.mappages(
-            a,
-            PGSIZE,
-            mem as usize,
-            PTE_W | PTE_X | PTE_R | PTE_U,
-        ) {
-            kfree(mem as *mut libc::CVoid);
-            uvmdealloc(pagetable, a, oldsz);
-            return Err(());
-        }
-        a = a.wrapping_add(PGSIZE);
-    }
-    Ok(newsz)
-}
-
-/// Deallocate user pages to bring the process size from oldsz to
-/// newsz.  oldsz and newsz need not be page-aligned, nor does newsz
-/// need to be less than oldsz.  oldsz can be larger than the actual
-/// process size.  Returns the new process size.
-pub unsafe fn uvmdealloc(pagetable: &mut PageTable, oldsz: usize, newsz: usize) -> usize {
-    if newsz >= oldsz {
-        return oldsz;
-    }
-    let newup: usize = pgroundup(newsz);
-    if newup < pgroundup(oldsz) {
-        uvmunmap(pagetable, newup, oldsz.wrapping_sub(newup), 1);
-    }
-    newsz
-}
-
-/// Free user memory pages,
-/// then free page-table pages.
-pub unsafe fn uvmfree(pagetable: &mut RawPageTable, sz: usize) {
-    uvmunmap(pagetable, 0, sz, 1);
-    pagetable.freewalk();
-}
-
-/// Given a parent process's page table, copy
-/// its memory into a child's page table.
-/// Copies both the page table and the
-/// physical memory.
-/// Returns Ok(()) on success, Err(()) on failure.
-/// Frees any allocated pages on failure.
-pub unsafe fn uvmcopy(
-    old: &mut RawPageTable,
-    mut new: &mut RawPageTable,
-    sz: usize,
-) -> Result<(), ()> {
-    for i in num_iter::range_step(0, sz, PGSIZE) {
-        let pte_op = walk(old, i, 0);
-        if pte_op.is_none() {
-            panic!("uvmcopy: pte should exist");
-        }
-        let pte = pte_op.unwrap();
-        if !pte.check_flag(PTE_V) {
-            panic!("uvmcopy: page not present");
-        }
-        let mut new_ptable = scopeguard::guard(new, |ptable| {
-            uvmunmap(ptable, 0, i, 1);
-        });
-        let pa = pte.get_pa();
-        let flags = pte.get_flags() as u32;
-        let mem = kalloc() as *mut u8;
-        if mem.is_null() {
-            return Err(());
-        }
-        ptr::copy(
-            pa as *mut u8 as *const libc::CVoid,
-            mem as *mut libc::CVoid,
-            PGSIZE,
-        );
-        if !(*new_ptable).mappages(i, PGSIZE, mem as usize, flags as i32) {
-            kfree(mem as *mut libc::CVoid);
-            return Err(());
-        }
-        new = scopeguard::ScopeGuard::into_inner(new_ptable);
-    }
-
-    Ok(())
-}
-
-/// Mark a PTE invalid for user access.
-/// Used by exec for the user stack guard page.
-pub unsafe fn uvmclear(pagetable: &mut RawPageTable, va: usize) {
-    let pte_op = walk(pagetable, va, 0);
-    if pte_op.is_none() {
-        panic!("uvmclear");
-    }
-    pte_op.unwrap().set_invalid(PTE_U as usize)
 }

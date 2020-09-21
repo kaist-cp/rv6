@@ -8,7 +8,6 @@ use crate::{
     riscv::PGSIZE,
     string::{safestrcpy, strlen},
     vm::PageTable,
-    vm::{uvmalloc, uvmclear},
 };
 
 pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
@@ -78,7 +77,7 @@ pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
             if ph.vaddr.wrapping_add(ph.memsz) < ph.vaddr {
                 return -1;
             }
-            let sz_op = uvmalloc(pt, *sz, ph.vaddr.wrapping_add(ph.memsz));
+            let sz_op = pt.uvmalloc(*sz, ph.vaddr.wrapping_add(ph.memsz));
             if sz_op.is_err() {
                 return -1;
             }
@@ -101,14 +100,14 @@ pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
     // Allocate two pages at the next page boundary.
     // Use the second as the user stack.
     *sz = sz.wrapping_add(PGSIZE).wrapping_sub(1) & !PGSIZE.wrapping_sub(1);
-    let sz_op = uvmalloc(pt, *sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)));
+    let sz_op = pt.uvmalloc(*sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)));
 
     if sz_op.is_err() {
         return -1;
     }
 
     *sz = sz_op.unwrap();
-    uvmclear(pt, sz.wrapping_sub(2usize.wrapping_mul(PGSIZE)));
+    pt.uvmclear(sz.wrapping_sub(2usize.wrapping_mul(PGSIZE)));
     let mut sp: usize = *sz;
     let stackbase: usize = sp.wrapping_sub(PGSIZE);
 
