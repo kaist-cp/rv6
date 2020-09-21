@@ -11,10 +11,7 @@ use crate::{
     spinlock::{pop_off, push_off, RawSpinlock, Spinlock},
     string::safestrcpy,
     trap::usertrapret,
-    vm::{
-        copyin, copyout, kvminithart, kvmmap, uvmalloc, uvmcopy, uvmdealloc, uvmfree, uvminit,
-        uvmunmap,
-    },
+    vm::{kvminithart, kvmmap, uvmalloc, uvmcopy, uvmdealloc, uvmfree, uvminit, uvmunmap},
 };
 use crate::{libc, vm::mappages, vm::PageTable};
 use core::cmp::Ordering;
@@ -629,8 +626,7 @@ impl ProcessSystem {
                     if np.state == Procstate::ZOMBIE {
                         let pid = np.pid;
                         if addr != 0
-                            && copyout(
-                                &mut (*p).pagetable,
+                            && (*p).pagetable.copyout(
                                 addr,
                                 &mut np.xstate as *mut i32 as *mut u8,
                                 ::core::mem::size_of::<i32>(),
@@ -957,7 +953,9 @@ unsafe fn forkret() {
 pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: *mut libc::CVoid, len: usize) -> i32 {
     let p = myproc();
     if user_dst != 0 {
-        copyout(&mut (*p).pagetable, dst, src as *mut u8, len).map_or(-1, |_v| 0)
+        (*p).pagetable
+            .copyout(dst, src as *mut u8, len)
+            .map_or(-1, |_v| 0)
     } else {
         ptr::copy(src, dst as *mut u8 as *mut libc::CVoid, len);
         0
@@ -970,7 +968,7 @@ pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: *mut libc::CVoid, l
 pub unsafe fn either_copyin(dst: *mut libc::CVoid, user_src: i32, src: usize, len: usize) -> i32 {
     let p = myproc();
     if user_src != 0 {
-        copyin(&mut (*p).pagetable, dst as *mut u8, src, len).map_or(-1, |_v| 0)
+        (*p).pagetable.copyin(dst as *mut u8, src, len).map_or(-1, |_v| 0)
     } else {
         ptr::copy(src as *mut u8 as *const libc::CVoid, dst, len);
         0

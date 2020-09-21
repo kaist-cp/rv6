@@ -9,7 +9,6 @@ use crate::{
     sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::Stat,
-    vm::copyout,
 };
 use core::cmp;
 use core::convert::TryFrom;
@@ -108,8 +107,7 @@ impl File {
                 (*ip).lock();
                 stati(ip, &mut st);
                 (*ip).unlock();
-                if copyout(
-                    &mut (*p).pagetable,
+                if (*p).pagetable.copyout(
                     addr,
                     &mut st as *mut Stat as *mut u8,
                     ::core::mem::size_of::<Stat>() as usize,
