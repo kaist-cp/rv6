@@ -11,7 +11,7 @@ use crate::{
     spinlock::{pop_off, push_off, RawSpinlock, Spinlock},
     string::safestrcpy,
     trap::usertrapret,
-    vm::{kvminithart, kvmmap,},
+    vm::{kvminithart, kvmmap},
 };
 use crate::{libc, vm::PageTable};
 use core::cmp::Ordering;
@@ -375,7 +375,7 @@ impl Proc {
             pid: 0,
             kstack: 0,
             sz: 0,
-            pagetable: unsafe { PageTable::raw() },
+            pagetable: unsafe { PageTable::null() },
             tf: ptr::null_mut(),
             context: Context::zeroed(),
             open_files: [None; NOFILE],
@@ -777,7 +777,7 @@ unsafe fn freeproc(mut p: *mut Proc) {
     if !(*p).pagetable.is_null() {
         proc_freepagetable(&mut (*p).pagetable, (*p).sz);
     }
-    (*p).pagetable = PageTable::raw();
+    (*p).pagetable = PageTable::null();
     (*p).sz = 0;
     (*p).pid = 0;
     (*p).parent = ptr::null_mut();
@@ -792,7 +792,7 @@ unsafe fn freeproc(mut p: *mut Proc) {
 /// with no user pages, but with trampoline pages.
 pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable {
     // An empty page table.
-    let mut pagetable = PageTable::raw();
+    let mut pagetable = PageTable::null();
     pagetable.init();
     // let mut pagetable = uvmcreate();
 
@@ -808,12 +808,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable {
     );
 
     // Map the trapframe just below TRAMPOLINE, for trampoline.S.
-    pagetable.mappages(
-        TRAPFRAME,
-        PGSIZE,
-        (*p).tf as usize,
-        PTE_R | PTE_W,
-    );
+    pagetable.mappages(TRAPFRAME, PGSIZE, (*p).tf as usize, PTE_R | PTE_W);
 
     pagetable
 }
@@ -965,7 +960,9 @@ pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: *mut libc::CVoid, l
 pub unsafe fn either_copyin(dst: *mut libc::CVoid, user_src: i32, src: usize, len: usize) -> i32 {
     let p = myproc();
     if user_src != 0 {
-        (*p).pagetable.copyin(dst as *mut u8, src, len).map_or(-1, |_v| 0)
+        (*p).pagetable
+            .copyin(dst as *mut u8, src, len)
+            .map_or(-1, |_v| 0)
     } else {
         ptr::copy(src as *mut u8 as *const libc::CVoid, dst, len);
         0

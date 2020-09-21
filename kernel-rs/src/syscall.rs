@@ -13,12 +13,10 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
     if addr >= (*p).sz || addr.wrapping_add(::core::mem::size_of::<usize>()) > (*p).sz {
         return -1;
     }
-    if (*p).pagetable.copyin(
-        ip as *mut u8,
-        addr,
-        ::core::mem::size_of::<usize>(),
-    )
-    .is_err()
+    if (*p)
+        .pagetable
+        .copyin(ip as *mut u8, addr, ::core::mem::size_of::<usize>())
+        .is_err()
     {
         return -1;
     }
