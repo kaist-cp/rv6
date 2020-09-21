@@ -420,11 +420,12 @@ impl ProcessSystem {
         }
     }
 
-    unsafe fn init(&mut self) {
+    pub unsafe fn init(&mut self) {
         for (i, p) in self.process_pool.iter_mut().enumerate() {
             p.lock.initlock("proc");
             p.palloc(i);
         }
+        kvminithart();
     }
 
     /// Look into process system for an UNUSED proc.
@@ -515,6 +516,102 @@ impl ProcessSystem {
         }
     }
 
+    /// Set up first user process.
+    pub unsafe fn user_proc_init(&mut self) {
+        let mut p = match self.alloc() {
+            Ok(proc) => proc,
+            _ => ptr::null_mut(),
+        };
+
+        PROCSYS.initial_proc = p;
+
+        // Allocate one user page and copy init's instructions
+        // and data into it.
+        uvminit(
+            (*p).pagetable,
+            INITCODE.as_mut_ptr(),
+            ::core::mem::size_of::<[u8; 51]>() as u32,
+        );
+        (*p).sz = PGSIZE;
+
+        // Prepare for the very first "return" from kernel to user.
+
+        // User program counter.
+        (*(*p).tf).epc = 0;
+
+        // User stack pointer.
+        (*(*p).tf).sp = PGSIZE;
+        safestrcpy(
+            (*p).name.as_mut_ptr(),
+            b"initcode\x00" as *const u8,
+            ::core::mem::size_of::<[u8; 16]>() as i32,
+        );
+        (*p).cwd = namei(b"/\x00" as *const u8 as *mut u8);
+        (*p).state = Procstate::RUNNABLE;
+        (*p).lock.release();
+    }
+
+    /// Exit the current process.  Does not return.
+    /// An exited process remains in the zombie state
+    /// until its parent calls wait().
+    pub unsafe fn exit_current(&mut self, status: i32) {
+        let mut p = myproc();
+        if p == self.initial_proc {
+            panic!("init exiting");
+        }
+
+        // Close all open files.
+        for file in &mut (*p).open_files {
+            *file = None;
+        }
+        begin_op();
+        (*(*p).cwd).put();
+        end_op();
+        (*p).cwd = ptr::null_mut();
+
+        // We might re-parent a child to init. We can't be precise about
+        // waking up init, since we can't acquire its lock once we've
+        // spinlock::acquired any other proc lock. so wake up init whether that's
+        // necessary or not. init may miss this wakeup, but that seems
+        // harmless.
+        (*self.initial_proc).lock.acquire();
+        (*self.initial_proc)
+            .child_waitchannel
+            .wakeup_proc(PROCSYS.initial_proc);
+        (*self.initial_proc).lock.release();
+
+        // Grab a copy of p->parent, to ensure that we unlock the same
+        // parent we locked. in case our parent gives us away to init while
+        // we're waiting for the parent lock. We may then race with an
+        // exiting parent, but the result will be a harmless spurious wakeup
+        // to a dead or wrong process; proc structs are never re-allocated
+        // as anything else.
+        (*p).lock.acquire();
+        let original_parent = (*p).parent;
+        (*p).lock.release();
+
+        // We need the parent's lock in order to wake it up from wait().
+        // The parent-then-child rule says we have to lock it first.
+        (*original_parent).lock.acquire();
+
+        (*p).lock.acquire();
+
+        // Give any children to init.
+        self.reparent(p);
+
+        // Parent might be sleeping in wait().
+        (*original_parent)
+            .child_waitchannel
+            .wakeup_proc(original_parent);
+        (*p).xstate = status;
+        (*p).state = Procstate::ZOMBIE;
+        (*original_parent).lock.release();
+
+        // Jump into the scheduler, never to return.
+        sched();
+        panic!("zombie exit");
+    }
+
     /// Print a process listing to console.  For debugging.
     /// Runs when user types ^P on console.
     /// No lock to avoid wedging a stuck machine further.
@@ -535,12 +632,6 @@ impl ProcessSystem {
 
 /// Current process system.
 pub static mut PROCSYS: ProcessSystem = ProcessSystem::zeroed();
-
-#[no_mangle]
-pub unsafe fn process_system_init() {
-    PROCSYS.init();
-    kvminithart();
-}
 
 /// Return this CPU's ID.
 ///
@@ -746,67 +837,6 @@ pub unsafe fn fork() -> i32 {
     (*np).state = Procstate::RUNNABLE;
     (*np).lock.release();
     pid
-}
-
-/// Exit the current process.  Does not return.
-/// An exited process remains in the zombie state
-/// until its parent calls wait().
-pub unsafe fn exit(status: i32) {
-    let mut p = myproc();
-    if p == PROCSYS.initial_proc {
-        panic!("init exiting");
-    }
-
-    // Close all open files.
-    for file in &mut (*p).open_files {
-        *file = None;
-    }
-    begin_op();
-    (*(*p).cwd).put();
-    end_op();
-    (*p).cwd = ptr::null_mut();
-
-    // We might re-parent a child to init. We can't be precise about
-    // waking up init, since we can't acquire its lock once we've
-    // spinlock::acquired any other proc lock. so wake up init whether that's
-    // necessary or not. init may miss this wakeup, but that seems
-    // harmless.
-    (*PROCSYS.initial_proc).lock.acquire();
-    (*PROCSYS.initial_proc)
-        .child_waitchannel
-        .wakeup_proc(PROCSYS.initial_proc);
-    (*PROCSYS.initial_proc).lock.release();
-
-    // Grab a copy of p->parent, to ensure that we unlock the same
-    // parent we locked. in case our parent gives us away to init while
-    // we're waiting for the parent lock. We may then race with an
-    // exiting parent, but the result will be a harmless spurious wakeup
-    // to a dead or wrong process; proc structs are never re-allocated
-    // as anything else.
-    (*p).lock.acquire();
-    let original_parent = (*p).parent;
-    (*p).lock.release();
-
-    // We need the parent's lock in order to wake it up from wait().
-    // The parent-then-child rule says we have to lock it first.
-    (*original_parent).lock.acquire();
-
-    (*p).lock.acquire();
-
-    // Give any children to init.
-    PROCSYS.reparent(p);
-
-    // Parent might be sleeping in wait().
-    (*original_parent)
-        .child_waitchannel
-        .wakeup_proc(original_parent);
-    (*p).xstate = status;
-    (*p).state = Procstate::ZOMBIE;
-    (*original_parent).lock.release();
-
-    // Jump into the scheduler, never to return.
-    sched();
-    panic!("zombie exit");
 }
 
 /// Wait for a child process to exit and return its pid.

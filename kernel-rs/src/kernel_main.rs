@@ -6,7 +6,7 @@ use crate::{
     plic::{plicinit, plicinithart},
     printf::printfinit,
     println,
-    proc::{cpuid, process_system_init, scheduler, userinit},
+    proc::{cpuid, scheduler, PROCSYS},
     trap::{trapinit, trapinithart},
     virtio_disk::virtio_disk_init,
     vm::{kvminit, kvminithart},
@@ -34,6 +34,9 @@ pub unsafe fn kernel_main() {
         // Turn on paging.
         kvminithart();
 
+        // Process system.
+        PROCSYS.init();
+
         // Trap vectors.
         trapinit();
 
@@ -56,7 +59,7 @@ pub unsafe fn kernel_main() {
         virtio_disk_init();
 
         // First user process.
-        userinit();
+        PROCSYS.user_proc_init();
         STARTED.store(true, Ordering::Release);
     } else {
         while !STARTED.load(Ordering::Acquire) {}
