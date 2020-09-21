@@ -288,7 +288,6 @@ impl RawPageTable {
             }
             new = scopeguard::ScopeGuard::into_inner(new_ptable);
         }
-
         Ok(())
     }
 
