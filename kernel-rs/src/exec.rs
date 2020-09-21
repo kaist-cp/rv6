@@ -8,7 +8,7 @@ use crate::{
     riscv::PGSIZE,
     string::{safestrcpy, strlen},
     vm::PageTable,
-    vm::{uvmalloc, uvmclear, walkaddr},
+    vm::{uvmalloc, uvmclear},
 };
 
 pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
@@ -211,7 +211,7 @@ unsafe fn loadseg(
     }
 
     for i in num_iter::range_step(0, sz, PGSIZE as _) {
-        let pa = walkaddr(pagetable, va.wrapping_add(i as usize));
+        let pa = pagetable.walkaddr(va.wrapping_add(i as usize));
         if pa == 0 {
             panic!("loadseg: address should exist");
         }

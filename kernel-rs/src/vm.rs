@@ -103,7 +103,7 @@ impl RawPageTable {
     ) -> Result<(), ()> {
         while len > 0 {
             let va0 = pgrounddown(dstva);
-            let pa0 = walkaddr(self, va0);
+            let pa0 = self.walkaddr(va0);
             if pa0 == 0 {
                 return Err(());
             }
@@ -134,7 +134,7 @@ impl RawPageTable {
     ) -> Result<(), ()> {
         while len > 0 {
             let va0 = pgrounddown(srcva);
-            let pa0 = walkaddr(self, va0);
+            let pa0 = self.walkaddr(va0);
             if pa0 == 0 {
                 return Err(());
             }
@@ -167,7 +167,7 @@ impl RawPageTable {
         let mut got_null: i32 = 0;
         while got_null == 0 && max > 0 {
             let va0 = pgrounddown(srcva);
-            let pa0 = walkaddr(self, va0);
+            let pa0 = self.walkaddr(va0);
             if pa0 == 0 {
                 return Err(());
             }
@@ -196,6 +196,73 @@ impl RawPageTable {
         } else {
             Err(())
         }
+    }
+
+    /// Look up a virtual address, return the physical address,
+    /// or 0 if not mapped.
+    /// Can only be used to look up user pages.
+    pub unsafe fn walkaddr(&mut self, va: usize) -> usize {
+        if va >= MAXVA {
+            return 0;
+        }
+        let pte_op = walk(self, va, 0);
+        if pte_op.is_none() {
+            return 0;
+        }
+        let pte = pte_op.unwrap();
+        if !pte.check_flag(PTE_V) {
+            return 0;
+        }
+        if !pte.check_flag(PTE_U as usize) {
+            return 0;
+        }
+        pte.get_pa()
+    }
+
+    /// Create PTEs for virtual addresses starting at va that refer to
+    /// physical addresses starting at pa. va and size might not
+    /// be page-aligned. Returns true on success, false if walk() couldn't
+    /// allocate a needed page-table page.
+    pub unsafe fn mappages(
+        &mut self,
+        va: usize,
+        size: usize,
+        mut pa: usize,
+        perm: i32,
+    ) -> bool {
+        let mut a = pgrounddown(va);
+        let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
+        loop {
+            let pte = some_or!(walk(self, a, 1), return false);
+            if pte.check_flag(PTE_V) {
+                panic!("remap");
+            }
+            pte.set_inner(pa2pte(pa) | perm as usize | PTE_V);
+            if a == last {
+                break;
+            }
+            a = a.wrapping_add(PGSIZE);
+            pa = pa.wrapping_add(PGSIZE);
+        }
+        true
+    }
+
+
+    /// Recursively free page-table pages.
+    /// All leaf mappings must already have been removed.
+    unsafe fn freewalk(&mut self) {
+        // There are 2^9 = 512 PTEs in a page table.
+        for i in 0..512 {
+            let pte = &mut self[i];
+            if pte.check_flag(PTE_V) && !pte.check_flag((PTE_R | PTE_W | PTE_X) as usize) {
+                // This PTE points to a lower-level page table.
+                pte.as_table_mut().freewalk();
+                pte.set_inner(0);
+            } else if pte.check_flag(PTE_V) {
+                panic!("freewalk: leaf");
+            }
+        }
+        kfree(self.as_mut_ptr() as *mut libc::CVoid);
     }
 
 }
@@ -349,32 +416,12 @@ unsafe fn walk(
     Some(&mut pagetable[px(0, va)])
 }
 
-/// Look up a virtual address, return the physical address,
-/// or 0 if not mapped.
-/// Can only be used to look up user pages.
-pub unsafe fn walkaddr(pagetable: &mut RawPageTable, va: usize) -> usize {
-    if va >= MAXVA {
-        return 0;
-    }
-    let pte_op = walk(pagetable, va, 0);
-    if pte_op.is_none() {
-        return 0;
-    }
-    let pte = pte_op.unwrap();
-    if !pte.check_flag(PTE_V) {
-        return 0;
-    }
-    if !pte.check_flag(PTE_U as usize) {
-        return 0;
-    }
-    pte.get_pa()
-}
 
 /// Add a mapping to the kernel page table.
 /// Only used when booting.
 /// Does not flush TLB or enable paging.
 pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
-    if !mappages(&mut KERNEL_PAGETABLE, va, sz, pa, perm) {
+    if !KERNEL_PAGETABLE.mappages(va, sz, pa, perm) {
         panic!("kvmmap");
     };
 }
@@ -390,34 +437,6 @@ pub unsafe fn kvmpa(va: usize) -> usize {
         .expect("kvmpa");
     let pa = pte.as_page() as *const _ as usize;
     pa.wrapping_add(off)
-}
-
-/// Create PTEs for virtual addresses starting at va that refer to
-/// physical addresses starting at pa. va and size might not
-/// be page-aligned. Returns true on success, false if walk() couldn't
-/// allocate a needed page-table page.
-pub unsafe fn mappages(
-    pagetable: &mut RawPageTable,
-    va: usize,
-    size: usize,
-    mut pa: usize,
-    perm: i32,
-) -> bool {
-    let mut a = pgrounddown(va);
-    let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
-    loop {
-        let pte = some_or!(walk(pagetable, a, 1), return false);
-        if pte.check_flag(PTE_V) {
-            panic!("remap");
-        }
-        pte.set_inner(pa2pte(pa) | perm as usize | PTE_V);
-        if a == last {
-            break;
-        }
-        a = a.wrapping_add(PGSIZE);
-        pa = pa.wrapping_add(PGSIZE);
-    }
-    true
 }
 
 /// Remove mappings from a page table. The mappings in
@@ -465,8 +484,7 @@ pub unsafe fn uvminit(pagetable: &mut PageTable, src: *mut u8, sz: u32) {
     }
     let mem: *mut u8 = kalloc() as *mut u8;
     ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
-    mappages(
-        pagetable,
+    pagetable.mappages(
         0,
         PGSIZE,
         mem as usize,
@@ -498,8 +516,7 @@ pub unsafe fn uvmalloc(
             return Err(());
         }
         ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
-        if !mappages(
-            pagetable,
+        if !pagetable.mappages(
             a,
             PGSIZE,
             mem as usize,
@@ -529,28 +546,11 @@ pub unsafe fn uvmdealloc(pagetable: &mut PageTable, oldsz: usize, newsz: usize) 
     newsz
 }
 
-/// Recursively free page-table pages.
-/// All leaf mappings must already have been removed.
-unsafe fn freewalk(pagetable: &mut RawPageTable) {
-    // There are 2^9 = 512 PTEs in a page table.
-    for i in 0..512 {
-        let pte = &mut pagetable[i];
-        if pte.check_flag(PTE_V) && !pte.check_flag((PTE_R | PTE_W | PTE_X) as usize) {
-            // This PTE points to a lower-level page table.
-            freewalk(pte.as_table_mut());
-            pte.set_inner(0);
-        } else if pte.check_flag(PTE_V) {
-            panic!("freewalk: leaf");
-        }
-    }
-    kfree(pagetable.as_mut_ptr() as *mut libc::CVoid);
-}
-
 /// Free user memory pages,
 /// then free page-table pages.
 pub unsafe fn uvmfree(pagetable: &mut RawPageTable, sz: usize) {
     uvmunmap(pagetable, 0, sz, 1);
-    freewalk(pagetable);
+    pagetable.freewalk();
 }
 
 /// Given a parent process's page table, copy
@@ -587,7 +587,7 @@ pub unsafe fn uvmcopy(
             mem as *mut libc::CVoid,
             PGSIZE,
         );
-        if !mappages(*new_ptable, i, PGSIZE, mem as usize, flags as i32) {
+        if !(*new_ptable).mappages(i, PGSIZE, mem as usize, flags as i32) {
             kfree(mem as *mut libc::CVoid);
             return Err(());
         }
