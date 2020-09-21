@@ -1,13 +1,13 @@
 use crate::{
     ok_or,
-    proc::{exit, fork, myproc, resizeproc, wait, PROCSYS},
+    proc::{fork, myproc, resizeproc, wait, PROCSYS},
     syscall::{argaddr, argint},
     trap::{TICKS, TICKSLOCK, TICKSWAITCHANNEL},
 };
 
 pub unsafe fn sys_exit() -> usize {
     let n = ok_or!(argint(0), return usize::MAX);
-    exit(n);
+    PROCSYS.exit_current(n);
 
     panic!("sys_exit: not reached");
 }

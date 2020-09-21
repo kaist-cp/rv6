@@ -2,7 +2,7 @@ use crate::{
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     plic::{plic_claim, plic_complete},
     println,
-    proc::{cpuid, exit, myproc, proc_yield, Proc, Procstate, WaitChannel},
+    proc::{cpuid, myproc, proc_yield, Proc, Procstate, WaitChannel, PROCSYS},
     riscv::{
         intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp,
         w_sepc, w_sip, w_stvec, Sstatus, PGSIZE,
@@ -65,7 +65,7 @@ pub unsafe extern "C" fn usertrap() {
         // system call
 
         if (*p).killed {
-            exit(-1);
+            PROCSYS.exit_current(-1);
         }
 
         // sepc points to the ecall instruction,
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn usertrap() {
     }
 
     if (*p).killed {
-        exit(-1);
+        PROCSYS.exit_current(-1);
     }
 
     // give up the CPU if this is a timer interrupt.
