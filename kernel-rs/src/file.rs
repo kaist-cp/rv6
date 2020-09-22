@@ -217,7 +217,7 @@ impl Drop for File {
         // TODO: Reasoning why.
         unsafe {
             match self.typ {
-                FileType::Pipe { pipe } => pipe.close(self.writable),
+                FileType::Pipe { mut pipe } => pipe.close(self.writable),
                 FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                     begin_op();
                     (*ip).put();
