@@ -400,7 +400,7 @@ impl Proc {
     }
 
     /// Kill and wake the process up.
-    unsafe fn kill(&mut self) {
+    fn kill(&mut self) {
         self.killed = true;
     }
 
@@ -571,6 +571,108 @@ impl ProcessSystem {
         (*p).lock.release();
     }
 
+    /// Create a new process, copying the parent.
+    /// Sets up child kernel stack to return as if from fork() system call.
+    pub unsafe fn fork(&mut self) -> i32 {
+        let p = myproc();
+
+        // Allocate process.
+        let mut np = match self.alloc() {
+            Ok(proc) => proc,
+            _ => ptr::null_mut(),
+        };
+        if np.is_null() {
+            return -1;
+        }
+
+        // Copy user memory from parent to child.
+        if uvmcopy((*p).pagetable, (*np).pagetable, (*p).sz) < 0 {
+            freeproc(np);
+            (*np).lock.release();
+            return -1;
+        }
+        (*np).sz = (*p).sz;
+        (*np).parent = p;
+
+        // Copy saved user registers.
+        *(*np).tf = *(*p).tf;
+
+        // Cause fork to return 0 in the child.
+        (*(*np).tf).a0 = 0;
+
+        // Increment reference counts on open file descriptors.
+        for i in 0..NOFILE {
+            if let Some(file) = &(*p).open_files[i] {
+                (*np).open_files[i] = Some(file.dup())
+            }
+        }
+        (*np).cwd = (*(*p).cwd).idup();
+        safestrcpy(
+            (*np).name.as_mut_ptr(),
+            (*p).name.as_mut_ptr(),
+            ::core::mem::size_of::<[u8; 16]>() as i32,
+        );
+        let pid = (*np).pid;
+        (*np).state = Procstate::RUNNABLE;
+        (*np).lock.release();
+        pid
+    }
+
+    /// Wait for a child process to exit and return its pid.
+    /// Return -1 if this process has no children.
+    pub unsafe fn wait(&mut self, addr: usize) -> i32 {
+        let p: *mut Proc = myproc();
+
+        // Hold p->lock for the whole time to avoid lost
+        // Wakeups from a child's exit().
+        (*p).lock.acquire();
+        loop {
+            // Scan through pool looking for exited children.
+            let mut havekids = false;
+            for np in self.process_pool.iter_mut() {
+                // This code uses np->parent without holding np->lock.
+                // Acquiring the lock first would cause a deadlock,
+                // since np might be an ancestor, and we already hold p->lock.
+                if np.parent == p {
+                    // np->parent can't change between the check and the acquire()
+                    // because only the parent changes it, and we're the parent.
+                    np.lock.acquire();
+                    havekids = true;
+                    if np.state == Procstate::ZOMBIE {
+                        let pid = np.pid;
+                        if addr != 0
+                            && copyout(
+                                (*p).pagetable,
+                                addr,
+                                &mut np.xstate as *mut i32 as *mut u8,
+                                ::core::mem::size_of::<i32>(),
+                            ) < 0
+                        {
+                            np.lock.release();
+                            (*p).lock.release();
+                            return -1;
+                        }
+                        freeproc(np);
+                        np.lock.release();
+                        (*p).lock.release();
+                        return pid;
+                    }
+                    np.lock.release();
+                }
+            }
+
+            // No point waiting if we don't have any children.
+            if !havekids || (*p).killed {
+                (*p).lock.release();
+                return -1;
+            }
+
+            // Wait for a child to exit.
+            //DOC: wait-sleep
+            (*p).child_waitchannel.sleep(&mut (*p).lock);
+        }
+    }
+
     /// Exit the current process.  Does not return.
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
@@ -590,7 +692,7 @@ impl ProcessSystem {
         (*self.initial_proc).lock.acquire();
         (*self.initial_proc)
             .child_waitchannel
-            .wakeup_proc(PROCSYS.initial_proc);
+            .wakeup_proc(self.initial_proc);
         (*self.initial_proc).lock.release();
 
         // Grab a copy of p->parent, to ensure that we unlock the same
@@ -768,108 +870,6 @@ pub unsafe fn resizeproc(n: i32) -> i32 {
     };
     (*p).sz = sz;
     0
-}
-
-/// Create a new process, copying the parent.
-/// Sets up child kernel stack to return as if from fork() system call.
-pub unsafe fn fork() -> i32 {
-    let p = myproc();
-
-    // Allocate process.
-    let mut np = match PROCSYS.alloc() {
-        Ok(proc) => proc,
-        _ => ptr::null_mut(),
-    };
-    if np.is_null() {
-        return -1;
-    }
-
-    // Copy user memory from parent to child.
-    if uvmcopy((*p).pagetable, (*np).pagetable, (*p).sz) < 0 {
-        freeproc(np);
-        (*np).lock.release();
-        return -1;
-    }
-    (*np).sz = (*p).sz;
-    (*np).parent = p;
-
-    // Copy saved user registers.
-    *(*np).tf = *(*p).tf;
-
-    // Cause fork to return 0 in the child.
-    (*(*np).tf).a0 = 0;
-
-    // Increment reference counts on open file descriptors.
-    for i in 0..NOFILE {
-        if let Some(file) = &(*p).open_files[i] {
-            (*np).open_files[i] = Some(file.dup())
-        }
-    }
-    (*np).cwd = (*(*p).cwd).idup();
-    safestrcpy(
-        (*np).name.as_mut_ptr(),
-        (*p).name.as_mut_ptr(),
-        ::core::mem::size_of::<[u8; 16]>() as i32,
-    );
-    let pid = (*np).pid;
-    (*np).state = Procstate::RUNNABLE;
-    (*np).lock.release();
-    pid
-}
-
-/// Wait for a child process to exit and return its pid.
-/// Return -1 if this process has no children.
-pub unsafe fn wait(addr: usize) -> i32 {
-    let p: *mut Proc = myproc();
-
-    // Hold p->lock for the whole time to avoid lost
-    // Wakeups from a child's exit().
-    (*p).lock.acquire();
-    loop {
-        // Scan through pool looking for exited children.
-        let mut havekids = false;
-        for np in &mut PROCSYS.process_pool {
-            // This code uses np->parent without holding np->lock.
-            // Acquiring the lock first would cause a deadlock,
-            // since np might be an ancestor, and we already hold p->lock.
-            if np.parent == p {
-                // np->parent can't change between the check and the acquire()
-                // because only the parent changes it, and we're the parent.
-                np.lock.acquire();
-                havekids = true;
-                if np.state == Procstate::ZOMBIE {
-                    let pid = np.pid;
-                    if addr != 0
-                        && copyout(
-                            (*p).pagetable,
-                            addr,
-                            &mut np.xstate as *mut i32 as *mut u8,
-                            ::core::mem::size_of::<i32>(),
-                        ) < 0
-                    {
-                        np.lock.release();
-                        (*p).lock.release();
-                        return -1;
-                    }
-                    freeproc(np);
-                    np.lock.release();
-                    (*p).lock.release();
-                    return pid;
-                }
-                np.lock.release();
-            }
-        }
-
-        // No point waiting if we don't have any children.
-        if !havekids || (*p).killed {
-            (*p).lock.release();
-            return -1;
-        }
-
-        // Wait for a child to exit.
-        //DOC: wait-sleep
-        (*p).child_waitchannel.sleep(&mut (*p).lock);
-    }
 }
 
 /// Per-CPU process scheduler.
