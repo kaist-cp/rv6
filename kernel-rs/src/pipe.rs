@@ -136,14 +136,8 @@ impl AllocatedPipe {
             read_waitchannel: WaitChannel::new(),
             write_waitchannel: WaitChannel::new(),
         };
-        let mut f0 = RcFile::alloc(true, false).ok_or_else(|| {
-            kfree(ptr as *mut libc::CVoid);
-            ()
-        })?;
-        let mut f1 = RcFile::alloc(false, true).ok_or_else(|| {
-            kfree(ptr as *mut libc::CVoid);
-            ()
-        })?;
+        let mut f0 = RcFile::alloc(true, false).ok_or_else(|| kfree(ptr as _))?;
+        let mut f1 = RcFile::alloc(false, true).ok_or_else(|| kfree(ptr as _))?;
 
         (*f0).typ = FileType::Pipe { pipe: Self { ptr } };
         (*f1).typ = FileType::Pipe { pipe: Self { ptr } };
