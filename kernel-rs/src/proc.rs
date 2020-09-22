@@ -737,41 +737,6 @@ static mut INITCODE: [u8; 51] = [
     0x1, 0x20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-/// Set up first user process.
-pub unsafe fn userinit() {
-    let mut p = match PROCSYS.alloc() {
-        Ok(proc) => proc,
-        _ => ptr::null_mut(),
-    };
-
-    PROCSYS.initial_proc = p;
-
-    // Allocate one user page and copy init's instructions
-    // and data into it.
-    uvminit(
-        (*p).pagetable,
-        INITCODE.as_mut_ptr(),
-        ::core::mem::size_of::<[u8; 51]>() as u32,
-    );
-    (*p).sz = PGSIZE;
-
-    // Prepare for the very first "return" from kernel to user.
-
-    // User program counter.
-    (*(*p).tf).epc = 0;
-
-    // User stack pointer.
-    (*(*p).tf).sp = PGSIZE;
-    safestrcpy(
-        (*p).name.as_mut_ptr(),
-        b"initcode\x00" as *const u8,
-        ::core::mem::size_of::<[u8; 16]>() as i32,
-    );
-    (*p).cwd = namei(b"/\x00" as *const u8 as *mut u8);
-    (*p).state = Procstate::RUNNABLE;
-    (*p).lock.release();
-}
-
 /// Grow or shrink user memory by n bytes.
 /// Return 0 on success, -1 on failure.
 pub unsafe fn resizeproc(n: i32) -> i32 {
