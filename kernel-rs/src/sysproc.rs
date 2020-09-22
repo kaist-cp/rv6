@@ -1,6 +1,6 @@
 use crate::{
     ok_or,
-    proc::{fork, myproc, resizeproc, wait, PROCSYS},
+    proc::{myproc, resizeproc, PROCSYS},
     syscall::{argaddr, argint},
     trap::{TICKS, TICKSLOCK, TICKSWAITCHANNEL},
 };
@@ -17,12 +17,12 @@ pub unsafe fn sys_getpid() -> usize {
 }
 
 pub unsafe fn sys_fork() -> usize {
-    fork() as _
+    PROCSYS.fork() as _
 }
 
 pub unsafe fn sys_wait() -> usize {
     let p = ok_or!(argaddr(0), return usize::MAX);
-    wait(p) as _
+    PROCSYS.wait(p) as _
 }
 
 pub unsafe fn sys_sbrk() -> usize {
