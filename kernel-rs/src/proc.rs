@@ -14,7 +14,7 @@ use crate::{
     vm::{kvminithart, kvmmap},
 };
 use crate::{libc, vm::PageTable};
-use core::cmp::Ordering;
+use core::{cmp::Ordering, mem::MaybeUninit};
 use core::ptr;
 use core::str;
 
@@ -297,7 +297,7 @@ pub struct Proc {
     pub sz: usize,
 
     /// Page table.
-    pub pagetable: PageTable,
+    pub pagetable: MaybeUninit<PageTable>,
 
     /// Data page for trampoline.S.
     pub tf: *mut Trapframe,
@@ -375,7 +375,7 @@ impl Proc {
             pid: 0,
             kstack: 0,
             sz: 0,
-            pagetable: unsafe { PageTable::null() },
+            pagetable: MaybeUninit::uninit(),
             tf: ptr::null_mut(),
             context: Context::zeroed(),
             open_files: [None; NOFILE],
@@ -463,7 +463,7 @@ impl ProcessSystem {
                 }
 
                 // An empty user page table.
-                p.pagetable = proc_pagetable(p);
+                p.pagetable = MaybeUninit::new(proc_pagetable(p));
 
                 // Set up new context to start executing at forkret,
                 // which returns to user space.
@@ -538,7 +538,7 @@ impl ProcessSystem {
 
         // Allocate one user page and copy init's instructions
         // and data into it.
-        (*p).pagetable.uvminit(
+        (*p).pagetable.assume_init_mut().uvminit(
             INITCODE.as_mut_ptr(),
             ::core::mem::size_of::<[u8; 51]>() as u32,
         );
@@ -570,7 +570,7 @@ impl ProcessSystem {
         let mut np = ok_or!(self.alloc(), return -1);
 
         // Copy user memory from parent to child.
-        if (*p).pagetable.uvmcopy(&mut (*np).pagetable, (*p).sz).is_err() {
+        if (*p).pagetable.assume_init_mut().uvmcopy((*np).pagetable.assume_init_mut(), (*p).sz).is_err() {
             freeproc(np);
             (*np).lock.release();
             return -1;
@@ -625,7 +625,7 @@ impl ProcessSystem {
                     if np.state == Procstate::ZOMBIE {
                         let pid = np.pid;
                         if addr != 0
-                            && (*p).pagetable.copyout(
+                            && (*p).pagetable.assume_init_mut().copyout(
                                 addr,
                                 &mut np.xstate as *mut i32 as *mut u8,
                                 ::core::mem::size_of::<i32>(),
@@ -774,10 +774,10 @@ unsafe fn freeproc(mut p: *mut Proc) {
         kfree((*p).tf as *mut libc::CVoid);
     }
     (*p).tf = ptr::null_mut();
-    if !(*p).pagetable.is_null() {
-        proc_freepagetable(&mut (*p).pagetable, (*p).sz);
+    if !(*p).pagetable.assume_init_mut().is_null() {
+        proc_freepagetable((*p).pagetable.assume_init_mut(), (*p).sz);
     }
-    (*p).pagetable = PageTable::null();
+    (*p).pagetable = MaybeUninit::uninit();
     (*p).sz = 0;
     (*p).pid = 0;
     (*p).parent = ptr::null_mut();
@@ -792,8 +792,8 @@ unsafe fn freeproc(mut p: *mut Proc) {
 /// with no user pages, but with trampoline pages.
 pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable {
     // An empty page table.
-    let mut pagetable = PageTable::null();
-    pagetable.init();
+    let mut pagetable = PageTable::new();
+
     // let mut pagetable = uvmcreate();
 
     // Map the trampoline code (for system call return)
@@ -838,13 +838,13 @@ pub unsafe fn resizeproc(n: i32) -> i32 {
     let sz = match n.cmp(&0) {
         Ordering::Equal => sz,
         Ordering::Greater => {
-            let sz = (*p).pagetable.uvmalloc(sz, sz.wrapping_add(n as usize));
+            let sz = (*p).pagetable.assume_init_mut().uvmalloc(sz, sz.wrapping_add(n as usize));
             if sz.is_err() {
                 return -1;
             }
             sz.unwrap()
         }
-        Ordering::Less => (*p).pagetable.uvmdealloc(sz, sz.wrapping_add(n as usize)),
+        Ordering::Less => (*p).pagetable.assume_init_mut().uvmdealloc(sz, sz.wrapping_add(n as usize)),
     };
     (*p).sz = sz;
     0
@@ -945,7 +945,7 @@ pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: *mut libc::CVoid, l
     let p = myproc();
     if user_dst != 0 {
         (*p).pagetable
-            .copyout(dst, src as *mut u8, len)
+            .assume_init_mut().copyout(dst, src as *mut u8, len)
             .map_or(Err(()), |_v| Ok(()))
     } else {
         ptr::copy(src, dst as *mut u8 as *mut libc::CVoid, len);
@@ -960,7 +960,7 @@ pub unsafe fn either_copyin(dst: *mut libc::CVoid, user_src: i32, src: usize, le
     let p = myproc();
     if user_src != 0 {
         (*p).pagetable
-            .copyin(dst as *mut u8, src, len)
+            .assume_init_mut().copyin(dst as *mut u8, src, len)
             .map_or(Err(()), |_v| Ok(()))
     } else {
         ptr::copy(src as *mut u8 as *const libc::CVoid, dst, len);

@@ -442,7 +442,7 @@ pub unsafe fn sys_pipe() -> usize {
 
     if (*p)
         .pagetable
-        .copyout(
+        .assume_init_mut().copyout(
             fdarray,
             &mut fd0 as *mut i32 as *mut u8,
             mem::size_of::<i32>(),
@@ -450,7 +450,7 @@ pub unsafe fn sys_pipe() -> usize {
         .is_err()
         || (*p)
             .pagetable
-            .copyout(
+            .assume_init_mut().copyout(
                 fdarray.wrapping_add(mem::size_of::<i32>()),
                 &mut fd1 as *mut i32 as *mut u8,
                 mem::size_of::<i32>(),

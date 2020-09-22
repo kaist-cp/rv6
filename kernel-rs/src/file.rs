@@ -107,7 +107,9 @@ impl File {
                 (*ip).lock();
                 stati(ip, &mut st);
                 (*ip).unlock();
-                if (*p).pagetable.copyout(
+                if (*p)
+                    .pagetable
+                    .assume_init_mut().copyout(
                     addr,
                     &mut st as *mut Stat as *mut u8,
                     ::core::mem::size_of::<Stat>() as usize,
