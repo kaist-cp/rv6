@@ -145,9 +145,7 @@ impl File {
             }
             FileType::Device { major, .. } => DEVSW
                 .get(*major as usize)
-                .and_then(|dev| {
-                    Some(dev.read?(1, addr, n) as usize)
-                })
+                .and_then(|dev| Some(dev.read?(1, addr, n) as usize))
                 .ok_or(()),
             _ => panic!("File::read"),
         }
@@ -198,9 +196,7 @@ impl File {
             }
             FileType::Device { major, .. } => DEVSW
                 .get(*major as usize)
-                .and_then(|dev| {
-                    Some(dev.write?(1, addr, n) as usize)
-                })
+                .and_then(|dev| Some(dev.write?(1, addr, n) as usize))
                 .ok_or(()),
             _ => panic!("File::read"),
         }
