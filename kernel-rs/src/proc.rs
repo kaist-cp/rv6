@@ -18,6 +18,7 @@ use crate::{
 };
 use core::cmp::Ordering;
 use core::ptr;
+use core::result::Result;
 use core::str;
 
 extern "C" {
@@ -431,8 +432,10 @@ pub struct ProcessSystem {
     initial_proc: *mut Proc,
 }
 
+#[derive(Debug)]
 pub enum ProcSysError {
     NoFreeProcs,
+    NullTrapFrame,
 }
 
 impl ProcessSystem {
@@ -465,7 +468,7 @@ impl ProcessSystem {
                 p.tf = kalloc() as *mut Trapframe;
                 if p.tf.is_null() {
                     p.lock.release();
-                    return Ok(ptr::null_mut());
+                    return Err(ProcSysError::NullTrapFrame);
                 }
 
                 // An empty user page table.
@@ -538,10 +541,7 @@ impl ProcessSystem {
 
     /// Set up first user process.
     pub unsafe fn user_proc_init(&mut self) {
-        let mut p = match self.alloc() {
-            Ok(proc) => proc,
-            _ => ptr::null_mut(),
-        };
+        let mut p = self.alloc().expect("user_proc_init");
 
         self.initial_proc = p;
 
