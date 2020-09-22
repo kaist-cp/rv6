@@ -410,6 +410,17 @@ impl Proc {
             self.state = Procstate::RUNNABLE
         }
     }
+
+    /// Close all open files.
+    unsafe fn close_files(&mut self) {
+        for file in (*self).open_files.iter_mut() {
+            *file = None;
+        }
+        begin_op();
+        (*(*self).cwd).put();
+        end_op();
+        (*self).cwd = ptr::null_mut();
+    }
 }
 
 static mut CPUS: [Cpu; NCPU] = [Cpu::zeroed(); NCPU];
@@ -532,7 +543,7 @@ impl ProcessSystem {
             _ => ptr::null_mut(),
         };
 
-        PROCSYS.initial_proc = p;
+        self.initial_proc = p;
 
         // Allocate one user page and copy init's instructions
         // and data into it.
@@ -569,14 +580,7 @@ impl ProcessSystem {
             panic!("init exiting");
         }
 
-        // Close all open files.
-        for file in &mut (*p).open_files {
-            *file = None;
-        }
-        begin_op();
-        (*(*p).cwd).put();
-        end_op();
-        (*p).cwd = ptr::null_mut();
+        (*p).close_files();
 
         // We might re-parent a child to init. We can't be precise about
         // waking up init, since we can't acquire its lock once we've
