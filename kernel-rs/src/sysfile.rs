@@ -262,7 +262,6 @@ pub unsafe fn sys_open() -> usize {
     let ip: *mut Inode;
     let _ = ok_or!(argstr(0, path.as_mut_ptr(), MAXPATH), return usize::MAX);
     let omode = ok_or!(argint(1), return usize::MAX);
-    let mut f = None;
     begin_op();
     let omode = FcntlFlags::from_bits_truncate(omode);
     if omode.contains(FcntlFlags::O_CREATE) {
@@ -278,26 +277,30 @@ pub unsafe fn sys_open() -> usize {
             return usize::MAX;
         }
         (*ip).lock();
-    }
-
-    if (!omode.contains(FcntlFlags::O_CREATE)
-        && (*ip).typ as i32 == T_DIR
-        && omode != FcntlFlags::O_RDONLY)
-        || ((*ip).typ as i32 == T_DEVICE && ((*ip).major as usize >= NDEV))
-        || {
-            f = RcFile::alloc(
-                !omode.intersects(FcntlFlags::O_WRONLY),
-                omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR),
-            );
-            f.is_none()
+        if (*ip).typ as i32 == T_DIR && omode != FcntlFlags::O_RDONLY {
+            (*ip).unlockput();
+            end_op();
+            return usize::MAX;
         }
-    {
+    }
+    if (*ip).typ as i32 == T_DEVICE && ((*ip).major as usize >= NDEV) {
         (*ip).unlockput();
         end_op();
         return usize::MAX;
     }
 
-    let fd = match f.unwrap().fdalloc() {
+    let f = some_or!(
+        RcFile::alloc(
+            !omode.intersects(FcntlFlags::O_WRONLY),
+            omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)
+        ),
+        {
+            (*ip).unlockput();
+            end_op();
+            return usize::MAX;
+        }
+    );
+    let fd = match f.fdalloc() {
         Ok(fd) => fd,
         Err(f) => {
             drop(f);
