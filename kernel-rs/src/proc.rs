@@ -940,30 +940,30 @@ unsafe fn forkret() {
 
 /// Copy to either a user address, or kernel address,
 /// depending on usr_dst.
-/// Returns 0 on success, -1 on error.
-pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: *mut libc::CVoid, len: usize) -> i32 {
+/// Returns Ok(()) on success, Err(()) on error.
+pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: *mut libc::CVoid, len: usize) -> Result<(),()> {
     let p = myproc();
     if user_dst != 0 {
         (*p).pagetable
             .copyout(dst, src as *mut u8, len)
-            .map_or(-1, |_v| 0)
+            .map_or(Err(()), |_v| Ok(()))
     } else {
         ptr::copy(src, dst as *mut u8 as *mut libc::CVoid, len);
-        0
+        Ok(())
     }
 }
 
 /// Copy from either a user address, or kernel address,
 /// depending on usr_src.
-/// Returns 0 on success, -1 on error.
-pub unsafe fn either_copyin(dst: *mut libc::CVoid, user_src: i32, src: usize, len: usize) -> i32 {
+/// Returns Ok(()) on success, Err(()) on error.
+pub unsafe fn either_copyin(dst: *mut libc::CVoid, user_src: i32, src: usize, len: usize) -> Result<(), ()> {
     let p = myproc();
     if user_src != 0 {
         (*p).pagetable
             .copyin(dst as *mut u8, src, len)
-            .map_or(-1, |_v| 0)
+            .map_or(Err(()), |_v| Ok(()))
     } else {
         ptr::copy(src as *mut u8 as *const libc::CVoid, dst, len);
-        0
+        Ok(())
     }
 }
