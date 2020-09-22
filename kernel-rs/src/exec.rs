@@ -177,7 +177,7 @@ pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
         );
 
         // Commit to the user image.
-        let mut oldpagetable = core::mem::replace(&mut (*p).pagetable, pt);
+        let mut oldpagetable = core::mem::replace((*p).pagetable.assume_init_mut(), pt);
         (*p).sz = sz;
 
         // initial program counter = main

@@ -1,3 +1,5 @@
+use mem::MaybeUninit;
+
 use crate::{
     kalloc::{kalloc, kfree},
     memlayout::{CLINT, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
@@ -21,6 +23,7 @@ extern "C" {
     static mut trampoline: [u8; 0];
 }
 
+#[derive(Default)]
 pub struct PageTableEntry {
     inner: PteT,
 }
@@ -399,21 +402,18 @@ pub struct PageTable {
 }
 
 impl PageTable {
-    pub const unsafe fn null() -> Self {
-        Self {
-            ptr: ptr::null_mut(),
-        }
-    }
-
-    pub fn init(&mut self) {
+    pub fn new() -> Self {
         let page = unsafe { kalloc() } as *mut RawPageTable;
         if page.is_null() {
-            panic!("PageTable init: out of memory");
+            panic!("PageTable new: out of memory");
         }
         unsafe {
-            ptr::write_bytes(page as *mut libc::CVoid, 0, PGSIZE);
+            ptr::write_bytes(page, 0, 1);
         }
-        self.ptr = page;
+
+        Self{
+            ptr: page,
+        }
     }
 
     pub fn from_raw(ptr: *mut RawPageTable) -> Self {
@@ -447,14 +447,14 @@ impl DerefMut for PageTable {
 ///
 /// The kernel's page table.
 ///
-pub static mut KERNEL_PAGETABLE: PageTable = unsafe { PageTable::null() };
+pub static mut KERNEL_PAGETABLE: MaybeUninit<PageTable> = MaybeUninit::uninit();
 
 // trampoline.S
 /// Create a direct-map page table for the kernel and
 /// turn on paging. Called early, in supervisor mode.
 /// The page allocator is already initialized.
 pub unsafe fn kvminit() {
-    KERNEL_PAGETABLE.init();
+    KERNEL_PAGETABLE.write(PageTable::new());
 
     // uart registers
     kvmmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);
@@ -497,7 +497,7 @@ pub unsafe fn kvminit() {
 /// Switch h/w page table register to the kernel's page table,
 /// and enable paging.
 pub unsafe fn kvminithart() {
-    w_satp(make_satp(KERNEL_PAGETABLE.ptr as usize));
+    w_satp(make_satp(KERNEL_PAGETABLE.assume_init_mut().ptr as usize));
     sfence_vma();
 }
 
@@ -547,7 +547,7 @@ unsafe fn walk(
 /// Only used when booting.
 /// Does not flush TLB or enable paging.
 pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
-    if !KERNEL_PAGETABLE.mappages(va, sz, pa, perm) {
+    if !KERNEL_PAGETABLE.assume_init_mut().mappages(va, sz, pa, perm) {
         panic!("kvmmap");
     };
 }
@@ -558,7 +558,7 @@ pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
 /// Assumes va is page aligned.
 pub unsafe fn kvmpa(va: usize) -> usize {
     let off: usize = va.wrapping_rem(PGSIZE);
-    let pte = walk(&mut KERNEL_PAGETABLE, va, 0)
+    let pte = walk(KERNEL_PAGETABLE.assume_init_mut(), va, 0)
         .filter(|pte| pte.check_flag(PTE_V))
         .expect("kvmpa");
     let pa = pte.as_page() as *const _ as usize;

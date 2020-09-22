@@ -15,7 +15,7 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
     }
     if (*p)
         .pagetable
-        .copyin(ip as *mut u8, addr, ::core::mem::size_of::<usize>())
+        .assume_init_mut().copyin(ip as *mut u8, addr, ::core::mem::size_of::<usize>())
         .is_err()
     {
         return -1;
@@ -27,7 +27,7 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
 /// Returns length of string, not including nul, or -1 for error.
 pub unsafe fn fetchstr(addr: usize, buf: *mut u8, max: usize) -> i32 {
     let p: *mut Proc = myproc();
-    let err = (*p).pagetable.copyinstr(buf, addr, max);
+    let err = (*p).pagetable.assume_init_mut().copyinstr(buf, addr, max);
     if err.is_err() {
         return -1;
     }

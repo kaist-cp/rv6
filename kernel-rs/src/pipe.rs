@@ -172,7 +172,9 @@ impl PipeInner {
                 }
                 return Ok(i);
             }
-            if (*proc).pagetable.copyin(
+            if (*proc)
+                .pagetable
+                .assume_init_mut().copyin(
                 &mut ch,
                 addr.wrapping_add(i),
                 1usize,
@@ -205,7 +207,10 @@ impl PipeInner {
             }
             let mut ch = self.data[self.nread as usize % PIPESIZE];
             self.nread = self.nread.wrapping_add(1);
-            if (*proc).pagetable.copyout(addr.wrapping_add(i), &mut ch, 1usize).is_err() {
+            if (*proc)
+                .pagetable
+                .assume_init_mut().copyout(addr.wrapping_add(i), &mut ch, 1usize)
+                .is_err() {
                 return Ok(i);
             }
         }
