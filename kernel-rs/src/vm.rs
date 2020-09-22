@@ -26,16 +26,6 @@ pub struct PageTableEntry {
 }
 
 impl PageTableEntry {
-    /// Creates a page table entry from the inner representation.
-    ///
-    /// # Safety
-    ///
-    /// Improper use of this function may lead to memory problems. For example, a double-free may
-    /// occur if the function is called twice on the same raw pointer.
-    unsafe fn from_raw(inner: PteT) -> Self {
-        Self { inner }
-    }
-
     fn check_flag(&self, flag: usize) -> bool {
         self.inner & flag != 0
     }
@@ -62,10 +52,6 @@ impl PageTableEntry {
 
     fn as_page(&self) -> &Page {
         unsafe { &*(pte2pa(self.inner) as *const Page) }
-    }
-
-    unsafe fn as_table(&self) -> &RawPageTable {
-        &*(pte2pa(self.inner) as *const RawPageTable)
     }
 
     unsafe fn as_table_mut(&mut self) -> &mut RawPageTable {
