@@ -85,7 +85,8 @@ pub unsafe fn sys_fstat() -> usize {
     let (_, f) = ok_or!(argfd(0), return usize::MAX);
     // user pointer to struct stat
     let st = ok_or!(argaddr(1), return usize::MAX);
-    (*f).stat(st).map_or_else(|_| usize::MAX, |_| 0)
+    ok_or!((*f).stat(st), return usize::MAX);
+    0
 }
 
 /// Create the path new as a link to the same inode as old.
