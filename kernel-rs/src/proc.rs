@@ -257,8 +257,8 @@ impl WaitChannel {
         if !(*p).lock.holding() {
             panic!("wakeup_proc");
         }
-        if (*p).waitchannel == self as _ && (*p).state == Procstate::SLEEPING {
-            (*p).state = Procstate::RUNNABLE
+        if (*p).waitchannel == self as _ {
+            (*p).wakeup()
         }
     }
 }
@@ -398,6 +398,18 @@ impl Proc {
         kvmmap(va, pa as usize, PGSIZE, PTE_R | PTE_W);
         self.kstack = va;
     }
+
+    /// Kill and wake the process up.
+    unsafe fn kill(&mut self) {
+        self.killed = true;
+    }
+
+    /// Wake process from sleep().
+    fn wakeup(&mut self) {
+        if self.state == Procstate::SLEEPING {
+            self.state = Procstate::RUNNABLE
+        }
+    }
 }
 
 static mut CPUS: [Cpu; NCPU] = [Cpu::zeroed(); NCPU];
@@ -491,11 +503,8 @@ impl ProcessSystem {
         for p in self.process_pool.iter_mut() {
             p.lock.acquire();
             if p.pid == pid {
-                p.killed = true;
-                if p.state == Procstate::SLEEPING {
-                    // Wake process from sleep().
-                    p.state = Procstate::RUNNABLE
-                }
+                p.kill();
+                p.wakeup();
                 p.lock.release();
                 return 0;
             }
@@ -509,8 +518,8 @@ impl ProcessSystem {
     pub fn wakeup_pool(&mut self, target: &WaitChannel) {
         for p in self.process_pool.iter_mut() {
             p.lock.acquire();
-            if p.waitchannel == target as _ && p.state == Procstate::SLEEPING {
-                p.state = Procstate::RUNNABLE
+            if p.waitchannel == target as _ {
+                p.wakeup()
             }
             p.lock.release();
         }
