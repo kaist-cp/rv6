@@ -432,12 +432,6 @@ pub struct ProcessSystem {
     initial_proc: *mut Proc,
 }
 
-#[derive(Debug)]
-pub enum ProcSysError {
-    NoFreeProcs,
-    NullTrapFrame,
-}
-
 impl ProcessSystem {
     const fn zeroed() -> Self {
         Self {
@@ -458,7 +452,7 @@ impl ProcessSystem {
     /// If found, initialize state required to run in the kernel,
     /// and return with p->lock held.
     /// If there are no free procs, return 0.
-    unsafe fn alloc(&mut self) -> Result<*mut Proc, ProcSysError> {
+    unsafe fn alloc(&mut self) -> Result<*mut Proc, ()> {
         for p in self.process_pool.iter_mut() {
             p.lock.acquire();
             if p.state == Procstate::UNUSED {
@@ -468,7 +462,7 @@ impl ProcessSystem {
                 p.tf = kalloc() as *mut Trapframe;
                 if p.tf.is_null() {
                     p.lock.release();
-                    return Err(ProcSysError::NullTrapFrame);
+                    return Err(());
                 }
 
                 // An empty user page table.
@@ -484,7 +478,7 @@ impl ProcessSystem {
             p.lock.release();
         }
 
-        Err(ProcSysError::NoFreeProcs)
+        Err(())
     }
 
     /// Pass p's abandoned children to init.
