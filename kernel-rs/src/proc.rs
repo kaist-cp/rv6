@@ -18,7 +18,6 @@ use crate::{
 };
 use core::cmp::Ordering;
 use core::ptr;
-use core::result::Result;
 use core::str;
 
 extern "C" {
@@ -418,9 +417,9 @@ impl Proc {
             *file = None;
         }
         begin_op();
-        (*(*self).cwd).put();
+        (*self.cwd).put();
         end_op();
-        (*self).cwd = ptr::null_mut();
+        self.cwd = ptr::null_mut();
     }
 }
 
