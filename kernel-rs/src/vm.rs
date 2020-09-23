@@ -33,11 +33,11 @@ impl PageTableEntry {
         self.inner & flag != 0
     }
 
-    fn set_valid(&mut self, flag: usize) {
+    fn set_flag(&mut self, flag: usize) {
         self.inner |= flag;
     }
 
-    fn set_invalid(&mut self, flag: usize) {
+    fn clear_flag(&mut self, flag: usize) {
         self.inner &= !flag;
     }
 
@@ -287,7 +287,7 @@ impl RawPageTable {
         if pte_op.is_none() {
             panic!("uvmclear");
         }
-        pte_op.unwrap().set_invalid(PTE_U as usize)
+        pte_op.unwrap().clear_flag(PTE_U as usize)
     }
 
     /// Copy from kernel to user.
@@ -536,7 +536,7 @@ unsafe fn walk(
 
             ptr::write_bytes(k as *mut libc::CVoid, 0, PGSIZE);
             pte.set_inner(pa2pte(k as usize));
-            pte.set_valid(PTE_V);
+            pte.set_flag(PTE_V);
             pagetable = pte.as_table_mut();
         }
     }
