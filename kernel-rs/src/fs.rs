@@ -473,18 +473,18 @@ impl Inode {
 }
 
 /// root i-number
-pub const ROOTINO: u32 = 1;
+const ROOTINO: u32 = 1;
 
 /// block size
 pub const BSIZE: usize = 1024;
-pub const FSMAGIC: u32 = 0x10203040;
-pub const NDIRECT: usize = 12;
+const FSMAGIC: u32 = 0x10203040;
+const NDIRECT: usize = 12;
 
-pub const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
-pub const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
+const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
+const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
 
 /// Inodes per block.
-pub const IPB: usize = BSIZE.wrapping_div(mem::size_of::<Dinode>());
+const IPB: usize = BSIZE.wrapping_div(mem::size_of::<Dinode>());
 
 impl Superblock {
     /// Block containing inode i
@@ -525,14 +525,14 @@ impl Superblock {
 }
 
 /// Bitmap bits per block
-pub const BPB: u32 = BSIZE.wrapping_mul(8) as u32;
+const BPB: u32 = BSIZE.wrapping_mul(8) as u32;
 
 /// Directory is a file containing a sequence of Dirent structures.
 pub const DIRSIZ: usize = 14;
 
 /// there should be one superblock per disk device, but we run with
 /// only one device
-pub static mut SB: Superblock = Superblock::zeroed();
+static mut SB: Superblock = Superblock::zeroed();
 
 /// Init fs
 pub unsafe fn fsinit(dev: i32) {
