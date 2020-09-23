@@ -65,14 +65,14 @@ pub unsafe fn sys_read() -> usize {
     let (_, f) = ok_or!(argfd(0), return usize::MAX);
     let n = ok_or!(argint(2), return usize::MAX);
     let p = ok_or!(argaddr(1), return usize::MAX);
-    ok_or!((*f).read(p, n), return usize::MAX)
+    ok_or!((*f).read(p, n), usize::MAX)
 }
 
 pub unsafe fn sys_write() -> usize {
     let (_, f) = ok_or!(argfd(0), return usize::MAX);
     let n = ok_or!(argint(2), return usize::MAX);
     let p = ok_or!(argaddr(1), return usize::MAX);
-    ok_or!((*f).write(p, n), return usize::MAX)
+    ok_or!((*f).write(p, n), usize::MAX)
 }
 
 pub unsafe fn sys_close() -> usize {
