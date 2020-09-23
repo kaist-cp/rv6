@@ -5,6 +5,7 @@ use crate::{
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
+    ok_or,
     param::{NCPU, NOFILE, NPROC, ROOTDEV},
     println,
     riscv::{intr_get, intr_on, r_tp, PagetableT, PGSIZE, PTE_R, PTE_W, PTE_X},
@@ -413,7 +414,7 @@ impl Proc {
 
     /// Close all open files.
     unsafe fn close_files(&mut self) {
-        for file in (*self).open_files.iter_mut() {
+        for file in self.open_files.iter_mut() {
             *file = None;
         }
         begin_op();
@@ -570,13 +571,7 @@ impl ProcessSystem {
         let p = myproc();
 
         // Allocate process.
-        let mut np = match self.alloc() {
-            Ok(proc) => proc,
-            _ => ptr::null_mut(),
-        };
-        if np.is_null() {
-            return -1;
-        }
+        let mut np = ok_or!(self.alloc(), return -1);
 
         // Copy user memory from parent to child.
         if uvmcopy((*p).pagetable, (*np).pagetable, (*p).sz) < 0 {
