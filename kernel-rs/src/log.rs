@@ -170,14 +170,14 @@ pub unsafe fn begin_op() {
 /// Called at the end of each FS system call.
 /// Commits if this was the last outstanding operation.
 pub unsafe fn end_op() {
-    let mut do_commit: i32 = 0;
+    let mut do_commit = false;
     LOG.lock.acquire();
     LOG.outstanding -= 1;
     if LOG.committing != 0 {
         panic!("LOG.committing");
     }
     if LOG.outstanding == 0 {
-        do_commit = 1;
+        do_commit = true;
         LOG.committing = 1
     } else {
         // begin_op() may be waiting for LOG space,
@@ -186,7 +186,7 @@ pub unsafe fn end_op() {
         LOG.waitchannel.wakeup();
     }
     LOG.lock.release();
-    if do_commit != 0 {
+    if do_commit {
         // Call commit w/o holding locks, since not allowed
         // to sleep with locks.
         commit();
