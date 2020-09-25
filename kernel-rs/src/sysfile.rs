@@ -101,12 +101,12 @@ pub unsafe fn sys_link() -> usize {
         return usize::MAX;
     });
     (*ip).lock();
-    if (*ip).typ == T_DIR {
+    if (*ip).inner.typ == T_DIR {
         (*ip).unlockput();
         end_op();
         return usize::MAX;
     }
-    (*ip).nlink += 1;
+    (*ip).inner.nlink += 1;
     (*ip).update();
     (*ip).unlock();
     if let Ok((dp, name)) = Path::new(new).nameiparent() {
@@ -121,7 +121,7 @@ pub unsafe fn sys_link() -> usize {
         }
     }
     (*ip).lock();
-    (*ip).nlink -= 1;
+    (*ip).inner.nlink -= 1;
     (*ip).update();
     (*ip).unlockput();
     end_op();
@@ -132,7 +132,7 @@ pub unsafe fn sys_link() -> usize {
 unsafe fn isdirempty(dp: *mut Inode) -> i32 {
     let mut de: Dirent = Default::default();
     let mut off = (2usize).wrapping_mul(mem::size_of::<Dirent>()) as i32;
-    while (off as u32) < (*dp).size {
+    while (off as u32) < (*dp).inner.size {
         if (*dp).read(
             0,
             &mut de as *mut Dirent as usize,
@@ -168,10 +168,10 @@ pub unsafe fn sys_unlink() -> usize {
         let mut ip: *mut Inode = dirlookup(dp, &name, &mut off);
         if !ip.is_null() {
             (*ip).lock();
-            if ((*ip).nlink as i32) < 1 {
+            if ((*ip).inner.nlink as i32) < 1 {
                 panic!("unlink: nlink < 1");
             }
-            if (*ip).typ == T_DIR && isdirempty(ip) == 0 {
+            if (*ip).inner.typ == T_DIR && isdirempty(ip) == 0 {
                 (*ip).unlockput();
             } else {
                 ptr::write_bytes(&mut de as *mut Dirent, 0, 1);
@@ -185,12 +185,12 @@ pub unsafe fn sys_unlink() -> usize {
                 {
                     panic!("unlink: writei");
                 }
-                if (*ip).typ == T_DIR {
-                    (*dp).nlink -= 1;
+                if (*ip).inner.typ == T_DIR {
+                    (*dp).inner.nlink -= 1;
                     (*dp).update();
                 }
                 (*dp).unlockput();
-                (*ip).nlink -= 1;
+                (*ip).inner.nlink -= 1;
                 (*ip).update();
                 (*ip).unlockput();
                 end_op();
@@ -211,7 +211,7 @@ unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> *mut Inode {
     if !ip.is_null() {
         (*dp).unlockput();
         (*ip).lock();
-        if typ == T_FILE && ((*ip).typ == T_FILE || (*ip).typ == T_DEVICE) {
+        if typ == T_FILE && ((*ip).inner.typ == T_FILE || (*ip).inner.typ == T_DEVICE) {
             return ip;
         }
         (*ip).unlockput();
@@ -222,15 +222,15 @@ unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> *mut Inode {
         panic!("create: Inode::alloc");
     }
     (*ip).lock();
-    (*ip).major = major;
-    (*ip).minor = minor;
-    (*ip).nlink = 1;
+    (*ip).inner.major = major;
+    (*ip).inner.minor = minor;
+    (*ip).inner.nlink = 1;
     (*ip).update();
 
     // Create . and .. entries.
     if typ == T_DIR {
         // for ".."
-        (*dp).nlink += 1;
+        (*dp).inner.nlink += 1;
         (*dp).update();
 
         // No ip->nlink++ for ".": avoid cyclic ref count.
@@ -267,13 +267,13 @@ pub unsafe fn sys_open() -> usize {
             return usize::MAX;
         });
         (*ip).lock();
-        if (*ip).typ == T_DIR && omode != FcntlFlags::O_RDONLY {
+        if (*ip).inner.typ == T_DIR && omode != FcntlFlags::O_RDONLY {
             (*ip).unlockput();
             end_op();
             return usize::MAX;
         }
     }
-    if (*ip).typ == T_DEVICE && ((*ip).major as usize >= NDEV) {
+    if (*ip).inner.typ == T_DEVICE && ((*ip).inner.major as usize >= NDEV) {
         (*ip).unlockput();
         end_op();
         return usize::MAX;
@@ -301,10 +301,10 @@ pub unsafe fn sys_open() -> usize {
     };
     let f = (*myproc()).open_files[fd as usize].as_mut().unwrap();
 
-    if (*ip).typ == T_DEVICE {
+    if (*ip).inner.typ == T_DEVICE {
         (*f).typ = FileType::Device {
             ip,
-            major: (*ip).major,
+            major: (*ip).inner.major,
         };
     } else {
         (*f).typ = FileType::Inode { ip, off: 0 };
@@ -363,7 +363,7 @@ pub unsafe fn sys_chdir() -> usize {
         return usize::MAX;
     });
     (*ip).lock();
-    if (*ip).typ != T_DIR {
+    if (*ip).inner.typ != T_DIR {
         (*ip).unlockput();
         end_op();
         return usize::MAX;

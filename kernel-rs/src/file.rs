@@ -22,17 +22,7 @@ pub struct File {
 // TODO: will be infered as we wrap *mut Pipe and *mut Inode.
 unsafe impl Send for File {}
 
-/// in-memory copy of an inode
-pub struct Inode {
-    /// Device number
-    pub dev: u32,
-
-    /// Inode number
-    pub inum: u32,
-
-    /// Reference count
-    pub ref_0: i32,
-
+pub struct InodeInner {
     /// protects everything below here
     pub lock: Sleeplock,
 
@@ -46,6 +36,20 @@ pub struct Inode {
     pub nlink: i16,
     pub size: u32,
     pub addrs: [u32; 13],
+}
+
+/// in-memory copy of an inode
+pub struct Inode {
+    /// Device number
+    pub dev: u32,
+
+    /// Inode number
+    pub inum: u32,
+
+    /// Reference count
+    pub ref_0: i32,
+
+    pub inner: InodeInner,
 }
 
 pub enum FileType {

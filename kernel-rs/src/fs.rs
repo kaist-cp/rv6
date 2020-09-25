@@ -14,7 +14,7 @@ use crate::libc;
 use crate::{
     bio::brelease,
     buf::Buf,
-    file::Inode,
+    file::{Inode, InodeInner},
     log::log_write,
     param::{NINODE, ROOTDEV},
     proc::{either_copyin, either_copyout},
@@ -197,13 +197,13 @@ impl Inode {
         let bp: *mut Buf = Buf::read(self.dev, SB.iblock(self.inum));
         let mut dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
             .add((self.inum as usize).wrapping_rem(IPB));
-        (*dip).typ = self.typ;
-        (*dip).major = self.major as i16;
-        (*dip).minor = self.minor as i16;
-        (*dip).nlink = self.nlink;
-        (*dip).size = self.size;
+        (*dip).typ = self.inner.typ;
+        (*dip).major = self.inner.major as i16;
+        (*dip).minor = self.inner.minor as i16;
+        (*dip).nlink = self.inner.nlink;
+        (*dip).size = self.inner.size;
         ptr::copy(
-            self.addrs.as_mut_ptr() as *const libc::CVoid,
+            self.inner.addrs.as_mut_ptr() as *const libc::CVoid,
             (*dip).addrs.as_mut_ptr() as *mut libc::CVoid,
             ::core::mem::size_of::<[u32; 13]>(),
         );
@@ -225,24 +225,24 @@ impl Inode {
         if (self as *mut Inode).is_null() || (*self).ref_0 < 1 {
             panic!("Inode::lock");
         }
-        (*self).lock.acquire();
-        if (*self).valid == 0 {
+        (*self).inner.lock.acquire();
+        if (*self).inner.valid == 0 {
             let bp: *mut Buf = Buf::read((*self).dev, SB.iblock((*self).inum));
             let dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
                 .add(((*self).inum as usize).wrapping_rem(IPB));
-            (*self).typ = (*dip).typ;
-            (*self).major = (*dip).major as u16;
-            (*self).minor = (*dip).minor as u16;
-            (*self).nlink = (*dip).nlink;
-            (*self).size = (*dip).size;
+            (*self).inner.typ = (*dip).typ;
+            (*self).inner.major = (*dip).major as u16;
+            (*self).inner.minor = (*dip).minor as u16;
+            (*self).inner.nlink = (*dip).nlink;
+            (*self).inner.size = (*dip).size;
             ptr::copy(
                 (*dip).addrs.as_mut_ptr() as *const libc::CVoid,
-                (*self).addrs.as_mut_ptr() as *mut libc::CVoid,
+                (*self).inner.addrs.as_mut_ptr() as *mut libc::CVoid,
                 ::core::mem::size_of::<[u32; 13]>(),
             );
             brelease(&mut *bp);
-            (*self).valid = 1;
-            if (*self).typ == 0 {
+            (*self).inner.valid = 1;
+            if (*self).inner.typ == 0 {
                 panic!("Inode::lock: no type");
             }
         };
@@ -250,10 +250,11 @@ impl Inode {
 
     /// Unlock the given inode.
     pub unsafe fn unlock(&mut self) {
-        if (self as *mut Inode).is_null() || (*self).lock.holding() == 0 || (*self).ref_0 < 1 {
+        if (self as *mut Inode).is_null() || (*self).inner.lock.holding() == 0 || (*self).ref_0 < 1
+        {
             panic!("Inode::unlock");
         }
-        (*self).lock.release();
+        (*self).inner.lock.release();
     }
 
     /// Drop a reference to an in-memory inode.
@@ -266,21 +267,21 @@ impl Inode {
     pub unsafe fn put(&mut self) {
         let mut inode = ICACHE.lock();
 
-        if (*self).ref_0 == 1 && (*self).valid != 0 && (*self).nlink as i32 == 0 {
+        if (*self).ref_0 == 1 && (*self).inner.valid != 0 && (*self).inner.nlink as i32 == 0 {
             // inode has no links and no other references: truncate and free.
 
             // self->ref == 1 means no other process can have self locked,
             // so this acquiresleep() won't block (or deadlock).
-            (*self).lock.acquire();
+            (*self).inner.lock.acquire();
 
             drop(inode);
 
             self.itrunc();
-            (*self).typ = 0;
+            (*self).inner.typ = 0;
             (*self).update();
-            (*self).valid = 0;
+            (*self).inner.valid = 0;
 
-            (*self).lock.release();
+            (*self).inner.lock.release();
 
             inode = ICACHE.lock();
         }
@@ -305,20 +306,20 @@ impl Inode {
     unsafe fn bmap(&mut self, mut bn: u32) -> u32 {
         let mut addr: u32;
         if bn < NDIRECT as u32 {
-            addr = (*self).addrs[bn as usize];
+            addr = (*self).inner.addrs[bn as usize];
             if addr == 0 {
                 addr = balloc((*self).dev);
-                (*self).addrs[bn as usize] = addr
+                (*self).inner.addrs[bn as usize] = addr
             }
             return addr;
         }
         bn = (bn).wrapping_sub(NDIRECT as u32);
         if (bn as usize) < NINDIRECT {
             // Load indirect block, allocating if necessary.
-            addr = (*self).addrs[NDIRECT];
+            addr = (*self).inner.addrs[NDIRECT];
             if addr == 0 {
                 addr = balloc((*self).dev);
-                (*self).addrs[NDIRECT] = addr
+                (*self).inner.addrs[NDIRECT] = addr
             }
             let bp: *mut Buf = Buf::read((*self).dev, addr);
             let a: *mut u32 = (*bp).inner.data.as_mut_ptr() as *mut u32;
@@ -341,13 +342,13 @@ impl Inode {
     /// not an open file or current directory).
     unsafe fn itrunc(&mut self) {
         for i in 0..NDIRECT {
-            if (*self).addrs[i] != 0 {
-                bfree((*self).dev as i32, (*self).addrs[i as usize]);
-                (*self).addrs[i] = 0
+            if (*self).inner.addrs[i] != 0 {
+                bfree((*self).dev as i32, (*self).inner.addrs[i as usize]);
+                (*self).inner.addrs[i] = 0
             }
         }
-        if (*self).addrs[NDIRECT] != 0 {
-            let bp = Buf::read((*self).dev, (*self).addrs[NDIRECT]);
+        if (*self).inner.addrs[NDIRECT] != 0 {
+            let bp = Buf::read((*self).dev, (*self).inner.addrs[NDIRECT]);
             let a = (*bp).inner.data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
                 if *a.add(j) != 0 {
@@ -355,10 +356,10 @@ impl Inode {
                 }
             }
             brelease(&mut *bp);
-            bfree((*self).dev as i32, (*self).addrs[NDIRECT]);
-            (*self).addrs[NDIRECT] = 0
+            bfree((*self).dev as i32, (*self).inner.addrs[NDIRECT]);
+            (*self).inner.addrs[NDIRECT] = 0
         }
-        (*self).size = 0;
+        (*self).inner.size = 0;
         (*self).update();
     }
 
@@ -367,11 +368,11 @@ impl Inode {
     /// If user_dst==1, then dst is a user virtual address;
     /// otherwise, dst is a kernel address.
     pub unsafe fn read(&mut self, user_dst: i32, mut dst: usize, mut off: u32, mut n: u32) -> i32 {
-        if off > (*self).size || off.wrapping_add(n) < off {
+        if off > (*self).inner.size || off.wrapping_add(n) < off {
             return -1;
         }
-        if off.wrapping_add(n) > (*self).size {
-            n = (*self).size.wrapping_sub(off)
+        if off.wrapping_add(n) > (*self).inner.size {
+            n = (*self).inner.size.wrapping_sub(off)
         }
         let mut tot: u32 = 0;
         while tot < n {
@@ -410,7 +411,7 @@ impl Inode {
     /// If user_src==1, then src is a user virtual address;
     /// otherwise, src is a kernel address.
     pub unsafe fn write(&mut self, user_src: i32, mut src: usize, mut off: u32, n: u32) -> i32 {
-        if off > (*self).size || off.wrapping_add(n) < off {
+        if off > (*self).inner.size || off.wrapping_add(n) < off {
             return -1;
         }
         if off.wrapping_add(n) as usize > MAXFILE.wrapping_mul(BSIZE) {
@@ -447,8 +448,8 @@ impl Inode {
             }
         }
         if n > 0 {
-            if off > (*self).size {
-                (*self).size = off
+            if off > (*self).inner.size {
+                (*self).inner.size = off
             }
             // write the i-node back to disk even if the size didn't change
             // because the loop above might have called bmap() and added a new
@@ -488,14 +489,16 @@ impl Inode {
             dev: 0,
             inum: 0,
             ref_0: 0,
-            lock: Sleeplock::zeroed(),
-            valid: 0,
-            typ: 0,
-            major: 0,
-            minor: 0,
-            nlink: 0,
-            size: 0,
-            addrs: [0; 13],
+            inner: InodeInner {
+                lock: Sleeplock::zeroed(),
+                valid: 0,
+                typ: 0,
+                major: 0,
+                minor: 0,
+                nlink: 0,
+                size: 0,
+                addrs: [0; 13],
+            },
         }
     }
 }
@@ -624,6 +627,7 @@ pub unsafe fn iinit() {
         inode
             .deref_mut()
             .get_unchecked_mut(i)
+            .inner
             .lock
             .initlock("inode");
     }
@@ -656,7 +660,7 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
     (*ip).dev = dev;
     (*ip).inum = inum;
     (*ip).ref_0 = 1;
-    (*ip).valid = 0;
+    (*ip).inner.valid = 0;
     ip
 }
 
@@ -665,9 +669,9 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
 pub unsafe fn stati(ip: *mut Inode, mut st: *mut Stat) {
     (*st).dev = (*ip).dev as i32;
     (*st).ino = (*ip).inum;
-    (*st).typ = (*ip).typ;
-    (*st).nlink = (*ip).nlink;
-    (*st).size = (*ip).size as usize;
+    (*st).typ = (*ip).inner.typ;
+    (*st).nlink = (*ip).inner.nlink;
+    (*st).size = (*ip).inner.size as usize;
 }
 
 // Directories
@@ -677,10 +681,10 @@ pub unsafe fn stati(ip: *mut Inode, mut st: *mut Stat) {
 pub unsafe fn dirlookup(dp: *mut Inode, name: &FileName, poff: *mut u32) -> *mut Inode {
     let mut off: u32 = 0;
     let mut de: Dirent = Default::default();
-    if (*dp).typ != T_DIR {
+    if (*dp).inner.typ != T_DIR {
         panic!("dirlookup not DIR");
     }
-    while off < (*dp).size {
+    while off < (*dp).inner.size {
         if (*dp).read(
             0,
             &mut de as *mut Dirent as usize,
@@ -718,7 +722,7 @@ pub unsafe fn dirlink(dp: *mut Inode, name: &FileName, inum: u32) -> i32 {
 
     // Look for an empty Dirent.
     let mut off: i32 = 0;
-    while (off as u32) < (*dp).size {
+    while (off as u32) < (*dp).inner.size {
         if (*dp).read(
             0,
             &mut de as *mut Dirent as usize,
