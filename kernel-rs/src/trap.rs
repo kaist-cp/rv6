@@ -148,7 +148,7 @@ pub unsafe fn usertrapret() {
     w_sepc((*(*p).tf).epc);
 
     // tell trampoline.S the user page table to switch to.
-    let satp: usize = make_satp((*p).pagetable.assume_init_mut().ptr as usize);
+    let satp: usize = make_satp((*p).pagetable.assume_init_mut().as_raw() as usize);
 
     // jump to trampoline.S at the top of memory, which
     // switches to the user page table, restores user registers,

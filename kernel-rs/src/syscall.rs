@@ -15,7 +15,8 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
     }
     if (*p)
         .pagetable
-        .assume_init_mut().copyin(ip as *mut u8, addr, ::core::mem::size_of::<usize>())
+        .assume_init_mut()
+        .copyin(ip as *mut u8, addr, ::core::mem::size_of::<usize>())
         .is_err()
     {
         return -1;

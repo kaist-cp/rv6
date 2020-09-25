@@ -1,3 +1,4 @@
+use crate::libc;
 use crate::{
     file::{Inode, RcFile},
     fs::{fsinit, namei},
@@ -11,12 +12,9 @@ use crate::{
     spinlock::{pop_off, push_off, RawSpinlock, Spinlock},
     string::safestrcpy,
     trap::usertrapret,
-    vm::{kvminithart, kvmmap},
+    vm::{kvminithart, kvmmap, PageTable},
 };
-use crate::{libc, vm::PageTable};
-use core::{cmp::Ordering, mem::MaybeUninit};
-use core::ptr;
-use core::str;
+use core::{cmp::Ordering, mem::MaybeUninit, ptr, str};
 
 extern "C" {
     // swtch.S
@@ -800,15 +798,19 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable {
     // at the highest user virtual address.
     // Only the supervisor uses it, on the way
     // to/from user space, so not PTE_U.
-    pagetable.mappages(
-        TRAMPOLINE,
-        PGSIZE,
-        trampoline.as_mut_ptr() as usize,
-        PTE_R | PTE_X,
-    );
+    pagetable
+        .mappages(
+            TRAMPOLINE,
+            PGSIZE,
+            trampoline.as_mut_ptr() as usize,
+            PTE_R | PTE_X,
+        )
+        .expect("proc_pagetable: mappages TRAMPOLINE");
 
     // Map the trapframe just below TRAMPOLINE, for trampoline.S.
-    pagetable.mappages(TRAPFRAME, PGSIZE, (*p).tf as usize, PTE_R | PTE_W);
+    pagetable
+        .mappages(TRAPFRAME, PGSIZE, (*p).tf as usize, PTE_R | PTE_W)
+        .expect("proc_pagetable: mappages TRAPFRAME");
     pagetable
 }
 
@@ -838,13 +840,19 @@ pub unsafe fn resizeproc(n: i32) -> i32 {
     let sz = match n.cmp(&0) {
         Ordering::Equal => sz,
         Ordering::Greater => {
-            let sz = (*p).pagetable.assume_init_mut().uvmalloc(sz, sz.wrapping_add(n as usize));
+            let sz = (*p)
+                .pagetable
+                .assume_init_mut()
+                .uvmalloc(sz, sz.wrapping_add(n as usize));
             if sz.is_err() {
                 return -1;
             }
             sz.unwrap()
         }
-        Ordering::Less => (*p).pagetable.assume_init_mut().uvmdealloc(sz, sz.wrapping_add(n as usize)),
+        Ordering::Less => (*p)
+            .pagetable
+            .assume_init_mut()
+            .uvmdealloc(sz, sz.wrapping_add(n as usize)),
     };
     (*p).sz = sz;
     0
@@ -941,11 +949,17 @@ unsafe fn forkret() {
 /// Copy to either a user address, or kernel address,
 /// depending on usr_dst.
 /// Returns Ok(()) on success, Err(()) on error.
-pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: *mut libc::CVoid, len: usize) -> Result<(),()> {
+pub unsafe fn either_copyout(
+    user_dst: i32,
+    dst: usize,
+    src: *mut libc::CVoid,
+    len: usize,
+) -> Result<(), ()> {
     let p = myproc();
     if user_dst != 0 {
         (*p).pagetable
-            .assume_init_mut().copyout(dst, src as *mut u8, len)
+            .assume_init_mut()
+            .copyout(dst, src as *mut u8, len)
             .map_or(Err(()), |_v| Ok(()))
     } else {
         ptr::copy(src, dst as *mut u8 as *mut libc::CVoid, len);
@@ -956,11 +970,17 @@ pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: *mut libc::CVoid, l
 /// Copy from either a user address, or kernel address,
 /// depending on usr_src.
 /// Returns Ok(()) on success, Err(()) on error.
-pub unsafe fn either_copyin(dst: *mut libc::CVoid, user_src: i32, src: usize, len: usize) -> Result<(), ()> {
+pub unsafe fn either_copyin(
+    dst: *mut libc::CVoid,
+    user_src: i32,
+    src: usize,
+    len: usize,
+) -> Result<(), ()> {
     let p = myproc();
     if user_src != 0 {
         (*p).pagetable
-            .assume_init_mut().copyin(dst as *mut u8, src, len)
+            .assume_init_mut()
+            .copyin(dst as *mut u8, src, len)
             .map_or(Err(()), |_v| Ok(()))
     } else {
         ptr::copy(src as *mut u8 as *const libc::CVoid, dst, len);
