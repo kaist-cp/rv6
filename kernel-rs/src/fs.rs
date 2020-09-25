@@ -242,7 +242,7 @@ impl Inode {
             );
             brelease(&mut *bp);
             (*self).valid = 1;
-            if (*self).typ as i32 == 0 {
+            if (*self).typ == 0 {
                 panic!("Inode::lock: no type");
             }
         };
@@ -468,7 +468,7 @@ impl Inode {
                 .add((inum as usize).wrapping_rem(IPB));
 
             // a free inode
-            if (*dip).typ as i32 == 0 {
+            if (*dip).typ == 0 {
                 ptr::write_bytes(dip, 0, 1);
                 (*dip).typ = typ;
 
@@ -677,7 +677,7 @@ pub unsafe fn stati(ip: *mut Inode, mut st: *mut Stat) {
 pub unsafe fn dirlookup(dp: *mut Inode, name: &FileName, poff: *mut u32) -> *mut Inode {
     let mut off: u32 = 0;
     let mut de: Dirent = Default::default();
-    if (*dp).typ as i32 != T_DIR {
+    if (*dp).typ != T_DIR {
         panic!("dirlookup not DIR");
     }
     while off < (*dp).size {

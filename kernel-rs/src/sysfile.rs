@@ -101,7 +101,7 @@ pub unsafe fn sys_link() -> usize {
         return usize::MAX;
     });
     (*ip).lock();
-    if (*ip).typ as i32 == T_DIR {
+    if (*ip).typ == T_DIR {
         (*ip).unlockput();
         end_op();
         return usize::MAX;
@@ -171,7 +171,7 @@ pub unsafe fn sys_unlink() -> usize {
             if ((*ip).nlink as i32) < 1 {
                 panic!("unlink: nlink < 1");
             }
-            if (*ip).typ as i32 == T_DIR && isdirempty(ip) == 0 {
+            if (*ip).typ == T_DIR && isdirempty(ip) == 0 {
                 (*ip).unlockput();
             } else {
                 ptr::write_bytes(&mut de as *mut Dirent, 0, 1);
@@ -185,7 +185,7 @@ pub unsafe fn sys_unlink() -> usize {
                 {
                     panic!("unlink: writei");
                 }
-                if (*ip).typ as i32 == T_DIR {
+                if (*ip).typ == T_DIR {
                     (*dp).nlink -= 1;
                     (*dp).update();
                 }
@@ -211,7 +211,7 @@ unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> *mut Inode {
     if !ip.is_null() {
         (*dp).unlockput();
         (*ip).lock();
-        if typ as i32 == T_FILE && ((*ip).typ as i32 == T_FILE || (*ip).typ as i32 == T_DEVICE) {
+        if typ == T_FILE && ((*ip).typ == T_FILE || (*ip).typ == T_DEVICE) {
             return ip;
         }
         (*ip).unlockput();
@@ -228,7 +228,7 @@ unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> *mut Inode {
     (*ip).update();
 
     // Create . and .. entries.
-    if typ as i32 == T_DIR {
+    if typ == T_DIR {
         // for ".."
         (*dp).nlink += 1;
         (*dp).update();
@@ -256,7 +256,7 @@ pub unsafe fn sys_open() -> usize {
     begin_op();
     let omode = FcntlFlags::from_bits_truncate(omode);
     if omode.contains(FcntlFlags::O_CREATE) {
-        ip = create(path, T_FILE as i16, 0, 0);
+        ip = create(path, T_FILE, 0, 0);
         if ip.is_null() {
             end_op();
             return usize::MAX;
@@ -267,13 +267,13 @@ pub unsafe fn sys_open() -> usize {
             return usize::MAX;
         });
         (*ip).lock();
-        if (*ip).typ as i32 == T_DIR && omode != FcntlFlags::O_RDONLY {
+        if (*ip).typ == T_DIR && omode != FcntlFlags::O_RDONLY {
             (*ip).unlockput();
             end_op();
             return usize::MAX;
         }
     }
-    if (*ip).typ as i32 == T_DEVICE && ((*ip).major as usize >= NDEV) {
+    if (*ip).typ == T_DEVICE && ((*ip).major as usize >= NDEV) {
         (*ip).unlockput();
         end_op();
         return usize::MAX;
@@ -301,7 +301,7 @@ pub unsafe fn sys_open() -> usize {
     };
     let f = (*myproc()).open_files[fd as usize].as_mut().unwrap();
 
-    if (*ip).typ as i32 == T_DEVICE {
+    if (*ip).typ == T_DEVICE {
         (*f).typ = FileType::Device {
             ip,
             major: (*ip).major,
@@ -322,7 +322,7 @@ pub unsafe fn sys_mkdir() -> usize {
         end_op();
         return usize::MAX;
     });
-    let ip = create(Path::new(path), T_DIR as _, 0, 0);
+    let ip = create(Path::new(path), T_DIR, 0, 0);
     if ip.is_null() {
         end_op();
         return usize::MAX;
@@ -342,7 +342,7 @@ pub unsafe fn sys_mknod() -> usize {
     let path = ok_or!(argstr(0, &mut path), return usize::MAX);
     let major = ok_or!(argint(1), return usize::MAX) as u16;
     let minor = ok_or!(argint(2), return usize::MAX) as u16;
-    let ip = create(Path::new(path), T_DEVICE as i16, major, minor);
+    let ip = create(Path::new(path), T_DEVICE, major, minor);
     if ip.is_null() {
         return usize::MAX;
     }
@@ -363,7 +363,7 @@ pub unsafe fn sys_chdir() -> usize {
         return usize::MAX;
     });
     (*ip).lock();
-    if (*ip).typ as i32 != T_DIR {
+    if (*ip).typ != T_DIR {
         (*ip).unlockput();
         end_op();
         return usize::MAX;

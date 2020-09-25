@@ -1,11 +1,11 @@
 /// Directory
-pub const T_DIR: i32 = 1;
+pub const T_DIR: i16 = 1;
 
 /// File
-pub const T_FILE: i32 = 2;
+pub const T_FILE: i16 = 2;
 
 /// Device
-pub const T_DEVICE: i32 = 3;
+pub const T_DEVICE: i16 = 3;
 
 #[derive(Default, Copy, Clone)]
 pub struct Stat {
