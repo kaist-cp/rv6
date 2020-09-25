@@ -84,22 +84,22 @@ impl RawPageTable {
     /// Look up a virtual address, return the physical address,
     /// or 0 if not mapped.
     /// Can only be used to look up user pages.
-    pub unsafe fn walkaddr(&mut self, va: usize) -> usize {
+    pub unsafe fn walkaddr(&mut self, va: usize) -> Option<usize> {
         if va >= MAXVA {
-            return 0;
+            return None;
         }
         let pte_op = walk(self, va, 0);
         if pte_op.is_none() {
-            return 0;
+            return None;
         }
         let pte = pte_op.unwrap();
         if !pte.check_flag(PTE_V) {
-            return 0;
+            return None;
         }
         if !pte.check_flag(PTE_U as usize) {
-            return 0;
+            return None;
         }
-        pte.get_pa()
+        Some(pte.get_pa())
     }
 
     /// Recursively free page-table pages.
@@ -131,7 +131,7 @@ impl RawPageTable {
         while len > 0 {
             let va0 = pgrounddown(dstva);
             let pa0 = self.walkaddr(va0);
-            if pa0 == 0 {
+            if pa0.is_none() {
                 return Err(());
             }
             let mut n = PGSIZE.wrapping_sub(dstva.wrapping_sub(va0));
@@ -140,7 +140,7 @@ impl RawPageTable {
             }
             ptr::copy(
                 src as *const libc::CVoid,
-                pa0.wrapping_add(dstva.wrapping_sub(va0)) as *mut libc::CVoid,
+                pa0.unwrap().wrapping_add(dstva.wrapping_sub(va0)) as *mut libc::CVoid,
                 n,
             );
             len = len.wrapping_sub(n);
@@ -214,11 +214,8 @@ impl RawPageTable {
     /// Mark a PTE invalid for user access.
     /// Used by exec for the user stack guard page.
     pub unsafe fn uvmclear(&mut self, va: usize) {
-        let pte_op = walk(self, va, 0);
-        if pte_op.is_none() {
-            panic!("uvmclear");
-        }
-        pte_op.unwrap().clear_flag(PTE_U as usize)
+        let pte = walk(self, va, 0).expect("uvmclear");
+        pte.clear_flag(PTE_U as usize)
     }
 
     /// Copy from user to kernel.
@@ -233,7 +230,7 @@ impl RawPageTable {
         while len > 0 {
             let va0 = pgrounddown(srcva);
             let pa0 = self.walkaddr(va0);
-            if pa0 == 0 {
+            if pa0.is_none() {
                 return Err(());
             }
             let mut n = PGSIZE.wrapping_sub(srcva.wrapping_sub(va0));
@@ -241,7 +238,7 @@ impl RawPageTable {
                 n = len
             }
             ptr::copy(
-                pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut libc::CVoid,
+                pa0.unwrap().wrapping_add(srcva.wrapping_sub(va0)) as *mut libc::CVoid,
                 dst as *mut libc::CVoid,
                 n,
             );
@@ -266,14 +263,14 @@ impl RawPageTable {
         while got_null == 0 && max > 0 {
             let va0 = pgrounddown(srcva);
             let pa0 = self.walkaddr(va0);
-            if pa0 == 0 {
+            if pa0.is_none() {
                 return Err(());
             }
             let mut n = PGSIZE.wrapping_sub(srcva.wrapping_sub(va0));
             if n > max {
                 n = max
             }
-            let mut p: *mut u8 = pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut u8;
+            let mut p: *mut u8 = pa0.unwrap().wrapping_add(srcva.wrapping_sub(va0)) as *mut u8;
             while n > 0 {
                 if *p as i32 == '\u{0}' as i32 {
                     *dst = '\u{0}' as i32 as u8;
