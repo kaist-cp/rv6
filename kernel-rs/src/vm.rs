@@ -62,13 +62,13 @@ impl PageTableEntry {
     }
 }
 
-const PTSIZE: usize = PGSIZE / mem::size_of::<PageTableEntry>();
+const PTE_PER_PT: usize = PGSIZE / mem::size_of::<PageTableEntry>();
 pub struct RawPageTable {
-    inner: [PageTableEntry; PTSIZE],
+    inner: [PageTableEntry; PTE_PER_PT],
 }
 
 impl Deref for RawPageTable {
-    type Target = [PageTableEntry; PTSIZE];
+    type Target = [PageTableEntry; PTE_PER_PT];
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
