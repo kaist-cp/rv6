@@ -143,7 +143,7 @@ impl Path {
             path = new_path;
 
             (*ip).lock();
-            if (*ip).typ as i32 != T_DIR {
+            if (*ip).typ != T_DIR {
                 (*ip).unlockput();
                 return Err(());
             }
