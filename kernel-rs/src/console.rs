@@ -89,7 +89,8 @@ impl Console {
                 user_src,
                 src.wrapping_add(i as usize),
                 1usize,
-            ).is_err()
+            )
+            .is_err()
             {
                 break;
             }
@@ -135,7 +136,8 @@ impl Console {
                     dst,
                     &mut cbuf as *mut u8 as *mut libc::CVoid,
                     1usize,
-                ).is_err()
+                )
+                .is_err()
                 {
                     break;
                 }

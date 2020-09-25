@@ -104,13 +104,19 @@ impl RawPageTable {
 
     /// Create PTEs for virtual addresses starting at va that refer to
     /// physical addresses starting at pa. va and size might not
-    /// be page-aligned. Returns true on success, false if walk() couldn't
+    /// be page-aligned. Returns Ok(()) on success, Err(()) if walk() couldn't
     /// allocate a needed page-table page.
-    pub unsafe fn mappages(&mut self, va: usize, size: usize, mut pa: usize, perm: i32) -> bool {
+    pub unsafe fn mappages(
+        &mut self,
+        va: usize,
+        size: usize,
+        mut pa: usize,
+        perm: i32,
+    ) -> Result<(), ()> {
         let mut a = pgrounddown(va);
         let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
         loop {
-            let pte = some_or!(walk(self, a, 1), return false);
+            let pte = some_or!(walk(self, a, 1), return Err(()));
             if pte.check_flag(PTE_V) {
                 panic!("remap");
             }
@@ -121,7 +127,7 @@ impl RawPageTable {
             a = a.wrapping_add(PGSIZE);
             pa = pa.wrapping_add(PGSIZE);
         }
-        true
+        Ok(())
     }
 
     /// Recursively free page-table pages.
@@ -186,7 +192,8 @@ impl RawPageTable {
         }
         let mem: *mut u8 = kalloc() as *mut u8;
         ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
-        self.mappages(0, PGSIZE, mem as usize, PTE_W | PTE_R | PTE_X | PTE_U);
+        self.mappages(0, PGSIZE, mem as usize, PTE_W | PTE_R | PTE_X | PTE_U)
+            .expect("inituvm: mappage");
         ptr::copy(
             src as *const libc::CVoid,
             mem as *mut libc::CVoid,
@@ -209,7 +216,10 @@ impl RawPageTable {
                 return Err(());
             }
             ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
-            if !self.mappages(a, PGSIZE, mem as usize, PTE_W | PTE_X | PTE_R | PTE_U) {
+            if self
+                .mappages(a, PGSIZE, mem as usize, PTE_W | PTE_X | PTE_R | PTE_U)
+                .is_err()
+            {
                 kfree(mem as *mut libc::CVoid);
                 self.uvmdealloc(a, oldsz);
                 return Err(());
@@ -271,7 +281,10 @@ impl RawPageTable {
                 mem as *mut libc::CVoid,
                 PGSIZE,
             );
-            if !(*new_ptable).mappages(i, PGSIZE, mem as usize, flags as i32) {
+            if (*new_ptable)
+                .mappages(i, PGSIZE, mem as usize, flags as i32)
+                .is_err()
+            {
                 kfree(mem as *mut libc::CVoid);
                 return Err(());
             }
@@ -398,7 +411,7 @@ impl RawPageTable {
 }
 
 pub struct PageTable {
-    pub ptr: *mut RawPageTable,
+    ptr: *mut RawPageTable,
 }
 
 impl PageTable {
@@ -411,9 +424,7 @@ impl PageTable {
             ptr::write_bytes(page, 0, 1);
         }
 
-        Self{
-            ptr: page,
-        }
+        Self { ptr: page }
     }
 
     pub fn from_raw(ptr: *mut RawPageTable) -> Self {
@@ -428,6 +439,10 @@ impl PageTable {
 
     pub fn is_null(&self) -> bool {
         self.ptr.is_null()
+    }
+
+    pub fn as_raw(&self) -> *mut RawPageTable {
+        self.ptr
     }
 }
 
@@ -547,7 +562,11 @@ unsafe fn walk(
 /// Only used when booting.
 /// Does not flush TLB or enable paging.
 pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
-    if !KERNEL_PAGETABLE.assume_init_mut().mappages(va, sz, pa, perm) {
+    if KERNEL_PAGETABLE
+        .assume_init_mut()
+        .mappages(va, sz, pa, perm)
+        .is_err()
+    {
         panic!("kvmmap");
     };
 }

@@ -364,7 +364,8 @@ impl Inode {
                     .offset(off.wrapping_rem(BSIZE as u32) as isize)
                     as *mut libc::CVoid,
                 m as usize,
-            ).is_err()
+            )
+            .is_err()
             {
                 brelease(&mut *bp);
                 break;
@@ -406,7 +407,8 @@ impl Inode {
                 user_src,
                 src,
                 m as usize,
-            ).is_err()
+            )
+            .is_err()
             {
                 brelease(&mut *bp);
                 break;
