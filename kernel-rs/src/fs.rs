@@ -192,7 +192,7 @@ impl Inode {
     /// Copy a modified in-memory inode to disk.
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk, since i-node cache is write-through.
-    /// Caller must hold ip->lock.
+    /// Caller must hold self->lock.
     pub unsafe fn update(&mut self) {
         let bp: *mut Buf = Buf::read(self.dev, SB.iblock(self.inum));
         let mut dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
@@ -267,7 +267,10 @@ impl Inode {
     pub unsafe fn put(&mut self) {
         let mut inode = ICACHE.lock();
 
-        if (*self).ref_0 == 1 && (*self).inner.valid != 0 && (*self).inner.nlink as i32 == 0 {
+        if (*self).ref_0 == 1
+        // TODO: Make Inode safe and don't check below line
+        && (*self).inner.valid != 0 && (*self).inner.nlink as i32 == 0
+        {
             // inode has no links and no other references: truncate and free.
 
             // self->ref == 1 means no other process can have self locked,
