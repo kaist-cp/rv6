@@ -568,7 +568,12 @@ impl ProcessSystem {
         let mut np = ok_or!(self.alloc(), return -1);
 
         // Copy user memory from parent to child.
-        if (*p).pagetable.assume_init_mut().uvmcopy((*np).pagetable.assume_init_mut(), (*p).sz).is_err() {
+        if (*p)
+            .pagetable
+            .assume_init_mut()
+            .uvmcopy((*np).pagetable.assume_init_mut(), (*p).sz)
+            .is_err()
+        {
             freeproc(np);
             (*np).lock.release();
             return -1;
@@ -623,11 +628,15 @@ impl ProcessSystem {
                     if np.state == Procstate::ZOMBIE {
                         let pid = np.pid;
                         if addr != 0
-                            && (*p).pagetable.assume_init_mut().copyout(
-                                addr,
-                                &mut np.xstate as *mut i32 as *mut u8,
-                                ::core::mem::size_of::<i32>(),
-                            ).is_err()
+                            && (*p)
+                                .pagetable
+                                .assume_init_mut()
+                                .copyout(
+                                    addr,
+                                    &mut np.xstate as *mut i32 as *mut u8,
+                                    ::core::mem::size_of::<i32>(),
+                                )
+                                .is_err()
                         {
                             np.lock.release();
                             (*p).lock.release();
@@ -844,10 +853,7 @@ pub unsafe fn resizeproc(n: i32) -> i32 {
                 .pagetable
                 .assume_init_mut()
                 .uvmalloc(sz, sz.wrapping_add(n as usize));
-            if sz.is_err() {
-                return -1;
-            }
-            sz.unwrap()
+            ok_or!(sz, return -1)
         }
         Ordering::Less => (*p)
             .pagetable

@@ -88,11 +88,7 @@ impl RawPageTable {
         if va >= MAXVA {
             return None;
         }
-        let pte_op = walk(self, va, 0);
-        if pte_op.is_none() {
-            return None;
-        }
-        let pte = pte_op.unwrap();
+        let pte = some_or!(walk(self, va, 0), return None);
         if !pte.check_flag(PTE_V) {
             return None;
         }
@@ -130,17 +126,14 @@ impl RawPageTable {
     ) -> Result<(), ()> {
         while len > 0 {
             let va0 = pgrounddown(dstva);
-            let pa0 = self.walkaddr(va0);
-            if pa0.is_none() {
-                return Err(());
-            }
+            let pa0 = some_or!(self.walkaddr(va0), return Err(()));
             let mut n = PGSIZE.wrapping_sub(dstva.wrapping_sub(va0));
             if n > len {
                 n = len
             }
             ptr::copy(
                 src as *const libc::CVoid,
-                pa0.unwrap().wrapping_add(dstva.wrapping_sub(va0)) as *mut libc::CVoid,
+                pa0.wrapping_add(dstva.wrapping_sub(va0)) as *mut libc::CVoid,
                 n,
             );
             len = len.wrapping_sub(n);
@@ -161,11 +154,7 @@ impl RawPageTable {
         let mut a = pgrounddown(va);
         let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
         loop {
-            let pte_op = walk(self, a, 0);
-            if pte_op.is_none() {
-                panic!("uvmunmap: walk");
-            }
-            let pte = pte_op.unwrap();
+            let pte = walk(self, a, 0).expect("uvmunmap: walk");
             if !pte.check_flag(PTE_V) {
                 println!(
                     "va={:018p} pte={:018p}",
@@ -229,16 +218,13 @@ impl RawPageTable {
     ) -> Result<(), ()> {
         while len > 0 {
             let va0 = pgrounddown(srcva);
-            let pa0 = self.walkaddr(va0);
-            if pa0.is_none() {
-                return Err(());
-            }
+            let pa0 = some_or!(self.walkaddr(va0), return Err(()));
             let mut n = PGSIZE.wrapping_sub(srcva.wrapping_sub(va0));
             if n > len {
                 n = len
             }
             ptr::copy(
-                pa0.unwrap().wrapping_add(srcva.wrapping_sub(va0)) as *mut libc::CVoid,
+                pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut libc::CVoid,
                 dst as *mut libc::CVoid,
                 n,
             );
@@ -262,15 +248,12 @@ impl RawPageTable {
         let mut got_null: i32 = 0;
         while got_null == 0 && max > 0 {
             let va0 = pgrounddown(srcva);
-            let pa0 = self.walkaddr(va0);
-            if pa0.is_none() {
-                return Err(());
-            }
+            let pa0 = some_or!(self.walkaddr(va0), return Err(()));
             let mut n = PGSIZE.wrapping_sub(srcva.wrapping_sub(va0));
             if n > max {
                 n = max
             }
-            let mut p: *mut u8 = pa0.unwrap().wrapping_add(srcva.wrapping_sub(va0)) as *mut u8;
+            let mut p: *mut u8 = pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut u8;
             while n > 0 {
                 if *p as i32 == '\u{0}' as i32 {
                     *dst = '\u{0}' as i32 as u8;
@@ -414,11 +397,7 @@ impl PageTable {
     /// Frees any allocated pages on failure.
     pub unsafe fn uvmcopy(&mut self, mut new: &mut PageTable, sz: usize) -> Result<(), ()> {
         for i in num_iter::range_step(0, sz, PGSIZE) {
-            let pte_op = walk(self, i, 0);
-            if pte_op.is_none() {
-                panic!("uvmcopy: pte should exist");
-            }
-            let pte = pte_op.unwrap();
+            let pte = walk(self, i, 0).expect("uvmcopy: pte should exist");
             if !pte.check_flag(PTE_V) {
                 panic!("uvmcopy: page not present");
             }
