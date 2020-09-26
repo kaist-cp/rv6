@@ -144,7 +144,7 @@ impl RawPageTable {
     }
 }
 
-// TODO: separate these methods for uvm type/struct
+// TODO: separate these methods for uvm type/struct (Use type to show this)
 impl RawPageTable {
     /// Remove mappings from a page table. The mappings in
     /// the given range must exist. Optionally free the
@@ -313,7 +313,7 @@ impl PageTable {
     }
 }
 
-// TODO: separate these function for va structure later
+// TODO: separate these function for va structure later (Use type to show this)
 impl PageTable {
     /// Create PTEs for virtual addresses starting at va that refer to
     /// physical addresses starting at pa. va and size might not
