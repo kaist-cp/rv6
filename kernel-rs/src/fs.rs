@@ -26,7 +26,7 @@ use core::mem;
 use core::{ops::DerefMut, ptr};
 
 mod path;
-pub use path::Path;
+pub use path::{Filename, Path};
 
 /// Disk layout:
 /// [ boot block | super block | log | inode blocks |
@@ -61,7 +61,7 @@ pub struct Superblock {
     bmapstart: u32,
 }
 
-#[derive(Default, Copy, Clone)]
+#[derive(Default)]
 pub struct Dirent {
     pub inum: u16,
     name: [u8; DIRSIZ],
@@ -71,10 +71,11 @@ impl Dirent {
     /// Fill in name. If name is shorter than DIRSIZ, NUL character is appended as
     /// terminator.
     ///
-    /// `name` must contains no NUL characters, but this is not asafety invariant.
-    fn set_name(&mut self, name: &[u8]) {
-        if name.len() >= DIRSIZ {
-            self.name.copy_from_slice(&name[..DIRSIZ]);
+    /// `name` must contains no NUL characters, but this is not a safety invariant.
+    fn set_name(&mut self, name: &Filename) {
+        let name = name.as_bytes();
+        if name.len() == DIRSIZ {
+            self.name.copy_from_slice(&name);
         } else {
             self.name[..name.len()].copy_from_slice(&name);
             self.name[name.len()] = 0;
@@ -84,9 +85,9 @@ impl Dirent {
     /// Returns slice which exactly contains `name`.
     ///
     /// It contains no NUL characters.
-    fn name_as_slice(&self) -> &[u8] {
+    fn get_name(&self) -> &Filename {
         let len = self.name.iter().position(|ch| *ch == 0).unwrap_or(DIRSIZ);
-        &self.name[..len]
+        unsafe { Filename::from_bytes(&self.name[..len]) }
     }
 }
 
@@ -673,7 +674,7 @@ pub unsafe fn stati(ip: *mut Inode, mut st: *mut Stat) {
 
 /// Look for a directory entry in a directory.
 /// If found, set *poff to byte offset of entry.
-pub unsafe fn dirlookup(dp: *mut Inode, name: &[u8], poff: *mut u32) -> *mut Inode {
+pub unsafe fn dirlookup(dp: *mut Inode, name: &Filename, poff: *mut u32) -> *mut Inode {
     let mut off: u32 = 0;
     let mut de: Dirent = Default::default();
     if (*dp).typ as i32 != T_DIR {
@@ -690,7 +691,7 @@ pub unsafe fn dirlookup(dp: *mut Inode, name: &[u8], poff: *mut u32) -> *mut Ino
         {
             panic!("dirlookup read");
         }
-        if de.inum as i32 != 0 && name == de.name_as_slice() {
+        if de.inum as i32 != 0 && name == de.get_name() {
             // entry matches path element
             if !poff.is_null() {
                 *poff = off
@@ -705,7 +706,7 @@ pub unsafe fn dirlookup(dp: *mut Inode, name: &[u8], poff: *mut u32) -> *mut Ino
 /// Write a new directory entry (name, inum) into the directory dp.
 ///
 /// `name` must not contain any NUL characters.
-pub unsafe fn dirlink(dp: *mut Inode, name: &[u8], inum: u32) -> i32 {
+pub unsafe fn dirlink(dp: *mut Inode, name: &Filename, inum: u32) -> i32 {
     let mut de: Dirent = Default::default();
 
     // Check that name is not present.

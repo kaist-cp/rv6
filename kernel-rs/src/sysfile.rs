@@ -7,7 +7,7 @@ use crate::{
     fcntl::FcntlFlags,
     file::{FileType, Inode, RcFile},
     fs::Dirent,
-    fs::{dirlink, dirlookup, Path},
+    fs::{dirlink, dirlookup, Filename, Path},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
     ok_or,
@@ -164,7 +164,7 @@ pub unsafe fn sys_unlink() -> usize {
     (*dp).lock();
 
     // Cannot unlink "." or "..".
-    if !(name == b"." || name == b"..") {
+    if !(name.as_bytes() == b"." || name.as_bytes() == b"..") {
         let mut ip: *mut Inode = dirlookup(dp, &name, &mut off);
         if !ip.is_null() {
             (*ip).lock();
@@ -234,7 +234,9 @@ unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> *mut Inode {
         (*dp).update();
 
         // No ip->nlink++ for ".": avoid cyclic ref count.
-        if dirlink(ip, b".", (*ip).inum) < 0 || dirlink(ip, b"..", (*dp).inum) < 0 {
+        if dirlink(ip, Filename::from_bytes(b"."), (*ip).inum) < 0
+            || dirlink(ip, Filename::from_bytes(b".."), (*dp).inum) < 0
+        {
             panic!("create dots");
         }
     }
