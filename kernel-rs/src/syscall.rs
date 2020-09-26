@@ -1,11 +1,11 @@
 use crate::{
     println,
     proc::{myproc, Proc},
-    string::strlen,
     sysfile::*,
     sysproc::*,
 };
 use core::str;
+use cstr_core::CStr;
 
 /// Fetch the usize at addr from the current process.
 pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
@@ -25,14 +25,12 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
 }
 
 /// Fetch the nul-terminated string at addr from the current process.
-/// Returns length of string, not including nul, or -1 for error.
-pub unsafe fn fetchstr(addr: usize, buf: *mut u8, max: usize) -> i32 {
+/// Returns reference to the string in the buffer.
+pub unsafe fn fetchstr(addr: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
     let p: *mut Proc = myproc();
-    let err = (*p).pagetable.assume_init_mut().copyinstr(buf, addr, max);
-    if err.is_err() {
-        return -1;
-    }
-    strlen(buf)
+    (*p).pagetable.assume_init_mut().copyinstr(buf.as_mut_ptr(), addr, buf.len())?;
+
+    Ok(CStr::from_ptr(buf.as_ptr()))
 }
 
 unsafe fn argraw(n: usize) -> usize {
@@ -63,9 +61,9 @@ pub unsafe fn argaddr(n: usize) -> Result<usize, ()> {
 /// Fetch the nth word-sized system call argument as a null-terminated string.
 /// Copies into buf, at most max.
 /// Returns string length if OK (including nul), -1 if error.
-pub unsafe fn argstr(n: usize, buf: *mut u8, max: usize) -> Result<i32, ()> {
+pub unsafe fn argstr(n: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
     let addr = argaddr(n)?;
-    Ok(fetchstr(addr, buf, max))
+    fetchstr(addr, buf)
 }
 
 static mut SYSCALLS: [Option<unsafe fn() -> usize>; 23] = [
