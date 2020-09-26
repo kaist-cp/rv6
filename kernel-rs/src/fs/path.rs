@@ -31,11 +31,11 @@ impl Path {
 
     pub unsafe fn namei(&self) -> Result<*mut Inode, ()> {
         let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
-        self.namex(0, &mut name)
+        self.namex(false, &mut name)
     }
 
     pub unsafe fn nameiparent(&self, name: &mut [u8; DIRSIZ]) -> Result<*mut Inode, ()> {
-        self.namex(1, name)
+        self.namex(true, name)
     }
 
     /// Paths
@@ -89,7 +89,7 @@ impl Path {
     /// If parent != 0, return the inode for the parent and copy the final
     /// path element into name, which must have room for DIRSIZ bytes.
     /// Must be called inside a transaction since it calls Inode::put().
-    unsafe fn namex(&self, nameiparent: i32, name: &mut [u8; DIRSIZ]) -> Result<*mut Inode, ()> {
+    unsafe fn namex(&self, parent: bool, name: &mut [u8; DIRSIZ]) -> Result<*mut Inode, ()> {
         let mut ip = if self.is_absolute() {
             iget(ROOTDEV as u32, ROOTINO)
         } else {
@@ -106,7 +106,7 @@ impl Path {
                 (*ip).unlockput();
                 return Err(());
             }
-            if nameiparent != 0 && path.inner.is_empty() {
+            if parent && path.inner.is_empty() {
                 // Stop one level early.
                 (*ip).unlock();
                 return Ok(ip);
@@ -119,7 +119,7 @@ impl Path {
             (*ip).unlockput();
             ip = next
         }
-        if nameiparent != 0 {
+        if parent {
             (*ip).put();
             return Err(());
         }
