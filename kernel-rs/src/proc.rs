@@ -1,7 +1,7 @@
 use crate::libc;
 use crate::{
     file::{Inode, RcFile},
-    fs::{fsinit, namei},
+    fs::{fsinit, Path},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
@@ -15,6 +15,8 @@ use crate::{
     vm::{kvminithart, kvmmap, PageTable},
 };
 use core::{cmp::Ordering, mem::MaybeUninit, ptr, str};
+
+use cstr_core::CStr;
 
 extern "C" {
     // swtch.S
@@ -554,7 +556,9 @@ impl ProcessSystem {
             b"initcode\x00" as *const u8,
             ::core::mem::size_of::<[u8; 16]>() as i32,
         );
-        (*p).cwd = namei(b"/\x00" as *const u8 as *mut u8);
+        (*p).cwd = Path::new(CStr::from_bytes_with_nul_unchecked(b"/\x00"))
+            .namei()
+            .unwrap_or(ptr::null_mut());
         (*p).state = Procstate::RUNNABLE;
         (*p).lock.release();
     }

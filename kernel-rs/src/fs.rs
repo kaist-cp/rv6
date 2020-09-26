@@ -17,7 +17,7 @@ use crate::{
     file::Inode,
     log::log_write,
     param::{NINODE, ROOTDEV},
-    proc::{either_copyin, either_copyout, myproc},
+    proc::{either_copyin, either_copyout},
     sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::{Stat, T_DIR},
@@ -25,6 +25,9 @@ use crate::{
 };
 use core::mem;
 use core::{ops::DerefMut, ptr};
+
+mod path;
+pub use path::Path;
 
 /// Disk layout:
 /// [ boot block | super block | log | inode blocks |
@@ -722,96 +725,4 @@ pub unsafe fn dirlink(dp: *mut Inode, name: *mut u8, inum: u32) -> i32 {
         panic!("dirlink");
     }
     0
-}
-
-/// Paths
-///
-/// Copy the next path element from path into name.
-/// Return a pointer to the element following the copied one.
-/// The returned path has no leading slashes,
-/// so the caller can check *path=='\0' to see if the name is the last one.
-/// If no name to remove, return 0.
-///
-/// Examples:
-///   skipelem("a/bb/c", name) = "bb/c", setting name = "a"
-///   skipelem("///a//bb", name) = "bb", setting name = "a"
-///   skipelem("a", name) = "", setting name = "a"
-///   skipelem("", name) = skipelem("////", name) = 0
-unsafe fn skipelem(mut path: *mut u8, name: *mut u8) -> *mut u8 {
-    while *path as i32 == '/' as i32 {
-        path = path.offset(1)
-    }
-    if *path as i32 == 0 {
-        return ptr::null_mut();
-    }
-    let s: *mut u8 = path;
-    while *path as i32 != '/' as i32 && *path as i32 != 0 {
-        path = path.offset(1)
-    }
-    let len: i32 = path.offset_from(s) as i64 as i32;
-    if len >= DIRSIZ as i32 {
-        ptr::copy(s as *const libc::CVoid, name as *mut libc::CVoid, DIRSIZ);
-    } else {
-        ptr::copy(
-            s as *const libc::CVoid,
-            name as *mut libc::CVoid,
-            len as usize,
-        );
-        *name.offset(len as isize) = 0
-    }
-    while *path as i32 == '/' as i32 {
-        path = path.offset(1)
-    }
-    path
-}
-
-/// Look up and return the inode for a path name.
-/// If parent != 0, return the inode for the parent and copy the final
-/// path element into name, which must have room for DIRSIZ bytes.
-/// Must be called inside a transaction since it calls Inode::put().
-unsafe fn namex(mut path: *mut u8, nameiparent_0: i32, name: *mut u8) -> *mut Inode {
-    let mut ip: *mut Inode;
-
-    if *path as i32 == '/' as i32 {
-        ip = iget(ROOTDEV as u32, ROOTINO)
-    } else {
-        ip = (*(*myproc()).cwd).idup()
-    }
-    loop {
-        path = skipelem(path, name);
-        if path.is_null() {
-            break;
-        }
-        (*ip).lock();
-        if (*ip).typ as i32 != T_DIR {
-            (*ip).unlockput();
-            return ptr::null_mut();
-        }
-        if nameiparent_0 != 0 && *path as i32 == '\u{0}' as i32 {
-            // Stop one level early.
-            (*ip).unlock();
-            return ip;
-        }
-        let next: *mut Inode = dirlookup(ip, name, ptr::null_mut());
-        if next.is_null() {
-            (*ip).unlockput();
-            return ptr::null_mut();
-        }
-        (*ip).unlockput();
-        ip = next
-    }
-    if nameiparent_0 != 0 {
-        (*ip).put();
-        return ptr::null_mut();
-    }
-    ip
-}
-
-pub unsafe fn namei(path: *mut u8) -> *mut Inode {
-    let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
-    namex(path, 0, name.as_mut_ptr())
-}
-
-pub unsafe fn nameiparent(path: *mut u8, name: *mut u8) -> *mut Inode {
-    namex(path, 1, name)
 }

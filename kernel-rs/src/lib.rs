@@ -40,7 +40,6 @@ mod log;
 mod memlayout;
 mod page;
 mod param;
-mod path;
 mod pipe;
 mod plic;
 mod pool;
