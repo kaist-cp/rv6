@@ -451,6 +451,7 @@ pub static mut KERNEL_PAGETABLE: MaybeUninit<PageTable> = MaybeUninit::uninit();
 /// turn on paging. Called early, in supervisor mode.
 /// The page allocator is already initialized.
 pub unsafe fn kvminit() {
+    // TODO: make MemoryManager which initiate and own KERNEL_PAGETABLE
     KERNEL_PAGETABLE.write(PageTable::new());
 
     // uart registers
