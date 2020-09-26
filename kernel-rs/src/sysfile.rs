@@ -6,8 +6,8 @@ use crate::{
     exec::exec,
     fcntl::FcntlFlags,
     file::{FileType, Inode, RcFile},
-    fs::{dirlink, dirlookup, namecmp, Path},
-    fs::{Dirent, DIRSIZ},
+    fs::Dirent,
+    fs::{dirlink, dirlookup, Path},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
     ok_or,
@@ -91,7 +91,6 @@ pub unsafe fn sys_fstat() -> usize {
 
 /// Create the path new as a link to the same inode as old.
 pub unsafe fn sys_link() -> usize {
-    let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
     let mut new: [u8; MAXPATH as usize] = [0; MAXPATH];
     let mut old: [u8; MAXPATH as usize] = [0; MAXPATH];
     let old = ok_or!(argstr(0, &mut old), return usize::MAX);
@@ -110,10 +109,9 @@ pub unsafe fn sys_link() -> usize {
     (*ip).nlink += 1;
     (*ip).update();
     (*ip).unlock();
-    let dp = Path::new(new).nameiparent(&mut name);
-    if let Ok(dp) = dp {
+    if let Ok((dp, name)) = Path::new(new).nameiparent() {
         (*dp).lock();
-        if (*dp).dev != (*ip).dev || dirlink(dp, name.as_mut_ptr(), (*ip).inum) < 0 {
+        if (*dp).dev != (*ip).dev || dirlink(dp, name, (*ip).inum) < 0 {
             (*dp).unlockput();
         } else {
             (*dp).unlockput();
@@ -155,22 +153,19 @@ unsafe fn isdirempty(dp: *mut Inode) -> i32 {
 
 pub unsafe fn sys_unlink() -> usize {
     let mut de: Dirent = Default::default();
-    let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
     let mut off: u32 = 0;
     let path = ok_or!(argstr(0, &mut path), return usize::MAX);
     begin_op();
-    let mut dp = ok_or!(Path::new(path).nameiparent(&mut name), {
+    let (mut dp, name) = ok_or!(Path::new(path).nameiparent(), {
         end_op();
         return usize::MAX;
     });
     (*dp).lock();
 
     // Cannot unlink "." or "..".
-    if !(namecmp(name.as_mut_ptr(), b".\x00" as *const u8) == 0
-        || namecmp(name.as_mut_ptr(), b"..\x00" as *const u8) == 0)
-    {
-        let mut ip: *mut Inode = dirlookup(dp, name.as_mut_ptr(), &mut off);
+    if !(name == b"." || name == b"..") {
+        let mut ip: *mut Inode = dirlookup(dp, &name, &mut off);
         if !ip.is_null() {
             (*ip).lock();
             if ((*ip).nlink as i32) < 1 {
@@ -209,11 +204,10 @@ pub unsafe fn sys_unlink() -> usize {
 }
 
 unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> *mut Inode {
-    let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
-    let mut dp: *mut Inode = ok_or!(path.nameiparent(&mut name), return ptr::null_mut());
+    let (mut dp, name) = ok_or!(path.nameiparent(), return ptr::null_mut());
 
     (*dp).lock();
-    let mut ip: *mut Inode = dirlookup(dp, name.as_mut_ptr(), ptr::null_mut());
+    let mut ip: *mut Inode = dirlookup(dp, &name, ptr::null_mut());
     if !ip.is_null() {
         (*dp).unlockput();
         (*ip).lock();
@@ -240,13 +234,11 @@ unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> *mut Inode {
         (*dp).update();
 
         // No ip->nlink++ for ".": avoid cyclic ref count.
-        if dirlink(ip, b".\x00" as *const u8 as *mut u8, (*ip).inum) < 0
-            || dirlink(ip, b"..\x00" as *const u8 as *mut u8, (*dp).inum) < 0
-        {
+        if dirlink(ip, b".", (*ip).inum) < 0 || dirlink(ip, b"..", (*dp).inum) < 0 {
             panic!("create dots");
         }
     }
-    if dirlink(dp, name.as_mut_ptr(), (*ip).inum) < 0 {
+    if dirlink(dp, &name, (*ip).inum) < 0 {
         panic!("create: dirlink");
     }
     (*dp).unlockput();

@@ -1,3 +1,4 @@
+use core::cmp;
 use core::ptr;
 use cstr_core::CStr;
 
@@ -30,28 +31,46 @@ impl Path {
     }
 
     pub unsafe fn namei(&self) -> Result<*mut Inode, ()> {
-        let mut name: [u8; DIRSIZ] = [0; DIRSIZ];
-        self.namex(false, &mut name)
+        Ok(self.namex(false)?.0)
     }
 
-    pub unsafe fn nameiparent(&self, name: &mut [u8; DIRSIZ]) -> Result<*mut Inode, ()> {
-        self.namex(true, name)
+    pub unsafe fn nameiparent(&self) -> Result<(*mut Inode, &[u8]), ()> {
+        let (ip, name_in_path) = self.namex(true)?;
+        let name_in_path = name_in_path.ok_or(())?;
+        Ok((ip, name_in_path))
     }
 
-    /// Paths
+    /// Returns `Some((path, name))` where,
+    ///  - `name` is the next path element from `self`, and
+    ///  - `path` is the remaining path.
     ///
-    /// Copy the next path element from path into name.
-    /// Return a pointer to the element following the copied one.
-    /// The returned path has no leading slashes,
-    /// so the caller can check path.inner.is_empty() to see if the name is the last one.
-    /// If no name to remove, return 0.
+    /// The returned path has no leading slashes, so the caller can check path.inner.is_empty() to
+    /// see if the name is the last one.
     ///
-    /// Examples:
-    ///   skipelem("a/bb/c", name) = "bb/c", setting name = "a"
-    ///   skipelem("///a//bb", name) = "bb", setting name = "a"
-    ///   skipelem("a", name) = "", setting name = "a"
-    ///   skipelem("", name) = skipelem("////", name) = 0
-    fn skipelem(&self, name: &mut [u8; DIRSIZ]) -> Option<&Self> {
+    /// If no name to remove, returns `None`.
+    ///
+    /// # Examples
+    /// ```
+    /// # unsafe {
+    /// assert_eq!(
+    ///     Path::from_bytes(b"a/bb/c").skipelem(),
+    ///     Some((Path::from_bytes(b"bb/c"), b"a")),
+    /// );
+    /// assert_eq!(
+    ///     Path::from_bytes(b"///a//bb").skipelem(),
+    ///     Some((Path::from_bytes(b"bb"), b"a")),
+    /// );
+    /// assert_eq!(
+    ///     Path::from_bytes(b"a").skipelem(),
+    ///     Some((Path::from_bytes(b""), b"a")),
+    /// );
+    /// assert_eq!(Path::from_bytes(b"").skipelem(), None);
+    /// assert_eq!(Path::from_bytes(b"////").skipelem(), None);
+    /// # }
+    /// ```
+    // TODO: Make an iterator.
+    // TODO: Fix doctests work.
+    fn skipelem(&self) -> Option<(&Self, &[u8])> {
         let mut bytes = &self.inner;
 
         let name_start = bytes.iter().position(|ch| *ch != b'/')?;
@@ -62,12 +81,8 @@ impl Path {
             .position(|ch| *ch == b'/')
             .unwrap_or(bytes.len());
 
-        if len >= DIRSIZ as _ {
-            name.copy_from_slice(&bytes[..DIRSIZ]);
-        } else {
-            name[..len].copy_from_slice(&bytes[..len]);
-            name[len] = 0;
-        }
+        // Truncate bytes followed by the first DIRSIZ bytes.
+        let name = &bytes[..cmp::min(len, DIRSIZ)];
 
         bytes = &bytes[len..];
 
@@ -77,7 +92,8 @@ impl Path {
             .unwrap_or(bytes.len());
 
         // SAFETY: `bytes` is a subslice of `self.inner`, which contains no NUL characters.
-        Some(unsafe { Self::from_bytes(&bytes[next_start..]) })
+        let path = unsafe { Self::from_bytes(&bytes[next_start..]) };
+        Some((path, name))
     }
 
     /// Returns `true` if `Path` begins with `'/'`.
@@ -89,7 +105,7 @@ impl Path {
     /// If parent != 0, return the inode for the parent and copy the final
     /// path element into name, which must have room for DIRSIZ bytes.
     /// Must be called inside a transaction since it calls Inode::put().
-    unsafe fn namex(&self, parent: bool, name: &mut [u8; DIRSIZ]) -> Result<*mut Inode, ()> {
+    unsafe fn namex(&self, parent: bool) -> Result<(*mut Inode, Option<&[u8]>), ()> {
         let mut ip = if self.is_absolute() {
             iget(ROOTDEV as u32, ROOTINO)
         } else {
@@ -99,7 +115,8 @@ impl Path {
         let mut path = self;
 
         loop {
-            path = some_or!(path.skipelem(name), break);
+            let (new_path, name) = some_or!(path.skipelem(), break);
+            path = new_path;
 
             (*ip).lock();
             if (*ip).typ as i32 != T_DIR {
@@ -109,9 +126,9 @@ impl Path {
             if parent && path.inner.is_empty() {
                 // Stop one level early.
                 (*ip).unlock();
-                return Ok(ip);
+                return Ok((ip, Some(name)));
             }
-            let next: *mut Inode = dirlookup(ip, name.as_mut_ptr(), ptr::null_mut());
+            let next: *mut Inode = dirlookup(ip, name, ptr::null_mut());
             if next.is_null() {
                 (*ip).unlockput();
                 return Err(());
@@ -123,6 +140,6 @@ impl Path {
             (*ip).put();
             return Err(());
         }
-        Ok(ip)
+        Ok((ip, None))
     }
 }
