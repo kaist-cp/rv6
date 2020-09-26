@@ -21,7 +21,6 @@ use crate::{
     sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::{Stat, T_DIR},
-    string::{strncmp, strncpy},
 };
 use core::mem;
 use core::{ops::DerefMut, ptr};
@@ -66,6 +65,29 @@ pub struct Superblock {
 pub struct Dirent {
     pub inum: u16,
     name: [u8; DIRSIZ],
+}
+
+impl Dirent {
+    /// Fill in name. If name is shorter than DIRSIZ, NUL character is appended as
+    /// terminator.
+    ///
+    /// `name` must contains no NUL characters, but this is not asafety invariant.
+    fn set_name(&mut self, name: &[u8]) {
+        if name.len() >= DIRSIZ {
+            self.name.copy_from_slice(&name[..DIRSIZ]);
+        } else {
+            self.name[..name.len()].copy_from_slice(&name);
+            self.name[name.len()] = 0;
+        }
+    }
+
+    /// Returns slice which exactly contains `name`.
+    ///
+    /// It contains no NUL characters.
+    fn name_as_slice(&self) -> &[u8] {
+        let len = self.name.iter().position(|ch| *ch == 0).unwrap_or(DIRSIZ);
+        &self.name[..len]
+    }
 }
 
 /// On-disk inode structure
@@ -647,14 +669,11 @@ pub unsafe fn stati(ip: *mut Inode, mut st: *mut Stat) {
     (*st).size = (*ip).size as usize;
 }
 
-/// Directories
-pub unsafe fn namecmp(s: *const u8, t: *const u8) -> i32 {
-    strncmp(s, t, DIRSIZ as u32)
-}
+// Directories
 
 /// Look for a directory entry in a directory.
 /// If found, set *poff to byte offset of entry.
-pub unsafe fn dirlookup(dp: *mut Inode, name: *mut u8, poff: *mut u32) -> *mut Inode {
+pub unsafe fn dirlookup(dp: *mut Inode, name: &[u8], poff: *mut u32) -> *mut Inode {
     let mut off: u32 = 0;
     let mut de: Dirent = Default::default();
     if (*dp).typ as i32 != T_DIR {
@@ -671,7 +690,7 @@ pub unsafe fn dirlookup(dp: *mut Inode, name: *mut u8, poff: *mut u32) -> *mut I
         {
             panic!("dirlookup read");
         }
-        if de.inum as i32 != 0 && namecmp(name, de.name.as_mut_ptr()) == 0 {
+        if de.inum as i32 != 0 && name == de.name_as_slice() {
             // entry matches path element
             if !poff.is_null() {
                 *poff = off
@@ -684,7 +703,9 @@ pub unsafe fn dirlookup(dp: *mut Inode, name: *mut u8, poff: *mut u32) -> *mut I
 }
 
 /// Write a new directory entry (name, inum) into the directory dp.
-pub unsafe fn dirlink(dp: *mut Inode, name: *mut u8, inum: u32) -> i32 {
+///
+/// `name` must not contain any NUL characters.
+pub unsafe fn dirlink(dp: *mut Inode, name: &[u8], inum: u32) -> i32 {
     let mut de: Dirent = Default::default();
 
     // Check that name is not present.
@@ -712,8 +733,9 @@ pub unsafe fn dirlink(dp: *mut Inode, name: *mut u8, inum: u32) -> i32 {
         }
         off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>()) as i32
     }
-    strncpy(de.name.as_mut_ptr(), name, DIRSIZ as i32);
+
     de.inum = inum as u16;
+    de.set_name(name);
     if (*dp).write(
         0,
         &mut de as *mut Dirent as usize,
