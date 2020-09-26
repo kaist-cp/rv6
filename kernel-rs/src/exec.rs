@@ -1,8 +1,9 @@
 use crate::{
     elf::{ElfHdr, ProgHdr, ELF_MAGIC, ELF_PROG_LOAD},
     file::Inode,
-    fs::namei,
+    fs::Path,
     log::{begin_op, end_op},
+    ok_or,
     param::MAXARG,
     proc::{myproc, proc_freepagetable, proc_pagetable, Proc},
     riscv::PGSIZE,
@@ -10,7 +11,7 @@ use crate::{
     vm::PageTable,
 };
 
-pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
+pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> i32 {
     let sz: usize = 0;
     let mut ustack: [usize; MAXARG + 1] = [0; MAXARG + 1];
     let mut elf: ElfHdr = Default::default();
@@ -18,11 +19,11 @@ pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
     let mut p: *mut Proc = myproc();
 
     begin_op();
-    let ip: *mut Inode = namei(path);
-    if ip.is_null() {
+    let ip = ok_or!(path.namei(), {
         end_op();
         return -1;
-    }
+    });
+
     (*ip).lock();
 
     let mut ip = scopeguard::guard(ip, |ip| {
@@ -162,8 +163,8 @@ pub unsafe fn exec(path: *mut u8, argv: *mut *mut u8) -> i32 {
         (*(*p).tf).a1 = sp;
 
         // Save program name for debugging.
-        let mut s: *mut u8 = path;
-        let mut last: *mut u8 = s;
+        let mut s = path.as_bytes().as_ptr();
+        let mut last = s;
         while *s != 0 {
             if *s as i32 == '/' as i32 {
                 last = s.offset(1)
