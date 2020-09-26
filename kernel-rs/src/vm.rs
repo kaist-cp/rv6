@@ -83,7 +83,7 @@ impl DerefMut for RawPageTable {
 impl RawPageTable {
     /// Look up a virtual address, return the physical address,
     /// or 0 if not mapped.
-    /// Can only be used to look up user pages.
+    /// TODO: Use type parameter at PageTable to show this function "Can only be used to look up user pages."
     pub unsafe fn walkaddr(&mut self, va: usize) -> Option<usize> {
         if va >= MAXVA {
             return None;
