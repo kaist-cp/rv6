@@ -8,14 +8,14 @@ use crate::some_or;
 
 #[derive(PartialEq)]
 #[repr(transparent)]
-pub struct Filename {
+pub struct FileName {
     // Invariant:
     // - The slice contains no NUL characters.
     // - The slice is not longer than DIRSIZ.
     inner: [u8],
 }
 
-impl Filename {
+impl FileName {
     /// Truncate bytes followed by the first DIRSIZ bytes.
     ///
     /// # Safety
@@ -59,7 +59,7 @@ impl Path {
         Ok(self.namex(false)?.0)
     }
 
-    pub unsafe fn nameiparent(&self) -> Result<(*mut Inode, &Filename), ()> {
+    pub unsafe fn nameiparent(&self) -> Result<(*mut Inode, &FileName), ()> {
         let (ip, name_in_path) = self.namex(true)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
@@ -95,7 +95,7 @@ impl Path {
     /// ```
     // TODO: Make an iterator.
     // TODO: Fix doctests work.
-    fn skipelem(&self) -> Option<(&Self, &Filename)> {
+    fn skipelem(&self) -> Option<(&Self, &FileName)> {
         let mut bytes = &self.inner;
 
         let name_start = bytes.iter().position(|ch| *ch != b'/')?;
@@ -106,7 +106,7 @@ impl Path {
             .position(|ch| *ch == b'/')
             .unwrap_or(bytes.len());
 
-        let name = unsafe { Filename::from_bytes(&bytes[..len]) };
+        let name = unsafe { FileName::from_bytes(&bytes[..len]) };
 
         bytes = &bytes[len..];
 
@@ -129,7 +129,7 @@ impl Path {
     /// If parent != 0, return the inode for the parent and copy the final
     /// path element into name, which must have room for DIRSIZ bytes.
     /// Must be called inside a transaction since it calls Inode::put().
-    unsafe fn namex(&self, parent: bool) -> Result<(*mut Inode, Option<&Filename>), ()> {
+    unsafe fn namex(&self, parent: bool) -> Result<(*mut Inode, Option<&FileName>), ()> {
         let mut ip = if self.is_absolute() {
             iget(ROOTDEV as u32, ROOTINO)
         } else {
