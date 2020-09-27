@@ -33,6 +33,9 @@ impl<T> SleeplockWIP<T> {
         self.data.into_inner()
     }
 
+    // TODO: This should be removed after `WaitChannel::sleep` gets refactored to take
+    // `SpinLockGuard`.
+    #[allow(clippy::while_immutable_condition)]
     pub unsafe fn lock(&self) -> SleepLockGuard<'_, T> {
         let mut guard = self.spinlock.lock();
         while *guard != -1 {
