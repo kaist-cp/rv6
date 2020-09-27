@@ -4,7 +4,6 @@ use cstr_core::CStr;
 
 use super::{dirlookup, iget, Inode, DIRSIZ, ROOTDEV, ROOTINO, T_DIR};
 use crate::proc::myproc;
-use crate::some_or;
 
 #[derive(PartialEq)]
 #[repr(transparent)]
@@ -122,7 +121,7 @@ impl Path {
 
     /// Returns `true` if `Path` begins with `'/'`.
     fn is_absolute(&self) -> bool {
-        self.inner.len() != 0 && self.inner[0] == b'/'
+        !self.inner.is_empty() && self.inner[0] == b'/'
     }
 
     /// Look up and return the inode for a path name.
@@ -138,8 +137,7 @@ impl Path {
 
         let mut path = self;
 
-        loop {
-            let (new_path, name) = some_or!(path.skipelem(), break);
+        while let Some((new_path, name)) = path.skipelem() {
             path = new_path;
 
             (*ip).lock();
