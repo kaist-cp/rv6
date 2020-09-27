@@ -4,11 +4,12 @@ addons:
   apt:
     packages:
       - gcc-riscv64-linux-gnu
-      - qemu-system-misc
+      - qemu-system-misc=1:4.2-3ubuntu6
 install:
   - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain none -y
   - source $HOME/.cargo/env
   - rustup component add rust-src
 script:
  - cargo fmt --manifest-path=kernel-rs/Cargo.toml -- --check -l
- - make
+ - make qemu USERTEST=yes
+ - rm fs.img ; make qemu USERTEST=yes RUST_MODE=release
