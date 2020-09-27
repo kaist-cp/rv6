@@ -11,5 +11,4 @@ install:
   - rustup component add rust-src
 script:
  - cargo fmt --manifest-path=kernel-rs/Cargo.toml -- --check -l
- - make qemu USERTEST=yes
- - rm fs.img ; make qemu USERTEST=yes RUST_MODE=release
+ - make qemu USERTEST=yes RUST_MODE=release
