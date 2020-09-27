@@ -213,7 +213,10 @@ impl RawPageTable {
     /// Mark a PTE invalid for user access.
     /// Used by exec for the user stack guard page.
     pub unsafe fn uvmclear(&mut self, va: usize) {
-        PageTable::from_raw(self).walk(va, 0).expect("uvmclear").clear_flag(PTE_U as usize);
+        PageTable::from_raw(self)
+            .walk(va, 0)
+            .expect("uvmclear")
+            .clear_flag(PTE_U as usize);
     }
 
     /// Copy from user to kernel.
@@ -333,11 +336,7 @@ impl PageTable {
     ///   21..39 -- 9 bits of level-1 index.
     ///   12..20 -- 9 bits of level-0 index.
     ///    0..12 -- 12 bits of byte offset within the page.
-    unsafe fn walk(
-        &mut self,
-        va: usize,
-        alloc: i32,
-    ) -> Option<&mut PageTableEntry> {
+    unsafe fn walk(&mut self, va: usize, alloc: i32) -> Option<&mut PageTableEntry> {
         let mut pagetable = &mut *self.as_raw();
         if va >= MAXVA {
             panic!("walk");
@@ -570,7 +569,9 @@ pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
 /// Assumes va is page aligned.
 pub unsafe fn kvmpa(va: usize) -> usize {
     let off: usize = va.wrapping_rem(PGSIZE);
-    let pte = KERNEL_PAGETABLE.assume_init_mut().walk(va, 0)
+    let pte = KERNEL_PAGETABLE
+        .assume_init_mut()
+        .walk(va, 0)
         .filter(|pte| pte.check_flag(PTE_V))
         .expect("kvmpa");
     let pa = pte.as_page() as *const _ as usize;
