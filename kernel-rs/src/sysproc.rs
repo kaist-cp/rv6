@@ -3,6 +3,7 @@ use crate::{
     proc::{myproc, resizeproc, PROCSYS},
     syscall::{argaddr, argint},
     trap::{TICKS, TICKSLOCK, TICKSWAITCHANNEL},
+    poweroff,
 };
 
 pub unsafe fn sys_exit() -> usize {
@@ -61,4 +62,9 @@ pub unsafe fn sys_uptime() -> usize {
     let xticks: u32 = TICKS;
     TICKSLOCK.release();
     xticks as usize
+}
+
+pub unsafe fn sys_poweroff() -> usize {
+    let exitcode = ok_or!(argint(0), return usize::MAX);
+    poweroff::machine_poweroff(exitcode as _);
 }

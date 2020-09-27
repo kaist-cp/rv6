@@ -2,7 +2,7 @@ use mem::MaybeUninit;
 
 use crate::{
     kalloc::{kalloc, kfree},
-    memlayout::{CLINT, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
+    memlayout::{CLINT, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     println,
     riscv::{
         make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, sfence_vma, w_satp, PteT,
@@ -504,6 +504,9 @@ pub static mut KERNEL_PAGETABLE: MaybeUninit<PageTable> = MaybeUninit::uninit();
 pub unsafe fn kvminit() {
     // TODO: make MemoryManager which initiate and own KERNEL_PAGETABLE
     KERNEL_PAGETABLE.write(PageTable::new());
+
+    // SiFive Test Finisher MMIO
+    kvmmap(FINISHER, FINISHER, PGSIZE, PTE_R | PTE_W);
 
     // uart registers
     kvmmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);

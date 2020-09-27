@@ -2193,5 +2193,5 @@ main(int argc, char *argv[])
     printf("ALL TESTS PASSED\n");
   else
     printf("SOME TESTS FAILED\n");
-  exit(1);   // not reached.
+  exit(fail);
 }

@@ -17,6 +17,9 @@
 //! PHYSTOP -- end RAM used by the kernel
 use crate::riscv::{MAXVA, PGSIZE};
 
+/// SiFive Test Finisher. (virt device only)
+pub const FINISHER: usize = 0x100000;
+
 /// qemu puts UART registers here in physical memory.
 pub const UART0: usize = 0x10000000;
 pub const UART0_IRQ: usize = 10;
