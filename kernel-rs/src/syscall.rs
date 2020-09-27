@@ -68,7 +68,7 @@ pub unsafe fn argstr(n: usize, buf: *mut u8, max: usize) -> Result<i32, ()> {
     Ok(fetchstr(addr, buf, max))
 }
 
-static mut SYSCALLS: [Option<unsafe fn() -> usize>; 22] = [
+static mut SYSCALLS: [Option<unsafe fn() -> usize>; 23] = [
     None,
     Some(sys_fork as unsafe fn() -> usize),
     Some(sys_exit as unsafe fn() -> usize),
@@ -91,6 +91,7 @@ static mut SYSCALLS: [Option<unsafe fn() -> usize>; 22] = [
     Some(sys_link as unsafe fn() -> usize),
     Some(sys_mkdir as unsafe fn() -> usize),
     Some(sys_close as unsafe fn() -> usize),
+    Some(sys_poweroff as unsafe fn() -> usize),
 ];
 
 pub unsafe fn syscall() {
