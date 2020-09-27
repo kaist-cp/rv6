@@ -1,9 +1,8 @@
 use crate::{
-    ok_or,
+    ok_or, poweroff,
     proc::{myproc, resizeproc, PROCSYS},
     syscall::{argaddr, argint},
     trap::{TICKS, TICKSLOCK, TICKSWAITCHANNEL},
-    poweroff,
 };
 
 pub unsafe fn sys_exit() -> usize {
