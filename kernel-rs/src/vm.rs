@@ -53,8 +53,8 @@ impl PageTableEntry {
         pte2pa(self.inner)
     }
 
-    fn as_page(&self) -> &Page {
-        unsafe { &*(pte2pa(self.inner) as *const Page) }
+    unsafe fn as_page(&self) -> &Page {
+        &*(pte2pa(self.inner) as *const Page)
     }
 
     unsafe fn as_table_mut(&mut self) -> &mut RawPageTable {
@@ -88,7 +88,7 @@ impl RawPageTable {
         if va >= MAXVA {
             return None;
         }
-        let pte = some_or!(walk(self, va, 0), return None);
+        let pte = walk(self, va, 0)?;
         if !pte.check_flag(PTE_V) {
             return None;
         }
@@ -102,8 +102,7 @@ impl RawPageTable {
     /// All leaf mappings must already have been removed.
     unsafe fn freewalk(&mut self) {
         // There are 2^9 = 512 PTEs in a page table.
-        for i in 0..512 {
-            let pte = &mut self[i];
+        for pte in &mut self.inner {
             if pte.check_flag(PTE_V) && !pte.check_flag((PTE_R | PTE_W | PTE_X) as usize) {
                 // This PTE points to a lower-level page table.
                 pte.as_table_mut().freewalk();
@@ -352,7 +351,7 @@ impl PageTable {
             panic!("inituvm: more than a page");
         }
         let mem: *mut u8 = kalloc() as *mut u8;
-        ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
+        ptr::write_bytes(mem, 0, PGSIZE);
         self.mappages(0, PGSIZE, mem as usize, PTE_W | PTE_R | PTE_X | PTE_U)
             .expect("inituvm: mappage");
         ptr::copy(
@@ -376,7 +375,7 @@ impl PageTable {
                 self.uvmdealloc(a, oldsz);
                 return Err(());
             }
-            ptr::write_bytes(mem as *mut libc::CVoid, 0, PGSIZE);
+            ptr::write_bytes(mem, 0, PGSIZE);
             if self
                 .mappages(a, PGSIZE, mem as usize, PTE_W | PTE_X | PTE_R | PTE_U)
                 .is_err()
@@ -533,7 +532,7 @@ unsafe fn walk(
                 return None;
             }
 
-            ptr::write_bytes(k as *mut libc::CVoid, 0, PGSIZE);
+            ptr::write_bytes(k, 0, PGSIZE);
             pte.set_inner(pa2pte(k as usize));
             pte.set_flag(PTE_V);
             pagetable = pte.as_table_mut();
