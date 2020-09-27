@@ -302,6 +302,8 @@ pub unsafe fn virtio_disk_init() {
     // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
 }
 
+// TODO: This should be removed after `WaitChannel::sleep` gets refactored to take `SpinLockGuard`.
+#[allow(clippy::while_immutable_condition)]
 pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
     let sector: usize = (*b).blockno.wrapping_mul((BSIZE / 512) as u32) as _;
 

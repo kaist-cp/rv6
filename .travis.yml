@@ -10,5 +10,6 @@ install:
   - source $HOME/.cargo/env
   - rustup component add rust-src
 script:
- - cargo fmt --manifest-path=kernel-rs/Cargo.toml -- --check -l
- - make qemu USERTEST=yes RUST_MODE=release
+  - cargo fmt --manifest-path=kernel-rs/Cargo.toml -- --check -l
+  - cargo clippy --manifest-path=kernel-rs/Cargo.toml
+  - make qemu USERTEST=yes RUST_MODE=release
