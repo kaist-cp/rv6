@@ -57,7 +57,15 @@ impl PageTableEntry {
         &*(pte2pa(self.inner) as *const Page)
     }
 
-    unsafe fn as_table_mut(&mut self) -> &mut RawPageTable {
+    fn as_table_mut(&mut self) -> Option<&mut RawPageTable> {
+        if self.check_flag(PTE_V) && !self.check_flag((PTE_R | PTE_W | PTE_X) as usize) {
+            Some(unsafe { &mut *(pte2pa(self.inner) as *mut RawPageTable) })
+        } else {
+            None
+        }
+    }
+
+    unsafe fn as_table_mut_unchecked(&mut self) -> &mut RawPageTable {
         &mut *(pte2pa(self.inner) as *mut RawPageTable)
     }
 }
@@ -88,7 +96,8 @@ impl RawPageTable {
         if va >= MAXVA {
             return None;
         }
-        let pte = walk(self, va, 0)?;
+        let mut pt = PageTable::from_raw(self);
+        let pte = pt.walk(va, 0)?;
         if !pte.check_flag(PTE_V) {
             return None;
         }
@@ -105,7 +114,7 @@ impl RawPageTable {
         for pte in &mut self.inner {
             if pte.check_flag(PTE_V) && !pte.check_flag((PTE_R | PTE_W | PTE_X) as usize) {
                 // This PTE points to a lower-level page table.
-                pte.as_table_mut().freewalk();
+                pte.as_table_mut_unchecked().freewalk();
                 pte.set_inner(0);
             } else if pte.check_flag(PTE_V) {
                 panic!("freewalk: leaf");
@@ -154,7 +163,8 @@ impl RawPageTable {
         let mut a = pgrounddown(va);
         let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
         loop {
-            let pte = walk(self, a, 0).expect("uvmunmap: walk");
+            let mut pt = PageTable::from_raw(self);
+            let pte = pt.walk(a, 0).expect("uvmunmap: walk");
             if !pte.check_flag(PTE_V) {
                 println!(
                     "va={:018p} pte={:018p}",
@@ -203,8 +213,7 @@ impl RawPageTable {
     /// Mark a PTE invalid for user access.
     /// Used by exec for the user stack guard page.
     pub unsafe fn uvmclear(&mut self, va: usize) {
-        let pte = walk(self, va, 0).expect("uvmclear");
-        pte.clear_flag(PTE_U as usize)
+        PageTable::from_raw(self).walk(va, 0).expect("uvmclear").clear_flag(PTE_U as usize);
     }
 
     /// Copy from user to kernel.
@@ -311,6 +320,49 @@ impl PageTable {
     pub fn as_raw(&self) -> *mut RawPageTable {
         self.ptr
     }
+
+    /// Return the address of the PTE in page table pagetable
+    /// that corresponds to virtual address va. If alloc!=0,
+    /// create any required page-table pages.
+    ///
+    /// The risc-v Sv39 scheme has three levels of page-table
+    /// pages. A page-table page contains 512 64-bit PTEs.
+    /// A 64-bit virtual address is split into five fields:
+    ///   39..63 -- must be zero.
+    ///   30..38 -- 9 bits of level-2 index.
+    ///   21..39 -- 9 bits of level-1 index.
+    ///   12..20 -- 9 bits of level-0 index.
+    ///    0..12 -- 12 bits of byte offset within the page.
+    unsafe fn walk(
+        &mut self,
+        va: usize,
+        alloc: i32,
+    ) -> Option<&mut PageTableEntry> {
+        let mut pagetable = &mut *self.as_raw();
+        if va >= MAXVA {
+            panic!("walk");
+        }
+        for level in (1..3).rev() {
+            let pte = &mut pagetable[px(level, va)];
+            if pte.check_flag(PTE_V) {
+                pagetable = pte.as_table_mut_unchecked();
+            } else {
+                if alloc == 0 {
+                    return None;
+                }
+                let k = kalloc();
+                if k.is_null() {
+                    return None;
+                }
+
+                ptr::write_bytes(k, 0, PGSIZE);
+                pte.set_inner(pa2pte(k as usize));
+                pte.set_flag(PTE_V);
+                pagetable = pte.as_table_mut_unchecked();
+            }
+        }
+        Some(&mut pagetable[px(0, va)])
+    }
 }
 
 // TODO: separate these function for va structure later (Use type to show this)
@@ -329,7 +381,7 @@ impl PageTable {
         let mut a = pgrounddown(va);
         let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
         loop {
-            let pte = some_or!(walk(self, a, 1), return Err(()));
+            let pte = some_or!(self.walk(a, 1), return Err(()));
             if pte.check_flag(PTE_V) {
                 panic!("remap");
             }
@@ -397,7 +449,7 @@ impl PageTable {
     /// Frees any allocated pages on failure.
     pub unsafe fn uvmcopy(&mut self, mut new: &mut PageTable, sz: usize) -> Result<(), ()> {
         for i in num_iter::range_step(0, sz, PGSIZE) {
-            let pte = walk(self, i, 0).expect("uvmcopy: pte should exist");
+            let pte = self.walk(i, 0).expect("uvmcopy: pte should exist");
             if !pte.check_flag(PTE_V) {
                 panic!("uvmcopy: page not present");
             }
@@ -499,48 +551,6 @@ pub unsafe fn kvminithart() {
     sfence_vma();
 }
 
-/// Return the address of the PTE in page table pagetable
-/// that corresponds to virtual address va. If alloc!=0,
-/// create any required page-table pages.
-///
-/// The risc-v Sv39 scheme has three levels of page-table
-/// pages. A page-table page contains 512 64-bit PTEs.
-/// A 64-bit virtual address is split into five fields:
-///   39..63 -- must be zero.
-///   30..38 -- 9 bits of level-2 index.
-///   21..39 -- 9 bits of level-1 index.
-///   12..20 -- 9 bits of level-0 index.
-///    0..12 -- 12 bits of byte offset within the page.
-unsafe fn walk(
-    mut pagetable: &mut RawPageTable,
-    va: usize,
-    alloc: i32,
-) -> Option<&mut PageTableEntry> {
-    if va >= MAXVA {
-        panic!("walk");
-    }
-    for level in (1..3).rev() {
-        let pte = &mut pagetable[px(level, va)];
-        if pte.check_flag(PTE_V) {
-            pagetable = pte.as_table_mut();
-        } else {
-            if alloc == 0 {
-                return None;
-            }
-            let k = kalloc();
-            if k.is_null() {
-                return None;
-            }
-
-            ptr::write_bytes(k, 0, PGSIZE);
-            pte.set_inner(pa2pte(k as usize));
-            pte.set_flag(PTE_V);
-            pagetable = pte.as_table_mut();
-        }
-    }
-    Some(&mut pagetable[px(0, va)])
-}
-
 /// Add a mapping to the kernel page table.
 /// Only used when booting.
 /// Does not flush TLB or enable paging.
@@ -560,7 +570,7 @@ pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
 /// Assumes va is page aligned.
 pub unsafe fn kvmpa(va: usize) -> usize {
     let off: usize = va.wrapping_rem(PGSIZE);
-    let pte = walk(KERNEL_PAGETABLE.assume_init_mut(), va, 0)
+    let pte = KERNEL_PAGETABLE.assume_init_mut().walk(va, 0)
         .filter(|pte| pte.check_flag(PTE_V))
         .expect("kvmpa");
     let pa = pte.as_page() as *const _ as usize;
