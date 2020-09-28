@@ -2,7 +2,7 @@ use core::cmp;
 use core::ptr;
 use cstr_core::CStr;
 
-use super::{dirlookup, iget, Inode, DIRSIZ, ROOTDEV, ROOTINO, T_DIR};
+use super::{iget, Inode, InodeGuard, DIRSIZ, ROOTDEV, ROOTINO, T_DIR};
 use crate::proc::myproc;
 
 #[derive(PartialEq)]
@@ -142,22 +142,25 @@ impl Path {
         while let Some((new_path, name)) = path.skipelem() {
             path = new_path;
 
-            (*ip).lock();
-            if (*ip).inner.typ != T_DIR {
-                (*ip).unlockput();
+            let mut ip_inodeguard: InodeGuard<'_> = InodeGuard {
+                guard: (*ip).lock(),
+                ptr: ip,
+            };
+            if ip_inodeguard.guard.typ != T_DIR {
+                ip_inodeguard.unlockput();
                 return Err(());
             }
             if parent && path.inner.is_empty() {
                 // Stop one level early.
-                (*ip).unlock();
+                ip_inodeguard.unlock();
                 return Ok((ip, Some(name)));
             }
-            let next: *mut Inode = dirlookup(ip, name, ptr::null_mut());
+            let next: *mut Inode = ip_inodeguard.dirlookup(name, ptr::null_mut());
             if next.is_null() {
-                (*ip).unlockput();
+                ip_inodeguard.unlockput();
                 return Err(());
             }
-            (*ip).unlockput();
+            ip_inodeguard.unlockput();
             ip = next
         }
         if parent {

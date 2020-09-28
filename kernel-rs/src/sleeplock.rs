@@ -24,6 +24,14 @@ pub struct SleeplockWIP<T> {
 unsafe impl<T: Send> Sync for SleeplockWIP<T> {}
 
 impl<T> SleeplockWIP<T> {
+    // TODO: transient measure
+    pub const fn new(name: &'static str, data: T) -> Self {
+        Self {
+            spinlock: Spinlock::new(name, -1),
+            data: UnsafeCell::new(data),
+            waitchannel: WaitChannel::new(),
+        }
+    }
     pub fn initlock(&mut self, name: &'static str) {
         self.spinlock = Spinlock::new(name, -1);
         self.waitchannel = WaitChannel::new();
@@ -42,7 +50,6 @@ impl<T> SleeplockWIP<T> {
             self.waitchannel.sleep(guard.raw() as *mut RawSpinlock);
         }
         *guard = (*myproc()).pid;
-        drop(guard);
         SleepLockGuard {
             lock: self,
             _marker: PhantomData,

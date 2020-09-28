@@ -1,6 +1,6 @@
 use crate::{
     elf::{ElfHdr, ProgHdr, ELF_MAGIC, ELF_PROG_LOAD},
-    file::Inode,
+    file::InodeGuard,
     fs::Path,
     log::{begin_op, end_op},
     ok_or,
@@ -23,16 +23,17 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> i32 {
         end_op();
         return -1;
     });
-
-    (*ip).lock();
-
-    let mut ip = scopeguard::guard(ip, |ip| {
-        (*ip).unlockput();
+    let ip_inodeguard: InodeGuard<'_> = InodeGuard {
+        guard: (*ip).lock(),
+        ptr: ip,
+    };
+    let mut ip_inodeguard = scopeguard::guard(ip_inodeguard, |ip_inodeguard| {
+        ip_inodeguard.unlockput();
         end_op();
     });
 
     // Check ELF header
-    if !((**ip).read(
+    if !(ip_inodeguard.read(
         0,
         &mut elf as *mut ElfHdr as usize,
         0,
@@ -61,7 +62,7 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> i32 {
             .phoff
             .wrapping_add(i * ::core::mem::size_of::<ProgHdr>());
 
-        if (**ip).read(
+        if ip_inodeguard.read(
             0,
             &mut ph as *mut ProgHdr as usize,
             off as u32,
@@ -86,14 +87,15 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> i32 {
             if ph.vaddr.wrapping_rem(PGSIZE) != 0 {
                 return -1;
             }
-            if loadseg(pt, ph.vaddr, *ip, ph.off as u32, ph.filesz as u32).is_err() {
+            if ip_inodeguard
+                .loadseg(pt, ph.vaddr, ph.off as u32, ph.filesz as u32)
+                .is_err()
+            {
                 return -1;
             }
         }
     }
-    (**ip).unlockput();
-    core::mem::forget(ip);
-    end_op();
+    drop(ip_inodeguard);
 
     p = myproc();
     let oldsz: usize = (*p).sz;
@@ -199,32 +201,34 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> i32 {
 /// and the pages from va to va+sz must already be mapped.
 ///
 /// Returns `Ok(())` on success, `Err(())` on failure.
-unsafe fn loadseg(
-    pagetable: &mut PageTable,
-    va: usize,
-    ip: *mut Inode,
-    offset: u32,
-    sz: u32,
-) -> Result<(), ()> {
-    if va.wrapping_rem(PGSIZE) != 0 {
-        panic!("loadseg: va msut be page aligned");
-    }
-
-    for i in num_iter::range_step(0, sz, PGSIZE as _) {
-        let pa = pagetable
-            .walkaddr(va.wrapping_add(i as usize))
-            .expect("loadseg: address should exist");
-
-        let n = if sz.wrapping_sub(i) < PGSIZE as u32 {
-            sz.wrapping_sub(i)
-        } else {
-            PGSIZE as u32
-        };
-
-        if (*ip).read(0, pa, offset.wrapping_add(i), n) as u32 != n {
-            return Err(());
+impl InodeGuard<'_> {
+    unsafe fn loadseg(
+        &mut self,
+        pagetable: &mut PageTable,
+        va: usize,
+        offset: u32,
+        sz: u32,
+    ) -> Result<(), ()> {
+        if va.wrapping_rem(PGSIZE) != 0 {
+            panic!("loadseg: va msut be page aligned");
         }
-    }
 
-    Ok(())
+        for i in num_iter::range_step(0, sz, PGSIZE as _) {
+            let pa = pagetable
+                .walkaddr(va.wrapping_add(i as usize))
+                .expect("loadseg: address should exist");
+
+            let n = if sz.wrapping_sub(i) < PGSIZE as u32 {
+                sz.wrapping_sub(i)
+            } else {
+                PGSIZE as u32
+            };
+
+            if self.read(0, pa, offset.wrapping_add(i), n) as u32 != n {
+                return Err(());
+            }
+        }
+
+        Ok(())
+    }
 }

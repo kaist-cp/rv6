@@ -1,12 +1,12 @@
 //! Support functions for system calls that involve file descriptors.
 use crate::{
-    fs::{stati, BSIZE},
+    fs::BSIZE,
     log::{begin_op, end_op},
     param::{MAXOPBLOCKS, NDEV, NFILE},
     pipe::AllocatedPipe,
     pool::{PoolRef, RcPool, TaggedBox},
     proc::{myproc, Proc},
-    sleeplock::Sleeplock,
+    sleeplock::{SleepLockGuard, SleeplockWIP},
     spinlock::Spinlock,
     stat::Stat,
 };
@@ -22,13 +22,11 @@ pub struct File {
 // TODO: will be infered as we wrap *mut Pipe and *mut Inode.
 unsafe impl Send for File {}
 
+pub struct InodeGuard<'a> {
+    pub guard: SleepLockGuard<'a, InodeInner>,
+    pub ptr: *mut Inode,
+}
 pub struct InodeInner {
-    /// protects everything below here
-    pub lock: Sleeplock,
-
-    /// inode has been read from disk?
-    pub valid: i32,
-
     /// copy of disk inode
     pub typ: i16,
     pub major: u16,
@@ -49,7 +47,11 @@ pub struct Inode {
     /// Reference count
     pub ref_0: i32,
 
-    pub inner: InodeInner,
+    /// inode has been read from disk?
+    pub valid: i32,
+
+    // pub inner: InodeInner,
+    pub inner: SleeplockWIP<InodeInner>,
 }
 
 pub enum FileType {
@@ -108,9 +110,12 @@ impl File {
 
         match self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
-                (*ip).lock();
-                stati(ip, &mut st);
-                (*ip).unlock();
+                let ip_inodeguard: InodeGuard<'_> = InodeGuard {
+                    guard: (*ip).lock(),
+                    ptr: ip,
+                };
+                ip_inodeguard.stati(&mut st);
+                ip_inodeguard.unlock();
                 if (*p)
                     .pagetable
                     .assume_init_mut()
@@ -141,12 +146,15 @@ impl File {
         match &mut self.typ {
             FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0)),
             FileType::Inode { ip, off } => {
-                (**ip).lock();
-                let r = (**ip).read(1, addr, *off, n as u32);
+                let mut ip_inodeguard: InodeGuard<'_> = InodeGuard {
+                    guard: (**ip).lock(),
+                    ptr: *ip,
+                };
+                let r = ip_inodeguard.read(1, addr, *off, n as u32);
                 if r > 0 {
                     *off = off.wrapping_add(r as u32);
                 }
-                (**ip).unlock();
+                ip_inodeguard.unlock();
                 Ok(r as usize)
             }
             FileType::Device { major, .. } => DEVSW
@@ -178,9 +186,12 @@ impl File {
                 for bytes_written in (0..n).step_by(max) {
                     let bytes_to_write = cmp::min(n - bytes_written, max as i32);
                     begin_op();
-                    (**ip).lock();
+                    let mut ip_inodeguard: InodeGuard<'_> = InodeGuard {
+                        guard: (**ip).lock(),
+                        ptr: *ip,
+                    };
 
-                    let r = (**ip).write(
+                    let r = ip_inodeguard.write(
                         1,
                         addr.wrapping_add(bytes_written as usize),
                         *off,
@@ -189,7 +200,7 @@ impl File {
                     if r > 0 {
                         *off = off.wrapping_add(r as u32);
                     }
-                    (**ip).unlock();
+                    ip_inodeguard.unlock();
                     end_op();
                     if r < 0 {
                         return Err(());
