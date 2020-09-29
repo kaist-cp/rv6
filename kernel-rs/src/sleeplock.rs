@@ -48,6 +48,17 @@ impl<T> SleeplockWIP<T> {
             _marker: PhantomData,
         }
     }
+
+    /// # Safety
+    ///
+    /// `self` must not be shared by other threads.
+    pub unsafe fn get_mut_unchecked(&self) -> &mut T {
+        &mut *self.data.get()
+    }
+
+    pub fn get_mut(&mut self) -> &mut T {
+        unsafe { &mut *self.data.get() }
+    }
 }
 
 impl<T> SleepLockGuard<'_, T> {
