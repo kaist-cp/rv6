@@ -177,38 +177,40 @@ pub unsafe fn sys_unlink() -> usize {
     };
 
     // Cannot unlink "." or "..".
-    let ip: *mut Inode = dp_inodeguard.dirlookup(&name, &mut off);
-    if !ip.is_null() {
-        let mut ip_inodeguard: InodeGuard<'_> = InodeGuard {
-            guard: (*ip).lock(),
-            ptr: ip,
-        };
-        if (ip_inodeguard.guard.nlink as i32) < 1 {
-            panic!("unlink: nlink < 1");
-        }
-        if ip_inodeguard.guard.typ == T_DIR && ip_inodeguard.isdirempty() == 0 {
-            ip_inodeguard.unlockput();
-        } else {
-            if dp_inodeguard.write(
-                0,
-                &mut de as *mut Dirent as usize,
-                off,
-                mem::size_of::<Dirent>() as u32,
-            ) as usize
-                != mem::size_of::<Dirent>()
-            {
-                panic!("unlink: writei");
+    if !(name.as_bytes() == b"." || name.as_bytes() == b"..") {
+        let ip: *mut Inode = dp_inodeguard.dirlookup(&name, &mut off);
+        if !ip.is_null() {
+            let mut ip_inodeguard: InodeGuard<'_> = InodeGuard {
+                guard: (*ip).lock(),
+                ptr: ip,
+            };
+            if (ip_inodeguard.guard.nlink as i32) < 1 {
+                panic!("unlink: nlink < 1");
             }
-            if ip_inodeguard.guard.typ == T_DIR {
-                dp_inodeguard.guard.nlink -= 1;
-                dp_inodeguard.update();
+            if ip_inodeguard.guard.typ == T_DIR && ip_inodeguard.isdirempty() == 0 {
+                ip_inodeguard.unlockput();
+            } else {
+                if dp_inodeguard.write(
+                    0,
+                    &mut de as *mut Dirent as usize,
+                    off,
+                    mem::size_of::<Dirent>() as u32,
+                ) as usize
+                    != mem::size_of::<Dirent>()
+                {
+                    panic!("unlink: writei");
+                }
+                if ip_inodeguard.guard.typ == T_DIR {
+                    dp_inodeguard.guard.nlink -= 1;
+                    dp_inodeguard.update();
+                }
+                dp_inodeguard.unlockput();
+                ip_inodeguard.guard.nlink -= 1;
+                ip_inodeguard.update();
+                ip_inodeguard.unlockput();
+                end_op();
+                return 0;
             }
-            dp_inodeguard.unlockput();
-            ip_inodeguard.guard.nlink -= 1;
-            ip_inodeguard.update();
-            ip_inodeguard.unlockput();
-            end_op();
-            return 0;
         }
     }
 
