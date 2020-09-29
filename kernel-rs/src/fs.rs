@@ -544,7 +544,7 @@ impl Inode {
                 ptr,
             };
             if inodeguard.guard.nlink != 0 {
-                self.ref_0 -=1;
+                self.ref_0 -= 1;
                 return;
             }
 
