@@ -51,7 +51,9 @@ impl<T> SleeplockWIP<T> {
 
     /// # Safety
     ///
-    /// `self` must not be shared by other threads.
+    /// `self` must not be shared by other threads. Use this function only in the middle of
+    /// refactoring.
+    #[allow(clippy::mut_from_ref)]
     pub unsafe fn get_mut_unchecked(&self) -> &mut T {
         &mut *self.data.get()
     }
