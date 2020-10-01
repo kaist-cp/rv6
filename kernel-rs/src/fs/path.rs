@@ -54,7 +54,7 @@ impl Path {
         &self.inner
     }
 
-    // TODO: Following functions should return a safe type rather than `*mut Inode`. 
+    // TODO: Following functions should return a safe type rather than `*mut Inode`.
 
     pub unsafe fn namei(&self) -> Result<*mut Inode, ()> {
         Ok(self.namex(false)?.0)
