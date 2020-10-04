@@ -11,7 +11,7 @@ use crate::{
     vm::PageTable,
 };
 
-pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> i32 {
+pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
     let sz: usize = 0;
     let mut ustack: [usize; MAXARG + 1] = [0; MAXARG + 1];
     let mut elf: ElfHdr = Default::default();
@@ -21,7 +21,7 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> i32 {
     begin_op();
     let ip = ok_or!(path.namei(), {
         end_op();
-        return -1;
+        return Err(());
     });
     let ip_inodeguard: InodeGuard<'_> = InodeGuard {
         guard: (*ip).lock(),
@@ -42,12 +42,12 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> i32 {
         == ::core::mem::size_of::<ElfHdr>()
         && elf.magic == ELF_MAGIC)
     {
-        return -1;
+        return Err(());
     }
 
     let pt = proc_pagetable(p);
     if pt.is_null() {
-        return -1;
+        return Err(());
     }
 
     let mut ptable_guard = scopeguard::guard((pt, sz), |(mut pt, sz)| {
@@ -70,28 +70,28 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> i32 {
         ) as usize
             != ::core::mem::size_of::<ProgHdr>()
         {
-            return -1;
+            return Err(());
         }
         if ph.typ == ELF_PROG_LOAD {
             if ph.memsz < ph.filesz {
-                return -1;
+                return Err(());
             }
             if ph.vaddr.wrapping_add(ph.memsz) < ph.vaddr {
-                return -1;
+                return Err(());
             }
             let sz_op = pt.uvmalloc(*sz, ph.vaddr.wrapping_add(ph.memsz));
             if sz_op.is_err() {
-                return -1;
+                return Err(());
             }
             *sz = sz_op.unwrap();
             if ph.vaddr.wrapping_rem(PGSIZE) != 0 {
-                return -1;
+                return Err(());
             }
             if ip_inodeguard
                 .loadseg(pt, ph.vaddr, ph.off as u32, ph.filesz as u32)
                 .is_err()
             {
-                return -1;
+                return Err(());
             }
         }
     }
@@ -106,7 +106,7 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> i32 {
     let sz_op = pt.uvmalloc(*sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)));
 
     if sz_op.is_err() {
-        return -1;
+        return Err(());
     }
 
     *sz = sz_op.unwrap();
@@ -121,20 +121,20 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> i32 {
             break;
         }
         if argc >= MAXARG {
-            return -1;
+            return Err(());
         }
         sp = sp.wrapping_sub((strlen(*argv.add(argc)) + 1) as usize);
 
         // riscv sp must be 16-byte aligned
         sp = sp.wrapping_sub(sp.wrapping_rem(16));
         if sp < stackbase {
-            return -1;
+            return Err(());
         }
         if pt
             .copyout(sp, *argv.add(argc), (strlen(*argv.add(argc)) + 1) as usize)
             .is_err()
         {
-            return -1;
+            return Err(());
         }
         ustack[argc] = sp;
         argc = argc.wrapping_add(1)
@@ -191,9 +191,9 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> i32 {
         proc_freepagetable(&mut oldpagetable, oldsz);
 
         // this ends up in a0, the first argument to main(argc, argv)
-        return argc as i32;
+        return Ok(argc);
     }
-    -1
+    Err(())
 }
 
 /// Load a program segment into pagetable at virtual address va.

@@ -441,7 +441,7 @@ pub unsafe fn sys_exec() -> usize {
     }
 
     let ret = if success {
-        exec(Path::new(path), argv.as_mut_ptr()) as usize
+        ok_or!(exec(Path::new(path), argv.as_mut_ptr()), usize::MAX)
     } else {
         usize::MAX
     };
