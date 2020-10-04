@@ -229,15 +229,15 @@ impl InodeGuard<'_> {
         // Look for an empty Dirent.
         let mut off: i32 = 0;
         while (off as u32) < self.guard.size {
-            if {
-                let x = self.read(
+            if self
+                .read(
                     0,
                     &mut de as *mut Dirent as usize,
                     off as u32,
                     ::core::mem::size_of::<Dirent>() as u32,
-                );
-                x.is_err() || x.unwrap() != ::core::mem::size_of::<Dirent>()
-            } {
+                )
+                .map_or(true, |v| v != ::core::mem::size_of::<Dirent>())
+            {
                 panic!("dirlink read");
             }
             if de.inum as i32 == 0 {
@@ -247,15 +247,15 @@ impl InodeGuard<'_> {
         }
         de.inum = inum as u16;
         de.set_name(name);
-        if {
-            let x = self.write(
+        if self
+            .write(
                 0,
                 &mut de as *mut Dirent as usize,
                 off as u32,
                 ::core::mem::size_of::<Dirent>() as u32,
-            );
-            x.is_err() || x.unwrap() != ::core::mem::size_of::<Dirent>()
-        } {
+            )
+            .map_or(true, |v| v != ::core::mem::size_of::<Dirent>())
+        {
             panic!("dirlink");
         }
         true
@@ -434,15 +434,15 @@ impl InodeGuard<'_> {
             panic!("dirlookup not DIR");
         }
         while off < self.guard.size {
-            if {
-                let x = self.read(
+            if self
+                .read(
                     0,
                     &mut de as *mut Dirent as usize,
                     off,
                     ::core::mem::size_of::<Dirent>() as u32,
-                );
-                x.is_err() || x.unwrap() != ::core::mem::size_of::<Dirent>()
-            } {
+                )
+                .map_or(true, |v| v != ::core::mem::size_of::<Dirent>())
+            {
                 panic!("dirlookup read");
             }
             if de.inum as i32 != 0 && name == de.get_name() {

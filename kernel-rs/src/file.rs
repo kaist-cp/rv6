@@ -150,12 +150,12 @@ impl File {
                     guard: (**ip).lock(),
                     ptr: *ip,
                 };
-                let r = ip_inodeguard.read(1, addr, *off, n as u32);
-                if r.is_ok() {
-                    *off = off.wrapping_add(r.unwrap() as u32);
+                let ret = ip_inodeguard.read(1, addr, *off, n as u32);
+                if ret.is_ok() {
+                    *off = off.wrapping_add(ret.unwrap() as u32);
                 }
                 ip_inodeguard.unlock();
-                r
+                ret
             }
             FileType::Device { major, .. } => DEVSW
                 .get(*major as usize)
@@ -191,21 +191,19 @@ impl File {
                         ptr: *ip,
                     };
 
-                    let r = ip_inodeguard.write(
+                    let bytes_written = ip_inodeguard.write(
                         1,
                         addr.wrapping_add(bytes_written as usize),
                         *off,
                         bytes_to_write as u32,
                     );
-                    if r.is_ok() {
-                        *off = off.wrapping_add(r.unwrap() as u32);
+                    if bytes_written.is_ok() {
+                        *off = off.wrapping_add(bytes_written.unwrap() as u32);
                     }
                     ip_inodeguard.unlock();
                     end_op();
-                    if r.is_err() {
-                        return Err(());
-                    }
-                    if r.unwrap() != bytes_to_write as usize {
+                    let bytes_written = bytes_written?;
+                    if bytes_written != bytes_to_write as usize {
                         panic!("short File::write");
                     }
                 }

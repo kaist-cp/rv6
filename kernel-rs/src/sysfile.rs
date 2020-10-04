@@ -142,15 +142,15 @@ impl InodeGuard<'_> {
         let mut de: Dirent = Default::default();
         let mut off = (2usize).wrapping_mul(mem::size_of::<Dirent>()) as i32;
         while (off as u32) < self.guard.size {
-            if {
-                let x = self.read(
+            if self
+                .read(
                     0,
                     &mut de as *mut Dirent as usize,
                     off as u32,
                     mem::size_of::<Dirent>() as u32,
-                );
-                x.is_err() || x.unwrap() != mem::size_of::<Dirent>()
-            } {
+                )
+                .map_or(true, |v| v != mem::size_of::<Dirent>())
+            {
                 panic!("isdirempty: readi");
             }
             if de.inum as i32 != 0 {
@@ -185,21 +185,21 @@ pub unsafe fn sys_unlink() -> usize {
                 guard: (*ip).lock(),
                 ptr: ip,
             };
-            if (ip_inodeguard.guard.nlink as i32) < 1 {
+            if ip_inodeguard.guard.nlink < 1 {
                 panic!("unlink: nlink < 1");
             }
             if ip_inodeguard.guard.typ == T_DIR && !ip_inodeguard.isdirempty() {
                 ip_inodeguard.unlockput();
             } else {
-                if {
-                    let x = dp_inodeguard.write(
+                if dp_inodeguard
+                    .write(
                         0,
                         &mut de as *mut Dirent as usize,
                         off,
                         mem::size_of::<Dirent>() as u32,
-                    );
-                    x.is_err() || x.unwrap() != mem::size_of::<Dirent>()
-                } {
+                    )
+                    .map_or(true, |v| v != mem::size_of::<Dirent>())
+                {
                     panic!("unlink: writei");
                 }
                 if ip_inodeguard.guard.typ == T_DIR {
