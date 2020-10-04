@@ -33,15 +33,15 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
     });
 
     // Check ELF header
-    if !({
-        let x = ip_inodeguard.read(
+    if !(ip_inodeguard
+        .read(
             0,
             &mut elf as *mut ElfHdr as usize,
             0,
             ::core::mem::size_of::<ElfHdr>() as u32,
-        );
-        x.is_err() || x.unwrap() == ::core::mem::size_of::<ElfHdr>()
-    } && elf.magic == ELF_MAGIC)
+        )
+        .map_or(true, |v| v == ::core::mem::size_of::<ElfHdr>())
+        && elf.magic == ELF_MAGIC)
     {
         return Err(());
     }
@@ -63,15 +63,15 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
             .phoff
             .wrapping_add(i * ::core::mem::size_of::<ProgHdr>());
 
-        if {
-            let x = ip_inodeguard.read(
+        if ip_inodeguard
+            .read(
                 0,
                 &mut ph as *mut ProgHdr as usize,
                 off as u32,
                 ::core::mem::size_of::<ProgHdr>() as u32,
-            );
-            x.is_err() || x.unwrap() != ::core::mem::size_of::<ProgHdr>()
-        } {
+            )
+            .map_or(true, |v| v != ::core::mem::size_of::<ProgHdr>())
+        {
             return Err(());
         }
         if ph.typ == ELF_PROG_LOAD {
@@ -226,10 +226,10 @@ impl InodeGuard<'_> {
                 PGSIZE as u32
             };
 
-            if {
-                let x = self.read(0, pa, offset.wrapping_add(i), n);
-                x.is_err() || x.unwrap() as u32 != n
-            } {
+            if self
+                .read(0, pa, offset.wrapping_add(i), n)
+                .map_or(true, |v| v as u32 != n)
+            {
                 return Err(());
             }
         }
