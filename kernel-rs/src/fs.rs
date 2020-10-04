@@ -232,14 +232,15 @@ impl InodeGuard<'_> {
         // Look for an empty Dirent.
         let mut off: i32 = 0;
         while (off as u32) < self.guard.size {
-            if self.read(
-                0,
-                &mut de as *mut Dirent as usize,
-                off as u32,
-                ::core::mem::size_of::<Dirent>() as u32,
-            ) as usize
-                != ::core::mem::size_of::<Dirent>()
-            {
+            if {
+                let x = self.read(
+                    0,
+                    &mut de as *mut Dirent as usize,
+                    off as u32,
+                    ::core::mem::size_of::<Dirent>() as u32,
+                );
+                x.is_err() || x.unwrap() != ::core::mem::size_of::<Dirent>()
+            } {
                 panic!("dirlink read");
             }
             if de.inum as i32 == 0 {
@@ -317,16 +318,25 @@ impl InodeGuard<'_> {
     /// Caller must hold self->lock.
     /// If user_dst==1, then dst is a user virtual address;
     /// otherwise, dst is a kernel address.
-    pub unsafe fn read(&mut self, user_dst: i32, mut dst: usize, mut off: u32, mut n: u32) -> i32 {
+    pub unsafe fn read(
+        &mut self,
+        user_dst: i32,
+        mut dst: usize,
+        mut off: u32,
+        mut n: u32,
+    ) -> Result<usize, ()> {
         if off > self.guard.size || off.wrapping_add(n) < off {
-            return -1;
+            return Err(());
         }
         if off.wrapping_add(n) > self.guard.size {
             n = self.guard.size.wrapping_sub(off)
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let bp = Buf::read((*self.ptr).dev, self.bmap((off as usize).wrapping_div(BSIZE)));
+            let bp = Buf::read(
+                (*self.ptr).dev,
+                self.bmap((off as usize).wrapping_div(BSIZE)),
+            );
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
@@ -353,7 +363,7 @@ impl InodeGuard<'_> {
                 dst = (dst).wrapping_add(m as usize)
             }
         }
-        n as i32
+        Ok(n as usize)
     }
 
     /// Write data to inode.
@@ -375,7 +385,10 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let bp = Buf::read((*self.ptr).dev, self.bmap((off as usize).wrapping_div(BSIZE)));
+            let bp = Buf::read(
+                (*self.ptr).dev,
+                self.bmap((off as usize).wrapping_div(BSIZE)),
+            );
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
@@ -424,14 +437,15 @@ impl InodeGuard<'_> {
             panic!("dirlookup not DIR");
         }
         while off < self.guard.size {
-            if self.read(
-                0,
-                &mut de as *mut Dirent as usize,
-                off,
-                ::core::mem::size_of::<Dirent>() as u32,
-            ) as usize
-                != ::core::mem::size_of::<Dirent>()
-            {
+            if {
+                let x = self.read(
+                    0,
+                    &mut de as *mut Dirent as usize,
+                    off,
+                    ::core::mem::size_of::<Dirent>() as u32,
+                );
+                x.is_err() || x.unwrap() != ::core::mem::size_of::<Dirent>()
+            } {
                 panic!("dirlookup read");
             }
             if de.inum as i32 != 0 && name == de.get_name() {
@@ -633,8 +647,7 @@ const IPB: usize = BSIZE.wrapping_div(mem::size_of::<Dinode>());
 impl Superblock {
     /// Block containing inode i
     const fn iblock(self, i: u32) -> u32 {
-        i.wrapping_div(IPB as u32)
-            .wrapping_add(self.inodestart)
+        i.wrapping_div(IPB as u32).wrapping_add(self.inodestart)
     }
 
     /// Block of free map containing bit for block b

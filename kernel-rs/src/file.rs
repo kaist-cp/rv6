@@ -151,11 +151,11 @@ impl File {
                     ptr: *ip,
                 };
                 let r = ip_inodeguard.read(1, addr, *off, n as u32);
-                if r > 0 {
-                    *off = off.wrapping_add(r as u32);
+                if r.is_ok() {
+                    *off = off.wrapping_add(r.unwrap() as u32);
                 }
                 ip_inodeguard.unlock();
-                Ok(r as usize)
+                r
             }
             FileType::Device { major, .. } => DEVSW
                 .get(*major as usize)

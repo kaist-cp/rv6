@@ -142,14 +142,15 @@ impl InodeGuard<'_> {
         let mut de: Dirent = Default::default();
         let mut off = (2usize).wrapping_mul(mem::size_of::<Dirent>()) as i32;
         while (off as u32) < self.guard.size {
-            if self.read(
-                0,
-                &mut de as *mut Dirent as usize,
-                off as u32,
-                mem::size_of::<Dirent>() as u32,
-            ) as usize
-                != mem::size_of::<Dirent>()
-            {
+            if {
+                let x = self.read(
+                    0,
+                    &mut de as *mut Dirent as usize,
+                    off as u32,
+                    mem::size_of::<Dirent>() as u32,
+                );
+                x.is_err() || x.unwrap() != mem::size_of::<Dirent>()
+            } {
                 panic!("isdirempty: readi");
             }
             if de.inum as i32 != 0 {
