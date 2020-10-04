@@ -190,14 +190,15 @@ pub unsafe fn sys_unlink() -> usize {
             if ip_inodeguard.guard.typ == T_DIR && ip_inodeguard.isdirempty() == 0 {
                 ip_inodeguard.unlockput();
             } else {
-                if dp_inodeguard.write(
-                    0,
-                    &mut de as *mut Dirent as usize,
-                    off,
-                    mem::size_of::<Dirent>() as u32,
-                ) as usize
-                    != mem::size_of::<Dirent>()
-                {
+                if {
+                    let x = dp_inodeguard.write(
+                        0,
+                        &mut de as *mut Dirent as usize,
+                        off,
+                        mem::size_of::<Dirent>() as u32,
+                    );
+                    x.is_err() || x.unwrap() != mem::size_of::<Dirent>()
+                } {
                     panic!("unlink: writei");
                 }
                 if ip_inodeguard.guard.typ == T_DIR {
