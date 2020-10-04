@@ -219,14 +219,14 @@ impl InodeGuard<'_> {
 
     // Directories
     /// Write a new directory entry (name, inum) into the directory dp.
-    pub unsafe fn dirlink(&mut self, name: &FileName, inum: u32) -> i32 {
+    pub unsafe fn dirlink(&mut self, name: &FileName, inum: u32) -> bool {
         let mut de: Dirent = Default::default();
 
         // Check that name is not present.
         let ip: *mut Inode = self.dirlookup(name, ptr::null_mut());
         if !ip.is_null() {
             (*ip).put();
-            return -1;
+            return false;
         }
 
         // Look for an empty Dirent.
@@ -259,7 +259,7 @@ impl InodeGuard<'_> {
         {
             panic!("dirlink");
         }
-        0
+        true
     }
 
     /// Copy a modified in-memory inode to disk.
