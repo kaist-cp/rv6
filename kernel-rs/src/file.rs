@@ -197,15 +197,15 @@ impl File {
                         *off,
                         bytes_to_write as u32,
                     );
-                    if r > 0 {
-                        *off = off.wrapping_add(r as u32);
+                    if r.is_ok() {
+                        *off = off.wrapping_add(r.unwrap() as u32);
                     }
                     ip_inodeguard.unlock();
                     end_op();
-                    if r < 0 {
+                    if r.is_err() {
                         return Err(());
                     }
-                    if r != bytes_to_write {
+                    if r.unwrap() != bytes_to_write as usize {
                         panic!("short File::write");
                     }
                 }

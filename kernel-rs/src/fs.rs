@@ -249,14 +249,15 @@ impl InodeGuard<'_> {
         }
         de.inum = inum as u16;
         de.set_name(name);
-        if self.write(
-            0,
-            &mut de as *mut Dirent as usize,
-            off as u32,
-            ::core::mem::size_of::<Dirent>() as u32,
-        ) as usize
-            != ::core::mem::size_of::<Dirent>()
-        {
+        if {
+            let x = self.write(
+                0,
+                &mut de as *mut Dirent as usize,
+                off as u32,
+                ::core::mem::size_of::<Dirent>() as u32,
+            );
+            x.is_err() || x.unwrap() != ::core::mem::size_of::<Dirent>()
+        } {
             panic!("dirlink");
         }
         true
@@ -359,12 +360,18 @@ impl InodeGuard<'_> {
     /// Caller must hold self->lock.
     /// If user_src==1, then src is a user virtual address;
     /// otherwise, src is a kernel address.
-    pub unsafe fn write(&mut self, user_src: i32, mut src: usize, mut off: u32, n: u32) -> i32 {
+    pub unsafe fn write(
+        &mut self,
+        user_src: i32,
+        mut src: usize,
+        mut off: u32,
+        n: u32,
+    ) -> Result<usize, ()> {
         if off > self.guard.size || off.wrapping_add(n) < off {
-            return -1;
+            return Err(());
         }
         if off.wrapping_add(n) as usize > MAXFILE.wrapping_mul(BSIZE) {
-            return -1;
+            return Err(());
         }
         let mut tot: u32 = 0;
         while tot < n {
@@ -405,7 +412,7 @@ impl InodeGuard<'_> {
             // block to self->addrs[].
             (*self).update();
         }
-        n as i32
+        Ok(n as usize)
     }
 
     /// Look for a directory entry in a directory.
