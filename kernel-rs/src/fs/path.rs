@@ -155,13 +155,9 @@ impl Path {
                 ip.unlock();
                 return Ok((ptr, Some(name)));
             }
-            let next: *mut Inode = ip.dirlookup(name, ptr::null_mut());
-            if next.is_null() {
-                ip.unlockput();
-                return Err(());
-            }
+            let next = ip.dirlookup(name, ptr::null_mut());
             ip.unlockput();
-            ptr = next
+            ptr = next?
         }
         if parent {
             (*ptr).put();

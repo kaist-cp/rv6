@@ -220,11 +220,11 @@ impl InodeGuard<'_> {
         let mut de: Dirent = Default::default();
 
         // Check that name is not present.
-        let ip: *mut Inode = self.dirlookup(name, ptr::null_mut());
-        if !ip.is_null() {
-            (*ip).put();
+        let ip = self.dirlookup(name, ptr::null_mut());
+        if ip.is_ok() {
+            (*ip.unwrap()).put();
             return false;
-        }
+        };
 
         // Look for an empty Dirent.
         let mut off: i32 = 0;
@@ -427,7 +427,7 @@ impl InodeGuard<'_> {
 
     /// Look for a directory entry in a directory.
     /// If found, set *poff to byte offset of entry.
-    pub unsafe fn dirlookup(&mut self, name: &FileName, poff: *mut u32) -> *mut Inode {
+    pub unsafe fn dirlookup(&mut self, name: &FileName, poff: *mut u32) -> Result<*mut Inode, ()> {
         let mut off: u32 = 0;
         let mut de: Dirent = Default::default();
         if self.guard.typ != T_DIR {
@@ -450,11 +450,11 @@ impl InodeGuard<'_> {
                 if !poff.is_null() {
                     *poff = off
                 }
-                return iget((*self.ptr).dev, de.inum as u32);
+                return Ok(iget((*self.ptr).dev, de.inum as u32));
             }
             off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>()) as u32
         }
-        ptr::null_mut()
+        Err(())
     }
 
     /// Inode content
