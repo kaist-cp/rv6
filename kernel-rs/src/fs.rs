@@ -293,7 +293,7 @@ impl InodeGuard<'_> {
     unsafe fn itrunc(&mut self) {
         for i in 0..NDIRECT {
             if self.guard.addrs[i] != 0 {
-                bfree((*self.ptr).dev as i32, self.guard.addrs[i as usize]);
+                bfree((*self.ptr).dev as i32, self.guard.addrs[i]);
                 self.guard.addrs[i] = 0
             }
         }
@@ -348,9 +348,9 @@ impl InodeGuard<'_> {
                 break;
             } else {
                 brelease(&mut *bp);
-                tot = (tot as u32).wrapping_add(m) as u32 as u32;
-                off = (off as u32).wrapping_add(m) as u32 as u32;
-                dst = (dst as usize).wrapping_add(m as usize) as usize as usize
+                tot = (tot).wrapping_add(m);
+                off = (off).wrapping_add(m);
+                dst = (dst).wrapping_add(m as usize)
             }
         }
         n as i32
@@ -398,9 +398,9 @@ impl InodeGuard<'_> {
             } else {
                 log_write(bp);
                 brelease(&mut *bp);
-                tot = (tot as u32).wrapping_add(m) as u32 as u32;
-                off = (off as u32).wrapping_add(m) as u32 as u32;
-                src = (src as usize).wrapping_add(m as usize) as usize as usize
+                tot = (tot).wrapping_add(m);
+                off = (off).wrapping_add(m);
+                src = (src).wrapping_add(m as usize)
             }
         }
         if n > 0 {
@@ -441,7 +441,7 @@ impl InodeGuard<'_> {
                 }
                 return iget((*self.ptr).dev, de.inum as u32);
             }
-            off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>()) as u32 as u32
+            off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>()) as u32
         }
         ptr::null_mut()
     }
@@ -587,7 +587,7 @@ impl Inode {
                 // mark it allocated on the disk
                 log_write(bp);
                 brelease(&mut *bp);
-                return iget(dev, inum as u32);
+                return iget(dev, inum);
             }
             brelease(&mut *bp);
         }
@@ -634,7 +634,7 @@ impl Superblock {
     /// Block containing inode i
     const fn iblock(self, i: u32) -> u32 {
         i.wrapping_div(IPB as u32)
-            .wrapping_add(self.inodestart as u32)
+            .wrapping_add(self.inodestart)
     }
 
     /// Block of free map containing bit for block b
