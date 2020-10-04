@@ -138,7 +138,7 @@ pub unsafe fn sys_link() -> usize {
 
 impl InodeGuard<'_> {
     /// Is the directory dp empty except for "." and ".." ?
-    unsafe fn isdirempty(&mut self) -> i32 {
+    unsafe fn isdirempty(&mut self) -> bool {
         let mut de: Dirent = Default::default();
         let mut off = (2usize).wrapping_mul(mem::size_of::<Dirent>()) as i32;
         while (off as u32) < self.guard.size {
@@ -154,11 +154,11 @@ impl InodeGuard<'_> {
                 panic!("isdirempty: readi");
             }
             if de.inum as i32 != 0 {
-                return 0;
+                return false;
             }
             off = (off as usize).wrapping_add(mem::size_of::<Dirent>()) as i32
         }
-        1
+        true
     }
 }
 
@@ -188,7 +188,7 @@ pub unsafe fn sys_unlink() -> usize {
             if (ip_inodeguard.guard.nlink as i32) < 1 {
                 panic!("unlink: nlink < 1");
             }
-            if ip_inodeguard.guard.typ == T_DIR && ip_inodeguard.isdirempty() == 0 {
+            if ip_inodeguard.guard.typ == T_DIR && !ip_inodeguard.isdirempty() {
                 ip_inodeguard.unlockput();
             } else {
                 if {

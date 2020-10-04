@@ -747,18 +747,6 @@ unsafe fn bfree(dev: i32, b: u32) {
     brelease(&mut *bp);
 }
 
-// TODO Can remove
-pub unsafe fn iinit() {
-    // let mut inode = ICACHE.lock();
-    // for i in 0..NINODE {
-    //     inode
-    //         .deref_mut()
-    //         .get_unchecked_mut(i)
-    //         .inner
-    //         .initlock("inode");
-    // }
-}
-
 /// Find the inode with number inum on device dev
 /// and return the in-memory copy. Does not lock
 /// the inode and does not read it from disk.
@@ -786,12 +774,7 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
     (*ip).dev = dev;
     (*ip).inum = inum;
     (*ip).ref_0 = 1;
-
-    // TODO: add lock
-    // let mut guard = (*ip).lock();
-    // guard.valid = 0;
     (*ip).valid = false;
     drop(inode);
-    // drop(guard);
     ip
 }
