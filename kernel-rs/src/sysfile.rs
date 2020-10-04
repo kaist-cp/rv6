@@ -116,7 +116,7 @@ pub unsafe fn sys_link() -> usize {
             guard: (*dp).lock(),
             ptr: dp,
         };
-        if (*dp).dev != (*ip).dev || dp_inodeguard.dirlink(name, (*ip).inum) < 0 {
+        if (*dp).dev != (*ip).dev || !dp_inodeguard.dirlink(name, (*ip).inum) {
             dp_inodeguard.unlockput();
         } else {
             dp_inodeguard.unlockput();
@@ -260,13 +260,13 @@ unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> Result<InodeG
         dp_inodeguard.update();
 
         // No ip->nlink++ for ".": avoid cyclic ref count.
-        if ip_inodeguard.dirlink(FileName::from_bytes(b"."), (*ip).inum) < 0
-            || ip_inodeguard.dirlink(FileName::from_bytes(b".."), (*dp).inum) < 0
+        if !ip_inodeguard.dirlink(FileName::from_bytes(b"."), (*ip).inum)
+            || !ip_inodeguard.dirlink(FileName::from_bytes(b".."), (*dp).inum)
         {
             panic!("create dots");
         }
     }
-    if dp_inodeguard.dirlink(&name, (*ip).inum) < 0 {
+    if !dp_inodeguard.dirlink(&name, (*ip).inum) {
         panic!("create: dirlink");
     }
     dp_inodeguard.unlockput();
