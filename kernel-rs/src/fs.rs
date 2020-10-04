@@ -191,10 +191,7 @@ static mut ICACHE: Spinlock<[Inode; NINODE]> = Spinlock::new("ICACHE", [Inode::z
 impl InodeGuard<'_> {
     /// Unlock the given inode.
     pub unsafe fn unlock(self) {
-        if
-        // (self as *mut Inode).is_null() || (*self).inner.lock.holding() == 0 ||
-        // Always hold lock when using lockguard
-        (*self.ptr).ref_0 < 1 {
+        if (*self.ptr).ref_0 < 1 {
             panic!("Inode::unlock");
         }
         drop(self.guard);
@@ -513,7 +510,7 @@ impl Inode {
     /// Lock the given inode.
     /// Reads the inode from disk if necessary.
     pub unsafe fn lock(&mut self) -> SleepLockGuard<'_, InodeInner> {
-        if (self as *mut Inode).is_null() || (*self).ref_0 < 1 {
+        if (*self).ref_0 < 1 {
             panic!("Inode::lock");
         }
         let mut ret = (*self).inner.lock();
