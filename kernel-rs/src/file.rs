@@ -48,7 +48,7 @@ pub struct Inode {
     pub ref_0: i32,
 
     /// inode has been read from disk?
-    pub valid: i32,
+    pub valid: bool,
 
     // pub inner: InodeInner,
     pub inner: SleeplockWIP<InodeInner>,

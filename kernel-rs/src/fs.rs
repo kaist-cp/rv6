@@ -496,7 +496,7 @@ impl Inode {
             panic!("Inode::lock");
         }
         let mut ret = (*self).inner.lock();
-        if self.valid == 0 {
+        if !self.valid {
             let bp: *mut Buf = Buf::read((*self).dev, SB.iblock(self.inum));
             let dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
                 .add((self.inum as usize).wrapping_rem(IPB));
@@ -511,7 +511,7 @@ impl Inode {
                 ::core::mem::size_of::<[u32; 13]>(),
             );
             brelease(&mut *bp);
-            self.valid = 1;
+            self.valid = true;
             if ret.typ == 0 {
                 panic!("Inode::lock: no type");
             }
@@ -531,7 +531,7 @@ impl Inode {
 
         if (*self).ref_0 == 1
         // TODO: Make Inode safe and don't check below line
-        && (*self).valid != 0
+        && (*self).valid
         // && (*self).inner.nlink as i32 == 0
         {
             // inode has no links and no other references: truncate and free.
@@ -553,7 +553,7 @@ impl Inode {
             inodeguard.itrunc();
             inodeguard.guard.typ = 0;
             inodeguard.update();
-            self.valid = 0;
+            self.valid = false;
 
             drop(inodeguard.guard);
 
@@ -593,7 +593,7 @@ impl Inode {
             dev: 0,
             inum: 0,
             ref_0: 0,
-            valid: 0,
+            valid: false,
             inner: SleeplockWIP::new(
                 "inode",
                 InodeInner {
@@ -770,7 +770,7 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
     // TODO: add lock
     // let mut guard = (*ip).lock();
     // guard.valid = 0;
-    (*ip).valid = 0;
+    (*ip).valid = false;
     drop(inode);
     // drop(guard);
     ip
