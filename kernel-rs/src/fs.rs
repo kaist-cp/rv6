@@ -326,7 +326,7 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let bp = Buf::read((*self.ptr).dev, self.bmap(off.wrapping_div(BSIZE as u32)));
+            let bp = Buf::read((*self.ptr).dev, self.bmap((off as usize).wrapping_div(BSIZE)));
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
@@ -375,7 +375,7 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let bp = Buf::read((*self.ptr).dev, self.bmap(off.wrapping_div(BSIZE as u32)));
+            let bp = Buf::read((*self.ptr).dev, self.bmap((off as usize).wrapping_div(BSIZE)));
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
@@ -454,18 +454,18 @@ impl InodeGuard<'_> {
     /// listed in block self->addrs[NDIRECT].
     /// Return the disk block address of the nth block in inode self.
     /// If there is no such block, bmap allocates one.
-    unsafe fn bmap(&mut self, mut bn: u32) -> u32 {
+    unsafe fn bmap(&mut self, mut bn: usize) -> u32 {
         let mut addr: u32;
-        if bn < NDIRECT as u32 {
-            addr = self.guard.addrs[bn as usize];
+        if bn < NDIRECT {
+            addr = self.guard.addrs[bn];
             if addr == 0 {
                 addr = balloc((*self.ptr).dev);
-                self.guard.addrs[bn as usize] = addr
+                self.guard.addrs[bn] = addr
             }
             return addr;
         }
-        bn = (bn).wrapping_sub(NDIRECT as u32);
-        if (bn as usize) < NINDIRECT {
+        bn = (bn).wrapping_sub(NDIRECT);
+        if bn < NINDIRECT {
             // Load indirect block, allocating if necessary.
             addr = self.guard.addrs[NDIRECT];
             if addr == 0 {
