@@ -1,7 +1,6 @@
 use crate::{
     bio::binit,
     console::Console,
-    fs::iinit,
     kalloc::kinit,
     plic::{plicinit, plicinithart},
     printf::printfinit,
@@ -51,9 +50,6 @@ pub unsafe fn kernel_main() {
 
         // Buffer cache.
         binit();
-
-        // Inode cache.
-        iinit();
 
         // Emulated hard disk.
         virtio_disk_init();
