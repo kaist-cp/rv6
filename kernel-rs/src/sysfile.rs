@@ -180,10 +180,11 @@ pub unsafe fn sys_unlink() -> usize {
     // Cannot unlink "." or "..".
     if !(name.as_bytes() == b"." || name.as_bytes() == b"..") {
         let ptr = dp.dirlookup(&name, &mut off);
-        if !ptr.is_null() {
+        // TODO: use other Result related functions
+        if ptr.is_ok() {
             let mut ip = InodeGuard {
-                guard: (*ptr).lock(),
-                ptr,
+                guard: (*ptr.unwrap()).lock(),
+                ptr: ptr.unwrap(),
             };
             if ip.guard.nlink < 1 {
                 panic!("unlink: nlink < 1");
@@ -227,12 +228,13 @@ unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> Result<InodeG
         guard: (*ptr).lock(),
         ptr,
     };
-    let mut ptr2: *mut Inode = dp.dirlookup(&name, ptr::null_mut());
-    if !ptr2.is_null() {
+    let ptr2 = dp.dirlookup(&name, ptr::null_mut());
+    // TODO: use other Result related functions
+    if ptr2.is_ok() {
         dp.unlockput();
         let ip = InodeGuard {
-            guard: (*ptr2).lock(),
-            ptr: ptr2,
+            guard: (*ptr2.unwrap()).lock(),
+            ptr: ptr2.unwrap(),
         };
         if typ == T_FILE && (ip.guard.typ == T_FILE || ip.guard.typ == T_DEVICE) {
             return Ok(ip);
@@ -240,7 +242,7 @@ unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> Result<InodeG
         ip.unlockput();
         return Err(());
     }
-    ptr2 = Inode::alloc((*ptr).dev, typ);
+    let ptr2 = Inode::alloc((*ptr).dev, typ);
     if ptr2.is_null() {
         panic!("create: Inode::alloc");
     }
