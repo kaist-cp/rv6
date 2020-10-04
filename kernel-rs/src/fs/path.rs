@@ -131,7 +131,7 @@ impl Path {
     /// path element into name, which must have room for DIRSIZ bytes.
     /// Must be called inside a transaction since it calls Inode::put().
     unsafe fn namex(&self, parent: bool) -> Result<(*mut Inode, Option<&FileName>), ()> {
-        let mut ip = if self.is_absolute() {
+        let mut ptr = if self.is_absolute() {
             iget(ROOTDEV as u32, ROOTINO)
         } else {
             (*(*myproc()).cwd).idup()
@@ -142,31 +142,31 @@ impl Path {
         while let Some((new_path, name)) = path.skipelem() {
             path = new_path;
 
-            let mut ip_inodeguard: InodeGuard<'_> = InodeGuard {
-                guard: (*ip).lock(),
-                ptr: ip,
+            let mut ip = InodeGuard {
+                guard: (*ptr).lock(),
+                ptr,
             };
-            if ip_inodeguard.guard.typ != T_DIR {
-                ip_inodeguard.unlockput();
+            if ip.guard.typ != T_DIR {
+                ip.unlockput();
                 return Err(());
             }
             if parent && path.inner.is_empty() {
                 // Stop one level early.
-                ip_inodeguard.unlock();
-                return Ok((ip, Some(name)));
+                ip.unlock();
+                return Ok((ptr, Some(name)));
             }
-            let next: *mut Inode = ip_inodeguard.dirlookup(name, ptr::null_mut());
+            let next: *mut Inode = ip.dirlookup(name, ptr::null_mut());
             if next.is_null() {
-                ip_inodeguard.unlockput();
+                ip.unlockput();
                 return Err(());
             }
-            ip_inodeguard.unlockput();
-            ip = next
+            ip.unlockput();
+            ptr = next
         }
         if parent {
-            (*ip).put();
+            (*ptr).put();
             return Err(());
         }
-        Ok((ip, None))
+        Ok((ptr, None))
     }
 }

@@ -23,17 +23,17 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
         end_op();
         return Err(());
     });
-    let ip_inodeguard: InodeGuard<'_> = InodeGuard {
+    let ip = InodeGuard {
         guard: (*ip).lock(),
         ptr: ip,
     };
-    let mut ip_inodeguard = scopeguard::guard(ip_inodeguard, |ip_inodeguard| {
-        ip_inodeguard.unlockput();
+    let mut ip = scopeguard::guard(ip, |ip| {
+        ip.unlockput();
         end_op();
     });
 
     // Check ELF header
-    if !(ip_inodeguard
+    if !(ip
         .read(
             0,
             &mut elf as *mut ElfHdr as usize,
@@ -63,7 +63,7 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
             .phoff
             .wrapping_add(i * ::core::mem::size_of::<ProgHdr>());
 
-        if ip_inodeguard
+        if ip
             .read(
                 0,
                 &mut ph as *mut ProgHdr as usize,
@@ -89,7 +89,7 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
             if ph.vaddr.wrapping_rem(PGSIZE) != 0 {
                 return Err(());
             }
-            if ip_inodeguard
+            if ip
                 .loadseg(pt, ph.vaddr, ph.off as u32, ph.filesz as u32)
                 .is_err()
             {
@@ -97,7 +97,7 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
             }
         }
     }
-    drop(ip_inodeguard);
+    drop(ip);
 
     p = myproc();
     let oldsz: usize = (*p).sz;
