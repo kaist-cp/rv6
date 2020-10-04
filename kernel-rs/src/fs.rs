@@ -199,9 +199,9 @@ impl InodeGuard<'_> {
 
     /// Common idiom: unlock, then put.
     pub unsafe fn unlockput(self) {
-        let temp: *mut Inode = self.ptr;
+        let ptr: *mut Inode = self.ptr;
         self.unlock();
-        (*temp).put();
+        (*ptr).put();
     }
 
     /// Copy stat information from inode.
@@ -553,23 +553,23 @@ impl Inode {
             // self->ref == 1 means no other process can have self locked,
             // so this acquiresleep() won't block (or deadlock).
             let ptr: *mut Inode = self;
-            let mut inodeguard: InodeGuard<'_> = InodeGuard {
+            let mut ip = InodeGuard {
                 guard: (*self).inner.lock(),
                 ptr,
             };
-            if inodeguard.guard.nlink != 0 {
+            if ip.guard.nlink != 0 {
                 self.ref_0 -= 1;
                 return;
             }
 
             drop(inode);
 
-            inodeguard.itrunc();
-            inodeguard.guard.typ = 0;
-            inodeguard.update();
+            ip.itrunc();
+            ip.guard.typ = 0;
+            ip.update();
             self.valid = false;
 
-            drop(inodeguard.guard);
+            drop(ip.guard);
 
             inode = ICACHE.lock();
         }

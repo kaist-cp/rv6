@@ -110,12 +110,12 @@ impl File {
 
         match self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
-                let ip_inodeguard: InodeGuard<'_> = InodeGuard {
+                let ip = InodeGuard {
                     guard: (*ip).lock(),
                     ptr: ip,
                 };
-                ip_inodeguard.stati(&mut st);
-                ip_inodeguard.unlock();
+                ip.stati(&mut st);
+                ip.unlock();
                 if (*p)
                     .pagetable
                     .assume_init_mut()
@@ -146,15 +146,15 @@ impl File {
         match &mut self.typ {
             FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0)),
             FileType::Inode { ip, off } => {
-                let mut ip_inodeguard: InodeGuard<'_> = InodeGuard {
+                let mut ip = InodeGuard {
                     guard: (**ip).lock(),
                     ptr: *ip,
                 };
-                let ret = ip_inodeguard.read(1, addr, *off, n as u32);
+                let ret = ip.read(1, addr, *off, n as u32);
                 if ret.is_ok() {
                     *off = off.wrapping_add(ret.unwrap() as u32);
                 }
-                ip_inodeguard.unlock();
+                ip.unlock();
                 ret
             }
             FileType::Device { major, .. } => DEVSW
@@ -186,12 +186,12 @@ impl File {
                 for bytes_written in (0..n).step_by(max) {
                     let bytes_to_write = cmp::min(n - bytes_written, max as i32);
                     begin_op();
-                    let mut ip_inodeguard: InodeGuard<'_> = InodeGuard {
+                    let mut ip = InodeGuard {
                         guard: (**ip).lock(),
                         ptr: *ip,
                     };
 
-                    let bytes_written = ip_inodeguard.write(
+                    let bytes_written = ip.write(
                         1,
                         addr.wrapping_add(bytes_written as usize),
                         *off,
@@ -200,7 +200,7 @@ impl File {
                     if bytes_written.is_ok() {
                         *off = off.wrapping_add(bytes_written.unwrap() as u32);
                     }
-                    ip_inodeguard.unlock();
+                    ip.unlock();
                     end_op();
                     let bytes_written = bytes_written?;
                     if bytes_written != bytes_to_write as usize {
