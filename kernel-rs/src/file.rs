@@ -50,7 +50,6 @@ pub struct Inode {
     /// inode has been read from disk?
     pub valid: bool,
 
-    // pub inner: InodeInner,
     pub inner: SleeplockWIP<InodeInner>,
 }
 
@@ -151,9 +150,9 @@ impl File {
                     ptr: *ip,
                 };
                 let ret = ip.read(1, addr, *off, n as u32);
-                if ret.is_ok() {
-                    *off = off.wrapping_add(ret.unwrap() as u32);
-                }
+                ret.map(|v| {
+                    *off = off.wrapping_add(v as u32);
+                })?;
                 ip.unlock();
                 ret
             }
@@ -191,18 +190,19 @@ impl File {
                         ptr: *ip,
                     };
 
-                    let bytes_written = ip.write(
-                        1,
-                        addr.wrapping_add(bytes_written as usize),
-                        *off,
-                        bytes_to_write as u32,
-                    );
-                    if bytes_written.is_ok() {
-                        *off = off.wrapping_add(bytes_written.unwrap() as u32);
-                    }
+                    let bytes_written = ip
+                        .write(
+                            1,
+                            addr.wrapping_add(bytes_written as usize),
+                            *off,
+                            bytes_to_write as u32,
+                        )
+                        .map(|v| {
+                            *off = off.wrapping_add(v as u32);
+                            v
+                        })?;
                     ip.unlock();
                     end_op();
-                    let bytes_written = bytes_written?;
                     if bytes_written != bytes_to_write as usize {
                         panic!("short File::write");
                     }
