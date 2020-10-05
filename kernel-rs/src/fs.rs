@@ -220,9 +220,8 @@ impl InodeGuard<'_> {
         let mut de: Dirent = Default::default();
 
         // Check that name is not present.
-        let ip = self.dirlookup(name, ptr::null_mut());
-        if ip.is_ok() {
-            (*ip.unwrap()).put();
+        if let Ok(ip) = self.dirlookup(name, ptr::null_mut()) {
+            (*ip).put();
             return false;
         };
 
@@ -485,10 +484,10 @@ impl InodeGuard<'_> {
             }
             let bp: *mut Buf = Buf::read((*self.ptr).dev, addr);
             let a: *mut u32 = (*bp).inner.data.as_mut_ptr() as *mut u32;
-            addr = *a.offset(bn as isize);
+            addr = *a.add(bn);
             if addr == 0 {
                 addr = balloc((*self.ptr).dev);
-                *a.offset(bn as isize) = addr;
+                *a.add(bn) = addr;
                 log_write(bp);
             }
             brelease(&mut *bp);

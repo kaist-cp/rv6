@@ -179,12 +179,11 @@ pub unsafe fn sys_unlink() -> usize {
 
     // Cannot unlink "." or "..".
     if !(name.as_bytes() == b"." || name.as_bytes() == b"..") {
-        let ptr = dp.dirlookup(&name, &mut off);
         // TODO: use other Result related functions
-        if ptr.is_ok() {
+        if let Ok(ptr) = dp.dirlookup(&name, &mut off) {
             let mut ip = InodeGuard {
-                guard: (*ptr.unwrap()).lock(),
-                ptr: ptr.unwrap(),
+                guard: (*ptr).lock(),
+                ptr,
             };
             if ip.guard.nlink < 1 {
                 panic!("unlink: nlink < 1");
@@ -228,13 +227,12 @@ unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> Result<InodeG
         guard: (*ptr).lock(),
         ptr,
     };
-    let ptr2 = dp.dirlookup(&name, ptr::null_mut());
     // TODO: use other Result related functions
-    if ptr2.is_ok() {
+    if let Ok(ptr2) = dp.dirlookup(&name, ptr::null_mut()) {
         dp.unlockput();
         let ip = InodeGuard {
-            guard: (*ptr2.unwrap()).lock(),
-            ptr: ptr2.unwrap(),
+            guard: (*ptr2).lock(),
+            ptr: ptr2,
         };
         if typ == T_FILE && (ip.guard.typ == T_FILE || ip.guard.typ == T_DEVICE) {
             return Ok(ip);
