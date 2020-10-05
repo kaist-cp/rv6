@@ -259,7 +259,7 @@ impl RawPageTable {
             if n > max {
                 n = max
             }
-            let mut p: *mut u8 = pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut u8;
+            let mut p = pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut u8;
             while n > 0 {
                 if *p as i32 == '\u{0}' as i32 {
                     *dst = '\u{0}' as i32 as u8;
