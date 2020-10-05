@@ -399,7 +399,3 @@ pub fn px(level: usize, va: usize) -> usize {
 pub const MAXVA: usize = (1) << (9 + 9 + 9 + 12 - 1);
 
 pub type PteT = usize;
-pub type PdeT = usize;
-
-/// 512 PTEs
-pub type PagetableT = *mut usize;
