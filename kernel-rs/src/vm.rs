@@ -87,40 +87,6 @@ impl DerefMut for RawPageTable {
 }
 
 impl RawPageTable {
-    /// Look up a virtual address, return the physical address,
-    /// or 0 if not mapped.
-    /// TODO: Use type parameter at PageTable to show this function "Can only be used to look up user pages."
-    pub unsafe fn walkaddr(&mut self, va: usize) -> Option<usize> {
-        if va >= MAXVA {
-            return None;
-        }
-        let pt = PageTable::from_raw(self);
-        let pte = pt.walk(va, 0)?;
-        if !pte.check_flag(PTE_V) {
-            return None;
-        }
-        if !pte.check_flag(PTE_U as usize) {
-            return None;
-        }
-        Some(pte.get_pa())
-    }
-
-    /// Recursively free page-table pages.
-    /// All leaf mappings must already have been removed.
-    unsafe fn freewalk(&mut self) {
-        // There are 2^9 = 512 PTEs in a page table.
-        for pte in &mut self.inner {
-            if pte.check_flag(PTE_V) && !pte.check_flag((PTE_R | PTE_W | PTE_X) as usize) {
-                // This PTE points to a lower-level page table.
-                pte.as_table_mut_unchecked().freewalk();
-                pte.set_inner(0);
-            } else if pte.check_flag(PTE_V) {
-                panic!("freewalk: leaf");
-            }
-        }
-        kernel().free(self.as_mut_ptr() as _);
-    }
-
     /// Copy from kernel to user.
     /// Copy len bytes from src to virtual address dstva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
@@ -133,7 +99,7 @@ impl RawPageTable {
     ) -> Result<(), ()> {
         while len > 0 {
             let va0 = pgrounddown(dstva);
-            let pa0 = some_or!(self.walkaddr(va0), return Err(()));
+            let pa0 = some_or!(PageTable::from_raw(self).walkaddr(va0), return Err(()));
             let mut n = PGSIZE - (dstva - va0);
             if n > len {
                 n = len
@@ -153,70 +119,6 @@ impl RawPageTable {
 
 // TODO: separate these methods for uvm type/struct (Use type to show this)
 impl RawPageTable {
-    /// Remove mappings from a page table. The mappings in
-    /// the given range must exist. Optionally free the
-    /// physical memory.
-    pub unsafe fn uvmunmap(&mut self, va: usize, size: usize, do_free: i32) {
-        let mut pa: usize = 0;
-        let mut a = pgrounddown(va);
-        let last = pgrounddown(va + size - 1usize);
-        loop {
-            let pt = PageTable::from_raw(self);
-            let pte = pt.walk(a, 0).expect("uvmunmap: walk");
-            if !pte.check_flag(PTE_V) {
-                println!(
-                    "va={:018p} pte={:018p}",
-                    a as *const u8, pte.inner as *const u8
-                );
-                panic!("uvmunmap: not mapped");
-            }
-            if pte.get_flags() == PTE_V {
-                panic!("uvmunmap: not a leaf");
-            }
-            if do_free != 0 {
-                pa = pte.get_pa();
-                kernel().free(pa as _);
-            }
-            pte.set_inner(0);
-            if a == last {
-                break;
-            }
-            a += PGSIZE;
-            pa += PGSIZE;
-        }
-    }
-
-    /// Deallocate user pages to bring the process size from oldsz to
-    /// newsz.  oldsz and newsz need not be page-aligned, nor does newsz
-    /// need to be less than oldsz.  oldsz can be larger than the actual
-    /// process size.  Returns the new process size.
-    pub unsafe fn uvmdealloc(&mut self, oldsz: usize, newsz: usize) -> usize {
-        if newsz >= oldsz {
-            return oldsz;
-        }
-        let newup: usize = pgroundup(newsz);
-        if newup < pgroundup(oldsz) {
-            self.uvmunmap(newup, oldsz - newup, 1);
-        }
-        newsz
-    }
-
-    /// Free user memory pages,
-    /// then free page-table pages.
-    pub unsafe fn uvmfree(&mut self, sz: usize) {
-        self.uvmunmap(0, sz, 1);
-        self.freewalk();
-    }
-
-    /// Mark a PTE invalid for user access.
-    /// Used by exec for the user stack guard page.
-    pub unsafe fn uvmclear(&mut self, va: usize) {
-        PageTable::from_raw(self)
-            .walk(va, 0)
-            .expect("uvmclear")
-            .clear_flag(PTE_U as usize);
-    }
-
     /// Copy from user to kernel.
     /// Copy len bytes to dst from virtual address srcva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
@@ -228,7 +130,7 @@ impl RawPageTable {
     ) -> Result<(), ()> {
         while len > 0 {
             let va0 = pgrounddown(srcva);
-            let pa0 = some_or!(self.walkaddr(va0), return Err(()));
+            let pa0 = some_or!(PageTable::from_raw(self).walkaddr(va0), return Err(()));
             let mut n = PGSIZE - (srcva - va0);
             if n > len {
                 n = len
@@ -254,7 +156,7 @@ impl RawPageTable {
         let mut got_null: i32 = 0;
         while got_null == 0 && max > 0 {
             let va0 = pgrounddown(srcva);
-            let pa0 = some_or!(self.walkaddr(va0), return Err(()));
+            let pa0 = some_or!(PageTable::from_raw(self).walkaddr(va0), return Err(()));
             let mut n = PGSIZE - (srcva - va0);
             if n > max {
                 n = max
@@ -362,6 +264,40 @@ impl PageTable {
         }
         Some(&mut pagetable[px(0, va)])
     }
+
+    /// Look up a virtual address, return the physical address,
+    /// or 0 if not mapped.
+    /// TODO: Use type parameter at PageTable to show this function "Can only be used to look up user pages."
+    pub unsafe fn walkaddr(&mut self, va: usize) -> Option<usize> {
+        if va >= MAXVA {
+            return None;
+        }
+        let pt = self;
+        let pte = pt.walk(va, 0)?;
+        if !pte.check_flag(PTE_V) {
+            return None;
+        }
+        if !pte.check_flag(PTE_U as usize) {
+            return None;
+        }
+        Some(pte.get_pa())
+    }
+
+    /// Recursively free page-table pages.
+    /// All leaf mappings must already have been removed.
+    unsafe fn freewalk(&mut self) {
+        // There are 2^9 = 512 PTEs in a page table.
+        for pte in &mut self.inner {
+            if pte.check_flag(PTE_V) && !pte.check_flag((PTE_R | PTE_W | PTE_X) as usize) {
+                // This PTE points to a lower-level page table.
+                PageTable::from_raw(pte.as_table_mut_unchecked()).freewalk();
+                pte.set_inner(0);
+            } else if pte.check_flag(PTE_V) {
+                panic!("freewalk: leaf");
+            }
+        }
+        kernel().free(self.as_mut_ptr() as _);
+    }
 }
 
 // TODO: separate these function for va structure later (Use type to show this)
@@ -468,6 +404,69 @@ impl PageTable {
             new = scopeguard::ScopeGuard::into_inner(new_ptable);
         }
         Ok(())
+    }
+
+    /// Remove mappings from a page table. The mappings in
+    /// the given range must exist. Optionally free the
+    /// physical memory.
+    pub unsafe fn uvmunmap(&mut self, va: usize, size: usize, do_free: i32) {
+        let mut pa: usize = 0;
+        let mut a = pgrounddown(va);
+        let last = pgrounddown(va + size - 1usize);
+        loop {
+            let pt = &mut *self;
+            let pte = pt.walk(a, 0).expect("uvmunmap: walk");
+            if !pte.check_flag(PTE_V) {
+                println!(
+                    "va={:018p} pte={:018p}",
+                    a as *const u8, pte.inner as *const u8
+                );
+                panic!("uvmunmap: not mapped");
+            }
+            if pte.get_flags() == PTE_V {
+                panic!("uvmunmap: not a leaf");
+            }
+            if do_free != 0 {
+                pa = pte.get_pa();
+                kernel().free(pa as _);
+            }
+            pte.set_inner(0);
+            if a == last {
+                break;
+            }
+            a += PGSIZE;
+            pa += PGSIZE;
+        }
+    }
+
+    /// Deallocate user pages to bring the process size from oldsz to
+    /// newsz.  oldsz and newsz need not be page-aligned, nor does newsz
+    /// need to be less than oldsz.  oldsz can be larger than the actual
+    /// process size.  Returns the new process size.
+    pub unsafe fn uvmdealloc(&mut self, oldsz: usize, newsz: usize) -> usize {
+        if newsz >= oldsz {
+            return oldsz;
+        }
+        let newup: usize = pgroundup(newsz);
+        if newup < pgroundup(oldsz) {
+            self.uvmunmap(newup, oldsz - newup, 1);
+        }
+        newsz
+    }
+
+    /// Free user memory pages,
+    /// then free page-table pages.
+    pub unsafe fn uvmfree(&mut self, sz: usize) {
+        self.uvmunmap(0, sz, 1);
+        self.freewalk();
+    }
+
+    /// Mark a PTE invalid for user access.
+    /// Used by exec for the user stack guard page.
+    pub unsafe fn uvmclear(&mut self, va: usize) {
+        self.walk(va, 0)
+            .expect("uvmclear")
+            .clear_flag(PTE_U as usize);
     }
 }
 
