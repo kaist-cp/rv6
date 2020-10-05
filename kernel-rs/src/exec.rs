@@ -89,12 +89,7 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
             if ph.vaddr.wrapping_rem(PGSIZE) != 0 {
                 return Err(());
             }
-            if ip
-                .loadseg(pt, ph.vaddr, ph.off as u32, ph.filesz as u32)
-                .is_err()
-            {
-                return Err(());
-            }
+            ip.loadseg(pt, ph.vaddr, ph.off as u32, ph.filesz as u32)?;
         }
     }
     drop(ip);
@@ -107,11 +102,7 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
     *sz = sz.wrapping_add(PGSIZE).wrapping_sub(1) & !PGSIZE.wrapping_sub(1);
     let sz_op = pt.uvmalloc(*sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)));
 
-    if sz_op.is_err() {
-        return Err(());
-    }
-
-    *sz = sz_op.unwrap();
+    *sz = sz_op?;
     pt.uvmclear(sz.wrapping_sub(2usize.wrapping_mul(PGSIZE)));
     let mut sp: usize = *sz;
     let stackbase: usize = sp.wrapping_sub(PGSIZE);
@@ -132,12 +123,7 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
         if sp < stackbase {
             return Err(());
         }
-        if pt
-            .copyout(sp, *argv.add(argc), (strlen(*argv.add(argc)) + 1) as usize)
-            .is_err()
-        {
-            return Err(());
-        }
+        pt.copyout(sp, *argv.add(argc), (strlen(*argv.add(argc)) + 1) as usize)?;
         ustack[argc] = sp;
         argc = argc.wrapping_add(1)
     }

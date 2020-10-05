@@ -32,10 +32,6 @@ impl<T> SleeplockWIP<T> {
             waitchannel: WaitChannel::new(),
         }
     }
-    pub fn initlock(&mut self, name: &'static str) {
-        self.spinlock = Spinlock::new(name, -1);
-        self.waitchannel = WaitChannel::new();
-    }
 
     pub fn into_inner(self) -> T {
         self.data.into_inner()
