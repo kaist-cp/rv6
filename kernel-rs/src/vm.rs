@@ -134,7 +134,7 @@ impl RawPageTable {
         while len > 0 {
             let va0 = pgrounddown(dstva);
             let pa0 = some_or!(self.walkaddr(va0), return Err(()));
-            let mut n = PGSIZE.wrapping_sub(dstva.wrapping_sub(va0));
+            let mut n = PGSIZE - (dstva - va0);
             if n > len {
                 n = len
             }
@@ -143,9 +143,9 @@ impl RawPageTable {
                 pa0.wrapping_add(dstva.wrapping_sub(va0)) as *mut u8,
                 n,
             );
-            len = len.wrapping_sub(n);
+            len -= n;
             src = src.add(n);
-            dstva = va0.wrapping_add(PGSIZE);
+            dstva = va0 + PGSIZE;
         }
         Ok(())
     }
@@ -159,7 +159,7 @@ impl RawPageTable {
     pub unsafe fn uvmunmap(&mut self, va: usize, size: usize, do_free: i32) {
         let mut pa: usize = 0;
         let mut a = pgrounddown(va);
-        let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
+        let last = pgrounddown(va + size - 1usize);
         loop {
             let pt = PageTable::from_raw(self);
             let pte = pt.walk(a, 0).expect("uvmunmap: walk");
@@ -181,8 +181,8 @@ impl RawPageTable {
             if a == last {
                 break;
             }
-            a = a.wrapping_add(PGSIZE);
-            pa = pa.wrapping_add(PGSIZE);
+            a += PGSIZE;
+            pa += PGSIZE;
         }
     }
 
@@ -196,7 +196,7 @@ impl RawPageTable {
         }
         let newup: usize = pgroundup(newsz);
         if newup < pgroundup(oldsz) {
-            self.uvmunmap(newup, oldsz.wrapping_sub(newup), 1);
+            self.uvmunmap(newup, oldsz - newup, 1);
         }
         newsz
     }
@@ -229,14 +229,14 @@ impl RawPageTable {
         while len > 0 {
             let va0 = pgrounddown(srcva);
             let pa0 = some_or!(self.walkaddr(va0), return Err(()));
-            let mut n = PGSIZE.wrapping_sub(srcva.wrapping_sub(va0));
+            let mut n = PGSIZE - (srcva - va0);
             if n > len {
                 n = len
             }
             ptr::copy(pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut u8, dst, n);
             len = len.wrapping_sub(n);
             dst = dst.add(n);
-            srcva = va0.wrapping_add(PGSIZE)
+            srcva = va0 + PGSIZE
         }
         Ok(())
     }
@@ -255,11 +255,11 @@ impl RawPageTable {
         while got_null == 0 && max > 0 {
             let va0 = pgrounddown(srcva);
             let pa0 = some_or!(self.walkaddr(va0), return Err(()));
-            let mut n = PGSIZE.wrapping_sub(srcva.wrapping_sub(va0));
+            let mut n = PGSIZE - (srcva - va0);
             if n > max {
                 n = max
             }
-            let mut p = pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut u8;
+            let mut p = (pa0 + (srcva - va0)) as *mut u8;
             while n > 0 {
                 if *p as i32 == '\u{0}' as i32 {
                     *dst = '\u{0}' as i32 as u8;
@@ -267,13 +267,13 @@ impl RawPageTable {
                     break;
                 } else {
                     *dst = *p;
-                    n = n.wrapping_sub(1);
-                    max = max.wrapping_sub(1);
+                    n -= 1;
+                    max -= 1;
                     p = p.offset(1);
                     dst = dst.offset(1)
                 }
             }
-            srcva = va0.wrapping_add(PGSIZE)
+            srcva = va0 + PGSIZE
         }
         if got_null != 0 {
             Ok(())
@@ -378,7 +378,7 @@ impl PageTable {
         perm: i32,
     ) -> Result<(), ()> {
         let mut a = pgrounddown(va);
-        let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
+        let last = pgrounddown(va + size - 1usize);
         loop {
             let pte = some_or!(self.walk(a, 1), return Err(()));
             if pte.check_flag(PTE_V) {
@@ -388,8 +388,8 @@ impl PageTable {
             if a == last {
                 break;
             }
-            a = a.wrapping_add(PGSIZE);
-            pa = pa.wrapping_add(PGSIZE);
+            a += PGSIZE;
+            pa += PGSIZE;
         }
         Ok(())
     }
@@ -431,7 +431,7 @@ impl PageTable {
                 self.uvmdealloc(a, oldsz);
                 return Err(());
             }
-            a = a.wrapping_add(PGSIZE);
+            a += PGSIZE;
         }
         Ok(newsz)
     }
@@ -512,7 +512,7 @@ pub unsafe fn kvminit(page_table: *mut PageTable) {
         page_table,
         KERNBASE,
         KERNBASE,
-        (etext.as_mut_ptr() as usize).wrapping_sub(KERNBASE),
+        (etext.as_mut_ptr() as usize) - KERNBASE,
         PTE_R | PTE_X,
     );
 
@@ -521,7 +521,7 @@ pub unsafe fn kvminit(page_table: *mut PageTable) {
         page_table,
         etext.as_mut_ptr() as usize,
         etext.as_mut_ptr() as usize,
-        (PHYSTOP).wrapping_sub(etext.as_mut_ptr() as usize),
+        PHYSTOP - (etext.as_mut_ptr() as usize),
         PTE_R | PTE_W,
     );
 
@@ -564,5 +564,5 @@ pub unsafe fn kvmpa(va: usize) -> usize {
         .filter(|pte| pte.check_flag(PTE_V))
         .expect("kvmpa");
     let pa = pte.as_page() as *const _ as usize;
-    pa.wrapping_add(off)
+    pa + off
 }
