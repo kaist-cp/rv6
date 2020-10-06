@@ -200,12 +200,13 @@ impl File {
                         .map(|v| {
                             *off = off.wrapping_add(v as u32);
                             v
-                        })?;
+                        });
                     ip.unlock();
                     end_op();
-                    if bytes_written != bytes_to_write as usize {
-                        panic!("short File::write");
-                    }
+                    assert!(
+                        bytes_written? == bytes_to_write as usize,
+                        "short File::write"
+                    );
                 }
                 Ok(n as usize)
             }
