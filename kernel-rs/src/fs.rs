@@ -425,12 +425,11 @@ impl InodeGuard<'_> {
     /// Look for a directory entry in a directory.
     /// If found, set *poff to byte offset of entry.
     pub unsafe fn dirlookup(&mut self, name: &FileName, poff: *mut u32) -> Result<*mut Inode, ()> {
-        let mut off: u32 = 0;
         let mut de: Dirent = Default::default();
         if self.guard.typ != T_DIR {
             panic!("dirlookup not DIR");
         }
-        while off < self.guard.size {
+        for off in (0..self.guard.size).step_by(::core::mem::size_of::<Dirent>()) {
             let bytes_read = self.read(
                 0,
                 &mut de as *mut Dirent as usize,
@@ -448,7 +447,6 @@ impl InodeGuard<'_> {
                 }
                 return Ok(iget((*self.ptr).dev, de.inum as u32));
             }
-            off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>()) as u32
         }
         Err(())
     }
