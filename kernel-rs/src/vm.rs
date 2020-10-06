@@ -136,7 +136,7 @@ pub trait VirtualAddr {
 
 impl VirtualAddr for KVAddr {
     unsafe fn copyin(dst: *mut u8, src: Self, len: usize) -> Result<(), ()> {
-        ptr::copy(src.0 as *mut u8, dst, len);
+        ptr::copy(src.value() as *mut u8, dst, len);
         Ok(())
     }
 
@@ -385,12 +385,12 @@ impl PageTable<UVAddr> {
     /// Frees any allocated pages on failure.
     pub unsafe fn uvmcopy(&mut self, mut new: &mut PageTable<UVAddr>, sz: usize) -> Result<(), ()> {
         for i in num_iter::range_step(0, sz, PGSIZE) {
-            let pte = self.walk(UVAddr(i), 0).expect("uvmcopy: pte should exist");
+            let pte = self.walk(UVAddr::wrap(i), 0).expect("uvmcopy: pte should exist");
             if !pte.check_flag(PTE_V) {
                 panic!("uvmcopy: page not present");
             }
             let mut new_ptable = scopeguard::guard(new, |ptable| {
-                ptable.uvmunmap(UVAddr(0), i, 1);
+                ptable.uvmunmap(UVAddr::wrap(0), i, 1);
             });
             let pa = pte.get_pa();
             let flags = pte.get_flags() as u32;
@@ -416,11 +416,11 @@ impl PageTable<UVAddr> {
     /// physical memory.
     pub unsafe fn uvmunmap(&mut self, va: UVAddr, size: usize, do_free: i32) {
         let mut pa: usize = 0;
-        let mut a = pgrounddown(va.0);
-        let last = pgrounddown(va.0 + size - 1usize);
+        let mut a = pgrounddown(va.value());
+        let last = pgrounddown(va.value() + size - 1usize);
         loop {
             let pt = &mut *self;
-            let pte = pt.walk(UVAddr(a), 0).expect("uvmunmap: walk");
+            let pte = pt.walk(UVAddr::wrap(a), 0).expect("uvmunmap: walk");
             if !pte.check_flag(PTE_V) {
                 println!(
                     "va={:018p} pte={:018p}",
@@ -454,7 +454,7 @@ impl PageTable<UVAddr> {
         }
         let newup: usize = pgroundup(newsz);
         if newup < pgroundup(oldsz) {
-            self.uvmunmap(UVAddr(newup), oldsz - newup, 1);
+            self.uvmunmap(UVAddr::wrap(newup), oldsz - newup, 1);
         }
         newsz
     }
@@ -462,7 +462,7 @@ impl PageTable<UVAddr> {
     /// Free user memory pages,
     /// then free page-table pages.
     pub unsafe fn uvmfree(&mut self, sz: usize) {
-        self.uvmunmap(UVAddr(0), sz, 1);
+        self.uvmunmap(UVAddr::wrap(0), sz, 1);
         self.freewalk();
     }
 
@@ -568,25 +568,25 @@ pub unsafe fn kvminit(page_table: *mut PageTable<KVAddr>) {
     let page_table = &mut *page_table;
 
     // SiFive Test Finisher MMIO
-    kvmmap(page_table, FINISHER, FINISHER, PGSIZE, PTE_R | PTE_W);
+    kvmmap(page_table, KVAddr::wrap(FINISHER), PAddr::wrap(FINISHER), PGSIZE, PTE_R | PTE_W);
 
     // uart registers
-    kvmmap(page_table, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+    kvmmap(page_table, KVAddr::wrap(UART0), PAddr::wrap(UART0), PGSIZE, PTE_R | PTE_W);
 
     // virtio mmio disk interface
-    kvmmap(page_table, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+    kvmmap(page_table, KVAddr::wrap(VIRTIO0), PAddr::wrap(VIRTIO0), PGSIZE, PTE_R | PTE_W);
 
     // CLINT
-    kvmmap(page_table, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+    kvmmap(page_table, KVAddr::wrap(CLINT), PAddr::wrap(CLINT), 0x10000, PTE_R | PTE_W);
 
     // PLIC
-    kvmmap(page_table, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+    kvmmap(page_table, KVAddr::wrap(PLIC), PAddr::wrap(PLIC), 0x400000, PTE_R | PTE_W);
 
     // Map kernel text executable and read-only.
     kvmmap(
         page_table,
-        KERNBASE,
-        KERNBASE,
+        KVAddr::wrap(KERNBASE),
+        PAddr::wrap(KERNBASE),
         (etext.as_mut_ptr() as usize) - KERNBASE,
         PTE_R | PTE_X,
     );
@@ -594,8 +594,8 @@ pub unsafe fn kvminit(page_table: *mut PageTable<KVAddr>) {
     // Map kernel data and the physical RAM we'll make use of.
     kvmmap(
         page_table,
-        etext.as_mut_ptr() as usize,
-        etext.as_mut_ptr() as usize,
+        KVAddr::wrap(etext.as_mut_ptr() as usize),
+        PAddr::wrap(etext.as_mut_ptr() as usize),
         PHYSTOP - (etext.as_mut_ptr() as usize),
         PTE_R | PTE_W,
     );
@@ -604,8 +604,8 @@ pub unsafe fn kvminit(page_table: *mut PageTable<KVAddr>) {
     // the highest virtual address in the kernel.
     kvmmap(
         page_table,
-        TRAMPOLINE,
-        trampoline.as_mut_ptr() as usize,
+        KVAddr::wrap(TRAMPOLINE),
+        PAddr::wrap(trampoline.as_mut_ptr() as usize),
         PGSIZE,
         PTE_R | PTE_X,
     );
