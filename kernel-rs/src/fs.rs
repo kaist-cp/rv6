@@ -22,8 +22,7 @@ use crate::{
     spinlock::Spinlock,
     stat::{Stat, T_DIR},
 };
-use core::mem;
-use core::{ops::DerefMut, ptr};
+use core::{mem, ops::DerefMut, ptr};
 
 mod path;
 pub use path::{FileName, Path};
@@ -232,16 +231,16 @@ impl InodeGuard<'_> {
                 0,
                 &mut de as *mut Dirent as usize,
                 off as u32,
-                ::core::mem::size_of::<Dirent>() as u32,
+                mem::size_of::<Dirent>() as u32,
             );
             assert!(
-                !bytes_read.map_or(true, |v| v != ::core::mem::size_of::<Dirent>()),
+                !bytes_read.map_or(true, |v| v != mem::size_of::<Dirent>()),
                 "dirlink read"
             );
             if de.inum as i32 == 0 {
                 break;
             }
-            off = (off as usize).wrapping_add(::core::mem::size_of::<Dirent>()) as i32
+            off = (off as usize).wrapping_add(mem::size_of::<Dirent>()) as i32
         }
         de.inum = inum as u16;
         de.set_name(name);
@@ -249,10 +248,10 @@ impl InodeGuard<'_> {
             0,
             &mut de as *mut Dirent as usize,
             off as u32,
-            ::core::mem::size_of::<Dirent>() as u32,
+            mem::size_of::<Dirent>() as u32,
         );
         assert!(
-            !bytes_write.map_or(true, |v| v != ::core::mem::size_of::<Dirent>()),
+            !bytes_write.map_or(true, |v| v != mem::size_of::<Dirent>()),
             "dirlink"
         );
         Ok(())
@@ -274,7 +273,7 @@ impl InodeGuard<'_> {
         ptr::copy(
             self.guard.addrs.as_mut_ptr() as *const libc::CVoid,
             (*dip).addrs.as_mut_ptr() as *mut libc::CVoid,
-            ::core::mem::size_of::<[u32; 13]>(),
+            mem::size_of::<[u32; 13]>(),
         );
         log_write(bp);
         brelease(&mut *bp);
@@ -429,15 +428,15 @@ impl InodeGuard<'_> {
         if self.guard.typ != T_DIR {
             panic!("dirlookup not DIR");
         }
-        for off in (0..self.guard.size).step_by(::core::mem::size_of::<Dirent>()) {
+        for off in (0..self.guard.size).step_by(mem::size_of::<Dirent>()) {
             let bytes_read = self.read(
                 0,
                 &mut de as *mut Dirent as usize,
                 off,
-                ::core::mem::size_of::<Dirent>() as u32,
+                mem::size_of::<Dirent>() as u32,
             );
             assert!(
-                !bytes_read.map_or(true, |v| v != ::core::mem::size_of::<Dirent>()),
+                !bytes_read.map_or(true, |v| v != mem::size_of::<Dirent>()),
                 "dirlookup read"
             );
             if de.inum as i32 != 0 && name == de.get_name() {
@@ -517,7 +516,7 @@ impl Inode {
             ptr::copy(
                 (*dip).addrs.as_mut_ptr() as *const libc::CVoid,
                 ret.addrs.as_mut_ptr() as *mut libc::CVoid,
-                ::core::mem::size_of::<[u32; 13]>(),
+                mem::size_of::<[u32; 13]>(),
             );
             brelease(&mut *bp);
             self.valid = true;
@@ -645,7 +644,7 @@ impl Superblock {
         ptr::copy(
             (*bp).inner.data.as_mut_ptr() as *const libc::CVoid,
             self as *mut Superblock as *mut libc::CVoid,
-            ::core::mem::size_of::<Superblock>(),
+            mem::size_of::<Superblock>(),
         );
         brelease(&mut *bp);
     }
