@@ -388,7 +388,7 @@ impl Proc {
     /// Map it high in memory, followed by an invalid
     /// guard page.
     unsafe fn palloc(&mut self, i: usize) {
-        let pa = kalloc() as *mut u8;
+        let pa = kalloc();
         if pa.is_null() {
             panic!("kalloc");
         }
@@ -782,7 +782,7 @@ fn allocpid() -> i32 {
 /// p->lock must be held.
 unsafe fn freeproc(mut p: *mut Proc) {
     if !(*p).tf.is_null() {
-        kfree((*p).tf as *mut libc::CVoid);
+        kfree((*p).tf as *mut u8);
     }
     (*p).tf = ptr::null_mut();
     if !(*p).pagetable.assume_init_mut().is_null() {

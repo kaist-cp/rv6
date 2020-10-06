@@ -1,4 +1,3 @@
-use crate::libc;
 use crate::{
     file::{FileType, RcFile},
     kalloc::{kalloc, kfree},
@@ -150,7 +149,7 @@ impl AllocatedPipe {
     // https://github.com/kaist-cp/rv6/pull/211#discussion_r491671723
     pub unsafe fn close(&mut self, writable: bool) {
         if (*self.ptr).close(writable) {
-            kfree(self.ptr as *mut Pipe as *mut u8 as *mut libc::CVoid);
+            kfree(self.ptr as *mut Pipe as *mut u8);
         }
     }
 }

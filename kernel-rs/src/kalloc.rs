@@ -1,7 +1,6 @@
 //! Physical memory allocator, for user processes,
 //! kernel stacks, page-table pages,
 //! and pipe buffers. Allocates whole 4096-byte pages.
-use crate::libc;
 use crate::{
     memlayout::PHYSTOP,
     riscv::{pgroundup, PGSIZE},
@@ -25,16 +24,13 @@ struct Run {
 static mut KMEM: Spinlock<*mut Run> = Spinlock::new("KMEM", ptr::null_mut());
 
 pub unsafe fn kinit() {
-    freerange(
-        end.as_mut_ptr() as *mut libc::CVoid,
-        PHYSTOP as *mut libc::CVoid,
-    );
+    freerange(end.as_mut_ptr(), PHYSTOP as *mut u8);
 }
 
-pub unsafe fn freerange(pa_start: *mut libc::CVoid, pa_end: *mut libc::CVoid) {
+pub unsafe fn freerange(pa_start: *mut u8, pa_end: *mut u8) {
     let mut p = pgroundup(pa_start as usize) as *mut u8;
-    while p.add(PGSIZE) <= pa_end as *mut u8 {
-        kfree(p as *mut libc::CVoid);
+    while p.add(PGSIZE) <= pa_end {
+        kfree(p);
         p = p.add(PGSIZE)
     }
 }
@@ -43,7 +39,7 @@ pub unsafe fn freerange(pa_start: *mut libc::CVoid, pa_end: *mut libc::CVoid) {
 /// which normally should have been returned by a
 /// call to kalloc().  (The exception is when
 /// initializing the allocator; see kinit above.)
-pub unsafe fn kfree(pa: *mut libc::CVoid) {
+pub unsafe fn kfree(pa: *mut u8) {
     if (pa as usize).wrapping_rem(PGSIZE) != 0
         || (pa as *mut u8) < end.as_mut_ptr()
         || pa as usize >= PHYSTOP
@@ -52,7 +48,7 @@ pub unsafe fn kfree(pa: *mut libc::CVoid) {
     }
 
     // Fill with junk to catch dangling refs.
-    ptr::write_bytes(pa as *mut libc::CVoid, 1, PGSIZE);
+    ptr::write_bytes(pa, 1, PGSIZE);
     let mut r = pa as *mut Run;
     let mut freelist = KMEM.lock();
     (*r).next = *freelist;
@@ -62,7 +58,7 @@ pub unsafe fn kfree(pa: *mut libc::CVoid) {
 /// Allocate one 4096-byte page of physical memory.
 /// Returns a pointer that the kernel can use.
 /// Returns 0 if the memory cannot be allocated.
-pub unsafe fn kalloc() -> *mut libc::CVoid {
+pub unsafe fn kalloc() -> *mut u8 {
     let ret = {
         let mut freelist = KMEM.lock();
         if freelist.is_null() {
