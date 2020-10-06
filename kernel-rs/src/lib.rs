@@ -15,15 +15,6 @@
 #![feature(maybe_uninit_extra)]
 #![feature(min_const_generics)]
 
-// TODO(@jeehoonkang): we define `libc` module here because the `libc` crate doesn't work for the
-// `riscv64gc-unknown-none-elfhf` target.
-//
-// Types are adopted from:
-// https://github.com/rust-lang/libc/blob/master/src/unix/linux_like/linux/gnu/b64/riscv64/mod.rs
-mod libc {
-    pub type CVoid = core::ffi::c_void;
-}
-
 mod abort;
 mod bio;
 mod buf;
