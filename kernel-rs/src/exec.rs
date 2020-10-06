@@ -8,7 +8,7 @@ use crate::{
     proc::{myproc, proc_freepagetable, proc_pagetable, Proc},
     riscv::PGSIZE,
     string::{safestrcpy, strlen},
-    vm::PageTable,
+    vm::{PageTable, UVAddr, VirtualAddr},
 };
 use core::mem;
 
@@ -86,7 +86,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
     *sz = sz.wrapping_add(PGSIZE).wrapping_sub(1) & !PGSIZE.wrapping_sub(1);
 
     *sz = pt.uvmalloc(*sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)))?;
-    pt.uvmclear(sz.wrapping_sub(2usize.wrapping_mul(PGSIZE)));
+    pt.uvmclear(UVAddr::wrap(sz.wrapping_sub(2usize.wrapping_mul(PGSIZE))));
     let mut sp: usize = *sz;
     let stackbase: usize = sp.wrapping_sub(PGSIZE);
 
@@ -172,8 +172,8 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
 /// and the pages from va to va+sz must already be mapped.
 ///
 /// Returns `Ok(())` on success, `Err(())` on failure.
-unsafe fn loadseg(
-    pagetable: &mut PageTable,
+unsafe fn loadseg<A: VirtualAddr>(
+    pagetable: &mut PageTable<A>,
     va: usize,
     ip: &mut InodeGuard<'_>,
     offset: u32,
@@ -185,7 +185,7 @@ unsafe fn loadseg(
 
     for i in num_iter::range_step(0, sz, PGSIZE as _) {
         let pa = pagetable
-            .walkaddr(va.wrapping_add(i as usize))
+            .walkaddr(VirtualAddr::wrap(va.wrapping_add(i as usize)))
             .expect("loadseg: address should exist");
 
         let n = if sz.wrapping_sub(i) < PGSIZE as u32 {

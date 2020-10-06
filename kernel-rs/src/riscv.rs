@@ -1,3 +1,5 @@
+use crate::vm::PAddr;
+
 /// Which hart (core) is this?
 #[inline]
 pub unsafe fn r_mhartid() -> usize {
@@ -363,13 +365,13 @@ pub const PTE_U: i32 = (1) << 4;
 
 /// Shift a physical address to the right place for a PTE.
 #[inline]
-pub const fn pa2pte(pa: usize) -> usize {
-    (pa >> 12) << 10
+pub const fn pa2pte(pa: PAddr) -> usize {
+    (pa.value() >> 12) << 10
 }
 
 #[inline]
-pub const fn pte2pa(pte: PteT) -> usize {
-    (pte >> 10) << 12
+pub const fn pte2pa(pte: PteT) -> PAddr {
+    PAddr::wrap((pte >> 10) << 12)
 }
 
 #[inline]

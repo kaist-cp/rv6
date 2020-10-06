@@ -3,6 +3,7 @@ use crate::{
     proc::{myproc, Proc},
     sysfile::*,
     sysproc::*,
+    vm::{UVAddr, VirtualAddr},
 };
 use core::str;
 use cstr_core::CStr;
@@ -16,7 +17,11 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
     if (*p)
         .pagetable
         .assume_init_mut()
-        .copyin(ip as *mut u8, addr, ::core::mem::size_of::<usize>())
+        .copyin(
+            ip as *mut u8,
+            UVAddr::wrap(addr),
+            ::core::mem::size_of::<usize>(),
+        )
         .is_err()
     {
         return -1;
@@ -30,7 +35,7 @@ pub unsafe fn fetchstr(addr: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
     let p: *mut Proc = myproc();
     (*p).pagetable
         .assume_init_mut()
-        .copyinstr(buf.as_mut_ptr(), addr, buf.len())?;
+        .copyinstr(buf.as_mut_ptr(), UVAddr::wrap(addr), buf.len())?;
 
     Ok(CStr::from_ptr(buf.as_ptr()))
 }
