@@ -164,7 +164,6 @@ impl InodeGuard<'_> {
 pub unsafe fn sys_unlink() -> usize {
     let mut de: Dirent = Default::default();
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
-    let mut off: u32 = 0;
     let path = ok_or!(argstr(0, &mut path), return usize::MAX);
     begin_op();
     let (ptr, name) = ok_or!(Path::new(path).nameiparent(), {
@@ -179,7 +178,7 @@ pub unsafe fn sys_unlink() -> usize {
     // Cannot unlink "." or "..".
     if !(name.as_bytes() == b"." || name.as_bytes() == b"..") {
         // TODO: use other Result related functions
-        if let Ok(ptr) = dp.dirlookup(&name, &mut off) {
+        if let Ok((ptr, off)) = dp.dirlookup(&name) {
             let mut ip = InodeGuard {
                 guard: (*ptr).lock(),
                 ptr,
@@ -226,7 +225,7 @@ unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> Result<InodeG
         ptr,
     };
     // TODO: use other Result related functions
-    if let Ok(ptr2) = dp.dirlookup(&name, ptr::null_mut()) {
+    if let Ok((ptr2, _)) = dp.dirlookup(&name) {
         dp.unlockput();
         let ip = InodeGuard {
             guard: (*ptr2).lock(),

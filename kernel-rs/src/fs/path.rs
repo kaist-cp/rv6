@@ -1,5 +1,4 @@
 use core::cmp;
-use core::ptr;
 use cstr_core::CStr;
 
 use super::{iget, Inode, InodeGuard, DIRSIZ, ROOTDEV, ROOTINO, T_DIR};
@@ -155,9 +154,10 @@ impl Path {
                 ip.unlock();
                 return Ok((ptr, Some(name)));
             }
-            let next = ip.dirlookup(name, ptr::null_mut());
+            let next = ip.dirlookup(name);
             ip.unlockput();
-            ptr = next?
+            // let (temp, _) = next?;
+            ptr = next?.0
         }
         if parent {
             (*ptr).put();
