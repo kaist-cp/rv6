@@ -193,7 +193,7 @@ impl DescriptorPool {
             }
         }
 
-        Some(descs.into_inner().unwrap())
+        descs.into_inner().ok()
     }
 
     /// Mark a descriptor as free.

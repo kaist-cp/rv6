@@ -279,12 +279,10 @@ pub unsafe fn sys_open() -> usize {
     begin_op();
     let omode = FcntlFlags::from_bits_truncate(omode);
     let ip: InodeGuard<'_> = if omode.contains(FcntlFlags::O_CREATE) {
-        let ip = create(path, T_FILE, 0, 0);
-        if ip.is_err() {
+        ok_or!(create(path, T_FILE, 0, 0), {
             end_op();
             return usize::MAX;
-        }
-        ip.unwrap()
+        })
     } else {
         let ptr = ok_or!(path.namei(), {
             end_op();
@@ -350,12 +348,11 @@ pub unsafe fn sys_mkdir() -> usize {
         end_op();
         return usize::MAX;
     });
-    let ip = create(Path::new(path), T_DIR, 0, 0);
-    if ip.is_err() {
+    ok_or!(create(Path::new(path), T_DIR, 0, 0), {
         end_op();
         return usize::MAX;
-    }
-    ip.unwrap().unlockput();
+    })
+    .unlockput();
     end_op();
     0
 }
@@ -369,11 +366,11 @@ pub unsafe fn sys_mknod() -> usize {
     let path = ok_or!(argstr(0, &mut path), return usize::MAX);
     let major = ok_or!(argint(1), return usize::MAX) as u16;
     let minor = ok_or!(argint(2), return usize::MAX) as u16;
-    let ip = create(Path::new(path), T_DEVICE, major, minor);
-    if ip.is_err() {
-        return usize::MAX;
-    }
-    ip.unwrap().unlockput();
+    ok_or!(
+        create(Path::new(path), T_DEVICE, major, minor),
+        return usize::MAX
+    )
+    .unlockput();
     0
 }
 
