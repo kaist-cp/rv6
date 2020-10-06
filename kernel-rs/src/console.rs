@@ -1,4 +1,3 @@
-use crate::libc;
 use crate::{
     file::{Devsw, DEVSW},
     printf::PANICKED,
@@ -85,7 +84,7 @@ impl Console {
         for i in 0..n {
             let mut c: u8 = 0;
             if either_copyin(
-                &mut c as *mut u8 as *mut libc::CVoid,
+                &mut c as *mut u8,
                 user_src,
                 src.wrapping_add(i as usize),
                 1usize,
@@ -134,14 +133,7 @@ impl Console {
             } else {
                 // Copy the input byte to the user-space buffer.
                 let mut cbuf = cin as u8;
-                if either_copyout(
-                    user_dst,
-                    dst,
-                    &mut cbuf as *mut u8 as *mut libc::CVoid,
-                    1usize,
-                )
-                .is_err()
-                {
+                if either_copyout(user_dst, dst, &mut cbuf as *mut u8, 1usize).is_err() {
                     break;
                 }
                 dst = dst.wrapping_add(1);

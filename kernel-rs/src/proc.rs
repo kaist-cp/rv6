@@ -1,4 +1,3 @@
-use crate::libc;
 use crate::{
     file::{Inode, RcFile},
     fs::{fsinit, Path},
@@ -962,7 +961,7 @@ unsafe fn forkret() {
 pub unsafe fn either_copyout(
     user_dst: i32,
     dst: usize,
-    src: *mut libc::CVoid,
+    src: *mut u8,
     len: usize,
 ) -> Result<(), ()> {
     let p = myproc();
@@ -972,7 +971,7 @@ pub unsafe fn either_copyout(
             .copyout(dst, src as *mut u8, len)
             .map_or(Err(()), |_v| Ok(()))
     } else {
-        ptr::copy(src, dst as *mut u8 as *mut libc::CVoid, len);
+        ptr::copy(src, dst as *mut u8, len);
         Ok(())
     }
 }
@@ -980,12 +979,7 @@ pub unsafe fn either_copyout(
 /// Copy from either a user address, or kernel address,
 /// depending on usr_src.
 /// Returns Ok(()) on success, Err(()) on error.
-pub unsafe fn either_copyin(
-    dst: *mut libc::CVoid,
-    user_src: i32,
-    src: usize,
-    len: usize,
-) -> Result<(), ()> {
+pub unsafe fn either_copyin(dst: *mut u8, user_src: i32, src: usize, len: usize) -> Result<(), ()> {
     let p = myproc();
     if user_src != 0 {
         (*p).pagetable
@@ -993,7 +987,7 @@ pub unsafe fn either_copyin(
             .copyin(dst as *mut u8, src, len)
             .map_or(Err(()), |_v| Ok(()))
     } else {
-        ptr::copy(src as *mut u8 as *const libc::CVoid, dst, len);
+        ptr::copy(src as *mut u8, dst, len);
         Ok(())
     }
 }
