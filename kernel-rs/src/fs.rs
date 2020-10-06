@@ -206,7 +206,7 @@ impl InodeGuard<'_> {
 
     /// Copy stat information from inode.
     /// Caller must hold ip->lock.
-    pub unsafe fn stati(&self, mut st: *mut Stat) {
+    pub unsafe fn stati(&self, st: &mut Stat) {
         (*st).dev = (*self.ptr).dev as i32;
         (*st).ino = (*self.ptr).inum;
         (*st).typ = self.guard.typ;
