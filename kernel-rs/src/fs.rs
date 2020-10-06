@@ -10,7 +10,6 @@
 //! are in sysfile.c.
 
 /// On-disk file system format used for both kernel and user programs are also included here.
-use crate::libc;
 use crate::{
     bio::brelease,
     buf::Buf,
@@ -323,8 +322,7 @@ impl InodeGuard<'_> {
                     .inner
                     .data
                     .as_mut_ptr()
-                    .offset(off.wrapping_rem(BSIZE as u32) as isize)
-                    as *mut libc::CVoid,
+                    .offset(off.wrapping_rem(BSIZE as u32) as isize),
                 m as usize,
             )
             .is_err()
@@ -370,8 +368,7 @@ impl InodeGuard<'_> {
                     .inner
                     .data
                     .as_mut_ptr()
-                    .offset(off.wrapping_rem(BSIZE as u32) as isize)
-                    as *mut libc::CVoid,
+                    .offset(off.wrapping_rem(BSIZE as u32) as isize),
                 user_src,
                 src,
                 m as usize,
