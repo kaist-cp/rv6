@@ -141,8 +141,8 @@ impl RawPageTable {
                 n = len
             }
             ptr::copy(
-                src as *const libc::CVoid,
-                pa0.wrapping_add(dstva.wrapping_sub(va0)) as *mut libc::CVoid,
+                src as *const u8,
+                pa0.wrapping_add(dstva.wrapping_sub(va0)) as *mut u8,
                 n,
             );
             len = len.wrapping_sub(n);
@@ -235,11 +235,7 @@ impl RawPageTable {
             if n > len {
                 n = len
             }
-            ptr::copy(
-                pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut libc::CVoid,
-                dst as *mut libc::CVoid,
-                n,
-            );
+            ptr::copy(pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut u8, dst, n);
             len = len.wrapping_sub(n);
             dst = dst.add(n);
             srcva = va0.wrapping_add(PGSIZE)
@@ -405,11 +401,7 @@ impl PageTable {
         ptr::write_bytes(mem, 0, PGSIZE);
         self.mappages(0, PGSIZE, mem as usize, PTE_W | PTE_R | PTE_X | PTE_U)
             .expect("inituvm: mappage");
-        ptr::copy(
-            src as *const libc::CVoid,
-            mem as *mut libc::CVoid,
-            sz as usize,
-        );
+        ptr::copy(src as *const u8, mem, sz as usize);
     }
 
     /// Allocate PTEs and physical memory to grow process from oldsz to
@@ -461,11 +453,7 @@ impl PageTable {
             if mem.is_null() {
                 return Err(());
             }
-            ptr::copy(
-                pa as *mut u8 as *const libc::CVoid,
-                mem as *mut libc::CVoid,
-                PGSIZE,
-            );
+            ptr::copy(pa as *mut u8 as *const u8, mem, PGSIZE);
             if (*new_ptable)
                 .mappages(i, PGSIZE, mem as usize, flags as i32)
                 .is_err()

@@ -598,8 +598,8 @@ impl Superblock {
     unsafe fn read(&mut self, dev: i32) {
         let bp: *mut Buf = Buf::read(dev as u32, 1);
         ptr::copy(
-            (*bp).inner.data.as_mut_ptr() as *const libc::CVoid,
-            self as *mut Superblock as *mut libc::CVoid,
+            (*bp).inner.data.as_mut_ptr() as *const u8,
+            self as *mut Superblock as *mut u8,
             mem::size_of::<Superblock>(),
         );
         brelease(&mut *bp);
