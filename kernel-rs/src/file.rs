@@ -150,9 +150,9 @@ impl File {
                     ptr: *ip,
                 };
                 let ret = ip.read(1, addr, *off, n as u32);
-                ret.map(|v| {
+                if let Ok(v) = ret {
                     *off = off.wrapping_add(v as u32);
-                })?;
+                }
                 ip.unlock();
                 ret
             }
