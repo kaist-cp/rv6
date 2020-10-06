@@ -13,7 +13,7 @@ use crate::{
     spinlock::{pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard},
     string::safestrcpy,
     trap::usertrapret,
-    vm::{kvmmap, PageTable},
+    vm::{kvminithart, kvmmap, KVAddr, PAddr, PageTable, UVAddr, VirtualAddr},
 };
 use core::{
     cmp, mem,
@@ -311,7 +311,7 @@ pub struct Proc {
     pub sz: usize,
 
     /// Page table.
-    pub pagetable: mem::MaybeUninit<PageTable>,
+    pub pagetable: mem::MaybeUninit<PageTable<UVAddr>>,
 
     /// Data page for trampoline.S.
     pub tf: *mut Trapframe,
@@ -468,7 +468,7 @@ impl Proc {
             panic!("kalloc");
         }
         let va: usize = kstack(i);
-        kvmmap(page_table, va, pa as usize, PGSIZE, PTE_R | PTE_W);
+        kvmmap(page_table, KVAddr::wrap(va), PAddr::wrap(pa as usize), PGSIZE, PTE_R | PTE_W);
         self.kstack = va;
     }
 
@@ -853,9 +853,9 @@ unsafe fn freeproc(mut p: ProcGuard) {
 
 /// Create a page table for a given process,
 /// with no user pages, but with trampoline pages.
-pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable {
+pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable<UVAddr> {
     // An empty page table.
-    let mut pagetable = PageTable::new();
+    let mut pagetable = PageTable::<UVAddr>::new();
 
     // let mut pagetable = uvmcreate();
 
@@ -865,7 +865,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable {
     // to/from user space, so not PTE_U.
     pagetable
         .mappages(
-            TRAMPOLINE,
+            UVAddr::wrap(TRAMPOLINE),
             PGSIZE,
             trampoline.as_mut_ptr() as usize,
             PTE_R | PTE_X,
@@ -874,16 +874,21 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable {
 
     // Map the trapframe just below TRAMPOLINE, for trampoline.S.
     pagetable
-        .mappages(TRAPFRAME, PGSIZE, (*p).tf as usize, PTE_R | PTE_W)
+        .mappages(
+            UVAddr::wrap(TRAPFRAME),
+            PGSIZE,
+            (*p).tf as usize,
+            PTE_R | PTE_W,
+        )
         .expect("proc_pagetable: mappages TRAPFRAME");
     pagetable
 }
 
 /// Free a process's page table, and free the
 /// physical memory it refers to.
-pub unsafe fn proc_freepagetable(pagetable: &mut PageTable, sz: usize) {
-    pagetable.uvmunmap(TRAMPOLINE, PGSIZE, 0);
-    pagetable.uvmunmap(TRAPFRAME, PGSIZE, 0);
+pub unsafe fn proc_freepagetable(pagetable: &mut PageTable<UVAddr>, sz: usize) {
+    pagetable.uvmunmap(UVAddr::wrap(TRAMPOLINE), PGSIZE, 0);
+    pagetable.uvmunmap(UVAddr::wrap(TRAPFRAME), PGSIZE, 0);
     if sz > 0 {
         pagetable.uvmfree(sz);
     };
@@ -1025,10 +1030,21 @@ pub unsafe fn either_copyin(
     if user_src {
         (*p).pagetable
             .assume_init_mut()
-            .copyin(dst, src, len)
+            .copyin(dst, UVAddr::wrap(src), len)
             .map_or(Err(()), |_v| Ok(()))
     } else {
         ptr::copy(src as *mut u8, dst, len);
         Ok(())
     }
 }
+
+// /// Copy from either a user address, or kernel address,
+// /// depending on usr_src.
+// /// Returns Ok(()) on success, Err(()) on error.
+// pub unsafe fn either_copyin<A: VirtualAddr>(
+//     dst: *mut libc::CVoid,
+//     src: A,
+//     len: usize,
+// ) -> Result<(), ()> {
+//     <A as VirtualAddr>::copyin(dst, src, len)
+// }

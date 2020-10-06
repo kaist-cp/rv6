@@ -3,6 +3,7 @@ use crate::{
     kernel::kernel,
     proc::{myproc, WaitChannel},
     spinlock::Spinlock,
+    vm::{UVAddr, VirtualAddr},
 };
 use core::ops::Deref;
 
@@ -167,7 +168,7 @@ impl PipeInner {
             if (*proc)
                 .pagetable
                 .assume_init_mut()
-                .copyin(&mut ch, addr.wrapping_add(i), 1usize)
+                .copyin(&mut ch, UVAddr::wrap(addr.wrapping_add(i)), 1usize)
                 .is_err()
             {
                 break;

@@ -12,7 +12,7 @@ use crate::{
     riscv::{PGSHIFT, PGSIZE},
     sleepablelock::SleepablelockGuard,
     virtio::*,
-    vm::kvmpa,
+    vm::{kvmpa, KVAddr, VirtualAddr},
 };
 
 use core::array::IntoIter;

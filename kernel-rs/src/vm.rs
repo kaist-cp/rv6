@@ -3,13 +3,20 @@ use crate::{
     memlayout::{CLINT, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     page::Page,
     println,
+    proc::myproc,
     riscv::{
         make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, sfence_vma, w_satp, PteT,
         MAXVA, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
     },
     some_or,
 };
-use core::{mem, ops::Deref, ops::DerefMut, ptr};
+use core::{
+    marker::PhantomData,
+    mem::{self},
+    ops::Deref,
+    ops::DerefMut,
+    ptr,
+};
 
 extern "C" {
     // kernel.ld sets this to end of kernel code.
@@ -47,24 +54,24 @@ impl PageTableEntry {
         self.inner = inner;
     }
 
-    fn get_pa(&self) -> usize {
+    fn get_pa(&self) -> PAddr {
         pte2pa(self.inner)
     }
 
     unsafe fn as_page(&self) -> &Page {
-        &*(pte2pa(self.inner) as *const Page)
+        &*(pte2pa(self.inner).value() as *const Page)
     }
 
     fn as_table_mut(&mut self) -> Option<&mut RawPageTable> {
         if self.check_flag(PTE_V) && !self.check_flag((PTE_R | PTE_W | PTE_X) as usize) {
-            Some(unsafe { &mut *(pte2pa(self.inner) as *mut RawPageTable) })
+            Some(unsafe { &mut *(pte2pa(self.inner).value() as *mut RawPageTable) })
         } else {
             None
         }
     }
 
     unsafe fn as_table_mut_unchecked(&mut self) -> &mut RawPageTable {
-        &mut *(pte2pa(self.inner) as *mut RawPageTable)
+        &mut *(pte2pa(self.inner).value() as *mut RawPageTable)
     }
 }
 
@@ -103,113 +110,69 @@ impl RawPageTable {
     }
 }
 
-impl PageTable {
-    /// Copy from kernel to user.
-    /// Copy len bytes from src to virtual address dstva in a given page table.
-    /// Return Ok(()) on success, Err(()) on error.
-    // TODO: Refactor src to type &[u8]
-    pub unsafe fn copyout(
-        &mut self,
-        mut dstva: usize,
-        mut src: *const u8,
-        mut len: usize,
-    ) -> Result<(), ()> {
-        while len > 0 {
-            let va0 = pgrounddown(dstva);
-            let pa0 = some_or!(self.walkaddr(va0), return Err(()));
-            let mut n = PGSIZE - (dstva - va0);
-            if n > len {
-                n = len
-            }
-            ptr::copy(
-                src as *const u8,
-                pa0.wrapping_add(dstva.wrapping_sub(va0)) as *mut u8,
-                n,
-            );
-            len -= n;
-            src = src.add(n);
-            dstva = va0 + PGSIZE;
-        }
+pub struct PAddr(usize);
+impl PAddr {
+    pub const fn wrap(value: usize) -> Self {
+        PAddr(value)
+    }
+
+    pub const fn value(self) -> usize {
+        self.0
+    }
+}
+pub struct KVAddr(usize);
+pub struct UVAddr(usize);
+
+pub trait VirtualAddr {
+    /// Copy from either a user address, or kernel address,
+    /// depending on usr_src.
+    /// Returns Ok(()) on success, Err(()) on error.
+    unsafe fn copyin(dst: *mut u8, src: Self, len: usize) -> Result<(), ()>;
+
+    fn wrap(value: usize) -> Self;
+
+    fn value(&self) -> usize;
+}
+
+impl VirtualAddr for KVAddr {
+    unsafe fn copyin(dst: *mut u8, src: Self, len: usize) -> Result<(), ()> {
+        ptr::copy(src.0 as *mut u8, dst, len);
         Ok(())
     }
 
-    /// Copy from user to kernel.
-    /// Copy len bytes to dst from virtual address srcva in a given page table.
-    /// Return Ok(()) on success, Err(()) on error.
-    pub unsafe fn copyin(
-        &mut self,
-        mut dst: *mut u8,
-        mut srcva: usize,
-        mut len: usize,
-    ) -> Result<(), ()> {
-        while len > 0 {
-            let va0 = pgrounddown(srcva);
-            let pa0 = some_or!(self.walkaddr(va0), return Err(()));
-            let mut n = PGSIZE - (srcva - va0);
-            if n > len {
-                n = len
-            }
-            ptr::copy(pa0.wrapping_add(srcva.wrapping_sub(va0)) as *mut u8, dst, n);
-            len = len.wrapping_sub(n);
-            dst = dst.add(n);
-            srcva = va0 + PGSIZE
-        }
-        Ok(())
+    fn wrap(value: usize) -> Self {
+        KVAddr(value)
     }
 
-    /// Copy a null-terminated string from user to kernel.
-    /// Copy bytes to dst from virtual address srcva in a given page table,
-    /// until a '\0', or max.
-    /// Return OK(()) on success, Err(()) on error.
-    pub unsafe fn copyinstr(
-        &mut self,
-        mut dst: *mut u8,
-        mut srcva: usize,
-        mut max: usize,
-    ) -> Result<(), ()> {
-        let mut got_null: i32 = 0;
-        while got_null == 0 && max > 0 {
-            let va0 = pgrounddown(srcva);
-            let pa0 = some_or!(self.walkaddr(va0), return Err(()));
-            let mut n = PGSIZE - (srcva - va0);
-            if n > max {
-                n = max
-            }
-            let mut p = (pa0 + (srcva - va0)) as *mut u8;
-            while n > 0 {
-                if *p as i32 == '\u{0}' as i32 {
-                    *dst = '\u{0}' as i32 as u8;
-                    got_null = 1;
-                    break;
-                } else {
-                    *dst = *p;
-                    n -= 1;
-                    max -= 1;
-                    p = p.offset(1);
-                    dst = dst.offset(1)
-                }
-            }
-            srcva = va0 + PGSIZE
-        }
-        if got_null != 0 {
-            Ok(())
-        } else {
-            Err(())
-        }
+    fn value(&self) -> usize {
+        self.0
     }
 }
 
-pub struct PageTable {
+impl VirtualAddr for UVAddr {
+    unsafe fn copyin(dst: *mut u8, src: Self, len: usize) -> Result<(), ()> {
+        let p = myproc();
+        (*p).pagetable
+            .assume_init_mut()
+            .copyin(dst as *mut u8, src, len)
+            .map_or(Err(()), |_v| Ok(()))
+    }
+
+    fn wrap(value: usize) -> Self {
+        UVAddr(value)
+    }
+
+    fn value(&self) -> usize {
+        self.0
+    }
+}
+
+pub struct PageTable<A> {
     ptr: *mut RawPageTable,
+    _marker: PhantomData<A>,
 }
 
-impl PageTable {
-    pub const fn zero() -> Self {
-        Self {
-            ptr: ptr::null_mut(),
-        }
-    }
-
+impl<A: VirtualAddr> PageTable<A> {
     pub fn new() -> Self {
         let page = unsafe { kernel().alloc() } as *mut RawPageTable;
         if page.is_null() {
@@ -219,11 +182,17 @@ impl PageTable {
             ptr::write_bytes(page, 0, 1);
         }
 
-        Self { ptr: page }
+        Self {
+            ptr: page,
+            _marker: PhantomData,
+        }
     }
 
     pub fn from_raw(ptr: *mut RawPageTable) -> Self {
-        Self { ptr }
+        Self {
+            ptr,
+            _marker: PhantomData,
+        }
     }
 
     pub fn into_raw(self) -> *mut RawPageTable {
@@ -252,13 +221,13 @@ impl PageTable {
     ///   21..39 -- 9 bits of level-1 index.
     ///   12..20 -- 9 bits of level-0 index.
     ///    0..12 -- 12 bits of byte offset within the page.
-    unsafe fn walk(&self, va: usize, alloc: i32) -> Option<&mut PageTableEntry> {
+    unsafe fn walk(&self, va: A, alloc: i32) -> Option<&mut PageTableEntry> {
         let mut pagetable = &mut *self.as_raw();
-        if va >= MAXVA {
+        if va.value() >= MAXVA {
             panic!("walk");
         }
         for level in (1..3).rev() {
-            let pte = &mut pagetable[px(level, va)];
+            let pte = &mut pagetable[px(level, va.value())];
             if pte.check_flag(PTE_V) {
                 pagetable = pte.as_table_mut_unchecked();
             } else {
@@ -271,19 +240,19 @@ impl PageTable {
                 }
 
                 ptr::write_bytes(k, 0, PGSIZE);
-                pte.set_inner(pa2pte(k as usize));
+                pte.set_inner(pa2pte(PAddr::wrap(k as usize)));
                 pte.set_flag(PTE_V);
                 pagetable = pte.as_table_mut_unchecked();
             }
         }
-        Some(&mut pagetable[px(0, va)])
+        Some(&mut pagetable[px(0, va.value())])
     }
 
     /// Look up a virtual address, return the physical address,
     /// or 0 if not mapped.
     /// TODO: Use type parameter at PageTable to show this function "Can only be used to look up user pages."
-    pub unsafe fn walkaddr(&mut self, va: usize) -> Option<usize> {
-        if va >= MAXVA {
+    pub unsafe fn walkaddr(&mut self, va: A) -> Option<usize> {
+        if va.value() >= MAXVA {
             return None;
         }
         let pt = self;
@@ -294,31 +263,28 @@ impl PageTable {
         if !pte.check_flag(PTE_U as usize) {
             return None;
         }
-        Some(pte.get_pa())
+        Some(pte.get_pa().value())
     }
-}
 
-// TODO: separate these function for va structure later (Use type to show this)
-impl PageTable {
     /// Create PTEs for virtual addresses starting at va that refer to
     /// physical addresses starting at pa. va and size might not
     /// be page-aligned. Returns Ok(()) on success, Err(()) if walk() couldn't
     /// allocate a needed page-table page.
     pub unsafe fn mappages(
         &mut self,
-        va: usize,
+        va: A,
         size: usize,
         mut pa: usize,
         perm: i32,
     ) -> Result<(), ()> {
-        let mut a = pgrounddown(va);
-        let last = pgrounddown(va + size - 1usize);
+        let mut a = pgrounddown(va.value());
+        let last = pgrounddown(va.value() + size - 1usize);
         loop {
-            let pte = some_or!(self.walk(a, 1), return Err(()));
+            let pte = some_or!(self.walk(VirtualAddr::wrap(a), 1), return Err(()));
             if pte.check_flag(PTE_V) {
                 panic!("remap");
             }
-            pte.set_inner(pa2pte(pa) | perm as usize | PTE_V);
+            pte.set_inner(pa2pte(PAddr::wrap(pa)) | perm as usize | PTE_V);
             if a == last {
                 break;
             }
@@ -328,6 +294,37 @@ impl PageTable {
         Ok(())
     }
 
+    /// Copy from kernel to user.
+    /// Copy len bytes from src to virtual address dstva in a given page table.
+    /// Return Ok(()) on success, Err(()) on error.
+    // TODO: Refactor src to type &[u8]
+    pub unsafe fn copyout(
+        &mut self,
+        mut dstva: usize,
+        mut src: *const u8,
+        mut len: usize,
+    ) -> Result<(), ()> {
+        while len > 0 {
+            let va0 = pgrounddown(dstva);
+            let pa0 = some_or!(self.walkaddr(VirtualAddr::wrap(va0)), return Err(()));
+            let mut n = PGSIZE - (dstva - va0);
+            if n > len {
+                n = len
+            }
+            ptr::copy(
+                src as *const u8,
+                (pa0 + (dstva - va0)) as *mut u8,
+                n,
+            );
+            len -= n;
+            src = src.add(n);
+            dstva = va0 + PGSIZE;
+        }
+        Ok(())
+    }
+}
+
+impl PageTable<UVAddr> {
     /// Load the user initcode into address 0 of pagetable,
     /// for the very first process.
     /// sz must be less than a page.
@@ -337,8 +334,13 @@ impl PageTable {
         }
         let mem: *mut u8 = kernel().alloc();
         ptr::write_bytes(mem, 0, PGSIZE);
-        self.mappages(0, PGSIZE, mem as usize, PTE_W | PTE_R | PTE_X | PTE_U)
-            .expect("inituvm: mappage");
+        self.mappages(
+            VirtualAddr::wrap(0),
+            PGSIZE,
+            mem as usize,
+            PTE_W | PTE_R | PTE_X | PTE_U,
+        )
+        .expect("inituvm: mappage");
         ptr::copy(src.as_ptr(), mem, src.len());
     }
 
@@ -358,7 +360,12 @@ impl PageTable {
             }
             ptr::write_bytes(mem, 0, PGSIZE);
             if self
-                .mappages(a, PGSIZE, mem as usize, PTE_W | PTE_X | PTE_R | PTE_U)
+                .mappages(
+                    VirtualAddr::wrap(a),
+                    PGSIZE,
+                    mem as usize,
+                    PTE_W | PTE_X | PTE_R | PTE_U,
+                )
                 .is_err()
             {
                 kernel().free(mem);
@@ -376,14 +383,14 @@ impl PageTable {
     /// physical memory.
     /// Returns Ok(()) on success, Err(()) on failure.
     /// Frees any allocated pages on failure.
-    pub unsafe fn uvmcopy(&mut self, mut new: &mut PageTable, sz: usize) -> Result<(), ()> {
+    pub unsafe fn uvmcopy(&mut self, mut new: &mut PageTable<UVAddr>, sz: usize) -> Result<(), ()> {
         for i in num_iter::range_step(0, sz, PGSIZE) {
-            let pte = self.walk(i, 0).expect("uvmcopy: pte should exist");
+            let pte = self.walk(UVAddr(i), 0).expect("uvmcopy: pte should exist");
             if !pte.check_flag(PTE_V) {
                 panic!("uvmcopy: page not present");
             }
             let mut new_ptable = scopeguard::guard(new, |ptable| {
-                ptable.uvmunmap(0, i, 1);
+                ptable.uvmunmap(UVAddr(0), i, 1);
             });
             let pa = pte.get_pa();
             let flags = pte.get_flags() as u32;
@@ -391,9 +398,9 @@ impl PageTable {
             if mem.is_null() {
                 return Err(());
             }
-            ptr::copy(pa as *mut u8 as *const u8, mem, PGSIZE);
+            ptr::copy(pa.value() as *mut u8 as *const u8, mem, PGSIZE);
             if (*new_ptable)
-                .mappages(i, PGSIZE, mem as usize, flags as i32)
+                .mappages(VirtualAddr::wrap(i), PGSIZE, mem as usize, flags as i32)
                 .is_err()
             {
                 kernel().free(mem);
@@ -407,13 +414,13 @@ impl PageTable {
     /// Remove mappings from a page table. The mappings in
     /// the given range must exist. Optionally free the
     /// physical memory.
-    pub unsafe fn uvmunmap(&mut self, va: usize, size: usize, do_free: i32) {
+    pub unsafe fn uvmunmap(&mut self, va: UVAddr, size: usize, do_free: i32) {
         let mut pa: usize = 0;
-        let mut a = pgrounddown(va);
-        let last = pgrounddown(va + size - 1usize);
+        let mut a = pgrounddown(va.0);
+        let last = pgrounddown(va.0 + size - 1usize);
         loop {
             let pt = &mut *self;
-            let pte = pt.walk(a, 0).expect("uvmunmap: walk");
+            let pte = pt.walk(UVAddr(a), 0).expect("uvmunmap: walk");
             if !pte.check_flag(PTE_V) {
                 println!(
                     "va={:018p} pte={:018p}",
@@ -425,7 +432,7 @@ impl PageTable {
                 panic!("uvmunmap: not a leaf");
             }
             if do_free != 0 {
-                pa = pte.get_pa();
+                pa = pte.get_pa().value();
                 kernel().free(pa as _);
             }
             pte.set_inner(0);
@@ -447,7 +454,7 @@ impl PageTable {
         }
         let newup: usize = pgroundup(newsz);
         if newup < pgroundup(oldsz) {
-            self.uvmunmap(newup, oldsz - newup, 1);
+            self.uvmunmap(UVAddr(newup), oldsz - newup, 1);
         }
         newsz
     }
@@ -455,27 +462,98 @@ impl PageTable {
     /// Free user memory pages,
     /// then free page-table pages.
     pub unsafe fn uvmfree(&mut self, sz: usize) {
-        self.uvmunmap(0, sz, 1);
+        self.uvmunmap(UVAddr(0), sz, 1);
         self.freewalk();
     }
 
     /// Mark a PTE invalid for user access.
     /// Used by exec for the user stack guard page.
-    pub unsafe fn uvmclear(&mut self, va: usize) {
+    pub unsafe fn uvmclear(&mut self, va: UVAddr) {
         self.walk(va, 0)
             .expect("uvmclear")
             .clear_flag(PTE_U as usize);
     }
+
+    /// Copy from user to kernel.
+    /// Copy len bytes to dst from virtual address srcva in a given page table.
+    /// Return Ok(()) on success, Err(()) on error.
+    pub unsafe fn copyin(
+        &mut self,
+        mut dst: *mut u8,
+        srcva: UVAddr,
+        mut len: usize,
+    ) -> Result<(), ()> {
+        let mut src = srcva.value();
+        while len > 0 {
+            let va0 = pgrounddown(src);
+            let pa0 = some_or!(self.walkaddr(VirtualAddr::wrap(va0)), return Err(()));
+            let mut n = PGSIZE - (src - va0);
+            if n > len {
+                n = len
+            }
+            ptr::copy(
+                (pa0 + (src - va0)) as *mut u8,
+                dst,
+                n,
+            );
+            len -= n;
+            dst = dst.add(n);
+            src = va0 + PGSIZE
+        }
+        Ok(())
+    }
+
+    /// Copy a null-terminated string from user to kernel.
+    /// Copy bytes to dst from virtual address srcva in a given page table,
+    /// until a '\0', or max.
+    /// Return OK(()) on success, Err(()) on error.
+    pub unsafe fn copyinstr(
+        &mut self,
+        mut dst: *mut u8,
+        srcva: UVAddr,
+        mut max: usize,
+    ) -> Result<(), ()> {
+        let mut got_null: i32 = 0;
+        let mut src = srcva.value();
+        while got_null == 0 && max > 0 {
+            let va0 = pgrounddown(src);
+            let pa0 = some_or!(self.walkaddr(VirtualAddr::wrap(va0)), return Err(()));
+            let mut n = PGSIZE - (src - va0);
+            if n > max {
+                n = max
+            }
+            let mut p = (pa0 + (src - va0)) as *mut u8;
+            while n > 0 {
+                if *p as i32 == '\u{0}' as i32 {
+                    *dst = '\u{0}' as i32 as u8;
+                    got_null = 1;
+                    break;
+                } else {
+                    *dst = *p;
+                    n -= 1;
+                    max -= 1;
+                    p = p.offset(1);
+                    dst = dst.offset(1)
+                }
+            }
+            src = va0 + PGSIZE
+        }
+        if got_null != 0 {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
 }
 
-impl Deref for PageTable {
+impl<T> Deref for PageTable<T> {
     type Target = RawPageTable;
     fn deref(&self) -> &Self::Target {
         unsafe { &*self.ptr }
     }
 }
 
-impl DerefMut for PageTable {
+impl<T> DerefMut for PageTable<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.ptr }
     }
@@ -485,7 +563,7 @@ impl DerefMut for PageTable {
 /// Create a direct-map page table for the kernel and
 /// turn on paging. Called early, in supervisor mode.
 /// The page allocator is already initialized.
-pub unsafe fn kvminit(page_table: *mut PageTable) {
+pub unsafe fn kvminit(page_table: *mut PageTable<KVAddr>) {
     ptr::write(page_table, PageTable::new());
     let page_table = &mut *page_table;
 
@@ -535,7 +613,7 @@ pub unsafe fn kvminit(page_table: *mut PageTable) {
 
 /// Switch h/w page table register to the kernel's page table,
 /// and enable paging.
-pub unsafe fn kvminithart(page_table: &PageTable) {
+pub unsafe fn kvminithart(page_table: &PageTable<KVAddr>) {
     w_satp(make_satp(page_table.ptr as usize));
     sfence_vma();
 }
@@ -543,8 +621,8 @@ pub unsafe fn kvminithart(page_table: &PageTable) {
 /// Add a mapping to the kernel page table.
 /// Only used when booting.
 /// Does not flush TLB or enable paging.
-pub unsafe fn kvmmap(page_table: &mut PageTable, va: usize, pa: usize, sz: usize, perm: i32) {
-    if page_table.mappages(va, sz, pa, perm).is_err() {
+pub unsafe fn kvmmap(page_table: &mut PageTable<KVAddr>, va: KVAddr, pa: PAddr, sz: usize, perm: i32) {
+    if page_table.mappages(va, sz, pa.value(), perm).is_err() {
         panic!("kvmmap");
     };
 }
@@ -553,8 +631,8 @@ pub unsafe fn kvmmap(page_table: &mut PageTable, va: usize, pa: usize, sz: usize
 /// a physical address. Only needed for
 /// addresses on the stack.
 /// Assumes va is page aligned.
-pub unsafe fn kvmpa(va: usize) -> usize {
-    let off: usize = va.wrapping_rem(PGSIZE);
+pub unsafe fn kvmpa(va: KVAddr) -> usize {
+    let off: usize = va.value().wrapping_rem(PGSIZE);
     let pte = kernel()
         .page_table
         .walk(va, 0)
