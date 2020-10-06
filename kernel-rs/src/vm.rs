@@ -87,6 +87,23 @@ impl DerefMut for RawPageTable {
 }
 
 impl RawPageTable {
+    /// Recursively free page-table pages.
+    /// All leaf mappings must already have been removed.
+    unsafe fn freewalk(&mut self) {
+        // There are 2^9 = 512 PTEs in a page table.
+        for pte in &mut self.inner {
+            if let Some(ptable) = pte.as_table_mut() {
+                ptable.freewalk();
+                pte.set_inner(0);
+            } else if pte.check_flag(PTE_V) {
+                panic!("freewalk: leaf");
+            }
+        }
+        kernel().free(self.as_mut_ptr() as _);
+    }
+}
+
+impl PageTable {
     /// Copy from kernel to user.
     /// Copy len bytes from src to virtual address dstva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
@@ -99,7 +116,7 @@ impl RawPageTable {
     ) -> Result<(), ()> {
         while len > 0 {
             let va0 = pgrounddown(dstva);
-            let pa0 = some_or!(PageTable::from_raw(self).walkaddr(va0), return Err(()));
+            let pa0 = some_or!(self.walkaddr(va0), return Err(()));
             let mut n = PGSIZE - (dstva - va0);
             if n > len {
                 n = len
@@ -115,10 +132,7 @@ impl RawPageTable {
         }
         Ok(())
     }
-}
 
-// TODO: separate these methods for uvm type/struct (Use type to show this)
-impl RawPageTable {
     /// Copy from user to kernel.
     /// Copy len bytes to dst from virtual address srcva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
@@ -130,7 +144,7 @@ impl RawPageTable {
     ) -> Result<(), ()> {
         while len > 0 {
             let va0 = pgrounddown(srcva);
-            let pa0 = some_or!(PageTable::from_raw(self).walkaddr(va0), return Err(()));
+            let pa0 = some_or!(self.walkaddr(va0), return Err(()));
             let mut n = PGSIZE - (srcva - va0);
             if n > len {
                 n = len
@@ -156,7 +170,7 @@ impl RawPageTable {
         let mut got_null: i32 = 0;
         while got_null == 0 && max > 0 {
             let va0 = pgrounddown(srcva);
-            let pa0 = some_or!(PageTable::from_raw(self).walkaddr(va0), return Err(()));
+            let pa0 = some_or!(self.walkaddr(va0), return Err(()));
             let mut n = PGSIZE - (srcva - va0);
             if n > max {
                 n = max
@@ -281,22 +295,6 @@ impl PageTable {
             return None;
         }
         Some(pte.get_pa())
-    }
-
-    /// Recursively free page-table pages.
-    /// All leaf mappings must already have been removed.
-    unsafe fn freewalk(&mut self) {
-        // There are 2^9 = 512 PTEs in a page table.
-        for pte in &mut self.inner {
-            if pte.check_flag(PTE_V) && !pte.check_flag((PTE_R | PTE_W | PTE_X) as usize) {
-                // This PTE points to a lower-level page table.
-                PageTable::from_raw(pte.as_table_mut_unchecked()).freewalk();
-                pte.set_inner(0);
-            } else if pte.check_flag(PTE_V) {
-                panic!("freewalk: leaf");
-            }
-        }
-        kernel().free(self.as_mut_ptr() as _);
     }
 }
 
