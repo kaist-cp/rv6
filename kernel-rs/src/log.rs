@@ -20,7 +20,6 @@
 //!   block C
 //!   ...
 //! Log appends are synchronous.
-use crate::libc;
 use crate::{
     bio::{bpin, brelease, bunpin},
     buf::Buf,
@@ -101,8 +100,8 @@ unsafe fn install_trans() {
 
         // Copy block to dst.
         ptr::copy(
-            (*lbuf).inner.data.as_mut_ptr() as *const libc::CVoid,
-            (*dbuf).inner.data.as_mut_ptr() as *mut libc::CVoid,
+            (*lbuf).inner.data.as_mut_ptr() as *const u8,
+            (*dbuf).inner.data.as_mut_ptr() as *mut u8,
             BSIZE,
         );
 
@@ -207,8 +206,8 @@ unsafe fn write_log() {
         let from: *mut Buf = Buf::read(LOG.dev as u32, LOG.lh.block[tail as usize] as u32);
 
         ptr::copy(
-            (*from).inner.data.as_mut_ptr() as *const libc::CVoid,
-            (*to).inner.data.as_mut_ptr() as *mut libc::CVoid,
+            (*from).inner.data.as_mut_ptr() as *const u8,
+            (*to).inner.data.as_mut_ptr() as *mut u8,
             BSIZE,
         );
 
