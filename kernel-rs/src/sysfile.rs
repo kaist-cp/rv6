@@ -1,7 +1,6 @@
 //! File-system system calls.
 //! Mostly argument checking, since we don't trust
 //! user code, and calls into file.c and fs.c.
-use crate::libc;
 use crate::{
     exec::exec,
     fcntl::FcntlFlags,
@@ -380,7 +379,7 @@ pub unsafe fn sys_exec() -> usize {
             break;
         }
 
-        *arg = kalloc() as *mut u8;
+        *arg = kalloc();
         if arg.is_null() {
             panic!("sys_exec kalloc");
         }
@@ -401,7 +400,7 @@ pub unsafe fn sys_exec() -> usize {
             break;
         }
 
-        kfree(*arg as *mut libc::CVoid);
+        kfree(*arg);
     }
 
     ret

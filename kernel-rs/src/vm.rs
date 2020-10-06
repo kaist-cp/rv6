@@ -3,6 +3,7 @@ use mem::MaybeUninit;
 use crate::{
     kalloc::{kalloc, kfree},
     memlayout::{CLINT, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
+    page::Page,
     println,
     riscv::{
         make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, sfence_vma, w_satp, PteT,
@@ -10,7 +11,6 @@ use crate::{
     },
     some_or,
 };
-use crate::{libc, page::Page};
 use core::{mem, ops::Deref, ops::DerefMut, ptr};
 
 extern "C" {
@@ -120,7 +120,7 @@ impl RawPageTable {
                 panic!("freewalk: leaf");
             }
         }
-        kfree(self.as_mut_ptr() as *mut libc::CVoid);
+        kfree(self.as_mut_ptr() as *mut u8);
     }
 
     /// Copy from kernel to user.
@@ -177,7 +177,7 @@ impl RawPageTable {
             }
             if do_free != 0 {
                 pa = pte.get_pa();
-                kfree(pa as *mut libc::CVoid);
+                kfree(pa as *mut u8);
             }
             pte.set_inner(0);
             if a == last {
@@ -397,7 +397,7 @@ impl PageTable {
         if sz >= PGSIZE as u32 {
             panic!("inituvm: more than a page");
         }
-        let mem: *mut u8 = kalloc() as *mut u8;
+        let mem: *mut u8 = kalloc();
         ptr::write_bytes(mem, 0, PGSIZE);
         self.mappages(0, PGSIZE, mem as usize, PTE_W | PTE_R | PTE_X | PTE_U)
             .expect("inituvm: mappage");
@@ -413,7 +413,7 @@ impl PageTable {
         oldsz = pgroundup(oldsz);
         let mut a = oldsz;
         while a < newsz {
-            let mem = kalloc() as *mut u8;
+            let mem = kalloc();
             if mem.is_null() {
                 self.uvmdealloc(a, oldsz);
                 return Err(());
@@ -423,7 +423,7 @@ impl PageTable {
                 .mappages(a, PGSIZE, mem as usize, PTE_W | PTE_X | PTE_R | PTE_U)
                 .is_err()
             {
-                kfree(mem as *mut libc::CVoid);
+                kfree(mem);
                 self.uvmdealloc(a, oldsz);
                 return Err(());
             }
@@ -449,7 +449,7 @@ impl PageTable {
             });
             let pa = pte.get_pa();
             let flags = pte.get_flags() as u32;
-            let mem = kalloc() as *mut u8;
+            let mem = kalloc();
             if mem.is_null() {
                 return Err(());
             }
@@ -458,7 +458,7 @@ impl PageTable {
                 .mappages(i, PGSIZE, mem as usize, flags as i32)
                 .is_err()
             {
-                kfree(mem as *mut libc::CVoid);
+                kfree(mem);
                 return Err(());
             }
             new = scopeguard::ScopeGuard::into_inner(new_ptable);
