@@ -781,7 +781,7 @@ fn allocpid() -> i32 {
 /// p->lock must be held.
 unsafe fn freeproc(mut p: *mut Proc) {
     if !(*p).tf.is_null() {
-        kfree((*p).tf as *mut u8);
+        kfree((*p).tf as _);
     }
     (*p).tf = ptr::null_mut();
     if !(*p).pagetable.assume_init_mut().is_null() {
@@ -968,7 +968,7 @@ pub unsafe fn either_copyout(
     if user_dst != 0 {
         (*p).pagetable
             .assume_init_mut()
-            .copyout(dst, src as *mut u8, len)
+            .copyout(dst, src, len)
             .map_or(Err(()), |_v| Ok(()))
     } else {
         ptr::copy(src, dst as *mut u8, len);
@@ -984,7 +984,7 @@ pub unsafe fn either_copyin(dst: *mut u8, user_src: i32, src: usize, len: usize)
     if user_src != 0 {
         (*p).pagetable
             .assume_init_mut()
-            .copyin(dst as *mut u8, src, len)
+            .copyin(dst, src, len)
             .map_or(Err(()), |_v| Ok(()))
     } else {
         ptr::copy(src as *mut u8, dst, len);

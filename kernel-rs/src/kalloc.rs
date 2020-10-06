@@ -24,11 +24,11 @@ struct Run {
 static mut KMEM: Spinlock<*mut Run> = Spinlock::new("KMEM", ptr::null_mut());
 
 pub unsafe fn kinit() {
-    freerange(end.as_mut_ptr(), PHYSTOP as *mut u8);
+    freerange(end.as_mut_ptr(), PHYSTOP as _);
 }
 
 pub unsafe fn freerange(pa_start: *mut u8, pa_end: *mut u8) {
-    let mut p = pgroundup(pa_start as usize) as *mut u8;
+    let mut p = pgroundup(pa_start as _) as *mut u8;
     while p.add(PGSIZE) <= pa_end {
         kfree(p);
         p = p.add(PGSIZE)
@@ -40,10 +40,7 @@ pub unsafe fn freerange(pa_start: *mut u8, pa_end: *mut u8) {
 /// call to kalloc().  (The exception is when
 /// initializing the allocator; see kinit above.)
 pub unsafe fn kfree(pa: *mut u8) {
-    if (pa as usize).wrapping_rem(PGSIZE) != 0
-        || (pa as *mut u8) < end.as_mut_ptr()
-        || pa as usize >= PHYSTOP
-    {
+    if (pa as usize).wrapping_rem(PGSIZE) != 0 || pa < end.as_mut_ptr() || pa as usize >= PHYSTOP {
         panic!("kfree");
     }
 

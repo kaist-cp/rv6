@@ -83,14 +83,7 @@ impl Console {
     unsafe fn write(&mut self, user_src: i32, src: usize, n: i32) {
         for i in 0..n {
             let mut c: u8 = 0;
-            if either_copyin(
-                &mut c as *mut u8,
-                user_src,
-                src.wrapping_add(i as usize),
-                1usize,
-            )
-            .is_err()
-            {
+            if either_copyin(&mut c, user_src, src.wrapping_add(i as usize), 1usize).is_err() {
                 break;
             }
             self.putc(c as i32);

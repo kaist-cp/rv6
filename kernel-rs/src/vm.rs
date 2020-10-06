@@ -120,7 +120,7 @@ impl RawPageTable {
                 panic!("freewalk: leaf");
             }
         }
-        kfree(self.as_mut_ptr() as *mut u8);
+        kfree(self.as_mut_ptr() as _);
     }
 
     /// Copy from kernel to user.
@@ -177,7 +177,7 @@ impl RawPageTable {
             }
             if do_free != 0 {
                 pa = pte.get_pa();
-                kfree(pa as *mut u8);
+                kfree(pa as _);
             }
             pte.set_inner(0);
             if a == last {

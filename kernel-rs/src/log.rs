@@ -100,8 +100,8 @@ unsafe fn install_trans() {
 
         // Copy block to dst.
         ptr::copy(
-            (*lbuf).inner.data.as_mut_ptr() as *const u8,
-            (*dbuf).inner.data.as_mut_ptr() as *mut u8,
+            (*lbuf).inner.data.as_mut_ptr(),
+            (*dbuf).inner.data.as_mut_ptr(),
             BSIZE,
         );
 
@@ -206,8 +206,8 @@ unsafe fn write_log() {
         let from: *mut Buf = Buf::read(LOG.dev as u32, LOG.lh.block[tail as usize] as u32);
 
         ptr::copy(
-            (*from).inner.data.as_mut_ptr() as *const u8,
-            (*to).inner.data.as_mut_ptr() as *mut u8,
+            (*from).inner.data.as_mut_ptr(),
+            (*to).inner.data.as_mut_ptr(),
             BSIZE,
         );
 

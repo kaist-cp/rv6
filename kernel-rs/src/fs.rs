@@ -371,7 +371,7 @@ impl InodeGuard<'_> {
                     .offset(off.wrapping_rem(BSIZE as u32) as isize),
                 user_src,
                 src,
-                m as usize,
+                m as _,
             )
             .is_err()
             {
@@ -595,7 +595,7 @@ impl Superblock {
     unsafe fn read(&mut self, dev: i32) {
         let bp: *mut Buf = Buf::read(dev as u32, 1);
         ptr::copy(
-            (*bp).inner.data.as_mut_ptr() as *const u8,
+            (*bp).inner.data.as_mut_ptr(),
             self as *mut Superblock as *mut u8,
             mem::size_of::<Superblock>(),
         );
