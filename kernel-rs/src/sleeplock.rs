@@ -24,7 +24,6 @@ pub struct SleeplockWIP<T> {
 unsafe impl<T: Send> Sync for SleeplockWIP<T> {}
 
 impl<T> SleeplockWIP<T> {
-    // TODO: transient measure
     pub const fn new(name: &'static str, data: T) -> Self {
         Self {
             spinlock: Spinlock::new(name, -1),

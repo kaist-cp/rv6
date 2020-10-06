@@ -10,6 +10,7 @@ use crate::{
     string::{safestrcpy, strlen},
     vm::PageTable,
 };
+use core::mem;
 
 pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
     let sz: usize = 0;
@@ -33,16 +34,8 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
     });
 
     // Check ELF header
-    if !(ip
-        .read(
-            0,
-            &mut elf as *mut ElfHdr as usize,
-            0,
-            ::core::mem::size_of::<ElfHdr>() as u32,
-        )
-        .map_or(true, |v| v == ::core::mem::size_of::<ElfHdr>())
-        && elf.magic == ELF_MAGIC)
-    {
+    let bytes_read = ip.read(0, &mut elf as *mut _ as _, 0, mem::size_of::<ElfHdr>() as _)?;
+    if !(bytes_read == mem::size_of::<ElfHdr>() && elf.magic == ELF_MAGIC) {
         return Err(());
     }
 
@@ -63,15 +56,13 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
             .phoff
             .wrapping_add(i * ::core::mem::size_of::<ProgHdr>());
 
-        if ip
-            .read(
-                0,
-                &mut ph as *mut ProgHdr as usize,
-                off as u32,
-                ::core::mem::size_of::<ProgHdr>() as u32,
-            )
-            .map_or(true, |v| v != ::core::mem::size_of::<ProgHdr>())
-        {
+        let bytes_read = ip.read(
+            0,
+            &mut ph as *mut ProgHdr as usize,
+            off as u32,
+            ::core::mem::size_of::<ProgHdr>() as u32,
+        )?;
+        if bytes_read != ::core::mem::size_of::<ProgHdr>() {
             return Err(());
         }
         if ph.typ == ELF_PROG_LOAD {
@@ -81,11 +72,7 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
             if ph.vaddr.wrapping_add(ph.memsz) < ph.vaddr {
                 return Err(());
             }
-            let sz_op = pt.uvmalloc(*sz, ph.vaddr.wrapping_add(ph.memsz));
-            if sz_op.is_err() {
-                return Err(());
-            }
-            *sz = sz_op.unwrap();
+            *sz = pt.uvmalloc(*sz, ph.vaddr.wrapping_add(ph.memsz))?;
             if ph.vaddr.wrapping_rem(PGSIZE) != 0 {
                 return Err(());
             }
@@ -100,9 +87,8 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
     // Allocate two pages at the next page boundary.
     // Use the second as the user stack.
     *sz = sz.wrapping_add(PGSIZE).wrapping_sub(1) & !PGSIZE.wrapping_sub(1);
-    let sz_op = pt.uvmalloc(*sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)));
 
-    *sz = sz_op?;
+    *sz = pt.uvmalloc(*sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)))?;
     pt.uvmclear(sz.wrapping_sub(2usize.wrapping_mul(PGSIZE)));
     let mut sp: usize = *sz;
     let stackbase: usize = sp.wrapping_sub(PGSIZE);
@@ -212,10 +198,8 @@ impl InodeGuard<'_> {
                 PGSIZE as u32
             };
 
-            if self
-                .read(0, pa, offset.wrapping_add(i), n)
-                .map_or(true, |v| v as u32 != n)
-            {
+            let bytes_read = self.read(0, pa, offset.wrapping_add(i), n)?;
+            if bytes_read as u32 != n {
                 return Err(());
             }
         }

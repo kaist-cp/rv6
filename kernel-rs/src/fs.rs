@@ -228,17 +228,16 @@ impl InodeGuard<'_> {
         // Look for an empty Dirent.
         let mut off: i32 = 0;
         while (off as u32) < self.guard.size {
-            if self
-                .read(
-                    0,
-                    &mut de as *mut Dirent as usize,
-                    off as u32,
-                    ::core::mem::size_of::<Dirent>() as u32,
-                )
-                .map_or(true, |v| v != ::core::mem::size_of::<Dirent>())
-            {
-                panic!("dirlink read");
-            }
+            let bytes_read = self.read(
+                0,
+                &mut de as *mut Dirent as usize,
+                off as u32,
+                ::core::mem::size_of::<Dirent>() as u32,
+            );
+            assert!(
+                !bytes_read.map_or(true, |v| v != ::core::mem::size_of::<Dirent>()),
+                "dirlink read"
+            );
             if de.inum as i32 == 0 {
                 break;
             }
@@ -246,17 +245,16 @@ impl InodeGuard<'_> {
         }
         de.inum = inum as u16;
         de.set_name(name);
-        if self
-            .write(
-                0,
-                &mut de as *mut Dirent as usize,
-                off as u32,
-                ::core::mem::size_of::<Dirent>() as u32,
-            )
-            .map_or(true, |v| v != ::core::mem::size_of::<Dirent>())
-        {
-            panic!("dirlink");
-        }
+        let bytes_write = self.write(
+            0,
+            &mut de as *mut Dirent as usize,
+            off as u32,
+            ::core::mem::size_of::<Dirent>() as u32,
+        );
+        assert!(
+            !bytes_write.map_or(true, |v| v != ::core::mem::size_of::<Dirent>()),
+            "dirlink"
+        );
         true
     }
 
@@ -354,9 +352,9 @@ impl InodeGuard<'_> {
                 break;
             } else {
                 brelease(&mut *bp);
-                tot = (tot).wrapping_add(m);
-                off = (off).wrapping_add(m);
-                dst = (dst).wrapping_add(m as usize)
+                tot = tot.wrapping_add(m);
+                off = off.wrapping_add(m);
+                dst = dst.wrapping_add(m as usize)
             }
         }
         Ok(n as usize)
@@ -407,9 +405,9 @@ impl InodeGuard<'_> {
             } else {
                 log_write(bp);
                 brelease(&mut *bp);
-                tot = (tot).wrapping_add(m);
-                off = (off).wrapping_add(m);
-                src = (src).wrapping_add(m as usize)
+                tot = tot.wrapping_add(m);
+                off = off.wrapping_add(m);
+                src = src.wrapping_add(m as usize)
             }
         }
         if n > 0 {
@@ -433,17 +431,16 @@ impl InodeGuard<'_> {
             panic!("dirlookup not DIR");
         }
         while off < self.guard.size {
-            if self
-                .read(
-                    0,
-                    &mut de as *mut Dirent as usize,
-                    off,
-                    ::core::mem::size_of::<Dirent>() as u32,
-                )
-                .map_or(true, |v| v != ::core::mem::size_of::<Dirent>())
-            {
-                panic!("dirlookup read");
-            }
+            let bytes_read = self.read(
+                0,
+                &mut de as *mut Dirent as usize,
+                off,
+                ::core::mem::size_of::<Dirent>() as u32,
+            );
+            assert!(
+                !bytes_read.map_or(true, |v| v != ::core::mem::size_of::<Dirent>()),
+                "dirlookup read"
+            );
             if de.inum as i32 != 0 && name == de.get_name() {
                 // entry matches path element
                 if !poff.is_null() {
@@ -767,6 +764,5 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
     (*ip).inum = inum;
     (*ip).ref_0 = 1;
     (*ip).valid = false;
-    drop(inode);
     ip
 }

@@ -142,17 +142,16 @@ impl InodeGuard<'_> {
         let mut de: Dirent = Default::default();
         let mut off = (2usize).wrapping_mul(mem::size_of::<Dirent>()) as i32;
         while (off as u32) < self.guard.size {
-            if self
-                .read(
-                    0,
-                    &mut de as *mut Dirent as usize,
-                    off as u32,
-                    mem::size_of::<Dirent>() as u32,
-                )
-                .map_or(true, |v| v != mem::size_of::<Dirent>())
-            {
-                panic!("isdirempty: readi");
-            }
+            let bytes_read = self.read(
+                0,
+                &mut de as *mut Dirent as usize,
+                off as u32,
+                mem::size_of::<Dirent>() as u32,
+            );
+            assert!(
+                !bytes_read.map_or(true, |v| v != mem::size_of::<Dirent>()),
+                "isdirempty: readi"
+            );
             if de.inum as i32 != 0 {
                 return false;
             }
@@ -191,17 +190,16 @@ pub unsafe fn sys_unlink() -> usize {
             if ip.guard.typ == T_DIR && !ip.isdirempty() {
                 ip.unlockput();
             } else {
-                if dp
-                    .write(
-                        0,
-                        &mut de as *mut Dirent as usize,
-                        off,
-                        mem::size_of::<Dirent>() as u32,
-                    )
-                    .map_or(true, |v| v != mem::size_of::<Dirent>())
-                {
-                    panic!("unlink: writei");
-                }
+                let bytes_write = dp.write(
+                    0,
+                    &mut de as *mut Dirent as usize,
+                    off,
+                    mem::size_of::<Dirent>() as u32,
+                );
+                assert!(
+                    !bytes_write.map_or(true, |v| v != mem::size_of::<Dirent>()),
+                    "unlink: writei"
+                );
                 if ip.guard.typ == T_DIR {
                     dp.guard.nlink -= 1;
                     dp.update();
