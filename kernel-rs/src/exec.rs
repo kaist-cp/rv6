@@ -11,6 +11,7 @@ use crate::{
     vm::PageTable,
 };
 use core::mem;
+use core::ops::DerefMut;
 
 pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
     let sz: usize = 0;
@@ -76,7 +77,13 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
             if ph.vaddr.wrapping_rem(PGSIZE) != 0 {
                 return Err(());
             }
-            ip.loadseg(pt, ph.vaddr, ph.off as u32, ph.filesz as u32)?;
+            loadseg(
+                pt,
+                ph.vaddr,
+                ip.deref_mut(),
+                ph.off as u32,
+                ph.filesz as u32,
+            )?;
         }
     }
     drop(ip);
@@ -175,35 +182,33 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
 /// and the pages from va to va+sz must already be mapped.
 ///
 /// Returns `Ok(())` on success, `Err(())` on failure.
-impl InodeGuard<'_> {
-    unsafe fn loadseg(
-        &mut self,
-        pagetable: &mut PageTable,
-        va: usize,
-        offset: u32,
-        sz: u32,
-    ) -> Result<(), ()> {
-        if va.wrapping_rem(PGSIZE) != 0 {
-            panic!("loadseg: va msut be page aligned");
-        }
-
-        for i in num_iter::range_step(0, sz, PGSIZE as _) {
-            let pa = pagetable
-                .walkaddr(va.wrapping_add(i as usize))
-                .expect("loadseg: address should exist");
-
-            let n = if sz.wrapping_sub(i) < PGSIZE as u32 {
-                sz.wrapping_sub(i)
-            } else {
-                PGSIZE as u32
-            };
-
-            let bytes_read = self.read(0, pa, offset.wrapping_add(i), n)?;
-            if bytes_read as u32 != n {
-                return Err(());
-            }
-        }
-
-        Ok(())
+unsafe fn loadseg(
+    pagetable: &mut PageTable,
+    va: usize,
+    ip: &mut InodeGuard<'_>,
+    offset: u32,
+    sz: u32,
+) -> Result<(), ()> {
+    if va.wrapping_rem(PGSIZE) != 0 {
+        panic!("loadseg: va msut be page aligned");
     }
+
+    for i in num_iter::range_step(0, sz, PGSIZE as _) {
+        let pa = pagetable
+            .walkaddr(va.wrapping_add(i as usize))
+            .expect("loadseg: address should exist");
+
+        let n = if sz.wrapping_sub(i) < PGSIZE as u32 {
+            sz.wrapping_sub(i)
+        } else {
+            PGSIZE as u32
+        };
+
+        let bytes_read = ip.read(0, pa, offset.wrapping_add(i), n)?;
+        if bytes_read as u32 != n {
+            return Err(());
+        }
+    }
+
+    Ok(())
 }
