@@ -140,8 +140,9 @@ impl InodeGuard<'_> {
     /// Is the directory dp empty except for "." and ".." ?
     unsafe fn isdirempty(&mut self) -> bool {
         let mut de: Dirent = Default::default();
-        let mut off = (2usize).wrapping_mul(mem::size_of::<Dirent>()) as i32;
-        while (off as u32) < self.guard.size {
+        for off in
+            (2 * mem::size_of::<Dirent>() as u32..self.guard.size).step_by(mem::size_of::<Dirent>())
+        {
             let bytes_read = self.read(
                 0,
                 &mut de as *mut Dirent as usize,
@@ -152,10 +153,9 @@ impl InodeGuard<'_> {
                 !bytes_read.map_or(true, |v| v != mem::size_of::<Dirent>()),
                 "isdirempty: readi"
             );
-            if de.inum as i32 != 0 {
+            if de.inum != 0 {
                 return false;
             }
-            off = (off as usize).wrapping_add(mem::size_of::<Dirent>()) as i32
         }
         true
     }
@@ -258,8 +258,11 @@ unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> Result<InodeG
         dp.update();
 
         // No ip->nlink++ for ".": avoid cyclic ref count.
-        assert!(ip.dirlink(FileName::from_bytes(b"."), (*ptr2).inum).is_ok()
-        && ip.dirlink(FileName::from_bytes(b".."), (*ptr).inum).is_ok(),"create dots");
+        assert!(
+            ip.dirlink(FileName::from_bytes(b"."), (*ptr2).inum).is_ok()
+                && ip.dirlink(FileName::from_bytes(b".."), (*ptr).inum).is_ok(),
+            "create dots"
+        );
     }
     assert!(dp.dirlink(&name, (*ptr2).inum).is_ok(), "create: dirlink");
     dp.unlockput();
