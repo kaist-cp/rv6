@@ -31,11 +31,11 @@ unsafe impl Send for File {}
 /// and inode's valid is always true.
 pub struct InodeGuard<'a> {
     guard: SleepLockGuard<'a, InodeInner>,
-    pub ptr: *mut Inode,
+    pub ptr: &'a Inode,
 }
 
 impl<'a> InodeGuard<'a> {
-    pub const fn new(guard: SleepLockGuard<'a, InodeInner>, ptr: *mut Inode) -> Self {
+    pub const fn new(guard: SleepLockGuard<'a, InodeInner>, ptr: &'a Inode) -> Self {
         Self { guard, ptr }
     }
 }
@@ -57,9 +57,7 @@ impl DerefMut for InodeGuard<'_> {
 impl Drop for InodeGuard<'_> {
     fn drop(&mut self) {
         // TODO: Reasoning why.
-        unsafe {
-            assert!((*self.ptr).ref_0 >= 1, "Inode::drop");
-        }
+        assert!(self.ptr.ref_0 >= 1, "Inode::drop");
     }
 }
 

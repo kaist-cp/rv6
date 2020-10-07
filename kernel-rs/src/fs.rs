@@ -190,8 +190,7 @@ static mut ICACHE: Spinlock<[Inode; NINODE]> = Spinlock::new("ICACHE", [Inode::z
 //TODO(@kimjungwow) : move inode-related methods to another file
 impl InodeGuard<'_> {
     /// Common idiom: unlock, then put.
-    pub unsafe fn unlockput(self) {
-        let ptr: *mut Inode = self.ptr;
+    pub unsafe fn unlockput(self, ptr: *mut Inode) {
         drop(self);
         (*ptr).put();
     }
@@ -199,8 +198,8 @@ impl InodeGuard<'_> {
     /// Copy stat information from inode.
     /// Caller must hold ip->lock.
     pub unsafe fn stati(&self, st: &mut Stat) {
-        (*st).dev = (*self.ptr).dev as i32;
-        (*st).ino = (*self.ptr).inum;
+        (*st).dev = self.ptr.dev as i32;
+        (*st).ino = self.ptr.inum;
         (*st).typ = self.typ;
         (*st).nlink = self.nlink;
         (*st).size = self.size as usize;
@@ -255,9 +254,9 @@ impl InodeGuard<'_> {
     /// that lives on disk, since i-node cache is write-through.
     /// Caller must hold self->lock.
     pub unsafe fn update(&self) {
-        let bp: *mut Buf = Buf::read((*self.ptr).dev, SB.iblock((*self.ptr).inum));
+        let bp: *mut Buf = Buf::read(self.ptr.dev, SB.iblock(self.ptr.inum));
         let mut dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
-            .add(((*self.ptr).inum as usize).wrapping_rem(IPB));
+            .add((self.ptr.inum as usize).wrapping_rem(IPB));
         (*dip).typ = self.typ;
         (*dip).major = self.major as i16;
         (*dip).minor = self.minor as i16;
@@ -280,20 +279,20 @@ impl InodeGuard<'_> {
     unsafe fn itrunc(&mut self) {
         for i in 0..NDIRECT {
             if self.addrs[i] != 0 {
-                bfree((*self.ptr).dev as i32, self.addrs[i]);
+                bfree(self.ptr.dev as i32, self.addrs[i]);
                 self.addrs[i] = 0
             }
         }
         if self.addrs[NDIRECT] != 0 {
-            let bp = Buf::read((*self.ptr).dev, self.addrs[NDIRECT]);
+            let bp = Buf::read(self.ptr.dev, self.addrs[NDIRECT]);
             let a = (*bp).inner.data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
                 if *a.add(j) != 0 {
-                    bfree((*self.ptr).dev as i32, *a.add(j));
+                    bfree(self.ptr.dev as i32, *a.add(j));
                 }
             }
             brelease(&mut *bp);
-            bfree((*self.ptr).dev as i32, self.addrs[NDIRECT]);
+            bfree(self.ptr.dev as i32, self.addrs[NDIRECT]);
             self.addrs[NDIRECT] = 0
         }
         self.size = 0;
@@ -319,10 +318,7 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let bp = Buf::read(
-                (*self.ptr).dev,
-                self.bmap((off as usize).wrapping_div(BSIZE)),
-            );
+            let bp = Buf::read(self.ptr.dev, self.bmap((off as usize).wrapping_div(BSIZE)));
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
@@ -371,10 +367,7 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let bp = Buf::read(
-                (*self.ptr).dev,
-                self.bmap((off as usize).wrapping_div(BSIZE)),
-            );
+            let bp = Buf::read(self.ptr.dev, self.bmap((off as usize).wrapping_div(BSIZE)));
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
@@ -432,7 +425,7 @@ impl InodeGuard<'_> {
             );
             if de.inum as i32 != 0 && name == de.get_name() {
                 // entry matches path element
-                return Ok((iget((*self.ptr).dev, de.inum as u32), off));
+                return Ok((iget(self.ptr.dev, de.inum as u32), off));
             }
         }
         Err(())
@@ -451,7 +444,7 @@ impl InodeGuard<'_> {
         if bn < NDIRECT {
             addr = self.addrs[bn];
             if addr == 0 {
-                addr = balloc((*self.ptr).dev);
+                addr = balloc(self.ptr.dev);
                 self.addrs[bn] = addr
             }
             return addr;
@@ -462,14 +455,14 @@ impl InodeGuard<'_> {
         // Load indirect block, allocating if necessary.
         addr = self.addrs[NDIRECT];
         if addr == 0 {
-            addr = balloc((*self.ptr).dev);
+            addr = balloc(self.ptr.dev);
             self.addrs[NDIRECT] = addr
         }
-        let bp: *mut Buf = Buf::read((*self.ptr).dev, addr);
+        let bp: *mut Buf = Buf::read(self.ptr.dev, addr);
         let a: *mut u32 = (*bp).inner.data.as_mut_ptr() as *mut u32;
         addr = *a.add(bn);
         if addr == 0 {
-            addr = balloc((*self.ptr).dev);
+            addr = balloc(self.ptr.dev);
             *a.add(bn) = addr;
             log_write(bp);
         }
@@ -492,7 +485,8 @@ impl Inode {
     // (@kimjungwow) lock() receives `ptr` because usertest halts at `fourfiles` when `ptr` isn't given.
     pub unsafe fn lock(&mut self) -> InodeGuard<'_> {
         assert!(self.ref_0 >= 1, "Inode::lock");
-        let ptr = self as *mut _;
+        let ptr = &mut self.valid as *mut bool;
+        let inode_ptr = &*self;
         let mut guard = self.inner.lock();
         if !self.valid {
             let bp: *mut Buf = Buf::read(self.dev, SB.iblock(self.inum));
@@ -509,10 +503,10 @@ impl Inode {
                 mem::size_of::<[u32; 13]>(),
             );
             brelease(&mut *bp);
-            self.valid = true;
+            *ptr = true;
             assert!(guard.typ != 0, "Inode::lock: no type");
         };
-        InodeGuard::new(guard, ptr)
+        InodeGuard::new(guard, inode_ptr)
     }
 
     /// Drop a reference to an in-memory inode.
@@ -530,6 +524,7 @@ impl Inode {
 
             // self->ref == 1 means no other process can have self locked,
             // so this acquiresleep() won't block (or deadlock).
+            let ptr = &mut self.valid as *mut bool;
             let mut ip = (*self).lock();
 
             drop(inode);
@@ -537,7 +532,7 @@ impl Inode {
             ip.itrunc();
             ip.typ = 0;
             ip.update();
-            (*ip.ptr).valid = false;
+            *ptr = false;
 
             drop(ip);
 
