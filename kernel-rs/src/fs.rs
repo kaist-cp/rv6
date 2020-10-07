@@ -254,7 +254,7 @@ impl InodeGuard<'_> {
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk, since i-node cache is write-through.
     /// Caller must hold self->lock.
-    pub unsafe fn update(&mut self) {
+    pub unsafe fn update(&self) {
         let bp: *mut Buf = Buf::read((*self.ptr).dev, SB.iblock((*self.ptr).inum));
         let mut dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
             .add(((*self.ptr).inum as usize).wrapping_rem(IPB));
@@ -264,7 +264,7 @@ impl InodeGuard<'_> {
         (*dip).nlink = self.nlink;
         (*dip).size = self.size;
         ptr::copy(
-            self.addrs.as_mut_ptr() as *const libc::CVoid,
+            self.addrs.as_ptr() as *const libc::CVoid,
             (*dip).addrs.as_mut_ptr() as *mut libc::CVoid,
             mem::size_of::<[u32; 13]>(),
         );
