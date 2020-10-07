@@ -23,9 +23,21 @@ pub struct File {
 // TODO: will be infered as we wrap *mut Pipe and *mut Inode.
 unsafe impl Send for File {}
 
+/// InodeGuard implies that SleeplockWIP<Inode> is held by current thread.
+///
+/// # Invariant
+///
+/// When SleeplockWIP<Inode> is held, there is allocated space in Buf cache to store the content of inode,
+/// and inode's valid is always true.
 pub struct InodeGuard<'a> {
-    pub guard: SleepLockGuard<'a, InodeInner>,
+    guard: SleepLockGuard<'a, InodeInner>,
     pub ptr: *mut Inode,
+}
+
+impl<'a> InodeGuard<'a> {
+    pub const fn new(guard: SleepLockGuard<'a, InodeInner>, ptr: *mut Inode) -> Self {
+        Self { guard, ptr }
+    }
 }
 
 impl Deref for InodeGuard<'_> {
@@ -38,6 +50,16 @@ impl Deref for InodeGuard<'_> {
 impl DerefMut for InodeGuard<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut *self.guard
+    }
+}
+
+/// Unlock the given inode.
+impl Drop for InodeGuard<'_> {
+    fn drop(&mut self) {
+        // TODO: Reasoning why.
+        unsafe {
+            assert!((*self.ptr).ref_0 >= 1, "Inode::drop");
+        }
     }
 }
 
@@ -126,7 +148,7 @@ impl File {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                 let ip = (*ip).lock(ip);
                 ip.stati(&mut st);
-                ip.unlock();
+                drop(ip);
                 if (*p)
                     .pagetable
                     .assume_init_mut()
@@ -162,7 +184,7 @@ impl File {
                 if let Ok(v) = ret {
                     *off = off.wrapping_add(v as u32);
                 }
-                ip.unlock();
+                drop(ip);
                 ret
             }
             FileType::Device { major, .. } => DEVSW
@@ -207,7 +229,7 @@ impl File {
                             *off = off.wrapping_add(v as u32);
                             v
                         });
-                    ip.unlock();
+                    drop(ip);
                     end_op();
                     assert!(
                         bytes_written? == bytes_to_write as usize,

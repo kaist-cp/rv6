@@ -148,7 +148,7 @@ impl Path {
             }
             if parent && path.inner.is_empty() {
                 // Stop one level early.
-                ip.unlock();
+                drop(ip);
                 return Ok((ptr, Some(name)));
             }
             let next = ip.dirlookup(name);
