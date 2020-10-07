@@ -153,7 +153,6 @@ impl Path {
             }
             let next = ip.dirlookup(name);
             ip.unlockput();
-            // let (temp, _) = next?;
             ptr = next?.0
         }
         if parent {
