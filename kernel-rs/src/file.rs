@@ -62,6 +62,8 @@ impl Drop for InodeGuard<'_> {
 }
 
 pub struct InodeInner {
+    /// inode has been read from disk?
+    pub valid: bool,
     /// copy of disk inode
     pub typ: i16,
     pub major: u16,
@@ -81,9 +83,6 @@ pub struct Inode {
 
     /// Reference count
     pub ref_0: i32,
-
-    /// inode has been read from disk?
-    pub valid: bool,
 
     pub inner: SleeplockWIP<InodeInner>,
 }
