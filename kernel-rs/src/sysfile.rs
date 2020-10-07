@@ -101,7 +101,7 @@ pub unsafe fn sys_link() -> usize {
     });
     let mut ip = (*ptr).lock();
     if ip.typ == T_DIR {
-        ip.unlockput();
+        ip.unlockput(ptr);
         end_op();
         return usize::MAX;
     }
@@ -111,9 +111,9 @@ pub unsafe fn sys_link() -> usize {
     if let Ok((ptr2, name)) = Path::new(new).nameiparent() {
         let mut dp = (*ptr2).lock();
         if (*ptr2).dev != (*ptr).dev || dp.dirlink(name, (*ptr).inum).is_err() {
-            dp.unlockput();
+            dp.unlockput(ptr2);
         } else {
-            dp.unlockput();
+            dp.unlockput(ptr2);
             (*ptr).put();
             end_op();
             return 0;
@@ -122,7 +122,7 @@ pub unsafe fn sys_link() -> usize {
     let mut ip = (*ptr).lock();
     ip.nlink -= 1;
     ip.update();
-    ip.unlockput();
+    ip.unlockput(ptr);
     end_op();
     usize::MAX
 }
@@ -166,13 +166,13 @@ pub unsafe fn sys_unlink() -> usize {
     // Cannot unlink "." or "..".
     if !(name.as_bytes() == b"." || name.as_bytes() == b"..") {
         // TODO: use other Result related functions
-        if let Ok((ptr, off)) = dp.dirlookup(&name) {
-            let mut ip = (*ptr).lock();
+        if let Ok((ptr2, off)) = dp.dirlookup(&name) {
+            let mut ip = (*ptr2).lock();
             if ip.nlink < 1 {
                 panic!("unlink: nlink < 1");
             }
             if ip.typ == T_DIR && !ip.isdirempty() {
-                ip.unlockput();
+                ip.unlockput(ptr2);
             } else {
                 let bytes_write = dp.write(
                     0,
@@ -188,32 +188,37 @@ pub unsafe fn sys_unlink() -> usize {
                     dp.nlink -= 1;
                     dp.update();
                 }
-                dp.unlockput();
+                dp.unlockput(ptr);
                 ip.nlink -= 1;
                 ip.update();
-                ip.unlockput();
+                ip.unlockput(ptr2);
                 end_op();
                 return 0;
             }
         }
     }
 
-    dp.unlockput();
+    dp.unlockput(ptr);
     end_op();
     usize::MAX
 }
 
-unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> Result<InodeGuard<'static>, ()> {
+unsafe fn create(
+    path: &Path,
+    typ: i16,
+    major: u16,
+    minor: u16,
+) -> Result<(*mut Inode, InodeGuard<'static>), ()> {
     let (ptr, name) = ok_or!(path.nameiparent(), return Err(()));
     let mut dp = (*ptr).lock();
     // TODO: use other Result related functions
     if let Ok((ptr2, _)) = dp.dirlookup(&name) {
-        dp.unlockput();
+        dp.unlockput(ptr);
         let ip = (*ptr2).lock();
         if typ == T_FILE && (ip.typ == T_FILE || ip.typ == T_DEVICE) {
-            return Ok(ip);
+            return Ok((ptr2, ip));
         }
-        ip.unlockput();
+        ip.unlockput(ptr2);
         return Err(());
     }
     let ptr2 = Inode::alloc((*ptr).dev, typ);
@@ -240,8 +245,8 @@ unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> Result<InodeG
         );
     }
     assert!(dp.dirlink(&name, (*ptr2).inum).is_ok(), "create: dirlink");
-    dp.unlockput();
-    Ok(ip)
+    dp.unlockput(ptr);
+    Ok((ptr2, ip))
 }
 
 pub unsafe fn sys_open() -> usize {
@@ -251,7 +256,7 @@ pub unsafe fn sys_open() -> usize {
     let omode = ok_or!(argint(1), return usize::MAX);
     begin_op();
     let omode = FcntlFlags::from_bits_truncate(omode);
-    let ip: InodeGuard<'_> = if omode.contains(FcntlFlags::O_CREATE) {
+    let (ptr, ip) = if omode.contains(FcntlFlags::O_CREATE) {
         ok_or!(create(path, T_FILE, 0, 0), {
             end_op();
             return usize::MAX;
@@ -263,14 +268,14 @@ pub unsafe fn sys_open() -> usize {
         });
         let ip = (*ptr).lock();
         if ip.typ == T_DIR && omode != FcntlFlags::O_RDONLY {
-            ip.unlockput();
+            ip.unlockput(ptr);
             end_op();
             return usize::MAX;
         }
-        ip
+        (ptr, ip)
     };
     if ip.typ == T_DEVICE && (ip.major as usize >= NDEV) {
-        ip.unlockput();
+        ip.unlockput(ptr);
         end_op();
         return usize::MAX;
     }
@@ -281,7 +286,7 @@ pub unsafe fn sys_open() -> usize {
             omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)
         ),
         {
-            ip.unlockput();
+            ip.unlockput(ptr);
             end_op();
             return usize::MAX;
         }
@@ -290,7 +295,7 @@ pub unsafe fn sys_open() -> usize {
         Ok(fd) => fd,
         Err(f) => {
             drop(f);
-            ip.unlockput();
+            ip.unlockput(ptr);
             end_op();
             return usize::MAX;
         }
@@ -299,11 +304,11 @@ pub unsafe fn sys_open() -> usize {
 
     if ip.typ == T_DEVICE {
         (*f).typ = FileType::Device {
-            ip: ip.ptr,
+            ip: ptr,
             major: ip.major,
         };
     } else {
-        (*f).typ = FileType::Inode { ip: ip.ptr, off: 0 };
+        (*f).typ = FileType::Inode { ip: ptr, off: 0 };
     }
 
     drop(ip);
@@ -318,11 +323,11 @@ pub unsafe fn sys_mkdir() -> usize {
         end_op();
         return usize::MAX;
     });
-    ok_or!(create(Path::new(path), T_DIR, 0, 0), {
+    let (ptr, ip) = ok_or!(create(Path::new(path), T_DIR, 0, 0), {
         end_op();
         return usize::MAX;
-    })
-    .unlockput();
+    });
+    ip.unlockput(ptr);
     end_op();
     0
 }
@@ -336,11 +341,11 @@ pub unsafe fn sys_mknod() -> usize {
     let path = ok_or!(argstr(0, &mut path), return usize::MAX);
     let major = ok_or!(argint(1), return usize::MAX) as u16;
     let minor = ok_or!(argint(2), return usize::MAX) as u16;
-    ok_or!(
+    let (ptr, ip) = ok_or!(
         create(Path::new(path), T_DEVICE, major, minor),
         return usize::MAX
-    )
-    .unlockput();
+    );
+    ip.unlockput(ptr);
     0
 }
 
@@ -358,7 +363,7 @@ pub unsafe fn sys_chdir() -> usize {
     });
     let ip = (*ptr).lock();
     if ip.typ != T_DIR {
-        ip.unlockput();
+        ip.unlockput(ptr);
         end_op();
         return usize::MAX;
     }
