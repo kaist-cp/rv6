@@ -1,7 +1,7 @@
 use core::cmp;
 use cstr_core::CStr;
 
-use super::{iget, Inode, InodeGuard, DIRSIZ, ROOTDEV, ROOTINO, T_DIR};
+use super::{iget, Inode, DIRSIZ, ROOTDEV, ROOTINO, T_DIR};
 use crate::proc::myproc;
 
 #[derive(PartialEq)]
@@ -141,10 +141,7 @@ impl Path {
         while let Some((new_path, name)) = path.skipelem() {
             path = new_path;
 
-            let mut ip = InodeGuard {
-                guard: (*ptr).lock(),
-                ptr,
-            };
+            let mut ip = (*ptr).lock(ptr);
             if ip.guard.typ != T_DIR {
                 ip.unlockput();
                 return Err(());
