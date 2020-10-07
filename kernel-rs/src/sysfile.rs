@@ -107,7 +107,7 @@ pub unsafe fn sys_link() -> usize {
     }
     ip.nlink += 1;
     ip.update();
-    ip.unlock();
+    drop(ip);
     if let Ok((ptr2, name)) = Path::new(new).nameiparent() {
         let mut dp = (*ptr2).lock(ptr2);
         if (*ptr2).dev != (*ptr).dev || dp.dirlink(name, (*ptr).inum).is_err() {
@@ -306,7 +306,7 @@ pub unsafe fn sys_open() -> usize {
         (*f).typ = FileType::Inode { ip: ip.ptr, off: 0 };
     }
 
-    ip.unlock();
+    drop(ip);
     end_op();
     fd as usize
 }
@@ -362,7 +362,7 @@ pub unsafe fn sys_chdir() -> usize {
         end_op();
         return usize::MAX;
     }
-    ip.unlock();
+    drop(ip);
     (*(*p).cwd).put();
     end_op();
     (*p).cwd = ptr;

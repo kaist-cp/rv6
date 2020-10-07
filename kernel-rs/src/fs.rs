@@ -189,16 +189,10 @@ static mut ICACHE: Spinlock<[Inode; NINODE]> = Spinlock::new("ICACHE", [Inode::z
 
 //TODO(@kimjungwow) : move inode-related methods to another file
 impl InodeGuard<'_> {
-    /// Unlock the given inode.
-    pub unsafe fn unlock(self) {
-        assert!((*self.ptr).ref_0 >= 1, "Inode::unlock");
-        drop(self);
-    }
-
     /// Common idiom: unlock, then put.
     pub unsafe fn unlockput(self) {
         let ptr: *mut Inode = self.ptr;
-        self.unlock();
+        drop(self);
         (*ptr).put();
     }
 
@@ -496,8 +490,9 @@ impl Inode {
     /// Lock the given inode.
     /// Reads the inode from disk if necessary.
     // (@kimjungwow) lock() receives `ptr` because usertest halts at `fourfiles` when `ptr` isn't given.
-    pub unsafe fn lock(&mut self, ptr: *mut Inode) -> InodeGuard<'_> {
+    pub unsafe fn lock(&mut self, _ptr: *mut Inode) -> InodeGuard<'_> {
         assert!(self.ref_0 >= 1, "Inode::lock");
+        let ptr = self as *mut _;
         let mut guard = self.inner.lock();
         if !self.valid {
             let bp: *mut Buf = Buf::read(self.dev, SB.iblock(self.inum));
@@ -517,7 +512,7 @@ impl Inode {
             self.valid = true;
             assert!(guard.typ != 0, "Inode::lock: no type");
         };
-        InodeGuard { guard, ptr }
+        InodeGuard::new(guard, ptr)
     }
 
     /// Drop a reference to an in-memory inode.
@@ -530,17 +525,13 @@ impl Inode {
     pub unsafe fn put(&mut self) {
         let mut inode = ICACHE.lock();
 
-        if self.ref_0 == 1 && self.valid {
+        if self.ref_0 == 1 && self.valid && self.inner.get_mut_unchecked().nlink == 0 {
             // inode has no links and no other references: truncate and free.
 
             // self->ref == 1 means no other process can have self locked,
             // so this acquiresleep() won't block (or deadlock).
             let ptr: *mut Inode = self;
             let mut ip = (*self).lock(ptr);
-            if ip.nlink != 0 {
-                (*ip.ptr).ref_0 -= 1;
-                return;
-            }
 
             drop(inode);
 
