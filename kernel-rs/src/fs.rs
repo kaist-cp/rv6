@@ -223,29 +223,29 @@ impl InodeGuard<'_> {
         };
 
         // Look for an empty Dirent.
-        let mut off: i32 = 0;
-        while (off as u32) < self.guard.size {
+        let mut off: u32 = 0;
+        while off < self.guard.size {
             let bytes_read = self.read(
                 0,
                 &mut de as *mut Dirent as usize,
-                off as u32,
+                off,
                 mem::size_of::<Dirent>() as u32,
             );
             assert!(
                 !bytes_read.map_or(true, |v| v != mem::size_of::<Dirent>()),
                 "dirlink read"
             );
-            if de.inum as i32 == 0 {
+            if de.inum == 0 {
                 break;
             }
-            off = (off as usize).wrapping_add(mem::size_of::<Dirent>()) as i32
+            off = (off as usize).wrapping_add(mem::size_of::<Dirent>()) as u32
         }
         de.inum = inum as u16;
         de.set_name(name);
         let bytes_write = self.write(
             0,
             &mut de as *mut Dirent as usize,
-            off as u32,
+            off,
             mem::size_of::<Dirent>() as u32,
         );
         assert!(
@@ -414,7 +414,7 @@ impl InodeGuard<'_> {
             // write the i-node back to disk even if the size didn't change
             // because the loop above might have called bmap() and added a new
             // block to self->addrs[].
-            (*self).update();
+            self.update();
         }
         Ok(n as usize)
     }
@@ -496,10 +496,10 @@ impl Inode {
     /// Reads the inode from disk if necessary.
     // lock() receives `ptr` because usertest halts at `fourfiles` when `ptr` isn't given.
     pub unsafe fn lock(&mut self, ptr: *mut Inode) -> InodeGuard<'_> {
-        assert!((*self).ref_0 >= 1, "Inode::lock");
-        let mut guard = (*self).inner.lock();
+        assert!(self.ref_0 >= 1, "Inode::lock");
+        let mut guard = self.inner.lock();
         if !self.valid {
-            let bp: *mut Buf = Buf::read((*self).dev, SB.iblock(self.inum));
+            let bp: *mut Buf = Buf::read(self.dev, SB.iblock(self.inum));
             let dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
                 .add((self.inum as usize).wrapping_rem(IPB));
             guard.typ = (*dip).typ;
@@ -529,14 +529,14 @@ impl Inode {
     pub unsafe fn put(&mut self) {
         let mut inode = ICACHE.lock();
 
-        if (*self).ref_0 == 1 && (*self).valid {
+        if self.ref_0 == 1 && self.valid {
             // inode has no links and no other references: truncate and free.
 
             // self->ref == 1 means no other process can have self locked,
             // so this acquiresleep() won't block (or deadlock).
             let ptr: *mut Inode = self;
             let mut ip = InodeGuard {
-                guard: (*self).inner.lock(),
+                guard: self.inner.lock(),
                 ptr,
             };
             if ip.guard.nlink != 0 {
@@ -555,7 +555,7 @@ impl Inode {
 
             inode = ICACHE.lock();
         }
-        (*self).ref_0 -= 1;
+        self.ref_0 -= 1;
         drop(inode);
     }
 
