@@ -518,7 +518,10 @@ impl Inode {
     pub unsafe fn put(&mut self) {
         let mut inode = ICACHE.lock();
 
-        if self.ref_0 == 1 && self.inner.get_mut_unchecked().valid && self.inner.get_mut_unchecked().nlink == 0 {
+        if self.ref_0 == 1
+            && self.inner.get_mut_unchecked().valid
+            && self.inner.get_mut_unchecked().nlink == 0
+        {
             // inode has no links and no other references: truncate and free.
 
             // self->ref == 1 means no other process can have self locked,
