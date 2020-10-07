@@ -490,7 +490,7 @@ impl Inode {
     /// Lock the given inode.
     /// Reads the inode from disk if necessary.
     // (@kimjungwow) lock() receives `ptr` because usertest halts at `fourfiles` when `ptr` isn't given.
-    pub unsafe fn lock(&mut self, _ptr: *mut Inode) -> InodeGuard<'_> {
+    pub unsafe fn lock(&mut self) -> InodeGuard<'_> {
         assert!(self.ref_0 >= 1, "Inode::lock");
         let ptr = self as *mut _;
         let mut guard = self.inner.lock();
@@ -530,8 +530,7 @@ impl Inode {
 
             // self->ref == 1 means no other process can have self locked,
             // so this acquiresleep() won't block (or deadlock).
-            let ptr: *mut Inode = self;
-            let mut ip = (*self).lock(ptr);
+            let mut ip = (*self).lock();
 
             drop(inode);
 

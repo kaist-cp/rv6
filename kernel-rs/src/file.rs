@@ -146,7 +146,7 @@ impl File {
 
         match self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
-                let ip = (*ip).lock(ip);
+                let ip = (*ip).lock();
                 ip.stati(&mut st);
                 drop(ip);
                 if (*p)
@@ -179,7 +179,7 @@ impl File {
         match &mut self.typ {
             FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0)),
             FileType::Inode { ip, off } => {
-                let mut ip = (**ip).lock(*ip);
+                let mut ip = (**ip).lock();
                 let ret = ip.read(1, addr, *off, n as u32);
                 if let Ok(v) = ret {
                     *off = off.wrapping_add(v as u32);
@@ -216,7 +216,7 @@ impl File {
                 for bytes_written in (0..n).step_by(max) {
                     let bytes_to_write = cmp::min(n - bytes_written, max as i32);
                     begin_op();
-                    let mut ip = (**ip).lock(*ip);
+                    let mut ip = (**ip).lock();
 
                     let bytes_written = ip
                         .write(

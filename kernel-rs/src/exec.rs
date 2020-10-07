@@ -25,7 +25,7 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
         end_op();
         return Err(());
     });
-    let ip = (*ip).lock(ip);
+    let ip = (*ip).lock();
     let mut ip = scopeguard::guard(ip, |ip| {
         ip.unlockput();
         end_op();
