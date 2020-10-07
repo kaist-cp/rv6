@@ -190,9 +190,7 @@ static mut ICACHE: Spinlock<[Inode; NINODE]> = Spinlock::new("ICACHE", [Inode::z
 impl InodeGuard<'_> {
     /// Unlock the given inode.
     pub unsafe fn unlock(self) {
-        if (*self.ptr).ref_0 < 1 {
-            panic!("Inode::unlock");
-        }
+        assert!((*self.ptr).ref_0 >= 1, "Inode::unlock");
         drop(self.guard);
     }
 
@@ -425,9 +423,7 @@ impl InodeGuard<'_> {
     /// If found, return the entry and byte offset of entry.
     pub unsafe fn dirlookup(&mut self, name: &FileName) -> Result<(*mut Inode, u32), ()> {
         let mut de: Dirent = Default::default();
-        if self.guard.typ != T_DIR {
-            panic!("dirlookup not DIR");
-        }
+        assert!(self.guard.typ == T_DIR, "dirlookup not DIR");
         for off in (0..self.guard.size).step_by(mem::size_of::<Dirent>()) {
             let bytes_read = self.read(
                 0,
@@ -466,25 +462,24 @@ impl InodeGuard<'_> {
             return addr;
         }
         bn = (bn).wrapping_sub(NDIRECT);
-        if bn < NINDIRECT {
-            // Load indirect block, allocating if necessary.
-            addr = self.guard.addrs[NDIRECT];
-            if addr == 0 {
-                addr = balloc((*self.ptr).dev);
-                self.guard.addrs[NDIRECT] = addr
-            }
-            let bp: *mut Buf = Buf::read((*self.ptr).dev, addr);
-            let a: *mut u32 = (*bp).inner.data.as_mut_ptr() as *mut u32;
-            addr = *a.add(bn);
-            if addr == 0 {
-                addr = balloc((*self.ptr).dev);
-                *a.add(bn) = addr;
-                log_write(bp);
-            }
-            brelease(&mut *bp);
-            return addr;
+
+        assert!(bn < NINDIRECT, "bmap: out of range");
+        // Load indirect block, allocating if necessary.
+        addr = self.guard.addrs[NDIRECT];
+        if addr == 0 {
+            addr = balloc((*self.ptr).dev);
+            self.guard.addrs[NDIRECT] = addr
         }
-        panic!("bmap: out of range");
+        let bp: *mut Buf = Buf::read((*self.ptr).dev, addr);
+        let a: *mut u32 = (*bp).inner.data.as_mut_ptr() as *mut u32;
+        addr = *a.add(bn);
+        if addr == 0 {
+            addr = balloc((*self.ptr).dev);
+            *a.add(bn) = addr;
+            log_write(bp);
+        }
+        brelease(&mut *bp);
+        return addr;
     }
 }
 
@@ -501,9 +496,7 @@ impl Inode {
     /// Reads the inode from disk if necessary.
     // lock() receives `ptr` because usertest halts at `fourfiles` when `ptr` isn't given.
     pub unsafe fn lock(&mut self, ptr: *mut Inode) -> InodeGuard<'_> {
-        if (*self).ref_0 < 1 {
-            panic!("Inode::lock");
-        }
+        assert!((*self).ref_0 >= 1, "Inode::lock");
         let mut guard = (*self).inner.lock();
         if !self.valid {
             let bp: *mut Buf = Buf::read((*self).dev, SB.iblock(self.inum));
@@ -521,9 +514,7 @@ impl Inode {
             );
             brelease(&mut *bp);
             self.valid = true;
-            if guard.typ == 0 {
-                panic!("Inode::lock: no type");
-            }
+            assert!(guard.typ != 0, "Inode::lock: no type");
         };
         InodeGuard { guard, ptr }
     }
@@ -678,9 +669,7 @@ static mut SB: Superblock = Superblock::zeroed();
 /// Init fs
 pub unsafe fn fsinit(dev: i32) {
     SB.read(dev);
-    if SB.magic != FSMAGIC {
-        panic!("invalid file system");
-    }
+    assert!(SB.magic == FSMAGIC, "invalid file system");
     SB.initlog(dev);
 }
 
@@ -723,9 +712,10 @@ unsafe fn bfree(dev: i32, b: u32) {
     let mut bp: *mut Buf = Buf::read(dev as u32, SB.bblock(b));
     let bi: i32 = b.wrapping_rem(BPB) as i32;
     let m: i32 = (1) << (bi % 8);
-    if (*bp).inner.data[(bi / 8) as usize] as i32 & m == 0 {
-        panic!("freeing free block");
-    }
+    assert!(
+        (*bp).inner.data[(bi / 8) as usize] as i32 & m != 0,
+        "freeing free block"
+    );
     (*bp).inner.data[(bi / 8) as usize] = ((*bp).inner.data[(bi / 8) as usize] as i32 & !m) as u8;
     log_write(bp);
     brelease(&mut *bp);
@@ -751,9 +741,7 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
     }
 
     // Recycle an inode cache entry.
-    if empty.is_null() {
-        panic!("iget: no inodes");
-    }
+    assert!(!empty.is_null(), "iget: no inodes");
     let ip = empty;
     (*ip).dev = dev;
     (*ip).inum = inum;
