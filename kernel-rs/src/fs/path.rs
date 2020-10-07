@@ -142,7 +142,7 @@ impl Path {
             path = new_path;
 
             let mut ip = (*ptr).lock(ptr);
-            if ip.guard.typ != T_DIR {
+            if ip.typ != T_DIR {
                 ip.unlockput();
                 return Err(());
             }
