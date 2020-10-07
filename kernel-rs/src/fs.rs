@@ -467,7 +467,7 @@ impl InodeGuard<'_> {
             log_write(bp);
         }
         brelease(&mut *bp);
-        return addr;
+        addr
     }
 }
 
