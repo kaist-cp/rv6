@@ -485,10 +485,9 @@ impl Inode {
     // (@kimjungwow) lock() receives `ptr` because usertest halts at `fourfiles` when `ptr` isn't given.
     pub unsafe fn lock(&mut self) -> InodeGuard<'_> {
         assert!(self.ref_0 >= 1, "Inode::lock");
-        let ptr = &mut self.valid as *mut bool;
         let inode_ptr = &*self;
         let mut guard = self.inner.lock();
-        if !self.valid {
+        if !self.inner.get_mut_unchecked().valid {
             let bp: *mut Buf = Buf::read(self.dev, SB.iblock(self.inum));
             let dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
                 .add((self.inum as usize).wrapping_rem(IPB));
@@ -503,7 +502,7 @@ impl Inode {
                 mem::size_of::<[u32; 13]>(),
             );
             brelease(&mut *bp);
-            *ptr = true;
+            guard.valid = true;
             assert!(guard.typ != 0, "Inode::lock: no type");
         };
         InodeGuard::new(guard, inode_ptr)
@@ -519,12 +518,11 @@ impl Inode {
     pub unsafe fn put(&mut self) {
         let mut inode = ICACHE.lock();
 
-        if self.ref_0 == 1 && self.valid && self.inner.get_mut_unchecked().nlink == 0 {
+        if self.ref_0 == 1 && self.inner.get_mut_unchecked().valid && self.inner.get_mut_unchecked().nlink == 0 {
             // inode has no links and no other references: truncate and free.
 
             // self->ref == 1 means no other process can have self locked,
             // so this acquiresleep() won't block (or deadlock).
-            let ptr = &mut self.valid as *mut bool;
             let mut ip = (*self).lock();
 
             drop(inode);
@@ -532,7 +530,7 @@ impl Inode {
             ip.itrunc();
             ip.typ = 0;
             ip.update();
-            *ptr = false;
+            ip.valid = false;
 
             drop(ip);
 
@@ -572,10 +570,10 @@ impl Inode {
             dev: 0,
             inum: 0,
             ref_0: 0,
-            valid: false,
             inner: SleeplockWIP::new(
                 "inode",
                 InodeInner {
+                    valid: false,
                     typ: 0,
                     major: 0,
                     minor: 0,
@@ -729,6 +727,6 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
     (*ip).dev = dev;
     (*ip).inum = inum;
     (*ip).ref_0 = 1;
-    (*ip).valid = false;
+    (*ip).inner.get_mut_unchecked().valid = false;
     ip
 }
