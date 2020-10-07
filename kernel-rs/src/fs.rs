@@ -536,12 +536,9 @@ impl Inode {
             // self->ref == 1 means no other process can have self locked,
             // so this acquiresleep() won't block (or deadlock).
             let ptr: *mut Inode = self;
-            let mut ip = InodeGuard {
-                guard: self.inner.lock(),
-                ptr,
-            };
+            let mut ip = (*self).lock(ptr);
             if ip.guard.nlink != 0 {
-                self.ref_0 -= 1;
+                (*ip.ptr).ref_0 -= 1;
                 return;
             }
 
@@ -550,7 +547,7 @@ impl Inode {
             ip.itrunc();
             ip.guard.typ = 0;
             ip.update();
-            self.valid = false;
+            (*ip.ptr).valid = false;
 
             drop(ip.guard);
 
