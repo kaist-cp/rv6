@@ -18,7 +18,7 @@ use crate::{
     log::log_write,
     param::{NINODE, ROOTDEV},
     proc::{either_copyin, either_copyout},
-    sleeplock::{SleepLockGuard, SleeplockWIP},
+    sleeplock::SleeplockWIP,
     spinlock::Spinlock,
     stat::{Stat, T_DIR},
 };
@@ -499,32 +499,33 @@ impl Inode {
 
     /// Lock the given inode.
     /// Reads the inode from disk if necessary.
-    pub unsafe fn lock(&mut self) -> SleepLockGuard<'_, InodeInner> {
+    // lock() receives `ptr` because usertest halts at `fourfiles` when `ptr` isn't given.
+    pub unsafe fn lock(&mut self, ptr: *mut Inode) -> InodeGuard<'_> {
         if (*self).ref_0 < 1 {
             panic!("Inode::lock");
         }
-        let mut ret = (*self).inner.lock();
+        let mut guard = (*self).inner.lock();
         if !self.valid {
             let bp: *mut Buf = Buf::read((*self).dev, SB.iblock(self.inum));
             let dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
                 .add((self.inum as usize).wrapping_rem(IPB));
-            ret.typ = (*dip).typ;
-            ret.major = (*dip).major as u16;
-            ret.minor = (*dip).minor as u16;
-            ret.nlink = (*dip).nlink;
-            ret.size = (*dip).size;
+            guard.typ = (*dip).typ;
+            guard.major = (*dip).major as u16;
+            guard.minor = (*dip).minor as u16;
+            guard.nlink = (*dip).nlink;
+            guard.size = (*dip).size;
             ptr::copy(
                 (*dip).addrs.as_mut_ptr() as *const libc::CVoid,
-                ret.addrs.as_mut_ptr() as *mut libc::CVoid,
+                guard.addrs.as_mut_ptr() as *mut libc::CVoid,
                 mem::size_of::<[u32; 13]>(),
             );
             brelease(&mut *bp);
             self.valid = true;
-            if ret.typ == 0 {
+            if guard.typ == 0 {
                 panic!("Inode::lock: no type");
             }
         };
-        ret
+        InodeGuard { guard, ptr }
     }
 
     /// Drop a reference to an in-memory inode.
