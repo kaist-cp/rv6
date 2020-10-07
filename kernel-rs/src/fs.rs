@@ -187,6 +187,7 @@ struct Dinode {
 
 static mut ICACHE: Spinlock<[Inode; NINODE]> = Spinlock::new("ICACHE", [Inode::zeroed(); NINODE]);
 
+//TODO(@kimjungwow) : move inode-related methods to another file
 impl InodeGuard<'_> {
     /// Unlock the given inode.
     pub unsafe fn unlock(self) {
@@ -494,7 +495,7 @@ impl Inode {
 
     /// Lock the given inode.
     /// Reads the inode from disk if necessary.
-    // lock() receives `ptr` because usertest halts at `fourfiles` when `ptr` isn't given.
+    // (@kimjungwow) lock() receives `ptr` because usertest halts at `fourfiles` when `ptr` isn't given.
     pub unsafe fn lock(&mut self, ptr: *mut Inode) -> InodeGuard<'_> {
         assert!(self.ref_0 >= 1, "Inode::lock");
         let mut guard = self.inner.lock();
