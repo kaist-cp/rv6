@@ -192,7 +192,7 @@ impl InodeGuard<'_> {
     /// Unlock the given inode.
     pub unsafe fn unlock(self) {
         assert!((*self.ptr).ref_0 >= 1, "Inode::unlock");
-        drop(self.guard);
+        drop(self);
     }
 
     /// Common idiom: unlock, then put.
@@ -207,9 +207,9 @@ impl InodeGuard<'_> {
     pub unsafe fn stati(&self, st: &mut Stat) {
         (*st).dev = (*self.ptr).dev as i32;
         (*st).ino = (*self.ptr).inum;
-        (*st).typ = self.guard.typ;
-        (*st).nlink = self.guard.nlink;
-        (*st).size = self.guard.size as usize;
+        (*st).typ = self.typ;
+        (*st).nlink = self.nlink;
+        (*st).size = self.size as usize;
     }
 
     // Directories
@@ -225,7 +225,7 @@ impl InodeGuard<'_> {
 
         // Look for an empty Dirent.
         let mut off: u32 = 0;
-        while off < self.guard.size {
+        while off < self.size {
             let bytes_read = self.read(
                 0,
                 &mut de as *mut Dirent as usize,
@@ -264,13 +264,13 @@ impl InodeGuard<'_> {
         let bp: *mut Buf = Buf::read((*self.ptr).dev, SB.iblock((*self.ptr).inum));
         let mut dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
             .add(((*self.ptr).inum as usize).wrapping_rem(IPB));
-        (*dip).typ = self.guard.typ;
-        (*dip).major = self.guard.major as i16;
-        (*dip).minor = self.guard.minor as i16;
-        (*dip).nlink = self.guard.nlink;
-        (*dip).size = self.guard.size;
+        (*dip).typ = self.typ;
+        (*dip).major = self.major as i16;
+        (*dip).minor = self.minor as i16;
+        (*dip).nlink = self.nlink;
+        (*dip).size = self.size;
         ptr::copy(
-            self.guard.addrs.as_mut_ptr() as *const libc::CVoid,
+            self.addrs.as_mut_ptr() as *const libc::CVoid,
             (*dip).addrs.as_mut_ptr() as *mut libc::CVoid,
             mem::size_of::<[u32; 13]>(),
         );
@@ -285,13 +285,13 @@ impl InodeGuard<'_> {
     /// not an open file or current directory).
     unsafe fn itrunc(&mut self) {
         for i in 0..NDIRECT {
-            if self.guard.addrs[i] != 0 {
-                bfree((*self.ptr).dev as i32, self.guard.addrs[i]);
-                self.guard.addrs[i] = 0
+            if self.addrs[i] != 0 {
+                bfree((*self.ptr).dev as i32, self.addrs[i]);
+                self.addrs[i] = 0
             }
         }
-        if self.guard.addrs[NDIRECT] != 0 {
-            let bp = Buf::read((*self.ptr).dev, self.guard.addrs[NDIRECT]);
+        if self.addrs[NDIRECT] != 0 {
+            let bp = Buf::read((*self.ptr).dev, self.addrs[NDIRECT]);
             let a = (*bp).inner.data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
                 if *a.add(j) != 0 {
@@ -299,10 +299,10 @@ impl InodeGuard<'_> {
                 }
             }
             brelease(&mut *bp);
-            bfree((*self.ptr).dev as i32, self.guard.addrs[NDIRECT]);
-            self.guard.addrs[NDIRECT] = 0
+            bfree((*self.ptr).dev as i32, self.addrs[NDIRECT]);
+            self.addrs[NDIRECT] = 0
         }
-        self.guard.size = 0;
+        self.size = 0;
         self.update();
     }
 
@@ -317,11 +317,11 @@ impl InodeGuard<'_> {
         mut off: u32,
         mut n: u32,
     ) -> Result<usize, ()> {
-        if off > self.guard.size || off.wrapping_add(n) < off {
+        if off > self.size || off.wrapping_add(n) < off {
             return Err(());
         }
-        if off.wrapping_add(n) > self.guard.size {
-            n = self.guard.size.wrapping_sub(off)
+        if off.wrapping_add(n) > self.size {
+            n = self.size.wrapping_sub(off)
         }
         let mut tot: u32 = 0;
         while tot < n {
@@ -369,7 +369,7 @@ impl InodeGuard<'_> {
         mut off: u32,
         n: u32,
     ) -> Result<usize, ()> {
-        if off > self.guard.size || off.wrapping_add(n) < off {
+        if off > self.size || off.wrapping_add(n) < off {
             return Err(());
         }
         if off.wrapping_add(n) as usize > MAXFILE.wrapping_mul(BSIZE) {
@@ -409,8 +409,8 @@ impl InodeGuard<'_> {
             }
         }
         if n > 0 {
-            if off > self.guard.size {
-                self.guard.size = off
+            if off > self.size {
+                self.size = off
             }
             // write the i-node back to disk even if the size didn't change
             // because the loop above might have called bmap() and added a new
@@ -424,8 +424,8 @@ impl InodeGuard<'_> {
     /// If found, return the entry and byte offset of entry.
     pub unsafe fn dirlookup(&mut self, name: &FileName) -> Result<(*mut Inode, u32), ()> {
         let mut de: Dirent = Default::default();
-        assert!(self.guard.typ == T_DIR, "dirlookup not DIR");
-        for off in (0..self.guard.size).step_by(mem::size_of::<Dirent>()) {
+        assert!(self.typ == T_DIR, "dirlookup not DIR");
+        for off in (0..self.size).step_by(mem::size_of::<Dirent>()) {
             let bytes_read = self.read(
                 0,
                 &mut de as *mut Dirent as usize,
@@ -455,10 +455,10 @@ impl InodeGuard<'_> {
     unsafe fn bmap(&mut self, mut bn: usize) -> u32 {
         let mut addr: u32;
         if bn < NDIRECT {
-            addr = self.guard.addrs[bn];
+            addr = self.addrs[bn];
             if addr == 0 {
                 addr = balloc((*self.ptr).dev);
-                self.guard.addrs[bn] = addr
+                self.addrs[bn] = addr
             }
             return addr;
         }
@@ -466,10 +466,10 @@ impl InodeGuard<'_> {
 
         assert!(bn < NINDIRECT, "bmap: out of range");
         // Load indirect block, allocating if necessary.
-        addr = self.guard.addrs[NDIRECT];
+        addr = self.addrs[NDIRECT];
         if addr == 0 {
             addr = balloc((*self.ptr).dev);
-            self.guard.addrs[NDIRECT] = addr
+            self.addrs[NDIRECT] = addr
         }
         let bp: *mut Buf = Buf::read((*self.ptr).dev, addr);
         let a: *mut u32 = (*bp).inner.data.as_mut_ptr() as *mut u32;
@@ -537,7 +537,7 @@ impl Inode {
             // so this acquiresleep() won't block (or deadlock).
             let ptr: *mut Inode = self;
             let mut ip = (*self).lock(ptr);
-            if ip.guard.nlink != 0 {
+            if ip.nlink != 0 {
                 (*ip.ptr).ref_0 -= 1;
                 return;
             }
@@ -545,11 +545,11 @@ impl Inode {
             drop(inode);
 
             ip.itrunc();
-            ip.guard.typ = 0;
+            ip.typ = 0;
             ip.update();
             (*ip.ptr).valid = false;
 
-            drop(ip.guard);
+            drop(ip);
 
             inode = ICACHE.lock();
         }

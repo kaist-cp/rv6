@@ -12,6 +12,7 @@ use crate::{
 };
 use core::cmp;
 use core::convert::TryFrom;
+use core::ops::{Deref, DerefMut};
 
 pub struct File {
     pub typ: FileType,
@@ -26,6 +27,20 @@ pub struct InodeGuard<'a> {
     pub guard: SleepLockGuard<'a, InodeInner>,
     pub ptr: *mut Inode,
 }
+
+impl Deref for InodeGuard<'_> {
+    type Target = InodeInner;
+    fn deref(&self) -> &Self::Target {
+        &*self.guard
+    }
+}
+
+impl DerefMut for InodeGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut *self.guard
+    }
+}
+
 pub struct InodeInner {
     /// copy of disk inode
     pub typ: i16,
