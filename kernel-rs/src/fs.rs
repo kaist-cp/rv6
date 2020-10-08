@@ -20,7 +20,7 @@ use crate::{
     proc::{either_copyin, either_copyout},
     sleeplock::SleeplockWIP,
     spinlock::Spinlock,
-    stat::{Stat, T_DIR},
+    stat::{Stat, T_DIR, T_NONE},
 };
 use core::{mem, ops::DerefMut, ptr};
 
@@ -197,12 +197,14 @@ impl InodeGuard<'_> {
 
     /// Copy stat information from inode.
     /// Caller must hold ip->lock.
-    pub unsafe fn stati(&self, st: &mut Stat) {
-        (*st).dev = self.ptr.dev as i32;
-        (*st).ino = self.ptr.inum;
-        (*st).typ = self.typ;
-        (*st).nlink = self.nlink;
-        (*st).size = self.size as usize;
+    pub unsafe fn stat(&self) -> Stat {
+        Stat {
+            dev: self.ptr.dev as i32,
+            ino: self.ptr.inum,
+            typ: self.typ,
+            nlink: self.nlink,
+            size: self.size as usize,
+        }
     }
 
     // Directories
@@ -225,10 +227,7 @@ impl InodeGuard<'_> {
                 off,
                 mem::size_of::<Dirent>() as u32,
             );
-            assert!(
-                !bytes_read.map_or(true, |v| v != mem::size_of::<Dirent>()),
-                "dirlink read"
-            );
+            assert_eq!(bytes_read, Ok(mem::size_of::<Dirent>()), "dirlink read");
             if de.inum == 0 {
                 break;
             }
@@ -242,10 +241,7 @@ impl InodeGuard<'_> {
             off,
             mem::size_of::<Dirent>() as u32,
         );
-        assert!(
-            !bytes_write.map_or(true, |v| v != mem::size_of::<Dirent>()),
-            "dirlink"
-        );
+        assert_eq!(bytes_write, Ok(mem::size_of::<Dirent>()), "dirlink");
         Ok(())
     }
 
@@ -262,11 +258,13 @@ impl InodeGuard<'_> {
         (*dip).minor = self.minor as i16;
         (*dip).nlink = self.nlink;
         (*dip).size = self.size;
-        ptr::copy(
-            self.addrs.as_ptr() as *const libc::CVoid,
-            (*dip).addrs.as_mut_ptr() as *mut libc::CVoid,
-            mem::size_of::<[u32; 13]>(),
-        );
+        // (*dip).addrs.as_mut_ptr().copy_from(&self.addrs as _, 13);
+        (*dip).addrs.copy_from_slice(&self.addrs);
+        // ptr::copy(
+        //     self.addrs.as_ptr() as *const libc::CVoid,
+        //     (*dip).addrs.as_mut_ptr() as *mut libc::CVoid,
+        //     mem::size_of::<[u32; 13]>(),
+        // );
         log_write(bp);
         brelease(&mut *bp);
     }
@@ -411,7 +409,7 @@ impl InodeGuard<'_> {
     /// If found, return the entry and byte offset of entry.
     pub unsafe fn dirlookup(&mut self, name: &FileName) -> Result<(*mut Inode, u32), ()> {
         let mut de: Dirent = Default::default();
-        assert!(self.typ == T_DIR, "dirlookup not DIR");
+        assert_eq!(self.typ, T_DIR, "dirlookup not DIR");
         for off in (0..self.size).step_by(mem::size_of::<Dirent>()) {
             let bytes_read = self.read(
                 0,
@@ -419,10 +417,7 @@ impl InodeGuard<'_> {
                 off,
                 mem::size_of::<Dirent>() as u32,
             );
-            assert!(
-                !bytes_read.map_or(true, |v| v != mem::size_of::<Dirent>()),
-                "dirlookup read"
-            );
+            assert_eq!(bytes_read, Ok(mem::size_of::<Dirent>()), "dirlookup read");
             if de.inum as i32 != 0 && name == de.get_name() {
                 // entry matches path element
                 return Ok((iget(self.ptr.dev, de.inum as u32), off));
@@ -482,10 +477,8 @@ impl Inode {
 
     /// Lock the given inode.
     /// Reads the inode from disk if necessary.
-    // (@kimjungwow) lock() receives `ptr` because usertest halts at `fourfiles` when `ptr` isn't given.
     pub unsafe fn lock(&mut self) -> InodeGuard<'_> {
         assert!(self.ref_0 >= 1, "Inode::lock");
-        let inode_ptr = &*self;
         let mut guard = self.inner.lock();
         if !self.inner.get_mut_unchecked().valid {
             let bp: *mut Buf = Buf::read(self.dev, SB.iblock(self.inum));
@@ -496,16 +489,17 @@ impl Inode {
             guard.minor = (*dip).minor as u16;
             guard.nlink = (*dip).nlink;
             guard.size = (*dip).size;
-            ptr::copy(
-                (*dip).addrs.as_mut_ptr() as *const libc::CVoid,
-                guard.addrs.as_mut_ptr() as *mut libc::CVoid,
-                mem::size_of::<[u32; 13]>(),
-            );
+            guard.addrs.copy_from_slice(&(*dip).addrs);
+            // ptr::copy(
+            //     (*dip).addrs.as_mut_ptr() as *const libc::CVoid,
+            //     guard.addrs.as_mut_ptr() as *mut libc::CVoid,
+            //     mem::size_of::<[u32; 13]>(),
+            // );
             brelease(&mut *bp);
             guard.valid = true;
-            assert!(guard.typ != 0, "Inode::lock: no type");
+            assert_ne!(guard.typ, T_NONE, "Inode::lock: no type");
         };
-        InodeGuard::new(guard, inode_ptr)
+        InodeGuard::new(guard, &*self)
     }
 
     /// Drop a reference to an in-memory inode.
@@ -526,7 +520,7 @@ impl Inode {
 
             // self->ref == 1 means no other process can have self locked,
             // so this acquiresleep() won't block (or deadlock).
-            let mut ip = (*self).lock();
+            let mut ip = self.lock();
 
             drop(inode);
 
@@ -653,7 +647,7 @@ static mut SB: Superblock = Superblock::zeroed();
 /// Init fs
 pub unsafe fn fsinit(dev: i32) {
     SB.read(dev);
-    assert!(SB.magic == FSMAGIC, "invalid file system");
+    assert_eq!(SB.magic, FSMAGIC, "invalid file system");
     SB.initlog(dev);
 }
 
@@ -696,8 +690,9 @@ unsafe fn bfree(dev: i32, b: u32) {
     let mut bp: *mut Buf = Buf::read(dev as u32, SB.bblock(b));
     let bi: i32 = b.wrapping_rem(BPB) as i32;
     let m: i32 = (1) << (bi % 8);
-    assert!(
-        (*bp).inner.data[(bi / 8) as usize] as i32 & m != 0,
+    assert_ne!(
+        (*bp).inner.data[(bi / 8) as usize] as i32 & m,
+        0,
         "freeing free block"
     );
     (*bp).inner.data[(bi / 8) as usize] = ((*bp).inner.data[(bi / 8) as usize] as i32 & !m) as u8;

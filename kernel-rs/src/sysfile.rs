@@ -140,8 +140,9 @@ impl InodeGuard<'_> {
                 off as u32,
                 mem::size_of::<Dirent>() as u32,
             );
-            assert!(
-                !bytes_read.map_or(true, |v| v != mem::size_of::<Dirent>()),
+            assert_eq!(
+                bytes_read,
+                Ok(mem::size_of::<Dirent>()),
                 "isdirempty: readi"
             );
             if de.inum != 0 {
@@ -180,10 +181,7 @@ pub unsafe fn sys_unlink() -> usize {
                     off,
                     mem::size_of::<Dirent>() as u32,
                 );
-                assert!(
-                    !bytes_write.map_or(true, |v| v != mem::size_of::<Dirent>()),
-                    "unlink: writei"
-                );
+                assert_eq!(bytes_write, Ok(mem::size_of::<Dirent>()), "unlink: writei");
                 if ip.typ == T_DIR {
                     dp.nlink -= 1;
                     dp.update();
@@ -209,7 +207,7 @@ unsafe fn create(
     major: u16,
     minor: u16,
 ) -> Result<(*mut Inode, InodeGuard<'static>), ()> {
-    let (ptr, name) = ok_or!(path.nameiparent(), return Err(()));
+    let (ptr, name) = path.nameiparent()?;
     let mut dp = (*ptr).lock();
     // TODO: use other Result related functions
     if let Ok((ptr2, _)) = dp.dirlookup(&name) {
@@ -238,13 +236,11 @@ unsafe fn create(
         dp.update();
 
         // No ip->nlink++ for ".": avoid cyclic ref count.
-        assert!(
-            ip.dirlink(FileName::from_bytes(b"."), (*ptr2).inum).is_ok()
-                && ip.dirlink(FileName::from_bytes(b".."), (*ptr).inum).is_ok(),
-            "create dots"
-        );
+        ip.dirlink(FileName::from_bytes(b"."), (*ptr2).inum)
+            .and_then(|_| ip.dirlink(FileName::from_bytes(b".."), (*ptr).inum))
+            .expect("create dots");
     }
-    assert!(dp.dirlink(&name, (*ptr2).inum).is_ok(), "create: dirlink");
+    dp.dirlink(&name, (*ptr2).inum).expect("create: dirlink");
     dp.unlockput(ptr);
     Ok((ptr2, ip))
 }

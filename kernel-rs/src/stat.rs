@@ -1,3 +1,6 @@
+/// None
+pub const T_NONE: i16 = 0;
+
 /// Directory
 pub const T_DIR: i16 = 1;
 
