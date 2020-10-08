@@ -190,9 +190,10 @@ static mut ICACHE: Spinlock<[Inode; NINODE]> = Spinlock::new("ICACHE", [Inode::z
 //TODO(@kimjungwow) : move inode-related methods to another file
 impl InodeGuard<'_> {
     /// Common idiom: unlock, then put.
-    pub unsafe fn unlockput(self, ptr: *mut Inode) {
+    pub unsafe fn unlockput(self) {
+        let ptr = self.ptr;
         drop(self);
-        (*ptr).put();
+        ptr.put();
     }
 
     /// Copy stat information from inode.
@@ -477,7 +478,7 @@ impl Inode {
 
     /// Lock the given inode.
     /// Reads the inode from disk if necessary.
-    pub unsafe fn lock(&mut self) -> InodeGuard<'_> {
+    pub unsafe fn lock(&self) -> InodeGuard<'_> {
         assert!(self.ref_0 >= 1, "Inode::lock");
         let mut guard = self.inner.lock();
         if !self.inner.get_mut_unchecked().valid {
@@ -509,7 +510,8 @@ impl Inode {
     /// to it, free the inode (and its content) on disk.
     /// All calls to Inode::put() must be inside a transaction in
     /// case it has to free the inode.
-    pub unsafe fn put(&mut self) {
+    #[allow(clippy::cast_ref_to_mut)]
+    pub unsafe fn put(&self) {
         let mut inode = ICACHE.lock();
 
         if self.ref_0 == 1
@@ -533,7 +535,8 @@ impl Inode {
 
             inode = ICACHE.lock();
         }
-        self.ref_0 -= 1;
+        //TODO : Use better code
+        *(&self.ref_0 as *const _ as *mut i32) -= 1;
         drop(inode);
     }
 

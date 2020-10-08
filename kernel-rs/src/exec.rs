@@ -25,14 +25,13 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
         return Err(());
     });
     let ip = (*ptr).lock();
-    let mut ip = scopeguard::guard((ip, ptr), |(ip, ptr)| {
-        ip.unlockput(ptr);
+    let mut ip = scopeguard::guard(ip, |ip| {
+        ip.unlockput();
         end_op();
     });
 
     // Check ELF header
-    let bytes_read =
-        ip.0.read(0, &mut elf as *mut _ as _, 0, mem::size_of::<ElfHdr>() as _)?;
+    let bytes_read = ip.read(0, &mut elf as *mut _ as _, 0, mem::size_of::<ElfHdr>() as _)?;
     if !(bytes_read == mem::size_of::<ElfHdr>() && elf.magic == ELF_MAGIC) {
         return Err(());
     }
@@ -54,7 +53,7 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
             .phoff
             .wrapping_add(i * ::core::mem::size_of::<ProgHdr>());
 
-        let bytes_read = ip.0.read(
+        let bytes_read = ip.read(
             0,
             &mut ph as *mut ProgHdr as usize,
             off as u32,
@@ -74,7 +73,7 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
             if ph.vaddr.wrapping_rem(PGSIZE) != 0 {
                 return Err(());
             }
-            loadseg(pt, ph.vaddr, &mut ip.0, ph.off as u32, ph.filesz as u32)?;
+            loadseg(pt, ph.vaddr, &mut ip, ph.off as u32, ph.filesz as u32)?;
         }
     }
     drop(ip);

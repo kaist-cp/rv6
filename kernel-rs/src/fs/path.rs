@@ -143,7 +143,7 @@ impl Path {
 
             let mut ip = (*ptr).lock();
             if ip.typ != T_DIR {
-                ip.unlockput(ptr);
+                ip.unlockput();
                 return Err(());
             }
             if parent && path.inner.is_empty() {
@@ -152,7 +152,7 @@ impl Path {
                 return Ok((ptr, Some(name)));
             }
             let next = ip.dirlookup(name);
-            ip.unlockput(ptr);
+            ip.unlockput();
             ptr = next?.0
         }
         if parent {
