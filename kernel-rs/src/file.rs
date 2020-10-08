@@ -139,13 +139,10 @@ impl File {
     /// addr is a user virtual address, pointing to a struct stat.
     pub unsafe fn stat(&mut self, addr: usize) -> Result<(), ()> {
         let p: *mut Proc = myproc();
-        let mut st: Stat = Default::default();
 
         match self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
-                let ip = (*ip).lock();
-                ip.stati(&mut st);
-                drop(ip);
+                let mut st = (*ip).lock().stat();
                 if (*p)
                     .pagetable
                     .assume_init_mut()
