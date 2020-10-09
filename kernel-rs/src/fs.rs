@@ -259,13 +259,7 @@ impl InodeGuard<'_> {
         (*dip).minor = self.minor as i16;
         (*dip).nlink = self.nlink;
         (*dip).size = self.size;
-        // (*dip).addrs.as_mut_ptr().copy_from(&self.addrs as _, 13);
         (*dip).addrs.copy_from_slice(&self.addrs);
-        // ptr::copy(
-        //     self.addrs.as_ptr() as *const libc::CVoid,
-        //     (*dip).addrs.as_mut_ptr() as *mut libc::CVoid,
-        //     mem::size_of::<[u32; 13]>(),
-        // );
         log_write(bp);
         brelease(&mut *bp);
     }
@@ -491,11 +485,6 @@ impl Inode {
             guard.nlink = (*dip).nlink;
             guard.size = (*dip).size;
             guard.addrs.copy_from_slice(&(*dip).addrs);
-            // ptr::copy(
-            //     (*dip).addrs.as_mut_ptr() as *const libc::CVoid,
-            //     guard.addrs.as_mut_ptr() as *mut libc::CVoid,
-            //     mem::size_of::<[u32; 13]>(),
-            // );
             brelease(&mut *bp);
             guard.valid = true;
             assert_ne!(guard.typ, T_NONE, "Inode::lock: no type");
