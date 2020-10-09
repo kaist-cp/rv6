@@ -60,6 +60,9 @@ pub struct Superblock {
     bmapstart: u32,
 }
 
+/// dirent size
+pub const DIRENTSIZE: usize = mem::size_of::<Dirent>();
+
 #[derive(Default)]
 pub struct Dirent {
     pub inum: u16,
@@ -87,6 +90,13 @@ impl Dirent {
     fn get_name(&self) -> &FileName {
         let len = self.name.iter().position(|ch| *ch == 0).unwrap_or(DIRSIZ);
         unsafe { FileName::from_bytes(&self.name[..len]) }
+    }
+
+    fn read_entry(&mut self, ip: &mut InodeGuard<'_>, off: u32, panic_msg: &'static str) {
+        unsafe {
+            let bytes_read = ip.read(0, self as *mut Dirent as usize, off, DIRENTSIZE as u32);
+            assert_eq!(bytes_read, Ok(DIRENTSIZE), "{}", panic_msg)
+        }
     }
 }
 
@@ -221,28 +231,18 @@ impl InodeGuard<'_> {
 
         // Look for an empty Dirent.
         let mut off: u32 = 0;
+        // TODO : Dirent를 순회하는 iterator 만들기 : DIRENTSIZE만큼씩 읽고, 그 결과가 DIRENTSIZE가 아니면 panic
         while off < self.size {
-            let bytes_read = self.read(
-                0,
-                &mut de as *mut Dirent as usize,
-                off,
-                mem::size_of::<Dirent>() as u32,
-            );
-            assert_eq!(bytes_read, Ok(mem::size_of::<Dirent>()), "dirlink read");
+            de.read_entry(self, off, "dirlink read");
             if de.inum == 0 {
                 break;
             }
-            off = (off as usize).wrapping_add(mem::size_of::<Dirent>()) as u32
+            off = (off as usize).wrapping_add(DIRENTSIZE) as u32
         }
         de.inum = inum as u16;
         de.set_name(name);
-        let bytes_write = self.write(
-            0,
-            &mut de as *mut Dirent as usize,
-            off,
-            mem::size_of::<Dirent>() as u32,
-        );
-        assert_eq!(bytes_write, Ok(mem::size_of::<Dirent>()), "dirlink");
+        let bytes_write = self.write(0, &mut de as *mut Dirent as usize, off, DIRENTSIZE as u32);
+        assert_eq!(bytes_write, Ok(DIRENTSIZE), "dirlink");
         Ok(())
     }
 
@@ -405,14 +405,8 @@ impl InodeGuard<'_> {
     pub unsafe fn dirlookup(&mut self, name: &FileName) -> Result<(*mut Inode, u32), ()> {
         let mut de: Dirent = Default::default();
         assert_eq!(self.typ, T_DIR, "dirlookup not DIR");
-        for off in (0..self.size).step_by(mem::size_of::<Dirent>()) {
-            let bytes_read = self.read(
-                0,
-                &mut de as *mut Dirent as usize,
-                off,
-                mem::size_of::<Dirent>() as u32,
-            );
-            assert_eq!(bytes_read, Ok(mem::size_of::<Dirent>()), "dirlookup read");
+        for off in (0..self.size).step_by(DIRENTSIZE) {
+            de.read_entry(self, off, "dirlookup read");
             if de.inum as i32 != 0 && name == de.get_name() {
                 // entry matches path element
                 return Ok((iget(self.ptr.dev, de.inum as u32), off));
