@@ -30,12 +30,12 @@ unsafe impl Send for File {}
 /// When SleeplockWIP<Inode> is held, there is allocated space in Buf cache to store the content of inode,
 /// and inode's valid is always true.
 pub struct InodeGuard<'a> {
-    guard: SleepLockGuard<'a, InodeInner>,
+    guard: SleepLockGuard<'a, Option<InodeInner>>,
     pub ptr: &'a Inode,
 }
 
 impl<'a> InodeGuard<'a> {
-    pub const fn new(guard: SleepLockGuard<'a, InodeInner>, ptr: &'a Inode) -> Self {
+    pub const fn new(guard: SleepLockGuard<'a, Option<InodeInner>>, ptr: &'a Inode) -> Self {
         Self { guard, ptr }
     }
 }
@@ -43,13 +43,13 @@ impl<'a> InodeGuard<'a> {
 impl Deref for InodeGuard<'_> {
     type Target = InodeInner;
     fn deref(&self) -> &Self::Target {
-        &*self.guard
+        self.guard.deref().as_ref().unwrap()
     }
 }
 
 impl DerefMut for InodeGuard<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.guard
+        self.guard.deref_mut().as_mut().unwrap()
     }
 }
 
@@ -62,8 +62,6 @@ impl Drop for InodeGuard<'_> {
 }
 
 pub struct InodeInner {
-    /// inode has been read from disk?
-    pub valid: bool,
     /// copy of disk inode
     pub typ: i16,
     pub major: u16,
@@ -84,7 +82,8 @@ pub struct Inode {
     /// Reference count
     pub ref_0: i32,
 
-    pub inner: SleeplockWIP<InodeInner>,
+    /// If inode has been read from disk, Sleeplock has Some(InodeInner).
+    pub inner: SleeplockWIP<Option<InodeInner>>,
 }
 
 pub enum FileType {
