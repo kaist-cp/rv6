@@ -18,7 +18,7 @@ use crate::{
     some_or,
     stat::{T_DEVICE, T_DIR, T_FILE},
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
-    vm::{VirtualAddr, KVAddr}
+    vm::{KVAddr, VirtualAddr},
 };
 
 use core::{cell::UnsafeCell, mem, ptr, slice};
