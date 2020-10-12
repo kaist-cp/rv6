@@ -27,8 +27,8 @@ unsafe impl Send for File {}
 ///
 /// # Invariant
 ///
-/// When SleeplockWIP<Inode> is held, there is allocated space in Buf cache to store the content of inode,
-/// and inode's valid is always true.
+/// `guard` should contain Some(_) when InodeGuard is used.
+/// The fields in InodeInner are meaningful only when `guard` contains Some(_). (not None)
 pub struct InodeGuard<'a> {
     guard: SleepLockGuard<'a, Option<InodeInner>>,
     pub ptr: &'a Inode,
