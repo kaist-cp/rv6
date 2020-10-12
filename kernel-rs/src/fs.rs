@@ -231,7 +231,6 @@ impl InodeGuard<'_> {
 
         // Look for an empty Dirent.
         let mut off: u32 = 0;
-        // TODO : Dirent를 순회하는 iterator 만들기 : DIRENTSIZE만큼씩 읽고, 그 결과가 DIRENTSIZE가 아니면 panic
         while off < self.size {
             de.read_entry(self, off, "dirlink read");
             if de.inum == 0 {
@@ -407,7 +406,7 @@ impl InodeGuard<'_> {
         assert_eq!(self.typ, T_DIR, "dirlookup not DIR");
         for off in (0..self.size).step_by(DIRENTSIZE) {
             de.read_entry(self, off, "dirlookup read");
-            if de.inum as i32 != 0 && name == de.get_name() {
+            if de.inum != 0 && name == de.get_name() {
                 // entry matches path element
                 return Ok((iget(self.ptr.dev, de.inum as u32), off));
             }
