@@ -11,6 +11,7 @@ use crate::{
     proc::{myproc, Proc},
     spinlock::Spinlock,
     stat::Stat,
+    vm::{VirtualAddr,UVAddr},
 };
 use core::{cell::UnsafeCell, cmp, convert::TryFrom, mem, ops::Deref};
 
@@ -148,8 +149,7 @@ impl File {
                     let curr_off = *off.get();
                     let bytes_written = ip
                         .write(
-                            true,
-                            addr.wrapping_add(bytes_written as usize),
+                            UVAddr::wrap(addr.wrapping_add(bytes_written as usize)),
                             curr_off,
                             bytes_to_write as u32,
                         )

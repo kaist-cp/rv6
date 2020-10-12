@@ -796,7 +796,7 @@ impl ProcessSystem {
     }
 }
 
-pub unsafe fn procinit(procs: &mut ProcessSystem, page_table: &mut PageTable) {
+pub unsafe fn procinit(procs: &mut ProcessSystem, page_table: &mut PageTable<UVAddr>) {
     for (i, p) in procs.process_pool.iter_mut().enumerate() {
         p.palloc(page_table, i);
     }
@@ -1020,31 +1020,10 @@ pub unsafe fn either_copyout(user_dst: bool, dst: usize, src: &[u8]) -> Result<(
 /// Copy from either a user address, or kernel address,
 /// depending on usr_src.
 /// Returns Ok(()) on success, Err(()) on error.
-pub unsafe fn either_copyin(
+pub unsafe fn either_copyin<A: VirtualAddr>(
     dst: *mut u8,
-    user_src: bool,
-    src: usize,
+    src: A,
     len: usize,
 ) -> Result<(), ()> {
-    let p = myproc();
-    if user_src {
-        (*p).pagetable
-            .assume_init_mut()
-            .copyin(dst, UVAddr::wrap(src), len)
-            .map_or(Err(()), |_v| Ok(()))
-    } else {
-        ptr::copy(src as *mut u8, dst, len);
-        Ok(())
-    }
+    <A as VirtualAddr>::copyin(dst, src, len)
 }
-
-// /// Copy from either a user address, or kernel address,
-// /// depending on usr_src.
-// /// Returns Ok(()) on success, Err(()) on error.
-// pub unsafe fn either_copyin<A: VirtualAddr>(
-//     dst: *mut libc::CVoid,
-//     src: A,
-//     len: usize,
-// ) -> Result<(), ()> {
-//     <A as VirtualAddr>::copyin(dst, src, len)
-// }

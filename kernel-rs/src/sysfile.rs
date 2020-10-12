@@ -18,6 +18,7 @@ use crate::{
     some_or,
     stat::{T_DEVICE, T_DIR, T_FILE},
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
+    vm::{VirtualAddr, KVAddr}
 };
 
 use core::{cell::UnsafeCell, mem, ptr, slice};
@@ -135,8 +136,7 @@ pub unsafe fn sys_unlink() -> usize {
             }
             if ip.deref_inner().typ != T_DIR || ip.isdirempty() {
                 let bytes_write = dp.write(
-                    false,
-                    &mut de as *mut Dirent as usize,
+                    KVAddr::wrap(&mut de as *mut Dirent as usize),
                     off,
                     DIRENT_SIZE as u32,
                 );
