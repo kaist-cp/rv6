@@ -6,7 +6,7 @@ use crate::{
     sleepablelock::SleepablelockGuard,
     uart::Uart,
     utils::spin_loop,
-    vm::{VirtualAddr, UVAddr, KVAddr},
+    vm::{KVAddr, UVAddr, VirtualAddr},
 };
 use core::fmt;
 

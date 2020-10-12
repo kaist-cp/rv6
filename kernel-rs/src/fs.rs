@@ -21,7 +21,7 @@ use crate::{
     sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::{Stat, T_DIR},
-    vm::{VirtualAddr, KVAddr}
+    vm::{KVAddr, VirtualAddr},
 };
 use core::mem;
 use core::{ops::DerefMut, ptr};

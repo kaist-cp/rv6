@@ -132,7 +132,7 @@ pub trait VirtualAddr {
     /// Returns Ok(()) on success, Err(()) on error.
     unsafe fn copyin(dst: *mut u8, src: Self, len: usize) -> Result<(), ()>;
 
-    fn wrap(value: usize) -> Self where Self: Sized;
+    fn wrap(value: usize) -> Self;
 
     fn value(&self) -> usize;
 
