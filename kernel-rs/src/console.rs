@@ -6,6 +6,7 @@ use crate::{
     sleepablelock::SleepablelockGuard,
     uart::Uart,
     utils::spin_loop,
+    vm::{VirtualAddr, UVAddr, KVAddr},
 };
 use core::fmt;
 
@@ -64,10 +65,10 @@ impl Console {
         };
     }
 
-    unsafe fn write(&mut self, user_src: bool, src: usize, n: i32) {
+    unsafe fn write<A: VirtualAddr>(&mut self, src: A, n: i32) {
         for i in 0..n {
             let mut c: u8 = 0;
-            if either_copyin(&mut c, user_src, src.wrapping_add(i as usize), 1usize).is_err() {
+            if either_copyin(&mut c, <A as VirtualAddr>::wrap(src.value() + (i as usize)), 1usize).is_err() {
                 break;
             }
             self.putc(c as i32);
@@ -202,7 +203,10 @@ pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
 /// User write()s to the console go here.
 unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
     let mut console = kernel().console.lock();
-    console.write(user_src != 0, src, n);
+    match user_src {
+        1 => console.write(UVAddr::wrap(src), n),
+        _ => console.write(KVAddr::wrap(src), n),
+    }
     n
 }
 

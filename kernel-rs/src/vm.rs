@@ -120,18 +120,23 @@ impl PAddr {
         self.0
     }
 }
+// Check(@anemoneflower) : remove copy?
+#[derive(Copy, Clone)]
 pub struct KVAddr(usize);
+// Check(@anemoneflower) : remove copy?
+#[derive(Copy, Clone)]
 pub struct UVAddr(usize);
-
 pub trait VirtualAddr {
     /// Copy from either a user address, or kernel address,
     /// depending on usr_src.
     /// Returns Ok(()) on success, Err(()) on error.
     unsafe fn copyin(dst: *mut u8, src: Self, len: usize) -> Result<(), ()>;
 
-    fn wrap(value: usize) -> Self;
+    fn wrap(value: usize) -> Self where Self: Sized;
 
     fn value(&self) -> usize;
+
+    fn update(&mut self, new: usize);
 }
 
 impl VirtualAddr for KVAddr {
@@ -146,6 +151,10 @@ impl VirtualAddr for KVAddr {
 
     fn value(&self) -> usize {
         self.0
+    }
+
+    fn update(&mut self, new: usize) {
+        self.0 = new
     }
 }
 
@@ -164,6 +173,10 @@ impl VirtualAddr for UVAddr {
 
     fn value(&self) -> usize {
         self.0
+    }
+
+    fn update(&mut self, new: usize) {
+        self.0 = new
     }
 }
 
@@ -385,7 +398,9 @@ impl PageTable<UVAddr> {
     /// Frees any allocated pages on failure.
     pub unsafe fn uvmcopy(&mut self, mut new: &mut PageTable<UVAddr>, sz: usize) -> Result<(), ()> {
         for i in num_iter::range_step(0, sz, PGSIZE) {
-            let pte = self.walk(UVAddr::wrap(i), 0).expect("uvmcopy: pte should exist");
+            let pte = self
+                .walk(UVAddr::wrap(i), 0)
+                .expect("uvmcopy: pte should exist");
             if !pte.check_flag(PTE_V) {
                 panic!("uvmcopy: page not present");
             }
