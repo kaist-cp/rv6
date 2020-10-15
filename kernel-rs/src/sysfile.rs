@@ -6,7 +6,7 @@ use crate::{
     exec::exec,
     fcntl::FcntlFlags,
     file::{FileType, Inode, InodeGuard, RcFile},
-    fs::{Dirent, FileName, Path, DIRENTSIZE},
+    fs::{Dirent, FileName, Path, DIRENT_SIZE},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
     ok_or,
@@ -131,14 +131,14 @@ impl InodeGuard<'_> {
     /// Is the directory dp empty except for "." and ".." ?
     unsafe fn isdirempty(&mut self) -> bool {
         let mut de: Dirent = Default::default();
-        for off in (2 * DIRENTSIZE as u32..self.size).step_by(DIRENTSIZE) {
+        for off in (2 * DIRENT_SIZE as u32..self.size).step_by(DIRENT_SIZE) {
             let bytes_read = self.read(
                 0,
                 &mut de as *mut Dirent as usize,
                 off as u32,
-                DIRENTSIZE as u32,
+                DIRENT_SIZE as u32,
             );
-            assert_eq!(bytes_read, Ok(DIRENTSIZE), "isdirempty: readi");
+            assert_eq!(bytes_read, Ok(DIRENT_SIZE), "isdirempty: readi");
             if de.inum != 0 {
                 return false;
             }
@@ -170,8 +170,8 @@ pub unsafe fn sys_unlink() -> usize {
                 ip.unlockput();
             } else {
                 let bytes_write =
-                    dp.write(0, &mut de as *mut Dirent as usize, off, DIRENTSIZE as u32);
-                assert_eq!(bytes_write, Ok(DIRENTSIZE), "unlink: writei");
+                    dp.write(0, &mut de as *mut Dirent as usize, off, DIRENT_SIZE as u32);
+                assert_eq!(bytes_write, Ok(DIRENT_SIZE), "unlink: writei");
                 if ip.typ == T_DIR {
                     dp.nlink -= 1;
                     dp.update();
