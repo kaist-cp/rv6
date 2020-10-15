@@ -92,6 +92,7 @@ impl Dirent {
         unsafe { FileName::from_bytes(&self.name[..len]) }
     }
 
+    // TODO: Use iterator
     fn read_entry(&mut self, ip: &mut InodeGuard<'_>, off: u32, panic_msg: &'static str) {
         unsafe {
             let bytes_read = ip.read(0, self as *mut Dirent as usize, off, DIRENT_SIZE as u32);
