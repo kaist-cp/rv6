@@ -191,6 +191,7 @@ pub unsafe fn sys_unlink() -> usize {
     usize::MAX
 }
 
+// TODO: Returning lockguard can be dangerous. ('static lifetime too)
 unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> Result<InodeGuard<'static>, ()> {
     let (ptr, name) = path.nameiparent()?;
     let mut dp = (*ptr).lock();
@@ -230,7 +231,6 @@ unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> Result<InodeG
     Ok(ip)
 }
 
-#[allow(clippy::cast_ref_to_mut)]
 pub unsafe fn sys_open() -> usize {
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
     let path = ok_or!(argstr(0, &mut path), return usize::MAX);
