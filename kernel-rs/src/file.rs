@@ -30,12 +30,12 @@ unsafe impl Send for File {}
 /// `guard` should contain Some(_) when InodeGuard is used.
 /// The fields in InodeInner are meaningful only when `guard` contains Some(_). (not None)
 pub struct InodeGuard<'a> {
-    guard: SleepLockGuard<'a, Option<InodeInner>>,
+    guard: SleepLockGuard<'a, InodeInner>,
     pub ptr: &'a Inode,
 }
 
 impl<'a> InodeGuard<'a> {
-    pub const fn new(guard: SleepLockGuard<'a, Option<InodeInner>>, ptr: &'a Inode) -> Self {
+    pub const fn new(guard: SleepLockGuard<'a, InodeInner>, ptr: &'a Inode) -> Self {
         Self { guard, ptr }
     }
 }
@@ -43,13 +43,13 @@ impl<'a> InodeGuard<'a> {
 impl Deref for InodeGuard<'_> {
     type Target = InodeInner;
     fn deref(&self) -> &Self::Target {
-        self.guard.deref().as_ref().unwrap()
+        &*self.guard
     }
 }
 
 impl DerefMut for InodeGuard<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.guard.deref_mut().as_mut().unwrap()
+        &mut *self.guard
     }
 }
 
@@ -62,6 +62,8 @@ impl Drop for InodeGuard<'_> {
 }
 
 pub struct InodeInner {
+    /// inode has been read from disk?
+    pub valid: bool,
     /// copy of disk inode
     pub typ: i16,
     pub major: u16,
@@ -82,8 +84,7 @@ pub struct Inode {
     /// Reference count
     pub ref_0: i32,
 
-    /// If inode has been read from disk, Sleeplock has Some(InodeInner).
-    pub inner: SleeplockWIP<Option<InodeInner>>,
+    pub inner: SleeplockWIP<InodeInner>,
 }
 
 pub enum FileType {

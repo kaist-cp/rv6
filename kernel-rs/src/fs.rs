@@ -468,32 +468,21 @@ impl Inode {
     pub unsafe fn lock(&self) -> InodeGuard<'_> {
         assert!(self.ref_0 >= 1, "Inode::lock");
         let mut guard = self.inner.lock();
-        if !self.inner.get_mut_unchecked().is_some() {
+        if !self.inner.get_mut_unchecked().valid {
             let bp: *mut Buf = Buf::read(self.dev, SB.iblock(self.inum));
             let dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
                 .add((self.inum as usize).wrapping_rem(IPB));
-            *guard = Some(InodeInner {
-                typ: (*dip).typ,
-                major: (*dip).major as u16,
-                minor: (*dip).minor as u16,
-                nlink: (*dip).nlink,
-                size: (*dip).size,
-                addrs: [0; 13],
-            });
-            guard
-                .deref_mut()
-                .as_mut()
-                .unwrap()
-                .addrs
-                .copy_from_slice(&(*dip).addrs);
+            guard.typ = (*dip).typ;
+            guard.major = (*dip).major as u16;
+            guard.minor = (*dip).minor as u16;
+            guard.nlink = (*dip).nlink;
+            guard.size = (*dip).size;
+            guard.addrs.copy_from_slice(&(*dip).addrs);
             brelease(&mut *bp);
-            assert_ne!(
-                guard.deref_mut().as_mut().unwrap().typ,
-                T_NONE,
-                "Inode::lock: no type"
-            );
+            guard.valid = true;
+            assert_ne!(guard.typ, T_NONE, "Inode::lock: no type");
         };
-        InodeGuard::new(guard, &*self)
+        InodeGuard::new(guard, self)
     }
 
     /// Drop a reference to an in-memory inode.
@@ -508,8 +497,8 @@ impl Inode {
         let mut inode = ICACHE.lock();
 
         if self.ref_0 == 1
-            && self.inner.get_mut_unchecked().is_some()
-            && self.inner.get_mut_unchecked().as_mut().unwrap().nlink == 0
+            && self.inner.get_mut_unchecked().valid
+            && self.inner.get_mut_unchecked().nlink == 0
         {
             // inode has no links and no other references: truncate and free.
 
@@ -522,7 +511,7 @@ impl Inode {
             ip.itrunc();
             ip.typ = 0;
             ip.update();
-            *self.inner.get_mut_unchecked() = None;
+            ip.valid = false;
 
             drop(ip);
 
@@ -563,7 +552,18 @@ impl Inode {
             dev: 0,
             inum: 0,
             ref_0: 0,
-            inner: SleeplockWIP::new("inode", None),
+            inner: SleeplockWIP::new(
+                "inode",
+                InodeInner {
+                    valid: false,
+                    typ: 0,
+                    major: 0,
+                    minor: 0,
+                    nlink: 0,
+                    size: 0,
+                    addrs: [0; 13],
+                },
+            ),
         }
     }
 }
@@ -710,6 +710,6 @@ unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
     (*ip).dev = dev;
     (*ip).inum = inum;
     (*ip).ref_0 = 1;
-    *(*ip).inner.get_mut_unchecked() = None;
+    (*ip).inner.get_mut_unchecked().valid = false;
     ip
 }
