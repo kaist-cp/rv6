@@ -27,8 +27,7 @@ unsafe impl Send for File {}
 ///
 /// # Invariant
 ///
-/// `guard` should contain Some(_) when InodeGuard is used.
-/// The fields in InodeInner are meaningful only when `guard` contains Some(_). (not None)
+/// When SleeplockWIP<InodeInner> is held, InodeInner's valid is always true.
 pub struct InodeGuard<'a> {
     guard: SleepLockGuard<'a, InodeInner>,
     pub ptr: &'a Inode,
