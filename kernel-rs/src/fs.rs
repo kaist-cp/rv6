@@ -469,7 +469,7 @@ impl Inode {
     pub unsafe fn lock(&self) -> InodeGuard<'_> {
         assert!(self.ref_0 >= 1, "Inode::lock");
         let mut guard = self.inner.lock();
-        if !self.inner.get_mut_unchecked().valid {
+        if !guard.valid {
             let bp: *mut Buf = Buf::read(self.dev, SB.iblock(self.inum));
             let dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
                 .add((self.inum as usize).wrapping_rem(IPB));
