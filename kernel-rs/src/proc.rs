@@ -1,13 +1,13 @@
 use crate::{
     file::{Inode, RcFile},
-    fs::{fs, Path},
+    fs::{fs, fsinit, Path},
     kalloc::{kalloc, kfree},
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     ok_or,
-    param::{NCPU, NOFILE, NPROC},
+    param::{NCPU, NOFILE, NPROC, ROOTDEV},
     println,
     riscv::{intr_get, intr_on, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
-    spinlock::{pop_off, push_off, RawSpinlock, Spinlock},
+    spinlock::{pop_off, push_off, RawSpinlock, SpinLockGuard, Spinlock},
     string::safestrcpy,
     trap::usertrapret,
     vm::{kvminithart, kvmmap, PageTable},
@@ -202,6 +202,12 @@ pub struct WaitChannel {}
 impl WaitChannel {
     pub const fn new() -> Self {
         Self {}
+    }
+
+    /// Atomically release lock and sleep on waitchannel.
+    /// Reacquires lock when awakened.
+    pub unsafe fn sleep2<T>(&self, guard: &mut SpinLockGuard<'_, T>) {
+        self.sleep(guard.raw() as *mut RawSpinlock);
     }
 
     /// Atomically release lock and sleep on waitchannel.
@@ -945,7 +951,7 @@ unsafe fn forkret() {
     // File system initialization must be run in the context of a
     // regular process (e.g., because it calls sleep), and thus cannot
     // be run from main().
-    let _ = fs();
+    fsinit(ROOTDEV);
     usertrapret();
 }
 

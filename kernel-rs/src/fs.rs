@@ -25,6 +25,7 @@ use core::{mem, ops::DerefMut, ptr};
 
 mod path;
 pub use path::{FileName, Path};
+use spin::Once;
 
 /// Disk layout:
 /// [ boot block | super block | log | inode blocks |
@@ -657,12 +658,18 @@ impl FileSystem {
     }
 }
 
-lazy_static! {
-    static ref FS: FileSystem = FileSystem::new(ROOTDEV);
+static FS: Once<FileSystem> = Once::new();
+
+pub fn fsinit(dev: i32) {
+    FS.call_once(|| FileSystem::new(dev));
 }
 
 pub fn fs() -> &'static FileSystem {
-    &FS
+    if let Some(fs) = FS.r#try() {
+        fs
+    } else {
+        unreachable!()
+    }
 }
 
 /// Zero a block.
