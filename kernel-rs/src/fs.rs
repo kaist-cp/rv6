@@ -134,7 +134,7 @@ struct Dinode {
 /// list of blocks holding the file's content.
 ///
 /// The inodes are laid out sequentially on disk at
-/// SB.startinode. Each inode has a number, indicating its
+/// FS.superblock.startinode. Each inode has a number, indicating its
 /// position on the disk.
 ///
 /// The kernel keeps a cache of in-use inodes in memory
@@ -250,7 +250,7 @@ impl InodeGuard<'_> {
     /// that lives on disk, since i-node cache is write-through.
     /// Caller must hold self->lock.
     pub unsafe fn update(&self) {
-        let bp: *mut Buf = Buf::read(self.ptr.dev, SB.iblock(self.ptr.inum));
+        let bp: *mut Buf = Buf::read(self.ptr.dev, FS.superblock.iblock(self.ptr.inum));
         let mut dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
             .add((self.ptr.inum as usize).wrapping_rem(IPB));
         (*dip).typ = self.typ;
@@ -467,7 +467,7 @@ impl Inode {
         assert!(self.ref_0 >= 1, "Inode::lock");
         let mut guard = self.inner.lock();
         if !guard.valid {
-            let bp: *mut Buf = Buf::read(self.dev, SB.iblock(self.inum));
+            let bp: *mut Buf = Buf::read(self.dev, FS.superblock.iblock(self.inum));
             let dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
                 .add((self.inum as usize).wrapping_rem(IPB));
             guard.typ = (*dip).typ;
@@ -524,8 +524,8 @@ impl Inode {
     /// Mark it as allocated by  giving it type type.
     /// Returns an unlocked but allocated and referenced inode.
     pub unsafe fn alloc(dev: u32, typ: i16) -> *mut Inode {
-        for inum in 1..SB.ninodes {
-            let bp = Buf::read(dev, SB.iblock(inum));
+        for inum in 1..FS.superblock.ninodes {
+            let bp = Buf::read(dev, FS.superblock.iblock(inum));
             let dip = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
                 .add((inum as usize).wrapping_rem(IPB));
 
@@ -623,15 +623,31 @@ const BPB: u32 = BSIZE.wrapping_mul(8) as u32;
 /// Directory is a file containing a sequence of Dirent structures.
 pub const DIRSIZ: usize = 14;
 
-/// there should be one superblock per disk device, but we run with
-/// only one device
-static mut SB: Superblock = Superblock::zeroed();
+pub struct FileSystem {
+    /// there should be one superblock per disk device, but we run with
+    /// only one device
+    superblock: Superblock,
+}
 
-/// Init fs
-pub unsafe fn fsinit(dev: i32) {
-    SB.read(dev);
-    assert_eq!(SB.magic, FSMAGIC, "invalid file system");
-    SB.initlog(dev);
+impl FileSystem {
+    fn new(dev: i32) -> Self {
+        let mut superblock = Superblock::zeroed();
+        unsafe {
+            superblock.read(dev);
+            assert_eq!(superblock.magic, FSMAGIC, "invalid file system");
+            superblock.initlog(dev);
+        }
+
+        Self { superblock }
+    }
+}
+
+lazy_static! {
+    static ref FS: FileSystem = FileSystem::new(ROOTDEV);
+}
+
+pub fn fs() -> &'static FileSystem {
+    &FS
 }
 
 /// Zero a block.
@@ -647,9 +663,9 @@ unsafe fn bzero(dev: i32, bno: i32) {
 unsafe fn balloc(dev: u32) -> u32 {
     let mut b: u32 = 0;
     let mut bi: u32 = 0;
-    while b < SB.size {
-        let mut bp: *mut Buf = Buf::read(dev, SB.bblock(b));
-        while bi < BPB && (b + bi) < SB.size {
+    while b < FS.superblock.size {
+        let mut bp: *mut Buf = Buf::read(dev, FS.superblock.bblock(b));
+        while bi < BPB && (b + bi) < FS.superblock.size {
             let m = (1) << (bi % 8);
             if (*bp).inner.data[(bi / 8) as usize] as i32 & m == 0 {
                 // Is block free?
@@ -670,7 +686,7 @@ unsafe fn balloc(dev: u32) -> u32 {
 
 /// Free a disk block.
 unsafe fn bfree(dev: i32, b: u32) {
-    let mut bp: *mut Buf = Buf::read(dev as u32, SB.bblock(b));
+    let mut bp: *mut Buf = Buf::read(dev as u32, FS.superblock.bblock(b));
     let bi: i32 = b.wrapping_rem(BPB) as i32;
     let m: i32 = (1) << (bi % 8);
     assert_ne!(

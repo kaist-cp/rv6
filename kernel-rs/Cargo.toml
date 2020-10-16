@@ -8,7 +8,7 @@ edition = "2018"
 crate-type = ["staticlib"]
 
 [features]
-default = []
+default = ["lazy_static/spin_no_std"]
 test = []
 
 [profile.dev]
@@ -25,6 +25,7 @@ num-iter = { version = "0.1", default-features = false }
 scopeguard = { version = "1.1.0", default-features = false }
 arrayvec = { version = "0.5.1", default-features = false }
 cstr_core = { version = "0.2.2", default-features = false }
+lazy_static = { version = "1.4.0", default-features = false }
 
 # Compiler options for sysroot packages.
 # Cargo currently warns following packages are not dependencies.
