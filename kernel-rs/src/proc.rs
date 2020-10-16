@@ -2,7 +2,6 @@ use crate::{
     file::{Inode, RcFile},
     fs::{fs, Path},
     kalloc::{kalloc, kfree},
-    log::{begin_op, end_op},
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     ok_or,
     param::{NCPU, NOFILE, NPROC},
@@ -413,9 +412,9 @@ impl Proc {
         for file in self.open_files.iter_mut() {
             *file = None;
         }
-        begin_op();
+        fs().begin_op();
         (*self.cwd).put();
-        end_op();
+        fs().end_op();
         self.cwd = ptr::null_mut();
     }
 }
