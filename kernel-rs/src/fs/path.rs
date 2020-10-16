@@ -1,7 +1,8 @@
 use core::cmp;
 use cstr_core::CStr;
 
-use super::{iget, Inode, DIRSIZ, ROOTDEV, ROOTINO, T_DIR};
+use super::{iget, Inode, DIRSIZ, ROOTINO, T_DIR};
+use crate::param::ROOTDEV;
 use crate::proc::myproc;
 
 #[derive(PartialEq)]

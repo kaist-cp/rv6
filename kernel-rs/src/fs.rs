@@ -15,7 +15,7 @@ use crate::{
     buf::Buf,
     file::{Inode, InodeGuard, InodeInner},
     log::Log,
-    param::{NINODE, ROOTDEV},
+    param::NINODE,
     proc::{either_copyin, either_copyout},
     sleeplock::SleeplockWIP,
     spinlock::Spinlock,
