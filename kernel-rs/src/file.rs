@@ -1,7 +1,6 @@
 //! Support functions for system calls that involve file descriptors.
 use crate::{
-    fs::BSIZE,
-    log::{begin_op, end_op},
+    fs::{fs, BSIZE},
     param::{MAXOPBLOCKS, NDEV, NFILE},
     pipe::AllocatedPipe,
     pool::{PoolRef, RcPool, TaggedBox},
@@ -208,7 +207,7 @@ impl File {
                 let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
                 for bytes_written in (0..n).step_by(max) {
                     let bytes_to_write = cmp::min(n - bytes_written, max as i32);
-                    begin_op();
+                    fs().begin_op();
                     let mut ip = (**ip).lock();
 
                     let bytes_written = ip
@@ -223,7 +222,7 @@ impl File {
                             v
                         });
                     drop(ip);
-                    end_op();
+                    fs().end_op();
                     assert!(
                         bytes_written? == bytes_to_write as usize,
                         "short File::write"
@@ -256,9 +255,9 @@ impl Drop for File {
             match self.typ {
                 FileType::Pipe { mut pipe } => pipe.close(self.writable),
                 FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
-                    begin_op();
+                    fs().begin_op();
                     (*ip).put();
-                    end_op();
+                    fs().end_op();
                 }
                 _ => (),
             }

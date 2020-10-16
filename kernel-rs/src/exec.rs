@@ -1,8 +1,7 @@
 use crate::{
     elf::{ElfHdr, ProgHdr, ELF_MAGIC, ELF_PROG_LOAD},
     file::InodeGuard,
-    fs::Path,
-    log::{begin_op, end_op},
+    fs::{fs, Path},
     ok_or,
     param::MAXARG,
     proc::{myproc, proc_freepagetable, proc_pagetable, Proc},
@@ -19,15 +18,15 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
     let mut ph: ProgHdr = Default::default();
     let mut p: *mut Proc = myproc();
 
-    begin_op();
+    fs().begin_op();
     let ptr = ok_or!(path.namei(), {
-        end_op();
+        fs().end_op();
         return Err(());
     });
     let ip = (*ptr).lock();
     let mut ip = scopeguard::guard(ip, |ip| {
         ip.unlockput();
-        end_op();
+        fs().end_op();
     });
 
     // Check ELF header
