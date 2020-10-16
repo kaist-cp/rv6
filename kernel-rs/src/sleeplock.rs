@@ -161,9 +161,9 @@ impl Sleeplock {
         (*self).lk.release();
     }
 
-    pub unsafe fn holding(&mut self) -> i32 {
+    pub unsafe fn holding(&mut self) -> bool {
         (*self).lk.acquire();
-        let r: i32 = ((*self).locked != 0 && (*self).pid == (*myproc()).pid) as i32;
+        let r = (*self).locked != 0 && (*self).pid == (*myproc()).pid;
         (*self).lk.release();
         r
     }

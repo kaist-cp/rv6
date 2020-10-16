@@ -37,7 +37,7 @@ impl Buf {
 
     /// Write self's contents to disk.  Must be locked.
     pub unsafe fn write(&mut self) {
-        if (*self).lock.holding() == 0 {
+        if !(*self).lock.holding() {
             panic!("bwrite");
         }
         virtio_disk_rw(self, true);

@@ -111,7 +111,7 @@ pub unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
 }
 
 pub unsafe fn brelease(buf: &mut Buf) {
-    if buf.lock.holding() == 0 {
+    if !buf.lock.holding() {
         panic!("brelease");
     }
     buf.lock.release();
