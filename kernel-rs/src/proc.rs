@@ -1,11 +1,11 @@
 use crate::{
     file::{Inode, RcFile},
-    fs::{fsinit, Path},
+    fs::{fs, Path},
     kalloc::{kalloc, kfree},
     log::{begin_op, end_op},
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     ok_or,
-    param::{NCPU, NOFILE, NPROC, ROOTDEV},
+    param::{NCPU, NOFILE, NPROC},
     println,
     riscv::{intr_get, intr_on, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
     spinlock::{pop_off, push_off, RawSpinlock, Spinlock},
@@ -941,17 +941,12 @@ pub unsafe fn proc_yield() {
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
 unsafe fn forkret() {
-    static mut FIRST: i32 = 1;
-
     // Still holding p->lock from scheduler.
     (*(myproc as unsafe fn() -> *mut Proc)()).lock.release();
-    if FIRST != 0 {
-        // File system initialization must be run in the context of a
-        // regular process (e.g., because it calls sleep), and thus cannot
-        // be run from main().
-        FIRST = 0;
-        fsinit(ROOTDEV);
-    }
+    // File system initialization must be run in the context of a
+    // regular process (e.g., because it calls sleep), and thus cannot
+    // be run from main().
+    let _ = fs();
     usertrapret();
 }
 
