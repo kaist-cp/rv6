@@ -49,7 +49,7 @@ impl Pipe {
                 }
                 Err(PipeError::WaitForIO) => {
                     //DOC: piperead-sleep
-                    self.read_waitchannel.sleep(inner.raw() as _);
+                    self.read_waitchannel.sleep2(&mut inner);
                 }
                 _ => return Err(()),
             }
@@ -67,7 +67,7 @@ impl Pipe {
                     written += r;
                     self.read_waitchannel.wakeup();
                     if written < n {
-                        self.write_waitchannel.sleep(inner.raw() as _);
+                        self.write_waitchannel.sleep2(&mut inner);
                     } else {
                         return Ok(written);
                     }

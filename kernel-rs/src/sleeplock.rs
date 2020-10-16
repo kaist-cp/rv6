@@ -96,7 +96,7 @@ impl<T> DerefMut for SleepLockGuard<'_, T> {
 /// Long-term locks for processes
 pub struct Sleeplock {
     /// Is the lock held?
-    locked: u32,
+    locked: bool,
 
     /// spinlock protecting this sleep lock
     lk: RawSpinlock,
@@ -117,7 +117,7 @@ impl Sleeplock {
     // TODO: transient measure
     pub const fn zeroed() -> Self {
         Self {
-            locked: 0,
+            locked: false,
             lk: RawSpinlock::zeroed(),
             name: "",
             pid: 0,
@@ -130,7 +130,7 @@ impl Sleeplock {
 
         lk.lk.initlock("sleep lock");
         lk.name = name;
-        lk.locked = 0;
+        lk.locked = false;
         lk.pid = 0;
 
         lk
@@ -139,23 +139,23 @@ impl Sleeplock {
     pub fn initlock(&mut self, name: &'static str) {
         (*self).lk.initlock("sleep lock");
         (*self).name = name;
-        (*self).locked = 0;
+        (*self).locked = false;
         (*self).pid = 0;
     }
 
     pub unsafe fn acquire(&mut self) {
         (*self).lk.acquire();
-        while (*self).locked != 0 {
+        while (*self).locked {
             (*self).waitchannel.sleep(&mut (*self).lk);
         }
-        (*self).locked = 1;
+        (*self).locked = true;
         (*self).pid = (*myproc()).pid;
         (*self).lk.release();
     }
 
     pub unsafe fn release(&mut self) {
         (*self).lk.acquire();
-        (*self).locked = 0;
+        (*self).locked = false;
         (*self).pid = 0;
         (*self).waitchannel.wakeup();
         (*self).lk.release();
@@ -163,7 +163,7 @@ impl Sleeplock {
 
     pub unsafe fn holding(&mut self) -> bool {
         (*self).lk.acquire();
-        let r = (*self).locked != 0 && (*self).pid == (*myproc()).pid;
+        let r = (*self).locked && (*self).pid == (*myproc()).pid;
         (*self).lk.release();
         r
     }
