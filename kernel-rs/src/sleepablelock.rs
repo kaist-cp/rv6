@@ -68,7 +68,7 @@ impl<T> SleepablelockGuard<'_, T> {
         unsafe {
             self.lock
                 .waitchannel
-                .sleep(&self.lock.lock as *const _ as *mut RawSpinlock);
+                .sleep_raw(&self.lock.lock as *const _ as *mut RawSpinlock);
         }
     }
 

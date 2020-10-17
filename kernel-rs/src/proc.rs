@@ -206,8 +206,8 @@ impl WaitChannel {
 
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
-    pub unsafe fn sleep2<T>(&self, guard: &mut SpinLockGuard<'_, T>) {
-        self.sleep(guard.raw() as *mut RawSpinlock);
+    pub unsafe fn sleep<T>(&self, guard: &mut SpinLockGuard<'_, T>) {
+        self.sleep_raw(guard.raw() as *mut RawSpinlock);
     }
 
     /// Atomically release lock and sleep on waitchannel.
@@ -215,7 +215,7 @@ impl WaitChannel {
     // TODO(@kimjungwow): lk is not SpinLockGuard yet because
     // 1. Some static mut variables are still not Spinlock<T> but RawSpinlock
     // 2. Sleeplock doesn't have Spinlock<T>
-    pub unsafe fn sleep(&self, lk: *mut RawSpinlock) {
+    pub unsafe fn sleep_raw(&self, lk: *mut RawSpinlock) {
         let mut p: *mut Proc = myproc();
 
         // Must acquire p->lock in order to
@@ -666,7 +666,7 @@ impl ProcessSystem {
 
             // Wait for a child to exit.
             //DOC: wait-sleep
-            (*p).child_waitchannel.sleep(&mut (*p).lock);
+            (*p).child_waitchannel.sleep_raw(&mut (*p).lock);
         }
     }
 
