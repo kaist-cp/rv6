@@ -102,7 +102,7 @@ pub unsafe fn syscall() {
     } else {
         println!(
             "{} {}: unknown sys call {}",
-            (*p).pid,
+            (*p).pid(),
             str::from_utf8(&(*p).name).unwrap_or("???"),
             num
         );

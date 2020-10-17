@@ -13,7 +13,7 @@ pub unsafe fn sys_exit() -> usize {
 }
 
 pub unsafe fn sys_getpid() -> usize {
-    (*myproc()).pid as _
+    (*myproc()).pid() as _
 }
 
 pub unsafe fn sys_fork() -> usize {
@@ -39,7 +39,7 @@ pub unsafe fn sys_sleep() -> usize {
     let mut ticks = TICKS.lock();
     let ticks0 = *ticks;
     while ticks.wrapping_sub(ticks0) < n as u32 {
-        if (*myproc()).killed {
+        if (*myproc()).killed() {
             return usize::MAX;
         }
         ticks.sleep();
