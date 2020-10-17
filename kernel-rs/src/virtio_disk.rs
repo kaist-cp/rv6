@@ -10,7 +10,7 @@ use crate::{
     page::Page,
     proc::WaitChannel,
     riscv::{PGSHIFT, PGSIZE},
-    spinlock::{RawSpinlock, Spinlock},
+    spinlock::{RawSpinlock, Spinlock, SpinlockGuard},
     virtio::*,
     vm::kvmpa,
 };
@@ -222,6 +222,99 @@ impl Disk {
             info: [InflightInfo::zeroed(); NUM],
         }
     }
+
+    // TODO: This should be removed after `WaitChannel::sleep` gets refactored to take `SpinlockGuard`.
+    #[allow(clippy::while_immutable_condition)]
+    pub unsafe fn virtio_rw(this: &mut SpinlockGuard<'_, Self>, b: *mut Buf, write: bool) {
+        let sector: usize = (*b).blockno.wrapping_mul((BSIZE / 512) as u32) as _;
+
+        // The spec says that legacy block operations use three
+        // descriptors: one for type/reserved/sector, one for
+        // the data, one for a 1-byte status result.
+
+        // Allocate the three descriptors.
+        let mut desc = loop {
+            match this.desc.alloc_three_sectors() {
+                Some(idx) => break idx,
+                None => this
+                    .desc
+                    .free_desc_waitchannel
+                    .sleep_raw(this.raw() as *mut RawSpinlock),
+            }
+        };
+
+        // Format the three descriptors.
+        // qemu's virtio-blk.c reads them.
+        let mut buf0 = VirtIOBlockOutHeader::new(write, sector);
+
+        // buf0 is on a kernel stack, which is not direct mapped,
+        // thus the call to kvmpa().
+        *desc[0] = VRingDesc {
+            addr: kvmpa(&mut buf0 as *mut _ as _),
+            len: mem::size_of::<VirtIOBlockOutHeader>() as _,
+            flags: VRingDescFlags::NEXT,
+            next: desc[1].idx as _,
+        };
+
+        // Device reads/writes b->data
+        *desc[1] = VRingDesc {
+            addr: (*b).inner.data.as_mut_ptr() as _,
+            len: BSIZE as _,
+            flags: if write {
+                VRingDescFlags::NEXT
+            } else {
+                VRingDescFlags::NEXT | VRingDescFlags::WRITE
+            },
+            next: desc[2].idx as _,
+        };
+
+        this.info[desc[0].idx].status = false;
+
+        // Device writes the status
+        *desc[2] = VRingDesc {
+            addr: &mut this.info[desc[0].idx].status as *mut _ as _,
+            len: 1,
+            flags: VRingDescFlags::WRITE,
+            next: 0,
+        };
+
+        // Record struct Buf for virtio_disk_intr().
+        (*b).inner.disk = true;
+        this.info[desc[0].idx].b = b;
+
+        // We only tell device the first index in our chain of descriptors.
+        let ring_idx = (*this.avail).idx as usize % NUM;
+        (*this.avail).ring[ring_idx] = desc[0].idx as _;
+        fence(Ordering::SeqCst);
+        (*this.avail).idx += 1;
+
+        // Value is queue number.
+        MmioRegs::QueueNotify.write(0);
+
+        // Wait for virtio_disk_intr() to say request has finished.
+        while (*b).inner.disk {
+            (*b).vdisk_request_waitchannel.sleep(this);
+        }
+        this.info[desc[0].idx].b = ptr::null_mut();
+        IntoIter::new(desc).for_each(|desc| this.desc.free(desc));
+    }
+
+    pub unsafe fn virtio_disk_intr(&mut self) {
+        while (self.used_idx as usize).wrapping_rem(NUM)
+            != ((*self.used)[0].id as usize).wrapping_rem(NUM)
+        {
+            let id = (*self.used)[0].elems[self.used_idx as usize].id as usize;
+            if self.info[id].status {
+                panic!("virtio_self_intr status");
+            }
+            (*self.info[id].b).inner.disk = false;
+
+            // Self is done with Buf.
+            (*self.info[id].b).vdisk_request_waitchannel.wakeup();
+
+            self.used_idx = (self.used_idx.wrapping_add(1)).wrapping_rem(NUM as _)
+        }
+    }
 }
 
 impl InflightInfo {
@@ -299,98 +392,11 @@ pub unsafe fn virtio_disk_init() {
     // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
 }
 
-// TODO: This should be removed after `WaitChannel::sleep` gets refactored to take `SpinLockGuard`.
-#[allow(clippy::while_immutable_condition)]
 pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
-    let sector: usize = (*b).blockno.wrapping_mul((BSIZE / 512) as u32) as _;
-
     let mut disk = DISK.lock();
-
-    // The spec says that legacy block operations use three
-    // descriptors: one for type/reserved/sector, one for
-    // the data, one for a 1-byte status result.
-
-    // Allocate the three descriptors.
-    let mut desc = loop {
-        match disk.desc.alloc_three_sectors() {
-            Some(idx) => break idx,
-            None => disk
-                .desc
-                .free_desc_waitchannel
-                .sleep_raw(disk.raw() as *mut RawSpinlock),
-        }
-    };
-
-    // Format the three descriptors.
-    // qemu's virtio-blk.c reads them.
-    let mut buf0 = VirtIOBlockOutHeader::new(write, sector);
-
-    // buf0 is on a kernel stack, which is not direct mapped,
-    // thus the call to kvmpa().
-    *desc[0] = VRingDesc {
-        addr: kvmpa(&mut buf0 as *mut _ as _),
-        len: mem::size_of::<VirtIOBlockOutHeader>() as _,
-        flags: VRingDescFlags::NEXT,
-        next: desc[1].idx as _,
-    };
-
-    // Device reads/writes b->data
-    *desc[1] = VRingDesc {
-        addr: (*b).inner.data.as_mut_ptr() as _,
-        len: BSIZE as _,
-        flags: if write {
-            VRingDescFlags::NEXT
-        } else {
-            VRingDescFlags::NEXT | VRingDescFlags::WRITE
-        },
-        next: desc[2].idx as _,
-    };
-
-    disk.info[desc[0].idx].status = false;
-
-    // Device writes the status
-    *desc[2] = VRingDesc {
-        addr: &mut disk.info[desc[0].idx].status as *mut _ as _,
-        len: 1,
-        flags: VRingDescFlags::WRITE,
-        next: 0,
-    };
-
-    // Record struct Buf for virtio_disk_intr().
-    (*b).inner.disk = true;
-    disk.info[desc[0].idx].b = b;
-
-    // We only tell device the first index in our chain of descriptors.
-    let ring_idx = (*disk.avail).idx as usize % NUM;
-    (*disk.avail).ring[ring_idx] = desc[0].idx as _;
-    fence(Ordering::SeqCst);
-    (*disk.avail).idx += 1;
-
-    // Value is queue number.
-    MmioRegs::QueueNotify.write(0);
-
-    // Wait for virtio_disk_intr() to say request has finished.
-    while (*b).inner.disk {
-        (*b).vdisk_request_waitchannel.sleep(&mut disk);
-    }
-    disk.info[desc[0].idx].b = ptr::null_mut();
-    IntoIter::new(desc).for_each(|desc| disk.desc.free(desc));
+    Disk::virtio_rw(&mut disk, b, write);
 }
 
 pub unsafe fn virtio_disk_intr() {
-    let mut disk = DISK.lock();
-    while (disk.used_idx as usize).wrapping_rem(NUM)
-        != ((*disk.used)[0].id as usize).wrapping_rem(NUM)
-    {
-        let id = (*disk.used)[0].elems[disk.used_idx as usize].id as usize;
-        if disk.info[id].status {
-            panic!("virtio_disk_intr status");
-        }
-        (*disk.info[id].b).inner.disk = false;
-
-        // Disk is done with Buf.
-        (*disk.info[id].b).vdisk_request_waitchannel.wakeup();
-
-        disk.used_idx = (disk.used_idx.wrapping_add(1)).wrapping_rem(NUM as _)
-    }
+    DISK.lock().virtio_disk_intr();
 }
