@@ -11,41 +11,39 @@
 //! * Do not use the buffer after calling release.
 //! * Only one process at a time can use a buffer, so do not keep them longer than necessary.
 
-use crate::{fs::BSIZE, proc::WaitChannel, sleeplock::RawSleeplock};
+use crate::{fs::BSIZE, proc::WaitChannel, sleeplock::Sleeplock};
 use crate::{param::NBUF, spinlock::Spinlock, virtio_disk::virtio_disk_rw};
 
 use core::mem;
 use core::ops::{Deref, DerefMut};
 use core::ptr;
 
-pub struct Buf {
+pub struct BufEntry {
     dev: u32,
     pub blockno: u32,
-    lock: RawSleeplock,
     refcnt: u32,
     /// WaitChannel saying virtio_disk request is done.
     pub vdisk_request_waitchannel: WaitChannel,
 
     /// LRU cache list.
-    prev: *mut Buf,
-    next: *mut Buf,
+    prev: *mut BufEntry,
+    next: *mut BufEntry,
 
-    pub inner: BufInner,
+    pub inner: Sleeplock<BufInner>,
 }
 
-impl Buf {
+impl BufEntry {
     pub const fn zeroed() -> Self {
         Self {
             dev: 0,
             blockno: 0,
-            lock: RawSleeplock::new("buffer"),
             refcnt: 0,
             vdisk_request_waitchannel: WaitChannel::new(),
 
             prev: ptr::null_mut(),
             next: ptr::null_mut(),
 
-            inner: BufInner::zeroed(),
+            inner: Sleeplock::new("buffer", BufInner::zeroed()),
         }
     }
 }
@@ -70,10 +68,10 @@ impl BufInner {
 }
 
 struct Bcache {
-    pub buf: [Buf; NBUF],
+    pub buf: [BufEntry; NBUF],
 
     // Linked list of all buffers, through prev/next.  head.next is most recently used.
-    pub head: Buf,
+    pub head: BufEntry,
 }
 
 static mut BCACHE: Spinlock<Bcache> = Spinlock::new("BCACHE", Bcache::zeroed());
@@ -82,8 +80,8 @@ impl Bcache {
     // TODO:transient measure.
     const fn zeroed() -> Self {
         Self {
-            buf: [Buf::zeroed(); NBUF],
-            head: Buf::zeroed(),
+            buf: [BufEntry::zeroed(); NBUF],
+            head: BufEntry::zeroed(),
         }
     }
 
@@ -104,9 +102,9 @@ impl Bcache {
     /// Look through buffer cache for block on device dev.
     /// If not found, allocate a buffer.
     /// In either case, return locked buffer.
-    unsafe fn get(&mut self, dev: u32, blockno: u32) -> *mut Buf {
+    unsafe fn get(&mut self, dev: u32, blockno: u32) -> *mut BufEntry {
         // Is the block already cached?
-        let mut b: *mut Buf = self.head.next;
+        let mut b: *mut BufEntry = self.head.next;
         while b != &mut self.head {
             if (*b).dev == dev && (*b).blockno == blockno {
                 (*b).refcnt = (*b).refcnt.wrapping_add(1);
@@ -121,7 +119,7 @@ impl Bcache {
             if (*b).refcnt == 0 {
                 (*b).dev = dev;
                 (*b).blockno = blockno;
-                (*b).inner.valid = false;
+                (*b).inner.get_mut_unchecked().valid = false;
                 (*b).refcnt = 1;
                 return b;
             }
@@ -132,7 +130,7 @@ impl Bcache {
 
     /// Release a locked buffer.
     /// Move to the head of the MRU list.
-    unsafe fn release(&mut self, buf: &mut Buf) {
+    unsafe fn release(&mut self, buf: &mut BufEntry) {
         buf.refcnt = buf.refcnt.wrapping_sub(1);
         if buf.refcnt == 0 {
             // No one is waiting for it.
@@ -145,7 +143,7 @@ impl Bcache {
         }
     }
 
-    unsafe fn unpin(&mut self, buf: &mut Buf) {
+    unsafe fn unpin(&mut self, buf: &mut BufEntry) {
         buf.refcnt = buf.refcnt.wrapping_sub(1);
     }
 }
@@ -155,31 +153,32 @@ pub unsafe fn binit() {
     bcache.init();
 }
 
-pub struct BufHandle {
-    ptr: *mut Buf,
+pub struct Buf {
+    /// Assumption: the `ptr.inner` lock is held.
+    ptr: *mut BufEntry,
 }
 
-impl BufHandle {
+impl Buf {
     /// Return a locked buf with the contents of the indicated block.
     pub fn new(dev: u32, blockno: u32) -> Self {
         unsafe {
             let ptr = BCACHE.lock().get(dev, blockno);
-            (*ptr).lock.acquire();
-            if !(*ptr).inner.valid {
-                virtio_disk_rw(ptr, false);
-                (*ptr).inner.valid = true;
+            mem::forget((*ptr).inner.lock());
+            let mut result = Self { ptr };
+
+            if !result.deref_inner().valid {
+                virtio_disk_rw(&mut result, false);
+                result.deref_mut_inner().valid = true;
             }
-            Self { ptr }
+
+            result
         }
     }
 
     pub fn pin(self) {
         unsafe {
             let buf = &mut *self.ptr;
-            if !buf.lock.holding() {
-                panic!("BufHandle::drop");
-            }
-            buf.lock.release();
+            buf.inner.unlock();
         }
         mem::forget(self);
     }
@@ -194,36 +193,38 @@ impl BufHandle {
 
     /// Write self's contents to disk.  Must be locked.
     pub unsafe fn write(&mut self) {
-        if !(*self).lock.holding() {
-            panic!("bwrite");
-        }
-        virtio_disk_rw(self.deref_mut(), true);
+        virtio_disk_rw(self, true);
+    }
+
+    pub fn deref_inner(&self) -> &BufInner {
+        unsafe { (*self.ptr).inner.get_mut_unchecked() }
+    }
+
+    pub fn deref_mut_inner(&mut self) -> &mut BufInner {
+        unsafe { (*self.ptr).inner.get_mut_unchecked() }
     }
 }
 
-impl Drop for BufHandle {
+impl Drop for Buf {
     fn drop(&mut self) {
         unsafe {
             let buf = &mut *self.ptr;
-            if !buf.lock.holding() {
-                panic!("BufHandle::drop");
-            }
-            buf.lock.release();
+            buf.inner.unlock();
             let mut bcache = BCACHE.lock();
             bcache.release(buf);
         }
     }
 }
 
-impl Deref for BufHandle {
-    type Target = Buf;
+impl Deref for Buf {
+    type Target = BufEntry;
 
     fn deref(&self) -> &Self::Target {
         unsafe { &*self.ptr }
     }
 }
 
-impl DerefMut for BufHandle {
+impl DerefMut for Buf {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.ptr }
     }
