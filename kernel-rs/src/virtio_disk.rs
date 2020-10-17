@@ -222,7 +222,7 @@ impl Disk {
             used: ptr::null_mut(),
             used_idx: 0,
             info: [InflightInfo::zeroed(); NUM],
-            vdisk_lock: RawSpinlock::zeroed(),
+            vdisk_lock: RawSpinlock::new("virtio_disk"),
         }
     }
 }
@@ -241,7 +241,6 @@ static mut DISK: Disk = Disk::zeroed();
 
 pub unsafe fn virtio_disk_init() {
     let mut status: VirtIOStatus = VirtIOStatus::empty();
-    DISK.vdisk_lock.initlock("virtio_disk");
     if !(MmioRegs::MagicValue.read() == 0x74726976
         && MmioRegs::Version.read() == 1
         && MmioRegs::DeviceId.read() == 2

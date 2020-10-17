@@ -26,7 +26,7 @@ unsafe impl<T: Send> Sync for Sleepablelock<T> {}
 impl<T> Sleepablelock<T> {
     pub const fn new(name: &'static str, data: T) -> Self {
         Self {
-            lock: RawSpinlock::init(name),
+            lock: RawSpinlock::new(name),
             waitchannel: WaitChannel::new(),
             data: UnsafeCell::new(data),
         }

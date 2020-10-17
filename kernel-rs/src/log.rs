@@ -56,34 +56,24 @@ struct LogHeader {
 }
 
 impl Log {
-    // TODO: transient measure
-    const fn zeroed() -> Self {
-        Self {
-            lock: RawSpinlock::zeroed(),
-            start: 0,
-            size: 0,
+    pub fn new(dev: i32, superblock: &Superblock) -> Self {
+        if ::core::mem::size_of::<LogHeader>() >= BSIZE {
+            panic!("Log::new: too big LogHeader");
+        }
+
+        let mut log = Self {
+            lock: RawSpinlock::new("LOG"),
+            start: superblock.logstart as i32,
+            size: superblock.nlog as i32,
             outstanding: 0,
             committing: 0,
-            dev: 0,
+            dev,
             lh: LogHeader {
                 n: 0,
                 block: [0; LOGSIZE],
             },
             waitchannel: WaitChannel::new(),
-        }
-    }
-}
-
-impl Log {
-    pub fn new(dev: i32, superblock: &Superblock) -> Self {
-        let mut log = Self::zeroed();
-        if ::core::mem::size_of::<LogHeader>() >= BSIZE {
-            panic!("Log::new: too big LogHeader");
-        }
-        log.lock.initlock("LOG");
-        log.start = superblock.logstart as i32;
-        log.size = superblock.nlog as i32;
-        log.dev = dev;
+        };
         unsafe {
             log.recover_from_log();
         }

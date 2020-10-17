@@ -122,7 +122,7 @@ impl RcFile {
     /// Allocate a file structure.
     pub fn alloc(readable: bool, writable: bool) -> Option<Self> {
         // TODO: idiomatic initialization.
-        FTableRef::alloc(File::init(readable, writable))
+        FTableRef::alloc(File::new(readable, writable))
     }
 
     /// Increment reference count of the file.
@@ -133,6 +133,14 @@ impl RcFile {
 }
 
 impl File {
+    pub const fn new(readable: bool, writable: bool) -> Self {
+        Self {
+            typ: FileType::None,
+            readable,
+            writable,
+        }
+    }
+
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
     pub unsafe fn stat(&mut self, addr: usize) -> Result<(), ()> {
@@ -235,15 +243,6 @@ impl File {
                 .and_then(|dev| Some(dev.write?(1, addr, n) as usize))
                 .ok_or(()),
             _ => panic!("File::read"),
-        }
-    }
-
-    // TODO: transient measure
-    pub const fn init(readable: bool, writable: bool) -> Self {
-        Self {
-            typ: FileType::None,
-            readable,
-            writable,
         }
     }
 }

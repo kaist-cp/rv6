@@ -593,28 +593,16 @@ impl Superblock {
     }
 
     /// Read the super block.
-    unsafe fn read(&mut self, dev: i32) {
+    unsafe fn new(dev: i32) -> Self {
+        let mut result = mem::MaybeUninit::uninit();
         let bp: *mut Buf = Buf::read(dev as u32, 1);
         ptr::copy(
             (*bp).inner.data.as_mut_ptr(),
-            self as *mut Superblock as *mut u8,
+            result.as_mut_ptr() as *mut Superblock as *mut u8,
             mem::size_of::<Superblock>(),
         );
         brelease(&mut *bp);
-    }
-
-    // TODO: transient measure
-    pub const fn zeroed() -> Self {
-        Self {
-            magic: 0,
-            size: 0,
-            nblocks: 0,
-            ninodes: 0,
-            nlog: 0,
-            logstart: 0,
-            inodestart: 0,
-            bmapstart: 0,
-        }
+        result.assume_init()
     }
 }
 
@@ -635,14 +623,12 @@ pub struct FileSystem {
 
 impl FileSystem {
     fn new(dev: i32) -> Self {
-        let mut superblock = Superblock::zeroed();
         unsafe {
-            superblock.read(dev);
+            let superblock = Superblock::new(dev);
             assert_eq!(superblock.magic, FSMAGIC, "invalid file system");
+            let log = Log::new(dev, &superblock);
+            Self { superblock, log }
         }
-        let log = Log::new(dev, &superblock);
-
-        Self { superblock, log }
     }
 
     pub unsafe fn begin_op(&self) {
