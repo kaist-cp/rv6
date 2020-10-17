@@ -2,7 +2,7 @@ use crate::{
     ok_or, poweroff,
     proc::{myproc, resizeproc, PROCSYS},
     syscall::{argaddr, argint},
-    trap::{TICKS, TICKSLOCK, TICKSWAITCHANNEL},
+    trap::TICKS,
 };
 
 pub unsafe fn sys_exit() -> usize {
@@ -36,16 +36,14 @@ pub unsafe fn sys_sbrk() -> usize {
 
 pub unsafe fn sys_sleep() -> usize {
     let n = ok_or!(argint(0), return usize::MAX);
-    TICKSLOCK.acquire();
-    let ticks0 = TICKS;
-    while TICKS.wrapping_sub(ticks0) < n as u32 {
+    let mut ticks = TICKS.lock();
+    let ticks0 = *ticks;
+    while ticks.wrapping_sub(ticks0) < n as u32 {
         if (*myproc()).killed {
-            TICKSLOCK.release();
             return usize::MAX;
         }
-        TICKSWAITCHANNEL.sleep(&mut TICKSLOCK);
+        ticks.sleep();
     }
-    TICKSLOCK.release();
     0
 }
 
@@ -57,10 +55,7 @@ pub unsafe fn sys_kill() -> usize {
 /// return how many clock tick interrupts have occurred
 /// since start.
 pub unsafe fn sys_uptime() -> usize {
-    TICKSLOCK.acquire();
-    let xticks: u32 = TICKS;
-    TICKSLOCK.release();
-    xticks as usize
+    *TICKS.lock() as usize
 }
 
 pub unsafe fn sys_poweroff() -> usize {

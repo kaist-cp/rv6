@@ -40,6 +40,7 @@ mod printf;
 mod proc;
 mod riscv;
 mod sleeplock;
+mod sleepablelock;
 mod spinlock;
 mod start;
 mod stat;
