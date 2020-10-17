@@ -16,6 +16,7 @@ use crate::{
     log::Log,
     param::NINODE,
     proc::{either_copyin, either_copyout},
+    sleepablelock::Sleepablelock,
     sleeplock::SleeplockWIP,
     spinlock::Spinlock,
     stat::{Stat, T_DIR, T_NONE},
@@ -611,7 +612,7 @@ pub struct FileSystem {
     superblock: Superblock,
 
     /// TODO(rv6): document it
-    log: Log,
+    log: Sleepablelock<Log>,
 }
 
 impl FileSystem {
@@ -619,24 +620,24 @@ impl FileSystem {
         unsafe {
             let superblock = Superblock::new(dev);
             assert_eq!(superblock.magic, FSMAGIC, "invalid file system");
-            let log = Log::new(dev, &superblock);
+            let log = Sleepablelock::new("LOG", Log::new(dev, &superblock));
             Self { superblock, log }
         }
     }
 
+    /// Called at the start of each FS system call.
     pub unsafe fn begin_op(&self) {
-        #[allow(clippy::cast_ref_to_mut)]
-        (*(self as *const _ as *mut Self)).log.begin_op();
+        Log::begin_op(&self.log);
     }
 
+    /// Called at the end of each FS system call.
+    /// Commits if this was the last outstanding operation.
     pub unsafe fn end_op(&self) {
-        #[allow(clippy::cast_ref_to_mut)]
-        (*(self as *const _ as *mut Self)).log.end_op();
+        Log::end_op(&self.log);
     }
 
     pub unsafe fn log_write(&self, b: BufHandle) {
-        #[allow(clippy::cast_ref_to_mut)]
-        (*(self as *const _ as *mut Self)).log.log_write(b);
+        self.log.lock().log_write(b);
     }
 }
 

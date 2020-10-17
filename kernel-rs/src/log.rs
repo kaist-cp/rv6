@@ -29,8 +29,6 @@ use crate::{
 use core::ptr;
 
 pub struct Log {
-    /// Lock saying committing is done or there is enough unreserved log space.
-    lock: Sleepablelock<()>,
     start: i32,
     size: i32,
 
@@ -58,7 +56,6 @@ impl Log {
         }
 
         let mut log = Self {
-            lock: Sleepablelock::new("LOG", ()),
             start: superblock.logstart as i32,
             size: superblock.nlog as i32,
             outstanding: 0,
@@ -133,16 +130,16 @@ impl Log {
     }
 
     /// Called at the start of each FS system call.
-    pub fn begin_op(&mut self) {
-        let mut guard = self.lock.lock();
+    pub unsafe fn begin_op(this: &Sleepablelock<Self>) {
+        let mut guard = this.lock();
         loop {
-            if self.committing ||
+            if guard.committing ||
             // This op might exhaust log space; wait for commit.
-            self.lh.n + (self.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
+            guard.lh.n + (guard.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
             {
                 guard.sleep();
             } else {
-                self.outstanding += 1;
+                guard.outstanding += 1;
                 break;
             }
         }
@@ -150,16 +147,16 @@ impl Log {
 
     /// Called at the end of each FS system call.
     /// Commits if this was the last outstanding operation.
-    pub unsafe fn end_op(&mut self) {
+    pub unsafe fn end_op(this: &Sleepablelock<Self>) {
         let mut do_commit = false;
-        let guard = self.lock.lock();
-        self.outstanding -= 1;
-        if self.committing {
-            panic!("self.committing");
+        let mut guard = this.lock();
+        guard.outstanding -= 1;
+        if guard.committing {
+            panic!("guard.committing");
         }
-        if self.outstanding == 0 {
+        if guard.outstanding == 0 {
             do_commit = true;
-            self.committing = true;
+            guard.committing = true;
         } else {
             // begin_op() may be waiting for LOG space,
             // and decrementing log.outstanding has decreased
@@ -170,9 +167,9 @@ impl Log {
         if do_commit {
             // Call commit w/o holding locks, since not allowed
             // to sleep with locks.
-            self.commit();
-            let guard = self.lock.lock();
-            self.committing = false;
+            this.get_mut_unchecked().commit();
+            let mut guard = this.lock();
+            guard.committing = false;
             guard.wakeup();
         };
     }
@@ -229,7 +226,6 @@ impl Log {
         if self.outstanding < 1 {
             panic!("log_write outside of trans");
         }
-        let _guard = self.lock.lock();
         let mut absorbed = false;
         for i in 0..self.lh.n {
             // Log absorbtion.
