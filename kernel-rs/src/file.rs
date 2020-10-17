@@ -5,7 +5,7 @@ use crate::{
     pipe::AllocatedPipe,
     pool::{PoolRef, RcPool, TaggedBox},
     proc::{myproc, Proc},
-    sleeplock::{SleepLockGuard, SleeplockWIP},
+    sleeplock::{Sleeplock, SleeplockGuard},
     spinlock::Spinlock,
     stat::Stat,
 };
@@ -28,12 +28,12 @@ unsafe impl Send for File {}
 ///
 /// When SleeplockWIP<InodeInner> is held, InodeInner's valid is always true.
 pub struct InodeGuard<'a> {
-    guard: SleepLockGuard<'a, InodeInner>,
+    guard: SleeplockGuard<'a, InodeInner>,
     pub ptr: &'a Inode,
 }
 
 impl<'a> InodeGuard<'a> {
-    pub const fn new(guard: SleepLockGuard<'a, InodeInner>, ptr: &'a Inode) -> Self {
+    pub const fn new(guard: SleeplockGuard<'a, InodeInner>, ptr: &'a Inode) -> Self {
         Self { guard, ptr }
     }
 }
@@ -82,7 +82,7 @@ pub struct Inode {
     /// Reference count
     pub ref_0: i32,
 
-    pub inner: SleeplockWIP<InodeInner>,
+    pub inner: Sleeplock<InodeInner>,
 }
 
 pub enum FileType {

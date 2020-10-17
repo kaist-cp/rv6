@@ -17,7 +17,7 @@ use crate::{
     param::NINODE,
     proc::{either_copyin, either_copyout},
     sleepablelock::Sleepablelock,
-    sleeplock::SleeplockWIP,
+    sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::{Stat, T_DIR, T_NONE},
 };
@@ -546,7 +546,7 @@ impl Inode {
             dev: 0,
             inum: 0,
             ref_0: 0,
-            inner: SleeplockWIP::new(
+            inner: Sleeplock::new(
                 "inode",
                 InodeInner {
                     valid: false,
