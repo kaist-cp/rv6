@@ -141,6 +141,15 @@ impl<T> Spinlock<T> {
         }
     }
 
+    pub unsafe fn unlock(&self) {
+        self.lock.release();
+    }
+
+    /// Check whether this cpu is holding the lock.
+    pub fn holding(&self) -> bool {
+        self.lock.holding()
+    }
+
     /// # Safety
     ///
     /// `self` must not be shared by other threads. Use this function only in the middle of
@@ -152,6 +161,10 @@ impl<T> Spinlock<T> {
 
     pub fn get_mut(&mut self) -> &mut T {
         unsafe { &mut *self.data.get() }
+    }
+
+    pub fn raw(&self) -> *const RawSpinlock {
+        &self.lock as *const _
     }
 }
 

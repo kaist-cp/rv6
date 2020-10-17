@@ -62,7 +62,7 @@ pub unsafe extern "C" fn usertrap() {
     if r_scause() == 8 {
         // system call
 
-        if (*p).killed {
+        if (*p).killed() {
             PROCSYS.exit_current(-1);
         }
 
@@ -80,18 +80,18 @@ pub unsafe extern "C" fn usertrap() {
             println!(
                 "usertrap(): unexpected scause {:018p} pid={}",
                 r_scause() as *const u8,
-                (*p).pid
+                (*p).pid()
             );
             println!(
                 "            sepc={:018p} stval={:018p}",
                 r_sepc() as *const u8,
                 r_stval() as *const u8
             );
-            (*p).killed = true;
+            (*p).kill();
         }
     }
 
-    if (*p).killed {
+    if (*p).killed() {
         PROCSYS.exit_current(-1);
     }
 
@@ -186,7 +186,7 @@ pub unsafe fn kerneltrap() {
     }
 
     // give up the CPU if this is a timer interrupt.
-    if which_dev == 2 && !myproc().is_null() && (*myproc()).state == Procstate::RUNNING {
+    if which_dev == 2 && !myproc().is_null() && (*myproc()).state() == Procstate::RUNNING {
         proc_yield();
     }
 
