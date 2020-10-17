@@ -24,7 +24,7 @@ impl Buf {
         Self {
             dev: 0,
             blockno: 0,
-            lock: Sleeplock::zeroed(),
+            lock: Sleeplock::new("buffer"),
             refcnt: 0,
             vdisk_request_waitchannel: WaitChannel::new(),
 
