@@ -119,8 +119,8 @@ impl Console {
                 break;
             } else {
                 // Copy the input byte to the user-space buffer.
-                let mut cbuf = cin as u8;
-                if either_copyout(user_dst, dst, &mut cbuf as *mut u8, 1usize).is_err() {
+                let cbuf = [cin as u8];
+                if either_copyout(user_dst, dst, &cbuf).is_err() {
                     break;
                 }
                 dst = dst.wrapping_add(1);

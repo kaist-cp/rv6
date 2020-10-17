@@ -130,7 +130,7 @@ impl RawPageTable {
     pub unsafe fn copyout(
         &mut self,
         mut dstva: usize,
-        mut src: *mut u8,
+        mut src: *const u8,
         mut len: usize,
     ) -> Result<(), ()> {
         while len > 0 {
@@ -393,15 +393,15 @@ impl PageTable {
     /// Load the user initcode into address 0 of pagetable,
     /// for the very first process.
     /// sz must be less than a page.
-    pub unsafe fn uvminit(&mut self, src: *mut u8, sz: u32) {
-        if sz >= PGSIZE as u32 {
+    pub unsafe fn uvminit(&mut self, src: &[u8]) {
+        if src.len() >= PGSIZE {
             panic!("inituvm: more than a page");
         }
         let mem: *mut u8 = kalloc();
         ptr::write_bytes(mem, 0, PGSIZE);
         self.mappages(0, PGSIZE, mem as usize, PTE_W | PTE_R | PTE_X | PTE_U)
             .expect("inituvm: mappage");
-        ptr::copy(src as *const u8, mem, sz as usize);
+        ptr::copy(src.as_ptr(), mem, src.len());
     }
 
     /// Allocate PTEs and physical memory to grow process from oldsz to

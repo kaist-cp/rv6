@@ -617,10 +617,7 @@ impl ProcessSystem {
 
         // Allocate one user page and copy init's instructions
         // and data into it.
-        (*p).pagetable.assume_init_mut().uvminit(
-            INITCODE.as_mut_ptr(),
-            ::core::mem::size_of::<[u8; 51]>() as u32,
-        );
+        (*p).pagetable.assume_init_mut().uvminit(&INITCODE);
         (*p).sz = PGSIZE;
 
         // Prepare for the very first "return" from kernel to user.
@@ -910,7 +907,7 @@ pub unsafe fn proc_freepagetable(pagetable: &mut PageTable, sz: usize) {
 
 /// A user program that calls exec("/init").
 /// od -t xC initcode
-static mut INITCODE: [u8; 51] = [
+static INITCODE: [u8; 51] = [
     0x17, 0x5, 0, 0, 0x13, 0x5, 0x5, 0x2, 0x97, 0x5, 0, 0, 0x93, 0x85, 0x5, 0x2, 0x9d, 0x48, 0x73,
     0, 0, 0, 0x89, 0x48, 0x73, 0, 0, 0, 0xef, 0xf0, 0xbf, 0xff, 0x2f, 0x69, 0x6e, 0x69, 0x74, 0, 0,
     0x1, 0x20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -1021,20 +1018,15 @@ unsafe fn forkret() {
 /// Copy to either a user address, or kernel address,
 /// depending on usr_dst.
 /// Returns Ok(()) on success, Err(()) on error.
-pub unsafe fn either_copyout(
-    user_dst: i32,
-    dst: usize,
-    src: *mut u8,
-    len: usize,
-) -> Result<(), ()> {
+pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: &[u8]) -> Result<(), ()> {
     let p = myproc();
     if user_dst != 0 {
         (*p).pagetable
             .assume_init_mut()
-            .copyout(dst, src, len)
+            .copyout(dst, src.as_ptr(), src.len())
             .map_or(Err(()), |_v| Ok(()))
     } else {
-        ptr::copy(src, dst as *mut u8, len);
+        ptr::copy(src.as_ptr(), dst as *mut u8, src.len());
         Ok(())
     }
 }
