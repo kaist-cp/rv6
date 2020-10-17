@@ -10,7 +10,7 @@ use crate::{
     virtio_disk::virtio_disk_init,
     vm::{kvminit, kvminithart},
 };
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{spin_loop_hint, AtomicBool, Ordering};
 
 static STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -58,7 +58,9 @@ pub unsafe fn kernel_main() {
         PROCSYS.user_proc_init();
         STARTED.store(true, Ordering::Release);
     } else {
-        while !STARTED.load(Ordering::Acquire) {}
+        while !STARTED.load(Ordering::Acquire) {
+            spin_loop_hint();
+        }
 
         println!("hart {} starting", cpuid());
 

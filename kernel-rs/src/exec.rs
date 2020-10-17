@@ -11,7 +11,7 @@ use crate::{
 };
 use core::mem;
 
-pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
+pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
     let sz: usize = 0;
     let mut ustack: [usize; MAXARG + 1] = [0; MAXARG + 1];
     let mut elf: ElfHdr = Default::default();
@@ -92,20 +92,20 @@ pub unsafe fn exec(path: &Path, argv: *mut *mut u8) -> Result<usize, ()> {
     // Push argument strings, prepare rest of stack in ustack.
     let mut argc: usize = 0;
     loop {
-        if (*argv.add(argc)).is_null() {
+        if argv[argc].is_null() {
             break;
         }
         if argc >= MAXARG {
             return Err(());
         }
-        sp = sp.wrapping_sub((strlen(*argv.add(argc)) + 1) as usize);
+        sp = sp.wrapping_sub((strlen(argv[argc]) + 1) as usize);
 
         // riscv sp must be 16-byte aligned
         sp = sp.wrapping_sub(sp.wrapping_rem(16));
         if sp < stackbase {
             return Err(());
         }
-        pt.copyout(sp, *argv.add(argc), (strlen(*argv.add(argc)) + 1) as usize)?;
+        pt.copyout(sp, argv[argc], (strlen(argv[argc]) + 1) as usize)?;
         ustack[argc] = sp;
         argc = argc.wrapping_add(1)
     }

@@ -15,11 +15,11 @@ extern "C" {
 
 /// entry.S needs one stack per CPU.
 #[repr(C, align(16))]
-pub struct Stack([u8; 4096 * NCPU]);
+pub struct Stack([[u8; 4096]; NCPU]);
 
 impl Stack {
     const fn new() -> Self {
-        Self([0; 4096 * NCPU])
+        Self([[0; 4096]; NCPU])
     }
 }
 
@@ -27,7 +27,7 @@ impl Stack {
 pub static mut stack0: Stack = Stack::new();
 
 /// scratch area for timer interrupt, one per CPU.
-static mut MSCRATCH0: [usize; NCPU * 32] = [0; NCPU * 32];
+static mut MSCRATCH0: [[usize; 32]; NCPU] = [[0; 32]; NCPU];
 
 /// entry.S jumps here in machine mode on stack0.
 #[no_mangle]
@@ -73,7 +73,7 @@ unsafe fn timerinit() {
     // scratch[0..3] : space for timervec to save registers.
     // scratch[4] : address of CLINT MTIMECMP register.
     // scratch[5] : desired interval (in cycles) between timer interrupts.
-    let scratch = &mut MSCRATCH0[(32 * id)..];
+    let scratch = &mut MSCRATCH0[id][..];
     *scratch.get_unchecked_mut(4) = clint_mtimecmp(id);
     *scratch.get_unchecked_mut(5) = interval;
     w_mscratch(&scratch[0] as *const _ as usize);
