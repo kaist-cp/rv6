@@ -7,6 +7,7 @@ use crate::{
     param::{NCPU, NOFILE, NPROC, ROOTDEV},
     println,
     riscv::{intr_get, intr_on, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
+    sleepablelock::SleepablelockGuard,
     spinlock::{pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard},
     string::safestrcpy,
     trap::usertrapret,
@@ -211,6 +212,12 @@ impl WaitChannel {
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
     pub unsafe fn sleep<T>(&self, guard: &mut SpinlockGuard<'_, T>) {
+        self.sleep_raw(guard.raw() as *mut RawSpinlock);
+    }
+
+    /// Atomically release lock and sleep on waitchannel.
+    /// Reacquires lock when awakened.
+    pub unsafe fn sleep_sleepable<T>(&self, guard: &mut SleepablelockGuard<'_, T>) {
         self.sleep_raw(guard.raw() as *mut RawSpinlock);
     }
 
