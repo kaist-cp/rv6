@@ -197,11 +197,15 @@ pub enum Procstate {
     UNUSED,
 }
 
-pub struct WaitChannel {}
+pub struct WaitChannel {
+    /// Required to make this type non-zero-sized. If it were zero-sized, multiple wait channels may
+    /// have the same address, spuriously waking up more threads.
+    _padding: u8,
+}
 
 impl WaitChannel {
     pub const fn new() -> Self {
-        Self {}
+        Self { _padding: 0 }
     }
 
     /// Atomically release lock and sleep on waitchannel.
