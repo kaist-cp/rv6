@@ -2,12 +2,12 @@ use crate::{
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     plic::{plic_claim, plic_complete},
     println,
-    proc::{cpuid, myproc, proc_yield, Proc, Procstate, WaitChannel, PROCSYS},
+    proc::{cpuid, myproc, proc_yield, Proc, Procstate, PROCSYS},
     riscv::{
         intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp,
         w_sepc, w_sip, w_stvec, Sstatus, PGSIZE,
     },
-    spinlock::RawSpinlock,
+    sleepablelock::Sleepablelock,
     syscall::syscall,
     uart::Uart,
     virtio_disk::virtio_disk_intr,
@@ -30,12 +30,10 @@ extern "C" {
     fn kernelvec();
 }
 
-pub static mut TICKSLOCK: RawSpinlock = RawSpinlock::zeroed();
-pub static mut TICKS: u32 = 0;
-pub static mut TICKSWAITCHANNEL: WaitChannel = WaitChannel::new();
+pub static TICKS: Sleepablelock<u32> = Sleepablelock::new("time", 0);
 
 pub unsafe fn trapinit() {
-    TICKSLOCK.initlock("time");
+    // TICKSLOCK.initlock("time");
 }
 
 /// set up to take exceptions and traps while in the kernel.
@@ -199,10 +197,9 @@ pub unsafe fn kerneltrap() {
 }
 
 pub unsafe fn clockintr() {
-    TICKSLOCK.acquire();
-    TICKS = TICKS.wrapping_add(1);
-    TICKSWAITCHANNEL.wakeup();
-    TICKSLOCK.release();
+    let mut ticks = TICKS.lock();
+    *ticks = ticks.wrapping_add(1);
+    ticks.wakeup();
 }
 
 /// check if it's an external interrupt or software interrupt,
