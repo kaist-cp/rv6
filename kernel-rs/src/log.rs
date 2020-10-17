@@ -25,13 +25,13 @@ use crate::{
     buf::Buf,
     fs::{Superblock, BSIZE},
     param::{LOGSIZE, MAXOPBLOCKS},
-    proc::WaitChannel,
-    spinlock::RawSpinlock,
+    sleepablelock::Sleepablelock,
 };
 use core::ptr;
 
 pub struct Log {
-    lock: RawSpinlock,
+    /// Lock saying committing is done or there is enough unreserved log space.
+    lock: Sleepablelock<()>,
     start: i32,
     size: i32,
 
@@ -42,9 +42,6 @@ pub struct Log {
     committing: i32,
     dev: i32,
     lh: LogHeader,
-
-    /// WaitChannel saying committing is done or there is enough unreserved log space.
-    waitchannel: WaitChannel,
 }
 
 /// Contents of the header block, used for both the on-disk header block
@@ -62,7 +59,7 @@ impl Log {
         }
 
         let mut log = Self {
-            lock: RawSpinlock::new("LOG"),
+            lock: Sleepablelock::new("LOG", ()),
             start: superblock.logstart as i32,
             size: superblock.nlog as i32,
             outstanding: 0,
@@ -72,7 +69,6 @@ impl Log {
                 n: 0,
                 block: [0; LOGSIZE],
             },
-            waitchannel: WaitChannel::new(),
         };
         unsafe {
             log.recover_from_log();
@@ -142,17 +138,16 @@ impl Log {
     }
 
     /// Called at the start of each FS system call.
-    pub unsafe fn begin_op(&mut self) {
-        self.lock.acquire();
+    pub fn begin_op(&mut self) {
+        let mut guard = self.lock.lock();
         loop {
             if self.committing != 0 ||
             // This op might exhaust log space; wait for commit.
             self.lh.n + (self.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
             {
-                self.waitchannel.sleep(&mut self.lock);
+                guard.sleep();
             } else {
                 self.outstanding += 1;
-                self.lock.release();
                 break;
             }
         }
@@ -162,7 +157,7 @@ impl Log {
     /// Commits if this was the last outstanding operation.
     pub unsafe fn end_op(&mut self) {
         let mut do_commit = false;
-        self.lock.acquire();
+        let guard = self.lock.lock();
         self.outstanding -= 1;
         if self.committing != 0 {
             panic!("self.committing");
@@ -174,17 +169,16 @@ impl Log {
             // begin_op() may be waiting for LOG space,
             // and decrementing log.outstanding has decreased
             // the amount of reserved space.
-            self.waitchannel.wakeup();
+            guard.wakeup();
         }
-        self.lock.release();
+        drop(guard);
         if do_commit {
             // Call commit w/o holding locks, since not allowed
             // to sleep with locks.
             self.commit();
-            self.lock.acquire();
+            let guard = self.lock.lock();
             self.committing = 0;
-            self.waitchannel.wakeup();
-            self.lock.release();
+            guard.wakeup();
         };
     }
 
@@ -243,7 +237,7 @@ impl Log {
         if self.outstanding < 1 {
             panic!("log_write outside of trans");
         }
-        self.lock.acquire();
+        let _guard = self.lock.lock();
         let mut absorbed = false;
         for i in 0..self.lh.n {
             // Log absorbtion.
@@ -260,6 +254,5 @@ impl Log {
             bpin(&mut *b);
             self.lh.n += 1;
         }
-        self.lock.release();
     }
 }

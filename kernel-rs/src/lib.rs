@@ -14,7 +14,6 @@
 #![feature(slice_ptr_range)]
 #![feature(maybe_uninit_extra)]
 #![feature(min_const_generics)]
-#![feature(once_cell)]
 
 mod abort;
 mod bio;

@@ -632,14 +632,17 @@ impl FileSystem {
     }
 
     pub unsafe fn begin_op(&self) {
+        #[allow(clippy::cast_ref_to_mut)]
         (*(self as *const _ as *mut Self)).log.begin_op();
     }
 
     pub unsafe fn end_op(&self) {
+        #[allow(clippy::cast_ref_to_mut)]
         (*(self as *const _ as *mut Self)).log.end_op();
     }
 
     pub unsafe fn log_write(&self, b: *mut Buf) {
+        #[allow(clippy::cast_ref_to_mut)]
         (*(self as *const _ as *mut Self)).log.log_write(b);
     }
 }

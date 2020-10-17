@@ -1,8 +1,8 @@
 use crate::{
     file::{Devsw, DEVSW},
     printf::PANICKED,
-    proc::{either_copyin, either_copyout, myproc, WaitChannel, PROCSYS},
-    spinlock::{RawSpinlock, Spinlock},
+    proc::{either_copyin, either_copyout, myproc, PROCSYS},
+    sleepablelock::{Sleepablelock, SleepablelockGuard},
     uart::Uart,
     utils::spin_loop,
 };
@@ -26,9 +26,6 @@ pub struct Console {
     e: u32,
 
     uart: Uart,
-
-    /// WaitChannel saying there are some input in console buffer.
-    read_waitchannel: WaitChannel,
 }
 
 impl fmt::Write for Console {
@@ -49,7 +46,6 @@ impl Console {
             w: 0,
             e: 0,
             uart: Uart::zeroed(),
-            read_waitchannel: WaitChannel::new(),
         }
     }
 
@@ -94,33 +90,32 @@ impl Console {
     // `SpinLockGuard`.
     #[allow(clippy::while_immutable_condition)]
     unsafe fn read(
-        &mut self,
+        this: &mut SleepablelockGuard<'_, Self>,
         user_dst: i32,
         mut dst: usize,
         mut n: i32,
-        lk: *mut RawSpinlock,
     ) -> i32 {
         let target = n as u32;
         while n > 0 {
             // Wait until interrupt handler has put some
             // input into CONS.buffer.
-            while self.r == self.w {
+            while this.r == this.w {
                 if (*myproc()).killed {
                     return -1;
                 }
                 // TODO: need to change "RawSpinlock" after refactoring "sleep()" function in proc.rs
-                self.read_waitchannel.sleep(lk);
+                this.sleep();
             }
-            let fresh0 = self.r;
-            self.r = self.r.wrapping_add(1);
-            let cin = self.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
+            let fresh0 = this.r;
+            this.r = this.r.wrapping_add(1);
+            let cin = this.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
 
             // end-of-file
             if cin == ctrl('D') {
                 if (n as u32) < target {
                     // Save ^D for next time, to make sure
                     // caller gets a 0-byte result.
-                    self.r = self.r.wrapping_sub(1)
+                    this.r = this.r.wrapping_sub(1)
                 }
                 break;
             } else {
@@ -141,7 +136,7 @@ impl Console {
         target.wrapping_sub(n as u32) as i32
     }
 
-    unsafe fn intr(&mut self, mut cin: i32) {
+    unsafe fn intr(this: &mut SleepablelockGuard<'_, Self>, mut cin: i32) {
         match cin {
             // Print process list.
             m if m == ctrl('P') => {
@@ -150,42 +145,42 @@ impl Console {
 
             // Kill line.
             m if m == ctrl('U') => {
-                while self.e != self.w
-                    && self.buf[self.e.wrapping_sub(1).wrapping_rem(INPUT_BUF as u32) as usize]
+                while this.e != this.w
+                    && this.buf[this.e.wrapping_sub(1).wrapping_rem(INPUT_BUF as u32) as usize]
                         as i32
                         != '\n' as i32
                 {
-                    self.e = self.e.wrapping_sub(1);
-                    self.putc(BACKSPACE);
+                    this.e = this.e.wrapping_sub(1);
+                    this.putc(BACKSPACE);
                 }
             }
 
             // Backspace
             m if m == ctrl('H') | '\x7f' as i32 => {
-                if self.e != self.w {
-                    self.e = self.e.wrapping_sub(1);
-                    self.putc(BACKSPACE);
+                if this.e != this.w {
+                    this.e = this.e.wrapping_sub(1);
+                    this.putc(BACKSPACE);
                 }
             }
             _ => {
-                if cin != 0 && self.e.wrapping_sub(self.r) < INPUT_BUF as u32 {
+                if cin != 0 && this.e.wrapping_sub(this.r) < INPUT_BUF as u32 {
                     cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
 
                     // Echo back to the user.
-                    self.putc(cin);
+                    this.putc(cin);
 
                     // Store for consumption by consoleread().
-                    let fresh1 = self.e;
-                    self.e = self.e.wrapping_add(1);
-                    self.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = cin as u8;
+                    let fresh1 = this.e;
+                    this.e = this.e.wrapping_add(1);
+                    this.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = cin as u8;
                     if cin == '\n' as i32
                         || cin == ctrl('D')
-                        || self.e == self.r.wrapping_add(INPUT_BUF as u32)
+                        || this.e == this.r.wrapping_add(INPUT_BUF as u32)
                     {
                         // Wake up consoleread() if a whole line (or end-of-file)
                         // has arrived.
-                        self.w = self.e;
-                        self.read_waitchannel.wakeup();
+                        this.w = this.e;
+                        this.wakeup();
                     }
                 }
             }
@@ -208,7 +203,8 @@ const fn ctrl(x: char) -> i32 {
     x as i32 - '@' as i32
 }
 
-pub static CONS: Spinlock<Console> = Spinlock::new("CONS", Console::zeroed());
+/// Sleeps waiting for there are some input in console buffer.
+pub static CONS: Sleepablelock<Console> = Sleepablelock::new("CONS", Console::zeroed());
 
 /// User write()s to the console go here.
 unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
@@ -223,8 +219,7 @@ unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
 /// or kernel address.
 unsafe fn consoleread(user_dst: i32, dst: usize, n: i32) -> i32 {
     let mut console = CONS.lock();
-    let lk = console.raw() as *mut RawSpinlock;
-    console.read(user_dst, dst, n, lk)
+    Console::read(&mut console, user_dst, dst, n)
 }
 
 /// The console input interrupt handler.
@@ -233,5 +228,5 @@ unsafe fn consoleread(user_dst: i32, dst: usize, n: i32) -> i32 {
 /// wake up consoleread() if a whole line has arrived.
 pub unsafe fn consoleintr(cin: i32) {
     let mut console = CONS.lock();
-    console.intr(cin);
+    Console::intr(&mut console, cin);
 }
