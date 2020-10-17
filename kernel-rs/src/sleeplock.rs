@@ -1,9 +1,46 @@
 //! Sleeping locks
-use crate::proc::{myproc, WaitChannel};
-use crate::spinlock::{RawSpinlock, Spinlock};
+use crate::proc::myproc;
+use crate::sleepablelock::Sleepablelock;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
+
+/// Long-term locks for processes
+pub struct Sleeplock {
+    /// Process holding lock. `-1` means unlocked.
+    locked: Sleepablelock<i32>,
+
+    /// Name of lock for debugging.
+    name: &'static str,
+}
+
+impl Sleeplock {
+    pub const fn new(name: &'static str) -> Self {
+        Self {
+            locked: Sleepablelock::new("sleep lock", -1),
+            name,
+        }
+    }
+
+    pub fn acquire(&self) {
+        let mut guard = self.locked.lock();
+        while *guard != -1 {
+            guard.sleep();
+        }
+        *guard = unsafe { (*myproc()).pid };
+    }
+
+    pub fn release(&self) {
+        let mut guard = self.locked.lock();
+        *guard = -1;
+        guard.wakeup();
+    }
+
+    pub fn holding(&self) -> bool {
+        let guard = self.locked.lock();
+        *guard == unsafe { (*myproc()).pid }
+    }
+}
 
 pub struct SleepLockGuard<'s, T> {
     lock: &'s SleeplockWIP<T>,
@@ -13,12 +50,9 @@ pub struct SleepLockGuard<'s, T> {
 // Do not implement Send; lock must be unlocked by the CPU that acquired it.
 unsafe impl<'s, T: Sync> Sync for SleepLockGuard<'s, T> {}
 
-/// Long-term locks for processes
 pub struct SleeplockWIP<T> {
-    spinlock: Spinlock<i32>,
+    lock: Sleeplock,
     data: UnsafeCell<T>,
-    /// WaitChannel saying spinlock is relased.
-    waitchannel: WaitChannel,
 }
 
 unsafe impl<T: Send> Sync for SleeplockWIP<T> {}
@@ -26,9 +60,8 @@ unsafe impl<T: Send> Sync for SleeplockWIP<T> {}
 impl<T> SleeplockWIP<T> {
     pub const fn new(name: &'static str, data: T) -> Self {
         Self {
-            spinlock: Spinlock::new(name, -1),
+            lock: Sleeplock::new(name),
             data: UnsafeCell::new(data),
-            waitchannel: WaitChannel::new(),
         }
     }
 
@@ -36,15 +69,9 @@ impl<T> SleeplockWIP<T> {
         self.data.into_inner()
     }
 
-    // TODO: This should be removed after `WaitChannel::sleep` gets refactored to take
-    // `SpinLockGuard`.
-    #[allow(clippy::while_immutable_condition)]
-    pub unsafe fn lock(&self) -> SleepLockGuard<'_, T> {
-        let mut guard = self.spinlock.lock();
-        while *guard != -1 {
-            self.waitchannel.sleep(guard.raw() as *mut RawSpinlock);
-        }
-        *guard = (*myproc()).pid;
+    pub fn lock(&self) -> SleepLockGuard<'_, T> {
+        self.lock.acquire();
+
         SleepLockGuard {
             lock: self,
             _marker: PhantomData,
@@ -73,10 +100,7 @@ impl<T> SleepLockGuard<'_, T> {
 
 impl<T> Drop for SleepLockGuard<'_, T> {
     fn drop(&mut self) {
-        let mut guard = self.lock.spinlock.lock();
-        *guard = -1;
-        self.lock.waitchannel.wakeup();
-        drop(guard);
+        self.lock.lock.release();
     }
 }
 
@@ -90,81 +114,5 @@ impl<T> Deref for SleepLockGuard<'_, T> {
 impl<T> DerefMut for SleepLockGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.lock.data.get() }
-    }
-}
-
-/// Long-term locks for processes
-pub struct Sleeplock {
-    /// Is the lock held?
-    locked: bool,
-
-    /// spinlock protecting this sleep lock
-    lk: RawSpinlock,
-
-    /// For debugging:  
-
-    /// Name of lock.
-    name: &'static str,
-
-    /// Process holding lock
-    pid: i32,
-
-    /// WaitChannel saying lk is relased.
-    waitchannel: WaitChannel,
-}
-
-impl Sleeplock {
-    // TODO: transient measure
-    pub const fn zeroed() -> Self {
-        Self {
-            locked: false,
-            lk: RawSpinlock::zeroed(),
-            name: "",
-            pid: 0,
-            waitchannel: WaitChannel::new(),
-        }
-    }
-
-    pub unsafe fn new(name: &'static str) -> Self {
-        let mut lk = Self::zeroed();
-
-        lk.lk.initlock("sleep lock");
-        lk.name = name;
-        lk.locked = false;
-        lk.pid = 0;
-
-        lk
-    }
-
-    pub fn initlock(&mut self, name: &'static str) {
-        (*self).lk.initlock("sleep lock");
-        (*self).name = name;
-        (*self).locked = false;
-        (*self).pid = 0;
-    }
-
-    pub unsafe fn acquire(&mut self) {
-        (*self).lk.acquire();
-        while (*self).locked {
-            (*self).waitchannel.sleep(&mut (*self).lk);
-        }
-        (*self).locked = true;
-        (*self).pid = (*myproc()).pid;
-        (*self).lk.release();
-    }
-
-    pub unsafe fn release(&mut self) {
-        (*self).lk.acquire();
-        (*self).locked = false;
-        (*self).pid = 0;
-        (*self).waitchannel.wakeup();
-        (*self).lk.release();
-    }
-
-    pub unsafe fn holding(&mut self) -> bool {
-        (*self).lk.acquire();
-        let r = (*self).locked && (*self).pid == (*myproc()).pid;
-        (*self).lk.release();
-        r
     }
 }
