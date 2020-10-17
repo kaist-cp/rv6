@@ -8,9 +8,8 @@ use crate::{
     fs::BSIZE,
     memlayout::VIRTIO0,
     page::Page,
-    proc::WaitChannel,
     riscv::{PGSHIFT, PGSIZE},
-    spinlock::{RawSpinlock, Spinlock, SpinlockGuard},
+    sleepablelock::{Sleepablelock, SleepablelockGuard},
     virtio::*,
     vm::kvmpa,
 };
@@ -58,9 +57,6 @@ struct DescriptorPool {
 
     /// Our own book-keeping.
     free: [bool; NUM], // TODO : Disk can be implemented using bitmap
-
-    /// WaitChannel saying some Descriptors are freed.
-    free_desc_waitchannel: WaitChannel,
 }
 
 /// A descriptor allocated by driver.
@@ -152,7 +148,6 @@ impl DescriptorPool {
         Self {
             desc: ptr::null_mut(),
             free: [false; NUM],
-            free_desc_waitchannel: WaitChannel::new(),
         }
     }
 
@@ -160,7 +155,6 @@ impl DescriptorPool {
         Self {
             desc: page as _,
             free: [true; NUM],
-            free_desc_waitchannel: WaitChannel::new(),
         }
     }
 
@@ -205,7 +199,6 @@ impl DescriptorPool {
             assert!(!self.free[idx], "virtio_disk_intr 2");
             (*self.desc)[idx].addr = 0;
             self.free[idx] = true;
-            self.free_desc_waitchannel.wakeup();
         }
         mem::forget(desc);
     }
@@ -225,7 +218,7 @@ impl Disk {
 
     // TODO: This should be removed after `WaitChannel::sleep` gets refactored to take `SpinlockGuard`.
     #[allow(clippy::while_immutable_condition)]
-    pub unsafe fn virtio_rw(this: &mut SpinlockGuard<'_, Self>, b: *mut Buf, write: bool) {
+    pub unsafe fn virtio_rw(this: &mut SleepablelockGuard<'_, Self>, b: *mut Buf, write: bool) {
         let sector: usize = (*b).blockno.wrapping_mul((BSIZE / 512) as u32) as _;
 
         // The spec says that legacy block operations use three
@@ -236,10 +229,10 @@ impl Disk {
         let mut desc = loop {
             match this.desc.alloc_three_sectors() {
                 Some(idx) => break idx,
-                None => this
-                    .desc
-                    .free_desc_waitchannel
-                    .sleep_raw(this.raw() as *mut RawSpinlock),
+                None => {
+                    this.wakeup();
+                    this.sleep();
+                }
             }
         };
 
@@ -293,10 +286,11 @@ impl Disk {
 
         // Wait for virtio_disk_intr() to say request has finished.
         while (*b).inner.disk {
-            (*b).vdisk_request_waitchannel.sleep(this);
+            (*b).vdisk_request_waitchannel.sleep_sleepable(this);
         }
         this.info[desc[0].idx].b = ptr::null_mut();
         IntoIter::new(desc).for_each(|desc| this.desc.free(desc));
+        this.wakeup();
     }
 
     pub unsafe fn virtio_disk_intr(&mut self) {
@@ -327,7 +321,8 @@ impl InflightInfo {
     }
 }
 
-static mut DISK: Spinlock<Disk> = Spinlock::new("virtio_disk", Disk::zeroed());
+/// It may sleep until some Descriptors are freed.
+static mut DISK: Sleepablelock<Disk> = Sleepablelock::new("virtio_disk", Disk::zeroed());
 
 pub unsafe fn virtio_disk_init() {
     let mut status: VirtIOStatus = VirtIOStatus::empty();
