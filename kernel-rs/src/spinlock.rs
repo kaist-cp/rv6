@@ -105,13 +105,13 @@ impl RawSpinlock {
     }
 }
 
-pub struct SpinLockGuard<'s, T> {
+pub struct SpinlockGuard<'s, T> {
     lock: &'s Spinlock<T>,
     _marker: PhantomData<*const ()>,
 }
 
 // Do not implement Send; lock must be unlocked by the CPU that acquired it.
-unsafe impl<'s, T: Sync> Sync for SpinLockGuard<'s, T> {}
+unsafe impl<'s, T: Sync> Sync for SpinlockGuard<'s, T> {}
 
 pub struct Spinlock<T> {
     lock: RawSpinlock,
@@ -132,10 +132,10 @@ impl<T> Spinlock<T> {
         self.data.into_inner()
     }
 
-    pub fn lock(&self) -> SpinLockGuard<'_, T> {
+    pub fn lock(&self) -> SpinlockGuard<'_, T> {
         self.lock.acquire();
 
-        SpinLockGuard {
+        SpinlockGuard {
             lock: self,
             _marker: PhantomData,
         }
@@ -155,26 +155,26 @@ impl<T> Spinlock<T> {
     }
 }
 
-impl<T> SpinLockGuard<'_, T> {
+impl<T> SpinlockGuard<'_, T> {
     pub fn raw(&self) -> usize {
         self.lock as *const _ as usize
     }
 }
 
-impl<T> Drop for SpinLockGuard<'_, T> {
+impl<T> Drop for SpinlockGuard<'_, T> {
     fn drop(&mut self) {
         self.lock.lock.release();
     }
 }
 
-impl<T> Deref for SpinLockGuard<'_, T> {
+impl<T> Deref for SpinlockGuard<'_, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         unsafe { &*self.lock.data.get() }
     }
 }
 
-impl<T> DerefMut for SpinLockGuard<'_, T> {
+impl<T> DerefMut for SpinlockGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.lock.data.get() }
     }

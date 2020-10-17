@@ -87,7 +87,7 @@ impl Console {
     }
 
     // TODO: This should be removed after `WaitChannel::sleep` gets refactored to take
-    // `SpinLockGuard`.
+    // `SpinlockGuard`.
     #[allow(clippy::while_immutable_condition)]
     unsafe fn read(
         this: &mut SleepablelockGuard<'_, Self>,
