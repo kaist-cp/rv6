@@ -103,7 +103,6 @@ impl Console {
                 if (*myproc()).killed {
                     return -1;
                 }
-                // TODO: need to change "RawSpinlock" after refactoring "sleep()" function in proc.rs
                 this.sleep();
             }
             let fresh0 = this.r;
