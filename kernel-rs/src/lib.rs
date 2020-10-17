@@ -5,6 +5,7 @@
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 // Required for unused features in xv6 (see https://github.com/kaist-cp/rv6/issues/120 for details).
 #![allow(dead_code)]
+#![allow(unreachable_code)]
 #![feature(llvm_asm)]
 #![feature(c_variadic)]
 #![feature(const_wrapping_int_methods)]
@@ -17,7 +18,6 @@
 
 mod abort;
 mod bio;
-mod buf;
 mod console;
 mod elf;
 mod etrace;
