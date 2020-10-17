@@ -369,7 +369,7 @@ impl Proc {
     // TODO: transient measure
     const fn zeroed() -> Self {
         Self {
-            lock: RawSpinlock::zeroed(),
+            lock: RawSpinlock::new("proc"),
             state: Procstate::UNUSED,
             parent: ptr::null_mut(),
             child_waitchannel: WaitChannel::new(),
@@ -443,7 +443,6 @@ impl ProcessSystem {
 
     pub unsafe fn init(&mut self) {
         for (i, p) in self.process_pool.iter_mut().enumerate() {
-            p.lock.initlock("proc");
             p.palloc(i);
         }
         kvminithart();

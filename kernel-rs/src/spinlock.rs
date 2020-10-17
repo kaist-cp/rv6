@@ -21,26 +21,12 @@ pub struct RawSpinlock {
 }
 
 impl RawSpinlock {
-    // TODO: transient measure
-    pub const fn init(name: &'static str) -> Self {
+    /// Mutual exclusion spin locks.
+    pub const fn new(name: &'static str) -> Self {
         Self {
             locked: AtomicPtr::new(ptr::null_mut()),
             name,
         }
-    }
-
-    // will remove after refactor
-    pub const fn zeroed() -> Self {
-        Self {
-            locked: AtomicPtr::new(ptr::null_mut()),
-            name: "",
-        }
-    }
-
-    /// Mutual exclusion spin locks.
-    pub fn initlock(&mut self, name: &'static str) {
-        self.name = name;
-        self.locked = AtomicPtr::new(ptr::null_mut());
     }
 
     /// Acquire the lock.
@@ -137,7 +123,7 @@ unsafe impl<T: Send> Sync for Spinlock<T> {}
 impl<T> Spinlock<T> {
     pub const fn new(name: &'static str, data: T) -> Self {
         Self {
-            lock: RawSpinlock::init(name),
+            lock: RawSpinlock::new(name),
             data: UnsafeCell::new(data),
         }
     }
