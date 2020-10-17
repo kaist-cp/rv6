@@ -35,7 +35,7 @@ impl MmioRegs {
 /// Memory for virtio descriptors `&c` for queue 0.
 ///
 /// This is a global instead of allocated because it must be multiple contiguous pages, which
-/// `kalloc()` doesn't support, and page aligned.
+/// `kernel().alloc()` doesn't support, and page aligned.
 // TODO(efenniht): I moved out pages from Disk. Did I changed semantics (pointer indirection?)
 static mut VIRTQUEUE: [Page; 2] = [Page::DEFAULT, Page::DEFAULT];
 

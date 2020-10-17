@@ -1,6 +1,6 @@
 use crate::{
     file::{FileType, RcFile},
-    kalloc::{kalloc, kfree},
+    kernel::kernel,
     proc::{myproc, WaitChannel},
     spinlock::Spinlock,
 };
@@ -108,7 +108,7 @@ impl Deref for AllocatedPipe {
 
 impl AllocatedPipe {
     pub unsafe fn alloc() -> Result<(RcFile, RcFile), ()> {
-        let ptr = kalloc() as *mut Pipe;
+        let ptr = kernel().alloc() as *mut Pipe;
         if ptr.is_null() {
             return Err(());
         }
@@ -128,8 +128,8 @@ impl AllocatedPipe {
             read_waitchannel: WaitChannel::new(),
             write_waitchannel: WaitChannel::new(),
         };
-        let mut f0 = RcFile::alloc(true, false).ok_or_else(|| kfree(ptr as _))?;
-        let mut f1 = RcFile::alloc(false, true).ok_or_else(|| kfree(ptr as _))?;
+        let mut f0 = RcFile::alloc(true, false).ok_or_else(|| kernel().free(ptr as _))?;
+        let mut f1 = RcFile::alloc(false, true).ok_or_else(|| kernel().free(ptr as _))?;
 
         (*f0).typ = FileType::Pipe { pipe: Self { ptr } };
         (*f1).typ = FileType::Pipe { pipe: Self { ptr } };
@@ -143,7 +143,7 @@ impl AllocatedPipe {
     // https://github.com/kaist-cp/rv6/pull/211#discussion_r491671723
     pub unsafe fn close(&mut self, writable: bool) {
         if (*self.ptr).close(writable) {
-            kfree(self.ptr as *mut Pipe as _);
+            kernel().free(self.ptr as *mut Pipe as _);
         }
     }
 }

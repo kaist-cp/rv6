@@ -1,7 +1,5 @@
-use mem::MaybeUninit;
-
 use crate::{
-    kalloc::{kalloc, kfree},
+    kernel::{kernel, kernel_mut},
     memlayout::{CLINT, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     page::Page,
     println,
@@ -96,7 +94,7 @@ impl RawPageTable {
         if va >= MAXVA {
             return None;
         }
-        let mut pt = PageTable::from_raw(self);
+        let pt = PageTable::from_raw(self);
         let pte = pt.walk(va, 0)?;
         if !pte.check_flag(PTE_V) {
             return None;
@@ -120,7 +118,7 @@ impl RawPageTable {
                 panic!("freewalk: leaf");
             }
         }
-        kfree(self.as_mut_ptr() as _);
+        kernel().free(self.as_mut_ptr() as _);
     }
 
     /// Copy from kernel to user.
@@ -163,7 +161,7 @@ impl RawPageTable {
         let mut a = pgrounddown(va);
         let last = pgrounddown(va.wrapping_add(size).wrapping_sub(1usize));
         loop {
-            let mut pt = PageTable::from_raw(self);
+            let pt = PageTable::from_raw(self);
             let pte = pt.walk(a, 0).expect("uvmunmap: walk");
             if !pte.check_flag(PTE_V) {
                 println!(
@@ -177,7 +175,7 @@ impl RawPageTable {
             }
             if do_free != 0 {
                 pa = pte.get_pa();
-                kfree(pa as _);
+                kernel().free(pa as _);
             }
             pte.set_inner(0);
             if a == last {
@@ -291,7 +289,7 @@ pub struct PageTable {
 
 impl PageTable {
     pub fn new() -> Self {
-        let page = unsafe { kalloc() } as *mut RawPageTable;
+        let page = unsafe { kernel().alloc() } as *mut RawPageTable;
         if page.is_null() {
             panic!("PageTable new: out of memory");
         }
@@ -332,7 +330,7 @@ impl PageTable {
     ///   21..39 -- 9 bits of level-1 index.
     ///   12..20 -- 9 bits of level-0 index.
     ///    0..12 -- 12 bits of byte offset within the page.
-    unsafe fn walk(&mut self, va: usize, alloc: i32) -> Option<&mut PageTableEntry> {
+    unsafe fn walk(&self, va: usize, alloc: i32) -> Option<&mut PageTableEntry> {
         let mut pagetable = &mut *self.as_raw();
         if va >= MAXVA {
             panic!("walk");
@@ -345,7 +343,7 @@ impl PageTable {
                 if alloc == 0 {
                     return None;
                 }
-                let k = kalloc();
+                let k = kernel().alloc();
                 if k.is_null() {
                     return None;
                 }
@@ -397,7 +395,7 @@ impl PageTable {
         if src.len() >= PGSIZE {
             panic!("inituvm: more than a page");
         }
-        let mem: *mut u8 = kalloc();
+        let mem: *mut u8 = kernel().alloc();
         ptr::write_bytes(mem, 0, PGSIZE);
         self.mappages(0, PGSIZE, mem as usize, PTE_W | PTE_R | PTE_X | PTE_U)
             .expect("inituvm: mappage");
@@ -413,7 +411,7 @@ impl PageTable {
         oldsz = pgroundup(oldsz);
         let mut a = oldsz;
         while a < newsz {
-            let mem = kalloc();
+            let mem = kernel().alloc();
             if mem.is_null() {
                 self.uvmdealloc(a, oldsz);
                 return Err(());
@@ -423,7 +421,7 @@ impl PageTable {
                 .mappages(a, PGSIZE, mem as usize, PTE_W | PTE_X | PTE_R | PTE_U)
                 .is_err()
             {
-                kfree(mem);
+                kernel().free(mem);
                 self.uvmdealloc(a, oldsz);
                 return Err(());
             }
@@ -449,7 +447,7 @@ impl PageTable {
             });
             let pa = pte.get_pa();
             let flags = pte.get_flags() as u32;
-            let mem = kalloc();
+            let mem = kernel().alloc();
             if mem.is_null() {
                 return Err(());
             }
@@ -458,7 +456,7 @@ impl PageTable {
                 .mappages(i, PGSIZE, mem as usize, flags as i32)
                 .is_err()
             {
-                kfree(mem);
+                kernel().free(mem);
                 return Err(());
             }
             new = scopeguard::ScopeGuard::into_inner(new_ptable);
@@ -480,19 +478,11 @@ impl DerefMut for PageTable {
     }
 }
 
-///
-/// The kernel's page table.
-///
-pub static mut KERNEL_PAGETABLE: MaybeUninit<PageTable> = MaybeUninit::uninit();
-
 // trampoline.S
 /// Create a direct-map page table for the kernel and
 /// turn on paging. Called early, in supervisor mode.
 /// The page allocator is already initialized.
 pub unsafe fn kvminit() {
-    // TODO: make MemoryManager which initiate and own KERNEL_PAGETABLE
-    KERNEL_PAGETABLE.write(PageTable::new());
-
     // SiFive Test Finisher MMIO
     kvmmap(FINISHER, FINISHER, PGSIZE, PTE_R | PTE_W);
 
@@ -537,7 +527,7 @@ pub unsafe fn kvminit() {
 /// Switch h/w page table register to the kernel's page table,
 /// and enable paging.
 pub unsafe fn kvminithart() {
-    w_satp(make_satp(KERNEL_PAGETABLE.assume_init_mut().ptr as usize));
+    w_satp(make_satp(kernel().page_table.ptr as usize));
     sfence_vma();
 }
 
@@ -545,11 +535,7 @@ pub unsafe fn kvminithart() {
 /// Only used when booting.
 /// Does not flush TLB or enable paging.
 pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
-    if KERNEL_PAGETABLE
-        .assume_init_mut()
-        .mappages(va, sz, pa, perm)
-        .is_err()
-    {
+    if kernel_mut().page_table.mappages(va, sz, pa, perm).is_err() {
         panic!("kvmmap");
     };
 }
@@ -560,8 +546,8 @@ pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
 /// Assumes va is page aligned.
 pub unsafe fn kvmpa(va: usize) -> usize {
     let off: usize = va.wrapping_rem(PGSIZE);
-    let pte = KERNEL_PAGETABLE
-        .assume_init_mut()
+    let pte = kernel()
+        .page_table
         .walk(va, 0)
         .filter(|pte| pte.check_flag(PTE_V))
         .expect("kvmpa");

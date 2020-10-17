@@ -1,7 +1,7 @@
 use crate::{
     file::{Inode, RcFile},
     fs::{fs, fsinit, Path},
-    kalloc::{kalloc, kfree},
+    kernel::kernel,
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     ok_or,
     param::{NCPU, NOFILE, NPROC, ROOTDEV},
@@ -11,7 +11,7 @@ use crate::{
     spinlock::{pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard},
     string::safestrcpy,
     trap::usertrapret,
-    vm::{kvminithart, kvmmap, PageTable},
+    vm::{kvmmap, PageTable},
 };
 use core::{
     cmp, mem,
@@ -462,7 +462,7 @@ impl Proc {
     /// Map it high in memory, followed by an invalid
     /// guard page.
     unsafe fn palloc(&mut self, i: usize) {
-        let pa = kalloc();
+        let pa = kernel().alloc();
         if pa.is_null() {
             panic!("kalloc");
         }
@@ -527,7 +527,6 @@ impl ProcessSystem {
         for (i, p) in self.process_pool.iter_mut().enumerate() {
             p.palloc(i);
         }
-        kvminithart();
     }
 
     /// Look into process system for an UNUSED proc.
@@ -541,7 +540,7 @@ impl ProcessSystem {
                 guard.deref_mut_inner().pid = allocpid();
 
                 // Allocate a trapframe page.
-                p.tf = kalloc() as *mut Trapframe;
+                p.tf = kernel().alloc() as *mut Trapframe;
                 if p.tf.is_null() {
                     return Err(());
                 }
@@ -849,7 +848,7 @@ fn allocpid() -> i32 {
 /// p->lock must be held.
 unsafe fn freeproc(mut p: ProcGuard) {
     if !(*p).tf.is_null() {
-        kfree((*p).tf as _);
+        kernel().free((*p).tf as _);
     }
     (*p).tf = ptr::null_mut();
     if !(*p).pagetable.assume_init_mut().is_null() {
@@ -907,7 +906,7 @@ pub unsafe fn proc_freepagetable(pagetable: &mut PageTable, sz: usize) {
 
 /// A user program that calls exec("/init").
 /// od -t xC initcode
-static INITCODE: [u8; 51] = [
+const INITCODE: [u8; 51] = [
     0x17, 0x5, 0, 0, 0x13, 0x5, 0x5, 0x2, 0x97, 0x5, 0, 0, 0x93, 0x85, 0x5, 0x2, 0x9d, 0x48, 0x73,
     0, 0, 0, 0x89, 0x48, 0x73, 0, 0, 0, 0xef, 0xf0, 0xbf, 0xff, 0x2f, 0x69, 0x6e, 0x69, 0x74, 0, 0,
     0x1, 0x20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
