@@ -1,10 +1,12 @@
 use super::{
-    balloc, bfree, brelease, fs, iget, Buf, Dinode, Dirent, FileName, BSIZE, DIRENT_SIZE, ICACHE,
-    IPB, MAXFILE, NDIRECT, NINDIRECT,
+    balloc, bfree, brelease, fs, iget, Buf, Dinode, Dirent, FileName, BSIZE, DIRENT_SIZE, IPB,
+    MAXFILE, NDIRECT, NINDIRECT,
 };
 use crate::{
+    param::NINODE,
     proc::{either_copyin, either_copyout},
     sleeplock::{SleepLockGuard, SleeplockWIP},
+    spinlock::Spinlock,
     stat::{Stat, T_DIR, T_NONE},
 };
 use core::ops::{Deref, DerefMut};
@@ -45,6 +47,78 @@ impl Drop for InodeGuard<'_> {
         assert!(self.ptr.ref_0 >= 1, "Inode::drop");
     }
 }
+
+/// Inodes.
+///
+/// An inode describes a single unnamed file.
+/// The inode disk structure holds metadata: the file's type,
+/// its size, the number of links referring to it, and the
+/// list of blocks holding the file's content.
+///
+/// The inodes are laid out sequentially on disk at
+/// FS.superblock.startinode. Each inode has a number, indicating its
+/// position on the disk.
+///
+/// The kernel keeps a cache of in-use inodes in memory
+/// to provide a place for synchronizing access
+/// to inodes used by multiple processes. The cached
+/// inodes include book-keeping information that is
+/// not stored on disk: ip->ref and ip->valid.
+///
+/// An inode and its in-memory representation go through a
+/// sequence of states before they can be used by the
+/// rest of the file system code.
+///
+/// * Allocation: an inode is allocated if its type (on disk)
+///   is non-zero. Inode::alloc() allocates, and Inode::put() frees if
+///   the reference and link counts have fallen to zero.
+///
+/// * Referencing in cache: an entry in the inode cache
+///   is free if ip->ref is zero. Otherwise ip->ref tracks
+///   the number of in-memory pointers to the entry (open
+///   files and current directories). iget() finds or
+///   creates a cache entry and increments its ref; Inode::put()
+///   decrements ref.
+///
+/// * Valid: the information (type, size, &c) in an inode
+///   cache entry is only correct when ip->valid is 1.
+///   Inode::lock() reads the inode from
+///   the disk and sets ip->valid, while Inode::put() clears
+///   ip->valid if ip->ref has fallen to zero.
+///
+/// * Locked: file system code may only examine and modify
+///   the information in an inode and its content if it
+///   has first locked the inode.
+///
+/// Thus a typical sequence is:
+///   ip = iget(dev, inum)
+///   (*ip).lock()
+///   ... examine and modify ip->xxx ...
+///   (*ip).unlock()
+///   (*ip).put()
+///
+/// Inode::lock() is separate from iget() so that system calls can
+/// get a long-term reference to an inode (as for an open file)
+/// and only lock it for short periods (e.g., in read()).
+/// The separation also helps avoid deadlock and races during
+/// pathname lookup. iget() increments ip->ref so that the inode
+/// stays cached and pointers to it remain valid.
+///
+/// Many internal file system functions expect the caller to
+/// have locked the inodes involved; this lets callers create
+/// multi-step atomic operations.
+///
+/// The ICACHE.lock spin-lock protects the allocation of icache
+/// entries. Since ip->ref indicates whether an entry is free,
+/// and ip->dev and ip->inum indicate which i-node an entry
+/// holds, one must hold ICACHE.lock while using any of those fields.
+///
+/// An ip->lock sleep-lock protects all ip-> fields other than ref,
+/// dev, and inum.  One must hold ip->lock in order to
+/// read or write that inode's ip->valid, ip->size, ip->type, &c.
+
+pub static mut ICACHE: Spinlock<[Inode; NINODE]> =
+    Spinlock::new("ICACHE", [Inode::zeroed(); NINODE]);
 
 pub struct InodeInner {
     /// inode has been read from disk?
