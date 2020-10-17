@@ -68,7 +68,7 @@ pub unsafe fn argstr(n: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
     fetchstr(addr, buf)
 }
 
-static SYSCALLS: [Option<unsafe fn() -> usize>; 23] = [
+const SYSCALLS: [Option<unsafe fn() -> usize>; 23] = [
     None,
     Some(sys_fork as unsafe fn() -> usize),
     Some(sys_exit as unsafe fn() -> usize),

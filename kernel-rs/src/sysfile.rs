@@ -6,7 +6,7 @@ use crate::{
     fcntl::FcntlFlags,
     file::{FileType, Inode, InodeGuard, RcFile},
     fs::{fs, Dirent, FileName, Path, DIRENT_SIZE},
-    kalloc::{kalloc, kfree},
+    kernel::kernel,
     ok_or,
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
     pipe::AllocatedPipe,
@@ -378,7 +378,7 @@ pub unsafe fn sys_exec() -> usize {
             break;
         }
 
-        *arg = kalloc();
+        *arg = kernel().alloc();
         if arg.is_null() {
             panic!("sys_exec kalloc");
         }
@@ -399,7 +399,7 @@ pub unsafe fn sys_exec() -> usize {
             break;
         }
 
-        kfree(*arg);
+        kernel().free(*arg);
     }
 
     ret
