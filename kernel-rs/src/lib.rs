@@ -25,7 +25,7 @@ mod fcntl;
 mod file;
 mod fs;
 mod kalloc;
-mod kernel_main;
+mod kernel;
 mod log;
 mod memlayout;
 mod page;

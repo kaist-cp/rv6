@@ -195,12 +195,12 @@ impl PipeInner {
             if self.nread == self.nwrite {
                 return Ok(i);
             }
-            let mut ch = self.data[self.nread as usize % PIPESIZE];
+            let ch = self.data[self.nread as usize % PIPESIZE];
             self.nread = self.nread.wrapping_add(1);
             if (*proc)
                 .pagetable
                 .assume_init_mut()
-                .copyout(addr.wrapping_add(i), &mut ch, 1usize)
+                .copyout(addr.wrapping_add(i), &ch, 1usize)
                 .is_err()
             {
                 return Ok(i);

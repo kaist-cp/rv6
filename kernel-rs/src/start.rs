@@ -1,5 +1,5 @@
 use crate::{
-    kernel_main::kernel_main,
+    kernel::kernel_main,
     memlayout::{clint_mtimecmp, CLINT_MTIME},
     param::NCPU,
     riscv::{

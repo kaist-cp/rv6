@@ -1,13 +1,12 @@
 use crate::{
     file::{Devsw, DEVSW},
-    printf::PANICKED,
+    kernel::kernel,
     proc::{either_copyin, either_copyout, myproc, PROCSYS},
-    sleepablelock::{Sleepablelock, SleepablelockGuard},
+    sleepablelock::SleepablelockGuard,
     uart::Uart,
     utils::spin_loop,
 };
 use core::fmt;
-use core::sync::atomic::Ordering;
 
 const CONSOLE_IN_DEVSW: usize = 1;
 /// Size of console input buffer.
@@ -39,31 +38,20 @@ impl fmt::Write for Console {
 
 impl Console {
     // TODO: transient measure
-    pub const fn zeroed() -> Self {
+    pub const fn new(uart: Uart) -> Self {
         Self {
             buf: [0; INPUT_BUF],
             r: 0,
             w: 0,
             e: 0,
-            uart: Uart::zeroed(),
+            uart,
         }
-    }
-
-    pub unsafe fn init() {
-        Uart::init();
-
-        // Connect read and write system calls
-        // to consoleread and consolewrite.
-        DEVSW[CONSOLE_IN_DEVSW] = Devsw {
-            read: Some(consoleread),
-            write: Some(consolewrite),
-        };
     }
 
     /// Send one character to the uart.
     pub fn putc(&mut self, c: i32) {
         // From printf.rs.
-        if PANICKED.load(Ordering::Acquire) {
+        if kernel().is_panicked() {
             spin_loop();
         }
         if c == BACKSPACE {
@@ -202,12 +190,18 @@ const fn ctrl(x: char) -> i32 {
     x as i32 - '@' as i32
 }
 
-/// Sleeps waiting for there are some input in console buffer.
-pub static CONS: Sleepablelock<Console> = Sleepablelock::new("CONS", Console::zeroed());
+pub unsafe fn consoleinit() {
+    // Connect read and write system calls
+    // to consoleread and consolewrite.
+    DEVSW[CONSOLE_IN_DEVSW] = Devsw {
+        read: Some(consoleread),
+        write: Some(consolewrite),
+    };
+}
 
 /// User write()s to the console go here.
 unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
-    let mut console = CONS.lock();
+    let mut console = kernel().console.lock();
     console.write(user_src, src, n);
     n
 }
@@ -217,7 +211,7 @@ unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
 /// User_dist indicates whether dst is a user
 /// or kernel address.
 unsafe fn consoleread(user_dst: i32, dst: usize, n: i32) -> i32 {
-    let mut console = CONS.lock();
+    let mut console = kernel().console.lock();
     Console::read(&mut console, user_dst, dst, n)
 }
 
@@ -226,6 +220,6 @@ unsafe fn consoleread(user_dst: i32, dst: usize, n: i32) -> i32 {
 /// Do erase/kill processing, append to CONS.buf,
 /// wake up consoleread() if a whole line has arrived.
 pub unsafe fn consoleintr(cin: i32) {
-    let mut console = CONS.lock();
+    let mut console = kernel().console.lock();
     Console::intr(&mut console, cin);
 }
