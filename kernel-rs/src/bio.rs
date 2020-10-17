@@ -11,7 +11,7 @@
 //! * Do not use the buffer after calling release.
 //! * Only one process at a time can use a buffer, so do not keep them longer than necessary.
 
-use crate::{fs::BSIZE, proc::WaitChannel, sleeplock::Sleeplock};
+use crate::{fs::BSIZE, proc::WaitChannel, sleeplock::RawSleeplock};
 use crate::{param::NBUF, spinlock::Spinlock, virtio_disk::virtio_disk_rw};
 
 use core::mem;
@@ -19,16 +19,16 @@ use core::ops::{Deref, DerefMut};
 use core::ptr;
 
 pub struct Buf {
-    pub dev: u32,
+    dev: u32,
     pub blockno: u32,
-    pub lock: Sleeplock,
-    pub refcnt: u32,
+    lock: RawSleeplock,
+    refcnt: u32,
     /// WaitChannel saying virtio_disk request is done.
     pub vdisk_request_waitchannel: WaitChannel,
 
     /// LRU cache list.
-    pub prev: *mut Buf,
-    pub next: *mut Buf,
+    prev: *mut Buf,
+    next: *mut Buf,
 
     pub inner: BufInner,
 }
@@ -38,7 +38,7 @@ impl Buf {
         Self {
             dev: 0,
             blockno: 0,
-            lock: Sleeplock::new("buffer"),
+            lock: RawSleeplock::new("buffer"),
             refcnt: 0,
             vdisk_request_waitchannel: WaitChannel::new(),
 
