@@ -11,7 +11,63 @@
 //! * Do not use the buffer after calling release.
 //! * Only one process at a time can use a buffer, so do not keep them longer than necessary.
 
-use crate::{buf::Buf, param::NBUF, spinlock::Spinlock};
+use crate::{fs::BSIZE, proc::WaitChannel, sleeplock::Sleeplock};
+use crate::{param::NBUF, spinlock::Spinlock, virtio_disk::virtio_disk_rw};
+
+use core::mem;
+use core::ops::{Deref, DerefMut};
+use core::ptr;
+
+pub struct Buf {
+    pub dev: u32,
+    pub blockno: u32,
+    pub lock: Sleeplock,
+    pub refcnt: u32,
+    /// WaitChannel saying virtio_disk request is done.
+    pub vdisk_request_waitchannel: WaitChannel,
+
+    /// LRU cache list.
+    pub prev: *mut Buf,
+    pub next: *mut Buf,
+
+    pub inner: BufInner,
+}
+
+impl Buf {
+    pub const fn zeroed() -> Self {
+        Self {
+            dev: 0,
+            blockno: 0,
+            lock: Sleeplock::new("buffer"),
+            refcnt: 0,
+            vdisk_request_waitchannel: WaitChannel::new(),
+
+            prev: ptr::null_mut(),
+            next: ptr::null_mut(),
+
+            inner: BufInner::zeroed(),
+        }
+    }
+}
+
+pub struct BufInner {
+    /// Has data been read from disk?
+    pub valid: bool,
+
+    /// Does disk "own" buf?
+    pub disk: bool,
+    pub data: [u8; BSIZE],
+}
+
+impl BufInner {
+    const fn zeroed() -> Self {
+        Self {
+            valid: false,
+            disk: false,
+            data: [0; BSIZE],
+        }
+    }
+}
 
 struct Bcache {
     pub buf: [Buf; NBUF],
@@ -85,12 +141,8 @@ impl Bcache {
             buf.next = self.head.next;
             buf.prev = &mut self.head;
             (*self.head.next).prev = buf;
-            self.head.next = buf
+            self.head.next = buf;
         }
-    }
-
-    unsafe fn pin(&mut self, buf: &mut Buf) {
-        buf.refcnt = buf.refcnt.wrapping_add(1);
     }
 
     unsafe fn unpin(&mut self, buf: &mut Buf) {
@@ -103,29 +155,76 @@ pub unsafe fn binit() {
     bcache.init();
 }
 
-pub unsafe fn bget(dev: u32, blockno: u32) -> *mut Buf {
-    let buf = BCACHE.lock().get(dev, blockno);
-    (*buf).lock.acquire();
-    buf
+pub struct BufHandle {
+    ptr: *mut Buf,
 }
 
-pub unsafe fn brelease(buf: &mut Buf) {
-    if !buf.lock.holding() {
-        panic!("brelease");
+impl BufHandle {
+    /// Return a locked buf with the contents of the indicated block.
+    pub fn new(dev: u32, blockno: u32) -> Self {
+        unsafe {
+            let ptr = BCACHE.lock().get(dev, blockno);
+            (*ptr).lock.acquire();
+            if !(*ptr).inner.valid {
+                virtio_disk_rw(ptr, false);
+                (*ptr).inner.valid = true;
+            }
+            Self { ptr }
+        }
     }
-    buf.lock.release();
-    let mut bcache = BCACHE.lock();
-    bcache.release(buf);
+
+    pub fn pin(self) {
+        unsafe {
+            let buf = &mut *self.ptr;
+            if !buf.lock.holding() {
+                panic!("BufHandle::drop");
+            }
+            buf.lock.release();
+        }
+        mem::forget(self);
+    }
+
+    pub fn unpin(&mut self) {
+        unsafe {
+            let mut bcache = BCACHE.lock();
+            let buf = &mut *self.ptr;
+            bcache.unpin(buf);
+        }
+    }
+
+    /// Write self's contents to disk.  Must be locked.
+    pub unsafe fn write(&mut self) {
+        if !(*self).lock.holding() {
+            panic!("bwrite");
+        }
+        virtio_disk_rw(self.deref_mut(), true);
+    }
 }
 
-pub unsafe fn bpin(buf: &mut Buf) {
-    let mut bcache = BCACHE.lock();
-    bcache.pin(buf);
-    drop(bcache);
+impl Drop for BufHandle {
+    fn drop(&mut self) {
+        unsafe {
+            let buf = &mut *self.ptr;
+            if !buf.lock.holding() {
+                panic!("BufHandle::drop");
+            }
+            buf.lock.release();
+            let mut bcache = BCACHE.lock();
+            bcache.release(buf);
+        }
+    }
 }
 
-pub unsafe fn bunpin(buf: &mut Buf) {
-    let mut bcache = BCACHE.lock();
-    bcache.unpin(buf);
-    drop(bcache);
+impl Deref for BufHandle {
+    type Target = Buf;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.ptr }
+    }
+}
+
+impl DerefMut for BufHandle {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *self.ptr }
+    }
 }
