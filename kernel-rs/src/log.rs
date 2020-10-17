@@ -21,7 +21,7 @@
 //!   ...
 //! Log appends are synchronous.
 use crate::{
-    bio::BufHandle,
+    bio::Buf,
     fs::{Superblock, BSIZE},
     param::{LOGSIZE, MAXOPBLOCKS},
     sleepablelock::Sleepablelock,
@@ -77,15 +77,15 @@ impl Log {
     unsafe fn install_trans(&self) {
         for tail in 0..self.lh.n {
             // Read log block.
-            let mut lbuf = BufHandle::new(self.dev as u32, (self.start + tail + 1) as u32);
+            let mut lbuf = Buf::new(self.dev as u32, (self.start + tail + 1) as u32);
 
             // Read dst.
-            let mut dbuf = BufHandle::new(self.dev as u32, self.lh.block[tail as usize] as u32);
+            let mut dbuf = Buf::new(self.dev as u32, self.lh.block[tail as usize] as u32);
 
             // Copy block to dst.
             ptr::copy(
-                (*lbuf).inner.data.as_mut_ptr(),
-                (*dbuf).inner.data.as_mut_ptr(),
+                lbuf.deref_mut_inner().data.as_mut_ptr(),
+                dbuf.deref_mut_inner().data.as_mut_ptr(),
                 BSIZE,
             );
 
@@ -97,8 +97,8 @@ impl Log {
 
     /// Read the log header from disk into the in-memory log header.
     unsafe fn read_head(&mut self) {
-        let mut buf = BufHandle::new(self.dev as u32, self.start as u32);
-        let lh: *mut LogHeader = (*buf).inner.data.as_mut_ptr() as *mut LogHeader;
+        let mut buf = Buf::new(self.dev as u32, self.start as u32);
+        let lh: *mut LogHeader = buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader;
         self.lh.n = (*lh).n;
         for i in 0..self.lh.n {
             self.lh.block[i as usize] = (*lh).block[i as usize];
@@ -109,8 +109,8 @@ impl Log {
     /// This is the true point at which the
     /// current transaction commits.
     unsafe fn write_head(&self) {
-        let mut buf = BufHandle::new(self.dev as u32, self.start as u32);
-        let mut hb: *mut LogHeader = (*buf).inner.data.as_mut_ptr() as *mut LogHeader;
+        let mut buf = Buf::new(self.dev as u32, self.start as u32);
+        let mut hb: *mut LogHeader = buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader;
         (*hb).n = self.lh.n;
         for i in 0..self.lh.n {
             (*hb).block[i as usize] = self.lh.block[i as usize];
@@ -178,14 +178,14 @@ impl Log {
     unsafe fn write_log(&self) {
         for tail in 0..self.lh.n {
             // Log block.
-            let mut to = BufHandle::new(self.dev as u32, (self.start + tail + 1) as u32);
+            let mut to = Buf::new(self.dev as u32, (self.start + tail + 1) as u32);
 
             // Cache block.
-            let mut from = BufHandle::new(self.dev as u32, self.lh.block[tail as usize] as u32);
+            let mut from = Buf::new(self.dev as u32, self.lh.block[tail as usize] as u32);
 
             ptr::copy(
-                (*from).inner.data.as_mut_ptr(),
-                (*to).inner.data.as_mut_ptr(),
+                from.deref_mut_inner().data.as_mut_ptr(),
+                to.deref_mut_inner().data.as_mut_ptr(),
                 BSIZE,
             );
 
@@ -216,10 +216,10 @@ impl Log {
     /// commit()/write_log() will do the disk write.
     ///
     /// log_write() replaces write(); a typical use is:
-    ///   bp = BufHandle::new(...)
+    ///   bp = Buf::new(...)
     ///   modify bp->data[]
     ///   log_write(bp)
-    pub unsafe fn log_write(&mut self, b: BufHandle) {
+    pub unsafe fn log_write(&mut self, b: Buf) {
         if self.lh.n >= LOGSIZE as i32 || self.lh.n >= self.size as i32 - 1 {
             panic!("too big a transaction");
         }

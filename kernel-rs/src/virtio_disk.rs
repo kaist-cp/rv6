@@ -218,7 +218,7 @@ impl Disk {
 
     // TODO: This should be removed after `WaitChannel::sleep` gets refactored to take `SpinlockGuard`.
     #[allow(clippy::while_immutable_condition)]
-    pub unsafe fn virtio_rw(this: &mut SleepablelockGuard<'_, Self>, b: *mut Buf, write: bool) {
+    pub unsafe fn virtio_rw(this: &mut SleepablelockGuard<'_, Self>, b: &mut Buf, write: bool) {
         let sector: usize = (*b).blockno.wrapping_mul((BSIZE / 512) as u32) as _;
 
         // The spec says that legacy block operations use three
@@ -251,7 +251,7 @@ impl Disk {
 
         // Device reads/writes b->data
         *desc[1] = VRingDesc {
-            addr: (*b).inner.data.as_mut_ptr() as _,
+            addr: b.deref_mut_inner().data.as_mut_ptr() as _,
             len: BSIZE as _,
             flags: if write {
                 VRingDescFlags::NEXT
@@ -272,7 +272,7 @@ impl Disk {
         };
 
         // Record struct Buf for virtio_disk_intr().
-        (*b).inner.disk = true;
+        b.deref_mut_inner().disk = true;
         this.info[desc[0].idx].b = b;
 
         // We only tell device the first index in our chain of descriptors.
@@ -285,7 +285,7 @@ impl Disk {
         MmioRegs::QueueNotify.write(0);
 
         // Wait for virtio_disk_intr() to say request has finished.
-        while (*b).inner.disk {
+        while b.deref_mut_inner().disk {
             (*b).vdisk_request_waitchannel.sleep_sleepable(this);
         }
         this.info[desc[0].idx].b = ptr::null_mut();
@@ -301,7 +301,7 @@ impl Disk {
             if self.info[id].status {
                 panic!("virtio_self_intr status");
             }
-            (*self.info[id].b).inner.disk = false;
+            (*self.info[id].b).deref_mut_inner().disk = false;
 
             // Self is done with Buf.
             (*self.info[id].b).vdisk_request_waitchannel.wakeup();
@@ -387,7 +387,7 @@ pub unsafe fn virtio_disk_init() {
     // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
 }
 
-pub unsafe fn virtio_disk_rw(b: *mut Buf, write: bool) {
+pub unsafe fn virtio_disk_rw(b: &mut Buf, write: bool) {
     let mut disk = DISK.lock();
     Disk::virtio_rw(&mut disk, b, write);
 }

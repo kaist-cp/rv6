@@ -11,7 +11,7 @@
 
 /// On-disk file system format used for both kernel and user programs are also included here.
 use crate::{
-    bio::BufHandle,
+    bio::Buf,
     file::{Inode, InodeGuard, InodeInner},
     log::Log,
     param::NINODE,
@@ -251,8 +251,8 @@ impl InodeGuard<'_> {
     /// that lives on disk, since i-node cache is write-through.
     /// Caller must hold self->lock.
     pub unsafe fn update(&self) {
-        let mut bp = BufHandle::new(self.ptr.dev, fs().superblock.iblock(self.ptr.inum));
-        let mut dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
+        let mut bp = Buf::new(self.ptr.dev, fs().superblock.iblock(self.ptr.inum));
+        let mut dip: *mut Dinode = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
             .add((self.ptr.inum as usize).wrapping_rem(IPB));
         (*dip).typ = self.typ;
         (*dip).major = self.major;
@@ -276,8 +276,8 @@ impl InodeGuard<'_> {
             }
         }
         if self.addrs[NDIRECT] != 0 {
-            let mut bp = BufHandle::new(self.ptr.dev, self.addrs[NDIRECT]);
-            let a = (*bp).inner.data.as_mut_ptr() as *mut u32;
+            let mut bp = Buf::new(self.ptr.dev, self.addrs[NDIRECT]);
+            let a = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
                 if *a.add(j) != 0 {
                     bfree(self.ptr.dev as i32, *a.add(j));
@@ -310,8 +310,7 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp =
-                BufHandle::new(self.ptr.dev, self.bmap((off as usize).wrapping_div(BSIZE)));
+            let mut bp = Buf::new(self.ptr.dev, self.bmap((off as usize).wrapping_div(BSIZE)));
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
@@ -319,8 +318,7 @@ impl InodeGuard<'_> {
             if either_copyout(
                 user_dst,
                 dst,
-                (*bp)
-                    .inner
+                bp.deref_mut_inner()
                     .data
                     .as_mut_ptr()
                     .offset(off.wrapping_rem(BSIZE as u32) as isize),
@@ -358,15 +356,13 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp =
-                BufHandle::new(self.ptr.dev, self.bmap((off as usize).wrapping_div(BSIZE)));
+            let mut bp = Buf::new(self.ptr.dev, self.bmap((off as usize).wrapping_div(BSIZE)));
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
             );
             if either_copyin(
-                (*bp)
-                    .inner
+                bp.deref_mut_inner()
                     .data
                     .as_mut_ptr()
                     .offset(off.wrapping_rem(BSIZE as u32) as isize),
@@ -438,8 +434,8 @@ impl InodeGuard<'_> {
             addr = balloc(self.ptr.dev);
             self.addrs[NDIRECT] = addr
         }
-        let mut bp = BufHandle::new(self.ptr.dev, addr);
-        let a: *mut u32 = (*bp).inner.data.as_mut_ptr() as *mut u32;
+        let mut bp = Buf::new(self.ptr.dev, addr);
+        let a: *mut u32 = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
         addr = *a.add(bn);
         if addr == 0 {
             addr = balloc(self.ptr.dev);
@@ -465,8 +461,8 @@ impl Inode {
         assert!(self.ref_0 >= 1, "Inode::lock");
         let mut guard = self.inner.lock();
         if !guard.valid {
-            let mut bp = BufHandle::new(self.dev, fs().superblock.iblock(self.inum));
-            let dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
+            let mut bp = Buf::new(self.dev, fs().superblock.iblock(self.inum));
+            let dip: *mut Dinode = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
                 .add((self.inum as usize).wrapping_rem(IPB));
             guard.typ = (*dip).typ;
             guard.major = (*dip).major as u16;
@@ -523,8 +519,8 @@ impl Inode {
     /// Returns an unlocked but allocated and referenced inode.
     pub unsafe fn alloc(dev: u32, typ: i16) -> *mut Inode {
         for inum in 1..fs().superblock.ninodes {
-            let mut bp = BufHandle::new(dev, fs().superblock.iblock(inum));
-            let dip = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
+            let mut bp = Buf::new(dev, fs().superblock.iblock(inum));
+            let dip = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
                 .add((inum as usize).wrapping_rem(IPB));
 
             // a free inode
@@ -590,9 +586,9 @@ impl Superblock {
     /// Read the super block.
     unsafe fn new(dev: i32) -> Self {
         let mut result = mem::MaybeUninit::uninit();
-        let mut bp = BufHandle::new(dev as u32, 1);
+        let mut bp = Buf::new(dev as u32, 1);
         ptr::copy(
-            (*bp).inner.data.as_mut_ptr(),
+            bp.deref_mut_inner().data.as_mut_ptr(),
             result.as_mut_ptr() as *mut Superblock as *mut u8,
             mem::size_of::<Superblock>(),
         );
@@ -636,7 +632,7 @@ impl FileSystem {
         Log::end_op(&self.log);
     }
 
-    pub unsafe fn log_write(&self, b: BufHandle) {
+    pub unsafe fn log_write(&self, b: Buf) {
         self.log.lock().log_write(b);
     }
 }
@@ -657,8 +653,8 @@ pub fn fs() -> &'static FileSystem {
 
 /// Zero a block.
 unsafe fn bzero(dev: i32, bno: i32) {
-    let mut bp = BufHandle::new(dev as u32, bno as u32);
-    ptr::write_bytes((*bp).inner.data.as_mut_ptr(), 0, BSIZE);
+    let mut bp = Buf::new(dev as u32, bno as u32);
+    ptr::write_bytes(bp.deref_mut_inner().data.as_mut_ptr(), 0, BSIZE);
     fs().log_write(bp);
 }
 
@@ -668,13 +664,13 @@ unsafe fn balloc(dev: u32) -> u32 {
     let mut b: u32 = 0;
     let mut bi: u32 = 0;
     while b < fs().superblock.size {
-        let mut bp = BufHandle::new(dev, fs().superblock.bblock(b));
+        let mut bp = Buf::new(dev, fs().superblock.bblock(b));
         while bi < BPB && (b + bi) < fs().superblock.size {
             let m = (1) << (bi % 8);
-            if (*bp).inner.data[(bi / 8) as usize] as i32 & m == 0 {
+            if bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & m == 0 {
                 // Is block free?
-                (*bp).inner.data[(bi / 8) as usize] =
-                    ((*bp).inner.data[(bi / 8) as usize] as i32 | m) as u8; // Mark block in use.
+                bp.deref_mut_inner().data[(bi / 8) as usize] =
+                    (bp.deref_mut_inner().data[(bi / 8) as usize] as i32 | m) as u8; // Mark block in use.
                 fs().log_write(bp);
                 bzero(dev as i32, (b + bi) as i32);
                 return b + bi;
@@ -688,15 +684,16 @@ unsafe fn balloc(dev: u32) -> u32 {
 
 /// Free a disk block.
 unsafe fn bfree(dev: i32, b: u32) {
-    let mut bp = BufHandle::new(dev as u32, fs().superblock.bblock(b));
+    let mut bp = Buf::new(dev as u32, fs().superblock.bblock(b));
     let bi: i32 = b.wrapping_rem(BPB) as i32;
     let m: i32 = (1) << (bi % 8);
     assert_ne!(
-        (*bp).inner.data[(bi / 8) as usize] as i32 & m,
+        bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & m,
         0,
         "freeing free block"
     );
-    (*bp).inner.data[(bi / 8) as usize] = ((*bp).inner.data[(bi / 8) as usize] as i32 & !m) as u8;
+    bp.deref_mut_inner().data[(bi / 8) as usize] =
+        (bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & !m) as u8;
     fs().log_write(bp);
 }
 

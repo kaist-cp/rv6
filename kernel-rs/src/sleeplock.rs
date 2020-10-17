@@ -6,7 +6,7 @@ use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 
 /// Long-term locks for processes
-pub struct RawSleeplock {
+struct RawSleeplock {
     /// Process holding lock. `-1` means unlocked.
     locked: Sleepablelock<i32>,
 
@@ -76,6 +76,10 @@ impl<T> Sleeplock<T> {
             lock: self,
             _marker: PhantomData,
         }
+    }
+
+    pub unsafe fn unlock(&self) {
+        self.lock.release();
     }
 
     /// # Safety
