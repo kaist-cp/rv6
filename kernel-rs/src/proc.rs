@@ -324,11 +324,10 @@ pub struct Proc {
 }
 
 impl Cpu {
-    // TODO: transient measure.
-    const fn zeroed() -> Self {
+    const fn new() -> Self {
         Self {
             proc: ptr::null_mut(),
-            scheduler: Context::zeroed(),
+            scheduler: Context::new(),
             noff: 0,
             interrupt_enabled: false,
         }
@@ -336,8 +335,7 @@ impl Cpu {
 }
 
 impl Context {
-    // TODO: transient measure
-    const fn zeroed() -> Self {
+    const fn new() -> Self {
         Self {
             ra: 0,
             sp: 0,
@@ -370,7 +368,7 @@ impl Procstate {
 }
 
 impl Proc {
-    // TODO: transient measure
+    // TODO: transient measure.
     const fn zeroed() -> Self {
         Self {
             lock: RawSpinlock::new("proc"),
@@ -385,7 +383,7 @@ impl Proc {
             sz: 0,
             pagetable: MaybeUninit::uninit(),
             tf: ptr::null_mut(),
-            context: Context::zeroed(),
+            context: Context::new(),
             open_files: [None; NOFILE],
             cwd: ptr::null_mut(),
             name: [0; 16],
@@ -429,7 +427,7 @@ impl Proc {
     }
 }
 
-static mut CPUS: [Cpu; NCPU] = [Cpu::zeroed(); NCPU];
+static mut CPUS: [Cpu; NCPU] = [Cpu::new(); NCPU];
 
 /// Process system type containing & managing whole processes.
 pub struct ProcessSystem {

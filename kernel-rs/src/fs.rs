@@ -112,10 +112,10 @@ struct Dinode {
     typ: i16,
 
     /// Major device number (T_DEVICE only)
-    major: i16,
+    major: u16,
 
     /// Minor device number (T_DEVICE only)
-    minor: i16,
+    minor: u16,
 
     /// Number of links to inode in file system
     nlink: i16,
@@ -255,8 +255,8 @@ impl InodeGuard<'_> {
         let mut dip: *mut Dinode = ((*bp).inner.data.as_mut_ptr() as *mut Dinode)
             .add((self.ptr.inum as usize).wrapping_rem(IPB));
         (*dip).typ = self.typ;
-        (*dip).major = self.major as i16;
-        (*dip).minor = self.minor as i16;
+        (*dip).major = self.major;
+        (*dip).minor = self.minor;
         (*dip).nlink = self.nlink;
         (*dip).size = self.size;
         (*dip).addrs.copy_from_slice(&self.addrs);

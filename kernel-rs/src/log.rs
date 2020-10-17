@@ -39,7 +39,7 @@ pub struct Log {
     outstanding: i32,
 
     /// In commit(), please wait.
-    committing: i32,
+    committing: bool,
     dev: i32,
     lh: LogHeader,
 }
@@ -63,7 +63,7 @@ impl Log {
             start: superblock.logstart as i32,
             size: superblock.nlog as i32,
             outstanding: 0,
-            committing: 0,
+            committing: false,
             dev,
             lh: LogHeader {
                 n: 0,
@@ -141,7 +141,7 @@ impl Log {
     pub fn begin_op(&mut self) {
         let mut guard = self.lock.lock();
         loop {
-            if self.committing != 0 ||
+            if self.committing ||
             // This op might exhaust log space; wait for commit.
             self.lh.n + (self.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
             {
@@ -159,12 +159,12 @@ impl Log {
         let mut do_commit = false;
         let guard = self.lock.lock();
         self.outstanding -= 1;
-        if self.committing != 0 {
+        if self.committing {
             panic!("self.committing");
         }
         if self.outstanding == 0 {
             do_commit = true;
-            self.committing = 1
+            self.committing = true;
         } else {
             // begin_op() may be waiting for LOG space,
             // and decrementing log.outstanding has decreased
@@ -177,7 +177,7 @@ impl Log {
             // to sleep with locks.
             self.commit();
             let guard = self.lock.lock();
-            self.committing = 0;
+            self.committing = false;
             guard.wakeup();
         };
     }

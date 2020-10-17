@@ -1,5 +1,5 @@
 //! formatted console output -- println, panic.
-use crate::console::{Console, CONS};
+use crate::console::CONS;
 use core::fmt;
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -19,8 +19,9 @@ pub fn _print(args: fmt::Arguments<'_>) {
         let mut lock = CONS.lock();
         lock.write_fmt(args).unwrap();
     } else {
-        // TODO: Need to find another method or change the function name when modifying the 'zeroed()' part.
-        Console::zeroed().write_fmt(args).unwrap();
+        unsafe {
+            CONS.get_mut_unchecked().write_fmt(args).unwrap();
+        }
     }
 }
 

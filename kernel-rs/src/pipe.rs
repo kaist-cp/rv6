@@ -4,7 +4,7 @@ use crate::{
     proc::{myproc, WaitChannel},
     spinlock::Spinlock,
 };
-use core::{ops::Deref, ptr};
+use core::ops::Deref;
 
 const PIPESIZE: usize = 512;
 
@@ -107,12 +107,6 @@ impl Deref for AllocatedPipe {
 }
 
 impl AllocatedPipe {
-    pub const fn zeroed() -> Self {
-        Self {
-            ptr: ptr::null_mut(),
-        }
-    }
-
     pub unsafe fn alloc() -> Result<(RcFile, RcFile), ()> {
         let ptr = kalloc() as *mut Pipe;
         if ptr.is_null() {
