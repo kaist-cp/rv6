@@ -4,8 +4,8 @@
 use crate::{
     exec::exec,
     fcntl::FcntlFlags,
-    file::{FileType, Inode, InodeGuard, RcFile},
-    fs::{fs, Dirent, FileName, Path, DIRENT_SIZE},
+    file::{FileType, RcFile},
+    fs::{fs, Dirent, FileName, Inode, InodeGuard, Path, DIRENT_SIZE},
     kalloc::{kalloc, kfree},
     ok_or,
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
@@ -123,26 +123,6 @@ pub unsafe fn sys_link() -> usize {
     ip.unlockput();
     fs().end_op();
     usize::MAX
-}
-
-impl InodeGuard<'_> {
-    /// Is the directory dp empty except for "." and ".." ?
-    unsafe fn isdirempty(&mut self) -> bool {
-        let mut de: Dirent = Default::default();
-        for off in (2 * DIRENT_SIZE as u32..self.size).step_by(DIRENT_SIZE) {
-            let bytes_read = self.read(
-                0,
-                &mut de as *mut Dirent as usize,
-                off as u32,
-                DIRENT_SIZE as u32,
-            );
-            assert_eq!(bytes_read, Ok(DIRENT_SIZE), "isdirempty: readi");
-            if de.inum != 0 {
-                return false;
-            }
-        }
-        true
-    }
 }
 
 pub unsafe fn sys_unlink() -> usize {

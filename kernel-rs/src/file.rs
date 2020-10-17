@@ -1,17 +1,15 @@
 //! Support functions for system calls that involve file descriptors.
 use crate::{
-    fs::{fs, BSIZE},
+    fs::{fs, Inode, BSIZE},
     param::{MAXOPBLOCKS, NDEV, NFILE},
     pipe::AllocatedPipe,
     pool::{PoolRef, RcPool, TaggedBox},
     proc::{myproc, Proc},
-    sleeplock::{SleepLockGuard, SleeplockWIP},
     spinlock::Spinlock,
     stat::Stat,
 };
 use core::cmp;
 use core::convert::TryFrom;
-use core::ops::{Deref, DerefMut};
 
 pub struct File {
     pub typ: FileType,
@@ -21,69 +19,6 @@ pub struct File {
 
 // TODO: will be infered as we wrap *mut Pipe and *mut Inode.
 unsafe impl Send for File {}
-
-/// InodeGuard implies that SleeplockWIP<Inode> is held by current thread.
-///
-/// # Invariant
-///
-/// When SleeplockWIP<InodeInner> is held, InodeInner's valid is always true.
-pub struct InodeGuard<'a> {
-    guard: SleepLockGuard<'a, InodeInner>,
-    pub ptr: &'a Inode,
-}
-
-impl<'a> InodeGuard<'a> {
-    pub const fn new(guard: SleepLockGuard<'a, InodeInner>, ptr: &'a Inode) -> Self {
-        Self { guard, ptr }
-    }
-}
-
-impl Deref for InodeGuard<'_> {
-    type Target = InodeInner;
-    fn deref(&self) -> &Self::Target {
-        &*self.guard
-    }
-}
-
-impl DerefMut for InodeGuard<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.guard
-    }
-}
-
-/// Unlock the given inode.
-impl Drop for InodeGuard<'_> {
-    fn drop(&mut self) {
-        // TODO: Reasoning why.
-        assert!(self.ptr.ref_0 >= 1, "Inode::drop");
-    }
-}
-
-pub struct InodeInner {
-    /// inode has been read from disk?
-    pub valid: bool,
-    /// copy of disk inode
-    pub typ: i16,
-    pub major: u16,
-    pub minor: u16,
-    pub nlink: i16,
-    pub size: u32,
-    pub addrs: [u32; 13],
-}
-
-/// in-memory copy of an inode
-pub struct Inode {
-    /// Device number
-    pub dev: u32,
-
-    /// Inode number
-    pub inum: u32,
-
-    /// Reference count
-    pub ref_0: i32,
-
-    pub inner: SleeplockWIP<InodeInner>,
-}
 
 pub enum FileType {
     None,

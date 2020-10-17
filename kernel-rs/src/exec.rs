@@ -1,7 +1,6 @@
 use crate::{
     elf::{ElfHdr, ProgHdr, ELF_MAGIC, ELF_PROG_LOAD},
-    file::InodeGuard,
-    fs::{fs, Path},
+    fs::{fs, InodeGuard, Path},
     ok_or,
     param::MAXARG,
     proc::{myproc, proc_freepagetable, proc_pagetable, Proc},
