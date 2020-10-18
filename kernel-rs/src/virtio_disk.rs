@@ -293,7 +293,7 @@ impl Disk {
         this.wakeup();
     }
 
-    pub unsafe fn virtio_disk_intr(&mut self) {
+    pub unsafe fn virtio_intr(&mut self) {
         while (self.used_idx as usize).wrapping_rem(NUM)
             != ((*self.used)[0].id as usize).wrapping_rem(NUM)
         {
@@ -393,5 +393,5 @@ pub unsafe fn virtio_disk_rw(b: &mut Buf, write: bool) {
 }
 
 pub unsafe fn virtio_disk_intr() {
-    DISK.lock().virtio_disk_intr();
+    DISK.lock().virtio_intr();
 }

@@ -25,7 +25,7 @@ use crate::{
 static mut KERNEL: mem::MaybeUninit<Kernel> = mem::MaybeUninit::uninit();
 
 /// The kernel can be mutably accessed only during the initialization.
-pub unsafe fn kernel_mut() -> &'static mut Kernel {
+unsafe fn kernel_mut() -> &'static mut Kernel {
     &mut *KERNEL.as_mut_ptr()
 }
 
@@ -40,10 +40,12 @@ pub struct Kernel {
     /// Sleeps waiting for there are some input in console buffer.
     pub console: Sleepablelock<Console>,
 
-    pub kmem: Spinlock<Kmem>,
+    kmem: Spinlock<Kmem>,
 
     /// The kernel's page table.
     pub page_table: PageTable,
+
+    ticks: Sleepablelock<u32>,
 }
 
 impl Kernel {
@@ -109,36 +111,33 @@ fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
 }
 
 /// start() jumps here in supervisor mode on all CPUs.
-pub unsafe fn kernel_main() {
+pub unsafe fn kernel_main() -> ! {
     static STARTED: AtomicBool = AtomicBool::new(false);
 
     if cpuid() == 0 {
         // Initialize the kernel.
 
         // Console.
-        let uart = Uart::new();
-        kernel_mut().console = Sleepablelock::new("CONS", Console::new(uart));
+        consoleinit(&mut kernel_mut().console, Uart::new());
 
         println!();
         println!("rv6 kernel is booting");
         println!();
 
         // Physical page allocator.
-        kernel_mut().kmem = Spinlock::new("KMEM", Kmem::new());
-        kinit();
+        kinit(&mut kernel_mut().kmem);
 
         // Create kernel page table.
-        kernel_mut().page_table = PageTable::new();
-        kvminit();
+        kvminit(&mut kernel_mut().page_table);
 
         // Turn on paging.
-        kvminithart();
+        kvminithart(&kernel().page_table);
 
         // Process system.
-        PROCSYS.init();
+        PROCSYS.init(&mut kernel_mut().page_table);
 
         // Trap vectors.
-        trapinit();
+        trapinit(&mut kernel_mut().ticks);
 
         // Install kernel trap vector.
         trapinithart();
@@ -155,8 +154,6 @@ pub unsafe fn kernel_main() {
         // Emulated hard disk.
         virtio_disk_init();
 
-        consoleinit();
-
         // First user process.
         PROCSYS.user_proc_init();
         STARTED.store(true, Ordering::Release);
@@ -168,7 +165,7 @@ pub unsafe fn kernel_main() {
         println!("hart {} starting", cpuid());
 
         // Turn on paging.
-        kvminithart();
+        kvminithart(&kernel().page_table);
 
         // Install kernel trap vector.
         trapinithart();
@@ -177,5 +174,5 @@ pub unsafe fn kernel_main() {
         plicinithart();
     }
 
-    scheduler();
+    scheduler()
 }

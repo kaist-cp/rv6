@@ -2,11 +2,11 @@ use crate::{
     file::{Devsw, DEVSW},
     kernel::kernel,
     proc::{either_copyin, either_copyout, myproc, PROCSYS},
-    sleepablelock::SleepablelockGuard,
+    sleepablelock::{Sleepablelock, SleepablelockGuard},
     uart::Uart,
     utils::spin_loop,
 };
-use core::fmt;
+use core::{fmt, ptr};
 
 const CONSOLE_IN_DEVSW: usize = 1;
 /// Size of console input buffer.
@@ -190,7 +190,9 @@ const fn ctrl(x: char) -> i32 {
     x as i32 - '@' as i32
 }
 
-pub unsafe fn consoleinit() {
+pub unsafe fn consoleinit(console: *mut Sleepablelock<Console>, uart: Uart) {
+    ptr::write(console, Sleepablelock::new("CONS", Console::new(uart)));
+
     // Connect read and write system calls
     // to consoleread and consolewrite.
     DEVSW[CONSOLE_IN_DEVSW] = Devsw {

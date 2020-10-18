@@ -461,13 +461,13 @@ impl Proc {
     /// Allocate a page for the process's kernel stack.
     /// Map it high in memory, followed by an invalid
     /// guard page.
-    unsafe fn palloc(&mut self, i: usize) {
+    unsafe fn palloc(&mut self, page_table: &mut PageTable, i: usize) {
         let pa = kernel().alloc();
         if pa.is_null() {
             panic!("kalloc");
         }
         let va: usize = kstack(i);
-        kvmmap(va, pa as usize, PGSIZE, PTE_R | PTE_W);
+        kvmmap(page_table, va, pa as usize, PGSIZE, PTE_R | PTE_W);
         self.kstack = va;
     }
 
@@ -523,9 +523,9 @@ impl ProcessSystem {
         }
     }
 
-    pub unsafe fn init(&mut self) {
+    pub unsafe fn init(&mut self, page_table: &mut PageTable) {
         for (i, p) in self.process_pool.iter_mut().enumerate() {
-            p.palloc(i);
+            p.palloc(page_table, i);
         }
     }
 

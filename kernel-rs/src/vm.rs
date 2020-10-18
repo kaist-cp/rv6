@@ -1,5 +1,5 @@
 use crate::{
-    kernel::{kernel, kernel_mut},
+    kernel::kernel,
     memlayout::{CLINT, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     page::Page,
     println,
@@ -482,24 +482,28 @@ impl DerefMut for PageTable {
 /// Create a direct-map page table for the kernel and
 /// turn on paging. Called early, in supervisor mode.
 /// The page allocator is already initialized.
-pub unsafe fn kvminit() {
+pub unsafe fn kvminit(page_table: *mut PageTable) {
+    ptr::write(page_table, PageTable::new());
+    let page_table = &mut *page_table;
+
     // SiFive Test Finisher MMIO
-    kvmmap(FINISHER, FINISHER, PGSIZE, PTE_R | PTE_W);
+    kvmmap(page_table, FINISHER, FINISHER, PGSIZE, PTE_R | PTE_W);
 
     // uart registers
-    kvmmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);
+    kvmmap(page_table, UART0, UART0, PGSIZE, PTE_R | PTE_W);
 
     // virtio mmio disk interface
-    kvmmap(VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+    kvmmap(page_table, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
 
     // CLINT
-    kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+    kvmmap(page_table, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
 
     // PLIC
-    kvmmap(PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+    kvmmap(page_table, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
 
     // Map kernel text executable and read-only.
     kvmmap(
+        page_table,
         KERNBASE,
         KERNBASE,
         (etext.as_mut_ptr() as usize).wrapping_sub(KERNBASE),
@@ -508,6 +512,7 @@ pub unsafe fn kvminit() {
 
     // Map kernel data and the physical RAM we'll make use of.
     kvmmap(
+        page_table,
         etext.as_mut_ptr() as usize,
         etext.as_mut_ptr() as usize,
         (PHYSTOP).wrapping_sub(etext.as_mut_ptr() as usize),
@@ -517,6 +522,7 @@ pub unsafe fn kvminit() {
     // Map the trampoline for trap entry/exit to
     // the highest virtual address in the kernel.
     kvmmap(
+        page_table,
         TRAMPOLINE,
         trampoline.as_mut_ptr() as usize,
         PGSIZE,
@@ -526,16 +532,16 @@ pub unsafe fn kvminit() {
 
 /// Switch h/w page table register to the kernel's page table,
 /// and enable paging.
-pub unsafe fn kvminithart() {
-    w_satp(make_satp(kernel().page_table.ptr as usize));
+pub unsafe fn kvminithart(page_table: &PageTable) {
+    w_satp(make_satp(page_table.ptr as usize));
     sfence_vma();
 }
 
 /// Add a mapping to the kernel page table.
 /// Only used when booting.
 /// Does not flush TLB or enable paging.
-pub unsafe fn kvmmap(va: usize, pa: usize, sz: usize, perm: i32) {
-    if kernel_mut().page_table.mappages(va, sz, pa, perm).is_err() {
+pub unsafe fn kvmmap(page_table: &mut PageTable, va: usize, pa: usize, sz: usize, perm: i32) {
+    if page_table.mappages(va, sz, pa, perm).is_err() {
         panic!("kvmmap");
     };
 }
