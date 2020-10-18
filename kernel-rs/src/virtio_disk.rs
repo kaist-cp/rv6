@@ -144,7 +144,7 @@ impl Drop for Descriptor {
 }
 
 impl DescriptorPool {
-    const fn zeroed() -> Self {
+    const fn zero() -> Self {
         Self {
             desc: ptr::null_mut(),
             free: [false; NUM],
@@ -205,14 +205,13 @@ impl DescriptorPool {
 }
 
 impl Disk {
-    // TODO: transient measure
-    const fn zeroed() -> Self {
+    const fn zero() -> Self {
         Self {
-            desc: DescriptorPool::zeroed(),
+            desc: DescriptorPool::zero(),
             avail: ptr::null_mut(),
             used: ptr::null_mut(),
             used_idx: 0,
-            info: [InflightInfo::zeroed(); NUM],
+            info: [InflightInfo::zero(); NUM],
         }
     }
 
@@ -312,8 +311,7 @@ impl Disk {
 }
 
 impl InflightInfo {
-    // TODO: transient measure
-    const fn zeroed() -> Self {
+    const fn zero() -> Self {
         Self {
             b: ptr::null_mut(),
             status: false,
@@ -322,7 +320,7 @@ impl InflightInfo {
 }
 
 /// It may sleep until some Descriptors are freed.
-static mut DISK: Sleepablelock<Disk> = Sleepablelock::new("virtio_disk", Disk::zeroed());
+static mut DISK: Sleepablelock<Disk> = Sleepablelock::new("virtio_disk", Disk::zero());
 
 pub unsafe fn virtio_disk_init() {
     let mut status: VirtIOStatus = VirtIOStatus::empty();

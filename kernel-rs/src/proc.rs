@@ -4,7 +4,7 @@ use crate::{
     kernel::kernel,
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     ok_or,
-    param::{NCPU, NOFILE, NPROC, ROOTDEV},
+    param::{NOFILE, NPROC, ROOTDEV},
     println,
     riscv::{intr_get, intr_on, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
     sleepablelock::SleepablelockGuard,
@@ -383,7 +383,7 @@ impl DerefMut for ProcGuard {
 }
 
 impl Cpu {
-    const fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             proc: ptr::null_mut(),
             scheduler: Context::new(),
@@ -427,8 +427,7 @@ impl Procstate {
 }
 
 impl Proc {
-    // TODO: transient measure.
-    const fn zeroed() -> Self {
+    const fn zero() -> Self {
         Self {
             inner: Spinlock::new(
                 "proc",
@@ -514,6 +513,13 @@ pub struct ProcessSystem {
 }
 
 impl ProcessSystem {
+    pub const fn zero() -> Self {
+        Self {
+            process_pool: [Proc::zero(); NPROC],
+            initial_proc: ptr::null_mut(),
+        }
+    }
+
     /// Look into process system for an UNUSED proc.
     /// If found, initialize state required to run in the kernel,
     /// and return with p->lock held.
@@ -790,20 +796,8 @@ impl ProcessSystem {
     }
 }
 
-pub unsafe fn procinit(
-    procs: *mut ProcessSystem,
-    cpus: *mut [Cpu; NCPU],
-    page_table: &mut PageTable,
-) {
-    for cpu in &mut *cpus {
-        ptr::write(cpu, Cpu::new());
-    }
-
-    let procs = &mut *procs;
-    ptr::write(&mut procs.initial_proc, ptr::null_mut());
-
+pub unsafe fn procinit(procs: &mut ProcessSystem, page_table: &mut PageTable) {
     for (i, p) in procs.process_pool.iter_mut().enumerate() {
-        ptr::write(p, Proc::zeroed());
         p.palloc(page_table, i);
     }
 }

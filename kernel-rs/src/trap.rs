@@ -8,12 +8,11 @@ use crate::{
         intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp,
         w_sepc, w_sip, w_stvec, Sstatus, PGSIZE,
     },
-    sleepablelock::Sleepablelock,
     syscall::syscall,
     uart::Uart,
     virtio_disk::virtio_disk_intr,
 };
-use core::{mem, ptr};
+use core::mem;
 
 extern "C" {
     // trampoline.S
@@ -31,9 +30,7 @@ extern "C" {
     fn kernelvec();
 }
 
-pub unsafe fn trapinit(ticks: *mut Sleepablelock<u32>) {
-    ptr::write(ticks, Sleepablelock::new("time", 0));
-}
+pub unsafe fn trapinit() {}
 
 /// set up to take exceptions and traps while in the kernel.
 pub unsafe fn trapinithart() {

@@ -11,8 +11,8 @@
 //! * Do not use the buffer after calling release.
 //! * Only one process at a time can use a buffer, so do not keep them longer than necessary.
 
-use crate::{fs::BSIZE, proc::WaitChannel, sleeplock::Sleeplock};
-use crate::{param::NBUF, spinlock::Spinlock, virtio_disk::virtio_disk_rw};
+use crate::{fs::BSIZE, kernel::kernel, proc::WaitChannel, sleeplock::Sleeplock};
+use crate::{param::NBUF, virtio_disk::virtio_disk_rw};
 
 use core::mem;
 use core::ops::Deref;
@@ -33,7 +33,7 @@ pub struct BufEntry {
 }
 
 impl BufEntry {
-    pub const fn zeroed() -> Self {
+    pub const fn zero() -> Self {
         Self {
             dev: 0,
             blockno: 0,
@@ -43,7 +43,7 @@ impl BufEntry {
             prev: ptr::null_mut(),
             next: ptr::null_mut(),
 
-            inner: Sleeplock::new("buffer", BufInner::zeroed()),
+            inner: Sleeplock::new("buffer", BufInner::zero()),
         }
     }
 }
@@ -58,7 +58,7 @@ pub struct BufInner {
 }
 
 impl BufInner {
-    const fn zeroed() -> Self {
+    const fn zero() -> Self {
         Self {
             valid: false,
             disk: false,
@@ -67,25 +67,22 @@ impl BufInner {
     }
 }
 
-struct Bcache {
+pub struct Bcache {
     pub buf: [BufEntry; NBUF],
 
     // Linked list of all buffers, through prev/next.  head.next is most recently used.
     pub head: BufEntry,
 }
 
-static mut BCACHE: Spinlock<Bcache> = Spinlock::new("BCACHE", Bcache::zeroed());
-
 impl Bcache {
-    // TODO:transient measure.
-    const fn zeroed() -> Self {
+    pub const fn zero() -> Self {
         Self {
-            buf: [BufEntry::zeroed(); NBUF],
-            head: BufEntry::zeroed(),
+            buf: [BufEntry::zero(); NBUF],
+            head: BufEntry::zero(),
         }
     }
 
-    fn init(&mut self) {
+    pub fn init(&mut self) {
         // Create linked list of buffers.
         self.head.prev = &mut self.head;
         self.head.next = &mut self.head;
@@ -148,11 +145,6 @@ impl Bcache {
     }
 }
 
-pub unsafe fn binit() {
-    let mut bcache = BCACHE.lock();
-    bcache.init();
-}
-
 pub struct Buf {
     /// Assumption: the `ptr.inner` lock is held.
     ptr: *mut BufEntry,
@@ -162,7 +154,7 @@ impl Buf {
     /// Return a locked buf with the contents of the indicated block.
     pub fn new(dev: u32, blockno: u32) -> Self {
         unsafe {
-            let ptr = BCACHE.lock().get(dev, blockno);
+            let ptr = kernel().bcache.lock().get(dev, blockno);
             mem::forget((*ptr).inner.lock());
             let mut result = Self { ptr };
 
@@ -184,7 +176,7 @@ impl Buf {
     }
 
     pub unsafe fn unpin(&mut self) {
-        let mut bcache = BCACHE.lock();
+        let mut bcache = kernel().bcache.lock();
         let buf = &mut *self.ptr;
         bcache.unpin(buf);
     }
@@ -208,7 +200,7 @@ impl Drop for Buf {
         unsafe {
             let buf = &mut *self.ptr;
             buf.inner.unlock();
-            let mut bcache = BCACHE.lock();
+            let mut bcache = kernel().bcache.lock();
             bcache.release(buf);
         }
     }

@@ -4,7 +4,6 @@
 use crate::{
     memlayout::PHYSTOP,
     riscv::{pgroundup, PGSIZE},
-    spinlock::Spinlock,
 };
 
 use core::mem;
@@ -55,7 +54,6 @@ impl Kmem {
     }
 }
 
-pub unsafe fn kinit(kmem: *mut Spinlock<Kmem>) {
-    ptr::write(kmem, Spinlock::new("KMEM", Kmem::new()));
-    (*kmem).get_mut().freerange(end.as_mut_ptr(), PHYSTOP as _);
+pub unsafe fn kinit(kmem: &mut Kmem) {
+    kmem.freerange(end.as_mut_ptr(), PHYSTOP as _);
 }
