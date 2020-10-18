@@ -1,6 +1,7 @@
 use crate::{
-    file::{Devsw, DEVSW},
+    file::Devsw,
     kernel::kernel,
+    param::NDEV,
     proc::{either_copyin, either_copyout, myproc},
     sleepablelock::SleepablelockGuard,
     uart::Uart,
@@ -189,10 +190,10 @@ const fn ctrl(x: char) -> i32 {
     x as i32 - '@' as i32
 }
 
-pub unsafe fn consoleinit() {
+pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
     // Connect read and write system calls
     // to consoleread and consolewrite.
-    DEVSW[CONSOLE_IN_DEVSW] = Devsw {
+    devsw[CONSOLE_IN_DEVSW] = Devsw {
         read: Some(consoleread),
         write: Some(consolewrite),
     };

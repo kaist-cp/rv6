@@ -1,7 +1,8 @@
 //! Support functions for system calls that involve file descriptors.
 use crate::{
     fs::{fs, BSIZE},
-    param::{MAXOPBLOCKS, NDEV, NFILE},
+    kernel::kernel,
+    param::{MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
     pool::{PoolRef, RcPool, TaggedBox},
     proc::{myproc, Proc},
@@ -99,20 +100,13 @@ pub struct Devsw {
     pub write: Option<unsafe fn(_: i32, _: usize, _: i32) -> i32>,
 }
 
-pub static mut DEVSW: [Devsw; NDEV] = [Devsw {
-    read: None,
-    write: None,
-}; NDEV];
-
-static FTABLE: Spinlock<RcPool<File, NFILE>> = Spinlock::new("FTABLE", RcPool::new());
-
 pub struct FTableRef(());
 
 // SAFETY: We have only one `PoolRef` pointing `FTABLE`.
 unsafe impl PoolRef for FTableRef {
     type Target = Spinlock<RcPool<File, NFILE>>;
     fn deref() -> &'static Self::Target {
-        &FTABLE
+        &kernel().ftable
     }
 }
 
@@ -128,7 +122,7 @@ impl RcFile {
     /// Increment reference count of the file.
     pub fn dup(&self) -> Self {
         // SAFETY: `self` is allocated from `FTABLE`, ensured by given type parameter `FTableRef`.
-        unsafe { RcFile::from_unchecked(FTABLE.lock().dup(&*self)) }
+        unsafe { RcFile::from_unchecked(kernel().ftable.lock().dup(&*self)) }
     }
 }
 
@@ -187,7 +181,8 @@ impl File {
                 drop(ip);
                 ret
             }
-            FileType::Device { major, .. } => DEVSW
+            FileType::Device { major, .. } => kernel()
+                .devsw
                 .get(*major as usize)
                 .and_then(|dev| Some(dev.read?(1, addr, n) as usize))
                 .ok_or(()),
@@ -238,7 +233,8 @@ impl File {
                 }
                 Ok(n as usize)
             }
-            FileType::Device { major, .. } => DEVSW
+            FileType::Device { major, .. } => kernel()
+                .devsw
                 .get(*major as usize)
                 .and_then(|dev| Some(dev.write?(1, addr, n) as usize))
                 .ok_or(()),
