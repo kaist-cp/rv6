@@ -12,7 +12,7 @@ use crate::{
     uart::Uart,
     virtio_disk::virtio_disk_intr,
 };
-use core::mem;
+use core::{mem, ptr};
 
 extern "C" {
     // trampoline.S
@@ -32,8 +32,8 @@ extern "C" {
 
 pub static TICKS: Sleepablelock<u32> = Sleepablelock::new("time", 0);
 
-pub unsafe fn trapinit() {
-    // TICKSLOCK.initlock("time");
+pub unsafe fn trapinit(ticks: *mut Sleepablelock<u32>) {
+    ptr::write(ticks, Sleepablelock::new("time", 0));
 }
 
 /// set up to take exceptions and traps while in the kernel.

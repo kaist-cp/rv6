@@ -2,9 +2,9 @@
 //! kernel stacks, page-table pages,
 //! and pipe buffers. Allocates whole 4096-byte pages.
 use crate::{
-    kernel::kernel_mut,
     memlayout::PHYSTOP,
     riscv::{pgroundup, PGSIZE},
+    spinlock::Spinlock,
 };
 
 use core::mem;
@@ -55,9 +55,7 @@ impl Kmem {
     }
 }
 
-pub unsafe fn kinit() {
-    kernel_mut()
-        .kmem
-        .get_mut()
-        .freerange(end.as_mut_ptr(), PHYSTOP as _);
+pub unsafe fn kinit(kmem: *mut Spinlock<Kmem>) {
+    ptr::write(kmem, Spinlock::new("KMEM", Kmem::new()));
+    (*kmem).get_mut().freerange(end.as_mut_ptr(), PHYSTOP as _);
 }
