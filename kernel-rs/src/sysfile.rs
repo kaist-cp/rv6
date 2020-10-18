@@ -131,7 +131,7 @@ impl InodeGuard<'_> {
         let mut de: Dirent = Default::default();
         for off in (2 * DIRENT_SIZE as u32..self.size).step_by(DIRENT_SIZE) {
             let bytes_read = self.read(
-                0,
+                false,
                 &mut de as *mut Dirent as usize,
                 off as u32,
                 DIRENT_SIZE as u32,
@@ -167,8 +167,12 @@ pub unsafe fn sys_unlink() -> usize {
             if ip.typ == T_DIR && !ip.isdirempty() {
                 ip.unlockput();
             } else {
-                let bytes_write =
-                    dp.write(0, &mut de as *mut Dirent as usize, off, DIRENT_SIZE as u32);
+                let bytes_write = dp.write(
+                    false,
+                    &mut de as *mut Dirent as usize,
+                    off,
+                    DIRENT_SIZE as u32,
+                );
                 assert_eq!(bytes_write, Ok(DIRENT_SIZE), "unlink: writei");
                 if ip.typ == T_DIR {
                     dp.nlink -= 1;

@@ -64,7 +64,7 @@ impl Console {
         };
     }
 
-    unsafe fn write(&mut self, user_src: i32, src: usize, n: i32) {
+    unsafe fn write(&mut self, user_src: bool, src: usize, n: i32) {
         for i in 0..n {
             let mut c: u8 = 0;
             if either_copyin(&mut c, user_src, src.wrapping_add(i as usize), 1usize).is_err() {
@@ -79,7 +79,7 @@ impl Console {
     #[allow(clippy::while_immutable_condition)]
     unsafe fn read(
         this: &mut SleepablelockGuard<'_, Self>,
-        user_dst: i32,
+        user_dst: bool,
         mut dst: usize,
         mut n: i32,
     ) -> i32 {
@@ -202,7 +202,7 @@ pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
 /// User write()s to the console go here.
 unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
     let mut console = kernel().console.lock();
-    console.write(user_src, src, n);
+    console.write(user_src != 0, src, n);
     n
 }
 
@@ -212,7 +212,7 @@ unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
 /// or kernel address.
 unsafe fn consoleread(user_dst: i32, dst: usize, n: i32) -> i32 {
     let mut console = kernel().console.lock();
-    Console::read(&mut console, user_dst, dst, n)
+    Console::read(&mut console, user_dst != 0, dst, n)
 }
 
 /// The console input interrupt handler.

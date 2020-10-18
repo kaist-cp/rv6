@@ -30,7 +30,12 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
     });
 
     // Check ELF header
-    let bytes_read = ip.read(0, &mut elf as *mut _ as _, 0, mem::size_of::<ElfHdr>() as _)?;
+    let bytes_read = ip.read(
+        false,
+        &mut elf as *mut _ as _,
+        0,
+        mem::size_of::<ElfHdr>() as _,
+    )?;
     if !(bytes_read == mem::size_of::<ElfHdr>() && elf.magic == ELF_MAGIC) {
         return Err(());
     }
@@ -53,7 +58,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
             .wrapping_add(i * ::core::mem::size_of::<ProgHdr>());
 
         let bytes_read = ip.read(
-            0,
+            false,
             &mut ph as *mut ProgHdr as usize,
             off as u32,
             ::core::mem::size_of::<ProgHdr>() as u32,
@@ -193,7 +198,7 @@ unsafe fn loadseg(
             PGSIZE as u32
         };
 
-        let bytes_read = ip.read(0, pa, offset.wrapping_add(i), n)?;
+        let bytes_read = ip.read(false, pa, offset.wrapping_add(i), n)?;
         if bytes_read as u32 != n {
             return Err(());
         }

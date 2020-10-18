@@ -93,7 +93,7 @@ impl Dirent {
     // TODO: Use iterator
     fn read_entry(&mut self, ip: &mut InodeGuard<'_>, off: u32, panic_msg: &'static str) {
         unsafe {
-            let bytes_read = ip.read(0, self as *mut Dirent as usize, off, DIRENT_SIZE as u32);
+            let bytes_read = ip.read(false, self as *mut Dirent as usize, off, DIRENT_SIZE as u32);
             assert_eq!(bytes_read, Ok(DIRENT_SIZE), "{}", panic_msg)
         }
     }
@@ -237,7 +237,12 @@ impl InodeGuard<'_> {
         }
         de.inum = inum as u16;
         de.set_name(name);
-        let bytes_write = self.write(0, &mut de as *mut Dirent as usize, off, DIRENT_SIZE as u32);
+        let bytes_write = self.write(
+            false,
+            &mut de as *mut Dirent as usize,
+            off,
+            DIRENT_SIZE as u32,
+        );
         assert_eq!(bytes_write, Ok(DIRENT_SIZE), "dirlink");
         Ok(())
     }
@@ -293,7 +298,7 @@ impl InodeGuard<'_> {
     /// otherwise, dst is a kernel address.
     pub unsafe fn read(
         &mut self,
-        user_dst: i32,
+        user_dst: bool,
         mut dst: usize,
         mut off: u32,
         mut n: u32,
@@ -330,7 +335,7 @@ impl InodeGuard<'_> {
     /// otherwise, src is a kernel address.
     pub unsafe fn write(
         &mut self,
-        user_src: i32,
+        user_src: bool,
         mut src: usize,
         mut off: u32,
         n: u32,

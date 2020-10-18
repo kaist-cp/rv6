@@ -999,9 +999,9 @@ unsafe fn forkret() {
 /// Copy to either a user address, or kernel address,
 /// depending on usr_dst.
 /// Returns Ok(()) on success, Err(()) on error.
-pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: &[u8]) -> Result<(), ()> {
+pub unsafe fn either_copyout(user_dst: bool, dst: usize, src: &[u8]) -> Result<(), ()> {
     let p = myproc();
-    if user_dst != 0 {
+    if user_dst {
         (*p).pagetable
             .assume_init_mut()
             .copyout(dst, src.as_ptr(), src.len())
@@ -1015,9 +1015,14 @@ pub unsafe fn either_copyout(user_dst: i32, dst: usize, src: &[u8]) -> Result<()
 /// Copy from either a user address, or kernel address,
 /// depending on usr_src.
 /// Returns Ok(()) on success, Err(()) on error.
-pub unsafe fn either_copyin(dst: *mut u8, user_src: i32, src: usize, len: usize) -> Result<(), ()> {
+pub unsafe fn either_copyin(
+    dst: *mut u8,
+    user_src: bool,
+    src: usize,
+    len: usize,
+) -> Result<(), ()> {
     let p = myproc();
-    if user_src != 0 {
+    if user_src {
         (*p).pagetable
             .assume_init_mut()
             .copyin(dst, src, len)
