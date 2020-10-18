@@ -2,11 +2,11 @@ use crate::{
     file::{Devsw, DEVSW},
     kernel::kernel,
     proc::{either_copyin, either_copyout, myproc},
-    sleepablelock::{Sleepablelock, SleepablelockGuard},
+    sleepablelock::SleepablelockGuard,
     uart::Uart,
     utils::spin_loop,
 };
-use core::{fmt, ptr};
+use core::fmt;
 
 const CONSOLE_IN_DEVSW: usize = 1;
 /// Size of console input buffer.
@@ -37,14 +37,13 @@ impl fmt::Write for Console {
 }
 
 impl Console {
-    // TODO: transient measure
-    pub const fn new(uart: Uart) -> Self {
+    pub const fn new() -> Self {
         Self {
             buf: [0; INPUT_BUF],
             r: 0,
             w: 0,
             e: 0,
-            uart,
+            uart: Uart::new(),
         }
     }
 
@@ -190,9 +189,7 @@ const fn ctrl(x: char) -> i32 {
     x as i32 - '@' as i32
 }
 
-pub unsafe fn consoleinit(console: *mut Sleepablelock<Console>, uart: Uart) {
-    ptr::write(console, Sleepablelock::new("CONS", Console::new(uart)));
-
+pub unsafe fn consoleinit() {
     // Connect read and write system calls
     // to consoleread and consolewrite.
     DEVSW[CONSOLE_IN_DEVSW] = Devsw {

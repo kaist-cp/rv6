@@ -288,6 +288,12 @@ pub struct PageTable {
 }
 
 impl PageTable {
+    pub const fn zero() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
     pub fn new() -> Self {
         let page = unsafe { kernel().alloc() } as *mut RawPageTable;
         if page.is_null() {

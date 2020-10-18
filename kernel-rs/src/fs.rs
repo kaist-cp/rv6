@@ -196,7 +196,7 @@ struct Dinode {
 /// dev, and inum.  One must hold ip->lock in order to
 /// read or write that inode's ip->valid, ip->size, ip->type, &c.
 
-static mut ICACHE: Spinlock<[Inode; NINODE]> = Spinlock::new("ICACHE", [Inode::zeroed(); NINODE]);
+static mut ICACHE: Spinlock<[Inode; NINODE]> = Spinlock::new("ICACHE", [Inode::zero(); NINODE]);
 
 //TODO(@kimjungwow) : move inode-related methods to another file
 impl InodeGuard<'_> {
@@ -527,8 +527,7 @@ impl Inode {
         panic!("Inode::alloc: no inodes");
     }
 
-    pub const fn zeroed() -> Self {
-        // TODO: transient measure
+    pub const fn zero() -> Self {
         Self {
             dev: 0,
             inum: 0,

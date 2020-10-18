@@ -1,11 +1,11 @@
 use core::sync::atomic::{spin_loop_hint, AtomicBool, Ordering};
 use core::{
     fmt::{self, Write},
-    mem, ptr,
+    ptr,
 };
 
 use crate::{
-    bio::binit,
+    bio::Bcache,
     console::{consoleinit, Console},
     kalloc::{end, kinit, Kmem},
     memlayout::PHYSTOP,
@@ -23,16 +23,11 @@ use crate::{
 };
 
 /// The kernel.
-static mut KERNEL: mem::MaybeUninit<Kernel> = mem::MaybeUninit::uninit();
-
-/// The kernel can be mutably accessed only during the initialization.
-unsafe fn kernel_mut() -> &'static mut Kernel {
-    &mut *KERNEL.as_mut_ptr()
-}
+static mut KERNEL: Kernel = Kernel::zero();
 
 /// After intialized, the kernel is safe to immutably access.
 pub fn kernel() -> &'static Kernel {
-    unsafe { &*KERNEL.as_ptr() }
+    unsafe { &KERNEL }
 }
 
 pub struct Kernel {
@@ -52,9 +47,24 @@ pub struct Kernel {
     pub procs: ProcessSystem,
 
     pub cpus: [Cpu; NCPU],
+
+    pub bcache: Spinlock<Bcache>,
 }
 
 impl Kernel {
+    const fn zero() -> Self {
+        Self {
+            panicked: AtomicBool::new(false),
+            console: Sleepablelock::new("CONS", Console::new()),
+            kmem: Spinlock::new("KMEM", Kmem::new()),
+            page_table: PageTable::zero(),
+            ticks: Sleepablelock::new("time", 0),
+            procs: ProcessSystem::zero(),
+            cpus: [Cpu::new(); NCPU],
+            bcache: Spinlock::new("BCACHE", Bcache::zero()),
+        }
+    }
+
     fn panic(&self) {
         self.panicked.store(true, Ordering::Release);
     }
@@ -124,30 +134,27 @@ pub unsafe fn kernel_main() -> ! {
         // Initialize the kernel.
 
         // Console.
-        consoleinit(&mut kernel_mut().console, Uart::new());
+        Uart::init();
+        consoleinit();
 
         println!();
         println!("rv6 kernel is booting");
         println!();
 
         // Physical page allocator.
-        kinit(&mut kernel_mut().kmem);
+        kinit(KERNEL.kmem.get_mut());
 
         // Create kernel page table.
-        kvminit(&mut kernel_mut().page_table);
+        kvminit(&mut KERNEL.page_table);
 
         // Turn on paging.
         kvminithart(&kernel().page_table);
 
         // Process system.
-        procinit(
-            &mut kernel_mut().procs,
-            &mut kernel_mut().cpus,
-            &mut kernel_mut().page_table,
-        );
+        procinit(&mut KERNEL.procs, &mut KERNEL.page_table);
 
         // Trap vectors.
-        trapinit(&mut kernel_mut().ticks);
+        trapinit();
 
         // Install kernel trap vector.
         trapinithart();
@@ -159,13 +166,13 @@ pub unsafe fn kernel_main() -> ! {
         plicinithart();
 
         // Buffer cache.
-        binit();
+        KERNEL.bcache.get_mut().init();
 
         // Emulated hard disk.
         virtio_disk_init();
 
         // First user process.
-        kernel_mut().procs.user_proc_init();
+        KERNEL.procs.user_proc_init();
         STARTED.store(true, Ordering::Release);
     } else {
         while !STARTED.load(Ordering::Acquire) {
