@@ -6,11 +6,11 @@
 // Required for unused features in xv6 (see https://github.com/kaist-cp/rv6/issues/120 for details).
 #![allow(dead_code)]
 #![feature(llvm_asm)]
-#![feature(c_variadic)]
 #![feature(const_wrapping_int_methods)]
 #![feature(maybe_uninit_ref)]
 #![feature(const_in_array_repeat_expressions)]
 #![feature(array_value_iter)]
+#![feature(const_fn)]
 #![feature(slice_ptr_range)]
 #![feature(maybe_uninit_extra)]
 #![feature(min_const_generics)]

@@ -13,19 +13,17 @@
 use crate::{
     bio::Buf,
     file::{Inode, InodeGuard, InodeInner},
+    kernel::kernel,
     log::Log,
-    param::NINODE,
     proc::{either_copyin, either_copyout},
     sleepablelock::Sleepablelock,
     sleeplock::Sleeplock,
-    spinlock::Spinlock,
     stat::{Stat, T_DIR, T_NONE},
 };
 use core::{mem, ops::DerefMut, ptr};
 
 mod path;
 pub use path::{FileName, Path};
-use spin::Once;
 
 /// Disk layout:
 /// [ boot block | super block | log | inode blocks |
@@ -135,7 +133,7 @@ struct Dinode {
 /// list of blocks holding the file's content.
 ///
 /// The inodes are laid out sequentially on disk at
-/// FS.superblock.startinode. Each inode has a number, indicating its
+/// kernel().file_system.superblock.startinode. Each inode has a number, indicating its
 /// position on the disk.
 ///
 /// The kernel keeps a cache of in-use inodes in memory
@@ -187,16 +185,14 @@ struct Dinode {
 /// have locked the inodes involved; this lets callers create
 /// multi-step atomic operations.
 ///
-/// The ICACHE.lock spin-lock protects the allocation of icache
+/// The kernel().icache.lock spin-lock protects the allocation of icache
 /// entries. Since ip->ref indicates whether an entry is free,
 /// and ip->dev and ip->inum indicate which i-node an entry
-/// holds, one must hold ICACHE.lock while using any of those fields.
+/// holds, one must hold kernel().icache.lock while using any of those fields.
 ///
 /// An ip->lock sleep-lock protects all ip-> fields other than ref,
 /// dev, and inum.  One must hold ip->lock in order to
 /// read or write that inode's ip->valid, ip->size, ip->type, &c.
-
-static mut ICACHE: Spinlock<[Inode; NINODE]> = Spinlock::new("ICACHE", [Inode::zero(); NINODE]);
 
 //TODO(@kimjungwow) : move inode-related methods to another file
 impl InodeGuard<'_> {
@@ -441,7 +437,7 @@ impl Inode {
     /// Increment reference count for ip.
     /// Returns ip to enable ip = idup(ip1) idiom.
     pub unsafe fn idup(&mut self) -> *mut Self {
-        let _inode = ICACHE.lock();
+        let _inode = kernel().icache.lock();
         self.ref_0 += 1;
         self
     }
@@ -477,7 +473,7 @@ impl Inode {
     /// case it has to free the inode.
     #[allow(clippy::cast_ref_to_mut)]
     pub unsafe fn put(&self) {
-        let mut inode = ICACHE.lock();
+        let mut inode = kernel().icache.lock();
 
         if self.ref_0 == 1
             && self.inner.get_mut_unchecked().valid
@@ -498,7 +494,7 @@ impl Inode {
 
             drop(ip);
 
-            inode = ICACHE.lock();
+            inode = kernel().icache.lock();
         }
         //TODO : Use better code
         *(&self.ref_0 as *const _ as *mut i32) -= 1;
@@ -627,14 +623,12 @@ impl FileSystem {
     }
 }
 
-static FS: Once<FileSystem> = Once::new();
-
 pub fn fsinit(dev: i32) {
-    FS.call_once(|| FileSystem::new(dev));
+    kernel().file_system.call_once(|| FileSystem::new(dev));
 }
 
 pub fn fs() -> &'static FileSystem {
-    if let Some(fs) = FS.r#try() {
+    if let Some(fs) = kernel().file_system.r#try() {
         fs
     } else {
         unreachable!()
@@ -691,7 +685,7 @@ unsafe fn bfree(dev: i32, b: u32) {
 /// and return the in-memory copy. Does not lock
 /// the inode and does not read it from disk.
 unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
-    let mut inode = ICACHE.lock();
+    let mut inode = kernel().icache.lock();
 
     // Is the inode already cached?
     let mut empty: *mut Inode = ptr::null_mut();

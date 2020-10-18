@@ -6,10 +6,11 @@
 use crate::{
     bio::Buf,
     fs::BSIZE,
+    kernel::kernel,
     memlayout::VIRTIO0,
     page::Page,
     riscv::{PGSHIFT, PGSIZE},
-    sleepablelock::{Sleepablelock, SleepablelockGuard},
+    sleepablelock::SleepablelockGuard,
     virtio::*,
     vm::kvmpa,
 };
@@ -32,14 +33,7 @@ impl MmioRegs {
     }
 }
 
-/// Memory for virtio descriptors `&c` for queue 0.
-///
-/// This is a global instead of allocated because it must be multiple contiguous pages, which
-/// `kernel().alloc()` doesn't support, and page aligned.
-// TODO(efenniht): I moved out pages from Disk. Did I changed semantics (pointer indirection?)
-static mut VIRTQUEUE: [Page; 2] = [Page::DEFAULT, Page::DEFAULT];
-
-struct Disk {
+pub struct Disk {
     desc: DescriptorPool,
     avail: *mut AvailableRing,
     used: *mut [UsedArea; NUM],
@@ -205,7 +199,7 @@ impl DescriptorPool {
 }
 
 impl Disk {
-    const fn zero() -> Self {
+    pub const fn zero() -> Self {
         Self {
             desc: DescriptorPool::zero(),
             avail: ptr::null_mut(),
@@ -319,10 +313,7 @@ impl InflightInfo {
     }
 }
 
-/// It may sleep until some Descriptors are freed.
-static mut DISK: Sleepablelock<Disk> = Sleepablelock::new("virtio_disk", Disk::zero());
-
-pub unsafe fn virtio_disk_init() {
+pub unsafe fn virtio_disk_init(virtqueue: &mut [Page; 2], disk: &mut Disk) {
     let mut status: VirtIOStatus = VirtIOStatus::empty();
     if !(MmioRegs::MagicValue.read() == 0x74726976
         && MmioRegs::Version.read() == 1
@@ -370,26 +361,25 @@ pub unsafe fn virtio_disk_init() {
         panic!("virtio disk max queue too short");
     }
     MmioRegs::QueueNum.write(NUM as _);
-    ptr::write_bytes(&mut VIRTQUEUE, 0, 1);
-    MmioRegs::QueuePfn.write((VIRTQUEUE.as_mut_ptr() as usize >> PGSHIFT) as _);
+    ptr::write_bytes(virtqueue, 0, 1);
+    MmioRegs::QueuePfn.write((virtqueue.as_mut_ptr() as usize >> PGSHIFT) as _);
 
     // desc = pages -- num * VRingDesc
     // avail = pages + 0x40 -- 2 * u16, then num * u16
     // used = pages + 4096 -- 2 * u16, then num * vRingUsedElem
 
-    let disk = DISK.get_mut_unchecked();
-    disk.desc = DescriptorPool::new(&mut VIRTQUEUE[0]);
-    disk.avail = (VIRTQUEUE[0].as_mut_ptr() as *mut VRingDesc).add(NUM) as _;
-    disk.used = VIRTQUEUE[1].as_mut_ptr() as _;
+    disk.desc = DescriptorPool::new(&mut virtqueue[0]);
+    disk.avail = (virtqueue[0].as_mut_ptr() as *mut VRingDesc).add(NUM) as _;
+    disk.used = virtqueue[1].as_mut_ptr() as _;
 
     // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
 }
 
 pub unsafe fn virtio_disk_rw(b: &mut Buf, write: bool) {
-    let mut disk = DISK.lock();
+    let mut disk = kernel().disk.lock();
     Disk::virtio_rw(&mut disk, b, write);
 }
 
 pub unsafe fn virtio_disk_intr() {
-    DISK.lock().virtio_intr();
+    kernel().disk.lock().virtio_intr();
 }

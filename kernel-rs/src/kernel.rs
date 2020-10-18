@@ -3,14 +3,19 @@ use core::{
     fmt::{self, Write},
     ptr,
 };
+use spin::Once;
 
 use crate::{
     bio::Bcache,
     console::{consoleinit, Console},
+    file::{Devsw, File, Inode},
+    fs::FileSystem,
     kalloc::{end, kinit, Kmem},
     memlayout::PHYSTOP,
-    param::NCPU,
+    page::Page,
+    param::{NCPU, NDEV, NFILE, NINODE},
     plic::{plicinit, plicinithart},
+    pool::RcPool,
     println,
     proc::{cpuid, procinit, scheduler, Cpu, ProcessSystem},
     riscv::PGSIZE,
@@ -18,7 +23,7 @@ use crate::{
     spinlock::Spinlock,
     trap::{trapinit, trapinithart},
     uart::Uart,
-    virtio_disk::virtio_disk_init,
+    virtio_disk::{virtio_disk_init, Disk},
     vm::{kvminit, kvminithart, PageTable},
 };
 
@@ -49,6 +54,24 @@ pub struct Kernel {
     pub cpus: [Cpu; NCPU],
 
     pub bcache: Spinlock<Bcache>,
+
+    /// Memory for virtio descriptors `&c` for queue 0.
+    ///
+    /// This is a global instead of allocated because it must be multiple contiguous pages, which
+    /// `kernel().alloc()` doesn't support, and page aligned.
+    // TODO(efenniht): I moved out pages from Disk. Did I changed semantics (pointer indirection?)
+    pub virtqueue: [Page; 2],
+
+    /// It may sleep until some Descriptors are freed.
+    pub disk: Sleepablelock<Disk>,
+
+    pub devsw: [Devsw; NDEV],
+
+    pub ftable: Spinlock<RcPool<File, NFILE>>,
+
+    pub icache: Spinlock<[Inode; NINODE]>,
+
+    pub file_system: Once<FileSystem>,
 }
 
 impl Kernel {
@@ -62,6 +85,15 @@ impl Kernel {
             procs: ProcessSystem::zero(),
             cpus: [Cpu::new(); NCPU],
             bcache: Spinlock::new("BCACHE", Bcache::zero()),
+            virtqueue: [Page::DEFAULT, Page::DEFAULT],
+            disk: Sleepablelock::new("virtio_disk", Disk::zero()),
+            devsw: [Devsw {
+                read: None,
+                write: None,
+            }; NDEV],
+            ftable: Spinlock::new("FTABLE", RcPool::new()),
+            icache: Spinlock::new("ICACHE", [Inode::zero(); NINODE]),
+            file_system: Once::new(),
         }
     }
 
@@ -135,7 +167,7 @@ pub unsafe fn kernel_main() -> ! {
 
         // Console.
         Uart::init();
-        consoleinit();
+        consoleinit(&mut KERNEL.devsw);
 
         println!();
         println!("rv6 kernel is booting");
@@ -169,7 +201,7 @@ pub unsafe fn kernel_main() -> ! {
         KERNEL.bcache.get_mut().init();
 
         // Emulated hard disk.
-        virtio_disk_init();
+        virtio_disk_init(&mut KERNEL.virtqueue, KERNEL.disk.get_mut());
 
         // First user process.
         KERNEL.procs.user_proc_init();
