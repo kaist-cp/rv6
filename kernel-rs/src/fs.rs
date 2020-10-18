@@ -328,7 +328,6 @@ impl InodeGuard<'_> {
             {
                 break;
             } else {
-                drop(bp);
                 tot = tot.wrapping_add(m);
                 off = off.wrapping_add(m);
                 dst = dst.wrapping_add(m as usize)

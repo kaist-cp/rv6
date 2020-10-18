@@ -15,7 +15,7 @@ use crate::{fs::BSIZE, proc::WaitChannel, sleeplock::Sleeplock};
 use crate::{param::NBUF, spinlock::Spinlock, virtio_disk::virtio_disk_rw};
 
 use core::mem;
-use core::ops::{Deref, DerefMut};
+use core::ops::Deref;
 use core::ptr;
 
 pub struct BufEntry {
@@ -119,7 +119,7 @@ impl Bcache {
             if (*b).refcnt == 0 {
                 (*b).dev = dev;
                 (*b).blockno = blockno;
-                (*b).inner.get_mut_unchecked().valid = false;
+                (*b).inner.get_mut().valid = false;
                 (*b).refcnt = 1;
                 return b;
             }
@@ -183,12 +183,10 @@ impl Buf {
         mem::forget(self);
     }
 
-    pub fn unpin(&mut self) {
-        unsafe {
-            let mut bcache = BCACHE.lock();
-            let buf = &mut *self.ptr;
-            bcache.unpin(buf);
-        }
+    pub unsafe fn unpin(&mut self) {
+        let mut bcache = BCACHE.lock();
+        let buf = &mut *self.ptr;
+        bcache.unpin(buf);
     }
 
     /// Write self's contents to disk.  Must be locked.
@@ -221,11 +219,5 @@ impl Deref for Buf {
 
     fn deref(&self) -> &Self::Target {
         unsafe { &*self.ptr }
-    }
-}
-
-impl DerefMut for Buf {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.ptr }
     }
 }
