@@ -1,8 +1,9 @@
 use crate::{
+    kernel::kernel,
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     plic::{plic_claim, plic_complete},
     println,
-    proc::{cpuid, myproc, proc_yield, Proc, Procstate, PROCSYS},
+    proc::{cpuid, myproc, proc_yield, Proc, Procstate},
     riscv::{
         intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp,
         w_sepc, w_sip, w_stvec, Sstatus, PGSIZE,
@@ -29,8 +30,6 @@ extern "C" {
     #[no_mangle]
     fn kernelvec();
 }
-
-pub static TICKS: Sleepablelock<u32> = Sleepablelock::new("time", 0);
 
 pub unsafe fn trapinit(ticks: *mut Sleepablelock<u32>) {
     ptr::write(ticks, Sleepablelock::new("time", 0));
@@ -63,7 +62,7 @@ pub unsafe extern "C" fn usertrap() {
         // system call
 
         if (*p).killed() {
-            PROCSYS.exit_current(-1);
+            kernel().procs.exit_current(-1);
         }
 
         // sepc points to the ecall instruction,
@@ -92,7 +91,7 @@ pub unsafe extern "C" fn usertrap() {
     }
 
     if (*p).killed() {
-        PROCSYS.exit_current(-1);
+        kernel().procs.exit_current(-1);
     }
 
     // give up the CPU if this is a timer interrupt.
@@ -197,7 +196,7 @@ pub unsafe fn kerneltrap() {
 }
 
 pub unsafe fn clockintr() {
-    let mut ticks = TICKS.lock();
+    let mut ticks = kernel().ticks.lock();
     *ticks = ticks.wrapping_add(1);
     ticks.wakeup();
 }
