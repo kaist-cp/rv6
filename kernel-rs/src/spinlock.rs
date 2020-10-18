@@ -1,5 +1,6 @@
 use crate::{
-    proc::{mycpu, Cpu},
+    kernel::kernel,
+    proc::Cpu,
     riscv::{intr_get, intr_off, intr_on},
 };
 use core::cell::UnsafeCell;
@@ -48,7 +49,7 @@ impl RawSpinlock {
             .locked
             .compare_exchange(
                 ptr::null_mut(),
-                mycpu(),
+                kernel().mycpu(),
                 Ordering::Acquire,
                 Ordering::Relaxed,
             )
@@ -98,7 +99,7 @@ impl RawSpinlock {
     pub fn holding(&self) -> bool {
         unsafe {
             push_off();
-            let ret = self.locked.load(Ordering::Relaxed) == mycpu();
+            let ret = self.locked.load(Ordering::Relaxed) == kernel().mycpu();
             pop_off();
             ret
         }
@@ -199,14 +200,14 @@ impl<T> DerefMut for SpinlockGuard<'_, T> {
 pub unsafe fn push_off() {
     let old = intr_get();
     intr_off();
-    if (*(mycpu())).noff == 0 {
-        (*(mycpu())).interrupt_enabled = old
+    if (*(kernel().mycpu())).noff == 0 {
+        (*(kernel().mycpu())).interrupt_enabled = old
     }
-    (*(mycpu())).noff += 1;
+    (*(kernel().mycpu())).noff += 1;
 }
 
 pub unsafe fn pop_off() {
-    let mut c: *mut Cpu = mycpu();
+    let mut c: *mut Cpu = kernel().mycpu();
     if intr_get() {
         panic!("pop_off - interruptible");
     }

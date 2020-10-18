@@ -51,7 +51,7 @@ pub struct Kernel {
     /// Current process system.
     pub procs: ProcessSystem,
 
-    pub cpus: [Cpu; NCPU],
+    cpus: [Cpu; NCPU],
 
     pub bcache: Spinlock<Bcache>,
 
@@ -60,7 +60,7 @@ pub struct Kernel {
     /// This is a global instead of allocated because it must be multiple contiguous pages, which
     /// `kernel().alloc()` doesn't support, and page aligned.
     // TODO(efenniht): I moved out pages from Disk. Did I changed semantics (pointer indirection?)
-    pub virtqueue: [Page; 2],
+    virtqueue: [Page; 2],
 
     /// It may sleep until some Descriptors are freed.
     pub disk: Sleepablelock<Disk>,
@@ -137,6 +137,7 @@ impl Kernel {
         ret
     }
 
+    /// Prints the given formatted string with the Console.
     pub fn console_write_fmt(&self, args: fmt::Arguments<'_>) -> fmt::Result {
         if self.is_panicked() {
             unsafe { kernel().console.get_mut_unchecked().write_fmt(args) }
@@ -145,6 +146,30 @@ impl Kernel {
             lock.write_fmt(args)
         }
     }
+
+    /// Return this CPU's cpu struct.
+    ///
+    /// It is safe to call this function with interrupts enabled, but returned address may not be the
+    /// current CPU since the scheduler can move the process to another CPU on time interrupt.
+    pub fn mycpu(&self) -> *mut Cpu {
+        let id: usize = cpuid();
+        &self.cpus[id] as *const _ as *mut _
+    }
+}
+
+/// print! macro prints to the console.
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => {
+        $crate::kernel::kernel().console_write_fmt(format_args!($($arg)*)).unwrap();
+    };
+}
+
+/// println! macro prints to the console.
+#[macro_export]
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
 
 /// Handles panic.

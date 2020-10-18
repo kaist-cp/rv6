@@ -810,19 +810,10 @@ pub fn cpuid() -> usize {
     unsafe { r_tp() }
 }
 
-/// Return this CPU's cpu struct.
-///
-/// It is safe to call this function with interrupts enabled, but returned address may not be the
-/// current CPU since the scheduler can move the process to another CPU on time interrupt.
-pub fn mycpu() -> *mut Cpu {
-    let id: usize = cpuid();
-    &kernel().cpus[id] as *const _ as *mut _
-}
-
 /// Return the current struct Proc *, or zero if none.
 pub unsafe fn myproc() -> *mut Proc {
     push_off();
-    let c = mycpu();
+    let c = kernel().mycpu();
     let p = (*c).proc;
     pop_off();
     p
@@ -937,7 +928,7 @@ pub unsafe fn resizeproc(n: i32) -> i32 {
 ///  - eventually that process transfers control
 ///    via swtch back to the scheduler.
 pub unsafe fn scheduler() -> ! {
-    let mut c = mycpu();
+    let mut c = kernel().mycpu();
     (*c).proc = ptr::null_mut();
     loop {
         // Avoid deadlock by ensuring that devices can interrupt.
@@ -971,7 +962,7 @@ pub unsafe fn scheduler() -> ! {
 ///
 /// `p` must be `myproc()`.
 unsafe fn sched(p: &mut ProcGuard) {
-    if (*mycpu()).noff != 1 {
+    if (*kernel().mycpu()).noff != 1 {
         panic!("sched locks");
     }
     if p.deref_inner().state == Procstate::RUNNING {
@@ -980,12 +971,9 @@ unsafe fn sched(p: &mut ProcGuard) {
     if intr_get() {
         panic!("sched interruptible");
     }
-    let interrupt_enabled = (*mycpu()).interrupt_enabled;
-    swtch(
-        &mut (*p).context,
-        &mut (*(mycpu as unsafe fn() -> *mut Cpu)()).scheduler,
-    );
-    (*mycpu()).interrupt_enabled = interrupt_enabled;
+    let interrupt_enabled = (*kernel().mycpu()).interrupt_enabled;
+    swtch(&mut (*p).context, &mut (*kernel().mycpu()).scheduler);
+    (*kernel().mycpu()).interrupt_enabled = interrupt_enabled;
 }
 
 /// Give up the CPU for one scheduling round.
