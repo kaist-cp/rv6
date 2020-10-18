@@ -268,7 +268,7 @@ impl WaitChannel {
     /// Wake up all processes sleeping on waitchannel.
     /// Must be called without any p->lock.
     pub fn wakeup(&self) {
-        unsafe { PROCSYS.wakeup_pool(self) }
+        kernel().procs.wakeup_pool(self)
     }
 }
 
@@ -507,8 +507,6 @@ impl Proc {
     }
 }
 
-static mut CPUS: [Cpu; NCPU] = [Cpu::new(); NCPU];
-
 /// Process system type containing & managing whole processes.
 pub struct ProcessSystem {
     process_pool: [Proc; NPROC],
@@ -516,43 +514,30 @@ pub struct ProcessSystem {
 }
 
 impl ProcessSystem {
-    const fn zeroed() -> Self {
-        Self {
-            process_pool: [Proc::zeroed(); NPROC],
-            initial_proc: ptr::null_mut(),
-        }
-    }
-
-    pub unsafe fn init(&mut self, page_table: &mut PageTable) {
-        for (i, p) in self.process_pool.iter_mut().enumerate() {
-            p.palloc(page_table, i);
-        }
-    }
-
     /// Look into process system for an UNUSED proc.
     /// If found, initialize state required to run in the kernel,
     /// and return with p->lock held.
     /// If there are no free procs, return 0.
-    unsafe fn alloc(&mut self) -> Result<ProcGuard, ()> {
-        for p in self.process_pool.iter_mut() {
+    unsafe fn alloc(&self) -> Result<ProcGuard, ()> {
+        for p in &self.process_pool {
             let mut guard = p.lock();
             if guard.deref_inner().state == Procstate::UNUSED {
                 guard.deref_mut_inner().pid = allocpid();
 
                 // Allocate a trapframe page.
-                p.tf = kernel().alloc() as *mut Trapframe;
-                if p.tf.is_null() {
+                guard.tf = kernel().alloc() as *mut Trapframe;
+                if guard.tf.is_null() {
                     return Err(());
                 }
 
                 // An empty user page table.
-                p.pagetable = mem::MaybeUninit::new(proc_pagetable(p));
+                guard.pagetable = mem::MaybeUninit::new(proc_pagetable(p as *const _ as *mut _));
 
                 // Set up new context to start executing at forkret,
                 // which returns to user space.
-                ptr::write_bytes(&mut (*p).context as *mut Context, 0, 1);
-                p.context.ra = forkret as usize;
-                p.context.sp = p.kstack.wrapping_add(PGSIZE);
+                ptr::write_bytes(&mut guard.context as *mut Context, 0, 1);
+                guard.context.ra = forkret as usize;
+                guard.context.sp = p.kstack.wrapping_add(PGSIZE);
                 return Ok(guard);
             }
         }
@@ -562,8 +547,8 @@ impl ProcessSystem {
 
     /// Pass p's abandoned children to init.
     /// Caller must hold p->lock.
-    unsafe fn reparent(&mut self, p: &mut ProcGuard) {
-        for pp in self.process_pool.iter_mut() {
+    unsafe fn reparent(&self, p: &mut ProcGuard) {
+        for pp in &self.process_pool {
             // This code uses pp->parent without holding pp->lock.
             // Acquiring the lock first could cause a deadlock
             // if pp or a child of pp were also in exit()
@@ -575,7 +560,7 @@ impl ProcessSystem {
                 guard.deref_mut_inner().parent = self.initial_proc;
 
                 // We should wake up init here, but that would require
-                // PROCSYS.initial_proc->lock, which would be a deadlock, since we hold
+                // kernel().procs.initial_proc->lock, which would be a deadlock, since we hold
                 // the lock on one of init's children (pp). This is why
                 // exit() always wakes init (before acquiring any locks).
             }
@@ -585,12 +570,12 @@ impl ProcessSystem {
     /// Kill the process with the given pid.
     /// The victim won't exit until it tries to return
     /// to user space (see usertrap() in trap.c).
-    pub unsafe fn kill(&mut self, pid: i32) -> i32 {
-        for p in self.process_pool.iter_mut() {
-            let guard = p.lock();
+    pub unsafe fn kill(&self, pid: i32) -> i32 {
+        for p in &self.process_pool {
+            let mut guard = p.lock();
             if guard.deref_inner().pid == pid {
-                p.kill();
-                p.wakeup();
+                guard.kill();
+                guard.wakeup();
                 return 0;
             }
         }
@@ -599,11 +584,11 @@ impl ProcessSystem {
 
     /// Wake up all processes in the pool sleeping on waitchannel.
     /// Must be called without any p->lock.
-    pub fn wakeup_pool(&mut self, target: &WaitChannel) {
-        for p in self.process_pool.iter_mut() {
-            let guard = p.lock();
+    pub fn wakeup_pool(&self, target: &WaitChannel) {
+        for p in &self.process_pool {
+            let mut guard = p.lock();
             if guard.deref_inner().waitchannel == target as _ {
-                p.wakeup()
+                guard.wakeup()
             }
         }
     }
@@ -639,7 +624,7 @@ impl ProcessSystem {
 
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
-    pub unsafe fn fork(&mut self) -> i32 {
+    pub unsafe fn fork(&self) -> i32 {
         let p = myproc();
 
         // Allocate process.
@@ -683,7 +668,7 @@ impl ProcessSystem {
 
     /// Wait for a child process to exit and return its pid.
     /// Return -1 if this process has no children.
-    pub unsafe fn wait(&mut self, addr: usize) -> i32 {
+    pub unsafe fn wait(&self, addr: usize) -> i32 {
         let p: *mut Proc = myproc();
 
         // Hold p->lock for the whole time to avoid lost
@@ -692,7 +677,7 @@ impl ProcessSystem {
         loop {
             // Scan through pool looking for exited children.
             let mut havekids = false;
-            for np in self.process_pool.iter_mut() {
+            for np in &self.process_pool {
                 // This code uses np->parent without holding np->lock.
                 // Acquiring the lock first would cause a deadlock,
                 // since np might be an ancestor, and we already hold p->lock.
@@ -739,7 +724,7 @@ impl ProcessSystem {
     /// Exit the current process.  Does not return.
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
-    pub unsafe fn exit_current(&mut self, status: i32) {
+    pub unsafe fn exit_current(&self, status: i32) {
         let p = myproc();
         if p == self.initial_proc {
             panic!("init exiting");
@@ -789,9 +774,9 @@ impl ProcessSystem {
     /// Print a process listing to console.  For debugging.
     /// Runs when user types ^P on console.
     /// No lock to avoid wedging a stuck machine further.
-    pub unsafe fn dump(&mut self) {
+    pub unsafe fn dump(&self) {
         println!();
-        for p in self.process_pool.iter_mut() {
+        for p in &self.process_pool {
             let inner = p.inner.get_mut_unchecked();
             if inner.state != Procstate::UNUSED {
                 println!(
@@ -805,8 +790,23 @@ impl ProcessSystem {
     }
 }
 
-/// Current process system.
-pub static mut PROCSYS: ProcessSystem = ProcessSystem::zeroed();
+pub unsafe fn procinit(
+    procs: *mut ProcessSystem,
+    cpus: *mut [Cpu; NCPU],
+    page_table: &mut PageTable,
+) {
+    for cpu in &mut *cpus {
+        ptr::write(cpu, Cpu::new());
+    }
+
+    let procs = &mut *procs;
+    ptr::write(&mut procs.initial_proc, ptr::null_mut());
+
+    for (i, p) in procs.process_pool.iter_mut().enumerate() {
+        ptr::write(p, Proc::zeroed());
+        p.palloc(page_table, i);
+    }
+}
 
 /// Return this CPU's ID.
 ///
@@ -822,7 +822,7 @@ pub fn cpuid() -> usize {
 /// current CPU since the scheduler can move the process to another CPU on time interrupt.
 pub fn mycpu() -> *mut Cpu {
     let id: usize = cpuid();
-    unsafe { &mut CPUS[id] as *mut Cpu }
+    &kernel().cpus[id] as *const _ as *mut _
 }
 
 /// Return the current struct Proc *, or zero if none.
@@ -949,15 +949,15 @@ pub unsafe fn scheduler() -> ! {
         // Avoid deadlock by ensuring that devices can interrupt.
         intr_on();
 
-        for p in PROCSYS.process_pool.iter_mut() {
+        for p in &kernel().procs.process_pool {
             let mut guard = p.lock();
             if guard.deref_inner().state == Procstate::RUNNABLE {
                 // Switch to chosen process.  It is the process's job
                 // to release its lock and then reacquire it
                 // before jumping back to us.
                 guard.deref_mut_inner().state = Procstate::RUNNING;
-                (*c).proc = p;
-                swtch(&mut (*c).scheduler, &mut p.context);
+                (*c).proc = p as *const _ as *mut _;
+                swtch(&mut (*c).scheduler, &mut guard.context);
 
                 // Process is done running for now.
                 // It should have changed its p->state before coming back.

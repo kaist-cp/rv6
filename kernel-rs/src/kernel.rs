@@ -9,9 +9,10 @@ use crate::{
     console::{consoleinit, Console},
     kalloc::{end, kinit, Kmem},
     memlayout::PHYSTOP,
+    param::NCPU,
     plic::{plicinit, plicinithart},
     println,
-    proc::{cpuid, scheduler, PROCSYS},
+    proc::{cpuid, procinit, scheduler, Cpu, ProcessSystem},
     riscv::PGSIZE,
     sleepablelock::Sleepablelock,
     spinlock::Spinlock,
@@ -45,7 +46,12 @@ pub struct Kernel {
     /// The kernel's page table.
     pub page_table: PageTable,
 
-    ticks: Sleepablelock<u32>,
+    pub ticks: Sleepablelock<u32>,
+
+    /// Current process system.
+    pub procs: ProcessSystem,
+
+    pub cpus: [Cpu; NCPU],
 }
 
 impl Kernel {
@@ -134,7 +140,11 @@ pub unsafe fn kernel_main() -> ! {
         kvminithart(&kernel().page_table);
 
         // Process system.
-        PROCSYS.init(&mut kernel_mut().page_table);
+        procinit(
+            &mut kernel_mut().procs,
+            &mut kernel_mut().cpus,
+            &mut kernel_mut().page_table,
+        );
 
         // Trap vectors.
         trapinit(&mut kernel_mut().ticks);
@@ -155,7 +165,7 @@ pub unsafe fn kernel_main() -> ! {
         virtio_disk_init();
 
         // First user process.
-        PROCSYS.user_proc_init();
+        kernel_mut().procs.user_proc_init();
         STARTED.store(true, Ordering::Release);
     } else {
         while !STARTED.load(Ordering::Acquire) {

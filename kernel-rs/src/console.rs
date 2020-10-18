@@ -1,7 +1,7 @@
 use crate::{
     file::{Devsw, DEVSW},
     kernel::kernel,
-    proc::{either_copyin, either_copyout, myproc, PROCSYS},
+    proc::{either_copyin, either_copyout, myproc},
     sleepablelock::{Sleepablelock, SleepablelockGuard},
     uart::Uart,
     utils::spin_loop,
@@ -127,7 +127,7 @@ impl Console {
         match cin {
             // Print process list.
             m if m == ctrl('P') => {
-                PROCSYS.dump();
+                kernel().procs.dump();
             }
 
             // Kill line.
