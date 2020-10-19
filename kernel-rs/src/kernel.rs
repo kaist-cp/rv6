@@ -8,8 +8,8 @@ use spin::Once;
 use crate::{
     bio::Bcache,
     console::{consoleinit, Console},
-    file::{Devsw, File, Inode},
-    fs::FileSystem,
+    file::{Devsw, File},
+    fs::{FileSystem, Inode},
     kalloc::{end, kinit, Kmem},
     memlayout::PHYSTOP,
     page::Page,
