@@ -1,6 +1,6 @@
 use crate::{
-    file::{Inode, RcFile},
-    fs::{fs, fsinit, Path},
+    file::RcFile,
+    fs::{fs, fsinit, Inode, Path},
     kernel::kernel,
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     ok_or,
