@@ -15,7 +15,6 @@
 #![feature(maybe_uninit_extra)]
 #![feature(min_const_generics)]
 
-mod abort;
 mod bio;
 mod console;
 mod elf;
