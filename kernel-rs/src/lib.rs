@@ -14,6 +14,7 @@
 #![feature(slice_ptr_range)]
 #![feature(maybe_uninit_extra)]
 #![feature(min_const_generics)]
+#![feature(type_alias_impl_trait, associated_type_defaults)]
 
 mod bio;
 mod console;
