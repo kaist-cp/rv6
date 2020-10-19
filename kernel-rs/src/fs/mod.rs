@@ -10,8 +10,11 @@
 //! are in sysfile.c.
 
 /// On-disk file system format used for both kernel and user programs are also included here.
-use crate::{bio::Buf, kernel::kernel, log::Log, sleepablelock::Sleepablelock, stat::T_DIR};
-use core::{mem, ops::DerefMut, ptr};
+use crate::{
+    bio::Buf, kernel::kernel, log::Log, pool::Pool, sleepablelock::Sleepablelock,
+    sleeplock::Sleeplock, stat::T_DIR,
+};
+use core::{mem, ptr};
 
 mod path;
 pub use path::{FileName, Path};
@@ -233,27 +236,32 @@ unsafe fn bfree(dev: i32, b: u32) {
 /// and return the in-memory copy. Does not lock
 /// the inode and does not read it from disk.
 unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
-    let mut inode = kernel().icache.lock();
+    let mut icache = kernel().icache.lock();
 
-    // Is the inode already cached?
-    let mut empty: *mut Inode = ptr::null_mut();
-    for ip in &mut inode.deref_mut()[..] {
-        if (*ip).ref_0 > 0 && (*ip).dev == dev && (*ip).inum == inum {
-            (*ip).ref_0 += 1;
-            return ip;
-        }
-        if empty.is_null() && (*ip).ref_0 == 0 {
-            // Remember empty slot.
-            empty = ip
-        }
-    }
+    let ip = icache.find_or_alloc(
+        |inode| inode.dev == dev && inode.inum == inum,
+        |inode| {
+            let inode = &mut *inode;
+            inode.dev = dev;
+            inode.inum = inum;
+            ptr::write(
+                &mut inode.inner,
+                // TODO(rv6): init once and reuse
+                Sleeplock::new(
+                    "inode",
+                    InodeInner {
+                        valid: false,
+                        typ: 0,
+                        major: 0,
+                        minor: 0,
+                        nlink: 0,
+                        size: 0,
+                        addrs: [0; 13],
+                    },
+                ),
+            );
+        },
+    );
 
-    // Recycle an inode cache entry.
-    assert!(!empty.is_null(), "iget: no inodes");
-    let ip = empty;
-    (*ip).dev = dev;
-    (*ip).inum = inum;
-    (*ip).ref_0 = 1;
-    (*ip).inner.get_mut_unchecked().valid = false;
-    ip
+    ip.expect("iget: no inodes").into_raw()
 }

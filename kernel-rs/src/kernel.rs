@@ -69,7 +69,7 @@ pub struct Kernel {
 
     pub ftable: Spinlock<RcPool<File, NFILE>>,
 
-    pub icache: Spinlock<[Inode; NINODE]>,
+    pub icache: Spinlock<RcPool<Inode, NINODE>>,
 
     pub file_system: Once<FileSystem>,
 }
@@ -92,7 +92,7 @@ impl Kernel {
                 write: None,
             }; NDEV],
             ftable: Spinlock::new("FTABLE", RcPool::new()),
-            icache: Spinlock::new("ICACHE", [Inode::zero(); NINODE]),
+            icache: Spinlock::new("ICACHE", RcPool::new()),
             file_system: Once::new(),
         }
     }

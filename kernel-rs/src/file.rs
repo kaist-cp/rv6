@@ -4,12 +4,13 @@ use crate::{
     kernel::kernel,
     param::{MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
-    pool::{PoolRef, RcPool, TaggedBox},
+    pool::{PoolRef, RcPool, TaggedRc},
     proc::{myproc, Proc},
-    spinlock::Spinlock,
+    spinlock::SpinlockGuard,
     stat::Stat,
 };
-use core::{cell::UnsafeCell, cmp, convert::TryFrom};
+use core::{cell::UnsafeCell, cmp, convert::TryFrom, ptr};
+
 pub struct File {
     pub typ: FileType,
     readable: bool,
@@ -41,23 +42,28 @@ pub struct Devsw {
     pub write: Option<unsafe fn(_: i32, _: usize, _: i32) -> i32>,
 }
 
-pub struct FTableRef(());
+pub struct FTableRef {}
 
 // SAFETY: We have only one `PoolRef` pointing `FTABLE`.
 unsafe impl PoolRef for FTableRef {
-    type Target = Spinlock<RcPool<File, NFILE>>;
-    fn deref() -> &'static Self::Target {
-        &kernel().ftable
+    type Target = RcPool<File, NFILE>;
+    type Result = SpinlockGuard<'static, Self::Target>;
+    // TODO(rv6): type Result = impl Deref<Target=Self::Target>;
+
+    fn deref_mut() -> SpinlockGuard<'static, Self::Target> {
+        kernel().ftable.lock()
     }
 }
 
-pub type RcFile = TaggedBox<FTableRef, File>;
+pub type RcFile = TaggedRc<FTableRef, File>;
 
 impl RcFile {
     /// Allocate a file structure.
     pub fn alloc(readable: bool, writable: bool) -> Option<Self> {
         // TODO: idiomatic initialization.
-        FTableRef::alloc(File::new(readable, writable))
+        FTableRef::alloc(|p| unsafe {
+            ptr::write(p, File::new(readable, writable));
+        })
     }
 
     /// Increment reference count of the file.
