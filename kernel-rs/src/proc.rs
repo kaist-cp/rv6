@@ -496,7 +496,7 @@ impl Proc {
 
     /// Close all open files.
     unsafe fn close_files(&mut self) {
-        for file in self.open_files.iter_mut() {
+        for file in &mut self.open_files {
             *file = None;
         }
         fs().begin_op();

@@ -1,11 +1,10 @@
 //! Support functions for system calls that involve file descriptors.
 use crate::{
-    arena::Arena,
-    arena::{RcArena, Tag, TaggedRc},
     fs::{fs, Inode, BSIZE},
     kernel::kernel,
     param::{MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
+    pool::{Arena, Rc, RcArena, Tag},
     proc::{myproc, Proc},
     spinlock::SpinlockGuard,
     stat::Stat,
@@ -48,25 +47,14 @@ pub struct FTableTag {}
 
 impl Tag for FTableTag {
     type Target = RcArena<File, NFILE>;
-    type Result<'s> = SpinlockGuard<'s, Self::Target>;
+    type Result = SpinlockGuard<'static, Self::Target>;
 
-    fn arena(&self) -> Self::Result<'_> {
+    fn arena(&self) -> Self::Result {
         kernel().ftable.lock()
     }
 }
 
-// // SAFETY: We have only one `PoolRef` pointing `FTABLE`.
-// unsafe impl ArenaRef for FTableTag {
-//     type Target = RcArena<File, NFILE>;
-//     type Result = SpinlockGuard<'static, Self::Target>;
-//     // TODO(rv6): type Result = impl Deref<Target=Self::Target>;
-
-//     fn deref_mut() -> SpinlockGuard<'static, Self::Target> {
-//         kernel().ftable.lock()
-//     }
-// }
-
-pub type RcFile = TaggedRc<FTableTag>;
+pub type RcFile = Rc<FTableTag>;
 
 impl RcFile {
     /// Allocate a file structure.

@@ -133,7 +133,7 @@ impl Drop for Descriptor {
     fn drop(&mut self) {
         // HACK(@efenniht): we really need linear type here:
         // https://github.com/rust-lang/rfcs/issues/814
-        panic!("Descriptor must never drop: use Descriptorarena::free instead.");
+        panic!("Descriptor must never drop: use DescriptorPool::free instead.");
     }
 }
 
