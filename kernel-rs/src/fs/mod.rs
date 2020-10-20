@@ -11,7 +11,7 @@
 
 /// On-disk file system format used for both kernel and user programs are also included here.
 use crate::{
-    bio::Buf, kernel::kernel, log::Log, pool::Pool, sleepablelock::Sleepablelock,
+    arena::Arena, bio::Buf, kernel::kernel, log::Log, sleepablelock::Sleepablelock,
     sleeplock::Sleeplock, stat::T_DIR,
 };
 use core::{mem, ptr};

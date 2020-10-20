@@ -1,10 +1,11 @@
 //! Support functions for system calls that involve file descriptors.
 use crate::{
+    arena::Arena,
+    arena::{RcArena, Tag, TaggedRc},
     fs::{fs, Inode, BSIZE},
     kernel::kernel,
     param::{MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
-    pool::{PoolRef, RcPool, TaggedRc},
     proc::{myproc, Proc},
     spinlock::SpinlockGuard,
     stat::Stat,
@@ -42,34 +43,38 @@ pub struct Devsw {
     pub write: Option<unsafe fn(_: i32, _: usize, _: i32) -> i32>,
 }
 
-pub struct FTableRef {}
+#[derive(Clone)]
+pub struct FTableTag {}
 
-// SAFETY: We have only one `PoolRef` pointing `FTABLE`.
-unsafe impl PoolRef for FTableRef {
-    type Target = RcPool<File, NFILE>;
-    type Result = SpinlockGuard<'static, Self::Target>;
-    // TODO(rv6): type Result = impl Deref<Target=Self::Target>;
+impl Tag for FTableTag {
+    type Target = RcArena<File, NFILE>;
+    type Result<'s> = SpinlockGuard<'s, Self::Target>;
 
-    fn deref_mut() -> SpinlockGuard<'static, Self::Target> {
+    fn arena(&self) -> Self::Result<'_> {
         kernel().ftable.lock()
     }
 }
 
-pub type RcFile = TaggedRc<FTableRef, File>;
+// // SAFETY: We have only one `PoolRef` pointing `FTABLE`.
+// unsafe impl ArenaRef for FTableTag {
+//     type Target = RcArena<File, NFILE>;
+//     type Result = SpinlockGuard<'static, Self::Target>;
+//     // TODO(rv6): type Result = impl Deref<Target=Self::Target>;
+
+//     fn deref_mut() -> SpinlockGuard<'static, Self::Target> {
+//         kernel().ftable.lock()
+//     }
+// }
+
+pub type RcFile = TaggedRc<FTableTag>;
 
 impl RcFile {
     /// Allocate a file structure.
     pub fn alloc(readable: bool, writable: bool) -> Option<Self> {
         // TODO: idiomatic initialization.
-        FTableRef::alloc(|p| unsafe {
+        FTableTag {}.alloc(|p| unsafe {
             ptr::write(p, File::new(readable, writable));
         })
-    }
-
-    /// Increment reference count of the file.
-    pub fn dup(&self) -> Self {
-        // SAFETY: `self` is allocated from `FTABLE`, ensured by given type parameter `FTableRef`.
-        unsafe { RcFile::from_unchecked(kernel().ftable.lock().dup(&*self)) }
     }
 }
 

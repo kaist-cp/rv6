@@ -6,6 +6,7 @@ use core::{
 use spin::Once;
 
 use crate::{
+    arena::RcArena,
     bio::Bcache,
     console::{consoleinit, Console},
     file::{Devsw, File},
@@ -15,7 +16,6 @@ use crate::{
     page::Page,
     param::{NCPU, NDEV, NFILE, NINODE},
     plic::{plicinit, plicinithart},
-    pool::RcPool,
     println,
     proc::{cpuid, procinit, scheduler, Cpu, ProcessSystem},
     riscv::PGSIZE,
@@ -67,9 +67,9 @@ pub struct Kernel {
 
     pub devsw: [Devsw; NDEV],
 
-    pub ftable: Spinlock<RcPool<File, NFILE>>,
+    pub ftable: Spinlock<RcArena<File, NFILE>>,
 
-    pub icache: Spinlock<RcPool<Inode, NINODE>>,
+    pub icache: Spinlock<RcArena<Inode, NINODE>>,
 
     pub file_system: Once<FileSystem>,
 }
@@ -91,8 +91,8 @@ impl Kernel {
                 read: None,
                 write: None,
             }; NDEV],
-            ftable: Spinlock::new("FTABLE", RcPool::new()),
-            icache: Spinlock::new("ICACHE", RcPool::new()),
+            ftable: Spinlock::new("FTABLE", RcArena::new()),
+            icache: Spinlock::new("ICACHE", RcArena::new()),
             file_system: Once::new(),
         }
     }
