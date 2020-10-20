@@ -1,10 +1,10 @@
 //! Support functions for system calls that involve file descriptors.
 use crate::{
+    arena::{Arena, Rc, RcArena, Tag},
     fs::{fs, Inode, BSIZE},
     kernel::kernel,
     param::{MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
-    pool::{Arena, Rc, RcArena, Tag},
     proc::{myproc, Proc},
     spinlock::SpinlockGuard,
     stat::Stat,

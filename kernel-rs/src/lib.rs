@@ -15,6 +15,7 @@
 #![feature(maybe_uninit_extra)]
 #![feature(min_const_generics)]
 
+mod arena;
 mod bio;
 mod console;
 mod elf;
@@ -31,7 +32,6 @@ mod page;
 mod param;
 mod pipe;
 mod plic;
-mod pool;
 mod poweroff;
 mod proc;
 mod riscv;
