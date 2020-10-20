@@ -50,7 +50,7 @@ unsafe fn argfd(n: usize) -> Result<(i32, *mut RcFile), ()> {
 
 pub unsafe fn sys_dup() -> usize {
     let (_, f) = ok_or!(argfd(0), return usize::MAX);
-    let newfile = (*f).dup();
+    let newfile = (*f).clone();
 
     let fd = ok_or!(newfile.fdalloc(), return usize::MAX);
     fd as usize

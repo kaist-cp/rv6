@@ -658,7 +658,7 @@ impl ProcessSystem {
         // Increment reference counts on open file descriptors.
         for i in 0..NOFILE {
             if let Some(file) = &(*p).open_files[i] {
-                (*np).open_files[i] = Some(file.dup())
+                (*np).open_files[i] = Some(file.clone())
             }
         }
         (*np).cwd = (*(*p).cwd).idup();
