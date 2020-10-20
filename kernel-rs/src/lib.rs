@@ -5,7 +5,6 @@
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 // Required for unused features in xv6 (see https://github.com/kaist-cp/rv6/issues/120 for details).
 #![allow(dead_code)]
-#![allow(incomplete_features)]
 #![feature(llvm_asm)]
 #![feature(const_wrapping_int_methods)]
 #![feature(maybe_uninit_ref)]
@@ -15,10 +14,7 @@
 #![feature(slice_ptr_range)]
 #![feature(maybe_uninit_extra)]
 #![feature(min_const_generics)]
-#![feature(type_alias_impl_trait, associated_type_defaults)]
-#![feature(generic_associated_types)]
 
-mod arena;
 mod bio;
 mod console;
 mod elf;
@@ -35,6 +31,7 @@ mod page;
 mod param;
 mod pipe;
 mod plic;
+mod pool;
 mod poweroff;
 mod proc;
 mod riscv;

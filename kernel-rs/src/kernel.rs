@@ -6,7 +6,6 @@ use core::{
 use spin::Once;
 
 use crate::{
-    arena::RcArena,
     bio::Bcache,
     console::{consoleinit, Console},
     file::{Devsw, File},
@@ -16,6 +15,7 @@ use crate::{
     page::Page,
     param::{NCPU, NDEV, NFILE, NINODE},
     plic::{plicinit, plicinithart},
+    pool::RcArena,
     println,
     proc::{cpuid, procinit, scheduler, Cpu, ProcessSystem},
     riscv::PGSIZE,
