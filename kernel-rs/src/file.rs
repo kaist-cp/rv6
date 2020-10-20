@@ -9,8 +9,7 @@ use crate::{
     spinlock::Spinlock,
     stat::Stat,
 };
-use core::cmp;
-use core::convert::TryFrom;
+use core::{cmp, convert::TryFrom};
 
 pub struct File {
     pub typ: FileType,
@@ -72,26 +71,17 @@ impl File {
 
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub unsafe fn stat(&mut self, addr: usize) -> Result<(), ()> {
+    pub unsafe fn stat(&self, addr: usize) -> Result<(), ()> {
         let p: *mut Proc = myproc();
 
         match self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                 let mut st = (*ip).lock().stat();
-                if (*p)
-                    .pagetable
-                    .assume_init_mut()
-                    .copyout(
-                        addr,
-                        &mut st as *mut Stat as *mut u8,
-                        ::core::mem::size_of::<Stat>() as usize,
-                    )
-                    .is_err()
-                {
-                    Err(())
-                } else {
-                    Ok(())
-                }
+                (*p).pagetable.assume_init_mut().copyout(
+                    addr,
+                    &mut st as *mut Stat as *mut u8,
+                    ::core::mem::size_of::<Stat>() as usize,
+                )
             }
             _ => Err(()),
         }
