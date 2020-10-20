@@ -243,8 +243,21 @@ pub unsafe fn sys_open() -> usize {
         return usize::MAX;
     }
 
+    let typ = if ip.typ == T_DEVICE {
+        FileType::Device {
+            //TODO : Use better code
+            ip: *(&ip.ptr as *const _ as *mut _),
+            major: ip.major,
+        }
+    } else {
+        FileType::Inode {
+            ip: *(&ip.ptr as *const _ as *mut _),
+            off: UnsafeCell::new(0),
+        }
+    };
     let f = some_or!(
         RcFile::alloc(
+            typ,
             !omode.intersects(FcntlFlags::O_WRONLY),
             omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)
         ),
@@ -263,20 +276,6 @@ pub unsafe fn sys_open() -> usize {
             return usize::MAX;
         }
     };
-    let f = (*myproc()).open_files[fd as usize].as_mut().unwrap();
-
-    if ip.typ == T_DEVICE {
-        (*f).typ = FileType::Device {
-            //TODO : Use better code
-            ip: *(&ip.ptr as *const _ as *mut _),
-            major: ip.major,
-        };
-    } else {
-        (*f).typ = FileType::Inode {
-            ip: *(&ip.ptr as *const _ as *mut _),
-            off: UnsafeCell::new(0),
-        };
-    }
 
     drop(ip);
     fs().end_op();

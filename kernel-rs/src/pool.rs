@@ -57,13 +57,6 @@ impl<T> Deref for UntaggedRc<T> {
     }
 }
 
-// TODO: This may cause UB; remove after refactoring File::{read, write}.
-impl<T> DerefMut for UntaggedRc<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { (*self.ptr).data.assume_init_mut() }
-    }
-}
-
 impl<T> Drop for UntaggedRc<T> {
     fn drop(&mut self) {
         // HACK(@efenniht): we really need linear type here:
@@ -184,12 +177,6 @@ impl<A: 'static, T: Tag<Target = RcArena<A, C>>, const C: usize> Deref for Rc<T>
 
     fn deref(&self) -> &Self::Target {
         self.inner.deref()
-    }
-}
-
-impl<A: 'static, T: Tag<Target = RcArena<A, C>>, const C: usize> DerefMut for Rc<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.inner.deref_mut()
     }
 }
 
