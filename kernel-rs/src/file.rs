@@ -9,8 +9,7 @@ use crate::{
     spinlock::Spinlock,
     stat::Stat,
 };
-use core::{cmp, convert::TryFrom};
-
+use core::{cell::UnsafeCell, cmp, convert::TryFrom};
 pub struct File {
     pub typ: FileType,
     readable: bool,
@@ -22,9 +21,17 @@ unsafe impl Send for File {}
 
 pub enum FileType {
     None,
-    Pipe { pipe: AllocatedPipe },
-    Inode { ip: *mut Inode, off: u32 },
-    Device { ip: *mut Inode, major: u16 },
+    Pipe {
+        pipe: AllocatedPipe,
+    },
+    Inode {
+        ip: *mut Inode,
+        off: UnsafeCell<u32>,
+    },
+    Device {
+        ip: *mut Inode,
+        major: u16,
+    },
 }
 
 /// map major device number to device functions.
@@ -89,19 +96,19 @@ impl File {
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub unsafe fn read(&mut self, addr: usize, n: i32) -> Result<usize, ()> {
+    pub unsafe fn read(&self, addr: usize, n: i32) -> Result<usize, ()> {
         if !self.readable {
             return Err(());
         }
 
-        // Use &mut self.typ because read() "changes" FileType::Inode.off during holding ip's lock.
-        match &mut self.typ {
+        match &self.typ {
             FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0)),
             FileType::Inode { ip, off } => {
                 let mut ip = (**ip).lock();
-                let ret = ip.read(true, addr, *off, n as u32);
+                let curr_off = *off.get();
+                let ret = ip.read(true, addr, curr_off, n as u32);
                 if let Ok(v) = ret {
-                    *off = off.wrapping_add(v as u32);
+                    *off.get() = curr_off.wrapping_add(v as u32);
                 }
                 drop(ip);
                 ret
@@ -114,16 +121,14 @@ impl File {
             _ => panic!("File::read"),
         }
     }
-
     /// Write to file self.
     /// addr is a user virtual address.
-    pub unsafe fn write(&mut self, addr: usize, n: i32) -> Result<usize, ()> {
+    pub unsafe fn write(&self, addr: usize, n: i32) -> Result<usize, ()> {
         if !self.writable {
             return Err(());
         }
 
-        // Use &mut self.typ because write() "changes" FileType::Inode.off during holding ip's lock.
-        match &mut self.typ {
+        match &self.typ {
             FileType::Pipe { pipe } => pipe.write(addr, usize::try_from(n).unwrap_or(0)),
             FileType::Inode { ip, off } => {
                 // write a few blocks at a time to avoid exceeding
@@ -137,16 +142,16 @@ impl File {
                     let bytes_to_write = cmp::min(n - bytes_written, max as i32);
                     fs().begin_op();
                     let mut ip = (**ip).lock();
-
+                    let curr_off = *off.get();
                     let bytes_written = ip
                         .write(
                             true,
                             addr.wrapping_add(bytes_written as usize),
-                            *off,
+                            curr_off,
                             bytes_to_write as u32,
                         )
                         .map(|v| {
-                            *off = off.wrapping_add(v as u32);
+                            *off.get() = curr_off.wrapping_add(v as u32);
                             v
                         });
                     drop(ip);
