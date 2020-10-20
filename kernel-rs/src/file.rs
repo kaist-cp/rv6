@@ -1,7 +1,7 @@
 //! Support functions for system calls that involve file descriptors.
 use crate::{
     arena::{Arena, Rc, RcArena, Tag},
-    fs::{fs, Inode, BSIZE},
+    fs::{fs, RcInode, BSIZE},
     kernel::kernel,
     param::{MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
@@ -9,7 +9,7 @@ use crate::{
     spinlock::SpinlockGuard,
     stat::Stat,
 };
-use core::{cell::UnsafeCell, cmp, convert::TryFrom, ptr};
+use core::{cell::UnsafeCell, cmp, convert::TryFrom, mem, ops::Deref, ptr};
 
 pub struct File {
     pub typ: FileType,
@@ -22,17 +22,9 @@ unsafe impl Send for File {}
 
 pub enum FileType {
     None,
-    Pipe {
-        pipe: AllocatedPipe,
-    },
-    Inode {
-        ip: *mut Inode,
-        off: UnsafeCell<u32>,
-    },
-    Device {
-        ip: *mut Inode,
-        major: u16,
-    },
+    Pipe { pipe: AllocatedPipe },
+    Inode { ip: RcInode, off: UnsafeCell<u32> },
+    Device { ip: RcInode, major: u16 },
 }
 
 /// map major device number to device functions.
@@ -80,9 +72,9 @@ impl File {
     pub unsafe fn stat(&self, addr: usize) -> Result<(), ()> {
         let p: *mut Proc = myproc();
 
-        match self.typ {
+        match &self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
-                let mut st = (*ip).lock().stat();
+                let mut st = ip.deref().lock().stat();
                 (*p).pagetable.assume_init_mut().copyout(
                     addr,
                     &mut st as *mut Stat as *mut u8,
@@ -103,7 +95,7 @@ impl File {
         match &self.typ {
             FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0)),
             FileType::Inode { ip, off } => {
-                let mut ip = (**ip).lock();
+                let mut ip = ip.deref().lock();
                 let curr_off = *off.get();
                 let ret = ip.read(true, addr, curr_off, n as u32);
                 if let Ok(v) = ret {
@@ -140,7 +132,7 @@ impl File {
                 for bytes_written in (0..n).step_by(max) {
                     let bytes_to_write = cmp::min(n - bytes_written, max as i32);
                     fs().begin_op();
-                    let mut ip = (**ip).lock();
+                    let mut ip = ip.deref().lock();
                     let curr_off = *off.get();
                     let bytes_written = ip
                         .write(
@@ -174,13 +166,14 @@ impl File {
 
 impl Drop for File {
     fn drop(&mut self) {
-        // TODO: Reasoning why.
+        // TODO(rv6): more efficient.. no replace
+        let typ = mem::replace(&mut self.typ, FileType::None);
         unsafe {
-            match self.typ {
+            match typ {
                 FileType::Pipe { mut pipe } => pipe.close(self.writable),
                 FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                     fs().begin_op();
-                    (*ip).put();
+                    drop(ip);
                     fs().end_op();
                 }
                 _ => (),

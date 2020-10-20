@@ -3,9 +3,9 @@ use core::mem::{self, ManuallyDrop, MaybeUninit};
 use core::ops::{Deref, DerefMut};
 use core::ptr;
 
-struct RcEntry<T> {
-    ref_cnt: usize,
-    data: MaybeUninit<T>,
+pub struct RcEntry<T> {
+    pub ref_cnt: usize,
+    pub data: MaybeUninit<T>,
 }
 
 /// A homogeneous memory allocator equipped with reference counts.
@@ -26,6 +26,11 @@ impl<T, const CAPACITY: usize> RcArena<T, CAPACITY> {
                 data: MaybeUninit::uninit(),
             }; CAPACITY],
         }
+    }
+
+    // TODO(rv6): broken API...
+    pub const fn new_with_array(inner: [RcEntry<T>; CAPACITY]) -> Self {
+        Self { inner }
     }
 
     /// # Safety

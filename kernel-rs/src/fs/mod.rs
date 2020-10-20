@@ -11,12 +11,12 @@
 
 /// On-disk file system format used for both kernel and user programs are also included here.
 use crate::{bio::Buf, kernel::kernel, log::Log, sleepablelock::Sleepablelock, stat::T_DIR};
-use core::{mem, ops::DerefMut, ptr};
+use core::{mem, ptr};
 
 mod path;
 pub use path::{FileName, Path};
 mod inode;
-pub use inode::{Dinode, Inode, InodeGuard, InodeInner};
+pub use inode::{Dinode, Inode, InodeInner, RcInode, RcInodeGuard};
 
 /// Disk layout:
 /// [ boot block | super block | log | inode blocks |
@@ -84,7 +84,7 @@ impl Dirent {
     }
 
     // TODO: Use iterator
-    fn read_entry(&mut self, ip: &mut InodeGuard<'_>, off: u32, panic_msg: &'static str) {
+    fn read_entry(&mut self, ip: &mut RcInodeGuard, off: u32, panic_msg: &'static str) {
         unsafe {
             let bytes_read = ip.read(false, self as *mut Dirent as usize, off, DIRENT_SIZE as u32);
             assert_eq!(bytes_read, Ok(DIRENT_SIZE), "{}", panic_msg)
@@ -227,33 +227,4 @@ unsafe fn bfree(dev: i32, b: u32) {
     bp.deref_mut_inner().data[(bi / 8) as usize] =
         (bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & !m) as u8;
     fs().log_write(bp);
-}
-
-/// Find the inode with number inum on device dev
-/// and return the in-memory copy. Does not lock
-/// the inode and does not read it from disk.
-unsafe fn iget(dev: u32, inum: u32) -> *mut Inode {
-    let mut inode = kernel().icache.lock();
-
-    // Is the inode already cached?
-    let mut empty: *mut Inode = ptr::null_mut();
-    for ip in &mut inode.deref_mut()[..] {
-        if (*ip).ref_0 > 0 && (*ip).dev == dev && (*ip).inum == inum {
-            (*ip).ref_0 += 1;
-            return ip;
-        }
-        if empty.is_null() && (*ip).ref_0 == 0 {
-            // Remember empty slot.
-            empty = ip
-        }
-    }
-
-    // Recycle an inode cache entry.
-    assert!(!empty.is_null(), "iget: no inodes");
-    let ip = empty;
-    (*ip).dev = dev;
-    (*ip).inum = inum;
-    (*ip).ref_0 = 1;
-    (*ip).inner.get_mut_unchecked().valid = false;
-    ip
 }

@@ -1,12 +1,13 @@
 use core::sync::atomic::{spin_loop_hint, AtomicBool, Ordering};
 use core::{
     fmt::{self, Write},
+    mem::MaybeUninit,
     ptr,
 };
 use spin::Once;
 
 use crate::{
-    arena::RcArena,
+    arena::{RcArena, RcEntry},
     bio::Bcache,
     console::{consoleinit, Console},
     file::{Devsw, File},
@@ -69,7 +70,7 @@ pub struct Kernel {
 
     pub ftable: Spinlock<RcArena<File, NFILE>>,
 
-    pub icache: Spinlock<[Inode; NINODE]>,
+    pub icache: Spinlock<RcArena<Inode, NINODE>>,
 
     pub file_system: Once<FileSystem>,
 }
@@ -92,7 +93,15 @@ impl Kernel {
                 write: None,
             }; NDEV],
             ftable: Spinlock::new("FTABLE", RcArena::new()),
-            icache: Spinlock::new("ICACHE", [Inode::zero(); NINODE]),
+            icache: Spinlock::new(
+                "ICACHE",
+                RcArena::new_with_array(
+                    [RcEntry {
+                        ref_cnt: 0,
+                        data: MaybeUninit::new(Inode::zero()),
+                    }; NINODE],
+                ),
+            ),
             file_system: Once::new(),
         }
     }
