@@ -183,11 +183,15 @@ impl<A: 'static, T: Tag<Target = RcArena<A, C>>, const C: usize> Deref for Rc<T>
 impl<T: Tag> Drop for Rc<T> {
     fn drop(&mut self) {
         // SAFETY: We can ensure the box is allocated from `self.tag` by the invariant of `Tag`.
-        unsafe {
+        let val = unsafe {
             self.tag
                 .arena()
-                .dealloc(ManuallyDrop::take(&mut self.inner));
-        }
+                .dealloc(ManuallyDrop::take(&mut self.inner))
+        };
+
+        // Drop AFTER the arena guard is dropped, as dropping val may cause the current thread
+        // sleep.
+        drop(val);
     }
 }
 
