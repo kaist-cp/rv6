@@ -1,6 +1,6 @@
 use crate::{
     file::RcFile,
-    fs::{fs, fsinit, Inode, Path},
+    fs::{fs, fsinit, Path, RcInode},
     kernel::kernel,
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     ok_or,
@@ -321,7 +321,7 @@ pub struct Proc {
     pub open_files: [Option<RcFile>; NOFILE],
 
     /// Current directory.
-    pub cwd: *mut Inode,
+    pub cwd: Option<RcInode>,
 
     /// Process name (debugging).
     pub name: [u8; 16],
@@ -447,7 +447,7 @@ impl Proc {
             tf: ptr::null_mut(),
             context: Context::new(),
             open_files: [None; NOFILE],
-            cwd: ptr::null_mut(),
+            cwd: None,
             name: [0; 16],
         }
     }
@@ -500,9 +500,8 @@ impl Proc {
             *file = None;
         }
         fs().begin_op();
-        (*self.cwd).put();
+        self.cwd = None;
         fs().end_op();
-        self.cwd = ptr::null_mut();
     }
 }
 
@@ -624,7 +623,7 @@ impl ProcessSystem {
         );
         (*p).cwd = Path::new(CStr::from_bytes_with_nul_unchecked(b"/\x00"))
             .namei()
-            .unwrap_or(ptr::null_mut());
+            .ok();
         p.deref_mut_inner().state = Procstate::RUNNABLE;
     }
 
@@ -661,7 +660,7 @@ impl ProcessSystem {
                 (*np).open_files[i] = Some(file.clone())
             }
         }
-        (*np).cwd = (*(*p).cwd).idup();
+        (*np).cwd = Some((*p).cwd.clone().unwrap());
         safestrcpy(
             (*np).name.as_mut_ptr(),
             (*p).name.as_mut_ptr(),

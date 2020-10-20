@@ -1,6 +1,6 @@
 use crate::{
     elf::{ElfHdr, ProgHdr, ELF_MAGIC, ELF_PROG_LOAD},
-    fs::{fs, InodeGuard, Path},
+    fs::{fs, Path, RcInodeGuard},
     ok_or,
     param::MAXARG,
     proc::{myproc, proc_freepagetable, proc_pagetable, Proc},
@@ -22,9 +22,9 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
         fs().end_op();
         return Err(());
     });
-    let ip = (*ptr).lock();
+    let ip = ptr.lock();
     let mut ip = scopeguard::guard(ip, |ip| {
-        ip.unlockput();
+        drop(ip);
         fs().end_op();
     });
 
@@ -178,7 +178,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
 unsafe fn loadseg(
     pagetable: &mut PageTable,
     va: usize,
-    ip: &mut InodeGuard<'_>,
+    ip: &mut RcInodeGuard,
     offset: u32,
     sz: u32,
 ) -> Result<(), ()> {

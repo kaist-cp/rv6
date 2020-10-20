@@ -1,7 +1,7 @@
 use core::cmp;
 use cstr_core::CStr;
 
-use super::{iget, Inode, DIRSIZ, ROOTINO, T_DIR};
+use super::{Inode, RcInode, DIRSIZ, ROOTINO, T_DIR};
 use crate::param::ROOTDEV;
 use crate::proc::myproc;
 
@@ -56,11 +56,11 @@ impl Path {
 
     // TODO: Following functions should return a safe type rather than `*mut Inode`.
 
-    pub unsafe fn namei(&self) -> Result<*mut Inode, ()> {
+    pub unsafe fn namei(&self) -> Result<RcInode, ()> {
         Ok(self.namex(false)?.0)
     }
 
-    pub unsafe fn nameiparent(&self) -> Result<(*mut Inode, &FileName), ()> {
+    pub unsafe fn nameiparent(&self) -> Result<(RcInode, &FileName), ()> {
         let (ip, name_in_path) = self.namex(true)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
@@ -130,11 +130,11 @@ impl Path {
     /// If parent != 0, return the inode for the parent and copy the final
     /// path element into name, which must have room for DIRSIZ bytes.
     /// Must be called inside a transaction since it calls Inode::put().
-    unsafe fn namex(&self, parent: bool) -> Result<(*mut Inode, Option<&FileName>), ()> {
+    unsafe fn namex(&self, parent: bool) -> Result<(RcInode, Option<&FileName>), ()> {
         let mut ptr = if self.is_absolute() {
-            iget(ROOTDEV as u32, ROOTINO)
+            Inode::get(ROOTDEV as u32, ROOTINO)
         } else {
-            (*(*myproc()).cwd).idup()
+            (*myproc()).cwd.clone().unwrap()
         };
 
         let mut path = self;
@@ -142,22 +142,18 @@ impl Path {
         while let Some((new_path, name)) = path.skipelem() {
             path = new_path;
 
-            let mut ip = (*ptr).lock();
+            let mut ip = ptr.lock();
             if ip.typ != T_DIR {
-                ip.unlockput();
                 return Err(());
             }
             if parent && path.inner.is_empty() {
                 // Stop one level early.
-                drop(ip);
-                return Ok((ptr, Some(name)));
+                return Ok((ip.unlock(), Some(name)));
             }
             let next = ip.dirlookup(name);
-            ip.unlockput();
             ptr = next?.0
         }
         if parent {
-            (*ptr).put();
             return Err(());
         }
         Ok((ptr, None))
