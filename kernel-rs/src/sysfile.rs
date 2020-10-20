@@ -17,7 +17,7 @@ use crate::{
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
 };
 
-use core::{cell::Cell, mem, ptr, slice};
+use core::{cell::UnsafeCell, mem, ptr, slice};
 
 impl RcFile {
     /// Allocate a file descriptor for the given file.
@@ -274,7 +274,7 @@ pub unsafe fn sys_open() -> usize {
     } else {
         (*f).typ = FileType::Inode {
             ip: *(&ip.ptr as *const _ as *mut _),
-            off: Cell::new(0),
+            off: UnsafeCell::new(0),
         };
     }
 
