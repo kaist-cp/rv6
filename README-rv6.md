@@ -142,6 +142,26 @@
 
     + Check https://sourceware.org/gdb/current/onlinedocs/gdb/TUI.html#TUI
 
+  - Tips for debugging rv6
+
+    + If rv6 doesn't boot, set the breakpoint to `kernel_main()` with `b kernel::kernel_main` and execute each line with `n`.
+
+    + If an infinite loop occurs during a usertest, check C code of the usertest in `user/usertests.c` first. Then set breakpoints to appropriate functions. For example, if infinite loop occurs during a `forkforkfork` test, set breakpoints to `sys_unlink()`, `sys_fork`, etc.
+
+    + It may be necessary to check whether the struct's field has an appropriate value (`print cpu.id`) or whether the address of the variable is appropriate (`print &(cpu.id)`). The x command (e.g., `x/4x 0x8049000`) allows you to examine memory (of the address of the variable) even after the variable is optimized out.
+  
+  - .gdbinit
+
+    + `.gdbinit` is generated after you run `make qemu-gdb`. This file contains GDB commands to automatically execute during GDB startup. The contents of the file are as follows :
+
+    ```
+    set confirm off
+    set architecture riscv:rv64
+    target remote 127.0.0.1:[PORT]
+    symbol-file kernel/kernel
+    set disassemble-next-line auto
+    ```
+
 ## How we ported xv6 to Rust
 
 - Run [c2rust](https://github.com/immunant/c2rust) to transpile C code to Rust.
