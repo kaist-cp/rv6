@@ -58,11 +58,12 @@ pub type RcFile = Rc<FTableTag>;
 
 impl RcFile {
     /// Allocate a file structure.
-    pub fn alloc(typ: FileType, readable: bool, writable: bool) -> Option<Self> {
-        // TODO: idiomatic initialization.
-        FTableTag {}.alloc(|p| unsafe {
-            ptr::write(p, File::new(typ, readable, writable));
-        })
+    pub fn alloc() -> Option<Self> {
+        FTableTag {}.alloc()
+    }
+
+    pub unsafe fn update(&mut self, f: File) {
+        ptr::write(&mut **self, f);
     }
 }
 

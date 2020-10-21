@@ -4,7 +4,7 @@
 use crate::{
     exec::exec,
     fcntl::FcntlFlags,
-    file::{FileType, RcFile},
+    file::{File, FileType, RcFile},
     fs::{fs, Dirent, FileName, Inode, InodeGuard, Path, DIRENT_SIZE},
     kernel::kernel,
     ok_or,
@@ -255,18 +255,16 @@ pub unsafe fn sys_open() -> usize {
             off: UnsafeCell::new(0),
         }
     };
-    let f = some_or!(
-        RcFile::alloc(
-            typ,
-            !omode.intersects(FcntlFlags::O_WRONLY),
-            omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)
-        ),
-        {
-            ip.unlockput();
-            fs().end_op();
-            return usize::MAX;
-        }
-    );
+    let mut f = some_or!(RcFile::alloc(), {
+        ip.unlockput();
+        fs().end_op();
+        return usize::MAX;
+    });
+    f.update(File::new(
+        typ,
+        !omode.intersects(FcntlFlags::O_WRONLY),
+        omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR),
+    ));
     let fd = match f.fdalloc() {
         Ok(fd) => fd,
         Err(f) => {

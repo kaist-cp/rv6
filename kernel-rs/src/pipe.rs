@@ -1,5 +1,5 @@
 use crate::{
-    file::{FileType, RcFile},
+    file::{File, FileType, RcFile},
     kernel::kernel,
     proc::{myproc, WaitChannel},
     spinlock::Spinlock,
@@ -112,6 +112,8 @@ impl AllocatedPipe {
         if ptr.is_null() {
             return Err(());
         }
+        let mut f0 = RcFile::alloc().ok_or_else(|| kernel().free(ptr as _))?;
+        let mut f1 = RcFile::alloc().ok_or_else(|| kernel().free(ptr as _))?;
 
         //TODO: Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`
         *ptr = Pipe {
@@ -128,10 +130,16 @@ impl AllocatedPipe {
             read_waitchannel: WaitChannel::new(),
             write_waitchannel: WaitChannel::new(),
         };
-        let f0 = RcFile::alloc(FileType::Pipe { pipe: Self { ptr } }, true, false)
-            .ok_or_else(|| kernel().free(ptr as _))?;
-        let f1 = RcFile::alloc(FileType::Pipe { pipe: Self { ptr } }, false, true)
-            .ok_or_else(|| kernel().free(ptr as _))?;
+        f0.update(File::new(
+            FileType::Pipe { pipe: Self { ptr } },
+            true,
+            false,
+        ));
+        f1.update(File::new(
+            FileType::Pipe { pipe: Self { ptr } },
+            false,
+            true,
+        ));
 
         Ok((f0, f1))
     }

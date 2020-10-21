@@ -57,6 +57,12 @@ impl<T> Deref for UntaggedRc<T> {
     }
 }
 
+impl<T> DerefMut for UntaggedRc<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { (*self.ptr).data.assume_init_mut() }
+    }
+}
+
 impl<T> Drop for UntaggedRc<T> {
     fn drop(&mut self) {
         // HACK(@efenniht): we really need linear type here:
@@ -81,7 +87,7 @@ pub trait Arena {
     ) -> Option<Self::Handle>;
 
     /// Failable allocation.
-    fn alloc<F: FnOnce(*mut Self::Data)>(&mut self, f: F) -> Option<Self::Handle>;
+    fn alloc(&mut self) -> Option<Self::Handle>;
 
     /// # Safety
     ///
@@ -127,11 +133,10 @@ impl<T: 'static, const CAPACITY: usize> Arena for RcArena<T, CAPACITY> {
         })
     }
 
-    fn alloc<F: FnOnce(*mut T)>(&mut self, f: F) -> Option<UntaggedRc<T>> {
+    fn alloc(&mut self) -> Option<UntaggedRc<T>> {
         for entry in &mut self.inner {
             if entry.ref_cnt == 0 {
                 entry.ref_cnt = 1;
-                f(entry.data.as_mut_ptr());
                 return Some(UntaggedRc {
                     ptr: entry,
                     _marker: PhantomData,
@@ -177,6 +182,12 @@ impl<A: 'static, T: Tag<Target = RcArena<A, C>>, const C: usize> Deref for Rc<T>
 
     fn deref(&self) -> &Self::Target {
         self.inner.deref()
+    }
+}
+
+impl<A: 'static, T: Tag<Target = RcArena<A, C>>, const C: usize> DerefMut for Rc<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.inner.deref_mut()
     }
 }
 
@@ -226,9 +237,9 @@ impl<A: Arena + 'static, T: Tag<Target = A>> Arena for T {
     }
 
     /// Failable allocation.
-    fn alloc<F: FnOnce(*mut Self::Data)>(&mut self, f: F) -> Option<Self::Handle> {
+    fn alloc(&mut self) -> Option<Self::Handle> {
         let tag = self.clone();
-        let inner = ManuallyDrop::new(tag.arena().alloc(f)?);
+        let inner = ManuallyDrop::new(tag.arena().alloc()?);
         Some(Rc { tag, inner })
     }
 
