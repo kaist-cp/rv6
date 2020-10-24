@@ -1,4 +1,5 @@
 use core::cmp;
+use core::mem;
 use cstr_core::CStr;
 
 use super::{Inode, RcInode, DIRSIZ, ROOTINO, T_DIR};
@@ -143,14 +144,16 @@ impl Path {
             path = new_path;
 
             let mut ip = ptr.lock();
-            if ip.typ != T_DIR {
+            if ip.deref_inner().typ != T_DIR {
                 return Err(());
             }
             if parent && path.inner.is_empty() {
                 // Stop one level early.
-                return Ok((ip.unlock(), Some(name)));
+                mem::drop(ip);
+                return Ok((ptr, Some(name)));
             }
             let next = ip.dirlookup(name);
+            mem::drop(ip);
             ptr = next?.0
         }
         if parent {

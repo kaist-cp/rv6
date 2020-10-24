@@ -1,11 +1,14 @@
 //! File-system system calls.
 //! Mostly argument checking, since we don't trust
 //! user code, and calls into file.c and fs.c.
+
+#![allow(clippy::unit_arg)]
+
 use crate::{
     exec::exec,
     fcntl::FcntlFlags,
     file::{FileType, RcFile},
-    fs::{fs, Dirent, FileName, Inode, Path, RcInodeGuard, DIRENT_SIZE},
+    fs::{fs, Dirent, FileName, Inode, InodeGuard, Path, RcInode, DIRENT_SIZE},
     kernel::kernel,
     ok_or,
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
@@ -90,37 +93,29 @@ pub unsafe fn sys_link() -> usize {
     let mut old: [u8; MAXPATH as usize] = [0; MAXPATH];
     let old = ok_or!(argstr(0, &mut old), return usize::MAX);
     let new = ok_or!(argstr(1, &mut new), return usize::MAX);
-    fs().begin_op();
+    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
     let ptr = ok_or!(Path::new(old).namei(), {
-        fs().end_op();
         return usize::MAX;
     });
     let mut ip = ptr.lock();
-    if ip.typ == T_DIR {
-        drop(ip);
-        fs().end_op();
+    if ip.deref_inner().typ == T_DIR {
         return usize::MAX;
     }
-    ip.nlink += 1;
+    ip.deref_inner_mut().nlink += 1;
     ip.update();
-    let ptr = ip.unlock();
+    drop(ip);
 
     if let Ok((ptr2, name)) = Path::new(new).nameiparent() {
         let mut dp = ptr2.lock();
-        if dp.inner.dev != ptr.dev || dp.dirlink(name, ptr.inum).is_err() {
-            drop(dp);
+        if dp.dev != ptr.dev || dp.dirlink(name, ptr.inum).is_err() {
         } else {
-            drop(dp);
-            fs().end_op();
             return 0;
         }
     }
 
     let mut ip = ptr.lock();
-    ip.nlink -= 1;
+    ip.deref_inner_mut().nlink -= 1;
     ip.update();
-    drop(ip);
-    fs().end_op();
     usize::MAX
 }
 
@@ -128,9 +123,8 @@ pub unsafe fn sys_unlink() -> usize {
     let mut de: Dirent = Default::default();
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
     let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-    fs().begin_op();
+    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
     let (ptr, name) = ok_or!(Path::new(path).nameiparent(), {
-        fs().end_op();
         return usize::MAX;
     });
     let mut dp = ptr.lock();
@@ -140,10 +134,10 @@ pub unsafe fn sys_unlink() -> usize {
         // TODO: use other Result related functions
         if let Ok((ptr2, off)) = dp.dirlookup(&name) {
             let mut ip = ptr2.lock();
-            if ip.nlink < 1 {
+            if ip.deref_inner().nlink < 1 {
                 panic!("unlink: nlink < 1");
             }
-            if ip.typ != T_DIR || ip.isdirempty() {
+            if ip.deref_inner().typ != T_DIR || ip.isdirempty() {
                 let bytes_write = dp.write(
                     false,
                     &mut de as *mut Dirent as usize,
@@ -151,101 +145,111 @@ pub unsafe fn sys_unlink() -> usize {
                     DIRENT_SIZE as u32,
                 );
                 assert_eq!(bytes_write, Ok(DIRENT_SIZE), "unlink: writei");
-                if ip.typ == T_DIR {
-                    dp.nlink -= 1;
+                if ip.deref_inner().typ == T_DIR {
+                    dp.deref_inner_mut().nlink -= 1;
                     dp.update();
                 }
                 drop(dp);
-                ip.nlink -= 1;
+                drop(ptr);
+                ip.deref_inner_mut().nlink -= 1;
                 ip.update();
-                drop(ip);
-                fs().end_op();
                 return 0;
             }
         }
     }
 
-    drop(dp);
-    fs().end_op();
     usize::MAX
 }
 
-// TODO: Returning lockguard can be dangerous. ('static lifetime too)
-unsafe fn create(path: &Path, typ: i16, major: u16, minor: u16) -> Result<RcInodeGuard, ()> {
+unsafe fn create<F, T>(
+    path: &Path,
+    typ: i16,
+    major: u16,
+    minor: u16,
+    f: F,
+) -> Result<(RcInode, T), ()>
+where
+    F: FnOnce(&mut InodeGuard<'_>) -> T,
+{
     let (ptr, name) = path.nameiparent()?;
     let mut dp = ptr.lock();
-    // TODO: use other Result related functions
     if let Ok((ptr2, _)) = dp.dirlookup(&name) {
         drop(dp);
-        let ip = ptr2.lock();
-        if typ == T_FILE && (ip.typ == T_FILE || ip.typ == T_DEVICE) {
-            return Ok(ip);
+        let mut ip = ptr2.lock();
+        if typ == T_FILE && (ip.deref_inner().typ == T_FILE || ip.deref_inner().typ == T_DEVICE) {
+            let ret = f(&mut ip);
+            mem::drop(ip);
+            return Ok((ptr2, ret));
         }
         return Err(());
     }
-    let ptr2 = Inode::alloc(dp.inner.dev, typ);
+    let ptr2 = Inode::alloc(dp.dev, typ);
     let mut ip = ptr2.lock();
-    ip.major = major;
-    ip.minor = minor;
-    ip.nlink = 1;
+    ip.deref_inner_mut().major = major;
+    ip.deref_inner_mut().minor = minor;
+    ip.deref_inner_mut().nlink = 1;
     ip.update();
 
     // Create . and .. entries.
     if typ == T_DIR {
         // for ".."
-        dp.nlink += 1;
+        dp.deref_inner_mut().nlink += 1;
         dp.update();
 
         // No ip->nlink++ for ".": avoid cyclic ref count.
-        ip.dirlink(FileName::from_bytes(b"."), ip.inner.inum)
-            .and_then(|_| ip.dirlink(FileName::from_bytes(b".."), dp.inner.inum))
+        ip.dirlink(FileName::from_bytes(b"."), ip.inum)
+            .and_then(|_| ip.dirlink(FileName::from_bytes(b".."), dp.inum))
             .expect("create dots");
     }
-    dp.dirlink(&name, ip.inner.inum).expect("create: dirlink");
-    Ok(ip)
+    dp.dirlink(&name, ip.inum).expect("create: dirlink");
+    let ret = f(&mut ip);
+    mem::drop(ip);
+    Ok((ptr2, ret))
 }
 
-#[allow(clippy::cast_ref_to_mut)]
 pub unsafe fn sys_open() -> usize {
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
     let path = ok_or!(argstr(0, &mut path), return usize::MAX);
     let path = Path::new(path);
     let omode = ok_or!(argint(1), return usize::MAX);
-    fs().begin_op();
     let omode = FcntlFlags::from_bits_truncate(omode);
-    let ip = if omode.contains(FcntlFlags::O_CREATE) {
-        ok_or!(create(path, T_FILE, 0, 0), {
-            fs().end_op();
-            return usize::MAX;
-        })
+
+    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
+
+    let (ip, (typ, major)) = if omode.contains(FcntlFlags::O_CREATE) {
+        ok_or!(
+            create(path, T_FILE, 0, 0, |ip| (
+                ip.deref_inner().typ,
+                ip.deref_inner().major
+            )),
+            {
+                return usize::MAX;
+            }
+        )
     } else {
         let ptr = ok_or!(path.namei(), {
-            fs().end_op();
             return usize::MAX;
         });
         let ip = ptr.lock();
-        if ip.typ == T_DIR && omode != FcntlFlags::O_RDONLY {
-            drop(ip);
-            fs().end_op();
+        let typ = ip.deref_inner().typ;
+        let major = ip.deref_inner().major;
+
+        if ip.deref_inner().typ == T_DIR && omode != FcntlFlags::O_RDONLY {
             return usize::MAX;
         }
-        ip
+        mem::drop(ip);
+        (ptr, (typ, major))
     };
-    if ip.typ == T_DEVICE && (ip.major as usize >= NDEV) {
-        drop(ip);
-        fs().end_op();
+    if typ == T_DEVICE && (major as usize >= NDEV) {
         return usize::MAX;
     }
 
-    let typ = if ip.typ == T_DEVICE {
-        let major = ip.major;
-        FileType::Device {
-            ip: ip.unlock(),
-            major,
-        }
+    let typ = if typ == T_DEVICE {
+        let major = major;
+        FileType::Device { ip, major }
     } else {
         FileType::Inode {
-            ip: ip.unlock(),
+            ip,
             off: UnsafeCell::new(0),
         }
     };
@@ -256,50 +260,39 @@ pub unsafe fn sys_open() -> usize {
             omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)
         ),
         {
-            fs().end_op();
             return usize::MAX;
         }
     );
     let fd = match f.fdalloc() {
         Ok(fd) => fd,
-        Err(f) => {
-            drop(f);
-            fs().end_op();
+        Err(_) => {
             return usize::MAX;
         }
     };
 
-    fs().end_op();
     fd as usize
 }
 
 pub unsafe fn sys_mkdir() -> usize {
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
-    fs().begin_op();
+    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
     let path = ok_or!(argstr(0, &mut path), {
-        fs().end_op();
         return usize::MAX;
     });
-    let ip = ok_or!(create(Path::new(path), T_DIR, 0, 0), {
-        fs().end_op();
+    ok_or!(create(Path::new(path), T_DIR, 0, 0, |_| ()), {
         return usize::MAX;
     });
-    drop(ip);
-    fs().end_op();
     0
 }
 
 pub unsafe fn sys_mknod() -> usize {
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
-    fs().begin_op();
-    let _end_op = scopeguard::guard((), |_| {
-        fs().end_op();
-    });
     let path = ok_or!(argstr(0, &mut path), return usize::MAX);
     let major = ok_or!(argint(1), return usize::MAX) as u16;
     let minor = ok_or!(argint(2), return usize::MAX) as u16;
+    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
     let _ip = ok_or!(
-        create(Path::new(path), T_DEVICE, major, minor),
+        create(Path::new(path), T_DEVICE, major, minor, |_| ()),
         return usize::MAX
     );
     0
@@ -308,23 +301,19 @@ pub unsafe fn sys_mknod() -> usize {
 pub unsafe fn sys_chdir() -> usize {
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
     let mut p: *mut Proc = myproc();
-    fs().begin_op();
+    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
     let path = ok_or!(argstr(0, &mut path), {
-        fs().end_op();
         return usize::MAX;
     });
     let ptr = ok_or!(Path::new(path).namei(), {
-        fs().end_op();
         return usize::MAX;
     });
     let ip = ptr.lock();
-    if ip.typ != T_DIR {
-        drop(ip);
-        fs().end_op();
+    if ip.deref_inner().typ != T_DIR {
         return usize::MAX;
     }
-    (*p).cwd = Some(ip.unlock());
-    fs().end_op();
+    mem::drop(ip);
+    (*p).cwd = Some(ptr);
     0
 }
 
