@@ -12,11 +12,7 @@ use crate::{
     spinlock::SpinlockGuard,
     stat::{Stat, T_DIR, T_NONE},
 };
-use core::{
-    mem,
-    ops::{Deref, DerefMut},
-    ptr,
-};
+use core::{mem, ops::Deref, ptr};
 
 pub struct InodeInner {
     /// inode has been read from disk?
@@ -55,104 +51,44 @@ impl Tag for IcacheTag {
 
 pub type RcInode = Rc<IcacheTag>;
 
-impl RcInode {
-    /// Lock the given inode.
-    /// Reads the inode from disk if necessary.
-    pub fn lock(self) -> RcInodeGuard {
-        let mut guard = self.inner.lock();
-        if !guard.valid {
-            let mut bp = Buf::new(self.dev, fs().superblock.iblock(self.inum));
-            let dip: &mut Dinode = unsafe {
-                &mut *((bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
-                    .add((self.inum as usize).wrapping_rem(IPB)))
-            };
-            guard.typ = (*dip).typ;
-            guard.major = (*dip).major as u16;
-            guard.minor = (*dip).minor as u16;
-            guard.nlink = (*dip).nlink;
-            guard.size = (*dip).size;
-            guard.addrs.copy_from_slice(&(*dip).addrs);
-            drop(bp);
-            guard.valid = true;
-            assert_ne!(guard.typ, T_NONE, "Inode::lock: no type");
-        };
-        mem::forget(guard);
-        RcInodeGuard { inner: self }
-    }
-}
-
-/// RcInodeGuard implies that SleeplockWIP<Inode> is held by current thread.
+/// InodeGuard implies that SleeplockWIP<InodeInner> is held by current thread.
 ///
 /// # Invariant
 ///
 /// When SleeplockWIP<InodeInner> is held, InodeInner's valid is always true.
-pub struct RcInodeGuard {
-    pub inner: RcInode,
+pub struct InodeGuard<'a> {
+    pub inode: &'a Inode,
 }
 
-impl Deref for RcInodeGuard {
-    type Target = InodeGuard;
+impl Deref for InodeGuard<'_> {
+    type Target = Inode;
 
     fn deref(&self) -> &Self::Target {
-        #[allow(clippy::transmute_ptr_to_ref)]
-        unsafe {
-            mem::transmute(self.inner.deref() as *const _)
-        }
+        self.inode
     }
 }
 
-impl DerefMut for RcInodeGuard {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        #[allow(clippy::transmute_ptr_to_ref)]
-        unsafe {
-            mem::transmute(self.inner.deref() as *const _)
-        }
+impl InodeGuard<'_> {
+    pub fn deref_inner(&self) -> &InodeInner {
+        unsafe { self.inner.get_mut_unchecked() }
+    }
+
+    pub fn deref_inner_mut(&mut self) -> &mut InodeInner {
+        unsafe { self.inner.get_mut_unchecked() }
     }
 }
 
 /// Unlock and put the given inode.
-impl Drop for RcInodeGuard {
+impl Drop for InodeGuard<'_> {
     fn drop(&mut self) {
         unsafe {
-            self.inner.inner.unlock();
+            self.inner.unlock();
         }
     }
 }
 
-/// RcInodeGuard implies that SleeplockWIP<Inode> is held by current thread.
-///
-/// # Invariant
-///
-/// When SleeplockWIP<InodeInner> is held, InodeInner's valid is always true.
-pub struct InodeGuard {
-    pub inner: &'static Inode,
-}
-
-impl Deref for InodeGuard {
-    type Target = InodeInner;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { &*self.inner.inner.get_mut_unchecked() }
-    }
-}
-
-impl DerefMut for InodeGuard {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.inner.inner.get_mut_unchecked() }
-    }
-}
-
-/// Unlock and put the given inode.
-impl Drop for InodeGuard {
-    fn drop(&mut self) {
-        unsafe {
-            self.inner.inner.unlock();
-        }
-    }
-}
-
-impl RcInodeGuard {
-    // Directories
+// Directories
+impl InodeGuard<'_> {
     /// Write a new directory entry (name, inum) into the directory dp.
     pub unsafe fn dirlink(&mut self, name: &FileName, inum: u32) -> Result<(), ()> {
         let mut de: Dirent = Default::default();
@@ -164,7 +100,7 @@ impl RcInodeGuard {
 
         // Look for an empty Dirent.
         let mut off: u32 = 0;
-        while off < self.size {
+        while off < self.deref_inner().size {
             de.read_entry(self, off, "dirlink read");
             if de.inum == 0 {
                 break;
@@ -187,38 +123,30 @@ impl RcInodeGuard {
     /// If found, return the entry and byte offset of entry.
     pub unsafe fn dirlookup(&mut self, name: &FileName) -> Result<(RcInode, u32), ()> {
         let mut de: Dirent = Default::default();
-        assert_eq!(self.typ, T_DIR, "dirlookup not DIR");
-        for off in (0..self.size).step_by(DIRENT_SIZE) {
+
+        assert_eq!(self.deref_inner().typ, T_DIR, "dirlookup not DIR");
+
+        for off in (0..self.deref_inner().size).step_by(DIRENT_SIZE) {
             de.read_entry(self, off, "dirlookup read");
             if de.inum != 0 && name == de.get_name() {
                 // entry matches path element
-                return Ok((Inode::get(self.inner.dev, de.inum as u32), off));
+                return Ok((Inode::get(self.dev, de.inum as u32), off));
             }
         }
         Err(())
     }
-
-    pub fn unlock(self) -> RcInode {
-        unsafe {
-            self.inner.inner.unlock();
-        }
-        // TODO(rv6): unsafe. use MauallyDrop
-        let inner = unsafe { ptr::read(&self.inner) };
-        mem::forget(self);
-        inner
-    }
 }
 
-impl InodeGuard {
+impl InodeGuard<'_> {
     /// Copy stat information from inode.
     /// Caller must hold ip->lock.
     pub unsafe fn stat(&self) -> Stat {
         Stat {
-            dev: self.inner.dev as i32,
-            ino: self.inner.inum,
-            typ: self.typ,
-            nlink: self.nlink,
-            size: self.size as usize,
+            dev: self.dev as i32,
+            ino: self.inum,
+            typ: self.deref_inner().typ,
+            nlink: self.deref_inner().nlink,
+            size: self.deref_inner().size as usize,
         }
     }
 
@@ -227,15 +155,16 @@ impl InodeGuard {
     /// that lives on disk, since i-node cache is write-through.
     /// Caller must hold self->lock.
     pub unsafe fn update(&self) {
-        let mut bp = Buf::new(self.inner.dev, fs().superblock.iblock(self.inner.inum));
+        let mut bp = Buf::new(self.dev, fs().superblock.iblock(self.inum));
         let mut dip: *mut Dinode = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
-            .add((self.inner.inum as usize).wrapping_rem(IPB));
-        (*dip).typ = self.typ;
-        (*dip).major = self.major;
-        (*dip).minor = self.minor;
-        (*dip).nlink = self.nlink;
-        (*dip).size = self.size;
-        (*dip).addrs.copy_from_slice(&self.addrs);
+            .add((self.inum as usize).wrapping_rem(IPB));
+        let inner = self.deref_inner();
+        (*dip).typ = inner.typ;
+        (*dip).major = inner.major;
+        (*dip).minor = inner.minor;
+        (*dip).nlink = inner.nlink;
+        (*dip).size = inner.size;
+        (*dip).addrs.copy_from_slice(&inner.addrs);
         fs().log_write(bp);
     }
 
@@ -246,24 +175,24 @@ impl InodeGuard {
     /// not an open file or current directory).
     unsafe fn itrunc(&mut self) {
         for i in 0..NDIRECT {
-            if self.addrs[i] != 0 {
-                bfree(self.inner.dev as i32, self.addrs[i]);
-                self.addrs[i] = 0
+            if self.deref_inner().addrs[i] != 0 {
+                bfree(self.dev as i32, self.deref_inner().addrs[i]);
+                self.deref_inner_mut().addrs[i] = 0;
             }
         }
-        if self.addrs[NDIRECT] != 0 {
-            let mut bp = Buf::new(self.inner.dev, self.addrs[NDIRECT]);
+        if self.deref_inner().addrs[NDIRECT] != 0 {
+            let mut bp = Buf::new(self.dev, self.deref_inner().addrs[NDIRECT]);
             let a = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
                 if *a.add(j) != 0 {
-                    bfree(self.inner.dev as i32, *a.add(j));
+                    bfree(self.dev as i32, *a.add(j));
                 }
             }
             drop(bp);
-            bfree(self.inner.dev as i32, self.addrs[NDIRECT]);
-            self.addrs[NDIRECT] = 0
+            bfree(self.dev as i32, self.deref_inner().addrs[NDIRECT]);
+            self.deref_inner_mut().addrs[NDIRECT] = 0
         }
-        self.size = 0;
+        self.deref_inner_mut().size = 0;
         self.update();
     }
 
@@ -278,18 +207,16 @@ impl InodeGuard {
         mut off: u32,
         mut n: u32,
     ) -> Result<usize, ()> {
-        if off > self.size || off.wrapping_add(n) < off {
+        let inner = self.deref_inner();
+        if off > inner.size || off.wrapping_add(n) < off {
             return Err(());
         }
-        if off.wrapping_add(n) > self.size {
-            n = self.size.wrapping_sub(off)
+        if off.wrapping_add(n) > inner.size {
+            n = inner.size.wrapping_sub(off)
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = Buf::new(
-                self.inner.dev,
-                self.bmap((off as usize).wrapping_div(BSIZE)),
-            );
+            let mut bp = Buf::new(self.dev, self.bmap((off as usize).wrapping_div(BSIZE)));
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
@@ -318,7 +245,7 @@ impl InodeGuard {
         mut off: u32,
         n: u32,
     ) -> Result<usize, ()> {
-        if off > self.size || off.wrapping_add(n) < off {
+        if off > self.deref_inner().size || off.wrapping_add(n) < off {
             return Err(());
         }
         if off.wrapping_add(n) as usize > MAXFILE.wrapping_mul(BSIZE) {
@@ -326,10 +253,7 @@ impl InodeGuard {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = Buf::new(
-                self.inner.dev,
-                self.bmap((off as usize).wrapping_div(BSIZE)),
-            );
+            let mut bp = Buf::new(self.dev, self.bmap((off as usize).wrapping_div(BSIZE)));
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
@@ -354,8 +278,8 @@ impl InodeGuard {
             }
         }
         if n > 0 {
-            if off > self.size {
-                self.size = off
+            if off > self.deref_inner().size {
+                self.deref_inner_mut().size = off;
             }
             // write the i-node back to disk even if the size didn't change
             // because the loop above might have called bmap() and added a new
@@ -375,11 +299,12 @@ impl InodeGuard {
     /// If there is no such block, bmap allocates one.
     unsafe fn bmap(&mut self, mut bn: usize) -> u32 {
         let mut addr: u32;
+        let inner = self.deref_inner();
         if bn < NDIRECT {
-            addr = self.addrs[bn];
+            addr = inner.addrs[bn];
             if addr == 0 {
-                addr = balloc(self.inner.dev);
-                self.addrs[bn] = addr
+                addr = balloc(self.dev);
+                self.deref_inner_mut().addrs[bn] = addr;
             }
             return addr;
         }
@@ -387,16 +312,16 @@ impl InodeGuard {
 
         assert!(bn < NINDIRECT, "bmap: out of range");
         // Load indirect block, allocating if necessary.
-        addr = self.addrs[NDIRECT];
+        addr = inner.addrs[NDIRECT];
         if addr == 0 {
-            addr = balloc(self.inner.dev);
-            self.addrs[NDIRECT] = addr
+            addr = balloc(self.dev);
+            self.deref_inner_mut().addrs[NDIRECT] = addr;
         }
-        let mut bp = Buf::new(self.inner.dev, addr);
+        let mut bp = Buf::new(self.dev, addr);
         let a: *mut u32 = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
         addr = *a.add(bn);
         if addr == 0 {
-            addr = balloc(self.inner.dev);
+            addr = balloc(self.dev);
             *a.add(bn) = addr;
             fs().log_write(bp);
         }
@@ -406,7 +331,7 @@ impl InodeGuard {
     /// Is the directory dp empty except for "." and ".." ?
     pub unsafe fn isdirempty(&mut self) -> bool {
         let mut de: Dirent = Default::default();
-        for off in (2 * DIRENT_SIZE as u32..self.size).step_by(DIRENT_SIZE) {
+        for off in (2 * DIRENT_SIZE as u32..self.deref_inner().size).step_by(DIRENT_SIZE) {
             let bytes_read = self.read(
                 false,
                 &mut de as *mut Dirent as usize,
@@ -542,9 +467,9 @@ impl Drop for Inode {
 
             unsafe {
                 ip.itrunc();
-                ip.typ = 0;
+                ip.deref_inner_mut().typ = 0;
                 ip.update();
-                ip.valid = false;
+                ip.deref_inner_mut().valid = false;
             }
 
             drop(ip);
@@ -556,11 +481,28 @@ impl Drop for Inode {
 }
 
 impl Inode {
-    pub fn lock(&self) -> InodeGuard {
-        mem::forget(self.inner.lock());
-        InodeGuard {
-            inner: unsafe { &*(self as *const _) },
-        }
+    /// Lock the given inode.
+    /// Reads the inode from disk if necessary.
+    pub fn lock(&self) -> InodeGuard<'_> {
+        let mut guard = self.inner.lock();
+        if !guard.valid {
+            let mut bp = Buf::new(self.dev, fs().superblock.iblock(self.inum));
+            let dip: &mut Dinode = unsafe {
+                &mut *((bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
+                    .add((self.inum as usize).wrapping_rem(IPB)))
+            };
+            guard.typ = (*dip).typ;
+            guard.major = (*dip).major as u16;
+            guard.minor = (*dip).minor as u16;
+            guard.nlink = (*dip).nlink;
+            guard.size = (*dip).size;
+            guard.addrs.copy_from_slice(&(*dip).addrs);
+            drop(bp);
+            guard.valid = true;
+            assert_ne!(guard.typ, T_NONE, "Inode::lock: no type");
+        };
+        mem::forget(guard);
+        InodeGuard { inode: self }
     }
 
     /// Find the inode with number inum on device dev

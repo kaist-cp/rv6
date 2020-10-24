@@ -16,7 +16,7 @@ use core::{mem, ptr};
 mod path;
 pub use path::{FileName, Path};
 mod inode;
-pub use inode::{Dinode, Inode, InodeInner, RcInode, RcInodeGuard};
+pub use inode::{Dinode, Inode, InodeGuard, InodeInner, RcInode};
 
 /// Disk layout:
 /// [ boot block | super block | log | inode blocks |
@@ -84,7 +84,7 @@ impl Dirent {
     }
 
     // TODO: Use iterator
-    fn read_entry(&mut self, ip: &mut RcInodeGuard, off: u32, panic_msg: &'static str) {
+    fn read_entry(&mut self, ip: &mut InodeGuard<'_>, off: u32, panic_msg: &'static str) {
         unsafe {
             let bytes_read = ip.read(false, self as *mut Dirent as usize, off, DIRENT_SIZE as u32);
             assert_eq!(bytes_read, Ok(DIRENT_SIZE), "{}", panic_msg)
