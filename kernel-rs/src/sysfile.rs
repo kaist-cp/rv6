@@ -18,7 +18,7 @@ use crate::{
     some_or,
     stat::{T_DEVICE, T_DIR, T_FILE},
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
-    vm::{KVAddr, VirtualAddr},
+    vm::{KVAddr, UVAddr, VirtualAddr},
 };
 
 use core::{cell::UnsafeCell, mem, ptr, slice};
@@ -358,7 +358,7 @@ pub unsafe fn sys_pipe() -> usize {
         .pagetable
         .assume_init_mut()
         .copyout(
-            fdarray,
+            UVAddr::wrap(fdarray),
             &mut fd0 as *mut i32 as *mut u8,
             mem::size_of::<i32>(),
         )
@@ -367,7 +367,7 @@ pub unsafe fn sys_pipe() -> usize {
             .pagetable
             .assume_init_mut()
             .copyout(
-                fdarray.wrapping_add(mem::size_of::<i32>()),
+                UVAddr::wrap(fdarray.wrapping_add(mem::size_of::<i32>())),
                 &mut fd1 as *mut i32 as *mut u8,
                 mem::size_of::<i32>(),
             )

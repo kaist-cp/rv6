@@ -8,7 +8,7 @@ use crate::{
     proc::{myproc, proc_freepagetable, proc_pagetable, Proc},
     riscv::PGSIZE,
     string::{safestrcpy, strlen},
-    vm::{PageTable, UVAddr, VirtualAddr},
+    vm::{KVAddr, PageTable, UVAddr, VirtualAddr},
 };
 use core::mem;
 
@@ -27,8 +27,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
 
     // Check ELF header
     let bytes_read = ip.read(
-        false,
-        &mut elf as *mut _ as _,
+        KVAddr::wrap(&mut elf as *mut _ as _),
         0,
         mem::size_of::<ElfHdr>() as _,
     )?;
@@ -54,8 +53,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
             .wrapping_add(i * ::core::mem::size_of::<ProgHdr>());
 
         let bytes_read = ip.read(
-            false,
-            &mut ph as *mut ProgHdr as usize,
+            KVAddr::wrap(&mut ph as *mut ProgHdr as usize),
             off as u32,
             ::core::mem::size_of::<ProgHdr>() as u32,
         )?;
@@ -106,7 +104,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
         if sp < stackbase {
             return Err(());
         }
-        pt.copyout(sp, argv[argc], (strlen(argv[argc]) + 1) as usize)?;
+        pt.copyout(UVAddr::wrap(sp), argv[argc], (strlen(argv[argc]) + 1) as usize)?;
         ustack[argc] = sp;
         argc = argc.wrapping_add(1)
     }
@@ -122,7 +120,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
     if sp >= stackbase
         && pt
             .copyout(
-                sp,
+                UVAddr::wrap(sp),
                 ustack.as_mut_ptr() as *mut u8,
                 argc.wrapping_add(1)
                     .wrapping_mul(::core::mem::size_of::<usize>()),
@@ -194,7 +192,7 @@ unsafe fn loadseg<A: VirtualAddr>(
             PGSIZE as u32
         };
 
-        let bytes_read = ip.read(false, pa, offset.wrapping_add(i), n)?;
+        let bytes_read = ip.read(KVAddr::wrap(pa), offset.wrapping_add(i), n)?;
         if bytes_read as u32 != n {
             return Err(());
         }

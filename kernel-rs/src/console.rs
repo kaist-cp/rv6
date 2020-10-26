@@ -77,11 +77,11 @@ impl Console {
 
     // TODO: This should be removed after `WaitChannel::sleep` gets refactored to take
     // `SpinlockGuard`.
+    // Check(@anemoneflower) : remove copy?
     #[allow(clippy::while_immutable_condition)]
-    unsafe fn read(
+    unsafe fn read<A: VirtualAddr + Copy>(
         this: &mut SleepablelockGuard<'_, Self>,
-        user_dst: bool,
-        mut dst: usize,
+        mut dst: A,
         mut n: i32,
     ) -> i32 {
         let target = n as u32;
@@ -109,10 +109,10 @@ impl Console {
             } else {
                 // Copy the input byte to the user-space buffer.
                 let cbuf = [cin as u8];
-                if either_copyout(user_dst, dst, &cbuf).is_err() {
+                if either_copyout(dst, &cbuf).is_err() {
                     break;
                 }
-                dst = dst.wrapping_add(1);
+                dst.update(dst.value() + 1);
                 n -= 1;
                 if cin == '\n' as i32 {
                     // A whole line has arrived, return to
@@ -216,7 +216,10 @@ unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
 /// or kernel address.
 unsafe fn consoleread(user_dst: i32, dst: usize, n: i32) -> i32 {
     let mut console = kernel().console.lock();
-    Console::read(&mut console, user_dst != 0, dst, n)
+    match user_dst {
+        1 => Console::read(&mut console, UVAddr::wrap(dst), n),
+        _ => Console::read(&mut console, KVAddr::wrap(dst), n),
+    }
 }
 
 /// The console input interrupt handler.
