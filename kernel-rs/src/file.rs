@@ -89,7 +89,7 @@ impl File {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                 let mut st = ip.deref().lock().stat();
                 (*p).pagetable.assume_init_mut().copyout(
-                    addr,
+                    UVAddr::wrap(addr),
                     &mut st as *mut Stat as *mut u8,
                     ::core::mem::size_of::<Stat>() as usize,
                 )
@@ -110,7 +110,7 @@ impl File {
             FileType::Inode { ip, off } => {
                 let mut ip = ip.deref().lock();
                 let curr_off = *off.get();
-                let ret = ip.read(true, addr, curr_off, n as u32);
+                let ret = ip.read(UVAddr::wrap(addr), curr_off, n as u32);
                 if let Ok(v) = ret {
                     *off.get() = curr_off.wrapping_add(v as u32);
                 }

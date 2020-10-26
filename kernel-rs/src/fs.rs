@@ -367,14 +367,20 @@ impl Inode {
     /// Caller must hold self->lock.
     /// If user_dst==1, then dst is a user virtual address;
     /// otherwise, dst is a kernel address.
-    pub unsafe fn read(&mut self, user_dst: i32, mut dst: usize, mut off: u32, mut n: u32) -> i32 {
+    // Check(@anemoneflower) : remove copy?
+    pub unsafe fn read<A: VirtualAddr + Copy>(
+        &mut self,
+        mut dst: A,
+        mut off: u32,
+        mut n: u32,
+    ) -> i32 {
         if off > (*self).size || off.wrapping_add(n) < off {
             return -1;
         }
         if off.wrapping_add(n) > (*self).size {
             n = (*self).size.wrapping_sub(off)
         }
-        let mut tot: u32 = 0;
+        let mut tot = 0;
         while tot < n {
             let bp = Buf::read((*self).dev, self.bmap(off.wrapping_div(BSIZE as u32)));
             let m = core::cmp::min(
@@ -382,7 +388,6 @@ impl Inode {
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
             );
             if either_copyout(
-                user_dst,
                 dst,
                 (*bp)
                     .inner
@@ -400,7 +405,7 @@ impl Inode {
                 brelease(&mut *bp);
                 tot = (tot as u32).wrapping_add(m) as u32 as u32;
                 off = (off as u32).wrapping_add(m) as u32 as u32;
-                dst = (dst as usize).wrapping_add(m as usize) as usize as usize
+                dst.update(dst.value() + (m as usize));
             }
         }
         n as i32
@@ -419,7 +424,7 @@ impl Inode {
         if off.wrapping_add(n) as usize > MAXFILE.wrapping_mul(BSIZE) {
             return -1;
         }
-        let mut tot: u32 = 0;
+        let mut tot = 0;
         while tot < n {
             let bp = Buf::read((*self).dev, self.bmap(off.wrapping_div(BSIZE as u32)));
             let m = core::cmp::min(
@@ -684,8 +689,7 @@ pub unsafe fn dirlookup(dp: *mut Inode, name: &FileName, poff: *mut u32) -> *mut
     }
     while off < (*dp).size {
         if (*dp).read(
-            0,
-            &mut de as *mut Dirent as usize,
+            KVAddr::wrap(&mut de as *mut Dirent as usize),
             off,
             ::core::mem::size_of::<Dirent>() as u32,
         ) as usize
@@ -722,8 +726,7 @@ pub unsafe fn dirlink(dp: *mut Inode, name: &FileName, inum: u32) -> i32 {
     let mut off: i32 = 0;
     while (off as u32) < (*dp).size {
         if (*dp).read(
-            0,
-            &mut de as *mut Dirent as usize,
+            KVAddr::wrap(&mut de as *mut Dirent as usize),
             off as u32,
             ::core::mem::size_of::<Dirent>() as u32,
         ) as usize

@@ -699,7 +699,7 @@ impl ProcessSystem {
                                 .pagetable
                                 .assume_init_mut()
                                 .copyout(
-                                    addr,
+                                    UVAddr::wrap(addr),
                                     &mut np.deref_mut_inner().xstate as *mut i32 as *mut u8,
                                     ::core::mem::size_of::<i32>(),
                                 )
@@ -1004,17 +1004,8 @@ unsafe fn forkret() {
 /// Copy to either a user address, or kernel address,
 /// depending on usr_dst.
 /// Returns Ok(()) on success, Err(()) on error.
-pub unsafe fn either_copyout(user_dst: bool, dst: usize, src: &[u8]) -> Result<(), ()> {
-    let p = myproc();
-    if user_dst {
-        (*p).pagetable
-            .assume_init_mut()
-            .copyout(dst, src.as_ptr(), src.len())
-            .map_or(Err(()), |_v| Ok(()))
-    } else {
-        ptr::copy(src.as_ptr(), dst as *mut u8, src.len());
-        Ok(())
-    }
+pub unsafe fn either_copyout<A: VirtualAddr>(dst: A, src: &[u8]) -> Result<(), ()> {
+    <A as VirtualAddr>::copyout(dst, src, len)
 }
 
 /// Copy from either a user address, or kernel address,

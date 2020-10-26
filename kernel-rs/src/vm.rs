@@ -132,6 +132,8 @@ pub trait VirtualAddr {
     /// Returns Ok(()) on success, Err(()) on error.
     unsafe fn copyin(dst: *mut u8, src: Self, len: usize) -> Result<(), ()>;
 
+    unsafe fn copyout(dst: Self, src: *mut libc::CVoid, len: usize) -> Result<(), ()>;
+
     fn wrap(value: usize) -> Self;
 
     fn value(&self) -> usize;
@@ -142,6 +144,11 @@ pub trait VirtualAddr {
 impl VirtualAddr for KVAddr {
     unsafe fn copyin(dst: *mut u8, src: Self, len: usize) -> Result<(), ()> {
         ptr::copy(src.value() as *mut u8, dst, len);
+        Ok(())
+    }
+
+    unsafe fn copyout(dst: Self, src: *mut libc::CVoid, len: usize) -> Result<(), ()> {
+        ptr::copy(src, dst.value() as *mut u8 as *mut libc::CVoid, len);
         Ok(())
     }
 
@@ -164,6 +171,14 @@ impl VirtualAddr for UVAddr {
         (*p).pagetable
             .assume_init_mut()
             .copyin(dst as *mut u8, src, len)
+            .map_or(Err(()), |_v| Ok(()))
+    }
+
+    unsafe fn copyout(dst: Self, src: *mut libc::CVoid, len: usize) -> Result<(), ()> {
+        let p = myproc();
+        (*p).pagetable
+            .assume_init_mut()
+            .copyout(dst, src as *mut u8, len)
             .map_or(Err(()), |_v| Ok(()))
     }
 
@@ -313,25 +328,26 @@ impl<A: VirtualAddr> PageTable<A> {
     // TODO: Refactor src to type &[u8]
     pub unsafe fn copyout(
         &mut self,
-        mut dstva: usize,
+        dstva: UVAddr,
         mut src: *const u8,
         mut len: usize,
     ) -> Result<(), ()> {
+        let mut dst = dstva.value();
         while len > 0 {
-            let va0 = pgrounddown(dstva);
+            let va0 = pgrounddown(dst);
             let pa0 = some_or!(self.walkaddr(VirtualAddr::wrap(va0)), return Err(()));
-            let mut n = PGSIZE - (dstva - va0);
+            let mut n = PGSIZE - (dst - va0);
             if n > len {
                 n = len
             }
             ptr::copy(
                 src as *const u8,
-                (pa0 + (dstva - va0)) as *mut u8,
+                (pa0 + (dst - va0)) as *mut u8,
                 n,
             );
             len -= n;
             src = src.add(n);
-            dstva = va0 + PGSIZE;
+            dst = va0 + PGSIZE;
         }
         Ok(())
     }
