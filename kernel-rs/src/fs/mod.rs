@@ -10,8 +10,15 @@
 //! are in sysfile.c.
 
 /// On-disk file system format used for both kernel and user programs are also included here.
-use crate::{bio::Buf, kernel::kernel, log::Log, sleepablelock::Sleepablelock, stat::T_DIR};
-use core::{mem, ptr};
+use crate::{
+    bio::Buf,
+    kernel::kernel,
+    log::Log,
+    sleepablelock::Sleepablelock,
+    stat::T_DIR,
+    vm::{KVAddr, VirtualAddr},
+};
+use core::{mem, ops::DerefMut, ptr};
 
 mod path;
 pub use path::{FileName, Path};
@@ -86,7 +93,11 @@ impl Dirent {
     // TODO: Use iterator
     fn read_entry(&mut self, ip: &mut InodeGuard<'_>, off: u32, panic_msg: &'static str) {
         unsafe {
-            let bytes_read = ip.read(false, self as *mut Dirent as usize, off, DIRENT_SIZE as u32);
+            let bytes_read = ip.read(
+                KVAddr::wrap(self as *mut Dirent as usize),
+                off,
+                DIRENT_SIZE as u32,
+            );
             assert_eq!(bytes_read, Ok(DIRENT_SIZE), "{}", panic_msg)
         }
     }
