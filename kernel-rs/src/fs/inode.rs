@@ -11,6 +11,8 @@ use crate::{
     sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::{Stat, T_DIR, T_NONE},
+    vm::KVAddr,
+    vm::VirtualAddr,
 };
 use core::{mem, ops::Deref, ptr};
 
@@ -109,8 +111,7 @@ impl InodeGuard<'_> {
         de.inum = inum as u16;
         de.set_name(name);
         let bytes_write = self.write(
-            false,
-            &mut de as *mut Dirent as usize,
+            KVAddr::wrap(&mut de as *mut Dirent as usize),
             off,
             DIRENT_SIZE as u32,
         );
@@ -199,10 +200,10 @@ impl InodeGuard<'_> {
     /// Caller must hold self->lock.
     /// If user_dst==1, then dst is a user virtual address;
     /// otherwise, dst is a kernel address.
-    pub unsafe fn read(
+    // Check(@anemoneflower) : remove copy?
+    pub unsafe fn read<A: VirtualAddr + Copy>(
         &mut self,
-        user_dst: bool,
-        mut dst: usize,
+        mut dst: A,
         mut off: u32,
         mut n: u32,
     ) -> Result<usize, ()> {
@@ -222,12 +223,12 @@ impl InodeGuard<'_> {
             );
             let begin = off.wrapping_rem(BSIZE as u32) as usize;
             let end = begin + m as usize;
-            if either_copyout(user_dst, dst, &bp.deref_mut_inner().data[begin..end]).is_err() {
+            if either_copyout(dst, &bp.deref_mut_inner().data[begin..end]).is_err() {
                 break;
             } else {
                 tot = tot.wrapping_add(m);
                 off = off.wrapping_add(m);
-                dst = dst.wrapping_add(m as usize)
+                dst.update(dst.value() + (m as usize));
             }
         }
         Ok(n as usize)
@@ -235,12 +236,13 @@ impl InodeGuard<'_> {
 
     /// Write data to inode.
     /// Caller must hold self->lock.
+    /// TODO: remove this comment
     /// If user_src==1, then src is a user virtual address;
     /// otherwise, src is a kernel address.
-    pub unsafe fn write(
+    // Check(@anemoneflower) : remove copy?
+    pub unsafe fn write<A: VirtualAddr + Copy>(
         &mut self,
-        user_src: bool,
-        mut src: usize,
+        mut src: A,
         mut off: u32,
         n: u32,
     ) -> Result<usize, ()> {
@@ -262,7 +264,6 @@ impl InodeGuard<'_> {
                     .data
                     .as_mut_ptr()
                     .offset(off.wrapping_rem(BSIZE as u32) as isize),
-                user_src,
                 src,
                 m as _,
             )
@@ -273,7 +274,7 @@ impl InodeGuard<'_> {
                 fs().log_write(bp);
                 tot = tot.wrapping_add(m);
                 off = off.wrapping_add(m);
-                src = src.wrapping_add(m as usize)
+                src.update(src.value() + (m as usize))
             }
         }
         if n > 0 {
@@ -332,8 +333,7 @@ impl InodeGuard<'_> {
         let mut de: Dirent = Default::default();
         for off in (2 * DIRENT_SIZE as u32..self.deref_inner().size).step_by(DIRENT_SIZE) {
             let bytes_read = self.read(
-                false,
-                &mut de as *mut Dirent as usize,
+                KVAddr::wrap(&mut de as *mut Dirent as usize),
                 off as u32,
                 DIRENT_SIZE as u32,
             );
