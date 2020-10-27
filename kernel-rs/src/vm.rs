@@ -132,7 +132,7 @@ pub trait VirtualAddr {
     /// Returns Ok(()) on success, Err(()) on error.
     unsafe fn copyin(dst: *mut u8, src: Self, len: usize) -> Result<(), ()>;
 
-    unsafe fn copyout(dst: Self, src: *mut libc::CVoid, len: usize) -> Result<(), ()>;
+    unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()>;
 
     fn wrap(value: usize) -> Self;
 
@@ -147,8 +147,8 @@ impl VirtualAddr for KVAddr {
         Ok(())
     }
 
-    unsafe fn copyout(dst: Self, src: *mut libc::CVoid, len: usize) -> Result<(), ()> {
-        ptr::copy(src, dst.value() as *mut u8 as *mut libc::CVoid, len);
+    unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()> {
+        ptr::copy(src.as_ptr(), dst.value() as *mut u8, src.len());
         Ok(())
     }
 
@@ -174,11 +174,11 @@ impl VirtualAddr for UVAddr {
             .map_or(Err(()), |_v| Ok(()))
     }
 
-    unsafe fn copyout(dst: Self, src: *mut libc::CVoid, len: usize) -> Result<(), ()> {
+    unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()> {
         let p = myproc();
         (*p).pagetable
             .assume_init_mut()
-            .copyout(dst, src as *mut u8, len)
+            .copyout(dst, src.as_ptr(), src.len())
             .map_or(Err(()), |_v| Ok(()))
     }
 
@@ -201,6 +201,13 @@ pub struct PageTable<A> {
 }
 
 impl<A: VirtualAddr> PageTable<A> {
+    pub const fn zero() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+            _marker: PhantomData,
+        }
+    }
+
     pub fn new() -> Self {
         let page = unsafe { kernel().alloc() } as *mut RawPageTable;
         if page.is_null() {
@@ -278,7 +285,6 @@ impl<A: VirtualAddr> PageTable<A> {
 
     /// Look up a virtual address, return the physical address,
     /// or 0 if not mapped.
-    /// TODO: Use type parameter at PageTable to show this function "Can only be used to look up user pages."
     pub unsafe fn walkaddr(&mut self, va: A) -> Option<usize> {
         if va.value() >= MAXVA {
             return None;
@@ -340,11 +346,7 @@ impl<A: VirtualAddr> PageTable<A> {
             if n > len {
                 n = len
             }
-            ptr::copy(
-                src as *const u8,
-                (pa0 + (dst - va0)) as *mut u8,
-                n,
-            );
+            ptr::copy(src as *const u8, (pa0 + (dst - va0)) as *mut u8, n);
             len -= n;
             src = src.add(n);
             dst = va0 + PGSIZE;
@@ -522,11 +524,7 @@ impl PageTable<UVAddr> {
             if n > len {
                 n = len
             }
-            ptr::copy(
-                (pa0 + (src - va0)) as *mut u8,
-                dst,
-                n,
-            );
+            ptr::copy((pa0 + (src - va0)) as *mut u8, dst, n);
             len -= n;
             dst = dst.add(n);
             src = va0 + PGSIZE
@@ -599,19 +597,49 @@ pub unsafe fn kvminit(page_table: *mut PageTable<KVAddr>) {
     let page_table = &mut *page_table;
 
     // SiFive Test Finisher MMIO
-    kvmmap(page_table, KVAddr::wrap(FINISHER), PAddr::wrap(FINISHER), PGSIZE, PTE_R | PTE_W);
+    kvmmap(
+        page_table,
+        KVAddr::wrap(FINISHER),
+        PAddr::wrap(FINISHER),
+        PGSIZE,
+        PTE_R | PTE_W,
+    );
 
     // uart registers
-    kvmmap(page_table, KVAddr::wrap(UART0), PAddr::wrap(UART0), PGSIZE, PTE_R | PTE_W);
+    kvmmap(
+        page_table,
+        KVAddr::wrap(UART0),
+        PAddr::wrap(UART0),
+        PGSIZE,
+        PTE_R | PTE_W,
+    );
 
     // virtio mmio disk interface
-    kvmmap(page_table, KVAddr::wrap(VIRTIO0), PAddr::wrap(VIRTIO0), PGSIZE, PTE_R | PTE_W);
+    kvmmap(
+        page_table,
+        KVAddr::wrap(VIRTIO0),
+        PAddr::wrap(VIRTIO0),
+        PGSIZE,
+        PTE_R | PTE_W,
+    );
 
     // CLINT
-    kvmmap(page_table, KVAddr::wrap(CLINT), PAddr::wrap(CLINT), 0x10000, PTE_R | PTE_W);
+    kvmmap(
+        page_table,
+        KVAddr::wrap(CLINT),
+        PAddr::wrap(CLINT),
+        0x10000,
+        PTE_R | PTE_W,
+    );
 
     // PLIC
-    kvmmap(page_table, KVAddr::wrap(PLIC), PAddr::wrap(PLIC), 0x400000, PTE_R | PTE_W);
+    kvmmap(
+        page_table,
+        KVAddr::wrap(PLIC),
+        PAddr::wrap(PLIC),
+        0x400000,
+        PTE_R | PTE_W,
+    );
 
     // Map kernel text executable and read-only.
     kvmmap(
@@ -652,7 +680,13 @@ pub unsafe fn kvminithart(page_table: &PageTable<KVAddr>) {
 /// Add a mapping to the kernel page table.
 /// Only used when booting.
 /// Does not flush TLB or enable paging.
-pub unsafe fn kvmmap(page_table: &mut PageTable<KVAddr>, va: KVAddr, pa: PAddr, sz: usize, perm: i32) {
+pub unsafe fn kvmmap(
+    page_table: &mut PageTable<KVAddr>,
+    va: KVAddr,
+    pa: PAddr,
+    sz: usize,
+    perm: i32,
+) {
     if page_table.mappages(va, sz, pa.value(), perm).is_err() {
         panic!("kvmmap");
     };

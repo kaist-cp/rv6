@@ -24,6 +24,7 @@ use crate::{
     trap::{trapinit, trapinithart},
     uart::Uart,
     virtio_disk::{virtio_disk_init, Disk},
+    vm::KVAddr,
     vm::{kvminit, kvminithart, PageTable},
 };
 
@@ -44,7 +45,7 @@ pub struct Kernel {
     kmem: Spinlock<Kmem>,
 
     /// The kernel's page table.
-    pub page_table: PageTable,
+    pub page_table: PageTable<KVAddr>,
 
     pub ticks: Sleepablelock<u32>,
 
