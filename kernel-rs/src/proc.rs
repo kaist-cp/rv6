@@ -13,7 +13,7 @@ use crate::{
     spinlock::{pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard},
     string::safestrcpy,
     trap::usertrapret,
-    vm::{kvminithart, kvmmap, KVAddr, PAddr, PageTable, UVAddr, VirtualAddr},
+    vm::{kvmmap, KVAddr, PAddr, PageTable, UVAddr, VirtualAddr},
 };
 use core::{
     cmp, mem,
@@ -462,13 +462,19 @@ impl Proc {
     /// Allocate a page for the process's kernel stack.
     /// Map it high in memory, followed by an invalid
     /// guard page.
-    unsafe fn palloc(&mut self, page_table: &mut PageTable, i: usize) {
+    unsafe fn palloc(&mut self, page_table: &mut PageTable<KVAddr>, i: usize) {
         let pa = kernel().alloc();
         if pa.is_null() {
             panic!("kalloc");
         }
         let va: usize = kstack(i);
-        kvmmap(page_table, KVAddr::wrap(va), PAddr::wrap(pa as usize), PGSIZE, PTE_R | PTE_W);
+        kvmmap(
+            page_table,
+            KVAddr::wrap(va),
+            PAddr::wrap(pa as usize),
+            PGSIZE,
+            PTE_R | PTE_W,
+        );
         self.kstack = va;
     }
 
@@ -796,7 +802,7 @@ impl ProcessSystem {
     }
 }
 
-pub unsafe fn procinit(procs: &mut ProcessSystem, page_table: &mut PageTable<UVAddr>) {
+pub unsafe fn procinit(procs: &mut ProcessSystem, page_table: &mut PageTable<KVAddr>) {
     for (i, p) in procs.process_pool.iter_mut().enumerate() {
         p.palloc(page_table, i);
     }
@@ -1005,16 +1011,12 @@ unsafe fn forkret() {
 /// depending on usr_dst.
 /// Returns Ok(()) on success, Err(()) on error.
 pub unsafe fn either_copyout<A: VirtualAddr>(dst: A, src: &[u8]) -> Result<(), ()> {
-    <A as VirtualAddr>::copyout(dst, src, len)
+    <A as VirtualAddr>::copyout(dst, src)
 }
 
 /// Copy from either a user address, or kernel address,
 /// depending on usr_src.
 /// Returns Ok(()) on success, Err(()) on error.
-pub unsafe fn either_copyin<A: VirtualAddr>(
-    dst: *mut u8,
-    src: A,
-    len: usize,
-) -> Result<(), ()> {
+pub unsafe fn either_copyin<A: VirtualAddr>(dst: *mut u8, src: A, len: usize) -> Result<(), ()> {
     <A as VirtualAddr>::copyin(dst, src, len)
 }

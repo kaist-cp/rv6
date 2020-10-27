@@ -104,7 +104,11 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
         if sp < stackbase {
             return Err(());
         }
-        pt.copyout(UVAddr::wrap(sp), argv[argc], (strlen(argv[argc]) + 1) as usize)?;
+        pt.copyout(
+            UVAddr::wrap(sp),
+            argv[argc],
+            (strlen(argv[argc]) + 1) as usize,
+        )?;
         ustack[argc] = sp;
         argc = argc.wrapping_add(1)
     }

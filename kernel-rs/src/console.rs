@@ -68,7 +68,13 @@ impl Console {
     unsafe fn write<A: VirtualAddr>(&mut self, src: A, n: i32) {
         for i in 0..n {
             let mut c: u8 = 0;
-            if either_copyin(&mut c, <A as VirtualAddr>::wrap(src.value() + (i as usize)), 1usize).is_err() {
+            if either_copyin(
+                &mut c,
+                <A as VirtualAddr>::wrap(src.value() + (i as usize)),
+                1usize,
+            )
+            .is_err()
+            {
                 break;
             }
             self.putc(c as i32);
