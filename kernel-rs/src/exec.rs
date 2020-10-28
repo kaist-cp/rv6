@@ -19,7 +19,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
     let mut ph: ProgHdr = Default::default();
     let mut p: *mut Proc = myproc();
 
-    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
+    let _tx = fs().begin_transaction();
     let ptr = ok_or!(path.namei(), {
         return Err(());
     });

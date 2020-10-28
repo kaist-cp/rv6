@@ -145,6 +145,18 @@ pub struct FileSystem {
     log: Sleepablelock<Log>,
 }
 
+pub struct FsTransaction<'s> {
+    fs: &'s FileSystem,
+}
+
+impl Drop for FsTransaction<'_> {
+    fn drop(&mut self) {
+        unsafe {
+            Log::end_op(&self.fs.log);
+        }
+    }
+}
+
 impl FileSystem {
     fn new(dev: i32) -> Self {
         unsafe {
@@ -155,9 +167,13 @@ impl FileSystem {
         }
     }
 
-    /// Called at the start of each FS system call.
-    pub unsafe fn begin_op(&self) {
-        Log::begin_op(&self.log);
+    /// Called for each FS system call.
+    pub fn begin_transaction(&self) -> FsTransaction<'_> {
+        // TODO(rv6): safety?
+        unsafe {
+            Log::begin_op(&self.log);
+        }
+        FsTransaction { fs: self }
     }
 
     /// Called at the end of each FS system call.

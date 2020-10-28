@@ -501,7 +501,7 @@ impl Proc {
         for file in &mut self.open_files {
             *file = None;
         }
-        let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
+        let _tx = fs().begin_transaction();
         self.cwd = None;
     }
 }
