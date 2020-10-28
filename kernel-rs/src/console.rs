@@ -85,7 +85,7 @@ impl Console {
     // `SpinlockGuard`.
     // Check(@anemoneflower) : remove copy?
     #[allow(clippy::while_immutable_condition)]
-    unsafe fn read<A: VAddr + Copy>(
+    unsafe fn read<A: VAddr>(
         this: &mut SleepablelockGuard<'_, Self>,
         mut dst: A,
         mut n: i32,
