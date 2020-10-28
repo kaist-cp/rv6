@@ -3,7 +3,7 @@ use crate::{
     proc::{myproc, Proc},
     sysfile::*,
     sysproc::*,
-    vm::{UVAddr, VirtualAddr},
+    vm::{UVAddr, VAddr},
 };
 use core::str;
 use cstr_core::CStr;

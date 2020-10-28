@@ -11,7 +11,7 @@ use crate::{
     proc::{myproc, Proc},
     spinlock::Spinlock,
     stat::Stat,
-    vm::{UVAddr, VirtualAddr},
+    vm::{UVAddr, VAddr},
 };
 use core::{cell::UnsafeCell, cmp, convert::TryFrom, mem, ops::Deref};
 
