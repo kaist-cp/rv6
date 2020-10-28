@@ -1,15 +1,15 @@
 //! Support functions for system calls that involve file descriptors.
 use crate::{
-    arena::{Arena, Rc, RcArena, Tag},
+    arena::{Arena, ArenaObject, Rc, RcArena},
     fs::{fs, RcInode, BSIZE},
     kernel::kernel,
     param::{MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
     proc::{myproc, Proc},
-    spinlock::SpinlockGuard,
+    spinlock::Spinlock,
     stat::Stat,
 };
-use core::{cell::UnsafeCell, cmp, convert::TryFrom, mem, ops::Deref, ptr};
+use core::{cell::UnsafeCell, cmp, convert::TryFrom, mem, ops::Deref};
 
 pub struct File {
     pub typ: FileType,
@@ -27,6 +27,12 @@ pub enum FileType {
     Device { ip: RcInode, major: u16 },
 }
 
+impl Default for FileType {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
 /// map major device number to device functions.
 #[derive(Copy, Clone)]
 pub struct Devsw {
@@ -37,23 +43,22 @@ pub struct Devsw {
 #[derive(Clone)]
 pub struct FTableTag {}
 
-impl Tag for FTableTag {
-    type Target = RcArena<File, NFILE>;
-    type Result = SpinlockGuard<'static, Self::Target>;
+impl Deref for FTableTag {
+    type Target = Spinlock<RcArena<File, NFILE>>;
 
-    fn arena(&self) -> Self::Result {
-        kernel().ftable.lock()
+    fn deref(&self) -> &Self::Target {
+        &kernel().ftable
     }
 }
 
-pub type RcFile = Rc<FTableTag>;
+pub type RcFile = Rc<<FTableTag as Deref>::Target, FTableTag>;
 
 impl RcFile {
     /// Allocate a file structure.
     pub fn alloc(typ: FileType, readable: bool, writable: bool) -> Option<Self> {
         // TODO: idiomatic initialization.
-        FTableTag {}.alloc(|p| unsafe {
-            ptr::write(p, File::new(typ, readable, writable));
+        FTableTag {}.alloc(|p| {
+            *p = File::new(typ, readable, writable);
         })
     }
 }
@@ -65,6 +70,10 @@ impl File {
             readable,
             writable,
         }
+    }
+
+    pub const fn zero() -> Self {
+        Self::new(FileType::None, false, false)
     }
 
     /// Get metadata about file self.
@@ -164,20 +173,19 @@ impl File {
     }
 }
 
-impl Drop for File {
-    fn drop(&mut self) {
-        // TODO(rv6): more efficient.. no replace
-        let typ = mem::replace(&mut self.typ, FileType::None);
-        unsafe {
+impl ArenaObject for File {
+    fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>) {
+        A::reacquire_after(guard, || {
+            let typ = mem::replace(&mut self.typ, FileType::None);
             match typ {
-                FileType::Pipe { mut pipe } => pipe.close(self.writable),
-                FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
+                FileType::Pipe { mut pipe } => unsafe { pipe.close(self.writable) },
+                FileType::Inode { ip, .. } | FileType::Device { ip, .. } => unsafe {
                     fs().begin_op();
                     drop(ip);
                     fs().end_op();
-                }
+                },
                 _ => (),
             }
-        }
+        });
     }
 }

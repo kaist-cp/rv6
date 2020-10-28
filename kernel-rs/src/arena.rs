@@ -1,11 +1,12 @@
+use crate::spinlock::{Spinlock, SpinlockGuard};
 use core::marker::PhantomData;
-use core::mem::{self, ManuallyDrop, MaybeUninit};
-use core::ops::{Deref, DerefMut};
+use core::mem::{self, ManuallyDrop};
+use core::ops::Deref;
 use core::ptr;
 
 pub struct RcEntry<T> {
-    pub ref_cnt: usize,
-    pub data: MaybeUninit<T>,
+    refcnt: usize,
+    data: T,
 }
 
 /// A homogeneous memory allocator equipped with reference counts.
@@ -18,39 +19,63 @@ pub struct UntaggedRc<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T, const CAPACITY: usize> RcArena<T, CAPACITY> {
-    pub const fn new() -> Self {
-        Self {
-            inner: [RcEntry {
-                ref_cnt: 0,
-                data: MaybeUninit::uninit(),
-            }; CAPACITY],
-        }
-    }
+pub struct Rc<A: Arena, T: Deref<Target = A>> {
+    tag: T,
+    inner: ManuallyDrop<<<T as Deref>::Target as Arena>::Handle>,
+}
 
-    // TODO(rv6): broken API...
-    pub const fn new_with_array(inner: [RcEntry<T>; CAPACITY]) -> Self {
-        Self { inner }
-    }
+/// A homogeneous memory allocator, equipped with the box type representing an allocation.
+pub trait Arena: Sized {
+    /// The value type of the allocator.
+    type Data;
+
+    /// The object handle type of the allocator.
+    type Handle;
+
+    /// The guard type for arena.
+    type Guard<'s>;
+
+    /// Find or alloc.
+    fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
+        &self,
+        c: C,
+        n: N,
+    ) -> Option<Self::Handle>;
+
+    /// Failable allocation.
+    fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Self::Handle>;
 
     /// # Safety
     ///
-    /// `rc` must be allocated from `self`.
-    // TODO: Make a RcArena trait and move this there.
-    pub unsafe fn dup(&mut self, rc: &UntaggedRc<T>) -> UntaggedRc<T> {
-        (*rc.ptr).ref_cnt += 1;
-        UntaggedRc {
-            ptr: rc.ptr,
-            _marker: PhantomData,
-        }
+    /// `handle` must be allocated from `self`.
+    unsafe fn dup(&self, handle: &Self::Handle) -> Self::Handle;
+
+    /// # Safety
+    ///
+    /// `pbox` must be allocated from the pool.
+    ///
+    /// Returns whether the object is finalized.
+    unsafe fn dealloc(&self, pbox: Self::Handle) -> bool;
+
+    fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
+    where
+        F: FnOnce() -> R;
+}
+
+pub trait ArenaObject {
+    fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>);
+}
+
+impl<T> RcEntry<T> {
+    pub const fn new(data: T) -> Self {
+        Self { refcnt: 0, data }
     }
 }
 
-impl<T> UntaggedRc<T> {
-    pub fn into_raw(self) -> *mut T {
-        let result = unsafe { (*self.ptr).data.as_mut_ptr() };
-        mem::forget(self);
-        result
+impl<T, const CAPACITY: usize> RcArena<T, CAPACITY> {
+    // TODO(rv6): unsafe...
+    pub const fn new(inner: [RcEntry<T>; CAPACITY]) -> Self {
+        Self { inner }
     }
 }
 
@@ -58,7 +83,7 @@ impl<T> Deref for UntaggedRc<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { (*self.ptr).data.assume_init_ref() }
+        unsafe { &(*self.ptr).data }
     }
 }
 
@@ -70,46 +95,24 @@ impl<T> Drop for UntaggedRc<T> {
     }
 }
 
-/// A homogeneous memory allocator, equipped with the box type representing an allocation.
-pub trait Arena {
-    /// The value type of the allocator.
-    type Data: 'static;
-
-    /// The box type of the allocator.
-    type Handle: 'static;
-
-    /// Find or alloc.
-    fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(*mut Self::Data)>(
-        &mut self,
-        c: C,
-        n: N,
-    ) -> Option<Self::Handle>;
-
-    /// Failable allocation.
-    fn alloc<F: FnOnce(*mut Self::Data)>(&mut self, f: F) -> Option<Self::Handle>;
-
-    /// # Safety
-    ///
-    /// `pbox` must be allocated from the pool.
-    unsafe fn dealloc(&mut self, pbox: Self::Handle) -> Option<Self::Data>;
-}
-
-impl<T: 'static, const CAPACITY: usize> Arena for RcArena<T, CAPACITY> {
+impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<RcArena<T, CAPACITY>> {
     type Data = T;
     type Handle = UntaggedRc<T>;
+    type Guard<'s> = SpinlockGuard<'s, RcArena<T, CAPACITY>>;
 
-    fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(*mut Self::Data)>(
-        &mut self,
+    fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
+        &self,
         c: C,
         n: N,
     ) -> Option<Self::Handle> {
-        let mut empty: *mut RcEntry<T> = ptr::null_mut();
+        let mut this = self.lock();
 
-        for entry in &mut self.inner {
-            if entry.ref_cnt != 0 {
-                if c(unsafe { &*entry.data.as_ptr() }) {
-                    entry.ref_cnt += 1;
-                    return Some(UntaggedRc {
+        let mut empty: *mut RcEntry<T> = ptr::null_mut();
+        for entry in &mut this.inner {
+            if entry.refcnt != 0 {
+                if c(&entry.data) {
+                    entry.refcnt += 1;
+                    return Some(Self::Handle {
                         ptr: entry,
                         _marker: PhantomData,
                     });
@@ -124,20 +127,22 @@ impl<T: 'static, const CAPACITY: usize> Arena for RcArena<T, CAPACITY> {
         }
 
         let entry = unsafe { &mut *empty };
-        entry.ref_cnt = 1;
-        n(entry.data.as_mut_ptr());
-        Some(UntaggedRc {
+        entry.refcnt = 1;
+        n(&mut entry.data);
+        Some(Self::Handle {
             ptr: entry,
             _marker: PhantomData,
         })
     }
 
-    fn alloc<F: FnOnce(*mut T)>(&mut self, f: F) -> Option<UntaggedRc<T>> {
-        for entry in &mut self.inner {
-            if entry.ref_cnt == 0 {
-                entry.ref_cnt = 1;
-                f(entry.data.as_mut_ptr());
-                return Some(UntaggedRc {
+    fn alloc<F: FnOnce(&mut T)>(&self, f: F) -> Option<Self::Handle> {
+        let mut this = self.lock();
+
+        for entry in &mut this.inner {
+            if entry.refcnt == 0 {
+                entry.refcnt = 1;
+                f(&mut entry.data);
+                return Some(Self::Handle {
                     ptr: entry,
                     _marker: PhantomData,
                 });
@@ -147,100 +152,117 @@ impl<T: 'static, const CAPACITY: usize> Arena for RcArena<T, CAPACITY> {
         None
     }
 
+    unsafe fn dup(&self, handle: &Self::Handle) -> Self::Handle {
+        // TODO: Make a RcArena trait and move this there.
+        (*handle.ptr).refcnt += 1;
+        Self::Handle {
+            ptr: handle.ptr,
+            _marker: PhantomData,
+        }
+    }
+
     /// # Safety
     ///
     /// `rc` must be allocated from `self`.
-    unsafe fn dealloc(&mut self, rc: UntaggedRc<T>) -> Option<T> {
-        let entry = &mut *rc.ptr;
-        entry.ref_cnt -= 1;
+    unsafe fn dealloc(&self, handle: Self::Handle) -> bool {
+        let mut this = self.lock();
 
-        let val = if entry.ref_cnt == 0 {
-            Some(entry.data.read())
+        let entry = &mut *handle.ptr;
+        let refcnt = entry.refcnt - 1;
+
+        let result = if refcnt == 0 {
+            entry.data.finalize::<Self>(&mut this);
+            true
         } else {
-            None
+            false
         };
 
-        mem::forget(rc);
-        val
+        entry.refcnt = refcnt;
+        mem::forget(handle);
+        result
+    }
+
+    fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        guard.reacquire_after(f)
     }
 }
 
-pub trait Tag: Clone + 'static {
-    type Target: Arena;
-    type Result: DerefMut<Target = Self::Target>;
-
-    fn arena(&self) -> Self::Result;
-}
-
-pub struct Rc<T: Tag> {
-    tag: T,
-    inner: ManuallyDrop<<<T as Tag>::Target as Arena>::Handle>,
-}
-
-impl<A: 'static, T: Tag<Target = RcArena<A, C>>, const C: usize> Deref for Rc<T> {
-    type Target = A;
+impl<A: Arena, T: Deref<Target = A>> Deref for Rc<A, T> {
+    type Target = <A as Arena>::Handle;
 
     fn deref(&self) -> &Self::Target {
         self.inner.deref()
     }
 }
 
-impl<T: Tag> Drop for Rc<T> {
+impl<A: Arena, T: Deref<Target = A>> Drop for Rc<A, T> {
     fn drop(&mut self) {
         // SAFETY: We can ensure the box is allocated from `self.tag` by the invariant of `Tag`.
-        let val = unsafe {
-            self.tag
-                .arena()
-                .dealloc(ManuallyDrop::take(&mut self.inner))
-        };
-
+        //
         // Drop AFTER the arena guard is dropped, as dropping val may cause the current thread
         // sleep.
-        drop(val);
+        let _val = unsafe { self.tag.dealloc(ManuallyDrop::take(&mut self.inner)) };
     }
 }
 
-impl<T: Tag> Rc<T> {
-    pub unsafe fn from_unchecked(tag: T, inner: <<T as Tag>::Target as Arena>::Handle) -> Self {
+impl<A: Arena, T: Deref<Target = A>> Rc<A, T> {
+    pub unsafe fn from_unchecked(tag: T, inner: <<T as Deref>::Target as Arena>::Handle) -> Self {
         let inner = ManuallyDrop::new(inner);
         Self { tag, inner }
     }
 }
 
-impl<A: 'static, T: Tag<Target = RcArena<A, C>>, const C: usize> Clone for Rc<T> {
+impl<A: Arena, T: Clone + Deref<Target = A>> Clone for Rc<A, T> {
     fn clone(&self) -> Self {
         let tag = self.tag.clone();
-        let inner = ManuallyDrop::new(unsafe { tag.arena().dup(&self.inner) });
+        let inner = ManuallyDrop::new(unsafe { tag.deref().dup(&self.inner) });
         Self { tag, inner }
     }
 }
 
-impl<A: Arena + 'static, T: Tag<Target = A>> Arena for T {
+impl<A: Arena, T: Clone + Deref<Target = A>> Arena for T {
     type Data = A::Data;
-    type Handle = Rc<T>;
+    type Handle = Rc<A, T>;
+    type Guard<'s> = <A as Arena>::Guard<'s>;
 
     /// Find or alloc.
-    fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(*mut Self::Data)>(
-        &mut self,
+    fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
+        &self,
         c: C,
         n: N,
     ) -> Option<Self::Handle> {
         let tag = self.clone();
-        let inner = ManuallyDrop::new(tag.arena().find_or_alloc(c, n)?);
-        Some(Rc { tag, inner })
+        let inner = ManuallyDrop::new(tag.deref().find_or_alloc(c, n)?);
+        Some(Self::Handle { tag, inner })
     }
 
     /// Failable allocation.
-    fn alloc<F: FnOnce(*mut Self::Data)>(&mut self, f: F) -> Option<Self::Handle> {
+    fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Self::Handle> {
         let tag = self.clone();
-        let inner = ManuallyDrop::new(tag.arena().alloc(f)?);
-        Some(Rc { tag, inner })
+        let inner = ManuallyDrop::new(tag.deref().alloc(f)?);
+        Some(Self::Handle { tag, inner })
+    }
+
+    unsafe fn dup(&self, handle: &Self::Handle) -> Self::Handle {
+        let tag = self.clone();
+        let inner = ManuallyDrop::new(self.deref().dup(&handle.inner));
+        Self::Handle { tag, inner }
     }
 
     /// # Safety
     ///
     /// `pbox` must be allocated from the pool.
-    unsafe fn dealloc(&mut self, mut pbox: Self::Handle) -> Option<Self::Data> {
-        self.arena().dealloc(ManuallyDrop::take(&mut pbox.inner))
+    unsafe fn dealloc(&self, mut pbox: Self::Handle) -> bool {
+        self.deref().dealloc(ManuallyDrop::take(&mut pbox.inner))
+    }
+
+    fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        A::reacquire_after(guard, f)
     }
 }

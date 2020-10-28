@@ -5,6 +5,7 @@
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 // Required for unused features in xv6 (see https://github.com/kaist-cp/rv6/issues/120 for details).
 #![allow(dead_code)]
+#![allow(incomplete_features)]
 #![feature(llvm_asm)]
 #![feature(const_wrapping_int_methods)]
 #![feature(maybe_uninit_ref)]
@@ -14,6 +15,7 @@
 #![feature(slice_ptr_range)]
 #![feature(maybe_uninit_extra)]
 #![feature(min_const_generics)]
+#![feature(generic_associated_types)]
 
 mod arena;
 mod bio;
