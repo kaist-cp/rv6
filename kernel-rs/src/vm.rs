@@ -120,13 +120,13 @@ impl PAddr {
         self.0
     }
 }
-// Check(@anemoneflower) : remove copy?
+
 #[derive(Copy, Clone)]
 pub struct KVAddr(usize);
-// Check(@anemoneflower) : remove copy?
+
 #[derive(Copy, Clone)]
 pub struct UVAddr(usize);
-pub trait VAddr {
+pub trait VAddr: Copy + Clone {
     /// Copy from either a user address, or kernel address,
     /// depending on usr_src.
     /// Returns Ok(()) on success, Err(()) on error.

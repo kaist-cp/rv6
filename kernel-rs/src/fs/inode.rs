@@ -11,8 +11,7 @@ use crate::{
     sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::{Stat, T_DIR, T_NONE},
-    vm::KVAddr,
-    vm::VirtualAddr,
+    vm::{KVAddr, VAddr},
 };
 use core::{mem, ops::Deref, ptr};
 
@@ -200,8 +199,7 @@ impl InodeGuard<'_> {
     /// Caller must hold self->lock.
     /// If user_dst==1, then dst is a user virtual address;
     /// otherwise, dst is a kernel address.
-    // Check(@anemoneflower) : remove copy?
-    pub unsafe fn read<A: VirtualAddr + Copy>(
+    pub unsafe fn read<A: VAddr>(
         &mut self,
         mut dst: A,
         mut off: u32,
@@ -239,8 +237,7 @@ impl InodeGuard<'_> {
     /// TODO: remove this comment
     /// If user_src==1, then src is a user virtual address;
     /// otherwise, src is a kernel address.
-    // Check(@anemoneflower) : remove copy?
-    pub unsafe fn write<A: VirtualAddr + Copy>(
+    pub unsafe fn write<A: VAddr>(
         &mut self,
         mut src: A,
         mut off: u32,

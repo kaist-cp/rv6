@@ -16,7 +16,7 @@ use crate::{
     log::Log,
     sleepablelock::Sleepablelock,
     stat::T_DIR,
-    vm::{KVAddr, VirtualAddr},
+    vm::{KVAddr, VAddr},
 };
 use core::{mem, ops::DerefMut, ptr};
 
