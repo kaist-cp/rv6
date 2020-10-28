@@ -1,7 +1,6 @@
 use core::sync::atomic::{spin_loop_hint, AtomicBool, Ordering};
 use core::{
     fmt::{self, Write},
-    mem::MaybeUninit,
     ptr,
 };
 use spin::Once;
@@ -92,15 +91,10 @@ impl Kernel {
                 read: None,
                 write: None,
             }; NDEV],
-            ftable: Spinlock::new("FTABLE", RcArena::new()),
+            ftable: Spinlock::new("FTABLE", RcArena::new([RcEntry::new(File::zero()); NFILE])),
             icache: Spinlock::new(
                 "ICACHE",
-                RcArena::new_with_array(
-                    [RcEntry {
-                        ref_cnt: 0,
-                        data: MaybeUninit::new(Inode::zero()),
-                    }; NINODE],
-                ),
+                RcArena::new([RcEntry::new(Inode::zero()); NINODE]),
             ),
             file_system: Once::new(),
         }

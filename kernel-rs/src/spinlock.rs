@@ -173,6 +173,16 @@ impl<T> SpinlockGuard<'_, T> {
     pub fn raw(&self) -> usize {
         self.lock as *const _ as usize
     }
+
+    pub fn reacquire_after<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        self.lock.lock.release();
+        let result = f();
+        self.lock.lock.acquire();
+        result
+    }
 }
 
 impl<T> Drop for SpinlockGuard<'_, T> {

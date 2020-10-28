@@ -3,13 +3,13 @@ use super::{
 };
 
 use crate::{
-    arena::{Arena, Rc, RcArena, Tag},
+    arena::{Arena, ArenaObject, Rc, RcArena},
     bio::Buf,
     kernel::kernel,
     param::NINODE,
     proc::{either_copyin, either_copyout},
     sleeplock::Sleeplock,
-    spinlock::SpinlockGuard,
+    spinlock::Spinlock,
     stat::{Stat, T_DIR, T_NONE},
 };
 use core::{mem, ops::Deref, ptr};
@@ -40,16 +40,15 @@ pub struct Inode {
 #[derive(Clone)]
 pub struct IcacheTag {}
 
-impl Tag for IcacheTag {
-    type Target = RcArena<Inode, NINODE>;
-    type Result = SpinlockGuard<'static, Self::Target>;
+impl Deref for IcacheTag {
+    type Target = Spinlock<RcArena<Inode, NINODE>>;
 
-    fn arena(&self) -> Self::Result {
-        kernel().icache.lock()
+    fn deref(&self) -> &Self::Target {
+        &kernel().icache
     }
 }
 
-pub type RcInode = Rc<IcacheTag>;
+pub type RcInode = Rc<<IcacheTag as Deref>::Target, IcacheTag>;
 
 /// InodeGuard implies that SleeplockWIP<InodeInner> is held by current thread.
 ///
@@ -442,7 +441,7 @@ pub struct Dinode {
 /// dev, and inum.  One must hold ip->lock in order to
 /// read or write that inode's ip->valid, ip->size, ip->type, &c.
 
-impl Drop for Inode {
+impl ArenaObject for Inode {
     /// Drop a reference to an in-memory inode.
     /// If that was the last reference, the inode cache entry can
     /// be recycled.
@@ -451,10 +450,7 @@ impl Drop for Inode {
     /// All calls to Inode::put() must be inside a transaction in
     /// case it has to free the inode.
     #[allow(clippy::cast_ref_to_mut)]
-    fn drop(&mut self) {
-        // TODO(rv6): must be inside a transaction in case it has to free the inode.
-        // let mut inode = kernel().icache.lock();
-
+    fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>) {
         if self.inner.get_mut().valid && self.inner.get_mut().nlink == 0 {
             // inode has no links and no other references: truncate and free.
 
@@ -462,20 +458,13 @@ impl Drop for Inode {
             // so this acquiresleep() won't block (or deadlock).
             let mut ip = self.lock();
 
-            // TODO(rv6): we should temporarily unlocking the icache lock, but we didn't.
-            // drop(inode);
-
-            unsafe {
+            A::reacquire_after(guard, move || unsafe {
                 ip.itrunc();
                 ip.deref_inner_mut().typ = 0;
                 ip.update();
                 ip.deref_inner_mut().valid = false;
-            }
-
-            drop(ip);
-
-            // TODO(rv6): see above.
-            // inode = kernel().icache.lock();
+                drop(ip);
+            });
         }
     }
 }
@@ -512,7 +501,6 @@ impl Inode {
         let ip = IcacheTag {}.find_or_alloc(
             |inode| inode.dev == dev && inode.inum == inum,
             |inode| {
-                let inode = &mut *inode;
                 inode.dev = dev;
                 inode.inum = inum;
                 inode.inner.get_mut().valid = false;
