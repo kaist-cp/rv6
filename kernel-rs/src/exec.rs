@@ -8,7 +8,7 @@ use crate::{
     proc::{myproc, proc_freepagetable, proc_pagetable, Proc},
     riscv::PGSIZE,
     string::{safestrcpy, strlen},
-    vm::{KVAddr, PageTable, UVAddr, VirtualAddr},
+    vm::{KVAddr, PageTable, UVAddr, VAddr},
 };
 use core::mem;
 
@@ -174,7 +174,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
 /// and the pages from va to va+sz must already be mapped.
 ///
 /// Returns `Ok(())` on success, `Err(())` on failure.
-unsafe fn loadseg<A: VirtualAddr>(
+unsafe fn loadseg<A: VAddr>(
     pagetable: &mut PageTable<A>,
     va: usize,
     ip: &mut InodeGuard<'_>,
@@ -187,7 +187,7 @@ unsafe fn loadseg<A: VirtualAddr>(
 
     for i in num_iter::range_step(0, sz, PGSIZE as _) {
         let pa = pagetable
-            .walkaddr(VirtualAddr::wrap(va.wrapping_add(i as usize)))
+            .walkaddr(VAddr::wrap(va.wrapping_add(i as usize)))
             .expect("loadseg: address should exist");
 
         let n = if sz.wrapping_sub(i) < PGSIZE as u32 {

@@ -126,7 +126,7 @@ pub struct KVAddr(usize);
 // Check(@anemoneflower) : remove copy?
 #[derive(Copy, Clone)]
 pub struct UVAddr(usize);
-pub trait VirtualAddr {
+pub trait VAddr {
     /// Copy from either a user address, or kernel address,
     /// depending on usr_src.
     /// Returns Ok(()) on success, Err(()) on error.
@@ -141,7 +141,7 @@ pub trait VirtualAddr {
     fn update(&mut self, new: usize);
 }
 
-impl VirtualAddr for KVAddr {
+impl VAddr for KVAddr {
     unsafe fn copyin(dst: *mut u8, src: Self, len: usize) -> Result<(), ()> {
         ptr::copy(src.value() as *mut u8, dst, len);
         Ok(())
@@ -165,7 +165,7 @@ impl VirtualAddr for KVAddr {
     }
 }
 
-impl VirtualAddr for UVAddr {
+impl VAddr for UVAddr {
     unsafe fn copyin(dst: *mut u8, src: Self, len: usize) -> Result<(), ()> {
         let p = myproc();
         (*p).pagetable
@@ -200,7 +200,7 @@ pub struct PageTable<A> {
     _marker: PhantomData<A>,
 }
 
-impl<A: VirtualAddr> PageTable<A> {
+impl<A: VAddr> PageTable<A> {
     pub const fn zero() -> Self {
         Self {
             ptr: ptr::null_mut(),
@@ -314,7 +314,7 @@ impl<A: VirtualAddr> PageTable<A> {
         let mut a = pgrounddown(va.value());
         let last = pgrounddown(va.value() + size - 1usize);
         loop {
-            let pte = some_or!(self.walk(VirtualAddr::wrap(a), 1), return Err(()));
+            let pte = some_or!(self.walk(VAddr::wrap(a), 1), return Err(()));
             if pte.check_flag(PTE_V) {
                 panic!("remap");
             }
@@ -341,7 +341,7 @@ impl<A: VirtualAddr> PageTable<A> {
         let mut dst = dstva.value();
         while len > 0 {
             let va0 = pgrounddown(dst);
-            let pa0 = some_or!(self.walkaddr(VirtualAddr::wrap(va0)), return Err(()));
+            let pa0 = some_or!(self.walkaddr(VAddr::wrap(va0)), return Err(()));
             let mut n = PGSIZE - (dst - va0);
             if n > len {
                 n = len
@@ -366,7 +366,7 @@ impl PageTable<UVAddr> {
         let mem: *mut u8 = kernel().alloc();
         ptr::write_bytes(mem, 0, PGSIZE);
         self.mappages(
-            VirtualAddr::wrap(0),
+            VAddr::wrap(0),
             PGSIZE,
             mem as usize,
             PTE_W | PTE_R | PTE_X | PTE_U,
@@ -392,7 +392,7 @@ impl PageTable<UVAddr> {
             ptr::write_bytes(mem, 0, PGSIZE);
             if self
                 .mappages(
-                    VirtualAddr::wrap(a),
+                    VAddr::wrap(a),
                     PGSIZE,
                     mem as usize,
                     PTE_W | PTE_X | PTE_R | PTE_U,
@@ -433,7 +433,7 @@ impl PageTable<UVAddr> {
             }
             ptr::copy(pa.value() as *mut u8 as *const u8, mem, PGSIZE);
             if (*new_ptable)
-                .mappages(VirtualAddr::wrap(i), PGSIZE, mem as usize, flags as i32)
+                .mappages(VAddr::wrap(i), PGSIZE, mem as usize, flags as i32)
                 .is_err()
             {
                 kernel().free(mem);
@@ -519,7 +519,7 @@ impl PageTable<UVAddr> {
         let mut src = srcva.value();
         while len > 0 {
             let va0 = pgrounddown(src);
-            let pa0 = some_or!(self.walkaddr(VirtualAddr::wrap(va0)), return Err(()));
+            let pa0 = some_or!(self.walkaddr(VAddr::wrap(va0)), return Err(()));
             let mut n = PGSIZE - (src - va0);
             if n > len {
                 n = len
@@ -546,7 +546,7 @@ impl PageTable<UVAddr> {
         let mut src = srcva.value();
         while got_null == 0 && max > 0 {
             let va0 = pgrounddown(src);
-            let pa0 = some_or!(self.walkaddr(VirtualAddr::wrap(va0)), return Err(()));
+            let pa0 = some_or!(self.walkaddr(VAddr::wrap(va0)), return Err(()));
             let mut n = PGSIZE - (src - va0);
             if n > max {
                 n = max

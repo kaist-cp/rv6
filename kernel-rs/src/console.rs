@@ -6,7 +6,7 @@ use crate::{
     sleepablelock::SleepablelockGuard,
     uart::Uart,
     utils::spin_loop,
-    vm::{KVAddr, UVAddr, VirtualAddr},
+    vm::{KVAddr, UVAddr, VAddr},
 };
 use core::fmt;
 
@@ -65,12 +65,12 @@ impl Console {
         };
     }
 
-    unsafe fn write<A: VirtualAddr>(&mut self, src: A, n: i32) {
+    unsafe fn write<A: VAddr>(&mut self, src: A, n: i32) {
         for i in 0..n {
             let mut c: u8 = 0;
             if either_copyin(
                 &mut c,
-                <A as VirtualAddr>::wrap(src.value() + (i as usize)),
+                <A as VAddr>::wrap(src.value() + (i as usize)),
                 1usize,
             )
             .is_err()
@@ -85,7 +85,7 @@ impl Console {
     // `SpinlockGuard`.
     // Check(@anemoneflower) : remove copy?
     #[allow(clippy::while_immutable_condition)]
-    unsafe fn read<A: VirtualAddr + Copy>(
+    unsafe fn read<A: VAddr + Copy>(
         this: &mut SleepablelockGuard<'_, Self>,
         mut dst: A,
         mut n: i32,

@@ -3,7 +3,7 @@ use crate::{
     kernel::kernel,
     proc::{myproc, WaitChannel},
     spinlock::Spinlock,
-    vm::{UVAddr, VirtualAddr},
+    vm::{UVAddr, VAddr},
 };
 use core::ops::Deref;
 
