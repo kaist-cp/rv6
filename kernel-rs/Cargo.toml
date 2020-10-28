@@ -20,12 +20,13 @@ panic = "abort"
 lto = true
 
 [dependencies]
-bitflags = "1.2.1"
-num-iter = { version = "0.1", default-features = false }
+bitflags = { version = "1.2.1", default-features = false }
+num-iter = { version = "0.1.41", default-features = false }
 scopeguard = { version = "1.1.0", default-features = false }
-arrayvec = { version = "0.5.1", default-features = false }
+arrayvec = { version = "0.5.2", default-features = false }
 cstr_core = { version = "0.2.2", default-features = false }
-spin = { version = "0.6.0", default-features = false }
+spin = { version = "0.7.0", default-features = false }
+memoffset = { version = "0.6.1", default-features = false }
 
 # Compiler options for sysroot packages.
 # Cargo currently warns following packages are not dependencies.
