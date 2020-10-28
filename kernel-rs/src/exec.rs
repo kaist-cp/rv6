@@ -1,3 +1,5 @@
+#![allow(clippy::unit_arg)]
+
 use crate::{
     elf::{ElfHdr, ProgHdr, ELF_MAGIC, ELF_PROG_LOAD},
     fs::{fs, InodeGuard, Path},
@@ -17,16 +19,11 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
     let mut ph: ProgHdr = Default::default();
     let mut p: *mut Proc = myproc();
 
-    fs().begin_op();
+    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
     let ptr = ok_or!(path.namei(), {
-        fs().end_op();
         return Err(());
     });
-    let ip = ptr.lock();
-    let mut ip = scopeguard::guard(ip, |ip| {
-        drop(ip);
-        fs().end_op();
-    });
+    let mut ip = ptr.lock();
 
     // Check ELF header
     let bytes_read = ip.read(

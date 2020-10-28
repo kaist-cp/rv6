@@ -1,4 +1,7 @@
 //! Support functions for system calls that involve file descriptors.
+
+#![allow(clippy::unit_arg)]
+
 use crate::{
     arena::{Arena, ArenaObject, Rc, RcArena},
     fs::{fs, RcInode, BSIZE},
@@ -140,7 +143,7 @@ impl File {
                 let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
                 for bytes_written in (0..n).step_by(max) {
                     let bytes_to_write = cmp::min(n - bytes_written, max as i32);
-                    fs().begin_op();
+                    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
                     let mut ip = ip.deref().lock();
                     let curr_off = *off.get();
                     let bytes_written = ip
@@ -154,8 +157,6 @@ impl File {
                             *off.get() = curr_off.wrapping_add(v as u32);
                             v
                         });
-                    drop(ip);
-                    fs().end_op();
                     assert!(
                         bytes_written? == bytes_to_write as usize,
                         "short File::write"
@@ -180,9 +181,8 @@ impl ArenaObject for File {
             match typ {
                 FileType::Pipe { mut pipe } => unsafe { pipe.close(self.writable) },
                 FileType::Inode { ip, .. } | FileType::Device { ip, .. } => unsafe {
-                    fs().begin_op();
+                    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
                     drop(ip);
-                    fs().end_op();
                 },
                 _ => (),
             }

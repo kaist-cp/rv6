@@ -55,7 +55,7 @@ pub trait Arena: Sized {
     /// `pbox` must be allocated from the pool.
     ///
     /// Returns whether the object is finalized.
-    unsafe fn dealloc(&self, pbox: Self::Handle) -> bool;
+    unsafe fn dealloc(&self, pbox: Self::Handle);
 
     fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
     where
@@ -164,22 +164,17 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<RcArena
     /// # Safety
     ///
     /// `rc` must be allocated from `self`.
-    unsafe fn dealloc(&self, handle: Self::Handle) -> bool {
+    unsafe fn dealloc(&self, handle: Self::Handle) {
         let mut this = self.lock();
 
         let entry = &mut *handle.ptr;
-        let refcnt = entry.refcnt - 1;
-
-        let result = if refcnt == 0 {
+        if entry.refcnt == 1 {
             entry.data.finalize::<Self>(&mut this);
-            true
-        } else {
-            false
-        };
+        }
 
-        entry.refcnt = refcnt;
+        let entry = &mut *handle.ptr;
+        entry.refcnt -= 1;
         mem::forget(handle);
-        result
     }
 
     fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
@@ -255,7 +250,7 @@ impl<A: Arena, T: Clone + Deref<Target = A>> Arena for T {
     /// # Safety
     ///
     /// `pbox` must be allocated from the pool.
-    unsafe fn dealloc(&self, mut pbox: Self::Handle) -> bool {
+    unsafe fn dealloc(&self, mut pbox: Self::Handle) {
         self.deref().dealloc(ManuallyDrop::take(&mut pbox.inner))
     }
 

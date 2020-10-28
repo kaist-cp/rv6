@@ -1,3 +1,5 @@
+#![allow(clippy::unit_arg)]
+
 use crate::{
     file::RcFile,
     fs::{fs, fsinit, Path, RcInode},
@@ -499,9 +501,8 @@ impl Proc {
         for file in &mut self.open_files {
             *file = None;
         }
-        fs().begin_op();
+        let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
         self.cwd = None;
-        fs().end_op();
     }
 }
 
