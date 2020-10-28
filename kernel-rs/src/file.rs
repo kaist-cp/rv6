@@ -143,7 +143,7 @@ impl File {
                 let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
                 for bytes_written in (0..n).step_by(max) {
                     let bytes_to_write = cmp::min(n - bytes_written, max as i32);
-                    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
+                    let _tx = fs().begin_transaction();
                     let mut ip = ip.deref().lock();
                     let curr_off = *off.get();
                     let bytes_written = ip
@@ -180,10 +180,10 @@ impl ArenaObject for File {
             let typ = mem::replace(&mut self.typ, FileType::None);
             match typ {
                 FileType::Pipe { mut pipe } => unsafe { pipe.close(self.writable) },
-                FileType::Inode { ip, .. } | FileType::Device { ip, .. } => unsafe {
-                    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
+                FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
+                    let _tx = fs().begin_transaction();
                     drop(ip);
-                },
+                }
                 _ => (),
             }
         });

@@ -93,10 +93,8 @@ pub unsafe fn sys_link() -> usize {
     let mut old: [u8; MAXPATH as usize] = [0; MAXPATH];
     let old = ok_or!(argstr(0, &mut old), return usize::MAX);
     let new = ok_or!(argstr(1, &mut new), return usize::MAX);
-    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
-    let ptr = ok_or!(Path::new(old).namei(), {
-        return usize::MAX;
-    });
+    let _tx = fs().begin_transaction();
+    let ptr = ok_or!(Path::new(old).namei(), return usize::MAX);
     let mut ip = ptr.lock();
     if ip.deref_inner().typ == T_DIR {
         return usize::MAX;
@@ -123,10 +121,8 @@ pub unsafe fn sys_unlink() -> usize {
     let mut de: Dirent = Default::default();
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
     let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
-    let (ptr, name) = ok_or!(Path::new(path).nameiparent(), {
-        return usize::MAX;
-    });
+    let _tx = fs().begin_transaction();
+    let (ptr, name) = ok_or!(Path::new(path).nameiparent(), return usize::MAX);
     let mut dp = ptr.lock();
 
     // Cannot unlink "." or "..".
@@ -214,7 +210,7 @@ pub unsafe fn sys_open() -> usize {
     let omode = ok_or!(argint(1), return usize::MAX);
     let omode = FcntlFlags::from_bits_truncate(omode);
 
-    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
+    let _tx = fs().begin_transaction();
 
     let (ip, (typ, major)) = if omode.contains(FcntlFlags::O_CREATE) {
         ok_or!(
@@ -222,14 +218,10 @@ pub unsafe fn sys_open() -> usize {
                 ip.deref_inner().typ,
                 ip.deref_inner().major
             )),
-            {
-                return usize::MAX;
-            }
+            return usize::MAX
         )
     } else {
-        let ptr = ok_or!(path.namei(), {
-            return usize::MAX;
-        });
+        let ptr = ok_or!(path.namei(), return usize::MAX);
         let ip = ptr.lock();
         let typ = ip.deref_inner().typ;
         let major = ip.deref_inner().major;
@@ -259,29 +251,20 @@ pub unsafe fn sys_open() -> usize {
             !omode.intersects(FcntlFlags::O_WRONLY),
             omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)
         ),
-        {
-            return usize::MAX;
-        }
+        return usize::MAX
     );
-    let fd = match f.fdalloc() {
-        Ok(fd) => fd,
-        Err(_) => {
-            return usize::MAX;
-        }
-    };
-
+    let fd = ok_or!(f.fdalloc(), return usize::MAX);
     fd as usize
 }
 
 pub unsafe fn sys_mkdir() -> usize {
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
-    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
-    let path = ok_or!(argstr(0, &mut path), {
-        return usize::MAX;
-    });
-    ok_or!(create(Path::new(path), T_DIR, 0, 0, |_| ()), {
-        return usize::MAX;
-    });
+    let _tx = fs().begin_transaction();
+    let path = ok_or!(argstr(0, &mut path), return usize::MAX);
+    ok_or!(
+        create(Path::new(path), T_DIR, 0, 0, |_| ()),
+        return usize::MAX
+    );
     0
 }
 
@@ -290,7 +273,7 @@ pub unsafe fn sys_mknod() -> usize {
     let path = ok_or!(argstr(0, &mut path), return usize::MAX);
     let major = ok_or!(argint(1), return usize::MAX) as u16;
     let minor = ok_or!(argint(2), return usize::MAX) as u16;
-    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
+    let _tx = fs().begin_transaction();
     let _ip = ok_or!(
         create(Path::new(path), T_DEVICE, major, minor, |_| ()),
         return usize::MAX
@@ -301,13 +284,9 @@ pub unsafe fn sys_mknod() -> usize {
 pub unsafe fn sys_chdir() -> usize {
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
     let mut p: *mut Proc = myproc();
-    let _log_guard = scopeguard::guard(fs().begin_op(), |_| fs().end_op());
-    let path = ok_or!(argstr(0, &mut path), {
-        return usize::MAX;
-    });
-    let ptr = ok_or!(Path::new(path).namei(), {
-        return usize::MAX;
-    });
+    let _tx = fs().begin_transaction();
+    let path = ok_or!(argstr(0, &mut path), return usize::MAX);
+    let ptr = ok_or!(Path::new(path).namei(), return usize::MAX);
     let ip = ptr.lock();
     if ip.deref_inner().typ != T_DIR {
         return usize::MAX;
