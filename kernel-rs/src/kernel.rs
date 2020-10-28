@@ -6,15 +6,15 @@ use core::{
 use spin::Once;
 
 use crate::{
-    arena::{ArrayArena, ArrayEntry},
-    bio::Bcache,
+    arena::{ArrayArena, ArrayEntry, MruArena, MruEntry},
+    bio::BufEntry,
     console::{consoleinit, Console},
     file::{Devsw, File},
     fs::{FileSystem, Inode},
     kalloc::{end, kinit, Kmem},
     memlayout::PHYSTOP,
     page::Page,
-    param::{NCPU, NDEV, NFILE, NINODE},
+    param::{NBUF, NCPU, NDEV, NFILE, NINODE},
     plic::{plicinit, plicinithart},
     println,
     proc::{cpuid, procinit, scheduler, Cpu, ProcessSystem},
@@ -54,7 +54,7 @@ pub struct Kernel {
 
     cpus: [Cpu; NCPU],
 
-    pub bcache: Spinlock<Bcache>,
+    pub bcache: Spinlock<MruArena<BufEntry, NBUF>>,
 
     /// Memory for virtio descriptors `&c` for queue 0.
     ///
@@ -85,7 +85,10 @@ impl Kernel {
             ticks: Sleepablelock::new("time", 0),
             procs: ProcessSystem::zero(),
             cpus: [Cpu::new(); NCPU],
-            bcache: Spinlock::new("BCACHE", Bcache::zero()),
+            bcache: Spinlock::new(
+                "BCACHE",
+                MruArena::new([MruEntry::new(BufEntry::zero()); NBUF]),
+            ),
             virtqueue: [Page::DEFAULT, Page::DEFAULT],
             disk: Sleepablelock::new("virtio_disk", Disk::zero()),
             devsw: [Devsw {

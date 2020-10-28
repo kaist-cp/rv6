@@ -276,6 +276,10 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
         c: C,
         n: N,
     ) -> Option<Self::Handle> {
+        // Look through buffer cache for block on device dev.
+        // If not found, allocate a buffer.
+        // In either case, return locked buffer.
+
         let mut this = self.lock();
 
         // Is the block already cached?
