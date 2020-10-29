@@ -110,7 +110,7 @@ impl InodeGuard<'_> {
         de.inum = inum as u16;
         de.set_name(name);
         let bytes_write = self.write(
-            KVAddr::wrap(&mut de as *mut Dirent as usize),
+            KVAddr::new(&mut de as *mut Dirent as usize),
             off,
             DIRENT_SIZE as u32,
         );
@@ -330,7 +330,7 @@ impl InodeGuard<'_> {
         let mut de: Dirent = Default::default();
         for off in (2 * DIRENT_SIZE as u32..self.deref_inner().size).step_by(DIRENT_SIZE) {
             let bytes_read = self.read(
-                KVAddr::wrap(&mut de as *mut Dirent as usize),
+                KVAddr::new(&mut de as *mut Dirent as usize),
                 off as u32,
                 DIRENT_SIZE as u32,
             );

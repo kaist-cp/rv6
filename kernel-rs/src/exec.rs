@@ -27,7 +27,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
 
     // Check ELF header
     let bytes_read = ip.read(
-        KVAddr::wrap(&mut elf as *mut _ as _),
+        KVAddr::new(&mut elf as *mut _ as _),
         0,
         mem::size_of::<ElfHdr>() as _,
     )?;
@@ -53,7 +53,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
             .wrapping_add(i * ::core::mem::size_of::<ProgHdr>());
 
         let bytes_read = ip.read(
-            KVAddr::wrap(&mut ph as *mut ProgHdr as usize),
+            KVAddr::new(&mut ph as *mut ProgHdr as usize),
             off as u32,
             ::core::mem::size_of::<ProgHdr>() as u32,
         )?;
@@ -84,7 +84,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
     *sz = sz.wrapping_add(PGSIZE).wrapping_sub(1) & !PGSIZE.wrapping_sub(1);
 
     *sz = pt.uvmalloc(*sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)))?;
-    pt.uvmclear(UVAddr::wrap(sz.wrapping_sub(2usize.wrapping_mul(PGSIZE))));
+    pt.uvmclear(UVAddr::new(sz.wrapping_sub(2usize.wrapping_mul(PGSIZE))));
     let mut sp: usize = *sz;
     let stackbase: usize = sp.wrapping_sub(PGSIZE);
 
@@ -105,7 +105,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
             return Err(());
         }
         pt.copyout(
-            UVAddr::wrap(sp),
+            UVAddr::new(sp),
             argv[argc],
             (strlen(argv[argc]) + 1) as usize,
         )?;
@@ -124,7 +124,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
     if sp >= stackbase
         && pt
             .copyout(
-                UVAddr::wrap(sp),
+                UVAddr::new(sp),
                 ustack.as_mut_ptr() as *mut u8,
                 argc.wrapping_add(1)
                     .wrapping_mul(::core::mem::size_of::<usize>()),
@@ -187,7 +187,7 @@ unsafe fn loadseg<A: VAddr>(
 
     for i in num_iter::range_step(0, sz, PGSIZE as _) {
         let pa = pagetable
-            .walkaddr(VAddr::wrap(va.wrapping_add(i as usize)))
+            .walkaddr(VAddr::new(va.wrapping_add(i as usize)))
             .expect("loadseg: address should exist");
 
         let n = if sz.wrapping_sub(i) < PGSIZE as u32 {
@@ -196,7 +196,7 @@ unsafe fn loadseg<A: VAddr>(
             PGSIZE as u32
         };
 
-        let bytes_read = ip.read(KVAddr::wrap(pa), offset.wrapping_add(i), n)?;
+        let bytes_read = ip.read(KVAddr::new(pa), offset.wrapping_add(i), n)?;
         if bytes_read as u32 != n {
             return Err(());
         }

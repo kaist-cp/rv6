@@ -168,7 +168,7 @@ impl PipeInner {
             if (*proc)
                 .pagetable
                 .assume_init_mut()
-                .copyin(&mut ch, UVAddr::wrap(addr.wrapping_add(i)), 1usize)
+                .copyin(&mut ch, UVAddr::new(addr.wrapping_add(i)), 1usize)
                 .is_err()
             {
                 break;
@@ -200,7 +200,7 @@ impl PipeInner {
             if (*proc)
                 .pagetable
                 .assume_init_mut()
-                .copyout(UVAddr::wrap(addr.wrapping_add(i)), &ch, 1usize)
+                .copyout(UVAddr::new(addr.wrapping_add(i)), &ch, 1usize)
                 .is_err()
             {
                 return Ok(i);

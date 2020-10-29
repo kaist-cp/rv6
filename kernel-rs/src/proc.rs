@@ -470,7 +470,7 @@ impl Proc {
         let va: usize = kstack(i);
         kvmmap(
             page_table,
-            KVAddr::wrap(va),
+            KVAddr::new(va),
             PAddr::wrap(pa as usize),
             PGSIZE,
             PTE_R | PTE_W,
@@ -705,7 +705,7 @@ impl ProcessSystem {
                                 .pagetable
                                 .assume_init_mut()
                                 .copyout(
-                                    UVAddr::wrap(addr),
+                                    UVAddr::new(addr),
                                     &mut np.deref_mut_inner().xstate as *mut i32 as *mut u8,
                                     ::core::mem::size_of::<i32>(),
                                 )
@@ -871,7 +871,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable<UVAddr> {
     // to/from user space, so not PTE_U.
     pagetable
         .mappages(
-            UVAddr::wrap(TRAMPOLINE),
+            UVAddr::new(TRAMPOLINE),
             PGSIZE,
             trampoline.as_mut_ptr() as usize,
             PTE_R | PTE_X,
@@ -881,7 +881,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable<UVAddr> {
     // Map the trapframe just below TRAMPOLINE, for trampoline.S.
     pagetable
         .mappages(
-            UVAddr::wrap(TRAPFRAME),
+            UVAddr::new(TRAPFRAME),
             PGSIZE,
             (*p).tf as usize,
             PTE_R | PTE_W,
@@ -893,8 +893,8 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable<UVAddr> {
 /// Free a process's page table, and free the
 /// physical memory it refers to.
 pub unsafe fn proc_freepagetable(pagetable: &mut PageTable<UVAddr>, sz: usize) {
-    pagetable.uvmunmap(UVAddr::wrap(TRAMPOLINE), PGSIZE, 0);
-    pagetable.uvmunmap(UVAddr::wrap(TRAPFRAME), PGSIZE, 0);
+    pagetable.uvmunmap(UVAddr::new(TRAMPOLINE), PGSIZE, 0);
+    pagetable.uvmunmap(UVAddr::new(TRAPFRAME), PGSIZE, 0);
     if sz > 0 {
         pagetable.uvmfree(sz);
     };

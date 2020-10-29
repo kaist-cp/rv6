@@ -136,7 +136,7 @@ pub unsafe fn sys_unlink() -> usize {
             }
             if ip.deref_inner().typ != T_DIR || ip.isdirempty() {
                 let bytes_write = dp.write(
-                    KVAddr::wrap(&mut de as *mut Dirent as usize),
+                    KVAddr::new(&mut de as *mut Dirent as usize),
                     off,
                     DIRENT_SIZE as u32,
                 );
@@ -358,7 +358,7 @@ pub unsafe fn sys_pipe() -> usize {
         .pagetable
         .assume_init_mut()
         .copyout(
-            UVAddr::wrap(fdarray),
+            UVAddr::new(fdarray),
             &mut fd0 as *mut i32 as *mut u8,
             mem::size_of::<i32>(),
         )
@@ -367,7 +367,7 @@ pub unsafe fn sys_pipe() -> usize {
             .pagetable
             .assume_init_mut()
             .copyout(
-                UVAddr::wrap(fdarray.wrapping_add(mem::size_of::<i32>())),
+                UVAddr::new(fdarray.wrapping_add(mem::size_of::<i32>())),
                 &mut fd1 as *mut i32 as *mut u8,
                 mem::size_of::<i32>(),
             )

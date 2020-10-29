@@ -94,7 +94,7 @@ impl Dirent {
     fn read_entry(&mut self, ip: &mut InodeGuard<'_>, off: u32, panic_msg: &'static str) {
         unsafe {
             let bytes_read = ip.read(
-                KVAddr::wrap(self as *mut Dirent as usize),
+                KVAddr::new(self as *mut Dirent as usize),
                 off,
                 DIRENT_SIZE as u32,
             );
