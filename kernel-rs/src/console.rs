@@ -6,7 +6,7 @@ use crate::{
     sleepablelock::SleepablelockGuard,
     uart::Uart,
     utils::spin_loop,
-    vm::{KVAddr, UVAddr, VAddr},
+    vm::{UVAddr, VAddr},
 };
 use core::fmt;
 
@@ -65,12 +65,12 @@ impl Console {
         };
     }
 
-    unsafe fn write<A: VAddr>(&mut self, src: A, n: i32) {
+    unsafe fn write(&mut self, src: UVAddr, n: i32) {
         for i in 0..n {
             let mut c: u8 = 0;
             if either_copyin(
                 &mut c,
-                <A as VAddr>::wrap(src.value() + (i as usize)),
+                UVAddr::new(src.value() + (i as usize)),
                 1usize,
             )
             .is_err()
@@ -83,11 +83,10 @@ impl Console {
 
     // TODO: This should be removed after `WaitChannel::sleep` gets refactored to take
     // `SpinlockGuard`.
-    // Check(@anemoneflower) : remove copy?
     #[allow(clippy::while_immutable_condition)]
-    unsafe fn read<A: VAddr>(
+    unsafe fn read(
         this: &mut SleepablelockGuard<'_, Self>,
-        mut dst: A,
+        mut dst: UVAddr,
         mut n: i32,
     ) -> i32 {
         let target = n as u32;
@@ -207,11 +206,10 @@ pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
 }
 
 /// User write()s to the console go here.
-unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
+unsafe fn consolewrite(user_src: bool, src: usize, n: i32) -> i32 {
     let mut console = kernel().console.lock();
-    match user_src {
-        1 => console.write(UVAddr::wrap(src), n),
-        _ => console.write(KVAddr::wrap(src), n),
+    if user_src {
+        console.write(UVAddr::new(src), n)
     }
     n
 }
@@ -220,11 +218,11 @@ unsafe fn consolewrite(user_src: i32, src: usize, n: i32) -> i32 {
 /// Copy (up to) a whole input line to dst.
 /// User_dist indicates whether dst is a user
 /// or kernel address.
-unsafe fn consoleread(user_dst: i32, dst: usize, n: i32) -> i32 {
+unsafe fn consoleread(user_dst: bool, dst: usize, n: i32) -> i32 {
     let mut console = kernel().console.lock();
     match user_dst {
-        1 => Console::read(&mut console, UVAddr::wrap(dst), n),
-        _ => Console::read(&mut console, KVAddr::wrap(dst), n),
+        true => Console::read(&mut console, UVAddr::new(dst), n),
+        _ => panic!("wrong user_dst!"),
     }
 }
 

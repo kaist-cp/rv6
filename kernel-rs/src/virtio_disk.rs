@@ -236,7 +236,7 @@ impl Disk {
         // buf0 is on a kernel stack, which is not direct mapped,
         // thus the call to kvmpa().
         *desc[0] = VRingDesc {
-            addr: kvmpa(KVAddr::wrap(&mut buf0 as *mut _ as _)),
+            addr: kvmpa(KVAddr::new(&mut buf0 as *mut _ as _)),
             len: mem::size_of::<VirtIOBlockOutHeader>() as _,
             flags: VRingDescFlags::NEXT,
             next: desc[1].idx as _,

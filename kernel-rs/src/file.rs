@@ -40,8 +40,8 @@ impl Default for FileType {
 /// map major device number to device functions.
 #[derive(Copy, Clone)]
 pub struct Devsw {
-    pub read: Option<unsafe fn(_: i32, _: usize, _: i32) -> i32>,
-    pub write: Option<unsafe fn(_: i32, _: usize, _: i32) -> i32>,
+    pub read: Option<unsafe fn(_: bool, _: usize, _: i32) -> i32>,
+    pub write: Option<unsafe fn(_: bool, _: usize, _: i32) -> i32>,
 }
 
 #[derive(Clone)]
@@ -89,7 +89,7 @@ impl File {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                 let mut st = ip.deref().lock().stat();
                 (*p).pagetable.assume_init_mut().copyout(
-                    UVAddr::wrap(addr),
+                    UVAddr::new(addr),
                     &mut st as *mut Stat as *mut u8,
                     ::core::mem::size_of::<Stat>() as usize,
                 )
@@ -110,7 +110,7 @@ impl File {
             FileType::Inode { ip, off } => {
                 let mut ip = ip.deref().lock();
                 let curr_off = *off.get();
-                let ret = ip.read(UVAddr::wrap(addr), curr_off, n as u32);
+                let ret = ip.read(UVAddr::new(addr), curr_off, n as u32);
                 if let Ok(v) = ret {
                     *off.get() = curr_off.wrapping_add(v as u32);
                 }
@@ -120,7 +120,7 @@ impl File {
             FileType::Device { major, .. } => kernel()
                 .devsw
                 .get(*major as usize)
-                .and_then(|dev| Some(dev.read?(1, addr, n) as usize))
+                .and_then(|dev| Some(dev.read?(true, addr, n) as usize))
                 .ok_or(()),
             _ => panic!("File::read"),
         }
@@ -149,7 +149,7 @@ impl File {
                     let curr_off = *off.get();
                     let bytes_written = ip
                         .write(
-                            UVAddr::wrap(addr.wrapping_add(bytes_written as usize)),
+                            UVAddr::new(addr.wrapping_add(bytes_written as usize)),
                             curr_off,
                             bytes_to_write as u32,
                         )
@@ -167,7 +167,7 @@ impl File {
             FileType::Device { major, .. } => kernel()
                 .devsw
                 .get(*major as usize)
-                .and_then(|dev| Some(dev.write?(1, addr, n) as usize))
+                .and_then(|dev| Some(dev.write?(true, addr, n) as usize))
                 .ok_or(()),
             _ => panic!("File::read"),
         }
