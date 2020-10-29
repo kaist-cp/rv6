@@ -68,13 +68,7 @@ impl Console {
     unsafe fn write(&mut self, src: UVAddr, n: i32) {
         for i in 0..n {
             let mut c: u8 = 0;
-            if either_copyin(
-                &mut c,
-                UVAddr::new(src.value() + (i as usize)),
-                1usize,
-            )
-            .is_err()
-            {
+            if either_copyin(&mut c, UVAddr::new(src.value() + (i as usize)), 1usize).is_err() {
                 break;
             }
             self.putc(c as i32);
@@ -84,11 +78,7 @@ impl Console {
     // TODO: This should be removed after `WaitChannel::sleep` gets refactored to take
     // `SpinlockGuard`.
     #[allow(clippy::while_immutable_condition)]
-    unsafe fn read(
-        this: &mut SleepablelockGuard<'_, Self>,
-        mut dst: UVAddr,
-        mut n: i32,
-    ) -> i32 {
+    unsafe fn read(this: &mut SleepablelockGuard<'_, Self>, mut dst: UVAddr, mut n: i32) -> i32 {
         let target = n as u32;
         while n > 0 {
             // Wait until interrupt handler has put some
