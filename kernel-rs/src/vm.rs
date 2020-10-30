@@ -124,7 +124,6 @@ impl PAddr {
 
 #[derive(Copy, Clone)]
 pub struct KVAddr(usize);
-
 #[derive(Copy, Clone)]
 pub struct UVAddr(usize);
 pub trait VAddr: Copy + Clone {
@@ -139,7 +138,7 @@ pub trait VAddr: Copy + Clone {
 
     fn into_usize(&self) -> usize;
 
-    fn update(&mut self, new: usize);
+    fn add(&mut self, rhs: usize) -> Self;
 }
 
 impl VAddr for KVAddr {
@@ -161,8 +160,8 @@ impl VAddr for KVAddr {
         self.0
     }
 
-    fn update(&mut self, new: usize) {
-        self.0 = new
+    fn add(&mut self, rhs: usize) -> Self {
+        Self(self.0 + rhs)
     }
 }
 
@@ -191,8 +190,8 @@ impl VAddr for UVAddr {
         self.0
     }
 
-    fn update(&mut self, new: usize) {
-        self.0 = new
+    fn add(&mut self, rhs: usize) -> Self {
+        Self(self.0 + rhs)
     }
 }
 

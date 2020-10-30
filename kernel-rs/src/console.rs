@@ -108,7 +108,7 @@ impl Console {
                 if either_copyout(dst, &cbuf).is_err() {
                     break;
                 }
-                dst.update(dst.into_usize() + 1);
+                dst = dst.add(1 as usize);
                 n -= 1;
                 if cin == '\n' as i32 {
                     // A whole line has arrived, return to

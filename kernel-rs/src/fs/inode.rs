@@ -226,7 +226,7 @@ impl InodeGuard<'_> {
             } else {
                 tot = tot.wrapping_add(m);
                 off = off.wrapping_add(m);
-                dst.update(dst.into_usize() + (m as usize));
+                dst = dst.add(m as usize);
             }
         }
         Ok(n as usize)
@@ -271,7 +271,7 @@ impl InodeGuard<'_> {
                 fs().log_write(bp);
                 tot = tot.wrapping_add(m);
                 off = off.wrapping_add(m);
-                src.update(src.into_usize() + (m as usize))
+                src = src.add(m as usize);
             }
         }
         if n > 0 {
