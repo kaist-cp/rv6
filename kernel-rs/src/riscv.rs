@@ -366,7 +366,7 @@ pub const PTE_U: i32 = (1) << 4;
 /// Shift a physical address to the right place for a PTE.
 #[inline]
 pub const fn pa2pte(pa: PAddr) -> usize {
-    (pa.value() >> 12) << 10
+    (pa.into_usize() >> 12) << 10
 }
 
 #[inline]

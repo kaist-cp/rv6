@@ -68,7 +68,8 @@ impl Console {
     unsafe fn write(&mut self, src: UVAddr, n: i32) {
         for i in 0..n {
             let mut c: u8 = 0;
-            if either_copyin(&mut c, UVAddr::new(src.value() + (i as usize)), 1usize).is_err() {
+            if either_copyin(&mut c, UVAddr::new(src.into_usize() + (i as usize)), 1usize).is_err()
+            {
                 break;
             }
             self.putc(c as i32);
@@ -107,7 +108,7 @@ impl Console {
                 if either_copyout(dst, &cbuf).is_err() {
                     break;
                 }
-                dst.update(dst.value() + 1);
+                dst.update(dst.into_usize() + 1);
                 n -= 1;
                 if cin == '\n' as i32 {
                     // A whole line has arrived, return to
