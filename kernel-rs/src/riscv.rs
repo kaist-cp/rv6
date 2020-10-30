@@ -1,4 +1,4 @@
-use crate::vm::PAddr;
+use crate::vm::{PAddr, VAddr};
 
 /// Which hart (core) is this?
 #[inline]
@@ -390,8 +390,8 @@ fn pxshift(level: usize) -> usize {
 }
 
 #[inline]
-pub fn px(level: usize, va: usize) -> usize {
-    (va >> pxshift(level)) & PXMASK
+pub fn px<A: VAddr>(level: usize, va: A) -> usize {
+    (va.into_usize() >> pxshift(level)) & PXMASK
 }
 
 /// One beyond the highest possible virtual address.

@@ -188,7 +188,8 @@ unsafe fn loadseg(
     for i in num_iter::range_step(0, sz, PGSIZE as _) {
         let pa = pagetable
             .walkaddr(UVAddr::new(va.wrapping_add(i as usize)))
-            .expect("loadseg: address should exist");
+            .expect("loadseg: address should exist")
+            .into_usize();
 
         let n = if sz.wrapping_sub(i) < PGSIZE as u32 {
             sz.wrapping_sub(i)
