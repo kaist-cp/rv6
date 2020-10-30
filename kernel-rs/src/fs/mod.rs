@@ -18,7 +18,7 @@ use crate::{
     stat::T_DIR,
     vm::{KVAddr, VAddr},
 };
-use core::{mem, ops::DerefMut, ptr};
+use core::{mem, ptr};
 
 mod path;
 pub use path::{FileName, Path};
