@@ -462,7 +462,7 @@ impl ProcData {
         self.killed.store(true, Ordering::Release);
     }
 
-    pub unsafe fn killed(&self) -> bool {
+    pub unsafe fn killed(&mut self) -> bool {
         self.killed.load(Ordering::Acquire)
     }
 
@@ -542,22 +542,24 @@ impl ProcessSystem {
         for p in &self.process_pool {
             let mut guard = p.lock();
             if guard.deref_inner().state == Procstate::UNUSED {
+                let data = &mut *guard.data.get();
                 guard.deref_mut_inner().pid = allocpid();
 
                 // Allocate a trapframe page.
-                (*guard.data.get()).tf = kernel().alloc() as *mut Trapframe;
-                if (*guard.data.get()).tf.is_null() {
+                data.tf = kernel().alloc() as *mut Trapframe;
+                if data.tf.is_null() {
                     return Err(());
                 }
 
                 // An empty user page table.
-                (*guard.data.get()).pagetable = mem::MaybeUninit::new(proc_pagetable(p as *const _ as *mut _));
+                data.pagetable = mem::MaybeUninit::new(proc_pagetable(p as *const _ as *mut _));
 
                 // Set up new context to start executing at forkret,
                 // which returns to user space.
-                ptr::write_bytes(&mut guard.context as *mut Context, 0, 1);
-                guard.context.ra = forkret as usize;
-                guard.context.sp = p.kstack.wrapping_add(PGSIZE);
+                // This is safe according to following paper: Stacked Borrows (https://plv.mpi-sws.org/rustbelt/stacked-borrows/paper.pdf).
+                ptr::write_bytes(&mut data.context, 0, 1);
+                data.context.ra = forkret as usize;
+                data.context.sp = data.kstack.wrapping_add(PGSIZE);
                 return Ok(guard);
             }
         }
@@ -594,7 +596,7 @@ impl ProcessSystem {
         for p in &self.process_pool {
             let mut guard = p.lock();
             if guard.deref_inner().pid == pid {
-                guard.kill();
+                (*guard.data.get()).kill();
                 guard.wakeup();
                 return 0;
             }
@@ -615,31 +617,32 @@ impl ProcessSystem {
 
     /// Set up first user process.
     pub unsafe fn user_proc_init(&mut self) {
-        let mut p = self.alloc().expect("user_proc_init");
+        let mut guard = self.alloc().expect("user_proc_init");
 
-        self.initial_proc = p.raw() as *mut _;
+        self.initial_proc = guard.raw() as *mut _;
 
+        let data = &mut *guard.data.get();
         // Allocate one user page and copy init's instructions
         // and data into it.
-        (*p).pagetable.assume_init_mut().uvminit(&INITCODE);
-        (*p).sz = PGSIZE;
+        data.pagetable.assume_init_mut().uvminit(&INITCODE);
+        data.sz = PGSIZE;
 
         // Prepare for the very first "return" from kernel to user.
 
         // User program counter.
-        (*(*p).tf).epc = 0;
+        (*data.tf).epc = 0;
 
         // User stack pointer.
-        (*(*p).tf).sp = PGSIZE;
+        (*data.tf).sp = PGSIZE;
         safestrcpy(
-            (*p).name.as_mut_ptr(),
+            (*guard).name.as_mut_ptr(),
             b"initcode\x00" as *const u8,
             ::core::mem::size_of::<[u8; 16]>() as i32,
         );
-        (*p).cwd = Path::new(CStr::from_bytes_with_nul_unchecked(b"/\x00"))
+        data.cwd = Path::new(CStr::from_bytes_with_nul_unchecked(b"/\x00"))
             .namei()
             .unwrap_or(ptr::null_mut());
-        p.deref_mut_inner().state = Procstate::RUNNABLE;
+        guard.deref_mut_inner().state = Procstate::RUNNABLE;
     }
 
     /// Create a new process, copying the parent.
@@ -650,32 +653,34 @@ impl ProcessSystem {
         // Allocate process.
         let mut np = ok_or!(self.alloc(), return -1);
 
+        let mut pdata = &mut *(*p).data.get();
+        let mut npdata =&mut *np.data.get();
         // Copy user memory from parent to child.
-        if (*p)
+        if pdata
             .pagetable
             .assume_init_mut()
-            .uvmcopy((*np).pagetable.assume_init_mut(), (*p).sz)
+            .uvmcopy(npdata.pagetable.assume_init_mut(), pdata.sz)
             .is_err()
         {
             freeproc(np);
             return -1;
         }
-        (*np).sz = (*p).sz;
+        npdata.sz = pdata.sz;
         np.deref_mut_inner().parent = p;
 
         // Copy saved user registers.
-        *(*np).tf = *(*p).tf;
+        *npdata.tf = *pdata.tf;
 
         // Cause fork to return 0 in the child.
-        (*(*np).tf).a0 = 0;
+        (*npdata.tf).a0 = 0;
 
         // Increment reference counts on open file descriptors.
         for i in 0..NOFILE {
-            if let Some(file) = &(*p).open_files[i] {
-                (*np).open_files[i] = Some(file.clone())
+            if let Some(file) = &pdata.open_files[i] {
+                npdata.open_files[i] = Some(file.clone())
             }
         }
-        (*np).cwd = (*(*p).cwd).idup();
+        npdata.cwd = (*pdata.cwd).idup();
         safestrcpy(
             (*np).name.as_mut_ptr(),
             (*p).name.as_mut_ptr(),
@@ -690,6 +695,7 @@ impl ProcessSystem {
     /// Return -1 if this process has no children.
     pub unsafe fn wait(&self, addr: usize) -> i32 {
         let p: *mut Proc = myproc();
+        let mut data = *(*p).data.get();
 
         // Hold p->lock for the whole time to avoid lost
         // Wakeups from a child's exit().
@@ -709,7 +715,7 @@ impl ProcessSystem {
                     if np.deref_inner().state == Procstate::ZOMBIE {
                         let pid = np.deref_inner().pid;
                         if addr != 0
-                            && (*p)
+                            && data
                                 .pagetable
                                 .assume_init_mut()
                                 .copyout(
@@ -728,7 +734,7 @@ impl ProcessSystem {
             }
 
             // No point waiting if we don't have any children.
-            if !havekids || (*p).killed() {
+            if !havekids || data.killed() {
                 return -1;
             }
 
@@ -746,11 +752,12 @@ impl ProcessSystem {
     /// until its parent calls wait().
     pub unsafe fn exit_current(&self, status: i32) {
         let p = myproc();
+        let mut data = *(*p).data.get();
         if p == self.initial_proc {
             panic!("init exiting");
         }
 
-        (*p).close_files();
+        data.close_files();
 
         // We might re-parent a child to init. We can't be precise about
         // waking up init, since we can't acquire its lock once we've
@@ -812,7 +819,7 @@ impl ProcessSystem {
 
 pub unsafe fn procinit(procs: &mut ProcessSystem, page_table: &mut PageTable) {
     for (i, p) in procs.process_pool.iter_mut().enumerate() {
-        p.palloc(page_table, i);
+        (*p.data.get()).palloc(page_table, i);
     }
 }
 
@@ -846,21 +853,22 @@ fn allocpid() -> i32 {
 /// including user pages.
 /// p->lock must be held.
 unsafe fn freeproc(mut p: ProcGuard) {
-    if !(*p).tf.is_null() {
-        kernel().free((*p).tf as _);
+    let mut data = &mut *p.data.get();
+    if !data.tf.is_null() {
+        kernel().free(data.tf as _);
     }
-    (*p).tf = ptr::null_mut();
-    if !(*p).pagetable.assume_init_mut().is_null() {
-        let sz = (*p).sz;
-        proc_freepagetable((*p).pagetable.assume_init_mut(), sz);
+    data.tf = ptr::null_mut();
+    if !data.pagetable.assume_init_mut().is_null() {
+        let sz = data.sz;
+        proc_freepagetable(data.pagetable.assume_init_mut(), sz);
     }
-    (*p).pagetable = mem::MaybeUninit::uninit();
-    (*p).sz = 0;
+    data.pagetable = mem::MaybeUninit::uninit();
+    data.sz = 0;
     p.deref_mut_inner().pid = 0;
     p.deref_mut_inner().parent = ptr::null_mut();
     (*p).name[0] = 0;
     p.deref_mut_inner().waitchannel = ptr::null();
-    (*p).killed = AtomicBool::new(false);
+    data.killed = AtomicBool::new(false);
     p.deref_mut_inner().xstate = 0;
     p.deref_mut_inner().state = Procstate::UNUSED;
 }
@@ -888,7 +896,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable {
 
     // Map the trapframe just below TRAMPOLINE, for trampoline.S.
     pagetable
-        .mappages(TRAPFRAME, PGSIZE, (*p).tf as usize, PTE_R | PTE_W)
+        .mappages(TRAPFRAME, PGSIZE, (*(*p).data.get()).tf as usize, PTE_R | PTE_W)
         .expect("proc_pagetable: mappages TRAPFRAME");
     pagetable
 }
@@ -915,22 +923,23 @@ const INITCODE: [u8; 51] = [
 /// Return 0 on success, -1 on failure.
 pub unsafe fn resizeproc(n: i32) -> i32 {
     let mut p = myproc();
-    let sz = (*p).sz;
+    let mut data = *(*p).data.get();
+    let sz = data.sz;
     let sz = match n.cmp(&0) {
         cmp::Ordering::Equal => sz,
         cmp::Ordering::Greater => {
-            let sz = (*p)
+            let sz = data
                 .pagetable
                 .assume_init_mut()
                 .uvmalloc(sz, sz.wrapping_add(n as usize));
             ok_or!(sz, return -1)
         }
-        cmp::Ordering::Less => (*p)
+        cmp::Ordering::Less => data
             .pagetable
             .assume_init_mut()
             .uvmdealloc(sz, sz.wrapping_add(n as usize)),
     };
-    (*p).sz = sz;
+    data.sz = sz;
     0
 }
 
@@ -956,7 +965,7 @@ pub unsafe fn scheduler() -> ! {
                 // before jumping back to us.
                 guard.deref_mut_inner().state = Procstate::RUNNING;
                 (*c).proc = p as *const _ as *mut _;
-                swtch(&mut (*c).scheduler, &mut guard.context);
+                swtch(&mut (*c).scheduler, &mut (*guard.data.get()).context);
 
                 // Process is done running for now.
                 // It should have changed its p->state before coming back.
@@ -986,7 +995,7 @@ unsafe fn sched(p: &mut ProcGuard) {
         panic!("sched interruptible");
     }
     let interrupt_enabled = (*kernel().mycpu()).interrupt_enabled;
-    swtch(&mut (*p).context, &mut (*kernel().mycpu()).scheduler);
+    swtch(&mut (*(*p).data.get()).context, &mut (*kernel().mycpu()).scheduler);
     (*kernel().mycpu()).interrupt_enabled = interrupt_enabled;
 }
 
@@ -1016,7 +1025,7 @@ unsafe fn forkret() {
 pub unsafe fn either_copyout(user_dst: bool, dst: usize, src: &[u8]) -> Result<(), ()> {
     let p = myproc();
     if user_dst {
-        (*p).pagetable
+        (*(*p).data.get()).pagetable
             .assume_init_mut()
             .copyout(dst, src.as_ptr(), src.len())
             .map_or(Err(()), |_v| Ok(()))
@@ -1037,7 +1046,7 @@ pub unsafe fn either_copyin(
 ) -> Result<(), ()> {
     let p = myproc();
     if user_src {
-        (*p).pagetable
+        (*(*p).data.get()).pagetable
             .assume_init_mut()
             .copyin(dst, src, len)
             .map_or(Err(()), |_v| Ok(()))
