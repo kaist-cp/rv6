@@ -1,4 +1,4 @@
-#!python3
+#!/usr/bin/env python3
 
 import argparse, subprocess, glob, re, collections, os
 from subprocess import Popen, PIPE
