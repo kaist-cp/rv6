@@ -265,7 +265,7 @@ impl<A: VAddr> PageTable<A> {
             panic!("walk");
         }
         for level in (1..3).rev() {
-            let pte = &mut pagetable[px(level, va.into_usize())];
+            let pte = &mut pagetable[px(level, va)];
             if pte.check_flag(PTE_V) {
                 pagetable = pte.as_table_mut_unchecked();
             } else {
@@ -283,12 +283,12 @@ impl<A: VAddr> PageTable<A> {
                 pagetable = pte.as_table_mut_unchecked();
             }
         }
-        Some(&mut pagetable[px(0, va.into_usize())])
+        Some(&mut pagetable[px(0, va)])
     }
 
     /// Look up a virtual address, return the physical address,
     /// or 0 if not mapped.
-    pub unsafe fn walkaddr(&mut self, va: A) -> Option<usize> {
+    pub unsafe fn walkaddr(&mut self, va: A) -> Option<PAddr> {
         if va.into_usize() >= MAXVA {
             return None;
         }
@@ -300,7 +300,7 @@ impl<A: VAddr> PageTable<A> {
         if !pte.check_flag(PTE_U as usize) {
             return None;
         }
-        Some(pte.get_pa().into_usize())
+        Some(pte.get_pa())
     }
 
     /// Create PTEs for virtual addresses starting at va that refer to
@@ -344,7 +344,7 @@ impl<A: VAddr> PageTable<A> {
         let mut dst = dstva.into_usize();
         while len > 0 {
             let va0 = pgrounddown(dst);
-            let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(()));
+            let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(())).into_usize();
             let mut n = PGSIZE - (dst - va0);
             if n > len {
                 n = len
@@ -522,7 +522,7 @@ impl PageTable<UVAddr> {
         let mut src = srcva.into_usize();
         while len > 0 {
             let va0 = pgrounddown(src);
-            let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(()));
+            let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(())).into_usize();
             let mut n = PGSIZE - (src - va0);
             if n > len {
                 n = len
@@ -549,7 +549,7 @@ impl PageTable<UVAddr> {
         let mut src = srcva.into_usize();
         while got_null == 0 && max > 0 {
             let va0 = pgrounddown(src);
-            let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(()));
+            let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(())).into_usize();
             let mut n = PGSIZE - (src - va0);
             if n > max {
                 n = max
