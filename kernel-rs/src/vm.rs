@@ -171,7 +171,8 @@ impl VAddr for KVAddr {
 impl VAddr for UVAddr {
     unsafe fn copyin(dst: *mut u8, src: Self, len: usize) -> Result<(), ()> {
         let p = myproc();
-        (*p).pagetable
+        (*(*p).data.get())
+            .pagetable
             .assume_init_mut()
             .copyin(dst as *mut u8, src, len)
             .map_or(Err(()), |_v| Ok(()))
@@ -179,7 +180,8 @@ impl VAddr for UVAddr {
 
     unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()> {
         let p = myproc();
-        (*p).pagetable
+        (*(*p).data.get())
+            .pagetable
             .assume_init_mut()
             .copyout(dst, src.as_ptr(), src.len())
             .map_or(Err(()), |_v| Ok(()))
