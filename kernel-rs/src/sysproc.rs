@@ -27,7 +27,7 @@ pub unsafe fn sys_wait() -> usize {
 
 pub unsafe fn sys_sbrk() -> usize {
     let n = ok_or!(argint(0), return usize::MAX);
-    let addr: i32 = (*myproc()).sz as i32;
+    let addr: i32 = (*(*myproc()).data.get()).sz as i32;
     if resizeproc(n) < 0 {
         return usize::MAX;
     }
@@ -39,7 +39,7 @@ pub unsafe fn sys_sleep() -> usize {
     let mut ticks = kernel().ticks.lock();
     let ticks0 = *ticks;
     while ticks.wrapping_sub(ticks0) < n as u32 {
-        if (*myproc()).killed() {
+        if (*(*myproc()).data.get()).killed() {
             return usize::MAX;
         }
         ticks.sleep();

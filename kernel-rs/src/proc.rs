@@ -297,7 +297,7 @@ struct ProcInfo {
 }
 
 /// Proc::data are private to the process, so lock need not be held.
-struct ProcData {
+pub struct ProcData {
     /// If true, the process have been killed.
     killed: AtomicBool,
 
@@ -327,7 +327,7 @@ struct ProcData {
 pub struct Proc {
     info: Spinlock<ProcInfo>,
 
-    data: UnsafeCell<ProcData>,
+    pub data: UnsafeCell<ProcData>,
 
     /// Process name (debugging).
     pub name: [u8; 16],
@@ -476,7 +476,7 @@ impl ProcData {
 
     /// Close all open files.
     unsafe fn close_files(&mut self) {
-        for file in self.open_files.into_iter() {
+        for file in self.open_files.iter_mut() {
             *file = None;
         }
         let _tx = fs().begin_transaction();
@@ -657,7 +657,7 @@ impl ProcessSystem {
         // Allocate process.
         let mut np = ok_or!(self.alloc(), return -1);
 
-        let mut pdata = &mut *(*p).data.get();
+        let pdata = &mut *(*p).data.get();
         let mut npdata = &mut *np.data.get();
         // Copy user memory from parent to child.
         if pdata
@@ -684,7 +684,7 @@ impl ProcessSystem {
                 npdata.open_files[i] = Some(file.clone())
             }
         }
-        npdata.cwd = Some((*p).cwd.clone().unwrap());
+        npdata.cwd = Some(pdata.cwd.clone().unwrap());
         safestrcpy(
             (*np).name.as_mut_ptr(),
             (*p).name.as_mut_ptr(),
@@ -699,7 +699,7 @@ impl ProcessSystem {
     /// Return -1 if this process has no children.
     pub unsafe fn wait(&self, addr: usize) -> i32 {
         let p: *mut Proc = myproc();
-        let mut data = *(*p).data.get();
+        let data = &mut *(*p).data.get();
 
         // Hold p->lock for the whole time to avoid lost
         // Wakeups from a child's exit().
@@ -756,7 +756,7 @@ impl ProcessSystem {
     /// until its parent calls wait().
     pub unsafe fn exit_current(&self, status: i32) {
         let p = myproc();
-        let mut data = *(*p).data.get();
+        let data = &mut *(*p).data.get();
         if p == self.initial_proc {
             panic!("init exiting");
         }
@@ -931,8 +931,8 @@ const INITCODE: [u8; 51] = [
 /// Grow or shrink user memory by n bytes.
 /// Return 0 on success, -1 on failure.
 pub unsafe fn resizeproc(n: i32) -> i32 {
-    let mut p = myproc();
-    let mut data = *(*p).data.get();
+    let p = myproc();
+    let data = &mut *(*p).data.get();
     let sz = data.sz;
     let sz = match n.cmp(&0) {
         cmp::Ordering::Equal => sz,
