@@ -471,7 +471,7 @@ impl Proc {
         kvmmap(
             page_table,
             KVAddr::new(va),
-            PAddr::wrap(pa as usize),
+            PAddr::new(pa as usize),
             PGSIZE,
             PTE_R | PTE_W,
         );
