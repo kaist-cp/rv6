@@ -135,7 +135,7 @@ impl Path {
         let mut ptr = if self.is_absolute() {
             Inode::get(ROOTDEV as u32, ROOTINO)
         } else {
-            (*myproc()).cwd.clone().unwrap()
+            (*(*myproc()).data.get()).cwd.clone().unwrap()
         };
 
         let mut path = self;
