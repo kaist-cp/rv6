@@ -197,11 +197,9 @@ pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
 }
 
 /// User write()s to the console go here.
-unsafe fn consolewrite(user_src: bool, src: usize, n: i32) -> i32 {
+unsafe fn consolewrite(src: UVAddr, n: i32) -> i32 {
     let mut console = kernel().console.lock();
-    if user_src {
-        console.write(UVAddr::new(src), n)
-    }
+    console.write(src, n);
     n
 }
 
@@ -209,12 +207,9 @@ unsafe fn consolewrite(user_src: bool, src: usize, n: i32) -> i32 {
 /// Copy (up to) a whole input line to dst.
 /// User_dist indicates whether dst is a user
 /// or kernel address.
-unsafe fn consoleread(user_dst: bool, dst: usize, n: i32) -> i32 {
+unsafe fn consoleread(dst: UVAddr, n: i32) -> i32 {
     let mut console = kernel().console.lock();
-    match user_dst {
-        true => Console::read(&mut console, UVAddr::new(dst), n),
-        _ => panic!("wrong user_dst!"),
-    }
+    Console::read(&mut console, dst, n)
 }
 
 /// The console input interrupt handler.
