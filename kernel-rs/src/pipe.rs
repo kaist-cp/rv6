@@ -162,7 +162,7 @@ impl PipeInner {
         for i in 0..n {
             if self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
-                if !self.readopen || data.killed() {
+                if !self.readopen || (*proc).killed() {
                     return Err(());
                 }
                 return Ok(i);
@@ -187,7 +187,7 @@ impl PipeInner {
 
         //DOC: pipe-empty
         if self.nread == self.nwrite && self.writeopen {
-            if data.killed() {
+            if (*proc).killed() {
                 return Err(PipeError::InvalidStatus);
             }
             return Err(PipeError::WaitForIO);

@@ -298,9 +298,6 @@ struct ProcInfo {
 
 /// Proc::data are private to the process, so lock need not be held.
 pub struct ProcData {
-    /// If true, the process have been killed.
-    killed: AtomicBool,
-
     /// Bottom of kernel stack for this process.
     pub kstack: usize,
 
@@ -328,6 +325,9 @@ pub struct Proc {
     info: Spinlock<ProcInfo>,
 
     pub data: UnsafeCell<ProcData>,
+
+    /// If true, the process have been killed.
+    killed: AtomicBool,
 
     /// Process name (debugging).
     pub name: [u8; 16],
@@ -435,7 +435,6 @@ impl Procstate {
 impl ProcData {
     const fn new() -> Self {
         Self {
-            killed: AtomicBool::new(false),
             kstack: 0,
             sz: 0,
             pagetable: mem::MaybeUninit::uninit(),
@@ -465,15 +464,6 @@ impl ProcData {
         self.kstack = va;
     }
 
-    /// Kill and wake the process up.
-    pub unsafe fn kill(&mut self) {
-        self.killed.store(true, Ordering::Release);
-    }
-
-    pub unsafe fn killed(&mut self) -> bool {
-        self.killed.load(Ordering::Acquire)
-    }
-
     /// Close all open files.
     unsafe fn close_files(&mut self) {
         for file in self.open_files.iter_mut() {
@@ -499,6 +489,7 @@ impl Proc {
                 },
             ),
             data: UnsafeCell::new(ProcData::new()),
+            killed: AtomicBool::new(false),
             name: [0; 16],
         }
     }
@@ -514,6 +505,15 @@ impl Proc {
 
     pub unsafe fn state(&self) -> Procstate {
         self.info.get_mut_unchecked().state
+    }
+
+    /// Kill and wake the process up.
+    pub fn kill(&self) {
+        self.killed.store(true, Ordering::Release);
+    }
+
+    pub fn killed(&self) -> bool {
+        self.killed.load(Ordering::Acquire)
     }
 
     /// Wake process from sleep().
@@ -596,11 +596,11 @@ impl ProcessSystem {
     /// Kill the process with the given pid.
     /// The victim won't exit until it tries to return
     /// to user space (see usertrap() in trap.c).
-    pub unsafe fn kill(&self, pid: i32) -> i32 {
+    pub fn kill(&self, pid: i32) -> i32 {
         for p in &self.process_pool {
             let mut guard = p.lock();
             if guard.deref_info().pid == pid {
-                (*guard.data.get()).kill();
+                p.kill();
                 guard.wakeup();
                 return 0;
             }
@@ -738,7 +738,7 @@ impl ProcessSystem {
             }
 
             // No point waiting if we don't have any children.
-            if !havekids || data.killed() {
+            if !havekids || (*p).killed() {
                 return -1;
             }
 
@@ -872,7 +872,7 @@ unsafe fn freeproc(mut p: ProcGuard) {
     p.deref_mut_info().parent = ptr::null_mut();
     (*p).name[0] = 0;
     p.deref_mut_info().waitchannel = ptr::null();
-    data.killed = AtomicBool::new(false);
+    p.killed = AtomicBool::new(false);
     p.deref_mut_info().xstate = 0;
     p.deref_mut_info().state = Procstate::UNUSED;
 }
