@@ -132,6 +132,9 @@ pub trait VAddr: Copy + Clone {
     /// Returns Ok(()) on success, Err(()) on error.
     unsafe fn copyin(dst: *mut u8, src: Self, len: usize) -> Result<(), ()>;
 
+    /// Copy to either a user address, or kernel address,
+    /// depending on usr_dst.
+    /// Returns Ok(()) on success, Err(()) on error.
     unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()>;
 
     fn new(value: usize) -> Self;

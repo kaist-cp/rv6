@@ -2,7 +2,7 @@ use crate::{
     file::Devsw,
     kernel::kernel,
     param::NDEV,
-    proc::{either_copyin, either_copyout, myproc},
+    proc::myproc,
     sleepablelock::SleepablelockGuard,
     uart::Uart,
     utils::spin_loop,
@@ -68,7 +68,7 @@ impl Console {
     unsafe fn write(&mut self, src: UVAddr, n: i32) {
         for i in 0..n {
             let mut c: u8 = 0;
-            if either_copyin(&mut c, UVAddr::new(src.into_usize() + (i as usize)), 1usize).is_err()
+            if VAddr::copyin(&mut c, UVAddr::new(src.into_usize() + (i as usize)), 1usize).is_err()
             {
                 break;
             }
@@ -105,7 +105,7 @@ impl Console {
             } else {
                 // Copy the input byte to the user-space buffer.
                 let cbuf = [cin as u8];
-                if either_copyout(dst, &cbuf).is_err() {
+                if UVAddr::copyout(dst, &cbuf).is_err() {
                     break;
                 }
                 dst = dst.add(1 as usize);

@@ -1006,17 +1006,3 @@ unsafe fn forkret() {
     fsinit(ROOTDEV);
     usertrapret();
 }
-
-/// Copy to either a user address, or kernel address,
-/// depending on usr_dst.
-/// Returns Ok(()) on success, Err(()) on error.
-pub unsafe fn either_copyout<A: VAddr>(dst: A, src: &[u8]) -> Result<(), ()> {
-    <A as VAddr>::copyout(dst, src)
-}
-
-/// Copy from either a user address, or kernel address,
-/// depending on usr_src.
-/// Returns Ok(()) on success, Err(()) on error.
-pub unsafe fn either_copyin<A: VAddr>(dst: *mut u8, src: A, len: usize) -> Result<(), ()> {
-    <A as VAddr>::copyin(dst, src, len)
-}
