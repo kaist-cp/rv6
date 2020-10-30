@@ -18,6 +18,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
     let mut elf: ElfHdr = Default::default();
     let mut ph: ProgHdr = Default::default();
     let mut p: *mut Proc = myproc();
+    let mut data = &mut *(*p).data.get();
 
     let _tx = fs().begin_transaction();
     let ptr = ok_or!(path.namei(), {
@@ -77,7 +78,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
     drop(ip);
 
     p = myproc();
-    let oldsz: usize = (*p).sz;
+    let oldsz: usize = data.sz;
 
     // Allocate two pages at the next page boundary.
     // Use the second as the user stack.
@@ -135,7 +136,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
         // arguments to user main(argc, argv)
         // argc is returned via the system call return
         // value, which goes in a0.
-        (*(*p).tf).a1 = sp;
+        (*data.tf).a1 = sp;
 
         // Save program name for debugging.
         let mut s = path.as_bytes().as_ptr();
@@ -153,14 +154,14 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
         );
 
         // Commit to the user image.
-        let mut oldpagetable = core::mem::replace((*p).pagetable.assume_init_mut(), pt);
-        (*p).sz = sz;
+        let mut oldpagetable = core::mem::replace(data.pagetable.assume_init_mut(), pt);
+        data.sz = sz;
 
         // initial program counter = main
-        (*(*p).tf).epc = elf.entry;
+        (*data.tf).epc = elf.entry;
 
         // initial stack pointer
-        (*(*p).tf).sp = sp;
+        (*data.tf).sp = sp;
         proc_freepagetable(&mut oldpagetable, oldsz);
 
         // this ends up in a0, the first argument to main(argc, argv)

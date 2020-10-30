@@ -157,15 +157,17 @@ impl PipeInner {
     unsafe fn try_write(&mut self, addr: usize, n: usize) -> Result<usize, ()> {
         let mut ch: u8 = 0;
         let proc = myproc();
+        let data = &mut *(*proc).data.get();
+
         for i in 0..n {
             if self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
-                if !self.readopen || (*proc).killed() {
+                if !self.readopen || data.killed() {
                     return Err(());
                 }
                 return Ok(i);
             }
-            if (*proc)
+            if data
                 .pagetable
                 .assume_init_mut()
                 .copyin(&mut ch, UVAddr::new(addr.wrapping_add(i)), 1usize)
@@ -181,10 +183,11 @@ impl PipeInner {
 
     unsafe fn try_read(&mut self, addr: usize, n: usize) -> Result<usize, PipeError> {
         let proc = myproc();
+        let data = &mut *(*proc).data.get();
 
         //DOC: pipe-empty
         if self.nread == self.nwrite && self.writeopen {
-            if (*proc).killed() {
+            if data.killed() {
                 return Err(PipeError::InvalidStatus);
             }
             return Err(PipeError::WaitForIO);
@@ -197,7 +200,7 @@ impl PipeInner {
             }
             let ch = self.data[self.nread as usize % PIPESIZE];
             self.nread = self.nread.wrapping_add(1);
-            if (*proc)
+            if data
                 .pagetable
                 .assume_init_mut()
                 .copyout(UVAddr::new(addr.wrapping_add(i)), &ch, 1usize)
