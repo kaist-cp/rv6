@@ -7,7 +7,6 @@ use crate::{
     bio::Buf,
     kernel::kernel,
     param::NINODE,
-    proc::{either_copyin, either_copyout},
     sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::{Stat, T_DIR, T_NONE},
@@ -221,7 +220,7 @@ impl InodeGuard<'_> {
             );
             let begin = off.wrapping_rem(BSIZE as u32) as usize;
             let end = begin + m as usize;
-            if either_copyout(dst, &bp.deref_mut_inner().data[begin..end]).is_err() {
+            if VAddr::copyout(dst, &bp.deref_mut_inner().data[begin..end]).is_err() {
                 break;
             } else {
                 tot = tot.wrapping_add(m);
@@ -256,7 +255,7 @@ impl InodeGuard<'_> {
                 n.wrapping_sub(tot),
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
             );
-            if either_copyin(
+            if VAddr::copyin(
                 bp.deref_mut_inner()
                     .data
                     .as_mut_ptr()
