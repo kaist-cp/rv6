@@ -59,19 +59,19 @@ impl PageTableEntry {
     }
 
     unsafe fn as_page(&self) -> &Page {
-        &*(pte2pa(self.inner).value() as *const Page)
+        &*(pte2pa(self.inner).into_usize() as *const Page)
     }
 
     fn as_table_mut(&mut self) -> Option<&mut RawPageTable> {
         if self.check_flag(PTE_V) && !self.check_flag((PTE_R | PTE_W | PTE_X) as usize) {
-            Some(unsafe { &mut *(pte2pa(self.inner).value() as *mut RawPageTable) })
+            Some(unsafe { &mut *(pte2pa(self.inner).into_usize() as *mut RawPageTable) })
         } else {
             None
         }
     }
 
     unsafe fn as_table_mut_unchecked(&mut self) -> &mut RawPageTable {
-        &mut *(pte2pa(self.inner).value() as *mut RawPageTable)
+        &mut *(pte2pa(self.inner).into_usize() as *mut RawPageTable)
     }
 }
 
@@ -117,7 +117,7 @@ impl PAddr {
         PAddr(value)
     }
 
-    pub const fn value(self) -> usize {
+    pub const fn into_usize(self) -> usize {
         self.0
     }
 }
@@ -137,19 +137,19 @@ pub trait VAddr: Copy + Clone {
 
     fn new(value: usize) -> Self;
 
-    fn value(&self) -> usize;
+    fn into_usize(&self) -> usize;
 
     fn update(&mut self, new: usize);
 }
 
 impl VAddr for KVAddr {
     unsafe fn copyin(dst: *mut u8, src: Self, len: usize) -> Result<(), ()> {
-        ptr::copy(src.value() as *mut u8, dst, len);
+        ptr::copy(src.into_usize() as *mut u8, dst, len);
         Ok(())
     }
 
     unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()> {
-        ptr::copy(src.as_ptr(), dst.value() as *mut u8, src.len());
+        ptr::copy(src.as_ptr(), dst.into_usize() as *mut u8, src.len());
         Ok(())
     }
 
@@ -157,7 +157,7 @@ impl VAddr for KVAddr {
         KVAddr(value)
     }
 
-    fn value(&self) -> usize {
+    fn into_usize(&self) -> usize {
         self.0
     }
 
@@ -187,7 +187,7 @@ impl VAddr for UVAddr {
         UVAddr(value)
     }
 
-    fn value(&self) -> usize {
+    fn into_usize(&self) -> usize {
         self.0
     }
 
@@ -259,11 +259,11 @@ impl<A: VAddr> PageTable<A> {
     ///    0..12 -- 12 bits of byte offset within the page.
     unsafe fn walk(&self, va: A, alloc: i32) -> Option<&mut PageTableEntry> {
         let mut pagetable = &mut *self.as_raw();
-        if va.value() >= MAXVA {
+        if va.into_usize() >= MAXVA {
             panic!("walk");
         }
         for level in (1..3).rev() {
-            let pte = &mut pagetable[px(level, va.value())];
+            let pte = &mut pagetable[px(level, va.into_usize())];
             if pte.check_flag(PTE_V) {
                 pagetable = pte.as_table_mut_unchecked();
             } else {
@@ -281,13 +281,13 @@ impl<A: VAddr> PageTable<A> {
                 pagetable = pte.as_table_mut_unchecked();
             }
         }
-        Some(&mut pagetable[px(0, va.value())])
+        Some(&mut pagetable[px(0, va.into_usize())])
     }
 
     /// Look up a virtual address, return the physical address,
     /// or 0 if not mapped.
     pub unsafe fn walkaddr(&mut self, va: A) -> Option<usize> {
-        if va.value() >= MAXVA {
+        if va.into_usize() >= MAXVA {
             return None;
         }
         let pt = self;
@@ -298,7 +298,7 @@ impl<A: VAddr> PageTable<A> {
         if !pte.check_flag(PTE_U as usize) {
             return None;
         }
-        Some(pte.get_pa().value())
+        Some(pte.get_pa().into_usize())
     }
 
     /// Create PTEs for virtual addresses starting at va that refer to
@@ -312,8 +312,8 @@ impl<A: VAddr> PageTable<A> {
         mut pa: usize,
         perm: i32,
     ) -> Result<(), ()> {
-        let mut a = pgrounddown(va.value());
-        let last = pgrounddown(va.value() + size - 1usize);
+        let mut a = pgrounddown(va.into_usize());
+        let last = pgrounddown(va.into_usize() + size - 1usize);
         loop {
             let pte = some_or!(self.walk(VAddr::new(a), 1), return Err(()));
             if pte.check_flag(PTE_V) {
@@ -339,7 +339,7 @@ impl<A: VAddr> PageTable<A> {
         mut src: *const u8,
         mut len: usize,
     ) -> Result<(), ()> {
-        let mut dst = dstva.value();
+        let mut dst = dstva.into_usize();
         while len > 0 {
             let va0 = pgrounddown(dst);
             let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(()));
@@ -432,7 +432,7 @@ impl PageTable<UVAddr> {
             if mem.is_null() {
                 return Err(());
             }
-            ptr::copy(pa.value() as *mut u8 as *const u8, mem, PGSIZE);
+            ptr::copy(pa.into_usize() as *mut u8 as *const u8, mem, PGSIZE);
             if (*new_ptable)
                 .mappages(VAddr::new(i), PGSIZE, mem as usize, flags as i32)
                 .is_err()
@@ -450,8 +450,8 @@ impl PageTable<UVAddr> {
     /// physical memory.
     pub unsafe fn uvmunmap(&mut self, va: UVAddr, size: usize, do_free: i32) {
         let mut pa: usize = 0;
-        let mut a = pgrounddown(va.value());
-        let last = pgrounddown(va.value() + size - 1usize);
+        let mut a = pgrounddown(va.into_usize());
+        let last = pgrounddown(va.into_usize() + size - 1usize);
         loop {
             let pt = &mut *self;
             let pte = pt.walk(UVAddr::new(a), 0).expect("uvmunmap: walk");
@@ -466,7 +466,7 @@ impl PageTable<UVAddr> {
                 panic!("uvmunmap: not a leaf");
             }
             if do_free != 0 {
-                pa = pte.get_pa().value();
+                pa = pte.get_pa().into_usize();
                 kernel().free(pa as _);
             }
             pte.set_inner(0);
@@ -517,7 +517,7 @@ impl PageTable<UVAddr> {
         srcva: UVAddr,
         mut len: usize,
     ) -> Result<(), ()> {
-        let mut src = srcva.value();
+        let mut src = srcva.into_usize();
         while len > 0 {
             let va0 = pgrounddown(src);
             let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(()));
@@ -544,7 +544,7 @@ impl PageTable<UVAddr> {
         mut max: usize,
     ) -> Result<(), ()> {
         let mut got_null: i32 = 0;
-        let mut src = srcva.value();
+        let mut src = srcva.into_usize();
         while got_null == 0 && max > 0 {
             let va0 = pgrounddown(src);
             let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(()));
@@ -688,7 +688,7 @@ pub unsafe fn kvmmap(
     sz: usize,
     perm: i32,
 ) {
-    if page_table.mappages(va, sz, pa.value(), perm).is_err() {
+    if page_table.mappages(va, sz, pa.into_usize(), perm).is_err() {
         panic!("kvmmap");
     };
 }
@@ -698,7 +698,7 @@ pub unsafe fn kvmmap(
 /// addresses on the stack.
 /// Assumes va is page aligned.
 pub unsafe fn kvmpa(va: KVAddr) -> usize {
-    let off: usize = va.value().wrapping_rem(PGSIZE);
+    let off: usize = va.into_usize().wrapping_rem(PGSIZE);
     let pte = kernel()
         .page_table
         .walk(va, 0)
