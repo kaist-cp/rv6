@@ -59,7 +59,7 @@ pub unsafe extern "C" fn usertrap() {
     if r_scause() == 8 {
         // system call
 
-        if data.killed() {
+        if (*p).killed() {
             kernel().procs.exit_current(-1);
         }
 
@@ -84,11 +84,11 @@ pub unsafe extern "C" fn usertrap() {
                 r_sepc() as *const u8,
                 r_stval() as *const u8
             );
-            data.kill();
+            (*p).kill();
         }
     }
 
-    if data.killed() {
+    if (*p).killed() {
         kernel().procs.exit_current(-1);
     }
 
