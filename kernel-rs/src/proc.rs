@@ -723,7 +723,7 @@ impl ProcessSystem {
                                 .pagetable
                                 .assume_init_mut()
                                 .copyout(
-                                    addr,
+                                    UVAddr::new(addr),
                                     &mut np.deref_mut_info().xstate as *mut i32 as *mut u8,
                                     ::core::mem::size_of::<i32>(),
                                 )
@@ -901,7 +901,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable<UVAddr> {
     // Map the trapframe just below TRAMPOLINE, for trampoline.S.
     pagetable
         .mappages(
-            TRAPFRAME,
+            UVAddr::new(TRAPFRAME),
             PGSIZE,
             (*(*p).data.get()).tf as usize,
             PTE_R | PTE_W,
@@ -1029,43 +1029,4 @@ unsafe fn forkret() {
     // be run from main().
     fsinit(ROOTDEV);
     usertrapret();
-}
-
-/// Copy to either a user address, or kernel address,
-/// depending on usr_dst.
-/// Returns Ok(()) on success, Err(()) on error.
-pub unsafe fn either_copyout(user_dst: bool, dst: usize, src: &[u8]) -> Result<(), ()> {
-    let p = myproc();
-    if user_dst {
-        (*(*p).data.get())
-            .pagetable
-            .assume_init_mut()
-            .copyout(dst, src.as_ptr(), src.len())
-            .map_or(Err(()), |_v| Ok(()))
-    } else {
-        ptr::copy(src.as_ptr(), dst as *mut u8, src.len());
-        Ok(())
-    }
-}
-
-/// Copy from either a user address, or kernel address,
-/// depending on usr_src.
-/// Returns Ok(()) on success, Err(()) on error.
-pub unsafe fn either_copyin(
-    dst: *mut u8,
-    user_src: bool,
-    src: usize,
-    len: usize,
-) -> Result<(), ()> {
-    let p = myproc();
-    if user_src {
-        (*(*p).data.get())
-            .pagetable
-            .assume_init_mut()
-            .copyin(dst, src, len)
-            .map_or(Err(()), |_v| Ok(()))
-    } else {
-        ptr::copy(src as *mut u8, dst, len);
-        Ok(())
-    }
 }
