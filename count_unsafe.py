@@ -33,3 +33,4 @@ for rust_file in rust_files:
 
 print("\n>>> Unsafe statistics for rv6")
 os.system('cargo count -a -l rs --unsafe-statistics')
+exit(0)
