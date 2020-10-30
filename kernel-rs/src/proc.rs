@@ -36,7 +36,7 @@ extern "C" {
 }
 
 /// Saved registers for kernel context switches.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct Context {
     pub ra: usize,
@@ -466,7 +466,7 @@ impl ProcData {
 
     /// Close all open files.
     unsafe fn close_files(&mut self) {
-        for file in self.open_files.iter_mut() {
+        for file in &mut self.open_files {
             *file = None;
         }
         let _tx = fs().begin_transaction();
@@ -474,6 +474,7 @@ impl ProcData {
     }
 }
 
+/// TODO(@efenniht): pid, state, wakeup should be methods of ProcGuard.
 impl Proc {
     const fn zero() -> Self {
         Self {
@@ -560,8 +561,7 @@ impl ProcessSystem {
 
                 // Set up new context to start executing at forkret,
                 // which returns to user space.
-                // This is safe according to following paper: Stacked Borrows (https://plv.mpi-sws.org/rustbelt/stacked-borrows/paper.pdf).
-                ptr::write_bytes(&mut data.context, 0, 1);
+                data.context = Default::default();
                 data.context.ra = forkret as usize;
                 data.context.sp = data.kstack.wrapping_add(PGSIZE);
                 return Ok(guard);
