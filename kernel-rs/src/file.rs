@@ -40,8 +40,8 @@ impl Default for FileType {
 /// map major device number to device functions.
 #[derive(Copy, Clone)]
 pub struct Devsw {
-    pub read: Option<unsafe fn(_: bool, _: usize, _: i32) -> i32>,
-    pub write: Option<unsafe fn(_: bool, _: usize, _: i32) -> i32>,
+    pub read: Option<unsafe fn(_: UVAddr, _: i32) -> i32>,
+    pub write: Option<unsafe fn(_: UVAddr, _: i32) -> i32>,
 }
 
 #[derive(Clone)]
@@ -120,7 +120,7 @@ impl File {
             FileType::Device { major, .. } => kernel()
                 .devsw
                 .get(*major as usize)
-                .and_then(|dev| Some(dev.read?(true, addr, n) as usize))
+                .and_then(|dev| Some(dev.read?(UVAddr::new(addr), n) as usize))
                 .ok_or(()),
             _ => panic!("File::read"),
         }
@@ -167,7 +167,7 @@ impl File {
             FileType::Device { major, .. } => kernel()
                 .devsw
                 .get(*major as usize)
-                .and_then(|dev| Some(dev.write?(true, addr, n) as usize))
+                .and_then(|dev| Some(dev.write?(UVAddr::new(addr), n) as usize))
                 .ok_or(()),
             _ => panic!("File::read"),
         }
