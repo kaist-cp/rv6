@@ -371,7 +371,7 @@ pub const fn pa2pte(pa: PAddr) -> usize {
 
 #[inline]
 pub const fn pte2pa(pte: PteT) -> PAddr {
-    PAddr::wrap((pte >> 10) << 12)
+    PAddr::new((pte >> 10) << 12)
 }
 
 #[inline]

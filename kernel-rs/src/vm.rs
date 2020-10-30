@@ -110,9 +110,10 @@ impl RawPageTable {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct PAddr(usize);
 impl PAddr {
-    pub const fn wrap(value: usize) -> Self {
+    pub const fn new(value: usize) -> Self {
         PAddr(value)
     }
 
@@ -275,7 +276,7 @@ impl<A: VAddr> PageTable<A> {
                 }
 
                 ptr::write_bytes(k, 0, PGSIZE);
-                pte.set_inner(pa2pte(PAddr::wrap(k as usize)));
+                pte.set_inner(pa2pte(PAddr::new(k as usize)));
                 pte.set_flag(PTE_V);
                 pagetable = pte.as_table_mut_unchecked();
             }
@@ -318,7 +319,7 @@ impl<A: VAddr> PageTable<A> {
             if pte.check_flag(PTE_V) {
                 panic!("remap");
             }
-            pte.set_inner(pa2pte(PAddr::wrap(pa)) | perm as usize | PTE_V);
+            pte.set_inner(pa2pte(PAddr::new(pa)) | perm as usize | PTE_V);
             if a == last {
                 break;
             }
@@ -600,7 +601,7 @@ pub unsafe fn kvminit(page_table: *mut PageTable<KVAddr>) {
     kvmmap(
         page_table,
         KVAddr::new(FINISHER),
-        PAddr::wrap(FINISHER),
+        PAddr::new(FINISHER),
         PGSIZE,
         PTE_R | PTE_W,
     );
@@ -609,7 +610,7 @@ pub unsafe fn kvminit(page_table: *mut PageTable<KVAddr>) {
     kvmmap(
         page_table,
         KVAddr::new(UART0),
-        PAddr::wrap(UART0),
+        PAddr::new(UART0),
         PGSIZE,
         PTE_R | PTE_W,
     );
@@ -618,7 +619,7 @@ pub unsafe fn kvminit(page_table: *mut PageTable<KVAddr>) {
     kvmmap(
         page_table,
         KVAddr::new(VIRTIO0),
-        PAddr::wrap(VIRTIO0),
+        PAddr::new(VIRTIO0),
         PGSIZE,
         PTE_R | PTE_W,
     );
@@ -627,7 +628,7 @@ pub unsafe fn kvminit(page_table: *mut PageTable<KVAddr>) {
     kvmmap(
         page_table,
         KVAddr::new(CLINT),
-        PAddr::wrap(CLINT),
+        PAddr::new(CLINT),
         0x10000,
         PTE_R | PTE_W,
     );
@@ -636,7 +637,7 @@ pub unsafe fn kvminit(page_table: *mut PageTable<KVAddr>) {
     kvmmap(
         page_table,
         KVAddr::new(PLIC),
-        PAddr::wrap(PLIC),
+        PAddr::new(PLIC),
         0x400000,
         PTE_R | PTE_W,
     );
@@ -645,7 +646,7 @@ pub unsafe fn kvminit(page_table: *mut PageTable<KVAddr>) {
     kvmmap(
         page_table,
         KVAddr::new(KERNBASE),
-        PAddr::wrap(KERNBASE),
+        PAddr::new(KERNBASE),
         (etext.as_mut_ptr() as usize) - KERNBASE,
         PTE_R | PTE_X,
     );
@@ -654,7 +655,7 @@ pub unsafe fn kvminit(page_table: *mut PageTable<KVAddr>) {
     kvmmap(
         page_table,
         KVAddr::new(etext.as_mut_ptr() as usize),
-        PAddr::wrap(etext.as_mut_ptr() as usize),
+        PAddr::new(etext.as_mut_ptr() as usize),
         PHYSTOP - (etext.as_mut_ptr() as usize),
         PTE_R | PTE_W,
     );
@@ -664,7 +665,7 @@ pub unsafe fn kvminit(page_table: *mut PageTable<KVAddr>) {
     kvmmap(
         page_table,
         KVAddr::new(TRAMPOLINE),
-        PAddr::wrap(trampoline.as_mut_ptr() as usize),
+        PAddr::new(trampoline.as_mut_ptr() as usize),
         PGSIZE,
         PTE_R | PTE_X,
     );
