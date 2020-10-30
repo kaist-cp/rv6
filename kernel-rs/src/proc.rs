@@ -14,11 +14,11 @@ use crate::{
     vm::{kvmmap, PageTable},
 };
 use core::{
+    cell::UnsafeCell,
     cmp, mem,
     ops::{Deref, DerefMut},
     ptr, str,
     sync::atomic::{AtomicBool, Ordering},
-    cell::UnsafeCell,
 };
 
 use cstr_core::CStr;
@@ -295,7 +295,7 @@ struct ProcInfo {
 }
 
 /// Proc::data are private to the process, so lock need not be held.
-struct ProcData {
+pub struct ProcData {
     /// If true, the process have been killed.
     killed: AtomicBool,
 
@@ -325,7 +325,7 @@ struct ProcData {
 pub struct Proc {
     info: Spinlock<ProcInfo>,
 
-    data: UnsafeCell<ProcData>,    
+    pub data: UnsafeCell<ProcData>,
 
     /// Process name (debugging).
     pub name: [u8; 16],
@@ -440,7 +440,7 @@ impl ProcData {
             tf: ptr::null_mut(),
             context: Context::new(),
             open_files: [None; NOFILE],
-            cwd: ptr::null_mut(),    
+            cwd: ptr::null_mut(),
         }
     }
 
@@ -468,7 +468,7 @@ impl ProcData {
 
     /// Close all open files.
     unsafe fn close_files(&mut self) {
-        for file in self.open_files.into_iter() {
+        for file in self.open_files.iter_mut() {
             *file = None;
         }
         fs().begin_op();
@@ -492,9 +492,7 @@ impl Proc {
                     pid: 0,
                 },
             ),
-            data: UnsafeCell::new(
-                ProcData::new(),
-            ),
+            data: UnsafeCell::new(ProcData::new()),
             name: [0; 16],
         }
     }
@@ -653,8 +651,8 @@ impl ProcessSystem {
         // Allocate process.
         let mut np = ok_or!(self.alloc(), return -1);
 
-        let mut pdata = &mut *(*p).data.get();
-        let mut npdata =&mut *np.data.get();
+        let pdata = &mut *(*p).data.get();
+        let mut npdata = &mut *np.data.get();
         // Copy user memory from parent to child.
         if pdata
             .pagetable
@@ -695,7 +693,7 @@ impl ProcessSystem {
     /// Return -1 if this process has no children.
     pub unsafe fn wait(&self, addr: usize) -> i32 {
         let p: *mut Proc = myproc();
-        let mut data = *(*p).data.get();
+        let data = &mut *(*p).data.get();
 
         // Hold p->lock for the whole time to avoid lost
         // Wakeups from a child's exit().
@@ -752,7 +750,7 @@ impl ProcessSystem {
     /// until its parent calls wait().
     pub unsafe fn exit_current(&self, status: i32) {
         let p = myproc();
-        let mut data = *(*p).data.get();
+        let data = &mut *(*p).data.get();
         if p == self.initial_proc {
             panic!("init exiting");
         }
@@ -896,7 +894,12 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable {
 
     // Map the trapframe just below TRAMPOLINE, for trampoline.S.
     pagetable
-        .mappages(TRAPFRAME, PGSIZE, (*(*p).data.get()).tf as usize, PTE_R | PTE_W)
+        .mappages(
+            TRAPFRAME,
+            PGSIZE,
+            (*(*p).data.get()).tf as usize,
+            PTE_R | PTE_W,
+        )
         .expect("proc_pagetable: mappages TRAPFRAME");
     pagetable
 }
@@ -922,8 +925,8 @@ const INITCODE: [u8; 51] = [
 /// Grow or shrink user memory by n bytes.
 /// Return 0 on success, -1 on failure.
 pub unsafe fn resizeproc(n: i32) -> i32 {
-    let mut p = myproc();
-    let mut data = *(*p).data.get();
+    let p = myproc();
+    let data = &mut *(*p).data.get();
     let sz = data.sz;
     let sz = match n.cmp(&0) {
         cmp::Ordering::Equal => sz,
@@ -995,7 +998,10 @@ unsafe fn sched(p: &mut ProcGuard) {
         panic!("sched interruptible");
     }
     let interrupt_enabled = (*kernel().mycpu()).interrupt_enabled;
-    swtch(&mut (*(*p).data.get()).context, &mut (*kernel().mycpu()).scheduler);
+    swtch(
+        &mut (*(*p).data.get()).context,
+        &mut (*kernel().mycpu()).scheduler,
+    );
     (*kernel().mycpu()).interrupt_enabled = interrupt_enabled;
 }
 
@@ -1025,7 +1031,8 @@ unsafe fn forkret() {
 pub unsafe fn either_copyout(user_dst: bool, dst: usize, src: &[u8]) -> Result<(), ()> {
     let p = myproc();
     if user_dst {
-        (*(*p).data.get()).pagetable
+        (*(*p).data.get())
+            .pagetable
             .assume_init_mut()
             .copyout(dst, src.as_ptr(), src.len())
             .map_or(Err(()), |_v| Ok(()))
@@ -1046,7 +1053,8 @@ pub unsafe fn either_copyin(
 ) -> Result<(), ()> {
     let p = myproc();
     if user_src {
-        (*(*p).data.get()).pagetable
+        (*(*p).data.get())
+            .pagetable
             .assume_init_mut()
             .copyin(dst, src, len)
             .map_or(Err(()), |_v| Ok(()))

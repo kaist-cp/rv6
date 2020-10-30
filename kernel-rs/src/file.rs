@@ -83,7 +83,7 @@ impl File {
         match self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                 let mut st = (*ip).lock().stat();
-                (*p).pagetable.assume_init_mut().copyout(
+                (*(*p).data.get()).pagetable.assume_init_mut().copyout(
                     addr,
                     &mut st as *mut Stat as *mut u8,
                     ::core::mem::size_of::<Stat>() as usize,

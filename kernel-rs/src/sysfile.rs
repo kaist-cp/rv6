@@ -23,11 +23,12 @@ impl RcFile {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
     unsafe fn fdalloc(self) -> Result<i32, Self> {
-        let mut p: *mut Proc = myproc();
+        let p: *mut Proc = myproc();
+        let mut data = &mut *(*p).data.get();
         for fd in 0..NOFILE {
             // user pointer to struct stat
-            if (*p).open_files[fd].is_none() {
-                (*p).open_files[fd] = Some(self);
+            if data.open_files[fd].is_none() {
+                data.open_files[fd] = Some(self);
                 return Ok(fd as i32);
             }
         }
@@ -43,7 +44,10 @@ unsafe fn argfd(n: usize) -> Result<(i32, *mut RcFile), ()> {
         return Err(());
     }
 
-    let f = some_or!(&mut (*myproc()).open_files[fd as usize], return Err(()));
+    let f = some_or!(
+        &mut (*(*myproc()).data.get()).open_files[fd as usize],
+        return Err(())
+    );
 
     Ok((fd, f))
 }
@@ -72,7 +76,7 @@ pub unsafe fn sys_write() -> usize {
 
 pub unsafe fn sys_close() -> usize {
     let (fd, _) = ok_or!(argfd(0), return usize::MAX);
-    (*myproc()).open_files[fd as usize] = None;
+    (*(*myproc()).data.get()).open_files[fd as usize] = None;
     0
 }
 
@@ -317,7 +321,8 @@ pub unsafe fn sys_mknod() -> usize {
 
 pub unsafe fn sys_chdir() -> usize {
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
-    let mut p: *mut Proc = myproc();
+    let p: *mut Proc = myproc();
+    let mut data = &mut *(*p).data.get();
     fs().begin_op();
     let path = ok_or!(argstr(0, &mut path), {
         fs().end_op();
@@ -334,9 +339,9 @@ pub unsafe fn sys_chdir() -> usize {
         return usize::MAX;
     }
     drop(ip);
-    (*(*p).cwd).put();
+    (*data.cwd).put();
     fs().end_op();
-    (*p).cwd = ptr;
+    data.cwd = ptr;
     0
 }
 
@@ -387,18 +392,19 @@ pub unsafe fn sys_exec() -> usize {
 }
 
 pub unsafe fn sys_pipe() -> usize {
-    let mut p: *mut Proc = myproc();
+    let p: *mut Proc = myproc();
+    let mut data = &mut *(*p).data.get();
     // user pointer to array of two integers
     let fdarray = ok_or!(argaddr(0), return usize::MAX);
     let (pipereader, pipewriter) = ok_or!(AllocatedPipe::alloc(), return usize::MAX);
 
     let mut fd0 = ok_or!(pipereader.fdalloc(), return usize::MAX);
     let mut fd1 = ok_or!(pipewriter.fdalloc(), {
-        (*p).open_files[fd0 as usize] = None;
+        data.open_files[fd0 as usize] = None;
         return usize::MAX;
     });
 
-    if (*p)
+    if data
         .pagetable
         .assume_init_mut()
         .copyout(
@@ -407,7 +413,7 @@ pub unsafe fn sys_pipe() -> usize {
             mem::size_of::<i32>(),
         )
         .is_err()
-        || (*p)
+        || data
             .pagetable
             .assume_init_mut()
             .copyout(
@@ -417,8 +423,8 @@ pub unsafe fn sys_pipe() -> usize {
             )
             .is_err()
     {
-        (*p).open_files[fd0 as usize] = None;
-        (*p).open_files[fd1 as usize] = None;
+        data.open_files[fd0 as usize] = None;
+        data.open_files[fd1 as usize] = None;
         return usize::MAX;
     }
     0

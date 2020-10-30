@@ -10,10 +10,11 @@ use cstr_core::CStr;
 /// Fetch the usize at addr from the current process.
 pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
     let p: *mut Proc = myproc();
-    if addr >= (*p).sz || addr.wrapping_add(::core::mem::size_of::<usize>()) > (*p).sz {
+    let data = &mut *(*p).data.get();
+    if addr >= data.sz || addr.wrapping_add(::core::mem::size_of::<usize>()) > data.sz {
         return -1;
     }
-    if (*p)
+    if data
         .pagetable
         .assume_init_mut()
         .copyin(ip as *mut u8, addr, ::core::mem::size_of::<usize>())
@@ -28,7 +29,8 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
 /// Returns reference to the string in the buffer.
 pub unsafe fn fetchstr(addr: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
     let p: *mut Proc = myproc();
-    (*p).pagetable
+    (*(*p).data.get())
+        .pagetable
         .assume_init_mut()
         .copyinstr(buf.as_mut_ptr(), addr, buf.len())?;
 
@@ -37,13 +39,14 @@ pub unsafe fn fetchstr(addr: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
 
 unsafe fn argraw(n: usize) -> usize {
     let p = myproc();
+    let data = &mut *(*p).data.get();
     match n {
-        0 => (*(*p).tf).a0,
-        1 => (*(*p).tf).a1,
-        2 => (*(*p).tf).a2,
-        3 => (*(*p).tf).a3,
-        4 => (*(*p).tf).a4,
-        5 => (*(*p).tf).a5,
+        0 => (*data.tf).a0,
+        1 => (*data.tf).a1,
+        2 => (*data.tf).a2,
+        3 => (*data.tf).a3,
+        4 => (*data.tf).a4,
+        5 => (*data.tf).a5,
         _ => panic!("argraw"),
     }
 }
@@ -95,10 +98,11 @@ const SYSCALLS: [Option<unsafe fn() -> usize>; 23] = [
 ];
 
 pub unsafe fn syscall() {
-    let mut p: *mut Proc = myproc();
-    let num: i32 = (*(*p).tf).a7 as i32;
+    let p: *mut Proc = myproc();
+    let mut data = &mut *(*p).data.get();
+    let num: i32 = (*data.tf).a7 as i32;
     if num > 0 && (num as usize) < SYSCALLS.len() && SYSCALLS[num as usize].is_some() {
-        (*(*p).tf).a0 = SYSCALLS[num as usize].expect("non-null function pointer")()
+        (*data.tf).a0 = SYSCALLS[num as usize].expect("non-null function pointer")()
     } else {
         println!(
             "{} {}: unknown sys call {}",
@@ -106,6 +110,6 @@ pub unsafe fn syscall() {
             str::from_utf8(&(*p).name).unwrap_or("???"),
             num
         );
-        (*(*p).tf).a0 = usize::MAX
+        (*data.tf).a0 = usize::MAX
     };
 }
