@@ -287,7 +287,7 @@ pub unsafe fn sys_mknod() -> usize {
 
 pub unsafe fn sys_chdir() -> usize {
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
-    let mut p: *mut Proc = myproc();
+    let p: *mut Proc = myproc();
     let mut data = &mut *(*p).data.get();
     let _tx = fs().begin_transaction();
     let path = ok_or!(argstr(0, &mut path), return usize::MAX);
