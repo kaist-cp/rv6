@@ -106,10 +106,9 @@ impl Log {
         let mut buf = Buf::new(self.dev as u32, self.start as u32);
         let lh: *mut LogHeader = buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader;
         for i in 0..(*lh).n {
-            // TODO(rv6): refcount should not be increased
             self.lh
                 .block
-                .push(RcBuf::new(self.dev as u32, (*lh).block[i as usize] as u32));
+                .push(RcBuf::unforget(self.dev as u32, (*lh).block[i as usize] as u32).unwrap());
         }
     }
 

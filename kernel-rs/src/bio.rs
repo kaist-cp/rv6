@@ -49,7 +49,7 @@ impl BufEntry {
 
 impl ArenaObject for BufEntry {
     fn finalize<'s, A: Arena>(&'s mut self, _guard: &'s mut A::Guard<'_>) {
-        todo!()
+        // The buffer contents should have been written. Does nothing.
     }
 }
 
@@ -153,6 +153,11 @@ impl RcBuf {
                 },
             )
             .expect("[BufGuard::new] no buffers")
+    }
+
+    /// Retrieves RcBuf without increasing reference count.
+    pub fn unforget(dev: u32, blockno: u32) -> Option<Self> {
+        BcacheTag {}.unforget(|buf| buf.dev == dev && buf.blockno == blockno)
     }
 
     pub fn lock(self) -> Buf {
