@@ -130,7 +130,7 @@ pub trait VAddr: Copy + Clone {
     /// Copy from either a user address, or kernel address,
     /// depending on usr_src.
     /// Returns Ok(()) on success, Err(()) on error.
-    unsafe fn copyin(dst: *mut u8, src: Self, len: usize) -> Result<(), ()>;
+    unsafe fn copyin(dst: &mut [u8], src: Self) -> Result<(), ()>;
 
     /// Copy to either a user address, or kernel address,
     /// depending on usr_dst.
@@ -145,8 +145,8 @@ pub trait VAddr: Copy + Clone {
 }
 
 impl VAddr for KVAddr {
-    unsafe fn copyin(dst: *mut u8, src: Self, len: usize) -> Result<(), ()> {
-        ptr::copy(src.into_usize() as *mut u8, dst, len);
+    unsafe fn copyin(dst: &mut [u8], src: Self) -> Result<(), ()> {
+        ptr::copy(src.into_usize() as *const u8, dst.as_mut_ptr(), dst.len());
         Ok(())
     }
 
@@ -169,12 +169,12 @@ impl VAddr for KVAddr {
 }
 
 impl VAddr for UVAddr {
-    unsafe fn copyin(dst: *mut u8, src: Self, len: usize) -> Result<(), ()> {
+    unsafe fn copyin(dst: &mut [u8], src: Self) -> Result<(), ()> {
         let p = myproc();
         (*(*p).data.get())
             .pagetable
             .assume_init_mut()
-            .copyin(dst as *mut u8, src, len)
+            .copyin(dst.as_mut_ptr(), src, dst.len())
             .map_or(Err(()), |_v| Ok(()))
     }
 
