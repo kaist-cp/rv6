@@ -255,16 +255,9 @@ impl InodeGuard<'_> {
                 n.wrapping_sub(tot),
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
             );
-            if VAddr::copyin(
-                bp.deref_mut_inner()
-                    .data
-                    .as_mut_ptr()
-                    .offset(off.wrapping_rem(BSIZE as u32) as isize),
-                src,
-                m as _,
-            )
-            .is_err()
-            {
+            let begin = off.wrapping_rem(BSIZE as u32) as usize;
+            let end = begin + m as usize;
+            if VAddr::copyin(&mut bp.deref_mut_inner().data[begin..end], src).is_err() {
                 break;
             } else {
                 fs().log_write(bp);
