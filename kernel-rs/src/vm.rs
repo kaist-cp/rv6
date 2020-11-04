@@ -183,7 +183,7 @@ impl VAddr for UVAddr {
         (*(*p).data.get())
             .pagetable
             .assume_init_mut()
-            .copyout(dst, src.as_ptr(), src.len())
+            .copyout(dst, src)
             .map_or(Err(()), |_v| Ok(()))
     }
 
@@ -340,10 +340,11 @@ impl<A: VAddr> PageTable<A> {
     pub unsafe fn copyout(
         &mut self,
         dstva: UVAddr,
-        mut src: *const u8,
-        mut len: usize,
+        src: &[u8],
     ) -> Result<(), ()> {
         let mut dst = dstva.into_usize();
+        let mut len = src.len();
+        let mut offset = 0;
         while len > 0 {
             let va0 = pgrounddown(dst);
             let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(())).into_usize();
@@ -351,9 +352,9 @@ impl<A: VAddr> PageTable<A> {
             if n > len {
                 n = len
             }
-            ptr::copy(src, (pa0 + (dst - va0)) as *mut u8, n);
+            ptr::copy(src[offset..(offset+n)].as_ptr(), (pa0 + (dst - va0)) as *mut u8, n);
             len -= n;
-            src = src.add(n);
+            offset += n;
             dst = va0 + PGSIZE;
         }
         Ok(())
@@ -519,7 +520,6 @@ impl PageTable<UVAddr> {
         &mut self,
         dst: &mut [u8],
         srcva: UVAddr,
-        // mut len: usize,
     ) -> Result<(), ()> {
         let mut src = srcva.into_usize();
         let mut len = dst.len();
@@ -531,10 +531,8 @@ impl PageTable<UVAddr> {
             if n > len {
                 n = len
             }
-            // let dst0 = &dst[offset..(offset+n)];
             ptr::copy((pa0 + (src - va0)) as *mut u8, dst[offset..(offset+n)].as_mut_ptr(), n);
             len -= n;
-            // dst = dst.add(n);
             offset += n;
             src = va0 + PGSIZE
         }
@@ -549,7 +547,6 @@ impl PageTable<UVAddr> {
         &mut self,
         dst: &mut [u8],
         srcva: UVAddr,
-        // mut max: usize,
     ) -> Result<(), ()> {
         let mut got_null: i32 = 0;
         let mut src = srcva.into_usize();
@@ -565,17 +562,14 @@ impl PageTable<UVAddr> {
             let mut p = (pa0 + (src - va0)) as *mut u8;
             while n > 0 {
                 if *p as i32 == '\u{0}' as i32 {
-                    // *dst 
                     dst[offset]= '\u{0}' as i32 as u8;
                     got_null = 1;
                     break;
                 } else {
-                    // *dst = *p;
                     dst[offset] = *p;
                     n -= 1;
                     max -= 1;
                     p = p.offset(1);
-                    // dst = dst.offset(1)
                     offset += 1;
                 }
             }
