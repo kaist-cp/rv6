@@ -107,8 +107,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
         }
         pt.copyout(
             UVAddr::new(sp),
-            ::core::slice::from_raw_parts_mut(argv[argc],
-            (strlen(argv[argc]) + 1) as usize),
+            ::core::slice::from_raw_parts_mut(argv[argc], (strlen(argv[argc]) + 1) as usize),
         )?;
         ustack[argc] = sp;
         argc = argc.wrapping_add(1)
@@ -126,9 +125,11 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
         && pt
             .copyout(
                 UVAddr::new(sp),
-                ::core::slice::from_raw_parts_mut(ustack.as_mut_ptr() as *mut u8,
-                argc.wrapping_add(1)
-                    .wrapping_mul(::core::mem::size_of::<usize>())),
+                ::core::slice::from_raw_parts_mut(
+                    ustack.as_mut_ptr() as *mut u8,
+                    argc.wrapping_add(1)
+                        .wrapping_mul(::core::mem::size_of::<usize>()),
+                ),
             )
             .is_ok()
     {
