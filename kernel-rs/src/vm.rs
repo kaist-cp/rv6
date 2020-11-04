@@ -174,7 +174,7 @@ impl VAddr for UVAddr {
         (*(*p).data.get())
             .pagetable
             .assume_init_mut()
-            .copyin(dst.as_mut_ptr(), src, dst.len())
+            .copyin(dst, src)
             .map_or(Err(()), |_v| Ok(()))
     }
 
@@ -517,11 +517,13 @@ impl PageTable<UVAddr> {
     /// Return Ok(()) on success, Err(()) on error.
     pub unsafe fn copyin(
         &mut self,
-        mut dst: *mut u8,
+        dst: &mut [u8],
         srcva: UVAddr,
-        mut len: usize,
+        // mut len: usize,
     ) -> Result<(), ()> {
         let mut src = srcva.into_usize();
+        let mut len = dst.len();
+        let mut offset = 0;
         while len > 0 {
             let va0 = pgrounddown(src);
             let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(())).into_usize();
@@ -529,9 +531,11 @@ impl PageTable<UVAddr> {
             if n > len {
                 n = len
             }
-            ptr::copy((pa0 + (src - va0)) as *mut u8, dst, n);
+            // let dst0 = &dst[offset..(offset+n)];
+            ptr::copy((pa0 + (src - va0)) as *mut u8, dst[offset..(offset+n)].as_mut_ptr(), n);
             len -= n;
-            dst = dst.add(n);
+            // dst = dst.add(n);
+            offset += n;
             src = va0 + PGSIZE
         }
         Ok(())

@@ -155,7 +155,7 @@ pub enum PipeError {
 
 impl PipeInner {
     unsafe fn try_write(&mut self, addr: usize, n: usize) -> Result<usize, ()> {
-        let mut ch: u8 = 0;
+        let ch: u8 = 0;
         let proc = myproc();
         let data = &mut *(*proc).data.get();
 
@@ -170,7 +170,7 @@ impl PipeInner {
             if data
                 .pagetable
                 .assume_init_mut()
-                .copyin(&mut ch, UVAddr::new(addr.wrapping_add(i)), 1usize)
+                .copyin(&mut [ch], UVAddr::new(addr.wrapping_add(i)))
                 .is_err()
             {
                 break;
