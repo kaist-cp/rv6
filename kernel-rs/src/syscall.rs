@@ -21,7 +21,6 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
         .copyin(
             ::core::slice::from_raw_parts_mut(ip as *mut u8, ::core::mem::size_of::<usize>()),
             UVAddr::new(addr),
-            // ::core::mem::size_of::<usize>(),
         )
         .is_err()
     {
@@ -37,7 +36,6 @@ pub unsafe fn fetchstr(addr: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
     (*(*p).data.get()).pagetable.assume_init_mut().copyinstr(
         buf,
         UVAddr::new(addr),
-        // buf.len(),
     )?;
 
     Ok(CStr::from_ptr(buf.as_ptr()))
