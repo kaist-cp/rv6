@@ -724,8 +724,8 @@ impl ProcessSystem {
                                 .assume_init_mut()
                                 .copyout(
                                     UVAddr::new(addr),
-                                    &mut np.deref_mut_info().xstate as *mut i32 as *mut u8,
-                                    ::core::mem::size_of::<i32>(),
+                                    ::core::slice::from_raw_parts_mut(&mut np.deref_mut_info().xstate as *mut i32 as *mut u8,
+                                    ::core::mem::size_of::<i32>()),
                                 )
                                 .is_err()
                         {

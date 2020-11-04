@@ -90,8 +90,8 @@ impl File {
                 let mut st = ip.deref().lock().stat();
                 (*(*p).data.get()).pagetable.assume_init_mut().copyout(
                     UVAddr::new(addr),
-                    &mut st as *mut Stat as *mut u8,
-                    ::core::mem::size_of::<Stat>() as usize,
+                    ::core::slice::from_raw_parts_mut(&mut st as *mut Stat as *mut u8,
+                    ::core::mem::size_of::<Stat>() as usize),
                 )
             }
             _ => Err(()),
