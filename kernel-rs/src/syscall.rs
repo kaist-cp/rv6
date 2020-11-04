@@ -33,10 +33,10 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
 /// Returns reference to the string in the buffer.
 pub unsafe fn fetchstr(addr: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
     let p: *mut Proc = myproc();
-    (*(*p).data.get()).pagetable.assume_init_mut().copyinstr(
-        buf,
-        UVAddr::new(addr),
-    )?;
+    (*(*p).data.get())
+        .pagetable
+        .assume_init_mut()
+        .copyinstr(buf, UVAddr::new(addr))?;
 
     Ok(CStr::from_ptr(buf.as_ptr()))
 }
