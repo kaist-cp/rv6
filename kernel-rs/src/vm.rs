@@ -337,11 +337,7 @@ impl<A: VAddr> PageTable<A> {
     /// Copy len bytes from src to virtual address dstva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
     // TODO: Refactor src to type &[u8]
-    pub unsafe fn copyout(
-        &mut self,
-        dstva: UVAddr,
-        src: &[u8],
-    ) -> Result<(), ()> {
+    pub unsafe fn copyout(&mut self, dstva: UVAddr, src: &[u8]) -> Result<(), ()> {
         let mut dst = dstva.into_usize();
         let mut len = src.len();
         let mut offset = 0;
@@ -352,7 +348,11 @@ impl<A: VAddr> PageTable<A> {
             if n > len {
                 n = len
             }
-            ptr::copy(src[offset..(offset+n)].as_ptr(), (pa0 + (dst - va0)) as *mut u8, n);
+            ptr::copy(
+                src[offset..(offset + n)].as_ptr(),
+                (pa0 + (dst - va0)) as *mut u8,
+                n,
+            );
             len -= n;
             offset += n;
             dst = va0 + PGSIZE;
@@ -516,11 +516,7 @@ impl PageTable<UVAddr> {
     /// Copy from user to kernel.
     /// Copy len bytes to dst from virtual address srcva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    pub unsafe fn copyin(
-        &mut self,
-        dst: &mut [u8],
-        srcva: UVAddr,
-    ) -> Result<(), ()> {
+    pub unsafe fn copyin(&mut self, dst: &mut [u8], srcva: UVAddr) -> Result<(), ()> {
         let mut src = srcva.into_usize();
         let mut len = dst.len();
         let mut offset = 0;
@@ -531,7 +527,11 @@ impl PageTable<UVAddr> {
             if n > len {
                 n = len
             }
-            ptr::copy((pa0 + (src - va0)) as *mut u8, dst[offset..(offset+n)].as_mut_ptr(), n);
+            ptr::copy(
+                (pa0 + (src - va0)) as *mut u8,
+                dst[offset..(offset + n)].as_mut_ptr(),
+                n,
+            );
             len -= n;
             offset += n;
             src = va0 + PGSIZE
@@ -543,11 +543,7 @@ impl PageTable<UVAddr> {
     /// Copy bytes to dst from virtual address srcva in a given page table,
     /// until a '\0', or max.
     /// Return OK(()) on success, Err(()) on error.
-    pub unsafe fn copyinstr(
-        &mut self,
-        dst: &mut [u8],
-        srcva: UVAddr,
-    ) -> Result<(), ()> {
+    pub unsafe fn copyinstr(&mut self, dst: &mut [u8], srcva: UVAddr) -> Result<(), ()> {
         let mut got_null: i32 = 0;
         let mut src = srcva.into_usize();
         let mut offset = 0;
@@ -562,7 +558,7 @@ impl PageTable<UVAddr> {
             let mut p = (pa0 + (src - va0)) as *mut u8;
             while n > 0 {
                 if *p as i32 == '\u{0}' as i32 {
-                    dst[offset]= '\u{0}' as i32 as u8;
+                    dst[offset] = '\u{0}' as i32 as u8;
                     got_null = 1;
                     break;
                 } else {

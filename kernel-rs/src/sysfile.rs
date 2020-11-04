@@ -365,8 +365,10 @@ pub unsafe fn sys_pipe() -> usize {
         .assume_init_mut()
         .copyout(
             UVAddr::new(fdarray),
-            ::core::slice::from_raw_parts_mut(&mut fd0 as *mut i32 as *mut u8,
-            mem::size_of::<i32>()),
+            ::core::slice::from_raw_parts_mut(
+                &mut fd0 as *mut i32 as *mut u8,
+                mem::size_of::<i32>(),
+            ),
         )
         .is_err()
         || data
@@ -374,8 +376,10 @@ pub unsafe fn sys_pipe() -> usize {
             .assume_init_mut()
             .copyout(
                 UVAddr::new(fdarray.wrapping_add(mem::size_of::<i32>())),
-                ::core::slice::from_raw_parts_mut(&mut fd1 as *mut i32 as *mut u8,
-                mem::size_of::<i32>()),
+                ::core::slice::from_raw_parts_mut(
+                    &mut fd1 as *mut i32 as *mut u8,
+                    mem::size_of::<i32>(),
+                ),
             )
             .is_err()
     {
