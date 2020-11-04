@@ -547,12 +547,14 @@ impl PageTable<UVAddr> {
     /// Return OK(()) on success, Err(()) on error.
     pub unsafe fn copyinstr(
         &mut self,
-        mut dst: *mut u8,
+        dst: &mut [u8],
         srcva: UVAddr,
-        mut max: usize,
+        // mut max: usize,
     ) -> Result<(), ()> {
         let mut got_null: i32 = 0;
         let mut src = srcva.into_usize();
+        let mut offset = 0;
+        let mut max = dst.len();
         while got_null == 0 && max > 0 {
             let va0 = pgrounddown(src);
             let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(())).into_usize();
@@ -563,15 +565,18 @@ impl PageTable<UVAddr> {
             let mut p = (pa0 + (src - va0)) as *mut u8;
             while n > 0 {
                 if *p as i32 == '\u{0}' as i32 {
-                    *dst = '\u{0}' as i32 as u8;
+                    // *dst 
+                    dst[offset]= '\u{0}' as i32 as u8;
                     got_null = 1;
                     break;
                 } else {
-                    *dst = *p;
+                    // *dst = *p;
+                    dst[offset] = *p;
                     n -= 1;
                     max -= 1;
                     p = p.offset(1);
-                    dst = dst.offset(1)
+                    // dst = dst.offset(1)
+                    offset += 1;
                 }
             }
             src = va0 + PGSIZE

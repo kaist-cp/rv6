@@ -35,9 +35,9 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
 pub unsafe fn fetchstr(addr: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
     let p: *mut Proc = myproc();
     (*(*p).data.get()).pagetable.assume_init_mut().copyinstr(
-        buf.as_mut_ptr(),
+        buf,
         UVAddr::new(addr),
-        buf.len(),
+        // buf.len(),
     )?;
 
     Ok(CStr::from_ptr(buf.as_ptr()))
