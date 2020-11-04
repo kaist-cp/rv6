@@ -336,7 +336,6 @@ impl<A: VAddr> PageTable<A> {
     /// Copy from kernel to user.
     /// Copy len bytes from src to virtual address dstva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    // TODO: Refactor src to type &[u8]
     pub unsafe fn copyout(&mut self, dstva: UVAddr, src: &[u8]) -> Result<(), ()> {
         let mut dst = dstva.into_usize();
         let mut len = src.len();
