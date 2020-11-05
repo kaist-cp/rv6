@@ -1,8 +1,6 @@
 //! the riscv Platform Level Interrupt Controller (PLIC).
 use crate::{
-    memlayout::{
-        plic_sclaim, plic_senable, plic_spriority, PLIC, PLIC_PENDING, UART0_IRQ, VIRTIO0_IRQ,
-    },
+    memlayout::{plic_sclaim, plic_senable, plic_spriority, PLIC, UART0_IRQ, VIRTIO0_IRQ},
     proc::cpuid,
 };
 
@@ -20,14 +18,6 @@ pub unsafe fn plicinithart() {
 
     // set this hart's S-mode priority threshold to 0.
     *(plic_spriority(hart) as *mut u32) = 0;
-}
-
-/// return a bitmap of which IRQs are waiting
-/// to be served.
-pub unsafe fn plic_pending() -> usize {
-    //mask = *(u32*)(PLIC + 0x1000);
-    //mask |= (u32)*(u32*)(PLIC + 0x1004) << 32;
-    *(PLIC_PENDING as *mut usize)
 }
 
 /// ask the PLIC what interrupt we should serve.
