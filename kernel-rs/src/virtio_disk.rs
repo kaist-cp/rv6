@@ -212,7 +212,7 @@ impl Disk {
     // TODO: This should be removed after `WaitChannel::sleep` gets refactored to take `SpinlockGuard`.
     #[allow(clippy::while_immutable_condition)]
     pub unsafe fn virtio_rw(this: &mut SleepablelockGuard<'_, Self>, b: &mut Buf, write: bool) {
-        let sector: usize = (*b).blockno.wrapping_mul((BSIZE / 512) as u32) as _;
+        let sector: usize = (*b).data.blockno.wrapping_mul((BSIZE / 512) as u32) as _;
 
         // The spec says that legacy block operations use three
         // descriptors: one for type/reserved/sector, one for
@@ -279,7 +279,7 @@ impl Disk {
 
         // Wait for virtio_disk_intr() to say request has finished.
         while b.deref_mut_inner().disk {
-            (*b).vdisk_request_waitchannel.sleep_sleepable(this);
+            (*b).data.vdisk_request_waitchannel.sleep_sleepable(this);
         }
         this.info[desc[0].idx].b = ptr::null_mut();
         IntoIter::new(desc).for_each(|desc| this.desc.free(desc));
@@ -297,7 +297,7 @@ impl Disk {
             (*self.info[id].b).deref_mut_inner().disk = false;
 
             // Self is done with Buf.
-            (*self.info[id].b).vdisk_request_waitchannel.wakeup();
+            (*self.info[id].b).data.vdisk_request_waitchannel.wakeup();
 
             self.used_idx = (self.used_idx.wrapping_add(1)).wrapping_rem(NUM as _)
         }

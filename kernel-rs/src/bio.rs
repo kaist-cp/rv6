@@ -23,11 +23,14 @@ struct ListEntry {
     next: *mut Self,
 }
 
-pub struct BufEntry {
+pub struct MruEntry<T> {
     refcnt: u32,
     /// LRU cache list.
     list_entry: ListEntry,
+    pub data: T,
+}
 
+pub struct BufData {
     dev: u32,
     pub blockno: u32,
     /// WaitChannel saying virtio_disk request is done.
@@ -35,6 +38,8 @@ pub struct BufEntry {
 
     pub inner: Sleeplock<BufInner>,
 }
+
+pub type BufEntry = MruEntry<BufData>;
 
 impl ListEntry {
     pub const fn new() -> Self {
@@ -45,18 +50,24 @@ impl ListEntry {
     }
 }
 
+impl<T> MruEntry<T> {
+    const fn new(data: T) -> Self {
+        Self {
+            refcnt: 0,
+            list_entry: ListEntry::new(),
+            data,
+        }
+    }
+}
+
 impl BufEntry {
     pub const fn zero() -> Self {
-        Self {
+        MruEntry::new(BufData {
             dev: 0,
             blockno: 0,
-            refcnt: 0,
             vdisk_request_waitchannel: WaitChannel::new(),
-
-            list_entry: ListEntry::new(),
-
             inner: Sleeplock::new("buffer", BufInner::zero()),
-        }
+        })
     }
 }
 
@@ -117,7 +128,7 @@ impl Bcache {
         while e != &mut self.head {
             let b: *mut BufEntry = (e as usize - offset_of!(BufEntry, list_entry)) as *mut _;
 
-            if (*b).dev == dev && (*b).blockno == blockno {
+            if (*b).data.dev == dev && (*b).data.blockno == blockno {
                 (*b).refcnt = (*b).refcnt.wrapping_add(1);
                 return b;
             }
@@ -130,9 +141,9 @@ impl Bcache {
             let b: *mut BufEntry = (e as usize - offset_of!(BufEntry, list_entry)) as *mut _;
 
             if (*b).refcnt == 0 {
-                (*b).dev = dev;
-                (*b).blockno = blockno;
-                (*b).inner.get_mut().valid = false;
+                (*b).data.dev = dev;
+                (*b).data.blockno = blockno;
+                (*b).data.inner.get_mut().valid = false;
                 (*b).refcnt = 1;
                 return b;
             }
@@ -171,7 +182,7 @@ impl Buf {
     pub fn new(dev: u32, blockno: u32) -> Self {
         unsafe {
             let ptr = kernel().bcache.lock().get(dev, blockno);
-            mem::forget((*ptr).inner.lock());
+            mem::forget((*ptr).data.inner.lock());
             let mut result = Self { ptr };
 
             if !result.deref_inner().valid {
@@ -186,7 +197,7 @@ impl Buf {
     pub fn pin(self) {
         unsafe {
             let buf = &mut *self.ptr;
-            buf.inner.unlock();
+            buf.data.inner.unlock();
         }
         mem::forget(self);
     }
@@ -203,11 +214,11 @@ impl Buf {
     }
 
     pub fn deref_inner(&self) -> &BufInner {
-        unsafe { (*self.ptr).inner.get_mut_unchecked() }
+        unsafe { (*self.ptr).data.inner.get_mut_unchecked() }
     }
 
     pub fn deref_mut_inner(&mut self) -> &mut BufInner {
-        unsafe { (*self.ptr).inner.get_mut_unchecked() }
+        unsafe { (*self.ptr).data.inner.get_mut_unchecked() }
     }
 }
 
@@ -215,7 +226,7 @@ impl Drop for Buf {
     fn drop(&mut self) {
         unsafe {
             let buf = &mut *self.ptr;
-            buf.inner.unlock();
+            buf.data.inner.unlock();
             let mut bcache = kernel().bcache.lock();
             bcache.release(buf);
         }

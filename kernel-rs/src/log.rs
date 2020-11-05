@@ -229,8 +229,8 @@ impl Log {
         let mut absorbed = false;
         for i in 0..self.lh.n {
             // Log absorbtion.
-            if self.lh.block[i as usize] as u32 == (*b).blockno {
-                self.lh.block[i as usize] = (*b).blockno as i32;
+            if self.lh.block[i as usize] as u32 == (*b).data.blockno {
+                self.lh.block[i as usize] = (*b).data.blockno as i32;
                 absorbed = true;
                 break;
             }
@@ -238,7 +238,7 @@ impl Log {
 
         // Add new block to log?
         if !absorbed {
-            self.lh.block[self.lh.n as usize] = (*b).blockno as i32;
+            self.lh.block[self.lh.n as usize] = (*b).data.blockno as i32;
             b.pin();
             self.lh.n += 1;
         }
