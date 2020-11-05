@@ -18,18 +18,31 @@ use core::mem;
 use core::ops::Deref;
 use core::ptr;
 
+struct ListEntry {
+    prev: *mut Self,
+    next: *mut Self,
+}
+
 pub struct BufEntry {
+    refcnt: u32,
+    /// LRU cache list.
+    list_entry: ListEntry,
+
     dev: u32,
     pub blockno: u32,
-    refcnt: u32,
     /// WaitChannel saying virtio_disk request is done.
     pub vdisk_request_waitchannel: WaitChannel,
 
-    /// LRU cache list.
-    prev: *mut BufEntry,
-    next: *mut BufEntry,
-
     pub inner: Sleeplock<BufInner>,
+}
+
+impl ListEntry {
+    pub const fn new() -> Self {
+        Self {
+            prev: ptr::null_mut(),
+            next: ptr::null_mut(),
+        }
+    }
 }
 
 impl BufEntry {
@@ -40,8 +53,7 @@ impl BufEntry {
             refcnt: 0,
             vdisk_request_waitchannel: WaitChannel::new(),
 
-            prev: ptr::null_mut(),
-            next: ptr::null_mut(),
+            list_entry: ListEntry::new(),
 
             inner: Sleeplock::new("buffer", BufInner::zero()),
         }
@@ -71,14 +83,14 @@ pub struct Bcache {
     pub buf: [BufEntry; NBUF],
 
     // Linked list of all buffers, through prev/next.  head.next is most recently used.
-    pub head: BufEntry,
+    head: ListEntry,
 }
 
 impl Bcache {
     pub const fn zero() -> Self {
         Self {
             buf: [BufEntry::zero(); NBUF],
-            head: BufEntry::zero(),
+            head: ListEntry::new(),
         }
     }
 
@@ -87,12 +99,12 @@ impl Bcache {
         self.head.prev = &mut self.head;
         self.head.next = &mut self.head;
         for b in &mut self.buf[..] {
-            b.next = self.head.next;
-            b.prev = &mut self.head;
+            b.list_entry.next = self.head.next;
+            b.list_entry.prev = &mut self.head;
             unsafe {
-                (*self.head.next).prev = b;
+                (*self.head.next).prev = &mut b.list_entry;
             }
-            self.head.next = b;
+            self.head.next = &mut b.list_entry;
         }
     }
 
@@ -101,18 +113,22 @@ impl Bcache {
     /// In either case, return locked buffer.
     unsafe fn get(&mut self, dev: u32, blockno: u32) -> *mut BufEntry {
         // Is the block already cached?
-        let mut b: *mut BufEntry = self.head.next;
-        while b != &mut self.head {
+        let mut e = self.head.next;
+        while e != &mut self.head {
+            let b: *mut BufEntry = (e as usize - offset_of!(BufEntry, list_entry)) as *mut _;
+
             if (*b).dev == dev && (*b).blockno == blockno {
                 (*b).refcnt = (*b).refcnt.wrapping_add(1);
                 return b;
             }
-            b = (*b).next
+            e = (*e).next;
         }
 
         // Not cached; recycle an unused buffer.
-        b = self.head.prev;
-        while b != &mut self.head {
+        e = self.head.prev;
+        while e != &mut self.head {
+            let b: *mut BufEntry = (e as usize - offset_of!(BufEntry, list_entry)) as *mut _;
+
             if (*b).refcnt == 0 {
                 (*b).dev = dev;
                 (*b).blockno = blockno;
@@ -120,7 +136,7 @@ impl Bcache {
                 (*b).refcnt = 1;
                 return b;
             }
-            b = (*b).prev
+            e = (*e).prev;
         }
         panic!("get: no buffers");
     }
@@ -131,12 +147,12 @@ impl Bcache {
         buf.refcnt = buf.refcnt.wrapping_sub(1);
         if buf.refcnt == 0 {
             // No one is waiting for it.
-            (*buf.next).prev = buf.prev;
-            (*buf.prev).next = buf.next;
-            buf.next = self.head.next;
-            buf.prev = &mut self.head;
-            (*self.head.next).prev = buf;
-            self.head.next = buf;
+            (*buf.list_entry.next).prev = buf.list_entry.prev;
+            (*buf.list_entry.prev).next = buf.list_entry.next;
+            buf.list_entry.next = self.head.next;
+            buf.list_entry.prev = &mut self.head;
+            (*self.head.next).prev = &mut buf.list_entry;
+            self.head.next = &mut buf.list_entry;
         }
     }
 
