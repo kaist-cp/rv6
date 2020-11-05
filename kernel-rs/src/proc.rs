@@ -27,11 +27,9 @@ use cstr_core::CStr;
 
 extern "C" {
     // swtch.S
-    #[no_mangle]
     fn swtch(_: *mut Context, _: *mut Context);
 
     // trampoline.S
-    #[no_mangle]
     static mut trampoline: [u8; 0];
 }
 
@@ -531,10 +529,14 @@ pub struct ProcessSystem {
     initial_proc: *mut Proc,
 }
 
+const fn proc_entry(_: usize) -> Proc {
+    Proc::zero()
+}
+
 impl ProcessSystem {
     pub const fn zero() -> Self {
         Self {
-            process_pool: [Proc::zero(); NPROC],
+            process_pool: array_const_fn_init![proc_entry; 64],
             initial_proc: ptr::null_mut(),
         }
     }

@@ -76,6 +76,20 @@ pub struct Kernel {
     pub file_system: Once<FileSystem>,
 }
 
+// TODO(rv6): ugly tricks with magic numbers. Fix it...
+
+const fn bcache_entry(_: usize) -> MruEntry<BufEntry> {
+    MruEntry::new(BufEntry::zero())
+}
+
+const fn ftable_entry(_: usize) -> ArrayEntry<File> {
+    ArrayEntry::new(File::zero())
+}
+
+const fn icache_entry(_: usize) -> ArrayEntry<Inode> {
+    ArrayEntry::new(Inode::zero())
+}
+
 impl Kernel {
     const fn zero() -> Self {
         Self {
@@ -88,7 +102,7 @@ impl Kernel {
             cpus: [Cpu::new(); NCPU],
             bcache: Spinlock::new(
                 "BCACHE",
-                MruArena::new([MruEntry::new(BufEntry::zero()); NBUF]),
+                MruArena::new(array_const_fn_init![bcache_entry; 30]),
             ),
             virtqueue: [Page::DEFAULT, Page::DEFAULT],
             disk: Sleepablelock::new("virtio_disk", Disk::zero()),
@@ -98,11 +112,11 @@ impl Kernel {
             }; NDEV],
             ftable: Spinlock::new(
                 "FTABLE",
-                ArrayArena::new([ArrayEntry::new(File::zero()); NFILE]),
+                ArrayArena::new(array_const_fn_init![ftable_entry; 100]),
             ),
             icache: Spinlock::new(
                 "ICACHE",
-                ArrayArena::new([ArrayEntry::new(Inode::zero()); NINODE]),
+                ArrayArena::new(array_const_fn_init![icache_entry; 50]),
             ),
             file_system: Once::new(),
         }

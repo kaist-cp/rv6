@@ -9,7 +9,6 @@ use crate::{
 
 extern "C" {
     // assembly code in kernelvec.S for machine-mode timer interrupt.
-    #[no_mangle]
     fn timervec();
 }
 

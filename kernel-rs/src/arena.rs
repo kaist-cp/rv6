@@ -1,4 +1,4 @@
-use crate::{spinlock::{Spinlock, SpinlockGuard}};
+use crate::spinlock::{Spinlock, SpinlockGuard};
 use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;

@@ -16,17 +16,13 @@ use core::mem;
 
 extern "C" {
     // trampoline.S
-    #[no_mangle]
     static mut trampoline: [u8; 0];
 
-    #[no_mangle]
     static mut uservec: [u8; 0];
 
-    #[no_mangle]
     static mut userret: [u8; 0];
 
     // in kernelvec.S, calls kerneltrap().
-    #[no_mangle]
     fn kernelvec();
 }
 
