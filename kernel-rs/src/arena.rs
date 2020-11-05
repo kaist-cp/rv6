@@ -1,4 +1,4 @@
-use crate::spinlock::{Spinlock, SpinlockGuard};
+use crate::{spinlock::{Spinlock, SpinlockGuard}};
 use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;
@@ -301,7 +301,8 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
                 &mut *((list_entry as usize - offset_of!(MruEntry<T>, list_entry))
                     as *mut MruEntry<T>)
             };
-            if entry.refcnt != 0 && c(&entry.data) {
+            if c(&entry.data) {
+                debug_assert!(entry.refcnt != 0);
                 return Some(Self::Handle {
                     ptr: entry,
                     _marker: PhantomData,
@@ -332,15 +333,13 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
                 &mut *((list_entry as usize - offset_of!(MruEntry<T>, list_entry))
                     as *mut MruEntry<T>)
             };
-            if entry.refcnt != 0 {
-                if c(&entry.data) {
-                    entry.refcnt += 1;
-                    return Some(Self::Handle {
-                        ptr: entry,
-                        _marker: PhantomData,
-                    });
-                }
-            } else {
+            if c(&entry.data) {
+                entry.refcnt += 1;
+                return Some(Self::Handle {
+                    ptr: entry,
+                    _marker: PhantomData,
+                });
+            } else if entry.refcnt == 0 {
                 empty = entry;
             }
             list_entry = unsafe { (*list_entry).next };
