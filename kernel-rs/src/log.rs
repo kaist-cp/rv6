@@ -21,11 +21,12 @@
 //!   ...
 //! Log appends are synchronous.
 use crate::{
-    bio::Buf,
+    bio::{Buf, BufUnlocked},
     fs::{Superblock, BSIZE},
     param::{LOGSIZE, MAXOPBLOCKS},
     sleepablelock::Sleepablelock,
 };
+use arrayvec::ArrayVec;
 use core::ptr;
 
 pub struct Log {
@@ -38,15 +39,20 @@ pub struct Log {
     /// In commit(), please wait.
     committing: bool,
     dev: i32,
-    lh: LogHeader,
+    lh: LogHeaderInMemory,
 }
 
 /// Contents of the header block, used for both the on-disk header block
 /// and to keep track in memory of logged block# before commit.
-#[derive(Copy, Clone)]
 struct LogHeader {
     n: i32,
     block: [i32; LOGSIZE],
+}
+
+/// Contents of the header block, used for both the on-disk header block
+/// and to keep track in memory of logged block# before commit.
+struct LogHeaderInMemory {
+    block: ArrayVec<[BufUnlocked; LOGSIZE]>,
 }
 
 impl Log {
@@ -61,9 +67,8 @@ impl Log {
             outstanding: 0,
             committing: false,
             dev,
-            lh: LogHeader {
-                n: 0,
-                block: [0; LOGSIZE],
+            lh: LogHeaderInMemory {
+                block: ArrayVec::new(),
             },
         };
         unsafe {
@@ -74,24 +79,23 @@ impl Log {
     }
 
     /// Copy committed blocks from log to their home location.
-    unsafe fn install_trans(&self) {
-        for tail in 0..self.lh.n {
+    unsafe fn install_trans(&mut self) {
+        for (tail, dbuf) in self.lh.block.drain(..).enumerate() {
             // Read log block.
-            let mut lbuf = Buf::new(self.dev as u32, (self.start + tail + 1) as u32);
+            let lbuf = Buf::new(self.dev as u32, (self.start + tail as i32 + 1) as u32);
 
             // Read dst.
-            let mut dbuf = Buf::new(self.dev as u32, self.lh.block[tail as usize] as u32);
+            let mut dbuf = dbuf.lock();
 
             // Copy block to dst.
             ptr::copy(
-                lbuf.deref_mut_inner().data.as_mut_ptr(),
+                lbuf.deref_inner().data.as_ptr(),
                 dbuf.deref_mut_inner().data.as_mut_ptr(),
                 BSIZE,
             );
 
             // Write dst to disk.
             dbuf.write();
-            dbuf.unpin();
         }
     }
 
@@ -99,21 +103,23 @@ impl Log {
     unsafe fn read_head(&mut self) {
         let mut buf = Buf::new(self.dev as u32, self.start as u32);
         let lh: *mut LogHeader = buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader;
-        self.lh.n = (*lh).n;
-        for i in 0..self.lh.n {
-            self.lh.block[i as usize] = (*lh).block[i as usize];
+        for i in 0..(*lh).n {
+            self.lh.block.push(BufUnlocked::from_blockno(
+                self.dev as u32,
+                (*lh).block[i as usize] as u32,
+            ));
         }
     }
 
     /// Write in-memory log header to disk.
     /// This is the true point at which the
     /// current transaction commits.
-    unsafe fn write_head(&self) {
+    unsafe fn write_head(&mut self) {
         let mut buf = Buf::new(self.dev as u32, self.start as u32);
         let mut hb: *mut LogHeader = buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader;
-        (*hb).n = self.lh.n;
-        for i in 0..self.lh.n {
-            (*hb).block[i as usize] = self.lh.block[i as usize];
+        (*hb).n = self.lh.block.len() as i32;
+        for (i, b) in self.lh.block.iter().enumerate() {
+            (*hb).block[i as usize] = b.data.blockno as i32;
         }
         buf.write();
     }
@@ -123,7 +129,6 @@ impl Log {
 
         // If committed, copy from log to disk.
         self.install_trans();
-        self.lh.n = 0;
 
         // Clear the log.
         self.write_head();
@@ -135,7 +140,7 @@ impl Log {
         loop {
             if guard.committing ||
             // This op might exhaust log space; wait for commit.
-            guard.lh.n + (guard.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
+            guard.lh.block.len() as i32 + (guard.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
             {
                 guard.sleep();
             } else {
@@ -175,16 +180,16 @@ impl Log {
     }
 
     /// Copy modified blocks from cache to self.
-    unsafe fn write_log(&self) {
-        for tail in 0..self.lh.n {
+    unsafe fn write_log(&mut self) {
+        for (tail, from) in self.lh.block.iter().enumerate() {
             // Log block.
-            let mut to = Buf::new(self.dev as u32, (self.start + tail + 1) as u32);
+            let mut to = Buf::new(self.dev as u32, (self.start + tail as i32 + 1) as u32);
 
             // Cache block.
-            let mut from = Buf::new(self.dev as u32, self.lh.block[tail as usize] as u32);
+            let from = Buf::new(self.dev as u32, from.data.blockno);
 
             ptr::copy(
-                from.deref_mut_inner().data.as_mut_ptr(),
+                from.deref_inner().data.as_ptr(),
                 to.deref_mut_inner().data.as_mut_ptr(),
                 BSIZE,
             );
@@ -195,7 +200,7 @@ impl Log {
     }
 
     unsafe fn commit(&mut self) {
-        if self.lh.n > 0 {
+        if !self.lh.block.is_empty() {
             // Write modified blocks from cache to self.
             self.write_log();
 
@@ -204,7 +209,6 @@ impl Log {
 
             // Now install writes to home locations.
             self.install_trans();
-            self.lh.n = 0;
 
             // Erase the transaction from the self.
             self.write_head();
@@ -220,27 +224,20 @@ impl Log {
     ///   modify bp->data[]
     ///   log_write(bp)
     pub unsafe fn log_write(&mut self, b: Buf) {
-        if self.lh.n >= LOGSIZE as i32 || self.lh.n >= self.size as i32 - 1 {
+        if self.lh.block.len() >= LOGSIZE || self.lh.block.len() as i32 >= self.size - 1 {
             panic!("too big a transaction");
         }
         if self.outstanding < 1 {
             panic!("log_write outside of trans");
         }
-        let mut absorbed = false;
-        for i in 0..self.lh.n {
+        for buf in &self.lh.block {
             // Log absorbtion.
-            if self.lh.block[i as usize] as u32 == (*b).data.blockno {
-                self.lh.block[i as usize] = (*b).data.blockno as i32;
-                absorbed = true;
-                break;
+            if buf.data.blockno == (*b).data.blockno {
+                return;
             }
         }
 
         // Add new block to log?
-        if !absorbed {
-            self.lh.block[self.lh.n as usize] = (*b).data.blockno as i32;
-            b.pin();
-            self.lh.n += 1;
-        }
+        self.lh.block.push(b.pin());
     }
 }

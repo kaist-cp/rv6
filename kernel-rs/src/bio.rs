@@ -119,24 +119,34 @@ impl Bcache {
         }
     }
 
-    /// Look through buffer cache for block on device dev.
-    /// If not found, allocate a buffer.
-    /// In either case, return locked buffer.
-    unsafe fn get(&mut self, dev: u32, blockno: u32) -> *mut BufEntry {
+    unsafe fn unforget(&mut self, dev: u32, blockno: u32) -> *mut BufEntry {
         // Is the block already cached?
         let mut e = self.head.next;
         while e != &mut self.head {
             let b: *mut BufEntry = (e as usize - offset_of!(BufEntry, list_entry)) as *mut _;
 
             if (*b).data.dev == dev && (*b).data.blockno == blockno {
-                (*b).refcnt = (*b).refcnt.wrapping_add(1);
                 return b;
             }
             e = (*e).next;
         }
 
+        ptr::null_mut()
+    }
+
+    /// Look through buffer cache for block on device dev.
+    /// If not found, allocate a buffer.
+    /// In either case, return locked buffer.
+    unsafe fn get(&mut self, dev: u32, blockno: u32) -> *mut BufEntry {
+        // Is the block already cached?
+        let b = self.unforget(dev, blockno);
+        if !b.is_null() {
+            (*b).refcnt = (*b).refcnt.wrapping_add(1);
+            return b;
+        }
+
         // Not cached; recycle an unused buffer.
-        e = self.head.prev;
+        let mut e = self.head.prev;
         while e != &mut self.head {
             let b: *mut BufEntry = (e as usize - offset_of!(BufEntry, list_entry)) as *mut _;
 
@@ -149,7 +159,8 @@ impl Bcache {
             }
             e = (*e).prev;
         }
-        panic!("get: no buffers");
+
+        ptr::null_mut()
     }
 
     /// Release a locked buffer.
@@ -177,11 +188,45 @@ pub struct Buf {
     ptr: *mut BufEntry,
 }
 
+pub struct BufUnlocked {
+    /// Assumption: the `ptr.inner` lock is unheld.
+    ptr: *mut BufEntry,
+}
+
+impl BufUnlocked {
+    pub fn lock(self) -> Buf {
+        unsafe {
+            mem::forget((*self.ptr).data.inner.lock());
+        }
+        let result = Buf { ptr: self.ptr };
+        mem::forget(self);
+        result
+    }
+
+    pub unsafe fn from_blockno(dev: u32, blockno: u32) -> Self {
+        let ptr = kernel().bcache.lock().unforget(dev, blockno);
+        debug_assert!(!ptr.is_null());
+        Self { ptr }
+    }
+}
+
+impl Drop for BufUnlocked {
+    fn drop(&mut self) {
+        unsafe {
+            let buf = &mut *self.ptr;
+            let mut bcache = kernel().bcache.lock();
+            bcache.release(buf);
+        }
+    }
+}
+
 impl Buf {
     /// Return a locked buf with the contents of the indicated block.
     pub fn new(dev: u32, blockno: u32) -> Self {
         unsafe {
             let ptr = kernel().bcache.lock().get(dev, blockno);
+            debug_assert!(!ptr.is_null(), "[Buf::new] no buffers");
+
             mem::forget((*ptr).data.inner.lock());
             let mut result = Self { ptr };
 
@@ -194,12 +239,14 @@ impl Buf {
         }
     }
 
-    pub fn pin(self) {
+    pub fn pin(self) -> BufUnlocked {
         unsafe {
             let buf = &mut *self.ptr;
             buf.data.inner.unlock();
         }
+        let result = BufUnlocked { ptr: self.ptr };
         mem::forget(self);
+        result
     }
 
     pub unsafe fn unpin(&mut self) {
@@ -234,6 +281,14 @@ impl Drop for Buf {
 }
 
 impl Deref for Buf {
+    type Target = BufEntry;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.ptr }
+    }
+}
+
+impl Deref for BufUnlocked {
     type Target = BufEntry;
 
     fn deref(&self) -> &Self::Target {
