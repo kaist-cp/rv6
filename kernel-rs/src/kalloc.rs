@@ -12,7 +12,6 @@ use core::ptr;
 extern "C" {
     // first address after kernel.
     // defined by kernel.ld.
-    #[no_mangle]
     pub static mut end: [u8; 0];
 }
 

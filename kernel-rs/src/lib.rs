@@ -7,12 +7,12 @@
 #![allow(dead_code)]
 #![allow(incomplete_features)]
 #![feature(llvm_asm)]
+#![feature(const_fn_fn_ptr_basics)]
 #![feature(const_wrapping_int_methods)]
 #![feature(maybe_uninit_ref)]
 #![feature(const_in_array_repeat_expressions)]
 #![feature(array_value_iter)]
 #![feature(const_fn)]
-#![feature(slice_ptr_range)]
 #![feature(maybe_uninit_extra)]
 #![feature(min_const_generics)]
 #![feature(generic_associated_types)]
@@ -57,3 +57,5 @@ mod vm;
 extern crate bitflags;
 #[macro_use]
 extern crate memoffset;
+#[macro_use]
+extern crate array_const_fn_init;

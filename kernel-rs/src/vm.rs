@@ -20,11 +20,9 @@ use core::{
 
 extern "C" {
     // kernel.ld sets this to end of kernel code.
-    #[no_mangle]
     static mut etext: [u8; 0];
 
     // trampoline.S
-    #[no_mangle]
     static mut trampoline: [u8; 0];
 }
 

@@ -13,7 +13,7 @@ test = []
 
 [profile.dev]
 panic = "abort"
-opt-level = 1
+opt-level = 2
 
 [profile.release]
 panic = "abort"
@@ -27,6 +27,7 @@ arrayvec = { version = "0.5.2", default-features = false }
 cstr_core = { version = "0.2.2", default-features = false }
 spin = { version = "0.7.0", default-features = false }
 memoffset = "0.6.1"
+array-const-fn-init = "0.1.1"
 
 # Compiler options for sysroot packages.
 # Cargo currently warns following packages are not dependencies.
