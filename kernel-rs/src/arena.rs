@@ -4,26 +4,6 @@ use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;
 use core::ptr;
 
-pub struct RcEntry<T> {
-    refcnt: usize,
-    data: T,
-}
-
-/// A homogeneous memory allocator equipped with reference counts.
-pub struct RcArena<T, const CAPACITY: usize> {
-    inner: [RcEntry<T>; CAPACITY],
-}
-
-pub struct UntaggedRc<T> {
-    ptr: *mut RcEntry<T>,
-    _marker: PhantomData<T>,
-}
-
-pub struct Rc<A: Arena, T: Deref<Target = A>> {
-    tag: T,
-    inner: ManuallyDrop<<<T as Deref>::Target as Arena>::Handle>,
-}
-
 /// A homogeneous memory allocator, equipped with the box type representing an allocation.
 pub trait Arena: Sized {
     /// The value type of the allocator.
@@ -34,6 +14,9 @@ pub trait Arena: Sized {
 
     /// The guard type for arena.
     type Guard<'s>;
+
+    /// Creates handle from condition without increasing reference count.
+    fn unforget<C: Fn(&Self::Data) -> bool>(&self, c: C) -> Option<Self::Handle>;
 
     /// Find or alloc.
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
@@ -66,20 +49,62 @@ pub trait ArenaObject {
     fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>);
 }
 
-impl<T> RcEntry<T> {
+pub struct ArrayEntry<T> {
+    refcnt: usize,
+    data: T,
+}
+
+/// A homogeneous memory allocator equipped with reference counts.
+pub struct ArrayArena<T, const CAPACITY: usize> {
+    entries: [ArrayEntry<T>; CAPACITY],
+}
+
+pub struct ArrayPtr<T> {
+    ptr: *mut ArrayEntry<T>,
+    _marker: PhantomData<T>,
+}
+
+pub struct ListEntry {
+    prev: *mut Self,
+    next: *mut Self,
+}
+
+pub struct MruEntry<T> {
+    refcnt: usize,
+    data: T,
+    list_entry: ListEntry,
+}
+
+/// A homogeneous memory allocator equipped with reference counts.
+pub struct MruArena<T, const CAPACITY: usize> {
+    entries: [MruEntry<T>; CAPACITY],
+    head: ListEntry,
+}
+
+pub struct MruPtr<T> {
+    ptr: *mut MruEntry<T>,
+    _marker: PhantomData<T>,
+}
+
+pub struct Rc<A: Arena, T: Deref<Target = A>> {
+    tag: T,
+    inner: ManuallyDrop<<<T as Deref>::Target as Arena>::Handle>,
+}
+
+impl<T> ArrayEntry<T> {
     pub const fn new(data: T) -> Self {
         Self { refcnt: 0, data }
     }
 }
 
-impl<T, const CAPACITY: usize> RcArena<T, CAPACITY> {
+impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
     // TODO(rv6): unsafe...
-    pub const fn new(inner: [RcEntry<T>; CAPACITY]) -> Self {
-        Self { inner }
+    pub const fn new(entries: [ArrayEntry<T>; CAPACITY]) -> Self {
+        Self { entries }
     }
 }
 
-impl<T> Deref for UntaggedRc<T> {
+impl<T> Deref for ArrayPtr<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -87,18 +112,33 @@ impl<T> Deref for UntaggedRc<T> {
     }
 }
 
-impl<T> Drop for UntaggedRc<T> {
+impl<T> Drop for ArrayPtr<T> {
     fn drop(&mut self) {
         // HACK(@efenniht): we really need linear type here:
         // https://github.com/rust-lang/rfcs/issues/814
-        panic!("UntaggedRc must never drop: use RcArena::dealloc instead.");
+        panic!("ArrayPtr must never drop: use ArrayArena::dealloc instead.");
     }
 }
 
-impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<RcArena<T, CAPACITY>> {
+impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<ArrayArena<T, CAPACITY>> {
     type Data = T;
-    type Handle = UntaggedRc<T>;
-    type Guard<'s> = SpinlockGuard<'s, RcArena<T, CAPACITY>>;
+    type Handle = ArrayPtr<T>;
+    type Guard<'s> = SpinlockGuard<'s, ArrayArena<T, CAPACITY>>;
+
+    fn unforget<C: Fn(&Self::Data) -> bool>(&self, c: C) -> Option<Self::Handle> {
+        let mut this = self.lock();
+
+        for entry in &mut this.entries {
+            if entry.refcnt != 0 && c(&entry.data) {
+                return Some(Self::Handle {
+                    ptr: entry,
+                    _marker: PhantomData,
+                });
+            }
+        }
+
+        None
+    }
 
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,
@@ -107,8 +147,8 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<RcArena
     ) -> Option<Self::Handle> {
         let mut this = self.lock();
 
-        let mut empty: *mut RcEntry<T> = ptr::null_mut();
-        for entry in &mut this.inner {
+        let mut empty: *mut ArrayEntry<T> = ptr::null_mut();
+        for entry in &mut this.entries {
             if entry.refcnt != 0 {
                 if c(&entry.data) {
                     entry.refcnt += 1;
@@ -138,7 +178,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<RcArena
     fn alloc<F: FnOnce(&mut T)>(&self, f: F) -> Option<Self::Handle> {
         let mut this = self.lock();
 
-        for entry in &mut this.inner {
+        for entry in &mut this.entries {
             if entry.refcnt == 0 {
                 entry.refcnt = 1;
                 f(&mut entry.data);
@@ -153,7 +193,9 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<RcArena
     }
 
     unsafe fn dup(&self, handle: &Self::Handle) -> Self::Handle {
-        // TODO: Make a RcArena trait and move this there.
+        let mut _this = self.lock();
+
+        // TODO: Make a ArrayArena trait and move this there.
         (*handle.ptr).refcnt += 1;
         Self::Handle {
             ptr: handle.ptr,
@@ -174,6 +216,206 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<RcArena
 
         let entry = &mut *handle.ptr;
         entry.refcnt -= 1;
+        mem::forget(handle);
+    }
+
+    fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        guard.reacquire_after(f)
+    }
+}
+
+impl ListEntry {
+    pub const fn new() -> Self {
+        Self {
+            prev: ptr::null_mut(),
+            next: ptr::null_mut(),
+        }
+    }
+}
+
+impl<T> MruEntry<T> {
+    pub const fn new(data: T) -> Self {
+        Self {
+            refcnt: 0,
+            data,
+            list_entry: ListEntry::new(),
+        }
+    }
+}
+
+impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
+    // TODO(rv6): unsafe...
+    pub const fn new(entries: [MruEntry<T>; CAPACITY]) -> Self {
+        Self {
+            entries,
+            head: ListEntry::new(),
+        }
+    }
+
+    pub fn init(&mut self) {
+        self.head.prev = &mut self.head;
+        self.head.next = &mut self.head;
+
+        for entry in &mut self.entries {
+            entry.list_entry.next = self.head.next;
+            entry.list_entry.prev = &mut self.head;
+            unsafe {
+                (*self.head.next).prev = &mut entry.list_entry;
+            }
+            self.head.next = &mut entry.list_entry;
+        }
+    }
+}
+
+impl<T> Deref for MruPtr<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &(*self.ptr).data }
+    }
+}
+
+impl<T> Drop for MruPtr<T> {
+    fn drop(&mut self) {
+        // HACK(@efenniht): we really need linear type here:
+        // https://github.com/rust-lang/rfcs/issues/814
+        panic!("MruPtr must never drop: use MruArena::dealloc instead.");
+    }
+}
+
+impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruArena<T, CAPACITY>> {
+    type Data = T;
+    type Handle = MruPtr<T>;
+    type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
+
+    fn unforget<C: Fn(&Self::Data) -> bool>(&self, c: C) -> Option<Self::Handle> {
+        let mut this = self.lock();
+
+        // Is the block already cached?
+        let mut list_entry = this.head.next;
+        while !list_entry.is_null() && list_entry != &mut this.head {
+            let entry = unsafe {
+                &mut *((list_entry as usize - offset_of!(MruEntry<T>, list_entry))
+                    as *mut MruEntry<T>)
+            };
+            if entry.refcnt != 0 && c(&entry.data) {
+                return Some(Self::Handle {
+                    ptr: entry,
+                    _marker: PhantomData,
+                });
+            }
+            list_entry = unsafe { (*list_entry).next };
+        }
+
+        None
+    }
+
+    fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
+        &self,
+        c: C,
+        n: N,
+    ) -> Option<Self::Handle> {
+        // Look through buffer cache for block on device dev.
+        // If not found, allocate a buffer.
+        // In either case, return locked buffer.
+
+        let mut this = self.lock();
+
+        // Is the block already cached?
+        let mut list_entry = this.head.next;
+        let mut empty = ptr::null_mut();
+        while !list_entry.is_null() && list_entry != &mut this.head {
+            let entry = unsafe {
+                &mut *((list_entry as usize - offset_of!(MruEntry<T>, list_entry))
+                    as *mut MruEntry<T>)
+            };
+            if entry.refcnt != 0 {
+                if c(&entry.data) {
+                    entry.refcnt += 1;
+                    return Some(Self::Handle {
+                        ptr: entry,
+                        _marker: PhantomData,
+                    });
+                }
+            } else {
+                empty = entry;
+            }
+            list_entry = unsafe { (*list_entry).next };
+        }
+
+        if empty.is_null() {
+            return None;
+        }
+
+        let entry = unsafe { &mut *empty };
+        entry.refcnt = 1;
+        n(&mut entry.data);
+        Some(Self::Handle {
+            ptr: entry,
+            _marker: PhantomData,
+        })
+    }
+
+    fn alloc<F: FnOnce(&mut T)>(&self, f: F) -> Option<Self::Handle> {
+        let mut this = self.lock();
+
+        let mut list_entry = this.head.prev;
+        while !list_entry.is_null() && list_entry != &mut this.head {
+            let entry = unsafe {
+                &mut *((list_entry as usize - offset_of!(MruEntry<T>, list_entry))
+                    as *mut MruEntry<T>)
+            };
+            if entry.refcnt == 0 {
+                entry.refcnt = 1;
+                f(&mut entry.data);
+                return Some(Self::Handle {
+                    ptr: entry,
+                    _marker: PhantomData,
+                });
+            }
+            list_entry = unsafe { (*list_entry).prev };
+        }
+
+        None
+    }
+
+    unsafe fn dup(&self, handle: &Self::Handle) -> Self::Handle {
+        let mut _this = self.lock();
+
+        // TODO: Make a MruArena trait and move this there.
+        (*handle.ptr).refcnt += 1;
+        Self::Handle {
+            ptr: handle.ptr,
+            _marker: PhantomData,
+        }
+    }
+
+    /// # Safety
+    ///
+    /// `rc` must be allocated from `self`.
+    unsafe fn dealloc(&self, handle: Self::Handle) {
+        let mut this = self.lock();
+
+        let entry = &mut *handle.ptr;
+        if entry.refcnt == 1 {
+            entry.data.finalize::<Self>(&mut this);
+        }
+
+        let entry = &mut *handle.ptr;
+        entry.refcnt -= 1;
+
+        if entry.refcnt == 0 {
+            (*entry.list_entry.next).prev = entry.list_entry.prev;
+            (*entry.list_entry.prev).next = entry.list_entry.next;
+            entry.list_entry.next = this.head.next;
+            entry.list_entry.prev = &mut this.head;
+            (*this.head.next).prev = &mut entry.list_entry;
+            this.head.next = &mut entry.list_entry;
+        }
+
         mem::forget(handle);
     }
 
@@ -223,7 +465,12 @@ impl<A: Arena, T: Clone + Deref<Target = A>> Arena for T {
     type Handle = Rc<A, T>;
     type Guard<'s> = <A as Arena>::Guard<'s>;
 
-    /// Find or alloc.
+    fn unforget<C: Fn(&Self::Data) -> bool>(&self, c: C) -> Option<Self::Handle> {
+        let tag = self.clone();
+        let inner = ManuallyDrop::new(tag.deref().unforget(c)?);
+        Some(Self::Handle { tag, inner })
+    }
+
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,
         c: C,
@@ -234,7 +481,6 @@ impl<A: Arena, T: Clone + Deref<Target = A>> Arena for T {
         Some(Self::Handle { tag, inner })
     }
 
-    /// Failable allocation.
     fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Self::Handle> {
         let tag = self.clone();
         let inner = ManuallyDrop::new(tag.deref().alloc(f)?);

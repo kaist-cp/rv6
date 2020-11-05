@@ -3,7 +3,7 @@ use super::{
 };
 
 use crate::{
-    arena::{Arena, ArenaObject, Rc, RcArena},
+    arena::{Arena, ArenaObject, ArrayArena, Rc},
     bio::Buf,
     kernel::kernel,
     param::NINODE,
@@ -41,7 +41,7 @@ pub struct Inode {
 pub struct IcacheTag {}
 
 impl Deref for IcacheTag {
-    type Target = Spinlock<RcArena<Inode, NINODE>>;
+    type Target = Spinlock<ArrayArena<Inode, NINODE>>;
 
     fn deref(&self) -> &Self::Target {
         &kernel().icache

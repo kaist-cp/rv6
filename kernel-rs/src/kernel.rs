@@ -6,7 +6,7 @@ use core::{
 use spin::Once;
 
 use crate::{
-    arena::{RcArena, RcEntry},
+    arena::{ArrayArena, ArrayEntry},
     bio::Bcache,
     console::{consoleinit, Console},
     file::{Devsw, File},
@@ -68,9 +68,9 @@ pub struct Kernel {
 
     pub devsw: [Devsw; NDEV],
 
-    pub ftable: Spinlock<RcArena<File, NFILE>>,
+    pub ftable: Spinlock<ArrayArena<File, NFILE>>,
 
-    pub icache: Spinlock<RcArena<Inode, NINODE>>,
+    pub icache: Spinlock<ArrayArena<Inode, NINODE>>,
 
     pub file_system: Once<FileSystem>,
 }
@@ -92,10 +92,13 @@ impl Kernel {
                 read: None,
                 write: None,
             }; NDEV],
-            ftable: Spinlock::new("FTABLE", RcArena::new([RcEntry::new(File::zero()); NFILE])),
+            ftable: Spinlock::new(
+                "FTABLE",
+                ArrayArena::new([ArrayEntry::new(File::zero()); NFILE]),
+            ),
             icache: Spinlock::new(
                 "ICACHE",
-                RcArena::new([RcEntry::new(Inode::zero()); NINODE]),
+                ArrayArena::new([ArrayEntry::new(Inode::zero()); NINODE]),
             ),
             file_system: Once::new(),
         }

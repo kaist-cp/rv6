@@ -3,7 +3,7 @@
 #![allow(clippy::unit_arg)]
 
 use crate::{
-    arena::{Arena, ArenaObject, Rc, RcArena},
+    arena::{Arena, ArenaObject, ArrayArena, Rc},
     fs::{fs, RcInode, BSIZE},
     kernel::kernel,
     param::{MAXOPBLOCKS, NFILE},
@@ -48,7 +48,7 @@ pub struct Devsw {
 pub struct FTableTag {}
 
 impl Deref for FTableTag {
-    type Target = Spinlock<RcArena<File, NFILE>>;
+    type Target = Spinlock<ArrayArena<File, NFILE>>;
 
     fn deref(&self) -> &Self::Target {
         &kernel().ftable
