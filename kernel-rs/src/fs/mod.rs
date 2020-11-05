@@ -203,7 +203,7 @@ pub fn fsinit(dev: i32) {
 }
 
 pub fn fs() -> &'static FileSystem {
-    if let Some(fs) = kernel().file_system.r#try() {
+    if let Some(fs) = kernel().file_system.get() {
         fs
     } else {
         unreachable!()
