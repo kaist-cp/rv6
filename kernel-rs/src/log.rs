@@ -103,11 +103,10 @@ impl Log {
     unsafe fn read_head(&mut self) {
         let mut buf = Buf::new(self.dev as u32, self.start as u32);
         let lh: *mut LogHeader = buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader;
-        for i in 0..(*lh).n {
-            self.lh.block.push(BufUnlocked::from_blockno(
-                self.dev as u32,
-                (*lh).block[i as usize] as u32,
-            ));
+        for b in &(*lh).block[0..(*lh).n as usize] {
+            self.lh
+                .block
+                .push(BufUnlocked::from_blockno(self.dev as u32, *b as u32));
         }
     }
 
