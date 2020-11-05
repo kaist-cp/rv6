@@ -106,7 +106,7 @@ impl Log {
         for b in &(*lh).block[0..(*lh).n as usize] {
             self.lh
                 .block
-                .push(BufUnlocked::from_blockno(self.dev as u32, *b as u32));
+                .push(BufUnlocked::unforget(self.dev as u32, *b as u32).unwrap());
         }
     }
 
@@ -118,7 +118,7 @@ impl Log {
         let mut hb: *mut LogHeader = buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader;
         (*hb).n = self.lh.block.len() as i32;
         for (i, b) in self.lh.block.iter().enumerate() {
-            (*hb).block[i as usize] = b.data.blockno as i32;
+            (*hb).block[i as usize] = b.blockno as i32;
         }
         buf.write();
     }
@@ -185,7 +185,7 @@ impl Log {
             let mut to = Buf::new(self.dev as u32, (self.start + tail as i32 + 1) as u32);
 
             // Cache block.
-            let from = Buf::new(self.dev as u32, from.data.blockno);
+            let from = Buf::new(self.dev as u32, from.blockno);
 
             ptr::copy(
                 from.deref_inner().data.as_ptr(),
@@ -231,7 +231,7 @@ impl Log {
         }
         for buf in &self.lh.block {
             // Log absorbtion.
-            if buf.data.blockno == (*b).data.blockno {
+            if buf.blockno == (*b).blockno {
                 return;
             }
         }
