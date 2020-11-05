@@ -238,6 +238,6 @@ impl Log {
         }
 
         // Add new block to log?
-        self.lh.block.push(b.pin());
+        self.lh.block.push(b.unlock());
     }
 }

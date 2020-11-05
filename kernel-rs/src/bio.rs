@@ -177,10 +177,6 @@ impl Bcache {
             self.head.next = &mut buf.list_entry;
         }
     }
-
-    unsafe fn unpin(&mut self, buf: &mut BufEntry) {
-        buf.refcnt = buf.refcnt.wrapping_sub(1);
-    }
 }
 
 pub struct Buf {
@@ -239,7 +235,7 @@ impl Buf {
         }
     }
 
-    pub fn pin(self) -> BufUnlocked {
+    pub fn unlock(self) -> BufUnlocked {
         unsafe {
             let buf = &mut *self.ptr;
             buf.data.inner.unlock();
@@ -247,12 +243,6 @@ impl Buf {
         let result = BufUnlocked { ptr: self.ptr };
         mem::forget(self);
         result
-    }
-
-    pub unsafe fn unpin(&mut self) {
-        let mut bcache = kernel().bcache.lock();
-        let buf = &mut *self.ptr;
-        bcache.unpin(buf);
     }
 
     /// Write self's contents to disk.  Must be locked.
