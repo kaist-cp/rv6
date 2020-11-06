@@ -188,6 +188,7 @@ impl PageTableEntry {
 }
 
 const PTE_PER_PT: usize = PGSIZE / mem::size_of::<PageTableEntry>();
+
 pub struct RawPageTable {
     inner: [PageTableEntry; PTE_PER_PT],
 }
@@ -214,8 +215,8 @@ impl RawPageTable {
             if let Some(ptable) = pte.as_table_mut() {
                 ptable.freewalk();
                 pte.set_inner(0);
-            } else if pte.check_flag(PTE_V) {
-                panic!("freewalk: leaf");
+            } else {
+                assert!(!pte.check_flag(PTE_V), "freewalk: leaf");
             }
         }
         kernel().free(self.as_mut_ptr() as _);
@@ -237,9 +238,8 @@ impl<A: VAddr> PageTable<A> {
 
     pub fn alloc_root(&mut self) {
         let page = unsafe { kernel().alloc() } as *mut RawPageTable;
-        if page.is_null() {
-            panic!("PageTable new: out of memory");
-        }
+        assert!(!page.is_null(), "PageTable new: out of memory");
+
         unsafe {
             ptr::write_bytes(page, 0, 1);
         }
@@ -282,9 +282,8 @@ impl<A: VAddr> PageTable<A> {
     ///    0..12 -- 12 bits of byte offset within the page.
     unsafe fn walk(&self, va: A, alloc: i32) -> Option<&mut PageTableEntry> {
         let mut pagetable = &mut *self.as_raw();
-        if va.into_usize() >= MAXVA {
-            panic!("walk");
-        }
+        assert!(va.into_usize() < MAXVA, "walk");
+
         for level in (1..3).rev() {
             let pte = &mut pagetable[px(level, va)];
             if pte.check_flag(PTE_V) {
@@ -339,9 +338,8 @@ impl<A: VAddr> PageTable<A> {
         let last = pgrounddown(va.into_usize() + size - 1usize);
         loop {
             let pte = some_or!(self.walk(VAddr::new(a), 1), return Err(()));
-            if pte.check_flag(PTE_V) {
-                panic!("remap");
-            }
+            assert!(!pte.check_flag(PTE_V), "remap");
+
             pte.set_inner(pa2pte(PAddr::new(pa)) | perm as usize | PTE_V);
             if a == last {
                 break;
@@ -384,9 +382,8 @@ impl PageTable<UVAddr> {
     /// for the very first process.
     /// sz must be less than a page.
     pub unsafe fn uvminit(&mut self, src: &[u8]) {
-        if src.len() >= PGSIZE {
-            panic!("inituvm: more than a page");
-        }
+        assert!(src.len() < PGSIZE, "inituvm: more than a page");
+
         let mem: *mut u8 = kernel().alloc();
         ptr::write_bytes(mem, 0, PGSIZE);
         self.mappages(

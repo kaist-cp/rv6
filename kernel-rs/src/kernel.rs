@@ -134,12 +134,12 @@ impl Kernel {
     /// call to kernel().alloc().  (The exception is when
     /// initializing the allocator; see kinit above.)
     pub unsafe fn free(&self, pa: *mut u8) {
-        if (pa as usize).wrapping_rem(PGSIZE) != 0
-            || pa < end.as_mut_ptr()
-            || pa as usize >= PHYSTOP
-        {
-            panic!("Kernel::free");
-        }
+        assert!(
+            (pa as usize).wrapping_rem(PGSIZE) == 0
+                && pa >= end.as_mut_ptr()
+                && (pa as usize) < PHYSTOP,
+            "[Kernel::free]"
+        );
 
         // Fill with junk to catch dangling refs.
         ptr::write_bytes(pa, 1, PGSIZE);

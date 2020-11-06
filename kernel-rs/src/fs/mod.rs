@@ -208,12 +208,11 @@ unsafe fn bzero(dev: i32, bno: i32) {
 /// Blocks.
 /// Allocate a zeroed disk block.
 unsafe fn balloc(dev: u32) -> u32 {
-    let mut b: u32 = 0;
     let mut bi: u32 = 0;
-    while b < kernel().fs().superblock.size {
+    for b in num_iter::range_step(0, kernel().fs().superblock.size, BPB) {
         let mut bp = Buf::new(dev, kernel().fs().superblock.bblock(b));
         while bi < BPB && (b + bi) < kernel().fs().superblock.size {
-            let m = (1) << (bi % 8);
+            let m = 1 << (bi % 8);
             if bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & m == 0 {
                 // Is block free?
                 bp.deref_mut_inner().data[(bi / 8) as usize] =
@@ -222,9 +221,8 @@ unsafe fn balloc(dev: u32) -> u32 {
                 bzero(dev as i32, (b + bi) as i32);
                 return b + bi;
             }
-            bi += 1
+            bi += 1;
         }
-        b += BPB
     }
     panic!("balloc: out of blocks");
 }

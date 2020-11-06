@@ -57,9 +57,10 @@ struct LogHeaderInMemory {
 
 impl Log {
     pub fn new(dev: i32, superblock: &Superblock) -> Self {
-        if mem::size_of::<LogHeader>() >= BSIZE {
-            panic!("Log::new: too big LogHeader");
-        }
+        assert!(
+            mem::size_of::<LogHeader>() < BSIZE,
+            "Log::new: too big LogHeader"
+        );
 
         let mut log = Self {
             start: superblock.logstart as i32,
@@ -152,22 +153,22 @@ impl Log {
     /// Called at the end of each FS system call.
     /// Commits if this was the last outstanding operation.
     pub unsafe fn end_op(this: &Sleepablelock<Self>) {
-        let mut do_commit = false;
         let mut guard = this.lock();
         guard.outstanding -= 1;
-        if guard.committing {
-            panic!("guard.committing");
-        }
-        if guard.outstanding == 0 {
-            do_commit = true;
+        assert!(!guard.committing, "guard.committing");
+
+        let do_commit = if guard.outstanding == 0 {
             guard.committing = true;
+            true
         } else {
             // begin_op() may be waiting for LOG space,
             // and decrementing log.outstanding has decreased
             // the amount of reserved space.
             guard.wakeup();
-        }
+            false
+        };
         drop(guard);
+
         if do_commit {
             // Call commit w/o holding locks, since not allowed
             // to sleep with locks.
@@ -223,12 +224,12 @@ impl Log {
     ///   modify bp->data[]
     ///   log_write(bp)
     pub unsafe fn log_write(&mut self, b: Buf) {
-        if self.lh.block.len() >= LOGSIZE || self.lh.block.len() as i32 >= self.size - 1 {
-            panic!("too big a transaction");
-        }
-        if self.outstanding < 1 {
-            panic!("log_write outside of trans");
-        }
+        assert!(
+            !(self.lh.block.len() >= LOGSIZE || self.lh.block.len() as i32 >= self.size - 1),
+            "too big a transaction"
+        );
+        assert!(self.outstanding >= 1, "log_write outside of trans");
+
         for buf in &self.lh.block {
             // Log absorbtion.
             if buf.blockno == (*b).blockno {

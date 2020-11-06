@@ -195,7 +195,7 @@ pub struct Trapframe {
     pub t6: usize,
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum Procstate {
     ZOMBIE,
     RUNNING,
@@ -253,7 +253,7 @@ impl WaitChannel {
         let mut guard = ProcGuard::from_raw(p);
         guard.deref_mut_info().waitchannel = self;
         guard.deref_mut_info().state = Procstate::SLEEPING;
-        sched(&mut guard);
+        guard.sched();
 
         // Tidy up.
         guard.deref_mut_info().waitchannel = ptr::null();
@@ -331,7 +331,7 @@ pub struct Proc {
     pub name: [u8; 16],
 }
 
-/// Assumption: ptr->info's spinlock is held.
+/// Assumption: `ptr` is `myproc()`, and ptr->info's spinlock is held.
 struct ProcGuard {
     ptr: *const Proc,
 }
@@ -360,6 +360,26 @@ impl ProcGuard {
         if &info.child_waitchannel as *const _ == info.waitchannel {
             self.wakeup();
         }
+    }
+
+    /// Switch to scheduler.  Must hold only p->lock
+    /// and have changed proc->state. Saves and restores
+    /// interrupt_enabled because interrupt_enabled is a property of this
+    /// kernel thread, not this CPU. It should
+    /// be proc->interrupt_enabled and proc->noff, but that would
+    /// break in the few places where a lock is held but
+    /// there's no process.
+    unsafe fn sched(&mut self) {
+        assert_eq!((*kernel().mycpu()).noff, 1, "sched locks");
+        assert_ne!(self.deref_info().state, Procstate::RUNNING, "sched running");
+        assert!(!intr_get(), "sched interruptible");
+
+        let interrupt_enabled = (*kernel().mycpu()).interrupt_enabled;
+        swtch(
+            &mut (*self.data.get()).context,
+            &mut (*kernel().mycpu()).scheduler,
+        );
+        (*kernel().mycpu()).interrupt_enabled = interrupt_enabled;
     }
 }
 
@@ -448,9 +468,8 @@ impl ProcData {
     /// guard page.
     unsafe fn palloc(&mut self, page_table: &mut PageTable<KVAddr>, i: usize) {
         let pa = kernel().alloc();
-        if pa.is_null() {
-            panic!("kalloc");
-        }
+        assert!(!pa.is_null(), "kalloc");
+
         let va: usize = kstack(i);
         page_table.kvmmap(
             KVAddr::new(va),
@@ -805,7 +824,7 @@ impl ProcessSystem {
         drop(original_parent);
 
         // Jump into the scheduler, never to return.
-        sched(&mut guard);
+        guard.sched();
         panic!("zombie exit");
     }
 
@@ -977,49 +996,24 @@ pub unsafe fn scheduler() -> ! {
     }
 }
 
-/// Switch to scheduler.  Must hold only p->lock
-/// and have changed proc->state. Saves and restores
-/// interrupt_enabled because interrupt_enabled is a property of this
-/// kernel thread, not this CPU. It should
-/// be proc->interrupt_enabled and proc->noff, but that would
-/// break in the few places where a lock is held but
-/// there's no process.
-///
-/// `p` must be `myproc()`.
-unsafe fn sched(p: &mut ProcGuard) {
-    if (*kernel().mycpu()).noff != 1 {
-        panic!("sched locks");
-    }
-    if p.deref_info().state == Procstate::RUNNING {
-        panic!("sched running");
-    }
-    if intr_get() {
-        panic!("sched interruptible");
-    }
-    let interrupt_enabled = (*kernel().mycpu()).interrupt_enabled;
-    swtch(
-        &mut (*(*p).data.get()).context,
-        &mut (*kernel().mycpu()).scheduler,
-    );
-    (*kernel().mycpu()).interrupt_enabled = interrupt_enabled;
-}
-
 /// Give up the CPU for one scheduling round.
 pub unsafe fn proc_yield() {
     let p = myproc();
     let mut guard = (*p).lock();
     guard.deref_mut_info().state = Procstate::RUNNABLE;
-    sched(&mut guard);
+    guard.sched();
 }
 
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
 unsafe fn forkret() {
     // Still holding p->lock from scheduler.
-    (*(myproc as unsafe fn() -> *mut Proc)()).info.unlock();
+    (*myproc()).info.unlock();
+
     // File system initialization must be run in the context of a
     // regular process (e.g., because it calls sleep), and thus cannot
     // be run from main().
     kernel().fsinit(ROOTDEV);
+
     usertrapret();
 }

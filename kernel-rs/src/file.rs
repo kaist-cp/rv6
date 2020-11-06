@@ -124,7 +124,7 @@ impl File {
                 .get(*major as usize)
                 .and_then(|dev| Some(dev.read?(addr, n) as usize))
                 .ok_or(()),
-            _ => panic!("File::read"),
+            FileType::None => panic!("File::read"),
         }
     }
     /// Write to file self.
@@ -171,7 +171,7 @@ impl File {
                 .get(*major as usize)
                 .and_then(|dev| Some(dev.write?(addr, n) as usize))
                 .ok_or(()),
-            _ => panic!("File::read"),
+            FileType::None => panic!("File::read"),
         }
     }
 }

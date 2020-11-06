@@ -38,9 +38,10 @@ pub unsafe fn trapinithart() {
 pub unsafe extern "C" fn usertrap() {
     let mut which_dev: i32 = 0;
 
-    if Sstatus::read().contains(Sstatus::SPP) {
-        panic!("usertrap: not from user mode");
-    }
+    assert!(
+        !Sstatus::read().contains(Sstatus::SPP),
+        "usertrap: not from user mode"
+    );
 
     // send interrupts and exceptions to kerneltrap(),
     // since we're now in the kernel.
@@ -159,13 +160,11 @@ pub unsafe fn kerneltrap() {
     let sstatus = Sstatus::read();
     let scause = r_scause();
 
-    if !sstatus.contains(Sstatus::SPP) {
-        panic!("kerneltrap: not from supervisor mode");
-    }
-
-    if intr_get() {
-        panic!("kerneltrap: interrupts enabled");
-    }
+    assert!(
+        sstatus.contains(Sstatus::SPP),
+        "kerneltrap: not from supervisor mode"
+    );
+    assert!(!intr_get(), "kerneltrap: interrupts enabled");
 
     let which_dev = devintr();
     if which_dev == 0 {
