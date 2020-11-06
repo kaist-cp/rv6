@@ -324,8 +324,7 @@ impl Kernel {
                 break;
             }
 
-            *arg = self.alloc();
-            assert!(!arg.is_null(), "sys_exec kalloc");
+            *arg = self.alloc().expect("sys_exec kalloc").into_usize() as *mut _;
 
             if fetchstr(UVAddr::new(uarg), slice::from_raw_parts_mut(*arg, PGSIZE)).is_err() {
                 break;

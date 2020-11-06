@@ -1,8 +1,5 @@
+use core::fmt::{self, Write};
 use core::sync::atomic::{spin_loop_hint, AtomicBool, Ordering};
-use core::{
-    fmt::{self, Write},
-    ptr,
-};
 use spin::Once;
 
 use crate::{
@@ -20,7 +17,6 @@ use crate::{
     proc::{cpuid, procinit, scheduler, Cpu, ProcessSystem},
     riscv::PGSIZE,
     sleepablelock::Sleepablelock,
-    some_or,
     spinlock::Spinlock,
     trap::{trapinit, trapinithart},
     uart::Uart,
@@ -150,12 +146,12 @@ impl Kernel {
     /// Allocate one 4096-byte page of physical memory.
     /// Returns a pointer that the kernel can use.
     /// Returns 0 if the memory cannot be allocated.
-    pub unsafe fn alloc(&self) -> *mut u8 {
-        let mut page = some_or!(kernel().kmem.lock().alloc(), return ptr::null_mut());
+    pub unsafe fn alloc(&self) -> Option<Page> {
+        let mut page = kernel().kmem.lock().alloc()?;
 
         // fill with junk
         page.write_bytes(5);
-        page.into_usize() as _
+        Some(page)
     }
 
     /// Prints the given formatted string with the Console.

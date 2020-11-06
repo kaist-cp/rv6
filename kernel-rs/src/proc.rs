@@ -11,6 +11,7 @@ use crate::{
     println,
     riscv::{intr_get, intr_on, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
     sleepablelock::SleepablelockGuard,
+    some_or,
     spinlock::{pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard},
     string::safestrcpy,
     trap::usertrapret,
@@ -468,8 +469,8 @@ impl ProcData {
     /// Map it high in memory, followed by an invalid
     /// guard page.
     unsafe fn palloc(&mut self, page_table: &mut PageTable<KVAddr>, i: usize) {
-        let pa = kernel().alloc();
-        assert!(!pa.is_null(), "kalloc");
+        let page = kernel().alloc().expect("kalloc");
+        let pa = page.into_usize();
 
         let va: usize = kstack(i);
         page_table.kvmmap(
@@ -578,10 +579,8 @@ impl ProcessSystem {
                 guard.deref_mut_info().pid = self.allocpid();
 
                 // Allocate a trapframe page.
-                data.tf = kernel().alloc() as *mut Trapframe;
-                if data.tf.is_null() {
-                    return Err(());
-                }
+                let page = some_or!(kernel().alloc(), return Err(()));
+                data.tf = page.into_usize() as *mut Trapframe;
 
                 // An empty user page table.
                 data.pagetable = proc_pagetable(p as *const _ as *mut _);

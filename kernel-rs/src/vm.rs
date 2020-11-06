@@ -237,14 +237,9 @@ impl<A: VAddr> PageTable<A> {
     }
 
     pub fn alloc_root(&mut self) {
-        let page = unsafe { kernel().alloc() } as *mut RawPageTable;
-        assert!(!page.is_null(), "PageTable new: out of memory");
-
-        unsafe {
-            ptr::write_bytes(page, 0, 1);
-        }
-
-        self.ptr = page;
+        let mut page = unsafe { kernel().alloc() }.expect("PageTable new: out of memory");
+        page.write_bytes(0);
+        self.ptr = page.into_usize() as *mut _;
     }
 
     pub fn from_raw(ptr: *mut RawPageTable) -> Self {
@@ -292,13 +287,11 @@ impl<A: VAddr> PageTable<A> {
                 if alloc == 0 {
                     return None;
                 }
-                let k = kernel().alloc();
-                if k.is_null() {
-                    return None;
-                }
+                let mut page = kernel().alloc()?;
+                page.write_bytes(0);
+                let k = page.into_usize();
 
-                ptr::write_bytes(k, 0, PGSIZE);
-                pte.set_inner(pa2pte(PAddr::new(k as usize)));
+                pte.set_inner(pa2pte(PAddr::new(k)));
                 pte.set_flag(PTE_V);
                 pagetable = pte.as_table_mut_unchecked();
             }
@@ -384,7 +377,7 @@ impl PageTable<UVAddr> {
     pub unsafe fn uvminit(&mut self, src: &[u8]) {
         assert!(src.len() < PGSIZE, "inituvm: more than a page");
 
-        let mem: *mut u8 = kernel().alloc();
+        let mem = kernel().alloc().unwrap().into_usize() as *mut u8;
         ptr::write_bytes(mem, 0, PGSIZE);
         self.mappages(
             VAddr::new(0),
@@ -405,22 +398,17 @@ impl PageTable<UVAddr> {
         oldsz = pgroundup(oldsz);
         let mut a = oldsz;
         while a < newsz {
-            let mem = kernel().alloc();
-            if mem.is_null() {
+            let mut mem = some_or!(kernel().alloc(), {
                 self.uvmdealloc(a, oldsz);
                 return Err(());
-            }
-            ptr::write_bytes(mem, 0, PGSIZE);
+            });
+            mem.write_bytes(0);
+            let pa = mem.into_usize();
             if self
-                .mappages(
-                    VAddr::new(a),
-                    PGSIZE,
-                    mem as usize,
-                    PTE_W | PTE_X | PTE_R | PTE_U,
-                )
+                .mappages(VAddr::new(a), PGSIZE, pa, PTE_W | PTE_X | PTE_R | PTE_U)
                 .is_err()
             {
-                kernel().free(Page::from_usize(mem as _));
+                kernel().free(Page::from_usize(pa));
                 self.uvmdealloc(a, oldsz);
                 return Err(());
             }
@@ -447,11 +435,12 @@ impl PageTable<UVAddr> {
             });
             let pa = pte.get_pa();
             let flags = pte.get_flags() as u32;
-            let mem = kernel().alloc();
-            if mem.is_null() {
-                return Err(());
-            }
-            ptr::copy(pa.into_usize() as *mut u8 as *const u8, mem, PGSIZE);
+            let mem = some_or!(kernel().alloc(), return Err(())).into_usize();
+            ptr::copy(
+                pa.into_usize() as *mut u8 as *const u8,
+                mem as *mut u8,
+                PGSIZE,
+            );
             if (*new_ptable)
                 .mappages(VAddr::new(i), PGSIZE, mem as usize, flags as i32)
                 .is_err()
