@@ -15,11 +15,12 @@ use crate::{
     arena::{Arena, ArenaObject, MruArena, Rc},
     fs::BSIZE,
     kernel::kernel,
+    param::NBUF,
     proc::WaitChannel,
     sleeplock::Sleeplock,
     spinlock::Spinlock,
+    virtio_disk::Disk,
 };
-use crate::{param::NBUF, virtio_disk::virtio_disk_rw};
 
 use core::mem;
 use core::ops::{Deref, DerefMut};
@@ -125,7 +126,7 @@ impl Buf {
 
     /// Write self's contents to disk.  Must be locked.
     pub unsafe fn write(&mut self) {
-        virtio_disk_rw(self, true);
+        Disk::virtio_rw(&mut kernel().disk.lock(), self, true);
     }
 }
 
@@ -163,7 +164,7 @@ impl BufUnlocked {
 
         if !result.deref_inner().valid {
             unsafe {
-                virtio_disk_rw(&mut result, false);
+                Disk::virtio_rw(&mut kernel().disk.lock(), &mut result, false);
             }
             result.deref_mut_inner().valid = true;
         }

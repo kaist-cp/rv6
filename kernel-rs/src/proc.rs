@@ -303,7 +303,7 @@ pub struct ProcData {
     pub sz: usize,
 
     /// Page table.
-    pub pagetable: mem::MaybeUninit<PageTable<UVAddr>>,
+    pub pagetable: PageTable<UVAddr>,
 
     /// Data page for trampoline.S.
     pub tf: *mut Trapframe,
@@ -435,7 +435,7 @@ impl ProcData {
         Self {
             kstack: 0,
             sz: 0,
-            pagetable: mem::MaybeUninit::uninit(),
+            pagetable: PageTable::zero(),
             tf: ptr::null_mut(),
             context: Context::new(),
             open_files: [None; NOFILE],
@@ -564,7 +564,7 @@ impl ProcessSystem {
                 }
 
                 // An empty user page table.
-                data.pagetable = mem::MaybeUninit::new(proc_pagetable(p as *const _ as *mut _));
+                data.pagetable = proc_pagetable(p as *const _ as *mut _);
 
                 // Set up new context to start executing at forkret,
                 // which returns to user space.
@@ -635,7 +635,7 @@ impl ProcessSystem {
         let data = &mut *guard.data.get();
         // Allocate one user page and copy init's instructions
         // and data into it.
-        data.pagetable.assume_init_mut().uvminit(&INITCODE);
+        data.pagetable.uvminit(&INITCODE);
         data.sz = PGSIZE;
 
         // Prepare for the very first "return" from kernel to user.
@@ -669,8 +669,7 @@ impl ProcessSystem {
         // Copy user memory from parent to child.
         if pdata
             .pagetable
-            .assume_init_mut()
-            .uvmcopy(npdata.pagetable.assume_init_mut(), pdata.sz)
+            .uvmcopy(&mut npdata.pagetable, pdata.sz)
             .is_err()
         {
             freeproc(np);
@@ -728,7 +727,6 @@ impl ProcessSystem {
                         if !addr.is_null()
                             && data
                                 .pagetable
-                                .assume_init_mut()
                                 .copyout(
                                     addr,
                                     slice::from_raw_parts_mut(
@@ -862,11 +860,11 @@ unsafe fn freeproc(mut p: ProcGuard) {
         kernel().free(data.tf as _);
     }
     data.tf = ptr::null_mut();
-    if !data.pagetable.assume_init_mut().is_null() {
+    if !data.pagetable.is_null() {
         let sz = data.sz;
-        proc_freepagetable(data.pagetable.assume_init_mut(), sz);
+        proc_freepagetable(&mut data.pagetable, sz);
     }
-    data.pagetable = mem::MaybeUninit::uninit();
+    data.pagetable = PageTable::zero();
     data.sz = 0;
     p.deref_mut_info().pid = 0;
     p.deref_mut_info().parent = ptr::null_mut();
@@ -938,16 +936,10 @@ pub unsafe fn resizeproc(n: i32) -> i32 {
     let sz = match n.cmp(&0) {
         cmp::Ordering::Equal => sz,
         cmp::Ordering::Greater => {
-            let sz = data
-                .pagetable
-                .assume_init_mut()
-                .uvmalloc(sz, sz.wrapping_add(n as usize));
+            let sz = data.pagetable.uvmalloc(sz, sz.wrapping_add(n as usize));
             ok_or!(sz, return -1)
         }
-        cmp::Ordering::Less => data
-            .pagetable
-            .assume_init_mut()
-            .uvmdealloc(sz, sz.wrapping_add(n as usize)),
+        cmp::Ordering::Less => data.pagetable.uvmdealloc(sz, sz.wrapping_add(n as usize)),
     };
     data.sz = sz;
     0

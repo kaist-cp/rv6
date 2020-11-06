@@ -61,16 +61,6 @@ impl Add<usize> for UVAddr {
 }
 
 pub trait VAddr: Copy + Add<usize, Output = Self> {
-    /// Copy from either a user address, or kernel address,
-    /// depending on usr_src.
-    /// Returns Ok(()) on success, Err(()) on error.
-    unsafe fn copyin(dst: &mut [u8], src: Self) -> Result<(), ()>;
-
-    /// Copy to either a user address, or kernel address,
-    /// depending on usr_dst.
-    /// Returns Ok(()) on success, Err(()) on error.
-    unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()>;
-
     fn new(value: usize) -> Self;
 
     fn into_usize(&self) -> usize;
@@ -78,19 +68,17 @@ pub trait VAddr: Copy + Add<usize, Output = Self> {
     fn is_null(&self) -> bool;
 
     fn is_page_aligned(&self) -> bool;
+
+    /// Copy from either a user address, or kernel address.
+    /// Returns Ok(()) on success, Err(()) on error.
+    unsafe fn copyin(dst: &mut [u8], src: Self) -> Result<(), ()>;
+
+    /// Copy to either a user address, or kernel address.
+    /// Returns Ok(()) on success, Err(()) on error.
+    unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()>;
 }
 
 impl VAddr for KVAddr {
-    unsafe fn copyin(dst: &mut [u8], src: Self) -> Result<(), ()> {
-        ptr::copy(src.into_usize() as *const u8, dst.as_mut_ptr(), dst.len());
-        Ok(())
-    }
-
-    unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()> {
-        ptr::copy(src.as_ptr(), dst.into_usize() as *mut u8, src.len());
-        Ok(())
-    }
-
     fn new(value: usize) -> Self {
         KVAddr(value)
     }
@@ -106,27 +94,19 @@ impl VAddr for KVAddr {
     fn is_page_aligned(&self) -> bool {
         self.0 % PGSIZE == 0
     }
-}
 
-impl VAddr for UVAddr {
     unsafe fn copyin(dst: &mut [u8], src: Self) -> Result<(), ()> {
-        let p = myproc();
-        (*(*p).data.get())
-            .pagetable
-            .assume_init_mut()
-            .copyin(dst, src)
-            .map_or(Err(()), |_v| Ok(()))
+        ptr::copy(src.into_usize() as *const u8, dst.as_mut_ptr(), dst.len());
+        Ok(())
     }
 
     unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()> {
-        let p = myproc();
-        (*(*p).data.get())
-            .pagetable
-            .assume_init_mut()
-            .copyout(dst, src)
-            .map_or(Err(()), |_v| Ok(()))
+        ptr::copy(src.as_ptr(), dst.into_usize() as *mut u8, src.len());
+        Ok(())
     }
+}
 
+impl VAddr for UVAddr {
     fn new(value: usize) -> Self {
         UVAddr(value)
     }
@@ -141,6 +121,22 @@ impl VAddr for UVAddr {
 
     fn is_page_aligned(&self) -> bool {
         self.0 % PGSIZE == 0
+    }
+
+    unsafe fn copyin(dst: &mut [u8], src: Self) -> Result<(), ()> {
+        let p = myproc();
+        (*(*p).data.get())
+            .pagetable
+            .copyin(dst, src)
+            .map_or(Err(()), |_v| Ok(()))
+    }
+
+    unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()> {
+        let p = myproc();
+        (*(*p).data.get())
+            .pagetable
+            .copyout(dst, src)
+            .map_or(Err(()), |_v| Ok(()))
     }
 }
 

@@ -9,6 +9,9 @@
 // virtio mmio control registers, mapped starting at 0x10001000.
 // from qemu virtio_mmio.h
 
+use crate::memlayout::VIRTIO0;
+use core::ptr;
+
 #[repr(usize)]
 pub enum MmioRegs {
     /// 0x74726976
@@ -37,6 +40,16 @@ pub enum MmioRegs {
     QueueNotify = 0x050,
     /// read/write
     Status = 0x070,
+}
+
+impl MmioRegs {
+    pub unsafe fn read(self) -> u32 {
+        ptr::read_volatile((VIRTIO0 as *mut u8).add(self as _) as _)
+    }
+
+    pub unsafe fn write(self, src: u32) {
+        ptr::write_volatile((VIRTIO0 as *mut u8).add(self as _) as _, src)
+    }
 }
 
 bitflags! {

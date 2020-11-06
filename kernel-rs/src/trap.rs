@@ -10,7 +10,6 @@ use crate::{
     },
     syscall::syscall,
     uart::Uart,
-    virtio_disk::virtio_disk_intr,
 };
 use core::mem;
 
@@ -140,7 +139,7 @@ pub unsafe fn usertrapret() {
     w_sepc((*data.tf).epc);
 
     // tell trampoline.S the user page table to switch to.
-    let satp: usize = make_satp(data.pagetable.assume_init_mut().as_raw() as usize);
+    let satp: usize = make_satp(data.pagetable.as_raw() as usize);
 
     // jump to trampoline.S at the top of memory, which
     // switches to the user page table, restores user registers,
@@ -213,7 +212,7 @@ pub unsafe fn devintr() -> i32 {
         if irq == UART0_IRQ {
             Uart::intr();
         } else if irq == VIRTIO0_IRQ {
-            virtio_disk_intr();
+            kernel().disk.lock().virtio_intr();
         }
 
         plic_complete(irq);

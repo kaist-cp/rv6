@@ -88,7 +88,7 @@ impl File {
         match &self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                 let mut st = ip.deref().lock().stat();
-                (*(*p).data.get()).pagetable.assume_init_mut().copyout(
+                (*(*p).data.get()).pagetable.copyout(
                     addr,
                     slice::from_raw_parts_mut(
                         &mut st as *mut Stat as *mut u8,

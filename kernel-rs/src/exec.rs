@@ -231,7 +231,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
         );
 
         // Commit to the user image.
-        let mut oldpagetable = mem::replace(data.pagetable.assume_init_mut(), pt);
+        let mut oldpagetable = mem::replace(&mut data.pagetable, pt);
         data.sz = sz;
 
         // initial program counter = main
