@@ -2,7 +2,7 @@
 
 use crate::{
     file::RcFile,
-    fs::{fs, fsinit, Path, RcInode},
+    fs::{Path, RcInode},
     kernel::kernel,
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     ok_or,
@@ -466,7 +466,7 @@ impl ProcData {
         for file in &mut self.open_files {
             *file = None;
         }
-        let _tx = fs().begin_transaction();
+        let _tx = kernel().fs().begin_transaction();
         self.cwd = None;
     }
 }
@@ -1028,6 +1028,6 @@ unsafe fn forkret() {
     // File system initialization must be run in the context of a
     // regular process (e.g., because it calls sleep), and thus cannot
     // be run from main().
-    fsinit(ROOTDEV);
+    kernel().fsinit(ROOTDEV);
     usertrapret();
 }

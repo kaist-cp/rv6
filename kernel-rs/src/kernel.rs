@@ -179,6 +179,18 @@ impl Kernel {
         let id: usize = cpuid();
         &self.cpus[id] as *const _ as *mut _
     }
+
+    pub fn fsinit(&self, dev: i32) {
+        self.file_system.call_once(|| FileSystem::new(dev));
+    }
+
+    pub fn fs(&self) -> &FileSystem {
+        if let Some(fs) = self.file_system.get() {
+            fs
+        } else {
+            unreachable!()
+        }
+    }
 }
 
 /// print! macro prints to the console.

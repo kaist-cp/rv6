@@ -169,7 +169,7 @@ impl Drop for FsTransaction<'_> {
 }
 
 impl FileSystem {
-    fn new(dev: i32) -> Self {
+    pub fn new(dev: i32) -> Self {
         unsafe {
             let superblock = Superblock::new(dev);
             assert_eq!(superblock.magic, FSMAGIC, "invalid file system");
@@ -198,23 +198,11 @@ impl FileSystem {
     }
 }
 
-pub fn fsinit(dev: i32) {
-    kernel().file_system.call_once(|| FileSystem::new(dev));
-}
-
-pub fn fs() -> &'static FileSystem {
-    if let Some(fs) = kernel().file_system.get() {
-        fs
-    } else {
-        unreachable!()
-    }
-}
-
 /// Zero a block.
 unsafe fn bzero(dev: i32, bno: i32) {
     let mut bp = Buf::new(dev as u32, bno as u32);
     ptr::write_bytes(bp.deref_mut_inner().data.as_mut_ptr(), 0, BSIZE);
-    fs().log_write(bp);
+    kernel().fs().log_write(bp);
 }
 
 /// Blocks.
@@ -222,15 +210,15 @@ unsafe fn bzero(dev: i32, bno: i32) {
 unsafe fn balloc(dev: u32) -> u32 {
     let mut b: u32 = 0;
     let mut bi: u32 = 0;
-    while b < fs().superblock.size {
-        let mut bp = Buf::new(dev, fs().superblock.bblock(b));
-        while bi < BPB && (b + bi) < fs().superblock.size {
+    while b < kernel().fs().superblock.size {
+        let mut bp = Buf::new(dev, kernel().fs().superblock.bblock(b));
+        while bi < BPB && (b + bi) < kernel().fs().superblock.size {
             let m = (1) << (bi % 8);
             if bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & m == 0 {
                 // Is block free?
                 bp.deref_mut_inner().data[(bi / 8) as usize] =
                     (bp.deref_mut_inner().data[(bi / 8) as usize] as i32 | m) as u8; // Mark block in use.
-                fs().log_write(bp);
+                kernel().fs().log_write(bp);
                 bzero(dev as i32, (b + bi) as i32);
                 return b + bi;
             }
@@ -243,7 +231,7 @@ unsafe fn balloc(dev: u32) -> u32 {
 
 /// Free a disk block.
 unsafe fn bfree(dev: i32, b: u32) {
-    let mut bp = Buf::new(dev as u32, fs().superblock.bblock(b));
+    let mut bp = Buf::new(dev as u32, kernel().fs().superblock.bblock(b));
     let bi: i32 = b.wrapping_rem(BPB) as i32;
     let m: i32 = (1) << (bi % 8);
     assert_ne!(
@@ -253,5 +241,5 @@ unsafe fn bfree(dev: i32, b: u32) {
     );
     bp.deref_mut_inner().data[(bi / 8) as usize] =
         (bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & !m) as u8;
-    fs().log_write(bp);
+    kernel().fs().log_write(bp);
 }

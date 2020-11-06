@@ -4,7 +4,7 @@
 
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, Rc},
-    fs::{fs, RcInode, BSIZE},
+    fs::{RcInode, BSIZE},
     kernel::kernel,
     param::{MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
@@ -146,7 +146,7 @@ impl File {
                 let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
                 for bytes_written in (0..n).step_by(max) {
                     let bytes_to_write = cmp::min(n - bytes_written, max as i32);
-                    let _tx = fs().begin_transaction();
+                    let _tx = kernel().fs().begin_transaction();
                     let mut ip = ip.deref().lock();
                     let curr_off = *off.get();
                     let bytes_written = ip
@@ -183,7 +183,7 @@ impl ArenaObject for File {
             match typ {
                 FileType::Pipe { mut pipe } => unsafe { pipe.close(self.writable) },
                 FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
-                    let _tx = fs().begin_transaction();
+                    let _tx = kernel().fs().begin_transaction();
                     drop(ip);
                 }
                 _ => (),

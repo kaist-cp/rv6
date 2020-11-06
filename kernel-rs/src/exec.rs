@@ -1,7 +1,8 @@
 #![allow(clippy::unit_arg)]
 
 use crate::{
-    fs::{fs, InodeGuard, Path},
+    fs::{InodeGuard, Path},
+    kernel::kernel,
     ok_or,
     param::MAXARG,
     proc::{myproc, proc_freepagetable, proc_pagetable, Proc},
@@ -95,7 +96,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
     let mut p: *mut Proc = myproc();
     let mut data = &mut *(*p).data.get();
 
-    let _tx = fs().begin_transaction();
+    let _tx = kernel().fs().begin_transaction();
     let ptr = ok_or!(path.namei(), {
         return Err(());
     });

@@ -8,7 +8,7 @@ use crate::{
     exec::exec,
     fcntl::FcntlFlags,
     file::{FileType, RcFile},
-    fs::{fs, Dirent, FileName, Inode, InodeGuard, Path, RcInode, DIRENT_SIZE},
+    fs::{Dirent, FileName, Inode, InodeGuard, Path, RcInode, DIRENT_SIZE},
     kernel::kernel,
     ok_or,
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
@@ -98,7 +98,7 @@ pub unsafe fn sys_link() -> usize {
     let mut old: [u8; MAXPATH as usize] = [0; MAXPATH];
     let old = ok_or!(argstr(0, &mut old), return usize::MAX);
     let new = ok_or!(argstr(1, &mut new), return usize::MAX);
-    let _tx = fs().begin_transaction();
+    let _tx = kernel().fs().begin_transaction();
     let ptr = ok_or!(Path::new(old).namei(), return usize::MAX);
     let mut ip = ptr.lock();
     if ip.deref_inner().typ == T_DIR {
@@ -126,7 +126,7 @@ pub unsafe fn sys_unlink() -> usize {
     let mut de: Dirent = Default::default();
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
     let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-    let _tx = fs().begin_transaction();
+    let _tx = kernel().fs().begin_transaction();
     let (ptr, name) = ok_or!(Path::new(path).nameiparent(), return usize::MAX);
     let mut dp = ptr.lock();
 
@@ -214,7 +214,7 @@ pub unsafe fn sys_open() -> usize {
     let omode = ok_or!(argint(1), return usize::MAX);
     let omode = FcntlFlags::from_bits_truncate(omode);
 
-    let _tx = fs().begin_transaction();
+    let _tx = kernel().fs().begin_transaction();
 
     let (ip, (typ, major)) = if omode.contains(FcntlFlags::O_CREATE) {
         ok_or!(
@@ -263,7 +263,7 @@ pub unsafe fn sys_open() -> usize {
 
 pub unsafe fn sys_mkdir() -> usize {
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
-    let _tx = fs().begin_transaction();
+    let _tx = kernel().fs().begin_transaction();
     let path = ok_or!(argstr(0, &mut path), return usize::MAX);
     ok_or!(
         create(Path::new(path), T_DIR, 0, 0, |_| ()),
@@ -277,7 +277,7 @@ pub unsafe fn sys_mknod() -> usize {
     let path = ok_or!(argstr(0, &mut path), return usize::MAX);
     let major = ok_or!(argint(1), return usize::MAX) as u16;
     let minor = ok_or!(argint(2), return usize::MAX) as u16;
-    let _tx = fs().begin_transaction();
+    let _tx = kernel().fs().begin_transaction();
     let _ip = ok_or!(
         create(Path::new(path), T_DEVICE, major, minor, |_| ()),
         return usize::MAX
@@ -289,7 +289,7 @@ pub unsafe fn sys_chdir() -> usize {
     let mut path: [u8; MAXPATH] = [0; MAXPATH];
     let p: *mut Proc = myproc();
     let mut data = &mut *(*p).data.get();
-    let _tx = fs().begin_transaction();
+    let _tx = kernel().fs().begin_transaction();
     let path = ok_or!(argstr(0, &mut path), return usize::MAX);
     let ptr = ok_or!(Path::new(path).namei(), return usize::MAX);
     let ip = ptr.lock();

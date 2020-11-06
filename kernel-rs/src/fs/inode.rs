@@ -1,5 +1,5 @@
 use super::{
-    balloc, bfree, fs, Dirent, FileName, BSIZE, DIRENT_SIZE, IPB, MAXFILE, NDIRECT, NINDIRECT,
+    balloc, bfree, Dirent, FileName, BSIZE, DIRENT_SIZE, IPB, MAXFILE, NDIRECT, NINDIRECT,
 };
 
 use crate::{
@@ -151,7 +151,7 @@ impl InodeGuard<'_> {
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk, since i-node cache is write-through.
     pub unsafe fn update(&self) {
-        let mut bp = Buf::new(self.dev, fs().superblock.iblock(self.inum));
+        let mut bp = Buf::new(self.dev, kernel().fs().superblock.iblock(self.inum));
         let mut dip: *mut Dinode = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
             .add((self.inum as usize).wrapping_rem(IPB));
         let inner = self.deref_inner();
@@ -161,7 +161,7 @@ impl InodeGuard<'_> {
         (*dip).nlink = inner.nlink;
         (*dip).size = inner.size;
         (*dip).addrs.copy_from_slice(&inner.addrs);
-        fs().log_write(bp);
+        kernel().fs().log_write(bp);
     }
 
     /// Truncate inode (discard contents).
@@ -247,7 +247,7 @@ impl InodeGuard<'_> {
                 break;
             } else {
                 unsafe {
-                    fs().log_write(bp);
+                    kernel().fs().log_write(bp);
                 }
                 tot = tot.wrapping_add(m);
                 off = off.wrapping_add(m);
@@ -303,7 +303,7 @@ impl InodeGuard<'_> {
             if addr == 0 {
                 addr = balloc(self.dev);
                 *a.add(bn) = addr;
-                fs().log_write(bp);
+                kernel().fs().log_write(bp);
             }
         }
         addr
@@ -456,7 +456,7 @@ impl Inode {
     pub fn lock(&self) -> InodeGuard<'_> {
         let mut guard = self.inner.lock();
         if !guard.valid {
-            let mut bp = Buf::new(self.dev, fs().superblock.iblock(self.inum));
+            let mut bp = Buf::new(self.dev, kernel().fs().superblock.iblock(self.inum));
             let dip: &mut Dinode = unsafe {
                 &mut *((bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
                     .add((self.inum as usize).wrapping_rem(IPB)))
@@ -495,8 +495,8 @@ impl Inode {
     /// Mark it as allocated by  giving it type type.
     /// Returns an unlocked but allocated and referenced inode.
     pub unsafe fn alloc(dev: u32, typ: i16) -> RcInode {
-        for inum in 1..fs().superblock.ninodes {
-            let mut bp = Buf::new(dev, fs().superblock.iblock(inum));
+        for inum in 1..kernel().fs().superblock.ninodes {
+            let mut bp = Buf::new(dev, kernel().fs().superblock.iblock(inum));
             let dip = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
                 .add((inum as usize).wrapping_rem(IPB));
 
@@ -506,7 +506,7 @@ impl Inode {
                 (*dip).typ = typ;
 
                 // mark it allocated on the disk
-                fs().log_write(bp);
+                kernel().fs().log_write(bp);
                 return Inode::get(dev, inum);
             }
         }
