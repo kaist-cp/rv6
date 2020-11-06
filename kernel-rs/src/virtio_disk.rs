@@ -282,9 +282,8 @@ impl Disk {
             != ((*self.used)[0].id as usize).wrapping_rem(NUM)
         {
             let id = (*self.used)[0].elems[self.used_idx as usize].id as usize;
-            if self.info[id].status {
-                panic!("virtio_self_intr status");
-            }
+            assert!(!self.info[id].status, "virtio_self_intr status");
+
             (*self.info[id].b).deref_mut_inner().disk = false;
 
             // Self is done with Buf.

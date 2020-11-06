@@ -37,9 +37,7 @@ impl RawSpinlock {
         unsafe {
             push_off();
         }
-        if self.holding() {
-            panic!("acquire {}", self.name);
-        }
+        assert!(!self.holding(), "acquire {}", self.name);
 
         // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
         //   a5 = 1
@@ -69,9 +67,7 @@ impl RawSpinlock {
 
     /// Release the lock.
     pub fn release(&self) {
-        if !self.holding() {
-            panic!("release {}", self.name);
-        }
+        assert!(self.holding(), "release {}", self.name);
 
         // Tell the C compiler and the CPU to not move loads or stores
         // past this point, to ensure that all the stores in the critical
@@ -218,13 +214,11 @@ pub unsafe fn push_off() {
 
 pub unsafe fn pop_off() {
     let mut c: *mut Cpu = kernel().mycpu();
-    if intr_get() {
-        panic!("pop_off - interruptible");
-    }
+    assert!(!intr_get(), "pop_off - interruptible");
+    assert!((*c).noff >= 1, "pop_off");
+
     (*c).noff -= 1;
-    if (*c).noff < 0 {
-        panic!("pop_off");
-    }
+
     if (*c).noff == 0 && (*c).interrupt_enabled {
         intr_on();
     }

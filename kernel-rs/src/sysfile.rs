@@ -135,9 +135,8 @@ pub unsafe fn sys_unlink() -> usize {
         // TODO: use other Result related functions
         if let Ok((ptr2, off)) = dp.dirlookup(&name) {
             let mut ip = ptr2.lock();
-            if ip.deref_inner().nlink < 1 {
-                panic!("unlink: nlink < 1");
-            }
+            assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
+
             if ip.deref_inner().typ != T_DIR || ip.isdirempty() {
                 let bytes_write = dp.write(
                     KVAddr::new(&mut de as *mut Dirent as usize),
@@ -325,9 +324,7 @@ pub unsafe fn sys_exec() -> usize {
         }
 
         *arg = kernel().alloc();
-        if arg.is_null() {
-            panic!("sys_exec kalloc");
-        }
+        assert!(!arg.is_null(), "sys_exec kalloc");
 
         if fetchstr(UVAddr::new(uarg), slice::from_raw_parts_mut(*arg, PGSIZE)).is_err() {
             break;

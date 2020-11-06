@@ -9,8 +9,6 @@ use crate::{
 pub unsafe fn sys_exit() -> usize {
     let n = ok_or!(argint(0), return usize::MAX);
     kernel().procs.exit_current(n);
-
-    panic!("sys_exit: not reached");
 }
 
 pub unsafe fn sys_getpid() -> usize {

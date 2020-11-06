@@ -780,12 +780,10 @@ impl ProcessSystem {
     /// Exit the current process.  Does not return.
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
-    pub unsafe fn exit_current(&self, status: i32) {
+    pub unsafe fn exit_current(&self, status: i32) -> ! {
         let p = myproc();
         let data = &mut *(*p).data.get();
-        if p == self.initial_proc {
-            panic!("init exiting");
-        }
+        assert_ne!(p, self.initial_proc, "init exiting");
 
         data.close_files();
 
@@ -825,7 +823,8 @@ impl ProcessSystem {
 
         // Jump into the scheduler, never to return.
         guard.sched();
-        panic!("zombie exit");
+
+        unreachable!("zombie exit")
     }
 
     /// Print a process listing to console.  For debugging.

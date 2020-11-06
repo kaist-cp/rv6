@@ -440,9 +440,8 @@ impl PageTable<UVAddr> {
             let pte = self
                 .walk(UVAddr::new(i), 0)
                 .expect("uvmcopy: pte should exist");
-            if !pte.check_flag(PTE_V) {
-                panic!("uvmcopy: page not present");
-            }
+            assert!(pte.check_flag(PTE_V), "uvmcopy: page not present");
+
             let mut new_ptable = scopeguard::guard(new, |ptable| {
                 ptable.uvmunmap(UVAddr::new(0), i, 1);
             });
@@ -482,9 +481,8 @@ impl PageTable<UVAddr> {
                 );
                 panic!("uvmunmap: not mapped");
             }
-            if pte.get_flags() == PTE_V {
-                panic!("uvmunmap: not a leaf");
-            }
+            assert_ne!(pte.get_flags(), PTE_V, "uvmunmap: not a leaf");
+
             if do_free != 0 {
                 pa = pte.get_pa().into_usize();
                 kernel().free(pa as _);
@@ -682,9 +680,8 @@ impl PageTable<KVAddr> {
     /// Only used when booting.
     /// Does not flush TLB or enable paging.
     pub unsafe fn kvmmap(&mut self, va: KVAddr, pa: PAddr, sz: usize, perm: i32) {
-        if self.mappages(va, sz, pa.into_usize(), perm).is_err() {
-            panic!("kvmmap");
-        };
+        self.mappages(va, sz, pa.into_usize(), perm)
+            .expect("kvmmap");
     }
 
     /// Translate a kernel virtual address to
