@@ -3,6 +3,7 @@
 //! and pipe buffers. Allocates whole 4096-byte pages.
 use crate::{
     memlayout::PHYSTOP,
+    page::Page,
     riscv::{pgroundup, PGSIZE},
 };
 
@@ -30,8 +31,8 @@ impl Kmem {
         }
     }
 
-    pub unsafe fn free(&mut self, pa: *mut u8) {
-        let mut r = pa as *mut Run;
+    pub unsafe fn free(&mut self, pa: Page) {
+        let mut r = pa.into_usize() as *mut Run;
         (*r).next = self.head;
         self.head = r;
     }
@@ -39,17 +40,17 @@ impl Kmem {
     pub unsafe fn freerange(&mut self, pa_start: *mut u8, pa_end: *mut u8) {
         let mut p = pgroundup(pa_start as _) as *mut u8;
         while p.add(PGSIZE) <= pa_end {
-            self.free(p);
+            self.free(Page::from_usize(p as _));
             p = p.add(PGSIZE);
         }
     }
 
-    pub unsafe fn alloc(&mut self) -> *mut u8 {
+    pub unsafe fn alloc(&mut self) -> Option<Page> {
         if self.head.is_null() {
-            return ptr::null_mut();
+            return None;
         }
         let next = (*self.head).next;
-        mem::replace(&mut self.head, next) as _
+        Some(Page::from_usize(mem::replace(&mut self.head, next) as _))
     }
 }
 

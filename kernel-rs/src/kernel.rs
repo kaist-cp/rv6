@@ -13,13 +13,14 @@ use crate::{
     fs::{FileSystem, Inode},
     kalloc::{end, kinit, Kmem},
     memlayout::PHYSTOP,
-    page::Page,
+    page::{Page, RawPage},
     param::{NBUF, NCPU, NDEV, NFILE, NINODE},
     plic::{plicinit, plicinithart},
     println,
     proc::{cpuid, procinit, scheduler, Cpu, ProcessSystem},
     riscv::PGSIZE,
     sleepablelock::Sleepablelock,
+    some_or,
     spinlock::Spinlock,
     trap::{trapinit, trapinithart},
     uart::Uart,
@@ -61,7 +62,7 @@ pub struct Kernel {
     /// This is a global instead of allocated because it must be multiple contiguous pages, which
     /// `kernel().alloc()` doesn't support, and page aligned.
     // TODO(efenniht): I moved out pages from Disk. Did I changed semantics (pointer indirection?)
-    virtqueue: [Page; 2],
+    virtqueue: [RawPage; 2],
 
     /// It may sleep until some Descriptors are freed.
     pub disk: Sleepablelock<Disk>,
@@ -103,7 +104,7 @@ impl Kernel {
                 "BCACHE",
                 MruArena::new(array_const_fn_init![bcache_entry; 30]),
             ),
-            virtqueue: [Page::DEFAULT, Page::DEFAULT],
+            virtqueue: [RawPage::DEFAULT, RawPage::DEFAULT],
             disk: Sleepablelock::new("virtio_disk", Disk::zero()),
             devsw: [Devsw {
                 read: None,
@@ -133,32 +134,28 @@ impl Kernel {
     /// which normally should have been returned by a
     /// call to kernel().alloc().  (The exception is when
     /// initializing the allocator; see kinit above.)
-    pub unsafe fn free(&self, pa: *mut u8) {
+    pub unsafe fn free(&self, mut page: Page) {
+        let pa = page.addr().into_usize();
         assert!(
-            (pa as usize).wrapping_rem(PGSIZE) == 0
-                && pa >= end.as_mut_ptr()
-                && (pa as usize) < PHYSTOP,
+            pa.wrapping_rem(PGSIZE) == 0 && (pa as *mut _) >= end.as_mut_ptr() && pa < PHYSTOP,
             "[Kernel::free]"
         );
 
         // Fill with junk to catch dangling refs.
-        ptr::write_bytes(pa, 1, PGSIZE);
+        page.write_bytes(1);
 
-        kernel().kmem.lock().free(pa);
+        kernel().kmem.lock().free(page);
     }
 
     /// Allocate one 4096-byte page of physical memory.
     /// Returns a pointer that the kernel can use.
     /// Returns 0 if the memory cannot be allocated.
     pub unsafe fn alloc(&self) -> *mut u8 {
-        let ret = kernel().kmem.lock().alloc();
-        if ret.is_null() {
-            return ret;
-        }
+        let mut page = some_or!(kernel().kmem.lock().alloc(), return ptr::null_mut());
 
         // fill with junk
-        ptr::write_bytes(ret, 5, PGSIZE);
-        ret
+        page.write_bytes(5);
+        page.into_usize() as _
     }
 
     /// Prints the given formatted string with the Console.

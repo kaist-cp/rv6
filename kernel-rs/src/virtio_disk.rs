@@ -7,7 +7,7 @@ use crate::{
     bio::Buf,
     fs::BSIZE,
     kernel::kernel,
-    page::Page,
+    page::RawPage,
     riscv::{PGSHIFT, PGSIZE},
     sleepablelock::SleepablelockGuard,
     virtio::*,
@@ -134,7 +134,7 @@ impl DescriptorPool {
         }
     }
 
-    fn new(page: *mut Page) -> Self {
+    fn new(page: *mut RawPage) -> Self {
         Self {
             desc: page as _,
             free: [true; NUM],
@@ -303,7 +303,7 @@ impl InflightInfo {
     }
 }
 
-pub unsafe fn virtio_disk_init(virtqueue: &mut [Page; 2], disk: &mut Disk) {
+pub unsafe fn virtio_disk_init(virtqueue: &mut [RawPage; 2], disk: &mut Disk) {
     let mut status: VirtIOStatus = VirtIOStatus::empty();
     assert!(
         MmioRegs::MagicValue.read() == 0x74726976

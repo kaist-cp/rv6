@@ -1,6 +1,7 @@
 use crate::{
     file::{FileType, RcFile},
     kernel::kernel,
+    page::Page,
     proc::{myproc, WaitChannel},
     spinlock::Spinlock,
     vm::UVAddr,
@@ -130,9 +131,9 @@ impl AllocatedPipe {
             write_waitchannel: WaitChannel::new(),
         };
         let f0 = RcFile::alloc(FileType::Pipe { pipe: Self { ptr } }, true, false)
-            .ok_or_else(|| kernel().free(ptr as _))?;
+            .ok_or_else(|| kernel().free(Page::from_usize(ptr as _)))?;
         let f1 = RcFile::alloc(FileType::Pipe { pipe: Self { ptr } }, false, true)
-            .ok_or_else(|| kernel().free(ptr as _))?;
+            .ok_or_else(|| kernel().free(Page::from_usize(ptr as _)))?;
 
         Ok((f0, f1))
     }
@@ -143,7 +144,7 @@ impl AllocatedPipe {
     // https://github.com/kaist-cp/rv6/pull/211#discussion_r491671723
     pub unsafe fn close(&mut self, writable: bool) {
         if (*self.ptr).close(writable) {
-            kernel().free(self.ptr as *mut Pipe as _);
+            kernel().free(Page::from_usize(self.ptr as *mut Pipe as _));
         }
     }
 }

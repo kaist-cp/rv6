@@ -6,6 +6,7 @@ use crate::{
     kernel::kernel,
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     ok_or,
+    page::Page,
     param::{NOFILE, NPROC, ROOTDEV},
     println,
     riscv::{intr_get, intr_on, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
@@ -875,7 +876,7 @@ pub unsafe fn myproc() -> *mut Proc {
 unsafe fn freeproc(mut p: ProcGuard) {
     let mut data = &mut *p.data.get();
     if !data.tf.is_null() {
-        kernel().free(data.tf as _);
+        kernel().free(Page::from_usize(data.tf as _));
     }
     data.tf = ptr::null_mut();
     if !data.pagetable.is_null() {

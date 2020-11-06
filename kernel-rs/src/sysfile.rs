@@ -10,6 +10,7 @@ use crate::{
     fs::{Dirent, FileName, Inode, InodeGuard, Path, RcInode, DIRENT_SIZE},
     kernel::Kernel,
     ok_or,
+    page::Page,
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
     pipe::AllocatedPipe,
     proc::{myproc, Proc},
@@ -342,7 +343,7 @@ impl Kernel {
                 break;
             }
 
-            self.free(*arg);
+            self.free(Page::from_usize(*arg as _));
         }
 
         ret

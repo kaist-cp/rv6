@@ -1,7 +1,7 @@
 use crate::{
     kernel::kernel,
     memlayout::{CLINT, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
-    page::Page,
+    page::{Page, RawPage},
     println,
     proc::myproc,
     riscv::{
@@ -170,8 +170,8 @@ impl PageTableEntry {
         pte2pa(self.inner)
     }
 
-    unsafe fn as_page(&self) -> &Page {
-        &*(pte2pa(self.inner).into_usize() as *const Page)
+    unsafe fn as_page(&self) -> &RawPage {
+        &*(pte2pa(self.inner).into_usize() as *const RawPage)
     }
 
     fn as_table_mut(&mut self) -> Option<&mut RawPageTable> {
@@ -219,7 +219,7 @@ impl RawPageTable {
                 assert!(!pte.check_flag(PTE_V), "freewalk: leaf");
             }
         }
-        kernel().free(self.as_mut_ptr() as _);
+        kernel().free(Page::from_usize(self.as_mut_ptr() as _));
     }
 }
 
@@ -420,7 +420,7 @@ impl PageTable<UVAddr> {
                 )
                 .is_err()
             {
-                kernel().free(mem);
+                kernel().free(Page::from_usize(mem as _));
                 self.uvmdealloc(a, oldsz);
                 return Err(());
             }
@@ -456,7 +456,7 @@ impl PageTable<UVAddr> {
                 .mappages(VAddr::new(i), PGSIZE, mem as usize, flags as i32)
                 .is_err()
             {
-                kernel().free(mem);
+                kernel().free(Page::from_usize(mem as _));
                 return Err(());
             }
             new = scopeguard::ScopeGuard::into_inner(new_ptable);
@@ -485,7 +485,7 @@ impl PageTable<UVAddr> {
 
             if do_free != 0 {
                 pa = pte.get_pa().into_usize();
-                kernel().free(pa as _);
+                kernel().free(Page::from_usize(pa as _));
             }
             pte.set_inner(0);
             if a == last {
