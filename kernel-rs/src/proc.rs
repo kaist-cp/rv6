@@ -20,7 +20,7 @@ use core::{
     cmp, mem,
     ops::{Deref, DerefMut},
     ptr, str,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicI32, Ordering},
 };
 
 use cstr_core::CStr;
@@ -525,6 +525,7 @@ impl Proc {
 
 /// Process system type containing & managing whole processes.
 pub struct ProcessSystem {
+    nextpid: AtomicI32,
     process_pool: [Proc; NPROC],
     initial_proc: *mut Proc,
 }
@@ -536,9 +537,14 @@ const fn proc_entry(_: usize) -> Proc {
 impl ProcessSystem {
     pub const fn zero() -> Self {
         Self {
+            nextpid: AtomicI32::new(1),
             process_pool: array_const_fn_init![proc_entry; 64],
             initial_proc: ptr::null_mut(),
         }
+    }
+
+    fn allocpid(&self) -> i32 {
+        self.nextpid.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Look into process system for an UNUSED proc.
@@ -550,7 +556,7 @@ impl ProcessSystem {
             let mut guard = p.lock();
             if guard.deref_info().state == Procstate::UNUSED {
                 let data = &mut *guard.data.get();
-                guard.deref_mut_info().pid = allocpid();
+                guard.deref_mut_info().pid = self.allocpid();
 
                 // Allocate a trapframe page.
                 data.tf = kernel().alloc() as *mut Trapframe;
@@ -846,15 +852,6 @@ pub unsafe fn myproc() -> *mut Proc {
     let p = (*c).proc;
     pop_off();
     p
-}
-
-fn allocpid() -> i32 {
-    static NEXTPID: Spinlock<i32> = Spinlock::new("nextpid", 1);
-
-    let mut pid = NEXTPID.lock();
-    let ret = *pid;
-    *pid += 1;
-    ret
 }
 
 /// Free a proc structure and the data hanging from it,
