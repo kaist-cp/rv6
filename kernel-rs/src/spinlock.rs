@@ -64,7 +64,7 @@ impl RawSpinlock {
         //
         // TODO(@jeehoon): it's unnecessary.
         //
-        // ::core::intrinsics::atomic_fence();
+        // intrinsics::atomic_fence();
     }
 
     /// Release the lock.
@@ -80,7 +80,7 @@ impl RawSpinlock {
         //
         // TODO(@jeehoon): it's unnecessary.
         //
-        // ::core::intrinsics::atomic_fence();
+        // intrinsics::atomic_fence();
 
         // Release the lock, equivalent to lk->locked = 0.
         // This code doesn't use a C assignment, since the C standard

@@ -89,7 +89,7 @@ impl Drop for InodeGuard<'_> {
 // Directories
 impl InodeGuard<'_> {
     /// Write a new directory entry (name, inum) into the directory dp.
-    pub unsafe fn dirlink(&mut self, name: &FileName, inum: u32) -> Result<(), ()> {
+    pub fn dirlink(&mut self, name: &FileName, inum: u32) -> Result<(), ()> {
         let mut de: Dirent = Default::default();
 
         // Check that name is not present.
@@ -119,7 +119,7 @@ impl InodeGuard<'_> {
 
     /// Look for a directory entry in a directory.
     /// If found, return the entry and byte offset of entry.
-    pub unsafe fn dirlookup(&mut self, name: &FileName) -> Result<(RcInode, u32), ()> {
+    pub fn dirlookup(&mut self, name: &FileName) -> Result<(RcInode, u32), ()> {
         let mut de: Dirent = Default::default();
 
         assert_eq!(self.deref_inner().typ, T_DIR, "dirlookup not DIR");
@@ -137,8 +137,7 @@ impl InodeGuard<'_> {
 
 impl InodeGuard<'_> {
     /// Copy stat information from inode.
-    /// Caller must hold ip->lock.
-    pub unsafe fn stat(&self) -> Stat {
+    pub fn stat(&self) -> Stat {
         Stat {
             dev: self.dev as i32,
             ino: self.inum,
@@ -151,7 +150,6 @@ impl InodeGuard<'_> {
     /// Copy a modified in-memory inode to disk.
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk, since i-node cache is write-through.
-    /// Caller must hold self->lock.
     pub unsafe fn update(&self) {
         let mut bp = Buf::new(self.dev, fs().superblock.iblock(self.inum));
         let mut dip: *mut Dinode = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
@@ -195,9 +193,6 @@ impl InodeGuard<'_> {
     }
 
     /// Read data from inode.
-    /// Caller must hold self->lock.
-    /// If user_dst==1, then dst is a user virtual address;
-    /// otherwise, dst is a kernel address.
     pub unsafe fn read<A: VAddr>(
         &mut self,
         mut dst: A,
@@ -225,23 +220,14 @@ impl InodeGuard<'_> {
             } else {
                 tot = tot.wrapping_add(m);
                 off = off.wrapping_add(m);
-                dst = dst.add(m as usize);
+                dst = dst + (m as usize);
             }
         }
         Ok(n as usize)
     }
 
     /// Write data to inode.
-    /// Caller must hold self->lock.
-    /// TODO: remove this comment
-    /// If user_src==1, then src is a user virtual address;
-    /// otherwise, src is a kernel address.
-    pub unsafe fn write<A: VAddr>(
-        &mut self,
-        mut src: A,
-        mut off: u32,
-        n: u32,
-    ) -> Result<usize, ()> {
+    pub fn write<A: VAddr>(&mut self, mut src: A, mut off: u32, n: u32) -> Result<usize, ()> {
         if off > self.deref_inner().size || off.wrapping_add(n) < off {
             return Err(());
         }
@@ -257,10 +243,12 @@ impl InodeGuard<'_> {
             );
             let begin = off.wrapping_rem(BSIZE as u32) as usize;
             let end = begin + m as usize;
-            if VAddr::copyin(&mut bp.deref_mut_inner().data[begin..end], src).is_err() {
+            if unsafe { VAddr::copyin(&mut bp.deref_mut_inner().data[begin..end], src) }.is_err() {
                 break;
             } else {
-                fs().log_write(bp);
+                unsafe {
+                    fs().log_write(bp);
+                }
                 tot = tot.wrapping_add(m);
                 off = off.wrapping_add(m);
                 src = src.add(m as usize);
@@ -273,7 +261,9 @@ impl InodeGuard<'_> {
             // write the i-node back to disk even if the size didn't change
             // because the loop above might have called bmap() and added a new
             // block to self->addrs[].
-            self.update();
+            unsafe {
+                self.update();
+            }
         }
         Ok(n as usize)
     }
@@ -286,13 +276,13 @@ impl InodeGuard<'_> {
     /// listed in block self->addrs[NDIRECT].
     /// Return the disk block address of the nth block in inode self.
     /// If there is no such block, bmap allocates one.
-    unsafe fn bmap(&mut self, mut bn: usize) -> u32 {
+    fn bmap(&mut self, mut bn: usize) -> u32 {
         let mut addr: u32;
         let inner = self.deref_inner();
         if bn < NDIRECT {
             addr = inner.addrs[bn];
             if addr == 0 {
-                addr = balloc(self.dev);
+                addr = unsafe { balloc(self.dev) };
                 self.deref_inner_mut().addrs[bn] = addr;
             }
             return addr;
@@ -303,16 +293,18 @@ impl InodeGuard<'_> {
         // Load indirect block, allocating if necessary.
         addr = inner.addrs[NDIRECT];
         if addr == 0 {
-            addr = balloc(self.dev);
+            addr = unsafe { balloc(self.dev) };
             self.deref_inner_mut().addrs[NDIRECT] = addr;
         }
         let mut bp = Buf::new(self.dev, addr);
         let a: *mut u32 = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
-        addr = *a.add(bn);
-        if addr == 0 {
-            addr = balloc(self.dev);
-            *a.add(bn) = addr;
-            fs().log_write(bp);
+        unsafe {
+            addr = *a.add(bn);
+            if addr == 0 {
+                addr = balloc(self.dev);
+                *a.add(bn) = addr;
+                fs().log_write(bp);
+            }
         }
         addr
     }
@@ -486,16 +478,17 @@ impl Inode {
     /// Find the inode with number inum on device dev
     /// and return the in-memory copy. Does not lock
     /// the inode and does not read it from disk.
-    pub unsafe fn get(dev: u32, inum: u32) -> RcInode {
-        let ip = IcacheTag {}.find_or_alloc(
-            |inode| inode.dev == dev && inode.inum == inum,
-            |inode| {
-                inode.dev = dev;
-                inode.inum = inum;
-                inode.inner.get_mut().valid = false;
-            },
-        );
-        ip.expect("iget: no inodes")
+    pub fn get(dev: u32, inum: u32) -> RcInode {
+        IcacheTag {}
+            .find_or_alloc(
+                |inode| inode.dev == dev && inode.inum == inum,
+                |inode| {
+                    inode.dev = dev;
+                    inode.inum = inum;
+                    inode.inner.get_mut().valid = false;
+                },
+            )
+            .expect("iget: no inodes")
     }
 
     /// Allocate an inode on device dev.

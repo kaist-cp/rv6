@@ -12,9 +12,8 @@ use crate::{
 };
 use core::{
     marker::PhantomData,
-    mem::{self},
-    ops::Deref,
-    ops::DerefMut,
+    mem,
+    ops::{Add, Deref, DerefMut},
     ptr,
 };
 
@@ -124,7 +123,7 @@ impl PAddr {
 pub struct KVAddr(usize);
 #[derive(Copy, Clone)]
 pub struct UVAddr(usize);
-pub trait VAddr: Copy + Clone {
+pub trait VAddr: Copy + Add<usize, Output = Self> {
     /// Copy from either a user address, or kernel address,
     /// depending on usr_src.
     /// Returns Ok(()) on success, Err(()) on error.
@@ -139,7 +138,17 @@ pub trait VAddr: Copy + Clone {
 
     fn into_usize(&self) -> usize;
 
-    fn add(&mut self, rhs: usize) -> Self;
+    fn is_null(&self) -> bool;
+
+    fn is_page_aligned(&self) -> bool;
+}
+
+impl Add<usize> for KVAddr {
+    type Output = Self;
+
+    fn add(self, rhs: usize) -> Self::Output {
+        Self(self.0 + rhs)
+    }
 }
 
 impl VAddr for KVAddr {
@@ -161,7 +170,19 @@ impl VAddr for KVAddr {
         self.0
     }
 
-    fn add(&mut self, rhs: usize) -> Self {
+    fn is_null(&self) -> bool {
+        self.0 == 0
+    }
+
+    fn is_page_aligned(&self) -> bool {
+        self.0 % PGSIZE == 0
+    }
+}
+
+impl Add<usize> for UVAddr {
+    type Output = Self;
+
+    fn add(self, rhs: usize) -> Self::Output {
         Self(self.0 + rhs)
     }
 }
@@ -193,8 +214,12 @@ impl VAddr for UVAddr {
         self.0
     }
 
-    fn add(&mut self, rhs: usize) -> Self {
-        Self(self.0 + rhs)
+    fn is_null(&self) -> bool {
+        self.0 == 0
+    }
+
+    fn is_page_aligned(&self) -> bool {
+        self.0 % PGSIZE == 0
     }
 }
 

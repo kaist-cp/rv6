@@ -3,7 +3,7 @@ use crate::{
     kernel::kernel,
     proc::{myproc, WaitChannel},
     spinlock::Spinlock,
-    vm::{UVAddr, VAddr},
+    vm::UVAddr,
 };
 use core::ops::Deref;
 
@@ -39,7 +39,7 @@ impl Pipe {
     /// PipeInner::try_read() tries to read as much as possible.
     /// Pipe::read() executes try_read() until all bytes in pipe are read.
     //TODO : `n` should be u32
-    pub unsafe fn read(&self, addr: usize, n: usize) -> Result<usize, ()> {
+    pub unsafe fn read(&self, addr: UVAddr, n: usize) -> Result<usize, ()> {
         let mut inner = self.inner.lock();
         loop {
             match inner.try_read(addr, n) {
@@ -59,7 +59,7 @@ impl Pipe {
 
     /// PipeInner::try_write() tries to write as much as possible.
     /// Pipe::write() executes try_write() until `n` bytes are written.
-    pub unsafe fn write(&self, addr: usize, n: usize) -> Result<usize, ()> {
+    pub unsafe fn write(&self, addr: UVAddr, n: usize) -> Result<usize, ()> {
         let mut written = 0;
         let mut inner = self.inner.lock();
         loop {
@@ -154,7 +154,7 @@ pub enum PipeError {
 }
 
 impl PipeInner {
-    unsafe fn try_write(&mut self, addr: usize, n: usize) -> Result<usize, ()> {
+    unsafe fn try_write(&mut self, addr: UVAddr, n: usize) -> Result<usize, ()> {
         let mut ch = [0 as u8];
         let proc = myproc();
         let data = &mut *(*proc).data.get();
@@ -170,7 +170,7 @@ impl PipeInner {
             if data
                 .pagetable
                 .assume_init_mut()
-                .copyin(&mut ch, UVAddr::new(addr.wrapping_add(i)))
+                .copyin(&mut ch, addr + i)
                 .is_err()
             {
                 break;
@@ -181,7 +181,7 @@ impl PipeInner {
         Ok(n)
     }
 
-    unsafe fn try_read(&mut self, addr: usize, n: usize) -> Result<usize, PipeError> {
+    unsafe fn try_read(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
         let proc = myproc();
         let data = &mut *(*proc).data.get();
 
@@ -203,7 +203,7 @@ impl PipeInner {
             if data
                 .pagetable
                 .assume_init_mut()
-                .copyout(UVAddr::new(addr.wrapping_add(i)), &ch)
+                .copyout(addr + i, &ch)
                 .is_err()
             {
                 return Ok(i);

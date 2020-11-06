@@ -27,7 +27,7 @@ use crate::{
     sleepablelock::Sleepablelock,
 };
 use arrayvec::ArrayVec;
-use core::ptr;
+use core::{mem, ptr};
 
 pub struct Log {
     start: i32,
@@ -57,7 +57,7 @@ struct LogHeaderInMemory {
 
 impl Log {
     pub fn new(dev: i32, superblock: &Superblock) -> Self {
-        if ::core::mem::size_of::<LogHeader>() >= BSIZE {
+        if mem::size_of::<LogHeader>() >= BSIZE {
             panic!("Log::new: too big LogHeader");
         }
 

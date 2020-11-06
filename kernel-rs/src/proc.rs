@@ -19,7 +19,7 @@ use core::{
     cell::UnsafeCell,
     cmp, mem,
     ops::{Deref, DerefMut},
-    ptr, str,
+    ptr, slice, str,
     sync::atomic::{AtomicBool, AtomicI32, Ordering},
 };
 
@@ -649,7 +649,7 @@ impl ProcessSystem {
         safestrcpy(
             (*guard).name.as_mut_ptr(),
             b"initcode\x00" as *const u8,
-            ::core::mem::size_of::<[u8; 16]>() as i32,
+            mem::size_of::<[u8; 16]>() as i32,
         );
         data.cwd = Path::new(CStr::from_bytes_with_nul_unchecked(b"/\x00"))
             .namei()
@@ -696,7 +696,7 @@ impl ProcessSystem {
         safestrcpy(
             (*np).name.as_mut_ptr(),
             (*p).name.as_mut_ptr(),
-            ::core::mem::size_of::<[u8; 16]>() as i32,
+            mem::size_of::<[u8; 16]>() as i32,
         );
         let pid = np.deref_mut_info().pid;
         np.deref_mut_info().state = Procstate::RUNNABLE;
@@ -705,7 +705,7 @@ impl ProcessSystem {
 
     /// Wait for a child process to exit and return its pid.
     /// Return -1 if this process has no children.
-    pub unsafe fn wait(&self, addr: usize) -> i32 {
+    pub unsafe fn wait(&self, addr: UVAddr) -> i32 {
         let p: *mut Proc = myproc();
         let data = &mut *(*p).data.get();
 
@@ -726,15 +726,15 @@ impl ProcessSystem {
                     havekids = true;
                     if np.deref_info().state == Procstate::ZOMBIE {
                         let pid = np.deref_info().pid;
-                        if addr != 0
+                        if !addr.is_null()
                             && data
                                 .pagetable
                                 .assume_init_mut()
                                 .copyout(
-                                    UVAddr::new(addr),
-                                    ::core::slice::from_raw_parts_mut(
+                                    addr,
+                                    slice::from_raw_parts_mut(
                                         &mut np.deref_mut_info().xstate as *mut i32 as *mut u8,
-                                        ::core::mem::size_of::<i32>(),
+                                        mem::size_of::<i32>(),
                                     ),
                                 )
                                 .is_err()

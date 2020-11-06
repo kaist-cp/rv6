@@ -107,7 +107,7 @@ impl Console {
                 if UVAddr::copyout(dst, &cbuf).is_err() {
                     break;
                 }
-                dst = dst.add(1 as usize);
+                dst = dst + 1;
                 n -= 1;
                 if cin == '\n' as i32 {
                     // A whole line has arrived, return to

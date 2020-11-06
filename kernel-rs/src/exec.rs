@@ -1,7 +1,6 @@
 #![allow(clippy::unit_arg)]
 
 use crate::{
-    elf::{ElfHdr, ProgHdr, ELF_MAGIC, ELF_PROG_LOAD},
     fs::{fs, InodeGuard, Path},
     ok_or,
     param::MAXARG,
@@ -10,11 +9,87 @@ use crate::{
     string::{safestrcpy, strlen},
     vm::{KVAddr, PageTable, UVAddr, VAddr},
 };
-use core::mem;
+use core::{cmp, mem, slice};
+
+/// "\x7FELF" in little endian
+const ELF_MAGIC: u32 = 0x464c457f;
+
+/// Values for Proghdr type
+const ELF_PROG_LOAD: u32 = 1;
+
+/// File header
+#[derive(Default, Clone)]
+// It needs repr(C) because it's struct for in-disk representation
+// which should follow C(=machine) representation
+// https://github.com/kaist-cp/rv6/issues/52
+#[repr(C)]
+struct ElfHdr {
+    /// must equal ELF_MAGIC
+    magic: u32,
+    elf: [u8; 12],
+    typ: u16,
+    machine: u16,
+    version: u32,
+    entry: usize,
+    phoff: usize,
+    shoff: usize,
+    flags: u32,
+    ehsize: u16,
+    phentsize: u16,
+    phnum: u16,
+    shentsize: u16,
+    shnum: u16,
+    shstrndx: u16,
+}
+
+bitflags! {
+    /// Flag bits for ProgHdr flags
+    #[repr(C)]
+    struct ProgFlags: u32 {
+        const EXEC = 1;
+        const WRITE = 2;
+        const READ = 4;
+    }
+}
+
+impl Default for ProgFlags {
+    fn default() -> Self {
+        Self::from_bits_truncate(0)
+    }
+}
+
+/// Program section header
+#[derive(Default, Clone)]
+// It needs repr(C) because it's struct for in-disk representation
+// which should follow C(=machine) representation
+// https://github.com/kaist-cp/rv6/issues/52
+#[repr(C)]
+struct ProgHdr {
+    typ: u32,
+    flags: ProgFlags,
+    off: usize,
+    vaddr: usize,
+    paddr: usize,
+    filesz: usize,
+    memsz: usize,
+    align: usize,
+}
+
+impl ElfHdr {
+    pub fn is_valid(&self) -> bool {
+        self.magic == ELF_MAGIC
+    }
+}
+
+impl ProgHdr {
+    pub fn is_prog_load(&self) -> bool {
+        self.typ == ELF_PROG_LOAD
+    }
+}
 
 pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
     let sz: usize = 0;
-    let mut ustack: [usize; MAXARG + 1] = [0; MAXARG + 1];
+    let mut ustack = [0usize; MAXARG + 1];
     let mut elf: ElfHdr = Default::default();
     let mut ph: ProgHdr = Default::default();
     let mut p: *mut Proc = myproc();
@@ -32,7 +107,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
         0,
         mem::size_of::<ElfHdr>() as _,
     )?;
-    if !(bytes_read == mem::size_of::<ElfHdr>() && elf.magic == ELF_MAGIC) {
+    if !(bytes_read == mem::size_of::<ElfHdr>() && elf.is_valid()) {
         return Err(());
     }
 
@@ -49,19 +124,17 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
     // Load program into memory.
     *sz = 0;
     for i in 0..elf.phnum as usize {
-        let off = elf
-            .phoff
-            .wrapping_add(i * ::core::mem::size_of::<ProgHdr>());
+        let off = elf.phoff.wrapping_add(i * mem::size_of::<ProgHdr>());
 
         let bytes_read = ip.read(
             KVAddr::new(&mut ph as *mut ProgHdr as usize),
             off as u32,
-            ::core::mem::size_of::<ProgHdr>() as u32,
+            mem::size_of::<ProgHdr>() as u32,
         )?;
-        if bytes_read != ::core::mem::size_of::<ProgHdr>() {
+        if bytes_read != mem::size_of::<ProgHdr>() {
             return Err(());
         }
-        if ph.typ == ELF_PROG_LOAD {
+        if ph.is_prog_load() {
             if ph.memsz < ph.filesz {
                 return Err(());
             }
@@ -72,7 +145,13 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
             if ph.vaddr.wrapping_rem(PGSIZE) != 0 {
                 return Err(());
             }
-            loadseg(pt, ph.vaddr, &mut ip, ph.off as u32, ph.filesz as u32)?;
+            loadseg(
+                pt,
+                UVAddr::new(ph.vaddr),
+                &mut ip,
+                ph.off as u32,
+                ph.filesz as u32,
+            )?;
         }
     }
     drop(ip);
@@ -107,7 +186,7 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
         }
         pt.copyout(
             UVAddr::new(sp),
-            ::core::slice::from_raw_parts_mut(argv[argc], (strlen(argv[argc]) + 1) as usize),
+            slice::from_raw_parts_mut(argv[argc], (strlen(argv[argc]) + 1) as usize),
         )?;
         ustack[argc] = sp;
         argc = argc.wrapping_add(1)
@@ -115,20 +194,16 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
     ustack[argc] = 0;
 
     // push the array of argv[] pointers.
-    sp = sp.wrapping_sub(
-        argc.wrapping_add(1)
-            .wrapping_mul(::core::mem::size_of::<usize>()),
-    );
+    sp = sp.wrapping_sub(argc.wrapping_add(1).wrapping_mul(mem::size_of::<usize>()));
     sp = sp.wrapping_sub(sp.wrapping_rem(16));
 
     if sp >= stackbase
         && pt
             .copyout(
                 UVAddr::new(sp),
-                ::core::slice::from_raw_parts_mut(
+                slice::from_raw_parts_mut(
                     ustack.as_mut_ptr() as *mut u8,
-                    argc.wrapping_add(1)
-                        .wrapping_mul(::core::mem::size_of::<usize>()),
+                    argc.wrapping_add(1).wrapping_mul(mem::size_of::<usize>()),
                 ),
             )
             .is_ok()
@@ -151,11 +226,11 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
         safestrcpy(
             (*p).name.as_mut_ptr(),
             last,
-            ::core::mem::size_of::<[u8; 16]>() as i32,
+            mem::size_of::<[u8; 16]>() as i32,
         );
 
         // Commit to the user image.
-        let mut oldpagetable = core::mem::replace(data.pagetable.assume_init_mut(), pt);
+        let mut oldpagetable = mem::replace(data.pagetable.assume_init_mut(), pt);
         data.sz = sz;
 
         // initial program counter = main
@@ -178,26 +253,20 @@ pub unsafe fn exec(path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
 /// Returns `Ok(())` on success, `Err(())` on failure.
 unsafe fn loadseg(
     pagetable: &mut PageTable<UVAddr>,
-    va: usize,
+    va: UVAddr,
     ip: &mut InodeGuard<'_>,
     offset: u32,
     sz: u32,
 ) -> Result<(), ()> {
-    if va.wrapping_rem(PGSIZE) != 0 {
-        panic!("loadseg: va msut be page aligned");
-    }
+    assert!(va.is_page_aligned(), "loadseg: va must be page aligned");
 
     for i in num_iter::range_step(0, sz, PGSIZE as _) {
         let pa = pagetable
-            .walkaddr(UVAddr::new(va.wrapping_add(i as usize)))
+            .walkaddr(va + i as usize)
             .expect("loadseg: address should exist")
             .into_usize();
 
-        let n = if sz.wrapping_sub(i) < PGSIZE as u32 {
-            sz.wrapping_sub(i)
-        } else {
-            PGSIZE as u32
-        };
+        let n = cmp::min(sz - i, PGSIZE as u32);
 
         let bytes_read = ip.read(KVAddr::new(pa), offset.wrapping_add(i), n)?;
         if bytes_read as u32 != n {

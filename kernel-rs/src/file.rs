@@ -11,9 +11,9 @@ use crate::{
     proc::{myproc, Proc},
     spinlock::Spinlock,
     stat::Stat,
-    vm::{UVAddr, VAddr},
+    vm::UVAddr,
 };
-use core::{cell::UnsafeCell, cmp, convert::TryFrom, mem, ops::Deref};
+use core::{cell::UnsafeCell, cmp, convert::TryFrom, mem, ops::Deref, slice};
 
 pub struct File {
     pub typ: FileType,
@@ -82,17 +82,17 @@ impl File {
 
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub unsafe fn stat(&self, addr: usize) -> Result<(), ()> {
+    pub unsafe fn stat(&self, addr: UVAddr) -> Result<(), ()> {
         let p: *mut Proc = myproc();
 
         match &self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                 let mut st = ip.deref().lock().stat();
                 (*(*p).data.get()).pagetable.assume_init_mut().copyout(
-                    UVAddr::new(addr),
-                    ::core::slice::from_raw_parts_mut(
+                    addr,
+                    slice::from_raw_parts_mut(
                         &mut st as *mut Stat as *mut u8,
-                        ::core::mem::size_of::<Stat>() as usize,
+                        mem::size_of::<Stat>() as usize,
                     ),
                 )
             }
@@ -102,7 +102,7 @@ impl File {
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub unsafe fn read(&self, addr: usize, n: i32) -> Result<usize, ()> {
+    pub unsafe fn read(&self, addr: UVAddr, n: i32) -> Result<usize, ()> {
         if !self.readable {
             return Err(());
         }
@@ -112,7 +112,7 @@ impl File {
             FileType::Inode { ip, off } => {
                 let mut ip = ip.deref().lock();
                 let curr_off = *off.get();
-                let ret = ip.read(UVAddr::new(addr), curr_off, n as u32);
+                let ret = ip.read(addr, curr_off, n as u32);
                 if let Ok(v) = ret {
                     *off.get() = curr_off.wrapping_add(v as u32);
                 }
@@ -122,14 +122,14 @@ impl File {
             FileType::Device { major, .. } => kernel()
                 .devsw
                 .get(*major as usize)
-                .and_then(|dev| Some(dev.read?(UVAddr::new(addr), n) as usize))
+                .and_then(|dev| Some(dev.read?(addr, n) as usize))
                 .ok_or(()),
             _ => panic!("File::read"),
         }
     }
     /// Write to file self.
     /// addr is a user virtual address.
-    pub unsafe fn write(&self, addr: usize, n: i32) -> Result<usize, ()> {
+    pub unsafe fn write(&self, addr: UVAddr, n: i32) -> Result<usize, ()> {
         if !self.writable {
             return Err(());
         }
@@ -151,7 +151,7 @@ impl File {
                     let curr_off = *off.get();
                     let bytes_written = ip
                         .write(
-                            UVAddr::new(addr.wrapping_add(bytes_written as usize)),
+                            addr + bytes_written as usize,
                             curr_off,
                             bytes_to_write as u32,
                         )
@@ -169,7 +169,7 @@ impl File {
             FileType::Device { major, .. } => kernel()
                 .devsw
                 .get(*major as usize)
-                .and_then(|dev| Some(dev.write?(UVAddr::new(addr), n) as usize))
+                .and_then(|dev| Some(dev.write?(addr, n) as usize))
                 .ok_or(()),
             _ => panic!("File::read"),
         }

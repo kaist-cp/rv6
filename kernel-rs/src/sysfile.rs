@@ -68,14 +68,14 @@ pub unsafe fn sys_read() -> usize {
     let (_, f) = ok_or!(argfd(0), return usize::MAX);
     let n = ok_or!(argint(2), return usize::MAX);
     let p = ok_or!(argaddr(1), return usize::MAX);
-    ok_or!((*f).read(p, n), usize::MAX)
+    ok_or!((*f).read(UVAddr::new(p), n), usize::MAX)
 }
 
 pub unsafe fn sys_write() -> usize {
     let (_, f) = ok_or!(argfd(0), return usize::MAX);
     let n = ok_or!(argint(2), return usize::MAX);
     let p = ok_or!(argaddr(1), return usize::MAX);
-    ok_or!((*f).write(p, n), usize::MAX)
+    ok_or!((*f).write(UVAddr::new(p), n), usize::MAX)
 }
 
 pub unsafe fn sys_close() -> usize {
@@ -88,7 +88,7 @@ pub unsafe fn sys_fstat() -> usize {
     let (_, f) = ok_or!(argfd(0), return usize::MAX);
     // user pointer to struct stat
     let st = ok_or!(argaddr(1), return usize::MAX);
-    ok_or!((*f).stat(st), return usize::MAX);
+    ok_or!((*f).stat(UVAddr::new(st)), return usize::MAX);
     0
 }
 
@@ -310,7 +310,11 @@ pub unsafe fn sys_exec() -> usize {
     let mut success = false;
     for (i, arg) in argv.iter_mut().enumerate() {
         let mut uarg = 0;
-        if fetchaddr(uargv + mem::size_of::<usize>() * i, &mut uarg as *mut usize) < 0 {
+        if fetchaddr(
+            UVAddr::new(uargv + mem::size_of::<usize>() * i),
+            &mut uarg as *mut usize,
+        ) < 0
+        {
             break;
         }
 
@@ -325,7 +329,7 @@ pub unsafe fn sys_exec() -> usize {
             panic!("sys_exec kalloc");
         }
 
-        if fetchstr(uarg, slice::from_raw_parts_mut(*arg, PGSIZE)).is_err() {
+        if fetchstr(UVAddr::new(uarg), slice::from_raw_parts_mut(*arg, PGSIZE)).is_err() {
             break;
         }
     }
@@ -365,10 +369,7 @@ pub unsafe fn sys_pipe() -> usize {
         .assume_init_mut()
         .copyout(
             UVAddr::new(fdarray),
-            ::core::slice::from_raw_parts_mut(
-                &mut fd0 as *mut i32 as *mut u8,
-                mem::size_of::<i32>(),
-            ),
+            slice::from_raw_parts_mut(&mut fd0 as *mut i32 as *mut u8, mem::size_of::<i32>()),
         )
         .is_err()
         || data
@@ -376,10 +377,7 @@ pub unsafe fn sys_pipe() -> usize {
             .assume_init_mut()
             .copyout(
                 UVAddr::new(fdarray.wrapping_add(mem::size_of::<i32>())),
-                ::core::slice::from_raw_parts_mut(
-                    &mut fd1 as *mut i32 as *mut u8,
-                    mem::size_of::<i32>(),
-                ),
+                slice::from_raw_parts_mut(&mut fd1 as *mut i32 as *mut u8, mem::size_of::<i32>()),
             )
             .is_err()
     {

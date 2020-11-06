@@ -3,6 +3,7 @@ use crate::{
     ok_or, poweroff,
     proc::{myproc, resizeproc},
     syscall::{argaddr, argint},
+    vm::{UVAddr, VAddr},
 };
 
 pub unsafe fn sys_exit() -> usize {
@@ -22,7 +23,7 @@ pub unsafe fn sys_fork() -> usize {
 
 pub unsafe fn sys_wait() -> usize {
     let p = ok_or!(argaddr(0), return usize::MAX);
-    kernel().procs.wait(p) as _
+    kernel().procs.wait(UVAddr::new(p)) as _
 }
 
 pub unsafe fn sys_sbrk() -> usize {

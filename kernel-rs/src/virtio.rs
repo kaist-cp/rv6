@@ -73,6 +73,7 @@ bitflags! {
 /// this many virtio descriptors.
 /// must be a power of two.
 pub const NUM: usize = 8;
+
 #[derive(Copy, Clone)]
 pub struct VRingDesc {
     pub addr: usize,

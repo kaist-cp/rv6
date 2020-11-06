@@ -5,22 +5,24 @@ use crate::{
     sysproc::*,
     vm::{UVAddr, VAddr},
 };
-use core::str;
+use core::{mem, slice, str};
 use cstr_core::CStr;
 
 /// Fetch the usize at addr from the current process.
-pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
+pub unsafe fn fetchaddr(addr: UVAddr, ip: *mut usize) -> i32 {
     let p: *mut Proc = myproc();
     let data = &mut *(*p).data.get();
-    if addr >= data.sz || addr.wrapping_add(::core::mem::size_of::<usize>()) > data.sz {
+    if addr.into_usize() >= data.sz
+        || addr.into_usize().wrapping_add(mem::size_of::<usize>()) > data.sz
+    {
         return -1;
     }
     if data
         .pagetable
         .assume_init_mut()
         .copyin(
-            ::core::slice::from_raw_parts_mut(ip as *mut u8, ::core::mem::size_of::<usize>()),
-            UVAddr::new(addr),
+            slice::from_raw_parts_mut(ip as *mut u8, mem::size_of::<usize>()),
+            addr,
         )
         .is_err()
     {
@@ -31,12 +33,12 @@ pub unsafe fn fetchaddr(addr: usize, ip: *mut usize) -> i32 {
 
 /// Fetch the nul-terminated string at addr from the current process.
 /// Returns reference to the string in the buffer.
-pub unsafe fn fetchstr(addr: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
+pub unsafe fn fetchstr(addr: UVAddr, buf: &mut [u8]) -> Result<&CStr, ()> {
     let p: *mut Proc = myproc();
     (*(*p).data.get())
         .pagetable
         .assume_init_mut()
-        .copyinstr(buf, UVAddr::new(addr))?;
+        .copyinstr(buf, addr)?;
 
     Ok(CStr::from_ptr(buf.as_ptr()))
 }
@@ -72,7 +74,7 @@ pub unsafe fn argaddr(n: usize) -> Result<usize, ()> {
 /// Returns string length if OK (including nul), -1 if error.
 pub unsafe fn argstr(n: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
     let addr = argaddr(n)?;
-    fetchstr(addr, buf)
+    fetchstr(UVAddr::new(addr), buf)
 }
 
 const SYSCALLS: [Option<unsafe fn() -> usize>; 23] = [
