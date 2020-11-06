@@ -8,7 +8,6 @@ use crate::{
         intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp,
         w_sepc, w_sip, w_stvec, Sstatus, PGSIZE,
     },
-    syscall::syscall,
     uart::Uart,
 };
 use core::mem;
@@ -66,7 +65,7 @@ pub unsafe extern "C" fn usertrap() {
         // an interrupt will change sstatus &c registers,
         // so don't enable until done with those registers.
         intr_on();
-        syscall();
+        kernel().syscall();
     } else {
         which_dev = devintr();
         if which_dev == 0 {

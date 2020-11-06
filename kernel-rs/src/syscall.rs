@@ -1,8 +1,7 @@
 use crate::{
+    kernel::Kernel,
     println,
     proc::{myproc, Proc},
-    sysfile::*,
-    sysproc::*,
     vm::{UVAddr, VAddr},
 };
 use core::{mem, slice, str};
@@ -73,45 +72,46 @@ pub unsafe fn argstr(n: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
     fetchstr(UVAddr::new(addr), buf)
 }
 
-const SYSCALLS: [Option<unsafe fn() -> usize>; 23] = [
-    None,
-    Some(sys_fork as unsafe fn() -> usize),
-    Some(sys_exit as unsafe fn() -> usize),
-    Some(sys_wait as unsafe fn() -> usize),
-    Some(sys_pipe as unsafe fn() -> usize),
-    Some(sys_read as unsafe fn() -> usize),
-    Some(sys_kill as unsafe fn() -> usize),
-    Some(sys_exec as unsafe fn() -> usize),
-    Some(sys_fstat as unsafe fn() -> usize),
-    Some(sys_chdir as unsafe fn() -> usize),
-    Some(sys_dup as unsafe fn() -> usize),
-    Some(sys_getpid as unsafe fn() -> usize),
-    Some(sys_sbrk as unsafe fn() -> usize),
-    Some(sys_sleep as unsafe fn() -> usize),
-    Some(sys_uptime as unsafe fn() -> usize),
-    Some(sys_open as unsafe fn() -> usize),
-    Some(sys_write as unsafe fn() -> usize),
-    Some(sys_mknod as unsafe fn() -> usize),
-    Some(sys_unlink as unsafe fn() -> usize),
-    Some(sys_link as unsafe fn() -> usize),
-    Some(sys_mkdir as unsafe fn() -> usize),
-    Some(sys_close as unsafe fn() -> usize),
-    Some(sys_poweroff as unsafe fn() -> usize),
-];
+impl Kernel {
+    pub unsafe fn syscall(&self) {
+        let p: *mut Proc = myproc();
+        let mut data = &mut *(*p).data.get();
+        let num: i32 = (*data.tf).a7 as i32;
 
-pub unsafe fn syscall() {
-    let p: *mut Proc = myproc();
-    let mut data = &mut *(*p).data.get();
-    let num: i32 = (*data.tf).a7 as i32;
-    if num > 0 && (num as usize) < SYSCALLS.len() && SYSCALLS[num as usize].is_some() {
-        (*data.tf).a0 = SYSCALLS[num as usize].expect("non-null function pointer")()
-    } else {
-        println!(
-            "{} {}: unknown sys call {}",
-            (*p).pid(),
-            str::from_utf8(&(*p).name).unwrap_or("???"),
-            num
-        );
-        (*data.tf).a0 = usize::MAX
-    };
+        let result = match num {
+            1 => self.sys_fork(),
+            2 => self.sys_exit(),
+            3 => self.sys_wait(),
+            4 => self.sys_pipe(),
+            5 => self.sys_read(),
+            6 => self.sys_kill(),
+            7 => self.sys_exec(),
+            8 => self.sys_fstat(),
+            9 => self.sys_chdir(),
+            10 => self.sys_dup(),
+            11 => self.sys_getpid(),
+            12 => self.sys_sbrk(),
+            13 => self.sys_sleep(),
+            14 => self.sys_uptime(),
+            15 => self.sys_open(),
+            16 => self.sys_write(),
+            17 => self.sys_mknod(),
+            18 => self.sys_unlink(),
+            19 => self.sys_link(),
+            20 => self.sys_mkdir(),
+            21 => self.sys_close(),
+            22 => self.sys_poweroff(),
+            _ => {
+                println!(
+                    "{} {}: unknown sys call {}",
+                    (*p).pid(),
+                    str::from_utf8(&(*p).name).unwrap_or("???"),
+                    num
+                );
+                usize::MAX
+            }
+        };
+
+        (*data.tf).a0 = result;
+    }
 }
