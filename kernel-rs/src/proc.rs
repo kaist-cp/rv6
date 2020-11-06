@@ -13,7 +13,7 @@ use crate::{
     spinlock::{pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard},
     string::safestrcpy,
     trap::usertrapret,
-    vm::{kvmmap, KVAddr, PAddr, PageTable, UVAddr, VAddr},
+    vm::{KVAddr, PAddr, PageTable, UVAddr, VAddr},
 };
 use core::{
     cell::UnsafeCell,
@@ -452,8 +452,7 @@ impl ProcData {
             panic!("kalloc");
         }
         let va: usize = kstack(i);
-        kvmmap(
-            page_table,
+        page_table.kvmmap(
             KVAddr::new(va),
             PAddr::new(pa as usize),
             PGSIZE,
@@ -882,7 +881,8 @@ unsafe fn freeproc(mut p: ProcGuard) {
 /// with no user pages, but with trampoline pages.
 pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable<UVAddr> {
     // An empty page table.
-    let mut pagetable = PageTable::<UVAddr>::new();
+    let mut pagetable = PageTable::<UVAddr>::zero();
+    pagetable.alloc_root();
 
     // let mut pagetable = uvmcreate();
 

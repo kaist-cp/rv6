@@ -25,6 +25,125 @@ extern "C" {
     static mut trampoline: [u8; 0];
 }
 
+#[derive(Clone, Copy)]
+pub struct PAddr(usize);
+
+#[derive(Clone, Copy)]
+pub struct KVAddr(usize);
+
+#[derive(Clone, Copy)]
+pub struct UVAddr(usize);
+
+impl PAddr {
+    pub const fn new(value: usize) -> Self {
+        PAddr(value)
+    }
+
+    pub const fn into_usize(self) -> usize {
+        self.0
+    }
+}
+
+impl Add<usize> for KVAddr {
+    type Output = Self;
+
+    fn add(self, rhs: usize) -> Self::Output {
+        Self(self.0 + rhs)
+    }
+}
+
+impl Add<usize> for UVAddr {
+    type Output = Self;
+
+    fn add(self, rhs: usize) -> Self::Output {
+        Self(self.0 + rhs)
+    }
+}
+
+pub trait VAddr: Copy + Add<usize, Output = Self> {
+    /// Copy from either a user address, or kernel address,
+    /// depending on usr_src.
+    /// Returns Ok(()) on success, Err(()) on error.
+    unsafe fn copyin(dst: &mut [u8], src: Self) -> Result<(), ()>;
+
+    /// Copy to either a user address, or kernel address,
+    /// depending on usr_dst.
+    /// Returns Ok(()) on success, Err(()) on error.
+    unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()>;
+
+    fn new(value: usize) -> Self;
+
+    fn into_usize(&self) -> usize;
+
+    fn is_null(&self) -> bool;
+
+    fn is_page_aligned(&self) -> bool;
+}
+
+impl VAddr for KVAddr {
+    unsafe fn copyin(dst: &mut [u8], src: Self) -> Result<(), ()> {
+        ptr::copy(src.into_usize() as *const u8, dst.as_mut_ptr(), dst.len());
+        Ok(())
+    }
+
+    unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()> {
+        ptr::copy(src.as_ptr(), dst.into_usize() as *mut u8, src.len());
+        Ok(())
+    }
+
+    fn new(value: usize) -> Self {
+        KVAddr(value)
+    }
+
+    fn into_usize(&self) -> usize {
+        self.0
+    }
+
+    fn is_null(&self) -> bool {
+        self.0 == 0
+    }
+
+    fn is_page_aligned(&self) -> bool {
+        self.0 % PGSIZE == 0
+    }
+}
+
+impl VAddr for UVAddr {
+    unsafe fn copyin(dst: &mut [u8], src: Self) -> Result<(), ()> {
+        let p = myproc();
+        (*(*p).data.get())
+            .pagetable
+            .assume_init_mut()
+            .copyin(dst, src)
+            .map_or(Err(()), |_v| Ok(()))
+    }
+
+    unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()> {
+        let p = myproc();
+        (*(*p).data.get())
+            .pagetable
+            .assume_init_mut()
+            .copyout(dst, src)
+            .map_or(Err(()), |_v| Ok(()))
+    }
+
+    fn new(value: usize) -> Self {
+        UVAddr(value)
+    }
+
+    fn into_usize(&self) -> usize {
+        self.0
+    }
+
+    fn is_null(&self) -> bool {
+        self.0 == 0
+    }
+
+    fn is_page_aligned(&self) -> bool {
+        self.0 % PGSIZE == 0
+    }
+}
+
 #[derive(Default)]
 pub struct PageTableEntry {
     inner: PteT,
@@ -107,122 +226,6 @@ impl RawPageTable {
     }
 }
 
-#[derive(Copy, Clone)]
-pub struct PAddr(usize);
-impl PAddr {
-    pub const fn new(value: usize) -> Self {
-        PAddr(value)
-    }
-
-    pub const fn into_usize(self) -> usize {
-        self.0
-    }
-}
-
-#[derive(Copy, Clone)]
-pub struct KVAddr(usize);
-#[derive(Copy, Clone)]
-pub struct UVAddr(usize);
-pub trait VAddr: Copy + Add<usize, Output = Self> {
-    /// Copy from either a user address, or kernel address,
-    /// depending on usr_src.
-    /// Returns Ok(()) on success, Err(()) on error.
-    unsafe fn copyin(dst: &mut [u8], src: Self) -> Result<(), ()>;
-
-    /// Copy to either a user address, or kernel address,
-    /// depending on usr_dst.
-    /// Returns Ok(()) on success, Err(()) on error.
-    unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()>;
-
-    fn new(value: usize) -> Self;
-
-    fn into_usize(&self) -> usize;
-
-    fn is_null(&self) -> bool;
-
-    fn is_page_aligned(&self) -> bool;
-}
-
-impl Add<usize> for KVAddr {
-    type Output = Self;
-
-    fn add(self, rhs: usize) -> Self::Output {
-        Self(self.0 + rhs)
-    }
-}
-
-impl VAddr for KVAddr {
-    unsafe fn copyin(dst: &mut [u8], src: Self) -> Result<(), ()> {
-        ptr::copy(src.into_usize() as *const u8, dst.as_mut_ptr(), dst.len());
-        Ok(())
-    }
-
-    unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()> {
-        ptr::copy(src.as_ptr(), dst.into_usize() as *mut u8, src.len());
-        Ok(())
-    }
-
-    fn new(value: usize) -> Self {
-        KVAddr(value)
-    }
-
-    fn into_usize(&self) -> usize {
-        self.0
-    }
-
-    fn is_null(&self) -> bool {
-        self.0 == 0
-    }
-
-    fn is_page_aligned(&self) -> bool {
-        self.0 % PGSIZE == 0
-    }
-}
-
-impl Add<usize> for UVAddr {
-    type Output = Self;
-
-    fn add(self, rhs: usize) -> Self::Output {
-        Self(self.0 + rhs)
-    }
-}
-
-impl VAddr for UVAddr {
-    unsafe fn copyin(dst: &mut [u8], src: Self) -> Result<(), ()> {
-        let p = myproc();
-        (*(*p).data.get())
-            .pagetable
-            .assume_init_mut()
-            .copyin(dst, src)
-            .map_or(Err(()), |_v| Ok(()))
-    }
-
-    unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()> {
-        let p = myproc();
-        (*(*p).data.get())
-            .pagetable
-            .assume_init_mut()
-            .copyout(dst, src)
-            .map_or(Err(()), |_v| Ok(()))
-    }
-
-    fn new(value: usize) -> Self {
-        UVAddr(value)
-    }
-
-    fn into_usize(&self) -> usize {
-        self.0
-    }
-
-    fn is_null(&self) -> bool {
-        self.0 == 0
-    }
-
-    fn is_page_aligned(&self) -> bool {
-        self.0 % PGSIZE == 0
-    }
-}
-
 pub struct PageTable<A> {
     ptr: *mut RawPageTable,
     _marker: PhantomData<A>,
@@ -236,7 +239,7 @@ impl<A: VAddr> PageTable<A> {
         }
     }
 
-    pub fn new() -> Self {
+    pub fn alloc_root(&mut self) {
         let page = unsafe { kernel().alloc() } as *mut RawPageTable;
         if page.is_null() {
             panic!("PageTable new: out of memory");
@@ -245,10 +248,7 @@ impl<A: VAddr> PageTable<A> {
             ptr::write_bytes(page, 0, 1);
         }
 
-        Self {
-            ptr: page,
-            _marker: PhantomData,
-        }
+        self.ptr = page;
     }
 
     pub fn from_raw(ptr: *mut RawPageTable) -> Self {
@@ -614,121 +614,97 @@ impl<T> DerefMut for PageTable<T> {
     }
 }
 
-// trampoline.S
-/// Create a direct-map page table for the kernel and
-/// turn on paging. Called early, in supervisor mode.
-/// The page allocator is already initialized.
-pub unsafe fn kvminit(page_table: *mut PageTable<KVAddr>) {
-    ptr::write(page_table, PageTable::new());
-    let page_table = &mut *page_table;
+impl PageTable<KVAddr> {
+    // trampoline.S
+    /// Create a direct-map page table for the kernel and
+    /// turn on paging. Called early, in supervisor mode.
+    /// The page allocator is already initialized.
+    pub unsafe fn kvminit(&mut self) {
+        self.alloc_root();
 
-    // SiFive Test Finisher MMIO
-    kvmmap(
-        page_table,
-        KVAddr::new(FINISHER),
-        PAddr::new(FINISHER),
-        PGSIZE,
-        PTE_R | PTE_W,
-    );
+        // SiFive Test Finisher MMIO
+        self.kvmmap(
+            KVAddr::new(FINISHER),
+            PAddr::new(FINISHER),
+            PGSIZE,
+            PTE_R | PTE_W,
+        );
 
-    // uart registers
-    kvmmap(
-        page_table,
-        KVAddr::new(UART0),
-        PAddr::new(UART0),
-        PGSIZE,
-        PTE_R | PTE_W,
-    );
+        // uart registers
+        self.kvmmap(KVAddr::new(UART0), PAddr::new(UART0), PGSIZE, PTE_R | PTE_W);
 
-    // virtio mmio disk interface
-    kvmmap(
-        page_table,
-        KVAddr::new(VIRTIO0),
-        PAddr::new(VIRTIO0),
-        PGSIZE,
-        PTE_R | PTE_W,
-    );
+        // virtio mmio disk interface
+        self.kvmmap(
+            KVAddr::new(VIRTIO0),
+            PAddr::new(VIRTIO0),
+            PGSIZE,
+            PTE_R | PTE_W,
+        );
 
-    // CLINT
-    kvmmap(
-        page_table,
-        KVAddr::new(CLINT),
-        PAddr::new(CLINT),
-        0x10000,
-        PTE_R | PTE_W,
-    );
+        // CLINT
+        self.kvmmap(
+            KVAddr::new(CLINT),
+            PAddr::new(CLINT),
+            0x10000,
+            PTE_R | PTE_W,
+        );
 
-    // PLIC
-    kvmmap(
-        page_table,
-        KVAddr::new(PLIC),
-        PAddr::new(PLIC),
-        0x400000,
-        PTE_R | PTE_W,
-    );
+        // PLIC
+        self.kvmmap(KVAddr::new(PLIC), PAddr::new(PLIC), 0x400000, PTE_R | PTE_W);
 
-    // Map kernel text executable and read-only.
-    kvmmap(
-        page_table,
-        KVAddr::new(KERNBASE),
-        PAddr::new(KERNBASE),
-        (etext.as_mut_ptr() as usize) - KERNBASE,
-        PTE_R | PTE_X,
-    );
+        // Map kernel text executable and read-only.
+        self.kvmmap(
+            KVAddr::new(KERNBASE),
+            PAddr::new(KERNBASE),
+            (etext.as_mut_ptr() as usize) - KERNBASE,
+            PTE_R | PTE_X,
+        );
 
-    // Map kernel data and the physical RAM we'll make use of.
-    kvmmap(
-        page_table,
-        KVAddr::new(etext.as_mut_ptr() as usize),
-        PAddr::new(etext.as_mut_ptr() as usize),
-        PHYSTOP - (etext.as_mut_ptr() as usize),
-        PTE_R | PTE_W,
-    );
+        // Map kernel data and the physical RAM we'll make use of.
+        self.kvmmap(
+            KVAddr::new(etext.as_mut_ptr() as usize),
+            PAddr::new(etext.as_mut_ptr() as usize),
+            PHYSTOP - (etext.as_mut_ptr() as usize),
+            PTE_R | PTE_W,
+        );
 
-    // Map the trampoline for trap entry/exit to
-    // the highest virtual address in the kernel.
-    kvmmap(
-        page_table,
-        KVAddr::new(TRAMPOLINE),
-        PAddr::new(trampoline.as_mut_ptr() as usize),
-        PGSIZE,
-        PTE_R | PTE_X,
-    );
-}
+        // Map the trampoline for trap entry/exit to
+        // the highest virtual address in the kernel.
+        self.kvmmap(
+            KVAddr::new(TRAMPOLINE),
+            PAddr::new(trampoline.as_mut_ptr() as usize),
+            PGSIZE,
+            PTE_R | PTE_X,
+        );
+    }
 
-/// Switch h/w page table register to the kernel's page table,
-/// and enable paging.
-pub unsafe fn kvminithart(page_table: &PageTable<KVAddr>) {
-    w_satp(make_satp(page_table.ptr as usize));
-    sfence_vma();
-}
+    /// Switch h/w page table register to the kernel's page table,
+    /// and enable paging.
+    pub unsafe fn kvminithart(&self) {
+        w_satp(make_satp(self.ptr as usize));
+        sfence_vma();
+    }
 
-/// Add a mapping to the kernel page table.
-/// Only used when booting.
-/// Does not flush TLB or enable paging.
-pub unsafe fn kvmmap(
-    page_table: &mut PageTable<KVAddr>,
-    va: KVAddr,
-    pa: PAddr,
-    sz: usize,
-    perm: i32,
-) {
-    if page_table.mappages(va, sz, pa.into_usize(), perm).is_err() {
-        panic!("kvmmap");
-    };
-}
+    /// Add a mapping to the kernel page table.
+    /// Only used when booting.
+    /// Does not flush TLB or enable paging.
+    pub unsafe fn kvmmap(&mut self, va: KVAddr, pa: PAddr, sz: usize, perm: i32) {
+        if self.mappages(va, sz, pa.into_usize(), perm).is_err() {
+            panic!("kvmmap");
+        };
+    }
 
-/// Translate a kernel virtual address to
-/// a physical address. Only needed for
-/// addresses on the stack.
-/// Assumes va is page aligned.
-pub unsafe fn kvmpa(va: KVAddr) -> usize {
-    let off: usize = va.into_usize().wrapping_rem(PGSIZE);
-    let pte = kernel()
-        .page_table
-        .walk(va, 0)
-        .filter(|pte| pte.check_flag(PTE_V))
-        .expect("kvmpa");
-    let pa = pte.as_page() as *const _ as usize;
-    pa + off
+    /// Translate a kernel virtual address to
+    /// a physical address. Only needed for
+    /// addresses on the stack.
+    /// Assumes va is page aligned.
+    pub unsafe fn kvmpa(&self, va: KVAddr) -> usize {
+        let off: usize = va.into_usize().wrapping_rem(PGSIZE);
+        let pte = self
+            .walk(va, 0)
+            .filter(|pte| pte.check_flag(PTE_V))
+            .expect("kvmpa");
+        let pa = pte.as_page() as *const _ as usize;
+        pa + off
+    }
 }

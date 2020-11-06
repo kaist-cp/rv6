@@ -24,8 +24,7 @@ use crate::{
     trap::{trapinit, trapinithart},
     uart::Uart,
     virtio_disk::{virtio_disk_init, Disk},
-    vm::KVAddr,
-    vm::{kvminit, kvminithart, PageTable},
+    vm::{KVAddr, PageTable},
 };
 
 /// The kernel.
@@ -227,10 +226,10 @@ pub unsafe fn kernel_main() -> ! {
         kinit(KERNEL.kmem.get_mut());
 
         // Create kernel page table.
-        kvminit(&mut KERNEL.page_table);
+        KERNEL.page_table.kvminit();
 
         // Turn on paging.
-        kvminithart(&kernel().page_table);
+        kernel().page_table.kvminithart();
 
         // Process system.
         procinit(&mut KERNEL.procs, &mut KERNEL.page_table);
@@ -264,7 +263,7 @@ pub unsafe fn kernel_main() -> ! {
         println!("hart {} starting", cpuid());
 
         // Turn on paging.
-        kvminithart(&kernel().page_table);
+        kernel().page_table.kvminithart();
 
         // Install kernel trap vector.
         trapinithart();
