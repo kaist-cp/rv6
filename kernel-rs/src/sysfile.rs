@@ -5,7 +5,6 @@
 #![allow(clippy::unit_arg)]
 
 use crate::{
-    exec::exec,
     fcntl::FcntlFlags,
     file::{FileType, RcFile},
     fs::{Dirent, FileName, Inode, InodeGuard, Path, RcInode, DIRENT_SIZE},
@@ -333,7 +332,7 @@ impl Kernel {
         }
 
         let ret = if success {
-            ok_or!(exec(Path::new(path), &argv), usize::MAX)
+            ok_or!(self.exec(Path::new(path), &argv), usize::MAX)
         } else {
             usize::MAX
         };
