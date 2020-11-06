@@ -114,7 +114,7 @@ impl AllocatedPipe {
             return Err(());
         }
 
-        //TODO: Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`
+        //TODO(rv6): Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`
         *ptr = Pipe {
             inner: Spinlock::new(
                 "pipe",
