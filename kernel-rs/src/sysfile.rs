@@ -42,14 +42,14 @@ impl RcFile {
 
 /// Fetch the nth word-sized system call argument as a file descriptor
 /// and return both the descriptor and the corresponding struct file.
-unsafe fn argfd(n: usize) -> Result<(i32, *mut RcFile), ()> {
+unsafe fn argfd<'a>(n: usize) -> Result<(i32, &'a RcFile), ()> {
     let fd = argint(n)?;
     if fd < 0 || fd >= NOFILE as i32 {
         return Err(());
     }
 
     let f = some_or!(
-        &mut (*(*myproc()).data.get()).open_files[fd as usize],
+        &(*(*myproc()).data.get()).open_files[fd as usize],
         return Err(())
     );
 
@@ -105,7 +105,7 @@ where
 impl Kernel {
     pub unsafe fn sys_dup(&self) -> usize {
         let (_, f) = ok_or!(argfd(0), return usize::MAX);
-        let newfile = (*f).clone();
+        let newfile = f.clone();
 
         let fd = ok_or!(newfile.fdalloc(), return usize::MAX);
         fd as usize
@@ -115,14 +115,14 @@ impl Kernel {
         let (_, f) = ok_or!(argfd(0), return usize::MAX);
         let n = ok_or!(argint(2), return usize::MAX);
         let p = ok_or!(argaddr(1), return usize::MAX);
-        ok_or!((*f).read(UVAddr::new(p), n), usize::MAX)
+        ok_or!(f.read(UVAddr::new(p), n), usize::MAX)
     }
 
     pub unsafe fn sys_write(&self) -> usize {
         let (_, f) = ok_or!(argfd(0), return usize::MAX);
         let n = ok_or!(argint(2), return usize::MAX);
         let p = ok_or!(argaddr(1), return usize::MAX);
-        ok_or!((*f).write(UVAddr::new(p), n), usize::MAX)
+        ok_or!(f.write(UVAddr::new(p), n), usize::MAX)
     }
 
     pub unsafe fn sys_close(&self) -> usize {
@@ -135,7 +135,7 @@ impl Kernel {
         let (_, f) = ok_or!(argfd(0), return usize::MAX);
         // user pointer to struct stat
         let st = ok_or!(argaddr(1), return usize::MAX);
-        ok_or!((*f).stat(UVAddr::new(st)), return usize::MAX);
+        ok_or!(f.stat(UVAddr::new(st)), return usize::MAX);
         0
     }
 
