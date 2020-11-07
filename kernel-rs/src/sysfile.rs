@@ -42,7 +42,7 @@ impl RcFile {
 
 /// Fetch the nth word-sized system call argument as a file descriptor
 /// and return both the descriptor and the corresponding struct file.
-unsafe fn argfd<'a>(n: usize) -> Result<(i32, &'a RcFile), ()> {
+unsafe fn argfd(n: usize) -> Result<(i32, &'static RcFile), ()> {
     let fd = argint(n)?;
     if fd < 0 || fd >= NOFILE as i32 {
         return Err(());
