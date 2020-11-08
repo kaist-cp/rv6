@@ -22,7 +22,6 @@
 #include "file.h"
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
-static void itrunc(struct inode*);
 // there should be one superblock per disk device, but we run with
 // only one device
 struct superblock sb; 
@@ -406,11 +405,8 @@ bmap(struct inode *ip, uint bn)
 }
 
 // Truncate inode (discard contents).
-// Only called when the inode has no links
-// to it (no directory entries referring to it)
-// and has no in-memory reference to it (is
-// not an open file or current directory).
-static void
+// Caller must hold ip->lock.
+void
 itrunc(struct inode *ip)
 {
   int i, j;
@@ -463,7 +459,7 @@ readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
   struct buf *bp;
 
   if(off > ip->size || off + n < off)
-    return -1;
+    return 0;
   if(off + n > ip->size)
     n = ip->size - off;
 
@@ -472,17 +468,21 @@ readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n)
     m = min(n - tot, BSIZE - off%BSIZE);
     if(either_copyout(user_dst, dst, bp->data + (off % BSIZE), m) == -1) {
       brelse(bp);
+      tot = -1;
       break;
     }
     brelse(bp);
   }
-  return n;
+  return tot;
 }
 
 // Write data to inode.
 // Caller must hold ip->lock.
 // If user_src==1, then src is a user virtual address;
 // otherwise, src is a kernel address.
+// Returns the number of bytes successfully written.
+// If the return value is less than the requested n,
+// there was an error of some kind.
 int
 writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
 {
@@ -505,16 +505,15 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
     brelse(bp);
   }
 
-  if(n > 0){
-    if(off > ip->size)
-      ip->size = off;
-    // write the i-node back to disk even if the size didn't change
-    // because the loop above might have called bmap() and added a new
-    // block to ip->addrs[].
-    iupdate(ip);
-  }
+  if(off > ip->size)
+    ip->size = off;
 
-  return n;
+  // write the i-node back to disk even if the size didn't change
+  // because the loop above might have called bmap() and added a new
+  // block to ip->addrs[].
+  iupdate(ip);
+
+  return tot;
 }
 
 // Directories

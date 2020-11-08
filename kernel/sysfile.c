@@ -341,6 +341,10 @@ sys_open(void)
   f->readable = !(omode & O_WRONLY);
   f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
 
+  if((omode & O_TRUNC) && ip->type == T_FILE){
+    itrunc(ip);
+  }
+
   iunlock(ip);
   end_op();
 
@@ -432,10 +436,9 @@ sys_exec(void)
     }
     argv[i] = kalloc();
     if(argv[i] == 0)
-      panic("sys_exec kalloc");
-    if(fetchstr(uarg, argv[i], PGSIZE) < 0){
       goto bad;
-    }
+    if(fetchstr(uarg, argv[i], PGSIZE) < 0)
+      goto bad;
   }
 
   int ret = exec(path, argv);
