@@ -152,7 +152,6 @@ pub unsafe fn usertrapret() {
 
 /// interrupts and exceptions from kernel code go here via kernelvec,
 /// on whatever the current kernel stack is.
-/// must be 4-byte aligned to fit in stvec.
 #[no_mangle]
 pub unsafe fn kerneltrap() {
     let sepc = r_sepc();
@@ -211,9 +210,14 @@ pub unsafe fn devintr() -> i32 {
             Uart::intr();
         } else if irq == VIRTIO0_IRQ {
             kernel().disk.lock().virtio_intr();
+        } else if irq != 0 {
+            println!("unexpected interrupt irq={:018p}\n", irq as *const u8);
         }
 
-        plic_complete(irq);
+        if irq != 0 {
+            plic_complete(irq);
+        }
+        
         1
     } else if scause == 0x8000000000000001 {
         // software interrupt from a machine-mode timer interrupt,

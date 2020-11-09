@@ -95,13 +95,9 @@ impl RawSpinlock {
     }
 
     /// Check whether this cpu is holding the lock.
+    /// Interrupts must be off.
     pub fn holding(&self) -> bool {
-        unsafe {
-            push_off();
-            let ret = self.locked.load(Ordering::Relaxed) == kernel().mycpu();
-            pop_off();
-            ret
-        }
+        self.locked.load(Ordering::Relaxed) == kernel().mycpu()
     }
 }
 

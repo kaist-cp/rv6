@@ -3,7 +3,7 @@ use crate::{
     memlayout::{clint_mtimecmp, CLINT_MTIME},
     param::NCPU,
     riscv::{
-        r_mhartid, w_medeleg, w_mepc, w_mideleg, w_mscratch, w_mtvec, w_satp, w_tp, Mstatus, MIE,
+        r_mhartid, w_medeleg, w_mepc, w_mideleg, w_mscratch, w_mtvec, w_satp, w_tp, Mstatus, MIE, SIE,
     },
 };
 
@@ -46,6 +46,11 @@ pub unsafe fn start() {
     // delegate all interrupts and exceptions to supervisor mode.
     w_medeleg(0xffff);
     w_mideleg(0xffff);
+    let mut x = SIE::read();
+    x.insert(SIE::SEIE);
+    x.insert(SIE::STIE);
+    x.insert(SIE::SSIE);
+    x.write();
 
     // ask for clock interrupts.
     timerinit();
