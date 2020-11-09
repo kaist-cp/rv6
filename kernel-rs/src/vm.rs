@@ -272,9 +272,9 @@ impl<A: VAddr> PageTable<A> {
     /// A 64-bit virtual address is split into five fields:
     ///   39..63 -- must be zero.
     ///   30..38 -- 9 bits of level-2 index.
-    ///   21..39 -- 9 bits of level-1 index.
+    ///   21..29 -- 9 bits of level-1 index.
     ///   12..20 -- 9 bits of level-0 index.
-    ///    0..12 -- 12 bits of byte offset within the page.
+    ///    0..11 -- 12 bits of byte offset within the page.
     unsafe fn walk(&self, va: A, alloc: i32) -> Option<&mut PageTableEntry> {
         let mut pagetable = &mut *self.as_raw();
         assert!(va.into_usize() < MAXVA, "walk");

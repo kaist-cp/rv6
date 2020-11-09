@@ -278,11 +278,6 @@ pub unsafe fn r_time() -> u64 {
 /// Enable device interrupts.
 #[inline]
 pub unsafe fn intr_on() {
-    let mut x = SIE::read();
-    x.insert(SIE::SEIE);
-    x.insert(SIE::STIE);
-    x.insert(SIE::SSIE);
-    x.write();
     let mut y = Sstatus::read();
     y.insert(Sstatus::SIE);
     y.write();

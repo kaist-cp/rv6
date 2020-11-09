@@ -298,7 +298,7 @@ struct ProcInfo {
 
 /// Proc::data are private to the process, so lock need not be held.
 pub struct ProcData {
-    /// Bottom of kernel stack for this process.
+    /// Virtual address of kernel stack.
     pub kstack: usize,
 
     /// Size of process memory (bytes).
