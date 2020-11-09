@@ -58,7 +58,8 @@ impl RawSpinlock {
 
         // Tell the C compiler and the processor to not move loads or stores
         // past this point, to ensure that the critical section's memory
-        // references happen after the lock is acquired.
+        // references happen strictly after the lock is acquired.
+        // On RISC-V, this emits a fence instruction.
         //
         // TODO(@jeehoon): it's unnecessary.
         //
@@ -71,8 +72,10 @@ impl RawSpinlock {
 
         // Tell the C compiler and the CPU to not move loads or stores
         // past this point, to ensure that all the stores in the critical
-        // section are visible to other CPUs before the lock is released.
-        // On RISC-V, this turns into a fence instruction.
+        // section are visible to other CPUs before the lock is released,
+        // and that loads in the critical section occur strictly before
+        // the lock is released.
+        // On RISC-V, this emits a fence instruction.
         //
         // TODO(@jeehoon): it's unnecessary.
         //
