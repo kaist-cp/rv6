@@ -217,7 +217,7 @@ pub unsafe fn devintr() -> i32 {
         if irq != 0 {
             plic_complete(irq);
         }
-        
+
         1
     } else if scause == 0x8000000000000001 {
         // software interrupt from a machine-mode timer interrupt,
