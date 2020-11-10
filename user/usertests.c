@@ -1038,7 +1038,11 @@ concreate(char *s)
       close(open(file, 0));
       close(open(file, 0));
       close(open(file, 0));
+      close(open(file, 0));
+      close(open(file, 0));
     } else {
+      unlink(file);
+      unlink(file);
       unlink(file);
       unlink(file);
       unlink(file);
@@ -1106,7 +1110,7 @@ bigdir(char *s)
     name[2] = '0' + (i % 64);
     name[3] = '\0';
     if(link("bd", name) != 0){
-      printf("%s: bigdir link failed\n", s);
+      printf("%s: bigdir link(bd, %s) failed\n", s, name);
       exit(1);
     }
   }
@@ -1335,8 +1339,8 @@ bigfile(char *s)
   enum { N = 20, SZ=600 };
   int fd, i, total, cc;
 
-  unlink("bigfile");
-  fd = open("bigfile", O_CREATE | O_RDWR);
+  unlink("bigfile.dat");
+  fd = open("bigfile.dat", O_CREATE | O_RDWR);
   if(fd < 0){
     printf("%s: cannot create bigfile", s);
     exit(1);
@@ -1350,7 +1354,7 @@ bigfile(char *s)
   }
   close(fd);
 
-  fd = open("bigfile", 0);
+  fd = open("bigfile.dat", 0);
   if(fd < 0){
     printf("%s: cannot open bigfile\n", s);
     exit(1);
@@ -1379,7 +1383,7 @@ bigfile(char *s)
     printf("%s: read bigfile wrong total\n", s);
     exit(1);
   }
-  unlink("bigfile");
+  unlink("bigfile.dat");
 }
 
 void
@@ -1418,6 +1422,14 @@ fourteen(char *s)
     printf("%s: mkdir 12345678901234/123456789012345 succeeded!\n", s);
     exit(1);
   }
+
+  // clean up
+  unlink("123456789012345/12345678901234");
+  unlink("12345678901234/12345678901234");
+  unlink("12345678901234/12345678901234/12345678901234");
+  unlink("123456789012345/123456789012345/123456789012345");
+  unlink("12345678901234/123456789012345");
+  unlink("12345678901234");
 }
 
 void
@@ -1512,7 +1524,8 @@ dirfile(char *s)
   close(fd);
 }
 
-// test that iput() is called at the end of _namei()
+// test that iput() is called at the end of _namei().
+// also tests empty file names.
 void
 iref(char *s)
 {
@@ -1537,6 +1550,12 @@ iref(char *s)
     if(fd >= 0)
       close(fd);
     unlink("xx");
+  }
+
+  // clean up
+  for(i = 0; i < NINODE + 1; i++){
+    chdir("..");
+    unlink("irefd");
   }
 
   chdir("/");
@@ -2087,13 +2106,32 @@ badarg(char *s)
   exit(0);
 }
 
+//
+// use sbrk() to count how many free physical memory pages there are.
+//
+int
+countfree()
+{
+  uint64 sz0 = (uint64)sbrk(0);
+  int n = 0;
+
+  while(1){
+    if((uint64)sbrk(4096) == 0xffffffffffffffff){
+      break;
+    }
+    n += 1;
+  }
+  sbrk(-((uint64)sbrk(0) - sz0));
+  return n;
+}
+
 // run each test in its own process. run returns 1 if child's exit()
 // indicates success.
 int
 run(void f(char *), char *s) {
   int pid;
   int xstatus;
-  
+
   printf("test %s: ", s);
   if((pid = fork()) < 0) {
     printf("runtest: fork error\n");
@@ -2115,9 +2153,16 @@ run(void f(char *), char *s) {
 int
 main(int argc, char *argv[])
 {
-  char *n = 0;
-  if(argc > 1) {
-    n = argv[1];
+  int continuous = 0;
+  char *justone = 0;
+
+  if(argc == 2 && strcmp(argv[1], "-c") == 0){
+    continuous = 1;
+  } else if(argc == 2 && argv[1][0] != '-'){
+    justone = argv[1];
+  } else if(argc > 1){
+    printf("Usage: usertests [-c] [testname]\n");
+    exit(1);
   }
   
   struct test {
@@ -2173,25 +2218,48 @@ main(int argc, char *argv[])
     {bigdir, "bigdir"}, // slow
     { 0, 0},
   };
-    
-  printf("usertests starting\n");
 
-  if(open("usertests.ran", 0) >= 0){
-    printf("already ran user tests -- rebuild fs.img (rm fs.img; make fs.img)\n");
-    exit(1);
+  if(continuous){
+    printf("continuous usertests starting\n");
+    while(1){
+      int fail = 0;
+      int free0 = countfree();
+      for (struct test *t = tests; t->s != 0; t++) {
+        if(!run(t->f, t->s)){
+          fail = 1;
+          break;
+        }
+      }
+      if(fail){
+        printf("SOME TESTS FAILED\n");
+        exit(1);
+      }
+      int free1 = countfree();
+      if(free1 < free0){
+        printf("FAILED -- lost some free pages\n");
+        exit(1);
+      }
+    }
   }
-  close(open("usertests.ran", O_CREATE));
 
+  printf("usertests starting\n");
+  int free0 = countfree();
   int fail = 0;
   for (struct test *t = tests; t->s != 0; t++) {
-    if((n == 0) || strcmp(t->s, n) == 0) {
+    if((justone == 0) || strcmp(t->s, justone) == 0) {
       if(!run(t->f, t->s))
         fail = 1;
     }
   }
-  if(!fail)
-    printf("ALL TESTS PASSED\n");
-  else
+
+  if(fail){
     printf("SOME TESTS FAILED\n");
-  exit(fail);
+    exit(1);
+  } else if(countfree() < free0){
+    printf("FAILED -- lost some free pages\n");
+    exit(1);
+  } else {
+    printf("ALL TESTS PASSED\n");
+    exit(0);
+  }
 }
