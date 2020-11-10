@@ -503,7 +503,9 @@ impl PageTable<UVAddr> {
     /// Free user memory pages,
     /// then free page-table pages.
     pub unsafe fn uvmfree(&mut self, sz: usize) {
-        self.uvmunmap(UVAddr::new(0), sz, 1);
+        if sz > 0 {
+            self.uvmunmap(UVAddr::new(0), sz, 1);
+        }
         self.freewalk();
     }
 
