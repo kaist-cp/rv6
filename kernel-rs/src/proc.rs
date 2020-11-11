@@ -308,7 +308,7 @@ pub struct ProcData {
     pub pagetable: PageTable<UVAddr>,
 
     /// Data page for trampoline.S.
-    pub tf: *mut Trapframe,
+    pub trapframe: *mut Trapframe,
 
     /// swtch() here to run process.
     context: Context,
@@ -458,7 +458,7 @@ impl ProcData {
             kstack: 0,
             sz: 0,
             pagetable: PageTable::zero(),
-            tf: ptr::null_mut(),
+            trapframe: ptr::null_mut(),
             context: Context::new(),
             open_files: [None; NOFILE],
             cwd: None,
@@ -580,7 +580,7 @@ impl ProcessSystem {
 
                 // Allocate a trapframe page.
                 let page = some_or!(kernel().alloc(), return Err(()));
-                data.tf = page.into_usize() as *mut Trapframe;
+                data.trapframe = page.into_usize() as *mut Trapframe;
 
                 // An empty user page table.
                 data.pagetable = proc_pagetable(p as *const _ as *mut _);
@@ -660,10 +660,10 @@ impl ProcessSystem {
         // Prepare for the very first "return" from kernel to user.
 
         // User program counter.
-        (*data.tf).epc = 0;
+        (*data.trapframe).epc = 0;
 
         // User stack pointer.
-        (*data.tf).sp = PGSIZE;
+        (*data.trapframe).sp = PGSIZE;
         safestrcpy(
             (*guard).name.as_mut_ptr(),
             b"initcode\x00" as *const u8,
@@ -698,10 +698,10 @@ impl ProcessSystem {
         np.deref_mut_info().parent = p;
 
         // Copy saved user registers.
-        *npdata.tf = *pdata.tf;
+        *npdata.trapframe = *pdata.trapframe;
 
         // Cause fork to return 0 in the child.
-        (*npdata.tf).a0 = 0;
+        (*npdata.trapframe).a0 = 0;
 
         // Increment reference counts on open file descriptors.
         for i in 0..NOFILE {
@@ -874,10 +874,10 @@ pub unsafe fn myproc() -> *mut Proc {
 /// p->lock must be held.
 unsafe fn freeproc(mut p: ProcGuard) {
     let mut data = &mut *p.data.get();
-    if !data.tf.is_null() {
-        kernel().free(Page::from_usize(data.tf as _));
+    if !data.trapframe.is_null() {
+        kernel().free(Page::from_usize(data.trapframe as _));
     }
-    data.tf = ptr::null_mut();
+    data.trapframe = ptr::null_mut();
     if !data.pagetable.is_null() {
         let sz = data.sz;
         proc_freepagetable(&mut data.pagetable, sz);
@@ -920,7 +920,7 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable<UVAddr> {
         .mappages(
             UVAddr::new(TRAPFRAME),
             PGSIZE,
-            (*(*p).data.get()).tf as usize,
+            (*(*p).data.get()).trapframe as usize,
             PTE_R | PTE_W,
         )
         .expect("proc_pagetable: mappages TRAPFRAME");

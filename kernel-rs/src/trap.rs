@@ -50,7 +50,7 @@ pub unsafe extern "C" fn usertrap() {
     let mut data = &mut *(*p).data.get();
 
     // save user program counter.
-    (*data.tf).epc = r_sepc();
+    (*data.trapframe).epc = r_sepc();
     if r_scause() == 8 {
         // system call
 
@@ -60,7 +60,7 @@ pub unsafe extern "C" fn usertrap() {
 
         // sepc points to the ecall instruction,
         // but we want to return to the next instruction.
-        (*data.tf).epc = ((*data.tf).epc).wrapping_add(4);
+        (*data.trapframe).epc = ((*data.trapframe).epc).wrapping_add(4);
 
         // an interrupt will change sstatus &c registers,
         // so don't enable until done with those registers.
@@ -113,14 +113,14 @@ pub unsafe fn usertrapret() {
     // the process next re-enters the kernel.
 
     // kernel page table
-    (*data.tf).kernel_satp = r_satp();
+    (*data.trapframe).kernel_satp = r_satp();
 
     // process's kernel stack
-    (*data.tf).kernel_sp = data.kstack.wrapping_add(PGSIZE);
-    (*data.tf).kernel_trap = usertrap as usize;
+    (*data.trapframe).kernel_sp = data.kstack.wrapping_add(PGSIZE);
+    (*data.trapframe).kernel_trap = usertrap as usize;
 
     // hartid for cpuid()
-    (*data.tf).kernel_hartid = r_tp();
+    (*data.trapframe).kernel_hartid = r_tp();
 
     // set up the registers that trampoline.S's sret will use
     // to get to user space.
@@ -136,7 +136,7 @@ pub unsafe fn usertrapret() {
     x.write();
 
     // set S Exception Program Counter to the saved user pc.
-    w_sepc((*data.tf).epc);
+    w_sepc((*data.trapframe).epc);
 
     // tell trampoline.S the user page table to switch to.
     let satp: usize = make_satp(data.pagetable.as_raw() as usize);

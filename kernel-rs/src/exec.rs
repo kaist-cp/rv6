@@ -214,7 +214,7 @@ impl Kernel {
             // arguments to user main(argc, argv)
             // argc is returned via the system call return
             // value, which goes in a0.
-            (*data.tf).a1 = sp;
+            (*data.trapframe).a1 = sp;
 
             // Save program name for debugging.
             let mut s = path.as_bytes().as_ptr();
@@ -236,10 +236,10 @@ impl Kernel {
             data.sz = sz;
 
             // initial program counter = main
-            (*data.tf).epc = elf.entry;
+            (*data.trapframe).epc = elf.entry;
 
             // initial stack pointer
-            (*data.tf).sp = sp;
+            (*data.trapframe).sp = sp;
             proc_freepagetable(&mut oldpagetable, oldsz);
 
             // this ends up in a0, the first argument to main(argc, argv)
