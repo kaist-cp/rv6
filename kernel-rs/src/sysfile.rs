@@ -240,7 +240,7 @@ impl Kernel {
             return usize::MAX;
         }
 
-        let typ = if typ == T_DEVICE {
+        let filetype = if typ == T_DEVICE {
             let major = major;
             FileType::Device { ip, major }
         } else {
@@ -251,12 +251,19 @@ impl Kernel {
         };
         let f = some_or!(
             RcFile::alloc(
-                typ,
+                filetype,
                 !omode.intersects(FcntlFlags::O_WRONLY),
                 omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)
             ),
             return usize::MAX
         );
+
+        if omode.contains(FcntlFlags::O_TRUNC) && typ == T_FILE {
+            match &f.typ {
+                FileType::Device { ip, .. } | FileType::Inode { ip, .. } => ip.lock().itrunc(),
+                _ => panic!("sys_open : Not reach"),
+            };
+        }
         let fd = ok_or!(f.fdalloc(), return usize::MAX);
         fd as usize
     }

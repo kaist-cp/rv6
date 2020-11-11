@@ -165,11 +165,8 @@ impl InodeGuard<'_> {
     }
 
     /// Truncate inode (discard contents).
-    /// Only called when the inode has no links
-    /// to it (no directory entries referring to it)
-    /// and has no in-memory reference to it (is
-    /// not an open file or current directory).
-    unsafe fn itrunc(&mut self) {
+    /// This function is called with Inode's lock is held.
+    pub unsafe fn itrunc(&mut self) {
         for i in 0..NDIRECT {
             if self.deref_inner().addrs[i] != 0 {
                 bfree(self.dev as i32, self.deref_inner().addrs[i]);
@@ -201,7 +198,7 @@ impl InodeGuard<'_> {
     ) -> Result<usize, ()> {
         let inner = self.deref_inner();
         if off > inner.size || off.wrapping_add(n) < off {
-            return Err(());
+            return Ok(0);
         }
         if off.wrapping_add(n) > inner.size {
             n = inner.size.wrapping_sub(off)
