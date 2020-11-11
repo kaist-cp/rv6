@@ -64,7 +64,7 @@ pub struct Cpu {
     pub proc: *mut Proc,
 
     /// swtch() here to enter scheduler().
-    pub scheduler: Context,
+    pub context: Context,
 
     /// Depth of push_off() nesting.
     pub noff: i32,
@@ -379,7 +379,7 @@ impl ProcGuard {
         let interrupt_enabled = (*kernel().mycpu()).interrupt_enabled;
         swtch(
             &mut (*self.data.get()).context,
-            &mut (*kernel().mycpu()).scheduler,
+            &mut (*kernel().mycpu()).context,
         );
         (*kernel().mycpu()).interrupt_enabled = interrupt_enabled;
     }
@@ -412,7 +412,7 @@ impl Cpu {
     pub const fn new() -> Self {
         Self {
             proc: ptr::null_mut(),
-            scheduler: Context::new(),
+            context: Context::new(),
             noff: 0,
             interrupt_enabled: false,
         }
@@ -983,7 +983,7 @@ pub unsafe fn scheduler() -> ! {
                 // before jumping back to us.
                 guard.deref_mut_info().state = Procstate::RUNNING;
                 (*c).proc = p as *const _ as *mut _;
-                swtch(&mut (*c).scheduler, &mut (*guard.data.get()).context);
+                swtch(&mut (*c).context, &mut (*guard.data.get()).context);
 
                 // Process is done running for now.
                 // It should have changed its p->state before coming back.
