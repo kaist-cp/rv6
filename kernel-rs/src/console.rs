@@ -49,6 +49,10 @@ impl Console {
         }
     }
 
+    pub fn uartintr(&self) {
+        self.uart.intr()
+    }
+
     /// Send one character to the uart.
     pub fn putc(&mut self, c: i32) {
         // From printf.rs.
@@ -57,11 +61,11 @@ impl Console {
         }
         if c == BACKSPACE {
             // If the user typed backspace, overwrite with a space.
-            self.uart.putc('\u{8}' as i32);
-            self.uart.putc(' ' as i32);
-            self.uart.putc('\u{8}' as i32);
+            self.uart.putc('\u{8}' as i32, false);
+            self.uart.putc(' ' as i32, false);
+            self.uart.putc('\u{8}' as i32, false);
         } else {
-            self.uart.putc(c);
+            self.uart.putc(c, false);
         };
     }
 
@@ -71,7 +75,7 @@ impl Console {
             if VAddr::copyin(&mut c, UVAddr::new(src.into_usize() + (i as usize))).is_err() {
                 break;
             }
-            self.putc(c[0] as i32);
+            self.uart.putc(c[0] as i32, true);
         }
     }
 

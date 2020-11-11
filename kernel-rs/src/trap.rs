@@ -8,7 +8,6 @@ use crate::{
         intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp,
         w_sepc, w_sip, w_stvec, Sstatus, PGSIZE,
     },
-    uart::Uart,
 };
 use core::mem;
 
@@ -100,8 +99,9 @@ pub unsafe fn usertrapret() {
     let p: *mut Proc = myproc();
     let mut data = &mut *(*p).data.get();
 
-    // turn off interrupts, since we're switching
-    // now from kerneltrap() to usertrap().
+    // we're about to switch the destination of traps from
+    // kerneltrap() to usertrap(), so turn off interrupts until
+    // we're back in user space, where usertrap() is correct.
     intr_off();
 
     // send syscalls, interrupts, and exceptions to trampoline.S
@@ -207,13 +207,16 @@ pub unsafe fn devintr() -> i32 {
         let irq: usize = plic_claim();
 
         if irq == UART0_IRQ {
-            Uart::intr();
+            kernel().console.get_mut_unchecked().uartintr();
         } else if irq == VIRTIO0_IRQ {
             kernel().disk.lock().virtio_intr();
         } else if irq != 0 {
             println!("unexpected interrupt irq={:018p}\n", irq as *const u8);
         }
 
+        // the PLIC allows each device to raise at most one
+        // interrupt at a time; tell the PLIC the device is
+        // now allowed to interrupt again.
         if irq != 0 {
             plic_complete(irq);
         }
