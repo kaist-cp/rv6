@@ -38,6 +38,10 @@ pub enum MmioRegs {
     QueueReady = 0x044,
     /// write-only
     QueueNotify = 0x050,
+    /// read-only
+    InterruptStatus = 0x060,
+    /// write-only
+    InterruptAck = 0x064,
     /// read/write
     Status = 0x070,
 }

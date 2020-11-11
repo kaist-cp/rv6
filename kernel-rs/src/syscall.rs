@@ -42,12 +42,12 @@ unsafe fn argraw(n: usize) -> usize {
     let p = myproc();
     let data = &mut *(*p).data.get();
     match n {
-        0 => (*data.tf).a0,
-        1 => (*data.tf).a1,
-        2 => (*data.tf).a2,
-        3 => (*data.tf).a3,
-        4 => (*data.tf).a4,
-        5 => (*data.tf).a5,
+        0 => (*data.trapframe).a0,
+        1 => (*data.trapframe).a1,
+        2 => (*data.trapframe).a2,
+        3 => (*data.trapframe).a3,
+        4 => (*data.trapframe).a4,
+        5 => (*data.trapframe).a5,
         _ => panic!("argraw"),
     }
 }
@@ -76,7 +76,7 @@ impl Kernel {
     pub unsafe fn syscall(&self) {
         let p: *mut Proc = myproc();
         let mut data = &mut *(*p).data.get();
-        let num: i32 = (*data.tf).a7 as i32;
+        let num: i32 = (*data.trapframe).a7 as i32;
 
         let result = match num {
             1 => self.sys_fork(),
@@ -112,6 +112,6 @@ impl Kernel {
             }
         };
 
-        (*data.tf).a0 = result;
+        (*data.trapframe).a0 = result;
     }
 }

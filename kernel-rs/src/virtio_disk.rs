@@ -291,6 +291,7 @@ impl Disk {
 
             self.used_idx = (self.used_idx.wrapping_add(1)).wrapping_rem(NUM as _)
         }
+        MmioRegs::InterruptAck.write(MmioRegs::InterruptStatus.read() & 0x3);
     }
 }
 

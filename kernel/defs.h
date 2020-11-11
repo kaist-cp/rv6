@@ -52,6 +52,7 @@ struct inode*   nameiparent(char*, char*);
 int             readi(struct inode*, int, uint64, uint, uint);
 void            stati(struct inode*, struct stat*);
 int             writei(struct inode*, int, uint64, uint, uint);
+void            itrunc(struct inode*);
 
 // ramdisk.c
 void            ramdiskinit(void);
@@ -148,7 +149,7 @@ void            usertrapret(void);
 // uart.c
 void            uartinit(void);
 void            uartintr(void);
-void            uartputc(int);
+void            uartputc(int, int);
 int             uartgetc(void);
 
 // vm.c
