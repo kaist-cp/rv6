@@ -123,11 +123,6 @@ impl Buf {
         let buf = BufUnlocked::new(dev, blockno);
         buf.lock()
     }
-
-    /// Write self's contents to disk.  Must be locked.
-    pub unsafe fn write(&mut self) {
-        Disk::virtio_rw(&mut kernel().disk.lock(), self, true);
-    }
 }
 
 impl Drop for Buf {

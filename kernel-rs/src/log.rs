@@ -23,8 +23,10 @@
 use crate::{
     bio::{Buf, BufUnlocked},
     fs::{Superblock, BSIZE},
+    kernel::kernel,
     param::{LOGSIZE, MAXOPBLOCKS},
     sleepablelock::Sleepablelock,
+    virtio_disk::Disk,
 };
 use arrayvec::ArrayVec;
 use core::{mem, ptr};
@@ -96,7 +98,7 @@ impl Log {
             );
 
             // Write dst to disk.
-            dbuf.write();
+            Disk::virtio_rw(&mut kernel().disk.lock(), &mut dbuf, true);
         }
     }
 
@@ -121,7 +123,7 @@ impl Log {
         for (i, b) in self.lh.block.iter().enumerate() {
             (*hb).block[i as usize] = b.blockno as i32;
         }
-        buf.write();
+        Disk::virtio_rw(&mut kernel().disk.lock(), &mut buf, true);
     }
 
     unsafe fn recover_from_log(&mut self) {
@@ -195,7 +197,7 @@ impl Log {
             );
 
             // Write the log.
-            to.write();
+            Disk::virtio_rw(&mut kernel().disk.lock(), &mut to, true);
         }
     }
 
