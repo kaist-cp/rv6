@@ -4,7 +4,7 @@
 ///
 /// qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 use crate::{
-    bio::Buf,
+    bio::{Buf, BufUnlocked},
     fs::BSIZE,
     kernel::kernel,
     page::RawPage,
@@ -196,6 +196,19 @@ impl Disk {
             used_idx: 0,
             info: [InflightInfo::zero(); NUM],
         }
+    }
+
+    /// Return a locked Buf with the `latest` contents of the indicated block.
+    /// If buf.valid is true, we don't need to access Disk.
+    pub fn virtio_get_buf(dev: u32, blockno: u32) -> Buf {
+        let mut buf = BufUnlocked::new(dev, blockno).lock();
+        if !buf.deref_inner().valid {
+            unsafe {
+                Disk::virtio_rw(&mut kernel().disk.lock(), &mut buf, false);
+            }
+            buf.deref_mut_inner().valid = true;
+        }
+        buf
     }
 
     pub unsafe fn virtio_rw(this: &mut SleepablelockGuard<'_, Self>, b: &mut Buf, write: bool) {
