@@ -19,7 +19,6 @@ use crate::{
     proc::WaitChannel,
     sleeplock::Sleeplock,
     spinlock::Spinlock,
-    virtio_disk::Disk,
 };
 
 use core::mem;
@@ -117,12 +116,6 @@ impl Buf {
             mem::transmute(self)
         }
     }
-
-    /// Return a locked buf with the contents of the indicated block.
-    pub fn new(dev: u32, blockno: u32) -> Self {
-        let buf = BufUnlocked::new(dev, blockno);
-        buf.lock()
-    }
 }
 
 impl Drop for Buf {
@@ -155,16 +148,7 @@ impl BufUnlocked {
 
     pub fn lock(self) -> Buf {
         mem::forget(self.inner.lock());
-        let mut result = Buf { inner: self };
-
-        if !result.deref_inner().valid {
-            unsafe {
-                Disk::virtio_rw(&mut kernel().disk.lock(), &mut result, false);
-            }
-            result.deref_mut_inner().valid = true;
-        }
-
-        result
+        Buf { inner: self }
     }
 
     pub fn deref_inner(&self) -> &BufInner {
