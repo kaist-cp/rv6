@@ -200,15 +200,19 @@ impl Disk {
 
     /// Return a locked Buf with the `latest` contents of the indicated block.
     /// If buf.valid is true, we don't need to access Disk.
-    pub fn virtio_get_buf(dev: u32, blockno: u32) -> Buf {
+    pub fn read(dev: u32, blockno: u32) -> Buf {
         let mut buf = BufUnlocked::new(dev, blockno).lock();
         if !buf.deref_inner().valid {
             unsafe {
-                Disk::virtio_rw(&mut kernel().disk.lock(), &mut buf, false);
+                Self::virtio_rw(&mut kernel().disk.lock(), &mut buf, false);
             }
             buf.deref_mut_inner().valid = true;
         }
         buf
+    }
+
+    pub fn write(b: &mut Buf) {
+        unsafe { Self::virtio_rw(&mut kernel().disk.lock(), b, true) }
     }
 
     pub unsafe fn virtio_rw(this: &mut SleepablelockGuard<'_, Self>, b: &mut Buf, write: bool) {

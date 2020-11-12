@@ -23,7 +23,6 @@
 use crate::{
     bio::{Buf, BufUnlocked},
     fs::{Superblock, BSIZE},
-    kernel::kernel,
     param::{LOGSIZE, MAXOPBLOCKS},
     sleepablelock::Sleepablelock,
     virtio_disk::Disk,
@@ -85,7 +84,7 @@ impl Log {
     unsafe fn install_trans(&mut self) {
         for (tail, dbuf) in self.lh.block.drain(..).enumerate() {
             // Read log block.
-            let lbuf = Disk::virtio_get_buf(self.dev as u32, (self.start + tail as i32 + 1) as u32);
+            let lbuf = Disk::read(self.dev as u32, (self.start + tail as i32 + 1) as u32);
 
             // Read dst.
             let mut dbuf = dbuf.lock();
@@ -98,13 +97,13 @@ impl Log {
             );
 
             // Write dst to disk.
-            Disk::virtio_rw(&mut kernel().disk.lock(), &mut dbuf, true);
+            Disk::write(&mut dbuf)
         }
     }
 
     /// Read the log header from disk into the in-memory log header.
     unsafe fn read_head(&mut self) {
-        let mut buf = Disk::virtio_get_buf(self.dev as u32, self.start as u32);
+        let mut buf = Disk::read(self.dev as u32, self.start as u32);
         let lh = buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader;
         for b in &(*lh).block[0..(*lh).n as usize] {
             self.lh
@@ -117,13 +116,13 @@ impl Log {
     /// This is the true point at which the
     /// current transaction commits.
     unsafe fn write_head(&mut self) {
-        let mut buf = Disk::virtio_get_buf(self.dev as u32, self.start as u32);
+        let mut buf = Disk::read(self.dev as u32, self.start as u32);
         let mut hb = buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader;
         (*hb).n = self.lh.block.len() as i32;
         for (i, b) in self.lh.block.iter().enumerate() {
             (*hb).block[i as usize] = b.blockno as i32;
         }
-        Disk::virtio_rw(&mut kernel().disk.lock(), &mut buf, true);
+        Disk::write(&mut buf)
     }
 
     unsafe fn recover_from_log(&mut self) {
@@ -185,11 +184,10 @@ impl Log {
     unsafe fn write_log(&mut self) {
         for (tail, from) in self.lh.block.iter().enumerate() {
             // Log block.
-            let mut to =
-                Disk::virtio_get_buf(self.dev as u32, (self.start + tail as i32 + 1) as u32);
+            let mut to = Disk::read(self.dev as u32, (self.start + tail as i32 + 1) as u32);
 
             // Cache block.
-            let from = Disk::virtio_get_buf(self.dev as u32, from.blockno);
+            let from = Disk::read(self.dev as u32, from.blockno);
 
             ptr::copy(
                 from.deref_inner().data.as_ptr(),
@@ -198,7 +196,7 @@ impl Log {
             );
 
             // Write the log.
-            Disk::virtio_rw(&mut kernel().disk.lock(), &mut to, true);
+            Disk::write(&mut to)
         }
     }
 
@@ -223,7 +221,7 @@ impl Log {
     /// commit()/write_log() will do the disk write.
     ///
     /// log_write() replaces write(); a typical use is:
-    ///   bp = Disk::virtio_get_buf(...)
+    ///   bp = Disk::read(...)
     ///   modify bp->data[]
     ///   log_write(bp)
     pub unsafe fn log_write(&mut self, b: Buf) {

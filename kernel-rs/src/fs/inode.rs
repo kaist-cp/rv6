@@ -151,7 +151,7 @@ impl InodeGuard<'_> {
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk, since i-node cache is write-through.
     pub unsafe fn update(&self) {
-        let mut bp = Disk::virtio_get_buf(self.dev, kernel().fs().superblock.iblock(self.inum));
+        let mut bp = Disk::read(self.dev, kernel().fs().superblock.iblock(self.inum));
         let mut dip: *mut Dinode = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
             .add((self.inum as usize).wrapping_rem(IPB));
         let inner = self.deref_inner();
@@ -174,7 +174,7 @@ impl InodeGuard<'_> {
             }
         }
         if self.deref_inner().addrs[NDIRECT] != 0 {
-            let mut bp = Disk::virtio_get_buf(self.dev, self.deref_inner().addrs[NDIRECT]);
+            let mut bp = Disk::read(self.dev, self.deref_inner().addrs[NDIRECT]);
             let a = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
                 if *a.add(j) != 0 {
@@ -205,8 +205,7 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp =
-                Disk::virtio_get_buf(self.dev, self.bmap((off as usize).wrapping_div(BSIZE)));
+            let mut bp = Disk::read(self.dev, self.bmap((off as usize).wrapping_div(BSIZE)));
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
@@ -234,8 +233,7 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp =
-                Disk::virtio_get_buf(self.dev, self.bmap((off as usize).wrapping_div(BSIZE)));
+            let mut bp = Disk::read(self.dev, self.bmap((off as usize).wrapping_div(BSIZE)));
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
@@ -295,7 +293,7 @@ impl InodeGuard<'_> {
             addr = unsafe { balloc(self.dev) };
             self.deref_inner_mut().addrs[NDIRECT] = addr;
         }
-        let mut bp = Disk::virtio_get_buf(self.dev, addr);
+        let mut bp = Disk::read(self.dev, addr);
         let a: *mut u32 = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
         unsafe {
             addr = *a.add(bn);
@@ -455,7 +453,7 @@ impl Inode {
     pub fn lock(&self) -> InodeGuard<'_> {
         let mut guard = self.inner.lock();
         if !guard.valid {
-            let mut bp = Disk::virtio_get_buf(self.dev, kernel().fs().superblock.iblock(self.inum));
+            let mut bp = Disk::read(self.dev, kernel().fs().superblock.iblock(self.inum));
             let dip: &mut Dinode = unsafe {
                 &mut *((bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
                     .add((self.inum as usize).wrapping_rem(IPB)))
@@ -495,7 +493,7 @@ impl Inode {
     /// Returns an unlocked but allocated and referenced inode.
     pub unsafe fn alloc(dev: u32, typ: i16) -> RcInode {
         for inum in 1..kernel().fs().superblock.ninodes {
-            let mut bp = Disk::virtio_get_buf(dev, kernel().fs().superblock.iblock(inum));
+            let mut bp = Disk::read(dev, kernel().fs().superblock.iblock(inum));
             let dip = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
                 .add((inum as usize).wrapping_rem(IPB));
 
