@@ -13,6 +13,7 @@ use crate::{
     page::{Page, RawPage},
     param::{NBUF, NCPU, NDEV, NFILE, NINODE},
     plic::{plicinit, plicinithart},
+    printer::Printer,
     println,
     proc::{cpuid, procinit, scheduler, Cpu, ProcessSystem},
     riscv::PGSIZE,
@@ -43,6 +44,9 @@ pub struct Kernel {
 
     /// The kernel's page table.
     pub page_table: PageTable<KVAddr>,
+
+    /// The Global Printer.
+    pub printer: Spinlock<Printer>,
 
     pub ticks: Sleepablelock<u32>,
 
@@ -93,6 +97,7 @@ impl Kernel {
             console: Sleepablelock::new("CONS", Console::new()),
             kmem: Spinlock::new("KMEM", Kmem::new()),
             page_table: PageTable::zero(),
+            printer: Spinlock::new("Println", Printer::new()),
             ticks: Sleepablelock::new("time", 0),
             procs: ProcessSystem::zero(),
             cpus: [Cpu::new(); NCPU],
@@ -154,12 +159,12 @@ impl Kernel {
         Some(page)
     }
 
-    /// Prints the given formatted string with the Console.
-    pub fn console_write_fmt(&self, args: fmt::Arguments<'_>) -> fmt::Result {
+    /// Prints the given formatted string with the Printer.
+    pub fn printer_write_fmt(&self, args: fmt::Arguments<'_>) -> fmt::Result {
         if self.is_panicked() {
-            unsafe { kernel().console.get_mut_unchecked().write_fmt(args) }
+            unsafe { kernel().printer.get_mut_unchecked().write_fmt(args) }
         } else {
-            let mut lock = kernel().console.lock();
+            let mut lock = kernel().printer.lock();
             lock.write_fmt(args)
         }
     }
@@ -190,7 +195,7 @@ impl Kernel {
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {
-        $crate::kernel::kernel().console_write_fmt(format_args!($($arg)*)).unwrap();
+        $crate::kernel::kernel().printer_write_fmt(format_args!($($arg)*)).unwrap();
     };
 }
 

@@ -8,7 +8,6 @@ use crate::{
     utils::spin_loop,
     vm::{UVAddr, VAddr},
 };
-use core::fmt;
 
 const CONSOLE_IN_DEVSW: usize = 1;
 /// Size of console input buffer.
@@ -27,15 +26,6 @@ pub struct Console {
     e: u32,
 
     uart: Uart,
-}
-
-impl fmt::Write for Console {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        for c in s.bytes() {
-            self.putc(c as _);
-        }
-        Ok(())
-    }
 }
 
 impl Console {

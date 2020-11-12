@@ -34,6 +34,7 @@ mod param;
 mod pipe;
 mod plic;
 mod poweroff;
+mod printer;
 mod proc;
 mod riscv;
 mod sleepablelock;
