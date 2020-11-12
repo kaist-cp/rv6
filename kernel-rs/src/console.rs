@@ -79,9 +79,6 @@ impl Console {
         }
     }
 
-    // TODO: This should be removed after `WaitChannel::sleep` gets refactored to take
-    // `SpinlockGuard`.
-    #[allow(clippy::while_immutable_condition)]
     unsafe fn read(this: &mut SleepablelockGuard<'_, Self>, mut dst: UVAddr, mut n: i32) -> i32 {
         let target = n as u32;
         while n > 0 {
