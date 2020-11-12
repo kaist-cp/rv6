@@ -198,8 +198,6 @@ impl Disk {
         }
     }
 
-    // TODO: This should be removed after `WaitChannel::sleep` gets refactored to take `SpinlockGuard`.
-    #[allow(clippy::while_immutable_condition)]
     pub unsafe fn virtio_rw(this: &mut SleepablelockGuard<'_, Self>, b: &mut Buf, write: bool) {
         let sector: usize = (*b).blockno.wrapping_mul((BSIZE / 512) as u32) as _;
 
