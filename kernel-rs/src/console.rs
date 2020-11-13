@@ -4,7 +4,6 @@ use crate::{
     param::NDEV,
     proc::myproc,
     sleepablelock::SleepablelockGuard,
-    uart::{Uart, UART},
     utils::spin_loop,
     vm::{UVAddr, VAddr},
 };
@@ -24,8 +23,6 @@ pub struct Console {
 
     /// Edit index.
     e: u32,
-
-    uart: Uart,
 }
 
 impl Console {
@@ -35,12 +32,11 @@ impl Console {
             r: 0,
             w: 0,
             e: 0,
-            uart: UART,
         }
     }
 
     pub fn uartintr(&self) {
-        self.uart.intr()
+        kernel().uart.intr()
     }
 
     /// Send one character to the uart.
@@ -51,11 +47,11 @@ impl Console {
         }
         if c == BACKSPACE {
             // If the user typed backspace, overwrite with a space.
-            self.uart.putc('\u{8}' as i32, false);
-            self.uart.putc(' ' as i32, false);
-            self.uart.putc('\u{8}' as i32, false);
+            kernel().uart.putc('\u{8}' as i32, false);
+            kernel().uart.putc(' ' as i32, false);
+            kernel().uart.putc('\u{8}' as i32, false);
         } else {
-            self.uart.putc(c, false);
+            kernel().uart.putc(c, false);
         };
     }
 
@@ -65,7 +61,7 @@ impl Console {
             if VAddr::copyin(&mut c, UVAddr::new(src.into_usize() + (i as usize))).is_err() {
                 break;
             }
-            self.uart.putc(c[0] as i32, true);
+            kernel().uart.putc(c[0] as i32, true);
         }
     }
 

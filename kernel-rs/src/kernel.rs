@@ -50,6 +50,8 @@ pub struct Kernel {
 
     pub ticks: Sleepablelock<u32>,
 
+    pub uart: Uart,
+
     /// Current process system.
     pub procs: ProcessSystem,
 
@@ -100,6 +102,7 @@ impl Kernel {
             printer: Spinlock::new("Println", Printer::new()),
             ticks: Sleepablelock::new("time", 0),
             procs: ProcessSystem::zero(),
+            uart: Uart::new(),
             cpus: [Cpu::new(); NCPU],
             bcache: Spinlock::new(
                 "BCACHE",

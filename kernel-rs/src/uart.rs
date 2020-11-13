@@ -203,5 +203,3 @@ impl Uart {
         self.start(self.tx_lock.lock());
     }
 }
-
-pub const UART: Uart = Uart::new();

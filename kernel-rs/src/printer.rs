@@ -1,17 +1,14 @@
 use crate::kernel::kernel;
-use crate::uart::{Uart, UART};
 use crate::utils::spin_loop;
 use core::fmt::{self, Write};
 
-pub struct Printer {
-    uart: Uart,
-}
+pub struct Printer {}
 
 const BACKSPACE: i32 = 0x100;
 
 impl Printer {
     pub const fn new() -> Self {
-        Self { uart: UART }
+        Self {}
     }
 
     /// Send one character to the uart.
@@ -22,11 +19,11 @@ impl Printer {
         }
         if c == BACKSPACE {
             // If the user typed backspace, overwrite with a space.
-            self.uart.putc('\u{8}' as i32, false);
-            self.uart.putc(' ' as i32, false);
-            self.uart.putc('\u{8}' as i32, false);
+            kernel().uart.putc('\u{8}' as i32, false);
+            kernel().uart.putc(' ' as i32, false);
+            kernel().uart.putc('\u{8}' as i32, false);
         } else {
-            self.uart.putc(c, false);
+            kernel().uart.putc(c, false);
         };
     }
 }
