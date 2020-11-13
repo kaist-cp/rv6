@@ -538,7 +538,6 @@ unsafe fn bzero(dev: i32, bno: i32) {
     kernel().fs().log_write(bp);
 }
 
-/// Blocks.
 /// Allocate a zeroed disk block.
 unsafe fn balloc(dev: u32) -> u32 {
     let mut bi: u32 = 0;
