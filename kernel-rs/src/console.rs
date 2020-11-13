@@ -35,10 +35,6 @@ impl Console {
         }
     }
 
-    pub fn uartintr(&self) {
-        kernel().uart.intr()
-    }
-
     /// Send one character to the uart.
     pub fn putc(&mut self, c: i32) {
         // From printf.rs.
