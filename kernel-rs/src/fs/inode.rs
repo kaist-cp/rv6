@@ -220,7 +220,7 @@ impl InodeGuard<'_> {
                 dst = dst + (m as usize);
             }
         }
-        Ok(n as usize)
+        Ok(tot as usize)
     }
 
     /// Write data to inode.

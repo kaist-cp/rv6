@@ -158,8 +158,8 @@ impl PipeInner {
         let mut ch = [0 as u8];
         let proc = myproc();
         let data = &mut *(*proc).data.get();
-
-        for i in 0..n {
+        let mut i: usize = 0;
+        while i < n {
             if self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
                 if !self.readopen || (*proc).killed() {
@@ -172,8 +172,9 @@ impl PipeInner {
             }
             self.data[self.nwrite as usize % PIPESIZE] = ch[0];
             self.nwrite = self.nwrite.wrapping_add(1);
+            i += 1;
         }
-        Ok(n)
+        Ok(i)
     }
 
     unsafe fn try_read(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
