@@ -37,20 +37,20 @@ pub fn kernel() -> &'static Kernel {
 pub struct Kernel {
     panicked: AtomicBool,
 
+    pub uart: Uart,
+
     /// Sleeps waiting for there are some input in console buffer.
     pub console: Sleepablelock<Console>,
+
+    /// The Global Printer.
+    pub printer: Spinlock<Printer>,
 
     kmem: Spinlock<Kmem>,
 
     /// The kernel's page table.
     pub page_table: PageTable<KVAddr>,
 
-    /// The Global Printer.
-    pub printer: Spinlock<Printer>,
-
     pub ticks: Sleepablelock<u32>,
-
-    pub uart: Uart,
 
     /// Current process system.
     pub procs: ProcessSystem,
@@ -96,13 +96,13 @@ impl Kernel {
     const fn zero() -> Self {
         Self {
             panicked: AtomicBool::new(false),
+            uart: Uart::new(),
             console: Sleepablelock::new("CONS", Console::new()),
+            printer: Spinlock::new("Println", Printer::new()),
             kmem: Spinlock::new("KMEM", Kmem::new()),
             page_table: PageTable::zero(),
-            printer: Spinlock::new("Println", Printer::new()),
             ticks: Sleepablelock::new("time", 0),
             procs: ProcessSystem::zero(),
-            uart: Uart::new(),
             cpus: [Cpu::new(); NCPU],
             bcache: Spinlock::new(
                 "BCACHE",
