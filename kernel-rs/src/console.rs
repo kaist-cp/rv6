@@ -4,7 +4,7 @@ use crate::{
     param::NDEV,
     proc::myproc,
     sleepablelock::SleepablelockGuard,
-    uart::Uart,
+    uart::{Uart, UART},
     utils::spin_loop,
     vm::{UVAddr, VAddr},
 };
@@ -35,7 +35,7 @@ impl Console {
             r: 0,
             w: 0,
             e: 0,
-            uart: Uart::new(),
+            uart: UART,
         }
     }
 

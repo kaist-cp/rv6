@@ -1,5 +1,5 @@
 use crate::kernel::kernel;
-use crate::uart::Uart;
+use crate::uart::{Uart, UART};
 use crate::utils::spin_loop;
 use core::fmt::{self, Write};
 
@@ -11,7 +11,7 @@ const BACKSPACE: i32 = 0x100;
 
 impl Printer {
     pub const fn new() -> Self {
-        Self { uart: Uart::new() }
+        Self { uart: UART }
     }
 
     /// Send one character to the uart.
