@@ -11,6 +11,19 @@ use self::UartCtrlRegs::{FCR, IER, ISR, LCR, LSR, RBR, THR};
 
 const UART_TX_BUF_SIZE: usize = 32;
 
+const IER_TX_ENABLE: u8 = 1 << 0;
+const IER_RX_ENABLE: u8 = 1 << 1;
+const FCR_FIFO_ENABLE: u8 = 1 << 0;
+/// Clear the content of the two FIFOs.
+const FCR_FIFO_CLEAR: u8 = 3 << 1;
+const LCR_EIGHT_BITS: u8 = 3 << 0;
+/// Special mode to set baud rate.
+const LCR_BAUD_LATCH: u8 = 1 << 7;
+/// Input is waiting to be read from RHR.
+const LSR_RX_READ: u8 = 1 << 0;
+/// THR can accept another character to send.
+const LSR_TX_IDLE: u8 = 1 << 5;
+
 /// The UART control registers.
 /// Some have different meanings for
 /// read vs write.
@@ -89,7 +102,7 @@ impl Uart {
         IER.write(0x00);
 
         // Special mode to set baud rate.
-        LCR.write(0x80);
+        LCR.write(LCR_BAUD_LATCH);
 
         // LSB for baud rate of 38.4K.
         RBR.write(0x03);
@@ -99,13 +112,13 @@ impl Uart {
 
         // Leave set-baud mode,
         // and set word length to 8 bits, no parity.
-        LCR.write(0x03);
+        LCR.write(LCR_EIGHT_BITS);
 
         // Reset and enable FIFOs.
-        FCR.write(0x07);
+        FCR.write(FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);
 
         // Enable transmit and receive interrupts.
-        IER.write(0x02 | 0x01);
+        IER.write(IER_TX_ENABLE | IER_RX_ENABLE);
     }
 
     /// add a character to the output buffer and tell the
@@ -139,7 +152,7 @@ impl Uart {
         unsafe { push_off(); }
 
         // wait for Transmit Holding Empty to be set in LSR.
-        while LSR.read() & (1 << 5) == 0 { }
+        while LSR.read() & LSR_TX_IDLE == 0 { }
         THR.write(c as u8);
         unsafe { pop_off(); }       
     }
@@ -155,7 +168,7 @@ impl Uart {
                 return;
             }
 
-            if (LSR.read() & (1 << 5)) == 0 {
+            if (LSR.read() & LSR_TX_IDLE) == 0 {
                 // the UART transmit holding register is full,
                 // so we cannot give it another byte.
                 // it will interrupt when it's ready for a new byte.
