@@ -174,7 +174,10 @@ impl FileSystem {
         unsafe {
             let superblock = Superblock::new(dev);
             assert_eq!(superblock.magic, FSMAGIC, "invalid file system");
-            let log = Sleepablelock::new("LOG", Log::new(dev, &superblock));
+            let log = Sleepablelock::new(
+                "LOG",
+                Log::new(dev, superblock.logstart as i32, superblock.nlog as i32),
+            );
             Self { superblock, log }
         }
     }

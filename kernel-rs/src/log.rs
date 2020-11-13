@@ -22,7 +22,7 @@
 //! Log appends are synchronous.
 use crate::{
     bio::{Buf, BufUnlocked},
-    fs::{Superblock, BSIZE},
+    fs::BSIZE,
     param::{LOGSIZE, MAXOPBLOCKS},
     sleepablelock::Sleepablelock,
     virtio_disk::Disk,
@@ -57,15 +57,15 @@ struct LogHeaderInMemory {
 }
 
 impl Log {
-    pub fn new(dev: i32, superblock: &Superblock) -> Self {
+    pub fn new(dev: i32, start: i32, size: i32) -> Self {
         assert!(
             mem::size_of::<LogHeader>() < BSIZE,
             "Log::new: too big LogHeader"
         );
 
         let mut log = Self {
-            start: superblock.logstart as i32,
-            size: superblock.nlog as i32,
+            start,
+            size,
             outstanding: 0,
             committing: false,
             dev,
