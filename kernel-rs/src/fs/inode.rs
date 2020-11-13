@@ -1,6 +1,4 @@
-use super::{
-    Dirent, FileName, BSIZE, DIRENT_SIZE, BPB, MAXFILE, NDIRECT, NINDIRECT,
-};
+use super::{Dirent, FileName, BPB, BSIZE, DIRENT_SIZE, MAXFILE, NDIRECT, NINDIRECT};
 
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, Rc},
