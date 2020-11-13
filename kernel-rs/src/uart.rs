@@ -3,6 +3,7 @@ use crate::memlayout::UART0;
 use crate::{
     console::consoleintr,
     sleepablelock::{Sleepablelock, SleepablelockGuard},
+    spinlock::{pop_off, push_off},
 };
 use core::ptr;
 
@@ -109,30 +110,17 @@ impl Uart {
 
     /// add a character to the output buffer and tell the
     /// UART to start sending if it isn't already.
-    ///
-    /// usually called from the top-half -- by a process
-    /// calling write(). can also be called from a uart
-    /// interrupt to echo a received character, or by printf
-    /// or panic from anywhere in the kernel.
-    ///
-    /// the block argument controls what happens if the
-    /// buffer is full. for write(), block is 1, and the
-    /// process waits. for kernel printf's and echoed
-    /// characters, block is 0, and the character is
-    /// discarded; this is necessary since sleep() is
-    /// not possible in interrupts.
-    pub fn putc(&self, c: i32, block: bool) {
+    /// blocks if the output buffer is full.
+    /// because it may block, it can't be called
+    /// from interrupts; it's only suitable for use
+    /// by write().
+    pub fn putc(&self, c: i32) {
         let mut guard = self.tx_lock.lock();
         loop {
             if (guard.w + 1) % UART_TX_BUF_SIZE as i32 == guard.r {
                 // buffer is full.
-                if block {
-                    // wait for uartstart() to open up space in the buffer.
-                    guard.sleep();
-                } else {
-                    // caller does not want us to wait.
-                    return;
-                }
+                // wait for uartstart() to open up space in the buffer.
+                guard.sleep();
             } else {
                 let w = guard.w;
                 guard.buf[w as usize] = c as u8;
@@ -141,6 +129,19 @@ impl Uart {
                 return;
             }
         }
+    }
+
+    /// alternate version of uartputc() that doesn't 
+    /// use interrupts, for use by kernel printf() and
+    /// to echo characters. it spins waiting for the uart's
+    /// output register to be empty.
+    pub fn putc_sync(c: i32) {
+        unsafe { push_off(); }
+
+        // wait for Transmit Holding Empty to be set in LSR.
+        while LSR.read() & (1 << 5) == 0 { }
+        THR.write(c as u8);
+        unsafe { pop_off(); }       
     }
 
     /// if the UART is idle, and a character is waiting

@@ -61,11 +61,11 @@ impl Console {
         }
         if c == BACKSPACE {
             // If the user typed backspace, overwrite with a space.
-            self.uart.putc('\u{8}' as i32, false);
-            self.uart.putc(' ' as i32, false);
-            self.uart.putc('\u{8}' as i32, false);
+            Uart::putc_sync('\u{8}' as i32);
+            Uart::putc_sync(' ' as i32);
+            Uart::putc_sync('\u{8}' as i32);
         } else {
-            self.uart.putc(c, false);
+            Uart::putc_sync(c);
         };
     }
 
@@ -75,7 +75,7 @@ impl Console {
             if VAddr::copyin(&mut c, UVAddr::new(src.into_usize() + (i as usize))).is_err() {
                 break;
             }
-            self.uart.putc(c[0] as i32, true);
+            self.uart.putc(c[0] as i32);
         }
     }
 
