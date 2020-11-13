@@ -35,20 +35,9 @@ impl Console {
         }
     }
 
-    /// Send one character to the uart.
+    /// putc for Console device.
     pub fn putc(&mut self, c: i32) {
-        // From printf.rs.
-        if kernel().is_panicked() {
-            spin_loop();
-        }
-        if c == BACKSPACE {
-            // If the user typed backspace, overwrite with a space.
-            kernel().uart.putc('\u{8}' as i32, false);
-            kernel().uart.putc(' ' as i32, false);
-            kernel().uart.putc('\u{8}' as i32, false);
-        } else {
-            kernel().uart.putc(c, false);
-        };
+        putc(c);
     }
 
     unsafe fn write(&mut self, src: UVAddr, n: i32) {
@@ -201,4 +190,19 @@ unsafe fn consoleread(dst: UVAddr, n: i32) -> i32 {
 pub unsafe fn consoleintr(cin: i32) {
     let mut console = kernel().console.lock();
     Console::intr(&mut console, cin);
+}
+
+/// Send one character to the uart.
+pub fn putc(c: i32) {
+    if kernel().is_panicked() {
+        spin_loop();
+    }
+    if c == BACKSPACE {
+        // If the user typed backspace, overwrite with a space.
+        kernel().uart.putc('\u{8}' as i32, false);
+        kernel().uart.putc(' ' as i32, false);
+        kernel().uart.putc('\u{8}' as i32, false);
+    } else {
+        kernel().uart.putc(c, false);
+    };
 }
