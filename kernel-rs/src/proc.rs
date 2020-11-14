@@ -833,13 +833,20 @@ impl ProcessSystem {
     pub unsafe fn dump(&self) {
         println!();
         for p in &self.process_pool {
+            let mut name = [0; 16];
+            let mut count = 0;
+            while p.name[count] != 0 as u8
+            {
+                name[count] = p.name[count];
+                count += 1;
+            }
             let info = p.info.get_mut_unchecked();
             if info.state != Procstate::UNUSED {
                 println!(
                     "{} {} {}",
                     info.pid,
                     Procstate::to_str(&info.state),
-                    str::from_utf8(&p.name).unwrap_or("???")
+                    str::from_utf8(&name).unwrap_or("???")
                 );
             }
         }
