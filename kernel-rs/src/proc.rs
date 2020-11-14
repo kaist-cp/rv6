@@ -835,8 +835,7 @@ impl ProcessSystem {
         for p in &self.process_pool {
             let mut name = [0; 16];
             let mut count = 0;
-            while p.name[count] != 0 as u8
-            {
+            while p.name[count] != 0 as u8 {
                 name[count] = p.name[count];
                 count += 1;
             }
