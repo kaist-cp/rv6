@@ -1,6 +1,4 @@
-use super::{
-    balloc, bfree, Dirent, FileName, BSIZE, DIRENT_SIZE, IPB, MAXFILE, NDIRECT, NINDIRECT,
-};
+use super::{Dirent, FileName, BSIZE, DIRENT_SIZE, IPB, MAXFILE, NDIRECT, NINDIRECT};
 
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, Rc},
@@ -169,7 +167,9 @@ impl InodeGuard<'_> {
     pub unsafe fn itrunc(&mut self) {
         for i in 0..NDIRECT {
             if self.deref_inner().addrs[i] != 0 {
-                bfree(self.dev as i32, self.deref_inner().addrs[i]);
+                kernel()
+                    .fs()
+                    .bfree(self.dev as i32, self.deref_inner().addrs[i]);
                 self.deref_inner_mut().addrs[i] = 0;
             }
         }
@@ -178,11 +178,13 @@ impl InodeGuard<'_> {
             let a = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
                 if *a.add(j) != 0 {
-                    bfree(self.dev as i32, *a.add(j));
+                    kernel().fs().bfree(self.dev as i32, *a.add(j));
                 }
             }
             drop(bp);
-            bfree(self.dev as i32, self.deref_inner().addrs[NDIRECT]);
+            kernel()
+                .fs()
+                .bfree(self.dev as i32, self.deref_inner().addrs[NDIRECT]);
             self.deref_inner_mut().addrs[NDIRECT] = 0
         }
         self.deref_inner_mut().size = 0;
@@ -279,7 +281,7 @@ impl InodeGuard<'_> {
         if bn < NDIRECT {
             addr = inner.addrs[bn];
             if addr == 0 {
-                addr = unsafe { balloc(self.dev) };
+                addr = unsafe { kernel().fs().balloc(self.dev) };
                 self.deref_inner_mut().addrs[bn] = addr;
             }
             return addr;
@@ -290,7 +292,7 @@ impl InodeGuard<'_> {
         // Load indirect block, allocating if necessary.
         addr = inner.addrs[NDIRECT];
         if addr == 0 {
-            addr = unsafe { balloc(self.dev) };
+            addr = unsafe { kernel().fs().balloc(self.dev) };
             self.deref_inner_mut().addrs[NDIRECT] = addr;
         }
         let mut bp = Disk::read(self.dev, addr);
@@ -298,7 +300,7 @@ impl InodeGuard<'_> {
         unsafe {
             addr = *a.add(bn);
             if addr == 0 {
-                addr = balloc(self.dev);
+                addr = kernel().fs().balloc(self.dev);
                 *a.add(bn) = addr;
                 kernel().fs().log_write(bp);
             }

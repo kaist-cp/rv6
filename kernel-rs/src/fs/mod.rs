@@ -11,8 +11,7 @@
 
 /// On-disk file system format used for both kernel and user programs are also included here.
 use crate::{
-    bio::Buf,
-    kernel::kernel,
+    bio::{Buf, BufUnlocked},
     log::Log,
     sleepablelock::Sleepablelock,
     stat::T_DIR,
@@ -197,48 +196,49 @@ impl FileSystem {
     pub unsafe fn log_write(&self, b: Buf) {
         self.log.lock().log_write(b);
     }
-}
 
-/// Zero a block.
-unsafe fn bzero(dev: i32, bno: i32) {
-    let mut bp = Disk::read(dev as u32, bno as u32);
-    ptr::write_bytes(bp.deref_mut_inner().data.as_mut_ptr(), 0, BSIZE);
-    kernel().fs().log_write(bp);
-}
-
-/// Blocks.
-/// Allocate a zeroed disk block.
-unsafe fn balloc(dev: u32) -> u32 {
-    let mut bi: u32 = 0;
-    for b in num_iter::range_step(0, kernel().fs().superblock.size, BPB) {
-        let mut bp = Disk::read(dev, kernel().fs().superblock.bblock(b));
-        while bi < BPB && (b + bi) < kernel().fs().superblock.size {
-            let m = 1 << (bi % 8);
-            if bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & m == 0 {
-                // Is block free?
-                bp.deref_mut_inner().data[(bi / 8) as usize] =
-                    (bp.deref_mut_inner().data[(bi / 8) as usize] as i32 | m) as u8; // Mark block in use.
-                kernel().fs().log_write(bp);
-                bzero(dev as i32, (b + bi) as i32);
-                return b + bi;
-            }
-            bi += 1;
-        }
+    /// Zero a block.
+    unsafe fn bzero(&self, dev: u32, bno: u32) {
+        let mut buf = BufUnlocked::new(dev, bno).lock();
+        ptr::write_bytes(buf.deref_mut_inner().data.as_mut_ptr(), 0, BSIZE);
+        buf.deref_mut_inner().valid = true;
+        self.log_write(buf);
     }
-    panic!("balloc: out of blocks");
-}
 
-/// Free a disk block.
-unsafe fn bfree(dev: i32, b: u32) {
-    let mut bp = Disk::read(dev as u32, kernel().fs().superblock.bblock(b));
-    let bi: i32 = b.wrapping_rem(BPB) as i32;
-    let m: i32 = (1) << (bi % 8);
-    assert_ne!(
-        bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & m,
-        0,
-        "freeing free block"
-    );
-    bp.deref_mut_inner().data[(bi / 8) as usize] =
-        (bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & !m) as u8;
-    kernel().fs().log_write(bp);
+    /// Blocks.
+    /// Allocate a zeroed disk block.
+    unsafe fn balloc(&self, dev: u32) -> u32 {
+        let mut bi: u32 = 0;
+        for b in num_iter::range_step(0, self.superblock.size, BPB) {
+            let mut bp = Disk::read(dev, self.superblock.bblock(b));
+            while bi < BPB && (b + bi) < self.superblock.size {
+                let m = 1 << (bi % 8);
+                if bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & m == 0 {
+                    // Is block free?
+                    bp.deref_mut_inner().data[(bi / 8) as usize] =
+                        (bp.deref_mut_inner().data[(bi / 8) as usize] as i32 | m) as u8; // Mark block in use.
+                    self.log_write(bp);
+                    self.bzero(dev, b + bi);
+                    return b + bi;
+                }
+                bi += 1;
+            }
+        }
+        panic!("balloc: out of blocks");
+    }
+
+    /// Free a disk block.
+    unsafe fn bfree(&self, dev: i32, b: u32) {
+        let mut bp = Disk::read(dev as u32, self.superblock.bblock(b));
+        let bi: i32 = b.wrapping_rem(BPB) as i32;
+        let m: i32 = (1) << (bi % 8);
+        assert_ne!(
+            bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & m,
+            0,
+            "freeing free block"
+        );
+        bp.deref_mut_inner().data[(bi / 8) as usize] =
+            (bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & !m) as u8;
+        self.log_write(bp);
+    }
 }
