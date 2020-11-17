@@ -8,22 +8,45 @@
 //! This file contains the low-level file system manipulation
 //! routines.  The (higher-level) system call implementations
 //! are in sysfile.c.
+//!
+//! On-disk file system format used for both kernel and user programs are also included here.
 
-/// On-disk file system format used for both kernel and user programs are also included here.
+use core::{mem, ptr};
+
 use crate::{
     bio::{Buf, BufUnlocked},
-    log::{Log, Superblock},
     sleepablelock::Sleepablelock,
     stat::T_DIR,
     virtio_disk::Disk,
     vm::{KVAddr, VAddr},
 };
-use core::{mem, ptr};
 
-mod path;
-pub use path::{FileName, Path};
 mod inode;
+mod log;
+mod path;
+
 pub use inode::{Dinode, Inode, InodeGuard, InodeInner, RcInode};
+pub use log::{Log, Superblock};
+pub use path::{FileName, Path};
+
+/// root i-number
+const ROOTINO: u32 = 1;
+
+/// block size
+pub const BSIZE: usize = 1024;
+
+const NDIRECT: usize = 12;
+const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
+const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
+
+/// Inodes per block.
+const IPB: usize = BSIZE.wrapping_div(mem::size_of::<Dinode>());
+
+/// Bitmap bits per block
+const BPB: u32 = BSIZE.wrapping_mul(8) as u32;
+
+/// Directory is a file containing a sequence of Dirent structures.
+pub const DIRSIZ: usize = 14;
 
 /// dirent size
 pub const DIRENT_SIZE: usize = mem::size_of::<Dirent>();
@@ -70,19 +93,6 @@ impl Dirent {
     }
 }
 
-/// root i-number
-const ROOTINO: u32 = 1;
-
-/// block size
-pub const BSIZE: usize = 1024;
-const NDIRECT: usize = 12;
-
-const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
-const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
-
-/// Inodes per block.
-const IPB: usize = BSIZE.wrapping_div(mem::size_of::<Dinode>());
-
 impl Superblock {
     /// Block containing inode i
     const fn iblock(self, i: u32) -> u32 {
@@ -94,12 +104,6 @@ impl Superblock {
         b.wrapping_div(BPB).wrapping_add(self.bmapstart)
     }
 }
-
-/// Bitmap bits per block
-const BPB: u32 = BSIZE.wrapping_mul(8) as u32;
-
-/// Directory is a file containing a sequence of Dirent structures.
-pub const DIRSIZ: usize = 14;
 
 pub struct FileSystem {
     /// there should be one superblock per disk device, but we run with
