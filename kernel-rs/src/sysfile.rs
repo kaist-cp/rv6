@@ -147,7 +147,7 @@ impl Kernel {
         let old = ok_or!(argstr(0, &mut old), return usize::MAX);
         let new = ok_or!(argstr(1, &mut new), return usize::MAX);
         let tx = self.fs().begin_transaction();
-        let ptr = ok_or!(Path::new(old).namei(), return usize::MAX);
+        let ptr = ok_or!(Path::new(old).namei(&tx), return usize::MAX);
         let mut ip = ptr.lock();
         if ip.deref_inner().typ == T_DIR {
             return usize::MAX;
@@ -226,7 +226,7 @@ impl Kernel {
                 return usize::MAX
             )
         } else {
-            let ptr = ok_or!(path.namei(), return usize::MAX);
+            let ptr = ok_or!(path.namei(&tx), return usize::MAX);
             let ip = ptr.lock();
             let typ = ip.deref_inner().typ;
             let major = ip.deref_inner().major;
@@ -297,9 +297,9 @@ impl Kernel {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let p: *mut Proc = myproc();
         let mut data = &mut *(*p).data.get();
-        let _tx = self.fs().begin_transaction();
+        let tx = self.fs().begin_transaction();
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-        let ptr = ok_or!(Path::new(path).namei(), return usize::MAX);
+        let ptr = ok_or!(Path::new(path).namei(&tx), return usize::MAX);
         let ip = ptr.lock();
         if ip.deref_inner().typ != T_DIR {
             return usize::MAX;

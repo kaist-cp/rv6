@@ -1,5 +1,15 @@
 #![allow(clippy::unit_arg)]
 
+use core::{
+    cell::UnsafeCell,
+    cmp, mem,
+    ops::{Deref, DerefMut},
+    ptr, slice, str,
+    sync::atomic::{AtomicBool, AtomicI32, Ordering},
+};
+
+use cstr_core::CStr;
+
 use crate::{
     file::RcFile,
     fs::{Path, RcInode},
@@ -17,15 +27,6 @@ use crate::{
     trap::usertrapret,
     vm::{KVAddr, PAddr, PageTable, UVAddr, VAddr},
 };
-use core::{
-    cell::UnsafeCell,
-    cmp, mem,
-    ops::{Deref, DerefMut},
-    ptr, slice, str,
-    sync::atomic::{AtomicBool, AtomicI32, Ordering},
-};
-
-use cstr_core::CStr;
 
 extern "C" {
     // swtch.S
@@ -670,7 +671,7 @@ impl ProcessSystem {
             mem::size_of::<[u8; 16]>() as i32,
         );
         data.cwd = Path::new(CStr::from_bytes_with_nul_unchecked(b"/\x00"))
-            .namei()
+            .namei(&*ptr::null()) // root doesn't access file system
             .ok();
         guard.deref_mut_info().state = Procstate::RUNNABLE;
     }

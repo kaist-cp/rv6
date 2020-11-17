@@ -97,8 +97,8 @@ impl Kernel {
         let mut p: *mut Proc = myproc();
         let mut data = &mut *(*p).data.get();
 
-        let _tx = self.fs().begin_transaction();
-        let ptr = ok_or!(path.namei(), {
+        let tx = self.fs().begin_transaction();
+        let ptr = ok_or!(path.namei(&tx), {
             return Err(());
         });
         let mut ip = ptr.lock();

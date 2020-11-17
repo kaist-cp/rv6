@@ -58,12 +58,12 @@ impl Path {
 
     // TODO: Following functions should return a safe type rather than `*mut Inode`.
 
-    pub unsafe fn namei(&self) -> Result<RcInode, ()> {
-        Ok(self.namex(false)?.0)
+    pub unsafe fn namei(&self, tx: &FsTransaction<'_>) -> Result<RcInode, ()> {
+        Ok(self.namex(false, tx)?.0)
     }
 
-    pub unsafe fn nameiparent(&self, _tx: &FsTransaction<'_>) -> Result<(RcInode, &FileName), ()> {
-        let (ip, name_in_path) = self.namex(true)?;
+    pub unsafe fn nameiparent(&self, tx: &FsTransaction<'_>) -> Result<(RcInode, &FileName), ()> {
+        let (ip, name_in_path) = self.namex(true, tx)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
     }
@@ -132,7 +132,11 @@ impl Path {
     /// If parent != 0, return the inode for the parent and copy the final
     /// path element into name, which must have room for DIRSIZ bytes.
     /// Must be called inside a transaction since it calls Inode::put().
-    unsafe fn namex(&self, parent: bool) -> Result<(RcInode, Option<&FileName>), ()> {
+    unsafe fn namex(
+        &self,
+        parent: bool,
+        _tx: &FsTransaction<'_>,
+    ) -> Result<(RcInode, Option<&FileName>), ()> {
         let mut ptr = if self.is_absolute() {
             Inode::get(ROOTDEV as u32, ROOTINO)
         } else {
