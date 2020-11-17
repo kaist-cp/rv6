@@ -15,6 +15,7 @@ use core::{mem, ptr};
 
 use crate::{
     bio::{Buf, BufUnlocked},
+    param::BSIZE,
     sleepablelock::Sleepablelock,
     stat::T_DIR,
     virtio_disk::Disk,
@@ -23,38 +24,19 @@ use crate::{
 mod inode;
 mod log;
 mod path;
+mod superblock;
 
 pub use inode::{Dinode, Dirent, Inode, InodeGuard, InodeInner, RcInode, DIRENT_SIZE, DIRSIZ};
-pub use log::{Log, Superblock};
+pub use log::Log;
 pub use path::{FileName, Path};
+pub use superblock::{Superblock, BPB, IPB};
 
 /// root i-number
 const ROOTINO: u32 = 1;
 
-/// block size
-pub const BSIZE: usize = 1024;
-
 const NDIRECT: usize = 12;
 const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
 const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
-
-/// Inodes per block.
-const IPB: usize = BSIZE.wrapping_div(mem::size_of::<Dinode>());
-
-/// Bitmap bits per block
-const BPB: u32 = BSIZE.wrapping_mul(8) as u32;
-
-impl Superblock {
-    /// Block containing inode i
-    const fn iblock(self, i: u32) -> u32 {
-        i.wrapping_div(IPB as u32).wrapping_add(self.inodestart)
-    }
-
-    /// Block of free map containing bit for block b
-    const fn bblock(self, b: u32) -> u32 {
-        b.wrapping_div(BPB).wrapping_add(self.bmapstart)
-    }
-}
 
 pub struct FileSystem {
     /// there should be one superblock per disk device, but we run with
@@ -78,9 +60,9 @@ impl Drop for FsTransaction<'_> {
 }
 
 impl FileSystem {
-    pub fn new(dev: i32) -> Self {
+    pub fn new(dev: u32) -> Self {
         unsafe {
-            let superblock = Superblock::new(dev);
+            let superblock = Superblock::new(&Disk::read(dev, 1));
             let log = Sleepablelock::new("LOG", Log::new(dev, &superblock));
             Self { superblock, log }
         }

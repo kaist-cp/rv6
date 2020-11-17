@@ -4,9 +4,9 @@
 
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, Rc},
-    fs::{RcInode, BSIZE},
+    fs::RcInode,
     kernel::kernel,
-    param::{MAXOPBLOCKS, NFILE},
+    param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
     proc::{myproc, Proc},
     spinlock::Spinlock,

@@ -5,9 +5,9 @@
 /// qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 use crate::{
     bio::{Buf, BufUnlocked},
-    fs::BSIZE,
     kernel::kernel,
     page::RawPage,
+    param::BSIZE,
     riscv::{PGSHIFT, PGSIZE},
     sleepablelock::SleepablelockGuard,
     virtio::*,

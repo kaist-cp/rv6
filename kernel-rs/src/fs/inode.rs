@@ -3,7 +3,7 @@ use core::{mem, ops::Deref, ptr};
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, Rc},
     kernel::kernel,
-    param::NINODE,
+    param::{BSIZE, NINODE},
     sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::{Stat, T_DIR, T_NONE},
@@ -11,7 +11,7 @@ use crate::{
     vm::{KVAddr, VAddr},
 };
 
-use super::{FileName, BSIZE, IPB, MAXFILE, NDIRECT, NINDIRECT};
+use super::{FileName, IPB, MAXFILE, NDIRECT, NINDIRECT};
 
 /// Directory is a file containing a sequence of Dirent structures.
 pub const DIRSIZ: usize = 14;

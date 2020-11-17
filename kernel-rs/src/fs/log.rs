@@ -20,50 +20,17 @@
 //!   block C
 //!   ...
 //! Log appends are synchronous.
-use crate::{
-    bio::{Buf, BufUnlocked},
-    fs::BSIZE,
-    param::{LOGSIZE, MAXOPBLOCKS},
-    sleepablelock::Sleepablelock,
-    virtio_disk::Disk,
-};
 use arrayvec::ArrayVec;
 use core::{mem, ptr};
 
-const FSMAGIC: u32 = 0x10203040;
+use crate::{
+    bio::{Buf, BufUnlocked},
+    param::{BSIZE, LOGSIZE, MAXOPBLOCKS},
+    sleepablelock::Sleepablelock,
+    virtio_disk::Disk,
+};
 
-/// Disk layout:
-/// [ boot block | super block | log | inode blocks |
-///                                          free bit map | data blocks]
-///
-/// mkfs computes the super block and builds an initial file system. The
-/// super block describes the disk layout:
-#[derive(Copy, Clone)]
-pub struct Superblock {
-    /// Must be FSMAGIC
-    magic: u32,
-
-    /// Size of file system image (blocks)
-    pub size: u32,
-
-    /// Number of data blocks
-    nblocks: u32,
-
-    /// Number of inodes
-    pub ninodes: u32,
-
-    /// Number of log blocks
-    pub nlog: u32,
-
-    /// Block number of first log block
-    pub logstart: u32,
-
-    /// Block number of first inode block
-    pub inodestart: u32,
-
-    /// Block number of first free map block
-    pub bmapstart: u32,
-}
+use super::Superblock;
 
 pub struct Log {
     start: i32,
@@ -74,7 +41,7 @@ pub struct Log {
 
     /// In commit(), please wait.
     committing: bool,
-    dev: i32,
+    dev: u32,
     lh: LogHeaderInMemory,
 }
 
@@ -91,18 +58,8 @@ struct LogHeaderInMemory {
     block: ArrayVec<[BufUnlocked; LOGSIZE]>,
 }
 
-impl Superblock {
-    /// Read the super block.
-    pub unsafe fn new(dev: i32) -> Self {
-        let mut bp = Disk::read(dev as u32, 1);
-        let result = ptr::read(bp.deref_mut_inner().data.as_mut_ptr() as *const Superblock);
-        assert_eq!(result.magic, FSMAGIC, "invalid file system");
-        result
-    }
-}
-
 impl Log {
-    pub fn new(dev: i32, superblock: &Superblock) -> Self {
+    pub fn new(dev: u32, superblock: &Superblock) -> Self {
         assert!(
             mem::size_of::<LogHeader>() < BSIZE,
             "Log::new: too big LogHeader"
