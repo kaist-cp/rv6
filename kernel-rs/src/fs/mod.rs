@@ -49,6 +49,8 @@ pub struct FsTransaction<'s> {
 
 impl Drop for FsTransaction<'_> {
     fn drop(&mut self) {
+        // Called at the end of each FS system call.
+        // Commits if this was the last outstanding operation.
         unsafe {
             Log::end_op(&self.fs.log);
         }
@@ -57,11 +59,9 @@ impl Drop for FsTransaction<'_> {
 
 impl FileSystem {
     pub fn new(dev: u32) -> Self {
-        unsafe {
-            let superblock = Superblock::new(&Disk::read(dev, 1));
-            let log = Sleepablelock::new("LOG", Log::new(dev, &superblock));
-            Self { superblock, log }
-        }
+        let superblock = unsafe { Superblock::new(&Disk::read(dev, 1)) };
+        let log = Sleepablelock::new("LOG", Log::new(dev, &superblock));
+        Self { superblock, log }
     }
 
     /// Called for each FS system call.
@@ -71,12 +71,6 @@ impl FileSystem {
             Log::begin_op(&self.log);
         }
         FsTransaction { fs: self }
-    }
-
-    /// Called at the end of each FS system call.
-    /// Commits if this was the last outstanding operation.
-    pub unsafe fn end_op(&self) {
-        Log::end_op(&self.log);
     }
 
     /// Zero a block.
@@ -111,14 +105,14 @@ impl FileSystem {
     /// Free a disk block.
     unsafe fn bfree(&self, dev: i32, b: u32) {
         let mut bp = Disk::read(dev as u32, self.superblock.bblock(b));
-        let bi: i32 = b.wrapping_rem(BPB) as i32;
-        let m: i32 = (1) << (bi % 8);
+        let bi = b.wrapping_rem(BPB) as i32;
+        let m = 1u8 << (bi % 8);
         assert_ne!(
-            bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & m,
+            bp.deref_mut_inner().data[(bi / 8) as usize] & m,
             0,
             "freeing free block"
         );
-        bp.deref_mut_inner().data[(bi / 8) as usize] &= !(m as u8);
+        bp.deref_mut_inner().data[(bi / 8) as usize] &= !m;
         self.log.lock().write(bp);
     }
 }
