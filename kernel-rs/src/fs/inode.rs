@@ -1,4 +1,4 @@
-use super::{Dirent, FileName, BSIZE, DIRENT_SIZE, IPB, MAXFILE, NDIRECT, NINDIRECT};
+use core::{mem, ops::Deref, ptr};
 
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, Rc},
@@ -10,7 +10,14 @@ use crate::{
     virtio_disk::Disk,
     vm::{KVAddr, VAddr},
 };
-use core::{mem, ops::Deref, ptr};
+
+use super::{FileName, BSIZE, IPB, MAXFILE, NDIRECT, NINDIRECT};
+
+/// Directory is a file containing a sequence of Dirent structures.
+pub const DIRSIZ: usize = 14;
+
+/// dirent size
+pub const DIRENT_SIZE: usize = mem::size_of::<Dirent>();
 
 pub struct InodeInner {
     /// inode has been read from disk?
@@ -55,6 +62,49 @@ pub type RcInode = Rc<<IcacheTag as Deref>::Target, IcacheTag>;
 /// When SleeplockWIP<InodeInner> is held, InodeInner's valid is always true.
 pub struct InodeGuard<'a> {
     pub inode: &'a Inode,
+}
+
+#[derive(Default)]
+pub struct Dirent {
+    pub inum: u16,
+    name: [u8; DIRSIZ],
+}
+
+impl Dirent {
+    /// Fill in name. If name is shorter than DIRSIZ, NUL character is appended as
+    /// terminator.
+    ///
+    /// `name` must contains no NUL characters, but this is not a safety invariant.
+    fn set_name(&mut self, name: &FileName) {
+        let name = name.as_bytes();
+        if name.len() == DIRSIZ {
+            self.name.copy_from_slice(&name);
+        } else {
+            self.name[..name.len()].copy_from_slice(&name);
+            self.name[name.len()] = 0;
+        }
+    }
+
+    /// Returns slice which exactly contains `name`.
+    ///
+    /// It contains no NUL characters.
+    fn get_name(&self) -> &FileName {
+        let len = self.name.iter().position(|ch| *ch == 0).unwrap_or(DIRSIZ);
+        // Safety: self.name[..len] doesn't contain '\0', and len must be <= DIRSIZ.
+        unsafe { FileName::from_bytes(&self.name[..len]) }
+    }
+
+    // TODO: Use iterator
+    fn read_entry(&mut self, ip: &mut InodeGuard<'_>, off: u32, panic_msg: &'static str) {
+        unsafe {
+            let bytes_read = ip.read(
+                KVAddr::new(self as *mut Dirent as usize),
+                off,
+                DIRENT_SIZE as u32,
+            );
+            assert_eq!(bytes_read, Ok(DIRENT_SIZE), "{}", panic_msg)
+        }
+    }
 }
 
 impl Deref for InodeGuard<'_> {

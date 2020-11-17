@@ -18,14 +18,13 @@ use crate::{
     sleepablelock::Sleepablelock,
     stat::T_DIR,
     virtio_disk::Disk,
-    vm::{KVAddr, VAddr},
 };
 
 mod inode;
 mod log;
 mod path;
 
-pub use inode::{Dinode, Inode, InodeGuard, InodeInner, RcInode};
+pub use inode::{Dinode, Dirent, Inode, InodeGuard, InodeInner, RcInode, DIRENT_SIZE, DIRSIZ};
 pub use log::{Log, Superblock};
 pub use path::{FileName, Path};
 
@@ -44,54 +43,6 @@ const IPB: usize = BSIZE.wrapping_div(mem::size_of::<Dinode>());
 
 /// Bitmap bits per block
 const BPB: u32 = BSIZE.wrapping_mul(8) as u32;
-
-/// Directory is a file containing a sequence of Dirent structures.
-pub const DIRSIZ: usize = 14;
-
-/// dirent size
-pub const DIRENT_SIZE: usize = mem::size_of::<Dirent>();
-
-#[derive(Default)]
-pub struct Dirent {
-    pub inum: u16,
-    name: [u8; DIRSIZ],
-}
-
-impl Dirent {
-    /// Fill in name. If name is shorter than DIRSIZ, NUL character is appended as
-    /// terminator.
-    ///
-    /// `name` must contains no NUL characters, but this is not a safety invariant.
-    fn set_name(&mut self, name: &FileName) {
-        let name = name.as_bytes();
-        if name.len() == DIRSIZ {
-            self.name.copy_from_slice(&name);
-        } else {
-            self.name[..name.len()].copy_from_slice(&name);
-            self.name[name.len()] = 0;
-        }
-    }
-
-    /// Returns slice which exactly contains `name`.
-    ///
-    /// It contains no NUL characters.
-    fn get_name(&self) -> &FileName {
-        let len = self.name.iter().position(|ch| *ch == 0).unwrap_or(DIRSIZ);
-        unsafe { FileName::from_bytes(&self.name[..len]) }
-    }
-
-    // TODO: Use iterator
-    fn read_entry(&mut self, ip: &mut InodeGuard<'_>, off: u32, panic_msg: &'static str) {
-        unsafe {
-            let bytes_read = ip.read(
-                KVAddr::new(self as *mut Dirent as usize),
-                off,
-                DIRENT_SIZE as u32,
-            );
-            assert_eq!(bytes_read, Ok(DIRENT_SIZE), "{}", panic_msg)
-        }
-    }
-}
 
 impl Superblock {
     /// Block containing inode i
