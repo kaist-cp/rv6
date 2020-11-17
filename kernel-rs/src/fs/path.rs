@@ -2,9 +2,10 @@ use core::cmp;
 use core::mem;
 use cstr_core::CStr;
 
-use super::{Inode, RcInode, DIRSIZ, ROOTINO, T_DIR};
 use crate::param::ROOTDEV;
 use crate::proc::myproc;
+
+use super::{FsTransaction, Inode, RcInode, DIRSIZ, ROOTINO, T_DIR};
 
 #[derive(PartialEq)]
 #[repr(transparent)]
@@ -61,7 +62,7 @@ impl Path {
         Ok(self.namex(false)?.0)
     }
 
-    pub unsafe fn nameiparent(&self) -> Result<(RcInode, &FileName), ()> {
+    pub unsafe fn nameiparent(&self, _tx: &FsTransaction<'_>) -> Result<(RcInode, &FileName), ()> {
         let (ip, name_in_path) = self.namex(true)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
