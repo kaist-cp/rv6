@@ -251,18 +251,21 @@ impl InodeGuard<'_> {
                 src = src.add(m as usize);
             }
         }
-        if n > 0 {
-            if off > self.deref_inner().size {
-                self.deref_inner_mut().size = off;
-            }
-            // write the i-node back to disk even if the size didn't change
-            // because the loop above might have called bmap() and added a new
-            // block to self->addrs[].
-            unsafe {
-                self.update();
-            }
+
+        // TODO(@kimjungwow) : To pass copyin() usertest,
+        // I updated Inode::write() earlier as
+        // https://github.com/mit-pdos/xv6-riscv/commit/5e392531c07966fd8a6bee50e3e357c553fb2a2f
+        if off > self.deref_inner().size {
+            self.deref_inner_mut().size = off;
         }
-        Ok(n as usize)
+
+        // write the i-node back to disk even if the size didn't change
+        // because the loop above might have called bmap() and added a new
+        // block to self->addrs[].
+        unsafe {
+            self.update();
+        }
+        Ok(tot as usize)
     }
 
     /// Inode content

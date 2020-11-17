@@ -16,7 +16,7 @@ const IER_RX_ENABLE: u8 = 1 << 1;
 const FCR_FIFO_ENABLE: u8 = 1 << 0;
 /// Clear the content of the two FIFOs.
 const FCR_FIFO_CLEAR: u8 = 3 << 1;
-const LCR_EIGHT_BITS: u8 = 3 << 0;
+const LCR_EIGHT_BITS: u8 = 3;
 /// Special mode to set baud rate.
 const LCR_BAUD_LATCH: u8 = 1 << 7;
 /// Input is waiting to be read from RHR.
@@ -144,17 +144,21 @@ impl Uart {
         }
     }
 
-    /// alternate version of uartputc() that doesn't 
+    /// alternate version of uartputc() that doesn't
     /// use interrupts, for use by kernel printf() and
     /// to echo characters. it spins waiting for the uart's
     /// output register to be empty.
     pub fn putc_sync(c: i32) {
-        unsafe { push_off(); }
+        unsafe {
+            push_off();
+        }
 
         // wait for Transmit Holding Empty to be set in LSR.
-        while LSR.read() & LSR_TX_IDLE == 0 { }
+        while LSR.read() & LSR_TX_IDLE == 0 {}
         THR.write(c as u8);
-        unsafe { pop_off(); }       
+        unsafe {
+            pop_off();
+        }
     }
 
     /// if the UART is idle, and a character is waiting
