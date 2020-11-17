@@ -562,8 +562,8 @@ unsafe fn balloc(dev: u32) -> u32 {
 /// Free a disk block.
 unsafe fn bfree(dev: i32, b: u32) {
     let mut bp = Disk::read(dev as u32, kernel().fs().superblock.bblock(b));
-    let bi: i32 = b.wrapping_rem(BPB) as i32;
-    let m: i32 = (1) << (bi % 8);
+    let bi = b.wrapping_rem(BPB) as i32;
+    let m = (1) << (bi % 8);
     assert_ne!(
         bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & m,
         0,
