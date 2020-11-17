@@ -14,11 +14,7 @@
 use core::{mem, ptr};
 
 use crate::{
-    bio::{Buf, BufUnlocked},
-    param::BSIZE,
-    sleepablelock::Sleepablelock,
-    stat::T_DIR,
-    virtio_disk::Disk,
+    bio::BufUnlocked, param::BSIZE, sleepablelock::Sleepablelock, stat::T_DIR, virtio_disk::Disk,
 };
 
 mod inode;
@@ -83,16 +79,12 @@ impl FileSystem {
         Log::end_op(&self.log);
     }
 
-    pub unsafe fn log_write(&self, b: Buf) {
-        self.log.lock().log_write(b);
-    }
-
     /// Zero a block.
     unsafe fn bzero(&self, dev: u32, bno: u32) {
         let mut buf = BufUnlocked::new(dev, bno).lock();
         ptr::write_bytes(buf.deref_mut_inner().data.as_mut_ptr(), 0, BSIZE);
         buf.deref_mut_inner().valid = true;
-        self.log_write(buf);
+        self.log.lock().write(buf);
     }
 
     /// Blocks.
@@ -103,11 +95,10 @@ impl FileSystem {
             let mut bp = Disk::read(dev, self.superblock.bblock(b));
             while bi < BPB && (b + bi) < self.superblock.size {
                 let m = 1 << (bi % 8);
-                if bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & m == 0 {
+                if bp.deref_mut_inner().data[(bi / 8) as usize] & m == 0 {
                     // Is block free?
-                    bp.deref_mut_inner().data[(bi / 8) as usize] =
-                        (bp.deref_mut_inner().data[(bi / 8) as usize] as i32 | m) as u8; // Mark block in use.
-                    self.log_write(bp);
+                    bp.deref_mut_inner().data[(bi / 8) as usize] |= m; // Mark block in use.
+                    self.log.lock().write(bp);
                     self.bzero(dev, b + bi);
                     return b + bi;
                 }
@@ -127,8 +118,7 @@ impl FileSystem {
             0,
             "freeing free block"
         );
-        bp.deref_mut_inner().data[(bi / 8) as usize] =
-            (bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & !m) as u8;
-        self.log_write(bp);
+        bp.deref_mut_inner().data[(bi / 8) as usize] &= !(m as u8);
+        self.log.lock().write(bp);
     }
 }

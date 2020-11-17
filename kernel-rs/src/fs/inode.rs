@@ -209,7 +209,7 @@ impl InodeGuard<'_> {
         (*dip).nlink = inner.nlink;
         (*dip).size = inner.size;
         (*dip).addrs.copy_from_slice(&inner.addrs);
-        kernel().fs().log_write(bp);
+        kernel().fs().log.lock().write(bp);
     }
 
     /// Truncate inode (discard contents).
@@ -296,7 +296,7 @@ impl InodeGuard<'_> {
                 break;
             } else {
                 unsafe {
-                    kernel().fs().log_write(bp);
+                    kernel().fs().log.lock().write(bp);
                 }
                 tot = tot.wrapping_add(m);
                 off = off.wrapping_add(m);
@@ -352,7 +352,7 @@ impl InodeGuard<'_> {
             if addr == 0 {
                 addr = kernel().fs().balloc(self.dev);
                 *a.add(bn) = addr;
-                kernel().fs().log_write(bp);
+                kernel().fs().log.lock().write(bp);
             }
         }
         addr
@@ -555,7 +555,7 @@ impl Inode {
                 (*dip).typ = typ;
 
                 // mark it allocated on the disk
-                kernel().fs().log_write(bp);
+                kernel().fs().log.lock().write(bp);
                 return Inode::get(dev, inum);
             }
         }

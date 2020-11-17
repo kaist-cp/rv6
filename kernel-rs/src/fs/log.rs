@@ -222,16 +222,16 @@ impl Log {
     /// Record the block number and pin in the cache by increasing refcnt.
     /// commit()/write_log() will do the disk write.
     ///
-    /// log_write() replaces write(); a typical use is:
+    /// write() replaces write(); a typical use is:
     ///   bp = Disk::read(...)
     ///   modify bp->data[]
-    ///   log_write(bp)
-    pub unsafe fn log_write(&mut self, b: Buf) {
+    ///   write(bp)
+    pub unsafe fn write(&mut self, b: Buf) {
         assert!(
             !(self.lh.block.len() >= LOGSIZE || self.lh.block.len() as i32 >= self.size - 1),
             "too big a transaction"
         );
-        assert!(self.outstanding >= 1, "log_write outside of trans");
+        assert!(self.outstanding >= 1, "write outside of trans");
 
         for buf in &self.lh.block {
             // Log absorbtion.
