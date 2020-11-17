@@ -12,7 +12,7 @@
 /// On-disk file system format used for both kernel and user programs are also included here.
 use crate::{
     bio::{Buf, BufUnlocked},
-    log::Log,
+    log::{Log, Superblock},
     sleepablelock::Sleepablelock,
     stat::T_DIR,
     virtio_disk::Disk,
@@ -24,39 +24,6 @@ mod path;
 pub use path::{FileName, Path};
 mod inode;
 pub use inode::{Dinode, Inode, InodeGuard, InodeInner, RcInode};
-
-/// Disk layout:
-/// [ boot block | super block | log | inode blocks |
-///                                          free bit map | data blocks]
-///
-/// mkfs computes the super block and builds an initial file system. The
-/// super block describes the disk layout:
-#[derive(Copy, Clone)]
-pub struct Superblock {
-    /// Must be FSMAGIC
-    magic: u32,
-
-    /// Size of file system image (blocks)
-    size: u32,
-
-    /// Number of data blocks
-    nblocks: u32,
-
-    /// Number of inodes
-    ninodes: u32,
-
-    /// Number of log blocks
-    pub nlog: u32,
-
-    /// Block number of first log block
-    pub logstart: u32,
-
-    /// Block number of first inode block
-    inodestart: u32,
-
-    /// Block number of first free map block
-    bmapstart: u32,
-}
 
 /// dirent size
 pub const DIRENT_SIZE: usize = mem::size_of::<Dirent>();
@@ -108,7 +75,6 @@ const ROOTINO: u32 = 1;
 
 /// block size
 pub const BSIZE: usize = 1024;
-const FSMAGIC: u32 = 0x10203040;
 const NDIRECT: usize = 12;
 
 const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
@@ -126,18 +92,6 @@ impl Superblock {
     /// Block of free map containing bit for block b
     const fn bblock(self, b: u32) -> u32 {
         b.wrapping_div(BPB).wrapping_add(self.bmapstart)
-    }
-
-    /// Read the super block.
-    unsafe fn new(dev: i32) -> Self {
-        let mut result = mem::MaybeUninit::uninit();
-        let mut bp = Disk::read(dev as u32, 1);
-        ptr::copy(
-            bp.deref_mut_inner().data.as_mut_ptr(),
-            result.as_mut_ptr() as *mut Superblock as *mut u8,
-            mem::size_of::<Superblock>(),
-        );
-        result.assume_init()
     }
 }
 
@@ -172,7 +126,6 @@ impl FileSystem {
     pub fn new(dev: i32) -> Self {
         unsafe {
             let superblock = Superblock::new(dev);
-            assert_eq!(superblock.magic, FSMAGIC, "invalid file system");
             let log = Sleepablelock::new("LOG", Log::new(dev, &superblock));
             Self { superblock, log }
         }
