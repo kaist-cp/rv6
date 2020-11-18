@@ -216,7 +216,7 @@ impl Log {
     ///   bp = Disk::read(...)
     ///   modify bp->data[]
     ///   write(bp)
-    pub unsafe fn write_(&mut self, b: Buf) {
+    pub unsafe fn write__(&mut self, b: Buf) {
         assert!(
             !(self.lh.len() >= LOGSIZE || self.lh.len() as i32 >= self.size - 1),
             "too big a transaction"

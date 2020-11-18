@@ -67,10 +67,13 @@
 //! dev, and inum.  One must hold ip->lock in order to
 //! read or write that inode's ip->valid, ip->size, ip->type, &c.
 
+#![allow(warnings)]
+
 use core::{mem, ops::Deref, ptr};
 
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, Rc},
+    fs::FsTransaction,
     kernel::kernel,
     param::{BSIZE, NINODE},
     sleeplock::Sleeplock,
@@ -161,6 +164,7 @@ pub type RcInode = Rc<<IcacheTag as Deref>::Target, IcacheTag>;
 /// When SleeplockWIP<InodeInner> is held, InodeInner's valid is always true.
 pub struct InodeGuard<'a> {
     pub inode: &'a Inode,
+    tx: &'a FsTransaction<'a>,
 }
 
 #[derive(Default)]
@@ -309,16 +313,17 @@ impl InodeGuard<'_> {
         (*dip).size = inner.size;
         (*dip).addr_direct.copy_from_slice(&inner.addr_direct);
         (*dip).addr_indirect = inner.addr_indirect;
-        kernel().fs().log.lock().write_(bp);
+        self.tx.write(bp);
     }
 
     /// Truncate inode (discard contents).
     /// This function is called with Inode's lock is held.
     pub unsafe fn itrunc(&mut self) {
+        let tx = self.tx;
         let dev = self.dev;
         for addr in &mut self.deref_inner_mut().addr_direct {
             if *addr != 0 {
-                kernel().fs().bfree_(dev, *addr);
+                tx.bfree(dev, *addr);
                 *addr = 0;
             }
         }
@@ -328,13 +333,11 @@ impl InodeGuard<'_> {
             let a = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
                 if *a.add(j) != 0 {
-                    kernel().fs().bfree_(self.dev, *a.add(j));
+                    self.tx.bfree(self.dev, *a.add(j));
                 }
             }
             drop(bp);
-            kernel()
-                .fs()
-                .bfree_(self.dev, self.deref_inner().addr_indirect);
+            self.tx.bfree(self.dev, self.deref_inner().addr_indirect);
             self.deref_inner_mut().addr_indirect = 0
         }
 
@@ -397,7 +400,7 @@ impl InodeGuard<'_> {
                 break;
             } else {
                 unsafe {
-                    kernel().fs().log.lock().write_(bp);
+                    self.tx.write(bp);
                 }
                 tot = tot.wrapping_add(m);
                 off = off.wrapping_add(m);
@@ -432,7 +435,7 @@ impl InodeGuard<'_> {
         if bn < NDIRECT {
             let mut addr = inner.addr_direct[bn];
             if addr == 0 {
-                addr = unsafe { kernel().fs().balloc_(self.dev) };
+                addr = unsafe { self.tx.balloc(self.dev) };
                 self.deref_inner_mut().addr_direct[bn] = addr;
             }
             return addr;
@@ -444,7 +447,7 @@ impl InodeGuard<'_> {
         // Load indirect block, allocating if necessary.
         let mut addr = inner.addr_indirect;
         if addr == 0 {
-            addr = unsafe { kernel().fs().balloc_(self.dev) };
+            addr = unsafe { self.tx.balloc(self.dev) };
             self.deref_inner_mut().addr_indirect = addr;
         }
 
@@ -453,9 +456,9 @@ impl InodeGuard<'_> {
         unsafe {
             addr = *a.add(bn);
             if addr == 0 {
-                addr = kernel().fs().balloc_(self.dev);
+                addr = self.tx.balloc(self.dev);
                 *a.add(bn) = addr;
-                kernel().fs().log.lock().write_(bp);
+                self.tx.write(bp);
             }
         }
         addr
@@ -494,7 +497,7 @@ impl ArenaObject for Inode {
 
             // self->ref == 1 means no other process can have self locked,
             // so this acquiresleep() won't block (or deadlock).
-            let mut ip = self.lock();
+            let mut ip = self.lock(todo!());
 
             A::reacquire_after(guard, move || unsafe {
                 ip.itrunc();
@@ -510,7 +513,7 @@ impl ArenaObject for Inode {
 impl Inode {
     /// Lock the given inode.
     /// Reads the inode from disk if necessary.
-    pub fn lock(&self) -> InodeGuard<'_> {
+    pub fn lock<'x>(&'x self, tx: &'x FsTransaction<'x>) -> InodeGuard<'x> {
         let mut guard = self.inner.lock();
         if !guard.valid {
             let mut bp = Disk::read(self.dev, kernel().fs().superblock.iblock(self.inum));
@@ -530,7 +533,7 @@ impl Inode {
             assert_ne!(guard.typ, T_NONE, "Inode::lock: no type");
         };
         mem::forget(guard);
-        InodeGuard { inode: self }
+        InodeGuard { inode: self, tx }
     }
 
     /// Find the inode with number inum on device dev
@@ -552,7 +555,7 @@ impl Inode {
     /// Allocate an inode on device dev.
     /// Mark it as allocated by  giving it type type.
     /// Returns an unlocked but allocated and referenced inode.
-    pub unsafe fn alloc(dev: u32, typ: i16) -> RcInode {
+    pub unsafe fn alloc(dev: u32, typ: i16, tx: &FsTransaction<'_>) -> RcInode {
         for inum in 1..kernel().fs().superblock.ninodes {
             let mut bp = Disk::read(dev, kernel().fs().superblock.iblock(inum));
             let dip = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
@@ -564,7 +567,7 @@ impl Inode {
                 (*dip).typ = typ;
 
                 // mark it allocated on the disk
-                kernel().fs().log.lock().write_(bp);
+                tx.write(bp);
                 return Inode::get(dev, inum);
             }
         }

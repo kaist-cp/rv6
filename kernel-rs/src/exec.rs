@@ -101,7 +101,7 @@ impl Kernel {
         let ptr = ok_or!(path.namei(&tx), {
             return Err(());
         });
-        let mut ip = ptr.lock();
+        let mut ip = ptr.lock(&tx);
 
         // Check ELF header
         let bytes_read = ip.read(

@@ -135,7 +135,7 @@ impl Path {
     unsafe fn namex(
         &self,
         parent: bool,
-        _tx: &FsTransaction<'_>,
+        tx: &FsTransaction<'_>,
     ) -> Result<(RcInode, Option<&FileName>), ()> {
         let mut ptr = if self.is_absolute() {
             Inode::get(ROOTDEV as u32, ROOTINO)
@@ -148,7 +148,7 @@ impl Path {
         while let Some((new_path, name)) = path.skipelem() {
             path = new_path;
 
-            let mut ip = ptr.lock();
+            let mut ip = ptr.lock(tx);
             if ip.deref_inner().typ != T_DIR {
                 return Err(());
             }
