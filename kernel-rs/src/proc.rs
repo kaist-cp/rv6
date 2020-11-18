@@ -671,7 +671,7 @@ impl ProcessSystem {
             mem::size_of::<[u8; 16]>() as i32,
         );
         data.cwd = Path::new(CStr::from_bytes_with_nul_unchecked(b"/\x00"))
-            .namei(&*ptr::null()) // root doesn't access file system
+            .namei(&*ptr::null()) // TODO(rv6): root doesn't access file system
             .ok();
         guard.deref_mut_info().state = Procstate::RUNNABLE;
     }

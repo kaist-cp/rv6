@@ -51,6 +51,23 @@ pub struct FsTransaction<'s> {
     fs: &'s FileSystem,
 }
 
+impl FileSystem {
+    pub fn new(dev: u32) -> Self {
+        let superblock = unsafe { Superblock::new(&Disk::read(dev, 1)) };
+        let log = Sleepablelock::new("LOG", Log::new(dev, &superblock));
+        Self { superblock, log }
+    }
+
+    /// Called for each FS system call.
+    pub fn begin_transaction(&self) -> FsTransaction<'_> {
+        // TODO(rv6): safety?
+        unsafe {
+            Log::begin_op(&self.log);
+        }
+        FsTransaction { fs: self }
+    }
+}
+
 impl Drop for FsTransaction<'_> {
     fn drop(&mut self) {
         // Called at the end of each FS system call.
@@ -70,63 +87,30 @@ impl FsTransaction<'_> {
     ///   bp = Disk::read(...)
     ///   modify bp->data[]
     ///   write(bp)
-    pub unsafe fn write(&self, b: Buf) {
-        self.fs.log.lock().write__(b);
+    unsafe fn write(&self, b: Buf) {
+        self.fs.log.lock().write(b);
     }
 
     /// Zero a block.
     unsafe fn bzero(&self, dev: u32, bno: u32) {
-        self.fs.bzero__(dev, bno);
+        let mut buf = BufUnlocked::new(dev, bno).lock();
+        ptr::write_bytes(buf.deref_mut_inner().data.as_mut_ptr(), 0, BSIZE);
+        buf.deref_mut_inner().valid = true;
+        self.write(buf);
     }
 
     /// Blocks.
     /// Allocate a zeroed disk block.
     unsafe fn balloc(&self, dev: u32) -> u32 {
-        self.fs.balloc__(dev)
-    }
-
-    /// Free a disk block.
-    unsafe fn bfree(&self, dev: u32, b: u32) {
-        self.fs.bfree__(dev, b);
-    }
-}
-
-impl FileSystem {
-    pub fn new(dev: u32) -> Self {
-        let superblock = unsafe { Superblock::new(&Disk::read(dev, 1)) };
-        let log = Sleepablelock::new("LOG", Log::new(dev, &superblock));
-        Self { superblock, log }
-    }
-
-    /// Called for each FS system call.
-    pub fn begin_transaction(&self) -> FsTransaction<'_> {
-        // TODO(rv6): safety?
-        unsafe {
-            Log::begin_op(&self.log);
-        }
-        FsTransaction { fs: self }
-    }
-
-    /// Zero a block.
-    unsafe fn bzero__(&self, dev: u32, bno: u32) {
-        let mut buf = BufUnlocked::new(dev, bno).lock();
-        ptr::write_bytes(buf.deref_mut_inner().data.as_mut_ptr(), 0, BSIZE);
-        buf.deref_mut_inner().valid = true;
-        self.log.lock().write__(buf);
-    }
-
-    /// Blocks.
-    /// Allocate a zeroed disk block.
-    unsafe fn balloc__(&self, dev: u32) -> u32 {
-        for b in num_iter::range_step(0, self.superblock.size, BPB) {
-            let mut bp = Disk::read(dev, self.superblock.bblock(b));
-            for bi in 0..cmp::min(BPB, self.superblock.size - b) {
+        for b in num_iter::range_step(0, self.fs.superblock.size, BPB) {
+            let mut bp = Disk::read(dev, self.fs.superblock.bblock(b));
+            for bi in 0..cmp::min(BPB, self.fs.superblock.size - b) {
                 let m = 1 << (bi % 8);
                 if bp.deref_mut_inner().data[(bi / 8) as usize] & m == 0 {
                     // Is block free?
                     bp.deref_mut_inner().data[(bi / 8) as usize] |= m; // Mark block in use.
-                    self.log.lock().write__(bp);
-                    self.bzero__(dev, b + bi);
+                    self.write(bp);
+                    self.bzero(dev, b + bi);
                     return b + bi;
                 }
             }
@@ -136,8 +120,8 @@ impl FileSystem {
     }
 
     /// Free a disk block.
-    unsafe fn bfree__(&self, dev: u32, b: u32) {
-        let mut bp = Disk::read(dev, self.superblock.bblock(b));
+    unsafe fn bfree(&self, dev: u32, b: u32) {
+        let mut bp = Disk::read(dev, self.fs.superblock.bblock(b));
         let bi = b.wrapping_rem(BPB) as i32;
         let m = 1u8 << (bi % 8);
         assert_ne!(
@@ -146,6 +130,6 @@ impl FileSystem {
             "freeing free block"
         );
         bp.deref_mut_inner().data[(bi / 8) as usize] &= !m;
-        self.log.lock().write__(bp);
+        self.write(bp);
     }
 }
