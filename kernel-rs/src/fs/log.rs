@@ -49,8 +49,8 @@ pub struct Log {
 
 /// Contents of the header block, used for the on-disk header block.
 struct LogHeader {
-    n: i32,
-    block: [i32; LOGSIZE],
+    n: u32,
+    block: [u32; LOGSIZE],
 }
 
 // `LogHeader` must be fit in a block.
@@ -109,10 +109,10 @@ impl Log {
     /// current transaction commits.
     unsafe fn write_head(&mut self) {
         let mut buf = Disk::read(self.dev as u32, self.start as u32);
-        let mut hb = buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader;
-        (*hb).n = self.lh.len() as i32;
-        for (i, b) in self.lh.iter().enumerate() {
-            (*hb).block[i as usize] = b.blockno as i32;
+        let mut hb = &mut *(buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader);
+        hb.n = self.lh.len() as u32;
+        for (db, b) in izip!(&mut hb.block, &self.lh) {
+            *db = (*b).blockno;
         }
         Disk::write(&mut buf)
     }
@@ -216,7 +216,7 @@ impl Log {
     ///   bp = Disk::read(...)
     ///   modify bp->data[]
     ///   write(bp)
-    pub unsafe fn write(&mut self, b: Buf) {
+    pub unsafe fn write_(&mut self, b: Buf) {
         assert!(
             !(self.lh.len() >= LOGSIZE || self.lh.len() as i32 >= self.size - 1),
             "too big a transaction"

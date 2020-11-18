@@ -57,3 +57,5 @@ extern crate bitflags;
 extern crate array_const_fn_init;
 #[macro_use]
 extern crate static_assertions;
+#[macro_use]
+extern crate itertools;

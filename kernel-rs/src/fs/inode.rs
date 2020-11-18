@@ -309,7 +309,7 @@ impl InodeGuard<'_> {
         (*dip).size = inner.size;
         (*dip).addr_direct.copy_from_slice(&inner.addr_direct);
         (*dip).addr_indirect = inner.addr_indirect;
-        kernel().fs().log.lock().write(bp);
+        kernel().fs().log.lock().write_(bp);
     }
 
     /// Truncate inode (discard contents).
@@ -318,7 +318,7 @@ impl InodeGuard<'_> {
         let dev = self.dev;
         for addr in &mut self.deref_inner_mut().addr_direct {
             if *addr != 0 {
-                kernel().fs().bfree(dev, *addr);
+                kernel().fs().bfree_(dev, *addr);
                 *addr = 0;
             }
         }
@@ -328,13 +328,13 @@ impl InodeGuard<'_> {
             let a = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
                 if *a.add(j) != 0 {
-                    kernel().fs().bfree(self.dev, *a.add(j));
+                    kernel().fs().bfree_(self.dev, *a.add(j));
                 }
             }
             drop(bp);
             kernel()
                 .fs()
-                .bfree(self.dev, self.deref_inner().addr_indirect);
+                .bfree_(self.dev, self.deref_inner().addr_indirect);
             self.deref_inner_mut().addr_indirect = 0
         }
 
@@ -397,7 +397,7 @@ impl InodeGuard<'_> {
                 break;
             } else {
                 unsafe {
-                    kernel().fs().log.lock().write(bp);
+                    kernel().fs().log.lock().write_(bp);
                 }
                 tot = tot.wrapping_add(m);
                 off = off.wrapping_add(m);
@@ -432,7 +432,7 @@ impl InodeGuard<'_> {
         if bn < NDIRECT {
             let mut addr = inner.addr_direct[bn];
             if addr == 0 {
-                addr = unsafe { kernel().fs().balloc(self.dev) };
+                addr = unsafe { kernel().fs().balloc_(self.dev) };
                 self.deref_inner_mut().addr_direct[bn] = addr;
             }
             return addr;
@@ -444,7 +444,7 @@ impl InodeGuard<'_> {
         // Load indirect block, allocating if necessary.
         let mut addr = inner.addr_indirect;
         if addr == 0 {
-            addr = unsafe { kernel().fs().balloc(self.dev) };
+            addr = unsafe { kernel().fs().balloc_(self.dev) };
             self.deref_inner_mut().addr_indirect = addr;
         }
 
@@ -453,9 +453,9 @@ impl InodeGuard<'_> {
         unsafe {
             addr = *a.add(bn);
             if addr == 0 {
-                addr = kernel().fs().balloc(self.dev);
+                addr = kernel().fs().balloc_(self.dev);
                 *a.add(bn) = addr;
-                kernel().fs().log.lock().write(bp);
+                kernel().fs().log.lock().write_(bp);
             }
         }
         addr
@@ -564,7 +564,7 @@ impl Inode {
                 (*dip).typ = typ;
 
                 // mark it allocated on the disk
-                kernel().fs().log.lock().write(bp);
+                kernel().fs().log.lock().write_(bp);
                 return Inode::get(dev, inum);
             }
         }

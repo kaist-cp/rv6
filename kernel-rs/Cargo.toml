@@ -28,6 +28,7 @@ cstr_core = { version = "0.2.2", default-features = false }
 spin = { version = "0.7.0", default-features = false }
 array-const-fn-init = "0.1.1"
 static_assertions = "1.1.0"
+itertools = { version = "0.9.0", default-features = false }
 
 # Compiler options for sysroot packages.
 # Cargo currently warns following packages are not dependencies.

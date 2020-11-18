@@ -11,10 +11,14 @@
 //!
 //! On-disk file system format used for both kernel and user programs are also included here.
 
-use core::{mem, ptr};
+use core::{cmp, mem, ptr};
 
 use crate::{
-    bio::BufUnlocked, param::BSIZE, sleepablelock::Sleepablelock, stat::T_DIR, virtio_disk::Disk,
+    bio::{Buf, BufUnlocked},
+    param::BSIZE,
+    sleepablelock::Sleepablelock,
+    stat::T_DIR,
+    virtio_disk::Disk,
 };
 
 mod inode;
@@ -57,6 +61,36 @@ impl Drop for FsTransaction<'_> {
     }
 }
 
+impl FsTransaction<'_> {
+    /// Caller has modified b->data and is done with the buffer.
+    /// Record the block number and pin in the cache by increasing refcnt.
+    /// commit()/write_log() will do the disk write.
+    ///
+    /// write() replaces write(); a typical use is:
+    ///   bp = Disk::read(...)
+    ///   modify bp->data[]
+    ///   write(bp)
+    pub unsafe fn write(&self, b: Buf) {
+        self.fs.log.lock().write_(b);
+    }
+
+    /// Zero a block.
+    unsafe fn bzero(&self, dev: u32, bno: u32) {
+        self.fs.bzero_(dev, bno);
+    }
+
+    /// Blocks.
+    /// Allocate a zeroed disk block.
+    unsafe fn balloc(&self, dev: u32) -> u32 {
+        self.fs.balloc_(dev)
+    }
+
+    /// Free a disk block.
+    unsafe fn bfree(&self, dev: u32, b: u32) {
+        self.fs.bfree_(dev, b);
+    }
+}
+
 impl FileSystem {
     pub fn new(dev: u32) -> Self {
         let superblock = unsafe { Superblock::new(&Disk::read(dev, 1)) };
@@ -74,36 +108,35 @@ impl FileSystem {
     }
 
     /// Zero a block.
-    unsafe fn bzero(&self, dev: u32, bno: u32) {
+    unsafe fn bzero_(&self, dev: u32, bno: u32) {
         let mut buf = BufUnlocked::new(dev, bno).lock();
         ptr::write_bytes(buf.deref_mut_inner().data.as_mut_ptr(), 0, BSIZE);
         buf.deref_mut_inner().valid = true;
-        self.log.lock().write(buf);
+        self.log.lock().write_(buf);
     }
 
     /// Blocks.
     /// Allocate a zeroed disk block.
-    unsafe fn balloc(&self, dev: u32) -> u32 {
-        let mut bi: u32 = 0;
+    unsafe fn balloc_(&self, dev: u32) -> u32 {
         for b in num_iter::range_step(0, self.superblock.size, BPB) {
             let mut bp = Disk::read(dev, self.superblock.bblock(b));
-            while bi < BPB && (b + bi) < self.superblock.size {
+            for bi in 0..cmp::min(BPB, self.superblock.size - b) {
                 let m = 1 << (bi % 8);
                 if bp.deref_mut_inner().data[(bi / 8) as usize] & m == 0 {
                     // Is block free?
                     bp.deref_mut_inner().data[(bi / 8) as usize] |= m; // Mark block in use.
-                    self.log.lock().write(bp);
-                    self.bzero(dev, b + bi);
+                    self.log.lock().write_(bp);
+                    self.bzero_(dev, b + bi);
                     return b + bi;
                 }
-                bi += 1;
             }
         }
+
         panic!("balloc: out of blocks");
     }
 
     /// Free a disk block.
-    unsafe fn bfree(&self, dev: u32, b: u32) {
+    unsafe fn bfree_(&self, dev: u32, b: u32) {
         let mut bp = Disk::read(dev, self.superblock.bblock(b));
         let bi = b.wrapping_rem(BPB) as i32;
         let m = 1u8 << (bi % 8);
@@ -113,6 +146,6 @@ impl FileSystem {
             "freeing free block"
         );
         bp.deref_mut_inner().data[(bi / 8) as usize] &= !m;
-        self.log.lock().write(bp);
+        self.log.lock().write_(bp);
     }
 }
