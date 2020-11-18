@@ -67,8 +67,6 @@
 //! dev, and inum.  One must hold ip->lock in order to
 //! read or write that inode's ip->valid, ip->size, ip->type, &c.
 
-#![allow(warnings)]
-
 use core::{mem, ops::Deref, ptr};
 
 use crate::{
@@ -287,17 +285,6 @@ impl InodeGuard<'_> {
 }
 
 impl InodeGuard<'_> {
-    /// Copy stat information from inode.
-    pub fn stat(&self) -> Stat {
-        Stat {
-            dev: self.dev as i32,
-            ino: self.inum,
-            typ: self.deref_inner().typ,
-            nlink: self.deref_inner().nlink,
-            size: self.deref_inner().size as usize,
-        }
-    }
-
     /// Copy a modified in-memory inode to disk.
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk, since i-node cache is write-through.
@@ -495,9 +482,12 @@ impl ArenaObject for Inode {
         if self.inner.get_mut().valid && self.inner.get_mut().nlink == 0 {
             // inode has no links and no other references: truncate and free.
 
+            // TODO(rv6): must be removed.
+            let tx = mem::ManuallyDrop::new(FsTransaction { fs: kernel().fs() });
+
             // self->ref == 1 means no other process can have self locked,
             // so this acquiresleep() won't block (or deadlock).
-            let mut ip = self.lock(todo!());
+            let mut ip = self.lock(&tx);
 
             A::reacquire_after(guard, move || unsafe {
                 ip.itrunc();
@@ -591,6 +581,18 @@ impl Inode {
                     addr_indirect: 0,
                 },
             ),
+        }
+    }
+
+    /// Copy stat information from inode.
+    pub fn stat(&self) -> Stat {
+        let inner = self.inner.lock();
+        Stat {
+            dev: self.dev as i32,
+            ino: self.inum,
+            typ: inner.typ,
+            nlink: inner.nlink,
+            size: inner.size as usize,
         }
     }
 }

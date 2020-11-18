@@ -1,8 +1,5 @@
 //! Support functions for system calls that involve file descriptors.
 
-#![allow(warnings)]
-#![allow(clippy::unit_arg)]
-
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, Rc},
     fs::RcInode,
@@ -88,7 +85,7 @@ impl File {
 
         match &self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
-                let mut st = ip.deref().lock(todo!()).stat();
+                let mut st = ip.stat();
                 (*(*p).data.get()).pagetable.copyout(
                     addr,
                     slice::from_raw_parts_mut(
@@ -111,7 +108,8 @@ impl File {
         match &self.typ {
             FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0)),
             FileType::Inode { ip, off } => {
-                let mut ip = ip.deref().lock(todo!());
+                let tx = kernel().fs().begin_transaction();
+                let mut ip = ip.deref().lock(&tx);
                 let curr_off = *off.get();
                 let ret = ip.read(addr, curr_off, n as u32);
                 if let Ok(v) = ret {
