@@ -58,6 +58,10 @@ impl Path {
 
     // TODO: Following functions should return a safe type rather than `*mut Inode`.
 
+    pub unsafe fn root() -> RcInode {
+        Inode::get(ROOTDEV as u32, ROOTINO)
+    }
+
     pub unsafe fn namei(&self, tx: &FsTransaction<'_>) -> Result<RcInode, ()> {
         Ok(self.namex(false, tx)?.0)
     }
@@ -138,7 +142,7 @@ impl Path {
         tx: &FsTransaction<'_>,
     ) -> Result<(RcInode, Option<&FileName>), ()> {
         let mut ptr = if self.is_absolute() {
-            Inode::get(ROOTDEV as u32, ROOTINO)
+            Self::root()
         } else {
             (*(*myproc()).data.get()).cwd.clone().unwrap()
         };
