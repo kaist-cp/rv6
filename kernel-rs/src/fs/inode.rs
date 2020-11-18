@@ -1,3 +1,72 @@
+//! Inodes.
+//!
+//! An inode describes a single unnamed file.
+//! The inode disk structure holds metadata: the file's type,
+//! its size, the number of links referring to it, and the
+//! list of blocks holding the file's content.
+//!
+//! The inodes are laid out sequentially on disk at
+//! kernel().file_system.superblock.startinode. Each inode has a number, indicating its
+//! position on the disk.
+//!
+//! The kernel keeps a cache of in-use inodes in memory
+//! to provide a place for synchronizing access
+//! to inodes used by multiple processes. The cached
+//! inodes include book-keeping information that is
+//! not stored on disk: ip->ref and ip->valid.
+//!
+//! An inode and its in-memory representation go through a
+//! sequence of states before they can be used by the
+//! rest of the file system code.
+//!
+//! * Allocation: an inode is allocated if its type (on disk)
+//!   is non-zero. Inode::alloc() allocates, and Inode::put() frees if
+//!   the reference and link counts have fallen to zero.
+//!
+//! * Referencing in cache: an entry in the inode cache
+//!   is free if ip->ref is zero. Otherwise ip->ref tracks
+//!   the number of in-memory pointers to the entry (open
+//!   files and current directories). iget() finds or
+//!   creates a cache entry and increments its ref; Inode::put()
+//!   decrements ref.
+//!
+//! * Valid: the information (type, size, &c) in an inode
+//!   cache entry is only correct when ip->valid is 1.
+//!   Inode::lock() reads the inode from
+//!   the disk and sets ip->valid, while Inode::put() clears
+//!   ip->valid if ip->ref has fallen to zero.
+//!
+//! * Locked: file system code may only examine and modify
+//!   the information in an inode and its content if it
+//!   has first locked the inode.
+//!
+//! Thus a typical sequence is:
+//!   ip = iget(dev, inum)
+//!   (*ip).lock()
+//!   ... examine and modify ip->xxx ...
+//!   (*ip).unlock()
+//!   (*ip).put()
+//!
+//! Inode::lock() is separate from iget() so that system calls can
+//! get a long-term reference to an inode (as for an open file)
+//! and only lock it for short periods (e.g., in read()).
+//! The separation also helps avoid deadlock and races during
+//! pathname lookup. iget() increments ip->ref so that the inode
+//! stays cached and pointers to it remain valid.
+//!
+//! Many internal file system functions expect the caller to
+//! have locked the inodes involved; this lets callers create
+//! multi-step atomic operations.
+//!
+//! The kernel().icache.lock spin-lock protects the allocation of icache
+//! entries. Since ip->ref indicates whether an entry is free,
+//! and ip->dev and ip->inum indicate which i-node an entry
+//! holds, one must hold kernel().icache.lock while using any of those fields.
+//!
+//! An ip->lock sleep-lock protects all ip-> fields other than ref,
+//! dev, and inum.  One must hold ip->lock in order to
+//! read or write that inode's ip->valid, ip->size, ip->type, &c.
+
 use core::{mem, ops::Deref, ptr};
 
 use crate::{
@@ -28,7 +97,8 @@ pub struct InodeInner {
     pub minor: u16,
     pub nlink: i16,
     pub size: u32,
-    pub addrs: [u32; 13],
+    pub addr_direct: [u32; NDIRECT],
+    pub addr_indirect: u32,
 }
 
 /// in-memory copy of an inode
@@ -40,6 +110,35 @@ pub struct Inode {
     pub inum: u32,
 
     pub inner: Sleeplock<InodeInner>,
+}
+
+/// On-disk inode structure
+/// Both the kernel and user programs use this header file.
+// It needs repr(C) because it's struct for in-disk representation
+// which should follow C(=machine) representation
+// https://github.com/kaist-cp/rv6/issues/52
+#[repr(C)]
+pub struct Dinode {
+    /// File type
+    typ: i16,
+
+    /// Major device number (T_DEVICE only)
+    major: u16,
+
+    /// Minor device number (T_DEVICE only)
+    minor: u16,
+
+    /// Number of links to inode in file system
+    nlink: i16,
+
+    /// Size of file (bytes)
+    size: u32,
+
+    /// Direct data block addresses
+    addr_direct: [u32; NDIRECT],
+
+    /// Indirect data block address
+    addr_indirect: u32,
 }
 
 #[derive(Clone)]
@@ -208,35 +307,37 @@ impl InodeGuard<'_> {
         (*dip).minor = inner.minor;
         (*dip).nlink = inner.nlink;
         (*dip).size = inner.size;
-        (*dip).addrs.copy_from_slice(&inner.addrs);
+        (*dip).addr_direct.copy_from_slice(&inner.addr_direct);
+        (*dip).addr_indirect = inner.addr_indirect;
         kernel().fs().log.lock().write(bp);
     }
 
     /// Truncate inode (discard contents).
     /// This function is called with Inode's lock is held.
     pub unsafe fn itrunc(&mut self) {
-        for i in 0..NDIRECT {
-            if self.deref_inner().addrs[i] != 0 {
-                kernel()
-                    .fs()
-                    .bfree(self.dev as i32, self.deref_inner().addrs[i]);
-                self.deref_inner_mut().addrs[i] = 0;
+        let dev = self.dev;
+        for addr in &mut self.deref_inner_mut().addr_direct {
+            if *addr != 0 {
+                kernel().fs().bfree(dev, *addr);
+                *addr = 0;
             }
         }
-        if self.deref_inner().addrs[NDIRECT] != 0 {
-            let mut bp = Disk::read(self.dev, self.deref_inner().addrs[NDIRECT]);
+
+        if self.deref_inner().addr_indirect != 0 {
+            let mut bp = Disk::read(self.dev, self.deref_inner().addr_indirect);
             let a = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
                 if *a.add(j) != 0 {
-                    kernel().fs().bfree(self.dev as i32, *a.add(j));
+                    kernel().fs().bfree(self.dev, *a.add(j));
                 }
             }
             drop(bp);
             kernel()
                 .fs()
-                .bfree(self.dev as i32, self.deref_inner().addrs[NDIRECT]);
-            self.deref_inner_mut().addrs[NDIRECT] = 0
+                .bfree(self.dev, self.deref_inner().addr_indirect);
+            self.deref_inner_mut().addr_indirect = 0
         }
+
         self.deref_inner_mut().size = 0;
         self.update();
     }
@@ -322,29 +423,31 @@ impl InodeGuard<'_> {
     /// The content (data) associated with each inode is stored
     /// in blocks on the disk. The first NDIRECT block numbers
     /// are listed in self->addrs[].  The next NINDIRECT blocks are
-    /// listed in block self->addrs[NDIRECT].
+    /// listed in block self->addr_indirect.
     /// Return the disk block address of the nth block in inode self.
     /// If there is no such block, bmap allocates one.
     fn bmap(&mut self, mut bn: usize) -> u32 {
-        let mut addr: u32;
         let inner = self.deref_inner();
+
         if bn < NDIRECT {
-            addr = inner.addrs[bn];
+            let mut addr = inner.addr_direct[bn];
             if addr == 0 {
                 addr = unsafe { kernel().fs().balloc(self.dev) };
-                self.deref_inner_mut().addrs[bn] = addr;
+                self.deref_inner_mut().addr_direct[bn] = addr;
             }
             return addr;
         }
-        bn = (bn).wrapping_sub(NDIRECT);
 
+        bn = (bn).wrapping_sub(NDIRECT);
         assert!(bn < NINDIRECT, "bmap: out of range");
+
         // Load indirect block, allocating if necessary.
-        addr = inner.addrs[NDIRECT];
+        let mut addr = inner.addr_indirect;
         if addr == 0 {
             addr = unsafe { kernel().fs().balloc(self.dev) };
-            self.deref_inner_mut().addrs[NDIRECT] = addr;
+            self.deref_inner_mut().addr_indirect = addr;
         }
+
         let mut bp = Disk::read(self.dev, addr);
         let a: *mut u32 = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
         unsafe {
@@ -375,101 +478,6 @@ impl InodeGuard<'_> {
         true
     }
 }
-
-/// On-disk inode structure
-/// Both the kernel and user programs use this header file.
-// It needs repr(C) because it's struct for in-disk representation
-// which should follow C(=machine) representation
-// https://github.com/kaist-cp/rv6/issues/52
-#[repr(C)]
-pub struct Dinode {
-    /// File type
-    typ: i16,
-
-    /// Major device number (T_DEVICE only)
-    major: u16,
-
-    /// Minor device number (T_DEVICE only)
-    minor: u16,
-
-    /// Number of links to inode in file system
-    nlink: i16,
-
-    /// Size of file (bytes)
-    size: u32,
-
-    /// Data block addresses
-    addrs: [u32; 13],
-}
-
-/// Inodes.
-///
-/// An inode describes a single unnamed file.
-/// The inode disk structure holds metadata: the file's type,
-/// its size, the number of links referring to it, and the
-/// list of blocks holding the file's content.
-///
-/// The inodes are laid out sequentially on disk at
-/// kernel().file_system.superblock.startinode. Each inode has a number, indicating its
-/// position on the disk.
-///
-/// The kernel keeps a cache of in-use inodes in memory
-/// to provide a place for synchronizing access
-/// to inodes used by multiple processes. The cached
-/// inodes include book-keeping information that is
-/// not stored on disk: ip->ref and ip->valid.
-///
-/// An inode and its in-memory representation go through a
-/// sequence of states before they can be used by the
-/// rest of the file system code.
-///
-/// * Allocation: an inode is allocated if its type (on disk)
-///   is non-zero. Inode::alloc() allocates, and Inode::put() frees if
-///   the reference and link counts have fallen to zero.
-///
-/// * Referencing in cache: an entry in the inode cache
-///   is free if ip->ref is zero. Otherwise ip->ref tracks
-///   the number of in-memory pointers to the entry (open
-///   files and current directories). iget() finds or
-///   creates a cache entry and increments its ref; Inode::put()
-///   decrements ref.
-///
-/// * Valid: the information (type, size, &c) in an inode
-///   cache entry is only correct when ip->valid is 1.
-///   Inode::lock() reads the inode from
-///   the disk and sets ip->valid, while Inode::put() clears
-///   ip->valid if ip->ref has fallen to zero.
-///
-/// * Locked: file system code may only examine and modify
-///   the information in an inode and its content if it
-///   has first locked the inode.
-///
-/// Thus a typical sequence is:
-///   ip = iget(dev, inum)
-///   (*ip).lock()
-///   ... examine and modify ip->xxx ...
-///   (*ip).unlock()
-///   (*ip).put()
-///
-/// Inode::lock() is separate from iget() so that system calls can
-/// get a long-term reference to an inode (as for an open file)
-/// and only lock it for short periods (e.g., in read()).
-/// The separation also helps avoid deadlock and races during
-/// pathname lookup. iget() increments ip->ref so that the inode
-/// stays cached and pointers to it remain valid.
-///
-/// Many internal file system functions expect the caller to
-/// have locked the inodes involved; this lets callers create
-/// multi-step atomic operations.
-///
-/// The kernel().icache.lock spin-lock protects the allocation of icache
-/// entries. Since ip->ref indicates whether an entry is free,
-/// and ip->dev and ip->inum indicate which i-node an entry
-/// holds, one must hold kernel().icache.lock while using any of those fields.
-///
-/// An ip->lock sleep-lock protects all ip-> fields other than ref,
-/// dev, and inum.  One must hold ip->lock in order to
-/// read or write that inode's ip->valid, ip->size, ip->type, &c.
 
 impl ArenaObject for Inode {
     /// Drop a reference to an in-memory inode.
@@ -515,7 +523,8 @@ impl Inode {
             guard.minor = (*dip).minor as u16;
             guard.nlink = (*dip).nlink;
             guard.size = (*dip).size;
-            guard.addrs.copy_from_slice(&(*dip).addrs);
+            guard.addr_direct.copy_from_slice(&(*dip).addr_direct);
+            guard.addr_indirect = (*dip).addr_indirect;
             drop(bp);
             guard.valid = true;
             assert_ne!(guard.typ, T_NONE, "Inode::lock: no type");
@@ -575,7 +584,8 @@ impl Inode {
                     minor: 0,
                     nlink: 0,
                     size: 0,
-                    addrs: [0; 13],
+                    addr_direct: [0; NDIRECT],
+                    addr_indirect: 0,
                 },
             ),
         }

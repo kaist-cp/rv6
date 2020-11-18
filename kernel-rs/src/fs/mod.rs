@@ -103,8 +103,8 @@ impl FileSystem {
     }
 
     /// Free a disk block.
-    unsafe fn bfree(&self, dev: i32, b: u32) {
-        let mut bp = Disk::read(dev as u32, self.superblock.bblock(b));
+    unsafe fn bfree(&self, dev: u32, b: u32) {
+        let mut bp = Disk::read(dev, self.superblock.bblock(b));
         let bi = b.wrapping_rem(BPB) as i32;
         let m = 1u8 << (bi % 8);
         assert_ne!(

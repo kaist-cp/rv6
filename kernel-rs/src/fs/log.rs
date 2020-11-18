@@ -33,6 +33,7 @@ use crate::{
 use super::Superblock;
 
 pub struct Log {
+    dev: u32,
     start: i32,
     size: i32,
 
@@ -41,39 +42,29 @@ pub struct Log {
 
     /// In commit(), please wait.
     committing: bool,
-    dev: u32,
-    lh: LogHeaderInMemory,
+
+    /// Contents of the header block, used to keep track in memory of logged block# before commit.
+    lh: ArrayVec<[BufUnlocked; LOGSIZE]>,
 }
 
-/// Contents of the header block, used for both the on-disk header block
-/// and to keep track in memory of logged block# before commit.
+/// Contents of the header block, used for the on-disk header block.
 struct LogHeader {
     n: i32,
     block: [i32; LOGSIZE],
 }
 
-/// Contents of the header block, used for both the on-disk header block
-/// and to keep track in memory of logged block# before commit.
-struct LogHeaderInMemory {
-    block: ArrayVec<[BufUnlocked; LOGSIZE]>,
-}
+// `LogHeader` must be fit in a block.
+const_assert!(mem::size_of::<LogHeader>() < BSIZE);
 
 impl Log {
     pub fn new(dev: u32, superblock: &Superblock) -> Self {
-        assert!(
-            mem::size_of::<LogHeader>() < BSIZE,
-            "Log::new: too big LogHeader"
-        );
-
         let mut log = Self {
+            dev,
             start: superblock.logstart as i32,
             size: superblock.nlog as i32,
             outstanding: 0,
             committing: false,
-            dev,
-            lh: LogHeaderInMemory {
-                block: ArrayVec::new(),
-            },
+            lh: ArrayVec::new(),
         };
         unsafe {
             log.recover_from_log();
@@ -84,7 +75,7 @@ impl Log {
 
     /// Copy committed blocks from log to their home location.
     unsafe fn install_trans(&mut self) {
-        for (tail, dbuf) in self.lh.block.drain(..).enumerate() {
+        for (tail, dbuf) in self.lh.drain(..).enumerate() {
             // Read log block.
             let lbuf = Disk::read(self.dev as u32, (self.start + tail as i32 + 1) as u32);
 
@@ -109,7 +100,6 @@ impl Log {
         let lh = buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader;
         for b in &(*lh).block[0..(*lh).n as usize] {
             self.lh
-                .block
                 .push(BufUnlocked::unforget(self.dev as u32, *b as u32).unwrap());
         }
     }
@@ -120,8 +110,8 @@ impl Log {
     unsafe fn write_head(&mut self) {
         let mut buf = Disk::read(self.dev as u32, self.start as u32);
         let mut hb = buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader;
-        (*hb).n = self.lh.block.len() as i32;
-        for (i, b) in self.lh.block.iter().enumerate() {
+        (*hb).n = self.lh.len() as i32;
+        for (i, b) in self.lh.iter().enumerate() {
             (*hb).block[i as usize] = b.blockno as i32;
         }
         Disk::write(&mut buf)
@@ -143,7 +133,7 @@ impl Log {
         loop {
             if guard.committing ||
             // This op might exhaust log space; wait for commit.
-            guard.lh.block.len() as i32 + (guard.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
+            guard.lh.len() as i32 + (guard.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
             {
                 guard.sleep();
             } else {
@@ -184,7 +174,7 @@ impl Log {
 
     /// Copy modified blocks from cache to self.
     unsafe fn write_log(&mut self) {
-        for (tail, from) in self.lh.block.iter().enumerate() {
+        for (tail, from) in self.lh.iter().enumerate() {
             // Log block.
             let mut to = Disk::read(self.dev as u32, (self.start + tail as i32 + 1) as u32);
 
@@ -203,7 +193,7 @@ impl Log {
     }
 
     unsafe fn commit(&mut self) {
-        if !self.lh.block.is_empty() {
+        if !self.lh.is_empty() {
             // Write modified blocks from cache to self.
             self.write_log();
 
@@ -228,12 +218,12 @@ impl Log {
     ///   write(bp)
     pub unsafe fn write(&mut self, b: Buf) {
         assert!(
-            !(self.lh.block.len() >= LOGSIZE || self.lh.block.len() as i32 >= self.size - 1),
+            !(self.lh.len() >= LOGSIZE || self.lh.len() as i32 >= self.size - 1),
             "too big a transaction"
         );
         assert!(self.outstanding >= 1, "write outside of trans");
 
-        for buf in &self.lh.block {
+        for buf in &self.lh {
             // Log absorbtion.
             if buf.blockno == (*b).blockno {
                 return;
@@ -241,6 +231,6 @@ impl Log {
         }
 
         // Add new block to log?
-        self.lh.block.push(b.unlock());
+        self.lh.push(b.unlock());
     }
 }
