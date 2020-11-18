@@ -545,7 +545,8 @@ unsafe fn balloc(dev: u32) -> u32 {
         let mut bp = Disk::read(dev, kernel().fs().superblock.bblock(b));
         while bi < BPB && (b + bi) < kernel().fs().superblock.size {
             let m = 1 << (bi % 8);
-            if bp.deref_mut_inner().data[(bi / 8) as usize] & m == 0 { // Is block free?
+            if bp.deref_mut_inner().data[(bi / 8) as usize] & m == 0 {
+                // Is block free?
                 bp.deref_mut_inner().data[(bi / 8) as usize] |= m; // Mark block in use.
                 kernel().fs().log_write(bp);
                 bzero(dev, b + bi);
