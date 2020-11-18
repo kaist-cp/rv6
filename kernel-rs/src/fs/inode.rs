@@ -170,7 +170,7 @@ impl InodeGuard<'_> {
     pub unsafe fn itrunc(&mut self) {
         for i in 0..NDIRECT {
             if self.deref_inner().addrs[i] != 0 {
-                bfree(self.dev as i32, self.deref_inner().addrs[i]);
+                bfree(self.dev, self.deref_inner().addrs[i]);
                 self.deref_inner_mut().addrs[i] = 0;
             }
         }
@@ -179,11 +179,11 @@ impl InodeGuard<'_> {
             let a = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
                 if *a.add(j) != 0 {
-                    bfree(self.dev as i32, *a.add(j));
+                    bfree(self.dev, *a.add(j));
                 }
             }
             drop(bp);
-            bfree(self.dev as i32, self.deref_inner().addrs[NDIRECT]);
+            bfree(self.dev, self.deref_inner().addrs[NDIRECT]);
             self.deref_inner_mut().addrs[NDIRECT] = 0
         }
         self.deref_inner_mut().size = 0;
@@ -532,8 +532,8 @@ impl Inode {
 }
 
 /// Zero a block.
-unsafe fn bzero(dev: i32, bno: i32) {
-    let mut bp = Disk::read(dev as u32, bno as u32);
+unsafe fn bzero(dev: u32, bno: u32) {
+    let mut bp = Disk::read(dev, bno);
     ptr::write_bytes(bp.deref_mut_inner().data.as_mut_ptr(), 0, BSIZE);
     kernel().fs().log_write(bp);
 }
@@ -545,12 +545,10 @@ unsafe fn balloc(dev: u32) -> u32 {
         let mut bp = Disk::read(dev, kernel().fs().superblock.bblock(b));
         while bi < BPB && (b + bi) < kernel().fs().superblock.size {
             let m = 1 << (bi % 8);
-            if bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & m == 0 {
-                // Is block free?
-                bp.deref_mut_inner().data[(bi / 8) as usize] =
-                    (bp.deref_mut_inner().data[(bi / 8) as usize] as i32 | m) as u8; // Mark block in use.
+            if bp.deref_mut_inner().data[(bi / 8) as usize] & m == 0 { // Is block free?
+                bp.deref_mut_inner().data[(bi / 8) as usize] |= m; // Mark block in use.
                 kernel().fs().log_write(bp);
-                bzero(dev as i32, (b + bi) as i32);
+                bzero(dev, b + bi);
                 return b + bi;
             }
             bi += 1;
@@ -560,8 +558,8 @@ unsafe fn balloc(dev: u32) -> u32 {
 }
 
 /// Free a disk block.
-unsafe fn bfree(dev: i32, b: u32) {
-    let mut bp = Disk::read(dev as u32, kernel().fs().superblock.bblock(b));
+unsafe fn bfree(dev: u32, b: u32) {
+    let mut bp = Disk::read(dev, kernel().fs().superblock.bblock(b));
     let bi = b.wrapping_rem(BPB) as i32;
     let m = (1) << (bi % 8);
     assert_ne!(
@@ -569,7 +567,6 @@ unsafe fn bfree(dev: i32, b: u32) {
         0,
         "freeing free block"
     );
-    bp.deref_mut_inner().data[(bi / 8) as usize] =
-        (bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & !m) as u8;
+    bp.deref_mut_inner().data[(bi / 8) as usize] &= (!m) as u8;
     kernel().fs().log_write(bp);
 }
