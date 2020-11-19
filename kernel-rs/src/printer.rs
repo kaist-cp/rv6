@@ -3,8 +3,6 @@ use core::fmt::{self, Write};
 
 pub struct Printer {}
 
-const BACKSPACE: i32 = 0x100;
-
 impl Printer {
     pub const fn new() -> Self {
         Self {}
