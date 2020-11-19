@@ -42,9 +42,9 @@ consputc(int c)
 
   if(c == BACKSPACE){
     // if the user typed backspace, overwrite with a space.
-    uartputc('\b', 0); uartputc(' ', 0); uartputc('\b', 0);
+    uartputc_sync('\b'); uartputc_sync(' '); uartputc_sync('\b');
   } else {
-    uartputc(c, 0);
+    uartputc_sync(c);
   }
 }
 
@@ -73,7 +73,6 @@ consolewrite(int user_src, uint64 src, int n)
     if(either_copyin(&c, user_src, src+i, 1) == -1)
       break;
     uartputc(c);
-    uartputc(c, 1);
   }
   release(&cons.lock);
 
