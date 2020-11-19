@@ -252,9 +252,9 @@ impl InodeGuard<'_> {
             }
         }
 
-        // TODO(@kimjungwow) : To pass copyin() usertest,
-        // I updated Inode::write() earlier as
+        // TODO(@kimjungwow) : To pass copyin() usertest, I reflect the commit on Nov 5, 2020 (below link).
         // https://github.com/mit-pdos/xv6-riscv/commit/5e392531c07966fd8a6bee50e3e357c553fb2a2f
+        // This comment will be removed as we fetch upstream(mit-pdos)
         if off > self.deref_inner().size {
             self.deref_inner_mut().size = off;
         }

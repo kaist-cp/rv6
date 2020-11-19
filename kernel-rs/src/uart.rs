@@ -155,7 +155,9 @@ impl Uart {
 
         // wait for Transmit Holding Empty to be set in LSR.
         while LSR.read() & LSR_TX_IDLE == 0 {}
+
         THR.write(c as u8);
+
         unsafe {
             pop_off();
         }
