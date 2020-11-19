@@ -297,8 +297,8 @@ impl Kernel {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let p: *mut Proc = myproc();
         let mut data = &mut *(*p).data.get();
-        let tx = self.fs().begin_transaction();
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
+        let tx = self.fs().begin_transaction();
         let ptr = ok_or!(Path::new(path).namei(&tx), return usize::MAX);
         let ip = ptr.lock(&tx);
         if ip.deref_inner().typ != T_DIR {

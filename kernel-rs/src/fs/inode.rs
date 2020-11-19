@@ -316,15 +316,15 @@ impl InodeGuard<'_> {
         }
 
         if self.deref_inner().addr_indirect != 0 {
-            let mut bp = Disk::read(self.dev, self.deref_inner().addr_indirect);
+            let mut bp = Disk::read(dev, self.deref_inner().addr_indirect);
             let a = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
                 if *a.add(j) != 0 {
-                    self.tx.bfree(self.dev, *a.add(j));
+                    self.tx.bfree(dev, *a.add(j));
                 }
             }
             drop(bp);
-            self.tx.bfree(self.dev, self.deref_inner().addr_indirect);
+            self.tx.bfree(dev, self.deref_inner().addr_indirect);
             self.deref_inner_mut().addr_indirect = 0
         }
 
