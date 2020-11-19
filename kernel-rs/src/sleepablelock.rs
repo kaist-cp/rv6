@@ -37,7 +37,9 @@ impl<T> Sleepablelock<T> {
     }
 
     pub fn lock(&self) -> SleepablelockGuard<'_, T> {
-        self.lock.acquire();
+        if !self.lock.holding() {
+            self.lock.acquire();
+        }
 
         SleepablelockGuard {
             lock: self,
@@ -79,7 +81,9 @@ impl<T> SleepablelockGuard<'_, T> {
 
 impl<T> Drop for SleepablelockGuard<'_, T> {
     fn drop(&mut self) {
-        self.lock.lock.release();
+        if self.lock.lock.holding() {
+            self.lock.lock.release();
+        }
     }
 }
 
