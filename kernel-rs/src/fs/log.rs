@@ -30,8 +30,6 @@ use crate::{
     virtio_disk::Disk,
 };
 
-use super::Superblock;
-
 pub struct Log {
     dev: u32,
     start: i32,
@@ -57,11 +55,11 @@ struct LogHeader {
 const_assert!(mem::size_of::<LogHeader>() < BSIZE);
 
 impl Log {
-    pub fn new(dev: u32, superblock: &Superblock) -> Self {
+    pub fn new(dev: u32, start: i32, size: i32) -> Self {
         let mut log = Self {
             dev,
-            start: superblock.logstart as i32,
-            size: superblock.nlog as i32,
+            start,
+            size,
             outstanding: 0,
             committing: false,
             lh: ArrayVec::new(),

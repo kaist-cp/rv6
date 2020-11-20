@@ -54,7 +54,10 @@ pub struct FsTransaction<'s> {
 impl FileSystem {
     pub fn new(dev: u32) -> Self {
         let superblock = unsafe { Superblock::new(&Disk::read(dev, 1)) };
-        let log = Sleepablelock::new("LOG", Log::new(dev, &superblock));
+        let log = Sleepablelock::new(
+            "LOG",
+            Log::new(dev, superblock.logstart as i32, superblock.nlog as i32),
+        );
         Self { superblock, log }
     }
 
