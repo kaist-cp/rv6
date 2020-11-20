@@ -7,7 +7,7 @@ use crate::{
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     ok_or,
     page::Page,
-    param::{NOFILE, NPROC, ROOTDEV},
+    param::{NOFILE, NPROC, ROOTDEV, MAXPROCNAME},
     println,
     riscv::{intr_get, intr_on, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
     sleepablelock::SleepablelockGuard,
@@ -330,7 +330,7 @@ pub struct Proc {
     killed: AtomicBool,
 
     /// Process name (debugging).
-    pub name: [u8; 16],
+    pub name: [u8; MAXPROCNAME],
 }
 
 /// Assumption: `ptr` is `myproc()`, and ptr->info's spinlock is held.
@@ -509,7 +509,7 @@ impl Proc {
             ),
             data: UnsafeCell::new(ProcData::new()),
             killed: AtomicBool::new(false),
-            name: [0; 16],
+            name: [0; MAXPROCNAME],
         }
     }
 
@@ -667,7 +667,7 @@ impl ProcessSystem {
         safestrcpy(
             (*guard).name.as_mut_ptr(),
             b"initcode\x00" as *const u8,
-            mem::size_of::<[u8; 16]>() as i32,
+            mem::size_of::<[u8; MAXPROCNAME]>() as i32,
         );
         data.cwd = Path::new(CStr::from_bytes_with_nul_unchecked(b"/\x00"))
             .namei()
@@ -713,7 +713,7 @@ impl ProcessSystem {
         safestrcpy(
             (*np).name.as_mut_ptr(),
             (*p).name.as_mut_ptr(),
-            mem::size_of::<[u8; 16]>() as i32,
+            mem::size_of::<[u8; MAXPROCNAME]>() as i32,
         );
         let pid = np.deref_mut_info().pid;
         np.deref_mut_info().state = Procstate::RUNNABLE;
@@ -833,9 +833,9 @@ impl ProcessSystem {
     pub unsafe fn dump(&self) {
         println!();
         for p in &self.process_pool {
-            let mut name = [0; 16];
+            let mut name = [0; MAXPROCNAME];
             let mut count = 0;
-            while p.name[count] != 0 as u8 {
+            while p.name[count] != 0 && count < MAXPROCNAME {
                 name[count] = p.name[count];
                 count += 1;
             }
