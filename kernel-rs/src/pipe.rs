@@ -75,6 +75,10 @@ impl Pipe {
                         return Ok(written);
                     }
                 }
+                Err(PipeError::InvalidCopyin) => {
+                    self.read_waitchannel.wakeup();
+                    return Ok(written);
+                }
                 _ => return Err(()),
             }
         }
@@ -151,24 +155,24 @@ impl AllocatedPipe {
 pub enum PipeError {
     WaitForIO,
     InvalidStatus,
+    InvalidCopyin,
 }
 
 impl PipeInner {
-    unsafe fn try_write(&mut self, addr: UVAddr, n: usize) -> Result<usize, ()> {
+    unsafe fn try_write(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
         let mut ch = [0 as u8];
         let proc = myproc();
         let data = &mut *(*proc).data.get();
-
         for i in 0..n {
             if self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
                 if !self.readopen || (*proc).killed() {
-                    return Err(());
+                    return Err(PipeError::InvalidStatus);
                 }
                 return Ok(i);
             }
             if data.pagetable.copyin(&mut ch, addr + i).is_err() {
-                break;
+                return Err(PipeError::InvalidCopyin);
             }
             self.data[self.nwrite as usize % PIPESIZE] = ch[0];
             self.nwrite = self.nwrite.wrapping_add(1);

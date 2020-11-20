@@ -19,13 +19,21 @@
 // some have different meanings for
 // read vs write.
 // see http://byterunner.com/16550.html
-#define RHR 0 // receive holding register (for input bytes)
-#define THR 0 // transmit holding register (for output bytes)
-#define IER 1 // interrupt enable register
-#define FCR 2 // FIFO control register
-#define ISR 2 // interrupt status register
-#define LCR 3 // line control register
-#define LSR 5 // line status register
+#define RHR 0                 // receive holding register (for input bytes)
+#define THR 0                 // transmit holding register (for output bytes)
+#define IER 1                 // interrupt enable register
+#define IER_TX_ENABLE (1<<0)
+#define IER_RX_ENABLE (1<<1)
+#define FCR 2                 // FIFO control register
+#define FCR_FIFO_ENABLE (1<<0)
+#define FCR_FIFO_CLEAR (3<<1) // clear the content of the two FIFOs
+#define ISR 2                 // interrupt status register
+#define LCR 3                 // line control register
+#define LCR_EIGHT_BITS (3<<0)
+#define LCR_BAUD_LATCH (1<<7) // special mode to set baud rate
+#define LSR 5                 // line status register
+#define LSR_RX_READY (1<<0)   // input is waiting to be read from RHR
+#define LSR_TX_IDLE (1<<5)    // THR can accept another character to send
 
 #define ReadReg(reg) (*(Reg(reg)))
 #define WriteReg(reg, v) (*(Reg(reg)) = (v))
@@ -46,7 +54,7 @@ uartinit(void)
   WriteReg(IER, 0x00);
 
   // special mode to set baud rate.
-  WriteReg(LCR, 0x80);
+  WriteReg(LCR, LCR_BAUD_LATCH);
 
   // LSB for baud rate of 38.4K.
   WriteReg(0, 0x03);
@@ -56,46 +64,32 @@ uartinit(void)
 
   // leave set-baud mode,
   // and set word length to 8 bits, no parity.
-  WriteReg(LCR, 0x03);
+  WriteReg(LCR, LCR_EIGHT_BITS);
 
   // reset and enable FIFOs.
-  WriteReg(FCR, 0x07);
+  WriteReg(FCR, FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);
 
   // enable transmit and receive interrupts.
-  WriteReg(IER, 0x02 | 0x01);
+  WriteReg(IER, IER_TX_ENABLE | IER_RX_ENABLE);
 
   initlock(&uart_tx_lock, "uart");
 }
 
 // add a character to the output buffer and tell the
 // UART to start sending if it isn't already.
-//
-// usually called from the top-half -- by a process
-// calling write(). can also be called from a uart
-// interrupt to echo a received character, or by printf
-// or panic from anywhere in the kernel.
-//
-// the block argument controls what happens if the
-// buffer is full. for write(), block is 1, and the
-// process waits. for kernel printf's and echoed
-// characters, block is 0, and the character is
-// discarded; this is necessary since sleep() is
-// not possible in interrupts.
+// blocks if the output buffer is full.
+// because it may block, it can't be called
+// from interrupts; it's only suitable for use
+// by write().
 void
-uartputc(int c, int block)
+uartputc(int c)
 {
   acquire(&uart_tx_lock);
   while(1){
     if(((uart_tx_w + 1) % UART_TX_BUF_SIZE) == uart_tx_r){
       // buffer is full.
-      if(block){
-        // wait for uartstart() to open up space in the buffer.
-        sleep(&uart_tx_r, &uart_tx_lock);
-      } else {
-        // caller does not want us to wait.
-        release(&uart_tx_lock);
-        return;
-      }
+      // wait for uartstart() to open up space in the buffer.
+      sleep(&uart_tx_r, &uart_tx_lock);
     } else {
       uart_tx_buf[uart_tx_w] = c;
       uart_tx_w = (uart_tx_w + 1) % UART_TX_BUF_SIZE;
@@ -104,6 +98,23 @@ uartputc(int c, int block)
       return;
     }
   }
+}
+
+// alternate version of uartputc() that doesn't 
+// use interrupts, for use by kernel printf() and
+// to echo characters. it spins waiting for the uart's
+// output register to be empty.
+void
+uartputc_sync(int c)
+{
+  push_off();
+
+  // wait for Transmit Holding Empty to be set in LSR.
+  while((ReadReg(LSR) & LSR_TX_IDLE) == 0)
+    ;
+  WriteReg(THR, c);
+
+  pop_off();
 }
 
 // if the UART is idle, and a character is waiting
@@ -119,7 +130,7 @@ uartstart()
       return;
     }
     
-    if((ReadReg(LSR) & (1 << 5)) == 0){
+    if((ReadReg(LSR) & LSR_TX_IDLE) == 0){
       // the UART transmit holding register is full,
       // so we cannot give it another byte.
       // it will interrupt when it's ready for a new byte.

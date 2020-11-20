@@ -598,9 +598,7 @@ impl<T> DerefMut for PageTable<T> {
 
 impl PageTable<KVAddr> {
     // trampoline.S
-    /// Create a direct-map page table for the kernel and
-    /// turn on paging. Called early, in supervisor mode.
-    /// The page allocator is already initialized.
+    /// Create a direct-map page table for the kernel.
     pub unsafe fn kvminit(&mut self) {
         self.alloc_root();
 

@@ -61,22 +61,23 @@ impl Console {
         }
         if c == BACKSPACE {
             // If the user typed backspace, overwrite with a space.
-            self.uart.putc('\u{8}' as i32, false);
-            self.uart.putc(' ' as i32, false);
-            self.uart.putc('\u{8}' as i32, false);
+            Uart::putc_sync('\u{8}' as i32);
+            Uart::putc_sync(' ' as i32);
+            Uart::putc_sync('\u{8}' as i32);
         } else {
-            self.uart.putc(c, false);
+            Uart::putc_sync(c);
         };
     }
 
-    unsafe fn write(&mut self, src: UVAddr, n: i32) {
+    unsafe fn write(&mut self, src: UVAddr, n: i32) -> i32 {
         for i in 0..n {
             let mut c = [0 as u8];
             if VAddr::copyin(&mut c, UVAddr::new(src.into_usize() + (i as usize))).is_err() {
-                break;
+                return i;
             }
-            self.uart.putc(c[0] as i32, true);
+            self.uart.putc(c[0] as i32);
         }
+        n
     }
 
     unsafe fn read(this: &mut SleepablelockGuard<'_, Self>, mut dst: UVAddr, mut n: i32) -> i32 {
@@ -199,8 +200,7 @@ pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
 /// User write()s to the console go here.
 unsafe fn consolewrite(src: UVAddr, n: i32) -> i32 {
     let mut console = kernel().console.lock();
-    console.write(src, n);
-    n
+    console.write(src, n)
 }
 
 /// User read()s from the console go here.
