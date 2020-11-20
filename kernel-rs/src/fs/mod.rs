@@ -233,6 +233,6 @@ unsafe fn bfree(dev: u32, b: u32) {
         0,
         "freeing free block"
     );
-    bp.deref_mut_inner().data[(bi / 8) as usize] &= (!m) as u8;
+    bp.deref_mut_inner().data[(bi / 8) as usize] &= !(m as u8);
     kernel().fs().log_write(bp);
 }
