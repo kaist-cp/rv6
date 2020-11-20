@@ -1,4 +1,4 @@
-use super::{Dirent, FileName, BPB, BSIZE, DIRENT_SIZE, MAXFILE, NDIRECT, NINDIRECT};
+use super::{balloc, bfree, Dirent, FileName, BSIZE, DIRENT_SIZE, MAXFILE, NDIRECT, NINDIRECT};
 
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, Rc},
@@ -331,7 +331,7 @@ impl InodeGuard<'_> {
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
-struct Dinode {
+pub struct Dinode {
     /// File type
     typ: i16,
 
@@ -529,45 +529,4 @@ impl Inode {
             ),
         }
     }
-}
-
-/// Zero a block.
-unsafe fn bzero(dev: u32, bno: u32) {
-    let mut bp = Disk::read(dev, bno);
-    ptr::write_bytes(bp.deref_mut_inner().data.as_mut_ptr(), 0, BSIZE);
-    kernel().fs().log_write(bp);
-}
-
-/// Allocate a zeroed disk block.
-unsafe fn balloc(dev: u32) -> u32 {
-    let mut bi: u32 = 0;
-    for b in num_iter::range_step(0, kernel().fs().superblock.size, BPB) {
-        let mut bp = Disk::read(dev, kernel().fs().superblock.bblock(b));
-        while bi < BPB && (b + bi) < kernel().fs().superblock.size {
-            let m = 1 << (bi % 8);
-            if bp.deref_mut_inner().data[(bi / 8) as usize] & m == 0 {
-                // Is block free?
-                bp.deref_mut_inner().data[(bi / 8) as usize] |= m; // Mark block in use.
-                kernel().fs().log_write(bp);
-                bzero(dev, b + bi);
-                return b + bi;
-            }
-            bi += 1;
-        }
-    }
-    panic!("balloc: out of blocks");
-}
-
-/// Free a disk block.
-unsafe fn bfree(dev: u32, b: u32) {
-    let mut bp = Disk::read(dev, kernel().fs().superblock.bblock(b));
-    let bi = b.wrapping_rem(BPB) as i32;
-    let m = (1) << (bi % 8);
-    assert_ne!(
-        bp.deref_mut_inner().data[(bi / 8) as usize] as i32 & m,
-        0,
-        "freeing free block"
-    );
-    bp.deref_mut_inner().data[(bi / 8) as usize] &= (!m) as u8;
-    kernel().fs().log_write(bp);
 }
