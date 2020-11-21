@@ -132,6 +132,7 @@ impl Console {
                     self.putc(BACKSPACE);
                 }
             }
+
             _ => {
                 if cin != 0 && terminal.e.wrapping_sub(terminal.r) < INPUT_BUF as u32 {
                     cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
