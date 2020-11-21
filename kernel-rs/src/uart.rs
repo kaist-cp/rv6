@@ -1,7 +1,7 @@
 //! low-level driver routines for 16550a UART.
 use crate::memlayout::UART0;
 use crate::{
-    console::terminalintr,
+    console::consoleintr,
     sleepablelock::{Sleepablelock, SleepablelockGuard},
     spinlock::{pop_off, push_off},
 };
@@ -231,7 +231,7 @@ impl Uart {
                 break;
             }
             unsafe {
-                terminalintr(c);
+                consoleintr(c);
             }
         }
 

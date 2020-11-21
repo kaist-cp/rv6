@@ -215,17 +215,17 @@ const fn ctrl(x: char) -> i32 {
     x as i32 - '@' as i32
 }
 
-pub unsafe fn terminalinit(devsw: &mut [Devsw; NDEV]) {
+pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
     // Connect read and write system calls
     // to terminalread and terminalwrite.
     devsw[CONSOLE_IN_DEVSW] = Devsw {
-        read: Some(terminalread),
-        write: Some(terminalwrite),
+        read: Some(consoleread),
+        write: Some(consolewrite),
     };
 }
 
 /// User write()s to the terminal go here.
-unsafe fn terminalwrite(src: UVAddr, n: i32) -> i32 {
+unsafe fn consolewrite(src: UVAddr, n: i32) -> i32 {
     kernel().console.terminalwrite(src, n)
 }
 
@@ -233,7 +233,7 @@ unsafe fn terminalwrite(src: UVAddr, n: i32) -> i32 {
 /// Copy (up to) a whole input line to dst.
 /// User_dist indicates whether dst is a user
 /// or kernel address.
-unsafe fn terminalread(dst: UVAddr, n: i32) -> i32 {
+unsafe fn consoleread(dst: UVAddr, n: i32) -> i32 {
     kernel().console.terminalread(dst, n)
 }
 
@@ -241,6 +241,6 @@ unsafe fn terminalread(dst: UVAddr, n: i32) -> i32 {
 /// uartintr() calls this for input character.
 /// Do erase/kill processing, append to CONS.buf,
 /// wake up terminalread() if a whole line has arrived.
-pub unsafe fn terminalintr(cin: i32) {
+pub unsafe fn consoleintr(cin: i32) {
     kernel().console.terminalintr(cin);
 }
