@@ -50,7 +50,7 @@ impl Console {
         };
     }
 
-    unsafe fn terminalwrite(&self, src: UVAddr, n: i32) -> i32 {
+    unsafe fn write(&self, src: UVAddr, n: i32) -> i32 {
         self.terminal.lock();
         for i in 0..n {
             let mut c = [0 as u8];
@@ -62,7 +62,7 @@ impl Console {
         n
     }
 
-    unsafe fn terminalread(&self, mut dst: UVAddr, mut n: i32) -> i32 {
+    unsafe fn read(&self, mut dst: UVAddr, mut n: i32) -> i32 {
         let mut terminal = self.terminal.lock();
         let target = n as u32;
         while n > 0 {
@@ -104,7 +104,7 @@ impl Console {
         target.wrapping_sub(n as u32) as i32
     }
 
-    fn terminalintr(&self, mut cin: i32) {
+    fn intr(&self, mut cin: i32) {
         let mut terminal = self.terminal.lock();
         match cin {
             // Print process list.
@@ -230,7 +230,7 @@ pub fn consoleinit(devsw: &mut [Devsw; NDEV]) {
 
 /// User write()s to the console go here.
 unsafe fn consolewrite(src: UVAddr, n: i32) -> i32 {
-    kernel().console.terminalwrite(src, n)
+    kernel().console.write(src, n)
 }
 
 /// User read()s from the console go here.
@@ -238,7 +238,7 @@ unsafe fn consolewrite(src: UVAddr, n: i32) -> i32 {
 /// User_dist indicates whether dst is a user
 /// or kernel address.
 unsafe fn consoleread(dst: UVAddr, n: i32) -> i32 {
-    kernel().console.terminalread(dst, n)
+    kernel().console.read(dst, n)
 }
 
 /// The console input interrupt handler.
@@ -246,5 +246,5 @@ unsafe fn consoleread(dst: UVAddr, n: i32) -> i32 {
 /// Do erase/kill processing, append to CONS.buf,
 /// wake up consoleread() if a whole line has arrived.
 pub fn consoleintr(cin: i32) {
-    kernel().console.terminalintr(cin);
+    kernel().console.intr(cin);
 }
