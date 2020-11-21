@@ -5,7 +5,7 @@ use spin::Once;
 use crate::{
     arena::{ArrayArena, ArrayEntry, MruArena, MruEntry},
     bio::BufEntry,
-    console::{consoleinit, Console},
+    console::{terminalinit, Console},
     file::{Devsw, File},
     fs::{FileSystem, Inode},
     kalloc::{end, kinit, Kmem},
@@ -37,7 +37,7 @@ pub struct Kernel {
     panicked: AtomicBool,
 
     /// Sleeps waiting for there are some input in console buffer.
-    pub console: Sleepablelock<Console>,
+    pub console: Console,
 
     kmem: Spinlock<Kmem>,
 
@@ -90,7 +90,7 @@ impl Kernel {
     const fn zero() -> Self {
         Self {
             panicked: AtomicBool::new(false),
-            console: Sleepablelock::new("CONS", Console::new()),
+            console: Console::new(),
             kmem: Spinlock::new("KMEM", Kmem::new()),
             page_table: PageTable::zero(),
             ticks: Sleepablelock::new("time", 0),
@@ -157,9 +157,9 @@ impl Kernel {
     /// Prints the given formatted string with the Console.
     pub fn console_write_fmt(&self, args: fmt::Arguments<'_>) -> fmt::Result {
         if self.is_panicked() {
-            unsafe { kernel().console.get_mut_unchecked().write_fmt(args) }
+            unsafe { self.console.printer.get_mut_unchecked().write_fmt(args) }
         } else {
-            let mut lock = kernel().console.lock();
+            let mut lock = self.console.printer.lock();
             lock.write_fmt(args)
         }
     }
@@ -221,7 +221,7 @@ pub unsafe fn kernel_main() -> ! {
 
         // Console.
         Uart::init();
-        consoleinit(&mut KERNEL.devsw);
+        terminalinit(&mut KERNEL.devsw);
 
         println!();
         println!("rv6 kernel is booting");

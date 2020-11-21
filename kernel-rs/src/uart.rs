@@ -1,7 +1,7 @@
 //! low-level driver routines for 16550a UART.
 use crate::memlayout::UART0;
 use crate::{
-    console::consoleintr,
+    console::terminalintr,
     sleepablelock::{Sleepablelock, SleepablelockGuard},
     spinlock::{pop_off, push_off},
 };
@@ -164,7 +164,7 @@ impl Uart {
     /// use interrupts, for use by kernel printf() and
     /// to echo characters. it spins waiting for the uart's
     /// output register to be empty.
-    pub fn putc_sync(c: i32) {
+    pub fn putc_sync(&self, c: i32) {
         unsafe {
             push_off();
         }
@@ -231,7 +231,7 @@ impl Uart {
                 break;
             }
             unsafe {
-                consoleintr(c);
+                terminalintr(c);
             }
         }
 

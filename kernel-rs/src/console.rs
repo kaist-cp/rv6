@@ -3,48 +3,29 @@ use crate::{
     kernel::kernel,
     param::NDEV,
     proc::myproc,
-    sleepablelock::SleepablelockGuard,
+    sleepablelock::Sleepablelock,
+    spinlock::Spinlock,
     uart::Uart,
     utils::spin_loop,
     vm::{UVAddr, VAddr},
 };
-use core::fmt;
+use core::fmt::{self, Write};
 
 const CONSOLE_IN_DEVSW: usize = 1;
 /// Size of console input buffer.
 const INPUT_BUF: usize = 128;
 
 pub struct Console {
-    buf: [u8; INPUT_BUF],
-
-    /// Read index.
-    r: u32,
-
-    /// Write index.
-    w: u32,
-
-    /// Edit index.
-    e: u32,
-
+    terminal: Sleepablelock<Terminal>,
+    pub printer: Spinlock<Printer>,
     uart: Uart,
-}
-
-impl fmt::Write for Console {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        for c in s.bytes() {
-            self.putc(c as _);
-        }
-        Ok(())
-    }
 }
 
 impl Console {
     pub const fn new() -> Self {
         Self {
-            buf: [0; INPUT_BUF],
-            r: 0,
-            w: 0,
-            e: 0,
+            terminal: Sleepablelock::new("Terminal", Terminal::new()),
+            printer: Spinlock::new("Println", Printer::new()),
             uart: Uart::new(),
         }
     }
@@ -54,22 +35,23 @@ impl Console {
     }
 
     /// Send one character to the uart.
-    pub fn putc(&mut self, c: i32) {
+    pub fn putc(&self, c: i32) {
         // From printf.rs.
         if kernel().is_panicked() {
             spin_loop();
         }
         if c == BACKSPACE {
             // If the user typed backspace, overwrite with a space.
-            Uart::putc_sync('\u{8}' as i32);
-            Uart::putc_sync(' ' as i32);
-            Uart::putc_sync('\u{8}' as i32);
+            self.uart.putc_sync('\u{8}' as i32);
+            self.uart.putc_sync(' ' as i32);
+            self.uart.putc_sync('\u{8}' as i32);
         } else {
-            Uart::putc_sync(c);
+            self.uart.putc_sync(c);
         };
     }
 
-    unsafe fn write(&mut self, src: UVAddr, n: i32) -> i32 {
+    unsafe fn terminalwrite(&self, src: UVAddr, n: i32) -> i32 {
+        self.terminal.lock();
         for i in 0..n {
             let mut c = [0 as u8];
             if VAddr::copyin(&mut c, UVAddr::new(src.into_usize() + (i as usize))).is_err() {
@@ -80,7 +62,8 @@ impl Console {
         n
     }
 
-    unsafe fn read(this: &mut SleepablelockGuard<'_, Self>, mut dst: UVAddr, mut n: i32) -> i32 {
+    unsafe fn terminalread(&self, mut dst: UVAddr, mut n: i32) -> i32 {
+        let mut this = self.terminal.lock();
         let target = n as u32;
         while n > 0 {
             // Wait until interrupt handler has put some
@@ -121,7 +104,8 @@ impl Console {
         target.wrapping_sub(n as u32) as i32
     }
 
-    unsafe fn intr(this: &mut SleepablelockGuard<'_, Self>, mut cin: i32) {
+    unsafe fn terminalintr(&self, mut cin: i32) {
+        let mut this = self.terminal.lock();
         match cin {
             // Print process list.
             m if m == ctrl('P') => {
@@ -136,7 +120,7 @@ impl Console {
                         != '\n' as i32
                 {
                     this.e = this.e.wrapping_sub(1);
-                    this.putc(BACKSPACE);
+                    self.putc(BACKSPACE);
                 }
             }
 
@@ -144,7 +128,7 @@ impl Console {
             m if m == ctrl('H') | '\x7f' as i32 => {
                 if this.e != this.w {
                     this.e = this.e.wrapping_sub(1);
-                    this.putc(BACKSPACE);
+                    self.putc(BACKSPACE);
                 }
             }
             _ => {
@@ -152,7 +136,7 @@ impl Console {
                     cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
 
                     // Echo back to the user.
-                    this.putc(cin);
+                    self.putc(cin);
 
                     // Store for consumption by consoleread().
                     let fresh1 = this.e;
@@ -173,6 +157,49 @@ impl Console {
     }
 }
 
+impl Write for Printer {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        for c in s.bytes() {
+            kernel().console.putc(c as _);
+        }
+        Ok(())
+    }
+}
+
+pub struct Terminal {
+    buf: [u8; INPUT_BUF],
+
+    /// Read index.
+    r: u32,
+
+    /// Write index.
+    w: u32,
+
+    /// Edit index.
+    e: u32,
+}
+
+impl Terminal {
+    pub const fn new() -> Self {
+        Self {
+            buf: [0; INPUT_BUF],
+            r: 0,
+            w: 0,
+            e: 0,
+        }
+    }
+}
+
+pub struct Printer {
+    _padding: u8,
+}
+
+impl Printer {
+    pub const fn new() -> Self {
+        Self { _padding: 0 }
+    }
+}
+
 /// Console input and output, to the uart.
 /// Reads are line at a time.
 /// Implements special input characters:
@@ -188,35 +215,32 @@ const fn ctrl(x: char) -> i32 {
     x as i32 - '@' as i32
 }
 
-pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
+pub unsafe fn terminalinit(devsw: &mut [Devsw; NDEV]) {
     // Connect read and write system calls
-    // to consoleread and consolewrite.
+    // to terminalread and terminalwrite.
     devsw[CONSOLE_IN_DEVSW] = Devsw {
-        read: Some(consoleread),
-        write: Some(consolewrite),
+        read: Some(terminalread),
+        write: Some(terminalwrite),
     };
 }
 
-/// User write()s to the console go here.
-unsafe fn consolewrite(src: UVAddr, n: i32) -> i32 {
-    let mut console = kernel().console.lock();
-    console.write(src, n)
+/// User write()s to the terminal go here.
+unsafe fn terminalwrite(src: UVAddr, n: i32) -> i32 {
+    kernel().console.terminalwrite(src, n)
 }
 
-/// User read()s from the console go here.
+/// User read()s from the terminal go here.
 /// Copy (up to) a whole input line to dst.
 /// User_dist indicates whether dst is a user
 /// or kernel address.
-unsafe fn consoleread(dst: UVAddr, n: i32) -> i32 {
-    let mut console = kernel().console.lock();
-    Console::read(&mut console, dst, n)
+unsafe fn terminalread(dst: UVAddr, n: i32) -> i32 {
+    kernel().console.terminalread(dst, n)
 }
 
 /// The console input interrupt handler.
 /// uartintr() calls this for input character.
 /// Do erase/kill processing, append to CONS.buf,
-/// wake up consoleread() if a whole line has arrived.
-pub unsafe fn consoleintr(cin: i32) {
-    let mut console = kernel().console.lock();
-    Console::intr(&mut console, cin);
+/// wake up terminalread() if a whole line has arrived.
+pub unsafe fn terminalintr(cin: i32) {
+    kernel().console.terminalintr(cin);
 }
