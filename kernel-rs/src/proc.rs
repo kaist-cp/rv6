@@ -7,7 +7,7 @@ use crate::{
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     ok_or,
     page::Page,
-    param::{NOFILE, NPROC, ROOTDEV},
+    param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
     println,
     riscv::{intr_get, intr_on, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
     sleepablelock::SleepablelockGuard,
@@ -304,7 +304,7 @@ pub struct ProcData {
     /// Size of process memory (bytes).
     pub sz: usize,
 
-    /// User page table.
+    /// Page table.
     pub pagetable: PageTable<UVAddr>,
 
     /// Data page for trampoline.S.
@@ -330,7 +330,7 @@ pub struct Proc {
     killed: AtomicBool,
 
     /// Process name (debugging).
-    pub name: [u8; 16],
+    pub name: [u8; MAXPROCNAME],
 }
 
 /// Assumption: `ptr` is `myproc()`, and ptr->info's spinlock is held.
@@ -509,7 +509,7 @@ impl Proc {
             ),
             data: UnsafeCell::new(ProcData::new()),
             killed: AtomicBool::new(false),
-            name: [0; 16],
+            name: [0; MAXPROCNAME],
         }
     }
 
@@ -667,7 +667,7 @@ impl ProcessSystem {
         safestrcpy(
             (*guard).name.as_mut_ptr(),
             b"initcode\x00" as *const u8,
-            mem::size_of::<[u8; 16]>() as i32,
+            mem::size_of::<[u8; MAXPROCNAME]>() as i32,
         );
         data.cwd = Path::new(CStr::from_bytes_with_nul_unchecked(b"/\x00"))
             .namei()
@@ -713,7 +713,7 @@ impl ProcessSystem {
         safestrcpy(
             (*np).name.as_mut_ptr(),
             (*p).name.as_mut_ptr(),
-            mem::size_of::<[u8; 16]>() as i32,
+            mem::size_of::<[u8; MAXPROCNAME]>() as i32,
         );
         let pid = np.deref_mut_info().pid;
         np.deref_mut_info().state = Procstate::RUNNABLE;
@@ -833,20 +833,25 @@ impl ProcessSystem {
     pub unsafe fn dump(&self) {
         println!();
         for p in &self.process_pool {
+            let mut name = [0; MAXPROCNAME];
+            let mut count = 0;
+            while p.name[count] != 0 && count < MAXPROCNAME {
+                name[count] = p.name[count];
+                count += 1;
+            }
             let info = p.info.get_mut_unchecked();
             if info.state != Procstate::UNUSED {
                 println!(
                     "{} {} {}",
                     info.pid,
                     Procstate::to_str(&info.state),
-                    str::from_utf8(&p.name).unwrap_or("???")
+                    str::from_utf8(&name).unwrap_or("???")
                 );
             }
         }
     }
 }
 
-/// Initialize the proc table at boot time.
 pub unsafe fn procinit(procs: &mut ProcessSystem, page_table: &mut PageTable<KVAddr>) {
     for (i, p) in procs.process_pool.iter_mut().enumerate() {
         (*p.data.get()).palloc(page_table, i);
@@ -894,8 +899,8 @@ unsafe fn freeproc(mut p: ProcGuard) {
     p.deref_mut_info().state = Procstate::UNUSED;
 }
 
-/// Create a user page table for a given process,
-/// with no user memory, but with trampoline pages.
+/// Create a page table for a given process,
+/// with no user pages, but with trampoline pages.
 pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable<UVAddr> {
     // An empty page table.
     let mut pagetable = PageTable::<UVAddr>::zero();

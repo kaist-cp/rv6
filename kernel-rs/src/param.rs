@@ -1,39 +1,42 @@
-/// maximum number of processes
+/// Maximum number of processes.
 pub const NPROC: usize = 64;
 
-/// maximum number of CPUs
+/// Maximum number of CPUs.
 pub const NCPU: usize = 8;
 
-/// open files per process
+/// Open files per process.
 pub const NOFILE: usize = 16;
 
-/// open files per system
+/// Open files per system.
 pub const NFILE: usize = 100;
 
-/// maximum number of active i-nodes
+/// Maximum number of active i-nodes.
 pub const NINODE: usize = 50;
 
-/// maximum major device number
+/// Maximum major device number.
 pub const NDEV: usize = 10;
 
-/// device number of file system root disk
+/// Device number of file system root disk.
 pub const ROOTDEV: i32 = 1;
 
-/// max exec arguments
+/// Max exec arguments.
 pub const MAXARG: usize = 32;
 
-/// max # of blocks any FS op writes
-/// Will be handled in #31
+/// Max # of blocks any FS op writes.
+/// Will be handled in #31.
 pub const MAXOPBLOCKS: usize = 10;
 
-/// max data blocks in on-disk log
+/// Max data blocks in on-disk log.
 pub const LOGSIZE: usize = MAXOPBLOCKS * 3;
 
-/// size of disk block cache
+/// Size of disk block cache.
 pub const NBUF: usize = MAXOPBLOCKS * 3;
 
-/// size of file system in blocks
+/// Size of file system in blocks.
 pub const FSSIZE: usize = 1000;
 
-/// maximum file path name
+/// Maximum file path name.
 pub const MAXPATH: usize = 128;
+
+/// Maximum length of process name.
+pub const MAXPROCNAME: usize = 16;
