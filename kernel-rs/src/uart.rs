@@ -230,9 +230,7 @@ impl Uart {
             if c == -1 {
                 break;
             }
-            unsafe {
-                consoleintr(c);
-            }
+            consoleintr(c);
         }
 
         // send buffered characters.

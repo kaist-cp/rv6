@@ -158,15 +158,6 @@ impl Console {
     }
 }
 
-impl Write for Printer {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        for c in s.bytes() {
-            kernel().console.putc(c as _);
-        }
-        Ok(())
-    }
-}
-
 pub struct Terminal {
     buf: [u8; INPUT_BUF],
 
@@ -201,6 +192,15 @@ impl Printer {
     }
 }
 
+impl Write for Printer {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        for c in s.bytes() {
+            kernel().console.putc(c as _);
+        }
+        Ok(())
+    }
+}
+
 /// Console input and output, to the uart.
 /// Reads are line at a time.
 /// Implements special input characters:
@@ -216,7 +216,7 @@ const fn ctrl(x: char) -> i32 {
     x as i32 - '@' as i32
 }
 
-pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
+pub fn consoleinit(devsw: &mut [Devsw; NDEV]) {
     kernel().console.uart.init();
 
     // Connect read and write system calls
@@ -244,6 +244,6 @@ unsafe fn consoleread(dst: UVAddr, n: i32) -> i32 {
 /// uartintr() calls this for input character.
 /// Do erase/kill processing, append to CONS.buf,
 /// wake up consoleread() if a whole line has arrived.
-pub unsafe fn consoleintr(cin: i32) {
+pub fn consoleintr(cin: i32) {
     kernel().console.terminalintr(cin);
 }
