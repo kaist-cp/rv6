@@ -104,13 +104,13 @@ impl Console {
         target.wrapping_sub(n as u32) as i32
     }
 
-    unsafe fn terminalintr(&self, mut cin: i32) {
+    fn terminalintr(&self, mut cin: i32) {
         let mut terminal = self.terminal.lock();
         match cin {
             // Print process list.
-            m if m == ctrl('P') => {
+            m if m == ctrl('P') => unsafe {
                 kernel().procs.dump();
-            }
+            },
 
             // Kill line.
             m if m == ctrl('U') => {
