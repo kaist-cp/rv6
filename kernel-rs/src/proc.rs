@@ -852,6 +852,7 @@ impl ProcessSystem {
     }
 }
 
+/// Initialize the proc table at boot time.
 pub unsafe fn procinit(procs: &mut ProcessSystem, page_table: &mut PageTable<KVAddr>) {
     for (i, p) in procs.process_pool.iter_mut().enumerate() {
         (*p.data.get()).palloc(page_table, i);
@@ -899,8 +900,8 @@ unsafe fn freeproc(mut p: ProcGuard) {
     p.deref_mut_info().state = Procstate::UNUSED;
 }
 
-/// Create a page table for a given process,
-/// with no user pages, but with trampoline pages.
+/// Create a user page table for a given process,
+/// with no user memory, but with trampoline pages.
 pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable<UVAddr> {
     // An empty page table.
     let mut pagetable = PageTable::<UVAddr>::zero();
