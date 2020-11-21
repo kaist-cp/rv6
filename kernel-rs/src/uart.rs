@@ -113,7 +113,7 @@ impl Uart {
         }
     }
 
-    pub fn init() {
+    pub fn init(&self) {
         // Disable interrupts.
         IER.write(0x00);
 

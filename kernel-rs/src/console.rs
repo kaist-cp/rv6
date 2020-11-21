@@ -216,6 +216,8 @@ const fn ctrl(x: char) -> i32 {
 }
 
 pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
+    kernel().console.uart.init();
+
     // Connect read and write system calls
     // to terminalread and terminalwrite.
     devsw[CONSOLE_IN_DEVSW] = Devsw {

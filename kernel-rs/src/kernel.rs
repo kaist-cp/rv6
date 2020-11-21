@@ -19,7 +19,6 @@ use crate::{
     sleepablelock::Sleepablelock,
     spinlock::Spinlock,
     trap::{trapinit, trapinithart},
-    uart::Uart,
     virtio_disk::{virtio_disk_init, Disk},
     vm::{KVAddr, PageTable},
 };
@@ -220,7 +219,6 @@ pub unsafe fn kernel_main() -> ! {
         // Initialize the kernel.
 
         // Console.
-        Uart::init();
         consoleinit(&mut KERNEL.devsw);
 
         println!();
