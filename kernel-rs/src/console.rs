@@ -63,27 +63,27 @@ impl Console {
     }
 
     unsafe fn terminalread(&self, mut dst: UVAddr, mut n: i32) -> i32 {
-        let mut this = self.terminal.lock();
+        let mut terminal = self.terminal.lock();
         let target = n as u32;
         while n > 0 {
             // Wait until interrupt handler has put some
             // input into CONS.buffer.
-            while this.r == this.w {
+            while terminal.r == terminal.w {
                 if (*myproc()).killed() {
                     return -1;
                 }
-                this.sleep();
+                terminal.sleep();
             }
-            let fresh0 = this.r;
-            this.r = this.r.wrapping_add(1);
-            let cin = this.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
+            let fresh0 = terminal.r;
+            terminal.r = terminal.r.wrapping_add(1);
+            let cin = terminal.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
 
             // end-of-file
             if cin == ctrl('D') {
                 if (n as u32) < target {
                     // Save ^D for next time, to make sure
                     // caller gets a 0-byte result.
-                    this.r = this.r.wrapping_sub(1)
+                    terminal.r = terminal.r.wrapping_sub(1)
                 }
                 break;
             } else {
@@ -105,7 +105,7 @@ impl Console {
     }
 
     unsafe fn terminalintr(&self, mut cin: i32) {
-        let mut this = self.terminal.lock();
+        let mut terminal = self.terminal.lock();
         match cin {
             // Print process list.
             m if m == ctrl('P') => {
@@ -114,42 +114,43 @@ impl Console {
 
             // Kill line.
             m if m == ctrl('U') => {
-                while this.e != this.w
-                    && this.buf[this.e.wrapping_sub(1).wrapping_rem(INPUT_BUF as u32) as usize]
+                while terminal.e != terminal.w
+                    && terminal.buf
+                        [terminal.e.wrapping_sub(1).wrapping_rem(INPUT_BUF as u32) as usize]
                         as i32
                         != '\n' as i32
                 {
-                    this.e = this.e.wrapping_sub(1);
+                    terminal.e = terminal.e.wrapping_sub(1);
                     self.putc(BACKSPACE);
                 }
             }
 
             // Backspace
             m if m == ctrl('H') | '\x7f' as i32 => {
-                if this.e != this.w {
-                    this.e = this.e.wrapping_sub(1);
+                if terminal.e != terminal.w {
+                    terminal.e = terminal.e.wrapping_sub(1);
                     self.putc(BACKSPACE);
                 }
             }
             _ => {
-                if cin != 0 && this.e.wrapping_sub(this.r) < INPUT_BUF as u32 {
+                if cin != 0 && terminal.e.wrapping_sub(terminal.r) < INPUT_BUF as u32 {
                     cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
 
                     // Echo back to the user.
                     self.putc(cin);
 
                     // Store for consumption by consoleread().
-                    let fresh1 = this.e;
-                    this.e = this.e.wrapping_add(1);
-                    this.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = cin as u8;
+                    let fresh1 = terminal.e;
+                    terminal.e = terminal.e.wrapping_add(1);
+                    terminal.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = cin as u8;
                     if cin == '\n' as i32
                         || cin == ctrl('D')
-                        || this.e == this.r.wrapping_add(INPUT_BUF as u32)
+                        || terminal.e == terminal.r.wrapping_add(INPUT_BUF as u32)
                     {
                         // Wake up consoleread() if a whole line (or end-of-file)
                         // has arrived.
-                        this.w = this.e;
-                        this.wakeup();
+                        terminal.w = terminal.e;
+                        terminal.wakeup();
                     }
                 }
             }
