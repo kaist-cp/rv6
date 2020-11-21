@@ -220,19 +220,19 @@ pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
     kernel().console.uart.init();
 
     // Connect read and write system calls
-    // to terminalread and terminalwrite.
+    // to consoleread and consolewrite.
     devsw[CONSOLE_IN_DEVSW] = Devsw {
         read: Some(consoleread),
         write: Some(consolewrite),
     };
 }
 
-/// User write()s to the terminal go here.
+/// User write()s to the console go here.
 unsafe fn consolewrite(src: UVAddr, n: i32) -> i32 {
     kernel().console.terminalwrite(src, n)
 }
 
-/// User read()s from the terminal go here.
+/// User read()s from the console go here.
 /// Copy (up to) a whole input line to dst.
 /// User_dist indicates whether dst is a user
 /// or kernel address.
@@ -243,7 +243,7 @@ unsafe fn consoleread(dst: UVAddr, n: i32) -> i32 {
 /// The console input interrupt handler.
 /// uartintr() calls this for input character.
 /// Do erase/kill processing, append to CONS.buf,
-/// wake up terminalread() if a whole line has arrived.
+/// wake up consoleread() if a whole line has arrived.
 pub unsafe fn consoleintr(cin: i32) {
     kernel().console.terminalintr(cin);
 }
