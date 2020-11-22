@@ -20,6 +20,8 @@ const INPUT_BUF: usize = 128;
 pub struct Console {
     /// An interface for user programs.
     /// I/O interactions between users and processes are done by this interface.
+    /// Inputs: User commands.
+    /// Outputs: Graphic(text) results.
     terminal: Sleepablelock<Terminal>,
 
     /// A struct for println! macro.
@@ -169,6 +171,7 @@ impl Console {
     }
 }
 
+/// Accept user commands and show result texts.
 pub struct Terminal {
     buf: [u8; INPUT_BUF],
 
@@ -193,6 +196,7 @@ impl Terminal {
     }
 }
 
+/// A printer formats UTF-8 bytes.
 pub struct Printer {
     _padding: u8,
 }
