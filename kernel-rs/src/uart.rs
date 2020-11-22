@@ -99,7 +99,8 @@ pub struct Uart {
     pub tx_lock: Sleepablelock<UartTX>,
 }
 
-/// An interface for interacting with UART registers(UartCtrlRegs). Read and write bytes from UART registers.
+/// An interface for interacting with UART registers(UartCtrlRegs).
+/// Read and write bytes from UART registers.
 impl Uart {
     pub const fn new() -> Self {
         Self {
