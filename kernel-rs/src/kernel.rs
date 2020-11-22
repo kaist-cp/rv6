@@ -154,7 +154,7 @@ impl Kernel {
     }
 
     /// Prints the given formatted string with the Printer.
-    pub fn printer_write_fmt(&self, args: fmt::Arguments<'_>) -> fmt::Result {
+    pub fn console_write_fmt(&self, args: fmt::Arguments<'_>) -> fmt::Result {
         if self.is_panicked() {
             unsafe { self.console.printer.get_mut_unchecked().write_fmt(args) }
         } else {
