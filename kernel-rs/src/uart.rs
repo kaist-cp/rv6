@@ -99,6 +99,7 @@ pub struct Uart {
     pub tx_lock: Sleepablelock<UartTX>,
 }
 
+/// An interface for interacting with UART registers(UartCtrlRegs). Read and write bytes from UART registers.
 impl Uart {
     pub const fn new() -> Self {
         Self {
@@ -137,10 +138,10 @@ impl Uart {
         IER.write(UartRegBits::IERTxEnable.bits() | UartRegBits::IERRxEnable.bits());
     }
 
-    /// add a character to the output buffer and tell the
+    /// Add a character to the output buffer and tell the
     /// UART to start sending if it isn't already.
-    /// blocks if the output buffer is full.
-    /// because it may block, it can't be called
+    /// Blocks if the output buffer is full.
+    /// Because it may block, it can't be called
     /// from interrupts; it's only suitable for use
     /// by write().
     pub fn putc(&self, c: i32) {

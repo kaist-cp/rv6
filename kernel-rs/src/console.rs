@@ -15,9 +15,15 @@ const CONSOLE_IN_DEVSW: usize = 1;
 /// Size of console input buffer.
 const INPUT_BUF: usize = 128;
 
+/// The integrated interface for console device.
 pub struct Console {
+    /// An interface for user programs. I/O interactions for processes are done by this interface. 
     terminal: Sleepablelock<Terminal>,
+
+    /// A struct for println! macro. Lock to avoid interleaving concurrent println! macros.
     pub printer: Spinlock<Printer>,
+
+    /// A console's uart interface which guarantees uniqueness. Interaction with UART Registers should always held by this interface.
     uart: Uart,
 }
 
