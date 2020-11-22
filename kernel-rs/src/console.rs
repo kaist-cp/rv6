@@ -16,9 +16,10 @@ const CONSOLE_IN_DEVSW: usize = 1;
 const INPUT_BUF: usize = 128;
 
 /// The integrated interface for console device.
+/// Managing every graphic interactions with real-world users and system.
 pub struct Console {
     /// An interface for user programs.
-    /// I/O interactions for processes are done by this interface.
+    /// I/O interactions between users and processes are done by this interface.
     terminal: Sleepablelock<Terminal>,
 
     /// A struct for println! macro.
