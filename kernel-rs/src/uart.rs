@@ -1,7 +1,7 @@
 //! low-level driver routines for 16550a UART.
 use crate::memlayout::UART0;
 use crate::{
-    console::consoleintr,
+    kernel::kernel,
     sleepablelock::{Sleepablelock, SleepablelockGuard},
     spinlock::{pop_off, push_off},
 };
@@ -213,7 +213,7 @@ impl Uart {
     /// Read one input character from the UART.
     /// Return -1 if none is waiting.
     /// TODO: should get &self - need to refactor when encapsulate Uart into Console.
-    fn getc() -> i32 {
+    fn getc(&self) -> i32 {
         if LSR.read() & 0x01 != 0 {
             // Input data is ready.
             RBR.read() as i32
@@ -228,11 +228,11 @@ impl Uart {
     pub fn intr(&self) {
         // read and process incoming characters.
         loop {
-            let c = Uart::getc();
+            let c = self.getc();
             if c == -1 {
                 break;
             }
-            consoleintr(c);
+            kernel().console.intr(c);
         }
 
         // send buffered characters.

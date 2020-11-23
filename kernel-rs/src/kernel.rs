@@ -5,7 +5,7 @@ use spin::Once;
 use crate::{
     arena::{ArrayArena, ArrayEntry, MruArena, MruEntry},
     bio::BufEntry,
-    console::{consoleinit, Console},
+    console::Console,
     file::{Devsw, File},
     fs::{FileSystem, Inode},
     kalloc::{end, kinit, Kmem},
@@ -219,7 +219,7 @@ pub unsafe fn kernel_main() -> ! {
         // Initialize the kernel.
 
         // Console.
-        consoleinit(&mut KERNEL.devsw);
+        KERNEL.console.init(&mut KERNEL.devsw);
 
         println!();
         println!("rv6 kernel is booting");
