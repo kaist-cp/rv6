@@ -197,13 +197,11 @@ impl Terminal {
 }
 
 /// A printer formats UTF-8 bytes.
-pub struct Printer {
-    _padding: u8,
-}
+pub struct Printer {}
 
 impl Printer {
     pub const fn new() -> Self {
-        Self { _padding: 0 }
+        Self {}
     }
 }
 
