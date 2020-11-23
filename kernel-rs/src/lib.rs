@@ -57,6 +57,8 @@ mod vm;
 extern crate bitflags;
 #[macro_use]
 extern crate array_const_fn_init;
+/// HACK(@coolofficials): #[cfg(test)] required for resolve false unused_import bug.
+/// See: https://github.com/rust-lang/rust/issues/44342#issuecomment-355355246
 #[cfg(test)]
 #[macro_use]
 extern crate memoffset;
