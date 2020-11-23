@@ -3,7 +3,7 @@ use crate::{
     kernel::kernel,
     param::NDEV,
     proc::myproc,
-    sleepablelock::{Sleepablelock, SleepablelockGuard},
+    sleepablelock::Sleepablelock,
     spinlock::Spinlock,
     uart::Uart,
     utils::spin_loop,
@@ -74,22 +74,115 @@ impl Console {
     }
 
     unsafe fn write(&self, src: UVAddr, n: i32) -> i32 {
-        let terminal = self.terminal.lock();
-        terminal.write(src, n)
+        self.terminal.lock();
+        for i in 0..n {
+            let mut c = [0 as u8];
+            if VAddr::copyin(&mut c, UVAddr::new(src.into_usize() + (i as usize))).is_err() {
+                return i;
+            }
+            self.uart.putc(c[0] as i32);
+        }
+        n
     }
 
-    unsafe fn read(&self, dst: UVAddr, n: i32) -> i32 {
+    unsafe fn read(&self, mut dst: UVAddr, mut n: i32) -> i32 {
         let mut terminal = self.terminal.lock();
-        terminal.read(dst, n)
+        let target = n as u32;
+        while n > 0 {
+            // Wait until interrupt handler has put some
+            // input into CONS.buffer.
+            while terminal.r == terminal.w {
+                if (*myproc()).killed() {
+                    return -1;
+                }
+                terminal.sleep();
+            }
+            let fresh0 = terminal.r;
+            terminal.r = terminal.r.wrapping_add(1);
+            let cin = terminal.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
+
+            // end-of-file
+            if cin == ctrl('D') {
+                if (n as u32) < target {
+                    // Save ^D for next time, to make sure
+                    // caller gets a 0-byte result.
+                    terminal.r = terminal.r.wrapping_sub(1)
+                }
+                break;
+            } else {
+                // Copy the input byte to the user-space buffer.
+                let cbuf = [cin as u8];
+                if UVAddr::copyout(dst, &cbuf).is_err() {
+                    break;
+                }
+                dst = dst + 1;
+                n -= 1;
+                if cin == '\n' as i32 {
+                    // A whole line has arrived, return to
+                    // the user-level read().
+                    break;
+                }
+            }
+        }
+        target.wrapping_sub(n as u32) as i32
     }
 
     /// The console input interrupt handler.
     /// uartintr() calls this for input character.
     /// Do erase/kill processing, append to TERMINAL.buf,
     /// wake up consoleread() if a whole line has arrived.
-    pub fn intr(&self, cin: i32) {
+    pub fn intr(&self, mut cin: i32) {
         let mut terminal = self.terminal.lock();
-        terminal.intr(cin);
+        match cin {
+            // Print process list.
+            m if m == ctrl('P') => {
+                kernel().procs.dump();
+            }
+
+            // Kill line.
+            m if m == ctrl('U') => {
+                while terminal.e != terminal.w
+                    && terminal.buf
+                        [terminal.e.wrapping_sub(1).wrapping_rem(INPUT_BUF as u32) as usize]
+                        as i32
+                        != '\n' as i32
+                {
+                    terminal.e = terminal.e.wrapping_sub(1);
+                    self.putc(BACKSPACE);
+                }
+            }
+
+            // Backspace
+            m if m == ctrl('H') | '\x7f' as i32 => {
+                if terminal.e != terminal.w {
+                    terminal.e = terminal.e.wrapping_sub(1);
+                    self.putc(BACKSPACE);
+                }
+            }
+
+            _ => {
+                if cin != 0 && terminal.e.wrapping_sub(terminal.r) < INPUT_BUF as u32 {
+                    cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
+
+                    // Echo back to the user.
+                    self.putc(cin);
+
+                    // Store for consumption by consoleread().
+                    let fresh1 = terminal.e;
+                    terminal.e = terminal.e.wrapping_add(1);
+                    terminal.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = cin as u8;
+                    if cin == '\n' as i32
+                        || cin == ctrl('D')
+                        || terminal.e == terminal.r.wrapping_add(INPUT_BUF as u32)
+                    {
+                        // Wake up consoleread() if a whole line (or end-of-file)
+                        // has arrived.
+                        terminal.w = terminal.e;
+                        terminal.wakeup();
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -114,112 +207,6 @@ impl Terminal {
             r: 0,
             w: 0,
             e: 0,
-        }
-    }
-}
-
-impl SleepablelockGuard<'_, Terminal> {
-    unsafe fn write(&self, src: UVAddr, n: i32) -> i32 {
-        for i in 0..n {
-            let mut c = [0 as u8];
-            if VAddr::copyin(&mut c, UVAddr::new(src.into_usize() + (i as usize))).is_err() {
-                return i;
-            }
-            kernel().console.uart.putc(c[0] as i32);
-        }
-        n
-    }
-
-    unsafe fn read(&mut self, mut dst: UVAddr, mut n: i32) -> i32 {
-        let target = n as u32;
-        while n > 0 {
-            // Wait until interrupt handler has put some
-            // input into CONS.buffer.
-            while self.r == self.w {
-                if (*myproc()).killed() {
-                    return -1;
-                }
-                self.sleep();
-            }
-            let fresh0 = self.r;
-            self.r = self.r.wrapping_add(1);
-            let cin = self.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
-
-            // end-of-file
-            if cin == ctrl('D') {
-                if (n as u32) < target {
-                    // Save ^D for next time, to make sure
-                    // caller gets a 0-byte result.
-                    self.r = self.r.wrapping_sub(1)
-                }
-                break;
-            } else {
-                // Copy the input byte to the user-space buffer.
-                let cbuf = [cin as u8];
-                if UVAddr::copyout(dst, &cbuf).is_err() {
-                    break;
-                }
-                dst = dst + 1;
-                n -= 1;
-                if cin == '\n' as i32 {
-                    // A whole line has arrived, return to
-                    // the user-level read().
-                    break;
-                }
-            }
-        }
-        target.wrapping_sub(n as u32) as i32
-    }
-
-    fn intr(&mut self, mut cin: i32) {
-        match cin {
-            // Print process list.
-            m if m == ctrl('P') => {
-                kernel().procs.dump();
-            }
-
-            // Kill line.
-            m if m == ctrl('U') => {
-                while self.e != self.w
-                    && self.buf[self.e.wrapping_sub(1).wrapping_rem(INPUT_BUF as u32) as usize]
-                        as i32
-                        != '\n' as i32
-                {
-                    self.e = self.e.wrapping_sub(1);
-                    kernel().console.uart.putc(BACKSPACE);
-                }
-            }
-
-            // Backspace
-            m if m == ctrl('H') | '\x7f' as i32 => {
-                if self.e != self.w {
-                    self.e = self.e.wrapping_sub(1);
-                    kernel().console.uart.putc(BACKSPACE);
-                }
-            }
-
-            _ => {
-                if cin != 0 && self.e.wrapping_sub(self.r) < INPUT_BUF as u32 {
-                    cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
-
-                    // Echo back to the user.
-                    kernel().console.uart.putc(cin);
-
-                    // Store for consumption by consoleread().
-                    let fresh1 = self.e;
-                    self.e = self.e.wrapping_add(1);
-                    self.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = cin as u8;
-                    if cin == '\n' as i32
-                        || cin == ctrl('D')
-                        || self.e == self.r.wrapping_add(INPUT_BUF as u32)
-                    {
-                        // Wake up consoleread() if a whole line (or end-of-file)
-                        // has arrived.
-                        self.w = self.e;
-                        self.wakeup();
-                    }
-                }
-            }
         }
     }
 }
