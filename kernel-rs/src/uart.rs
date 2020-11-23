@@ -1,4 +1,4 @@
-//! low-level driver routines for 16550a UART.
+//! Low-level driver routines for 16550a UART.
 use crate::memlayout::UART0;
 use crate::{
     kernel::kernel,
@@ -88,10 +88,10 @@ impl UartCtrlRegs {
 pub struct UartTX {
     pub buf: [u8; UART_TX_BUF_SIZE],
 
-    /// write next to uart_tx_buf[uart_tx_w++]
+    /// Write next to uart_tx_buf[uart_tx_w++]
     pub w: i32,
 
-    /// read next from uart_tx_buf[uar_tx_r++]
+    /// Read next from uart_tx_buf[uar_tx_r++]
     pub r: i32,
 }
 
@@ -149,8 +149,8 @@ impl Uart {
         let mut guard = self.tx_lock.lock();
         loop {
             if (guard.w + 1) % UART_TX_BUF_SIZE as i32 == guard.r {
-                // buffer is full.
-                // wait for uartstart() to open up space in the buffer.
+                // Buffer is full.
+                // Wait for uartstart() to open up space in the buffer.
                 guard.sleep();
             } else {
                 let w = guard.w;
@@ -162,16 +162,16 @@ impl Uart {
         }
     }
 
-    /// alternate version of uartputc() that doesn't
+    /// Alternate version of uartputc() that doesn't
     /// use interrupts, for use by kernel printf() and
-    /// to echo characters. it spins waiting for the uart's
+    /// to echo characters. It spins waiting for the uart's
     /// output register to be empty.
     pub fn putc_sync(&self, c: i32) {
         unsafe {
             push_off();
         }
 
-        // wait for Transmit Holding Empty to be set in LSR.
+        // Wait for Transmit Holding Empty to be set in LSR.
         while LSR.read() & UartRegBits::LSRTxIdle.bits() == 0 {}
 
         THR.write(c as u8);
@@ -181,10 +181,10 @@ impl Uart {
         }
     }
 
-    /// if the UART is idle, and a character is waiting
+    /// If the UART is idle, and a character is waiting
     /// in the transmit buffer, send it.
-    /// caller must hold uart_tx_lock.
-    /// called from both the top- and bottom-half.
+    /// Caller must hold uart_tx_lock.
+    /// Called from both the top- and bottom-half.
     fn start(&self, mut guard: SleepablelockGuard<'_, UartTX>) {
         loop {
             if guard.w == guard.r {
@@ -193,9 +193,9 @@ impl Uart {
             }
 
             if (LSR.read() & UartRegBits::LSRTxIdle.bits()) == 0 {
-                // the UART transmit holding register is full,
+                // The UART transmit holding register is full,
                 // so we cannot give it another byte.
-                // it will interrupt when it's ready for a new byte.
+                // It will interrupt when it's ready for a new byte.
                 return;
             }
 
@@ -203,7 +203,7 @@ impl Uart {
             let c = guard.buf[r as usize];
             guard.r = (r + 1) % UART_TX_BUF_SIZE as i32;
 
-            // maybe uartputc() is waiting for space in the buffer.
+            // Maybe uartputc() is waiting for space in the buffer.
             guard.wakeup();
 
             THR.write(c);
@@ -212,7 +212,6 @@ impl Uart {
 
     /// Read one input character from the UART.
     /// Return -1 if none is waiting.
-    /// TODO: should get &self - need to refactor when encapsulate Uart into Console.
     fn getc(&self) -> i32 {
         if LSR.read() & 0x01 != 0 {
             // Input data is ready.
@@ -222,11 +221,11 @@ impl Uart {
         }
     }
 
-    /// handle a uart interrupt, raised because input has
+    /// Handle a uart interrupt, raised because input has
     /// arrived, or the uart is ready for more output, or
-    /// both. called from trap.c.
+    /// both. Called from trap.c.
     pub fn intr(&self) {
-        // read and process incoming characters.
+        // Read and process incoming characters.
         loop {
             let c = self.getc();
             if c == -1 {
@@ -235,7 +234,7 @@ impl Uart {
             kernel().console.intr(c);
         }
 
-        // send buffered characters.
+        // Send buffered characters.
         self.start(self.tx_lock.lock());
     }
 }
