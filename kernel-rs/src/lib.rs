@@ -57,3 +57,6 @@ mod vm;
 extern crate bitflags;
 #[macro_use]
 extern crate array_const_fn_init;
+#[cfg(test)]
+#[macro_use]
+extern crate memoffset;
