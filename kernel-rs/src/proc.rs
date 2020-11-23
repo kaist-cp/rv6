@@ -304,7 +304,7 @@ pub struct ProcData {
     /// Size of process memory (bytes).
     pub sz: usize,
 
-    /// Page table.
+    /// User Page table.
     pub pagetable: PageTable<UVAddr>,
 
     /// Data page for trampoline.S.
@@ -833,6 +833,8 @@ impl ProcessSystem {
     pub unsafe fn dump(&self) {
         println!();
         for p in &self.process_pool {
+            // For null character recognization.
+            // str::from_utf8 cannot recognize interior null characters.
             let mut name = [0; MAXPROCNAME];
             let mut count = 0;
             while p.name[count] != 0 && count < MAXPROCNAME {
