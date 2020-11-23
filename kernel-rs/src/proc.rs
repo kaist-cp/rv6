@@ -830,7 +830,7 @@ impl ProcessSystem {
     /// Print a process listing to console.  For debugging.
     /// Runs when user types ^P on console.
     /// No lock to avoid wedging a stuck machine further.
-    pub unsafe fn dump(&self) {
+    pub fn dump(&self) {
         println!();
         for p in &self.process_pool {
             // For null character recognization.
@@ -841,14 +841,16 @@ impl ProcessSystem {
                 name[count] = p.name[count];
                 count += 1;
             }
-            let info = p.info.get_mut_unchecked();
-            if info.state != Procstate::UNUSED {
-                println!(
-                    "{} {} {}",
-                    info.pid,
-                    Procstate::to_str(&info.state),
-                    str::from_utf8(&name).unwrap_or("???")
-                );
+            unsafe {
+                let info = p.info.get_mut_unchecked();
+                if info.state != Procstate::UNUSED {
+                    println!(
+                        "{} {} {}",
+                        info.pid,
+                        Procstate::to_str(&info.state),
+                        str::from_utf8(&name).unwrap_or("???")
+                    );
+                }
             }
         }
     }

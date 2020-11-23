@@ -174,9 +174,9 @@ impl SleepablelockGuard<'_, Terminal> {
     fn intr(&mut self, mut cin: i32) {
         match cin {
             // Print process list.
-            m if m == ctrl('P') => unsafe {
+            m if m == ctrl('P') => {
                 kernel().procs.dump();
-            },
+            }
 
             // Kill line.
             m if m == ctrl('U') => {
