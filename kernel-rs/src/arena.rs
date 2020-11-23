@@ -1,4 +1,7 @@
-use crate::spinlock::{Spinlock, SpinlockGuard};
+use crate::{
+    ds::list::*,
+    spinlock::{Spinlock, SpinlockGuard},
+};
 use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;
@@ -62,11 +65,6 @@ pub struct ArrayArena<T, const CAPACITY: usize> {
 pub struct ArrayPtr<T> {
     ptr: *mut ArrayEntry<T>,
     _marker: PhantomData<T>,
-}
-
-pub struct ListEntry {
-    prev: *mut Self,
-    next: *mut Self,
 }
 
 #[repr(C)]
@@ -228,15 +226,6 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<ArrayAr
     }
 }
 
-impl ListEntry {
-    pub const fn new() -> Self {
-        Self {
-            prev: ptr::null_mut(),
-            next: ptr::null_mut(),
-        }
-    }
-}
-
 impl<T> MruEntry<T> {
     pub const fn new(data: T) -> Self {
         Self {
@@ -256,17 +245,11 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
         }
     }
 
-    pub fn init(&mut self) {
-        self.head.prev = &mut self.head;
-        self.head.next = &mut self.head;
+    pub unsafe fn init(&mut self) {
+        list_init(&mut self.head);
 
         for entry in &mut self.entries {
-            entry.list_entry.next = self.head.next;
-            entry.list_entry.prev = &mut self.head;
-            unsafe {
-                (*self.head.next).prev = &mut entry.list_entry;
-            }
-            self.head.next = &mut entry.list_entry;
+            list_prepend(&mut self.head, &mut entry.list_entry);
         }
     }
 }

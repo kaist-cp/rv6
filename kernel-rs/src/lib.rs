@@ -20,6 +20,7 @@
 mod arena;
 mod bio;
 mod console;
+mod ds;
 mod etrace;
 mod exec;
 mod fcntl;
