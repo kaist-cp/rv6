@@ -899,7 +899,7 @@ unsafe fn freeproc(mut p: ProcGuard) {
 pub unsafe fn proc_pagetable(p: *mut Proc) -> Result<PageTable<UVAddr>, ()> {
     // An empty page table.
     let mut pagetable = PageTable::<UVAddr>::zero();
-    pagetable.alloc_root();
+    pagetable.alloc_root()?;
 
     // let mut pagetable = uvmcreate();
 

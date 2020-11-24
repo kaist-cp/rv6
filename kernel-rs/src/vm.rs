@@ -235,10 +235,11 @@ impl<A: VAddr> PageTable<A> {
         }
     }
 
-    pub fn alloc_root(&mut self) {
-        let mut page = unsafe { kernel().alloc() }.expect("PageTable new: out of memory");
+    pub fn alloc_root(&mut self) -> Result<(), ()> {
+        let mut page = unsafe { some_or!(kernel().alloc(), return Err(())) };
         page.write_bytes(0);
         self.ptr = page.into_usize() as *mut _;
+        Ok(())
     }
 
     pub fn from_raw(ptr: *mut RawPageTable) -> Self {
@@ -597,7 +598,7 @@ impl PageTable<KVAddr> {
     // trampoline.S
     /// Create a direct-map page table for the kernel.
     pub unsafe fn kvminit(&mut self) {
-        self.alloc_root();
+        let _ = self.alloc_root();
 
         // SiFive Test Finisher MMIO
         self.kvmmap(
