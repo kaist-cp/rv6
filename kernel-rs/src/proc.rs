@@ -928,8 +928,8 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable<UVAddr> {
 /// Free a process's page table, and free the
 /// physical memory it refers to.
 pub unsafe fn proc_freepagetable(pagetable: &mut PageTable<UVAddr>, sz: usize) {
-    pagetable.uvmunmap(UVAddr::new(TRAMPOLINE), PGSIZE, 0);
-    pagetable.uvmunmap(UVAddr::new(TRAPFRAME), PGSIZE, 0);
+    pagetable.uvmunmap(UVAddr::new(TRAMPOLINE), 1, 0);
+    pagetable.uvmunmap(UVAddr::new(TRAPFRAME), 1, 0);
     pagetable.uvmfree(sz);
 }
 

@@ -2,7 +2,6 @@ use crate::{
     kernel::kernel,
     memlayout::{CLINT, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     page::{Page, RawPage},
-    println,
     proc::myproc,
     riscv::{
         make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, sfence_vma, w_satp, PteT,
@@ -431,7 +430,7 @@ impl PageTable<UVAddr> {
             assert!(pte.check_flag(PTE_V), "uvmcopy: page not present");
 
             let mut new_ptable = scopeguard::guard(new, |ptable| {
-                ptable.uvmunmap(UVAddr::new(0), i, 1);
+                ptable.uvmunmap(UVAddr::new(0), i.wrapping_div(PGSIZE), 1);
             });
             let pa = pte.get_pa();
             let flags = pte.get_flags() as u32;
@@ -453,20 +452,18 @@ impl PageTable<UVAddr> {
         Ok(())
     }
 
-    /// Remove mappings from a page table. The mappings in
-    /// the given range must exist. Optionally free the
-    /// physical memory.
-    pub unsafe fn uvmunmap(&mut self, va: UVAddr, size: usize, do_free: i32) {
-        let mut a = pgrounddown(va.into_usize());
-        let last = pgrounddown(va.into_usize() + size - 1usize);
+    /// Remove npages of mappings starting from va. va must be
+    /// page-aligned. The mappings must exist.
+    /// Optionally free the physical memory.
+    pub unsafe fn uvmunmap(&mut self, va: UVAddr, npages: usize, do_free: i32) {
+        if va.into_usize().wrapping_rem(PGSIZE) != 0 {
+            panic!("uvmunmap: not aligned");
+        }
+        let mut a = va.into_usize();
         loop {
             let pt = &mut *self;
             let pte = pt.walk(UVAddr::new(a), 0).expect("uvmunmap: walk");
             if !pte.check_flag(PTE_V) {
-                println!(
-                    "va={:018p} pte={:018p}",
-                    a as *const u8, pte.inner as *const u8
-                );
                 panic!("uvmunmap: not mapped");
             }
             assert_ne!(pte.get_flags(), PTE_V, "uvmunmap: not a leaf");
@@ -476,10 +473,11 @@ impl PageTable<UVAddr> {
                 kernel().free(Page::from_usize(pa as _));
             }
             pte.set_inner(0);
-            if a == last {
+
+            a += PGSIZE;
+            if a >= va.into_usize().wrapping_add(npages.wrapping_mul(PGSIZE)) {
                 break;
             }
-            a += PGSIZE;
         }
     }
 
@@ -491,9 +489,10 @@ impl PageTable<UVAddr> {
         if newsz >= oldsz {
             return oldsz;
         }
-        let newup: usize = pgroundup(newsz);
-        if newup < pgroundup(oldsz) {
-            self.uvmunmap(UVAddr::new(newup), oldsz - newup, 1);
+
+        if pgroundup(newsz) < pgroundup(oldsz) {
+            let npages = (pgroundup(oldsz).wrapping_sub(pgroundup(newsz))).wrapping_div(PGSIZE);
+            self.uvmunmap(UVAddr::new(pgroundup(newsz)), npages, 1);
         }
         newsz
     }
@@ -502,7 +501,7 @@ impl PageTable<UVAddr> {
     /// then free page-table pages.
     pub unsafe fn uvmfree(&mut self, sz: usize) {
         if sz > 0 {
-            self.uvmunmap(UVAddr::new(0), sz, 1);
+            self.uvmunmap(UVAddr::new(0), pgroundup(sz).wrapping_div(PGSIZE), 1);
         }
         self.freewalk();
     }
