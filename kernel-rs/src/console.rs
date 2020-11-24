@@ -30,7 +30,7 @@ pub struct Console {
 
     /// A console's uart interface which guarantees uniqueness.
     /// Interaction with UART Registers should always held by this interface.
-    uart: Uart,
+    pub uart: Uart,
 }
 
 impl Console {
@@ -51,10 +51,6 @@ impl Console {
             read: Some(consoleread),
             write: Some(consolewrite),
         };
-    }
-
-    pub fn uartintr(&self) {
-        self.uart.intr()
     }
 
     /// Send one character to the uart.
