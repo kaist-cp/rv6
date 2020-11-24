@@ -457,7 +457,6 @@ impl PageTable<UVAddr> {
     /// the given range must exist. Optionally free the
     /// physical memory.
     pub unsafe fn uvmunmap(&mut self, va: UVAddr, size: usize, do_free: i32) {
-        let mut pa: usize = 0;
         let mut a = pgrounddown(va.into_usize());
         let last = pgrounddown(va.into_usize() + size - 1usize);
         loop {
@@ -473,7 +472,7 @@ impl PageTable<UVAddr> {
             assert_ne!(pte.get_flags(), PTE_V, "uvmunmap: not a leaf");
 
             if do_free != 0 {
-                pa = pte.get_pa().into_usize();
+                let pa = pte.get_pa().into_usize();
                 kernel().free(Page::from_usize(pa as _));
             }
             pte.set_inner(0);
@@ -481,7 +480,6 @@ impl PageTable<UVAddr> {
                 break;
             }
             a += PGSIZE;
-            pa += PGSIZE;
         }
     }
 
