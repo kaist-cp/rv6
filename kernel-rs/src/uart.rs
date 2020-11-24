@@ -3,12 +3,42 @@ use crate::memlayout::UART0;
 use crate::{
     console::consoleintr,
     sleepablelock::{Sleepablelock, SleepablelockGuard},
+    spinlock::{pop_off, push_off},
 };
 use core::ptr;
 
 use self::UartCtrlRegs::{FCR, IER, ISR, LCR, LSR, RBR, THR};
 
 const UART_TX_BUF_SIZE: usize = 32;
+
+enum UartRegBits {
+    IERTxEnable,
+    IERRxEnable,
+    FCRFifoEnable,
+    FCRFifoClear,
+    LCREightBits,
+    LCRBaudLatch,
+    LSRRxRead,
+    LSRTxIdle,
+}
+
+impl UartRegBits {
+    fn bits(self) -> u8 {
+        match self {
+            UartRegBits::FCRFifoEnable | UartRegBits::IERTxEnable
+            // Input is waiting to be read from RHR.
+            | UartRegBits::LSRRxRead => 1 << 0,
+            UartRegBits::IERRxEnable => 1 << 1,
+            // Clear the content of the two FIFOs.
+            UartRegBits::FCRFifoClear => 3 << 1,
+            UartRegBits::LCREightBits => 3,
+            // Special mode to set baud rate.
+            UartRegBits::LCRBaudLatch => 1 << 7,
+            // THR can accept another character to send.
+            UartRegBits::LSRTxIdle => 1 << 5,
+        }
+    }
+}
 
 /// The UART control registers.
 /// Some have different meanings for
@@ -88,7 +118,7 @@ impl Uart {
         IER.write(0x00);
 
         // Special mode to set baud rate.
-        LCR.write(0x80);
+        LCR.write(UartRegBits::LCRBaudLatch.bits());
 
         // LSB for baud rate of 38.4K.
         RBR.write(0x03);
@@ -98,41 +128,28 @@ impl Uart {
 
         // Leave set-baud mode,
         // and set word length to 8 bits, no parity.
-        LCR.write(0x03);
+        LCR.write(UartRegBits::LCREightBits.bits());
 
         // Reset and enable FIFOs.
-        FCR.write(0x07);
+        FCR.write(UartRegBits::FCRFifoEnable.bits() | UartRegBits::FCRFifoClear.bits());
 
         // Enable transmit and receive interrupts.
-        IER.write(0x02 | 0x01);
+        IER.write(UartRegBits::IERTxEnable.bits() | UartRegBits::IERRxEnable.bits());
     }
 
     /// add a character to the output buffer and tell the
     /// UART to start sending if it isn't already.
-    ///
-    /// usually called from the top-half -- by a process
-    /// calling write(). can also be called from a uart
-    /// interrupt to echo a received character, or by printf
-    /// or panic from anywhere in the kernel.
-    ///
-    /// the block argument controls what happens if the
-    /// buffer is full. for write(), block is 1, and the
-    /// process waits. for kernel printf's and echoed
-    /// characters, block is 0, and the character is
-    /// discarded; this is necessary since sleep() is
-    /// not possible in interrupts.
-    pub fn putc(&self, c: i32, block: bool) {
+    /// blocks if the output buffer is full.
+    /// because it may block, it can't be called
+    /// from interrupts; it's only suitable for use
+    /// by write().
+    pub fn putc(&self, c: i32) {
         let mut guard = self.tx_lock.lock();
         loop {
             if (guard.w + 1) % UART_TX_BUF_SIZE as i32 == guard.r {
                 // buffer is full.
-                if block {
-                    // wait for uartstart() to open up space in the buffer.
-                    guard.sleep();
-                } else {
-                    // caller does not want us to wait.
-                    return;
-                }
+                // wait for uartstart() to open up space in the buffer.
+                guard.sleep();
             } else {
                 let w = guard.w;
                 guard.buf[w as usize] = c as u8;
@@ -140,6 +157,25 @@ impl Uart {
                 self.start(guard);
                 return;
             }
+        }
+    }
+
+    /// alternate version of uartputc() that doesn't
+    /// use interrupts, for use by kernel printf() and
+    /// to echo characters. it spins waiting for the uart's
+    /// output register to be empty.
+    pub fn putc_sync(c: i32) {
+        unsafe {
+            push_off();
+        }
+
+        // wait for Transmit Holding Empty to be set in LSR.
+        while LSR.read() & UartRegBits::LSRTxIdle.bits() == 0 {}
+
+        THR.write(c as u8);
+
+        unsafe {
+            pop_off();
         }
     }
 
@@ -154,7 +190,7 @@ impl Uart {
                 return;
             }
 
-            if (LSR.read() & (1 << 5)) == 0 {
+            if (LSR.read() & UartRegBits::LSRTxIdle.bits()) == 0 {
                 // the UART transmit holding register is full,
                 // so we cannot give it another byte.
                 // it will interrupt when it's ready for a new byte.

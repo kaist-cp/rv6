@@ -143,12 +143,17 @@ impl File {
                 // this really belongs lower down, since write()
                 // might be writing a device like the console.
                 let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
-                for bytes_written in (0..n).step_by(max) {
-                    let bytes_to_write = cmp::min(n - bytes_written, max as i32);
+
+                // TODO(@kimjungwow) : To pass copyin() usertest, I reflect the commit on Nov 5, 2020 (below link).
+                // https://github.com/mit-pdos/xv6-riscv/commit/5e392531c07966fd8a6bee50e3e357c553fb2a2f
+                // This comment will be removed as we fetch upstream(mit-pdos)
+                let mut bytes_written: usize = 0;
+                while bytes_written < n as usize {
+                    let bytes_to_write = cmp::min(n as usize - bytes_written, max);
                     let tx = kernel().fs().begin_transaction();
                     let mut ip = ip.deref().lock(&tx);
                     let curr_off = *off.get();
-                    let bytes_written = ip
+                    let r = ip
                         .write(
                             addr + bytes_written as usize,
                             curr_off,
@@ -157,11 +162,14 @@ impl File {
                         .map(|v| {
                             *off.get() = curr_off.wrapping_add(v as u32);
                             v
-                        });
-                    assert!(
-                        bytes_written? == bytes_to_write as usize,
-                        "short File::write"
-                    );
+                        })?;
+                    if r != bytes_to_write as usize {
+                        break;
+                    }
+                    bytes_written += r;
+                }
+                if bytes_written != n as usize {
+                    return Err(());
                 }
                 Ok(n as usize)
             }
