@@ -155,11 +155,11 @@ impl Deref for IcacheTag {
 
 pub type RcInode = Rc<<IcacheTag as Deref>::Target, IcacheTag>;
 
-/// InodeGuard implies that SleeplockWIP<InodeInner> is held by current thread.
+/// InodeGuard implies that Sleeplock<InodeInner> is held by current thread and transaction is opened.
 ///
 /// # Invariant
 ///
-/// When SleeplockWIP<InodeInner> is held, InodeInner's valid is always true.
+/// When Sleeplock<InodeInner> is held, InodeInner's valid is always true.
 pub struct InodeGuard<'a> {
     pub inode: &'a Inode,
     tx: &'a FsTransaction<'a>,
