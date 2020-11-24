@@ -569,7 +569,7 @@ impl ProcessSystem {
     /// Look into process system for an UNUSED proc.
     /// If found, initialize state required to run in the kernel,
     /// and return with p->lock held.
-    /// If there are no free procs, return 0.
+    /// If there are no free procs, or a memory allocation fails, return Err.
     unsafe fn alloc(&self) -> Result<ProcGuard, ()> {
         for p in &self.process_pool {
             let mut guard = p.lock();
@@ -582,7 +582,10 @@ impl ProcessSystem {
                 data.trapframe = page.into_usize() as *mut Trapframe;
 
                 // An empty user page table.
-                data.pagetable = proc_pagetable(p as *const _ as *mut _);
+                data.pagetable = ok_or!(proc_pagetable(p as *const _ as *mut _), {
+                    freeproc(guard);
+                    return Err(());
+                });
 
                 // Set up new context to start executing at forkret,
                 // which returns to user space.
@@ -893,7 +896,7 @@ unsafe fn freeproc(mut p: ProcGuard) {
 
 /// Create a user page table for a given process,
 /// with no user memory, but with trampoline pages.
-pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable<UVAddr> {
+pub unsafe fn proc_pagetable(p: *mut Proc) -> Result<PageTable<UVAddr>, ()> {
     // An empty page table.
     let mut pagetable = PageTable::<UVAddr>::zero();
     pagetable.alloc_root();
@@ -904,25 +907,34 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable<UVAddr> {
     // at the highest user virtual address.
     // Only the supervisor uses it, on the way
     // to/from user space, so not PTE_U.
-    pagetable
+    if pagetable
         .mappages(
             UVAddr::new(TRAMPOLINE),
             PGSIZE,
             trampoline.as_mut_ptr() as usize,
             PTE_R | PTE_X,
         )
-        .expect("proc_pagetable: mappages TRAMPOLINE");
+        .is_err()
+    {
+        pagetable.uvmfree(0);
+        return Err(());
+    }
 
     // Map the trapframe just below TRAMPOLINE, for trampoline.S.
-    pagetable
+    if pagetable
         .mappages(
             UVAddr::new(TRAPFRAME),
             PGSIZE,
             (*(*p).data.get()).trapframe as usize,
             PTE_R | PTE_W,
         )
-        .expect("proc_pagetable: mappages TRAPFRAME");
-    pagetable
+        .is_err()
+    {
+        pagetable.uvmunmap(UVAddr::new(TRAMPOLINE), 1, 0);
+        pagetable.uvmfree(0);
+        return Err(());
+    }
+    Ok(pagetable)
 }
 
 /// Free a process's page table, and free the

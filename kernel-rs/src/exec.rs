@@ -113,10 +113,7 @@ impl Kernel {
             return Err(());
         }
 
-        let pt = proc_pagetable(p);
-        if pt.is_null() {
-            return Err(());
-        }
+        let pt = proc_pagetable(p)?;
 
         let mut ptable_guard = scopeguard::guard((pt, sz), |(mut pt, sz)| {
             proc_freepagetable(&mut pt, sz);
