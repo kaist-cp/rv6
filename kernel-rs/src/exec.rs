@@ -140,7 +140,8 @@ impl Kernel {
                 if ph.vaddr.wrapping_add(ph.memsz) < ph.vaddr {
                     return Err(());
                 }
-                *sz = pt.uvmalloc(*sz, ph.vaddr.wrapping_add(ph.memsz))?;
+                let sz1 = pt.uvmalloc(*sz, ph.vaddr.wrapping_add(ph.memsz))?;
+                *sz = sz1;
                 if ph.vaddr.wrapping_rem(PGSIZE) != 0 {
                     return Err(());
                 }
