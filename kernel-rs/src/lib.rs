@@ -27,7 +27,6 @@ mod file;
 mod fs;
 mod kalloc;
 mod kernel;
-mod log;
 mod memlayout;
 mod page;
 mod param;
@@ -56,3 +55,7 @@ mod vm;
 extern crate bitflags;
 #[macro_use]
 extern crate array_const_fn_init;
+#[macro_use]
+extern crate static_assertions;
+#[macro_use]
+extern crate itertools;

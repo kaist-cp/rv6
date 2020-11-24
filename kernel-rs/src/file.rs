@@ -1,12 +1,10 @@
 //! Support functions for system calls that involve file descriptors.
 
-#![allow(clippy::unit_arg)]
-
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, Rc},
-    fs::{RcInode, BSIZE},
+    fs::RcInode,
     kernel::kernel,
-    param::{MAXOPBLOCKS, NFILE},
+    param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
     proc::{myproc, Proc},
     spinlock::Spinlock,
@@ -87,7 +85,7 @@ impl File {
 
         match &self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
-                let mut st = ip.deref().lock().stat();
+                let mut st = ip.stat();
                 (*(*p).data.get()).pagetable.copyout(
                     addr,
                     slice::from_raw_parts_mut(
@@ -110,7 +108,8 @@ impl File {
         match &self.typ {
             FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0)),
             FileType::Inode { ip, off } => {
-                let mut ip = ip.deref().lock();
+                let tx = kernel().fs().begin_transaction();
+                let mut ip = ip.deref().lock(&tx);
                 let curr_off = *off.get();
                 let ret = ip.read(addr, curr_off, n as u32);
                 if let Ok(v) = ret {
@@ -151,8 +150,8 @@ impl File {
                 let mut bytes_written: usize = 0;
                 while bytes_written < n as usize {
                     let bytes_to_write = cmp::min(n as usize - bytes_written, max);
-                    let _tx = kernel().fs().begin_transaction();
-                    let mut ip = ip.deref().lock();
+                    let tx = kernel().fs().begin_transaction();
+                    let mut ip = ip.deref().lock(&tx);
                     let curr_off = *off.get();
                     let r = ip
                         .write(
