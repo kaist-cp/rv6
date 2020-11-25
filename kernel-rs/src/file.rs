@@ -109,7 +109,7 @@ impl File {
             FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0)),
             FileType::Inode { ip, off } => {
                 let tx = kernel().fs().begin_transaction();
-                let mut ip = ip.deref().lock(&tx);
+                let ip = ip.deref().lock(&tx);
                 let curr_off = *off.get();
                 let ret = ip.read(addr, curr_off, n as u32);
                 if let Ok(v) = ret {
