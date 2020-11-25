@@ -172,7 +172,7 @@ impl Kernel {
         &self.cpus[id] as *const _ as *mut _
     }
 
-    pub fn fsinit(&self, dev: i32) {
+    pub fn fsinit(&self, dev: u32) {
         self.file_system.call_once(|| FileSystem::new(dev));
     }
 

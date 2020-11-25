@@ -7,7 +7,7 @@
 use crate::{
     fcntl::FcntlFlags,
     file::{FileType, RcFile},
-    fs::{Dirent, FileName, Inode, InodeGuard, Path, RcInode, DIRENT_SIZE},
+    fs::{Dirent, FileName, FsTransaction, Inode, InodeGuard, Path, RcInode, DIRENT_SIZE},
     kernel::Kernel,
     ok_or,
     page::Page,
@@ -61,16 +61,17 @@ unsafe fn create<F, T>(
     typ: i16,
     major: u16,
     minor: u16,
+    tx: &FsTransaction<'_>,
     f: F,
 ) -> Result<(RcInode, T), ()>
 where
     F: FnOnce(&mut InodeGuard<'_>) -> T,
 {
-    let (ptr, name) = path.nameiparent()?;
-    let mut dp = ptr.lock();
+    let (ptr, name) = path.nameiparent(tx)?;
+    let mut dp = ptr.lock(tx);
     if let Ok((ptr2, _)) = dp.dirlookup(&name) {
         drop(dp);
-        let mut ip = ptr2.lock();
+        let mut ip = ptr2.lock(tx);
         if typ == T_FILE && (ip.deref_inner().typ == T_FILE || ip.deref_inner().typ == T_DEVICE) {
             let ret = f(&mut ip);
             mem::drop(ip);
@@ -78,8 +79,8 @@ where
         }
         return Err(());
     }
-    let ptr2 = Inode::alloc(dp.dev, typ);
-    let mut ip = ptr2.lock();
+    let ptr2 = Inode::alloc(dp.dev, typ, tx);
+    let mut ip = ptr2.lock(tx);
     ip.deref_inner_mut().major = major;
     ip.deref_inner_mut().minor = minor;
     ip.deref_inner_mut().nlink = 1;
@@ -145,9 +146,9 @@ impl Kernel {
         let mut old: [u8; MAXPATH as usize] = [0; MAXPATH];
         let old = ok_or!(argstr(0, &mut old), return usize::MAX);
         let new = ok_or!(argstr(1, &mut new), return usize::MAX);
-        let _tx = self.fs().begin_transaction();
-        let ptr = ok_or!(Path::new(old).namei(), return usize::MAX);
-        let mut ip = ptr.lock();
+        let tx = self.fs().begin_transaction();
+        let ptr = ok_or!(Path::new(old).namei(&tx), return usize::MAX);
+        let mut ip = ptr.lock(&tx);
         if ip.deref_inner().typ == T_DIR {
             return usize::MAX;
         }
@@ -155,15 +156,15 @@ impl Kernel {
         ip.update();
         drop(ip);
 
-        if let Ok((ptr2, name)) = Path::new(new).nameiparent() {
-            let mut dp = ptr2.lock();
+        if let Ok((ptr2, name)) = Path::new(new).nameiparent(&tx) {
+            let mut dp = ptr2.lock(&tx);
             if dp.dev != ptr.dev || dp.dirlink(name, ptr.inum).is_err() {
             } else {
                 return 0;
             }
         }
 
-        let mut ip = ptr.lock();
+        let mut ip = ptr.lock(&tx);
         ip.deref_inner_mut().nlink -= 1;
         ip.update();
         usize::MAX
@@ -173,15 +174,15 @@ impl Kernel {
         let mut de: Dirent = Default::default();
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-        let _tx = self.fs().begin_transaction();
-        let (ptr, name) = ok_or!(Path::new(path).nameiparent(), return usize::MAX);
-        let mut dp = ptr.lock();
+        let tx = self.fs().begin_transaction();
+        let (ptr, name) = ok_or!(Path::new(path).nameiparent(&tx), return usize::MAX);
+        let mut dp = ptr.lock(&tx);
 
         // Cannot unlink "." or "..".
         if !(name.as_bytes() == b"." || name.as_bytes() == b"..") {
             // TODO: use other Result related functions
             if let Ok((ptr2, off)) = dp.dirlookup(&name) {
-                let mut ip = ptr2.lock();
+                let mut ip = ptr2.lock(&tx);
                 assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
 
                 if ip.deref_inner().typ != T_DIR || ip.isdirempty() {
@@ -214,19 +215,19 @@ impl Kernel {
         let omode = ok_or!(argint(1), return usize::MAX);
         let omode = FcntlFlags::from_bits_truncate(omode);
 
-        let _tx = self.fs().begin_transaction();
+        let tx = self.fs().begin_transaction();
 
         let (ip, (typ, major)) = if omode.contains(FcntlFlags::O_CREATE) {
             ok_or!(
-                create(path, T_FILE, 0, 0, |ip| (
+                create(path, T_FILE, 0, 0, &tx, |ip| (
                     ip.deref_inner().typ,
-                    ip.deref_inner().major
+                    ip.deref_inner().major,
                 )),
                 return usize::MAX
             )
         } else {
-            let ptr = ok_or!(path.namei(), return usize::MAX);
-            let ip = ptr.lock();
+            let ptr = ok_or!(path.namei(&tx), return usize::MAX);
+            let ip = ptr.lock(&tx);
             let typ = ip.deref_inner().typ;
             let major = ip.deref_inner().major;
 
@@ -260,7 +261,7 @@ impl Kernel {
 
         if omode.contains(FcntlFlags::O_TRUNC) && typ == T_FILE {
             match &f.typ {
-                FileType::Device { ip, .. } | FileType::Inode { ip, .. } => ip.lock().itrunc(),
+                FileType::Device { ip, .. } | FileType::Inode { ip, .. } => ip.lock(&tx).itrunc(),
                 _ => panic!("sys_open : Not reach"),
             };
         }
@@ -270,10 +271,10 @@ impl Kernel {
 
     pub unsafe fn sys_mkdir(&self) -> usize {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let _tx = self.fs().begin_transaction();
+        let tx = self.fs().begin_transaction();
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
         ok_or!(
-            create(Path::new(path), T_DIR, 0, 0, |_| ()),
+            create(Path::new(path), T_DIR, 0, 0, &tx, |_| ()),
             return usize::MAX
         );
         0
@@ -284,9 +285,9 @@ impl Kernel {
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
         let major = ok_or!(argint(1), return usize::MAX) as u16;
         let minor = ok_or!(argint(2), return usize::MAX) as u16;
-        let _tx = self.fs().begin_transaction();
+        let tx = self.fs().begin_transaction();
         let _ip = ok_or!(
-            create(Path::new(path), T_DEVICE, major, minor, |_| ()),
+            create(Path::new(path), T_DEVICE, major, minor, &tx, |_| ()),
             return usize::MAX
         );
         0
@@ -296,10 +297,10 @@ impl Kernel {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let p: *mut Proc = myproc();
         let mut data = &mut *(*p).data.get();
-        let _tx = self.fs().begin_transaction();
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-        let ptr = ok_or!(Path::new(path).namei(), return usize::MAX);
-        let ip = ptr.lock();
+        let tx = self.fs().begin_transaction();
+        let ptr = ok_or!(Path::new(path).namei(&tx), return usize::MAX);
+        let ip = ptr.lock(&tx);
         if ip.deref_inner().typ != T_DIR {
             return usize::MAX;
         }

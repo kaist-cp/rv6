@@ -17,10 +17,13 @@ pub const NINODE: usize = 50;
 pub const NDEV: usize = 10;
 
 /// Device number of file system root disk.
-pub const ROOTDEV: i32 = 1;
+pub const ROOTDEV: u32 = 1;
 
 /// Max exec arguments.
 pub const MAXARG: usize = 32;
+
+/// Block Size.
+pub const BSIZE: usize = 1024;
 
 /// Max # of blocks any FS op writes.
 /// Will be handled in #31.

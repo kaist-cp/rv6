@@ -13,9 +13,8 @@
 
 use crate::{
     arena::{Arena, ArenaObject, MruArena, Rc},
-    fs::BSIZE,
     kernel::kernel,
-    param::NBUF,
+    param::{BSIZE, NBUF},
     proc::WaitChannel,
     sleeplock::Sleeplock,
     spinlock::Spinlock,
