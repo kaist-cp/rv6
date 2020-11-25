@@ -236,7 +236,7 @@ impl<A: VAddr> PageTable<A> {
     }
 
     pub fn alloc_root(&mut self) -> Result<(), ()> {
-        let mut page = unsafe { some_or!(kernel().alloc(), return Err(())) };
+        let mut page = unsafe { kernel().alloc().ok_or(())? };
         page.write_bytes(0);
         self.ptr = page.into_usize() as *mut _;
         Ok(())
@@ -330,7 +330,7 @@ impl<A: VAddr> PageTable<A> {
         let mut a = pgrounddown(va.into_usize());
         let last = pgrounddown(va.into_usize() + size - 1usize);
         loop {
-            let pte = some_or!(self.walk(VAddr::new(a), 1), return Err(()));
+            let pte = self.walk(VAddr::new(a), 1).ok_or(())?;
             assert!(!pte.check_flag(PTE_V), "remap");
 
             pte.set_inner(pa2pte(PAddr::new(pa)) | perm as usize | PTE_V);
@@ -352,7 +352,7 @@ impl<A: VAddr> PageTable<A> {
         let mut offset = 0;
         while len > 0 {
             let va0 = pgrounddown(dst);
-            let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(())).into_usize();
+            let pa0 = self.walkaddr(VAddr::new(va0)).ok_or(())?.into_usize();
             let mut n = PGSIZE - (dst - va0);
             if n > len {
                 n = len
@@ -435,7 +435,7 @@ impl PageTable<UVAddr> {
             });
             let pa = pte.get_pa();
             let flags = pte.get_flags() as u32;
-            let mem = some_or!(kernel().alloc(), return Err(())).into_usize();
+            let mem = kernel().alloc().ok_or(())?.into_usize();
             ptr::copy(
                 pa.into_usize() as *mut u8 as *const u8,
                 mem as *mut u8,
@@ -524,7 +524,7 @@ impl PageTable<UVAddr> {
         let mut offset = 0;
         while len > 0 {
             let va0 = pgrounddown(src);
-            let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(())).into_usize();
+            let pa0 = self.walkaddr(VAddr::new(va0)).ok_or(())?.into_usize();
             let mut n = PGSIZE - (src - va0);
             if n > len {
                 n = len
@@ -552,7 +552,7 @@ impl PageTable<UVAddr> {
         let mut max = dst.len();
         while got_null == 0 && max > 0 {
             let va0 = pgrounddown(src);
-            let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(())).into_usize();
+            let pa0 = self.walkaddr(VAddr::new(va0)).ok_or(())?.into_usize();
             let mut n = PGSIZE - (src - va0);
             if n > max {
                 n = max

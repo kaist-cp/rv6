@@ -19,7 +19,6 @@ use crate::{
     println,
     riscv::{intr_get, intr_on, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
     sleepablelock::SleepablelockGuard,
-    some_or,
     spinlock::{pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard},
     string::safestrcpy,
     trap::usertrapret,
@@ -578,7 +577,7 @@ impl ProcessSystem {
                 guard.deref_mut_info().pid = self.allocpid();
 
                 // Allocate a trapframe page.
-                let page = some_or!(kernel().alloc(), return Err(()));
+                let page = kernel().alloc().ok_or(())?;
                 data.trapframe = page.into_usize() as *mut Trapframe;
 
                 // An empty user page table.

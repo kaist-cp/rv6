@@ -3,7 +3,6 @@ use crate::{
     kernel::kernel,
     page::Page,
     proc::{myproc, WaitChannel},
-    some_or,
     spinlock::Spinlock,
     vm::UVAddr,
 };
@@ -115,7 +114,7 @@ impl Deref for AllocatedPipe {
 
 impl AllocatedPipe {
     pub unsafe fn alloc() -> Result<(RcFile, RcFile), ()> {
-        let page = some_or!(kernel().alloc(), return Err(()));
+        let page = kernel().alloc().ok_or(())?;
         let ptr = page.into_usize() as *mut Pipe;
 
         //TODO(rv6): Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`
