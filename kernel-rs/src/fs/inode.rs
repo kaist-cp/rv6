@@ -330,7 +330,7 @@ impl InodeGuard<'_> {
     }
 
     /// Read data from inode.
-    pub fn read<A: VAddr>(&mut self, mut dst: A, mut off: u32, mut n: u32) -> Result<usize, ()> {
+    pub fn read<A: VAddr>(&self, mut dst: A, mut off: u32, mut n: u32) -> Result<usize, ()> {
         let inner = self.deref_inner();
         if off > inner.size || off.wrapping_add(n) < off {
             return Ok(0);
@@ -371,8 +371,10 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp =
-                (&kernel().disk).read(self.dev, self.bmap((off as usize).wrapping_div(BSIZE)));
+            let mut bp = (&kernel().disk).read(
+                self.dev,
+                self.bmap_or_alloc((off as usize).wrapping_div(BSIZE)),
+            );
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
@@ -416,7 +418,7 @@ impl InodeGuard<'_> {
     /// listed in block self->addr_indirect.
     /// Return the disk block address of the nth block in inode self.
     /// If there is no such block, bmap allocates one.
-    fn bmap(&mut self, mut bn: usize) -> u32 {
+    fn bmap_or_alloc(&mut self, mut bn: usize) -> u32 {
         let inner = self.deref_inner();
 
         if bn < NDIRECT {
@@ -449,6 +451,27 @@ impl InodeGuard<'_> {
             }
         }
         addr
+    }
+
+    fn bmap(&self, bn: usize) -> u32 {
+        let inner = self.deref_inner();
+
+        if bn < NDIRECT {
+            let addr = inner.addr_direct[bn];
+            assert_ne!(addr, 0, "bmap: out of range");
+            addr
+        } else {
+            let bn = bn - NDIRECT;
+            let indirect = inner.addr_indirect;
+            assert_ne!(indirect, 0, "bmap: out of range");
+
+            let bp = kernel().disk.read(self.dev, indirect);
+            let data = bp.deref_inner().data.as_ptr() as *mut u32;
+            let addr = unsafe { *data.add(bn) };
+            assert_ne!(addr, 0, "bmap: out of range");
+
+            addr
+        }
     }
 
     /// Is the directory dp empty except for "." and ".." ?
