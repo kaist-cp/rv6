@@ -1,6 +1,6 @@
 use crate::{
     file::Devsw,
-    kernel::kernel,
+    kernel::{kernel, KERNEL},
     param::NDEV,
     proc::myproc,
     sleepablelock::Sleepablelock,
@@ -69,8 +69,7 @@ impl Console {
         };
     }
 
-    unsafe fn write(&self, src: UVAddr, n: i32) -> i32 {
-        self.terminal.lock();
+    unsafe fn write(&mut self, src: UVAddr, n: i32) -> i32 {
         for i in 0..n {
             let mut c = [0 as u8];
             if VAddr::copyin(&mut c, UVAddr::new(src.into_usize() + (i as usize))).is_err() {
@@ -242,7 +241,7 @@ const fn ctrl(x: char) -> i32 {
 
 /// User write()s to the console go here.
 unsafe fn consolewrite(src: UVAddr, n: i32) -> i32 {
-    kernel().console.write(src, n)
+    KERNEL.console.write(src, n)
 }
 
 /// User read()s from the console go here.

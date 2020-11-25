@@ -24,7 +24,7 @@ use crate::{
 };
 
 /// The kernel.
-static mut KERNEL: Kernel = Kernel::zero();
+pub static mut KERNEL: Kernel = Kernel::zero();
 
 /// After intialized, the kernel is safe to immutably access.
 #[inline]
