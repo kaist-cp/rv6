@@ -431,7 +431,7 @@ impl PageTable<UVAddr> {
             assert!(pte.check_flag(PTE_V), "uvmcopy: page not present");
 
             let mut new_ptable = scopeguard::guard(new, |ptable| {
-                ptable.uvmunmap(UVAddr::new(0), i.wrapping_div(PGSIZE), 1);
+                ptable.uvmunmap(UVAddr::new(0), i.wrapping_div(PGSIZE), true);
             });
             let pa = pte.get_pa();
             let flags = pte.get_flags() as u32;
@@ -456,7 +456,7 @@ impl PageTable<UVAddr> {
     /// Remove npages of mappings starting from va. va must be
     /// page-aligned. The mappings must exist.
     /// Optionally free the physical memory.
-    pub unsafe fn uvmunmap(&mut self, va: UVAddr, npages: usize, do_free: i32) {
+    pub unsafe fn uvmunmap(&mut self, va: UVAddr, npages: usize, do_free: bool) {
         if va.into_usize().wrapping_rem(PGSIZE) != 0 {
             panic!("uvmunmap: not aligned");
         }
@@ -469,7 +469,7 @@ impl PageTable<UVAddr> {
             }
             assert_ne!(pte.get_flags(), PTE_V, "uvmunmap: not a leaf");
 
-            if do_free != 0 {
+            if do_free {
                 let pa = pte.get_pa().into_usize();
                 kernel().free(Page::from_usize(pa as _));
             }
@@ -493,7 +493,7 @@ impl PageTable<UVAddr> {
 
         if pgroundup(newsz) < pgroundup(oldsz) {
             let npages = (pgroundup(oldsz).wrapping_sub(pgroundup(newsz))).wrapping_div(PGSIZE);
-            self.uvmunmap(UVAddr::new(pgroundup(newsz)), npages, 1);
+            self.uvmunmap(UVAddr::new(pgroundup(newsz)), npages, true);
         }
         newsz
     }
@@ -502,7 +502,7 @@ impl PageTable<UVAddr> {
     /// then free page-table pages.
     pub unsafe fn uvmfree(&mut self, sz: usize) {
         if sz > 0 {
-            self.uvmunmap(UVAddr::new(0), pgroundup(sz).wrapping_div(PGSIZE), 1);
+            self.uvmunmap(UVAddr::new(0), pgroundup(sz).wrapping_div(PGSIZE), true);
         }
         self.freewalk();
     }
