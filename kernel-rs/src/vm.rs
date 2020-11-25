@@ -460,8 +460,9 @@ impl PageTable<UVAddr> {
         if va.into_usize().wrapping_rem(PGSIZE) != 0 {
             panic!("uvmunmap: not aligned");
         }
-        let mut a = va.into_usize();
-        loop {
+        let start = va.into_usize();
+        let end = start.wrapping_add(npages.wrapping_mul(PGSIZE));
+        for a in num_iter::range_step(start, end, PGSIZE) {
             let pt = &mut *self;
             let pte = pt.walk(UVAddr::new(a), 0).expect("uvmunmap: walk");
             if !pte.check_flag(PTE_V) {
@@ -474,11 +475,6 @@ impl PageTable<UVAddr> {
                 kernel().free(Page::from_usize(pa as _));
             }
             pte.set_inner(0);
-
-            a += PGSIZE;
-            if a >= va.into_usize().wrapping_add(npages.wrapping_mul(PGSIZE)) {
-                break;
-            }
         }
     }
 
