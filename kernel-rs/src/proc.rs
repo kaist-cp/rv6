@@ -901,8 +901,6 @@ pub unsafe fn proc_pagetable(p: *mut Proc) -> Result<PageTable<UVAddr>, ()> {
     let mut pagetable = PageTable::<UVAddr>::zero();
     pagetable.alloc_root()?;
 
-    // let mut pagetable = uvmcreate();
-
     // Map the trampoline code (for system call return)
     // at the highest user virtual address.
     // Only the supervisor uses it, on the way
