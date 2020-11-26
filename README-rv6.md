@@ -4,13 +4,10 @@
 
   ```
   # Ubuntu 20.04
-  sudo apt install gcc-riscv64-linux-gnu qemu-system-misc gdb-multiarch
+  # The latest qemu-system-misc(1:4.2-3ubuntu6.9) can't boot rv6, so please use older version (1:4.2-3ubuntu6)
+  sudo apt install gcc-riscv64-linux-gnu qemu-system-misc=1:4.2-3ubuntu6 gdb-multiarch
 
   rustup component add rust-src
-  
-  # Older nightly needs cargo-xbuild version 0.5.35.
-  cargo install cargo-xbuild --version 0.5.35
-  [https://github.com/kaist-cp/rv6/issues/162]
   ```
 
 - Compile rv6.
