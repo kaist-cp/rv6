@@ -19,7 +19,6 @@ use crate::{
     println,
     riscv::{intr_get, intr_on, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
     sleepablelock::SleepablelockGuard,
-    some_or,
     spinlock::{pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard},
     string::safestrcpy,
     trap::usertrapret,
@@ -569,7 +568,7 @@ impl ProcessSystem {
     /// Look into process system for an UNUSED proc.
     /// If found, initialize state required to run in the kernel,
     /// and return with p->lock held.
-    /// If there are no free procs, return 0.
+    /// If there are no free procs, or a memory allocation fails, return Err.
     unsafe fn alloc(&self) -> Result<ProcGuard, ()> {
         for p in &self.process_pool {
             let mut guard = p.lock();
@@ -578,11 +577,14 @@ impl ProcessSystem {
                 guard.deref_mut_info().pid = self.allocpid();
 
                 // Allocate a trapframe page.
-                let page = some_or!(kernel().alloc(), return Err(()));
+                let page = kernel().alloc().ok_or(())?;
                 data.trapframe = page.into_usize() as *mut Trapframe;
 
                 // An empty user page table.
-                data.pagetable = proc_pagetable(p as *const _ as *mut _);
+                data.pagetable = ok_or!(proc_pagetable(p as *const _ as *mut _), {
+                    freeproc(guard);
+                    return Err(());
+                });
 
                 // Set up new context to start executing at forkret,
                 // which returns to user space.
@@ -893,52 +895,59 @@ unsafe fn freeproc(mut p: ProcGuard) {
 
 /// Create a user page table for a given process,
 /// with no user memory, but with trampoline pages.
-pub unsafe fn proc_pagetable(p: *mut Proc) -> PageTable<UVAddr> {
+pub unsafe fn proc_pagetable(p: *mut Proc) -> Result<PageTable<UVAddr>, ()> {
     // An empty page table.
     let mut pagetable = PageTable::<UVAddr>::zero();
-    pagetable.alloc_root();
-
-    // let mut pagetable = uvmcreate();
+    pagetable.alloc_root()?;
 
     // Map the trampoline code (for system call return)
     // at the highest user virtual address.
     // Only the supervisor uses it, on the way
     // to/from user space, so not PTE_U.
-    pagetable
+    if pagetable
         .mappages(
             UVAddr::new(TRAMPOLINE),
             PGSIZE,
             trampoline.as_mut_ptr() as usize,
             PTE_R | PTE_X,
         )
-        .expect("proc_pagetable: mappages TRAMPOLINE");
+        .is_err()
+    {
+        pagetable.uvmfree(0);
+        return Err(());
+    }
 
     // Map the trapframe just below TRAMPOLINE, for trampoline.S.
-    pagetable
+    if pagetable
         .mappages(
             UVAddr::new(TRAPFRAME),
             PGSIZE,
             (*(*p).data.get()).trapframe as usize,
             PTE_R | PTE_W,
         )
-        .expect("proc_pagetable: mappages TRAPFRAME");
-    pagetable
+        .is_err()
+    {
+        pagetable.uvmunmap(UVAddr::new(TRAMPOLINE), 1, false);
+        pagetable.uvmfree(0);
+        return Err(());
+    }
+    Ok(pagetable)
 }
 
 /// Free a process's page table, and free the
 /// physical memory it refers to.
 pub unsafe fn proc_freepagetable(pagetable: &mut PageTable<UVAddr>, sz: usize) {
-    pagetable.uvmunmap(UVAddr::new(TRAMPOLINE), PGSIZE, 0);
-    pagetable.uvmunmap(UVAddr::new(TRAPFRAME), PGSIZE, 0);
+    pagetable.uvmunmap(UVAddr::new(TRAMPOLINE), 1, false);
+    pagetable.uvmunmap(UVAddr::new(TRAPFRAME), 1, false);
     pagetable.uvmfree(sz);
 }
 
 /// A user program that calls exec("/init").
 /// od -t xC initcode
-const INITCODE: [u8; 51] = [
-    0x17, 0x05, 0, 0, 0x13, 0x05, 0x05, 0x02, 0x97, 0x05, 0, 0, 0x93, 0x85, 0x05, 0x02, 0x9d, 0x48,
-    0x73, 0, 0, 0, 0x89, 0x48, 0x73, 0, 0, 0, 0xef, 0xf0, 0xbf, 0xff, 0x2f, 0x69, 0x6e, 0x69, 0x74,
-    0, 0, 0x01, 0x20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+const INITCODE: [u8; 52] = [
+    0x17, 0x05, 0, 0, 0x13, 0x05, 0x45, 0x02, 0x97, 0x05, 0, 0, 0x93, 0x85, 0x35, 0x02, 0x93, 0x08,
+    0x70, 0, 0x73, 0, 0, 0, 0x93, 0x08, 0x20, 0, 0x73, 0, 0, 0, 0xef, 0xf0, 0x9f, 0xff, 0x2f, 0x69,
+    0x6e, 0x69, 0x74, 0, 0, 0x24, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
 /// Grow or shrink user memory by n bytes.

@@ -3,7 +3,6 @@ use crate::{
     kernel::kernel,
     page::Page,
     proc::{myproc, WaitChannel},
-    some_or,
     spinlock::Spinlock,
     vm::UVAddr,
 };
@@ -75,9 +74,9 @@ impl Pipe {
                         return Ok(written);
                     }
                 }
-                Err(PipeError::InvalidCopyin) => {
+                Err(PipeError::InvalidCopyin(i)) => {
                     self.read_waitchannel.wakeup();
-                    return Ok(written);
+                    return Ok(written + i);
                 }
                 _ => return Err(()),
             }
@@ -115,7 +114,7 @@ impl Deref for AllocatedPipe {
 
 impl AllocatedPipe {
     pub unsafe fn alloc() -> Result<(RcFile, RcFile), ()> {
-        let page = some_or!(kernel().alloc(), return Err(()));
+        let page = kernel().alloc().ok_or(())?;
         let ptr = page.into_usize() as *mut Pipe;
 
         //TODO(rv6): Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`
@@ -155,7 +154,7 @@ impl AllocatedPipe {
 pub enum PipeError {
     WaitForIO,
     InvalidStatus,
-    InvalidCopyin,
+    InvalidCopyin(usize),
 }
 
 impl PipeInner {
@@ -172,7 +171,7 @@ impl PipeInner {
                 return Ok(i);
             }
             if data.pagetable.copyin(&mut ch, addr + i).is_err() {
-                return Err(PipeError::InvalidCopyin);
+                return Err(PipeError::InvalidCopyin(i));
             }
             self.data[self.nwrite as usize % PIPESIZE] = ch[0];
             self.nwrite = self.nwrite.wrapping_add(1);

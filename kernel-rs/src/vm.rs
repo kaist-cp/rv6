@@ -2,7 +2,6 @@ use crate::{
     kernel::kernel,
     memlayout::{CLINT, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     page::{Page, RawPage},
-    println,
     proc::myproc,
     riscv::{
         make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, sfence_vma, w_satp, PteT,
@@ -236,10 +235,11 @@ impl<A: VAddr> PageTable<A> {
         }
     }
 
-    pub fn alloc_root(&mut self) {
-        let mut page = unsafe { kernel().alloc() }.expect("PageTable new: out of memory");
+    pub fn alloc_root(&mut self) -> Result<(), ()> {
+        let mut page = unsafe { kernel().alloc().ok_or(())? };
         page.write_bytes(0);
         self.ptr = page.into_usize() as *mut _;
+        Ok(())
     }
 
     pub fn from_raw(ptr: *mut RawPageTable) -> Self {
@@ -330,7 +330,7 @@ impl<A: VAddr> PageTable<A> {
         let mut a = pgrounddown(va.into_usize());
         let last = pgrounddown(va.into_usize() + size - 1usize);
         loop {
-            let pte = some_or!(self.walk(VAddr::new(a), 1), return Err(()));
+            let pte = self.walk(VAddr::new(a), 1).ok_or(())?;
             assert!(!pte.check_flag(PTE_V), "remap");
 
             pte.set_inner(pa2pte(PAddr::new(pa)) | perm as usize | PTE_V);
@@ -352,7 +352,7 @@ impl<A: VAddr> PageTable<A> {
         let mut offset = 0;
         while len > 0 {
             let va0 = pgrounddown(dst);
-            let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(())).into_usize();
+            let pa0 = self.walkaddr(VAddr::new(va0)).ok_or(())?.into_usize();
             let mut n = PGSIZE - (dst - va0);
             if n > len {
                 n = len
@@ -431,11 +431,11 @@ impl PageTable<UVAddr> {
             assert!(pte.check_flag(PTE_V), "uvmcopy: page not present");
 
             let mut new_ptable = scopeguard::guard(new, |ptable| {
-                ptable.uvmunmap(UVAddr::new(0), i, 1);
+                ptable.uvmunmap(UVAddr::new(0), i.wrapping_div(PGSIZE), true);
             });
             let pa = pte.get_pa();
             let flags = pte.get_flags() as u32;
-            let mem = some_or!(kernel().alloc(), return Err(())).into_usize();
+            let mem = kernel().alloc().ok_or(())?.into_usize();
             ptr::copy(
                 pa.into_usize() as *mut u8 as *const u8,
                 mem as *mut u8,
@@ -453,35 +453,28 @@ impl PageTable<UVAddr> {
         Ok(())
     }
 
-    /// Remove mappings from a page table. The mappings in
-    /// the given range must exist. Optionally free the
-    /// physical memory.
-    pub unsafe fn uvmunmap(&mut self, va: UVAddr, size: usize, do_free: i32) {
-        let mut pa: usize = 0;
-        let mut a = pgrounddown(va.into_usize());
-        let last = pgrounddown(va.into_usize() + size - 1usize);
-        loop {
+    /// Remove npages of mappings starting from va. va must be
+    /// page-aligned. The mappings must exist.
+    /// Optionally free the physical memory.
+    pub unsafe fn uvmunmap(&mut self, va: UVAddr, npages: usize, do_free: bool) {
+        if va.into_usize().wrapping_rem(PGSIZE) != 0 {
+            panic!("uvmunmap: not aligned");
+        }
+        let start = va.into_usize();
+        let end = start.wrapping_add(npages.wrapping_mul(PGSIZE));
+        for a in num_iter::range_step(start, end, PGSIZE) {
             let pt = &mut *self;
             let pte = pt.walk(UVAddr::new(a), 0).expect("uvmunmap: walk");
             if !pte.check_flag(PTE_V) {
-                println!(
-                    "va={:018p} pte={:018p}",
-                    a as *const u8, pte.inner as *const u8
-                );
                 panic!("uvmunmap: not mapped");
             }
             assert_ne!(pte.get_flags(), PTE_V, "uvmunmap: not a leaf");
 
-            if do_free != 0 {
-                pa = pte.get_pa().into_usize();
+            if do_free {
+                let pa = pte.get_pa().into_usize();
                 kernel().free(Page::from_usize(pa as _));
             }
             pte.set_inner(0);
-            if a == last {
-                break;
-            }
-            a += PGSIZE;
-            pa += PGSIZE;
         }
     }
 
@@ -493,9 +486,10 @@ impl PageTable<UVAddr> {
         if newsz >= oldsz {
             return oldsz;
         }
-        let newup: usize = pgroundup(newsz);
-        if newup < pgroundup(oldsz) {
-            self.uvmunmap(UVAddr::new(newup), oldsz - newup, 1);
+
+        if pgroundup(newsz) < pgroundup(oldsz) {
+            let npages = (pgroundup(oldsz).wrapping_sub(pgroundup(newsz))).wrapping_div(PGSIZE);
+            self.uvmunmap(UVAddr::new(pgroundup(newsz)), npages, true);
         }
         newsz
     }
@@ -504,7 +498,7 @@ impl PageTable<UVAddr> {
     /// then free page-table pages.
     pub unsafe fn uvmfree(&mut self, sz: usize) {
         if sz > 0 {
-            self.uvmunmap(UVAddr::new(0), sz, 1);
+            self.uvmunmap(UVAddr::new(0), pgroundup(sz).wrapping_div(PGSIZE), true);
         }
         self.freewalk();
     }
@@ -526,7 +520,7 @@ impl PageTable<UVAddr> {
         let mut offset = 0;
         while len > 0 {
             let va0 = pgrounddown(src);
-            let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(())).into_usize();
+            let pa0 = self.walkaddr(VAddr::new(va0)).ok_or(())?.into_usize();
             let mut n = PGSIZE - (src - va0);
             if n > len {
                 n = len
@@ -554,7 +548,7 @@ impl PageTable<UVAddr> {
         let mut max = dst.len();
         while got_null == 0 && max > 0 {
             let va0 = pgrounddown(src);
-            let pa0 = some_or!(self.walkaddr(VAddr::new(va0)), return Err(())).into_usize();
+            let pa0 = self.walkaddr(VAddr::new(va0)).ok_or(())?.into_usize();
             let mut n = PGSIZE - (src - va0);
             if n > max {
                 n = max
@@ -600,7 +594,7 @@ impl PageTable<KVAddr> {
     // trampoline.S
     /// Create a direct-map page table for the kernel.
     pub unsafe fn kvminit(&mut self) {
-        self.alloc_root();
+        let _ = self.alloc_root();
 
         // SiFive Test Finisher MMIO
         self.kvmmap(

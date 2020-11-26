@@ -113,10 +113,7 @@ impl Kernel {
             return Err(());
         }
 
-        let pt = proc_pagetable(p);
-        if pt.is_null() {
-            return Err(());
-        }
+        let pt = proc_pagetable(p)?;
 
         let mut ptable_guard = scopeguard::guard((pt, sz), |(mut pt, sz)| {
             proc_freepagetable(&mut pt, sz);
@@ -143,7 +140,8 @@ impl Kernel {
                 if ph.vaddr.wrapping_add(ph.memsz) < ph.vaddr {
                     return Err(());
                 }
-                *sz = pt.uvmalloc(*sz, ph.vaddr.wrapping_add(ph.memsz))?;
+                let sz1 = pt.uvmalloc(*sz, ph.vaddr.wrapping_add(ph.memsz))?;
+                *sz = sz1;
                 if ph.vaddr.wrapping_rem(PGSIZE) != 0 {
                     return Err(());
                 }

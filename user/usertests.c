@@ -22,6 +22,217 @@
 char buf[BUFSZ];
 char name[3];
 
+// what if you pass ridiculous pointers to system calls
+// that read user memory with copyin?
+void
+copyin(char *s)
+{
+  uint64 addrs[] = { 0x80000000LL, 0xffffffffffffffff };
+
+  for(int ai = 0; ai < 2; ai++){
+    uint64 addr = addrs[ai];
+    
+    int fd = open("copyin1", O_CREATE|O_WRONLY);
+    if(fd < 0){
+      printf("open(copyin1) failed\n");
+      exit(1);
+    }
+    int n = write(fd, (void*)addr, 8192);
+    if(n >= 0){
+      printf("write(fd, %p, 8192) returned %d, not -1\n", addr, n);
+      exit(1);
+    }
+    close(fd);
+    unlink("copyin1");
+    
+    n = write(1, (char*)addr, 8192);
+    if(n > 0){
+      printf("write(1, %p, 8192) returned %d, not -1 or 0\n", addr, n);
+      exit(1);
+    }
+    
+    int fds[2];
+    if(pipe(fds) < 0){
+      printf("pipe() failed\n");
+      exit(1);
+    }
+    n = write(fds[1], (char*)addr, 8192);
+    if(n > 0){
+      printf("write(pipe, %p, 8192) returned %d, not -1 or 0\n", addr, n);
+      exit(1);
+    }
+    close(fds[0]);
+    close(fds[1]);
+  }
+}
+
+// what if you pass ridiculous pointers to system calls
+// that write user memory with copyout?
+void
+copyout(char *s)
+{
+  uint64 addrs[] = { 0x80000000LL, 0xffffffffffffffff };
+
+  for(int ai = 0; ai < 2; ai++){
+    uint64 addr = addrs[ai];
+
+    int fd = open("README", 0);
+    if(fd < 0){
+      printf("open(README) failed\n");
+      exit(1);
+    }
+    int n = read(fd, (void*)addr, 8192);
+    if(n > 0){
+      printf("read(fd, %p, 8192) returned %d, not -1 or 0\n", addr, n);
+      exit(1);
+    }
+    close(fd);
+
+    int fds[2];
+    if(pipe(fds) < 0){
+      printf("pipe() failed\n");
+      exit(1);
+    }
+    n = write(fds[1], "x", 1);
+    if(n != 1){
+      printf("pipe write failed\n");
+      exit(1);
+    }
+    n = read(fds[0], (void*)addr, 8192);
+    if(n > 0){
+      printf("read(pipe, %p, 8192) returned %d, not -1 or 0\n", addr, n);
+      exit(1);
+    }
+    close(fds[0]);
+    close(fds[1]);
+  }
+}
+
+// what if you pass ridiculous string pointers to system calls?
+void
+copyinstr1(char *s)
+{
+  uint64 addrs[] = { 0x80000000LL, 0xffffffffffffffff };
+
+  for(int ai = 0; ai < 2; ai++){
+    uint64 addr = addrs[ai];
+
+    int fd = open((char *)addr, O_CREATE|O_WRONLY);
+    if(fd >= 0){
+      printf("open(%p) returned %d, not -1\n", addr, fd);
+      exit(1);
+    }
+  }
+}
+
+// what if a string system call argument is exactly the size
+// of the kernel buffer it is copied into, so that the null
+// would fall just beyond the end of the kernel buffer?
+void
+copyinstr2(char *s)
+{
+  char b[MAXPATH+1];
+
+  for(int i = 0; i < MAXPATH; i++)
+    b[i] = 'x';
+  b[MAXPATH] = '\0';
+  
+  int ret = unlink(b);
+  if(ret != -1){
+    printf("unlink(%s) returned %d, not -1\n", b, ret);
+    exit(1);
+  }
+
+  int fd = open(b, O_CREATE | O_WRONLY);
+  if(fd != -1){
+    printf("open(%s) returned %d, not -1\n", b, fd);
+    exit(1);
+  }
+
+  ret = link(b, b);
+  if(ret != -1){
+    printf("link(%s, %s) returned %d, not -1\n", b, b, ret);
+    exit(1);
+  }
+
+  char *args[] = { "xx", 0 };
+  ret = exec(b, args);
+  if(ret != -1){
+    printf("exec(%s) returned %d, not -1\n", b, fd);
+    exit(1);
+  }
+
+  int pid = fork();
+  if(pid < 0){
+    printf("fork failed\n");
+    exit(1);
+  }
+  if(pid == 0){
+    static char big[PGSIZE+1];
+    for(int i = 0; i < PGSIZE; i++)
+      big[i] = 'x';
+    big[PGSIZE] = '\0';
+    char *args2[] = { big, big, big, 0 };
+    ret = exec("echo", args2);
+    if(ret != -1){
+      printf("exec(echo, BIG) returned %d, not -1\n", fd);
+      exit(1);
+    }
+    exit(747); // OK
+  }
+
+  int st = 0;
+  wait(&st);
+  if(st != 747){
+    printf("exec(echo, BIG) succeeded, should have failed\n");
+    exit(1);
+  }
+}
+
+// what if a string argument crosses over the end of last user page?
+void
+copyinstr3(char *s)
+{
+  sbrk(8192);
+  uint64 top = (uint64) sbrk(0);
+  if((top % PGSIZE) != 0){
+    sbrk(PGSIZE - (top % PGSIZE));
+  }
+  top = (uint64) sbrk(0);
+  if(top % PGSIZE){
+    printf("oops\n");
+    exit(1);
+  }
+
+  char *b = (char *) (top - 1);
+  *b = 'x';
+
+  int ret = unlink(b);
+  if(ret != -1){
+    printf("unlink(%s) returned %d, not -1\n", b, ret);
+    exit(1);
+  }
+
+  int fd = open(b, O_CREATE | O_WRONLY);
+  if(fd != -1){
+    printf("open(%s) returned %d, not -1\n", b, fd);
+    exit(1);
+  }
+
+  ret = link(b, b);
+  if(ret != -1){
+    printf("link(%s, %s) returned %d, not -1\n", b, b, ret);
+    exit(1);
+  }
+
+  char *args[] = { "xx", 0 };
+  ret = exec(b, args);
+  if(ret != -1){
+    printf("exec(%s) returned %d, not -1\n", b, fd);
+    exit(1);
+  }
+}
+
 // test O_TRUNC.
 void
 truncate1(char *s)
@@ -2296,6 +2507,8 @@ main(int argc, char *argv[])
 
   if(argc == 2 && strcmp(argv[1], "-c") == 0){
     continuous = 1;
+  } else if(argc == 2 && strcmp(argv[1], "-C") == 0){
+    continuous = 2;
   } else if(argc == 2 && argv[1][0] != '-'){
     justone = argv[1];
   } else if(argc > 1){
@@ -2307,6 +2520,11 @@ main(int argc, char *argv[])
     void (*f)(char *);
     char *s;
   } tests[] = {
+    {copyin, "copyin"},
+    {copyout, "copyout"},
+    {copyinstr1, "copyinstr1"},
+    {copyinstr2, "copyinstr2"},
+    {copyinstr3, "copyinstr3"},
     {truncate1, "truncate1"},
     {truncate2, "truncate2"},
     {truncate3, "truncate3"},
@@ -2373,12 +2591,14 @@ main(int argc, char *argv[])
       }
       if(fail){
         printf("SOME TESTS FAILED\n");
-        exit(1);
+        if(continuous != 2)
+          exit(1);
       }
       int free1 = countfree();
       if(free1 < free0){
         printf("FAILED -- lost some free pages\n");
-        exit(1);
+        if(continuous != 2)
+          exit(1);
       }
     }
   }
