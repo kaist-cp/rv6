@@ -2,8 +2,10 @@
 use crate::memlayout::UART0;
 use crate::{
     console::consoleintr,
+    kernel::kernel,
     sleepablelock::{Sleepablelock, SleepablelockGuard},
     spinlock::{pop_off, push_off},
+    utils::spin_loop,
 };
 use core::ptr;
 
@@ -145,6 +147,9 @@ impl Uart {
     /// by write().
     pub fn putc(&self, c: i32) {
         let mut guard = self.tx_lock.lock();
+        if kernel().is_panicked() {
+            spin_loop();
+        }
         loop {
             if (guard.w + 1) % UART_TX_BUF_SIZE as i32 == guard.r {
                 // buffer is full.
@@ -167,6 +172,9 @@ impl Uart {
     pub fn putc_sync(c: i32) {
         unsafe {
             push_off();
+        }
+        if kernel().is_panicked() {
+            spin_loop();
         }
 
         // wait for Transmit Holding Empty to be set in LSR.

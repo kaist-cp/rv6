@@ -5,7 +5,6 @@ use crate::{
     proc::myproc,
     sleepablelock::SleepablelockGuard,
     uart::Uart,
-    utils::spin_loop,
     vm::{UVAddr, VAddr},
 };
 use core::fmt;
@@ -55,10 +54,6 @@ impl Console {
 
     /// Send one character to the uart.
     pub fn putc(&mut self, c: i32) {
-        // From printf.rs.
-        if kernel().is_panicked() {
-            spin_loop();
-        }
         if c == BACKSPACE {
             // If the user typed backspace, overwrite with a space.
             Uart::putc_sync('\u{8}' as i32);
@@ -199,9 +194,6 @@ pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
 
 /// User write()s to the console go here.
 unsafe fn consolewrite(src: UVAddr, n: i32) -> i32 {
-    if kernel().is_panicked() {
-        spin_loop();
-    }
     let mut console = kernel().console.lock();
     console.write(src, n)
 }
