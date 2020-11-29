@@ -2723,6 +2723,9 @@ main(int argc, char *argv[])
   }
 
   printf("usertests starting\n");
+#ifdef SOL_LAZY1
+  int free0 = 32*1024*1024;
+#else
   int free0 = countfree();
   int free1 = 0;
   int fail = 0;
