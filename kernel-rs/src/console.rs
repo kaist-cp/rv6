@@ -24,17 +24,6 @@ pub struct Console {
 
     /// Edit index.
     e: u32,
-
-    uart: Uart,
-}
-
-impl fmt::Write for Console {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        for c in s.bytes() {
-            self.putc(c as _);
-        }
-        Ok(())
-    }
 }
 
 impl Console {
@@ -44,24 +33,13 @@ impl Console {
             r: 0,
             w: 0,
             e: 0,
-            uart: Uart::new(),
         }
     }
 
-    pub fn uartintr(&self) {
-        self.uart.intr()
-    }
-
-    /// Send one character to the uart.
+    /// putc for Console.
+    /// TODO(@coolofficials): This function should be changed after refactoring Console-Uart-Printer relationship.
     pub fn putc(&mut self, c: i32) {
-        if c == BACKSPACE {
-            // If the user typed backspace, overwrite with a space.
-            Uart::putc_sync('\u{8}' as i32);
-            Uart::putc_sync(' ' as i32);
-            Uart::putc_sync('\u{8}' as i32);
-        } else {
-            Uart::putc_sync(c);
-        };
+        putc(c);
     }
 
     unsafe fn write(&mut self, src: UVAddr, n: i32) -> i32 {
@@ -70,7 +48,9 @@ impl Console {
             if VAddr::copyin(&mut c, UVAddr::new(src.into_usize() + (i as usize))).is_err() {
                 return i;
             }
-            self.uart.putc(c[0] as i32);
+            // TODO(@coolofficials): Temporarily using global function kernel().
+            // This implementation should be changed after refactoring Console-Uart-Printer relationship.
+            kernel().uart.putc(c[0] as i32);
         }
         n
     }
@@ -166,6 +146,43 @@ impl Console {
             }
         }
     }
+}
+
+pub struct Printer {}
+
+impl Printer {
+    pub const fn new() -> Self {
+        Self {}
+    }
+
+    /// putc for Printer.
+    /// TODO(@coolofficials): This function should be changed after refactoring Console-Uart-Printer relationship.
+    pub fn putc(&mut self, c: i32) {
+        putc(c);
+    }
+}
+
+impl fmt::Write for Printer {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        for c in s.bytes() {
+            self.putc(c as _);
+        }
+        Ok(())
+    }
+}
+
+/// Send one character to the uart.
+/// TODO(@coolofficials): This global function is temporary.
+/// After refactoring Console-Uart-Printer relationship, this function need to be removed.
+pub fn putc(c: i32) {
+    if c == BACKSPACE {
+        // If the user typed backspace, overwrite with a space.
+        Uart::putc_sync('\u{8}' as i32);
+        Uart::putc_sync(' ' as i32);
+        Uart::putc_sync('\u{8}' as i32);
+    } else {
+        Uart::putc_sync(c);
+    };
 }
 
 /// Console input and output, to the uart.

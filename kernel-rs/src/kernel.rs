@@ -5,7 +5,7 @@ use spin::Once;
 use crate::{
     arena::{ArrayArena, ArrayEntry, MruArena, MruEntry},
     bio::BufEntry,
-    console::{consoleinit, Console},
+    console::{consoleinit, Console, Printer},
     file::{Devsw, File},
     fs::{FileSystem, Inode},
     kalloc::{end, kinit, Kmem},
@@ -38,6 +38,12 @@ pub struct Kernel {
 
     /// Sleeps waiting for there are some input in console buffer.
     pub console: Sleepablelock<Console>,
+
+    /// TODO(@coolofficials): Kernel owns uart temporarily.
+    /// This might be changed after refactoring relationship between Console-Uart-Printer.
+    pub uart: Uart,
+
+    pub printer: Spinlock<Printer>,
 
     kmem: Spinlock<Kmem>,
 
@@ -91,6 +97,8 @@ impl Kernel {
         Self {
             panicked: AtomicBool::new(false),
             console: Sleepablelock::new("CONS", Console::new()),
+            uart: Uart::new(),
+            printer: Spinlock::new("PRINTLN", Printer::new()),
             kmem: Spinlock::new("KMEM", Kmem::new()),
             page_table: PageTable::zero(),
             ticks: Sleepablelock::new("time", 0),
@@ -154,12 +162,12 @@ impl Kernel {
         Some(page)
     }
 
-    /// Prints the given formatted string with the Console.
-    pub fn console_write_fmt(&self, args: fmt::Arguments<'_>) -> fmt::Result {
+    /// Prints the given formatted string with the Printer.
+    pub fn printer_write_fmt(&self, args: fmt::Arguments<'_>) -> fmt::Result {
         if self.is_panicked() {
-            unsafe { kernel().console.get_mut_unchecked().write_fmt(args) }
+            unsafe { kernel().printer.get_mut_unchecked().write_fmt(args) }
         } else {
-            let mut lock = kernel().console.lock();
+            let mut lock = kernel().printer.lock();
             lock.write_fmt(args)
         }
     }
@@ -186,15 +194,15 @@ impl Kernel {
     }
 }
 
-/// print! macro prints to the console.
+/// print! macro prints to the console using printer.
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {
-        $crate::kernel::kernel().console_write_fmt(format_args!($($arg)*)).unwrap();
+        $crate::kernel::kernel().printer_write_fmt(format_args!($($arg)*)).unwrap();
     };
 }
 
-/// println! macro prints to the console.
+/// println! macro prints to the console using printer.
 #[macro_export]
 macro_rules! println {
     () => ($crate::print!("\n"));

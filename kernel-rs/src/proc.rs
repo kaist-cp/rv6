@@ -15,7 +15,7 @@ use crate::{
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     ok_or,
     page::Page,
-    param::{NOFILE, NPROC, ROOTDEV, MAXPROCNAME},
+    param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
     println,
     riscv::{intr_get, intr_on, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
     sleepablelock::SleepablelockGuard,
