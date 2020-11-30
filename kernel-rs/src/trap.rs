@@ -207,7 +207,7 @@ pub unsafe fn devintr() -> i32 {
         let irq: usize = plic_claim();
 
         if irq == UART0_IRQ {
-            kernel().console.get_mut_unchecked().uartintr();
+            kernel().uart.intr();
         } else if irq == VIRTIO0_IRQ {
             kernel().disk.lock().virtio_intr();
         } else if irq != 0 {
