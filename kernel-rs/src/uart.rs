@@ -27,10 +27,10 @@ enum UartRegBits {
 impl UartRegBits {
     fn bits(self) -> u8 {
         match self {
-            UartRegBits::FCRFifoEnable | UartRegBits::IERTxEnable
+            UartRegBits::FCRFifoEnable | UartRegBits::IERRxEnable
             // Input is waiting to be read from RHR.
             | UartRegBits::LSRRxRead => 1 << 0,
-            UartRegBits::IERRxEnable => 1 << 1,
+            UartRegBits::IERTxEnable => 1 << 1,
             // Clear the content of the two FIFOs.
             UartRegBits::FCRFifoClear => 3 << 1,
             UartRegBits::LCREightBits => 3,
