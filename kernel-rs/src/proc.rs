@@ -834,12 +834,7 @@ impl ProcessSystem {
         for p in &self.process_pool {
             // For null character recognization.
             // Required since str::from_utf8 cannot recognize interior null characters.
-            let mut name = [0; MAXPROCNAME];
-            let mut count = 0;
-            while p.name[count] != 0 && count < MAXPROCNAME {
-                name[count] = p.name[count];
-                count += 1;
-            }
+            let length = p.name.iter().position(|&c| c == 0).unwrap_or(p.name.len());
             unsafe {
                 let info = p.info.get_mut_unchecked();
                 if info.state != Procstate::UNUSED {
@@ -847,7 +842,7 @@ impl ProcessSystem {
                         "{} {} {}",
                         info.pid,
                         Procstate::to_str(&info.state),
-                        str::from_utf8(&name).unwrap_or("???")
+                        str::from_utf8(&p.name[0..length]).unwrap_or("???")
                     );
                 }
             }
