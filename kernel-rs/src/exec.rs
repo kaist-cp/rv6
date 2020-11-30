@@ -163,7 +163,8 @@ impl Kernel {
         // Use the second as the user stack.
         *sz = sz.wrapping_add(PGSIZE).wrapping_sub(1) & !PGSIZE.wrapping_sub(1);
 
-        *sz = pt.uvmalloc(*sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)))?;
+        let sz1 = pt.uvmalloc(*sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)))?;
+        *sz = sz1;
         pt.uvmclear(UVAddr::new(sz.wrapping_sub(2usize.wrapping_mul(PGSIZE))));
         let mut sp: usize = *sz;
         let stackbase: usize = sp.wrapping_sub(PGSIZE);
