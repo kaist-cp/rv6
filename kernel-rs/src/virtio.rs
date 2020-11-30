@@ -101,6 +101,8 @@ pub struct VRingDesc {
 
 bitflags! {
     pub struct VRingDescFlags: u16 {
+        const FREED = 0b00;
+
         /// chained with another descriptor
         const NEXT = 0b01;
 

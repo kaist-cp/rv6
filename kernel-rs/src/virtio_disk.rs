@@ -69,7 +69,7 @@ struct AvailableRing {
 #[derive(Copy, Clone)]
 struct InflightInfo {
     b: *mut Buf,
-    status: bool,
+    status: u8,
 }
 
 // It needs repr(C) because it's struct for in-disk representation
@@ -177,10 +177,13 @@ impl DescriptorPool {
         unsafe {
             assert!(
                 (*self.desc).as_mut_ptr_range().contains(&ptr),
-                "virtio_disk_intr 1",
+                "DescriptorPool::free 1",
             );
-            assert!(!self.free[idx], "virtio_disk_intr 2");
+            assert!(!self.free[idx], "DescriptorPool::free 2");
             (*self.desc)[idx].addr = 0;
+            (*self.desc)[idx].len = 0;
+            (*self.desc)[idx].flags = VRingDescFlags::FREED;
+            (*self.desc)[idx].next = 0;
             self.free[idx] = true;
         }
         mem::forget(desc);
@@ -260,7 +263,8 @@ impl Disk {
             next: desc[2].idx as _,
         };
 
-        this.info[desc[0].idx].status = false;
+        // device writes 0 on success
+        this.info[desc[0].idx].status = 0xff;
 
         // Device writes the status
         *desc[2] = VRingDesc {
@@ -277,8 +281,12 @@ impl Disk {
         // We only tell device the first index in our chain of descriptors.
         let ring_idx = (*this.avail).idx as usize % NUM;
         (*this.avail).ring[ring_idx] = desc[0].idx as _;
+
         fence(Ordering::SeqCst);
+
         (*this.avail).idx += 1;
+
+        fence(Ordering::SeqCst);
 
         // Value is queue number.
         MmioRegs::QueueNotify.write(0);
@@ -293,20 +301,27 @@ impl Disk {
     }
 
     pub unsafe fn virtio_intr(&mut self) {
-        while (self.used_idx as usize).wrapping_rem(NUM)
-            != ((*self.used)[0].id as usize).wrapping_rem(NUM)
-        {
-            let id = (*self.used)[0].elems[self.used_idx as usize].id as usize;
-            assert!(!self.info[id].status, "virtio_self_intr status");
-
-            (*self.info[id].b).deref_mut_inner().disk = false;
-
-            // Self is done with Buf.
-            (*self.info[id].b).vdisk_request_waitchannel.wakeup();
-
-            self.used_idx = (self.used_idx.wrapping_add(1)).wrapping_rem(NUM as _)
-        }
+        // this ack may race with the device writing new notifications to
+        // the "used" ring, in which case we may get an interrupt we don't
+        // need, which is harmless.
         MmioRegs::InterruptAck.write(MmioRegs::InterruptStatus.read() & 0x3);
+
+        fence(Ordering::SeqCst);
+
+        while self.used_idx != (*self.used)[0].id {
+            fence(Ordering::SeqCst);
+            let id = (*self.used)[0].elems[(self.used_idx as usize).wrapping_rem(NUM)].id as usize;
+
+            assert!(self.info[id].status == 0, "virtio_self_intr status");
+
+            let buf = &mut *self.info[id].b;
+
+            // disk is done with buf
+            buf.deref_mut_inner().disk = false;
+            buf.vdisk_request_waitchannel.wakeup();
+
+            self.used_idx += 1;
+        }
     }
 }
 
@@ -314,7 +329,7 @@ impl InflightInfo {
     const fn zero() -> Self {
         Self {
             b: ptr::null_mut(),
-            status: false,
+            status: 0,
         }
     }
 }
