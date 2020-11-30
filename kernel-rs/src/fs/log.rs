@@ -72,7 +72,7 @@ impl Log {
     }
 
     /// Copy committed blocks from log to their home location.
-    unsafe fn install_trans(&mut self) {
+    unsafe fn install_trans(&mut self, recovering: bool) {
         for (tail, dbuf) in self.lh.drain(..).enumerate() {
             // Read log block.
             let lbuf = Disk::read(self.dev as u32, (self.start + tail as i32 + 1) as u32);
@@ -88,7 +88,11 @@ impl Log {
             );
 
             // Write dst to disk.
-            Disk::write(&mut dbuf)
+            Disk::write(&mut dbuf);
+
+            if recovering {
+                mem::forget(dbuf);
+            }
         }
     }
 
@@ -119,7 +123,7 @@ impl Log {
         self.read_head();
 
         // If committed, copy from log to disk.
-        self.install_trans();
+        self.install_trans(true);
 
         // Clear the log.
         self.write_head();
@@ -199,7 +203,7 @@ impl Log {
             self.write_head();
 
             // Now install writes to home locations.
-            self.install_trans();
+            self.install_trans(false);
 
             // Erase the transaction from the self.
             self.write_head();
