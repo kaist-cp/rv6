@@ -197,14 +197,12 @@ impl Dirent {
 
     // TODO: Use iterator
     fn read_entry(&mut self, ip: &mut InodeGuard<'_>, off: u32, panic_msg: &'static str) {
-        unsafe {
-            let bytes_read = ip.read(
-                KVAddr::new(self as *mut Dirent as usize),
-                off,
-                DIRENT_SIZE as u32,
-            );
-            assert_eq!(bytes_read, Ok(DIRENT_SIZE), "{}", panic_msg)
-        }
+        let bytes_read = ip.read(
+            KVAddr::new(self as *mut Dirent as usize),
+            off,
+            DIRENT_SIZE as u32,
+        );
+        assert_eq!(bytes_read, Ok(DIRENT_SIZE), "{}", panic_msg)
     }
 }
 
@@ -333,12 +331,7 @@ impl InodeGuard<'_> {
     }
 
     /// Read data from inode.
-    pub unsafe fn read<A: VAddr>(
-        &mut self,
-        mut dst: A,
-        mut off: u32,
-        mut n: u32,
-    ) -> Result<usize, ()> {
+    pub fn read<A: VAddr>(&mut self, mut dst: A, mut off: u32, mut n: u32) -> Result<usize, ()> {
         let inner = self.deref_inner();
         if off > inner.size || off.wrapping_add(n) < off {
             return Ok(0);
@@ -355,13 +348,12 @@ impl InodeGuard<'_> {
             );
             let begin = off.wrapping_rem(BSIZE as u32) as usize;
             let end = begin + m as usize;
-            if VAddr::copyout(dst, &bp.deref_mut_inner().data[begin..end]).is_err() {
-                break;
-            } else {
-                tot = tot.wrapping_add(m);
-                off = off.wrapping_add(m);
-                dst = dst + (m as usize);
+            unsafe {
+                VAddr::copyout(dst, &bp.deref_mut_inner().data[begin..end])?;
             }
+            tot = tot.wrapping_add(m);
+            off = off.wrapping_add(m);
+            dst = dst + (m as usize);
         }
         Ok(tot as usize)
     }
@@ -383,16 +375,15 @@ impl InodeGuard<'_> {
             );
             let begin = off.wrapping_rem(BSIZE as u32) as usize;
             let end = begin + m as usize;
-            if unsafe { VAddr::copyin(&mut bp.deref_mut_inner().data[begin..end], src) }.is_err() {
-                break;
-            } else {
-                unsafe {
-                    self.tx.write(bp);
-                }
-                tot = tot.wrapping_add(m);
-                off = off.wrapping_add(m);
-                src = src.add(m as usize);
+            unsafe {
+                VAddr::copyin(&mut bp.deref_mut_inner().data[begin..end], src)?;
             }
+            unsafe {
+                self.tx.write(bp);
+            }
+            tot = tot.wrapping_add(m);
+            off = off.wrapping_add(m);
+            src = src.add(m as usize);
         }
 
         // TODO(@kimjungwow) : To pass copyin() usertest, I reflect the commit on Nov 5, 2020 (below link).
