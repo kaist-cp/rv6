@@ -332,10 +332,7 @@ impl Kernel {
                 break;
             }
 
-            match self.alloc() {
-                Some(page) => *arg = page.into_usize() as *mut _,
-                None => break,
-            };
+            *arg = some_or!(self.alloc(), break).into_usize() as *mut _;
 
             if fetchstr(UVAddr::new(uarg), slice::from_raw_parts_mut(*arg, PGSIZE)).is_err() {
                 break;
