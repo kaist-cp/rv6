@@ -666,18 +666,4 @@ impl PageTable<KVAddr> {
         self.mappages(va, sz, pa.into_usize(), perm)
             .expect("kvmmap");
     }
-
-    /// Translate a kernel virtual address to
-    /// a physical address. Only needed for
-    /// addresses on the stack.
-    /// Assumes va is page aligned.
-    pub unsafe fn kvmpa(&self, va: KVAddr) -> usize {
-        let off: usize = va.into_usize().wrapping_rem(PGSIZE);
-        let pte = self
-            .walk(va, 0)
-            .filter(|pte| pte.check_flag(PTE_V))
-            .expect("kvmpa");
-        let pa = pte.as_page() as *const _ as usize;
-        pa + off
-    }
 }

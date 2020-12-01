@@ -138,32 +138,3 @@ pub struct VirtqUsed {
     pub id: u16,
     pub ring: [VirtqUsedElem; NUM],
 }
-
-/// The format of the first descriptor in a disk request.
-/// To be followed by two more descriptors containing
-/// the block, and a one-byte status.
-// It needs repr(C) because it's struct for in-disk representation
-// which should follow C(=machine) representation
-// https://github.com/kaist-cp/rv6/issues/52
-#[repr(C)]
-pub struct VirtIOBlockOutHeader {
-    typ: u32,
-    reserved: u32,
-    sector: usize,
-}
-
-impl VirtIOBlockOutHeader {
-    pub fn new(write: bool, sector: usize) -> Self {
-        let typ = if write {
-            VIRTIO_BLK_T_OUT
-        } else {
-            VIRTIO_BLK_T_IN
-        };
-
-        Self {
-            typ,
-            reserved: 0,
-            sector,
-        }
-    }
-}

@@ -11,7 +11,6 @@ use crate::{
     riscv::{PGSHIFT, PGSIZE},
     sleepablelock::SleepablelockGuard,
     virtio::*,
-    vm::{KVAddr, VAddr},
 };
 
 use core::array::IntoIter;
@@ -33,6 +32,10 @@ pub struct Disk {
     /// for use when completion interrupt arrives.
     /// indexed by first descriptor index of chain.
     info: [InflightInfo; NUM],
+
+    /// Disk command headers.
+    /// One-for-one with descriptors, for convenience.
+    ops: [VirtIOBlockOutHeader; NUM],
 }
 
 struct DescriptorPool {
@@ -71,6 +74,44 @@ struct VirtqAvail {
 struct InflightInfo {
     b: *mut Buf,
     status: u8,
+}
+
+/// The format of the first descriptor in a disk request.
+/// To be followed by two more descriptors containing
+/// the block, and a one-byte status.
+// It needs repr(C) because it's struct for in-disk representation
+// which should follow C(=machine) representation
+// https://github.com/kaist-cp/rv6/issues/52
+#[derive(Copy, Clone)]
+#[repr(C)]
+struct VirtIOBlockOutHeader {
+    typ: u32,
+    reserved: u32,
+    sector: usize,
+}
+
+impl VirtIOBlockOutHeader {
+    const fn zero() -> Self {
+        Self {
+            typ: 0,
+            reserved: 0,
+            sector: 0,
+        }
+    }
+
+    fn new(write: bool, sector: usize) -> Self {
+        let typ = if write {
+            VIRTIO_BLK_T_OUT
+        } else {
+            VIRTIO_BLK_T_IN
+        };
+
+        Self {
+            typ,
+            reserved: 0,
+            sector,
+        }
+    }
 }
 
 impl Descriptor {
@@ -175,6 +216,7 @@ impl Disk {
             used: ptr::null_mut(),
             used_idx: 0,
             info: [InflightInfo::zero(); NUM],
+            ops: [VirtIOBlockOutHeader::zero(); NUM],
         }
     }
 
@@ -215,14 +257,12 @@ impl Disk {
 
         // Format the three descriptors.
         // qemu's virtio-blk.c reads them.
-        let mut buf0 = VirtIOBlockOutHeader::new(write, sector);
 
-        // buf0 is on a kernel stack, which is not direct mapped,
-        // thus the call to kvmpa().
+        let buf0 = &mut this.ops[desc[0].idx] as *mut VirtIOBlockOutHeader;
+        *buf0 = VirtIOBlockOutHeader::new(write, sector);
+
         *desc[0] = VirtqDesc {
-            addr: kernel()
-                .page_table
-                .kvmpa(KVAddr::new(&mut buf0 as *mut _ as _)),
+            addr: buf0 as _,
             len: mem::size_of::<VirtIOBlockOutHeader>() as _,
             flags: VirtqDescFlags::NEXT,
             next: desc[1].idx as _,
