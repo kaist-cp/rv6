@@ -1,6 +1,6 @@
 use crate::{
     kernel::kernel,
-    memlayout::{CLINT, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
+    memlayout::{FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     page::{Page, RawPage},
     proc::myproc,
     riscv::{
@@ -612,14 +612,6 @@ impl PageTable<KVAddr> {
             KVAddr::new(VIRTIO0),
             PAddr::new(VIRTIO0),
             PGSIZE,
-            PTE_R | PTE_W,
-        );
-
-        // CLINT
-        self.kvmmap(
-            KVAddr::new(CLINT),
-            PAddr::new(CLINT),
-            0x10000,
             PTE_R | PTE_W,
         );
 
