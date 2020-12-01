@@ -91,16 +91,17 @@ bitflags! {
 /// must be a power of two.
 pub const NUM: usize = 8;
 
+/// a single descriptor, from the spec.
 #[derive(Copy, Clone)]
-pub struct VRingDesc {
+pub struct VirtqDesc {
     pub addr: usize,
     pub len: u32,
-    pub flags: VRingDescFlags,
+    pub flags: VirtqDescFlags,
     pub next: u16,
 }
 
 bitflags! {
-    pub struct VRingDescFlags: u16 {
+    pub struct VirtqDescFlags: u16 {
         const FREED = 0b00;
 
         /// chained with another descriptor
@@ -111,8 +112,10 @@ bitflags! {
     }
 }
 
+/// One entry in the "used" ring, with which the
+/// device tells the driver about completed requests.
 #[derive(Copy, Clone)]
-pub struct VRingUsedElem {
+pub struct VirtqUsedElem {
     /// index of start of completed descriptor chain
     pub id: u32,
 
@@ -130,8 +133,37 @@ pub const VIRTIO_BLK_T_OUT: u32 = 1;
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
-pub struct UsedArea {
+pub struct VirtqUsed {
     pub flags: u16,
     pub id: u16,
-    pub elems: [VRingUsedElem; NUM],
+    pub ring: [VirtqUsedElem; NUM],
+}
+
+/// The format of the first descriptor in a disk request.
+/// To be followed by two more descriptors containing
+/// the block, and a one-byte status.
+// It needs repr(C) because it's struct for in-disk representation
+// which should follow C(=machine) representation
+// https://github.com/kaist-cp/rv6/issues/52
+#[repr(C)]
+pub struct VirtIOBlockOutHeader {
+    typ: u32,
+    reserved: u32,
+    sector: usize,
+}
+
+impl VirtIOBlockOutHeader {
+    pub fn new(write: bool, sector: usize) -> Self {
+        let typ = if write {
+            VIRTIO_BLK_T_OUT
+        } else {
+            VIRTIO_BLK_T_IN
+        };
+
+        Self {
+            typ,
+            reserved: 0,
+            sector,
+        }
+    }
 }
