@@ -1,6 +1,6 @@
 use crate::{
     kernel::kernel,
-    memlayout::{CLINT, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
+    memlayout::{FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     page::{Page, RawPage},
     proc::myproc,
     riscv::{
@@ -615,14 +615,6 @@ impl PageTable<KVAddr> {
             PTE_R | PTE_W,
         );
 
-        // CLINT
-        self.kvmmap(
-            KVAddr::new(CLINT),
-            PAddr::new(CLINT),
-            0x10000,
-            PTE_R | PTE_W,
-        );
-
         // PLIC
         self.kvmmap(KVAddr::new(PLIC), PAddr::new(PLIC), 0x400000, PTE_R | PTE_W);
 
@@ -665,19 +657,5 @@ impl PageTable<KVAddr> {
     pub unsafe fn kvmmap(&mut self, va: KVAddr, pa: PAddr, sz: usize, perm: i32) {
         self.mappages(va, sz, pa.into_usize(), perm)
             .expect("kvmmap");
-    }
-
-    /// Translate a kernel virtual address to
-    /// a physical address. Only needed for
-    /// addresses on the stack.
-    /// Assumes va is page aligned.
-    pub unsafe fn kvmpa(&self, va: KVAddr) -> usize {
-        let off: usize = va.into_usize().wrapping_rem(PGSIZE);
-        let pte = self
-            .walk(va, 0)
-            .filter(|pte| pte.check_flag(PTE_V))
-            .expect("kvmpa");
-        let pa = pte.as_page() as *const _ as usize;
-        pa + off
     }
 }

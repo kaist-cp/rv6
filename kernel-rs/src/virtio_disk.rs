@@ -11,7 +11,6 @@ use crate::{
     riscv::{PGSHIFT, PGSIZE},
     sleepablelock::SleepablelockGuard,
     virtio::*,
-    vm::{KVAddr, VAddr},
 };
 
 use core::array::IntoIter;
@@ -24,8 +23,8 @@ use arrayvec::ArrayVec;
 
 pub struct Disk {
     desc: DescriptorPool,
-    avail: *mut AvailableRing,
-    used: *mut [UsedArea; NUM],
+    avail: *mut VirtqAvail,
+    used: *mut [VirtqUsed; NUM],
 
     used_idx: u16,
 
@@ -33,10 +32,14 @@ pub struct Disk {
     /// for use when completion interrupt arrives.
     /// indexed by first descriptor index of chain.
     info: [InflightInfo; NUM],
+
+    /// Disk command headers.
+    /// One-for-one with descriptors, for convenience.
+    ops: [VirtIOBlockOutHeader; NUM],
 }
 
 struct DescriptorPool {
-    desc: *mut [VRingDesc; NUM],
+    desc: *mut [VirtqDesc; NUM],
 
     /// Our own book-keeping.
     free: [bool; NUM], // TODO : Disk can be implemented using bitmap
@@ -50,13 +53,14 @@ struct DescriptorPool {
 #[derive(Debug)]
 struct Descriptor {
     idx: usize,
-    ptr: *mut VRingDesc,
+    ptr: *mut VirtqDesc,
 }
 
 // It needs repr(C) because it's read by device.
 // https://docs.oasis-open.org/virtio/virtio/v1.1/csprd01/virtio-v1.1-csprd01.html#x1-380006
+/// the (entire) avail ring, from the spec.
 #[repr(C)]
-struct AvailableRing {
+struct VirtqAvail {
     flags: u16,
 
     /// Tells the device how far to look in `ring`.
@@ -72,9 +76,13 @@ struct InflightInfo {
     status: bool,
 }
 
+/// The format of the first descriptor in a disk request.
+/// To be followed by two more descriptors containing
+/// the block, and a one-byte status.
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
+#[derive(Copy, Clone)]
 #[repr(C)]
 struct VirtIOBlockOutHeader {
     typ: u32,
@@ -83,6 +91,14 @@ struct VirtIOBlockOutHeader {
 }
 
 impl VirtIOBlockOutHeader {
+    const fn zero() -> Self {
+        Self {
+            typ: 0,
+            reserved: 0,
+            sector: 0,
+        }
+    }
+
     fn new(write: bool, sector: usize) -> Self {
         let typ = if write {
             VIRTIO_BLK_T_OUT
@@ -99,13 +115,13 @@ impl VirtIOBlockOutHeader {
 }
 
 impl Descriptor {
-    unsafe fn new(idx: usize, ptr: *mut VRingDesc) -> Self {
+    unsafe fn new(idx: usize, ptr: *mut VirtqDesc) -> Self {
         Self { idx, ptr }
     }
 }
 
 impl Deref for Descriptor {
-    type Target = VRingDesc;
+    type Target = VirtqDesc;
 
     fn deref(&self) -> &Self::Target {
         unsafe { &*self.ptr }
@@ -153,6 +169,8 @@ impl DescriptorPool {
         None
     }
 
+    /// Allocate three descriptors (they need not be contiguous).
+    /// Disk transfers always use three descriptors.
     fn alloc_three_sectors(&mut self) -> Option<[Descriptor; 3]> {
         let mut descs = ArrayVec::<[_; 3]>::new();
 
@@ -177,10 +195,13 @@ impl DescriptorPool {
         unsafe {
             assert!(
                 (*self.desc).as_mut_ptr_range().contains(&ptr),
-                "virtio_disk_intr 1",
+                "DescriptorPool::free 1",
             );
-            assert!(!self.free[idx], "virtio_disk_intr 2");
+            assert!(!self.free[idx], "DescriptorPool::free 2");
             (*self.desc)[idx].addr = 0;
+            (*self.desc)[idx].len = 0;
+            (*self.desc)[idx].flags = VirtqDescFlags::FREED;
+            (*self.desc)[idx].next = 0;
             self.free[idx] = true;
         }
         mem::forget(desc);
@@ -195,6 +216,7 @@ impl Disk {
             used: ptr::null_mut(),
             used_idx: 0,
             info: [InflightInfo::zero(); NUM],
+            ops: [VirtIOBlockOutHeader::zero(); NUM],
         }
     }
 
@@ -218,9 +240,9 @@ impl Disk {
     pub unsafe fn virtio_rw(this: &mut SleepablelockGuard<'_, Self>, b: &mut Buf, write: bool) {
         let sector: usize = (*b).blockno.wrapping_mul((BSIZE / 512) as u32) as _;
 
-        // The spec says that legacy block operations use three
-        // descriptors: one for type/reserved/sector, one for
-        // the data, one for a 1-byte status result.
+        // The spec's Section 5.2 says that legacy block operations use
+        // three descriptors: one for type/reserved/sector, one for the
+        // data, one for a 1-byte status result.
 
         // Allocate the three descriptors.
         let mut desc = loop {
@@ -235,38 +257,37 @@ impl Disk {
 
         // Format the three descriptors.
         // qemu's virtio-blk.c reads them.
-        let mut buf0 = VirtIOBlockOutHeader::new(write, sector);
 
-        // buf0 is on a kernel stack, which is not direct mapped,
-        // thus the call to kvmpa().
-        *desc[0] = VRingDesc {
-            addr: kernel()
-                .page_table
-                .kvmpa(KVAddr::new(&mut buf0 as *mut _ as _)),
+        let buf0 = &mut this.ops[desc[0].idx] as *mut VirtIOBlockOutHeader;
+        *buf0 = VirtIOBlockOutHeader::new(write, sector);
+
+        *desc[0] = VirtqDesc {
+            addr: buf0 as _,
             len: mem::size_of::<VirtIOBlockOutHeader>() as _,
-            flags: VRingDescFlags::NEXT,
+            flags: VirtqDescFlags::NEXT,
             next: desc[1].idx as _,
         };
 
         // Device reads/writes b->data
-        *desc[1] = VRingDesc {
+        *desc[1] = VirtqDesc {
             addr: b.deref_mut_inner().data.as_mut_ptr() as _,
             len: BSIZE as _,
             flags: if write {
-                VRingDescFlags::NEXT
+                VirtqDescFlags::NEXT
             } else {
-                VRingDescFlags::NEXT | VRingDescFlags::WRITE
+                VirtqDescFlags::NEXT | VirtqDescFlags::WRITE
             },
             next: desc[2].idx as _,
         };
 
-        this.info[desc[0].idx].status = false;
+        // device writes 0 on success
+        this.info[desc[0].idx].status = true;
 
         // Device writes the status
-        *desc[2] = VRingDesc {
+        *desc[2] = VirtqDesc {
             addr: &mut this.info[desc[0].idx].status as *mut _ as _,
             len: 1,
-            flags: VRingDescFlags::WRITE,
+            flags: VirtqDescFlags::WRITE,
             next: 0,
         };
 
@@ -274,11 +295,16 @@ impl Disk {
         b.deref_mut_inner().disk = true;
         this.info[desc[0].idx].b = b;
 
-        // We only tell device the first index in our chain of descriptors.
+        // Tell the device the first index in our chain of descriptors.
         let ring_idx = (*this.avail).idx as usize % NUM;
         (*this.avail).ring[ring_idx] = desc[0].idx as _;
+
         fence(Ordering::SeqCst);
+
+        // Tell the device another avail ring entry is available.
         (*this.avail).idx += 1;
+
+        fence(Ordering::SeqCst);
 
         // Value is queue number.
         MmioRegs::QueueNotify.write(0);
@@ -293,20 +319,33 @@ impl Disk {
     }
 
     pub unsafe fn virtio_intr(&mut self) {
-        while (self.used_idx as usize).wrapping_rem(NUM)
-            != ((*self.used)[0].id as usize).wrapping_rem(NUM)
-        {
-            let id = (*self.used)[0].elems[self.used_idx as usize].id as usize;
+        // The device won't raise another interrupt until we tell it
+        // we've seen this interrupt, which the following line does.
+        // This may race with the device writing new entries to
+        // the "used" ring, in which case we may process the new
+        // completion entries in this interrupt, and have nothing to do
+        // in the next interrupt, which is harmless.
+        MmioRegs::InterruptAck.write(MmioRegs::InterruptStatus.read() & 0x3);
+
+        fence(Ordering::SeqCst);
+
+        // The device increments disk.used->idx when it
+        // adds an entry to the used ring.
+
+        while self.used_idx != (*self.used)[0].id {
+            fence(Ordering::SeqCst);
+            let id = (*self.used)[0].ring[(self.used_idx as usize).wrapping_rem(NUM)].id as usize;
+
             assert!(!self.info[id].status, "virtio_self_intr status");
 
-            (*self.info[id].b).deref_mut_inner().disk = false;
+            let buf = &mut *self.info[id].b;
 
-            // Self is done with Buf.
-            (*self.info[id].b).vdisk_request_waitchannel.wakeup();
+            // disk is done with buf
+            buf.deref_mut_inner().disk = false;
+            buf.vdisk_request_waitchannel.wakeup();
 
-            self.used_idx = (self.used_idx.wrapping_add(1)).wrapping_rem(NUM as _)
+            self.used_idx += 1;
         }
-        MmioRegs::InterruptAck.write(MmioRegs::InterruptStatus.read() & 0x3);
     }
 }
 
@@ -363,12 +402,12 @@ pub unsafe fn virtio_disk_init(virtqueue: &mut [RawPage; 2], disk: &mut Disk) {
     ptr::write_bytes(virtqueue, 0, 1);
     MmioRegs::QueuePfn.write((virtqueue.as_mut_ptr() as usize >> PGSHIFT) as _);
 
-    // desc = pages -- num * VRingDesc
+    // desc = pages -- num * VirtqDesc
     // avail = pages + 0x40 -- 2 * u16, then num * u16
     // used = pages + 4096 -- 2 * u16, then num * vRingUsedElem
 
     disk.desc = DescriptorPool::new(&mut virtqueue[0]);
-    disk.avail = (virtqueue[0].as_mut_ptr() as *mut VRingDesc).add(NUM) as _;
+    disk.avail = (virtqueue[0].as_mut_ptr() as *mut VirtqDesc).add(NUM) as _;
     disk.used = virtqueue[1].as_mut_ptr() as _;
 
     // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
