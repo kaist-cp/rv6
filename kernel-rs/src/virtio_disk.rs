@@ -73,7 +73,7 @@ struct VirtqAvail {
 #[derive(Copy, Clone)]
 struct InflightInfo {
     b: *mut Buf,
-    status: u8,
+    status: bool,
 }
 
 /// The format of the first descriptor in a disk request.
@@ -281,7 +281,7 @@ impl Disk {
         };
 
         // device writes 0 on success
-        this.info[desc[0].idx].status = 0xff;
+        this.info[desc[0].idx].status = true;
 
         // Device writes the status
         *desc[2] = VirtqDesc {
@@ -336,7 +336,7 @@ impl Disk {
             fence(Ordering::SeqCst);
             let id = (*self.used)[0].ring[(self.used_idx as usize).wrapping_rem(NUM)].id as usize;
 
-            assert!(self.info[id].status == 0, "virtio_self_intr status");
+            assert!(!self.info[id].status, "virtio_self_intr status");
 
             let buf = &mut *self.info[id].b;
 
@@ -353,7 +353,7 @@ impl InflightInfo {
     const fn zero() -> Self {
         Self {
             b: ptr::null_mut(),
-            status: 0,
+            status: false,
         }
     }
 }
