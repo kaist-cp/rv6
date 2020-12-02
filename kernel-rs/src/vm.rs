@@ -2,7 +2,7 @@ use crate::{
     kernel::kernel,
     memlayout::{FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
     page::{Page, RawPage},
-    proc::myproc,
+    proc::{myproc, proc_mapstacks},
     riscv::{
         make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, sfence_vma, w_satp, PteT,
         MAXVA, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
@@ -591,9 +591,8 @@ impl<T> DerefMut for PageTable<T> {
 }
 
 impl PageTable<KVAddr> {
-    // trampoline.S
-    /// Create a direct-map page table for the kernel.
-    pub unsafe fn kvminit(&mut self) {
+    /// Make a direct-map page table for the kernel.
+    pub unsafe fn kvmmake(&mut self) {
         let _ = self.alloc_root();
 
         // SiFive Test Finisher MMIO
@@ -604,10 +603,10 @@ impl PageTable<KVAddr> {
             PTE_R | PTE_W,
         );
 
-        // uart registers
+        // Uart registers
         self.kvmmap(KVAddr::new(UART0), PAddr::new(UART0), PGSIZE, PTE_R | PTE_W);
 
-        // virtio mmio disk interface
+        // Virtio mmio disk interface
         self.kvmmap(
             KVAddr::new(VIRTIO0),
             PAddr::new(VIRTIO0),
@@ -642,6 +641,14 @@ impl PageTable<KVAddr> {
             PGSIZE,
             PTE_R | PTE_X,
         );
+
+        // map kernel stacks
+        proc_mapstacks(self);
+    }
+
+    /// Initialize the one kernel_pagetable
+    pub unsafe fn kvminit(&mut self) {
+        self.kvmmake();
     }
 
     /// Switch h/w page table register to the kernel's page table,

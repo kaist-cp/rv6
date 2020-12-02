@@ -11,7 +11,7 @@ use core::{
 use crate::{
     file::RcFile,
     fs::{Path, RcInode},
-    kernel::kernel,
+    kernel::{kernel, KERNEL},
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     ok_or,
     page::Page,
@@ -463,23 +463,6 @@ impl ProcData {
         }
     }
 
-    /// Allocate a page for the process's kernel stack.
-    /// Map it high in memory, followed by an invalid
-    /// guard page.
-    unsafe fn palloc(&mut self, page_table: &mut PageTable<KVAddr>, i: usize) {
-        let page = kernel().alloc().expect("kalloc");
-        let pa = page.into_usize();
-
-        let va: usize = kstack(i);
-        page_table.kvmmap(
-            KVAddr::new(va),
-            PAddr::new(pa as usize),
-            PGSIZE,
-            PTE_R | PTE_W,
-        );
-        self.kstack = va;
-    }
-
     /// Close all open files.
     unsafe fn close_files(&mut self) {
         for file in &mut self.open_files {
@@ -850,10 +833,27 @@ impl ProcessSystem {
     }
 }
 
+/// Allocate a page for the process's kernel stack.
+/// Map it high in memory, followed by an invalid
+/// guard page.
+pub unsafe fn proc_mapstacks(page_table: &mut PageTable<KVAddr>) {
+    for (i, _) in &mut KERNEL.procs.process_pool.iter_mut().enumerate() {
+        let pa = kernel().alloc().expect("kalloc").into_usize();
+        let va: usize = kstack(i);
+        page_table.kvmmap(
+            KVAddr::new(va),
+            PAddr::new(pa as usize),
+            PGSIZE,
+            PTE_R | PTE_W,
+        );
+    }
+}
+
 /// Initialize the proc table at boot time.
-pub unsafe fn procinit(procs: &mut ProcessSystem, page_table: &mut PageTable<KVAddr>) {
+#[allow(clippy::ref_in_deref)]
+pub unsafe fn procinit(procs: &mut ProcessSystem) {
     for (i, p) in procs.process_pool.iter_mut().enumerate() {
-        (*p.data.get()).palloc(page_table, i);
+        (&mut *(*p).data.get()).kstack = kstack(i);
     }
 }
 

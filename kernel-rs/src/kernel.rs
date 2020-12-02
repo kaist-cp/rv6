@@ -25,7 +25,7 @@ use crate::{
 };
 
 /// The kernel.
-static mut KERNEL: Kernel = Kernel::zero();
+pub static mut KERNEL: Kernel = Kernel::zero();
 
 /// After intialized, the kernel is safe to immutably access.
 #[inline]
@@ -245,7 +245,7 @@ pub unsafe fn kernel_main() -> ! {
         kernel().page_table.kvminithart();
 
         // Process system.
-        procinit(&mut KERNEL.procs, &mut KERNEL.page_table);
+        procinit(&mut KERNEL.procs);
 
         // Trap vectors.
         trapinit();
