@@ -211,8 +211,7 @@ pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
 
 /// User write()s to the console go here.
 unsafe fn consolewrite(src: UVAddr, n: i32) -> i32 {
-    let mut console = kernel().console.lock();
-    console.write(src, n)
+    kernel().console.get_mut_unchecked().write(src, n)
 }
 
 /// User read()s from the console go here.
