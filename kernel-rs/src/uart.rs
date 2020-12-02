@@ -90,11 +90,11 @@ impl UartCtrlRegs {
 pub struct UartTX {
     pub buf: [u8; UART_TX_BUF_SIZE],
 
-    /// Write next to uart_tx_buf[uart_tx_w++]
-    pub w: i32,
+    /// Write next to uart_tx_buf[uart_tx_w % UART_TX_BUF_SIZE]
+    pub w: u64,
 
-    /// Read next from uart_tx_buf[uar_tx_r++]
-    pub r: i32,
+    /// Read next from uart_tx_buf[uar_tx_r % UART_TX_BUF_SIZE]
+    pub r: u64,
 }
 
 pub struct Uart {
@@ -151,14 +151,14 @@ impl Uart {
             spin_loop();
         }
         loop {
-            if (guard.w + 1) % UART_TX_BUF_SIZE as i32 == guard.r {
+            if guard.w == guard.r + UART_TX_BUF_SIZE as u64 {
                 // Buffer is full.
                 // Wait for uartstart() to open up space in the buffer.
                 guard.sleep();
             } else {
                 let w = guard.w;
-                guard.buf[w as usize] = c as u8;
-                guard.w = (w + 1) % UART_TX_BUF_SIZE as i32;
+                guard.buf[w as usize % UART_TX_BUF_SIZE] = c as u8;
+                guard.w += 1;
                 self.start(guard);
                 return;
             }
@@ -205,9 +205,8 @@ impl Uart {
                 return;
             }
 
-            let r = guard.r;
-            let c = guard.buf[r as usize];
-            guard.r = (r + 1) % UART_TX_BUF_SIZE as i32;
+            let c = guard.buf[guard.r as usize % UART_TX_BUF_SIZE];
+            guard.r += 1;
 
             // Maybe uartputc() is waiting for space in the buffer.
             guard.wakeup();
