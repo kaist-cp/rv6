@@ -359,6 +359,9 @@ impl InodeGuard<'_> {
     }
 
     /// Write data to inode.
+    /// Returns the number of bytes successfully written.
+    /// If the return value is less than the requested n,
+    /// there was an error of some kind.
     pub fn write<A: VAddr>(&mut self, mut src: A, mut off: u32, n: u32) -> Result<usize, ()> {
         if off > self.deref_inner().size || off.wrapping_add(n) < off {
             return Err(());
@@ -376,7 +379,9 @@ impl InodeGuard<'_> {
             let begin = off.wrapping_rem(BSIZE as u32) as usize;
             let end = begin + m as usize;
             unsafe {
-                VAddr::copyin(&mut bp.deref_mut_inner().data[begin..end], src)?;
+                if VAddr::copyin(&mut bp.deref_mut_inner().data[begin..end], src).is_err() {
+                    break;
+                }
             }
             unsafe {
                 self.tx.write(bp);
@@ -393,7 +398,7 @@ impl InodeGuard<'_> {
             self.deref_inner_mut().size = off;
         }
 
-        // write the i-node back to disk even if the size didn't change
+        // Write the i-node back to disk even if the size didn't change
         // because the loop above might have called bmap() and added a new
         // block to self->addrs[].
         unsafe {
