@@ -203,6 +203,7 @@ pub enum Procstate {
     RUNNABLE,
     SLEEPING,
     UNUSED,
+    USED,
 }
 
 pub struct WaitChannel {
@@ -233,7 +234,7 @@ impl WaitChannel {
     // TODO(@kimjungwow): lk is not SpinlockGuard yet because
     // 1. Some static mut variables are still not Spinlock<T> but RawSpinlock
     // 2. Sleeplock doesn't have Spinlock<T>
-    pub unsafe fn sleep_raw(&self, lk: *mut RawSpinlock) {
+    pub unsafe fn sleep_raw(&self, lk: *const RawSpinlock) {
         let p: *mut Proc = myproc();
 
         // Must acquire p->lock in order to
@@ -243,12 +244,9 @@ impl WaitChannel {
         // (wakeup locks p->lock),
         // so it's okay to release lk.
 
-        //DOC: sleeplock0
-        if lk != (*p).info.raw() as *mut RawSpinlock {
-            //DOC: sleeplock1
-            mem::forget((*p).info.lock());
-            (*lk).release();
-        }
+        //DOC: sleeplock1
+        mem::forget((*p).info.lock());
+        (*lk).release();
 
         // Go to sleep.
         let mut guard = ProcGuard::from_raw(p);
@@ -261,10 +259,8 @@ impl WaitChannel {
         mem::forget(guard);
 
         // Reacquire original lock.
-        if lk != (*p).info.raw() as *mut RawSpinlock {
-            (*p).info.unlock();
-            (*lk).acquire();
-        };
+        (*p).info.unlock();
+        (*lk).acquire();
     }
 
     /// Wake up all processes sleeping on waitchannel.
@@ -354,15 +350,6 @@ impl ProcGuard {
         self.ptr
     }
 
-    /// Wake up p if it is sleeping in wait(); used by exit().
-    /// Caller must hold p->lock.
-    unsafe fn wakeup_proc(&mut self) {
-        let info = self.deref_mut_info();
-        if &info.child_waitchannel as *const _ == info.waitchannel {
-            self.wakeup();
-        }
-    }
-
     /// Switch to scheduler.  Must hold only p->lock
     /// and have changed proc->state. Saves and restores
     /// interrupt_enabled because interrupt_enabled is a property of this
@@ -442,6 +429,7 @@ impl Context {
 impl Procstate {
     fn to_str(&self) -> &'static str {
         match self {
+            Procstate::USED => "used",
             Procstate::UNUSED => "unused",
             Procstate::SLEEPING => "sleep ",
             Procstate::RUNNABLE => "runble",
@@ -530,6 +518,11 @@ pub struct ProcessSystem {
     nextpid: AtomicI32,
     process_pool: [Proc; NPROC],
     initial_proc: *mut Proc,
+
+    // Protects parent/child relationships.
+    // Must be held when using p->parent.
+    // Must be acquired before any p->lock.
+    proc_tree_lock: RawSpinlock,
 }
 
 const fn proc_entry(_: usize) -> Proc {
@@ -542,6 +535,7 @@ impl ProcessSystem {
             nextpid: AtomicI32::new(1),
             process_pool: array_const_fn_init![proc_entry; 64],
             initial_proc: ptr::null_mut(),
+            proc_tree_lock: RawSpinlock::new("proc_tree"),
         }
     }
 
@@ -559,6 +553,7 @@ impl ProcessSystem {
             if guard.deref_info().state == Procstate::UNUSED {
                 let data = &mut *guard.data.get();
                 guard.deref_mut_info().pid = self.allocpid();
+                guard.deref_mut_info().state = Procstate::USED;
 
                 // Allocate a trapframe page.
                 let page = some_or!(kernel().alloc(), {
@@ -586,23 +581,12 @@ impl ProcessSystem {
     }
 
     /// Pass p's abandoned children to init.
-    /// Caller must hold p->lock.
+    /// Caller must hold ProcGuard::proc_tree_lock.
     unsafe fn reparent(&self, p: &mut ProcGuard) {
         for pp in &self.process_pool {
-            // This code uses pp->parent without holding pp->lock.
-            // Acquiring the lock first could cause a deadlock
-            // if pp or a child of pp were also in exit()
-            // and about to try to lock p.
             if pp.info.get_mut_unchecked().parent == p.raw() as *mut _ {
-                // pp->parent can't change between the check and the acquire()
-                // because only the parent changes it, and we're the parent.
-                let mut guard = pp.lock();
-                guard.deref_mut_info().parent = self.initial_proc;
-
-                // We should wake up init here, but that would require
-                // kernel().procs.initial_proc->lock, which would be a deadlock, since we hold
-                // the lock on one of init's children (pp). This is why
-                // exit() always wakes init (before acquiring any locks).
+                pp.info.get_mut_unchecked().parent = self.initial_proc;
+                (&mut *self.initial_proc).wakeup();
             }
         }
     }
@@ -625,10 +609,13 @@ impl ProcessSystem {
     /// Wake up all processes in the pool sleeping on waitchannel.
     /// Must be called without any p->lock.
     pub fn wakeup_pool(&self, target: &WaitChannel) {
+        let myproc = unsafe { myproc() as *const Proc };
         for p in &self.process_pool {
-            let mut guard = p.lock();
-            if guard.deref_info().waitchannel == target as _ {
-                guard.wakeup()
+            if p as *const Proc != myproc {
+                let mut guard = p.lock();
+                if guard.deref_info().waitchannel == target as _ {
+                    guard.wakeup()
+                }
             }
         }
     }
@@ -681,7 +668,6 @@ impl ProcessSystem {
             return -1;
         }
         npdata.sz = pdata.sz;
-        np.deref_mut_info().parent = p;
 
         // Copy saved user registers.
         *npdata.trapframe = *pdata.trapframe;
@@ -696,13 +682,28 @@ impl ProcessSystem {
             }
         }
         npdata.cwd = Some(pdata.cwd.clone().unwrap());
+
         safestrcpy(
             (*np).name.as_mut_ptr(),
             (*p).name.as_mut_ptr(),
             mem::size_of::<[u8; MAXPROCNAME]>() as i32,
         );
+
         let pid = np.deref_mut_info().pid;
+
+        // let child = np.ptr;
+        // mem::forget(np);
+        let child = np.raw();
+        drop(np);
+
+        self.proc_tree_lock.acquire();
+        (*child).info.get_mut_unchecked().parent = p;
+        self.proc_tree_lock.release();
+
+        // let mut np = ProcGuard::from_raw(child);
+        let mut np = (*child).lock();
         np.deref_mut_info().state = Procstate::RUNNABLE;
+
         pid
     }
 
@@ -712,22 +713,17 @@ impl ProcessSystem {
         let p: *mut Proc = myproc();
         let data = &mut *(*p).data.get();
 
-        // Hold p->lock for the whole time to avoid lost
-        // Wakeups from a child's exit().
-        let mut guard = (*p).lock();
+        self.proc_tree_lock.acquire();
+
         loop {
             // Scan through pool looking for exited children.
             let mut havekids = false;
             for np in &self.process_pool {
-                // This code uses np->parent without holding np->lock.
-                // Acquiring the lock first would cause a deadlock,
-                // since np might be an ancestor, and we already hold p->lock.
                 if np.info.get_mut_unchecked().parent == p {
-                    // np->parent can't change between the check and the acquire()
-                    // because only the parent changes it, and we're the parent.
                     let mut np = np.lock();
                     havekids = true;
-                    if np.deref_info().state == Procstate::ZOMBIE {
+                    let state = np.deref_info().state;
+                    if state == Procstate::ZOMBIE {
                         let pid = np.deref_info().pid;
                         if !addr.is_null()
                             && data
@@ -744,6 +740,7 @@ impl ProcessSystem {
                             return -1;
                         }
                         freeproc(np);
+                        self.proc_tree_lock.release();
                         return pid;
                     }
                 }
@@ -751,15 +748,13 @@ impl ProcessSystem {
 
             // No point waiting if we don't have any children.
             if !havekids || (*p).killed() {
+                self.proc_tree_lock.release();
                 return -1;
             }
 
             // Wait for a child to exit.
             //DOC: wait-sleep
-            guard
-                .deref_mut_info()
-                .child_waitchannel
-                .sleep_raw((*p).info.raw() as *mut _);
+            ((*p).info.get_mut_unchecked().child_waitchannel).sleep_raw(&self.proc_tree_lock);
         }
     }
 
@@ -773,28 +768,7 @@ impl ProcessSystem {
 
         data.close_files();
 
-        // We might re-parent a child to init. We can't be precise about
-        // waking up init, since we can't acquire its lock once we've
-        // spinlock::acquired any other proc lock. so wake up init whether that's
-        // necessary or not. init may miss this wakeup, but that seems
-        // harmless.
-        let mut initial_proc = (*self.initial_proc).lock();
-        initial_proc.wakeup_proc();
-        drop(initial_proc);
-
-        // Grab a copy of p->parent, to ensure that we unlock the same
-        // parent we locked. in case our parent gives us away to init while
-        // we're waiting for the parent lock. We may then race with an
-        // exiting parent, but the result will be a harmless spurious wakeup
-        // to a dead or wrong process; proc structs are never re-allocated
-        // as anything else.
-        let guard = (*p).lock();
-        let original_parent = guard.deref_info().parent;
-        drop(guard);
-
-        // We need the parent's lock in order to wake it up from wait().
-        // The parent-then-child rule says we have to lock it first.
-        let mut original_parent = (*original_parent).lock();
+        self.proc_tree_lock.acquire();
 
         let mut guard = (*p).lock();
 
@@ -802,10 +776,12 @@ impl ProcessSystem {
         self.reparent(&mut guard);
 
         // Parent might be sleeping in wait().
-        original_parent.wakeup_proc();
+        (*guard.info.get_mut_unchecked().parent).wakeup();
+
         guard.deref_mut_info().xstate = status;
         guard.deref_mut_info().state = Procstate::ZOMBIE;
-        drop(original_parent);
+
+        self.proc_tree_lock.release();
 
         // Jump into the scheduler, never to return.
         guard.sched();
