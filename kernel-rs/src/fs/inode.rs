@@ -9,9 +9,9 @@
 //! kernel().file_system.superblock.startinode. Each inode has a number, indicating its
 //! position on the disk.
 //!
-//! The kernel keeps a cache of in-use inodes in memory
+//! The kernel keeps a table of in-use inodes in memory
 //! to provide a place for synchronizing access
-//! to inodes used by multiple processes. The cached
+//! to inodes used by multiple processes. The in-memory
 //! inodes include book-keeping information that is
 //! not stored on disk: ip->ref and ip->valid.
 //!
@@ -23,7 +23,7 @@
 //!   is non-zero. Inode::alloc() allocates, and Inode::put() frees if
 //!   the reference and link counts have fallen to zero.
 //!
-//! * Referencing in cache: an entry in the inode cache
+//! * Referencing in table: an entry in the inode table
 //!   is free if ip->ref is zero. Otherwise ip->ref tracks
 //!   the number of in-memory pointers to the entry (open
 //!   files and current directories). iget() finds or
@@ -31,7 +31,7 @@
 //!   decrements ref.
 //!
 //! * Valid: the information (type, size, &c) in an inode
-//!   cache entry is only correct when ip->valid is 1.
+//!   table entry is only correct when ip->valid is 1.
 //!   Inode::lock() reads the inode from
 //!   the disk and sets ip->valid, while Inode::put() clears
 //!   ip->valid if ip->ref has fallen to zero.
@@ -52,16 +52,16 @@
 //! and only lock it for short periods (e.g., in read()).
 //! The separation also helps avoid deadlock and races during
 //! pathname lookup. iget() increments ip->ref so that the inode
-//! stays cached and pointers to it remain valid.
+//! stays in the table and pointers to it remain valid.
 //!
 //! Many internal file system functions expect the caller to
 //! have locked the inodes involved; this lets callers create
 //! multi-step atomic operations.
 //!
-//! The kernel().icache.lock spin-lock protects the allocation of icache
+//! The kernel().itable.lock spin-lock protects the allocation of itable
 //! entries. Since ip->ref indicates whether an entry is free,
 //! and ip->dev and ip->inum indicate which i-node an entry
-//! holds, one must hold kernel().icache.lock while using any of those fields.
+//! holds, one must hold kernel().itable.lock while using any of those fields.
 //!
 //! An ip->lock sleep-lock protects all ip-> fields other than ref,
 //! dev, and inum.  One must hold ip->lock in order to
@@ -143,17 +143,17 @@ pub struct Dinode {
 }
 
 #[derive(Clone)]
-pub struct IcacheTag {}
+pub struct ItableTag {}
 
-impl Deref for IcacheTag {
+impl Deref for ItableTag {
     type Target = Spinlock<ArrayArena<Inode, NINODE>>;
 
     fn deref(&self) -> &Self::Target {
-        &kernel().icache
+        &kernel().itable
     }
 }
 
-pub type RcInode = Rc<<IcacheTag as Deref>::Target, IcacheTag>;
+pub type RcInode = Rc<<ItableTag as Deref>::Target, ItableTag>;
 
 /// InodeGuard implies that Sleeplock<InodeInner> is held by current thread and transaction is opened.
 ///
@@ -285,7 +285,7 @@ impl InodeGuard<'_> {
 impl InodeGuard<'_> {
     /// Copy a modified in-memory inode to disk.
     /// Must be called after every change to an ip->xxx field
-    /// that lives on disk, since i-node cache is write-through.
+    /// that lives on disk.
     pub unsafe fn update(&self) {
         let mut bp = Disk::read(self.dev, kernel().fs().superblock.iblock(self.inum));
         let mut dip: *mut Dinode = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
@@ -470,7 +470,7 @@ impl InodeGuard<'_> {
 
 impl ArenaObject for Inode {
     /// Drop a reference to an in-memory inode.
-    /// If that was the last reference, the inode cache entry can
+    /// If that was the last reference, the inode table entry can
     /// be recycled.
     /// If that was the last reference and the inode has no links
     /// to it, free the inode (and its content) on disk.
@@ -529,7 +529,7 @@ impl Inode {
     /// and return the in-memory copy. Does not lock
     /// the inode and does not read it from disk.
     pub fn get(dev: u32, inum: u32) -> RcInode {
-        IcacheTag {}
+        ItableTag {}
             .find_or_alloc(
                 |inode| inode.dev == dev && inode.inum == inum,
                 |inode| {
