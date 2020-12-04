@@ -211,6 +211,8 @@ pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
 
 /// User write()s to the console go here.
 unsafe fn consolewrite(src: UVAddr, n: i32) -> i32 {
+    // TODO(@coolofficials) Remove below comment.
+    // consolewrite() does not need console.lock() -- can lead to sleep() with lock held.
     kernel().console.get_mut_unchecked().write(src, n)
 }
 
