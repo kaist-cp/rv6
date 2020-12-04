@@ -275,7 +275,7 @@ struct ProcInfo {
     /// Process state.
     state: Procstate,
 
-    /// proc_tree_lock must be held when using this:
+    /// wait_lock must be held when using this:
     /// Parent process.
     parent: *mut Proc,
 
@@ -520,10 +520,11 @@ pub struct ProcessSystem {
     process_pool: [Proc; NPROC],
     initial_proc: *mut Proc,
 
-    // Protects parent/child relationships.
-    // Must be held when using p->parent.
+    // Helps ensure that wakeups of wait()ing
+    // parents are not lost. Helps obey the
+    // memory model when using p->parent.
     // Must be acquired before any p->lock.
-    proc_tree_lock: RawSpinlock,
+    wait_lock: RawSpinlock,
 }
 
 const fn proc_entry(_: usize) -> Proc {
@@ -536,7 +537,7 @@ impl ProcessSystem {
             nextpid: AtomicI32::new(1),
             process_pool: array_const_fn_init![proc_entry; 64],
             initial_proc: ptr::null_mut(),
-            proc_tree_lock: RawSpinlock::new("proc_tree"),
+            wait_lock: RawSpinlock::new("wait_lock"),
         }
     }
 
@@ -582,7 +583,7 @@ impl ProcessSystem {
     }
 
     /// Pass p's abandoned children to init.
-    /// Caller must hold ProcGuard::proc_tree_lock.
+    /// Caller must hold ProcGuard::wait_lock.
     unsafe fn reparent(&self, p: *mut Proc) {
         for pp in &self.process_pool {
             if pp.info.get_mut_unchecked().parent == p {
@@ -697,9 +698,9 @@ impl ProcessSystem {
         let child = np.raw();
         drop(np);
 
-        self.proc_tree_lock.acquire();
+        self.wait_lock.acquire();
         (*child).info.get_mut_unchecked().parent = p;
-        self.proc_tree_lock.release();
+        self.wait_lock.release();
 
         // let mut np = ProcGuard::from_raw(child);
         let mut np = (*child).lock();
@@ -714,7 +715,7 @@ impl ProcessSystem {
         let p: *mut Proc = myproc();
         let data = &mut *(*p).data.get();
 
-        self.proc_tree_lock.acquire();
+        self.wait_lock.acquire();
 
         loop {
             // Scan through pool looking for exited children.
@@ -741,11 +742,11 @@ impl ProcessSystem {
                                 .is_err()
                         {
                             drop(np);
-                            self.proc_tree_lock.release();
+                            self.wait_lock.release();
                             return -1;
                         }
                         freeproc(np);
-                        self.proc_tree_lock.release();
+                        self.wait_lock.release();
                         return pid;
                     }
                 }
@@ -753,13 +754,13 @@ impl ProcessSystem {
 
             // No point waiting if we don't have any children.
             if !havekids || (*p).killed() {
-                self.proc_tree_lock.release();
+                self.wait_lock.release();
                 return -1;
             }
 
             // Wait for a child to exit.
             //DOC: wait-sleep
-            ((*p).info.get_mut_unchecked().child_waitchannel).sleep_raw(&self.proc_tree_lock);
+            ((*p).info.get_mut_unchecked().child_waitchannel).sleep_raw(&self.wait_lock);
         }
     }
 
@@ -773,7 +774,7 @@ impl ProcessSystem {
 
         data.close_files();
 
-        self.proc_tree_lock.acquire();
+        self.wait_lock.acquire();
 
         // Give any children to init.
         self.reparent(p);
@@ -786,7 +787,7 @@ impl ProcessSystem {
         guard.deref_mut_info().xstate = status;
         guard.deref_mut_info().state = Procstate::ZOMBIE;
 
-        self.proc_tree_lock.release();
+        self.wait_lock.release();
 
         // Jump into the scheduler, never to return.
         guard.sched();
