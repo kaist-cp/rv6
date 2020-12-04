@@ -737,6 +737,8 @@ impl ProcessSystem {
                                 )
                                 .is_err()
                         {
+                            drop(np);
+                            self.proc_tree_lock.release();
                             return -1;
                         }
                         freeproc(np);
