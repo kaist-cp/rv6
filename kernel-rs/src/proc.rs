@@ -275,6 +275,7 @@ struct ProcInfo {
     /// Process state.
     state: Procstate,
 
+    /// proc_tree_lock must be held when using this:
     /// Parent process.
     parent: *mut Proc,
 
@@ -582,9 +583,9 @@ impl ProcessSystem {
 
     /// Pass p's abandoned children to init.
     /// Caller must hold ProcGuard::proc_tree_lock.
-    unsafe fn reparent(&self, p: &mut ProcGuard) {
+    unsafe fn reparent(&self, p: *mut Proc) {
         for pp in &self.process_pool {
-            if pp.info.get_mut_unchecked().parent == p.raw() as *mut _ {
+            if pp.info.get_mut_unchecked().parent == p {
                 pp.info.get_mut_unchecked().parent = self.initial_proc;
                 (&mut *self.initial_proc).wakeup();
             }
@@ -720,7 +721,9 @@ impl ProcessSystem {
             let mut havekids = false;
             for np in &self.process_pool {
                 if np.info.get_mut_unchecked().parent == p {
+                    // Make sure the child isn't still in exit() or swtch().
                     let mut np = np.lock();
+
                     havekids = true;
                     let state = np.deref_info().state;
                     if state == Procstate::ZOMBIE {
@@ -772,13 +775,13 @@ impl ProcessSystem {
 
         self.proc_tree_lock.acquire();
 
-        let mut guard = (*p).lock();
-
         // Give any children to init.
-        self.reparent(&mut guard);
+        self.reparent(p);
 
         // Parent might be sleeping in wait().
-        (*guard.info.get_mut_unchecked().parent).wakeup();
+        (*(*p).info.get_mut_unchecked().parent).wakeup();
+
+        let mut guard = (*p).lock();
 
         guard.deref_mut_info().xstate = status;
         guard.deref_mut_info().state = Procstate::ZOMBIE;
