@@ -25,6 +25,7 @@ use crate::{
 };
 
 /// The kernel.
+// TODO(rv6): remove pub from `pub static mut KERNEL`.
 pub static mut KERNEL: Kernel = Kernel::zero();
 
 /// After intialized, the kernel is safe to immutably access.
