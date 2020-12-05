@@ -25,7 +25,8 @@ use crate::{
 };
 
 /// The kernel.
-static mut KERNEL: Kernel = Kernel::zero();
+// TODO(rv6): remove pub from `pub static mut KERNEL`.
+pub static mut KERNEL: Kernel = Kernel::zero();
 
 /// After intialized, the kernel is safe to immutably access.
 #[inline]
@@ -73,7 +74,7 @@ pub struct Kernel {
 
     pub ftable: Spinlock<ArrayArena<File, NFILE>>,
 
-    pub icache: Spinlock<ArrayArena<Inode, NINODE>>,
+    pub itable: Spinlock<ArrayArena<Inode, NINODE>>,
 
     pub file_system: Once<FileSystem>,
 }
@@ -88,7 +89,7 @@ const fn ftable_entry(_: usize) -> ArrayEntry<File> {
     ArrayEntry::new(File::zero())
 }
 
-const fn icache_entry(_: usize) -> ArrayEntry<Inode> {
+const fn itable_entry(_: usize) -> ArrayEntry<Inode> {
     ArrayEntry::new(Inode::zero())
 }
 
@@ -118,9 +119,9 @@ impl Kernel {
                 "FTABLE",
                 ArrayArena::new(array_const_fn_init![ftable_entry; 100]),
             ),
-            icache: Spinlock::new(
-                "ICACHE",
-                ArrayArena::new(array_const_fn_init![icache_entry; 50]),
+            itable: Spinlock::new(
+                "ITABLE",
+                ArrayArena::new(array_const_fn_init![itable_entry; 50]),
             ),
             file_system: Once::new(),
         }
@@ -245,7 +246,7 @@ pub unsafe fn kernel_main() -> ! {
         kernel().page_table.kvminithart();
 
         // Process system.
-        procinit(&mut KERNEL.procs, &mut KERNEL.page_table);
+        procinit(&mut KERNEL.procs);
 
         // Trap vectors.
         trapinit();

@@ -164,6 +164,7 @@ impl File {
                             v
                         })?;
                     if r != bytes_to_write as usize {
+                        // error from InodeGuard::write
                         break;
                     }
                     bytes_written += r;
