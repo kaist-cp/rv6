@@ -5,11 +5,10 @@
 /// qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 use crate::{
     bio::{Buf, BufUnlocked},
-    kernel::kernel,
     page::RawPage,
     param::BSIZE,
     riscv::{PGSHIFT, PGSIZE},
-    sleepablelock::SleepablelockGuard,
+    sleepablelock::{Sleepablelock, SleepablelockGuard},
     virtio::*,
 };
 
@@ -208,6 +207,25 @@ impl DescriptorPool {
     }
 }
 
+impl Sleepablelock<Disk> {
+    /// Return a locked Buf with the `latest` contents of the indicated block.
+    /// If buf.valid is true, we don't need to access Disk.
+    pub fn read(&self, dev: u32, blockno: u32) -> Buf {
+        let mut buf = BufUnlocked::new(dev, blockno).lock();
+        if !buf.deref_inner().valid {
+            unsafe {
+                Disk::virtio_rw(&mut self.lock(), &mut buf, false);
+            }
+            buf.deref_mut_inner().valid = true;
+        }
+        buf
+    }
+
+    pub fn write(&self, b: &mut Buf) {
+        unsafe { Disk::virtio_rw(&mut self.lock(), b, true) }
+    }
+}
+
 impl Disk {
     pub const fn zero() -> Self {
         Self {
@@ -218,23 +236,6 @@ impl Disk {
             info: [InflightInfo::zero(); NUM],
             ops: [VirtIOBlockOutHeader::zero(); NUM],
         }
-    }
-
-    /// Return a locked Buf with the `latest` contents of the indicated block.
-    /// If buf.valid is true, we don't need to access Disk.
-    pub fn read(dev: u32, blockno: u32) -> Buf {
-        let mut buf = BufUnlocked::new(dev, blockno).lock();
-        if !buf.deref_inner().valid {
-            unsafe {
-                Self::virtio_rw(&mut kernel().disk.lock(), &mut buf, false);
-            }
-            buf.deref_mut_inner().valid = true;
-        }
-        buf
-    }
-
-    pub fn write(b: &mut Buf) {
-        unsafe { Self::virtio_rw(&mut kernel().disk.lock(), b, true) }
     }
 
     pub unsafe fn virtio_rw(this: &mut SleepablelockGuard<'_, Self>, b: &mut Buf, write: bool) {
