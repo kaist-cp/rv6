@@ -208,6 +208,6 @@ impl FileTable {
             *p = File::new(typ, readable, writable);
         })?;
 
-        Some(unsafe { Rc::from_unchecked(&kernel().ftable, inner) })
+        Some(unsafe { Rc::from_unchecked(self, inner) })
     }
 }
