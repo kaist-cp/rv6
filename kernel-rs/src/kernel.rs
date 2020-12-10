@@ -6,12 +6,12 @@ use crate::{
     arena::{ArrayArena, ArrayEntry, MruArena, MruEntry},
     bio::BufEntry,
     console::{consoleinit, Console, Printer},
-    file::{Devsw, File},
+    file::{Devsw, FileTable},
     fs::{FileSystem, Inode},
     kalloc::{end, kinit, Kmem},
     memlayout::PHYSTOP,
     page::{Page, RawPage},
-    param::{NBUF, NCPU, NDEV, NFILE, NINODE},
+    param::{NBUF, NCPU, NDEV, NINODE},
     plic::{plicinit, plicinithart},
     println,
     proc::{cpuid, procinit, scheduler, Cpu, ProcessSystem},
@@ -72,7 +72,7 @@ pub struct Kernel {
 
     pub devsw: [Devsw; NDEV],
 
-    pub ftable: Spinlock<ArrayArena<File, NFILE>>,
+    pub ftable: FileTable,
 
     pub itable: Spinlock<ArrayArena<Inode, NINODE>>,
 
@@ -83,10 +83,6 @@ pub struct Kernel {
 
 const fn bcache_entry(_: usize) -> MruEntry<BufEntry> {
     MruEntry::new(BufEntry::zero())
-}
-
-const fn ftable_entry(_: usize) -> ArrayEntry<File> {
-    ArrayEntry::new(File::zero())
 }
 
 const fn itable_entry(_: usize) -> ArrayEntry<Inode> {
@@ -115,10 +111,7 @@ impl Kernel {
                 read: None,
                 write: None,
             }; NDEV],
-            ftable: Spinlock::new(
-                "FTABLE",
-                ArrayArena::new(array_const_fn_init![ftable_entry; 100]),
-            ),
+            ftable: FileTable::zero(),
             itable: Spinlock::new(
                 "ITABLE",
                 ArrayArena::new(array_const_fn_init![itable_entry; 50]),

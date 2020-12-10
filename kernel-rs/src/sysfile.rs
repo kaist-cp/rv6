@@ -23,7 +23,7 @@ use crate::{
 
 use core::{cell::UnsafeCell, mem, ptr, slice};
 
-impl RcFile {
+impl RcFile<'static> {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
     unsafe fn fdalloc(self) -> Result<i32, Self> {
@@ -42,7 +42,7 @@ impl RcFile {
 
 /// Fetch the nth word-sized system call argument as a file descriptor
 /// and return both the descriptor and the corresponding struct file.
-unsafe fn argfd(n: usize) -> Result<(i32, &'static RcFile), ()> {
+unsafe fn argfd(n: usize) -> Result<(i32, &'static RcFile<'static>), ()> {
     let fd = argint(n)?;
     if fd < 0 || fd >= NOFILE as i32 {
         return Err(());
@@ -208,7 +208,7 @@ impl Kernel {
         usize::MAX
     }
 
-    pub unsafe fn sys_open(&self) -> usize {
+    pub unsafe fn sys_open(&'static self) -> usize {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
         let path = Path::new(path);
@@ -251,7 +251,7 @@ impl Kernel {
             }
         };
         let f = some_or!(
-            RcFile::alloc(
+            self.ftable.alloc_file(
                 filetype,
                 !omode.intersects(FcntlFlags::O_WRONLY),
                 omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)

@@ -310,7 +310,7 @@ pub struct ProcData {
     context: Context,
 
     /// Open files.
-    pub open_files: [Option<RcFile>; NOFILE],
+    pub open_files: [Option<RcFile<'static>>; NOFILE],
 
     /// Current directory.
     pub cwd: Option<RcInode>,
