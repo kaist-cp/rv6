@@ -313,7 +313,7 @@ pub struct ProcData {
     pub open_files: [Option<RcFile<'static>>; NOFILE],
 
     /// Current directory.
-    pub cwd: Option<RcInode>,
+    pub cwd: Option<RcInode<'static>>,
 }
 
 /// Per-process state.

@@ -3,15 +3,14 @@ use core::sync::atomic::{spin_loop_hint, AtomicBool, Ordering};
 use spin::Once;
 
 use crate::{
-    arena::{ArrayArena, ArrayEntry},
     bio::Bcache,
     console::{consoleinit, Console, Printer},
     file::{Devsw, FileTable},
-    fs::{FileSystem, Inode},
+    fs::{FileSystem, Itable},
     kalloc::{end, kinit, Kmem},
     memlayout::PHYSTOP,
     page::{Page, RawPage},
-    param::{NCPU, NDEV, NINODE},
+    param::{NCPU, NDEV},
     plic::{plicinit, plicinithart},
     println,
     proc::{cpuid, procinit, scheduler, Cpu, ProcessSystem},
@@ -74,14 +73,9 @@ pub struct Kernel {
 
     pub ftable: FileTable,
 
-    pub itable: Spinlock<ArrayArena<Inode, NINODE>>,
+    pub itable: Itable,
 
     pub file_system: Once<FileSystem>,
-}
-
-// TODO(rv6): ugly tricks with magic numbers. Fix it...
-const fn itable_entry(_: usize) -> ArrayEntry<Inode> {
-    ArrayEntry::new(Inode::zero())
 }
 
 impl Kernel {
@@ -104,10 +98,7 @@ impl Kernel {
                 write: None,
             }; NDEV],
             ftable: FileTable::zero(),
-            itable: Spinlock::new(
-                "ITABLE",
-                ArrayArena::new(array_const_fn_init![itable_entry; 50]),
-            ),
+            itable: Itable::zero(),
             file_system: Once::new(),
         }
     }
