@@ -113,7 +113,7 @@ impl Deref for AllocatedPipe {
 }
 
 impl AllocatedPipe {
-    pub unsafe fn alloc() -> Result<(RcFile, RcFile), ()> {
+    pub unsafe fn alloc() -> Result<(RcFile<'static>, RcFile<'static>), ()> {
         let page = kernel().alloc().ok_or(())?;
         let ptr = page.into_usize() as *mut Pipe;
 
@@ -132,9 +132,13 @@ impl AllocatedPipe {
             read_waitchannel: WaitChannel::new(),
             write_waitchannel: WaitChannel::new(),
         };
-        let f0 = RcFile::alloc(FileType::Pipe { pipe: Self { ptr } }, true, false)
+        let f0 = kernel()
+            .ftable
+            .alloc_file(FileType::Pipe { pipe: Self { ptr } }, true, false)
             .ok_or_else(|| kernel().free(Page::from_usize(ptr as _)))?;
-        let f1 = RcFile::alloc(FileType::Pipe { pipe: Self { ptr } }, false, true)
+        let f1 = kernel()
+            .ftable
+            .alloc_file(FileType::Pipe { pipe: Self { ptr } }, false, true)
             .ok_or_else(|| kernel().free(Page::from_usize(ptr as _)))?;
 
         Ok((f0, f1))

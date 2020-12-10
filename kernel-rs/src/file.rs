@@ -1,7 +1,7 @@
 //! Support functions for system calls that involve file descriptors.
 
 use crate::{
-    arena::{Arena, ArenaObject, ArrayArena, Rc},
+    arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
     fs::RcInode,
     kernel::kernel,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
@@ -13,15 +13,6 @@ use crate::{
 };
 use core::{cell::UnsafeCell, cmp, convert::TryFrom, mem, ops::Deref, slice};
 
-pub struct File {
-    pub typ: FileType,
-    readable: bool,
-    writable: bool,
-}
-
-// TODO: will be infered as we wrap *mut Pipe and *mut Inode.
-unsafe impl Send for File {}
-
 pub enum FileType {
     None,
     Pipe { pipe: AllocatedPipe },
@@ -29,11 +20,13 @@ pub enum FileType {
     Device { ip: RcInode, major: u16 },
 }
 
-impl Default for FileType {
-    fn default() -> Self {
-        Self::None
-    }
+pub struct File {
+    pub typ: FileType,
+    readable: bool,
+    writable: bool,
 }
+
+pub type FileTable = Spinlock<ArrayArena<File, NFILE>>;
 
 /// map major device number to device functions.
 #[derive(Copy, Clone)]
@@ -42,26 +35,14 @@ pub struct Devsw {
     pub write: Option<unsafe fn(_: UVAddr, _: i32) -> i32>,
 }
 
-#[derive(Clone)]
-pub struct FTableTag {}
+pub type RcFile<'s> = Rc<FileTable, &'s FileTable>;
 
-impl Deref for FTableTag {
-    type Target = Spinlock<ArrayArena<File, NFILE>>;
+// TODO: will be infered as we wrap *mut Pipe and *mut Inode.
+unsafe impl Send for File {}
 
-    fn deref(&self) -> &Self::Target {
-        &kernel().ftable
-    }
-}
-
-pub type RcFile = Rc<<FTableTag as Deref>::Target, FTableTag>;
-
-impl RcFile {
-    /// Allocate a file structure.
-    pub fn alloc(typ: FileType, readable: bool, writable: bool) -> Option<Self> {
-        // TODO: idiomatic initialization.
-        FTableTag {}.alloc(|p| {
-            *p = File::new(typ, readable, writable);
-        })
+impl Default for FileType {
+    fn default() -> Self {
+        Self::None
     }
 }
 
@@ -197,5 +178,28 @@ impl ArenaObject for File {
                 _ => (),
             }
         });
+    }
+}
+
+impl FileTable {
+    pub const fn zero() -> Self {
+        const fn ftable_entry(_: usize) -> ArrayEntry<File> {
+            ArrayEntry::new(File::zero())
+        }
+
+        Spinlock::new(
+            "FTABLE",
+            ArrayArena::new(array_const_fn_init![ftable_entry; 100]),
+        )
+    }
+
+    /// Allocate a file structure.
+    pub fn alloc_file(&self, typ: FileType, readable: bool, writable: bool) -> Option<RcFile<'_>> {
+        // TODO: idiomatic initialization.
+        let inner = self.alloc(|p| {
+            *p = File::new(typ, readable, writable);
+        })?;
+
+        Some(unsafe { Rc::from_unchecked(&kernel().ftable, inner) })
     }
 }

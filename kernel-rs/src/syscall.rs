@@ -73,7 +73,7 @@ pub unsafe fn argstr(n: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
 }
 
 impl Kernel {
-    pub unsafe fn syscall(&self) {
+    pub unsafe fn syscall(&'static self) {
         let p: *mut Proc = myproc();
         let mut data = &mut *(*p).data.get();
         let num: i32 = (*data.trapframe).a7 as i32;
