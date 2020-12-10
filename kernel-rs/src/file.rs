@@ -15,9 +15,17 @@ use core::{cell::UnsafeCell, cmp, convert::TryFrom, mem, ops::Deref, slice};
 
 pub enum FileType {
     None,
-    Pipe { pipe: AllocatedPipe },
-    Inode { ip: RcInode, off: UnsafeCell<u32> },
-    Device { ip: RcInode, major: u16 },
+    Pipe {
+        pipe: AllocatedPipe,
+    },
+    Inode {
+        ip: RcInode<'static>,
+        off: UnsafeCell<u32>,
+    },
+    Device {
+        ip: RcInode<'static>,
+        major: u16,
+    },
 }
 
 pub struct File {

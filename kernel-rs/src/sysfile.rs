@@ -63,7 +63,7 @@ unsafe fn create<F, T>(
     minor: u16,
     tx: &FsTransaction<'_>,
     f: F,
-) -> Result<(RcInode, T), ()>
+) -> Result<(RcInode<'static>, T), ()>
 where
     F: FnOnce(&mut InodeGuard<'_>) -> T,
 {

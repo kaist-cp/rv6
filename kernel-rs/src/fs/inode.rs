@@ -70,7 +70,7 @@
 use core::{mem, ops::Deref, ptr};
 
 use crate::{
-    arena::{Arena, ArenaObject, ArrayArena, Rc},
+    arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
     fs::FsTransaction,
     kernel::kernel,
     param::{BSIZE, NINODE},
@@ -141,18 +141,9 @@ pub struct Dinode {
     addr_indirect: u32,
 }
 
-#[derive(Clone)]
-pub struct ItableTag {}
+pub type Itable = Spinlock<ArrayArena<Inode, NINODE>>;
 
-impl Deref for ItableTag {
-    type Target = Spinlock<ArrayArena<Inode, NINODE>>;
-
-    fn deref(&self) -> &Self::Target {
-        &kernel().itable
-    }
-}
-
-pub type RcInode = Rc<<ItableTag as Deref>::Target, ItableTag>;
+pub type RcInode<'s> = Rc<Itable, &'s Itable>;
 
 /// InodeGuard implies that Sleeplock<InodeInner> is held by current thread and transaction is opened.
 ///
@@ -265,7 +256,7 @@ impl InodeGuard<'_> {
 
     /// Look for a directory entry in a directory.
     /// If found, return the entry and byte offset of entry.
-    pub fn dirlookup(&mut self, name: &FileName) -> Result<(RcInode, u32), ()> {
+    pub fn dirlookup(&mut self, name: &FileName) -> Result<(RcInode<'static>, u32), ()> {
         let mut de: Dirent = Default::default();
 
         assert_eq!(self.deref_inner().typ, T_DIR, "dirlookup not DIR");
@@ -274,7 +265,7 @@ impl InodeGuard<'_> {
             de.read_entry(self, off, "dirlookup read");
             if de.inum != 0 && name == de.get_name() {
                 // entry matches path element
-                return Ok((Inode::get(self.dev, de.inum as u32), off));
+                return Ok((kernel().itable.get_inode(self.dev, de.inum as u32), off));
             }
         }
         Err(())
@@ -554,26 +545,10 @@ impl Inode {
         InodeGuard { inode: self, tx }
     }
 
-    /// Find the inode with number inum on device dev
-    /// and return the in-memory copy. Does not lock
-    /// the inode and does not read it from disk.
-    pub fn get(dev: u32, inum: u32) -> RcInode {
-        ItableTag {}
-            .find_or_alloc(
-                |inode| inode.dev == dev && inode.inum == inum,
-                |inode| {
-                    inode.dev = dev;
-                    inode.inum = inum;
-                    inode.inner.get_mut().valid = false;
-                },
-            )
-            .expect("iget: no inodes")
-    }
-
     /// Allocate an inode on device dev.
     /// Mark it as allocated by  giving it type type.
     /// Returns an unlocked but allocated and referenced inode.
-    pub unsafe fn alloc(dev: u32, typ: i16, tx: &FsTransaction<'_>) -> RcInode {
+    pub unsafe fn alloc(dev: u32, typ: i16, tx: &FsTransaction<'_>) -> RcInode<'static> {
         for inum in 1..kernel().fs().superblock.ninodes {
             let mut bp = kernel()
                 .disk
@@ -588,7 +563,7 @@ impl Inode {
 
                 // mark it allocated on the disk
                 tx.write(bp);
-                return Inode::get(dev, inum);
+                return kernel().itable.get_inode(dev, inum);
             }
         }
         panic!("Inode::alloc: no inodes");
@@ -624,5 +599,35 @@ impl Inode {
             nlink: inner.nlink,
             size: inner.size as usize,
         }
+    }
+}
+
+impl Itable {
+    pub const fn zero() -> Self {
+        const fn itable_entry(_: usize) -> ArrayEntry<Inode> {
+            ArrayEntry::new(Inode::zero())
+        }
+
+        Spinlock::new(
+            "ITABLE",
+            ArrayArena::new(array_const_fn_init![itable_entry; 50]),
+        )
+    }
+
+    /// Find the inode with number inum on device dev
+    /// and return the in-memory copy. Does not lock
+    /// the inode and does not read it from disk.
+    pub fn get_inode(&self, dev: u32, inum: u32) -> RcInode<'_> {
+        let inner = self
+            .find_or_alloc(
+                |inode| inode.dev == dev && inode.inum == inum,
+                |inode| {
+                    inode.dev = dev;
+                    inode.inum = inum;
+                    inode.inner.get_mut().valid = false;
+                },
+            )
+            .expect("iget: no inodes");
+        unsafe { Rc::from_unchecked(&kernel().itable, inner) }
     }
 }

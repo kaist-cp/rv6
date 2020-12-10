@@ -2,10 +2,9 @@ use core::cmp;
 use core::mem;
 use cstr_core::CStr;
 
-use crate::param::ROOTDEV;
-use crate::proc::myproc;
+use crate::{kernel::kernel, param::ROOTDEV, proc::myproc};
 
-use super::{FsTransaction, Inode, RcInode, DIRSIZ, ROOTINO, T_DIR};
+use super::{FsTransaction, RcInode, DIRSIZ, ROOTINO, T_DIR};
 
 #[derive(PartialEq)]
 #[repr(transparent)]
@@ -58,15 +57,18 @@ impl Path {
 
     // TODO: Following functions should return a safe type rather than `*mut Inode`.
 
-    pub unsafe fn root() -> RcInode {
-        Inode::get(ROOTDEV as u32, ROOTINO)
+    pub unsafe fn root() -> RcInode<'static> {
+        kernel().itable.get_inode(ROOTDEV as u32, ROOTINO)
     }
 
-    pub unsafe fn namei(&self, tx: &FsTransaction<'_>) -> Result<RcInode, ()> {
+    pub unsafe fn namei(&self, tx: &FsTransaction<'_>) -> Result<RcInode<'static>, ()> {
         Ok(self.namex(false, tx)?.0)
     }
 
-    pub unsafe fn nameiparent(&self, tx: &FsTransaction<'_>) -> Result<(RcInode, &FileName), ()> {
+    pub unsafe fn nameiparent(
+        &self,
+        tx: &FsTransaction<'_>,
+    ) -> Result<(RcInode<'static>, &FileName), ()> {
         let (ip, name_in_path) = self.namex(true, tx)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
@@ -140,7 +142,7 @@ impl Path {
         &self,
         parent: bool,
         tx: &FsTransaction<'_>,
-    ) -> Result<(RcInode, Option<&FileName>), ()> {
+    ) -> Result<(RcInode<'static>, Option<&FileName>), ()> {
         let mut ptr = if self.is_absolute() {
             Self::root()
         } else {

@@ -20,7 +20,9 @@ mod log;
 mod path;
 mod superblock;
 
-pub use inode::{Dinode, Dirent, Inode, InodeGuard, InodeInner, RcInode, DIRENT_SIZE, DIRSIZ};
+pub use inode::{
+    Dinode, Dirent, Inode, InodeGuard, InodeInner, Itable, RcInode, DIRENT_SIZE, DIRSIZ,
+};
 pub use log::Log;
 pub use path::{FileName, Path};
 pub use superblock::{Superblock, BPB, IPB};
