@@ -12,7 +12,7 @@
 //! * Only one process at a time can use a buffer, so do not keep them longer than necessary.
 
 use crate::{
-    arena::{Arena, ArenaObject, MruArena, Rc},
+    arena::{Arena, ArenaObject, MruArena, MruEntry, Rc},
     kernel::kernel,
     param::{BSIZE, NBUF},
     proc::WaitChannel,
@@ -69,38 +69,29 @@ impl BufInner {
     }
 }
 
-#[derive(Clone)]
-pub struct BcacheTag {}
+pub type Bcache = Spinlock<MruArena<BufEntry, NBUF>>;
 
-impl Deref for BcacheTag {
-    type Target = Spinlock<MruArena<BufEntry, NBUF>>;
+pub type BufUnlocked<'s> = Rc<Bcache, &'s Bcache>;
 
-    fn deref(&self) -> &Self::Target {
-        &kernel().bcache
-    }
+pub struct Buf<'s> {
+    inner: BufUnlocked<'s>,
 }
 
-pub type BufUnlocked = Rc<<BcacheTag as Deref>::Target, BcacheTag>;
-
-pub struct Buf {
-    inner: BufUnlocked,
-}
-
-impl Deref for Buf {
-    type Target = BufUnlocked;
+impl<'s> Deref for Buf<'s> {
+    type Target = BufUnlocked<'s>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-impl DerefMut for Buf {
+impl DerefMut for Buf<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl Buf {
+impl<'s> Buf<'s> {
     pub fn deref_inner(&self) -> &BufInner {
         unsafe { self.inner.inner.get_mut_unchecked() }
     }
@@ -109,7 +100,7 @@ impl Buf {
         unsafe { self.inner.inner.get_mut_unchecked() }
     }
 
-    pub fn unlock(self) -> BufUnlocked {
+    pub fn unlock(self) -> BufUnlocked<'s> {
         unsafe {
             self.inner.inner.unlock();
             mem::transmute(self)
@@ -117,7 +108,7 @@ impl Buf {
     }
 }
 
-impl Drop for Buf {
+impl Drop for Buf<'_> {
     fn drop(&mut self) {
         unsafe {
             self.inner.inner.unlock();
@@ -125,10 +116,21 @@ impl Drop for Buf {
     }
 }
 
-impl BufUnlocked {
+impl Bcache {
+    pub const fn zero() -> Self {
+        const fn bcache_entry(_: usize) -> MruEntry<BufEntry> {
+            MruEntry::new(BufEntry::zero())
+        }
+
+        Spinlock::new(
+            "BCACHE",
+            MruArena::new(array_const_fn_init![bcache_entry; 30]),
+        )
+    }
+
     /// Return a unlocked buf with the contents of the indicated block.
-    pub fn new(dev: u32, blockno: u32) -> Self {
-        BcacheTag {}
+    pub fn buf(&self, dev: u32, blockno: u32) -> BufUnlocked<'_> {
+        let inner = self
             .find_or_alloc(
                 |buf| buf.dev == dev && buf.blockno == blockno,
                 |buf| {
@@ -137,15 +139,21 @@ impl BufUnlocked {
                     buf.inner.get_mut().valid = false;
                 },
             )
-            .expect("[BufGuard::new] no buffers")
+            .expect("[BufGuard::new] no buffers");
+
+        unsafe { Rc::from_unchecked(&kernel().bcache, inner) }
     }
 
     /// Retrieves BufUnlocked without increasing reference count.
-    pub fn unforget(dev: u32, blockno: u32) -> Option<Self> {
-        BcacheTag {}.unforget(|buf| buf.dev == dev && buf.blockno == blockno)
-    }
+    pub fn buf_unforget(&self, dev: u32, blockno: u32) -> Option<BufUnlocked<'_>> {
+        let inner = self.unforget(|buf| buf.dev == dev && buf.blockno == blockno)?;
 
-    pub fn lock(self) -> Buf {
+        Some(unsafe { Rc::from_unchecked(&kernel().bcache, inner) })
+    }
+}
+
+impl<'s> BufUnlocked<'s> {
+    pub fn lock(self) -> Buf<'s> {
         mem::forget(self.inner.lock());
         Buf { inner: self }
     }

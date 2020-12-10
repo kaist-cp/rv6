@@ -13,13 +13,7 @@
 
 use core::{cmp, mem, ptr};
 
-use crate::{
-    bio::{Buf, BufUnlocked},
-    kernel::kernel,
-    param::BSIZE,
-    sleepablelock::Sleepablelock,
-    stat::T_DIR,
-};
+use crate::{bio::Buf, kernel::kernel, param::BSIZE, sleepablelock::Sleepablelock, stat::T_DIR};
 
 mod inode;
 mod log;
@@ -90,13 +84,13 @@ impl FsTransaction<'_> {
     ///   bp = kernel().disk.read(...)
     ///   modify bp->data[]
     ///   write(bp)
-    unsafe fn write(&self, b: Buf) {
+    unsafe fn write(&self, b: Buf<'static>) {
         self.fs.log.lock().write(b);
     }
 
     /// Zero a block.
     unsafe fn bzero(&self, dev: u32, bno: u32) {
-        let mut buf = BufUnlocked::new(dev, bno).lock();
+        let mut buf = kernel().bcache.buf(dev, bno).lock();
         ptr::write_bytes(buf.deref_mut_inner().data.as_mut_ptr(), 0, BSIZE);
         buf.deref_mut_inner().valid = true;
         self.write(buf);

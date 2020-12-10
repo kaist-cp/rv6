@@ -42,7 +42,7 @@ pub struct Log {
     committing: bool,
 
     /// Contents of the header block, used to keep track in memory of logged block# before commit.
-    lh: ArrayVec<[BufUnlocked; LOGSIZE]>,
+    lh: ArrayVec<[BufUnlocked<'static>; LOGSIZE]>,
 }
 
 /// Contents of the header block, used for the on-disk header block.
@@ -104,8 +104,12 @@ impl Log {
         let mut buf = kernel().disk.read(self.dev as u32, self.start as u32);
         let lh = buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader;
         for b in &(*lh).block[0..(*lh).n as usize] {
-            self.lh
-                .push(BufUnlocked::unforget(self.dev as u32, *b as u32).unwrap());
+            self.lh.push(
+                kernel()
+                    .bcache
+                    .buf_unforget(self.dev as u32, *b as u32)
+                    .unwrap(),
+            );
         }
     }
 
@@ -223,7 +227,7 @@ impl Log {
     ///   bp = Disk::read(...)
     ///   modify bp->data[]
     ///   write(bp)
-    pub unsafe fn write(&mut self, b: Buf) {
+    pub unsafe fn write(&mut self, b: Buf<'static>) {
         assert!(
             !(self.lh.len() >= LOGSIZE || self.lh.len() as i32 >= self.size - 1),
             "too big a transaction"

@@ -3,15 +3,15 @@ use core::sync::atomic::{spin_loop_hint, AtomicBool, Ordering};
 use spin::Once;
 
 use crate::{
-    arena::{ArrayArena, ArrayEntry, MruArena, MruEntry},
-    bio::BufEntry,
+    arena::{ArrayArena, ArrayEntry},
+    bio::Bcache,
     console::{consoleinit, Console, Printer},
     file::{Devsw, FileTable},
     fs::{FileSystem, Inode},
     kalloc::{end, kinit, Kmem},
     memlayout::PHYSTOP,
     page::{Page, RawPage},
-    param::{NBUF, NCPU, NDEV, NINODE},
+    param::{NCPU, NDEV, NINODE},
     plic::{plicinit, plicinithart},
     println,
     proc::{cpuid, procinit, scheduler, Cpu, ProcessSystem},
@@ -58,7 +58,7 @@ pub struct Kernel {
 
     cpus: [Cpu; NCPU],
 
-    pub bcache: Spinlock<MruArena<BufEntry, NBUF>>,
+    pub bcache: Bcache,
 
     /// Memory for virtio descriptors `&c` for queue 0.
     ///
@@ -80,11 +80,6 @@ pub struct Kernel {
 }
 
 // TODO(rv6): ugly tricks with magic numbers. Fix it...
-
-const fn bcache_entry(_: usize) -> MruEntry<BufEntry> {
-    MruEntry::new(BufEntry::zero())
-}
-
 const fn itable_entry(_: usize) -> ArrayEntry<Inode> {
     ArrayEntry::new(Inode::zero())
 }
@@ -101,10 +96,7 @@ impl Kernel {
             ticks: Sleepablelock::new("time", 0),
             procs: ProcessSystem::zero(),
             cpus: [Cpu::new(); NCPU],
-            bcache: Spinlock::new(
-                "BCACHE",
-                MruArena::new(array_const_fn_init![bcache_entry; 30]),
-            ),
+            bcache: Bcache::zero(),
             virtqueue: [RawPage::DEFAULT, RawPage::DEFAULT],
             disk: Sleepablelock::new("virtio_disk", Disk::zero()),
             devsw: [Devsw {
