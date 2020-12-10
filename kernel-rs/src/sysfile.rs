@@ -7,8 +7,8 @@
 use crate::{
     fcntl::FcntlFlags,
     file::{FileType, RcFile},
-    fs::{Dirent, FileName, FsTransaction, Inode, InodeGuard, Path, RcInode, DIRENT_SIZE},
-    kernel::Kernel,
+    fs::{Dirent, FileName, FsTransaction, InodeGuard, Path, RcInode, DIRENT_SIZE},
+    kernel::{kernel, Kernel},
     ok_or,
     page::Page,
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
@@ -79,7 +79,7 @@ where
         }
         return Err(());
     }
-    let ptr2 = Inode::alloc(dp.dev, typ, tx);
+    let ptr2 = kernel().itable.alloc_inode(dp.dev, typ, tx);
     let mut ip = ptr2.lock(tx);
     ip.deref_inner_mut().major = major;
     ip.deref_inner_mut().minor = minor;

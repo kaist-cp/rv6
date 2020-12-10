@@ -545,30 +545,6 @@ impl Inode {
         InodeGuard { inode: self, tx }
     }
 
-    /// Allocate an inode on device dev.
-    /// Mark it as allocated by  giving it type type.
-    /// Returns an unlocked but allocated and referenced inode.
-    pub unsafe fn alloc(dev: u32, typ: i16, tx: &FsTransaction<'_>) -> RcInode<'static> {
-        for inum in 1..kernel().fs().superblock.ninodes {
-            let mut bp = kernel()
-                .disk
-                .read(dev, kernel().fs().superblock.iblock(inum));
-            let dip = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
-                .add((inum as usize).wrapping_rem(IPB));
-
-            // a free inode
-            if (*dip).typ == 0 {
-                ptr::write_bytes(dip, 0, 1);
-                (*dip).typ = typ;
-
-                // mark it allocated on the disk
-                tx.write(bp);
-                return kernel().itable.get_inode(dev, inum);
-            }
-        }
-        panic!("Inode::alloc: no inodes");
-    }
-
     pub const fn zero() -> Self {
         Self {
             dev: 0,
@@ -627,7 +603,31 @@ impl Itable {
                     inode.inner.get_mut().valid = false;
                 },
             )
-            .expect("iget: no inodes");
-        unsafe { Rc::from_unchecked(&kernel().itable, inner) }
+            .expect("[Itable::get_inode] no inodes");
+        unsafe { Rc::from_unchecked(self, inner) }
+    }
+
+    /// Allocate an inode on device dev.
+    /// Mark it as allocated by giving it type.
+    /// Returns an unlocked but allocated and referenced inode.
+    pub unsafe fn alloc_inode(&self, dev: u32, typ: i16, tx: &FsTransaction<'_>) -> RcInode<'_> {
+        for inum in 1..kernel().fs().superblock.ninodes {
+            let mut bp = kernel()
+                .disk
+                .read(dev, kernel().fs().superblock.iblock(inum));
+            let dip = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
+                .add((inum as usize).wrapping_rem(IPB));
+
+            // a free inode
+            if (*dip).typ == 0 {
+                ptr::write_bytes(dip, 0, 1);
+                (*dip).typ = typ;
+
+                // mark it allocated on the disk
+                tx.write(bp);
+                return self.get_inode(dev, inum);
+            }
+        }
+        panic!("[Itable::alloc_inode] no inodes");
     }
 }
