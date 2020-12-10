@@ -1,8 +1,8 @@
-use core::{mem, ptr};
+use core::ptr;
 
-use crate::{bio::Buf, param::BSIZE};
+use crate::{kernel::kernel, param::BSIZE};
 
-use super::Dinode;
+use super::DINODE_SIZE;
 
 const FSMAGIC: u32 = 0x10203040;
 
@@ -40,14 +40,15 @@ pub struct Superblock {
 }
 
 /// Inodes per block.
-pub const IPB: usize = BSIZE.wrapping_div(mem::size_of::<Dinode>());
+pub const IPB: usize = BSIZE.wrapping_div(DINODE_SIZE);
 
 /// Bitmap bits per block
 pub const BPB: u32 = BSIZE.wrapping_mul(8) as u32;
 
 impl Superblock {
     /// Read the super block.
-    pub unsafe fn new(buf: &Buf) -> Self {
+    pub unsafe fn new(dev: u32) -> Self {
+        let buf = &kernel().disk.read(dev, 1);
         let result = ptr::read(buf.deref_inner().data.as_ptr() as *const Superblock);
         assert_eq!(result.magic, FSMAGIC, "invalid file system");
         result

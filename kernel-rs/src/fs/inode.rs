@@ -85,6 +85,9 @@ use super::{FileName, IPB, MAXFILE, NDIRECT, NINDIRECT};
 /// Directory is a file containing a sequence of Dirent structures.
 pub const DIRSIZ: usize = 14;
 
+/// dinode size
+pub const DINODE_SIZE: usize = mem::size_of::<Dinode>();
+
 /// dirent size
 pub const DIRENT_SIZE: usize = mem::size_of::<Dirent>();
 

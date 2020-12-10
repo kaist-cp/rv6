@@ -26,7 +26,9 @@ mod log;
 mod path;
 mod superblock;
 
-pub use inode::{Dinode, Dirent, Inode, InodeGuard, InodeInner, RcInode, DIRENT_SIZE, DIRSIZ};
+pub use inode::{
+    Dinode, Dirent, Inode, InodeGuard, InodeInner, RcInode, DINODE_SIZE, DIRENT_SIZE, DIRSIZ,
+};
 pub use log::Log;
 pub use path::{FileName, Path};
 pub use superblock::{Superblock, BPB, IPB};
@@ -53,7 +55,7 @@ pub struct FsTransaction<'s> {
 
 impl FileSystem {
     pub fn new(dev: u32) -> Self {
-        let superblock = unsafe { Superblock::new(&kernel().disk.read(dev, 1)) };
+        let superblock = unsafe { Superblock::new(dev) };
         let log = Sleepablelock::new(
             "LOG",
             Log::new(dev, superblock.logstart as i32, superblock.nlog as i32),
