@@ -588,7 +588,11 @@ impl ProcessSystem {
         for pp in &self.process_pool {
             if pp.info.get_mut_unchecked().parent == p {
                 pp.info.get_mut_unchecked().parent = self.initial_proc;
-                (&mut *self.initial_proc).wakeup();
+                (*self.initial_proc)
+                    .info
+                    .get_mut_unchecked()
+                    .child_waitchannel
+                    .wakeup();
             }
         }
     }
@@ -693,8 +697,6 @@ impl ProcessSystem {
 
         let pid = np.deref_mut_info().pid;
 
-        // let child = np.ptr;
-        // mem::forget(np);
         let child = np.raw();
         drop(np);
 
@@ -702,7 +704,6 @@ impl ProcessSystem {
         (*child).info.get_mut_unchecked().parent = p;
         self.wait_lock.release();
 
-        // let mut np = ProcGuard::from_raw(child);
         let mut np = (*child).lock();
         np.deref_mut_info().state = Procstate::RUNNABLE;
 
@@ -780,7 +781,11 @@ impl ProcessSystem {
         self.reparent(p);
 
         // Parent might be sleeping in wait().
-        (*(*p).info.get_mut_unchecked().parent).wakeup();
+        (*(*p).info.get_mut_unchecked().parent)
+            .info
+            .get_mut_unchecked()
+            .child_waitchannel
+            .wakeup();
 
         let mut guard = (*p).lock();
 
