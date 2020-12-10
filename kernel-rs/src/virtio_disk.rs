@@ -4,7 +4,8 @@
 ///
 /// qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 use crate::{
-    bio::{Buf, BufUnlocked},
+    bio::Buf,
+    kernel::kernel,
     page::RawPage,
     param::BSIZE,
     riscv::{PGSHIFT, PGSIZE},
@@ -71,7 +72,7 @@ struct VirtqAvail {
 
 #[derive(Copy, Clone)]
 struct InflightInfo {
-    b: *mut Buf,
+    b: *mut Buf<'static>,
     status: bool,
 }
 
@@ -210,8 +211,8 @@ impl DescriptorPool {
 impl Sleepablelock<Disk> {
     /// Return a locked Buf with the `latest` contents of the indicated block.
     /// If buf.valid is true, we don't need to access Disk.
-    pub fn read(&self, dev: u32, blockno: u32) -> Buf {
-        let mut buf = BufUnlocked::new(dev, blockno).lock();
+    pub fn read(&self, dev: u32, blockno: u32) -> Buf<'static> {
+        let mut buf = kernel().bcache.buf(dev, blockno).lock();
         if !buf.deref_inner().valid {
             unsafe {
                 Disk::virtio_rw(&mut self.lock(), &mut buf, false);
@@ -221,7 +222,7 @@ impl Sleepablelock<Disk> {
         buf
     }
 
-    pub fn write(&self, b: &mut Buf) {
+    pub fn write(&self, b: &mut Buf<'static>) {
         unsafe { Disk::virtio_rw(&mut self.lock(), b, true) }
     }
 }
@@ -238,7 +239,11 @@ impl Disk {
         }
     }
 
-    pub unsafe fn virtio_rw(this: &mut SleepablelockGuard<'_, Self>, b: &mut Buf, write: bool) {
+    pub unsafe fn virtio_rw(
+        this: &mut SleepablelockGuard<'_, Self>,
+        b: &mut Buf<'static>,
+        write: bool,
+    ) {
         let sector: usize = (*b).blockno.wrapping_mul((BSIZE / 512) as u32) as _;
 
         // The spec's Section 5.2 says that legacy block operations use
