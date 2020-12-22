@@ -197,6 +197,8 @@ impl FileTable {
 
         Spinlock::new(
             "FTABLE",
+            // TODO : Const variable should be used instead of the magic number.
+            // https://github.com/kaist-cp/rv6/issues/309
             ArrayArena::new(array_const_fn_init![ftable_entry; 100]),
         )
     }
