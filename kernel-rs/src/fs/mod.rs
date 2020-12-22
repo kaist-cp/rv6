@@ -92,7 +92,7 @@ impl FsTransaction<'_> {
 
     /// Zero a block.
     unsafe fn bzero(&self, dev: u32, bno: u32) {
-        let mut buf = kernel().bcache.buf(dev, bno).lock();
+        let mut buf = kernel().bcache.get_buf(dev, bno).lock();
         ptr::write_bytes(buf.deref_mut_inner().data.as_mut_ptr(), 0, BSIZE);
         buf.deref_mut_inner().valid = true;
         self.write(buf);
