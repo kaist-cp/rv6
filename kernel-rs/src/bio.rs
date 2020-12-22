@@ -13,7 +13,6 @@
 
 use crate::{
     arena::{Arena, ArenaObject, MruArena, MruEntry, Rc},
-    kernel::kernel,
     param::{BSIZE, NBUF},
     proc::WaitChannel,
     sleeplock::Sleeplock,
@@ -129,7 +128,7 @@ impl Bcache {
     }
 
     /// Return a unlocked buf with the contents of the indicated block.
-    pub fn buf(&self, dev: u32, blockno: u32) -> BufUnlocked<'_> {
+    pub fn get_buf(&self, dev: u32, blockno: u32) -> BufUnlocked<'_> {
         let inner = self
             .find_or_alloc(
                 |buf| buf.dev == dev && buf.blockno == blockno,
@@ -141,14 +140,14 @@ impl Bcache {
             )
             .expect("[BufGuard::new] no buffers");
 
-        unsafe { Rc::from_unchecked(&kernel().bcache, inner) }
+        unsafe { Rc::from_unchecked(self, inner) }
     }
 
     /// Retrieves BufUnlocked without increasing reference count.
     pub fn buf_unforget(&self, dev: u32, blockno: u32) -> Option<BufUnlocked<'_>> {
         let inner = self.unforget(|buf| buf.dev == dev && buf.blockno == blockno)?;
 
-        Some(unsafe { Rc::from_unchecked(&kernel().bcache, inner) })
+        Some(unsafe { Rc::from_unchecked(self, inner) })
     }
 }
 
