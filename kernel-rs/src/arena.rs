@@ -1,3 +1,4 @@
+use crate::list::*;
 use crate::spinlock::{Spinlock, SpinlockGuard};
 use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop};
@@ -62,11 +63,6 @@ pub struct ArrayArena<T, const CAPACITY: usize> {
 pub struct ArrayPtr<T> {
     ptr: *mut ArrayEntry<T>,
     _marker: PhantomData<T>,
-}
-
-pub struct ListEntry {
-    prev: *mut Self,
-    next: *mut Self,
 }
 
 #[repr(C)]
@@ -228,15 +224,6 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<ArrayAr
     }
 }
 
-impl ListEntry {
-    pub const fn new() -> Self {
-        Self {
-            prev: ptr::null_mut(),
-            next: ptr::null_mut(),
-        }
-    }
-}
-
 impl<T> MruEntry<T> {
     pub const fn new(data: T) -> Self {
         Self {
@@ -257,16 +244,10 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
     }
 
     pub fn init(&mut self) {
-        self.head.prev = &mut self.head;
-        self.head.next = &mut self.head;
+        self.head.init();
 
         for entry in &mut self.entries {
-            entry.list_entry.next = self.head.next;
-            entry.list_entry.prev = &mut self.head;
-            unsafe {
-                (*self.head.next).prev = &mut entry.list_entry;
-            }
-            self.head.next = &mut entry.list_entry;
+            unsafe { self.head.prepend(&mut entry.list_entry) }; // Safe since used after init
         }
     }
 }
@@ -412,12 +393,8 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
         entry.refcnt -= 1;
 
         if entry.refcnt == 0 {
-            (*entry.list_entry.next).prev = entry.list_entry.prev;
-            (*entry.list_entry.prev).next = entry.list_entry.next;
-            entry.list_entry.next = this.head.next;
-            entry.list_entry.prev = &mut this.head;
-            (*this.head.next).prev = &mut entry.list_entry;
-            this.head.next = &mut entry.list_entry;
+            entry.list_entry.remove();
+            this.head.prepend(&mut entry.list_entry);
         }
 
         mem::forget(handle);
