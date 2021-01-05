@@ -1,9 +1,12 @@
 //! Doubly circular intrusive linked list with head node.
+//! `ListEntry` types must be first initialized with init()
+//! before calling its member functions.
+
 use core::ptr;
 
 pub struct ListEntry {
-    pub next: *mut ListEntry,
-    pub prev: *mut ListEntry,
+    next: *mut ListEntry,
+    prev: *mut ListEntry,
 }
 
 impl ListEntry {
@@ -19,53 +22,50 @@ impl ListEntry {
         self.prev = self;
     }
 
-    /// # Safety
-    ///
-    /// Use only with initialized `ListEntry` types.
-    pub unsafe fn next(&self) -> &mut Self {
-        &mut *self.next
+    pub fn prev(&self) -> &mut Self {
+        unsafe { &mut *self.prev }
     }
 
-    /// # Safety
-    ///
-    /// Use only with initialized `ListEntry` types.
-    pub unsafe fn append(&mut self, e: &mut ListEntry) {
+    pub fn next(&self) -> &mut Self {
+        unsafe { &mut *self.next }
+    }
+
+    /// `e` <-> `this`
+    pub fn append(&mut self, e: &mut ListEntry) {
         e.next = self;
         e.prev = self.prev;
 
-        (*e.next).prev = e;
-        (*e.prev).next = e;
+        unsafe {
+            (*e.next).prev = e;
+            (*e.prev).next = e;
+        }
     }
 
-    /// # Safety
-    ///
-    /// Use only with initialized `ListEntry` types.
-    pub unsafe fn prepend(&mut self, e: &mut ListEntry) {
+    /// `this` <-> `e`
+    pub fn prepend(&mut self, e: &mut ListEntry) {
         e.next = self.next;
         e.prev = self;
 
-        (*e.next).prev = e;
-        (*e.prev).next = e;
+        unsafe {
+            (*e.next).prev = e;
+            (*e.prev).next = e;
+        }
     }
 
     pub fn is_empty(&self) -> bool {
         self.next as *const _ == self as *const _
     }
 
-    /// # Safety
-    ///
-    /// Use only with initialized `ListEntry` types.
-    pub unsafe fn remove(&mut self) {
-        (*self.prev).next = self.next;
-        (*self.next).prev = self.prev;
+    pub fn remove(&mut self) {
+        unsafe {
+            (*self.prev).next = self.next;
+            (*self.next).prev = self.prev;
+        }
         self.init();
     }
 
-    /// # Safety
-    ///
-    /// Use only with initialized `ListEntry` types.
-    pub unsafe fn list_pop_front(&self) -> &ListEntry {
-        let result = &mut *self.next;
+    pub fn list_pop_front(&self) -> &ListEntry {
+        let result = unsafe { &mut *self.next };
         result.remove();
         result
     }
