@@ -16,7 +16,7 @@ impl ListEntry {
             next: ptr::null_mut(),
         }
     }
-    
+
     pub fn init(&mut self) {
         self.next = self;
         self.prev = self;

@@ -287,7 +287,8 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
         let mut list_entry = this.head.next();
         while list_entry as *const _ != &this.head as *const _ {
             let entry = unsafe {
-                &mut *((list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET) as *mut MruEntry<T>)
+                &mut *((list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET)
+                    as *mut MruEntry<T>)
             };
             if c(&entry.data) {
                 debug_assert!(entry.refcnt != 0);
@@ -318,7 +319,8 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
         let mut empty = ptr::null_mut();
         while list_entry as *const _ != &this.head as *const _ {
             let entry = unsafe {
-                &mut *((list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET) as *mut MruEntry<T>)
+                &mut *((list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET)
+                    as *mut MruEntry<T>)
             };
             if c(&entry.data) {
                 entry.refcnt += 1;
@@ -351,7 +353,8 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
         let mut list_entry = this.head.prev();
         while list_entry as *const _ != &this.head as *const _ {
             let entry = unsafe {
-                &mut *((list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET) as *mut MruEntry<T>)
+                &mut *((list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET)
+                    as *mut MruEntry<T>)
             };
             if entry.refcnt == 0 {
                 entry.refcnt = 1;
