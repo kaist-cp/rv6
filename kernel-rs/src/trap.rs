@@ -211,10 +211,7 @@ pub unsafe fn devintr() -> i32 {
         } else if irq == VIRTIO0_IRQ {
             kernel().disk.lock().virtio_intr();
         } else if irq != 0 {
-            // TODO(@travis1829): this is a temporary fix just to circumvent the 
-            // 4KB stack size limit. Should later change it to println! after
-            // implementing automatic stack growth.
-            panic!("unexpected interrupt irq");
+            println!("unexpected interrupt irq={:018p}\n", irq as *const u8);
         }
 
         // the PLIC allows each device to raise at most one
