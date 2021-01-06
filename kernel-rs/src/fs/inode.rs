@@ -588,7 +588,7 @@ impl Itable {
             "ITABLE",
             // TODO : Const variable should be used instead of the magic number.
             // https://github.com/kaist-cp/rv6/issues/309
-            ArrayArena::new(array_const_fn_init![itable_entry; 50]),
+            ArrayArena::new(array![x => itable_entry(x); NINODE]),
         )
     }
 
