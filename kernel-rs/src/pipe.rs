@@ -164,11 +164,11 @@ pub enum PipeError {
 impl PipeInner {
     unsafe fn try_write(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
         let mut ch = [0 as u8];
-        let proc = myproc();
+        let mut proc = myproc().unwrap();
         if !self.readopen || (*proc).killed() {
             return Err(PipeError::InvalidStatus);
         }
-        let data = &mut *(*proc).data.get();
+        let data = proc.deref_mut_data();//&mut *(*proc).data.get();
         for i in 0..n {
             if self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
@@ -184,8 +184,9 @@ impl PipeInner {
     }
 
     unsafe fn try_read(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
-        let proc = myproc();
-        let data = &mut *(*proc).data.get();
+        let mut proc = myproc().unwrap();
+        // let data = &mut *(*proc).data.get();
+        let data = proc.deref_mut_data();
 
         //DOC: pipe-empty
         if self.nread == self.nwrite && self.writeopen {

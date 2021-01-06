@@ -1,7 +1,7 @@
 use crate::{
     kernel::Kernel,
     println,
-    proc::{myproc, Proc},
+    proc::{myproc},
     vm::{UVAddr, VAddr},
 };
 use core::{mem, slice, str};
@@ -9,8 +9,8 @@ use cstr_core::CStr;
 
 /// Fetch the usize at addr from the current process.
 pub unsafe fn fetchaddr(addr: UVAddr, ip: *mut usize) -> i32 {
-    let p: *mut Proc = myproc();
-    let data = &mut *(*p).data.get();
+    let mut p = myproc().unwrap();
+    let data = p.deref_mut_data();//&mut *(*p).data.get();
     if addr.into_usize() >= data.sz
         || addr.into_usize().wrapping_add(mem::size_of::<usize>()) > data.sz
     {
@@ -32,15 +32,16 @@ pub unsafe fn fetchaddr(addr: UVAddr, ip: *mut usize) -> i32 {
 /// Fetch the nul-terminated string at addr from the current process.
 /// Returns reference to the string in the buffer.
 pub unsafe fn fetchstr(addr: UVAddr, buf: &mut [u8]) -> Result<&CStr, ()> {
-    let p: *mut Proc = myproc();
-    (*(*p).data.get()).pagetable.copyinstr(buf, addr)?;
+    let mut p = myproc().unwrap();
+    // (*(*p).data.get())
+    p.deref_mut_data().pagetable.copyinstr(buf, addr)?;
 
     Ok(CStr::from_ptr(buf.as_ptr()))
 }
 
 unsafe fn argraw(n: usize) -> usize {
-    let p = myproc();
-    let data = &mut *(*p).data.get();
+    let p = myproc().unwrap();
+    let data = p.deref_data();//&mut *(*p).data.get();
     match n {
         0 => (*data.trapframe).a0,
         1 => (*data.trapframe).a1,
@@ -74,9 +75,9 @@ pub unsafe fn argstr(n: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
 
 impl Kernel {
     pub unsafe fn syscall(&'static self) {
-        let p: *mut Proc = myproc();
-        let mut data = &mut *(*p).data.get();
-        let num: i32 = (*data.trapframe).a7 as i32;
+        let p = myproc().unwrap();
+        // let mut data = p.deref_mut_data();//&mut *(*p).data.get();
+        let num: i32 = (*p.deref_data().trapframe).a7 as i32;
 
         let result = match num {
             1 => self.sys_fork(),
@@ -112,6 +113,6 @@ impl Kernel {
             }
         };
 
-        (*data.trapframe).a0 = result;
+        (*p.deref_data().trapframe).a0 = result;
     }
 }

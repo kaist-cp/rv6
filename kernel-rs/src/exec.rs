@@ -94,8 +94,11 @@ impl Kernel {
         let mut ustack = [0usize; MAXARG + 1];
         let mut elf: ElfHdr = Default::default();
         let mut ph: ProgHdr = Default::default();
-        let mut p: *mut Proc = myproc();
-        let mut data = &mut *(*p).data.get();
+        let mut pp = myproc().unwrap();
+        
+        let mut data = pp.deref_mut_data();
+        let oldsz = data.sz;
+        // let mut data = &mut *(*p).data.get();
 
         let tx = self.fs().begin_transaction();
         let ptr = ok_or!(path.namei(&tx), {
@@ -113,7 +116,7 @@ impl Kernel {
             return Err(());
         }
 
-        let pt = proc_pagetable(p)?;
+        let pt = proc_pagetable(myproc().unwrap().raw() as *mut Proc)?;
 
         let mut ptable_guard = scopeguard::guard((pt, sz), |(mut pt, sz)| {
             proc_freepagetable(&mut pt, sz);
@@ -156,8 +159,8 @@ impl Kernel {
         }
         drop(ip);
 
-        p = myproc();
-        let oldsz: usize = data.sz;
+        let mut p = myproc().unwrap();
+        // let oldsz: usize = data.sz;
 
         // Allocate two pages at the next page boundary.
         // Use the second as the user stack.
@@ -225,7 +228,8 @@ impl Kernel {
                 s = s.offset(1)
             }
             safestrcpy(
-                (*p).name.as_mut_ptr(),
+                // (*p).name.as_mut_ptr(),
+                p.name.as_mut_ptr(),
                 last,
                 mem::size_of::<[u8; 16]>() as i32,
             );

@@ -61,7 +61,7 @@ impl Console {
             // Wait until interrupt handler has put some
             // input into CONS.buffer.
             while this.r == this.w {
-                if (*myproc()).killed() {
+                if (*myproc().unwrap()).killed() {
                     return -1;
                 }
                 this.sleep();

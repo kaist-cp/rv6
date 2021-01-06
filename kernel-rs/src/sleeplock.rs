@@ -27,7 +27,7 @@ impl RawSleeplock {
         while *guard != -1 {
             guard.sleep();
         }
-        *guard = unsafe { (*myproc()).pid() };
+        *guard = unsafe { (*myproc().unwrap()).pid() };
     }
 
     pub fn release(&self) {
@@ -38,7 +38,7 @@ impl RawSleeplock {
 
     pub fn holding(&self) -> bool {
         let guard = self.locked.lock();
-        *guard == unsafe { (*myproc()).pid() }
+        *guard == unsafe { (*myproc().unwrap()).pid() }
     }
 }
 

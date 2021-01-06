@@ -3,7 +3,7 @@ use crate::{
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     plic::{plic_claim, plic_complete},
     println,
-    proc::{cpuid, myproc, proc_yield, Proc, Procstate},
+    proc::{cpuid, myproc, proc_yield, Procstate},
     riscv::{
         intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp,
         w_sepc, w_sip, w_stvec, Sstatus, PGSIZE,
@@ -45,15 +45,15 @@ pub unsafe extern "C" fn usertrap() {
     // since we're now in the kernel.
     w_stvec(kernelvec as _);
 
-    let p: *mut Proc = myproc();
-    let mut data = &mut *(*p).data.get();
+    let p = myproc().unwrap();
+    let mut data = p.deref_data();//&mut *(*p).data.get();
 
     // save user program counter.
     (*data.trapframe).epc = r_sepc();
     if r_scause() == 8 {
         // system call
 
-        if (*p).killed() {
+        if (*(p.raw())).killed() {//(*p).killed() {
             kernel().procs.exit_current(-1);
         }
 
@@ -96,8 +96,8 @@ pub unsafe extern "C" fn usertrap() {
 
 /// return to user space
 pub unsafe fn usertrapret() {
-    let p: *mut Proc = myproc();
-    let mut data = &mut *(*p).data.get();
+    let mut p = myproc().unwrap();
+    let mut data = p.deref_mut_data();//&mut *(*p).data.get();
 
     // we're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
@@ -176,7 +176,7 @@ pub unsafe fn kerneltrap() {
     }
 
     // give up the CPU if this is a timer interrupt.
-    if which_dev == 2 && !myproc().is_null() && (*myproc()).state() == Procstate::RUNNING {
+    if which_dev == 2 && myproc().is_ok() && (*myproc().unwrap()).state() == Procstate::RUNNING {
         proc_yield();
     }
 

@@ -13,7 +13,7 @@ use crate::{
     page::Page,
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
     pipe::AllocatedPipe,
-    proc::{myproc, Proc},
+    proc::{myproc},
     riscv::PGSIZE,
     some_or,
     stat::{T_DEVICE, T_DIR, T_FILE},
@@ -27,8 +27,8 @@ impl RcFile<'static> {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
     unsafe fn fdalloc(self) -> Result<i32, Self> {
-        let p: *mut Proc = myproc();
-        let mut data = &mut *(*p).data.get();
+        let mut p = myproc().unwrap();
+        let mut data = p.deref_mut_data();//&mut *(*p).data.get();
         for fd in 0..NOFILE {
             // user pointer to struct stat
             if data.open_files[fd].is_none() {
@@ -48,12 +48,21 @@ unsafe fn argfd(n: usize) -> Result<(i32, &'static RcFile<'static>), ()> {
         return Err(());
     }
 
-    let f = some_or!(
-        &(*(*myproc()).data.get()).open_files[fd as usize],
+    let f = some_or!({
+        // &(*(*myproc()).data.get()).open_files[fd as usize],
+        let p = myproc()?;
+        &(p.deref_data()).open_files[fd as usize]
+    },
         return Err(())
     );
-
     Ok((fd, f))
+    // let mut p = myproc().unwrap();
+    // let f = &(p.deref_mut_data()).open_files[fd as usize];
+    // if f.is_none() {
+    //     return Err(())
+    // }
+    // let ff = f.unwrap();
+    // return Ok((fd, ff))
 }
 
 unsafe fn create<F, T>(
@@ -128,7 +137,8 @@ impl Kernel {
 
     pub unsafe fn sys_close(&self) -> usize {
         let (fd, _) = ok_or!(argfd(0), return usize::MAX);
-        (*(*myproc()).data.get()).open_files[fd as usize] = None;
+        // (*(*myproc()).data.get())
+        myproc().unwrap().deref_mut_data().open_files[fd as usize] = None;
         0
     }
 
@@ -295,8 +305,8 @@ impl Kernel {
 
     pub unsafe fn sys_chdir(&self) -> usize {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let p: *mut Proc = myproc();
-        let mut data = &mut *(*p).data.get();
+        let mut p = myproc().unwrap();
+        let mut data = p.deref_mut_data();//&mut *(*p).data.get();
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
         let tx = self.fs().begin_transaction();
         let ptr = ok_or!(Path::new(path).namei(&tx), return usize::MAX);
@@ -357,8 +367,8 @@ impl Kernel {
     }
 
     pub unsafe fn sys_pipe(&self) -> usize {
-        let p: *mut Proc = myproc();
-        let mut data = &mut *(*p).data.get();
+        let mut p = myproc().unwrap();
+        let mut data = p.deref_mut_data();//&mut *(*p).data.get();
         // user pointer to array of two integers
         let fdarray = ok_or!(argaddr(0), return usize::MAX);
         let (pipereader, pipewriter) = ok_or!(AllocatedPipe::alloc(), return usize::MAX);

@@ -13,7 +13,7 @@ impl Kernel {
     }
 
     pub unsafe fn sys_getpid(&self) -> usize {
-        (*myproc()).pid() as _
+        (*myproc().unwrap()).pid() as _
     }
 
     pub unsafe fn sys_fork(&self) -> usize {
@@ -27,7 +27,8 @@ impl Kernel {
 
     pub unsafe fn sys_sbrk(&self) -> usize {
         let n = ok_or!(argint(0), return usize::MAX);
-        let addr: i32 = (*(*myproc()).data.get()).sz as i32;
+        // let addr: i32 = (*(*myproc()).data.get()).sz as i32;
+        let addr: i32 = myproc().unwrap().deref_mut_data().sz as i32;
         if resizeproc(n) < 0 {
             return usize::MAX;
         }
@@ -39,7 +40,7 @@ impl Kernel {
         let mut ticks = self.ticks.lock();
         let ticks0 = *ticks;
         while ticks.wrapping_sub(ticks0) < n as u32 {
-            if (*myproc()).killed() {
+            if (*myproc().unwrap()).killed() {
                 return usize::MAX;
             }
             ticks.sleep();
