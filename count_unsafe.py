@@ -1,36 +1,41 @@
 #!/usr/bin/env python3
 
-import subprocess, glob, re, os
-from subprocess import Popen, PIPE
+import os, re, sys, glob
+from collections import defaultdict
 
-if os.popen('cargo --list | grep count').read()=="":
-    print('Please install cargo-count by `cargo install cargo-count`.\nIf it doesn\'t work, check https://github.com/kbknapp/cargo-count#compiling')
-    exit(0)
+path = 'kernel-rs/**/*.rs'
 
-p = re.compile(rb"""
-^Totals:\s+
-1\s+            # files
-\d+\s+          # lines
-\d+\s+          # blanks
-\d+\s+          # comments
-(\d+)\s+        # codes
-(\d+)\s+        # unsafe
-""", re.VERBOSE)
+if len(sys.argv) > 1:
+    path = sys.argv[1]
 
-rust_files = glob.glob("./kernel-rs/src/**/*.rs", recursive=True)
+if os.system('which count-unsafe > /dev/null 2>&1') != 0:
+    print('''Please install count-unsafe by\n
+`rustup update nightly && cargo +nightly install --git https://github.com/efenniht/count-unsafe`''')
+    exit(-1)
 
-for rust_file in rust_files:
-    cargo_count_cwd = os.path.dirname(rust_file)
-    rust_file_base = os.path.basename(rust_file)
-    with Popen(['cargo', 'count', rust_file_base, '--unsafe-statistics'], stdout=PIPE, cwd=cargo_count_cwd) as proc:
-        stat_line = proc.stdout.readlines()[-1]
-        m = p.match(stat_line)
-        if m:
-            (code, unsafe) = (int(m.group(1)), int(m.group(2)))
-            print(rust_file + " : " + str(unsafe) + "/" + str(code) + " = " + str(unsafe*100//code) + "%")
-        else:
-            print(f'Cannot count {rust_file_base} at riscv.')
+if os.system('which cloc > /dev/null 2>&1') != 0:
+    print('''Please install cloc by `apt install cloc`''')
+    exit(-1)
 
-print("\n>>> Unsafe statistics for rv6")
-os.system('cargo count -a -l rs --unsafe-statistics')
-exit(0)
+space = re.compile(r'\s+')
+
+unsafes = defaultdict(lambda: 0)
+
+for line in os.popen(f'count-unsafe {path}').readlines()[1:]:
+    file, begin, end, cnt, ty = line.split(',')
+
+    unsafes[file] += int(cnt)
+
+slocs = {}
+
+for file in glob.glob(path, recursive=True):
+    stat = os.popen(f'cloc {file}').readlines()[-2].strip()
+    sloc = int(space.split(stat)[-1])
+
+    slocs[file] = sloc
+
+    print(f'{file} : {unsafes[file]}/{sloc} = {unsafes[file]*100//sloc}')
+
+print('Total:')
+
+print(f'{sum(unsafes.values())}/{sum(slocs.values())}')
