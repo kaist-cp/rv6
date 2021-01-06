@@ -285,7 +285,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
 
         // Is the block already cached?
         let mut list_entry = this.head.next();
-        while list_entry as *const _ != & this.head as *const _ {
+        while list_entry as *const _ != &this.head as *const _ {
             let entry = unsafe {
                 &mut *((list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET) as *mut MruEntry<T>)
             };
@@ -316,7 +316,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
         // Is the block already cached?
         let mut list_entry = this.head.next();
         let mut empty = ptr::null_mut();
-        while list_entry as *const _ != & this.head as *const _ {
+        while list_entry as *const _ != &this.head as *const _ {
             let entry = unsafe {
                 &mut *((list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET) as *mut MruEntry<T>)
             };
@@ -349,7 +349,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
         let this = self.lock();
 
         let mut list_entry = this.head.prev();
-        while list_entry as *const _ != & this.head as *const _ {
+        while list_entry as *const _ != &this.head as *const _ {
             let entry = unsafe {
                 &mut *((list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET) as *mut MruEntry<T>)
             };

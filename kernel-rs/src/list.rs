@@ -22,12 +22,12 @@ impl ListEntry {
         self.prev = self;
     }
 
-    pub fn prev(&self) -> &mut Self {
-        unsafe { &mut *self.prev }
+    pub fn prev(&self) -> &Self {
+        unsafe { &*self.prev }
     }
 
-    pub fn next(&self) -> &mut Self {
-        unsafe { &mut *self.next }
+    pub fn next(&self) -> &Self {
+        unsafe { &*self.next }
     }
 
     /// `e` <-> `this`
