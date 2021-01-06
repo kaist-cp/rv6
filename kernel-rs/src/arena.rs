@@ -1,3 +1,4 @@
+use crate::list::*;
 use crate::spinlock::{Spinlock, SpinlockGuard};
 use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop};
@@ -62,11 +63,6 @@ pub struct ArrayArena<T, const CAPACITY: usize> {
 pub struct ArrayPtr<T> {
     ptr: *mut ArrayEntry<T>,
     _marker: PhantomData<T>,
-}
-
-pub struct ListEntry {
-    prev: *mut Self,
-    next: *mut Self,
 }
 
 #[repr(C)]
@@ -228,15 +224,6 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<ArrayAr
     }
 }
 
-impl ListEntry {
-    pub const fn new() -> Self {
-        Self {
-            prev: ptr::null_mut(),
-            next: ptr::null_mut(),
-        }
-    }
-}
-
 impl<T> MruEntry<T> {
     pub const fn new(data: T) -> Self {
         Self {
@@ -257,16 +244,10 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
     }
 
     pub fn init(&mut self) {
-        self.head.prev = &mut self.head;
-        self.head.next = &mut self.head;
+        self.head.init();
 
         for entry in &mut self.entries {
-            entry.list_entry.next = self.head.next;
-            entry.list_entry.prev = &mut self.head;
-            unsafe {
-                (*self.head.next).prev = &mut entry.list_entry;
-            }
-            self.head.next = &mut entry.list_entry;
+            self.head.prepend(&mut entry.list_entry);
         }
     }
 }
@@ -300,13 +281,14 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
     type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
 
     fn unforget<C: Fn(&Self::Data) -> bool>(&self, c: C) -> Option<Self::Handle> {
-        let mut this = self.lock();
+        let this = self.lock();
 
         // Is the block already cached?
-        let mut list_entry = this.head.next;
-        while !list_entry.is_null() && list_entry != &mut this.head {
+        let mut list_entry = this.head.next();
+        while list_entry as *const _ != &this.head as *const _ {
             let entry = unsafe {
-                &mut *((list_entry as usize - Self::LIST_ENTRY_OFFSET) as *mut MruEntry<T>)
+                &mut *((list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET)
+                    as *mut MruEntry<T>)
             };
             if c(&entry.data) {
                 debug_assert!(entry.refcnt != 0);
@@ -315,7 +297,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
                     _marker: PhantomData,
                 });
             }
-            list_entry = unsafe { (*list_entry).next };
+            list_entry = list_entry.next();
         }
 
         None
@@ -330,14 +312,15 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
         // If not found, allocate a buffer.
         // In either case, return locked buffer.
 
-        let mut this = self.lock();
+        let this = self.lock();
 
         // Is the block already cached?
-        let mut list_entry = this.head.next;
+        let mut list_entry = this.head.next();
         let mut empty = ptr::null_mut();
-        while !list_entry.is_null() && list_entry != &mut this.head {
+        while list_entry as *const _ != &this.head as *const _ {
             let entry = unsafe {
-                &mut *((list_entry as usize - Self::LIST_ENTRY_OFFSET) as *mut MruEntry<T>)
+                &mut *((list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET)
+                    as *mut MruEntry<T>)
             };
             if c(&entry.data) {
                 entry.refcnt += 1;
@@ -348,7 +331,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
             } else if entry.refcnt == 0 {
                 empty = entry;
             }
-            list_entry = unsafe { (*list_entry).next };
+            list_entry = list_entry.next();
         }
 
         if empty.is_null() {
@@ -365,12 +348,13 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
     }
 
     fn alloc<F: FnOnce(&mut T)>(&self, f: F) -> Option<Self::Handle> {
-        let mut this = self.lock();
+        let this = self.lock();
 
-        let mut list_entry = this.head.prev;
-        while !list_entry.is_null() && list_entry != &mut this.head {
+        let mut list_entry = this.head.prev();
+        while list_entry as *const _ != &this.head as *const _ {
             let entry = unsafe {
-                &mut *((list_entry as usize - Self::LIST_ENTRY_OFFSET) as *mut MruEntry<T>)
+                &mut *((list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET)
+                    as *mut MruEntry<T>)
             };
             if entry.refcnt == 0 {
                 entry.refcnt = 1;
@@ -380,7 +364,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
                     _marker: PhantomData,
                 });
             }
-            list_entry = unsafe { (*list_entry).prev };
+            list_entry = list_entry.prev();
         }
 
         None
@@ -412,12 +396,8 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
         entry.refcnt -= 1;
 
         if entry.refcnt == 0 {
-            (*entry.list_entry.next).prev = entry.list_entry.prev;
-            (*entry.list_entry.prev).next = entry.list_entry.next;
-            entry.list_entry.next = this.head.next;
-            entry.list_entry.prev = &mut this.head;
-            (*this.head.next).prev = &mut entry.list_entry;
-            this.head.next = &mut entry.list_entry;
+            entry.list_entry.remove();
+            this.head.prepend(&mut entry.list_entry);
         }
 
         mem::forget(handle);

@@ -27,6 +27,7 @@ mod file;
 mod fs;
 mod kalloc;
 mod kernel;
+mod list;
 mod memlayout;
 mod page;
 mod param;
