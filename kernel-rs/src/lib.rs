@@ -13,6 +13,7 @@
 #![feature(const_in_array_repeat_expressions)]
 #![feature(array_value_iter)]
 #![feature(const_fn)]
+#![feature(const_fn_union)]
 #![feature(maybe_uninit_extra)]
 #![feature(min_const_generics)]
 #![feature(generic_associated_types)]
@@ -54,7 +55,7 @@ mod vm;
 #[macro_use]
 extern crate bitflags;
 #[macro_use]
-extern crate array_const_fn_init;
+extern crate array_macro;
 #[macro_use]
 extern crate static_assertions;
 #[macro_use]

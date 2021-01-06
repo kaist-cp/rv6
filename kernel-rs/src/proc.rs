@@ -537,7 +537,7 @@ impl ProcessSystem {
             nextpid: AtomicI32::new(1),
             // TODO : Const variable should be used instead of the magic number.
             // https://github.com/kaist-cp/rv6/issues/309
-            process_pool: array_const_fn_init![proc_entry; 64],
+            process_pool: array![x => proc_entry(x); NPROC],
             initial_proc: ptr::null_mut(),
             wait_lock: RawSpinlock::new("wait_lock"),
         }

@@ -125,7 +125,7 @@ impl Bcache {
             "BCACHE",
             // TODO : Const variable should be used instead of the magic number.
             // https://github.com/kaist-cp/rv6/issues/309
-            MruArena::new(array_const_fn_init![bcache_entry; 30]),
+            MruArena::new(array![x => bcache_entry(x); NBUF]),
         )
     }
 
