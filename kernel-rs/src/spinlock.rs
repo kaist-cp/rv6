@@ -124,9 +124,9 @@ pub struct GlobalSpinlockGuard<'s, T> {
 // Do not implement Send; lock must be unlocked by the CPU that acquired it.
 unsafe impl<'s, T: Sync> Sync for GlobalSpinlockGuard<'s, T> {}
 
-/// A struct for wrapping data that is protected by a global `RawSpinlock`.
+/// A struct for wrapping data that is protected by a shared `RawSpinlock`.
 pub struct GlobalSpinlock<T> {
-    lock: &'static RawSpinlock,
+    lock: *mut RawSpinlock,
     data: UnsafeCell<T>,
 }
 
@@ -217,20 +217,27 @@ impl<T> DerefMut for SpinlockGuard<'_, T> {
 
 impl<T> GlobalSpinlock<T> {
     /// Creates a new `GlobalSpinlock` that protects `data` with a
-    /// global `RawSpinlock` type.
-    pub const fn new(global_raw_lock: &'static RawSpinlock, data: T) -> Self {
+    /// shared `RawSpinlock`.
+    pub const fn zero(data: T) -> Self {
         Self {
-            lock: global_raw_lock,
+            lock: ptr::null_mut(),
             data: UnsafeCell::new(data),
         }
+    }
+
+    pub fn init(&mut self, raw_lock: &mut RawSpinlock) {
+        self.lock = raw_lock as *mut _;
     }
 
     pub fn into_inner(self) -> T {
         self.data.into_inner()
     }
 
-    pub fn lock(&self) -> GlobalSpinlockGuard<'_, T> {
-        self.lock.acquire();
+    /// # Safety
+    ///
+    /// Lock must be initialized before use.
+    pub unsafe fn lock(&self) -> GlobalSpinlockGuard<'_, T> {
+        (*self.lock).acquire();
 
         GlobalSpinlockGuard {
             lock: self,
@@ -238,15 +245,40 @@ impl<T> GlobalSpinlock<T> {
         }
     }
 
+    /// By consuming a `GlobalSpinlockGuard` that was obtained from a `GlobalSpinlock`
+    /// that uses the same `RawSpinlock`, you can obtain the lock continuously
+    /// without doing extra atomic instructions.
+    pub fn lock_with_guard<'s>(&'s self, mut guard: GlobalSpinlockGuard<'s, T>) -> GlobalSpinlockGuard<'_, T> {
+        if self.lock != guard.lock.lock {
+            panic!("wrong RawSpinlock");
+        }
+        guard.lock = self;
+        guard
+    }
+
     /// Check whether this cpu is holding the lock.
-    pub fn holding(&self) -> bool {
-        self.lock.holding()
+    /// # Safety
+    ///
+    /// Lock must be initialized before use.
+    pub unsafe fn holding(&self) -> bool {
+        (*self.lock).holding()
+    }
+
+    pub fn get_mut(&mut self) -> &mut T {
+        unsafe { &mut *self.data.get() }
+    }
+}
+
+impl<T> GlobalSpinlockGuard<'_, T> {
+    /// Returns the inner `RawSpinlock`.
+    pub fn raw(&self) -> usize {
+        self.lock.lock as usize
     }
 }
 
 impl<T> Drop for GlobalSpinlockGuard<'_, T> {
     fn drop(&mut self) {
-        self.lock.lock.release();
+        unsafe { (*self.lock.lock).release(); }
     }
 }
 
