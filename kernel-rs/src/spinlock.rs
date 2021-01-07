@@ -116,6 +116,22 @@ pub struct Spinlock<T> {
 
 unsafe impl<T: Send> Sync for Spinlock<T> {}
 
+pub struct GlobalSpinlockGuard<'s, T> {
+    lock: &'s GlobalSpinlock<'s, T>,
+    _marker: PhantomData<*const ()>,
+}
+
+// Do not implement Send; lock must be unlocked by the CPU that acquired it.
+unsafe impl<'s, T: Sync> Sync for GlobalSpinlockGuard<'s, T> {}
+
+/// A struct for wrapping data that is protected by a global `RawSpinlock`.
+pub struct GlobalSpinlock<'s, T> {
+    lock: &'s RawSpinlock,
+    data: UnsafeCell<T>,
+}
+
+unsafe impl<'s, T: Send> Sync for GlobalSpinlock<'s, T> {}
+
 impl<T> Spinlock<T> {
     pub const fn new(name: &'static str, data: T) -> Self {
         Self {
@@ -194,6 +210,54 @@ impl<T> Deref for SpinlockGuard<'_, T> {
 }
 
 impl<T> DerefMut for SpinlockGuard<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *self.lock.data.get() }
+    }
+}
+
+impl<'s, T> GlobalSpinlock<'s, T> {
+    /// Creates a new `GlobalSpinlock` that protects `data` with a
+    /// global `RawSpinlock` type.
+    pub const fn new(global_raw_lock: &'s RawSpinlock, data: T) -> Self {
+        Self {
+            lock: global_raw_lock,
+            data: UnsafeCell::new(data),
+        }
+    }
+
+    pub fn into_inner(self) -> T {
+        self.data.into_inner()
+    }
+
+    pub fn lock(&self) -> GlobalSpinlockGuard<'_, T> {
+        self.lock.acquire();
+
+        GlobalSpinlockGuard {
+            lock: self,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Check whether this cpu is holding the lock.
+    pub fn holding(&self) -> bool {
+        self.lock.holding()
+    }
+}
+
+impl<T> Drop for GlobalSpinlockGuard<'_, T> {
+    fn drop(&mut self) {
+        self.lock.lock.release();
+    }
+}
+
+impl<T> Deref for GlobalSpinlockGuard<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.lock.data.get() }
+    }
+}
+
+impl<T> DerefMut for GlobalSpinlockGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.lock.data.get() }
     }
