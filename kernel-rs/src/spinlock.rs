@@ -117,7 +117,7 @@ pub struct Spinlock<T> {
 unsafe impl<T: Send> Sync for Spinlock<T> {}
 
 pub struct GlobalSpinlockGuard<'s, T> {
-    lock: &'s GlobalSpinlock<'s, T>,
+    lock: &'s GlobalSpinlock<T>,
     _marker: PhantomData<*const ()>,
 }
 
@@ -125,12 +125,12 @@ pub struct GlobalSpinlockGuard<'s, T> {
 unsafe impl<'s, T: Sync> Sync for GlobalSpinlockGuard<'s, T> {}
 
 /// A struct for wrapping data that is protected by a global `RawSpinlock`.
-pub struct GlobalSpinlock<'s, T> {
-    lock: &'s RawSpinlock,
+pub struct GlobalSpinlock<T> {
+    lock: &'static RawSpinlock,
     data: UnsafeCell<T>,
 }
 
-unsafe impl<'s, T: Send> Sync for GlobalSpinlock<'s, T> {}
+unsafe impl<T: Send> Sync for GlobalSpinlock<T> {}
 
 impl<T> Spinlock<T> {
     pub const fn new(name: &'static str, data: T) -> Self {
@@ -215,10 +215,10 @@ impl<T> DerefMut for SpinlockGuard<'_, T> {
     }
 }
 
-impl<'s, T> GlobalSpinlock<'s, T> {
+impl<T> GlobalSpinlock<T> {
     /// Creates a new `GlobalSpinlock` that protects `data` with a
     /// global `RawSpinlock` type.
-    pub const fn new(global_raw_lock: &'s RawSpinlock, data: T) -> Self {
+    pub const fn new(global_raw_lock: &'static RawSpinlock, data: T) -> Self {
         Self {
             lock: global_raw_lock,
             data: UnsafeCell::new(data),
