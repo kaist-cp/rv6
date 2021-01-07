@@ -124,7 +124,7 @@ pub struct GlobalSpinlockGuard<'s, T> {
 // Do not implement Send; lock must be unlocked by the CPU that acquired it.
 unsafe impl<'s, T: Sync> Sync for GlobalSpinlockGuard<'s, T> {}
 
-/// A struct for wrapping data that is protected by a shared `RawSpinlock`.
+/// A struct that protects data using a global `RawSpinlock`.
 pub struct GlobalSpinlock<T> {
     lock: *mut RawSpinlock,
     data: UnsafeCell<T>,
@@ -216,8 +216,7 @@ impl<T> DerefMut for SpinlockGuard<'_, T> {
 }
 
 impl<T> GlobalSpinlock<T> {
-    /// Creates a new `GlobalSpinlock` that protects `data` with a
-    /// shared `RawSpinlock`.
+    /// Creates an uninitialized `GlobalSpinlock`.
     pub const fn zero(data: T) -> Self {
         Self {
             lock: ptr::null_mut(),
@@ -225,6 +224,7 @@ impl<T> GlobalSpinlock<T> {
         }
     }
 
+    /// Initializes the `GlobalSpinlock` using the `raw_lock`.
     pub fn init(&mut self, raw_lock: &mut RawSpinlock) {
         self.lock = raw_lock as *mut _;
     }
@@ -247,7 +247,7 @@ impl<T> GlobalSpinlock<T> {
 
     /// By consuming a `GlobalSpinlockGuard` that was obtained from a `GlobalSpinlock`
     /// that uses the same `RawSpinlock`, you can obtain the lock continuously
-    /// without doing extra atomic instructions.
+    /// without doing atomic instructions again.
     pub fn lock_with_guard<'s>(
         &'s self,
         mut guard: GlobalSpinlockGuard<'s, T>,
