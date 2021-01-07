@@ -527,17 +527,11 @@ pub struct ProcessSystem {
     wait_lock: RawSpinlock,
 }
 
-const fn proc_entry(_: usize) -> Proc {
-    Proc::zero()
-}
-
 impl ProcessSystem {
     pub const fn zero() -> Self {
         Self {
             nextpid: AtomicI32::new(1),
-            // TODO : Const variable should be used instead of the magic number.
-            // https://github.com/kaist-cp/rv6/issues/309
-            process_pool: array![x => proc_entry(x); NPROC],
+            process_pool: array![_ => Proc::zero(); NPROC],
             initial_proc: ptr::null_mut(),
             wait_lock: RawSpinlock::new("wait_lock"),
         }

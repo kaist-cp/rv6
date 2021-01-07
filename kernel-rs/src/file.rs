@@ -191,15 +191,9 @@ impl ArenaObject for File {
 
 impl FileTable {
     pub const fn zero() -> Self {
-        const fn ftable_entry(_: usize) -> ArrayEntry<File> {
-            ArrayEntry::new(File::zero())
-        }
-
         Spinlock::new(
             "FTABLE",
-            // TODO : Const variable should be used instead of the magic number.
-            // https://github.com/kaist-cp/rv6/issues/309
-            ArrayArena::new(array![x => ftable_entry(x); NFILE]),
+            ArrayArena::new(array![_ => ArrayEntry::new(File::zero()); NFILE]),
         )
     }
 
