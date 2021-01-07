@@ -60,8 +60,8 @@ impl<T> Sleepablelock<T> {
 }
 
 impl<T> SleepablelockGuard<'_, T> {
-    pub fn raw(&self) -> usize {
-        self.lock as *const _ as usize
+    pub fn raw(&self) -> *const RawSpinlock {
+        &self.lock.lock as *const _
     }
 
     pub fn sleep(&mut self) {

@@ -20,7 +20,10 @@ use crate::{
     riscv::{intr_get, intr_on, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
     sleepablelock::SleepablelockGuard,
     some_or,
-    spinlock::{pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard, GlobalSpinlock, GlobalSpinlockGuard},
+    spinlock::{
+        pop_off, push_off, GlobalSpinlock, GlobalSpinlockGuard, RawSpinlock, Spinlock,
+        SpinlockGuard,
+    },
     string::safestrcpy,
     trap::usertrapret,
     vm::{KVAddr, PAddr, PageTable, UVAddr, VAddr},
@@ -220,13 +223,13 @@ impl WaitChannel {
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
     pub unsafe fn sleep<T>(&self, guard: &mut SpinlockGuard<'_, T>) {
-        self.sleep_raw(guard.raw() as *mut RawSpinlock);
+        self.sleep_raw(guard.raw());
     }
 
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
     pub unsafe fn sleep_sleepable<T>(&self, guard: &mut SleepablelockGuard<'_, T>) {
-        self.sleep_raw(guard.raw() as *mut RawSpinlock);
+        self.sleep_raw(guard.raw());
     }
 
     /// Atomically release lock and sleep on waitchannel.
@@ -579,7 +582,11 @@ impl ProcessSystem {
 
     /// Pass p's abandoned children to init.
     /// Caller must provide a `GlobalSpinlockGuard`.
-    unsafe fn reparent<'s>(&'s self, p: *mut Proc, mut parent_guard: GlobalSpinlockGuard<'s, *mut Proc>) -> GlobalSpinlockGuard<'_, *mut Proc> {
+    unsafe fn reparent<'s>(
+        &'s self,
+        p: *mut Proc,
+        mut parent_guard: GlobalSpinlockGuard<'s, *mut Proc>,
+    ) -> GlobalSpinlockGuard<'_, *mut Proc> {
         for pp in &self.process_pool {
             parent_guard = pp.parent.lock_with_guard(parent_guard);
             if *parent_guard == p {
@@ -711,9 +718,7 @@ impl ProcessSystem {
         let p: *mut Proc = myproc();
         let data = &mut *(*p).data.get();
 
-        if self.process_pool.len() == 0 {
-            return -1
-        }
+        // Assumes that the process_pool has at least 1 element.
         let mut parent_guard = self.process_pool[0].parent.lock();
 
         loop {
@@ -757,7 +762,7 @@ impl ProcessSystem {
 
             // Wait for a child to exit.
             //DOC: wait-sleep
-            ((*p).info.get_mut_unchecked().child_waitchannel).sleep_raw(parent_guard.raw() as *const RawSpinlock);
+            ((*p).info.get_mut_unchecked().child_waitchannel).sleep_raw(parent_guard.raw());
         }
     }
 

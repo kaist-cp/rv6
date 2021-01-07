@@ -181,8 +181,8 @@ impl<T> Spinlock<T> {
 }
 
 impl<T> SpinlockGuard<'_, T> {
-    pub fn raw(&self) -> usize {
-        self.lock as *const _ as usize
+    pub fn raw(&self) -> *const RawSpinlock {
+        &self.lock.lock as *const _
     }
 
     pub fn reacquire_after<F, R>(&mut self, f: F) -> R
@@ -248,7 +248,10 @@ impl<T> GlobalSpinlock<T> {
     /// By consuming a `GlobalSpinlockGuard` that was obtained from a `GlobalSpinlock`
     /// that uses the same `RawSpinlock`, you can obtain the lock continuously
     /// without doing extra atomic instructions.
-    pub fn lock_with_guard<'s>(&'s self, mut guard: GlobalSpinlockGuard<'s, T>) -> GlobalSpinlockGuard<'_, T> {
+    pub fn lock_with_guard<'s>(
+        &'s self,
+        mut guard: GlobalSpinlockGuard<'s, T>,
+    ) -> GlobalSpinlockGuard<'_, T> {
         if self.lock != guard.lock.lock {
             panic!("wrong RawSpinlock");
         }
@@ -271,14 +274,16 @@ impl<T> GlobalSpinlock<T> {
 
 impl<T> GlobalSpinlockGuard<'_, T> {
     /// Returns the inner `RawSpinlock`.
-    pub fn raw(&self) -> usize {
-        self.lock.lock as usize
+    pub fn raw(&self) -> *const RawSpinlock {
+        self.lock.lock as *const _
     }
 }
 
 impl<T> Drop for GlobalSpinlockGuard<'_, T> {
     fn drop(&mut self) {
-        unsafe { (*self.lock.lock).release(); }
+        unsafe {
+            (*self.lock.lock).release();
+        }
     }
 }
 
