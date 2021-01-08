@@ -20,7 +20,7 @@ use core::ptr;
 use core::sync::atomic::{fence, Ordering};
 
 use arrayvec::ArrayVec;
-#[derive(Copy, Clone)] // 수정: fs disk때문에 추가한 부분
+
 pub struct Disk {
     desc: DescriptorPool,
     avail: *mut VirtqAvail,
@@ -38,7 +38,6 @@ pub struct Disk {
     ops: [VirtIOBlockOutHeader; NUM],
 }
 
-#[derive(Copy, Clone)]
 struct DescriptorPool {
     desc: *mut [VirtqDesc; NUM],
 
