@@ -13,14 +13,7 @@
 
 use core::{cmp, mem, ptr};
 
-use crate::{
-    bio::Buf,
-    kernel::kernel,
-    param::BSIZE,
-    sleepablelock::Sleepablelock,
-    stat::T_DIR,
-    virtio_disk::Disk,
-};
+use crate::{bio::Buf, kernel::{kernel, kernel_mut}, param::BSIZE, sleepablelock::Sleepablelock, stat::T_DIR, virtio_disk::{Disk, virtio_disk_init}};
 
 mod inode;
 mod log;
@@ -58,14 +51,11 @@ pub struct FsTransaction<'s> {
 }
 
 impl FileSystem {
-    // pub fn zero() -> Self {
-
-    // }
     pub fn new(dev: u32) -> Self {
-        // let mut disk = Sleepablelock::new("virtio_disk", Disk::zero());
-        let disk = Sleepablelock::new("virtio_disk", kernel().disk);
+        let mut disk = Sleepablelock::new("virtio_disk", Disk::zero());
+        // let disk = Sleepablelock::new("virtio_disk", unsafe{&DISK});
 
-        // unsafe { virtio_disk_init(&mut kernel_mut().virtqueue, disk.get_mut()) };
+        unsafe { virtio_disk_init(&mut kernel_mut().virtqueue, disk.get_mut()) };
         let superblock = unsafe { Superblock::new(&disk.read(dev, 1)) };
         let log = Sleepablelock::new(
             "LOG",

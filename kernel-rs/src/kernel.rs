@@ -19,7 +19,7 @@ use crate::{
     spinlock::Spinlock,
     trap::{trapinit, trapinithart},
     uart::Uart,
-    virtio_disk::{virtio_disk_init, Disk},
+    // virtio_disk::{virtio_disk_init, Disk},
     vm::{KVAddr, PageTable},
 };
 
@@ -70,10 +70,10 @@ pub struct Kernel {
     /// This is a global instead of allocated because it must be multiple contiguous pages, which
     /// `kernel().alloc()` doesn't support, and page aligned.
     // TODO(efenniht): I moved out pages from Disk. Did I changed semantics (pointer indirection?)
-    virtqueue: [RawPage; 2],
+    pub virtqueue: [RawPage; 2],
 
     /// It may sleep until some Descriptors are freed.
-    pub disk: Disk, //Sleepablelock<Disk>,
+    // pub disk: Disk, //Sleepablelock<Disk>,
 
     pub devsw: [Devsw; NDEV],
 
@@ -98,7 +98,7 @@ impl Kernel {
             cpus: [Cpu::new(); NCPU],
             bcache: Bcache::zero(),
             virtqueue: [RawPage::DEFAULT, RawPage::DEFAULT],
-            disk: Disk::zero(), //Sleepablelock::new("virtio_disk", Disk::zero()),
+            // disk: Disk::zero(), //Sleepablelock::new("virtio_disk", Disk::zero()),
             devsw: [Devsw {
                 read: None,
                 write: None,
@@ -246,7 +246,7 @@ pub unsafe fn kernel_main() -> ! {
         KERNEL.bcache.get_mut().init();
 
         // Emulated hard disk.
-        virtio_disk_init(&mut KERNEL.virtqueue, &mut KERNEL.disk); //KERNEL.disk.get_mut());
+        // virtio_disk_init(&mut KERNEL.virtqueue, &mut KERNEL.disk); //KERNEL.disk.get_mut());
 
         // First user process.
         KERNEL.procs.user_proc_init();
