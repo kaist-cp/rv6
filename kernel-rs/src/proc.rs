@@ -847,7 +847,9 @@ pub unsafe fn proc_mapstacks(page_table: &mut PageTable<KVAddr>) {
 #[allow(clippy::ref_in_deref)]
 pub unsafe fn procinit(procs: &'static mut ProcessSystem) {
     for (i, p) in procs.process_pool.iter_mut().enumerate() {
-        p.parent.as_mut_ptr().write(GlobalSpinlock::new(&procs.wait_lock, ptr::null_mut()));
+        p.parent
+            .as_mut_ptr()
+            .write(GlobalSpinlock::new(&procs.wait_lock, ptr::null_mut()));
         (&mut *(*p).data.get()).kstack = kstack(i);
     }
 }
