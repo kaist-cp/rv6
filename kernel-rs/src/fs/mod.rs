@@ -13,7 +13,14 @@
 
 use core::{cmp, mem, ptr};
 
-use crate::{bio::Buf, kernel::kernel, param::BSIZE, sleepablelock::Sleepablelock, stat::T_DIR};
+use crate::{
+    bio::Buf,
+    kernel::kernel,
+    param::BSIZE,
+    sleepablelock::Sleepablelock,
+    stat::T_DIR,
+    virtio_disk::Disk,
+};
 
 mod inode;
 mod log;
@@ -41,6 +48,9 @@ pub struct FileSystem {
 
     /// TODO(rv6): document it
     log: Sleepablelock<Log>,
+
+    /// It may sleep until some Descriptors are freed.
+    pub disk: Sleepablelock<Disk>,
 }
 
 pub struct FsTransaction<'s> {
@@ -48,13 +58,25 @@ pub struct FsTransaction<'s> {
 }
 
 impl FileSystem {
+    // pub fn zero() -> Self {
+
+    // }
     pub fn new(dev: u32) -> Self {
-        let superblock = unsafe { Superblock::new(&kernel().disk.read(dev, 1)) };
+        // let mut disk = Sleepablelock::new("virtio_disk", Disk::zero());
+        let disk = Sleepablelock::new("virtio_disk", kernel().disk);
+
+        // unsafe { virtio_disk_init(&mut kernel_mut().virtqueue, disk.get_mut()) };
+        let superblock = unsafe { Superblock::new(&disk.read(dev, 1)) };
         let log = Sleepablelock::new(
             "LOG",
             Log::new(dev, superblock.logstart as i32, superblock.nlog as i32),
         );
-        Self { superblock, log }
+
+        Self {
+            superblock,
+            log,
+            disk,
+        }
     }
 
     /// Called for each FS system call.
@@ -83,7 +105,7 @@ impl FsTransaction<'_> {
     /// commit()/write_log() will do the disk write.
     ///
     /// write() replaces write(); a typical use is:
-    ///   bp = kernel().disk.read(...)
+    ///   bp = kernel().fs().disk.read(...)
     ///   modify bp->data[]
     ///   write(bp)
     unsafe fn write(&self, b: Buf<'static>) {
@@ -102,7 +124,7 @@ impl FsTransaction<'_> {
     /// Allocate a zeroed disk block.
     unsafe fn balloc(&self, dev: u32) -> u32 {
         for b in num_iter::range_step(0, self.fs.superblock.size, BPB) {
-            let mut bp = kernel().disk.read(dev, self.fs.superblock.bblock(b));
+            let mut bp = self.fs.disk.read(dev, self.fs.superblock.bblock(b));
             for bi in 0..cmp::min(BPB, self.fs.superblock.size - b) {
                 let m = 1 << (bi % 8);
                 if bp.deref_mut_inner().data[(bi / 8) as usize] & m == 0 {
@@ -120,7 +142,7 @@ impl FsTransaction<'_> {
 
     /// Free a disk block.
     unsafe fn bfree(&self, dev: u32, b: u32) {
-        let mut bp = kernel().disk.read(dev, self.fs.superblock.bblock(b));
+        let mut bp = self.fs.disk.read(dev, self.fs.superblock.bblock(b));
         let bi = b.wrapping_rem(BPB) as i32;
         let m = 1u8 << (bi % 8);
         assert_ne!(

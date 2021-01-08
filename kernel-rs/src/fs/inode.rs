@@ -278,6 +278,7 @@ impl InodeGuard<'_> {
     /// that lives on disk.
     pub unsafe fn update(&self) {
         let mut bp = kernel()
+            .fs()
             .disk
             .read(self.dev, kernel().fs().superblock.iblock(self.inum));
         let mut dip: *mut Dinode = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
@@ -306,7 +307,10 @@ impl InodeGuard<'_> {
         }
 
         if self.deref_inner().addr_indirect != 0 {
-            let mut bp = kernel().disk.read(dev, self.deref_inner().addr_indirect);
+            let mut bp = kernel()
+                .fs()
+                .disk
+                .read(dev, self.deref_inner().addr_indirect);
             let a = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
                 if *a.add(j) != 0 {
@@ -334,6 +338,7 @@ impl InodeGuard<'_> {
         let mut tot: u32 = 0;
         while tot < n {
             let mut bp = kernel()
+                .fs()
                 .disk
                 .read(self.dev, self.bmap((off as usize).wrapping_div(BSIZE)));
             let m = core::cmp::min(
@@ -365,7 +370,7 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = kernel().disk.read(
+            let mut bp = kernel().fs().disk.read(
                 self.dev,
                 self.bmap_or_alloc((off as usize).wrapping_div(BSIZE)),
             );
@@ -434,7 +439,7 @@ impl InodeGuard<'_> {
             self.deref_inner_mut().addr_indirect = addr;
         }
 
-        let mut bp = kernel().disk.read(self.dev, addr);
+        let mut bp = kernel().fs().disk.read(self.dev, addr);
         let a: *mut u32 = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
         unsafe {
             addr = *a.add(bn);
@@ -459,7 +464,7 @@ impl InodeGuard<'_> {
             let indirect = inner.addr_indirect;
             assert_ne!(indirect, 0, "bmap: out of range");
 
-            let bp = kernel().disk.read(self.dev, indirect);
+            let bp = kernel().fs().disk.read(self.dev, indirect);
             let data = bp.deref_inner().data.as_ptr() as *mut u32;
             let addr = unsafe { *data.add(bn) };
             assert_ne!(addr, 0, "bmap: out of range");
@@ -524,6 +529,7 @@ impl Inode {
         let mut guard = self.inner.lock();
         if !guard.valid {
             let mut bp = kernel()
+                .fs()
                 .disk
                 .read(self.dev, kernel().fs().superblock.iblock(self.inum));
             let dip: &mut Dinode = unsafe {
@@ -615,6 +621,7 @@ impl Itable {
     pub unsafe fn alloc_inode(&self, dev: u32, typ: i16, tx: &FsTransaction<'_>) -> RcInode<'_> {
         for inum in 1..kernel().fs().superblock.ninodes {
             let mut bp = kernel()
+                .fs()
                 .disk
                 .read(dev, kernel().fs().superblock.iblock(inum));
             let dip = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
