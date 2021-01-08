@@ -126,7 +126,7 @@ unsafe impl<'s, T: Sync> Sync for GlobalSpinlockGuard<'s, T> {}
 
 /// A struct that protects data using a global `RawSpinlock`.
 pub struct GlobalSpinlock<T> {
-    lock: *mut RawSpinlock,
+    lock: &'static RawSpinlock,
     data: UnsafeCell<T>,
 }
 
@@ -217,27 +217,19 @@ impl<T> DerefMut for SpinlockGuard<'_, T> {
 
 impl<T> GlobalSpinlock<T> {
     /// Creates an uninitialized `GlobalSpinlock`.
-    pub const fn zero(data: T) -> Self {
+    pub const fn new(raw_lock: &'static RawSpinlock, data: T) -> Self {
         Self {
-            lock: ptr::null_mut(),
+            lock: raw_lock,
             data: UnsafeCell::new(data),
         }
-    }
-
-    /// Initializes the `GlobalSpinlock` using the `raw_lock`.
-    pub fn init(&mut self, raw_lock: &mut RawSpinlock) {
-        self.lock = raw_lock as *mut _;
     }
 
     pub fn into_inner(self) -> T {
         self.data.into_inner()
     }
 
-    /// # Safety
-    ///
-    /// Lock must be initialized before use.
-    pub unsafe fn lock(&self) -> GlobalSpinlockGuard<'_, T> {
-        (*self.lock).acquire();
+    pub fn lock(&self) -> GlobalSpinlockGuard<'_, T> {
+        self.lock.acquire();
 
         GlobalSpinlockGuard {
             lock: self,
@@ -252,7 +244,7 @@ impl<T> GlobalSpinlock<T> {
         &'s self,
         mut guard: GlobalSpinlockGuard<'s, T>,
     ) -> GlobalSpinlockGuard<'_, T> {
-        if self.lock != guard.lock.lock {
+        if self.lock as *const _ != guard.lock.lock as *const _ {
             panic!("wrong RawSpinlock");
         }
         guard.lock = self;
@@ -260,11 +252,8 @@ impl<T> GlobalSpinlock<T> {
     }
 
     /// Check whether this cpu is holding the lock.
-    /// # Safety
-    ///
-    /// Lock must be initialized before use.
-    pub unsafe fn holding(&self) -> bool {
-        (*self.lock).holding()
+    pub fn holding(&self) -> bool {
+        self.lock.holding()
     }
 
     pub fn get_mut(&mut self) -> &mut T {
@@ -281,9 +270,7 @@ impl<T> GlobalSpinlockGuard<'_, T> {
 
 impl<T> Drop for GlobalSpinlockGuard<'_, T> {
     fn drop(&mut self) {
-        unsafe {
-            (*self.lock.lock).release();
-        }
+        self.lock.lock.release();
     }
 }
 
