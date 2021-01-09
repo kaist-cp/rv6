@@ -227,10 +227,6 @@ impl<T> SpinlockProtected<T> {
         }
     }
 
-    pub fn into_inner(self) -> T {
-        self.data.into_inner()
-    }
-
     pub fn lock(&self) -> SpinlockProtectedGuard<'_, T> {
         self.lock.acquire();
 
@@ -243,8 +239,15 @@ impl<T> SpinlockProtected<T> {
     /// Returns a mutable reference to the inner data, provided that the given
     /// `guard: SpinlockProtectedGuard` was obtained from a `SpinlockProtected`
     /// that refers to the same `RawSpinlock` with this `SpinlockProtected`.
-    /// Note that in order to prevent references from leaking, the returned reference
+    ///
+    /// # Note
+    ///
+    /// In order to prevent references from leaking, the returned reference
     /// cannot outlive the given `guard`.
+    ///
+    /// This adds some small runtime cost, since we need to check that the given
+    /// `SpinlockProtectedGuard` was truely originated from a `SpinlockProtected`
+    /// that refers to the same `RawSpinlock`.
     #[allow(clippy::mut_from_ref)]
     pub fn get_mut<'s>(&self, guard: &'s SpinlockProtectedGuard<'s, T>) -> &'s mut T {
         assert!(self.lock as *const _ == guard.lock.lock as *const _);
