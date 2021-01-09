@@ -22,8 +22,8 @@ use crate::{
     sleepablelock::SleepablelockGuard,
     some_or,
     spinlock::{
-        pop_off, push_off, GlobalSpinlock, GlobalSpinlockGuard, RawSpinlock, Spinlock,
-        SpinlockGuard,
+        pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard, SpinlockProtected,
+        SpinlockProtectedGuard,
     },
     string::safestrcpy,
     trap::usertrapret,
@@ -319,7 +319,7 @@ pub struct ProcData {
 /// Per-process state.
 pub struct Proc {
     /// Parent process.
-    parent: MaybeUninit<GlobalSpinlock<*mut Proc>>,
+    parent: MaybeUninit<SpinlockProtected<*mut Proc>>,
 
     info: Spinlock<ProcInfo>,
 
@@ -558,14 +558,14 @@ impl ProcessSystem {
 
                 // Allocate a trapframe page.
                 let page = some_or!(kernel().alloc(), {
-                    freeproc(guard);
+                    freeproc(guard, None);
                     return Err(());
                 });
                 data.trapframe = page.into_usize() as *mut Trapframe;
 
                 // An empty user page table.
                 data.pagetable = ok_or!(proc_pagetable(p as *const _ as *mut _), {
-                    freeproc(guard);
+                    freeproc(guard, None);
                     return Err(());
                 });
 
@@ -582,16 +582,15 @@ impl ProcessSystem {
     }
 
     /// Pass p's abandoned children to init.
-    /// Caller must provide a `GlobalSpinlockGuard`.
+    /// Caller must provide a `SpinlockProtectedGuard`.
     unsafe fn reparent<'s>(
         &'s self,
         p: *mut Proc,
-        mut parent_guard: GlobalSpinlockGuard<'s, *mut Proc>,
-    ) -> GlobalSpinlockGuard<'_, *mut Proc> {
+        parent_guard: &SpinlockProtectedGuard<'s, *mut Proc>,
+    ) {
         for pp in &self.process_pool {
-            parent_guard = pp.parent.assume_init_ref().lock_with_guard(parent_guard);
-            if *parent_guard == p {
-                *parent_guard = self.initial_proc;
+            if *pp.parent.assume_init_ref().get_mut(parent_guard) == p {
+                *pp.parent.assume_init_ref().get_mut(parent_guard) = self.initial_proc;
                 (*self.initial_proc)
                     .info
                     .get_mut_unchecked()
@@ -599,7 +598,6 @@ impl ProcessSystem {
                     .wakeup();
             }
         }
-        parent_guard
     }
 
     /// Kill the process with the given pid.
@@ -675,7 +673,7 @@ impl ProcessSystem {
             .uvmcopy(&mut npdata.pagetable, pdata.sz)
             .is_err()
         {
-            freeproc(np);
+            freeproc(np, None);
             return -1;
         }
         npdata.sz = pdata.sz;
@@ -720,14 +718,13 @@ impl ProcessSystem {
         let data = &mut *(*p).data.get();
 
         // Assumes that the process_pool has at least 1 element.
-        let mut parent_guard = self.process_pool[0].parent.assume_init_ref().lock();
+        let parent_guard = self.process_pool[0].parent.assume_init_ref().lock();
 
         loop {
             // Scan through pool looking for exited children.
             let mut havekids = false;
             for np in &self.process_pool {
-                parent_guard = np.parent.assume_init_ref().lock_with_guard(parent_guard);
-                if *parent_guard == p {
+                if *np.parent.assume_init_ref().get_mut(&parent_guard) == p {
                     // Make sure the child isn't still in exit() or swtch().
                     let mut np = np.lock();
 
@@ -750,7 +747,7 @@ impl ProcessSystem {
                             drop(np);
                             return -1;
                         }
-                        freeproc(np);
+                        freeproc(np, Some(parent_guard));
                         return pid;
                     }
                 }
@@ -778,12 +775,11 @@ impl ProcessSystem {
         data.close_files();
 
         // Give all children to init.
-        let mut parent_guard = (*p).parent.assume_init_ref().lock();
-        parent_guard = self.reparent(p, parent_guard);
+        let parent_guard = (*p).parent.assume_init_ref().lock();
+        self.reparent(p, &parent_guard);
 
         // Parent might be sleeping in wait().
-        parent_guard = (*p).parent.assume_init_ref().lock_with_guard(parent_guard);
-        (**parent_guard)
+        (**(*p).parent.assume_init_ref().get_mut(&parent_guard))
             .info
             .get_mut_unchecked()
             .child_waitchannel
@@ -849,7 +845,7 @@ pub unsafe fn procinit(procs: &'static mut ProcessSystem) {
     for (i, p) in procs.process_pool.iter_mut().enumerate() {
         p.parent
             .as_mut_ptr()
-            .write(GlobalSpinlock::new(&procs.wait_lock, ptr::null_mut()));
+            .write(SpinlockProtected::new(&procs.wait_lock, ptr::null_mut()));
         (&mut *(*p).data.get()).kstack = kstack(i);
     }
 }
@@ -871,10 +867,12 @@ pub unsafe fn myproc() -> *mut Proc {
     p
 }
 
-/// Free a proc structure and the data hanging from it,
+/// Frees a `Proc` structure and the data hanging from it,
 /// including user pages.
-/// p->lock must be held.
-unsafe fn freeproc(mut p: ProcGuard) {
+/// Must provide a `ProcGuard`.
+/// If a `SpinlockProtectedGuard` was also provided,
+/// also clears the given `Proc`'s parent field.
+unsafe fn freeproc(mut p: ProcGuard, parent_guard: Option<SpinlockProtectedGuard<'_, *mut Proc>>) {
     let mut data = &mut *p.data.get();
     if !data.trapframe.is_null() {
         kernel().free(Page::from_usize(data.trapframe as _));
@@ -886,7 +884,9 @@ unsafe fn freeproc(mut p: ProcGuard) {
     }
     data.pagetable = PageTable::zero();
     data.sz = 0;
-    *(*p).parent.assume_init_mut().get_mut() = ptr::null_mut();
+    if let Some(guard) = parent_guard {
+        *(*p).parent.assume_init_mut().get_mut(&guard) = ptr::null_mut();
+    }
     p.deref_mut_info().pid = 0;
     (*p).name[0] = 0;
     p.deref_mut_info().waitchannel = ptr::null();
