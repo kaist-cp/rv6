@@ -80,7 +80,7 @@ use crate::{
     vm::{KVAddr, VAddr},
 };
 
-use super::{FileName, IPB, MAXFILE, NDIRECT, NINDIRECT};
+use super::{FileName, DISK, IPB, MAXFILE, NDIRECT, NINDIRECT};
 
 /// Directory is a file containing a sequence of Dirent structures.
 pub const DIRSIZ: usize = 14;
@@ -226,7 +226,7 @@ impl Drop for InodeGuard<'_> {
 // Directories
 impl InodeGuard<'_> {
     /// Write a new directory entry (name, inum) into the directory dp.
-    pub fn dirlink(&mut self, name: &FileName, inum: u32) -> Result<(), ()> {
+    pub unsafe fn dirlink(&mut self, name: &FileName, inum: u32) -> Result<(), ()> {
         let mut de: Dirent = Default::default();
 
         // Check that name is not present.
@@ -277,10 +277,7 @@ impl InodeGuard<'_> {
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk.
     pub unsafe fn update(&self) {
-        let mut bp = kernel()
-            .fs()
-            .disk
-            .read(self.dev, kernel().fs().superblock.iblock(self.inum));
+        let mut bp = DISK.read(self.dev, kernel().fs().superblock.iblock(self.inum));
         let mut dip: *mut Dinode = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
             .add((self.inum as usize).wrapping_rem(IPB));
         let inner = self.deref_inner();
@@ -307,10 +304,7 @@ impl InodeGuard<'_> {
         }
 
         if self.deref_inner().addr_indirect != 0 {
-            let mut bp = kernel()
-                .fs()
-                .disk
-                .read(dev, self.deref_inner().addr_indirect);
+            let mut bp = DISK.read(dev, self.deref_inner().addr_indirect);
             let a = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
                 if *a.add(j) != 0 {
@@ -337,10 +331,8 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = kernel()
-                .fs()
-                .disk
-                .read(self.dev, self.bmap((off as usize).wrapping_div(BSIZE)));
+            let mut bp =
+                unsafe { DISK.read(self.dev, self.bmap((off as usize).wrapping_div(BSIZE))) };
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
@@ -370,10 +362,12 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = kernel().fs().disk.read(
-                self.dev,
-                self.bmap_or_alloc((off as usize).wrapping_div(BSIZE)),
-            );
+            let mut bp = unsafe {
+                DISK.read(
+                    self.dev,
+                    self.bmap_or_alloc((off as usize).wrapping_div(BSIZE)),
+                )
+            };
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
                 (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
@@ -439,7 +433,7 @@ impl InodeGuard<'_> {
             self.deref_inner_mut().addr_indirect = addr;
         }
 
-        let mut bp = kernel().fs().disk.read(self.dev, addr);
+        let mut bp = unsafe { DISK.read(self.dev, addr) };
         let a: *mut u32 = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
         unsafe {
             addr = *a.add(bn);
@@ -464,7 +458,7 @@ impl InodeGuard<'_> {
             let indirect = inner.addr_indirect;
             assert_ne!(indirect, 0, "bmap: out of range");
 
-            let bp = kernel().fs().disk.read(self.dev, indirect);
+            let bp = unsafe { DISK.read(self.dev, indirect) };
             let data = bp.deref_inner().data.as_ptr() as *mut u32;
             let addr = unsafe { *data.add(bn) };
             assert_ne!(addr, 0, "bmap: out of range");
@@ -528,10 +522,7 @@ impl Inode {
     pub fn lock<'x>(&'x self, tx: &'x FsTransaction<'x>) -> InodeGuard<'x> {
         let mut guard = self.inner.lock();
         if !guard.valid {
-            let mut bp = kernel()
-                .fs()
-                .disk
-                .read(self.dev, kernel().fs().superblock.iblock(self.inum));
+            let mut bp = unsafe { DISK.read(self.dev, kernel().fs().superblock.iblock(self.inum)) };
             let dip: &mut Dinode = unsafe {
                 &mut *((bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
                     .add((self.inum as usize).wrapping_rem(IPB)))
@@ -620,10 +611,7 @@ impl Itable {
     /// Returns an unlocked but allocated and referenced inode.
     pub unsafe fn alloc_inode(&self, dev: u32, typ: i16, tx: &FsTransaction<'_>) -> RcInode<'_> {
         for inum in 1..kernel().fs().superblock.ninodes {
-            let mut bp = kernel()
-                .fs()
-                .disk
-                .read(dev, kernel().fs().superblock.iblock(inum));
+            let mut bp = DISK.read(dev, kernel().fs().superblock.iblock(inum));
             let dip = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
                 .add((inum as usize).wrapping_rem(IPB));
 

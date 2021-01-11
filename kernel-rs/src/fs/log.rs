@@ -30,6 +30,7 @@ use crate::{
     sleepablelock::Sleepablelock,
 };
 
+use super::DISK;
 pub struct Log {
     dev: u32,
     start: i32,
@@ -76,10 +77,7 @@ impl Log {
         for (tail, dbuf) in self.lh.drain(..).enumerate() {
             // Read log block.
 
-            let lbuf = kernel()
-                .fs()
-                .disk
-                .read(self.dev as u32, (self.start + tail as i32 + 1) as u32);
+            let lbuf = DISK.read(self.dev as u32, (self.start + tail as i32 + 1) as u32);
 
             // Read dst.
             let mut dbuf = dbuf.lock();
@@ -92,7 +90,7 @@ impl Log {
             );
 
             // Write dst to disk.
-            kernel().fs().disk.write(&mut dbuf);
+            DISK.write(&mut dbuf);
 
             if recovering {
                 mem::forget(dbuf);
@@ -102,7 +100,7 @@ impl Log {
 
     /// Read the log header from disk into the in-memory log header.
     unsafe fn read_head(&mut self) {
-        let mut buf = kernel().fs().disk.read(self.dev as u32, self.start as u32);
+        let mut buf = DISK.read(self.dev as u32, self.start as u32);
         let lh = buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader;
         for b in &(*lh).block[0..(*lh).n as usize] {
             self.lh.push(
@@ -118,13 +116,13 @@ impl Log {
     /// This is the true point at which the
     /// current transaction commits.
     unsafe fn write_head(&mut self) {
-        let mut buf = kernel().fs().disk.read(self.dev as u32, self.start as u32);
+        let mut buf = DISK.read(self.dev as u32, self.start as u32);
         let mut hb = &mut *(buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader);
         hb.n = self.lh.len() as u32;
         for (db, b) in izip!(&mut hb.block, &self.lh) {
             *db = (*b).blockno;
         }
-        kernel().fs().disk.write(&mut buf)
+        DISK.write(&mut buf)
     }
 
     unsafe fn recover_from_log(&mut self) {
@@ -186,13 +184,11 @@ impl Log {
     unsafe fn write_log(&mut self) {
         for (tail, from) in self.lh.iter().enumerate() {
             // Log block.
-            let mut to = kernel()
-                .fs()
-                .disk
+            let mut to = DISK
                 .read(self.dev as u32, (self.start + tail as i32 + 1) as u32);
 
             // Cache block.
-            let from = kernel().fs().disk.read(self.dev as u32, from.blockno);
+            let from = DISK.read(self.dev as u32, from.blockno);
 
             ptr::copy(
                 from.deref_inner().data.as_ptr(),
@@ -201,7 +197,7 @@ impl Log {
             );
 
             // Write the log.
-            kernel().fs().disk.write(&mut to)
+            DISK.write(&mut to)
         }
     }
 
