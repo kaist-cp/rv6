@@ -19,15 +19,13 @@ use crate::{
     spinlock::Spinlock,
     trap::{trapinit, trapinithart},
     uart::Uart,
-    // virtio_disk::{virtio_disk_init, Disk},
+    virtio_disk::virtio_disk_init1,
     vm::{KVAddr, PageTable},
 };
 
 /// The kernel.
 // TODO(rv6): remove pub from `pub static mut KERNEL`.
 pub static mut KERNEL: Kernel = Kernel::zero();
-
-// pub static mut DISK: Disk = Disk::zero();
 
 /// After intialized, the kernel is safe to immutably access.
 #[inline]
@@ -72,9 +70,6 @@ pub struct Kernel {
     // TODO(efenniht): I moved out pages from Disk. Did I changed semantics (pointer indirection?)
     pub virtqueue: [RawPage; 2],
 
-    /// It may sleep until some Descriptors are freed.
-    // pub disk: Disk, //Sleepablelock<Disk>,
-
     pub devsw: [Devsw; NDEV],
 
     pub ftable: FileTable,
@@ -98,7 +93,6 @@ impl Kernel {
             cpus: [Cpu::new(); NCPU],
             bcache: Bcache::zero(),
             virtqueue: [RawPage::DEFAULT, RawPage::DEFAULT],
-            // disk: Disk::zero(), //Sleepablelock::new("virtio_disk", Disk::zero()),
             devsw: [Devsw {
                 read: None,
                 write: None,
@@ -246,7 +240,7 @@ pub unsafe fn kernel_main() -> ! {
         KERNEL.bcache.get_mut().init();
 
         // Emulated hard disk.
-        // virtio_disk_init(&mut KERNEL.virtqueue, &mut KERNEL.disk); //KERNEL.disk.get_mut());
+        virtio_disk_init1(&mut KERNEL.virtqueue); //KERNEL.disk.get_mut());
 
         // First user process.
         KERNEL.procs.user_proc_init();
