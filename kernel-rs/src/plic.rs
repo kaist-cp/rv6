@@ -21,14 +21,14 @@ pub unsafe fn plicinithart() {
 }
 
 /// ask the PLIC what interrupt we should serve.
-pub unsafe fn plic_claim() -> usize {
+pub unsafe fn plic_claim() -> u32 {
     let hart: usize = cpuid();
-    let irq: usize = *(plic_sclaim(hart) as *mut usize);
+    let irq: u32 = *(plic_sclaim(hart) as *mut u32);
     irq
 }
 
 /// tell the PLIC we've served this IRQ.
-pub unsafe fn plic_complete(irq: usize) {
+pub unsafe fn plic_complete(irq: u32) {
     let hart: usize = cpuid();
-    *(plic_sclaim(hart) as *mut usize) = irq;
+    *(plic_sclaim(hart) as *mut u32) = irq;
 }

@@ -204,14 +204,14 @@ pub unsafe fn devintr() -> i32 {
         // This is a supervisor external interrupt, via PLIC.
 
         // irq indicates which device interrupted.
-        let irq: usize = plic_claim();
+        let irq = plic_claim();
 
-        if irq == UART0_IRQ {
+        if irq as usize == UART0_IRQ {
             kernel().uart.intr();
-        } else if irq == VIRTIO0_IRQ {
+        } else if irq as usize == VIRTIO0_IRQ {
             kernel().disk.lock().virtio_intr();
         } else if irq != 0 {
-            println!("unexpected interrupt irq={:018p}\n", irq as *const u8);
+            println!("unexpected interrupt irq={}\n", irq);
         }
 
         // The PLIC allows each device to raise at most one
