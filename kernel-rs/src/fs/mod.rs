@@ -11,9 +11,20 @@
 //!
 //! On-disk file system format used for both kernel and user programs are also included here.
 
-use core::{cmp, mem, ptr};
+use core::{
+    cmp,
+    mem::{self},
+    ptr,
+};
 
-use crate::{bio::Buf, kernel::{kernel, kernel_mut}, param::BSIZE, sleepablelock::Sleepablelock, stat::T_DIR, virtio_disk::{Disk, virtio_disk_init}};
+use crate::{
+    bio::Buf,
+    kernel::{kernel, kernel_mut},
+    param::BSIZE,
+    sleepablelock::Sleepablelock,
+    stat::T_DIR,
+    virtio_disk::{virtio_disk_init2, Disk},
+};
 
 mod inode;
 mod log;
@@ -24,6 +35,7 @@ pub use inode::{
     Dinode, Dirent, Inode, InodeGuard, InodeInner, Itable, RcInode, DIRENT_SIZE, DIRSIZ,
 };
 pub use log::Log;
+// use mem::take;
 pub use path::{FileName, Path};
 pub use superblock::{Superblock, BPB, IPB};
 
@@ -34,6 +46,8 @@ const NDIRECT: usize = 12;
 const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
 const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
 
+pub static mut DISK: Sleepablelock<Disk> = Sleepablelock::new("virtiodisk", Disk::zero());
+// const DISK: Sleepablelock<Disk> = Sleepablelock::new("virtiodisk", Disk::zero());
 pub struct FileSystem {
     /// there should be one superblock per disk device, but we run with
     /// only one device
@@ -41,9 +55,8 @@ pub struct FileSystem {
 
     /// TODO(rv6): document it
     log: Sleepablelock<Log>,
-
-    /// It may sleep until some Descriptors are freed.
-    pub disk: Sleepablelock<Disk>,
+    // It may sleep until some Descriptors are freed.
+    // pub disk: Sleepablelock<Disk>,
 }
 
 pub struct FsTransaction<'s> {
@@ -52,11 +65,10 @@ pub struct FsTransaction<'s> {
 
 impl FileSystem {
     pub fn new(dev: u32) -> Self {
-        let mut disk = Sleepablelock::new("virtio_disk", Disk::zero());
-        // let disk = Sleepablelock::new("virtio_disk", unsafe{&DISK});
-
-        unsafe { virtio_disk_init(&mut kernel_mut().virtqueue, disk.get_mut()) };
-        let superblock = unsafe { Superblock::new(&disk.read(dev, 1)) };
+        // let disk = Sleepablelock::new("virtio_disk", disk);////Disk::zero());
+        // let mut disk = Sleepablelock::new("virtio_disk", DISK);
+        unsafe { virtio_disk_init2(&mut kernel_mut().virtqueue, DISK.get_mut()) };
+        let superblock = unsafe { Superblock::new(&DISK.read(dev, 1)) };
         let log = Sleepablelock::new(
             "LOG",
             Log::new(dev, superblock.logstart as i32, superblock.nlog as i32),
@@ -65,7 +77,6 @@ impl FileSystem {
         Self {
             superblock,
             log,
-            disk,
         }
     }
 
@@ -114,7 +125,7 @@ impl FsTransaction<'_> {
     /// Allocate a zeroed disk block.
     unsafe fn balloc(&self, dev: u32) -> u32 {
         for b in num_iter::range_step(0, self.fs.superblock.size, BPB) {
-            let mut bp = self.fs.disk.read(dev, self.fs.superblock.bblock(b));
+            let mut bp = DISK.read(dev, self.fs.superblock.bblock(b));
             for bi in 0..cmp::min(BPB, self.fs.superblock.size - b) {
                 let m = 1 << (bi % 8);
                 if bp.deref_mut_inner().data[(bi / 8) as usize] & m == 0 {
@@ -132,7 +143,7 @@ impl FsTransaction<'_> {
 
     /// Free a disk block.
     unsafe fn bfree(&self, dev: u32, b: u32) {
-        let mut bp = self.fs.disk.read(dev, self.fs.superblock.bblock(b));
+        let mut bp = DISK.read(dev, self.fs.superblock.bblock(b));
         let bi = b.wrapping_rem(BPB) as i32;
         let m = 1u8 << (bi % 8);
         assert_ne!(
