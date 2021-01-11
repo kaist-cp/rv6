@@ -580,15 +580,9 @@ impl Inode {
 
 impl Itable {
     pub const fn zero() -> Self {
-        const fn itable_entry(_: usize) -> ArrayEntry<Inode> {
-            ArrayEntry::new(Inode::zero())
-        }
-
         Spinlock::new(
             "ITABLE",
-            // TODO : Const variable should be used instead of the magic number.
-            // https://github.com/kaist-cp/rv6/issues/309
-            ArrayArena::new(array![x => itable_entry(x); NINODE]),
+            ArrayArena::new(array![_ => ArrayEntry::new(Inode::zero()); NINODE]),
         )
     }
 

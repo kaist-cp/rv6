@@ -2,7 +2,8 @@
 
 use core::{
     cell::UnsafeCell,
-    cmp, mem,
+    cmp,
+    mem::{self, MaybeUninit},
     ops::{Deref, DerefMut},
     ptr, slice, str,
     sync::atomic::{AtomicBool, AtomicI32, Ordering},
@@ -20,7 +21,10 @@ use crate::{
     riscv::{intr_get, intr_on, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
     sleepablelock::SleepablelockGuard,
     some_or,
-    spinlock::{pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard},
+    spinlock::{
+        pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard, SpinlockProtected,
+        SpinlockProtectedGuard,
+    },
     string::safestrcpy,
     trap::usertrapret,
     vm::{KVAddr, PAddr, PageTable, UVAddr, VAddr},
@@ -220,13 +224,13 @@ impl WaitChannel {
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
     pub unsafe fn sleep<T>(&self, guard: &mut SpinlockGuard<'_, T>) {
-        self.sleep_raw(guard.raw() as *mut RawSpinlock);
+        self.sleep_raw(guard.raw());
     }
 
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
     pub unsafe fn sleep_sleepable<T>(&self, guard: &mut SleepablelockGuard<'_, T>) {
-        self.sleep_raw(guard.raw() as *mut RawSpinlock);
+        self.sleep_raw(guard.raw());
     }
 
     /// Atomically release lock and sleep on waitchannel.
@@ -275,10 +279,6 @@ struct ProcInfo {
     /// Process state.
     state: Procstate,
 
-    /// wait_lock must be held when using this:
-    /// Parent process.
-    parent: *mut Proc,
-
     /// If non-zero, sleeping on waitchannel.
     waitchannel: *const WaitChannel,
 
@@ -318,6 +318,14 @@ pub struct ProcData {
 
 /// Per-process state.
 pub struct Proc {
+    /// Parent process.
+    ///
+    /// We have to use a `MaybeUninit` type here, since we can't initialize
+    /// this field in Proc::zero(), which is a const fn.
+    /// Hence, this field gets initialized later in procinit() as
+    /// `SpinlockProtected::new(&procs.wait_lock, ptr::null_mut())`.
+    parent: MaybeUninit<SpinlockProtected<*mut Proc>>,
+
     info: Spinlock<ProcInfo>,
 
     pub data: UnsafeCell<ProcData>,
@@ -467,11 +475,11 @@ impl ProcData {
 impl Proc {
     const fn zero() -> Self {
         Self {
+            parent: MaybeUninit::uninit(),
             info: Spinlock::new(
                 "proc",
                 ProcInfo {
                     state: Procstate::UNUSED,
-                    parent: ptr::null_mut(),
                     child_waitchannel: WaitChannel::new(),
                     waitchannel: ptr::null(),
                     xstate: 0,
@@ -527,17 +535,11 @@ pub struct ProcessSystem {
     wait_lock: RawSpinlock,
 }
 
-const fn proc_entry(_: usize) -> Proc {
-    Proc::zero()
-}
-
 impl ProcessSystem {
     pub const fn zero() -> Self {
         Self {
             nextpid: AtomicI32::new(1),
-            // TODO : Const variable should be used instead of the magic number.
-            // https://github.com/kaist-cp/rv6/issues/309
-            process_pool: array![x => proc_entry(x); NPROC],
+            process_pool: array![_ => Proc::zero(); NPROC],
             initial_proc: ptr::null_mut(),
             wait_lock: RawSpinlock::new("wait_lock"),
         }
@@ -561,14 +563,14 @@ impl ProcessSystem {
 
                 // Allocate a trapframe page.
                 let page = some_or!(kernel().alloc(), {
-                    freeproc(guard);
+                    freeproc(guard, None);
                     return Err(());
                 });
                 data.trapframe = page.into_usize() as *mut Trapframe;
 
                 // An empty user page table.
                 data.pagetable = ok_or!(proc_pagetable(p as *const _ as *mut _), {
-                    freeproc(guard);
+                    freeproc(guard, None);
                     return Err(());
                 });
 
@@ -585,11 +587,11 @@ impl ProcessSystem {
     }
 
     /// Pass p's abandoned children to init.
-    /// Caller must hold ProcGuard::wait_lock.
-    unsafe fn reparent(&self, p: *mut Proc) {
+    /// Caller must provide a `SpinlockProtectedGuard`.
+    unsafe fn reparent(&self, p: *mut Proc, parent_guard: &SpinlockProtectedGuard<'_>) {
         for pp in &self.process_pool {
-            if pp.info.get_mut_unchecked().parent == p {
-                pp.info.get_mut_unchecked().parent = self.initial_proc;
+            if *pp.parent.assume_init_ref().get_mut(parent_guard) == p {
+                *pp.parent.assume_init_ref().get_mut(parent_guard) = self.initial_proc;
                 (*self.initial_proc)
                     .info
                     .get_mut_unchecked()
@@ -672,7 +674,7 @@ impl ProcessSystem {
             .uvmcopy(&mut npdata.pagetable, pdata.sz)
             .is_err()
         {
-            freeproc(np);
+            freeproc(np, None);
             return -1;
         }
         npdata.sz = pdata.sz;
@@ -702,9 +704,8 @@ impl ProcessSystem {
         let child = np.raw();
         drop(np);
 
-        self.wait_lock.acquire();
-        (*child).info.get_mut_unchecked().parent = p;
-        self.wait_lock.release();
+        let parent_guard = (*child).parent.assume_init_ref().lock();
+        *(*child).parent.assume_init_ref().get_mut(&parent_guard) = p;
 
         let mut np = (*child).lock();
         np.deref_mut_info().state = Procstate::RUNNABLE;
@@ -718,13 +719,14 @@ impl ProcessSystem {
         let p: *mut Proc = myproc();
         let data = &mut *(*p).data.get();
 
-        self.wait_lock.acquire();
+        // Assumes that the process_pool has at least 1 element.
+        let parent_guard = self.process_pool[0].parent.assume_init_ref().lock();
 
         loop {
             // Scan through pool looking for exited children.
             let mut havekids = false;
             for np in &self.process_pool {
-                if np.info.get_mut_unchecked().parent == p {
+                if *np.parent.assume_init_ref().get_mut(&parent_guard) == p {
                     // Make sure the child isn't still in exit() or swtch().
                     let mut np = np.lock();
 
@@ -745,11 +747,9 @@ impl ProcessSystem {
                                 .is_err()
                         {
                             drop(np);
-                            self.wait_lock.release();
                             return -1;
                         }
-                        freeproc(np);
-                        self.wait_lock.release();
+                        freeproc(np, Some(parent_guard));
                         return pid;
                     }
                 }
@@ -757,13 +757,12 @@ impl ProcessSystem {
 
             // No point waiting if we don't have any children.
             if !havekids || (*p).killed() {
-                self.wait_lock.release();
                 return -1;
             }
 
             // Wait for a child to exit.
             //DOC: wait-sleep
-            ((*p).info.get_mut_unchecked().child_waitchannel).sleep_raw(&self.wait_lock);
+            ((*p).info.get_mut_unchecked().child_waitchannel).sleep_raw(parent_guard.raw());
         }
     }
 
@@ -777,13 +776,12 @@ impl ProcessSystem {
 
         data.close_files();
 
-        self.wait_lock.acquire();
-
-        // Give any children to init.
-        self.reparent(p);
+        // Give all children to init.
+        let parent_guard = (*p).parent.assume_init_ref().lock();
+        self.reparent(p, &parent_guard);
 
         // Parent might be sleeping in wait().
-        (*(*p).info.get_mut_unchecked().parent)
+        (**(*p).parent.assume_init_ref().get_mut(&parent_guard))
             .info
             .get_mut_unchecked()
             .child_waitchannel
@@ -794,17 +792,18 @@ impl ProcessSystem {
         guard.deref_mut_info().xstate = status;
         guard.deref_mut_info().state = Procstate::ZOMBIE;
 
-        self.wait_lock.release();
+        // Should manually drop since this function never returns.
+        drop(parent_guard);
 
-        // Jump into the scheduler, never to return.
+        // Jump into the scheduler, and never return.
         guard.sched();
 
         unreachable!("zombie exit")
     }
 
-    /// Print a process listing to console.  For debugging.
+    /// Print a process listing to the console for debugging.
     /// Runs when user types ^P on console.
-    /// No lock to avoid wedging a stuck machine further.
+    /// Doesn't acquire locks in order to avoid wedging a stuck machine further.
     pub fn dump(&self) {
         println!();
         for p in &self.process_pool {
@@ -844,15 +843,18 @@ pub unsafe fn proc_mapstacks(page_table: &mut PageTable<KVAddr>) {
 
 /// Initialize the proc table at boot time.
 #[allow(clippy::ref_in_deref)]
-pub unsafe fn procinit(procs: &mut ProcessSystem) {
+pub unsafe fn procinit(procs: &'static mut ProcessSystem) {
     for (i, p) in procs.process_pool.iter_mut().enumerate() {
+        p.parent
+            .as_mut_ptr()
+            .write(SpinlockProtected::new(&procs.wait_lock, ptr::null_mut()));
         (&mut *(*p).data.get()).kstack = kstack(i);
     }
 }
 
 /// Return this CPU's ID.
 ///
-/// It is safe to call this function with interrupts enabled, but returned id may not be the
+/// It is safe to call this function with interrupts enabled, but the returned id may not be the
 /// current CPU since the scheduler can move the process to another CPU on time interrupt.
 pub fn cpuid() -> usize {
     unsafe { r_tp() }
@@ -867,10 +869,15 @@ pub unsafe fn myproc() -> *mut Proc {
     p
 }
 
-/// Free a proc structure and the data hanging from it,
-/// including user pages.
-/// p->lock must be held.
-unsafe fn freeproc(mut p: ProcGuard) {
+/// Frees a `Proc` structure and the data hanging from it, including user pages.
+/// Must provide a `ProcGuard`, and optionally, you can also provide a `SpinlockProtectedGuard`
+/// if you also want to clear `p`'s parent field into `ptr::null_mut()`.
+///
+/// # Note
+///
+/// If a `SpinlockProtectedGuard` was not provided, `p`'s parent field is not modified.
+/// Note that this is because accessing a parent field without a `SpinlockProtectedGuard` is illegal.
+unsafe fn freeproc(mut p: ProcGuard, parent_guard: Option<SpinlockProtectedGuard<'_>>) {
     let mut data = &mut *p.data.get();
     if !data.trapframe.is_null() {
         kernel().free(Page::from_usize(data.trapframe as _));
@@ -882,8 +889,10 @@ unsafe fn freeproc(mut p: ProcGuard) {
     }
     data.pagetable = PageTable::zero();
     data.sz = 0;
+    if let Some(guard) = parent_guard {
+        *(*p).parent.assume_init_mut().get_mut(&guard) = ptr::null_mut();
+    }
     p.deref_mut_info().pid = 0;
-    p.deref_mut_info().parent = ptr::null_mut();
     (*p).name[0] = 0;
     p.deref_mut_info().waitchannel = ptr::null();
     p.killed = AtomicBool::new(false);

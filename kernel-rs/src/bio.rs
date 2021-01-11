@@ -117,15 +117,9 @@ impl Drop for Buf<'_> {
 
 impl Bcache {
     pub const fn zero() -> Self {
-        const fn bcache_entry(_: usize) -> MruEntry<BufEntry> {
-            MruEntry::new(BufEntry::zero())
-        }
-
         Spinlock::new(
             "BCACHE",
-            // TODO : Const variable should be used instead of the magic number.
-            // https://github.com/kaist-cp/rv6/issues/309
-            MruArena::new(array![x => bcache_entry(x); NBUF]),
+            MruArena::new(array![_ => MruEntry::new(BufEntry::zero()); NBUF]),
         )
     }
 
