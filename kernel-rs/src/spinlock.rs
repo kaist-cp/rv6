@@ -116,19 +116,21 @@ pub struct Spinlock<T> {
 
 unsafe impl<T: Send> Sync for Spinlock<T> {}
 
-pub struct SpinlockProtectedGuard<'s, T> {
-    lock: &'s SpinlockProtected<T>,
+pub struct SpinlockProtectedGuard<'s> {
+    lock: &'s RawSpinlock,
     _marker: PhantomData<*const ()>,
 }
 
 // Do not implement Send; lock must be unlocked by the CPU that acquired it.
-unsafe impl<'s, T: Sync> Sync for SpinlockProtectedGuard<'s, T> {}
+unsafe impl<'s> Sync for SpinlockProtectedGuard<'s> {}
 
 /// Similar to `Spinlock<T>`, but instead of internally owning a `RawSpinlock`,
 /// this stores a `'static` reference to an external `RawSpinlock` that was provided by the caller.
 /// By making multiple `SpinlockProtected<T>`'s refer to a single `RawSpinlock`,
 /// you can make multiple data be protected by a single `RawSpinlock`, and hence,
 /// implement global locks.
+/// To dereference the inner data, you must use `SpinlockProtected<T>::get_mut`, instead of
+/// trying to dereference the `SpinlockProtectedGuard`.
 pub struct SpinlockProtected<T> {
     lock: &'static RawSpinlock,
     data: UnsafeCell<T>,
@@ -227,11 +229,11 @@ impl<T> SpinlockProtected<T> {
         }
     }
 
-    pub fn lock(&self) -> SpinlockProtectedGuard<'_, T> {
+    pub fn lock(&self) -> SpinlockProtectedGuard<'_> {
         self.lock.acquire();
 
         SpinlockProtectedGuard {
-            lock: self,
+            lock: self.lock,
             _marker: PhantomData,
         }
     }
@@ -245,12 +247,12 @@ impl<T> SpinlockProtected<T> {
     /// In order to prevent references from leaking, the returned reference
     /// cannot outlive the given `guard`.
     ///
-    /// This adds some small runtime cost, since we need to check that the given
+    /// This method adds some small runtime cost, since we need to check that the given
     /// `SpinlockProtectedGuard` was truely originated from a `SpinlockProtected`
     /// that refers to the same `RawSpinlock`.
     #[allow(clippy::mut_from_ref)]
-    pub fn get_mut<'s>(&self, guard: &'s SpinlockProtectedGuard<'s, T>) -> &'s mut T {
-        assert!(self.lock as *const _ == guard.lock.lock as *const _);
+    pub fn get_mut<'s>(&self, guard: &'s SpinlockProtectedGuard<'s>) -> &'s mut T {
+        assert!(self.lock as *const _ == guard.lock as *const _);
         unsafe { &mut *self.data.get() }
     }
 
@@ -260,29 +262,16 @@ impl<T> SpinlockProtected<T> {
     }
 }
 
-impl<T> SpinlockProtectedGuard<'_, T> {
+impl SpinlockProtectedGuard<'_> {
     /// Returns the inner `RawSpinlock`.
     pub fn raw(&self) -> *const RawSpinlock {
-        self.lock.lock as *const _
+        self.lock as *const _
     }
 }
 
-impl<T> Drop for SpinlockProtectedGuard<'_, T> {
+impl Drop for SpinlockProtectedGuard<'_> {
     fn drop(&mut self) {
-        self.lock.lock.release();
-    }
-}
-
-impl<T> Deref for SpinlockProtectedGuard<'_, T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        unsafe { &*self.lock.data.get() }
-    }
-}
-
-impl<T> DerefMut for SpinlockProtectedGuard<'_, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.lock.data.get() }
+        self.lock.release();
     }
 }
 

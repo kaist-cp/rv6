@@ -319,6 +319,11 @@ pub struct ProcData {
 /// Per-process state.
 pub struct Proc {
     /// Parent process.
+    ///
+    /// We have to use a `MaybeUninit` type here, since we can't initialize
+    /// this field in Proc::zero(), which is a const fn.
+    /// Hence, this field gets initialized later in procinit() as
+    /// `SpinlockProtected::new(&procs.wait_lock, ptr::null_mut())`.
     parent: MaybeUninit<SpinlockProtected<*mut Proc>>,
 
     info: Spinlock<ProcInfo>,
@@ -583,11 +588,7 @@ impl ProcessSystem {
 
     /// Pass p's abandoned children to init.
     /// Caller must provide a `SpinlockProtectedGuard`.
-    unsafe fn reparent<'s>(
-        &'s self,
-        p: *mut Proc,
-        parent_guard: &SpinlockProtectedGuard<'s, *mut Proc>,
-    ) {
+    unsafe fn reparent(&self, p: *mut Proc, parent_guard: &SpinlockProtectedGuard<'_>) {
         for pp in &self.process_pool {
             if *pp.parent.assume_init_ref().get_mut(parent_guard) == p {
                 *pp.parent.assume_init_ref().get_mut(parent_guard) = self.initial_proc;
@@ -703,7 +704,8 @@ impl ProcessSystem {
         let child = np.raw();
         drop(np);
 
-        *(*child).parent.assume_init_ref().lock() = p;
+        let parent_guard = (*child).parent.assume_init_ref().lock();
+        *(*child).parent.assume_init_ref().get_mut(&parent_guard) = p;
 
         let mut np = (*child).lock();
         np.deref_mut_info().state = Procstate::RUNNABLE;
@@ -867,12 +869,15 @@ pub unsafe fn myproc() -> *mut Proc {
     p
 }
 
-/// Frees a `Proc` structure and the data hanging from it,
-/// including user pages.
-/// Must provide a `ProcGuard`.
-/// If a `SpinlockProtectedGuard` was also provided,
-/// also clears the given `Proc`'s parent field.
-unsafe fn freeproc(mut p: ProcGuard, parent_guard: Option<SpinlockProtectedGuard<'_, *mut Proc>>) {
+/// Frees a `Proc` structure and the data hanging from it, including user pages.
+/// Must provide a `ProcGuard`, and optionally, you can also provide a `SpinlockProtectedGuard`
+/// if you also want to clear `p`'s parent field into `ptr::null_mut()`.
+///
+/// # Note
+///
+/// If a `SpinlockProtectedGuard` was not provided, `p`'s parent field is not modified.
+/// Note that this is because accessing a parent field without a `SpinlockProtectedGuard` is illegal.
+unsafe fn freeproc(mut p: ProcGuard, parent_guard: Option<SpinlockProtectedGuard<'_>>) {
     let mut data = &mut *p.data.get();
     if !data.trapframe.is_null() {
         kernel().free(Page::from_usize(data.trapframe as _));
