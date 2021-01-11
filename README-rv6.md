@@ -4,8 +4,7 @@
 
   ```
   # Ubuntu 20.04
-  # The latest qemu-system-misc(1:4.2-3ubuntu6.9) can't boot rv6, so please use older version (1:4.2-3ubuntu6)
-  sudo apt install gcc-riscv64-linux-gnu qemu-system-misc=1:4.2-3ubuntu6 gdb-multiarch
+  sudo apt install gcc-riscv64-linux-gnu qemu-system-misc gdb-multiarch
 
   rustup component add rust-src
   ```
