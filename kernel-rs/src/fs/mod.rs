@@ -12,8 +12,12 @@
 //! On-disk file system format used for both kernel and user programs are also included here.
 
 use core::{cmp, mem, ptr};
+use spin::Once;
 
-use crate::{bio::Buf, kernel::kernel, param::BSIZE, sleepablelock::Sleepablelock, stat::T_DIR};
+use crate::{
+    bio::Buf, kernel::kernel, param::BSIZE, sleepablelock::Sleepablelock, stat::T_DIR,
+    virtio_disk::Disk,
+};
 
 mod inode;
 mod log;
@@ -35,12 +39,18 @@ const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
 const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
 
 pub struct FileSystem {
-    /// there should be one superblock per disk device, but we run with
-    /// only one device
-    superblock: Superblock,
+    /// TODO(rv6): initializing superblock should be run only once
+    /// because forkret() calls fsinit()
+    /// There should be one superblock per disk device, but we run with
+    /// only one device.
+    superblock: Once<Superblock>,
 
-    /// TODO(rv6): document it
-    log: Sleepablelock<Log>,
+    /// TODO(rv6): document it / initializing log should be run
+    /// only once because forkret() calls fsinit()
+    log: Once<Sleepablelock<Log>>,
+
+    /// It may sleep until some Descriptors are freed.
+    pub disk: Sleepablelock<Disk>,
 }
 
 pub struct FsTransaction<'s> {
@@ -48,20 +58,52 @@ pub struct FsTransaction<'s> {
 }
 
 impl FileSystem {
-    pub fn new(dev: u32) -> Self {
-        let superblock = unsafe { Superblock::new(&kernel().disk.read(dev, 1)) };
-        let log = Sleepablelock::new(
-            "LOG",
-            Log::new(dev, superblock.logstart as i32, superblock.nlog as i32),
-        );
-        Self { superblock, log }
+    pub const fn zero() -> Self {
+        Self {
+            superblock: Once::new(),
+            log: Once::new(),
+            disk: Sleepablelock::new("virtio_disk", Disk::zero()),
+        }
+    }
+
+    pub fn init(&self, dev: u32) {
+        self.superblock
+            .call_once(|| unsafe { Superblock::new(&self.disk.read(dev, 1)) });
+        self.log.call_once(|| {
+            Sleepablelock::new(
+                "LOG",
+                Log::new(
+                    dev,
+                    self.superblock().logstart as i32,
+                    self.superblock().nlog as i32,
+                ),
+            )
+        });
+    }
+
+    /// TODO(rv6): calling superblock() after initialize is safe
+    fn superblock(&self) -> &Superblock {
+        if let Some(sb) = self.superblock.get() {
+            sb
+        } else {
+            unreachable!()
+        }
+    }
+
+    /// TODO(rv6): calling log() after initialize is safe
+    fn log(&self) -> &Sleepablelock<Log> {
+        if let Some(log) = self.log.get() {
+            log
+        } else {
+            unreachable!()
+        }
     }
 
     /// Called for each FS system call.
     pub fn begin_transaction(&self) -> FsTransaction<'_> {
         // TODO(rv6): safety?
         unsafe {
-            Log::begin_op(&self.log);
+            Log::begin_op(self.log());
         }
         FsTransaction { fs: self }
     }
@@ -72,7 +114,7 @@ impl Drop for FsTransaction<'_> {
         // Called at the end of each FS system call.
         // Commits if this was the last outstanding operation.
         unsafe {
-            Log::end_op(&self.fs.log);
+            Log::end_op(self.fs.log());
         }
     }
 }
@@ -83,11 +125,11 @@ impl FsTransaction<'_> {
     /// commit()/write_log() will do the disk write.
     ///
     /// write() replaces write(); a typical use is:
-    ///   bp = kernel().disk.read(...)
+    ///   bp = kernel().file_system.disk.read(...)
     ///   modify bp->data[]
     ///   write(bp)
     unsafe fn write(&self, b: Buf<'static>) {
-        self.fs.log.lock().write(b);
+        self.fs.log().lock().write(b);
     }
 
     /// Zero a block.
@@ -101,9 +143,9 @@ impl FsTransaction<'_> {
     /// Blocks.
     /// Allocate a zeroed disk block.
     unsafe fn balloc(&self, dev: u32) -> u32 {
-        for b in num_iter::range_step(0, self.fs.superblock.size, BPB) {
-            let mut bp = kernel().disk.read(dev, self.fs.superblock.bblock(b));
-            for bi in 0..cmp::min(BPB, self.fs.superblock.size - b) {
+        for b in num_iter::range_step(0, self.fs.superblock().size, BPB) {
+            let mut bp = self.fs.disk.read(dev, self.fs.superblock().bblock(b));
+            for bi in 0..cmp::min(BPB, self.fs.superblock().size - b) {
                 let m = 1 << (bi % 8);
                 if bp.deref_mut_inner().data[(bi / 8) as usize] & m == 0 {
                     // Is block free?
@@ -120,7 +162,7 @@ impl FsTransaction<'_> {
 
     /// Free a disk block.
     unsafe fn bfree(&self, dev: u32, b: u32) {
-        let mut bp = kernel().disk.read(dev, self.fs.superblock.bblock(b));
+        let mut bp = self.fs.disk.read(dev, self.fs.superblock().bblock(b));
         let bi = b.wrapping_rem(BPB) as i32;
         let m = 1u8 << (bi % 8);
         assert_ne!(

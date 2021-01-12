@@ -97,7 +97,7 @@ impl Kernel {
         let mut p: *mut Proc = myproc();
         let mut data = &mut *(*p).data.get();
 
-        let tx = self.fs().begin_transaction();
+        let tx = self.file_system.begin_transaction();
         let ptr = ok_or!(path.namei(&tx), {
             return Err(());
         });

@@ -146,7 +146,7 @@ impl Kernel {
         let mut old: [u8; MAXPATH as usize] = [0; MAXPATH];
         let old = ok_or!(argstr(0, &mut old), return usize::MAX);
         let new = ok_or!(argstr(1, &mut new), return usize::MAX);
-        let tx = self.fs().begin_transaction();
+        let tx = self.file_system.begin_transaction();
         let ptr = ok_or!(Path::new(old).namei(&tx), return usize::MAX);
         let mut ip = ptr.lock(&tx);
         if ip.deref_inner().typ == T_DIR {
@@ -174,7 +174,7 @@ impl Kernel {
         let mut de: Dirent = Default::default();
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-        let tx = self.fs().begin_transaction();
+        let tx = self.file_system.begin_transaction();
         let (ptr, name) = ok_or!(Path::new(path).nameiparent(&tx), return usize::MAX);
         let mut dp = ptr.lock(&tx);
 
@@ -215,7 +215,7 @@ impl Kernel {
         let omode = ok_or!(argint(1), return usize::MAX);
         let omode = FcntlFlags::from_bits_truncate(omode);
 
-        let tx = self.fs().begin_transaction();
+        let tx = self.file_system.begin_transaction();
 
         let (ip, (typ, major)) = if omode.contains(FcntlFlags::O_CREATE) {
             ok_or!(
@@ -271,7 +271,7 @@ impl Kernel {
 
     pub unsafe fn sys_mkdir(&self) -> usize {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let tx = self.fs().begin_transaction();
+        let tx = self.file_system.begin_transaction();
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
         ok_or!(
             create(Path::new(path), T_DIR, 0, 0, &tx, |_| ()),
@@ -285,7 +285,7 @@ impl Kernel {
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
         let major = ok_or!(argint(1), return usize::MAX) as u16;
         let minor = ok_or!(argint(2), return usize::MAX) as u16;
-        let tx = self.fs().begin_transaction();
+        let tx = self.file_system.begin_transaction();
         let _ip = ok_or!(
             create(Path::new(path), T_DEVICE, major, minor, &tx, |_| ()),
             return usize::MAX
@@ -298,7 +298,7 @@ impl Kernel {
         let p: *mut Proc = myproc();
         let mut data = &mut *(*p).data.get();
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-        let tx = self.fs().begin_transaction();
+        let tx = self.file_system.begin_transaction();
         let ptr = ok_or!(Path::new(path).namei(&tx), return usize::MAX);
         let ip = ptr.lock(&tx);
         if ip.deref_inner().typ != T_DIR {
