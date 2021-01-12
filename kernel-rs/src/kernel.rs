@@ -32,10 +32,6 @@ pub fn kernel() -> &'static Kernel {
     unsafe { &KERNEL }
 }
 
-pub fn kernel_mut() -> &'static mut Kernel {
-    unsafe { &mut KERNEL }
-}
-
 pub struct Kernel {
     panicked: AtomicBool,
 
@@ -157,7 +153,7 @@ impl Kernel {
         &self.cpus[id] as *const _ as *mut _
     }
 
-    pub fn fsinit(&mut self, dev: u32) {
+    pub fn fsinit(&self, dev: u32) {
         self.file_system
             .superblock
             .call_once(|| FileSystem::superblock_init(&self.file_system.disk, dev));

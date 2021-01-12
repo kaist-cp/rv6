@@ -28,7 +28,6 @@ pub use inode::{
     Dinode, Dirent, Inode, InodeGuard, InodeInner, Itable, RcInode, DIRENT_SIZE, DIRSIZ,
 };
 pub use log::Log;
-// use mem::take;
 pub use path::{FileName, Path};
 pub use superblock::{Superblock, BPB, IPB};
 
@@ -40,11 +39,13 @@ const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
 const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
 
 pub struct FileSystem {
+    /// TODO(rv6): forkret() calls fsinit(), this should be run only once
     /// there should be one superblock per disk device, but we run with
     /// only one device
     pub superblock: Once<Superblock>,
 
-    /// TODO(rv6): document it
+    /// TODO(rv6): document it / forkret() calls fsinit(), 
+    /// this should be run only once
     pub log: Once<Sleepablelock<Log>>,
 
     /// It may sleep until some Descriptors are freed.

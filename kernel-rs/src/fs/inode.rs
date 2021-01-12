@@ -226,7 +226,7 @@ impl Drop for InodeGuard<'_> {
 // Directories
 impl InodeGuard<'_> {
     /// Write a new directory entry (name, inum) into the directory dp.
-    pub unsafe fn dirlink(&mut self, name: &FileName, inum: u32) -> Result<(), ()> {
+    pub fn dirlink(&mut self, name: &FileName, inum: u32) -> Result<(), ()> {
         let mut de: Dirent = Default::default();
 
         // Check that name is not present.

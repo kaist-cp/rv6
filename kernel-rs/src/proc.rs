@@ -12,7 +12,7 @@ use core::{
 use crate::{
     file::RcFile,
     fs::{Path, RcInode},
-    kernel::{kernel, kernel_mut, KERNEL},
+    kernel::{kernel, KERNEL},
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     ok_or,
     page::Page,
@@ -1024,7 +1024,7 @@ unsafe fn forkret() {
     // File system initialization must be run in the context of a
     // regular process (e.g., because it calls sleep), and thus cannot
     // be run from main().
-    kernel_mut().fsinit(ROOTDEV);
+    kernel().fsinit(ROOTDEV);
 
     usertrapret();
 }
