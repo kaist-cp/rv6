@@ -4,7 +4,7 @@ use cstr_core::CStr;
 
 use crate::{kernel::kernel, param::ROOTDEV, proc::myproc};
 
-use super::{FsTransaction, RcInode, DIRSIZ, ROOTINO, T_DIR};
+use super::{RcInode, DIRSIZ, ROOTINO, T_DIR};
 
 #[derive(PartialEq)]
 #[repr(transparent)]
@@ -61,15 +61,12 @@ impl Path {
         kernel().itable.get_inode(ROOTDEV as u32, ROOTINO)
     }
 
-    pub unsafe fn namei(&self, tx: &FsTransaction<'_>) -> Result<RcInode<'static>, ()> {
-        Ok(self.namex(false, tx)?.0)
+    pub unsafe fn namei(&self) -> Result<RcInode<'static>, ()> {
+        Ok(self.namex(false)?.0)
     }
 
-    pub unsafe fn nameiparent(
-        &self,
-        tx: &FsTransaction<'_>,
-    ) -> Result<(RcInode<'static>, &FileName), ()> {
-        let (ip, name_in_path) = self.namex(true, tx)?;
+    pub unsafe fn nameiparent(&self) -> Result<(RcInode<'static>, &FileName), ()> {
+        let (ip, name_in_path) = self.namex(true)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
     }
@@ -138,11 +135,7 @@ impl Path {
     /// If parent != 0, return the inode for the parent and copy the final
     /// path element into name, which must have room for DIRSIZ bytes.
     /// Must be called inside a transaction since it calls Inode::put().
-    unsafe fn namex(
-        &self,
-        parent: bool,
-        tx: &FsTransaction<'_>,
-    ) -> Result<(RcInode<'static>, Option<&FileName>), ()> {
+    unsafe fn namex(&self, parent: bool) -> Result<(RcInode<'static>, Option<&FileName>), ()> {
         let mut ptr = if self.is_absolute() {
             Self::root()
         } else {
@@ -154,7 +147,7 @@ impl Path {
         while let Some((new_path, name)) = path.skipelem() {
             path = new_path;
 
-            let mut ip = ptr.lock(tx);
+            let mut ip = ptr.lock();
             if ip.deref_inner().typ != T_DIR {
                 return Err(());
             }

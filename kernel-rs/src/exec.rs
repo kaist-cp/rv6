@@ -97,11 +97,11 @@ impl Kernel {
         let mut p: *mut Proc = myproc();
         let mut data = &mut *(*p).data.get();
 
-        let tx = self.file_system.begin_transaction();
-        let ptr = ok_or!(path.namei(&tx), {
+        let _tx = self.file_system.begin_transaction();
+        let ptr = ok_or!(path.namei(), {
             return Err(());
         });
-        let mut ip = ptr.lock(&tx);
+        let mut ip = ptr.lock();
 
         // Check ELF header
         let bytes_read = ip.read(
