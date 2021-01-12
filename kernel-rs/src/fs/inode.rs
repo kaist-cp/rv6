@@ -523,7 +523,7 @@ impl ArenaObject for Inode {
 impl Inode {
     /// Lock the given inode.
     /// Reads the inode from disk if necessary.
-    pub fn lock<'x>(&'x self) -> InodeGuard<'x> {
+    pub fn lock(&self) -> InodeGuard<'_> {
         let mut guard = self.inner.lock();
         if !guard.valid {
             let mut bp = kernel().file_system.disk.read(
