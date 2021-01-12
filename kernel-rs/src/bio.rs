@@ -55,7 +55,29 @@ pub struct BufInner {
 
     /// Does disk "own" buf?
     pub disk: bool,
-    pub data: [u8; BSIZE],
+    pub data: BufData,
+}
+
+// Data in Buf may be assumed to be u32, so the data field in Buf must have
+// an alignment of 4 bytes. Due to the align(4) modifier, BufData has an
+// alignment of 4 bytes.
+#[repr(align(4))]
+pub struct BufData {
+    pub inner: [u8; BSIZE],
+}
+
+impl Deref for BufData {
+    type Target = [u8; BSIZE];
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for BufData {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
 }
 
 impl BufInner {
@@ -63,7 +85,7 @@ impl BufInner {
         Self {
             valid: false,
             disk: false,
-            data: [0; BSIZE],
+            data: BufData { inner: [0; BSIZE] },
         }
     }
 }
