@@ -153,17 +153,9 @@ impl Kernel {
         &self.cpus[id] as *const _ as *mut _
     }
 
+    /// TODO(rv6): remove?
     pub fn fsinit(&self, dev: u32) {
-        self.file_system
-            .superblock
-            .call_once(|| FileSystem::superblock_init(&self.file_system.disk, dev));
-        self.file_system.log.call_once(|| {
-            FileSystem::log_init(
-                self.file_system.superblock().logstart as i32,
-                self.file_system.superblock().nlog as i32,
-                dev,
-            )
-        });
+        self.file_system.init(dev)
     }
 }
 

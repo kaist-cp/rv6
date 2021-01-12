@@ -39,14 +39,15 @@ const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
 const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
 
 pub struct FileSystem {
-    /// TODO(rv6): forkret() calls fsinit(), this should be run only once
-    /// there should be one superblock per disk device, but we run with
-    /// only one device
-    pub superblock: Once<Superblock>,
+    /// TODO(rv6): initializing superblock should be run only once
+    /// because forkret() calls fsinit()
+    /// There should be one superblock per disk device, but we run with
+    /// only one device.
+    superblock: Once<Superblock>,
 
-    /// TODO(rv6): document it / forkret() calls fsinit(), 
-    /// this should be run only once
-    pub log: Once<Sleepablelock<Log>>,
+    /// TODO(rv6): document it / initializing log should be run
+    /// only once because forkret() calls fsinit()
+    log: Once<Sleepablelock<Log>>,
 
     /// It may sleep until some Descriptors are freed.
     pub disk: Sleepablelock<Disk>,
@@ -65,15 +66,23 @@ impl FileSystem {
         }
     }
 
-    pub fn superblock_init(disk: &Sleepablelock<Disk>, dev: u32) -> Superblock {
-        unsafe { Superblock::new(&disk.read(dev, 1)) }
+    pub fn init(&self, dev: u32) {
+        self.superblock
+            .call_once(|| unsafe { Superblock::new(&self.disk.read(dev, 1)) });
+        self.log.call_once(|| {
+            Sleepablelock::new(
+                "LOG",
+                Log::new(
+                    dev,
+                    self.superblock().logstart as i32,
+                    self.superblock().nlog as i32,
+                ),
+            )
+        });
     }
 
-    pub fn log_init(logstart: i32, nlog: i32, dev: u32) -> Sleepablelock<Log> {
-        Sleepablelock::new("LOG", Log::new(dev, logstart, nlog))
-    }
-
-    pub fn superblock(&self) -> &Superblock {
+    /// TODO(rv6): calling superblock() after initialize is safe
+    fn superblock(&self) -> &Superblock {
         if let Some(sb) = self.superblock.get() {
             sb
         } else {
@@ -81,6 +90,7 @@ impl FileSystem {
         }
     }
 
+    /// TODO(rv6): calling log() after initialize is safe
     fn log(&self) -> &Sleepablelock<Log> {
         if let Some(log) = self.log.get() {
             log
