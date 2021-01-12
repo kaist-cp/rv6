@@ -448,18 +448,16 @@ impl InodeGuard<'_> {
             }
 
             let mut bp = kernel().file_system.disk.read(self.dev, indirect);
-            let data = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
-            unsafe {
-                let ptr = data.add(bn);
-                let mut addr = *ptr;
-                if addr == 0 {
-                    assert!(do_alloc, "bmap: out of range");
-                    addr = self.tx.balloc(self.dev);
-                    *ptr = addr;
-                    self.tx.write(bp);
-                }
-                addr
+            let (prefix, data, _) = unsafe { bp.deref_mut_inner().data.align_to_mut::<u32>() };
+            debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
+            let mut addr = data[bn];
+            if addr == 0 {
+                assert!(do_alloc, "bmap: out of range");
+                addr = unsafe { self.tx.balloc(self.dev) };
+                data[bn] = addr;
+                unsafe { self.tx.write(bp) };
             }
+            addr
         }
     }
 
