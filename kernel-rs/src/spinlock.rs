@@ -250,8 +250,8 @@ impl<T> SpinlockProtected<T> {
     /// This method adds some small runtime cost, since we need to check that the given
     /// `SpinlockProtectedGuard` was truely originated from a `SpinlockProtected`
     /// that refers to the same `RawSpinlock`.
-    #[allow(clippy::mut_from_ref)]
-    pub fn get_mut<'s>(&self, guard: &'s SpinlockProtectedGuard<'s>) -> &'s mut T {
+    /// TODO: This runtime cost can be removed by using a trait, such as `pub trait SpinlockID {}`.
+    pub fn get_mut<'a: 'b, 'b>(&'a self, guard: &'b mut SpinlockProtectedGuard<'a>) -> &'b mut T {
         assert!(self.lock as *const _ == guard.lock as *const _);
         unsafe { &mut *self.data.get() }
     }
