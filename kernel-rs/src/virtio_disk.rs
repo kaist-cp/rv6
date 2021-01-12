@@ -364,7 +364,7 @@ impl InflightInfo {
     }
 }
 
-pub unsafe fn virtio_disk_init1(virtqueue: &mut [RawPage; 2]) {
+pub unsafe fn virtio_disk_init(virtqueue: &mut [RawPage; 2], disk: &mut Disk) {
     let mut status: VirtIOStatus = VirtIOStatus::empty();
     assert!(
         MmioRegs::MagicValue.read() == 0x74726976
@@ -412,14 +412,6 @@ pub unsafe fn virtio_disk_init1(virtqueue: &mut [RawPage; 2]) {
     // avail = pages + 0x40 -- 2 * u16, then num * u16
     // used = pages + 4096 -- 2 * u16, then num * vRingUsedElem
 
-    // disk.desc = DescriptorPool::new(&mut virtqueue[0]);
-    // disk.avail = (virtqueue[0].as_mut_ptr() as *mut VirtqDesc).add(NUM) as _;
-    // disk.used = virtqueue[1].as_mut_ptr() as _;
-
-    // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
-}
-
-pub unsafe fn virtio_disk_init2(virtqueue: &mut [RawPage; 2], disk: &mut Disk) {
     disk.desc = DescriptorPool::new(&mut virtqueue[0]);
     disk.avail = (virtqueue[0].as_mut_ptr() as *mut VirtqDesc).add(NUM) as _;
     disk.used = virtqueue[1].as_mut_ptr() as _;

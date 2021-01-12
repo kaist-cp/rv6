@@ -1,6 +1,5 @@
 use core::fmt::{self, Write};
 use core::sync::atomic::{spin_loop_hint, AtomicBool, Ordering};
-use spin::Once;
 
 use crate::{
     bio::Bcache,
@@ -19,7 +18,7 @@ use crate::{
     spinlock::Spinlock,
     trap::{trapinit, trapinithart},
     uart::Uart,
-    virtio_disk::virtio_disk_init1,
+    virtio_disk::virtio_disk_init,
     vm::{KVAddr, PageTable},
 };
 
@@ -76,7 +75,7 @@ pub struct Kernel {
 
     pub itable: Itable,
 
-    pub file_system: Once<FileSystem>,
+    pub file_system: FileSystem,
 }
 
 impl Kernel {
@@ -99,7 +98,7 @@ impl Kernel {
             }; NDEV],
             ftable: FileTable::zero(),
             itable: Itable::zero(),
-            file_system: Once::new(),
+            file_system: FileSystem::zero(),
         }
     }
 
@@ -158,16 +157,17 @@ impl Kernel {
         &self.cpus[id] as *const _ as *mut _
     }
 
-    pub fn fsinit(&self, dev: u32) {
-        self.file_system.call_once(|| FileSystem::new(dev));
-    }
-
-    pub fn fs(&self) -> &FileSystem {
-        if let Some(fs) = self.file_system.get() {
-            fs
-        } else {
-            unreachable!()
-        }
+    pub fn fsinit(&mut self, dev: u32) {
+        self.file_system
+            .superblock
+            .call_once(|| FileSystem::superblock_init(&self.file_system.disk, dev));
+        self.file_system.log.call_once(|| {
+            FileSystem::log_init(
+                self.file_system.superblock().logstart as i32,
+                self.file_system.superblock().nlog as i32,
+                dev,
+            )
+        });
     }
 }
 
@@ -240,7 +240,7 @@ pub unsafe fn kernel_main() -> ! {
         KERNEL.bcache.get_mut().init();
 
         // Emulated hard disk.
-        virtio_disk_init1(&mut KERNEL.virtqueue); //KERNEL.disk.get_mut());
+        virtio_disk_init(&mut KERNEL.virtqueue, KERNEL.file_system.disk.get_mut()); //KERNEL.disk.get_mut());
 
         // First user process.
         KERNEL.procs.user_proc_init();
