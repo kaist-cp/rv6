@@ -49,13 +49,20 @@ impl ArenaObject for BufEntry {
     }
 }
 
+// Data in Buf may be assumed to be u32, so the data field in Buf must have
+// an alignment of 4 bytes. To preserve the order between the fields in the
+// source code, we use the C representation instead of the default one. By
+// doing so, Buf in memory always begins with the data field. In addition,
+// due to the align(4) modifier, Buf itself has an alignment of 4 bytes.
+#[repr(C, align(4))]
 pub struct BufInner {
+    pub data: [u8; BSIZE],
+
     /// Has data been read from disk?
     pub valid: bool,
 
     /// Does disk "own" buf?
     pub disk: bool,
-    pub data: [u8; BSIZE],
 }
 
 impl BufInner {
