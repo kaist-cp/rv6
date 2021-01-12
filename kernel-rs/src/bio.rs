@@ -49,20 +49,35 @@ impl ArenaObject for BufEntry {
     }
 }
 
-// Data in Buf may be assumed to be u32, so the data field in Buf must have
-// an alignment of 4 bytes. To preserve the order between the fields in the
-// source code, we use the C representation instead of the default one. By
-// doing so, Buf in memory always begins with the data field. In addition,
-// due to the align(4) modifier, Buf itself has an alignment of 4 bytes.
-#[repr(C, align(4))]
 pub struct BufInner {
-    pub data: [u8; BSIZE],
-
     /// Has data been read from disk?
     pub valid: bool,
 
     /// Does disk "own" buf?
     pub disk: bool,
+    pub data: BufData,
+}
+
+// Data in Buf may be assumed to be u32, so the data field in Buf must have
+// an alignment of 4 bytes. Due to the align(4) modifier, BufData has an
+// alignment of 4 bytes.
+#[repr(align(4))]
+pub struct BufData {
+    pub inner: [u8; BSIZE],
+}
+
+impl Deref for BufData {
+    type Target = [u8; BSIZE];
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for BufData {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
 }
 
 impl BufInner {
@@ -70,7 +85,7 @@ impl BufInner {
         Self {
             valid: false,
             disk: false,
-            data: [0; BSIZE],
+            data: BufData { inner: [0; BSIZE] },
         }
     }
 }
