@@ -63,7 +63,7 @@ pub struct Kernel {
     /// This is a global instead of allocated because it must be multiple contiguous pages, which
     /// `kernel().alloc()` doesn't support, and page aligned.
     // TODO(efenniht): I moved out pages from Disk. Did I changed semantics (pointer indirection?)
-    pub virtqueue: [RawPage; 2],
+    virtqueue: [RawPage; 2],
 
     pub devsw: [Devsw; NDEV],
 
