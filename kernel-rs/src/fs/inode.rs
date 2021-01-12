@@ -327,7 +327,7 @@ impl InodeGuard<'_> {
     }
 
     /// Read data from inode.
-    pub fn read<A: VAddr>(&self, mut dst: A, mut off: u32, mut n: u32) -> Result<usize, ()> {
+    pub fn read<A: VAddr>(&mut self, mut dst: A, mut off: u32, mut n: u32) -> Result<usize, ()> {
         let inner = self.deref_inner();
         if off > inner.size || off.wrapping_add(n) < off {
             return Ok(0);
@@ -417,59 +417,49 @@ impl InodeGuard<'_> {
     /// listed in block self->addr_indirect.
     /// Return the disk block address of the nth block in inode self.
     /// If there is no such block, bmap allocates one.
-    fn bmap_or_alloc(&mut self, mut bn: usize) -> u32 {
+    fn bmap_or_alloc(&mut self, bn: usize) -> u32 {
+        self.bmap_inner(bn, true)
+    }
+
+    fn bmap(&mut self, bn: usize) -> u32 {
+        self.bmap_inner(bn, false)
+    }
+
+    fn bmap_inner(&mut self, bn: usize, do_alloc: bool) -> u32 {
         let inner = self.deref_inner();
 
         if bn < NDIRECT {
             let mut addr = inner.addr_direct[bn];
             if addr == 0 {
+                assert!(do_alloc, "bmap: out of range");
                 addr = unsafe { self.tx.balloc(self.dev) };
                 self.deref_inner_mut().addr_direct[bn] = addr;
             }
-            return addr;
-        }
-
-        bn = (bn).wrapping_sub(NDIRECT);
-        assert!(bn < NINDIRECT, "bmap: out of range");
-
-        // Load indirect block, allocating if necessary.
-        let mut addr = inner.addr_indirect;
-        if addr == 0 {
-            addr = unsafe { self.tx.balloc(self.dev) };
-            self.deref_inner_mut().addr_indirect = addr;
-        }
-
-        let mut bp = kernel().file_system.disk.read(self.dev, addr);
-        let a: *mut u32 = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
-        unsafe {
-            addr = *a.add(bn);
-            if addr == 0 {
-                addr = self.tx.balloc(self.dev);
-                *a.add(bn) = addr;
-                self.tx.write(bp);
-            }
-        }
-        addr
-    }
-
-    fn bmap(&self, bn: usize) -> u32 {
-        let inner = self.deref_inner();
-
-        if bn < NDIRECT {
-            let addr = inner.addr_direct[bn];
-            assert_ne!(addr, 0, "bmap: out of range");
             addr
         } else {
             let bn = bn - NDIRECT;
-            let indirect = inner.addr_indirect;
-            assert_ne!(indirect, 0, "bmap: out of range");
+            assert!(bn < NINDIRECT, "bmap: out of range");
 
-            let bp = kernel().file_system.disk.read(self.dev, indirect);
-            let data = bp.deref_inner().data.as_ptr() as *mut u32;
-            let addr = unsafe { *data.add(bn) };
-            assert_ne!(addr, 0, "bmap: out of range");
+            let mut indirect = inner.addr_indirect;
+            if indirect == 0 {
+                assert!(do_alloc, "bmap: out of range");
+                indirect = unsafe { self.tx.balloc(self.dev) };
+                self.deref_inner_mut().addr_indirect = indirect;
+            }
 
-            addr
+            let mut bp = kernel().file_system.disk.read(self.dev, indirect);
+            let data = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
+            unsafe {
+                let ptr = data.add(bn);
+                let mut addr = *ptr;
+                if addr == 0 {
+                    assert!(do_alloc, "bmap: out of range");
+                    addr = self.tx.balloc(self.dev);
+                    *ptr = addr;
+                    self.tx.write(bp);
+                }
+                addr
+            }
         }
     }
 
