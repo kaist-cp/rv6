@@ -240,7 +240,7 @@ pub unsafe fn kernel_main() -> ! {
         KERNEL.bcache.get_mut().init();
 
         // Emulated hard disk.
-        virtio_disk_init(&mut KERNEL.virtqueue, KERNEL.file_system.disk.get_mut()); //KERNEL.disk.get_mut());
+        virtio_disk_init(&mut KERNEL.virtqueue, KERNEL.file_system.disk.get_mut());
 
         // First user process.
         KERNEL.procs.user_proc_init();
