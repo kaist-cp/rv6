@@ -1,5 +1,4 @@
 use crate::{
-    fs::DISK,
     kernel::kernel,
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     plic::{plic_claim, plic_complete},
@@ -210,7 +209,7 @@ pub unsafe fn devintr() -> i32 {
         if irq == UART0_IRQ {
             kernel().uart.intr();
         } else if irq == VIRTIO0_IRQ {
-            DISK.lock().virtio_intr();
+            kernel().file_system.disk.lock().virtio_intr();
         } else if irq != 0 {
             println!("unexpected interrupt irq={:018p}\n", irq as *const u8);
         }

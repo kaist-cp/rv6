@@ -97,7 +97,7 @@ impl File {
         match &self.typ {
             FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0)),
             FileType::Inode { ip, off } => {
-                let tx = kernel().fs().begin_transaction();
+                let tx = kernel().file_system.begin_transaction();
                 let ip = ip.deref().lock(&tx);
                 let curr_off = *off.get();
                 let ret = ip.read(addr, curr_off, n as u32);
@@ -139,7 +139,7 @@ impl File {
                 let mut bytes_written: usize = 0;
                 while bytes_written < n as usize {
                     let bytes_to_write = cmp::min(n as usize - bytes_written, max);
-                    let tx = kernel().fs().begin_transaction();
+                    let tx = kernel().file_system.begin_transaction();
                     let mut ip = ip.deref().lock(&tx);
                     let curr_off = *off.get();
                     let r = ip
@@ -180,7 +180,7 @@ impl ArenaObject for File {
             match typ {
                 FileType::Pipe { mut pipe } => unsafe { pipe.close(self.writable) },
                 FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
-                    let _tx = kernel().fs().begin_transaction();
+                    let _tx = kernel().file_system.begin_transaction();
                     drop(ip);
                 }
                 _ => (),
