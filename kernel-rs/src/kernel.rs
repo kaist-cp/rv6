@@ -152,11 +152,6 @@ impl Kernel {
         let id: usize = cpuid();
         &self.cpus[id] as *const _ as *mut _
     }
-
-    /// TODO(rv6): remove?
-    pub fn fsinit(&self, dev: u32) {
-        self.file_system.init(dev)
-    }
 }
 
 /// print! macro prints to the console using printer.
