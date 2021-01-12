@@ -207,7 +207,8 @@ pub enum Procstate {
     RUNNABLE,
     SLEEPING,
     UNUSED,
-    USED,
+    WIP1,
+    WIP2,
 }
 
 pub struct WaitChannel {
@@ -379,11 +380,44 @@ impl ProcGuard {
         );
         (*kernel().mycpu()).interrupt_enabled = interrupt_enabled;
     }
+
+    /// Frees a `Proc` structure and the data hanging from it, including user pages.
+    /// Must provide a `ProcGuard`, and optionally, you can also provide a `SpinlockProtectedGuard`
+    /// if you also want to clear `p`'s parent field into `ptr::null_mut()`.
+    ///
+    /// # Note
+    ///
+    /// If a `SpinlockProtectedGuard` was not provided, `p`'s parent field is not modified.
+    /// Note that this is because accessing a parent field without a `SpinlockProtectedGuard` is illegal.
+    unsafe fn freeproc(&mut self, parent_guard: Option<SpinlockProtectedGuard<'_>>) {
+        let mut data = &mut *self.data.get();
+        if !data.trapframe.is_null() {
+            kernel().free(Page::from_usize(data.trapframe as _));
+        }
+        data.trapframe = ptr::null_mut();
+        let mut page_table = PageTable::zero();
+        mem::swap(&mut data.pagetable, &mut page_table);
+        proc_freepagetable(page_table, data.sz);
+        data.pagetable = PageTable::zero();
+        data.sz = 0;
+        if let Some(mut guard) = parent_guard {
+            *(*self).parent.assume_init_mut().get_mut(&mut guard) = ptr::null_mut();
+        }
+        self.deref_mut_info().pid = 0;
+        (*self).name[0] = 0;
+        self.deref_mut_info().waitchannel = ptr::null();
+        self.killed = AtomicBool::new(false);
+        self.deref_mut_info().xstate = 0;
+        self.deref_mut_info().state = Procstate::UNUSED;
+    }
 }
 
 impl Drop for ProcGuard {
     fn drop(&mut self) {
         unsafe {
+            if self.deref_info().state == Procstate::WIP1 {
+                self.freeproc(None);
+            }
             let proc = &*self.ptr;
             proc.info.unlock();
         }
@@ -439,7 +473,8 @@ impl Context {
 impl Procstate {
     fn to_str(&self) -> &'static str {
         match self {
-            Procstate::USED => "used",
+            Procstate::WIP1 => "work in progress: step 1",
+            Procstate::WIP2 => "work in progress: step 2",
             Procstate::UNUSED => "unused",
             Procstate::SLEEPING => "sleep ",
             Procstate::RUNNABLE => "runble",
@@ -565,18 +600,16 @@ impl ProcessSystem {
             if guard.deref_info().state == Procstate::UNUSED {
                 let data = &mut *guard.data.get();
                 guard.deref_mut_info().pid = self.allocpid();
-                guard.deref_mut_info().state = Procstate::USED;
+                guard.deref_mut_info().state = Procstate::WIP1;
 
                 // Allocate a trapframe page.
                 let page = some_or!(kernel().alloc(), {
-                    freeproc(guard, None);
                     return Err(());
                 });
                 data.trapframe = page.into_usize() as *mut Trapframe;
 
                 // An empty user page table.
                 data.pagetable = some_or!(PageTable::<UVAddr>::new(data.trapframe), {
-                    freeproc(guard, None);
                     return Err(());
                 });
 
@@ -684,7 +717,6 @@ impl ProcessSystem {
             .copy(&mut npdata.pagetable, pdata.sz)
             .is_err()
         {
-            freeproc(np, None);
             return -1;
         }
         npdata.sz = pdata.sz;
@@ -711,12 +743,20 @@ impl ProcessSystem {
 
         let pid = np.deref_mut_info().pid;
 
+        // Change the process's state to WIP2, so that the destructor doesn't
+        // free the process.
+        np.deref_mut_info().state = Procstate::WIP2;
+
+        // Now drop the guard before we acquire the `wait_lock`.
+        // This is because the lock order must be `wait_lock` -> `Proc::info`.
         let child = np.raw();
         drop(np);
 
+        // Acquire the `wait_lock`, and write the parent field.
         let mut parent_guard = (*child).parent.assume_init_ref().lock();
         *(*child).parent.assume_init_ref().get_mut(&mut parent_guard) = p;
 
+        // Set the process's state to RUNNABLE.
         let mut np = (*child).lock();
         np.deref_mut_info().state = Procstate::RUNNABLE;
 
@@ -737,6 +777,7 @@ impl ProcessSystem {
             let mut havekids = false;
             for np in &self.process_pool {
                 if *np.parent.assume_init_ref().get_mut(&mut parent_guard) == p {
+                    // Found a child.
                     // Make sure the child isn't still in exit() or swtch().
                     let mut np = np.lock();
 
@@ -759,7 +800,8 @@ impl ProcessSystem {
                             drop(np);
                             return -1;
                         }
-                        freeproc(np, Some(parent_guard));
+                        // Reap the zombie child process.
+                        np.freeproc(Some(parent_guard));
                         return pid;
                     }
                 }
@@ -861,36 +903,6 @@ pub unsafe fn myproc() -> *mut Proc {
     let p = (*c).proc;
     pop_off();
     p
-}
-
-/// Frees a `Proc` structure and the data hanging from it, including user pages.
-/// Must provide a `ProcGuard`, and optionally, you can also provide a `SpinlockProtectedGuard`
-/// if you also want to clear `p`'s parent field into `ptr::null_mut()`.
-///
-/// # Note
-///
-/// If a `SpinlockProtectedGuard` was not provided, `p`'s parent field is not modified.
-/// Note that this is because accessing a parent field without a `SpinlockProtectedGuard` is illegal.
-unsafe fn freeproc(mut p: ProcGuard, parent_guard: Option<SpinlockProtectedGuard<'_>>) {
-    let mut data = &mut *p.data.get();
-    if !data.trapframe.is_null() {
-        kernel().free(Page::from_usize(data.trapframe as _));
-    }
-    data.trapframe = ptr::null_mut();
-    let mut page_table = PageTable::zero();
-    mem::swap(&mut data.pagetable, &mut page_table);
-    proc_freepagetable(page_table, data.sz);
-    data.pagetable = PageTable::zero();
-    data.sz = 0;
-    if let Some(mut guard) = parent_guard {
-        *(*p).parent.assume_init_mut().get_mut(&mut guard) = ptr::null_mut();
-    }
-    p.deref_mut_info().pid = 0;
-    (*p).name[0] = 0;
-    p.deref_mut_info().waitchannel = ptr::null();
-    p.killed = AtomicBool::new(false);
-    p.deref_mut_info().xstate = 0;
-    p.deref_mut_info().state = Procstate::UNUSED;
 }
 
 /// Free a process's page table, and free the
