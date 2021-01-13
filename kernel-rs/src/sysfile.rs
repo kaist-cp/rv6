@@ -380,14 +380,14 @@ impl Kernel {
 
         if data
             .pagetable
-            .copyout(
+            .copy_out(
                 UVAddr::new(fdarray),
                 slice::from_raw_parts_mut(&mut fd0 as *mut i32 as *mut u8, mem::size_of::<i32>()),
             )
             .is_err()
             || data
                 .pagetable
-                .copyout(
+                .copy_out(
                     UVAddr::new(fdarray.wrapping_add(mem::size_of::<i32>())),
                     slice::from_raw_parts_mut(
                         &mut fd1 as *mut i32 as *mut u8,

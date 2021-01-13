@@ -12,6 +12,13 @@ pub struct RawPage {
     inner: [u8; PGSIZE],
 }
 
+/// # Safety
+///
+/// The invariants of this struct are as follows:
+/// - inner is 4096 bytes-aligned.
+/// - end <= inner < PHYSTOP
+/// - Two different pages never overwrap. If p1: Page and p2: Page, then
+///   *(p1.inner).inner and *(p1.inner).inner are non-overwrapping arrays.
 pub struct Page {
     inner: *mut RawPage,
 }
@@ -48,7 +55,14 @@ impl Page {
         result
     }
 
-    pub fn from_usize(addr: usize) -> Self {
+    /// # Safety
+    ///
+    /// Given addr must not break the invariant of Page.
+    /// - addr is a multiple of 4096.
+    /// - end <= addr < PHYSTOP
+    /// - If p: Page, then *(p.inner).inner and (addr as *RawPage).inner are
+    ///   non-overwrapping arrays.
+    pub unsafe fn from_usize(addr: usize) -> Self {
         Self {
             inner: addr as *mut _,
         }

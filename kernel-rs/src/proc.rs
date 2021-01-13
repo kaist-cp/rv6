@@ -12,13 +12,13 @@ use core::{
 use crate::{
     file::RcFile,
     fs::{Path, RcInode},
-    kernel::{kernel, KERNEL},
+    kernel::kernel,
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     ok_or,
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
     println,
-    riscv::{intr_get, intr_on, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
+    riscv::{intr_get, intr_on, r_tp, PGSIZE},
     sleepablelock::SleepablelockGuard,
     some_or,
     spinlock::{
@@ -27,7 +27,7 @@ use crate::{
     },
     string::safestrcpy,
     trap::usertrapret,
-    vm::{KVAddr, PAddr, PageTable, UVAddr, VAddr},
+    vm::{PageTable, UVAddr, VAddr},
 };
 
 extern "C" {
@@ -301,6 +301,7 @@ pub struct ProcData {
     pub sz: usize,
 
     /// User page table.
+    // TODO(rv6): change it to Option<PageTable<UVAddr>>
     pub pagetable: PageTable<UVAddr>,
 
     /// Data page for trampoline.S.
@@ -453,7 +454,7 @@ impl ProcData {
         Self {
             kstack: 0,
             sz: 0,
-            pagetable: PageTable::zero(),
+            pagetable: unsafe { PageTable::zero() },
             trapframe: ptr::null_mut(),
             context: Context::new(),
             open_files: [None; NOFILE],
@@ -574,7 +575,7 @@ impl ProcessSystem {
                 data.trapframe = page.into_usize() as *mut Trapframe;
 
                 // An empty user page table.
-                data.pagetable = ok_or!(proc_pagetable(p as *const _ as *mut _), {
+                data.pagetable = some_or!(PageTable::<UVAddr>::new(data.trapframe), {
                     freeproc(guard, None);
                     return Err(());
                 });
@@ -648,7 +649,7 @@ impl ProcessSystem {
         let data = &mut *guard.data.get();
         // Allocate one user page and copy init's instructions
         // and data into it.
-        data.pagetable.uvminit(&INITCODE);
+        data.pagetable.init(&INITCODE).expect("init: failed");
         data.sz = PGSIZE;
 
         // Prepare for the very first "return" from kernel to user.
@@ -680,7 +681,7 @@ impl ProcessSystem {
         // Copy user memory from parent to child.
         if pdata
             .pagetable
-            .uvmcopy(&mut npdata.pagetable, pdata.sz)
+            .copy(&mut npdata.pagetable, pdata.sz)
             .is_err()
         {
             freeproc(np, None);
@@ -746,7 +747,7 @@ impl ProcessSystem {
                         if !addr.is_null()
                             && data
                                 .pagetable
-                                .copyout(
+                                .copy_out(
                                     addr,
                                     slice::from_raw_parts_mut(
                                         &mut np.deref_mut_info().xstate as *mut i32 as *mut u8,
@@ -834,22 +835,6 @@ impl ProcessSystem {
     }
 }
 
-/// Allocate a page for the process's kernel stack.
-/// Map it high in memory, followed by an invalid
-/// guard page.
-pub unsafe fn proc_mapstacks(page_table: &mut PageTable<KVAddr>) {
-    for (i, _) in &mut KERNEL.procs.process_pool.iter_mut().enumerate() {
-        let pa = kernel().alloc().expect("kalloc").into_usize();
-        let va: usize = kstack(i);
-        page_table.kvmmap(
-            KVAddr::new(va),
-            PAddr::new(pa as usize),
-            PGSIZE,
-            PTE_R | PTE_W,
-        );
-    }
-}
-
 /// Initialize the proc table at boot time.
 #[allow(clippy::ref_in_deref)]
 pub unsafe fn procinit(procs: &'static mut ProcessSystem) {
@@ -892,10 +877,9 @@ unsafe fn freeproc(mut p: ProcGuard, parent_guard: Option<SpinlockProtectedGuard
         kernel().free(Page::from_usize(data.trapframe as _));
     }
     data.trapframe = ptr::null_mut();
-    if !data.pagetable.is_null() {
-        let sz = data.sz;
-        proc_freepagetable(&mut data.pagetable, sz);
-    }
+    let mut page_table = PageTable::zero();
+    mem::swap(&mut data.pagetable, &mut page_table);
+    proc_freepagetable(page_table, data.sz);
     data.pagetable = PageTable::zero();
     data.sz = 0;
     if let Some(mut guard) = parent_guard {
@@ -909,53 +893,12 @@ unsafe fn freeproc(mut p: ProcGuard, parent_guard: Option<SpinlockProtectedGuard
     p.deref_mut_info().state = Procstate::UNUSED;
 }
 
-/// Create a user page table for a given process,
-/// with no user memory, but with trampoline pages.
-pub unsafe fn proc_pagetable(p: *mut Proc) -> Result<PageTable<UVAddr>, ()> {
-    // An empty page table.
-    let mut pagetable = PageTable::<UVAddr>::zero();
-    pagetable.alloc_root()?;
-
-    // Map the trampoline code (for system call return)
-    // at the highest user virtual address.
-    // Only the supervisor uses it, on the way
-    // to/from user space, so not PTE_U.
-    if pagetable
-        .mappages(
-            UVAddr::new(TRAMPOLINE),
-            PGSIZE,
-            trampoline.as_mut_ptr() as usize,
-            PTE_R | PTE_X,
-        )
-        .is_err()
-    {
-        pagetable.uvmfree(0);
-        return Err(());
-    }
-
-    // Map the trapframe just below TRAMPOLINE, for trampoline.S.
-    if pagetable
-        .mappages(
-            UVAddr::new(TRAPFRAME),
-            PGSIZE,
-            (*(*p).data.get()).trapframe as usize,
-            PTE_R | PTE_W,
-        )
-        .is_err()
-    {
-        pagetable.uvmunmap(UVAddr::new(TRAMPOLINE), 1, false);
-        pagetable.uvmfree(0);
-        return Err(());
-    }
-    Ok(pagetable)
-}
-
 /// Free a process's page table, and free the
 /// physical memory it refers to.
-pub unsafe fn proc_freepagetable(pagetable: &mut PageTable<UVAddr>, sz: usize) {
-    pagetable.uvmunmap(UVAddr::new(TRAMPOLINE), 1, false);
-    pagetable.uvmunmap(UVAddr::new(TRAPFRAME), 1, false);
-    pagetable.uvmfree(sz);
+pub unsafe fn proc_freepagetable(mut pagetable: PageTable<UVAddr>, sz: usize) {
+    pagetable.unmap(UVAddr::new(TRAMPOLINE), 1, false);
+    pagetable.unmap(UVAddr::new(TRAPFRAME), 1, false);
+    pagetable.free(sz);
 }
 
 /// A user program that calls exec("/init").
@@ -975,10 +918,10 @@ pub unsafe fn resizeproc(n: i32) -> i32 {
     let sz = match n.cmp(&0) {
         cmp::Ordering::Equal => sz,
         cmp::Ordering::Greater => {
-            let sz = data.pagetable.uvmalloc(sz, sz.wrapping_add(n as usize));
+            let sz = data.pagetable.alloc(sz, sz.wrapping_add(n as usize));
             ok_or!(sz, return -1)
         }
-        cmp::Ordering::Less => data.pagetable.uvmdealloc(sz, sz.wrapping_add(n as usize)),
+        cmp::Ordering::Less => data.pagetable.dealloc(sz, sz.wrapping_add(n as usize)),
     };
     data.sz = sz;
     0

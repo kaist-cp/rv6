@@ -6,7 +6,7 @@ use crate::{
     console::{consoleinit, Console, Printer},
     file::{Devsw, FileTable},
     fs::{FileSystem, Itable},
-    kalloc::{end, kinit, Kmem},
+    kalloc::{end, Kmem},
     memlayout::PHYSTOP,
     page::{Page, RawPage},
     param::{NCPU, NDEV},
@@ -82,7 +82,7 @@ impl Kernel {
             uart: Uart::new(),
             printer: Spinlock::new("PRINTLN", Printer::new()),
             kmem: Spinlock::new("KMEM", Kmem::new()),
-            page_table: PageTable::zero(),
+            page_table: unsafe { PageTable::zero() },
             ticks: Sleepablelock::new("time", 0),
             procs: ProcessSystem::zero(),
             cpus: [Cpu::new(); NCPU],
@@ -109,11 +109,11 @@ impl Kernel {
     /// Free the page of physical memory pointed at by v,
     /// which normally should have been returned by a
     /// call to kernel().alloc().  (The exception is when
-    /// initializing the allocator; see kinit above.)
-    pub unsafe fn free(&self, mut page: Page) {
+    /// initializing the allocator; see Kmem::init.)
+    pub fn free(&self, mut page: Page) {
         let pa = page.addr().into_usize();
-        assert!(
-            pa.wrapping_rem(PGSIZE) == 0 && (pa as *mut _) >= end.as_mut_ptr() && pa < PHYSTOP,
+        debug_assert!(
+            pa % PGSIZE == 0 && (pa as *mut _) >= unsafe { end.as_mut_ptr() } && pa < PHYSTOP,
             "[Kernel::free]"
         );
 
@@ -126,7 +126,7 @@ impl Kernel {
     /// Allocate one 4096-byte page of physical memory.
     /// Returns a pointer that the kernel can use.
     /// Returns 0 if the memory cannot be allocated.
-    pub unsafe fn alloc(&self) -> Option<Page> {
+    pub fn alloc(&self) -> Option<Page> {
         let mut page = kernel().kmem.lock().alloc()?;
 
         // fill with junk
@@ -196,13 +196,13 @@ pub unsafe fn kernel_main() -> ! {
         println!();
 
         // Physical page allocator.
-        kinit(KERNEL.kmem.get_mut());
+        KERNEL.kmem.get_mut().init();
 
         // Create kernel page table.
-        KERNEL.page_table.kvminit();
+        KERNEL.page_table = PageTable::<KVAddr>::new().expect("PageTable::new failed");
 
         // Turn on paging.
-        kernel().page_table.kvminithart();
+        KERNEL.page_table.init_hart();
 
         // Process system.
         procinit(&mut KERNEL.procs);
@@ -236,7 +236,7 @@ pub unsafe fn kernel_main() -> ! {
         println!("hart {} starting", cpuid());
 
         // Turn on paging.
-        kernel().page_table.kvminithart();
+        KERNEL.page_table.init_hart();
 
         // Install kernel trap vector.
         trapinithart();

@@ -45,7 +45,7 @@ impl Console {
     unsafe fn write(&mut self, src: UVAddr, n: i32) -> i32 {
         for i in 0..n {
             let mut c = [0 as u8];
-            if VAddr::copyin(&mut c, UVAddr::new(src.into_usize() + (i as usize))).is_err() {
+            if VAddr::copy_in(&mut c, UVAddr::new(src.into_usize() + (i as usize))).is_err() {
                 return i;
             }
             // TODO(@coolofficials): Temporarily using global function kernel().
@@ -81,7 +81,7 @@ impl Console {
             } else {
                 // Copy the input byte to the user-space buffer.
                 let cbuf = [cin as u8];
-                if UVAddr::copyout(dst, &cbuf).is_err() {
+                if UVAddr::copy_out(dst, &cbuf).is_err() {
                     break;
                 }
                 dst = dst + 1;

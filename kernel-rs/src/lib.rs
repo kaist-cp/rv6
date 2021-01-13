@@ -17,6 +17,7 @@
 #![feature(maybe_uninit_extra)]
 #![feature(min_const_generics)]
 #![feature(generic_associated_types)]
+#![feature(unsafe_block_in_unsafe_fn)]
 
 mod arena;
 mod bio;
