@@ -635,7 +635,6 @@ impl Itable {
             if (*dip).typ == IFileType::None {
                 ptr::write_bytes(dip, 0, 1);
                 (*dip).typ = typ;
-                (*dip).nlink = 1;
 
                 // mark it allocated on the disk
                 tx.write(bp);
