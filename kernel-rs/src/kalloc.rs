@@ -20,6 +20,11 @@ struct Run {
     next: *mut Run,
 }
 
+// Internal safety invariant:
+// This singly linked list does not have a cycle.
+// If head is null, then it is an empty list.
+// Ohterwise, it is nonempty, and head is its first element, which
+// is a valid page.
 pub struct Kmem {
     head: *mut Run,
 }
@@ -31,13 +36,27 @@ impl Kmem {
         }
     }
 
-    pub unsafe fn free(&mut self, pa: Page) {
+    /// # Safety
+    ///
+    /// Must be called only once. Create pages between `end` and `PHYSTOP` by
+    /// calling freerange.
+    pub unsafe fn init(&mut self) {
+        self.freerange(end.as_mut_ptr(), PHYSTOP as _);
+    }
+
+    pub fn free(&mut self, pa: Page) {
         let mut r = pa.into_usize() as *mut Run;
-        (*r).next = self.head;
+        // By the invariant of Page, it does not create a cycle in this list and
+        // thus is safe.
+        unsafe { (*r).next = self.head };
         self.head = r;
     }
 
-    pub unsafe fn freerange(&mut self, pa_start: *mut u8, pa_end: *mut u8) {
+    /// # Safety
+    ///
+    /// Create pages between `pa_start` and `pa_end`. Created pages must
+    /// not overwrap with any existing pages.
+    unsafe fn freerange(&mut self, pa_start: *mut u8, pa_end: *mut u8) {
         let mut p = pgroundup(pa_start as _) as *mut u8;
         while p.add(PGSIZE) <= pa_end {
             self.free(Page::from_usize(p as _));
@@ -45,15 +64,14 @@ impl Kmem {
         }
     }
 
-    pub unsafe fn alloc(&mut self) -> Option<Page> {
+    pub fn alloc(&mut self) -> Option<Page> {
         if self.head.is_null() {
             return None;
         }
-        let next = (*self.head).next;
-        Some(Page::from_usize(mem::replace(&mut self.head, next) as _))
+        // It is safe because head is not null and the structure of this list
+        // is maintained by the invariant.
+        let next = unsafe { (*self.head).next };
+        // It is safe because the first element is a valid page by the invariant.
+        Some(unsafe { Page::from_usize(mem::replace(&mut self.head, next) as _) })
     }
-}
-
-pub unsafe fn kinit(kmem: &mut Kmem) {
-    kmem.freerange(end.as_mut_ptr(), PHYSTOP as _);
 }

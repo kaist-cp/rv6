@@ -121,8 +121,8 @@ impl Kernel {
 
         let pt = proc_pagetable(p)?;
 
-        let mut ptable_guard = scopeguard::guard((pt, sz), |(mut pt, sz)| {
-            proc_freepagetable(&mut pt, sz);
+        let mut ptable_guard = scopeguard::guard((pt, sz), |(pt, sz)| {
+            proc_freepagetable(pt, sz);
         });
 
         let (pt, sz) = &mut *ptable_guard;
@@ -146,7 +146,7 @@ impl Kernel {
                 if ph.vaddr.wrapping_add(ph.memsz) < ph.vaddr {
                     return Err(());
                 }
-                let sz1 = pt.uvmalloc(*sz, ph.vaddr.wrapping_add(ph.memsz))?;
+                let sz1 = pt.uvm_alloc(*sz, ph.vaddr.wrapping_add(ph.memsz))?;
                 *sz = sz1;
                 if ph.vaddr.wrapping_rem(PGSIZE) != 0 {
                     return Err(());
@@ -169,9 +169,9 @@ impl Kernel {
         // Use the second as the user stack.
         *sz = sz.wrapping_add(PGSIZE).wrapping_sub(1) & !PGSIZE.wrapping_sub(1);
 
-        let sz1 = pt.uvmalloc(*sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)))?;
+        let sz1 = pt.uvm_alloc(*sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)))?;
         *sz = sz1;
-        pt.uvmclear(UVAddr::new(sz.wrapping_sub(2usize.wrapping_mul(PGSIZE))));
+        pt.uvm_guard(UVAddr::new(sz.wrapping_sub(2usize.wrapping_mul(PGSIZE))));
         let mut sp: usize = *sz;
         let stackbase: usize = sp.wrapping_sub(PGSIZE);
 
@@ -191,7 +191,7 @@ impl Kernel {
             if sp < stackbase {
                 return Err(());
             }
-            pt.copyout(
+            pt.copy_out(
                 UVAddr::new(sp),
                 slice::from_raw_parts_mut(argv[argc], (strlen(argv[argc]) + 1) as usize),
             )?;
@@ -206,7 +206,7 @@ impl Kernel {
 
         if sp >= stackbase
             && pt
-                .copyout(
+                .copy_out(
                     UVAddr::new(sp),
                     slice::from_raw_parts_mut(
                         ustack.as_mut_ptr() as *mut u8,
@@ -237,7 +237,7 @@ impl Kernel {
             );
 
             // Commit to the user image.
-            let mut oldpagetable = mem::replace(&mut data.pagetable, pt);
+            let oldpagetable = mem::replace(&mut data.pagetable, pt);
             data.sz = sz;
 
             // initial program counter = main
@@ -245,7 +245,7 @@ impl Kernel {
 
             // initial stack pointer
             (*data.trapframe).sp = sp;
-            proc_freepagetable(&mut oldpagetable, oldsz);
+            proc_freepagetable(oldpagetable, oldsz);
 
             // this ends up in a0, the first argument to main(argc, argv)
             return Ok(argc);
@@ -270,7 +270,7 @@ unsafe fn loadseg(
 
     for i in num_iter::range_step(0, sz, PGSIZE as _) {
         let pa = pagetable
-            .walkaddr(va + i as usize)
+            .uvm_walk_addr(va + i as usize)
             .expect("loadseg: address should exist")
             .into_usize();
 

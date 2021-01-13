@@ -18,7 +18,7 @@ pub unsafe fn fetchaddr(addr: UVAddr, ip: *mut usize) -> i32 {
     }
     if data
         .pagetable
-        .copyin(
+        .copy_in(
             slice::from_raw_parts_mut(ip as *mut u8, mem::size_of::<usize>()),
             addr,
         )
@@ -33,7 +33,7 @@ pub unsafe fn fetchaddr(addr: UVAddr, ip: *mut usize) -> i32 {
 /// Returns reference to the string in the buffer.
 pub unsafe fn fetchstr(addr: UVAddr, buf: &mut [u8]) -> Result<&CStr, ()> {
     let p: *mut Proc = myproc();
-    (*(*p).data.get()).pagetable.copyinstr(buf, addr)?;
+    (*(*p).data.get()).pagetable.copy_in_str(buf, addr)?;
 
     Ok(CStr::from_ptr(buf.as_ptr()))
 }
