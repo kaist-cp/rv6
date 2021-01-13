@@ -4,7 +4,7 @@ use cstr_core::CStr;
 
 use crate::{kernel::kernel, param::ROOTDEV, proc::myproc};
 
-use super::{RcInode, DIRSIZ, ROOTINO, IFileType};
+use super::{IFileType, RcInode, DIRSIZ, ROOTINO};
 
 #[derive(PartialEq)]
 #[repr(transparent)]
@@ -148,7 +148,7 @@ impl Path {
             path = new_path;
 
             let mut ip = ptr.lock();
-            if ip.deref_inner().typ != IFileType::DIR {
+            if ip.deref_inner().typ != IFileType::Dir {
                 return Err(());
             }
             if parent && path.inner.is_empty() {

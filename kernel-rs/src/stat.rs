@@ -1,17 +1,17 @@
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub enum IFileType{
-    NONE,
-    DIR,
-    FILE,
-    DEVICE    
-}
-impl Default for IFileType {
-    fn default() -> Self {
-        IFileType::NONE
-    }
+pub enum IFileType {
+    None,
+    Dir,
+    File,
+    Device {
+        /// Major device number
+        major: u16,
+        /// Minor device number
+        minor: u16,
+    },
 }
 
-#[derive(Default, Copy, Clone)]
+#[derive(Copy, Clone)]
 pub struct Stat {
     /// File system's disk device
     pub dev: i32,

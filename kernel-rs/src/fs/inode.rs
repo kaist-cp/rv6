@@ -76,7 +76,7 @@ use crate::{
     param::{BSIZE, NINODE},
     sleeplock::Sleeplock,
     spinlock::Spinlock,
-    stat::{Stat, IFileType},
+    stat::{IFileType, Stat},
     vm::{KVAddr, VAddr},
 };
 
@@ -93,8 +93,8 @@ pub struct InodeInner {
     pub valid: bool,
     /// copy of disk inode
     pub typ: IFileType,
-    pub major: u16,
-    pub minor: u16,
+    // pub major: u16,
+    // pub minor: u16,
     pub nlink: i16,
     pub size: u32,
     pub addr_direct: [u32; NDIRECT],
@@ -122,12 +122,11 @@ pub struct Dinode {
     /// File type
     typ: IFileType,
 
-    /// Major device number (T_DEVICE only)
-    major: u16,
+    // /// Major device number (T_DEVICE only)
+    // major: u16,
 
-    /// Minor device number (T_DEVICE only)
-    minor: u16,
-
+    // /// Minor device number (T_DEVICE only)
+    // minor: u16,
     /// Number of links to inode in file system
     nlink: i16,
 
@@ -271,7 +270,7 @@ impl InodeGuard<'_> {
     pub fn dirlookup(&mut self, name: &FileName) -> Result<(RcInode<'static>, u32), ()> {
         let mut de: Dirent = Default::default();
 
-        assert_eq!(self.deref_inner().typ, IFileType::DIR, "dirlookup not DIR");
+        assert_eq!(self.deref_inner().typ, IFileType::Dir, "dirlookup not DIR");
 
         for off in (0..self.deref_inner().size).step_by(DIRENT_SIZE) {
             de.read_entry(self, off, "dirlookup read");
@@ -297,8 +296,8 @@ impl InodeGuard<'_> {
             .add((self.inum as usize).wrapping_rem(IPB));
         let inner = self.deref_inner();
         (*dip).typ = inner.typ;
-        (*dip).major = inner.major;
-        (*dip).minor = inner.minor;
+        // (*dip).major = inner.major;
+        // (*dip).minor = inner.minor;
         (*dip).nlink = inner.nlink;
         (*dip).size = inner.size;
         (*dip).addr_direct.copy_from_slice(&inner.addr_direct);
@@ -530,7 +529,7 @@ impl ArenaObject for Inode {
 
             A::reacquire_after(guard, move || unsafe {
                 ip.itrunc(&tx);
-                ip.deref_inner_mut().typ = IFileType::NONE;
+                ip.deref_inner_mut().typ = IFileType::None;
                 ip.update(&tx);
                 ip.deref_inner_mut().valid = false;
                 drop(ip);
@@ -554,15 +553,13 @@ impl Inode {
                     .add((self.inum as usize).wrapping_rem(IPB)))
             };
             guard.typ = (*dip).typ;
-            guard.major = (*dip).major as u16;
-            guard.minor = (*dip).minor as u16;
             guard.nlink = (*dip).nlink;
             guard.size = (*dip).size;
             guard.addr_direct.copy_from_slice(&(*dip).addr_direct);
             guard.addr_indirect = (*dip).addr_indirect;
             drop(bp);
             guard.valid = true;
-            assert_ne!(guard.typ, IFileType::NONE, "Inode::lock: no type");
+            assert_ne!(guard.typ, IFileType::None, "Inode::lock: no type");
         };
         mem::forget(guard);
         InodeGuard { inode: self }
@@ -576,9 +573,7 @@ impl Inode {
                 "inode",
                 InodeInner {
                     valid: false,
-                    typ: IFileType::NONE,
-                    major: 0,
-                    minor: 0,
+                    typ: IFileType::None,
                     nlink: 0,
                     size: 0,
                     addr_direct: [0; NDIRECT],
@@ -629,7 +624,12 @@ impl Itable {
     /// Allocate an inode on device dev.
     /// Mark it as allocated by giving it type.
     /// Returns an unlocked but allocated and referenced inode.
-    pub unsafe fn alloc_inode(&self, dev: u32, typ: IFileType, tx: &FsTransaction<'_>) -> RcInode<'_> {
+    pub unsafe fn alloc_inode(
+        &self,
+        dev: u32,
+        typ: IFileType,
+        tx: &FsTransaction<'_>,
+    ) -> RcInode<'_> {
         for inum in 1..kernel().file_system.superblock().ninodes {
             let mut bp = kernel()
                 .file_system
@@ -639,7 +639,7 @@ impl Itable {
                 .add((inum as usize).wrapping_rem(IPB));
 
             // a free inode
-            if (*dip).typ == IFileType::NONE {
+            if (*dip).typ == IFileType::None {
                 ptr::write_bytes(dip, 0, 1);
                 (*dip).typ = typ;
 

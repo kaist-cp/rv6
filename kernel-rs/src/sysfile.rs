@@ -65,8 +65,6 @@ unsafe fn argfd(n: usize) -> Result<(i32, &'static RcFile<'static>), ()> {
 unsafe fn create<F, T>(
     path: &Path,
     typ: IFileType,
-    major: u16,
-    minor: u16,
     tx: &FsTransaction<'_>,
     f: F,
 ) -> Result<(RcInode<'static>, T), ()>
@@ -78,22 +76,25 @@ where
     if let Ok((ptr2, _)) = dp.dirlookup(&name) {
         drop(dp);
         let mut ip = ptr2.lock();
-        if typ == IFileType::FILE && (ip.deref_inner().typ == IFileType::FILE || ip.deref_inner().typ == IFileType::DEVICE) {
-            let ret = f(&mut ip);
-            mem::drop(ip);
-            return Ok((ptr2, ret));
+        if typ == IFileType::File {
+            match ip.deref_inner().typ {
+                IFileType::File | IFileType::Device { .. } => {
+                    let ret = f(&mut ip);
+                    drop(ip);
+                    return Ok((ptr2, ret));
+                }
+                _ => return Err(()),
+            }
         }
         return Err(());
     }
     let ptr2 = kernel().itable.alloc_inode(dp.dev, typ, tx);
     let mut ip = ptr2.lock();
-    ip.deref_inner_mut().major = major;
-    ip.deref_inner_mut().minor = minor;
     ip.deref_inner_mut().nlink = 1;
     ip.update(tx);
 
     // Create . and .. entries.
-    if typ == IFileType::DIR {
+    if typ == IFileType::Dir {
         // for ".."
         dp.deref_inner_mut().nlink += 1;
         dp.update(tx);
@@ -155,7 +156,7 @@ impl Kernel {
         let tx = self.file_system.begin_transaction();
         let ptr = ok_or!(Path::new(old).namei(), return usize::MAX);
         let mut ip = ptr.lock();
-        if ip.deref_inner().typ == IFileType::DIR {
+        if ip.deref_inner().typ == IFileType::Dir {
             return usize::MAX;
         }
         ip.deref_inner_mut().nlink += 1;
@@ -191,7 +192,7 @@ impl Kernel {
                 let mut ip = ptr2.lock();
                 assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
 
-                if ip.deref_inner().typ != IFileType::DIR || ip.isdirempty() {
+                if ip.deref_inner().typ != IFileType::Dir || ip.isdirempty() {
                     let bytes_write = dp.write(
                         KVAddr::new(&mut de as *mut Dirent as usize),
                         off,
@@ -199,7 +200,7 @@ impl Kernel {
                         &tx,
                     );
                     assert_eq!(bytes_write, Ok(DIRENT_SIZE), "unlink: writei");
-                    if ip.deref_inner().typ == IFileType::DIR {
+                    if ip.deref_inner().typ == IFileType::Dir {
                         dp.deref_inner_mut().nlink -= 1;
                         dp.update(&tx);
                     }
@@ -224,39 +225,36 @@ impl Kernel {
 
         let tx = self.file_system.begin_transaction();
 
-        let (ip, (typ, major)) = if omode.contains(FcntlFlags::O_CREATE) {
+        let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
             ok_or!(
-                create(path, IFileType::FILE, 0, 0, &tx, |ip| (
-                    ip.deref_inner().typ,
-                    ip.deref_inner().major,
-                )),
+                create(path, IFileType::File, &tx, |ip| ip.deref_inner().typ,),
                 return usize::MAX
             )
         } else {
             let ptr = ok_or!(path.namei(), return usize::MAX);
             let ip = ptr.lock();
             let typ = ip.deref_inner().typ;
-            let major = ip.deref_inner().major;
 
-            if ip.deref_inner().typ == IFileType::DIR && omode != FcntlFlags::O_RDONLY {
+            if typ == IFileType::Dir && omode != FcntlFlags::O_RDONLY {
                 return usize::MAX;
             }
             mem::drop(ip);
-            (ptr, (typ, major))
+            (ptr, typ)
         };
-        if typ == IFileType::DEVICE && (major as usize >= NDEV) {
-            return usize::MAX;
-        }
 
-        let filetype = if typ == IFileType::DEVICE {
-            let major = major;
-            FileType::Device { ip, major }
-        } else {
-            FileType::Inode {
+        let filetype = match typ {
+            IFileType::Device { major, .. } => {
+                if major as usize >= NDEV {
+                    return usize::MAX;
+                };
+                FileType::Device { ip, major }
+            }
+            _ => FileType::Inode {
                 ip,
                 off: UnsafeCell::new(0),
-            }
+            },
         };
+
         let f = some_or!(
             self.ftable.alloc_file(
                 filetype,
@@ -266,7 +264,7 @@ impl Kernel {
             return usize::MAX
         );
 
-        if omode.contains(FcntlFlags::O_TRUNC) && typ == IFileType::FILE {
+        if omode.contains(FcntlFlags::O_TRUNC) && typ == IFileType::File {
             match &f.typ {
                 FileType::Device { ip, .. } | FileType::Inode { ip, .. } => ip.lock().itrunc(&tx),
                 _ => panic!("sys_open : Not reach"),
@@ -281,7 +279,7 @@ impl Kernel {
         let tx = self.file_system.begin_transaction();
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
         ok_or!(
-            create(Path::new(path), IFileType::DIR, 0, 0, &tx, |_| ()),
+            create(Path::new(path), IFileType::Dir, &tx, |_| ()),
             return usize::MAX
         );
         0
@@ -294,7 +292,12 @@ impl Kernel {
         let minor = ok_or!(argint(2), return usize::MAX) as u16;
         let tx = self.file_system.begin_transaction();
         let _ip = ok_or!(
-            create(Path::new(path), IFileType::DEVICE, major, minor, &tx, |_| ()),
+            create(
+                Path::new(path),
+                IFileType::Device { major, minor },
+                &tx,
+                |_| ()
+            ),
             return usize::MAX
         );
         0
@@ -314,7 +317,7 @@ impl Kernel {
         let _tx = self.file_system.begin_transaction();
         let ptr = ok_or!(Path::new(path).namei(), return usize::MAX);
         let ip = ptr.lock();
-        if ip.deref_inner().typ != IFileType::DIR {
+        if ip.deref_inner().typ != IFileType::Dir {
             return usize::MAX;
         }
         mem::drop(ip);
