@@ -56,12 +56,6 @@ unsafe fn argfd(n: usize) -> Result<(i32, &'static RcFile<'static>), ()> {
     Ok((fd, f))
 }
 
-// unsafe fn argPath(n: usize) -> Result<Path, ()> {
-//     let mut path: [u8; MAXPATH as usize] = [0; MAXPATH];
-//     let path = ok_or!(argstr(0, &mut path), return Err(()));
-//     Ok(Path::new(path))
-// }
-
 unsafe fn create<F, T>(
     path: &Path,
     typ: IFileType,
