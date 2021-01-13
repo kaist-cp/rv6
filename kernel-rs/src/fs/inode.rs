@@ -150,6 +150,9 @@ pub type RcInode<'s> = Rc<Itable, &'s Itable>;
 /// # Invariant
 ///
 /// When Sleeplock<InodeInner> is held, InodeInner's valid is always true.
+// It does not have a FsTransaction field, since reading an opened file does
+// not need to be inside a transaction while it requires an InodeGuard.
+// https://github.com/kaist-cp/rv6/issues/328
 pub struct InodeGuard<'a> {
     pub inode: &'a Inode,
 }
@@ -500,7 +503,19 @@ impl ArenaObject for Inode {
         if self.inner.get_mut().valid && self.inner.get_mut().nlink == 0 {
             // inode has no links and no other references: truncate and free.
 
-            // TODO(rv6): must be removed.
+            // TODO(rv6)
+            // Disk write operations must happen inside a transaction. However,
+            // we cannot begin a new transaction here becuase beginning of a
+            // transaction acquires a sleep lock while the spin lock of this
+            // arena has been acquired before the invocation of this method.
+            // To mitigate this problem, we make a fake transaction and pass
+            // it as an argument for each disk write operation below. As a
+            // transaction does not start here, any operation that can drop an
+            // inode must begin a transaction even in the case that the
+            // resulting FsTransaction value is never used. Such transactions
+            // can be found in finalize in file.rs, sys_chdir in sysfile.rs,
+            // close_files in proc.rs, and exec in exec.rs.
+            // https://github.com/kaist-cp/rv6/issues/290
             let tx = mem::ManuallyDrop::new(FsTransaction {
                 fs: &kernel().file_system,
             });

@@ -97,6 +97,12 @@ impl Kernel {
         let mut p: *mut Proc = myproc();
         let mut data = &mut *(*p).data.get();
 
+        // TODO(rv6)
+        // The method namei can drop inodes. If namei succeeds, its return
+        // value, ptr, will be dropped when this method returns. Deallocation
+        // of an inode may cause disk write operations, so we must begin a
+        // transaction here.
+        // https://github.com/kaist-cp/rv6/issues/290
         let _tx = self.file_system.begin_transaction();
         let ptr = ok_or!(path.namei(), {
             return Err(());

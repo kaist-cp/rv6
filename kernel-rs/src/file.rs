@@ -180,6 +180,11 @@ impl ArenaObject for File {
             match typ {
                 FileType::Pipe { mut pipe } => unsafe { pipe.close(self.writable) },
                 FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
+                    // TODO(rv6)
+                    // The inode ip will be dropped by drop(ip). Deallocation
+                    // of an inode may cause disk write operations, so we must
+                    // begin a transaction here.
+                    // https://github.com/kaist-cp/rv6/issues/290
                     let _tx = kernel().file_system.begin_transaction();
                     drop(ip);
                 }
