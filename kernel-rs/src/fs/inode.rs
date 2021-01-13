@@ -93,8 +93,6 @@ pub struct InodeInner {
     pub valid: bool,
     /// copy of disk inode
     pub typ: IFileType,
-    // pub major: u16,
-    // pub minor: u16,
     pub nlink: i16,
     pub size: u32,
     pub addr_direct: [u32; NDIRECT],
@@ -122,11 +120,6 @@ pub struct Dinode {
     /// File type
     typ: IFileType,
 
-    // /// Major device number (T_DEVICE only)
-    // major: u16,
-
-    // /// Minor device number (T_DEVICE only)
-    // minor: u16,
     /// Number of links to inode in file system
     nlink: i16,
 
@@ -642,6 +635,7 @@ impl Itable {
             if (*dip).typ == IFileType::None {
                 ptr::write_bytes(dip, 0, 1);
                 (*dip).typ = typ;
+                (*dip).nlink = 1;
 
                 // mark it allocated on the disk
                 tx.write(bp);

@@ -90,8 +90,6 @@ where
     }
     let ptr2 = kernel().itable.alloc_inode(dp.dev, typ, tx);
     let mut ip = ptr2.lock();
-    ip.deref_inner_mut().nlink = 1;
-    ip.update(tx);
 
     // Create . and .. entries.
     if typ == IFileType::Dir {
