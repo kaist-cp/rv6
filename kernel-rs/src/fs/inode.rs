@@ -150,8 +150,12 @@ pub type RcInode<'s> = Rc<Itable, &'s Itable>;
 /// # Invariant
 ///
 /// When Sleeplock<InodeInner> is held, InodeInner's valid is always true.
-// It does not have a FsTransaction field, since reading an opened file does
-// not need to be inside a transaction while it requires an InodeGuard.
+// Every disk write operation must happen inside a transaction. Reading an
+// opened file does not write anything on disk in any matter and thus does
+// not need to happen inside a transaction. At the same time, it requires
+// an InodeGuard. Therefore, InodeGuard does not have a FsTransaction field.
+// Instead, every method that needs to be inside a transaction explicitly
+// takes a FsTransaction value as an argument.
 // https://github.com/kaist-cp/rv6/issues/328
 pub struct InodeGuard<'a> {
     pub inode: &'a Inode,
@@ -505,7 +509,7 @@ impl ArenaObject for Inode {
 
             // TODO(rv6)
             // Disk write operations must happen inside a transaction. However,
-            // we cannot begin a new transaction here becuase beginning of a
+            // we cannot begin a new transaction here because beginning of a
             // transaction acquires a sleep lock while the spin lock of this
             // arena has been acquired before the invocation of this method.
             // To mitigate this problem, we make a fake transaction and pass
