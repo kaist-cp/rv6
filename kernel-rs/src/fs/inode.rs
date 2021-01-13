@@ -76,7 +76,7 @@ use crate::{
     param::{BSIZE, NINODE},
     sleeplock::Sleeplock,
     spinlock::Spinlock,
-    stat::{Stat, T_DIR, T_NONE},
+    stat::{Stat, IFileType},
     vm::{KVAddr, VAddr},
 };
 
@@ -92,7 +92,7 @@ pub struct InodeInner {
     /// inode has been read from disk?
     pub valid: bool,
     /// copy of disk inode
-    pub typ: i16,
+    pub typ: IFileType,
     pub major: u16,
     pub minor: u16,
     pub nlink: i16,
@@ -120,7 +120,7 @@ pub struct Inode {
 #[repr(C)]
 pub struct Dinode {
     /// File type
-    typ: i16,
+    typ: IFileType,
 
     /// Major device number (T_DEVICE only)
     major: u16,
@@ -271,7 +271,7 @@ impl InodeGuard<'_> {
     pub fn dirlookup(&mut self, name: &FileName) -> Result<(RcInode<'static>, u32), ()> {
         let mut de: Dirent = Default::default();
 
-        assert_eq!(self.deref_inner().typ, T_DIR, "dirlookup not DIR");
+        assert_eq!(self.deref_inner().typ, IFileType::DIR, "dirlookup not DIR");
 
         for off in (0..self.deref_inner().size).step_by(DIRENT_SIZE) {
             de.read_entry(self, off, "dirlookup read");
@@ -293,7 +293,7 @@ impl InodeGuard<'_> {
             self.dev,
             kernel().file_system.superblock().iblock(self.inum),
         );
-        let mut dip: *mut Dinode = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
+        let mut dip = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
             .add((self.inum as usize).wrapping_rem(IPB));
         let inner = self.deref_inner();
         (*dip).typ = inner.typ;
@@ -530,7 +530,7 @@ impl ArenaObject for Inode {
 
             A::reacquire_after(guard, move || unsafe {
                 ip.itrunc(&tx);
-                ip.deref_inner_mut().typ = 0;
+                ip.deref_inner_mut().typ = IFileType::NONE;
                 ip.update(&tx);
                 ip.deref_inner_mut().valid = false;
                 drop(ip);
@@ -562,7 +562,7 @@ impl Inode {
             guard.addr_indirect = (*dip).addr_indirect;
             drop(bp);
             guard.valid = true;
-            assert_ne!(guard.typ, T_NONE, "Inode::lock: no type");
+            assert_ne!(guard.typ, IFileType::NONE, "Inode::lock: no type");
         };
         mem::forget(guard);
         InodeGuard { inode: self }
@@ -576,7 +576,7 @@ impl Inode {
                 "inode",
                 InodeInner {
                     valid: false,
-                    typ: 0,
+                    typ: IFileType::NONE,
                     major: 0,
                     minor: 0,
                     nlink: 0,
@@ -629,7 +629,7 @@ impl Itable {
     /// Allocate an inode on device dev.
     /// Mark it as allocated by giving it type.
     /// Returns an unlocked but allocated and referenced inode.
-    pub unsafe fn alloc_inode(&self, dev: u32, typ: i16, tx: &FsTransaction<'_>) -> RcInode<'_> {
+    pub unsafe fn alloc_inode(&self, dev: u32, typ: IFileType, tx: &FsTransaction<'_>) -> RcInode<'_> {
         for inum in 1..kernel().file_system.superblock().ninodes {
             let mut bp = kernel()
                 .file_system
@@ -639,7 +639,7 @@ impl Itable {
                 .add((inum as usize).wrapping_rem(IPB));
 
             // a free inode
-            if (*dip).typ == 0 {
+            if (*dip).typ == IFileType::NONE {
                 ptr::write_bytes(dip, 0, 1);
                 (*dip).typ = typ;
 
