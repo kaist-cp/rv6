@@ -207,8 +207,8 @@ pub enum Procstate {
     RUNNABLE,
     SLEEPING,
     UNUSED,
-    WIP1,
-    WIP2,
+    STARTING1,
+    STARTING2,
 }
 
 pub struct WaitChannel {
@@ -390,6 +390,7 @@ impl ProcGuard {
     /// If a `SpinlockProtectedGuard` was not provided, `p`'s parent field is not modified.
     /// Note that this is because accessing a parent field without a `SpinlockProtectedGuard` is illegal.
     unsafe fn freeproc(&mut self, parent_guard: Option<SpinlockProtectedGuard<'_>>) {
+        // Clear the `ProcData`.
         let mut data = &mut *self.data.get();
         if !data.trapframe.is_null() {
             kernel().free(Page::from_usize(data.trapframe as _));
@@ -397,12 +398,16 @@ impl ProcGuard {
         data.trapframe = ptr::null_mut();
         let mut page_table = PageTable::zero();
         mem::swap(&mut data.pagetable, &mut page_table);
-        proc_freepagetable(page_table, data.sz);
+        page_table.drop();
         data.pagetable = PageTable::zero();
         data.sz = 0;
+
+        // Clear the process's parent field.
         if let Some(mut guard) = parent_guard {
             *(*self).parent.assume_init_mut().get_mut(&mut guard) = ptr::null_mut();
         }
+
+        // Clear the `ProcInfo`.
         self.deref_mut_info().pid = 0;
         (*self).name[0] = 0;
         self.deref_mut_info().waitchannel = ptr::null();
@@ -415,7 +420,7 @@ impl ProcGuard {
 impl Drop for ProcGuard {
     fn drop(&mut self) {
         unsafe {
-            if self.deref_info().state == Procstate::WIP1 {
+            if self.deref_info().state == Procstate::STARTING1 {
                 self.freeproc(None);
             }
             let proc = &*self.ptr;
@@ -473,8 +478,8 @@ impl Context {
 impl Procstate {
     fn to_str(&self) -> &'static str {
         match self {
-            Procstate::WIP1 => "work in progress: step 1",
-            Procstate::WIP2 => "work in progress: step 2",
+            Procstate::STARTING1 => "starting 1",
+            Procstate::STARTING2 => "starting 2",
             Procstate::UNUSED => "unused",
             Procstate::SLEEPING => "sleep ",
             Procstate::RUNNABLE => "runble",
@@ -600,7 +605,7 @@ impl ProcessSystem {
             if guard.deref_info().state == Procstate::UNUSED {
                 let data = &mut *guard.data.get();
                 guard.deref_mut_info().pid = self.allocpid();
-                guard.deref_mut_info().state = Procstate::WIP1;
+                guard.deref_mut_info().state = Procstate::STARTING1;
 
                 // Allocate a trapframe page.
                 let page = some_or!(kernel().alloc(), {
@@ -743,9 +748,9 @@ impl ProcessSystem {
 
         let pid = np.deref_mut_info().pid;
 
-        // Change the process's state to WIP2, so that the destructor doesn't
+        // Change the process's state to STARTING2, so that the destructor doesn't
         // free the process.
-        np.deref_mut_info().state = Procstate::WIP2;
+        np.deref_mut_info().state = Procstate::STARTING2;
 
         // Now drop the guard before we acquire the `wait_lock`.
         // This is because the lock order must be `wait_lock` -> `Proc::info`.

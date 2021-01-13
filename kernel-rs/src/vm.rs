@@ -290,8 +290,9 @@ impl RawPageTable {
 ///
 /// The invariant of this struct is that ptr uniquely refers to a valid 3-level
 /// RawPageTable.
-pub struct PageTable<A> {
+pub struct PageTable<A: VAddr> {
     ptr: *mut RawPageTable,
+    num_usr_pages: usize,
     _marker: PhantomData<A>,
 }
 
@@ -302,6 +303,7 @@ impl<A: VAddr> PageTable<A> {
     pub const unsafe fn zero() -> Self {
         Self {
             ptr: ptr::null_mut(),
+            num_usr_pages: 0,
             _marker: PhantomData,
         }
     }
@@ -312,6 +314,7 @@ impl<A: VAddr> PageTable<A> {
     fn new_empty_table() -> Option<Self> {
         Some(Self {
             ptr: RawPageTable::new()?,
+            num_usr_pages: 0,
             _marker: PhantomData,
         })
     }
@@ -393,7 +396,7 @@ impl PageTable<UVAddr> {
             )
             .is_err()
         {
-            page_table.free(0);
+            page_table.drop();
             return None;
         }
 
@@ -408,7 +411,7 @@ impl PageTable<UVAddr> {
             .is_err()
         {
             page_table.unmap(UVAddr::new(TRAMPOLINE), 1, false);
-            page_table.free(0);
+            page_table.drop();
             return None;
         }
         Some(page_table)
@@ -424,6 +427,7 @@ impl PageTable<UVAddr> {
         let mem = page.into_usize() as *mut u8;
         ptr::write_bytes(mem, 0, PGSIZE);
         ptr::copy(src.as_ptr(), mem, src.len());
+        self.num_usr_pages = 1;
         self.map_pages(
             VAddr::new(0),
             PGSIZE,
@@ -476,6 +480,7 @@ impl PageTable<UVAddr> {
                 return Err(());
             }
             a += PGSIZE;
+            self.num_usr_pages += 1;
         }
         Ok(newsz)
     }
@@ -513,6 +518,7 @@ impl PageTable<UVAddr> {
             }
             new = scopeguard::ScopeGuard::into_inner(new_ptable);
         }
+        new.num_usr_pages = self.num_usr_pages;
         Ok(())
     }
 
@@ -553,6 +559,7 @@ impl PageTable<UVAddr> {
         if pgroundup(newsz) < pgroundup(oldsz) {
             let npages = (pgroundup(oldsz).wrapping_sub(pgroundup(newsz))).wrapping_div(PGSIZE);
             self.unmap(UVAddr::new(pgroundup(newsz)), npages, true);
+            self.num_usr_pages -= npages;
         }
         newsz
     }
@@ -566,6 +573,26 @@ impl PageTable<UVAddr> {
         // It is safe because this method consumes self, so the internal
         // raw page table will not be use anymore.
         unsafe { self.as_inner_mut().free_walk() };
+    }
+
+    pub fn drop(&mut self) {
+        // Unmap the TRAMPOLINE page.
+        if let Some(pte) = self.walk(UVAddr::new(TRAMPOLINE), false) {
+            if pte.get_flags() != PTE_V {
+                self.unmap(UVAddr::new(TRAMPOLINE), 1, false);
+            }
+        }
+        // Unmap the TRAPFRAME page.
+        if let Some(pte) = self.walk(UVAddr::new(TRAPFRAME), false) {
+            if pte.get_flags() != PTE_V {
+                self.unmap(UVAddr::new(TRAPFRAME), 1, false);
+            }
+        }
+        // Unmap other pages.
+        if self.num_usr_pages != 0 {
+            self.unmap(UVAddr::new(0), self.num_usr_pages, true);
+        }
+        unsafe { self.as_inner_mut().free_walk(); }
     }
 
     /// Mark a PTE invalid for user access.

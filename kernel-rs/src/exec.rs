@@ -5,7 +5,7 @@ use crate::{
     kernel::Kernel,
     ok_or,
     param::MAXARG,
-    proc::{myproc, proc_freepagetable, Proc},
+    proc::{myproc, Proc},
     riscv::PGSIZE,
     string::{safestrcpy, strlen},
     vm::{KVAddr, PageTable, UVAddr, VAddr},
@@ -121,8 +121,8 @@ impl Kernel {
 
         let pt = PageTable::<UVAddr>::new(data.trapframe).ok_or(())?;
 
-        let mut ptable_guard = scopeguard::guard((pt, sz), |(pt, sz)| {
-            proc_freepagetable(pt, sz);
+        let mut ptable_guard = scopeguard::guard((pt, sz), |(mut pt, _)| {
+            pt.drop();
         });
 
         let (pt, sz) = &mut *ptable_guard;
@@ -163,7 +163,6 @@ impl Kernel {
         drop(ip);
 
         p = myproc();
-        let oldsz: usize = data.sz;
 
         // Allocate two pages at the next page boundary.
         // Use the second as the user stack.
@@ -237,7 +236,7 @@ impl Kernel {
             );
 
             // Commit to the user image.
-            let oldpagetable = mem::replace(&mut data.pagetable, pt);
+            let mut oldpagetable = mem::replace(&mut data.pagetable, pt);
             data.sz = sz;
 
             // initial program counter = main
@@ -245,7 +244,7 @@ impl Kernel {
 
             // initial stack pointer
             (*data.trapframe).sp = sp;
-            proc_freepagetable(oldpagetable, oldsz);
+            oldpagetable.drop();
 
             // this ends up in a0, the first argument to main(argc, argv)
             return Ok(argc);
