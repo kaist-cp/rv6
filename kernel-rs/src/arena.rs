@@ -156,6 +156,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<ArrayAr
                 }
             } else if empty.is_null() {
                 empty = entry;
+                break;
             }
         }
 
