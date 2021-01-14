@@ -1,38 +1,32 @@
 use crate::{
     kernel::Kernel,
     println,
-    proc::{myproc, Proc},
+    proc::myproc,
     vm::{UVAddr, VAddr},
 };
 use core::{mem, slice, str};
 use cstr_core::CStr;
 
 /// Fetch the usize at addr from the current process.
-pub unsafe fn fetchaddr(addr: UVAddr, ip: *mut usize) -> i32 {
-    let p: *mut Proc = myproc();
+pub unsafe fn fetchaddr(addr: UVAddr, ip: *mut usize) -> Result<(), ()> {
+    let p = myproc();
     let data = &mut *(*p).data.get();
     if addr.into_usize() >= data.sz
         || addr.into_usize().wrapping_add(mem::size_of::<usize>()) > data.sz
     {
-        return -1;
+        return Err(());
     }
-    if data
-        .pagetable
-        .copy_in(
-            slice::from_raw_parts_mut(ip as *mut u8, mem::size_of::<usize>()),
-            addr,
-        )
-        .is_err()
-    {
-        return -1;
-    }
-    0
+    data.pagetable.copy_in(
+        slice::from_raw_parts_mut(ip as *mut u8, mem::size_of::<usize>()),
+        addr,
+    )?;
+    Ok(())
 }
 
 /// Fetch the nul-terminated string at addr from the current process.
 /// Returns reference to the string in the buffer.
 pub unsafe fn fetchstr(addr: UVAddr, buf: &mut [u8]) -> Result<&CStr, ()> {
-    let p: *mut Proc = myproc();
+    let p = myproc();
     (*(*p).data.get()).pagetable.copy_in_str(buf, addr)?;
 
     Ok(CStr::from_ptr(buf.as_ptr()))
@@ -74,7 +68,7 @@ pub unsafe fn argstr(n: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
 
 impl Kernel {
     pub unsafe fn syscall(&'static self) {
-        let p: *mut Proc = myproc();
+        let p = myproc();
         let mut data = &mut *(*p).data.get();
         let num: i32 = (*data.trapframe).a7 as i32;
 

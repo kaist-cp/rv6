@@ -294,7 +294,7 @@ impl Kernel {
 
     unsafe fn mknod(&self, filename: &CStr, major: u16, minor: u16) -> Result<usize, ()> {
         let tx = self.file_system.begin_transaction();
-        let _ip = create(
+        create(
             Path::new(filename),
             InodeType::Device { major, minor },
             &tx,
@@ -346,13 +346,13 @@ impl Kernel {
         let mut success = false;
         for (i, arg) in argv.iter_mut().enumerate() {
             let mut uarg = 0;
-            if fetchaddr(
-                UVAddr::new(uargv + mem::size_of::<usize>() * i),
-                &mut uarg as *mut usize,
-            ) < 0
-            {
-                break;
-            }
+            ok_or!(
+                fetchaddr(
+                    UVAddr::new(uargv + mem::size_of::<usize>() * i),
+                    &mut uarg as *mut usize,
+                ),
+                break
+            );
 
             if uarg == 0 {
                 *arg = ptr::null_mut();
