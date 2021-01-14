@@ -167,7 +167,7 @@ impl Kernel {
 
         Err(())
     }
-    
+
     unsafe fn open(&'static self, name: &Path, omode: FcntlFlags) -> Result<usize, ()> {
         let tx = self.file_system.begin_transaction();
 
@@ -216,13 +216,13 @@ impl Kernel {
         let fd = f.fdalloc()?;
         Ok(fd as usize)
     }
-    
+
     unsafe fn mkdir(&self, dirname: &CStr) -> Result<usize, ()> {
         let tx = self.file_system.begin_transaction();
         create(Path::new(dirname), InodeType::Dir, &tx, |_| ())?;
         Ok(0)
     }
-    
+
     unsafe fn mknod(&self, filename: &CStr, major: u16, minor: u16) -> Result<usize, ()> {
         let tx = self.file_system.begin_transaction();
         create(
@@ -337,7 +337,7 @@ impl Kernel {
     pub unsafe fn sys_unlink(&self) -> usize {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-        ok_or!(self.unlink(path), return usize::MAX)
+        ok_or!(self.unlink(path), usize::MAX)
     }
 
     pub unsafe fn sys_open(&'static self) -> usize {
@@ -346,13 +346,13 @@ impl Kernel {
         let path = Path::new(path);
         let omode = ok_or!(argint(1), return usize::MAX);
         let omode = FcntlFlags::from_bits_truncate(omode);
-        ok_or!(self.open(path, omode), return usize::MAX)
+        ok_or!(self.open(path, omode), usize::MAX)
     }
 
     pub unsafe fn sys_mkdir(&self) -> usize {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-        ok_or!(self.mkdir(path), return usize::MAX)
+        ok_or!(self.mkdir(path), usize::MAX)
     }
 
     pub unsafe fn sys_mknod(&self) -> usize {
@@ -360,13 +360,13 @@ impl Kernel {
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
         let major = ok_or!(argint(1), return usize::MAX) as u16;
         let minor = ok_or!(argint(2), return usize::MAX) as u16;
-        ok_or!(self.mknod(path, major, minor), return usize::MAX)
+        ok_or!(self.mknod(path, major, minor), usize::MAX)
     }
 
     pub unsafe fn sys_chdir(&self) -> usize {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-        ok_or!(self.chdir(path), return usize::MAX)
+        ok_or!(self.chdir(path), usize::MAX)
     }
 
     pub unsafe fn sys_exec(&self) -> usize {
@@ -419,6 +419,6 @@ impl Kernel {
     pub unsafe fn sys_pipe(&self) -> usize {
         // user pointer to array of two integers
         let fdarray = ok_or!(argaddr(0), return usize::MAX);
-        ok_or!(self.pipe(fdarray), return usize::MAX)
+        ok_or!(self.pipe(fdarray), usize::MAX)
     }
 }
