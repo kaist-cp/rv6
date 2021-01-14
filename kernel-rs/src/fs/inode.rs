@@ -448,7 +448,7 @@ impl InodeGuard<'_> {
         if bn < NDIRECT {
             let mut addr = inner.addr_direct[bn];
             if addr == 0 {
-                addr = unsafe { tx_opt.unwrap().balloc(self.dev) };
+                addr = unsafe { tx_opt.expect("bmap: out of range").balloc(self.dev) };
                 self.deref_inner_mut().addr_direct[bn] = addr;
             }
             addr
@@ -458,7 +458,7 @@ impl InodeGuard<'_> {
 
             let mut indirect = inner.addr_indirect;
             if indirect == 0 {
-                indirect = unsafe { tx_opt.unwrap().balloc(self.dev) };
+                indirect = unsafe { tx_opt.expect("bmap: out of range").balloc(self.dev) };
                 self.deref_inner_mut().addr_indirect = indirect;
             }
 
@@ -467,7 +467,7 @@ impl InodeGuard<'_> {
             debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
             let mut addr = data[bn];
             if addr == 0 {
-                let tx = tx_opt.unwrap();
+                let tx = tx_opt.expect("bmap: out of range");
                 addr = unsafe { tx.balloc(self.dev) };
                 data[bn] = addr;
                 unsafe { tx.write(bp) };
