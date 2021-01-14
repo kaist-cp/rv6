@@ -1,4 +1,6 @@
+use crate::fs::InodeType;
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct Stat {
     /// File system's disk device
     pub dev: i32,

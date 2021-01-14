@@ -76,7 +76,7 @@ use crate::{
     param::{BSIZE, NINODE},
     sleeplock::Sleeplock,
     spinlock::Spinlock,
-    stat::{InodeType, Stat},
+    stat::Stat,
     vm::{KVAddr, VAddr},
 };
 
@@ -89,16 +89,12 @@ pub const DIRSIZ: usize = 14;
 pub const DIRENT_SIZE: usize = mem::size_of::<Dirent>();
 
 #[derive(Copy, Clone, PartialEq, Debug)]
+#[repr(i16)]
 pub enum InodeType {
     None,
     Dir,
     File,
-    Device {
-        /// Major device number
-        major: u16,
-        /// Minor device number
-        minor: u16,
-    },
+    Device,
 }
 
 pub struct InodeInner {
@@ -106,6 +102,8 @@ pub struct InodeInner {
     pub valid: bool,
     /// copy of disk inode
     pub typ: InodeType,
+    pub major: u16,
+    pub minor: u16,
     pub nlink: i16,
     pub size: u32,
     pub addr_direct: [u32; NDIRECT],
@@ -132,6 +130,12 @@ pub struct Inode {
 pub struct Dinode {
     /// File type
     typ: InodeType,
+
+    /// Major device number (T_DEVICE only)
+    major: u16,
+
+    /// Minor device number (T_DEVICE only)
+    minor: u16,
 
     /// Number of links to inode in file system
     nlink: i16,
@@ -557,6 +561,8 @@ impl Inode {
                     .add((self.inum as usize).wrapping_rem(IPB)))
             };
             guard.typ = (*dip).typ;
+            guard.major = (*dip).major as u16;
+            guard.minor = (*dip).minor as u16;
             guard.nlink = (*dip).nlink;
             guard.size = (*dip).size;
             guard.addr_direct.copy_from_slice(&(*dip).addr_direct);
@@ -578,6 +584,8 @@ impl Inode {
                 InodeInner {
                     valid: false,
                     typ: InodeType::None,
+                    major: 0,
+                    minor: 0,
                     nlink: 0,
                     size: 0,
                     addr_direct: [0; NDIRECT],

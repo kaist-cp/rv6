@@ -15,8 +15,7 @@ use core::{cmp, mem, ptr};
 use spin::Once;
 
 use crate::{
-    bio::Buf, kernel::kernel, param::BSIZE, sleepablelock::Sleepablelock, stat::InodeType,
-    virtio_disk::Disk,
+    bio::Buf, kernel::kernel, param::BSIZE, sleepablelock::Sleepablelock, virtio_disk::Disk,
 };
 
 mod inode;
@@ -25,7 +24,7 @@ mod path;
 mod superblock;
 
 pub use inode::{
-    Dinode, Dirent, Inode, InodeGuard, InodeInner, Itable, RcInode, DIRENT_SIZE, DIRSIZ,
+    Dinode, Dirent, Inode, InodeGuard, InodeInner, InodeType, Itable, RcInode, DIRENT_SIZE, DIRSIZ,
 };
 pub use log::Log;
 pub use path::{FileName, Path};
