@@ -88,6 +88,19 @@ pub const DIRSIZ: usize = 14;
 /// dirent size
 pub const DIRENT_SIZE: usize = mem::size_of::<Dirent>();
 
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum InodeType {
+    None,
+    Dir,
+    File,
+    Device {
+        /// Major device number
+        major: u16,
+        /// Minor device number
+        minor: u16,
+    },
+}
+
 pub struct InodeInner {
     /// inode has been read from disk?
     pub valid: bool,

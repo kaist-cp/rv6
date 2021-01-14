@@ -1,16 +1,3 @@
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub enum InodeType {
-    None,
-    Dir,
-    File,
-    Device {
-        /// Major device number
-        major: u16,
-        /// Minor device number
-        minor: u16,
-    },
-}
-
 #[derive(Copy, Clone)]
 pub struct Stat {
     /// File system's disk device
