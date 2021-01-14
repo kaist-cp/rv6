@@ -106,14 +106,11 @@ where
 }
 
 impl Kernel {
-    unsafe fn dup(&self, file: &'static RcFile<'static>) -> Result<usize, ()> {
-        let fd = file.clone().fdalloc()?;
-        Ok(fd as usize)
-    }
-
     pub unsafe fn sys_dup(&self) -> usize {
         let (_, f) = ok_or!(argfd(0), return usize::MAX);
-        ok_or!(self.dup(f), usize::MAX)
+        let newfile = f.clone();
+        let fd = ok_or!(newfile.fdalloc(), return usize::MAX);
+        fd as usize
     }
 
     pub unsafe fn sys_read(&self) -> usize {
