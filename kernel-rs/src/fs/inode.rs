@@ -94,6 +94,14 @@ pub enum InodeType {
     None,
     Dir,
     File,
+    Device { major: u16, minor: u16 },
+}
+#[derive(Copy, Clone, PartialEq, Debug)]
+#[repr(i16)]
+pub enum DInodeType {
+    None,
+    Dir,
+    File,
     Device,
 }
 
@@ -102,8 +110,6 @@ pub struct InodeInner {
     pub valid: bool,
     /// copy of disk inode
     pub typ: InodeType,
-    pub major: u16,
-    pub minor: u16,
     pub nlink: i16,
     pub size: u32,
     pub addr_direct: [u32; NDIRECT],
@@ -129,7 +135,7 @@ pub struct Inode {
 #[repr(C)]
 pub struct Dinode {
     /// File type
-    typ: InodeType,
+    typ: DInodeType,
 
     /// Major device number (T_DEVICE only)
     major: u16,
@@ -305,9 +311,29 @@ impl InodeGuard<'_> {
         let mut dip = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
             .add((self.inum as usize).wrapping_rem(IPB));
         let inner = self.deref_inner();
-        (*dip).typ = inner.typ;
-        (*dip).major = inner.major;
-        (*dip).minor = inner.minor;
+        match inner.typ {
+            InodeType::Device { major, minor } => {
+                (*dip).typ = DInodeType::Device;
+                (*dip).major = major;
+                (*dip).minor = minor;
+            }
+            InodeType::None => {
+                (*dip).typ = DInodeType::None;
+                (*dip).major = 0;
+                (*dip).minor = 0;
+            }
+            InodeType::Dir => {
+                (*dip).typ = DInodeType::Dir;
+                (*dip).major = 0;
+                (*dip).minor = 0;
+            }
+            InodeType::File => {
+                (*dip).typ = DInodeType::File;
+                (*dip).major = 0;
+                (*dip).minor = 0;
+            }
+        }
+
         (*dip).nlink = inner.nlink;
         (*dip).size = inner.size;
         (*dip).addr_direct.copy_from_slice(&inner.addr_direct);
@@ -562,9 +588,17 @@ impl Inode {
                 &mut *((bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
                     .add((self.inum as usize).wrapping_rem(IPB)))
             };
-            guard.typ = (*dip).typ;
-            guard.major = (*dip).major as u16;
-            guard.minor = (*dip).minor as u16;
+            match (*dip).typ {
+                DInodeType::None => guard.typ = InodeType::None,
+                DInodeType::Dir => guard.typ = InodeType::Dir,
+                DInodeType::File => guard.typ = InodeType::File,
+                DInodeType::Device => {
+                    guard.typ = InodeType::Device {
+                        major: (*dip).major,
+                        minor: (*dip).minor,
+                    }
+                }
+            }
             guard.nlink = (*dip).nlink;
             guard.size = (*dip).size;
             guard.addr_direct.copy_from_slice(&(*dip).addr_direct);
@@ -586,8 +620,6 @@ impl Inode {
                 InodeInner {
                     valid: false,
                     typ: InodeType::None,
-                    major: 0,
-                    minor: 0,
                     nlink: 0,
                     size: 0,
                     addr_direct: [0; NDIRECT],
@@ -653,9 +685,18 @@ impl Itable {
                 .add((inum as usize).wrapping_rem(IPB));
 
             // a free inode
-            if (*dip).typ == InodeType::None {
+            if (*dip).typ == DInodeType::None {
                 ptr::write_bytes(dip, 0, 1);
-                (*dip).typ = typ;
+                match typ {
+                    InodeType::None => (*dip).typ = DInodeType::None,
+                    InodeType::Dir => (*dip).typ = DInodeType::Dir,
+                    InodeType::File => (*dip).typ = DInodeType::File,
+                    InodeType::Device { major, minor } => {
+                        (*dip).typ = DInodeType::Device;
+                        (*dip).major = major;
+                        (*dip).minor = minor
+                    }
+                }
 
                 // mark it allocated on the disk
                 tx.write(bp);

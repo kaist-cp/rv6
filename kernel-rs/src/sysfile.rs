@@ -58,8 +58,6 @@ unsafe fn argfd(n: usize) -> Result<(i32, &'static RcFile<'static>), ()> {
 unsafe fn create<F, T>(
     path: &Path,
     typ: InodeType,
-    major: u16,
-    minor: u16,
     tx: &FsTransaction<'_>,
     f: F,
 ) -> Result<(RcInode<'static>, T), ()>
@@ -71,20 +69,20 @@ where
     if let Ok((ptr2, _)) = dp.dirlookup(&name) {
         drop(dp);
         let mut ip = ptr2.lock();
-        if typ == InodeType::File
-            && (ip.deref_inner().typ == InodeType::File
-                || ip.deref_inner().typ == InodeType::Device)
-        {
-            let ret = f(&mut ip);
-            mem::drop(ip);
-            return Ok((ptr2, ret));
+        if typ == InodeType::File {
+            match ip.deref_inner().typ {
+                InodeType::File | InodeType::Device { .. } => {
+                    let ret = f(&mut ip);
+                    mem::drop(ip);
+                    return Ok((ptr2, ret));
+                }
+                _ => return Err(()),
+            }
         }
         return Err(());
     }
     let ptr2 = kernel().itable.alloc_inode(dp.dev, typ, tx);
     let mut ip = ptr2.lock();
-    ip.deref_inner_mut().major = major;
-    ip.deref_inner_mut().minor = minor;
     ip.deref_inner_mut().nlink = 1;
     ip.update(tx);
 
@@ -220,29 +218,25 @@ impl Kernel {
 
         let tx = self.file_system.begin_transaction();
 
-        let (ip, (typ, major)) = if omode.contains(FcntlFlags::O_CREATE) {
+        let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
             ok_or!(
-                create(path, InodeType::File, 0, 0, &tx, |ip| (
-                    ip.deref_inner().typ,
-                    ip.deref_inner().major
-                )),
+                create(path, InodeType::File, &tx, |ip| ip.deref_inner().typ),
                 return usize::MAX
             )
         } else {
             let ptr = ok_or!(path.namei(), return usize::MAX);
             let ip = ptr.lock();
             let typ = ip.deref_inner().typ;
-            let major = ip.deref_inner().major;
 
             if typ == InodeType::Dir && omode != FcntlFlags::O_RDONLY {
                 return usize::MAX;
             }
             mem::drop(ip);
-            (ptr, (typ, major))
+            (ptr, typ)
         };
 
         let filetype = match typ {
-            InodeType::Device => {
+            InodeType::Device { major, .. } => {
                 if major as usize >= NDEV {
                     return usize::MAX;
                 };
@@ -278,7 +272,7 @@ impl Kernel {
         let tx = self.file_system.begin_transaction();
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
         ok_or!(
-            create(Path::new(path), InodeType::Dir, 0, 0, &tx, |_| ()),
+            create(Path::new(path), InodeType::Dir, &tx, |_| ()),
             return usize::MAX
         );
         0
@@ -293,9 +287,7 @@ impl Kernel {
         let _ip = ok_or!(
             create(
                 Path::new(path),
-                InodeType::Device,
-                major,
-                minor,
+                InodeType::Device { major, minor },
                 &tx,
                 |_| ()
             ),
