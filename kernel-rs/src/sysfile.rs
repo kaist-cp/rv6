@@ -107,8 +107,7 @@ where
 
 impl Kernel {
     unsafe fn dup(&self, file: &'static RcFile<'static>) -> Result<usize, ()> {
-        let newfile = file.clone();
-        let fd = newfile.fdalloc()?;
+        let fd = file.clone().fdalloc()?;
         Ok(fd as usize)
     }
 
