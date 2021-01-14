@@ -16,7 +16,7 @@ use crate::{
     proc::{myproc, Proc},
     riscv::PGSIZE,
     some_or,
-    stat::IFileType,
+    stat::InodeType,
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
     vm::{KVAddr, UVAddr, VAddr},
 };
@@ -58,7 +58,7 @@ unsafe fn argfd(n: usize) -> Result<(i32, &'static RcFile<'static>), ()> {
 
 unsafe fn create<F, T>(
     path: &Path,
-    typ: IFileType,
+    typ: InodeType,
     tx: &FsTransaction<'_>,
     f: F,
 ) -> Result<(RcInode<'static>, T), ()>
@@ -70,9 +70,9 @@ where
     if let Ok((ptr2, _)) = dp.dirlookup(&name) {
         drop(dp);
         let mut ip = ptr2.lock();
-        if typ == IFileType::File {
+        if typ == InodeType::File {
             match ip.deref_inner().typ {
-                IFileType::File | IFileType::Device { .. } => {
+                InodeType::File | InodeType::Device { .. } => {
                     let ret = f(&mut ip);
                     drop(ip);
                     return Ok((ptr2, ret));
@@ -88,7 +88,7 @@ where
     ip.update(tx);
 
     // Create . and .. entries.
-    if typ == IFileType::Dir {
+    if typ == InodeType::Dir {
         // for ".."
         dp.deref_inner_mut().nlink += 1;
         dp.update(tx);
@@ -150,7 +150,7 @@ impl Kernel {
         let tx = self.file_system.begin_transaction();
         let ptr = ok_or!(Path::new(old).namei(), return usize::MAX);
         let mut ip = ptr.lock();
-        if ip.deref_inner().typ == IFileType::Dir {
+        if ip.deref_inner().typ == InodeType::Dir {
             return usize::MAX;
         }
         ip.deref_inner_mut().nlink += 1;
@@ -186,7 +186,7 @@ impl Kernel {
                 let mut ip = ptr2.lock();
                 assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
 
-                if ip.deref_inner().typ != IFileType::Dir || ip.isdirempty() {
+                if ip.deref_inner().typ != InodeType::Dir || ip.isdirempty() {
                     let bytes_write = dp.write(
                         KVAddr::new(&mut de as *mut Dirent as usize),
                         off,
@@ -194,7 +194,7 @@ impl Kernel {
                         &tx,
                     );
                     assert_eq!(bytes_write, Ok(DIRENT_SIZE), "unlink: writei");
-                    if ip.deref_inner().typ == IFileType::Dir {
+                    if ip.deref_inner().typ == InodeType::Dir {
                         dp.deref_inner_mut().nlink -= 1;
                         dp.update(&tx);
                     }
@@ -221,7 +221,7 @@ impl Kernel {
 
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
             ok_or!(
-                create(path, IFileType::File, &tx, |ip| ip.deref_inner().typ,),
+                create(path, InodeType::File, &tx, |ip| ip.deref_inner().typ,),
                 return usize::MAX
             )
         } else {
@@ -229,7 +229,7 @@ impl Kernel {
             let ip = ptr.lock();
             let typ = ip.deref_inner().typ;
 
-            if typ == IFileType::Dir && omode != FcntlFlags::O_RDONLY {
+            if typ == InodeType::Dir && omode != FcntlFlags::O_RDONLY {
                 return usize::MAX;
             }
             mem::drop(ip);
@@ -237,7 +237,7 @@ impl Kernel {
         };
 
         let filetype = match typ {
-            IFileType::Device { major, .. } => {
+            InodeType::Device { major, .. } => {
                 if major as usize >= NDEV {
                     return usize::MAX;
                 };
@@ -258,7 +258,7 @@ impl Kernel {
             return usize::MAX
         );
 
-        if omode.contains(FcntlFlags::O_TRUNC) && typ == IFileType::File {
+        if omode.contains(FcntlFlags::O_TRUNC) && typ == InodeType::File {
             match &f.typ {
                 FileType::Device { ip, .. } | FileType::Inode { ip, .. } => ip.lock().itrunc(&tx),
                 _ => panic!("sys_open : Not reach"),
@@ -273,7 +273,7 @@ impl Kernel {
         let tx = self.file_system.begin_transaction();
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
         ok_or!(
-            create(Path::new(path), IFileType::Dir, &tx, |_| ()),
+            create(Path::new(path), InodeType::Dir, &tx, |_| ()),
             return usize::MAX
         );
         0
@@ -288,7 +288,7 @@ impl Kernel {
         let _ip = ok_or!(
             create(
                 Path::new(path),
-                IFileType::Device { major, minor },
+                InodeType::Device { major, minor },
                 &tx,
                 |_| ()
             ),
@@ -311,7 +311,7 @@ impl Kernel {
         let _tx = self.file_system.begin_transaction();
         let ptr = ok_or!(Path::new(path).namei(), return usize::MAX);
         let ip = ptr.lock();
-        if ip.deref_inner().typ != IFileType::Dir {
+        if ip.deref_inner().typ != InodeType::Dir {
             return usize::MAX;
         }
         mem::drop(ip);

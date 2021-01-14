@@ -76,7 +76,7 @@ use crate::{
     param::{BSIZE, NINODE},
     sleeplock::Sleeplock,
     spinlock::Spinlock,
-    stat::{IFileType, Stat},
+    stat::{InodeType, Stat},
     vm::{KVAddr, VAddr},
 };
 
@@ -92,7 +92,7 @@ pub struct InodeInner {
     /// inode has been read from disk?
     pub valid: bool,
     /// copy of disk inode
-    pub typ: IFileType,
+    pub typ: InodeType,
     pub nlink: i16,
     pub size: u32,
     pub addr_direct: [u32; NDIRECT],
@@ -118,7 +118,7 @@ pub struct Inode {
 #[repr(C)]
 pub struct Dinode {
     /// File type
-    typ: IFileType,
+    typ: InodeType,
 
     /// Number of links to inode in file system
     nlink: i16,
@@ -263,7 +263,7 @@ impl InodeGuard<'_> {
     pub fn dirlookup(&mut self, name: &FileName) -> Result<(RcInode<'static>, u32), ()> {
         let mut de: Dirent = Default::default();
 
-        assert_eq!(self.deref_inner().typ, IFileType::Dir, "dirlookup not DIR");
+        assert_eq!(self.deref_inner().typ, InodeType::Dir, "dirlookup not DIR");
 
         for off in (0..self.deref_inner().size).step_by(DIRENT_SIZE) {
             de.read_entry(self, off, "dirlookup read");
@@ -520,7 +520,7 @@ impl ArenaObject for Inode {
 
             A::reacquire_after(guard, move || unsafe {
                 ip.itrunc(&tx);
-                ip.deref_inner_mut().typ = IFileType::None;
+                ip.deref_inner_mut().typ = InodeType::None;
                 ip.update(&tx);
                 ip.deref_inner_mut().valid = false;
                 drop(ip);
@@ -550,7 +550,7 @@ impl Inode {
             guard.addr_indirect = (*dip).addr_indirect;
             drop(bp);
             guard.valid = true;
-            assert_ne!(guard.typ, IFileType::None, "Inode::lock: no type");
+            assert_ne!(guard.typ, InodeType::None, "Inode::lock: no type");
         };
         mem::forget(guard);
         InodeGuard { inode: self }
@@ -564,7 +564,7 @@ impl Inode {
                 "inode",
                 InodeInner {
                     valid: false,
-                    typ: IFileType::None,
+                    typ: InodeType::None,
                     nlink: 0,
                     size: 0,
                     addr_direct: [0; NDIRECT],
@@ -618,7 +618,7 @@ impl Itable {
     pub unsafe fn alloc_inode(
         &self,
         dev: u32,
-        typ: IFileType,
+        typ: InodeType,
         tx: &FsTransaction<'_>,
     ) -> RcInode<'_> {
         for inum in 1..kernel().file_system.superblock().ninodes {
@@ -630,7 +630,7 @@ impl Itable {
                 .add((inum as usize).wrapping_rem(IPB));
 
             // a free inode
-            if (*dip).typ == IFileType::None {
+            if (*dip).typ == InodeType::None {
                 ptr::write_bytes(dip, 0, 1);
                 (*dip).typ = typ;
 

@@ -1,5 +1,5 @@
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub enum IFileType {
+pub enum InodeType {
     None,
     Dir,
     File,
@@ -20,7 +20,7 @@ pub struct Stat {
     pub ino: u32,
 
     /// Type of file
-    pub typ: IFileType,
+    pub typ: InodeType,
 
     /// Number of links to file
     pub nlink: i16,
