@@ -306,6 +306,8 @@ impl InodeGuard<'_> {
             .add((self.inum as usize).wrapping_rem(IPB));
         let inner = self.deref_inner();
         (*dip).typ = inner.typ;
+        (*dip).major = inner.major;	
+        (*dip).minor = inner.minor;
         (*dip).nlink = inner.nlink;
         (*dip).size = inner.size;
         (*dip).addr_direct.copy_from_slice(&inner.addr_direct);
