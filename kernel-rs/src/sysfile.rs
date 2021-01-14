@@ -15,7 +15,7 @@ use crate::{
     page::Page,
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
     pipe::AllocatedPipe,
-    proc::{myproc, Proc},
+    proc::myproc,
     riscv::PGSIZE,
     some_or,
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
@@ -27,8 +27,8 @@ use core::{cell::UnsafeCell, mem, ptr, slice};
 impl RcFile<'static> {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
-    unsafe fn fdalloc(self) -> Result<i32, Self> {
-        let p: *mut Proc = myproc();
+    unsafe fn fdalloc(self) -> Result<i32, ()> {
+        let p = myproc();
         let mut data = &mut *(*p).data.get();
         for fd in 0..NOFILE {
             // user pointer to struct stat
@@ -37,7 +37,7 @@ impl RcFile<'static> {
                 return Ok(fd as i32);
             }
         }
-        Err(self)
+        Err(())
     }
 }
 
@@ -106,16 +106,15 @@ where
 }
 
 impl Kernel {
-    unsafe fn dup(&self, file: &'static RcFile<'static>) -> usize {
+    unsafe fn dup(&self, file: &'static RcFile<'static>) -> Result<usize, ()> {
         let newfile = file.clone();
-
-        let fd = ok_or!(newfile.fdalloc(), return usize::MAX);
-        fd as usize
+        let fd = newfile.fdalloc()?;
+        Ok(fd as usize)
     }
 
     pub unsafe fn sys_dup(&self) -> usize {
         let (_, f) = ok_or!(argfd(0), return usize::MAX);
-        self.dup(f)
+        ok_or!(self.dup(f), usize::MAX)
     }
 
     pub unsafe fn sys_read(&self) -> usize {
@@ -146,12 +145,12 @@ impl Kernel {
         0
     }
 
-    unsafe fn link(&self, oldname: &CStr, newname: &CStr) -> usize {
+    unsafe fn link(&self, oldname: &CStr, newname: &CStr) -> Result<usize, ()> {
         let tx = self.file_system.begin_transaction();
-        let ptr = ok_or!(Path::new(oldname).namei(), return usize::MAX);
+        let ptr = Path::new(oldname).namei()?;
         let mut ip = ptr.lock();
         if ip.deref_inner().typ == InodeType::Dir {
-            return usize::MAX;
+            return Err(());
         }
         ip.deref_inner_mut().nlink += 1;
         ip.update(&tx);
@@ -161,14 +160,14 @@ impl Kernel {
             let mut dp = ptr2.lock();
             if dp.dev != ptr.dev || dp.dirlink(name, ptr.inum, &tx).is_err() {
             } else {
-                return 0;
+                return Ok(0);
             }
         }
 
         let mut ip = ptr.lock();
         ip.deref_inner_mut().nlink -= 1;
         ip.update(&tx);
-        usize::MAX
+        Err(())
     }
 
     /// Create the path new as a link to the same inode as old.
@@ -177,13 +176,13 @@ impl Kernel {
         let mut old: [u8; MAXPATH] = [0; MAXPATH];
         let old = ok_or!(argstr(0, &mut old), return usize::MAX);
         let new = ok_or!(argstr(1, &mut new), return usize::MAX);
-        self.link(old, new)
+        ok_or!(self.link(old, new), usize::MAX)
     }
 
-    unsafe fn unlink(&self, filename: &CStr) -> usize {
+    unsafe fn unlink(&self, filename: &CStr) -> Result<usize, ()> {
         let mut de: Dirent = Default::default();
         let tx = self.file_system.begin_transaction();
-        let (ptr, name) = ok_or!(Path::new(filename).nameiparent(), return usize::MAX);
+        let (ptr, name) = Path::new(filename).nameiparent()?;
         let mut dp = ptr.lock();
 
         // Cannot unlink "." or "..".
@@ -209,35 +208,32 @@ impl Kernel {
                     drop(ptr);
                     ip.deref_inner_mut().nlink -= 1;
                     ip.update(&tx);
-                    return 0;
+                    return Ok(0);
                 }
             }
         }
 
-        usize::MAX
+        Err(())
     }
 
     pub unsafe fn sys_unlink(&self) -> usize {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-        self.unlink(path)
+        ok_or!(self.unlink(path), return usize::MAX)
     }
 
-    unsafe fn open(&'static self, name: &Path, omode: FcntlFlags) -> usize {
+    unsafe fn open(&'static self, name: &Path, omode: FcntlFlags) -> Result<usize, ()> {
         let tx = self.file_system.begin_transaction();
 
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
-            ok_or!(
-                create(name, InodeType::File, &tx, |ip| ip.deref_inner().typ),
-                return usize::MAX
-            )
+            create(name, InodeType::File, &tx, |ip| ip.deref_inner().typ)?
         } else {
-            let ptr = ok_or!(name.namei(), return usize::MAX);
+            let ptr = name.namei()?;
             let ip = ptr.lock();
             let typ = ip.deref_inner().typ;
 
             if typ == InodeType::Dir && omode != FcntlFlags::O_RDONLY {
-                return usize::MAX;
+                return Err(());
             }
             mem::drop(ip);
             (ptr, typ)
@@ -246,7 +242,7 @@ impl Kernel {
         let filetype = match typ {
             InodeType::Device { major, .. } => {
                 if major as usize >= NDEV {
-                    return usize::MAX;
+                    return Err(());
                 };
                 FileType::Device { ip, major }
             }
@@ -262,7 +258,7 @@ impl Kernel {
                 !omode.intersects(FcntlFlags::O_WRONLY),
                 omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)
             ),
-            return usize::MAX
+            return Err(())
         );
 
         if omode.contains(FcntlFlags::O_TRUNC) && typ == InodeType::File {
@@ -271,45 +267,40 @@ impl Kernel {
                 _ => panic!("sys_open : Not reach"),
             };
         }
-        let fd = ok_or!(f.fdalloc(), return usize::MAX);
-        fd as usize
+        let fd = f.fdalloc()?;
+        Ok(fd as usize)
     }
-    
+
     pub unsafe fn sys_open(&'static self) -> usize {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
         let path = Path::new(path);
         let omode = ok_or!(argint(1), return usize::MAX);
         let omode = FcntlFlags::from_bits_truncate(omode);
-        self.open(path, omode)
+        ok_or!(self.open(path, omode), return usize::MAX)
     }
 
-    unsafe fn mkdir(&self, dirname: &CStr) -> usize {
+    unsafe fn mkdir(&self, dirname: &CStr) -> Result<usize, ()> {
         let tx = self.file_system.begin_transaction();
-        ok_or!(
-            create(Path::new(dirname), InodeType::Dir, &tx, |_| ()),
-            return usize::MAX
-        );
-        0
+        create(Path::new(dirname), InodeType::Dir, &tx, |_| ())?;
+        Ok(0)
     }
+
     pub unsafe fn sys_mkdir(&self) -> usize {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-        self.mkdir(path)
+        ok_or!(self.mkdir(path), return usize::MAX)
     }
 
-    unsafe fn mknod(&self, filename: &CStr, major: u16, minor: u16) -> usize {
+    unsafe fn mknod(&self, filename: &CStr, major: u16, minor: u16) -> Result<usize, ()> {
         let tx = self.file_system.begin_transaction();
-        let _ip = ok_or!(
-            create(
-                Path::new(filename),
-                InodeType::Device { major, minor },
-                &tx,
-                |_| ()
-            ),
-            return usize::MAX
-        );
-        0
+        let _ip = create(
+            Path::new(filename),
+            InodeType::Device { major, minor },
+            &tx,
+            |_| (),
+        )?;
+        Ok(0)
     }
 
     pub unsafe fn sys_mknod(&self) -> usize {
@@ -317,10 +308,10 @@ impl Kernel {
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
         let major = ok_or!(argint(1), return usize::MAX) as u16;
         let minor = ok_or!(argint(2), return usize::MAX) as u16;
-        self.mknod(path, major, minor)
+        ok_or!(self.mknod(path, major, minor), return usize::MAX)
     }
 
-    unsafe fn chdir(&self, dirname: &CStr) -> usize {
+    unsafe fn chdir(&self, dirname: &CStr) -> Result<usize, ()> {
         let p = myproc();
         let mut data = &mut *(*p).data.get();
         // TODO(rv6)
@@ -330,20 +321,20 @@ impl Kernel {
         // transaction here.
         // https://github.com/kaist-cp/rv6/issues/290
         let _tx = self.file_system.begin_transaction();
-        let ptr = ok_or!(Path::new(dirname).namei(), return usize::MAX);
+        let ptr = Path::new(dirname).namei()?;
         let ip = ptr.lock();
         if ip.deref_inner().typ != InodeType::Dir {
-            return usize::MAX;
+            return Err(());
         }
         mem::drop(ip);
         data.cwd = Some(ptr);
-        0
+        Ok(0)
     }
 
     pub unsafe fn sys_chdir(&self) -> usize {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-        self.chdir(path)
+        ok_or!(self.chdir(path), return usize::MAX)
     }
 
     pub unsafe fn sys_exec(&self) -> usize {
@@ -393,15 +384,15 @@ impl Kernel {
         ret
     }
 
-    unsafe fn pipe(&self, fdarray: usize) -> usize {
+    unsafe fn pipe(&self, fdarray: usize) -> Result<usize, ()> {
         let p = myproc();
         let mut data = &mut *(*p).data.get();
-        let (pipereader, pipewriter) = ok_or!(AllocatedPipe::alloc(), return usize::MAX);
+        let (pipereader, pipewriter) = AllocatedPipe::alloc()?;
 
-        let mut fd0 = ok_or!(pipereader.fdalloc(), return usize::MAX);
+        let mut fd0 = pipereader.fdalloc()?;
         let mut fd1 = ok_or!(pipewriter.fdalloc(), {
             data.open_files[fd0 as usize] = None;
-            return usize::MAX;
+            return Err(());
         });
 
         if data
@@ -424,14 +415,14 @@ impl Kernel {
         {
             data.open_files[fd0 as usize] = None;
             data.open_files[fd1 as usize] = None;
-            return usize::MAX;
+            return Err(());
         }
-        0
+        Ok(0)
     }
 
     pub unsafe fn sys_pipe(&self) -> usize {
         // user pointer to array of two integers
         let fdarray = ok_or!(argaddr(0), return usize::MAX);
-        self.pipe(fdarray)
+        ok_or!(self.pipe(fdarray), return usize::MAX)
     }
 }
