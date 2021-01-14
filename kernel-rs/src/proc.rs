@@ -466,6 +466,11 @@ impl ProcData {
         for file in &mut self.open_files {
             *file = None;
         }
+        // TODO(rv6)
+        // If self.cwd is not None, the inode inside self.cwd will be dropped
+        // by assigning None to self.cwd. Deallocation of an inode may cause
+        // disk write operations, so we must begin a transaction here.
+        // https://github.com/kaist-cp/rv6/issues/290
         let _tx = kernel().file_system.begin_transaction();
         self.cwd = None;
     }

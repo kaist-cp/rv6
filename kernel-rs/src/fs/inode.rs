@@ -150,9 +150,15 @@ pub type RcInode<'s> = Rc<Itable, &'s Itable>;
 /// # Invariant
 ///
 /// When Sleeplock<InodeInner> is held, InodeInner's valid is always true.
+// Every disk write operation must happen inside a transaction. Reading an
+// opened file does not write anything on disk in any matter and thus does
+// not need to happen inside a transaction. At the same time, it requires
+// an InodeGuard. Therefore, InodeGuard does not have a FsTransaction field.
+// Instead, every method that needs to be inside a transaction explicitly
+// takes a FsTransaction value as an argument.
+// https://github.com/kaist-cp/rv6/issues/328
 pub struct InodeGuard<'a> {
     pub inode: &'a Inode,
-    tx: &'a FsTransaction<'a>,
 }
 
 #[derive(Default)]
@@ -226,7 +232,12 @@ impl Drop for InodeGuard<'_> {
 // Directories
 impl InodeGuard<'_> {
     /// Write a new directory entry (name, inum) into the directory dp.
-    pub fn dirlink(&mut self, name: &FileName, inum: u32) -> Result<(), ()> {
+    pub fn dirlink(
+        &mut self,
+        name: &FileName,
+        inum: u32,
+        tx: &FsTransaction<'_>,
+    ) -> Result<(), ()> {
         let mut de: Dirent = Default::default();
 
         // Check that name is not present.
@@ -249,6 +260,7 @@ impl InodeGuard<'_> {
             KVAddr::new(&mut de as *mut Dirent as usize),
             off,
             DIRENT_SIZE as u32,
+            tx,
         );
         assert_eq!(bytes_write, Ok(DIRENT_SIZE), "dirlink");
         Ok(())
@@ -276,7 +288,7 @@ impl InodeGuard<'_> {
     /// Copy a modified in-memory inode to disk.
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk.
-    pub unsafe fn update(&self) {
+    pub unsafe fn update(&self, tx: &FsTransaction<'_>) {
         let mut bp = kernel().file_system.disk.read(
             self.dev,
             kernel().file_system.superblock().iblock(self.inum),
@@ -291,13 +303,12 @@ impl InodeGuard<'_> {
         (*dip).size = inner.size;
         (*dip).addr_direct.copy_from_slice(&inner.addr_direct);
         (*dip).addr_indirect = inner.addr_indirect;
-        self.tx.write(bp);
+        tx.write(bp);
     }
 
     /// Truncate inode (discard contents).
     /// This function is called with Inode's lock is held.
-    pub unsafe fn itrunc(&mut self) {
-        let tx = self.tx;
+    pub unsafe fn itrunc(&mut self, tx: &FsTransaction<'_>) {
         let dev = self.dev;
         for addr in &mut self.deref_inner_mut().addr_direct {
             if *addr != 0 {
@@ -314,16 +325,16 @@ impl InodeGuard<'_> {
             let a = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
                 if *a.add(j) != 0 {
-                    self.tx.bfree(dev, *a.add(j));
+                    tx.bfree(dev, *a.add(j));
                 }
             }
             drop(bp);
-            self.tx.bfree(dev, self.deref_inner().addr_indirect);
+            tx.bfree(dev, self.deref_inner().addr_indirect);
             self.deref_inner_mut().addr_indirect = 0
         }
 
         self.deref_inner_mut().size = 0;
-        self.update();
+        self.update(tx);
     }
 
     /// Read data from inode.
@@ -361,7 +372,13 @@ impl InodeGuard<'_> {
     /// Returns the number of bytes successfully written.
     /// If the return value is less than the requested n,
     /// there was an error of some kind.
-    pub fn write<A: VAddr>(&mut self, mut src: A, mut off: u32, n: u32) -> Result<usize, ()> {
+    pub fn write<A: VAddr>(
+        &mut self,
+        mut src: A,
+        mut off: u32,
+        n: u32,
+        tx: &FsTransaction<'_>,
+    ) -> Result<usize, ()> {
         if off > self.deref_inner().size || off.wrapping_add(n) < off {
             return Err(());
         }
@@ -372,7 +389,7 @@ impl InodeGuard<'_> {
         while tot < n {
             let mut bp = kernel().file_system.disk.read(
                 self.dev,
-                self.bmap_or_alloc((off as usize).wrapping_div(BSIZE)),
+                self.bmap_or_alloc((off as usize).wrapping_div(BSIZE), tx),
             );
             let m = core::cmp::min(
                 n.wrapping_sub(tot),
@@ -386,7 +403,7 @@ impl InodeGuard<'_> {
                 }
             }
             unsafe {
-                self.tx.write(bp);
+                tx.write(bp);
             }
             tot = tot.wrapping_add(m);
             off = off.wrapping_add(m);
@@ -404,7 +421,7 @@ impl InodeGuard<'_> {
         // because the loop above might have called bmap() and added a new
         // block to self->addrs[].
         unsafe {
-            self.update();
+            self.update(tx);
         }
         Ok(tot as usize)
     }
@@ -417,22 +434,21 @@ impl InodeGuard<'_> {
     /// listed in block self->addr_indirect.
     /// Return the disk block address of the nth block in inode self.
     /// If there is no such block, bmap allocates one.
-    fn bmap_or_alloc(&mut self, bn: usize) -> u32 {
-        self.bmap_inner(bn, true)
+    fn bmap_or_alloc(&mut self, bn: usize, tx: &FsTransaction<'_>) -> u32 {
+        self.bmap_inner(bn, Some(tx))
     }
 
     fn bmap(&mut self, bn: usize) -> u32 {
-        self.bmap_inner(bn, false)
+        self.bmap_inner(bn, None)
     }
 
-    fn bmap_inner(&mut self, bn: usize, do_alloc: bool) -> u32 {
+    fn bmap_inner(&mut self, bn: usize, tx_opt: Option<&FsTransaction<'_>>) -> u32 {
         let inner = self.deref_inner();
 
         if bn < NDIRECT {
             let mut addr = inner.addr_direct[bn];
             if addr == 0 {
-                assert!(do_alloc, "bmap: out of range");
-                addr = unsafe { self.tx.balloc(self.dev) };
+                addr = unsafe { tx_opt.expect("bmap: out of range").balloc(self.dev) };
                 self.deref_inner_mut().addr_direct[bn] = addr;
             }
             addr
@@ -442,8 +458,7 @@ impl InodeGuard<'_> {
 
             let mut indirect = inner.addr_indirect;
             if indirect == 0 {
-                assert!(do_alloc, "bmap: out of range");
-                indirect = unsafe { self.tx.balloc(self.dev) };
+                indirect = unsafe { tx_opt.expect("bmap: out of range").balloc(self.dev) };
                 self.deref_inner_mut().addr_indirect = indirect;
             }
 
@@ -452,10 +467,10 @@ impl InodeGuard<'_> {
             debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
             let mut addr = data[bn];
             if addr == 0 {
-                assert!(do_alloc, "bmap: out of range");
-                addr = unsafe { self.tx.balloc(self.dev) };
+                let tx = tx_opt.expect("bmap: out of range");
+                addr = unsafe { tx.balloc(self.dev) };
                 data[bn] = addr;
-                unsafe { self.tx.write(bp) };
+                unsafe { tx.write(bp) };
             }
             addr
         }
@@ -492,19 +507,31 @@ impl ArenaObject for Inode {
         if self.inner.get_mut().valid && self.inner.get_mut().nlink == 0 {
             // inode has no links and no other references: truncate and free.
 
-            // TODO(rv6): must be removed.
+            // TODO(rv6)
+            // Disk write operations must happen inside a transaction. However,
+            // we cannot begin a new transaction here because beginning of a
+            // transaction acquires a sleep lock while the spin lock of this
+            // arena has been acquired before the invocation of this method.
+            // To mitigate this problem, we make a fake transaction and pass
+            // it as an argument for each disk write operation below. As a
+            // transaction does not start here, any operation that can drop an
+            // inode must begin a transaction even in the case that the
+            // resulting FsTransaction value is never used. Such transactions
+            // can be found in finalize in file.rs, sys_chdir in sysfile.rs,
+            // close_files in proc.rs, and exec in exec.rs.
+            // https://github.com/kaist-cp/rv6/issues/290
             let tx = mem::ManuallyDrop::new(FsTransaction {
                 fs: &kernel().file_system,
             });
 
             // self->ref == 1 means no other process can have self locked,
             // so this acquiresleep() won't block (or deadlock).
-            let mut ip = self.lock(&tx);
+            let mut ip = self.lock();
 
             A::reacquire_after(guard, move || unsafe {
-                ip.itrunc();
+                ip.itrunc(&tx);
                 ip.deref_inner_mut().typ = 0;
-                ip.update();
+                ip.update(&tx);
                 ip.deref_inner_mut().valid = false;
                 drop(ip);
             });
@@ -515,7 +542,7 @@ impl ArenaObject for Inode {
 impl Inode {
     /// Lock the given inode.
     /// Reads the inode from disk if necessary.
-    pub fn lock<'x>(&'x self, tx: &'x FsTransaction<'x>) -> InodeGuard<'x> {
+    pub fn lock(&self) -> InodeGuard<'_> {
         let mut guard = self.inner.lock();
         if !guard.valid {
             let mut bp = kernel().file_system.disk.read(
@@ -538,7 +565,7 @@ impl Inode {
             assert_ne!(guard.typ, T_NONE, "Inode::lock: no type");
         };
         mem::forget(guard);
-        InodeGuard { inode: self, tx }
+        InodeGuard { inode: self }
     }
 
     pub const fn zero() -> Self {

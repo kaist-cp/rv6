@@ -97,8 +97,7 @@ impl File {
         match &self.typ {
             FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0)),
             FileType::Inode { ip, off } => {
-                let tx = kernel().file_system.begin_transaction();
-                let mut ip = ip.deref().lock(&tx);
+                let mut ip = ip.deref().lock();
                 let curr_off = *off.get();
                 let ret = ip.read(addr, curr_off, n as u32);
                 if let Ok(v) = ret {
@@ -140,13 +139,14 @@ impl File {
                 while bytes_written < n as usize {
                     let bytes_to_write = cmp::min(n as usize - bytes_written, max);
                     let tx = kernel().file_system.begin_transaction();
-                    let mut ip = ip.deref().lock(&tx);
+                    let mut ip = ip.deref().lock();
                     let curr_off = *off.get();
                     let r = ip
                         .write(
                             addr + bytes_written as usize,
                             curr_off,
                             bytes_to_write as u32,
+                            &tx,
                         )
                         .map(|v| {
                             *off.get() = curr_off.wrapping_add(v as u32);
@@ -180,6 +180,11 @@ impl ArenaObject for File {
             match typ {
                 FileType::Pipe { mut pipe } => unsafe { pipe.close(self.writable) },
                 FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
+                    // TODO(rv6)
+                    // The inode ip will be dropped by drop(ip). Deallocation
+                    // of an inode may cause disk write operations, so we must
+                    // begin a transaction here.
+                    // https://github.com/kaist-cp/rv6/issues/290
                     let _tx = kernel().file_system.begin_transaction();
                     drop(ip);
                 }
