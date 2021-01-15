@@ -137,13 +137,19 @@ impl AllocatedPipe {
             kernel()
                 .ftable
                 .alloc_file(FileType::Pipe { pipe: Self { ptr } }, true, false),
-            return Err(kernel().free(Page::from_usize(ptr as _)))
+            {
+                kernel().free(Page::from_usize(ptr as _));
+                return Err(())
+            }
         );
         let f1 = ok_or!(
             kernel()
                 .ftable
                 .alloc_file(FileType::Pipe { pipe: Self { ptr } }, false, true),
-            return Err(kernel().free(Page::from_usize(ptr as _)))
+                {
+                    kernel().free(Page::from_usize(ptr as _));
+                    return Err(())
+                }
         );
 
         Ok((f0, f1))
