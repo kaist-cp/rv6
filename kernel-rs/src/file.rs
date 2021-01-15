@@ -203,12 +203,12 @@ impl FileTable {
     }
 
     /// Allocate a file structure.
-    pub fn alloc_file(&self, typ: FileType, readable: bool, writable: bool) -> Option<RcFile<'_>> {
+    pub fn alloc_file(&self, typ: FileType, readable: bool, writable: bool) -> Result<RcFile<'_>, ()> {
         // TODO: idiomatic initialization.
         let inner = self.alloc(|p| {
             *p = File::new(typ, readable, writable);
-        })?;
+        }).ok_or(())?;
 
-        Some(unsafe { Rc::from_unchecked(self, inner) })
+        Ok(unsafe { Rc::from_unchecked(self, inner) })
     }
 }

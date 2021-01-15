@@ -651,13 +651,13 @@ impl ProcessSystem {
     /// Kill the process with the given pid.
     /// The victim won't exit until it tries to return
     /// to user space (see usertrap() in trap.c).
-    pub fn kill(&self, pid: i32) -> Result<i32, ()> {
+    pub fn kill(&self, pid: i32) -> Result<(), ()> {
         for p in &self.process_pool {
             let mut guard = p.lock();
             if guard.deref_info().pid == pid {
                 p.kill();
                 guard.wakeup();
-                return Ok(0);
+                return Ok(());
             }
         }
         Err(())

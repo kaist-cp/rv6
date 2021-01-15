@@ -61,7 +61,7 @@ pub unsafe fn argaddr(n: usize) -> Result<usize, ()> {
 
 /// Fetch the nth word-sized system call argument as a null-terminated string.
 /// Copies into buf, at most max.
-/// Returns string length if OK (including nul), -1 if error.
+/// Returns reference to the string in the buffer.
 pub unsafe fn argstr(n: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
     let addr = argaddr(n)?;
     fetchstr(UVAddr::new(addr), buf)

@@ -49,7 +49,8 @@ impl Kernel {
 
     pub unsafe fn sys_kill(&self) -> Result<usize, ()> {
         let pid = argint(0)?;
-        Ok(self.procs.kill(pid)? as usize)
+        self.procs.kill(pid)?;
+        Ok(0)
     }
 
     /// Return how many clock tick interrupts have occurred

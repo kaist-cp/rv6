@@ -106,7 +106,7 @@ where
 }
 
 impl Kernel {
-    unsafe fn link(&self, oldname: &CStr, newname: &CStr) -> Result<usize, ()> {
+    unsafe fn link(&self, oldname: &CStr, newname: &CStr) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
         let ptr = Path::new(oldname).namei()?;
         let mut ip = ptr.lock();
@@ -121,7 +121,7 @@ impl Kernel {
             let mut dp = ptr2.lock();
             if dp.dev != ptr.dev || dp.dirlink(name, ptr.inum, &tx).is_err() {
             } else {
-                return Ok(0);
+                return Ok(());
             }
         }
 
@@ -131,7 +131,7 @@ impl Kernel {
         Err(())
     }
 
-    unsafe fn unlink(&self, filename: &CStr) -> Result<usize, ()> {
+    unsafe fn unlink(&self, filename: &CStr) -> Result<(), ()> {
         let mut de: Dirent = Default::default();
         let tx = self.file_system.begin_transaction();
         let (ptr, name) = Path::new(filename).nameiparent()?;
@@ -160,7 +160,7 @@ impl Kernel {
                     drop(ptr);
                     ip.deref_inner_mut().nlink -= 1;
                     ip.update(&tx);
-                    return Ok(0);
+                    return Ok(());
                 }
             }
         }
@@ -198,14 +198,12 @@ impl Kernel {
             },
         };
 
-        let f = some_or!(
+        let f = 
             self.ftable.alloc_file(
                 filetype,
                 !omode.intersects(FcntlFlags::O_WRONLY),
                 omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)
-            ),
-            return Err(())
-        );
+            )?;
 
         if omode.contains(FcntlFlags::O_TRUNC) && typ == InodeType::File {
             match &f.typ {
@@ -217,13 +215,13 @@ impl Kernel {
         Ok(fd as usize)
     }
 
-    unsafe fn mkdir(&self, dirname: &CStr) -> Result<usize, ()> {
+    unsafe fn mkdir(&self, dirname: &CStr) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
         create(Path::new(dirname), InodeType::Dir, &tx, |_| ())?;
-        Ok(0)
+        Ok(())
     }
 
-    unsafe fn mknod(&self, filename: &CStr, major: u16, minor: u16) -> Result<usize, ()> {
+    unsafe fn mknod(&self, filename: &CStr, major: u16, minor: u16) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
         create(
             Path::new(filename),
@@ -231,10 +229,10 @@ impl Kernel {
             &tx,
             |_| (),
         )?;
-        Ok(0)
+        Ok(())
     }
 
-    unsafe fn chdir(&self, dirname: &CStr) -> Result<usize, ()> {
+    unsafe fn chdir(&self, dirname: &CStr) -> Result<(), ()> {
         let p = myproc();
         let mut data = &mut *(*p).data.get();
         // TODO(rv6)
@@ -251,10 +249,10 @@ impl Kernel {
         }
         mem::drop(ip);
         data.cwd = Some(ptr);
-        Ok(0)
+        Ok(())
     }
 
-    unsafe fn pipe(&self, fdarray: usize) -> Result<usize, ()> {
+    unsafe fn pipe(&self, fdarray: usize) -> Result<(), ()> {
         let p = myproc();
         let mut data = &mut *(*p).data.get();
         let (pipereader, pipewriter) = AllocatedPipe::alloc()?;
@@ -287,7 +285,7 @@ impl Kernel {
             data.open_files[fd1 as usize] = None;
             return Err(());
         }
-        Ok(0)
+        Ok(())
     }
 
     pub unsafe fn sys_dup(&self) -> Result<usize, ()> {
@@ -331,13 +329,15 @@ impl Kernel {
         let mut old: [u8; MAXPATH] = [0; MAXPATH];
         let old = argstr(0, &mut old)?;
         let new = argstr(1, &mut new)?;
-        self.link(old, new)
+        self.link(old, new)?;
+        Ok(0)
     }
 
     pub unsafe fn sys_unlink(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = argstr(0, &mut path)?;
-        self.unlink(path)
+        self.unlink(path)?;
+        Ok(0)
     }
 
     pub unsafe fn sys_open(&'static self) -> Result<usize, ()> {
@@ -352,7 +352,8 @@ impl Kernel {
     pub unsafe fn sys_mkdir(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = argstr(0, &mut path)?;
-        self.mkdir(path)
+        self.mkdir(path)?;
+        Ok(0)
     }
 
     pub unsafe fn sys_mknod(&self) -> Result<usize, ()> {
@@ -360,13 +361,15 @@ impl Kernel {
         let path = argstr(0, &mut path)?;
         let major = argint(1)? as u16;
         let minor = argint(2)? as u16;
-        self.mknod(path, major, minor)
+        self.mknod(path, major, minor)?;
+        Ok(0)
     }
 
     pub unsafe fn sys_chdir(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = argstr(0, &mut path)?;
-        self.chdir(path)
+        self.chdir(path)?;
+        Ok(0)
     }
 
     pub unsafe fn sys_exec(&self) -> Result<usize, ()> {
@@ -420,6 +423,7 @@ impl Kernel {
     pub unsafe fn sys_pipe(&self) -> Result<usize, ()> {
         // user pointer to array of two integers
         let fdarray = argaddr(0)?;
-        self.pipe(fdarray)
+        self.pipe(fdarray)?;
+        Ok(0)
     }
 }
