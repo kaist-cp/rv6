@@ -8,20 +8,21 @@ use core::{mem, slice, str};
 use cstr_core::CStr;
 
 /// Fetch the usize at addr from the current process.
-/// Returns Ok(()) on success, Err(()) on error.
-pub unsafe fn fetchaddr(addr: UVAddr, ip: *mut usize) -> Result<(), ()> {
+/// Returns Ok(ip) on success, Err(()) on error.
+pub unsafe fn fetchaddr(addr: UVAddr) -> Result<usize, ()> {
     let p = myproc();
     let data = &mut *(*p).data.get();
+    let mut ip = 0;
     if addr.into_usize() >= data.sz
         || addr.into_usize().wrapping_add(mem::size_of::<usize>()) > data.sz
     {
         return Err(());
     }
     data.pagetable.copy_in(
-        slice::from_raw_parts_mut(ip as *mut u8, mem::size_of::<usize>()),
+        slice::from_raw_parts_mut(&mut ip as *mut usize as *mut u8, mem::size_of::<usize>()),
         addr,
     )?;
-    Ok(())
+    Ok(ip)
 }
 
 /// Fetch the nul-terminated string at addr from the current process.

@@ -380,15 +380,10 @@ impl Kernel {
 
         let mut success = false;
         for (i, arg) in argv.iter_mut().enumerate() {
-            let mut uarg = 0;
-            if fetchaddr(
-                UVAddr::new(uargv + mem::size_of::<usize>() * i),
-                &mut uarg as *mut usize,
-            )
-            .is_err()
-            {
-                break;
-            }
+
+            let uarg = ok_or!(fetchaddr(
+                UVAddr::new(uargv + mem::size_of::<usize>() * i)
+            ), break);
 
             if uarg == 0 {
                 *arg = ptr::null_mut();
