@@ -27,7 +27,7 @@ use core::{cell::UnsafeCell, mem, ptr, slice};
 impl RcFile<'static> {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
-    unsafe fn fdalloc(self) -> Result<i32, ()> {
+    unsafe fn fdalloc(self) -> Result<i32, Self> {
         let p = myproc();
         let mut data = &mut *(*p).data.get();
         for fd in 0..NOFILE {
@@ -37,7 +37,7 @@ impl RcFile<'static> {
                 return Ok(fd as i32);
             }
         }
-        Err(())
+        Err(self)
     }
 }
 
@@ -210,7 +210,7 @@ impl Kernel {
                 _ => panic!("sys_open : Not reach"),
             };
         }
-        let fd = f.fdalloc()?;
+        let fd = ok_or!(f.fdalloc(), return Err(()));
         Ok(fd as usize)
     }
 
@@ -256,7 +256,7 @@ impl Kernel {
         let mut data = &mut *(*p).data.get();
         let (pipereader, pipewriter) = AllocatedPipe::alloc()?;
 
-        let mut fd0 = pipereader.fdalloc()?;
+        let mut fd0 = ok_or!(pipereader.fdalloc(), return Err(()));
         let mut fd1 = ok_or!(pipewriter.fdalloc(), {
             data.open_files[fd0 as usize] = None;
             return Err(());
@@ -290,7 +290,7 @@ impl Kernel {
     pub unsafe fn sys_dup(&self) -> Result<usize, ()> {
         let (_, f) = argfd(0)?;
         let newfile = f.clone();
-        let fd = newfile.fdalloc()?;
+        let fd = ok_or!(newfile.fdalloc(), return Err(()));
         Ok(fd as usize)
     }
 
