@@ -1,6 +1,6 @@
 use crate::{
     kernel::Kernel,
-    println,
+    ok_or, println,
     proc::myproc,
     vm::{UVAddr, VAddr},
 };
@@ -102,10 +102,10 @@ impl Kernel {
                     str::from_utf8(&(*p).name).unwrap_or("???"),
                     num
                 );
-                usize::MAX
+                Err(())
             }
         };
 
-        (*data.trapframe).a0 = result;
+        (*data.trapframe).a0 = ok_or!(result, usize::MAX);
     }
 }

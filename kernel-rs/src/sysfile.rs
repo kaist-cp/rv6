@@ -290,90 +290,90 @@ impl Kernel {
         Ok(0)
     }
 
-    pub unsafe fn sys_dup(&self) -> usize {
-        let (_, f) = ok_or!(argfd(0), return usize::MAX);
+    pub unsafe fn sys_dup(&self) -> Result<usize, ()> {
+        let (_, f) = argfd(0)?;
         let newfile = f.clone();
-        let fd = ok_or!(newfile.fdalloc(), return usize::MAX);
-        fd as usize
+        let fd = newfile.fdalloc()?;
+        Ok(fd as usize)
     }
 
-    pub unsafe fn sys_read(&self) -> usize {
-        let (_, f) = ok_or!(argfd(0), return usize::MAX);
-        let n = ok_or!(argint(2), return usize::MAX);
-        let p = ok_or!(argaddr(1), return usize::MAX);
-        ok_or!(f.read(UVAddr::new(p), n), usize::MAX)
+    pub unsafe fn sys_read(&self) -> Result<usize, ()> {
+        let (_, f) = argfd(0)?;
+        let n = argint(2)?;
+        let p = argaddr(1)?;
+        f.read(UVAddr::new(p), n)
     }
 
-    pub unsafe fn sys_write(&self) -> usize {
-        let (_, f) = ok_or!(argfd(0), return usize::MAX);
-        let n = ok_or!(argint(2), return usize::MAX);
-        let p = ok_or!(argaddr(1), return usize::MAX);
-        ok_or!(f.write(UVAddr::new(p), n), usize::MAX)
+    pub unsafe fn sys_write(&self) -> Result<usize, ()> {
+        let (_, f) = argfd(0)?;
+        let n = argint(2)?;
+        let p = argaddr(1)?;
+        f.write(UVAddr::new(p), n)
     }
 
-    pub unsafe fn sys_close(&self) -> usize {
-        let (fd, _) = ok_or!(argfd(0), return usize::MAX);
+    pub unsafe fn sys_close(&self) -> Result<usize, ()> {
+        let (fd, _) = argfd(0)?;
         (*(*myproc()).data.get()).open_files[fd as usize] = None;
-        0
+        Ok(0)
     }
 
-    pub unsafe fn sys_fstat(&self) -> usize {
-        let (_, f) = ok_or!(argfd(0), return usize::MAX);
+    pub unsafe fn sys_fstat(&self) -> Result<usize, ()> {
+        let (_, f) = argfd(0)?;
         // user pointer to struct stat
-        let st = ok_or!(argaddr(1), return usize::MAX);
-        ok_or!(f.stat(UVAddr::new(st)), return usize::MAX);
-        0
+        let st = argaddr(1)?;
+        f.stat(UVAddr::new(st))?;
+        Ok(0)
     }
 
     /// Create the path new as a link to the same inode as old.
-    pub unsafe fn sys_link(&self) -> usize {
+    pub unsafe fn sys_link(&self) -> Result<usize, ()> {
         let mut new: [u8; MAXPATH] = [0; MAXPATH];
         let mut old: [u8; MAXPATH] = [0; MAXPATH];
-        let old = ok_or!(argstr(0, &mut old), return usize::MAX);
-        let new = ok_or!(argstr(1, &mut new), return usize::MAX);
-        ok_or!(self.link(old, new), usize::MAX)
+        let old = argstr(0, &mut old)?;
+        let new = argstr(1, &mut new)?;
+        self.link(old, new)
     }
 
-    pub unsafe fn sys_unlink(&self) -> usize {
+    pub unsafe fn sys_unlink(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-        ok_or!(self.unlink(path), usize::MAX)
+        let path = argstr(0, &mut path)?;
+        self.unlink(path)
     }
 
-    pub unsafe fn sys_open(&'static self) -> usize {
+    pub unsafe fn sys_open(&'static self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = ok_or!(argstr(0, &mut path), return usize::MAX);
+        let path = argstr(0, &mut path)?;
         let path = Path::new(path);
-        let omode = ok_or!(argint(1), return usize::MAX);
+        let omode = argint(1)?;
         let omode = FcntlFlags::from_bits_truncate(omode);
-        ok_or!(self.open(path, omode), usize::MAX)
+        self.open(path, omode)
     }
 
-    pub unsafe fn sys_mkdir(&self) -> usize {
+    pub unsafe fn sys_mkdir(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-        ok_or!(self.mkdir(path), usize::MAX)
+        let path = argstr(0, &mut path)?;
+        self.mkdir(path)
     }
 
-    pub unsafe fn sys_mknod(&self) -> usize {
+    pub unsafe fn sys_mknod(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-        let major = ok_or!(argint(1), return usize::MAX) as u16;
-        let minor = ok_or!(argint(2), return usize::MAX) as u16;
-        ok_or!(self.mknod(path, major, minor), usize::MAX)
+        let path = argstr(0, &mut path)?;
+        let major = argint(1)? as u16;
+        let minor = argint(2)? as u16;
+        self.mknod(path, major, minor)
     }
 
-    pub unsafe fn sys_chdir(&self) -> usize {
+    pub unsafe fn sys_chdir(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-        ok_or!(self.chdir(path), usize::MAX)
+        let path = argstr(0, &mut path)?;
+        self.chdir(path)
     }
 
-    pub unsafe fn sys_exec(&self) -> usize {
+    pub unsafe fn sys_exec(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let mut argv: [*mut u8; MAXARG] = [ptr::null_mut(); MAXARG];
-        let path = ok_or!(argstr(0, &mut path), return usize::MAX);
-        let uargv = ok_or!(argaddr(1), return usize::MAX);
+        let path = argstr(0, &mut path)?;
+        let uargv = argaddr(1)?;
 
         let mut success = false;
         for (i, arg) in argv.iter_mut().enumerate() {
@@ -400,9 +400,9 @@ impl Kernel {
         }
 
         let ret = if success {
-            ok_or!(self.exec(Path::new(path), &argv), usize::MAX)
+            self.exec(Path::new(path), &argv)
         } else {
-            usize::MAX
+            Err(())
         };
 
         for arg in &mut argv[..] {
@@ -416,9 +416,9 @@ impl Kernel {
         ret
     }
 
-    pub unsafe fn sys_pipe(&self) -> usize {
+    pub unsafe fn sys_pipe(&self) -> Result<usize, ()> {
         // user pointer to array of two integers
-        let fdarray = ok_or!(argaddr(0), return usize::MAX);
-        ok_or!(self.pipe(fdarray), usize::MAX)
+        let fdarray = argaddr(0)?;
+        self.pipe(fdarray)
     }
 }
