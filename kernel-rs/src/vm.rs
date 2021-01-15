@@ -1,9 +1,9 @@
 use crate::{
     kernel::kernel,
-    kernel::Kernel,
-    memlayout::{FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, UART0, VIRTIO0},
+    memlayout::{kstack, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0},
     page::Page,
-    proc::{myproc, proc_mapstacks},
+    param::NPROC,
+    proc::{myproc, Trapframe},
     riscv::{
         make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, sfence_vma, w_satp, PteT,
         MAXVA, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
@@ -28,6 +28,14 @@ pub struct KVAddr(usize);
 
 #[derive(Clone, Copy)]
 pub struct UVAddr(usize);
+
+impl Add<usize> for PAddr {
+    type Output = Self;
+
+    fn add(self, rhs: usize) -> Self::Output {
+        Self(self.0 + rhs)
+    }
+}
 
 impl PAddr {
     pub const fn new(value: usize) -> Self {
@@ -169,6 +177,10 @@ impl PageTableEntry {
         self.check_flag(PTE_V)
     }
 
+    fn is_user_accessible(&self) -> bool {
+        self.check_flag(PTE_V | PTE_U as usize)
+    }
+
     fn is_table(&self) -> bool {
         self.is_valid() && !self.check_flag((PTE_R | PTE_W | PTE_X) as usize)
     }
@@ -273,9 +285,9 @@ pub struct PageTable<A> {
 }
 
 impl<A: VAddr> PageTable<A> {
-    // TODO(rv6): it remains for initialization of ProcData.
-    // When ProcData changes to have Option<PageTable<_>> instead of
-    // PageTable<_>, this method can be removed.
+    /// # Saftey
+    ///
+    /// Any page table returned by this method must not be used at all.
     pub const unsafe fn zero() -> Self {
         Self {
             ptr: ptr::null_mut(),
@@ -328,25 +340,84 @@ impl<A: VAddr> PageTable<A> {
     /// physical addresses starting at pa. va and size might not
     /// be page-aligned. Returns Ok(()) on success, Err(()) if walk() couldn't
     /// allocate a needed page-table page.
-    pub fn map_pages(&mut self, va: A, size: usize, mut pa: usize, perm: i32) -> Result<(), ()> {
+    fn map_pages(&mut self, va: A, size: usize, mut pa: PAddr, perm: i32) -> Result<(), ()> {
         let mut a = pgrounddown(va.into_usize());
         let last = pgrounddown(va.into_usize() + size - 1usize);
         loop {
             let pte = self.walk(VAddr::new(a), true).ok_or(())?;
             assert!(!pte.is_valid(), "remap");
 
-            pte.set_inner(pa2pte(PAddr::new(pa)) | perm as usize | PTE_V);
+            pte.set_inner(pa2pte(pa) | perm as usize | PTE_V);
             if a == last {
                 break;
             }
             a += PGSIZE;
-            pa += PGSIZE;
+            pa = pa + PGSIZE;
         }
         Ok(())
     }
 }
 
 impl PageTable<UVAddr> {
+    /// Create a user page table with no user memory,
+    /// but with the trampoline and a given trap frame.
+    /// Return Some(..) if every allocation has succeeded.
+    /// Return None otherwise.
+    pub fn uvm_new(trap_frame: *mut Trapframe) -> Option<Self> {
+        let mut page_table = Self::new()?;
+
+        // Map the trampoline code (for system call return)
+        // at the highest user virtual address.
+        // Only the supervisor uses it, on the way
+        // to/from user space, so not PTE_U.
+        if page_table
+            .map_pages(
+                UVAddr::new(TRAMPOLINE),
+                PGSIZE,
+                PAddr::new(unsafe { trampoline.as_mut_ptr() as usize }),
+                PTE_R | PTE_X,
+            )
+            .is_err()
+        {
+            page_table.uvm_free(0);
+            return None;
+        }
+
+        // Map the trapframe just below TRAMPOLINE, for trampoline.S.
+        if page_table
+            .map_pages(
+                UVAddr::new(TRAPFRAME),
+                PGSIZE,
+                PAddr::new(trap_frame as _),
+                PTE_R | PTE_W,
+            )
+            .is_err()
+        {
+            page_table.uvm_unmap(UVAddr::new(TRAMPOLINE), 1, false);
+            page_table.uvm_free(0);
+            return None;
+        }
+        Some(page_table)
+    }
+
+    /// Load the user initcode into address 0 of pagetable,
+    /// for the very first process.
+    /// src.len() must be less than a page.
+    pub unsafe fn uvm_init(&mut self, src: &[u8]) -> Result<(), ()> {
+        assert!(src.len() < PGSIZE, "uvm_init: more than a page");
+
+        let page = kernel().alloc().ok_or(())?;
+        let mem = page.into_usize() as *mut u8;
+        ptr::write_bytes(mem, 0, PGSIZE);
+        ptr::copy(src.as_ptr(), mem, src.len());
+        self.map_pages(
+            VAddr::new(0),
+            PGSIZE,
+            PAddr::new(mem as usize),
+            PTE_W | PTE_R | PTE_X | PTE_U,
+        )
+    }
+
     /// Look up a virtual address, return Some(physical address),
     /// or None if not mapped.
     pub fn uvm_walk_addr(&mut self, va: UVAddr) -> Option<PAddr> {
@@ -354,35 +425,14 @@ impl PageTable<UVAddr> {
             return None;
         }
         let pte = self.walk(va, false)?;
-        if !pte.is_valid() {
-            return None;
-        }
-        if !pte.check_flag(PTE_U as usize) {
+        if !pte.is_user_accessible() {
             return None;
         }
         Some(pte.get_pa())
     }
 
-    /// Load the user initcode into address 0 of pagetable,
-    /// for the very first process.
-    /// sz must be less than a page.
-    pub unsafe fn uvm_init(&mut self, src: &[u8]) {
-        assert!(src.len() < PGSIZE, "inituvm: more than a page");
-
-        let mem = kernel().alloc().unwrap().into_usize() as *mut u8;
-        ptr::write_bytes(mem, 0, PGSIZE);
-        self.map_pages(
-            VAddr::new(0),
-            PGSIZE,
-            mem as usize,
-            PTE_W | PTE_R | PTE_X | PTE_U,
-        )
-        .expect("inituvm: mappage");
-        ptr::copy(src.as_ptr(), mem, src.len());
-    }
-
     /// Allocate PTEs and physical memory to grow process from oldsz to
-    /// newsz, which need not be page aligned.  Returns Ok(new size) or Err(()) on error.
+    /// newsz, which need not be page aligned. Returns Ok(new size) or Err(()) on error.
     pub fn uvm_alloc(&mut self, mut oldsz: usize, newsz: usize) -> Result<usize, ()> {
         if newsz < oldsz {
             return Ok(oldsz);
@@ -397,7 +447,12 @@ impl PageTable<UVAddr> {
             mem.write_bytes(0);
             let pa = mem.into_usize();
             if self
-                .map_pages(VAddr::new(a), PGSIZE, pa, PTE_W | PTE_X | PTE_R | PTE_U)
+                .map_pages(
+                    VAddr::new(a),
+                    PGSIZE,
+                    PAddr::new(pa),
+                    PTE_W | PTE_X | PTE_R | PTE_U,
+                )
                 .is_err()
             {
                 // It is safe because pa is an address of mem, which is a page
@@ -440,7 +495,12 @@ impl PageTable<UVAddr> {
                 PGSIZE,
             );
             if (*new_ptable)
-                .map_pages(VAddr::new(i), PGSIZE, mem as usize, flags as i32)
+                .map_pages(
+                    VAddr::new(i),
+                    PGSIZE,
+                    PAddr::new(mem as usize),
+                    flags as i32,
+                )
                 .is_err()
             {
                 kernel().free(Page::from_usize(mem as _));
@@ -507,7 +567,7 @@ impl PageTable<UVAddr> {
     /// Used by exec for the user stack guard page.
     pub fn uvm_guard(&mut self, va: UVAddr) {
         self.walk(va, false)
-            .expect("uvmguard")
+            .expect("uvm_guard")
             .clear_flag(PTE_U as usize);
     }
 
@@ -607,57 +667,81 @@ impl PageTable<KVAddr> {
     /// Make a direct-map page table for the kernel.
     pub fn kvm_new() -> Option<Self> {
         let mut page_table = Self::new()?;
-        page_table.kvm_make();
-        Some(page_table)
-    }
 
-    /// Add direct-mappings for the kernel to this page table.
-    pub fn kvm_make(&mut self) {
         // SiFive Test Finisher MMIO
-        self.kvm_map(
-            KVAddr::new(FINISHER),
-            PAddr::new(FINISHER),
-            PGSIZE,
-            PTE_R | PTE_W,
-        );
+        page_table
+            .map_pages(
+                KVAddr::new(FINISHER),
+                PGSIZE,
+                PAddr::new(FINISHER),
+                PTE_R | PTE_W,
+            )
+            .ok()?;
 
         // Uart registers
-        self.kvm_map(KVAddr::new(UART0), PAddr::new(UART0), PGSIZE, PTE_R | PTE_W);
+        page_table
+            .map_pages(KVAddr::new(UART0), PGSIZE, PAddr::new(UART0), PTE_R | PTE_W)
+            .ok()?;
 
         // Virtio mmio disk interface
-        self.kvm_map(
-            KVAddr::new(VIRTIO0),
-            PAddr::new(VIRTIO0),
-            PGSIZE,
-            PTE_R | PTE_W,
-        );
+        page_table
+            .map_pages(
+                KVAddr::new(VIRTIO0),
+                PGSIZE,
+                PAddr::new(VIRTIO0),
+                PTE_R | PTE_W,
+            )
+            .ok()?;
 
         // PLIC
-        self.kvm_map(KVAddr::new(PLIC), PAddr::new(PLIC), 0x400000, PTE_R | PTE_W);
+        page_table
+            .map_pages(KVAddr::new(PLIC), 0x400000, PAddr::new(PLIC), PTE_R | PTE_W)
+            .ok()?;
 
         // Map kernel text executable and read-only.
         let et = unsafe { etext.as_mut_ptr() as usize };
-        self.kvm_map(
-            KVAddr::new(KERNBASE),
-            PAddr::new(KERNBASE),
-            et - KERNBASE,
-            PTE_R | PTE_X,
-        );
+        page_table
+            .map_pages(
+                KVAddr::new(KERNBASE),
+                et - KERNBASE,
+                PAddr::new(KERNBASE),
+                PTE_R | PTE_X,
+            )
+            .ok()?;
 
         // Map kernel data and the physical RAM we'll make use of.
-        self.kvm_map(KVAddr::new(et), PAddr::new(et), PHYSTOP - et, PTE_R | PTE_W);
+        page_table
+            .map_pages(KVAddr::new(et), PHYSTOP - et, PAddr::new(et), PTE_R | PTE_W)
+            .ok()?;
 
         // Map the trampoline for trap entry/exit to
         // the highest virtual address in the kernel.
-        self.kvm_map(
-            KVAddr::new(TRAMPOLINE),
-            PAddr::new(unsafe { trampoline.as_mut_ptr() as usize }),
-            PGSIZE,
-            PTE_R | PTE_X,
-        );
+        page_table
+            .map_pages(
+                KVAddr::new(TRAMPOLINE),
+                PGSIZE,
+                PAddr::new(unsafe { trampoline.as_mut_ptr() as usize }),
+                PTE_R | PTE_X,
+            )
+            .ok()?;
 
-        // map kernel stacks
-        proc_mapstacks(self);
+        // Allocate a page for the process's kernel stack.
+        // Map it high in memory, followed by an invalid
+        // guard page.
+        for i in 0..NPROC {
+            let pa = kernel().alloc()?.into_usize();
+            let va: usize = kstack(i);
+            page_table
+                .map_pages(
+                    KVAddr::new(va),
+                    PGSIZE,
+                    PAddr::new(pa as usize),
+                    PTE_R | PTE_W,
+                )
+                .ok()?;
+        }
+
+        Some(page_table)
     }
 
     /// Switch h/w page table register to the kernel's page table,
@@ -665,22 +749,5 @@ impl PageTable<KVAddr> {
     pub unsafe fn kvm_init_hart(&self) {
         w_satp(make_satp(self.ptr as usize));
         sfence_vma();
-    }
-
-    /// Add a mapping to the kernel page table.
-    /// Only used when booting.
-    /// Does not flush TLB or enable paging.
-    pub fn kvm_map(&mut self, va: KVAddr, pa: PAddr, sz: usize, perm: i32) {
-        self.map_pages(va, sz, pa.into_usize(), perm)
-            .expect("kvm_map");
-    }
-}
-
-impl Kernel {
-    pub unsafe fn kvm_init_hart(&self) {
-        self.page_table
-            .as_ref()
-            .expect("kernel page table must not be None")
-            .kvm_init_hart();
     }
 }

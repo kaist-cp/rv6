@@ -47,7 +47,7 @@ pub struct Kernel {
     kmem: Spinlock<Kmem>,
 
     /// The kernel's page table.
-    pub page_table: Option<PageTable<KVAddr>>,
+    pub page_table: PageTable<KVAddr>,
 
     pub ticks: Sleepablelock<u32>,
 
@@ -82,7 +82,7 @@ impl Kernel {
             uart: Uart::new(),
             printer: Spinlock::new("PRINTLN", Printer::new()),
             kmem: Spinlock::new("KMEM", Kmem::new()),
-            page_table: None,
+            page_table: unsafe { PageTable::zero() },
             ticks: Sleepablelock::new("time", 0),
             procs: ProcessSystem::zero(),
             cpus: [Cpu::new(); NCPU],
@@ -199,10 +199,10 @@ pub unsafe fn kernel_main() -> ! {
         KERNEL.kmem.get_mut().init();
 
         // Create kernel page table.
-        KERNEL.page_table = PageTable::kvm_new();
+        KERNEL.page_table = PageTable::kvm_new().expect("kvm_new failed");
 
         // Turn on paging.
-        KERNEL.kvm_init_hart();
+        KERNEL.page_table.kvm_init_hart();
 
         // Process system.
         procinit(&mut KERNEL.procs);
@@ -236,7 +236,7 @@ pub unsafe fn kernel_main() -> ! {
         println!("hart {} starting", cpuid());
 
         // Turn on paging.
-        KERNEL.kvm_init_hart();
+        KERNEL.page_table.kvm_init_hart();
 
         // Install kernel trap vector.
         trapinithart();

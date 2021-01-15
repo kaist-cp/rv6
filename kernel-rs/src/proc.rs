@@ -12,13 +12,13 @@ use core::{
 use crate::{
     file::RcFile,
     fs::{Path, RcInode},
-    kernel::{kernel, KERNEL},
+    kernel::kernel,
     memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
     ok_or,
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
     println,
-    riscv::{intr_get, intr_on, r_tp, PGSIZE, PTE_R, PTE_W, PTE_X},
+    riscv::{intr_get, intr_on, r_tp, PGSIZE},
     sleepablelock::SleepablelockGuard,
     some_or,
     spinlock::{
@@ -27,7 +27,7 @@ use crate::{
     },
     string::safestrcpy,
     trap::usertrapret,
-    vm::{KVAddr, PAddr, PageTable, UVAddr, VAddr},
+    vm::{PageTable, UVAddr, VAddr},
 };
 
 extern "C" {
@@ -575,7 +575,7 @@ impl ProcessSystem {
                 data.trapframe = page.into_usize() as *mut Trapframe;
 
                 // An empty user page table.
-                data.pagetable = ok_or!(proc_pagetable(p as *const _ as *mut _), {
+                data.pagetable = some_or!(PageTable::uvm_new(data.trapframe), {
                     freeproc(guard, None);
                     return Err(());
                 });
@@ -649,7 +649,9 @@ impl ProcessSystem {
         let data = &mut *guard.data.get();
         // Allocate one user page and copy init's instructions
         // and data into it.
-        data.pagetable.uvm_init(&INITCODE);
+        data.pagetable
+            .uvm_init(&INITCODE)
+            .expect("uvm_init: failed");
         data.sz = PGSIZE;
 
         // Prepare for the very first "return" from kernel to user.
@@ -835,25 +837,6 @@ impl ProcessSystem {
     }
 }
 
-/// Allocate a page for the process's kernel stack.
-/// Map it high in memory, followed by an invalid
-/// guard page.
-pub fn proc_mapstacks(page_table: &mut PageTable<KVAddr>) {
-    for (i, _) in unsafe { &mut KERNEL.procs.process_pool }
-        .iter_mut()
-        .enumerate()
-    {
-        let pa = kernel().alloc().expect("kalloc").into_usize();
-        let va: usize = kstack(i);
-        page_table.kvm_map(
-            KVAddr::new(va),
-            PAddr::new(pa as usize),
-            PGSIZE,
-            PTE_R | PTE_W,
-        );
-    }
-}
-
 /// Initialize the proc table at boot time.
 #[allow(clippy::ref_in_deref)]
 pub unsafe fn procinit(procs: &'static mut ProcessSystem) {
@@ -910,46 +893,6 @@ unsafe fn freeproc(mut p: ProcGuard, parent_guard: Option<SpinlockProtectedGuard
     p.killed = AtomicBool::new(false);
     p.deref_mut_info().xstate = 0;
     p.deref_mut_info().state = Procstate::UNUSED;
-}
-
-/// Create a user page table for a given process,
-/// with no user memory, but with trampoline pages.
-pub unsafe fn proc_pagetable(p: *mut Proc) -> Result<PageTable<UVAddr>, ()> {
-    // An empty page table.
-    let mut pagetable = PageTable::<UVAddr>::new().ok_or(())?;
-
-    // Map the trampoline code (for system call return)
-    // at the highest user virtual address.
-    // Only the supervisor uses it, on the way
-    // to/from user space, so not PTE_U.
-    if pagetable
-        .map_pages(
-            UVAddr::new(TRAMPOLINE),
-            PGSIZE,
-            trampoline.as_mut_ptr() as usize,
-            PTE_R | PTE_X,
-        )
-        .is_err()
-    {
-        pagetable.uvm_free(0);
-        return Err(());
-    }
-
-    // Map the trapframe just below TRAMPOLINE, for trampoline.S.
-    if pagetable
-        .map_pages(
-            UVAddr::new(TRAPFRAME),
-            PGSIZE,
-            (*(*p).data.get()).trapframe as usize,
-            PTE_R | PTE_W,
-        )
-        .is_err()
-    {
-        pagetable.uvm_unmap(UVAddr::new(TRAMPOLINE), 1, false);
-        pagetable.uvm_free(0);
-        return Err(());
-    }
-    Ok(pagetable)
 }
 
 /// Free a process's page table, and free the

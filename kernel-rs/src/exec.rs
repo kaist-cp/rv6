@@ -5,7 +5,7 @@ use crate::{
     kernel::Kernel,
     ok_or,
     param::MAXARG,
-    proc::{myproc, proc_freepagetable, proc_pagetable, Proc},
+    proc::{myproc, proc_freepagetable, Proc},
     riscv::PGSIZE,
     string::{safestrcpy, strlen},
     vm::{KVAddr, PageTable, UVAddr, VAddr},
@@ -119,7 +119,7 @@ impl Kernel {
             return Err(());
         }
 
-        let pt = proc_pagetable(p)?;
+        let pt = PageTable::uvm_new(data.trapframe).ok_or(())?;
 
         let mut ptable_guard = scopeguard::guard((pt, sz), |(pt, sz)| {
             proc_freepagetable(pt, sz);
