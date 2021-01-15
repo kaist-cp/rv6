@@ -210,7 +210,7 @@ impl Kernel {
                 _ => panic!("sys_open : Not reach"),
             };
         }
-        let fd = ok_or!(f.fdalloc(), return Err(()));
+        let fd = f.fdalloc().map_err(|_| ())?;
         Ok(fd as usize)
     }
 
@@ -256,11 +256,10 @@ impl Kernel {
         let mut data = &mut *(*p).data.get();
         let (pipereader, pipewriter) = AllocatedPipe::alloc()?;
 
-        let mut fd0 = ok_or!(pipereader.fdalloc(), return Err(()));
-        let mut fd1 = ok_or!(pipewriter.fdalloc(), {
-            data.open_files[fd0 as usize] = None;
-            return Err(());
-        });
+        let mut fd0 = pipereader.fdalloc().map_err(|_| ())?;
+        let mut fd1 = pipewriter
+            .fdalloc()
+            .map_err(|_| data.open_files[fd0 as usize] = None)?;
 
         if data
             .pagetable
@@ -290,7 +289,7 @@ impl Kernel {
     pub unsafe fn sys_dup(&self) -> Result<usize, ()> {
         let (_, f) = argfd(0)?;
         let newfile = f.clone();
-        let fd = ok_or!(newfile.fdalloc(), return Err(()));
+        let fd = newfile.fdalloc().map_err(|_| ())?;
         Ok(fd as usize)
     }
 

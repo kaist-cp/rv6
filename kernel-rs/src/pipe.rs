@@ -1,7 +1,6 @@
 use crate::{
     file::{FileType, RcFile},
     kernel::kernel,
-    ok_or,
     page::Page,
     proc::{myproc, WaitChannel},
     spinlock::Spinlock,
@@ -133,24 +132,15 @@ impl AllocatedPipe {
             read_waitchannel: WaitChannel::new(),
             write_waitchannel: WaitChannel::new(),
         };
-        let f0 = ok_or!(
-            kernel()
-                .ftable
-                .alloc_file(FileType::Pipe { pipe: Self { ptr } }, true, false),
-            {
-                kernel().free(Page::from_usize(ptr as _));
-                return Err(());
-            }
-        );
-        let f1 = ok_or!(
-            kernel()
-                .ftable
-                .alloc_file(FileType::Pipe { pipe: Self { ptr } }, false, true),
-            {
-                kernel().free(Page::from_usize(ptr as _));
-                return Err(());
-            }
-        );
+        let f0 = kernel()
+            .ftable
+            .alloc_file(FileType::Pipe { pipe: Self { ptr } }, true, false)
+            .map_err(|_| kernel().free(Page::from_usize(ptr as _)))?;
+
+        let f1 = kernel()
+            .ftable
+            .alloc_file(FileType::Pipe { pipe: Self { ptr } }, false, true)
+            .map_err(|_| kernel().free(Page::from_usize(ptr as _)))?;
 
         Ok((f0, f1))
     }
