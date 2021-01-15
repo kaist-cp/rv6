@@ -72,7 +72,7 @@ impl Kernel {
     pub unsafe fn syscall(&'static self) {
         let p = myproc();
         let mut data = &mut *(*p).data.get();
-        let num: i32 = (*data.trapframe).a7 as i32;
+        let num = (*data.trapframe).a7 as i32;
 
         let result = match num {
             1 => self.sys_fork(),
