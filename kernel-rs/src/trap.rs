@@ -65,7 +65,6 @@ pub unsafe extern "C" fn usertrap() {
         // An interrupt will change sstatus &c registers,
         // so don't enable until done with those registers.
         intr_on();
-
         (*data.trapframe).a0 = ok_or!(kernel().syscall(), usize::MAX);
     } else {
         which_dev = devintr();
