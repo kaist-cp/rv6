@@ -251,7 +251,7 @@ impl Kernel {
         Ok(())
     }
 
-    unsafe fn pipe(&self, fdarray: usize) -> Result<(), ()> {
+    unsafe fn pipe(&self, fdarray: UVAddr) -> Result<(), ()> {
         let p = myproc();
         let mut data = &mut *(*p).data.get();
         let (pipereader, pipewriter) = AllocatedPipe::alloc()?;
@@ -265,14 +265,14 @@ impl Kernel {
         if data
             .pagetable
             .copy_out(
-                UVAddr::new(fdarray),
+                fdarray,
                 slice::from_raw_parts_mut(&mut fd0 as *mut i32 as *mut u8, mem::size_of::<i32>()),
             )
             .is_err()
             || data
                 .pagetable
                 .copy_out(
-                    UVAddr::new(fdarray.wrapping_add(mem::size_of::<i32>())),
+                    UVAddr::new(fdarray.into_usize().wrapping_add(mem::size_of::<i32>())),
                     slice::from_raw_parts_mut(
                         &mut fd1 as *mut i32 as *mut u8,
                         mem::size_of::<i32>(),
@@ -416,7 +416,7 @@ impl Kernel {
 
     pub unsafe fn sys_pipe(&self) -> Result<usize, ()> {
         // user pointer to array of two integers
-        let fdarray = argaddr(0)?;
+        let fdarray = UVAddr::new(argaddr(0)?);
         self.pipe(fdarray)?;
         Ok(0)
     }
