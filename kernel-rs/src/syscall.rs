@@ -1,6 +1,6 @@
 use crate::{
     kernel::Kernel,
-    ok_or, println,
+    println,
     proc::myproc,
     vm::{UVAddr, VAddr},
 };
@@ -69,12 +69,12 @@ pub unsafe fn argstr(n: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
 }
 
 impl Kernel {
-    pub unsafe fn syscall(&'static self) {
+    pub unsafe fn syscall(&'static self) -> Result<usize, ()> {
         let p = myproc();
-        let mut data = &mut *(*p).data.get();
+        let data = &mut *(*p).data.get();
         let num = (*data.trapframe).a7 as i32;
 
-        let result = match num {
+        match num {
             1 => self.sys_fork(),
             2 => self.sys_exit(),
             3 => self.sys_wait(),
@@ -106,8 +106,6 @@ impl Kernel {
                 );
                 Err(())
             }
-        };
-
-        (*data.trapframe).a0 = ok_or!(result, usize::MAX);
+        }
     }
 }

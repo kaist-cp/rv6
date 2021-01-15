@@ -1,4 +1,12 @@
-use crate::{file::{FileType, RcFile}, kernel::kernel, ok_or, page::Page, proc::{myproc, WaitChannel}, spinlock::Spinlock, vm::UVAddr};
+use crate::{
+    file::{FileType, RcFile},
+    kernel::kernel,
+    ok_or,
+    page::Page,
+    proc::{myproc, WaitChannel},
+    spinlock::Spinlock,
+    vm::UVAddr,
+};
 use core::ops::Deref;
 
 const PIPESIZE: usize = 512;
@@ -125,14 +133,24 @@ impl AllocatedPipe {
             read_waitchannel: WaitChannel::new(),
             write_waitchannel: WaitChannel::new(),
         };
-        let f0 = ok_or!(kernel()
-            .ftable
-            .alloc_file(FileType::Pipe { pipe: Self { ptr } }, true, false)
-            , {kernel().free(Page::from_usize(ptr as _)); return Err(())});
-        let f1 = ok_or!(kernel()
-            .ftable
-            .alloc_file(FileType::Pipe { pipe: Self { ptr } }, false, true)
-            ,{kernel().free(Page::from_usize(ptr as _)); return Err(())});
+        let f0 = ok_or!(
+            kernel()
+                .ftable
+                .alloc_file(FileType::Pipe { pipe: Self { ptr } }, true, false),
+            {
+                kernel().free(Page::from_usize(ptr as _));
+                return Err(());
+            }
+        );
+        let f1 = ok_or!(
+            kernel()
+                .ftable
+                .alloc_file(FileType::Pipe { pipe: Self { ptr } }, false, true),
+            {
+                kernel().free(Page::from_usize(ptr as _));
+                return Err(());
+            }
+        );
 
         Ok((f0, f1))
     }

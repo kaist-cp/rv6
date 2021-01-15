@@ -1,6 +1,7 @@
 use crate::{
     kernel::kernel,
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
+    ok_or,
     plic::{plic_claim, plic_complete},
     println,
     proc::{cpuid, myproc, proc_yield, Proc, Procstate},
@@ -64,7 +65,8 @@ pub unsafe extern "C" fn usertrap() {
         // An interrupt will change sstatus &c registers,
         // so don't enable until done with those registers.
         intr_on();
-        kernel().syscall();
+
+        (*data.trapframe).a0 = ok_or!(kernel().syscall(), usize::MAX);
     } else {
         which_dev = devintr();
         if which_dev == 0 {

@@ -198,12 +198,11 @@ impl Kernel {
             },
         };
 
-        let f = 
-            self.ftable.alloc_file(
-                filetype,
-                !omode.intersects(FcntlFlags::O_WRONLY),
-                omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR)
-            )?;
+        let f = self.ftable.alloc_file(
+            filetype,
+            !omode.intersects(FcntlFlags::O_WRONLY),
+            omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR),
+        )?;
 
         if omode.contains(FcntlFlags::O_TRUNC) && typ == InodeType::File {
             match &f.typ {
@@ -380,10 +379,10 @@ impl Kernel {
 
         let mut success = false;
         for (i, arg) in argv.iter_mut().enumerate() {
-
-            let uarg = ok_or!(fetchaddr(
-                UVAddr::new(uargv + mem::size_of::<usize>() * i)
-            ), break);
+            let uarg = ok_or!(
+                fetchaddr(UVAddr::new(uargv + mem::size_of::<usize>() * i)),
+                break
+            );
 
             if uarg == 0 {
                 *arg = ptr::null_mut();
