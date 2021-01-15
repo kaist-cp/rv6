@@ -207,8 +207,7 @@ pub enum Procstate {
     RUNNABLE,
     SLEEPING,
     UNUSED,
-    STARTING1,
-    STARTING2,
+    USED,
 }
 
 pub struct WaitChannel {
@@ -420,7 +419,7 @@ impl ProcGuard {
 impl Drop for ProcGuard {
     fn drop(&mut self) {
         unsafe {
-            if self.deref_info().state == Procstate::STARTING1 {
+            if self.deref_info().state == Procstate::USED && (*self.data.get()).sz == 0 {
                 self.freeproc(None);
             }
             let proc = &*self.ptr;
@@ -478,8 +477,7 @@ impl Context {
 impl Procstate {
     fn to_str(&self) -> &'static str {
         match self {
-            Procstate::STARTING1 => "starting 1",
-            Procstate::STARTING2 => "starting 2",
+            Procstate::USED => "used",
             Procstate::UNUSED => "unused",
             Procstate::SLEEPING => "sleep ",
             Procstate::RUNNABLE => "runble",
@@ -605,7 +603,7 @@ impl ProcessSystem {
             if guard.deref_info().state == Procstate::UNUSED {
                 let data = &mut *guard.data.get();
                 guard.deref_mut_info().pid = self.allocpid();
-                guard.deref_mut_info().state = Procstate::STARTING1;
+                guard.deref_mut_info().state = Procstate::USED;
 
                 // Allocate a trapframe page.
                 let page = some_or!(kernel().alloc(), {
@@ -747,10 +745,6 @@ impl ProcessSystem {
         );
 
         let pid = np.deref_mut_info().pid;
-
-        // Change the process's state to STARTING2, so that the destructor doesn't
-        // free the process.
-        np.deref_mut_info().state = Procstate::STARTING2;
 
         // Now drop the guard before we acquire the `wait_lock`.
         // This is because the lock order must be `wait_lock` -> `Proc::info`.
