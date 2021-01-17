@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - riscv
+      - staging
+      - trying
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install dependencies
+        run: sudo apt-get install gcc-riscv64-linux-gnu qemu-system-misc
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+            override: true
+            components: rust-src, rustfmt, clippy
+      - name: Test
+        run: ./ci/test.sh

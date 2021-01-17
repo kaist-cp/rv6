@@ -109,7 +109,6 @@ $U/initcode: $U/initcode.S
 	$(OBJDUMP) -S $U/initcode.o > $U/initcode.asm
 
 $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a: $(shell find $(KR) -type f)
-	rustup component add rust-src
 	cargo build --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json $(CARGOFLAGS)
 
 tags: $(OBJS) _init
