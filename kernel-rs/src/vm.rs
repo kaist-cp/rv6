@@ -5,8 +5,8 @@ use crate::{
     param::NPROC,
     proc::{myproc, Trapframe},
     riscv::{
-        make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, sfence_vma, w_satp, PteT,
-        MAXVA, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
+        make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, pxshift, sfence_vma,
+        w_satp, PteT, MAXVA, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
     },
     some_or,
 };
@@ -79,6 +79,11 @@ pub trait VAddr: Copy + Add<usize, Output = Self> {
     /// Copy to either a user address, or kernel address.
     /// Returns Ok(()) on success, Err(()) on error.
     unsafe fn copy_out(dst: Self, src: &[u8]) -> Result<(), ()>;
+
+    /// Returns true if the virtual address `value` points to a page that was allocated by
+    /// `kernel().alloc()`, and hence, needs to be manually freed by `kernel().free()` later.
+    /// Returns false otherwise.
+    fn need_free(value: usize) -> bool;
 }
 
 impl VAddr for KVAddr {
@@ -106,6 +111,10 @@ impl VAddr for KVAddr {
     unsafe fn copy_out(dst: Self, src: &[u8]) -> Result<(), ()> {
         ptr::copy(src.as_ptr(), dst.into_usize() as *mut u8, src.len());
         Ok(())
+    }
+
+    fn need_free(_: usize) -> bool {
+        false
     }
 }
 
@@ -140,6 +149,11 @@ impl VAddr for UVAddr {
             .pagetable
             .copy_out(dst, src)
             .map_or(Err(()), |_v| Ok(()))
+    }
+
+    fn need_free(value: usize) -> bool {
+        // All pages of UVAddr in 0 ~ TRAPFRAME - 1 needs `kernel().free()`.
+        value < TRAPFRAME
     }
 }
 
@@ -292,18 +306,16 @@ impl RawPageTable {
 /// RawPageTable.
 pub struct PageTable<A: VAddr> {
     ptr: *mut RawPageTable,
-    num_usr_pages: usize,
     _marker: PhantomData<A>,
 }
 
 impl<A: VAddr> PageTable<A> {
-    /// # Saftey
+    /// # Safety
     ///
     /// Any page table returned by this method must not be used at all.
     pub const unsafe fn zero() -> Self {
         Self {
             ptr: ptr::null_mut(),
-            num_usr_pages: 0,
             _marker: PhantomData,
         }
     }
@@ -314,7 +326,6 @@ impl<A: VAddr> PageTable<A> {
     fn new_empty_table() -> Option<Self> {
         Some(Self {
             ptr: RawPageTable::new()?,
-            num_usr_pages: 0,
             _marker: PhantomData,
         })
     }
@@ -370,6 +381,40 @@ impl<A: VAddr> PageTable<A> {
         }
         Ok(())
     }
+
+    /// Recursively frees all pages in the page table, including page-table pages.
+    /// Internally uses `VAddr::need_free()` to distinguish pages that need
+    /// to be `kernel().free()`ed from ones that do not.
+    unsafe fn freewalk(ptable: &mut RawPageTable, level: usize, indicies: &mut [usize]) {
+        assert!(level < 3);
+
+        // Iterate the level-`level` page table.
+        for i in 0..ptable.inner.len() {
+            let pte = &mut ptable.inner[i];
+            indicies[level] = i;
+
+            if let Some(ptable) = pte.as_table_mut() {
+                // Non-leaf page. Iterate recursively.
+                Self::freewalk(ptable, level - 1, indicies);
+            } else if level == 0 && pte.check_flag(PTE_V) && pte.get_flags() != PTE_V {
+                // Valid leaf page.
+                // Calculate the corresponding virtual address using the `indicies`.
+                let mut va = indicies[2] << pxshift(2);
+                va += indicies[1] << pxshift(1);
+                va += indicies[0] << pxshift(0);
+                // Next, `kernel().free()` the page if we need to.
+                if A::need_free(va) {
+                    let pa = pte.get_pa().into_usize();
+                    kernel().free(Page::from_usize(pa));
+                }
+            }
+            // Remove mapping.
+            pte.set_inner(0);
+        }
+        // Remove the page-table page.
+        let page = Page::from_usize(ptable.inner.as_mut_ptr() as _);
+        kernel().free(page);
+    }
 }
 
 impl PageTable<UVAddr> {
@@ -396,7 +441,6 @@ impl PageTable<UVAddr> {
             )
             .is_err()
         {
-            page_table.drop();
             return None;
         }
 
@@ -410,8 +454,6 @@ impl PageTable<UVAddr> {
             )
             .is_err()
         {
-            page_table.unmap(UVAddr::new(TRAMPOLINE), 1, false);
-            page_table.drop();
             return None;
         }
         Some(page_table)
@@ -427,7 +469,6 @@ impl PageTable<UVAddr> {
         let mem = page.into_usize() as *mut u8;
         ptr::write_bytes(mem, 0, PGSIZE);
         ptr::copy(src.as_ptr(), mem, src.len());
-        self.num_usr_pages = 1;
         self.map_pages(
             VAddr::new(0),
             PGSIZE,
@@ -480,7 +521,6 @@ impl PageTable<UVAddr> {
                 return Err(());
             }
             a += PGSIZE;
-            self.num_usr_pages += 1;
         }
         Ok(newsz)
     }
@@ -518,7 +558,6 @@ impl PageTable<UVAddr> {
             }
             new = scopeguard::ScopeGuard::into_inner(new_ptable);
         }
-        new.num_usr_pages = self.num_usr_pages;
         Ok(())
     }
 
@@ -559,7 +598,6 @@ impl PageTable<UVAddr> {
         if pgroundup(newsz) < pgroundup(oldsz) {
             let npages = (pgroundup(oldsz).wrapping_sub(pgroundup(newsz))).wrapping_div(PGSIZE);
             self.unmap(UVAddr::new(pgroundup(newsz)), npages, true);
-            self.num_usr_pages -= npages;
         }
         newsz
     }
@@ -573,26 +611,6 @@ impl PageTable<UVAddr> {
         // It is safe because this method consumes self, so the internal
         // raw page table will not be use anymore.
         unsafe { self.as_inner_mut().free_walk() };
-    }
-
-    pub fn drop(&mut self) {
-        // Unmap the TRAMPOLINE page.
-        if let Some(pte) = self.walk(UVAddr::new(TRAMPOLINE), false) {
-            if pte.get_flags() != PTE_V {
-                self.unmap(UVAddr::new(TRAMPOLINE), 1, false);
-            }
-        }
-        // Unmap the TRAPFRAME page.
-        if let Some(pte) = self.walk(UVAddr::new(TRAPFRAME), false) {
-            if pte.get_flags() != PTE_V {
-                self.unmap(UVAddr::new(TRAPFRAME), 1, false);
-            }
-        }
-        // Unmap other pages.
-        if self.num_usr_pages != 0 {
-            self.unmap(UVAddr::new(0), self.num_usr_pages, true);
-        }
-        unsafe { self.as_inner_mut().free_walk(); }
     }
 
     /// Mark a PTE invalid for user access.
@@ -691,6 +709,16 @@ impl PageTable<UVAddr> {
             Ok(())
         } else {
             Err(())
+        }
+    }
+}
+
+impl<A: VAddr> Drop for PageTable<A> {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            unsafe {
+                Self::freewalk(&mut *self.ptr, 2, &mut [0, 0, 0]);
+            }
         }
     }
 }

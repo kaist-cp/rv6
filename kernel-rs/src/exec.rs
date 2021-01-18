@@ -121,9 +121,7 @@ impl Kernel {
 
         let pt = PageTable::<UVAddr>::new(data.trapframe).ok_or(())?;
 
-        let mut ptable_guard = scopeguard::guard((pt, sz), |(mut pt, _)| {
-            pt.drop();
-        });
+        let mut ptable_guard = scopeguard::guard((pt, sz), |(_, _)| {});
 
         let (pt, sz) = &mut *ptable_guard;
         // Load program into memory.
@@ -236,7 +234,7 @@ impl Kernel {
             );
 
             // Commit to the user image.
-            let mut oldpagetable = mem::replace(&mut data.pagetable, pt);
+            data.pagetable = pt;
             data.sz = sz;
 
             // initial program counter = main
@@ -244,7 +242,6 @@ impl Kernel {
 
             // initial stack pointer
             (*data.trapframe).sp = sp;
-            oldpagetable.drop();
 
             // this ends up in a0, the first argument to main(argc, argv)
             return Ok(argc);

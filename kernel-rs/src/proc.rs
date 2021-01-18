@@ -395,9 +395,6 @@ impl ProcGuard {
             kernel().free(Page::from_usize(data.trapframe as _));
         }
         data.trapframe = ptr::null_mut();
-        let mut page_table = PageTable::zero();
-        mem::swap(&mut data.pagetable, &mut page_table);
-        page_table.drop();
         data.pagetable = PageTable::zero();
         data.sz = 0;
 
@@ -422,8 +419,7 @@ impl Drop for ProcGuard {
             if self.deref_info().state == Procstate::USED && (*self.data.get()).sz == 0 {
                 self.freeproc(None);
             }
-            let proc = &*self.ptr;
-            proc.info.unlock();
+            (*self.ptr).info.unlock();
         }
     }
 }
