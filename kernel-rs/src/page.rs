@@ -12,11 +12,13 @@ pub struct RawPage {
     inner: [u8; PGSIZE],
 }
 
-// Internal safety invariant:
-// - inner is 4096 bytes-aligned.
-// - end <= inner < PHYSTOP
-// - Two different pages never overwrap. If p1: Page and p2: Page, then
-//   *(p1.inner).inner and *(p1.inner).inner are non-overwrapping arrays.
+/// # Safety
+///
+/// The invariants of this struct are as follows:
+/// - inner is 4096 bytes-aligned.
+/// - end <= inner < PHYSTOP
+/// - Two different pages never overwrap. If p1: Page and p2: Page, then
+///   *(p1.inner).inner and *(p1.inner).inner are non-overwrapping arrays.
 pub struct Page {
     inner: *mut RawPage,
 }

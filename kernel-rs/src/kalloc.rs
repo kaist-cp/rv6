@@ -20,11 +20,12 @@ struct Run {
     next: *mut Run,
 }
 
-// Internal safety invariant:
-// This singly linked list does not have a cycle.
-// If head is null, then it is an empty list.
-// Ohterwise, it is nonempty, and head is its first element, which
-// is a valid page.
+/// # Safety
+///
+/// The invariants of this struct are as follows:
+/// - This singly linked list does not have a cycle.
+/// - If head is null, then it is an empty list. Ohterwise, it is nonempty, and
+///   head is its first element, which is a valid page.
 pub struct Kmem {
     head: *mut Run,
 }

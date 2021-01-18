@@ -119,7 +119,7 @@ impl Kernel {
             return Err(());
         }
 
-        let pt = PageTable::uvm_new(data.trapframe).ok_or(())?;
+        let pt = PageTable::<UVAddr>::new(data.trapframe).ok_or(())?;
 
         let mut ptable_guard = scopeguard::guard((pt, sz), |(pt, sz)| {
             proc_freepagetable(pt, sz);
@@ -146,7 +146,7 @@ impl Kernel {
                 if ph.vaddr.wrapping_add(ph.memsz) < ph.vaddr {
                     return Err(());
                 }
-                let sz1 = pt.uvm_alloc(*sz, ph.vaddr.wrapping_add(ph.memsz))?;
+                let sz1 = pt.alloc(*sz, ph.vaddr.wrapping_add(ph.memsz))?;
                 *sz = sz1;
                 if ph.vaddr.wrapping_rem(PGSIZE) != 0 {
                     return Err(());
@@ -169,9 +169,9 @@ impl Kernel {
         // Use the second as the user stack.
         *sz = sz.wrapping_add(PGSIZE).wrapping_sub(1) & !PGSIZE.wrapping_sub(1);
 
-        let sz1 = pt.uvm_alloc(*sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)))?;
+        let sz1 = pt.alloc(*sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)))?;
         *sz = sz1;
-        pt.uvm_guard(UVAddr::new(sz.wrapping_sub(2usize.wrapping_mul(PGSIZE))));
+        pt.guard(UVAddr::new(sz.wrapping_sub(2usize.wrapping_mul(PGSIZE))));
         let mut sp: usize = *sz;
         let stackbase: usize = sp.wrapping_sub(PGSIZE);
 
@@ -270,7 +270,7 @@ unsafe fn loadseg(
 
     for i in num_iter::range_step(0, sz, PGSIZE as _) {
         let pa = pagetable
-            .uvm_walk_addr(va + i as usize)
+            .walk_addr(va + i as usize)
             .expect("loadseg: address should exist")
             .into_usize();
 

@@ -112,7 +112,7 @@ impl Kernel {
     /// initializing the allocator; see Kmem::init.)
     pub fn free(&self, mut page: Page) {
         let pa = page.addr().into_usize();
-        assert!(
+        debug_assert!(
             pa % PGSIZE == 0 && (pa as *mut _) >= unsafe { end.as_mut_ptr() } && pa < PHYSTOP,
             "[Kernel::free]"
         );
@@ -199,10 +199,10 @@ pub unsafe fn kernel_main() -> ! {
         KERNEL.kmem.get_mut().init();
 
         // Create kernel page table.
-        KERNEL.page_table = PageTable::kvm_new().expect("kvm_new failed");
+        KERNEL.page_table = PageTable::<KVAddr>::new().expect("PageTable::new failed");
 
         // Turn on paging.
-        KERNEL.page_table.kvm_init_hart();
+        KERNEL.page_table.init_hart();
 
         // Process system.
         procinit(&mut KERNEL.procs);
@@ -236,7 +236,7 @@ pub unsafe fn kernel_main() -> ! {
         println!("hart {} starting", cpuid());
 
         // Turn on paging.
-        KERNEL.page_table.kvm_init_hart();
+        KERNEL.page_table.init_hart();
 
         // Install kernel trap vector.
         trapinithart();

@@ -575,7 +575,7 @@ impl ProcessSystem {
                 data.trapframe = page.into_usize() as *mut Trapframe;
 
                 // An empty user page table.
-                data.pagetable = some_or!(PageTable::uvm_new(data.trapframe), {
+                data.pagetable = some_or!(PageTable::<UVAddr>::new(data.trapframe), {
                     freeproc(guard, None);
                     return Err(());
                 });
@@ -649,9 +649,7 @@ impl ProcessSystem {
         let data = &mut *guard.data.get();
         // Allocate one user page and copy init's instructions
         // and data into it.
-        data.pagetable
-            .uvm_init(&INITCODE)
-            .expect("uvm_init: failed");
+        data.pagetable.init(&INITCODE).expect("init: failed");
         data.sz = PGSIZE;
 
         // Prepare for the very first "return" from kernel to user.
@@ -683,7 +681,7 @@ impl ProcessSystem {
         // Copy user memory from parent to child.
         if pdata
             .pagetable
-            .uvm_copy(&mut npdata.pagetable, pdata.sz)
+            .copy(&mut npdata.pagetable, pdata.sz)
             .is_err()
         {
             freeproc(np, None);
@@ -898,9 +896,9 @@ unsafe fn freeproc(mut p: ProcGuard, parent_guard: Option<SpinlockProtectedGuard
 /// Free a process's page table, and free the
 /// physical memory it refers to.
 pub unsafe fn proc_freepagetable(mut pagetable: PageTable<UVAddr>, sz: usize) {
-    pagetable.uvm_unmap(UVAddr::new(TRAMPOLINE), 1, false);
-    pagetable.uvm_unmap(UVAddr::new(TRAPFRAME), 1, false);
-    pagetable.uvm_free(sz);
+    pagetable.unmap(UVAddr::new(TRAMPOLINE), 1, false);
+    pagetable.unmap(UVAddr::new(TRAPFRAME), 1, false);
+    pagetable.free(sz);
 }
 
 /// A user program that calls exec("/init").
@@ -920,10 +918,10 @@ pub unsafe fn resizeproc(n: i32) -> i32 {
     let sz = match n.cmp(&0) {
         cmp::Ordering::Equal => sz,
         cmp::Ordering::Greater => {
-            let sz = data.pagetable.uvm_alloc(sz, sz.wrapping_add(n as usize));
+            let sz = data.pagetable.alloc(sz, sz.wrapping_add(n as usize));
             ok_or!(sz, return -1)
         }
-        cmp::Ordering::Less => data.pagetable.uvm_dealloc(sz, sz.wrapping_add(n as usize)),
+        cmp::Ordering::Less => data.pagetable.dealloc(sz, sz.wrapping_add(n as usize)),
     };
     data.sz = sz;
     0

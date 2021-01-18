@@ -74,11 +74,11 @@ pub trait VAddr: Copy + Add<usize, Output = Self> {
 
     /// Copy from either a user address, or kernel address.
     /// Returns Ok(()) on success, Err(()) on error.
-    unsafe fn copyin(dst: &mut [u8], src: Self) -> Result<(), ()>;
+    unsafe fn copy_in(dst: &mut [u8], src: Self) -> Result<(), ()>;
 
     /// Copy to either a user address, or kernel address.
     /// Returns Ok(()) on success, Err(()) on error.
-    unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()>;
+    unsafe fn copy_out(dst: Self, src: &[u8]) -> Result<(), ()>;
 }
 
 impl VAddr for KVAddr {
@@ -98,12 +98,12 @@ impl VAddr for KVAddr {
         self.0 % PGSIZE == 0
     }
 
-    unsafe fn copyin(dst: &mut [u8], src: Self) -> Result<(), ()> {
+    unsafe fn copy_in(dst: &mut [u8], src: Self) -> Result<(), ()> {
         ptr::copy(src.into_usize() as *const u8, dst.as_mut_ptr(), dst.len());
         Ok(())
     }
 
-    unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()> {
+    unsafe fn copy_out(dst: Self, src: &[u8]) -> Result<(), ()> {
         ptr::copy(src.as_ptr(), dst.into_usize() as *mut u8, src.len());
         Ok(())
     }
@@ -126,7 +126,7 @@ impl VAddr for UVAddr {
         self.0 % PGSIZE == 0
     }
 
-    unsafe fn copyin(dst: &mut [u8], src: Self) -> Result<(), ()> {
+    unsafe fn copy_in(dst: &mut [u8], src: Self) -> Result<(), ()> {
         let p = myproc();
         (*(*p).data.get())
             .pagetable
@@ -134,7 +134,7 @@ impl VAddr for UVAddr {
             .map_or(Err(()), |_v| Ok(()))
     }
 
-    unsafe fn copyout(dst: Self, src: &[u8]) -> Result<(), ()> {
+    unsafe fn copy_out(dst: Self, src: &[u8]) -> Result<(), ()> {
         let p = myproc();
         (*(*p).data.get())
             .pagetable
@@ -198,7 +198,7 @@ impl PageTableEntry {
     /// Return `None` if it is invalid.
     unsafe fn as_table_mut(&mut self) -> Option<&mut RawPageTable> {
         if self.is_table() {
-            (pte2pa(self.inner).into_usize() as *mut RawPageTable).as_mut()
+            Some(&mut *(pte2pa(self.inner).into_usize() as *mut RawPageTable))
         } else {
             None
         }
@@ -207,13 +207,16 @@ impl PageTableEntry {
 
 const PTE_PER_PT: usize = PGSIZE / mem::size_of::<PageTableEntry>();
 
+/// # Safety
+///
+/// The invariants of this struct are as follows:
+/// - If an entry's V flag is set but its RWX flags are not set,
+///   then it must refer to a valid page-table page.
+/// - It should be safely converted to a Page without breaking the invariants
+///   of Page.
+/// - It should not be accessed outside RawPageTable to guarantee the
+///   invariant.
 struct RawPageTable {
-    // Internal safety invariant:
-    // If an entry's V flag is set but its RWX flags are not set,
-    // then it must refer to a valid page-table page.
-    // It should be safely converted to a Page without breaking the invariants
-    // of Page.
-    // It should not be accessed outside RawPageTable to guarantee the invariant.
     inner: [PageTableEntry; PTE_PER_PT],
 }
 
@@ -277,9 +280,11 @@ impl RawPageTable {
     }
 }
 
+/// # Safety
+///
+/// The invariant of this struct is that ptr uniquely refers to a valid 3-level
+/// RawPageTable.
 pub struct PageTable<A> {
-    // Internal safety invariant:
-    // ptr uniquely refers to a valid 3-level RawPageTable.
     ptr: *mut RawPageTable,
     _marker: PhantomData<A>,
 }
@@ -298,7 +303,7 @@ impl<A: VAddr> PageTable<A> {
     /// Make a new empty page table by allocating a new page.
     /// Return `Ok(..)` if the allocation has succeeded.
     /// Return `None` if the allocation has failed.
-    pub fn new() -> Option<Self> {
+    fn new_emtpy_table() -> Option<Self> {
         Some(Self {
             ptr: RawPageTable::new()?,
             _marker: PhantomData,
@@ -309,10 +314,10 @@ impl<A: VAddr> PageTable<A> {
         self.ptr as usize
     }
 
-    fn as_raw_mut(&mut self) -> &mut RawPageTable {
+    fn as_inner_mut(&mut self) -> &mut RawPageTable {
         // It is safe because self.ptr uniquely refers to a valid RawPageTable
         // according to the invariant.
-        unsafe { self.ptr.as_mut() }.expect("ptr must not be null")
+        unsafe { &mut *self.ptr }
     }
 
     /// Return the reference of the PTE in this page table
@@ -329,7 +334,7 @@ impl<A: VAddr> PageTable<A> {
     ///    0..11 -- 12 bits of byte offset within the page.
     fn walk(&mut self, va: A, alloc: bool) -> Option<&mut PageTableEntry> {
         assert!(va.into_usize() < MAXVA, "walk");
-        let mut page_table = self.as_raw_mut();
+        let mut page_table = self.as_inner_mut();
         for level in (1..3).rev() {
             page_table = page_table.get_table_mut(px(level, va), alloc)?;
         }
@@ -363,8 +368,8 @@ impl PageTable<UVAddr> {
     /// but with the trampoline and a given trap frame.
     /// Return Some(..) if every allocation has succeeded.
     /// Return None otherwise.
-    pub fn uvm_new(trap_frame: *mut Trapframe) -> Option<Self> {
-        let mut page_table = Self::new()?;
+    pub fn new(trap_frame: *mut Trapframe) -> Option<Self> {
+        let mut page_table = Self::new_emtpy_table()?;
 
         // Map the trampoline code (for system call return)
         // at the highest user virtual address.
@@ -379,7 +384,7 @@ impl PageTable<UVAddr> {
             )
             .is_err()
         {
-            page_table.uvm_free(0);
+            page_table.free(0);
             return None;
         }
 
@@ -393,8 +398,8 @@ impl PageTable<UVAddr> {
             )
             .is_err()
         {
-            page_table.uvm_unmap(UVAddr::new(TRAMPOLINE), 1, false);
-            page_table.uvm_free(0);
+            page_table.unmap(UVAddr::new(TRAMPOLINE), 1, false);
+            page_table.free(0);
             return None;
         }
         Some(page_table)
@@ -403,8 +408,8 @@ impl PageTable<UVAddr> {
     /// Load the user initcode into address 0 of pagetable,
     /// for the very first process.
     /// src.len() must be less than a page.
-    pub unsafe fn uvm_init(&mut self, src: &[u8]) -> Result<(), ()> {
-        assert!(src.len() < PGSIZE, "uvm_init: more than a page");
+    pub unsafe fn init(&mut self, src: &[u8]) -> Result<(), ()> {
+        assert!(src.len() < PGSIZE, "init: more than a page");
 
         let page = kernel().alloc().ok_or(())?;
         let mem = page.into_usize() as *mut u8;
@@ -420,7 +425,7 @@ impl PageTable<UVAddr> {
 
     /// Look up a virtual address, return Some(physical address),
     /// or None if not mapped.
-    pub fn uvm_walk_addr(&mut self, va: UVAddr) -> Option<PAddr> {
+    pub fn walk_addr(&mut self, va: UVAddr) -> Option<PAddr> {
         if va.into_usize() >= MAXVA {
             return None;
         }
@@ -433,7 +438,7 @@ impl PageTable<UVAddr> {
 
     /// Allocate PTEs and physical memory to grow process from oldsz to
     /// newsz, which need not be page aligned. Returns Ok(new size) or Err(()) on error.
-    pub fn uvm_alloc(&mut self, mut oldsz: usize, newsz: usize) -> Result<usize, ()> {
+    pub fn alloc(&mut self, mut oldsz: usize, newsz: usize) -> Result<usize, ()> {
         if newsz < oldsz {
             return Ok(oldsz);
         }
@@ -441,7 +446,7 @@ impl PageTable<UVAddr> {
         let mut a = oldsz;
         while a < newsz {
             let mut mem = some_or!(kernel().alloc(), {
-                self.uvm_dealloc(a, oldsz);
+                self.dealloc(a, oldsz);
                 return Err(());
             });
             mem.write_bytes(0);
@@ -458,7 +463,7 @@ impl PageTable<UVAddr> {
                 // It is safe because pa is an address of mem, which is a page
                 // obtained by alloc().
                 kernel().free(unsafe { Page::from_usize(pa) });
-                self.uvm_dealloc(a, oldsz);
+                self.dealloc(a, oldsz);
                 return Err(());
             }
             a += PGSIZE;
@@ -472,11 +477,7 @@ impl PageTable<UVAddr> {
     /// physical memory.
     /// Returns Ok(()) on success, Err(()) on failure.
     /// Frees any allocated pages on failure.
-    pub unsafe fn uvm_copy(
-        &mut self,
-        mut new: &mut PageTable<UVAddr>,
-        sz: usize,
-    ) -> Result<(), ()> {
+    pub unsafe fn copy(&mut self, mut new: &mut PageTable<UVAddr>, sz: usize) -> Result<(), ()> {
         for i in num_iter::range_step(0, sz, PGSIZE) {
             let pte = self
                 .walk(UVAddr::new(i), false)
@@ -484,7 +485,7 @@ impl PageTable<UVAddr> {
             assert!(pte.is_valid(), "uvmcopy: page not present");
 
             let mut new_ptable = scopeguard::guard(new, |ptable| {
-                ptable.uvm_unmap(UVAddr::new(0), i.wrapping_div(PGSIZE), true);
+                ptable.unmap(UVAddr::new(0), i.wrapping_div(PGSIZE), true);
             });
             let pa = pte.get_pa();
             let flags = pte.get_flags() as u32;
@@ -514,7 +515,7 @@ impl PageTable<UVAddr> {
     /// Remove npages of mappings starting from va. va must be
     /// page-aligned. The mappings must exist.
     /// Optionally free the physical memory.
-    pub fn uvm_unmap(&mut self, va: UVAddr, npages: usize, do_free: bool) {
+    pub fn unmap(&mut self, va: UVAddr, npages: usize, do_free: bool) {
         if va.into_usize().wrapping_rem(PGSIZE) != 0 {
             panic!("uvmunmap: not aligned");
         }
@@ -540,34 +541,34 @@ impl PageTable<UVAddr> {
     /// newsz.  oldsz and newsz need not be page-aligned, nor does newsz
     /// need to be less than oldsz.  oldsz can be larger than the actual
     /// process size.  Returns the new process size.
-    pub fn uvm_dealloc(&mut self, oldsz: usize, newsz: usize) -> usize {
+    pub fn dealloc(&mut self, oldsz: usize, newsz: usize) -> usize {
         if newsz >= oldsz {
             return oldsz;
         }
 
         if pgroundup(newsz) < pgroundup(oldsz) {
             let npages = (pgroundup(oldsz).wrapping_sub(pgroundup(newsz))).wrapping_div(PGSIZE);
-            self.uvm_unmap(UVAddr::new(pgroundup(newsz)), npages, true);
+            self.unmap(UVAddr::new(pgroundup(newsz)), npages, true);
         }
         newsz
     }
 
     /// Free user memory pages,
     /// then free page-table pages.
-    pub fn uvm_free(mut self, sz: usize) {
+    pub fn free(mut self, sz: usize) {
         if sz > 0 {
-            self.uvm_unmap(UVAddr::new(0), pgroundup(sz).wrapping_div(PGSIZE), true);
+            self.unmap(UVAddr::new(0), pgroundup(sz).wrapping_div(PGSIZE), true);
         }
         // It is safe because this method consumes self, so the internal
         // raw page table will not be use anymore.
-        unsafe { self.as_raw_mut().free_walk() };
+        unsafe { self.as_inner_mut().free_walk() };
     }
 
     /// Mark a PTE invalid for user access.
     /// Used by exec for the user stack guard page.
-    pub fn uvm_guard(&mut self, va: UVAddr) {
+    pub fn guard(&mut self, va: UVAddr) {
         self.walk(va, false)
-            .expect("uvm_guard")
+            .expect("guard")
             .clear_flag(PTE_U as usize);
     }
 
@@ -580,7 +581,7 @@ impl PageTable<UVAddr> {
         let mut offset = 0;
         while len > 0 {
             let va0 = pgrounddown(dst);
-            let pa0 = self.uvm_walk_addr(VAddr::new(va0)).ok_or(())?.into_usize();
+            let pa0 = self.walk_addr(VAddr::new(va0)).ok_or(())?.into_usize();
             let mut n = PGSIZE - (dst - va0);
             if n > len {
                 n = len
@@ -606,7 +607,7 @@ impl PageTable<UVAddr> {
         let mut offset = 0;
         while len > 0 {
             let va0 = pgrounddown(src);
-            let pa0 = self.uvm_walk_addr(VAddr::new(va0)).ok_or(())?.into_usize();
+            let pa0 = self.walk_addr(VAddr::new(va0)).ok_or(())?.into_usize();
             let mut n = PGSIZE - (src - va0);
             if n > len {
                 n = len
@@ -634,7 +635,7 @@ impl PageTable<UVAddr> {
         let mut max = dst.len();
         while got_null == 0 && max > 0 {
             let va0 = pgrounddown(src);
-            let pa0 = self.uvm_walk_addr(VAddr::new(va0)).ok_or(())?.into_usize();
+            let pa0 = self.walk_addr(VAddr::new(va0)).ok_or(())?.into_usize();
             let mut n = PGSIZE - (src - va0);
             if n > max {
                 n = max
@@ -665,8 +666,8 @@ impl PageTable<UVAddr> {
 
 impl PageTable<KVAddr> {
     /// Make a direct-map page table for the kernel.
-    pub fn kvm_new() -> Option<Self> {
-        let mut page_table = Self::new()?;
+    pub fn new() -> Option<Self> {
+        let mut page_table = Self::new_emtpy_table()?;
 
         // SiFive Test Finisher MMIO
         page_table
@@ -746,7 +747,7 @@ impl PageTable<KVAddr> {
 
     /// Switch h/w page table register to the kernel's page table,
     /// and enable paging.
-    pub unsafe fn kvm_init_hart(&self) {
+    pub unsafe fn init_hart(&self) {
         w_satp(make_satp(self.ptr as usize));
         sfence_vma();
     }

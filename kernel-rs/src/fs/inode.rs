@@ -394,7 +394,7 @@ impl InodeGuard<'_> {
             let begin = off.wrapping_rem(BSIZE as u32) as usize;
             let end = begin + m as usize;
             unsafe {
-                VAddr::copyout(dst, &bp.deref_mut_inner().data[begin..end])?;
+                VAddr::copy_out(dst, &bp.deref_mut_inner().data[begin..end])?;
             }
             tot = tot.wrapping_add(m);
             off = off.wrapping_add(m);
@@ -433,7 +433,7 @@ impl InodeGuard<'_> {
             let begin = off.wrapping_rem(BSIZE as u32) as usize;
             let end = begin + m as usize;
             unsafe {
-                if VAddr::copyin(&mut bp.deref_mut_inner().data[begin..end], src).is_err() {
+                if VAddr::copy_in(&mut bp.deref_mut_inner().data[begin..end], src).is_err() {
                     break;
                 }
             }
