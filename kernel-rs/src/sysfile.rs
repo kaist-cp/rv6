@@ -57,6 +57,8 @@ unsafe fn argfd(n: usize) -> Result<(i32, &'static RcFile<'static>), ()> {
     Ok((fd, f))
 }
 
+/// Create an inode with given type.
+/// Returns Ok(created inode, result of given function f) on success, Err(()) on error.
 unsafe fn create<F, T>(
     path: &Path,
     typ: InodeType,
@@ -106,6 +108,8 @@ where
 }
 
 impl Kernel {
+    /// Create another name(newname) for the file oldname.
+    /// Returns Ok(()) on success, Err(()) on error.
     unsafe fn link(&self, oldname: &CStr, newname: &CStr) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
         let ptr = Path::new(oldname).namei()?;
@@ -131,6 +135,8 @@ impl Kernel {
         Err(())
     }
 
+    /// Remove a file(filename).
+    /// Returns Ok(()) on success, Err(()) on error.
     unsafe fn unlink(&self, filename: &CStr) -> Result<(), ()> {
         let mut de: Dirent = Default::default();
         let tx = self.file_system.begin_transaction();
@@ -168,6 +174,8 @@ impl Kernel {
         Err(())
     }
 
+    /// Open a file; omode indicate read/write.
+    /// Returns Ok(file descriptor) on success, Err(()) on error.
     unsafe fn open(&'static self, name: &Path, omode: FcntlFlags) -> Result<usize, ()> {
         let tx = self.file_system.begin_transaction();
 
@@ -214,12 +222,16 @@ impl Kernel {
         Ok(fd as usize)
     }
 
+    /// Create a new directory.
+    /// Returns Ok(()) on success, Err(()) on error.
     unsafe fn mkdir(&self, dirname: &CStr) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
         create(Path::new(dirname), InodeType::Dir, &tx, |_| ())?;
         Ok(())
     }
 
+    /// Create a device file.
+    /// Returns Ok(()) on success, Err(()) on error.
     unsafe fn mknod(&self, filename: &CStr, major: u16, minor: u16) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
         create(
@@ -231,6 +243,8 @@ impl Kernel {
         Ok(())
     }
 
+    /// Change the current directory.
+    /// Returns Ok(()) on success, Err(()) on error.
     unsafe fn chdir(&self, dirname: &CStr) -> Result<(), ()> {
         let p = myproc();
         let mut data = &mut *(*p).data.get();
@@ -251,6 +265,8 @@ impl Kernel {
         Ok(())
     }
 
+    /// Create a pipe, put read/write file descriptors in fd0 and fd1.
+    /// Returns Ok(()) on success, Err(()) on error.
     unsafe fn pipe(&self, fdarray: UVAddr) -> Result<(), ()> {
         let p = myproc();
         let mut data = &mut *(*p).data.get();
@@ -286,6 +302,8 @@ impl Kernel {
         Ok(())
     }
 
+    /// Return a new file descriptor referring to the same file as given fd.
+    /// Returns Ok(new file descriptor) on success, Err(()) on error.
     pub unsafe fn sys_dup(&self) -> Result<usize, ()> {
         let (_, f) = argfd(0)?;
         let newfile = f.clone();
@@ -293,6 +311,8 @@ impl Kernel {
         Ok(fd as usize)
     }
 
+    /// Read n bytes into buf.
+    /// Returns Ok(number read) on success, Err(()) on error.
     pub unsafe fn sys_read(&self) -> Result<usize, ()> {
         let (_, f) = argfd(0)?;
         let n = argint(2)?;
@@ -300,6 +320,8 @@ impl Kernel {
         f.read(UVAddr::new(p), n)
     }
 
+    /// Write n bytes from buf to given file descriptor fd.
+    /// Returns Ok(n) on success, Err(()) on error.
     pub unsafe fn sys_write(&self) -> Result<usize, ()> {
         let (_, f) = argfd(0)?;
         let n = argint(2)?;
@@ -307,12 +329,16 @@ impl Kernel {
         f.write(UVAddr::new(p), n)
     }
 
+    /// Release open file fd.
+    /// Returns Ok(0) on success, Err(()) on error.
     pub unsafe fn sys_close(&self) -> Result<usize, ()> {
         let (fd, _) = argfd(0)?;
         (*(*myproc()).data.get()).open_files[fd as usize] = None;
         Ok(0)
     }
 
+    /// Place info about an open file into struct stat.
+    /// Returns Ok(0) on success, Err(()) on error.
     pub unsafe fn sys_fstat(&self) -> Result<usize, ()> {
         let (_, f) = argfd(0)?;
         // user pointer to struct stat
@@ -322,6 +348,7 @@ impl Kernel {
     }
 
     /// Create the path new as a link to the same inode as old.
+    /// Returns Ok(0) on success, Err(()) on error.
     pub unsafe fn sys_link(&self) -> Result<usize, ()> {
         let mut new: [u8; MAXPATH] = [0; MAXPATH];
         let mut old: [u8; MAXPATH] = [0; MAXPATH];
@@ -331,6 +358,8 @@ impl Kernel {
         Ok(0)
     }
 
+    /// Remove a file.
+    /// Returns Ok(0) on success, Err(()) on error.
     pub unsafe fn sys_unlink(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = argstr(0, &mut path)?;
@@ -338,6 +367,8 @@ impl Kernel {
         Ok(0)
     }
 
+    /// Open a file.
+    /// Returns Ok(0) on success, Err(()) on error.
     pub unsafe fn sys_open(&'static self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = argstr(0, &mut path)?;
@@ -347,6 +378,8 @@ impl Kernel {
         self.open(path, omode)
     }
 
+    /// Create a new directory.
+    /// Returns Ok(0) on success, Err(()) on error.
     pub unsafe fn sys_mkdir(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = argstr(0, &mut path)?;
@@ -354,6 +387,8 @@ impl Kernel {
         Ok(0)
     }
 
+    /// Create a new directory.
+    /// Returns Ok(0) on success, Err(()) on error.
     pub unsafe fn sys_mknod(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = argstr(0, &mut path)?;
@@ -363,6 +398,8 @@ impl Kernel {
         Ok(0)
     }
 
+    /// Change the current directory.
+    /// Returns Ok(0) on success, Err(()) on error.
     pub unsafe fn sys_chdir(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = argstr(0, &mut path)?;
@@ -370,6 +407,8 @@ impl Kernel {
         Ok(0)
     }
 
+    /// Load a file and execute it with arguments.
+    /// Returns Ok(argc argument to user main) on success, Err(()) on error.
     pub unsafe fn sys_exec(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let mut argv: [*mut u8; MAXARG] = [ptr::null_mut(); MAXARG];
@@ -413,6 +452,8 @@ impl Kernel {
         ret
     }
 
+    /// Create a pipe.
+    /// Returns Ok(0) on success, Err(()) on error.
     pub unsafe fn sys_pipe(&self) -> Result<usize, ()> {
         // user pointer to array of two integers
         let fdarray = UVAddr::new(argaddr(0)?);
