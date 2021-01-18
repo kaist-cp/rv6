@@ -351,14 +351,14 @@ impl<A: VAddr> PageTable<A> {
     /// physical addresses starting at pa. va and size might not
     /// be page-aligned. Returns Ok(()) on success, Err(()) if walk() couldn't
     /// allocate a needed page-table page.
-    fn map_pages(&mut self, va: A, size: usize, mut pa: PAddr, perm: i32) -> Result<(), ()> {
+    fn map_pages(&mut self, va: A, size: usize, mut pa: PAddr, perm: usize) -> Result<(), ()> {
         let mut a = pgrounddown(va.into_usize());
         let last = pgrounddown(va.into_usize() + size - 1usize);
         loop {
             let pte = self.walk(VAddr::new(a), true).ok_or(())?;
             assert!(!pte.is_valid(), "remap");
 
-            pte.set_inner(pa2pte(pa) | perm as usize | PTE_V);
+            pte.set_inner(pa2pte(pa) | perm | PTE_V);
             if a == last {
                 break;
             }
@@ -497,7 +497,7 @@ impl PageTable<UVAddr> {
                 ptable.unmap(UVAddr::new(0), i.wrapping_div(PGSIZE), true);
             });
             let pa = pte.get_pa();
-            let flags = pte.get_flags() as u32;
+            let flags = pte.get_flags();
             let mem = kernel().alloc().ok_or(())?.into_usize();
             ptr::copy(
                 pa.into_usize() as *mut u8 as *const u8,
@@ -505,12 +505,7 @@ impl PageTable<UVAddr> {
                 PGSIZE,
             );
             if (*new_ptable)
-                .map_pages(
-                    VAddr::new(i),
-                    PGSIZE,
-                    PAddr::new(mem as usize),
-                    flags as i32,
-                )
+                .map_pages(VAddr::new(i), PGSIZE, PAddr::new(mem as usize), flags)
                 .is_err()
             {
                 kernel().free(Page::from_usize(mem as _));

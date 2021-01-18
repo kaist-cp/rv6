@@ -351,12 +351,12 @@ pub const fn pgrounddown(a: usize) -> usize {
 /// valid
 pub const PTE_V: usize = (1) << 0;
 
-pub const PTE_R: i32 = (1) << 1;
-pub const PTE_W: i32 = (1) << 2;
-pub const PTE_X: i32 = (1) << 3;
+pub const PTE_R: usize = (1) << 1;
+pub const PTE_W: usize = (1) << 2;
+pub const PTE_X: usize = (1) << 3;
 
 /// 1 -> user can access
-pub const PTE_U: i32 = (1) << 4;
+pub const PTE_U: usize = (1) << 4;
 
 /// Shift a physical address to the right place for a PTE.
 #[inline]
