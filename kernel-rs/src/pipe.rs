@@ -136,7 +136,6 @@ impl AllocatedPipe {
             .ftable
             .alloc_file(FileType::Pipe { pipe: Self { ptr } }, true, false)
             .map_err(|_| kernel().free(Page::from_usize(ptr as _)))?;
-
         let f1 = kernel()
             .ftable
             .alloc_file(FileType::Pipe { pipe: Self { ptr } }, false, true)

@@ -4,8 +4,6 @@
 
 #![allow(clippy::unit_arg)]
 
-use cstr_core::CStr;
-
 use crate::{
     fcntl::FcntlFlags,
     file::{FileType, RcFile},
@@ -21,8 +19,8 @@ use crate::{
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
     vm::{KVAddr, UVAddr, VAddr},
 };
-
 use core::{cell::UnsafeCell, mem, ptr, slice};
+use cstr_core::CStr;
 
 impl RcFile<'static> {
     /// Allocate a file descriptor for the given file.
