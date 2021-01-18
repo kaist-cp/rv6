@@ -27,3 +27,13 @@ jobs:
             components: rust-src, rustfmt, clippy
       - name: Test
         run: ./ci/test.sh
+
+  ci-success:
+    name: ci
+    if: github.event_name == 'push' && success()
+    needs:
+      - test
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Mark the job as a success
+        run: exit 0
