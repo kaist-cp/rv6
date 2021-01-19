@@ -282,7 +282,7 @@ impl Kernel {
             .fdalloc()
             .map_err(|_| data.open_files[fd0 as usize] = None)?;
 
-        // Both copy_out is safe because fdarray and fd0, fd1 is valid.
+        // Both copy_out is safe because fdarray, fd0, fd1 is valid.
         if unsafe {
             data.pagetable.copy_out(
                 fdarray,
