@@ -25,9 +25,11 @@ use cstr_core::CStr;
 impl RcFile<'static> {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
-    unsafe fn fdalloc(self) -> Result<i32, Self> {
-        let p = myproc();
-        let mut data = &mut *(*p).data.get();
+    fn fdalloc(self) -> Result<i32, Self> {
+        // This block is not safe. We need to refactor myproc() to be safe function.
+        // TODO(rv6): myproc() and accessing proc.data nees to be safe
+        let p = unsafe{myproc()};
+        let mut data = unsafe{&mut *(*p).data.get()};
         for fd in 0..NOFILE {
             // user pointer to struct stat
             if data.open_files[fd].is_none() {
@@ -57,7 +59,7 @@ unsafe fn argfd(n: usize) -> Result<(i32, &'static RcFile<'static>), ()> {
 
 /// Create an inode with given type.
 /// Returns Ok(created inode, result of given function f) on success, Err(()) on error.
-unsafe fn create<F, T>(
+fn create<F, T>(
     path: &Path,
     typ: InodeType,
     tx: &FsTransaction<'_>,
@@ -83,20 +85,24 @@ where
         }
         return Err(());
     }
-    let ptr2 = kernel().itable.alloc_inode(dp.dev, typ, tx);
+    // TODO: unsafe block documentation
+    let ptr2 = unsafe{kernel().itable.alloc_inode(dp.dev, typ, tx)};
     let mut ip = ptr2.lock();
     ip.deref_inner_mut().nlink = 1;
-    ip.update(tx);
+    // TODO: unsafe block documentation
+    unsafe{ip.update(tx)};
 
     // Create . and .. entries.
     if typ == InodeType::Dir {
         // for ".."
         dp.deref_inner_mut().nlink += 1;
-        dp.update(tx);
+        // TODO: unsafe block documentation
+        unsafe{dp.update(tx)};
 
         // No ip->nlink++ for ".": avoid cyclic ref count.
-        ip.dirlink(FileName::from_bytes(b"."), ip.inum, tx)
-            .and_then(|_| ip.dirlink(FileName::from_bytes(b".."), dp.inum, tx))
+        // This is safe because b"." and b".." does not contain any NUL characters.
+        ip.dirlink(unsafe{FileName::from_bytes(b".")}, ip.inum, tx)
+            .and_then(|_| ip.dirlink(unsafe{FileName::from_bytes(b"..")}, dp.inum, tx))
             .expect("create dots");
     }
     dp.dirlink(&name, ip.inum, tx).expect("create: dirlink");
@@ -116,6 +122,7 @@ impl Kernel {
             return Err(());
         }
         ip.deref_inner_mut().nlink += 1;
+        // TODO: unsafe block
         ip.update(&tx);
         drop(ip);
 
@@ -129,6 +136,7 @@ impl Kernel {
 
         let mut ip = ptr.lock();
         ip.deref_inner_mut().nlink -= 1;
+        // TODO: unsafe block
         ip.update(&tx);
         Err(())
     }

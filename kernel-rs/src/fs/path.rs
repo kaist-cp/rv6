@@ -57,15 +57,15 @@ impl Path {
 
     // TODO: Following functions should return a safe type rather than `*mut Inode`.
 
-    pub unsafe fn root() -> RcInode<'static> {
+    pub fn root() -> RcInode<'static> {
         kernel().itable.get_inode(ROOTDEV as u32, ROOTINO)
     }
 
-    pub unsafe fn namei(&self) -> Result<RcInode<'static>, ()> {
+    pub fn namei(&self) -> Result<RcInode<'static>, ()> {
         Ok(self.namex(false)?.0)
     }
 
-    pub unsafe fn nameiparent(&self) -> Result<(RcInode<'static>, &FileName), ()> {
+    pub fn nameiparent(&self) -> Result<(RcInode<'static>, &FileName), ()> {
         let (ip, name_in_path) = self.namex(true)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
@@ -135,11 +135,12 @@ impl Path {
     /// If parent != 0, return the inode for the parent and copy the final
     /// path element into name, which must have room for DIRSIZ bytes.
     /// Must be called inside a transaction since it calls Inode::put().
-    unsafe fn namex(&self, parent: bool) -> Result<(RcInode<'static>, Option<&FileName>), ()> {
+    fn namex(&self, parent: bool) -> Result<(RcInode<'static>, Option<&FileName>), ()> {
         let mut ptr = if self.is_absolute() {
             Self::root()
         } else {
-            (*(*myproc()).data.get()).cwd.clone().unwrap()
+            // TODO(rv6): accessing proc.data shoud be safe after refactoring myproc()
+            unsafe{(*(*myproc()).data.get()).cwd.clone().unwrap()}
         };
 
         let mut path = self;
