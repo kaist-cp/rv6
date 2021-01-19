@@ -113,33 +113,38 @@ impl Deref for AllocatedPipe {
 }
 
 impl AllocatedPipe {
-    pub unsafe fn alloc() -> Result<(RcFile<'static>, RcFile<'static>), ()> {
+    pub fn alloc() -> Result<(RcFile<'static>, RcFile<'static>), ()> {
         let page = kernel().alloc().ok_or(())?;
         let ptr = page.into_usize() as *mut Pipe;
 
         //TODO(rv6): Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`
-        *ptr = Pipe {
-            inner: Spinlock::new(
-                "pipe",
-                PipeInner {
-                    data: [0; PIPESIZE],
-                    nwrite: 0,
-                    nread: 0,
-                    readopen: true,
-                    writeopen: true,
-                },
-            ),
-            read_waitchannel: WaitChannel::new(),
-            write_waitchannel: WaitChannel::new(),
+        //TODO(rv6): need to check safety
+        unsafe {
+            *ptr = Pipe {
+                inner: Spinlock::new(
+                    "pipe",
+                    PipeInner {
+                        data: [0; PIPESIZE],
+                        nwrite: 0,
+                        nread: 0,
+                        readopen: true,
+                        writeopen: true,
+                    },
+                ),
+                read_waitchannel: WaitChannel::new(),
+                write_waitchannel: WaitChannel::new(),
+            }
         };
         let f0 = kernel()
             .ftable
             .alloc_file(FileType::Pipe { pipe: Self { ptr } }, true, false)
-            .map_err(|_| kernel().free(Page::from_usize(ptr as _)))?;
+            // It is safe because ptr is an address of page, which obtained by alloc()
+            .map_err(|_| kernel().free(unsafe { Page::from_usize(ptr as _) }))?;
         let f1 = kernel()
             .ftable
             .alloc_file(FileType::Pipe { pipe: Self { ptr } }, false, true)
-            .map_err(|_| kernel().free(Page::from_usize(ptr as _)))?;
+            // It is safe because ptr is an address of page, which obtained by alloc()
+            .map_err(|_| kernel().free(unsafe { Page::from_usize(ptr as _) }))?;
 
         Ok((f0, f1))
     }

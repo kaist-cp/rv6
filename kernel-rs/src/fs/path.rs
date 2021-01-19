@@ -140,7 +140,7 @@ impl Path {
             Self::root()
         } else {
             // TODO(rv6): accessing proc.data shoud be safe after refactoring myproc()
-            unsafe{(*(*myproc()).data.get()).cwd.clone().unwrap()}
+            unsafe { (*(*myproc()).data.get()).cwd.clone().unwrap() }
         };
 
         let mut path = self;

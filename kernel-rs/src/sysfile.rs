@@ -26,10 +26,9 @@ impl RcFile<'static> {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
     fn fdalloc(self) -> Result<i32, Self> {
-        // This block is not safe. We need to refactor myproc() to be safe function.
-        // TODO(rv6): myproc() and accessing proc.data nees to be safe
-        let p = unsafe{myproc()};
-        let mut data = unsafe{&mut *(*p).data.get()};
+        // TODO(rv6): These two unsafe blocks needs to be safe after we refactor myproc()
+        let p = unsafe { myproc() };
+        let mut data = unsafe { &mut *(*p).data.get() };
         for fd in 0..NOFILE {
             // user pointer to struct stat
             if data.open_files[fd].is_none() {
@@ -85,24 +84,21 @@ where
         }
         return Err(());
     }
-    // TODO: unsafe block documentation
-    let ptr2 = unsafe{kernel().itable.alloc_inode(dp.dev, typ, tx)};
+    let ptr2 = unsafe { kernel().itable.alloc_inode(dp.dev, typ, tx) };
     let mut ip = ptr2.lock();
     ip.deref_inner_mut().nlink = 1;
-    // TODO: unsafe block documentation
-    unsafe{ip.update(tx)};
+    unsafe { ip.update(tx) };
 
     // Create . and .. entries.
     if typ == InodeType::Dir {
         // for ".."
         dp.deref_inner_mut().nlink += 1;
-        // TODO: unsafe block documentation
-        unsafe{dp.update(tx)};
+        unsafe { dp.update(tx) };
 
         // No ip->nlink++ for ".": avoid cyclic ref count.
-        // This is safe because b"." and b".." does not contain any NUL characters.
-        ip.dirlink(unsafe{FileName::from_bytes(b".")}, ip.inum, tx)
-            .and_then(|_| ip.dirlink(unsafe{FileName::from_bytes(b"..")}, dp.inum, tx))
+        // It is safe because b"." and b".." does not contain any NUL characters.
+        ip.dirlink(unsafe { FileName::from_bytes(b".") }, ip.inum, tx)
+            .and_then(|_| ip.dirlink(unsafe { FileName::from_bytes(b"..") }, dp.inum, tx))
             .expect("create dots");
     }
     dp.dirlink(&name, ip.inum, tx).expect("create: dirlink");
@@ -114,7 +110,7 @@ where
 impl Kernel {
     /// Create another name(newname) for the file oldname.
     /// Returns Ok(()) on success, Err(()) on error.
-    unsafe fn link(&self, oldname: &CStr, newname: &CStr) -> Result<(), ()> {
+    fn link(&self, oldname: &CStr, newname: &CStr) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
         let ptr = Path::new(oldname).namei()?;
         let mut ip = ptr.lock();
@@ -122,8 +118,7 @@ impl Kernel {
             return Err(());
         }
         ip.deref_inner_mut().nlink += 1;
-        // TODO: unsafe block
-        ip.update(&tx);
+        unsafe { ip.update(&tx) };
         drop(ip);
 
         if let Ok((ptr2, name)) = Path::new(newname).nameiparent() {
@@ -136,14 +131,13 @@ impl Kernel {
 
         let mut ip = ptr.lock();
         ip.deref_inner_mut().nlink -= 1;
-        // TODO: unsafe block
-        ip.update(&tx);
+        unsafe { ip.update(&tx) };
         Err(())
     }
 
     /// Remove a file(filename).
     /// Returns Ok(()) on success, Err(()) on error.
-    unsafe fn unlink(&self, filename: &CStr) -> Result<(), ()> {
+    fn unlink(&self, filename: &CStr) -> Result<(), ()> {
         let mut de: Dirent = Default::default();
         let tx = self.file_system.begin_transaction();
         let (ptr, name) = Path::new(filename).nameiparent()?;
@@ -151,7 +145,7 @@ impl Kernel {
 
         // Cannot unlink "." or "..".
         if !(name.as_bytes() == b"." || name.as_bytes() == b"..") {
-            // TODO: use other Result related functions
+            // TODO: use other Result related functions => solved?
             if let Ok((ptr2, off)) = dp.dirlookup(&name) {
                 let mut ip = ptr2.lock();
                 assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
@@ -166,12 +160,12 @@ impl Kernel {
                     assert_eq!(bytes_write, Ok(DIRENT_SIZE), "unlink: writei");
                     if ip.deref_inner().typ == InodeType::Dir {
                         dp.deref_inner_mut().nlink -= 1;
-                        dp.update(&tx);
+                        unsafe { dp.update(&tx) };
                     }
                     drop(dp);
                     drop(ptr);
                     ip.deref_inner_mut().nlink -= 1;
-                    ip.update(&tx);
+                    unsafe { ip.update(&tx) };
                     return Ok(());
                 }
             }
@@ -182,7 +176,7 @@ impl Kernel {
 
     /// Open a file; omode indicate read/write.
     /// Returns Ok(file descriptor) on success, Err(()) on error.
-    unsafe fn open(&'static self, name: &Path, omode: FcntlFlags) -> Result<usize, ()> {
+    fn open(&'static self, name: &Path, omode: FcntlFlags) -> Result<usize, ()> {
         let tx = self.file_system.begin_transaction();
 
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
@@ -220,7 +214,10 @@ impl Kernel {
 
         if omode.contains(FcntlFlags::O_TRUNC) && typ == InodeType::File {
             match &f.typ {
-                FileType::Device { ip, .. } | FileType::Inode { ip, .. } => ip.lock().itrunc(&tx),
+                // It is safe to call itrunc because ip.lock() is held
+                FileType::Device { ip, .. } | FileType::Inode { ip, .. } => unsafe {
+                    ip.lock().itrunc(&tx)
+                },
                 _ => panic!("sys_open : Not reach"),
             };
         }
@@ -230,7 +227,7 @@ impl Kernel {
 
     /// Create a new directory.
     /// Returns Ok(()) on success, Err(()) on error.
-    unsafe fn mkdir(&self, dirname: &CStr) -> Result<(), ()> {
+    fn mkdir(&self, dirname: &CStr) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
         create(Path::new(dirname), InodeType::Dir, &tx, |_| ())?;
         Ok(())
@@ -238,7 +235,7 @@ impl Kernel {
 
     /// Create a device file.
     /// Returns Ok(()) on success, Err(()) on error.
-    unsafe fn mknod(&self, filename: &CStr, major: u16, minor: u16) -> Result<(), ()> {
+    fn mknod(&self, filename: &CStr, major: u16, minor: u16) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
         create(
             Path::new(filename),
@@ -251,9 +248,10 @@ impl Kernel {
 
     /// Change the current directory.
     /// Returns Ok(()) on success, Err(()) on error.
-    unsafe fn chdir(&self, dirname: &CStr) -> Result<(), ()> {
-        let p = myproc();
-        let mut data = &mut *(*p).data.get();
+    fn chdir(&self, dirname: &CStr) -> Result<(), ()> {
+        // TODO(rv6): These two unsafe blocks needs to be safe after we refactor myproc()
+        let p = unsafe { myproc() };
+        let mut data = unsafe { &mut *(*p).data.get() };
         // TODO(rv6)
         // The method namei can drop inodes. If namei succeeds, its return
         // value, ptr, will be dropped when this method returns. Deallocation
@@ -273,9 +271,10 @@ impl Kernel {
 
     /// Create a pipe, put read/write file descriptors in fd0 and fd1.
     /// Returns Ok(()) on success, Err(()) on error.
-    unsafe fn pipe(&self, fdarray: UVAddr) -> Result<(), ()> {
-        let p = myproc();
-        let mut data = &mut *(*p).data.get();
+    fn pipe(&self, fdarray: UVAddr) -> Result<(), ()> {
+        // TODO(rv6): These two unsafe blocks needs to be safe after we refactor myproc()
+        let p = unsafe { myproc() };
+        let mut data = unsafe { &mut *(*p).data.get() };
         let (pipereader, pipewriter) = AllocatedPipe::alloc()?;
 
         let mut fd0 = pipereader.fdalloc().map_err(|_| ())?;
@@ -283,23 +282,24 @@ impl Kernel {
             .fdalloc()
             .map_err(|_| data.open_files[fd0 as usize] = None)?;
 
-        if data
-            .pagetable
-            .copy_out(
+        // Both copy_out is safe because fdarray and fd0, fd1 is valid.
+        if unsafe {
+            data.pagetable.copy_out(
                 fdarray,
                 slice::from_raw_parts_mut(&mut fd0 as *mut i32 as *mut u8, mem::size_of::<i32>()),
             )
-            .is_err()
-            || data
-                .pagetable
-                .copy_out(
+        }
+        .is_err()
+            || unsafe {
+                data.pagetable.copy_out(
                     UVAddr::new(fdarray.into_usize().wrapping_add(mem::size_of::<i32>())),
                     slice::from_raw_parts_mut(
                         &mut fd1 as *mut i32 as *mut u8,
                         mem::size_of::<i32>(),
                     ),
                 )
-                .is_err()
+            }
+            .is_err()
         {
             data.open_files[fd0 as usize] = None;
             data.open_files[fd1 as usize] = None;

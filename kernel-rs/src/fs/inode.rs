@@ -512,7 +512,7 @@ impl InodeGuard<'_> {
     }
 
     /// Is the directory dp empty except for "." and ".." ?
-    pub unsafe fn isdirempty(&mut self) -> bool {
+    pub fn isdirempty(&mut self) -> bool {
         let mut de: Dirent = Default::default();
         for off in (2 * DIRENT_SIZE as u32..self.deref_inner().size).step_by(DIRENT_SIZE) {
             let bytes_read = self.read(
