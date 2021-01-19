@@ -187,7 +187,7 @@ impl PipeInner {
                 //DOC: pipewrite-full
                 return Ok(i);
             }
-            if data.pagetable.copy_in(&mut ch, addr + i).is_err() {
+            if data.memory.copy_in(&mut ch, addr + i).is_err() {
                 return Err(PipeError::InvalidCopyin(i));
             }
             self.data[self.nwrite as usize % PIPESIZE] = ch[0];
@@ -215,7 +215,7 @@ impl PipeInner {
             }
             let ch = [self.data[self.nread as usize % PIPESIZE]];
             self.nread = self.nread.wrapping_add(1);
-            if data.pagetable.copy_out(addr + i, &ch).is_err() {
+            if data.memory.copy_out(addr + i, &ch).is_err() {
                 return Ok(i);
             }
         }

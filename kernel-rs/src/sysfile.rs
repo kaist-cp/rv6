@@ -293,7 +293,7 @@ impl Kernel {
 
         // It is safe because fdarray, fd0 is valid.
         if unsafe {
-            data.pagetable.copy_out(
+            data.memory.copy_out(
                 fdarray,
                 slice::from_raw_parts_mut(&mut fd0 as *mut i32 as *mut u8, mem::size_of::<i32>()),
             )
@@ -301,7 +301,7 @@ impl Kernel {
         .is_err()
             // It is safe because fdarray, fd1 is valid.
             || unsafe {
-                data.pagetable.copy_out(
+                data.memory.copy_out(
                     UVAddr::new(fdarray.into_usize().wrapping_add(mem::size_of::<i32>())),
                     slice::from_raw_parts_mut(
                         &mut fd1 as *mut i32 as *mut u8,
@@ -442,7 +442,7 @@ impl Kernel {
     /// TODO(rv6): This is unsafe because it is using unsafe functions(argstr, argaddr, fetchaddr, fetchstr, exec)
     pub unsafe fn sys_exec(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let mut argvs = ArrayVec::<[Page; MAXARG]>::new();
+        let mut args = ArrayVec::<[Page; MAXARG]>::new();
         let path = argstr(0, &mut path)?;
         let uargv = argaddr(1)?;
 
@@ -463,16 +463,16 @@ impl Kernel {
                 self.free(page);
                 break;
             }
-            argvs.push(page);
+            args.push(page);
         }
 
         let ret = if success {
-            self.exec(Path::new(path), &argvs)
+            self.exec(Path::new(path), &args)
         } else {
             Err(())
         };
 
-        for page in argvs.drain(..) {
+        for page in args.drain(..) {
             self.free(page);
         }
 

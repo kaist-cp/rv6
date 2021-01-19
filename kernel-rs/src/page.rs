@@ -55,10 +55,14 @@ impl Page {
         result
     }
 
+    pub fn addr(&self) -> PAddr {
+        PAddr::new(self.inner.as_ptr() as _)
+    }
+
     /// # Safety
     ///
     /// Given addr must not break the invariant of Page.
-    /// - addr is a multiple of 4096.
+    /// - addr is a multiple of PGSIZE.
     /// - end <= addr < PHYSTOP
     /// - If p: Page, then *(p.inner).inner and (addr as *RawPage).inner are
     ///   non-overwrapping arrays.
@@ -66,10 +70,6 @@ impl Page {
         Self {
             inner: NonNull::new_unchecked(addr as *mut _),
         }
-    }
-
-    pub fn addr(&self) -> PAddr {
-        PAddr::new(self.inner.as_ptr() as _)
     }
 }
 

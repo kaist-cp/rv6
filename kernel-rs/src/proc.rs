@@ -2,7 +2,6 @@
 
 use core::{
     cell::UnsafeCell,
-    cmp,
     mem::{self, MaybeUninit},
     ops::{Deref, DerefMut},
     ptr, slice, str,
@@ -13,18 +12,16 @@ use crate::{
     file::RcFile,
     fs::{Path, RcInode},
     kernel::kernel,
-    memlayout::{kstack, TRAMPOLINE, TRAPFRAME},
-    ok_or,
+    memlayout::kstack,
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
     println,
     riscv::{intr_get, intr_on, r_tp, PGSIZE},
-    some_or,
     spinlock::{
         pop_off, push_off, RawSpinlock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
     },
     trap::usertrapret,
-    vm::{PageTable, UVAddr, VAddr},
+    vm::{UVAddr, UserMemory, VAddr},
 };
 
 extern "C" {
@@ -87,7 +84,7 @@ pub struct Cpu {
 /// return-to-user path via usertrapret() doesn't return through
 /// the entire kernel call stack.
 #[derive(Copy, Clone)]
-pub struct Trapframe {
+pub struct TrapFrame {
     /// 0 - kernel page table (satp: Supervisor Address Translation and Protection)
     pub kernel_satp: usize,
 
@@ -312,15 +309,11 @@ pub struct ProcData {
     /// Virtual address of kernel stack.
     pub kstack: usize,
 
-    /// Size of process memory (bytes).
-    pub sz: usize,
-
-    /// User page table.
-    // TODO(rv6): change it to Option<PageTable<UVAddr>>
-    pub pagetable: PageTable<UVAddr>,
-
     /// Data page for trampoline.S.
-    pub trapframe: *mut Trapframe,
+    trap_frame: *mut TrapFrame,
+
+    /// User memory manager
+    pub memory: UserMemory,
 
     /// swtch() here to run process.
     context: Context,
@@ -333,6 +326,11 @@ pub struct ProcData {
 }
 
 /// Per-process state.
+///
+/// # Safety
+///
+/// If info.state != UNUSED, then Page::from_usize(data.trap_frame) succeeds
+/// without breaking the invariant of Page.
 pub struct Proc {
     /// Parent process.
     ///
@@ -407,12 +405,11 @@ impl ProcGuard {
         unsafe {
             // Clear the `ProcData`.
             let mut data = &mut *self.data.get();
-            if !data.trapframe.is_null() {
-                kernel().free(Page::from_usize(data.trapframe as _));
+            let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
+            if !trap_frame.is_null() {
+                kernel().free(Page::from_usize(trap_frame as _));
             }
-            data.trapframe = ptr::null_mut();
-            data.pagetable = PageTable::zero();
-            data.sz = 0;
+            data.memory = UserMemory::uninit();
 
             // Clear the process's parent field.
             if let Some(mut guard) = parent_guard {
@@ -436,7 +433,7 @@ impl Drop for ProcGuard {
             // If the ProcGuard was dropped while the process's state is still `USED`
             // and ProcData::sz == 0, this means an error happened while initializing a process.
             // Hence, clear the process's fields.
-            if self.deref_info().state == Procstate::USED && (*self.data.get()).sz == 0 {
+            if self.deref_info().state == Procstate::USED && (*self.data.get()).memory.size() == 0 {
                 self.clear(None);
             }
             (*self.ptr).info.unlock();
@@ -507,13 +504,20 @@ impl ProcData {
     const fn new() -> Self {
         Self {
             kstack: 0,
-            sz: 0,
-            pagetable: unsafe { PageTable::zero() },
-            trapframe: ptr::null_mut(),
+            trap_frame: ptr::null_mut(),
+            memory: unsafe { UserMemory::uninit() },
             context: Context::new(),
             open_files: [None; NOFILE],
             cwd: None,
         }
+    }
+
+    pub fn trap_frame(&self) -> &TrapFrame {
+        unsafe { &*self.trap_frame }
+    }
+
+    pub fn trap_frame_mut(&mut self) -> &mut TrapFrame {
+        unsafe { &mut *self.trap_frame }
     }
 
     /// Close all open files.
@@ -613,7 +617,7 @@ impl ProcessSystem {
     /// If found, initialize state required to run in the kernel,
     /// and return with p->lock held.
     /// If there are no free procs, or a memory allocation fails, return Err.
-    unsafe fn alloc(&self) -> Result<ProcGuard, ()> {
+    unsafe fn alloc(&self, trap_frame: Page, memory: UserMemory) -> Result<ProcGuard, ()> {
         for p in &self.process_pool {
             let mut guard = p.lock();
             if guard.deref_info().state == Procstate::UNUSED {
@@ -621,16 +625,9 @@ impl ProcessSystem {
                 guard.deref_mut_info().pid = self.allocpid();
                 guard.deref_mut_info().state = Procstate::USED;
 
-                // Allocate a trapframe page.
-                let page = some_or!(kernel().alloc(), {
-                    return Err(());
-                });
-                data.trapframe = page.into_usize() as *mut Trapframe;
-
-                // An empty user page table.
-                data.pagetable = some_or!(PageTable::<UVAddr>::new(data.trapframe), {
-                    return Err(());
-                });
+                // Initialize trap frame and page table.
+                data.trap_frame = trap_frame.into_usize() as _;
+                data.memory = memory;
 
                 // Set up new context to start executing at forkret,
                 // which returns to user space.
@@ -641,6 +638,7 @@ impl ProcessSystem {
             }
         }
 
+        kernel().free(trap_frame);
         Err(())
     }
 
@@ -695,23 +693,32 @@ impl ProcessSystem {
 
     /// Set up first user process.
     pub unsafe fn user_proc_init(&mut self) {
-        let mut guard = self.alloc().expect("user_proc_init");
+        // Allocate trap frame.
+        let trap_frame = scopeguard::guard(
+            kernel().alloc().expect("user_proc_init: kernel().alloc"),
+            |page| kernel().free(page),
+        );
+
+        // Allocate one user page and copy init's instructions
+        // and data into it.
+        let memory = UserMemory::new(trap_frame.addr(), Some(&INITCODE))
+            .expect("user_proc_init: UserMemory::new");
+
+        let mut guard = self
+            .alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory)
+            .expect("user_proc_init: ProcessSystem::alloc");
 
         self.initial_proc = guard.raw() as *mut _;
 
         let data = &mut *guard.data.get();
-        // Allocate one user page and copy init's instructions
-        // and data into it.
-        data.pagetable.init(&INITCODE).expect("init: failed");
-        data.sz = PGSIZE;
 
         // Prepare for the very first "return" from kernel to user.
 
         // User program counter.
-        (*data.trapframe).epc = 0;
+        data.trap_frame_mut().epc = 0;
 
         // User stack pointer.
-        (*data.trapframe).sp = PGSIZE;
+        data.trap_frame_mut().sp = PGSIZE;
         let name = b"initcode\x00";
         (&mut (*guard).name[..name.len()]).copy_from_slice(name);
         data.cwd = Some(Path::root());
@@ -723,21 +730,23 @@ impl ProcessSystem {
     /// Returns Ok(new process id) on success, Err(()) on error.
     pub unsafe fn fork(&self) -> Result<i32, ()> {
         let p = myproc();
+        let pdata = &mut *(*p).data.get();
+
+        // Allocate trap frame.
+        let trap_frame = scopeguard::guard(kernel().alloc().ok_or(())?, |page| kernel().free(page));
+
+        // Copy user memory from parent to child.
+        let memory = pdata.memory.clone(trap_frame.addr()).ok_or(())?;
 
         // Allocate process.
-        let mut np = self.alloc()?;
-
-        let pdata = &mut *(*p).data.get();
+        let mut np = self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory)?;
         let mut npdata = &mut *np.data.get();
-        // Copy user memory from parent to child.
-        pdata.pagetable.copy(&mut npdata.pagetable, pdata.sz)?;
-        npdata.sz = pdata.sz;
 
         // Copy saved user registers.
-        *npdata.trapframe = *pdata.trapframe;
+        *npdata.trap_frame_mut() = *pdata.trap_frame();
 
         // Cause fork to return 0 in the child.
-        (*npdata.trapframe).a0 = 0;
+        npdata.trap_frame_mut().a0 = 0;
 
         // Increment reference counts on open file descriptors.
         for i in 0..NOFILE {
@@ -791,7 +800,7 @@ impl ProcessSystem {
                         let pid = np.deref_info().pid;
                         if !addr.is_null()
                             && data
-                                .pagetable
+                                .memory
                                 .copy_out(
                                     addr,
                                     slice::from_raw_parts_mut(
@@ -908,14 +917,6 @@ pub unsafe fn myproc() -> *mut Proc {
     p
 }
 
-/// Free a process's page table, and free the
-/// physical memory it refers to.
-pub unsafe fn proc_freepagetable(mut pagetable: PageTable<UVAddr>, sz: usize) {
-    pagetable.unmap(UVAddr::new(TRAMPOLINE), 1, false);
-    pagetable.unmap(UVAddr::new(TRAPFRAME), 1, false);
-    pagetable.free(sz);
-}
-
 /// A user program that calls exec("/init").
 /// od -t xC initcode
 const INITCODE: [u8; 52] = [
@@ -923,24 +924,6 @@ const INITCODE: [u8; 52] = [
     0x70, 0, 0x73, 0, 0, 0, 0x93, 0x08, 0x20, 0, 0x73, 0, 0, 0, 0xef, 0xf0, 0x9f, 0xff, 0x2f, 0x69,
     0x6e, 0x69, 0x74, 0, 0, 0x24, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
-
-/// Grow or shrink user memory by n bytes.
-/// Return 0 on success, -1 on failure.
-pub unsafe fn resizeproc(n: i32) -> i32 {
-    let p = myproc();
-    let data = &mut *(*p).data.get();
-    let sz = data.sz;
-    let sz = match n.cmp(&0) {
-        cmp::Ordering::Equal => sz,
-        cmp::Ordering::Greater => {
-            let sz = data.pagetable.alloc(sz, sz.wrapping_add(n as usize));
-            ok_or!(sz, return -1)
-        }
-        cmp::Ordering::Less => data.pagetable.dealloc(sz, sz.wrapping_add(n as usize)),
-    };
-    data.sz = sz;
-    0
-}
 
 /// Per-CPU process scheduler.
 /// Each CPU calls scheduler() after setting itself up.

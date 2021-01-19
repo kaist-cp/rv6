@@ -4,7 +4,7 @@
 use crate::{
     memlayout::PHYSTOP,
     page::Page,
-    riscv::{pgroundup, PGSIZE},
+    riscv::{pgrounddown, pgroundup, PGSIZE},
 };
 
 use core::mem;
@@ -36,32 +36,38 @@ impl Kmem {
         }
     }
 
+    /// Create pages between `end` and `PHYSTOP`.
+    ///
     /// # Safety
     ///
-    /// Must be called only once. Create pages between `end` and `PHYSTOP` by
-    /// calling freerange.
+    /// There must be no existing pages. It implies that this method should be
+    /// called only once.
     pub unsafe fn init(&mut self) {
-        self.freerange(end.as_mut_ptr(), PHYSTOP as _);
+        // It is safe to acquire only the address of a static variable.
+        let pa_start = pgroundup(unsafe { end.as_ptr() as usize });
+        let pa_end = pgrounddown(PHYSTOP);
+        for pa in num_iter::range_step(pa_start, pa_end, PGSIZE) {
+            // It is safe because
+            // * pa_start is a multiple of PGSIZE, and pa is so
+            // * end <= pa < PHYSTOP
+            // * the safety condition of this method guarantees that the
+            //   created page does not overlap with existing pages
+            self.free(unsafe { Page::from_usize(pa) });
+        }
     }
 
     pub fn free(&mut self, pa: Page) {
-        let mut r = pa.into_usize() as *mut Run;
+        let pa = pa.into_usize();
+        debug_assert!(
+            // It is safe to acquire only the address of a static variable.
+            pa % PGSIZE == 0 && (unsafe { end.as_ptr() as usize }..PHYSTOP).contains(&pa),
+            "Kmem::free"
+        );
+        let mut r = pa as *mut Run;
         // By the invariant of Page, it does not create a cycle in this list and
         // thus is safe.
         unsafe { (*r).next = self.head };
         self.head = r;
-    }
-
-    /// # Safety
-    ///
-    /// Create pages between `pa_start` and `pa_end`. Created pages must
-    /// not overwrap with any existing pages.
-    unsafe fn freerange(&mut self, pa_start: *mut u8, pa_end: *mut u8) {
-        let mut p = pgroundup(pa_start as _) as *mut u8;
-        while p.add(PGSIZE) <= pa_end {
-            self.free(Page::from_usize(p as _));
-            p = p.add(PGSIZE);
-        }
     }
 
     pub fn alloc(&mut self) -> Option<Page> {

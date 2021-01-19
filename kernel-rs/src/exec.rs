@@ -1,16 +1,15 @@
 #![allow(clippy::unit_arg)]
 
 use crate::{
-    fs::{InodeGuard, Path},
+    fs::Path,
     kernel::Kernel,
     page::Page,
     param::MAXARG,
-    proc::{myproc, Proc},
+    proc::myproc,
     riscv::{pgroundup, PGSIZE},
-    vm::{KVAddr, PageTable, UVAddr, VAddr},
+    vm::{KVAddr, PAddr, UVAddr, UserMemory, VAddr},
 };
 use core::{cmp, mem};
-use cstr_core::CStr;
 
 /// "\x7FELF" in little endian
 const ELF_MAGIC: u32 = 0x464c457f;
@@ -89,8 +88,8 @@ impl ProgHdr {
 }
 
 impl Kernel {
-    pub unsafe fn exec(&self, path: &Path, argv: &[Page]) -> Result<usize, ()> {
-        if argv.len() > MAXARG {
+    pub fn exec(&self, path: &Path, args: &[Page]) -> Result<usize, ()> {
+        if args.len() > MAXARG {
             return Err(());
         }
 
@@ -115,12 +114,12 @@ impl Kernel {
             return Err(());
         }
 
-        let p: *mut Proc = myproc();
-        let mut data = &mut *(*p).data.get();
-        let mut pt = PageTable::<UVAddr>::new(data.trapframe).ok_or(())?;
+        let p = unsafe { &mut *myproc() };
+        let mut data = unsafe { &mut *p.data.get() };
+        let trap_frame = PAddr::new(data.trap_frame() as *const _ as _);
+        let mut mem = UserMemory::new(trap_frame, None).ok_or(())?;
 
         // Load program into memory.
-        let mut sz = 0;
         for i in 0..elf.phnum as usize {
             let off = elf.phoff + i * mem::size_of::<ProgHdr>();
 
@@ -137,14 +136,8 @@ impl Kernel {
                 if ph.memsz < ph.filesz || ph.vaddr % PGSIZE != 0 {
                     return Err(());
                 }
-                sz = pt.alloc(sz, ph.vaddr.checked_add(ph.memsz).ok_or(())?)?;
-                loadseg(
-                    &mut pt,
-                    UVAddr::new(ph.vaddr),
-                    &mut ip,
-                    ph.off as _,
-                    ph.filesz as _,
-                )?;
+                mem.alloc(ph.vaddr.checked_add(ph.memsz).ok_or(())?)?;
+                mem.read_file(UVAddr::new(ph.vaddr), &mut ip, ph.off as _, ph.filesz as _)?;
             }
         }
         drop(ip);
@@ -152,16 +145,20 @@ impl Kernel {
 
         // Allocate two pages at the next page boundary.
         // Use the second as the user stack.
-        sz = pgroundup(sz);
-        sz = pt.alloc(sz, sz + 2 * PGSIZE)?;
-        pt.clear(UVAddr::new(sz - 2 * PGSIZE));
+        let mut sz = pgroundup(mem.size());
+        sz = mem.alloc(sz + 2 * PGSIZE)?;
+        mem.clear(UVAddr::new(sz - 2 * PGSIZE));
         let mut sp: usize = sz;
         let stackbase: usize = sp - PGSIZE;
 
         // Push argument strings, prepare rest of stack in ustack.
         let mut ustack = [0usize; MAXARG + 1];
-        for (arg, stack) in izip!(argv, &mut ustack) {
-            let bytes = CStr::from_ptr(arg.as_ptr()).to_bytes_with_nul();
+        for (arg, stack) in izip!(args, &mut ustack) {
+            let null_idx = arg
+                .iter()
+                .position(|c| *c == 0)
+                .expect("exec: no null char found");
+            let bytes = &arg[..null_idx + 1];
             sp -= bytes.len();
 
             // riscv sp must be 16-byte aligned
@@ -170,10 +167,10 @@ impl Kernel {
                 return Err(());
             }
 
-            pt.copy_out(UVAddr::new(sp), bytes)?;
+            mem.copy_out(UVAddr::new(sp), bytes)?;
             *stack = sp;
         }
-        let argc: usize = argv.len();
+        let argc: usize = args.len();
         ustack[argc] = 0;
 
         // push the array of argv[] pointers.
@@ -183,12 +180,9 @@ impl Kernel {
         if sp < stackbase {
             return Err(());
         }
-        pt.copy_out(UVAddr::new(sp), &ustack.align_to::<u8>().1[..argv_size])?;
-
-        // arguments to user main(argc, argv)
-        // argc is returned via the system call return
-        // value, which goes in a0.
-        (*data.trapframe).a1 = sp;
+        // It is safe because any byte can be considered as a valid u8.
+        let (_, ustack, _) = unsafe { ustack.align_to::<u8>() };
+        mem.copy_out(UVAddr::new(sp), &ustack[..argv_size])?;
 
         // Save program name for debugging.
         let path_str = path.as_bytes();
@@ -197,7 +191,7 @@ impl Kernel {
             .rposition(|c| *c == b'/')
             .map(|i| &path_str[(i + 1)..])
             .unwrap_or(path_str);
-        let p_name = &mut (*p).name;
+        let p_name = &mut p.name;
         let len = cmp::min(p_name.len(), name.len());
         p_name[..len].copy_from_slice(&name[..len]);
         if len < p_name.len() {
@@ -205,47 +199,20 @@ impl Kernel {
         }
 
         // Commit to the user image.
-        data.pagetable = pt;
-        data.sz = sz;
+        data.memory = mem;
+
+        // arguments to user main(argc, argv)
+        // argc is returned via the system call return
+        // value, which goes in a0.
+        data.trap_frame_mut().a1 = sp;
 
         // initial program counter = main
-        (*data.trapframe).epc = elf.entry;
+        data.trap_frame_mut().epc = elf.entry;
 
         // initial stack pointer
-        (*data.trapframe).sp = sp;
+        data.trap_frame_mut().sp = sp;
 
         // this ends up in a0, the first argument to main(argc, argv)
         Ok(argc)
     }
-}
-
-/// Load a program segment into pagetable at virtual address va.
-/// va must be page-aligned
-/// and the pages from va to va+sz must already be mapped.
-///
-/// Returns `Ok(())` on success, `Err(())` on failure.
-unsafe fn loadseg(
-    pagetable: &mut PageTable<UVAddr>,
-    va: UVAddr,
-    ip: &mut InodeGuard<'_>,
-    offset: u32,
-    sz: u32,
-) -> Result<(), ()> {
-    assert!(va.is_page_aligned(), "loadseg: va must be page aligned");
-
-    for i in num_iter::range_step(0, sz, PGSIZE as _) {
-        let pa = pagetable
-            .walk_addr(va + i as usize)
-            .expect("loadseg: address should exist")
-            .into_usize();
-
-        let n = cmp::min(sz - i, PGSIZE as _);
-
-        let bytes_read = ip.read(KVAddr::new(pa), offset + i, n)?;
-        if bytes_read != n as _ {
-            return Err(());
-        }
-    }
-
-    Ok(())
 }
