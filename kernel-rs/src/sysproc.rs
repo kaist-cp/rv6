@@ -67,7 +67,7 @@ impl Kernel {
 
     /// Return how many clock tick interrupts have occurred
     /// since start.
-    pub unsafe fn sys_uptime(&self) -> Result<usize, ()> {
+    pub fn sys_uptime(&self) -> Result<usize, ()> {
         Ok(*self.ticks.lock() as usize)
     }
 
