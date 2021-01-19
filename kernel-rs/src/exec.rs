@@ -90,7 +90,6 @@ impl ProgHdr {
 
 impl Kernel {
     pub unsafe fn exec(&self, path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
-        let mut sz: usize;
         let mut ustack = [0usize; MAXARG + 1];
         let mut elf: ElfHdr = Default::default();
         let mut ph: ProgHdr = Default::default();
@@ -122,7 +121,7 @@ impl Kernel {
         let mut pt = PageTable::<UVAddr>::new(data.trapframe).ok_or(())?;
 
         // Load program into memory.
-        sz = 0;
+        let mut sz = 0;
         for i in 0..elf.phnum as usize {
             let off = elf.phoff.wrapping_add(i * mem::size_of::<ProgHdr>());
 
