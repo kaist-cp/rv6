@@ -69,10 +69,8 @@ pub unsafe fn argstr(n: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
 }
 
 impl Kernel {
-    pub unsafe fn syscall(&'static self) -> Result<usize, ()> {
+    pub unsafe fn syscall(&'static self, num: i32) -> Result<usize, ()> {
         let p = myproc();
-        let data = &mut *(*p).data.get();
-        let num = (*data.trapframe).a7 as i32;
 
         match num {
             1 => self.sys_fork(),
