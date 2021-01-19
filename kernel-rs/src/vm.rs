@@ -5,8 +5,8 @@ use crate::{
     param::NPROC,
     proc::{myproc, Trapframe},
     riscv::{
-        make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pte_flags, px, pxshift, sfence_vma,
-        w_satp, PteT, MAXVA, PGSIZE, PTE_R, PTE_U, PTE_V, PTE_W, PTE_X,
+        make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, px, pxshift, sfence_vma, w_satp,
+        PteFlags, MAXVA, PGSIZE,
     },
     some_or,
 };
@@ -164,16 +164,16 @@ impl VAddr for UVAddr {
 /// Because of #[derive(Default)], inner is initially 0, which satisfies the invariant.
 #[derive(Default)]
 struct PageTableEntry {
-    inner: PteT,
+    inner: usize,
 }
 
 impl PageTableEntry {
-    fn get_flags(&self) -> usize {
-        pte_flags(self.inner)
+    fn get_flags(&self) -> PteFlags {
+        PteFlags::from_bits_truncate(self.inner)
     }
 
-    fn check_flag(&self, flag: usize) -> bool {
-        self.inner & flag != 0
+    fn flag_intersects(&self, flag: PteFlags) -> bool {
+        self.get_flags().intersects(flag)
     }
 
     fn get_pa(&self) -> PAddr {
@@ -181,37 +181,37 @@ impl PageTableEntry {
     }
 
     fn is_valid(&self) -> bool {
-        self.check_flag(PTE_V)
+        self.flag_intersects(PteFlags::V)
     }
 
     fn is_user(&self) -> bool {
-        self.check_flag(PTE_V | PTE_U as usize)
+        self.flag_intersects(PteFlags::V | PteFlags::U)
     }
 
     fn is_table(&self) -> bool {
-        self.is_valid() && !self.check_flag((PTE_R | PTE_W | PTE_X) as usize)
+        self.is_valid() && !self.flag_intersects(PteFlags::R | PteFlags::W | PteFlags::X)
     }
 
     fn is_data(&self) -> bool {
-        self.is_valid() && self.check_flag((PTE_R | PTE_W | PTE_X) as usize)
+        self.is_valid() && self.flag_intersects(PteFlags::R | PteFlags::W | PteFlags::X)
     }
 
     /// Make the entry refer to a given page-table page.
     fn set_table(&mut self, page: *mut RawPageTable) {
-        self.inner = pa2pte(PAddr::new(page as usize)) | PTE_V;
+        self.inner = pa2pte(PAddr::new(page as usize)) | PteFlags::V.bits();
     }
 
     /// Make the entry refer to a given address with a given permission.
     /// The permission should include at lease one of R, W, and X not to be
     /// considered as an entry referring a page-table page.
-    fn set_entry(&mut self, pa: PAddr, perm: usize) {
-        assert_ne!(perm & ((PTE_R | PTE_W | PTE_X) as usize), 0);
-        self.inner = pa2pte(pa) | perm | PTE_V;
+    fn set_entry(&mut self, pa: PAddr, perm: PteFlags) {
+        assert!(perm.intersects(PteFlags::R | PteFlags::W | PteFlags::X));
+        self.inner = pa2pte(pa) | (perm | PteFlags::V).bits();
     }
 
-    /// Make the entry inaccessible by user processes by clearing PTE_U.
+    /// Make the entry inaccessible by user processes by clearing PteFlags::U.
     fn clear_user(&mut self) {
-        self.inner &= !(PTE_U as usize);
+        self.inner &= !(PteFlags::U.bits());
     }
 
     /// Invalidate the entry by making every bit 0.
@@ -364,7 +364,7 @@ impl<A: VAddr> PageTable<A> {
     /// physical addresses starting at pa. va and size might not
     /// be page-aligned. Returns Ok(()) on success, Err(()) if walk() couldn't
     /// allocate a needed page-table page.
-    fn map_pages(&mut self, va: A, size: usize, mut pa: PAddr, perm: usize) -> Result<(), ()> {
+    fn map_pages(&mut self, va: A, size: usize, mut pa: PAddr, perm: PteFlags) -> Result<(), ()> {
         let mut a = pgrounddown(va.into_usize());
         let last = pgrounddown(va.into_usize() + size - 1usize);
         loop {
@@ -395,7 +395,7 @@ impl<A: VAddr> PageTable<A> {
             if let Some(ptable) = pte.as_table_mut() {
                 // Non-leaf page. Iterate recursively.
                 Self::free_walk(ptable, level - 1, indicies);
-            } else if level == 0 && pte.check_flag(PTE_V) && pte.get_flags() != PTE_V {
+            } else if level == 0 && pte.is_data() {
                 // Valid leaf page.
                 // Calculate the corresponding virtual address using the `indicies`.
                 let mut va = indicies[2] << pxshift(2);
@@ -430,13 +430,13 @@ impl PageTable<UVAddr> {
         // Map the trampoline code (for system call return)
         // at the highest user virtual address.
         // Only the supervisor uses it, on the way
-        // to/from user space, so not PTE_U.
+        // to/from user space, so not PteFlags::U.
         if page_table
             .map_pages(
                 UVAddr::new(TRAMPOLINE),
                 PGSIZE,
                 PAddr::new(unsafe { trampoline.as_mut_ptr() as usize }),
-                PTE_R | PTE_X,
+                PteFlags::R | PteFlags::X,
             )
             .is_err()
         {
@@ -449,7 +449,7 @@ impl PageTable<UVAddr> {
                 UVAddr::new(TRAPFRAME),
                 PGSIZE,
                 PAddr::new(trap_frame as _),
-                PTE_R | PTE_W,
+                PteFlags::R | PteFlags::W,
             )
             .is_err()
         {
@@ -472,7 +472,7 @@ impl PageTable<UVAddr> {
             VAddr::new(0),
             PGSIZE,
             PAddr::new(mem as usize),
-            PTE_W | PTE_R | PTE_X | PTE_U,
+            PteFlags::R | PteFlags::W | PteFlags::X | PteFlags::U,
         )
     }
 
@@ -509,7 +509,7 @@ impl PageTable<UVAddr> {
                     VAddr::new(a),
                     PGSIZE,
                     PAddr::new(pa),
-                    PTE_W | PTE_X | PTE_R | PTE_U,
+                    PteFlags::R | PteFlags::W | PteFlags::X | PteFlags::U,
                 )
                 .is_err()
             {
@@ -734,13 +734,18 @@ impl PageTable<KVAddr> {
                 KVAddr::new(FINISHER),
                 PGSIZE,
                 PAddr::new(FINISHER),
-                PTE_R | PTE_W,
+                PteFlags::R | PteFlags::W,
             )
             .ok()?;
 
         // Uart registers
         page_table
-            .map_pages(KVAddr::new(UART0), PGSIZE, PAddr::new(UART0), PTE_R | PTE_W)
+            .map_pages(
+                KVAddr::new(UART0),
+                PGSIZE,
+                PAddr::new(UART0),
+                PteFlags::R | PteFlags::W,
+            )
             .ok()?;
 
         // Virtio mmio disk interface
@@ -749,13 +754,18 @@ impl PageTable<KVAddr> {
                 KVAddr::new(VIRTIO0),
                 PGSIZE,
                 PAddr::new(VIRTIO0),
-                PTE_R | PTE_W,
+                PteFlags::R | PteFlags::W,
             )
             .ok()?;
 
         // PLIC
         page_table
-            .map_pages(KVAddr::new(PLIC), 0x400000, PAddr::new(PLIC), PTE_R | PTE_W)
+            .map_pages(
+                KVAddr::new(PLIC),
+                0x400000,
+                PAddr::new(PLIC),
+                PteFlags::R | PteFlags::W,
+            )
             .ok()?;
 
         // Map kernel text executable and read-only.
@@ -765,13 +775,18 @@ impl PageTable<KVAddr> {
                 KVAddr::new(KERNBASE),
                 et - KERNBASE,
                 PAddr::new(KERNBASE),
-                PTE_R | PTE_X,
+                PteFlags::R | PteFlags::X,
             )
             .ok()?;
 
         // Map kernel data and the physical RAM we'll make use of.
         page_table
-            .map_pages(KVAddr::new(et), PHYSTOP - et, PAddr::new(et), PTE_R | PTE_W)
+            .map_pages(
+                KVAddr::new(et),
+                PHYSTOP - et,
+                PAddr::new(et),
+                PteFlags::R | PteFlags::W,
+            )
             .ok()?;
 
         // Map the trampoline for trap entry/exit to
@@ -781,7 +796,7 @@ impl PageTable<KVAddr> {
                 KVAddr::new(TRAMPOLINE),
                 PGSIZE,
                 PAddr::new(unsafe { trampoline.as_mut_ptr() as usize }),
-                PTE_R | PTE_X,
+                PteFlags::R | PteFlags::X,
             )
             .ok()?;
 
@@ -796,7 +811,7 @@ impl PageTable<KVAddr> {
                     KVAddr::new(va),
                     PGSIZE,
                     PAddr::new(pa as usize),
-                    PTE_R | PTE_W,
+                    PteFlags::R | PteFlags::W,
                 )
                 .ok()?;
         }
