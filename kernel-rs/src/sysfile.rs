@@ -84,15 +84,18 @@ where
         }
         return Err(());
     }
+    // TODO(rv6): It is not safe until we check safty of alloc_inode.
     let ptr2 = unsafe { kernel().itable.alloc_inode(dp.dev, typ, tx) };
     let mut ip = ptr2.lock();
     ip.deref_inner_mut().nlink = 1;
+    // TODO(rv6): Need to check the safety of InodeGuard::update
     unsafe { ip.update(tx) };
 
     // Create . and .. entries.
     if typ == InodeType::Dir {
         // for ".."
         dp.deref_inner_mut().nlink += 1;
+        // TODO(rv6): Need to check the safety of InodeGuard::update
         unsafe { dp.update(tx) };
 
         // No ip->nlink++ for ".": avoid cyclic ref count.
@@ -119,6 +122,7 @@ impl Kernel {
             return Err(());
         }
         ip.deref_inner_mut().nlink += 1;
+        // TODO(rv6): Need to check the safety of InodeGuard::update
         unsafe { ip.update(&tx) };
         drop(ip);
 
@@ -132,6 +136,7 @@ impl Kernel {
 
         let mut ip = ptr.lock();
         ip.deref_inner_mut().nlink -= 1;
+        // TODO(rv6): Need to check the safety of InodeGuard::update
         unsafe { ip.update(&tx) };
         Err(())
     }
@@ -161,11 +166,13 @@ impl Kernel {
                     assert_eq!(bytes_write, Ok(DIRENT_SIZE), "unlink: writei");
                     if ip.deref_inner().typ == InodeType::Dir {
                         dp.deref_inner_mut().nlink -= 1;
+                        // TODO(rv6): Need to check the safety of InodeGuard::update
                         unsafe { dp.update(&tx) };
                     }
                     drop(dp);
                     drop(ptr);
                     ip.deref_inner_mut().nlink -= 1;
+                    // TODO(rv6): Need to check the safety of InodeGuard::update
                     unsafe { ip.update(&tx) };
                     return Ok(());
                 }

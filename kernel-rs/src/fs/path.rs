@@ -139,7 +139,7 @@ impl Path {
         let mut ptr = if self.is_absolute() {
             Self::root()
         } else {
-            // TODO(rv6): accessing proc.data shoud be safe after refactoring myproc()
+            // TODO(rv6): accessing proc.data should be safe after refactoring myproc()
             unsafe { (*(*myproc()).data.get()).cwd.clone().unwrap() }
         };
 
