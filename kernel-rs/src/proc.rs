@@ -716,13 +716,7 @@ impl ProcessSystem {
         let pdata = &mut *(*p).data.get();
         let mut npdata = &mut *np.data.get();
         // Copy user memory from parent to child.
-        if pdata
-            .pagetable
-            .copy(&mut npdata.pagetable, pdata.sz)
-            .is_err()
-        {
-            return Err(());
-        }
+        pdata.pagetable.copy(&mut npdata.pagetable, pdata.sz)?;
         npdata.sz = pdata.sz;
 
         // Copy saved user registers.

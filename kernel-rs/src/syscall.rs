@@ -8,7 +8,7 @@ use core::{mem, slice, str};
 use cstr_core::CStr;
 
 /// Fetch the usize at addr from the current process.
-/// Returns Ok(fetched address) on success, Err(()) on error.
+/// Returns Ok(fetched integer) on success, Err(()) on error.
 pub unsafe fn fetchaddr(addr: UVAddr) -> Result<usize, ()> {
     let p = myproc();
     let data = &mut *(*p).data.get();

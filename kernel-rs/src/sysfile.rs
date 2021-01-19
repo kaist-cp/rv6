@@ -96,8 +96,9 @@ where
         unsafe { dp.update(tx) };
 
         // No ip->nlink++ for ".": avoid cyclic ref count.
-        // It is safe because b"." and b".." does not contain any NUL characters.
+        // It is safe because b"." does not contain any NUL characters.
         ip.dirlink(unsafe { FileName::from_bytes(b".") }, ip.inum, tx)
+            // It is safe because b".." does not contain any NUL characters.
             .and_then(|_| ip.dirlink(unsafe { FileName::from_bytes(b"..") }, dp.inum, tx))
             .expect("create dots");
     }
@@ -145,7 +146,7 @@ impl Kernel {
 
         // Cannot unlink "." or "..".
         if !(name.as_bytes() == b"." || name.as_bytes() == b"..") {
-            // TODO: use other Result related functions => solved?
+            // TODO: use other Result related functions
             if let Ok((ptr2, off)) = dp.dirlookup(&name) {
                 let mut ip = ptr2.lock();
                 assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
@@ -307,7 +308,9 @@ impl Kernel {
         }
         Ok(())
     }
+}
 
+impl Kernel {
     /// Return a new file descriptor referring to the same file as given fd.
     /// Returns Ok(new file descriptor) on success, Err(()) on error.
     pub unsafe fn sys_dup(&self) -> Result<usize, ()> {
