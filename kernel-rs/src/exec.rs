@@ -141,8 +141,7 @@ impl Kernel {
                 if ph.vaddr.wrapping_add(ph.memsz) < ph.vaddr {
                     return Err(());
                 }
-                let sz1 = pt.alloc(sz, ph.vaddr.wrapping_add(ph.memsz))?;
-                sz = sz1;
+                sz = pt.alloc(sz, ph.vaddr.wrapping_add(ph.memsz))?;
                 if ph.vaddr.wrapping_rem(PGSIZE) != 0 {
                     return Err(());
                 }
@@ -162,9 +161,7 @@ impl Kernel {
         // Allocate two pages at the next page boundary.
         // Use the second as the user stack.
         sz = sz.wrapping_add(PGSIZE).wrapping_sub(1) & !PGSIZE.wrapping_sub(1);
-
-        let sz1 = pt.alloc(sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)))?;
-        sz = sz1;
+        sz = pt.alloc(sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)))?;
         pt.clear(UVAddr::new(sz.wrapping_sub(2usize.wrapping_mul(PGSIZE))));
         let mut sp: usize = sz;
         let stackbase: usize = sp.wrapping_sub(PGSIZE);

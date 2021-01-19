@@ -388,28 +388,30 @@ impl ProcGuard {
     ///
     /// If a `SpinlockProtectedGuard` was not provided, `p`'s parent field is not modified.
     /// Note that this is because accessing a parent field without a `SpinlockProtectedGuard` is illegal.
-    unsafe fn clear_proc(&mut self, parent_guard: Option<SpinlockProtectedGuard<'_>>) {
-        // Clear the `ProcData`.
-        let mut data = &mut *self.data.get();
-        if !data.trapframe.is_null() {
-            kernel().free(Page::from_usize(data.trapframe as _));
-        }
-        data.trapframe = ptr::null_mut();
-        data.pagetable = PageTable::zero();
-        data.sz = 0;
+    fn clear(&mut self, parent_guard: Option<SpinlockProtectedGuard<'_>>) {
+        unsafe {
+            // Clear the `ProcData`.
+            let mut data = &mut *self.data.get();
+            if !data.trapframe.is_null() {
+                kernel().free(Page::from_usize(data.trapframe as _));
+            }
+            data.trapframe = ptr::null_mut();
+            data.pagetable = PageTable::zero();
+            data.sz = 0;
 
-        // Clear the process's parent field.
-        if let Some(mut guard) = parent_guard {
-            *(*self).parent.assume_init_mut().get_mut(&mut guard) = ptr::null_mut();
-        }
+            // Clear the process's parent field.
+            if let Some(mut guard) = parent_guard {
+                *(*self).parent.assume_init_mut().get_mut(&mut guard) = ptr::null_mut();
+            }
 
-        // Clear the `ProcInfo`.
-        self.deref_mut_info().pid = 0;
-        (*self).name[0] = 0;
-        self.deref_mut_info().waitchannel = ptr::null();
-        self.killed = AtomicBool::new(false);
-        self.deref_mut_info().xstate = 0;
-        self.deref_mut_info().state = Procstate::UNUSED;
+            // Clear the `ProcInfo`.
+            self.deref_mut_info().pid = 0;
+            (*self).name[0] = 0;
+            self.deref_mut_info().waitchannel = ptr::null();
+            self.killed = AtomicBool::new(false);
+            self.deref_mut_info().xstate = 0;
+            self.deref_mut_info().state = Procstate::UNUSED;
+        }
     }
 }
 
@@ -420,7 +422,7 @@ impl Drop for ProcGuard {
             // and ProcData::sz == 0, this means an error happened while initializing a process.
             // Hence, clear the process's fields.
             if self.deref_info().state == Procstate::USED && (*self.data.get()).sz == 0 {
-                self.clear_proc(None);
+                self.clear(None);
             }
             (*self.ptr).info.unlock();
         }
@@ -799,7 +801,7 @@ impl ProcessSystem {
                             return -1;
                         }
                         // Reap the zombie child process.
-                        np.clear_proc(Some(parent_guard));
+                        np.clear(Some(parent_guard));
                         return pid;
                     }
                 }
