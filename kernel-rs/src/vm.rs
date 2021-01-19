@@ -385,7 +385,7 @@ impl<A: VAddr> PageTable<A> {
     /// Recursively frees all pages in the page table, including page-table pages.
     /// Internally uses `VAddr::need_free()` to distinguish pages that need
     /// to be `kernel().free()`ed from ones that do not.
-    unsafe fn freewalk(ptable: &mut RawPageTable, level: usize, indicies: &mut [usize]) {
+    unsafe fn free_walk(ptable: &mut RawPageTable, level: usize, indicies: &mut [usize]) {
         assert!(level < 3);
 
         // Iterate the level-`level` page table.
@@ -395,7 +395,7 @@ impl<A: VAddr> PageTable<A> {
 
             if let Some(ptable) = pte.as_table_mut() {
                 // Non-leaf page. Iterate recursively.
-                Self::freewalk(ptable, level - 1, indicies);
+                Self::free_walk(ptable, level - 1, indicies);
             } else if level == 0 && pte.check_flag(PTE_V) && pte.get_flags() != PTE_V {
                 // Valid leaf page.
                 // Calculate the corresponding virtual address using the `indicies`.
@@ -716,8 +716,11 @@ impl PageTable<UVAddr> {
 impl<A: VAddr> Drop for PageTable<A> {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
+            // Recursively walk through the page-table starting from the highest level (level 2),
+            // and free all pages, including page-table pages. Start with initial `indicies` [0, 0, 0],
+            // which will be later overwritten by `Self::freewalk()` anyway.
             unsafe {
-                Self::freewalk(&mut *self.ptr, 2, &mut [0, 0, 0]);
+                Self::free_walk(self.as_inner_mut(), 2, &mut [0, 0, 0]);
             }
         }
     }

@@ -388,7 +388,7 @@ impl ProcGuard {
     ///
     /// If a `SpinlockProtectedGuard` was not provided, `p`'s parent field is not modified.
     /// Note that this is because accessing a parent field without a `SpinlockProtectedGuard` is illegal.
-    unsafe fn freeproc(&mut self, parent_guard: Option<SpinlockProtectedGuard<'_>>) {
+    unsafe fn clear_proc(&mut self, parent_guard: Option<SpinlockProtectedGuard<'_>>) {
         // Clear the `ProcData`.
         let mut data = &mut *self.data.get();
         if !data.trapframe.is_null() {
@@ -416,8 +416,11 @@ impl ProcGuard {
 impl Drop for ProcGuard {
     fn drop(&mut self) {
         unsafe {
+            // If the ProcGuard was dropped while the process's state is still `USED`
+            // and ProcData::sz == 0, this means an error happened while initializing a process.
+            // Hence, clear the process's fields.
             if self.deref_info().state == Procstate::USED && (*self.data.get()).sz == 0 {
-                self.freeproc(None);
+                self.clear_proc(None);
             }
             (*self.ptr).info.unlock();
         }
@@ -796,7 +799,7 @@ impl ProcessSystem {
                             return -1;
                         }
                         // Reap the zombie child process.
-                        np.freeproc(Some(parent_guard));
+                        np.clear_proc(Some(parent_guard));
                         return pid;
                     }
                 }

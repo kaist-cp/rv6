@@ -90,7 +90,7 @@ impl ProgHdr {
 
 impl Kernel {
     pub unsafe fn exec(&self, path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
-        let sz: usize = 0;
+        let mut sz: usize;
         let mut ustack = [0usize; MAXARG + 1];
         let mut elf: ElfHdr = Default::default();
         let mut ph: ProgHdr = Default::default();
@@ -119,13 +119,10 @@ impl Kernel {
             return Err(());
         }
 
-        let pt = PageTable::<UVAddr>::new(data.trapframe).ok_or(())?;
+        let mut pt = PageTable::<UVAddr>::new(data.trapframe).ok_or(())?;
 
-        let mut ptable_guard = scopeguard::guard((pt, sz), |(_, _)| {});
-
-        let (pt, sz) = &mut *ptable_guard;
         // Load program into memory.
-        *sz = 0;
+        sz = 0;
         for i in 0..elf.phnum as usize {
             let off = elf.phoff.wrapping_add(i * mem::size_of::<ProgHdr>());
 
@@ -144,13 +141,13 @@ impl Kernel {
                 if ph.vaddr.wrapping_add(ph.memsz) < ph.vaddr {
                     return Err(());
                 }
-                let sz1 = pt.alloc(*sz, ph.vaddr.wrapping_add(ph.memsz))?;
-                *sz = sz1;
+                let sz1 = pt.alloc(sz, ph.vaddr.wrapping_add(ph.memsz))?;
+                sz = sz1;
                 if ph.vaddr.wrapping_rem(PGSIZE) != 0 {
                     return Err(());
                 }
                 loadseg(
-                    pt,
+                    &mut pt,
                     UVAddr::new(ph.vaddr),
                     &mut ip,
                     ph.off as u32,
@@ -164,12 +161,12 @@ impl Kernel {
 
         // Allocate two pages at the next page boundary.
         // Use the second as the user stack.
-        *sz = sz.wrapping_add(PGSIZE).wrapping_sub(1) & !PGSIZE.wrapping_sub(1);
+        sz = sz.wrapping_add(PGSIZE).wrapping_sub(1) & !PGSIZE.wrapping_sub(1);
 
-        let sz1 = pt.alloc(*sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)))?;
-        *sz = sz1;
+        let sz1 = pt.alloc(sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)))?;
+        sz = sz1;
         pt.clear(UVAddr::new(sz.wrapping_sub(2usize.wrapping_mul(PGSIZE))));
-        let mut sp: usize = *sz;
+        let mut sp: usize = sz;
         let stackbase: usize = sp.wrapping_sub(PGSIZE);
 
         // Push argument strings, prepare rest of stack in ustack.
@@ -212,7 +209,6 @@ impl Kernel {
                 )
                 .is_ok()
         {
-            let (pt, sz) = scopeguard::ScopeGuard::into_inner(ptable_guard);
             // arguments to user main(argc, argv)
             // argc is returned via the system call return
             // value, which goes in a0.
