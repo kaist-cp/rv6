@@ -455,7 +455,7 @@ impl InodeGuard<'_> {
         // Write the i-node back to disk even if the size didn't change
         // because the loop above might have called bmap() and added a new
         // block to self->addrs[].
-        // TODO(rv6): Need to check the safety of InodeGuard::update
+        // TODO(rv6): Need to check the safety of InodeGuard::update()
         unsafe {
             self.update(tx);
         }

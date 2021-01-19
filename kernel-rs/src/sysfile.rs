@@ -26,7 +26,7 @@ impl RcFile<'static> {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
     fn fdalloc(self) -> Result<i32, Self> {
-        // TODO(rv6): These two unsafe blocks needs to be safe after we refactor myproc()
+        // TODO(rv6): These two unsafe blocks need to be safe after we refactor myproc()
         let p = unsafe { myproc() };
         let mut data = unsafe { &mut *(*p).data.get() };
         for fd in 0..NOFILE {
@@ -88,14 +88,14 @@ where
     let ptr2 = unsafe { kernel().itable.alloc_inode(dp.dev, typ, tx) };
     let mut ip = ptr2.lock();
     ip.deref_inner_mut().nlink = 1;
-    // TODO(rv6): Need to check the safety of InodeGuard::update
+    // TODO(rv6): Need to check the safety of InodeGuard::update()
     unsafe { ip.update(tx) };
 
     // Create . and .. entries.
     if typ == InodeType::Dir {
         // for ".."
         dp.deref_inner_mut().nlink += 1;
-        // TODO(rv6): Need to check the safety of InodeGuard::update
+        // TODO(rv6): Need to check the safety of InodeGuard::update()
         unsafe { dp.update(tx) };
 
         // No ip->nlink++ for ".": avoid cyclic ref count.
@@ -122,7 +122,7 @@ impl Kernel {
             return Err(());
         }
         ip.deref_inner_mut().nlink += 1;
-        // TODO(rv6): Need to check the safety of InodeGuard::update
+        // TODO(rv6): Need to check the safety of InodeGuard::update()
         unsafe { ip.update(&tx) };
         drop(ip);
 
@@ -136,7 +136,7 @@ impl Kernel {
 
         let mut ip = ptr.lock();
         ip.deref_inner_mut().nlink -= 1;
-        // TODO(rv6): Need to check the safety of InodeGuard::update
+        // TODO(rv6): Need to check the safety of InodeGuard::update()
         unsafe { ip.update(&tx) };
         Err(())
     }
@@ -166,13 +166,13 @@ impl Kernel {
                     assert_eq!(bytes_write, Ok(DIRENT_SIZE), "unlink: writei");
                     if ip.deref_inner().typ == InodeType::Dir {
                         dp.deref_inner_mut().nlink -= 1;
-                        // TODO(rv6): Need to check the safety of InodeGuard::update
+                        // TODO(rv6): Need to check the safety of InodeGuard::update()
                         unsafe { dp.update(&tx) };
                     }
                     drop(dp);
                     drop(ptr);
                     ip.deref_inner_mut().nlink -= 1;
-                    // TODO(rv6): Need to check the safety of InodeGuard::update
+                    // TODO(rv6): Need to check the safety of InodeGuard::update()
                     unsafe { ip.update(&tx) };
                     return Ok(());
                 }
@@ -257,7 +257,7 @@ impl Kernel {
     /// Change the current directory.
     /// Returns Ok(()) on success, Err(()) on error.
     fn chdir(&self, dirname: &CStr) -> Result<(), ()> {
-        // TODO(rv6): These two unsafe blocks needs to be safe after we refactor myproc()
+        // TODO(rv6): These two unsafe blocks need to be safe after we refactor myproc()
         let p = unsafe { myproc() };
         let mut data = unsafe { &mut *(*p).data.get() };
         // TODO(rv6)
@@ -280,7 +280,7 @@ impl Kernel {
     /// Create a pipe, put read/write file descriptors in fd0 and fd1.
     /// Returns Ok(()) on success, Err(()) on error.
     fn pipe(&self, fdarray: UVAddr) -> Result<(), ()> {
-        // TODO(rv6): These two unsafe blocks needs to be safe after we refactor myproc()
+        // TODO(rv6): These two unsafe blocks need to be safe after we refactor myproc()
         let p = unsafe { myproc() };
         let mut data = unsafe { &mut *(*p).data.get() };
         let (pipereader, pipewriter) = AllocatedPipe::alloc()?;
@@ -290,7 +290,7 @@ impl Kernel {
             .fdalloc()
             .map_err(|_| data.open_files[fd0 as usize] = None)?;
 
-        // Both copy_out is safe because fdarray, fd0, fd1 is valid.
+        // It is safe because fdarray, fd0 is valid.
         if unsafe {
             data.pagetable.copy_out(
                 fdarray,
@@ -298,6 +298,7 @@ impl Kernel {
             )
         }
         .is_err()
+            // It is safe because fdarray, fd1 is valid.
             || unsafe {
                 data.pagetable.copy_out(
                     UVAddr::new(fdarray.into_usize().wrapping_add(mem::size_of::<i32>())),

@@ -5,8 +5,9 @@ use crate::{
     proc::{myproc, WaitChannel},
     spinlock::Spinlock,
     vm::UVAddr,
+    riscv::PGSIZE,
 };
-use core::ops::Deref;
+use core::{ops::Deref, ptr, mem};
 
 const PIPESIZE: usize = 512;
 
@@ -117,10 +118,14 @@ impl AllocatedPipe {
         let page = kernel().alloc().ok_or(())?;
         let ptr = page.into_usize() as *mut Pipe;
 
+        // `Pipe` must be align with `Page`
+        const_assert!(mem::size_of::<Pipe>() <= PGSIZE);
+
         //TODO(rv6): Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`
-        //TODO(rv6): need to check safety
+        // It is safe because unique access to page is guaranteed since page is just allocated,
+        // and the pipe size and alignment are compatible with the page.
         unsafe {
-            *ptr = Pipe {
+            ptr::write(ptr, Pipe {
                 inner: Spinlock::new(
                     "pipe",
                     PipeInner {
@@ -133,7 +138,7 @@ impl AllocatedPipe {
                 ),
                 read_waitchannel: WaitChannel::new(),
                 write_waitchannel: WaitChannel::new(),
-            }
+            });
         };
         let f0 = kernel()
             .ftable
