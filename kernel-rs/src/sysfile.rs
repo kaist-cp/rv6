@@ -150,7 +150,7 @@ impl Kernel {
                 let mut ip = ptr2.lock();
                 assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
 
-                if ip.deref_inner().typ != InodeType::Dir || ip.isdirempty() {
+                if ip.deref_inner().typ != InodeType::Dir || ip.is_dir_empty() {
                     let bytes_write = dp.write(
                         KVAddr::new(&mut de as *mut Dirent as usize),
                         off,
