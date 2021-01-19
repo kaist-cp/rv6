@@ -681,7 +681,6 @@ impl Itable {
                 .file_system
                 .disk
                 .read(dev, kernel().file_system.superblock().iblock(inum));
-            // TODO: unsafe block
             let dip = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
                 .add((inum as usize).wrapping_rem(IPB));
 
