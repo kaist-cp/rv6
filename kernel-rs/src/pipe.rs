@@ -3,11 +3,11 @@ use crate::{
     kernel::kernel,
     page::Page,
     proc::{myproc, WaitChannel},
+    riscv::PGSIZE,
     spinlock::Spinlock,
     vm::UVAddr,
-    riscv::PGSIZE,
 };
-use core::{ops::Deref, ptr, mem};
+use core::{mem, ops::Deref, ptr};
 
 const PIPESIZE: usize = 512;
 
@@ -125,20 +125,23 @@ impl AllocatedPipe {
         // It is safe because unique access to page is guaranteed since page is just allocated,
         // and the pipe size and alignment are compatible with the page.
         unsafe {
-            ptr::write(ptr, Pipe {
-                inner: Spinlock::new(
-                    "pipe",
-                    PipeInner {
-                        data: [0; PIPESIZE],
-                        nwrite: 0,
-                        nread: 0,
-                        readopen: true,
-                        writeopen: true,
-                    },
-                ),
-                read_waitchannel: WaitChannel::new(),
-                write_waitchannel: WaitChannel::new(),
-            });
+            ptr::write(
+                ptr,
+                Pipe {
+                    inner: Spinlock::new(
+                        "pipe",
+                        PipeInner {
+                            data: [0; PIPESIZE],
+                            nwrite: 0,
+                            nread: 0,
+                            readopen: true,
+                            writeopen: true,
+                        },
+                    ),
+                    read_waitchannel: WaitChannel::new(),
+                    write_waitchannel: WaitChannel::new(),
+                },
+            );
         };
         let f0 = kernel()
             .ftable
