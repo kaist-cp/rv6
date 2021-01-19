@@ -651,6 +651,7 @@ impl ProcessSystem {
     /// Kill the process with the given pid.
     /// The victim won't exit until it tries to return
     /// to user space (see usertrap() in trap.c).
+    /// Returns Ok(()) on success, Err(()) on error.
     pub fn kill(&self, pid: i32) -> Result<(), ()> {
         for p in &self.process_pool {
             let mut guard = p.lock();
@@ -707,6 +708,7 @@ impl ProcessSystem {
 
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
+    /// Returns Ok(new process id) on success, Err(()) on error.
     pub unsafe fn fork(&self) -> Result<i32, ()> {
         let p = myproc();
 
