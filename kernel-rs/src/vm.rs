@@ -157,6 +157,11 @@ impl VAddr for UVAddr {
     }
 }
 
+/// # Safety
+///
+/// If self.is_table() is true, then it must refer to a valid page-table page.
+///
+/// Because of #[derive(Default)], inner is initially 0, which satisfies the invariant.
 #[derive(Default)]
 struct PageTableEntry {
     inner: PteT,
@@ -171,18 +176,6 @@ impl PageTableEntry {
         self.inner & flag != 0
     }
 
-    fn set_flag(&mut self, flag: usize) {
-        self.inner |= flag;
-    }
-
-    fn clear_flag(&mut self, flag: usize) {
-        self.inner &= !flag;
-    }
-
-    fn set_inner(&mut self, inner: PteT) {
-        self.inner = inner;
-    }
-
     fn get_pa(&self) -> PAddr {
         pte2pa(self.inner)
     }
@@ -191,7 +184,7 @@ impl PageTableEntry {
         self.check_flag(PTE_V)
     }
 
-    fn is_user_accessible(&self) -> bool {
+    fn is_user(&self) -> bool {
         self.check_flag(PTE_V | PTE_U as usize)
     }
 
@@ -203,22 +196,36 @@ impl PageTableEntry {
         self.is_valid() && self.check_flag((PTE_R | PTE_W | PTE_X) as usize)
     }
 
-    /// # Safety
-    ///
-    /// If `self.is_table()` is true, then it must refer to a valid page-table page.
-    ///
+    /// Make the entry refer to a given page-table page.
+    fn set_table(&mut self, page: *mut RawPageTable) {
+        self.inner = pa2pte(PAddr::new(page as usize)) | PTE_V;
+    }
+
+    /// Make the entry refer to a given address with a given permission.
+    /// The permission should include at lease one of R, W, and X not to be
+    /// considered as an entry referring a page-table page.
+    fn set_entry(&mut self, pa: PAddr, perm: usize) {
+        assert_ne!(perm & ((PTE_R | PTE_W | PTE_X) as usize), 0);
+        self.inner = pa2pte(pa) | perm | PTE_V;
+    }
+
+    /// Make the entry inaccessible by user processes by clearing PTE_U.
+    fn clear_user(&mut self) {
+        self.inner &= !(PTE_U as usize);
+    }
+
+    /// Invalidate the entry by making every bit 0.
+    fn invalidate(&mut self) {
+        self.inner = 0;
+    }
+
     /// Return `Some(..)` if it refers to a page-table page.
     /// Return `None` if it refers to a data page.
     /// Return `None` if it is invalid.
-    // TODO(rv6)
-    // It is unsafe because it can be used safely only with the invariant of
-    // RawPageTable. If we consider the invariant as an invariant of
-    // PageTableEntry, the unsafe modifier can be removed. However, it will
-    // make other methods such as set_inner unsafe.
-    // https://github.com/kaist-cp/rv6/issues/339
-    unsafe fn as_table_mut(&mut self) -> Option<&mut RawPageTable> {
+    fn as_table_mut(&mut self) -> Option<&mut RawPageTable> {
         if self.is_table() {
-            Some(&mut *(pte2pa(self.inner).into_usize() as *mut RawPageTable))
+            // This is safe because of the invariant.
+            Some(unsafe { &mut *(pte2pa(self.inner).into_usize() as *mut _) })
         } else {
             None
         }
@@ -229,13 +236,8 @@ const PTE_PER_PT: usize = PGSIZE / mem::size_of::<PageTableEntry>();
 
 /// # Safety
 ///
-/// The invariants of this struct are as follows:
-/// - If an entry's V flag is set but its RWX flags are not set,
-///   then it must refer to a valid page-table page.
-/// - It should be safely converted to a Page without breaking the invariants
-///   of Page.
-/// - It should not be accessed outside RawPageTable to guarantee the
-///   invariant.
+/// It should be converted to a Page by Page::from_usize(self.inner.as_ptr() as _)
+/// without breaking the invariants of Page.
 struct RawPageTable {
     inner: [PageTableEntry; PTE_PER_PT],
 }
@@ -247,6 +249,7 @@ impl RawPageTable {
     fn new() -> Option<*mut RawPageTable> {
         let mut page = kernel().alloc()?;
         page.write_bytes(0);
+        // This line guarantees the invariant.
         Some(page.into_usize() as *mut RawPageTable)
     }
 
@@ -262,12 +265,10 @@ impl RawPageTable {
             if !alloc {
                 return None;
             }
-            let page = Self::new()?;
-            let k = page as usize;
-            pte.set_inner(pa2pte(PAddr::new(k)) | PTE_V);
+            let table = Self::new()?;
+            pte.set_table(table);
         }
-        // It is safe because of the RawPageTable's invariant.
-        unsafe { pte.as_table_mut() }
+        pte.as_table_mut()
     }
 
     /// Return a `PageTableEntry` if the `index`th entry refers to a data page.
@@ -287,23 +288,21 @@ impl RawPageTable {
     unsafe fn free_walk(&mut self) {
         // There are 2^9 = 512 PTEs in a page table.
         for pte in &mut self.inner {
-            // It is safe because of the RawPageTable's invariant.
-            if let Some(ptable) = unsafe { pte.as_table_mut() } {
+            if let Some(ptable) = pte.as_table_mut() {
                 // It is safe because ptable will not be used anymore.
                 unsafe { ptable.free_walk() };
-                pte.set_inner(0);
+                pte.invalidate();
             }
         }
         // It is safe to convert inner to a Page because of the invariant.
-        let page = unsafe { Page::from_usize(self.inner.as_mut_ptr() as _) };
+        let page = unsafe { Page::from_usize(self.inner.as_ptr() as _) };
         kernel().free(page);
     }
 }
 
 /// # Safety
 ///
-/// The invariant of this struct is that ptr uniquely refers to a valid 3-level
-/// RawPageTable.
+/// ptr uniquely refers to a valid 3-level RawPageTable.
 pub struct PageTable<A: VAddr> {
     ptr: *mut RawPageTable,
     _marker: PhantomData<A>,
@@ -372,7 +371,7 @@ impl<A: VAddr> PageTable<A> {
             let pte = self.walk(VAddr::new(a), true).ok_or(())?;
             assert!(!pte.is_valid(), "remap");
 
-            pte.set_inner(pa2pte(pa) | perm | PTE_V);
+            pte.set_entry(pa, perm);
             if a == last {
                 break;
             }
@@ -409,7 +408,7 @@ impl<A: VAddr> PageTable<A> {
                 }
             }
             // Remove mapping.
-            pte.set_inner(0);
+            pte.invalidate();
         }
         // Remove the page-table page.
         let page = Page::from_usize(ptable.inner.as_mut_ptr() as _);
@@ -484,7 +483,7 @@ impl PageTable<UVAddr> {
             return None;
         }
         let pte = self.walk(va, false)?;
-        if !pte.is_user_accessible() {
+        if !pte.is_user() {
             return None;
         }
         Some(pte.get_pa())
@@ -582,7 +581,7 @@ impl PageTable<UVAddr> {
                 // guarantee that it is safe.
                 kernel().free(unsafe { Page::from_usize(pa) });
             }
-            pte.set_inner(0);
+            pte.invalidate();
         }
     }
 
@@ -616,9 +615,7 @@ impl PageTable<UVAddr> {
     /// Mark a PTE invalid for user access.
     /// Used by exec for the user stack guard page.
     pub fn clear(&mut self, va: UVAddr) {
-        self.walk(va, false)
-            .expect("clear")
-            .clear_flag(PTE_U as usize);
+        self.walk(va, false).expect("clear").clear_user();
     }
 
     /// Copy from kernel to user.

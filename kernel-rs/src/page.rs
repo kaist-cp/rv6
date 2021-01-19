@@ -14,7 +14,6 @@ pub struct RawPage {
 
 /// # Safety
 ///
-/// The invariants of this struct are as follows:
 /// - inner is 4096 bytes-aligned.
 /// - end <= inner < PHYSTOP
 /// - Two different pages never overwrap. If p1: Page and p2: Page, then
