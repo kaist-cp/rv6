@@ -380,7 +380,7 @@ pub const fn pte_flags(pte: PteT) -> usize {
 pub const PXMASK: usize = 0x1ff;
 
 #[inline]
-fn pxshift(level: usize) -> usize {
+pub fn pxshift(level: usize) -> usize {
     PGSHIFT + 9 * level
 }
 

@@ -125,7 +125,7 @@ impl Kernel {
 
     /// Allocate one 4096-byte page of physical memory.
     /// Returns a pointer that the kernel can use.
-    /// Returns 0 if the memory cannot be allocated.
+    /// Returns None if the memory cannot be allocated.
     pub fn alloc(&self) -> Option<Page> {
         let mut page = kernel().kmem.lock().alloc()?;
 
