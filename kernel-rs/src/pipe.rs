@@ -3,10 +3,11 @@ use crate::{
     kernel::kernel,
     page::Page,
     proc::{myproc, WaitChannel},
+    riscv::PGSIZE,
     spinlock::Spinlock,
     vm::UVAddr,
 };
-use core::ops::Deref;
+use core::{mem, ops::Deref, ptr};
 
 const PIPESIZE: usize = 512;
 
@@ -113,33 +114,45 @@ impl Deref for AllocatedPipe {
 }
 
 impl AllocatedPipe {
-    pub unsafe fn alloc() -> Result<(RcFile<'static>, RcFile<'static>), ()> {
+    pub fn alloc() -> Result<(RcFile<'static>, RcFile<'static>), ()> {
         let page = kernel().alloc().ok_or(())?;
         let ptr = page.into_usize() as *mut Pipe;
 
+        // `Pipe` must be align with `Page`
+        const_assert!(mem::size_of::<Pipe>() <= PGSIZE);
+
         //TODO(rv6): Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`
-        *ptr = Pipe {
-            inner: Spinlock::new(
-                "pipe",
-                PipeInner {
-                    data: [0; PIPESIZE],
-                    nwrite: 0,
-                    nread: 0,
-                    readopen: true,
-                    writeopen: true,
+        // It is safe because unique access to page is guaranteed since page is just allocated,
+        // and the pipe size and alignment are compatible with the page.
+        unsafe {
+            ptr::write(
+                ptr,
+                Pipe {
+                    inner: Spinlock::new(
+                        "pipe",
+                        PipeInner {
+                            data: [0; PIPESIZE],
+                            nwrite: 0,
+                            nread: 0,
+                            readopen: true,
+                            writeopen: true,
+                        },
+                    ),
+                    read_waitchannel: WaitChannel::new(),
+                    write_waitchannel: WaitChannel::new(),
                 },
-            ),
-            read_waitchannel: WaitChannel::new(),
-            write_waitchannel: WaitChannel::new(),
+            );
         };
         let f0 = kernel()
             .ftable
             .alloc_file(FileType::Pipe { pipe: Self { ptr } }, true, false)
-            .ok_or_else(|| kernel().free(Page::from_usize(ptr as _)))?;
+            // It is safe because ptr is an address of page, which obtained by alloc()
+            .map_err(|_| kernel().free(unsafe { Page::from_usize(ptr as _) }))?;
         let f1 = kernel()
             .ftable
             .alloc_file(FileType::Pipe { pipe: Self { ptr } }, false, true)
-            .ok_or_else(|| kernel().free(Page::from_usize(ptr as _)))?;
+            // It is safe because ptr is an address of page, which obtained by alloc()
+            .map_err(|_| kernel().free(unsafe { Page::from_usize(ptr as _) }))?;
 
         Ok((f0, f1))
     }

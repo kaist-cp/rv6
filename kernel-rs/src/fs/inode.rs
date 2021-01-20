@@ -512,7 +512,7 @@ impl InodeGuard<'_> {
     }
 
     /// Is the directory dp empty except for "." and ".." ?
-    pub unsafe fn isdirempty(&mut self) -> bool {
+    pub fn is_dir_empty(&mut self) -> bool {
         let mut de: Dirent = Default::default();
         for off in (2 * DIRENT_SIZE as u32..self.deref_inner().size).step_by(DIRENT_SIZE) {
             let bytes_read = self.read(
@@ -520,7 +520,7 @@ impl InodeGuard<'_> {
                 off as u32,
                 DIRENT_SIZE as u32,
             );
-            assert_eq!(bytes_read, Ok(DIRENT_SIZE), "isdirempty: readi");
+            assert_eq!(bytes_read, Ok(DIRENT_SIZE), "is_dir_empty: readi");
             if de.inum != 0 {
                 return false;
             }

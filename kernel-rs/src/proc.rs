@@ -651,16 +651,17 @@ impl ProcessSystem {
     /// Kill the process with the given pid.
     /// The victim won't exit until it tries to return
     /// to user space (see usertrap() in trap.c).
-    pub fn kill(&self, pid: i32) -> i32 {
+    /// Returns Ok(()) on success, Err(()) on error.
+    pub fn kill(&self, pid: i32) -> Result<(), ()> {
         for p in &self.process_pool {
             let mut guard = p.lock();
             if guard.deref_info().pid == pid {
                 p.kill();
                 guard.wakeup();
-                return 0;
+                return Ok(());
             }
         }
-        -1
+        Err(())
     }
 
     /// Wake up all processes in the pool sleeping on waitchannel.
@@ -707,22 +708,17 @@ impl ProcessSystem {
 
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
-    pub unsafe fn fork(&self) -> i32 {
+    /// Returns Ok(new process id) on success, Err(()) on error.
+    pub unsafe fn fork(&self) -> Result<i32, ()> {
         let p = myproc();
 
         // Allocate process.
-        let mut np = ok_or!(self.alloc(), return -1);
+        let mut np = self.alloc()?;
 
         let pdata = &mut *(*p).data.get();
         let mut npdata = &mut *np.data.get();
         // Copy user memory from parent to child.
-        if pdata
-            .pagetable
-            .copy(&mut npdata.pagetable, pdata.sz)
-            .is_err()
-        {
-            return -1;
-        }
+        pdata.pagetable.copy(&mut npdata.pagetable, pdata.sz)?;
         npdata.sz = pdata.sz;
 
         // Copy saved user registers.
@@ -760,12 +756,12 @@ impl ProcessSystem {
         let mut np = (*child).lock();
         np.deref_mut_info().state = Procstate::RUNNABLE;
 
-        pid
+        Ok(pid)
     }
 
     /// Wait for a child process to exit and return its pid.
-    /// Return -1 if this process has no children.
-    pub unsafe fn wait(&self, addr: UVAddr) -> i32 {
+    /// Return Err(()) if this process has no children.
+    pub unsafe fn wait(&self, addr: UVAddr) -> Result<i32, ()> {
         let p: *mut Proc = myproc();
         let data = &mut *(*p).data.get();
 
@@ -797,19 +793,18 @@ impl ProcessSystem {
                                 )
                                 .is_err()
                         {
-                            drop(np);
-                            return -1;
+                            return Err(());
                         }
                         // Reap the zombie child process.
                         np.clear(Some(parent_guard));
-                        return pid;
+                        return Ok(pid);
                     }
                 }
             }
 
             // No point waiting if we don't have any children.
             if !havekids || (*p).killed() {
-                return -1;
+                return Err(());
             }
 
             // Wait for a child to exit.

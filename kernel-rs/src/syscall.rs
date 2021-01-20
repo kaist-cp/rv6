@@ -1,38 +1,34 @@
 use crate::{
     kernel::Kernel,
     println,
-    proc::{myproc, Proc},
+    proc::myproc,
     vm::{UVAddr, VAddr},
 };
 use core::{mem, slice, str};
 use cstr_core::CStr;
 
 /// Fetch the usize at addr from the current process.
-pub unsafe fn fetchaddr(addr: UVAddr, ip: *mut usize) -> i32 {
-    let p: *mut Proc = myproc();
+/// Returns Ok(fetched integer) on success, Err(()) on error.
+pub unsafe fn fetchaddr(addr: UVAddr) -> Result<usize, ()> {
+    let p = myproc();
     let data = &mut *(*p).data.get();
+    let mut ip = 0;
     if addr.into_usize() >= data.sz
         || addr.into_usize().wrapping_add(mem::size_of::<usize>()) > data.sz
     {
-        return -1;
+        return Err(());
     }
-    if data
-        .pagetable
-        .copy_in(
-            slice::from_raw_parts_mut(ip as *mut u8, mem::size_of::<usize>()),
-            addr,
-        )
-        .is_err()
-    {
-        return -1;
-    }
-    0
+    data.pagetable.copy_in(
+        slice::from_raw_parts_mut(&mut ip as *mut usize as *mut u8, mem::size_of::<usize>()),
+        addr,
+    )?;
+    Ok(ip)
 }
 
 /// Fetch the nul-terminated string at addr from the current process.
 /// Returns reference to the string in the buffer.
 pub unsafe fn fetchstr(addr: UVAddr, buf: &mut [u8]) -> Result<&CStr, ()> {
-    let p: *mut Proc = myproc();
+    let p = myproc();
     (*(*p).data.get()).pagetable.copy_in_str(buf, addr)?;
 
     Ok(CStr::from_ptr(buf.as_ptr()))
@@ -66,19 +62,17 @@ pub unsafe fn argaddr(n: usize) -> Result<usize, ()> {
 
 /// Fetch the nth word-sized system call argument as a null-terminated string.
 /// Copies into buf, at most max.
-/// Returns string length if OK (including nul), -1 if error.
+/// Returns reference to the string in the buffer.
 pub unsafe fn argstr(n: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
     let addr = argaddr(n)?;
     fetchstr(UVAddr::new(addr), buf)
 }
 
 impl Kernel {
-    pub unsafe fn syscall(&'static self) {
-        let p: *mut Proc = myproc();
-        let mut data = &mut *(*p).data.get();
-        let num: i32 = (*data.trapframe).a7 as i32;
+    pub unsafe fn syscall(&'static self, num: i32) -> Result<usize, ()> {
+        let p = myproc();
 
-        let result = match num {
+        match num {
             1 => self.sys_fork(),
             2 => self.sys_exit(),
             3 => self.sys_wait(),
@@ -108,10 +102,8 @@ impl Kernel {
                     str::from_utf8(&(*p).name).unwrap_or("???"),
                     num
                 );
-                usize::MAX
+                Err(())
             }
-        };
-
-        (*data.trapframe).a0 = result;
+        }
     }
 }
