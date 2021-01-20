@@ -793,7 +793,6 @@ impl ProcessSystem {
                                 )
                                 .is_err()
                         {
-                            drop(np);
                             return Err(());
                         }
                         // Reap the zombie child process.
