@@ -43,7 +43,6 @@ mod sleeplock;
 mod spinlock;
 mod start;
 mod stat;
-mod string;
 mod syscall;
 mod sysfile;
 mod sysproc;

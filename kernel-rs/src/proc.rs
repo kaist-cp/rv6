@@ -25,7 +25,6 @@ use crate::{
         pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard, SpinlockProtected,
         SpinlockProtectedGuard,
     },
-    string::safestrcpy,
     trap::usertrapret,
     vm::{PageTable, UVAddr, VAddr},
 };
@@ -697,11 +696,8 @@ impl ProcessSystem {
 
         // User stack pointer.
         (*data.trapframe).sp = PGSIZE;
-        safestrcpy(
-            (*guard).name.as_mut_ptr(),
-            b"initcode\x00" as *const u8,
-            mem::size_of::<[u8; MAXPROCNAME]>() as i32,
-        );
+        let name = b"initcode\x00";
+        (&mut (*guard).name[..name.len()]).copy_from_slice(name);
         data.cwd = Some(Path::root());
         guard.deref_mut_info().state = Procstate::RUNNABLE;
     }
@@ -735,11 +731,7 @@ impl ProcessSystem {
         }
         npdata.cwd = Some(pdata.cwd.clone().unwrap());
 
-        safestrcpy(
-            (*np).name.as_mut_ptr(),
-            (*p).name.as_mut_ptr(),
-            mem::size_of::<[u8; MAXPROCNAME]>() as i32,
-        );
+        np.name.copy_from_slice(&(*p).name);
 
         let pid = np.deref_mut_info().pid;
 
