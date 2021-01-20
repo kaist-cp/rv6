@@ -101,6 +101,11 @@ impl RawSpinlock {
     }
 }
 
+pub trait Guard {
+    /// Returns a reference to the inner `RawSpinlock`.
+    fn get_raw(&self) -> &RawSpinlock;
+}
+
 pub struct SpinlockGuard<'s, T> {
     lock: &'s Spinlock<T>,
     _marker: PhantomData<*const ()>,
@@ -187,10 +192,6 @@ impl<T> Spinlock<T> {
 }
 
 impl<T> SpinlockGuard<'_, T> {
-    pub fn raw(&self) -> *const RawSpinlock {
-        &self.lock.lock as *const _
-    }
-
     pub fn reacquire_after<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce() -> R,
@@ -199,6 +200,12 @@ impl<T> SpinlockGuard<'_, T> {
         let result = f();
         self.lock.lock.acquire();
         result
+    }
+}
+
+impl<T> Guard for SpinlockGuard<'_, T> {
+    fn get_raw(&self) -> &RawSpinlock {
+        &self.lock.lock
     }
 }
 
@@ -262,10 +269,9 @@ impl<T> SpinlockProtected<T> {
     }
 }
 
-impl SpinlockProtectedGuard<'_> {
-    /// Returns the inner `RawSpinlock`.
-    pub fn raw(&self) -> *const RawSpinlock {
-        self.lock as *const _
+impl Guard for SpinlockProtectedGuard<'_> {
+    fn get_raw(&self) -> &RawSpinlock {
+        &self.lock
     }
 }
 
