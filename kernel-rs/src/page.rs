@@ -2,6 +2,7 @@ use core::{
     mem,
     ops::{Deref, DerefMut},
     ptr,
+    ptr::NonNull,
 };
 
 use crate::{println, riscv::PGSIZE, vm::PAddr};
@@ -19,7 +20,7 @@ pub struct RawPage {
 /// - Two different pages never overwrap. If p1: Page and p2: Page, then
 ///   *(p1.inner).inner and *(p1.inner).inner are non-overwrapping arrays.
 pub struct Page {
-    inner: *mut RawPage,
+    inner: NonNull<RawPage>,
 }
 
 impl RawPage {
@@ -49,7 +50,7 @@ impl DerefMut for RawPage {
 
 impl Page {
     pub fn into_usize(self) -> usize {
-        let result = self.inner as _;
+        let result = self.inner.as_ptr() as _;
         mem::forget(self);
         result
     }
@@ -63,12 +64,12 @@ impl Page {
     ///   non-overwrapping arrays.
     pub unsafe fn from_usize(addr: usize) -> Self {
         Self {
-            inner: addr as *mut _,
+            inner: NonNull::new_unchecked(addr as *mut _),
         }
     }
 
     pub fn addr(&self) -> PAddr {
-        PAddr::new(self.inner as _)
+        PAddr::new(self.inner.as_ptr() as _)
     }
 }
 
@@ -76,13 +77,13 @@ impl Deref for Page {
     type Target = RawPage;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*self.inner }
+        unsafe { self.inner.as_ref() }
     }
 }
 
 impl DerefMut for Page {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.inner }
+        unsafe { self.inner.as_mut() }
     }
 }
 

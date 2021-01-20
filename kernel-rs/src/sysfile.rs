@@ -14,12 +14,13 @@ use crate::{
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
     pipe::AllocatedPipe,
     proc::myproc,
-    riscv::PGSIZE,
     some_or,
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
     vm::{KVAddr, UVAddr, VAddr},
 };
-use core::{cell::UnsafeCell, mem, ptr, slice};
+
+use arrayvec::ArrayVec;
+use core::{cell::UnsafeCell, mem, slice};
 use cstr_core::CStr;
 
 impl RcFile<'static> {
@@ -441,42 +442,38 @@ impl Kernel {
     /// TODO(rv6): This is unsafe because it is using unsafe functions(argstr, argaddr, fetchaddr, fetchstr, exec)
     pub unsafe fn sys_exec(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let mut argv: [*mut u8; MAXARG] = [ptr::null_mut(); MAXARG];
+        let mut argvs = ArrayVec::<[Page; MAXARG]>::new();
         let path = argstr(0, &mut path)?;
         let uargv = argaddr(1)?;
 
         let mut success = false;
-        for (i, arg) in argv.iter_mut().enumerate() {
+        for i in 0..MAXARG {
             let uarg = ok_or!(
                 fetchaddr(UVAddr::new(uargv + mem::size_of::<usize>() * i)),
                 break
             );
 
             if uarg == 0 {
-                *arg = ptr::null_mut();
                 success = true;
                 break;
             }
 
-            *arg = some_or!(self.alloc(), break).into_usize() as *mut _;
-
-            if fetchstr(UVAddr::new(uarg), slice::from_raw_parts_mut(*arg, PGSIZE)).is_err() {
+            let mut page = some_or!(self.alloc(), break);
+            if fetchstr(UVAddr::new(uarg), &mut page[..]).is_err() {
+                self.free(page);
                 break;
             }
+            argvs.push(page);
         }
 
         let ret = if success {
-            self.exec(Path::new(path), &argv)
+            self.exec(Path::new(path), &argvs)
         } else {
             Err(())
         };
 
-        for arg in &mut argv[..] {
-            if arg.is_null() {
-                break;
-            }
-
-            self.free(Page::from_usize(*arg as _));
+        for page in argvs.drain(..) {
+            self.free(page);
         }
 
         ret

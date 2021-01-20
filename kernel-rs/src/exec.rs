@@ -3,14 +3,14 @@
 use crate::{
     fs::{InodeGuard, Path},
     kernel::Kernel,
-    ok_or,
+    page::Page,
     param::MAXARG,
     proc::{myproc, Proc},
-    riscv::PGSIZE,
-    string::{safestrcpy, strlen},
+    riscv::{pgroundup, PGSIZE},
     vm::{KVAddr, PageTable, UVAddr, VAddr},
 };
-use core::{cmp, mem, slice};
+use core::{cmp, mem};
+use cstr_core::CStr;
 
 /// "\x7FELF" in little endian
 const ELF_MAGIC: u32 = 0x464c457f;
@@ -89,12 +89,10 @@ impl ProgHdr {
 }
 
 impl Kernel {
-    pub unsafe fn exec(&self, path: &Path, argv: &[*mut u8]) -> Result<usize, ()> {
-        let mut ustack = [0usize; MAXARG + 1];
-        let mut elf: ElfHdr = Default::default();
-        let mut ph: ProgHdr = Default::default();
-        let mut p: *mut Proc = myproc();
-        let mut data = &mut *(*p).data.get();
+    pub unsafe fn exec(&self, path: &Path, argv: &[Page]) -> Result<usize, ()> {
+        if argv.len() > MAXARG {
+            return Err(());
+        }
 
         // TODO(rv6)
         // The method namei can drop inodes. If namei succeeds, its return
@@ -102,13 +100,12 @@ impl Kernel {
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
         // https://github.com/kaist-cp/rv6/issues/290
-        let _tx = self.file_system.begin_transaction();
-        let ptr = ok_or!(path.namei(), {
-            return Err(());
-        });
+        let tx = self.file_system.begin_transaction();
+        let ptr = path.namei()?;
         let mut ip = ptr.lock();
 
         // Check ELF header
+        let mut elf: ElfHdr = Default::default();
         let bytes_read = ip.read(
             KVAddr::new(&mut elf as *mut _ as _),
             0,
@@ -118,127 +115,107 @@ impl Kernel {
             return Err(());
         }
 
+        let p: *mut Proc = myproc();
+        let mut data = &mut *(*p).data.get();
         let mut pt = PageTable::<UVAddr>::new(data.trapframe).ok_or(())?;
 
         // Load program into memory.
         let mut sz = 0;
         for i in 0..elf.phnum as usize {
-            let off = elf.phoff.wrapping_add(i * mem::size_of::<ProgHdr>());
+            let off = elf.phoff + i * mem::size_of::<ProgHdr>();
 
+            let mut ph: ProgHdr = Default::default();
             let bytes_read = ip.read(
-                KVAddr::new(&mut ph as *mut ProgHdr as usize),
-                off as u32,
-                mem::size_of::<ProgHdr>() as u32,
+                KVAddr::new(&mut ph as *mut _ as _),
+                off as _,
+                mem::size_of::<ProgHdr>() as _,
             )?;
             if bytes_read != mem::size_of::<ProgHdr>() {
                 return Err(());
             }
             if ph.is_prog_load() {
-                if ph.memsz < ph.filesz {
+                if ph.memsz < ph.filesz || ph.vaddr % PGSIZE != 0 {
                     return Err(());
                 }
-                if ph.vaddr.wrapping_add(ph.memsz) < ph.vaddr {
-                    return Err(());
-                }
-                sz = pt.alloc(sz, ph.vaddr.wrapping_add(ph.memsz))?;
-                if ph.vaddr.wrapping_rem(PGSIZE) != 0 {
-                    return Err(());
-                }
+                sz = pt.alloc(sz, ph.vaddr.checked_add(ph.memsz).ok_or(())?)?;
                 loadseg(
                     &mut pt,
                     UVAddr::new(ph.vaddr),
                     &mut ip,
-                    ph.off as u32,
-                    ph.filesz as u32,
+                    ph.off as _,
+                    ph.filesz as _,
                 )?;
             }
         }
         drop(ip);
-
-        p = myproc();
+        drop(tx);
 
         // Allocate two pages at the next page boundary.
         // Use the second as the user stack.
-        sz = sz.wrapping_add(PGSIZE).wrapping_sub(1) & !PGSIZE.wrapping_sub(1);
-        sz = pt.alloc(sz, sz.wrapping_add(2usize.wrapping_mul(PGSIZE)))?;
-        pt.clear(UVAddr::new(sz.wrapping_sub(2usize.wrapping_mul(PGSIZE))));
+        sz = pgroundup(sz);
+        sz = pt.alloc(sz, sz + 2 * PGSIZE)?;
+        pt.clear(UVAddr::new(sz - 2 * PGSIZE));
         let mut sp: usize = sz;
-        let stackbase: usize = sp.wrapping_sub(PGSIZE);
+        let stackbase: usize = sp - PGSIZE;
 
         // Push argument strings, prepare rest of stack in ustack.
-        let mut argc: usize = 0;
-        loop {
-            if argv[argc].is_null() {
-                break;
-            }
-            if argc >= MAXARG {
-                return Err(());
-            }
-            sp = sp.wrapping_sub((strlen(argv[argc]) + 1) as usize);
+        let mut ustack = [0usize; MAXARG + 1];
+        for (arg, stack) in izip!(argv, &mut ustack) {
+            let bytes = CStr::from_ptr(arg.as_ptr()).to_bytes_with_nul();
+            sp -= bytes.len();
 
             // riscv sp must be 16-byte aligned
-            sp = sp.wrapping_sub(sp.wrapping_rem(16));
+            sp &= !0xf;
             if sp < stackbase {
                 return Err(());
             }
-            pt.copy_out(
-                UVAddr::new(sp),
-                slice::from_raw_parts_mut(argv[argc], (strlen(argv[argc]) + 1) as usize),
-            )?;
-            ustack[argc] = sp;
-            argc = argc.wrapping_add(1)
+
+            pt.copy_out(UVAddr::new(sp), bytes)?;
+            *stack = sp;
         }
+        let argc: usize = argv.len();
         ustack[argc] = 0;
 
         // push the array of argv[] pointers.
-        sp = sp.wrapping_sub(argc.wrapping_add(1).wrapping_mul(mem::size_of::<usize>()));
-        sp = sp.wrapping_sub(sp.wrapping_rem(16));
-
-        if sp >= stackbase
-            && pt
-                .copy_out(
-                    UVAddr::new(sp),
-                    slice::from_raw_parts_mut(
-                        ustack.as_mut_ptr() as *mut u8,
-                        argc.wrapping_add(1).wrapping_mul(mem::size_of::<usize>()),
-                    ),
-                )
-                .is_ok()
-        {
-            // arguments to user main(argc, argv)
-            // argc is returned via the system call return
-            // value, which goes in a0.
-            (*data.trapframe).a1 = sp;
-
-            // Save program name for debugging.
-            let mut s = path.as_bytes().as_ptr();
-            let mut last = s;
-            while *s != 0 {
-                if *s as i32 == '/' as i32 {
-                    last = s.offset(1)
-                }
-                s = s.offset(1)
-            }
-            safestrcpy(
-                (*p).name.as_mut_ptr(),
-                last,
-                mem::size_of::<[u8; 16]>() as i32,
-            );
-
-            // Commit to the user image.
-            data.pagetable = pt;
-            data.sz = sz;
-
-            // initial program counter = main
-            (*data.trapframe).epc = elf.entry;
-
-            // initial stack pointer
-            (*data.trapframe).sp = sp;
-
-            // this ends up in a0, the first argument to main(argc, argv)
-            return Ok(argc);
+        let argv_size = (argc + 1) * mem::size_of::<usize>();
+        sp -= argv_size;
+        sp &= !0xf;
+        if sp < stackbase {
+            return Err(());
         }
-        Err(())
+        pt.copy_out(UVAddr::new(sp), &ustack.align_to::<u8>().1[..argv_size])?;
+
+        // arguments to user main(argc, argv)
+        // argc is returned via the system call return
+        // value, which goes in a0.
+        (*data.trapframe).a1 = sp;
+
+        // Save program name for debugging.
+        let path_str = path.as_bytes();
+        let name = path_str
+            .iter()
+            .rposition(|c| *c == b'/')
+            .map(|i| &path_str[(i + 1)..])
+            .unwrap_or(path_str);
+        let p_name = &mut (*p).name;
+        let len = cmp::min(p_name.len(), name.len());
+        p_name[..len].copy_from_slice(&name[..len]);
+        if len < p_name.len() {
+            p_name[len] = 0;
+        }
+
+        // Commit to the user image.
+        data.pagetable = pt;
+        data.sz = sz;
+
+        // initial program counter = main
+        (*data.trapframe).epc = elf.entry;
+
+        // initial stack pointer
+        (*data.trapframe).sp = sp;
+
+        // this ends up in a0, the first argument to main(argc, argv)
+        Ok(argc)
     }
 }
 
@@ -262,10 +239,10 @@ unsafe fn loadseg(
             .expect("loadseg: address should exist")
             .into_usize();
 
-        let n = cmp::min(sz - i, PGSIZE as u32);
+        let n = cmp::min(sz - i, PGSIZE as _);
 
-        let bytes_read = ip.read(KVAddr::new(pa), offset.wrapping_add(i), n)?;
-        if bytes_read as u32 != n {
+        let bytes_read = ip.read(KVAddr::new(pa), offset + i, n)?;
+        if bytes_read != n as _ {
             return Err(());
         }
     }
