@@ -36,7 +36,7 @@ pub const LOGSIZE: usize = MAXOPBLOCKS * 3;
 pub const NBUF: usize = MAXOPBLOCKS * 3;
 
 /// Size of file system in blocks.
-pub const FSSIZE: usize = 1000;
+pub const FSSIZE: usize = 2000;
 
 /// Maximum file path name.
 pub const MAXPATH: usize = 128;
