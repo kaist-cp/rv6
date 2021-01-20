@@ -348,15 +348,20 @@ pub const fn pgrounddown(a: usize) -> usize {
     a & !PGSIZE.wrapping_sub(1)
 }
 
-/// valid
-pub const PTE_V: usize = (1) << 0;
-
-pub const PTE_R: usize = (1) << 1;
-pub const PTE_W: usize = (1) << 2;
-pub const PTE_X: usize = (1) << 3;
-
-/// 1 -> user can access
-pub const PTE_U: usize = (1) << 4;
+bitflags! {
+    pub struct PteFlags: usize {
+        /// valid
+        const V = 1 << 0;
+        /// readable
+        const R = 1 << 1;
+        /// writable
+        const W = 1 << 2;
+        /// executable
+        const X = 1 << 3;
+        /// user-accessible
+        const U = 1 << 4;
+    }
+}
 
 /// Shift a physical address to the right place for a PTE.
 #[inline]
@@ -365,13 +370,8 @@ pub const fn pa2pte(pa: PAddr) -> usize {
 }
 
 #[inline]
-pub const fn pte2pa(pte: PteT) -> PAddr {
+pub const fn pte2pa(pte: usize) -> PAddr {
     PAddr::new((pte >> 10) << 12)
-}
-
-#[inline]
-pub const fn pte_flags(pte: PteT) -> usize {
-    pte & 0x3FFusize
 }
 
 /// Extract the three 9-bit page table indices from a virtual address.
@@ -394,5 +394,3 @@ pub fn px<A: VAddr>(level: usize, va: A) -> usize {
 /// Sv39, to avoid having to sign-extend virtual addresses
 /// that have the high bit set.
 pub const MAXVA: usize = (1) << (9 + 9 + 9 + 12 - 1);
-
-pub type PteT = usize;
