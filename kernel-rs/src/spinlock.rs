@@ -1,6 +1,6 @@
 use crate::{
     kernel::kernel,
-    proc::{Cpu, WaitableGuard},
+    proc::{Cpu, Waitable},
     riscv::{intr_get, intr_off, intr_on},
 };
 use core::cell::UnsafeCell;
@@ -198,8 +198,8 @@ impl<T> SpinlockGuard<'_, T> {
     }
 }
 
-impl<T> WaitableGuard for SpinlockGuard<'_, T> {
-    fn get_raw(&self) -> &RawSpinlock {
+impl<T> Waitable for SpinlockGuard<'_, T> {
+    unsafe fn get_raw(&self) -> &RawSpinlock {
         &self.lock.lock
     }
 }
@@ -264,8 +264,8 @@ impl<T> SpinlockProtected<T> {
     }
 }
 
-impl WaitableGuard for SpinlockProtectedGuard<'_> {
-    fn get_raw(&self) -> &RawSpinlock {
+impl Waitable for SpinlockProtectedGuard<'_> {
+    unsafe fn get_raw(&self) -> &RawSpinlock {
         &self.lock
     }
 }

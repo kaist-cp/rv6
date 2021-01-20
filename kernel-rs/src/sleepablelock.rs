@@ -1,5 +1,5 @@
 //! Sleepable locks
-use crate::proc::{WaitChannel, WaitableGuard};
+use crate::proc::{WaitChannel, Waitable};
 use crate::spinlock::RawSpinlock;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
@@ -71,8 +71,8 @@ impl<T> SleepablelockGuard<'_, T> {
     }
 }
 
-impl<T> WaitableGuard for SleepablelockGuard<'_, T> {
-    fn get_raw(&self) -> &RawSpinlock {
+impl<T> Waitable for SleepablelockGuard<'_, T> {
+    unsafe fn get_raw(&self) -> &RawSpinlock {
         &self.lock.lock
     }
 }

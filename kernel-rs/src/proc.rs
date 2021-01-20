@@ -207,9 +207,15 @@ pub enum Procstate {
     USED,
 }
 
-pub trait WaitableGuard {
+/// Represents lock guards that can be slept in a `WaitChannel`.
+pub trait Waitable {
     /// Returns a reference to the inner `RawSpinlock`.
-    fn get_raw(&self) -> &RawSpinlock;
+    ///
+    /// # Safety
+    ///
+    /// You should manually prove the correctness when directly accessing
+    /// the inner `RawSpinlock` instead of using the lock's API.
+    unsafe fn get_raw(&self) -> &RawSpinlock;
 }
 
 pub struct WaitChannel {
@@ -229,7 +235,7 @@ impl WaitChannel {
     /// # Safety
     ///
     /// Make sure `lk` is the only lock we currently hold.
-    pub unsafe fn sleep<T: WaitableGuard>(&self, lk: &mut T) {
+    pub unsafe fn sleep<T: Waitable>(&self, lk: &mut T) {
         let p = &*myproc();
 
         // Must acquire p->lock in order to
