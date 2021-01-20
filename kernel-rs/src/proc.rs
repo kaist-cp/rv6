@@ -21,7 +21,7 @@ use crate::{
     riscv::{intr_get, intr_on, r_tp, PGSIZE},
     some_or,
     spinlock::{
-        pop_off, push_off, Guard, RawSpinlock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
+        pop_off, push_off, RawSpinlock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
     },
     trap::usertrapret,
     vm::{PageTable, UVAddr, VAddr},
@@ -207,6 +207,11 @@ pub enum Procstate {
     USED,
 }
 
+pub trait WaitableGuard {
+    /// Returns a reference to the inner `RawSpinlock`.
+    fn get_raw(&self) -> &RawSpinlock;
+}
+
 pub struct WaitChannel {
     /// Required to make this type non-zero-sized. If it were zero-sized, multiple wait channels may
     /// have the same address, spuriously waking up more threads.
@@ -220,10 +225,11 @@ impl WaitChannel {
 
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
+    ///
     /// # Safety
     ///
     /// Make sure `lk` is the only lock we currently hold.
-    pub unsafe fn sleep(&self, lk: &mut dyn Guard) {
+    pub unsafe fn sleep<T: WaitableGuard>(&self, lk: &mut T) {
         let p = &*myproc();
 
         // Must acquire p->lock in order to

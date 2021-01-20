@@ -1,6 +1,6 @@
 use crate::{
     kernel::kernel,
-    proc::Cpu,
+    proc::{Cpu, WaitableGuard},
     riscv::{intr_get, intr_off, intr_on},
 };
 use core::cell::UnsafeCell;
@@ -101,11 +101,6 @@ impl RawSpinlock {
     }
 }
 
-pub trait Guard {
-    /// Returns a reference to the inner `RawSpinlock`.
-    fn get_raw(&self) -> &RawSpinlock;
-}
-
 pub struct SpinlockGuard<'s, T> {
     lock: &'s Spinlock<T>,
     _marker: PhantomData<*const ()>,
@@ -203,7 +198,7 @@ impl<T> SpinlockGuard<'_, T> {
     }
 }
 
-impl<T> Guard for SpinlockGuard<'_, T> {
+impl<T> WaitableGuard for SpinlockGuard<'_, T> {
     fn get_raw(&self) -> &RawSpinlock {
         &self.lock.lock
     }
@@ -269,7 +264,7 @@ impl<T> SpinlockProtected<T> {
     }
 }
 
-impl Guard for SpinlockProtectedGuard<'_> {
+impl WaitableGuard for SpinlockProtectedGuard<'_> {
     fn get_raw(&self) -> &RawSpinlock {
         &self.lock
     }
