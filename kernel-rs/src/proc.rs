@@ -19,11 +19,9 @@ use crate::{
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
     println,
     riscv::{intr_get, intr_on, r_tp, PGSIZE},
-    sleepablelock::SleepablelockGuard,
     some_or,
     spinlock::{
-        pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard, SpinlockProtected,
-        SpinlockProtectedGuard,
+        pop_off, push_off, RawSpinlock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
     },
     trap::usertrapret,
     vm::{PageTable, UVAddr, VAddr},
@@ -209,6 +207,26 @@ pub enum Procstate {
     USED,
 }
 
+/// Represents lock guards that can be slept in a `WaitChannel`.
+pub trait Waitable {
+    /// Releases the inner `RawSpinlock`.
+    ///
+    /// # Safety
+    ///
+    /// `raw_release()` and `raw_acquire` must always be used as a pair.
+    /// Use these only for temporarily releasing (and then acquiring) the lock.
+    /// Also, do not access `self` until re-acquiring the lock with `raw_acquire()`.
+    unsafe fn raw_release(&mut self);
+
+    /// Acquires the inner `RawSpinlock`.
+    ///
+    /// # Safety
+    ///
+    /// `raw_release()` and `raw_acquire` must always be used as a pair.
+    /// Use these only for temporarily releasing (and then acquiring) the lock.
+    unsafe fn raw_acquire(&mut self);
+}
+
 pub struct WaitChannel {
     /// Required to make this type non-zero-sized. If it were zero-sized, multiple wait channels may
     /// have the same address, spuriously waking up more threads.
@@ -222,23 +240,11 @@ impl WaitChannel {
 
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
-    pub unsafe fn sleep<T>(&self, guard: &mut SpinlockGuard<'_, T>) {
-        self.sleep_raw(guard.raw());
-    }
-
-    /// Atomically release lock and sleep on waitchannel.
-    /// Reacquires lock when awakened.
-    pub unsafe fn sleep_sleepable<T>(&self, guard: &mut SleepablelockGuard<'_, T>) {
-        self.sleep_raw(guard.raw());
-    }
-
-    /// Atomically release lock and sleep on waitchannel.
-    /// Reacquires lock when awakened.
-    // TODO(@kimjungwow): lk is not SpinlockGuard yet because
-    // 1. Some static mut variables are still not Spinlock<T> but RawSpinlock
-    // 2. Sleeplock doesn't have Spinlock<T>
-    pub unsafe fn sleep_raw(&self, lk: *const RawSpinlock) {
-        let p: *mut Proc = myproc();
+    pub fn sleep<T: Waitable>(&self, lk: &mut T) {
+        let p = unsafe {
+            // TODO: Remove this unsafe part after resolving #258
+            &*myproc()
+        };
 
         // Must acquire p->lock in order to
         // change p->state and then call sched.
@@ -248,22 +254,32 @@ impl WaitChannel {
         // so it's okay to release lk.
 
         //DOC: sleeplock1
-        mem::forget((*p).info.lock());
-        (*lk).release();
+        let mut guard = p.lock();
+        unsafe {
+            // Temporarily release the inner `RawSpinlock`.
+            // This is safe, since we don't access `lk` until re-acquiring the lock
+            // at `lk.raw_acquire()`.
+            lk.raw_release();
+        }
 
         // Go to sleep.
-        let mut guard = ProcGuard::from_raw(p);
         guard.deref_mut_info().waitchannel = self;
         guard.deref_mut_info().state = Procstate::SLEEPING;
-        guard.sched();
+        unsafe {
+            // Safe since we hold `p.lock()`, changed the process's state,
+            // and device interrupts are disabled by `push_off()` in `p.lock()`.
+            guard.sched();
+        }
 
         // Tidy up.
         guard.deref_mut_info().waitchannel = ptr::null();
-        mem::forget(guard);
 
         // Reacquire original lock.
-        (*p).info.unlock();
-        (*lk).acquire();
+        drop(guard);
+        unsafe {
+            // Safe since this is paired with a previous `lk.raw_release()`.
+            lk.raw_acquire();
+        }
     }
 
     /// Wake up all processes sleeping on waitchannel.
@@ -801,7 +817,7 @@ impl ProcessSystem {
 
             // Wait for a child to exit.
             //DOC: wait-sleep
-            ((*p).info.get_mut_unchecked().child_waitchannel).sleep_raw(parent_guard.raw());
+            ((*p).info.get_mut_unchecked().child_waitchannel).sleep(&mut parent_guard);
         }
     }
 

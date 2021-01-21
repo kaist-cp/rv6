@@ -1,6 +1,6 @@
 use crate::{
     kernel::kernel,
-    proc::Cpu,
+    proc::{Cpu, Waitable},
     riscv::{intr_get, intr_off, intr_on},
 };
 use core::cell::UnsafeCell;
@@ -187,10 +187,6 @@ impl<T> Spinlock<T> {
 }
 
 impl<T> SpinlockGuard<'_, T> {
-    pub fn raw(&self) -> *const RawSpinlock {
-        &self.lock.lock as *const _
-    }
-
     pub fn reacquire_after<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce() -> R,
@@ -199,6 +195,15 @@ impl<T> SpinlockGuard<'_, T> {
         let result = f();
         self.lock.lock.acquire();
         result
+    }
+}
+
+impl<T> Waitable for SpinlockGuard<'_, T> {
+    unsafe fn raw_release(&mut self) {
+        self.lock.lock.release();
+    }
+    unsafe fn raw_acquire(&mut self) {
+        self.lock.lock.acquire();
     }
 }
 
@@ -262,10 +267,12 @@ impl<T> SpinlockProtected<T> {
     }
 }
 
-impl SpinlockProtectedGuard<'_> {
-    /// Returns the inner `RawSpinlock`.
-    pub fn raw(&self) -> *const RawSpinlock {
-        self.lock as *const _
+impl Waitable for SpinlockProtectedGuard<'_> {
+    unsafe fn raw_release(&mut self) {
+        self.lock.release();
+    }
+    unsafe fn raw_acquire(&mut self) {
+        self.lock.acquire();
     }
 }
 
