@@ -216,7 +216,7 @@ pub trait Waitable {
     /// `raw_release()` and `raw_acquire` must always be used as a pair.
     /// Use these only for temporarily releasing (and then acquiring) the lock.
     /// Also, do not access `self` until re-acquiring the lock with `raw_acquire()`.
-    unsafe fn raw_release(&self);
+    unsafe fn raw_release(&mut self);
 
     /// Acquires the inner `RawSpinlock`.
     ///
@@ -224,7 +224,7 @@ pub trait Waitable {
     ///
     /// `raw_release()` and `raw_acquire` must always be used as a pair.
     /// Use these only for temporarily releasing (and then acquiring) the lock.
-    unsafe fn raw_acquire(&self);
+    unsafe fn raw_acquire(&mut self);
 }
 
 pub struct WaitChannel {

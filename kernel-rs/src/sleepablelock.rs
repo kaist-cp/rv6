@@ -70,10 +70,10 @@ impl<T> SleepablelockGuard<'_, T> {
 }
 
 impl<T> Waitable for SleepablelockGuard<'_, T> {
-    unsafe fn raw_release(&self) {
+    unsafe fn raw_release(&mut self) {
         self.lock.lock.release();
     }
-    unsafe fn raw_acquire(&self) {
+    unsafe fn raw_acquire(&mut self) {
         self.lock.lock.acquire();
     }
 }
