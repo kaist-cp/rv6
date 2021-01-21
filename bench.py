@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import os, argparse, datetime, time, statistics, subprocess
 
 parser = argparse.ArgumentParser(description='usertests benchmark')
