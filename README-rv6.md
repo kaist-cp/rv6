@@ -158,6 +158,33 @@
     set disassemble-next-line auto
     ```
 
+## Benchmark
+
+Run `bench.py`. This script runs `usertests` 10 times by default.
+
+```sh
+./bench.py
+# Or, run 30 times
+./bench.py -n 30
+```
+
+You can see the result in `bench.result`. An exemplary output is:
+
+```
+Start benchmark 2021-01-21 16:01:02.001441
+73.16322882205714
+73.82074988691602
+74.60743912809994
+73.06701795198023
+74.04991712688934
+74.74715550499968
+73.93327224906534
+74.19972170796245
+73.0705537419999
+72.86001828499138
+Mean=73.75190744049614, Standard Deviation=0.6422428124461621, N=10
+```
+
 ## How we ported xv6 to Rust
 
 - Run [c2rust](https://github.com/immunant/c2rust) to transpile C code to Rust.
