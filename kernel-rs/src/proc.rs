@@ -209,13 +209,22 @@ pub enum Procstate {
 
 /// Represents lock guards that can be slept in a `WaitChannel`.
 pub trait Waitable {
-    /// Returns a reference to the inner `RawSpinlock`.
+    /// Releases the inner `RawSpinlock`.
     ///
     /// # Safety
     ///
-    /// You should manually prove the correctness when directly accessing
-    /// the inner `RawSpinlock` instead of using the lock's API.
-    unsafe fn get_raw(&self) -> &RawSpinlock;
+    /// `raw_release()` and `raw_acquire` must always be used as a pair.
+    /// Use these only for temporarily releasing (and then acquiring) the lock.
+    /// Also, do not access `self` until re-acquiring the lock with `raw_acquire()`.
+    unsafe fn raw_release(&self);
+
+    /// Acquires the inner `RawSpinlock`.
+    ///
+    /// # Safety
+    ///
+    /// `raw_release()` and `raw_acquire` must always be used as a pair.
+    /// Use these only for temporarily releasing (and then acquiring) the lock.
+    unsafe fn raw_acquire(&self);
 }
 
 pub struct WaitChannel {
@@ -231,12 +240,11 @@ impl WaitChannel {
 
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
-    ///
-    /// # Safety
-    ///
-    /// Make sure `lk` is the only lock we currently hold.
-    pub unsafe fn sleep<T: Waitable>(&self, lk: &mut T) {
-        let p = &*myproc();
+    pub fn sleep<T: Waitable>(&self, lk: &mut T) {
+        let p = unsafe {
+            // TODO: Remove this unsafe part after resolving #258
+            &*myproc()
+        };
 
         // Must acquire p->lock in order to
         // change p->state and then call sched.
@@ -247,19 +255,31 @@ impl WaitChannel {
 
         //DOC: sleeplock1
         let mut guard = p.lock();
-        lk.get_raw().release();
+        unsafe {
+            // Temporarily release the inner `RawSpinlock`.
+            // This is safe, since we don't access `lk` until re-acquiring the lock
+            // at `lk.raw_acquire()`.
+            lk.raw_release();
+        }
 
         // Go to sleep.
         guard.deref_mut_info().waitchannel = self;
         guard.deref_mut_info().state = Procstate::SLEEPING;
-        guard.sched();
+        unsafe {
+            // Safe since we hold `p.lock()`, changed the process's state,
+            // and device interrupts are disabled by `push_off()` in `p.lock()`.
+            guard.sched();
+        }
 
         // Tidy up.
         guard.deref_mut_info().waitchannel = ptr::null();
 
         // Reacquire original lock.
         drop(guard);
-        lk.get_raw().acquire();
+        unsafe {
+            // Safe since this is paired with a previous `lk.raw_release()`.
+            lk.raw_acquire();
+        }
     }
 
     /// Wake up all processes sleeping on waitchannel.

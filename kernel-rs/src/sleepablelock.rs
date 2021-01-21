@@ -61,9 +61,7 @@ impl<T> Sleepablelock<T> {
 
 impl<T> SleepablelockGuard<'_, T> {
     pub fn sleep(&mut self) {
-        unsafe {
-            self.lock.waitchannel.sleep(self);
-        }
+        self.lock.waitchannel.sleep(self);
     }
 
     pub fn wakeup(&self) {
@@ -72,8 +70,11 @@ impl<T> SleepablelockGuard<'_, T> {
 }
 
 impl<T> Waitable for SleepablelockGuard<'_, T> {
-    unsafe fn get_raw(&self) -> &RawSpinlock {
-        &self.lock.lock
+    unsafe fn raw_release(&self) {
+        self.lock.lock.release();
+    }
+    unsafe fn raw_acquire(&self) {
+        self.lock.lock.acquire();
     }
 }
 

@@ -199,8 +199,11 @@ impl<T> SpinlockGuard<'_, T> {
 }
 
 impl<T> Waitable for SpinlockGuard<'_, T> {
-    unsafe fn get_raw(&self) -> &RawSpinlock {
-        &self.lock.lock
+    unsafe fn raw_release(&self) {
+        self.lock.lock.release();
+    }
+    unsafe fn raw_acquire(&self) {
+        self.lock.lock.acquire();
     }
 }
 
@@ -265,8 +268,11 @@ impl<T> SpinlockProtected<T> {
 }
 
 impl Waitable for SpinlockProtectedGuard<'_> {
-    unsafe fn get_raw(&self) -> &RawSpinlock {
-        &self.lock
+    unsafe fn raw_release(&self) {
+        self.lock.release();
+    }
+    unsafe fn raw_acquire(&self) {
+        self.lock.acquire();
     }
 }
 
