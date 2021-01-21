@@ -1,4 +1,4 @@
-import os, argparse, datetime, time, numpy
+import os, argparse, datetime, time, statistics, subprocess
 
 parser = argparse.ArgumentParser(description='usertests benchmark')
 parser.add_argument('-n', '--number', type=int, default=10, help='number of usertests')
@@ -8,29 +8,29 @@ parser.add_argument('--option', type=str, default='RUST_MODE=release OPTFLAGS=-O
 def main(args):
     stat = []
 
-    f = open(args.output, 'a', buffering=1)
-    f.write('Start benchmark {}\n'.format(datetime.datetime.now()))
-    
-    os.system('make clean')
-    os.system(f'make kernel/kernel USERTEST=yes {args.option}')
-    os.system(f'make fs.img USERTEST=yes {args.option}')
+    with open(args.output, 'a', buffering=1) as f:
+        f.write('Start benchmark {}\n'.format(datetime.datetime.now()))
 
-    for _ in range(args.number):
-        begin = time.perf_counter()
-        os.system(f'make qemu USERTEST=yes {args.option} 2>/dev/null')
-        elapsed = time.perf_counter() - begin
-        f.write(f'{elapsed}\n')
-        stat.append(elapsed)
+        subprocess.check_call('make clean', shell=True)
+        subprocess.check_call(f'make kernel/kernel USERTEST=yes {args.option}', shell=True)
+        subprocess.check_call(f'make fs.img USERTEST=yes {args.option}', shell=True)
 
-        os.remove('fs.img')
-        os.system(f'make fs.img USERTEST=yes {args.option}')
+        for _ in range(args.number):
+            begin = time.perf_counter()
+            subprocess.check_call(f'make qemu USERTEST=yes {args.option} 2>/dev/null', shell=True)
+            elapsed = time.perf_counter() - begin
+            f.write(f'{elapsed}\n')
+            stat.append(elapsed)
 
-    avg = numpy.average(stat)
-    std = numpy.std(stat)
+            os.remove('fs.img')
+            subprocess.check_call(f'make fs.img USERTEST=yes {args.option}', shell=True)
 
-    f.write(f'Mean={avg}, Standard Deviation={std}, N={args.number}\n')
-    f.write('Finish benchmark\n')
+        avg = statistics.mean(stat)
+        std = statistics.stdev(stat)
 
-    f.close()
+        f.write(f'Mean={avg}, Standard Deviation={std}, N={args.number}\n')
+        f.write('Finish benchmark\n')
 
-main(parser.parse_args())
+
+if __name__ == "__main__":
+    main(parser.parse_args())
