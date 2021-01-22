@@ -47,12 +47,24 @@ pub enum MmioRegs {
 }
 
 impl MmioRegs {
-    pub unsafe fn read(self) -> u32 {
-        ptr::read_volatile((VIRTIO0 as *mut u8).add(self as _) as _)
+    pub fn read(self) -> u32 {
+        // It is safe because
+        // * `src` is valid, as the kernel can access [VIRTIO0..VIRTIO0+PGSIZE).
+        // * `src` is properly aligned, as self % 4 == 0.
+        // * `src` points to a properly initialized value, as u32 does not have
+        //   any internal structure to be initialized.
+        // * volatile concurrent accesses are safe.
+        //   (https://github.com/kaist-cp/rv6/issues/188#issuecomment-683548362)
+        unsafe { ptr::read_volatile((VIRTIO0 as *mut u8).add(self as _) as _) }
     }
 
-    pub unsafe fn write(self, src: u32) {
-        ptr::write_volatile((VIRTIO0 as *mut u8).add(self as _) as _, src)
+    pub fn write(self, src: u32) {
+        // It is safe because
+        // * `dst` is valid, as the kernel can access [VIRTIO0..VIRTIO0+PGSIZE).
+        // * `dst` is properly aligned, as self % 4 == 0.
+        // * volatile concurrent accesses are safe.
+        //   (https://github.com/kaist-cp/rv6/issues/188#issuecomment-683548362)
+        unsafe { ptr::write_volatile((VIRTIO0 as *mut u8).add(self as _) as _, src) }
     }
 }
 
@@ -87,11 +99,14 @@ bitflags! {
     }
 }
 
-/// this many virtio descriptors.
-/// must be a power of two.
-pub const NUM: usize = 8;
+/// This many virtio descriptors. It must be a power of two.
+pub const NUM: usize = 1 << 3;
 
-/// a single descriptor, from the spec.
+/// A single descriptor, from the spec.
+/// https://docs.oasis-open.org/virtio/virtio/v1.1/csprd01/virtio-v1.1-csprd01.html#x1-320005
+// It needs repr(C) because it is read by device.
+// https://github.com/kaist-cp/rv6/issues/52
+#[repr(C)]
 #[derive(Copy, Clone)]
 pub struct VirtqDesc {
     pub addr: usize,
@@ -112,8 +127,12 @@ bitflags! {
     }
 }
 
-/// One entry in the "used" ring, with which the
-/// device tells the driver about completed requests.
+/// One entry in the "used" ring, with which the device tells the driver about
+/// completed requests.
+/// https://docs.oasis-open.org/virtio/virtio/v1.1/csprd01/virtio-v1.1-csprd01.html#x1-430008
+// It needs repr(C) because it is read by device.
+// https://github.com/kaist-cp/rv6/issues/52
+#[repr(C)]
 #[derive(Copy, Clone)]
 pub struct VirtqUsedElem {
     /// index of start of completed descriptor chain
@@ -129,12 +148,17 @@ pub const VIRTIO_BLK_T_IN: u32 = 0;
 /// write the disk
 pub const VIRTIO_BLK_T_OUT: u32 = 1;
 
-// It needs repr(C) because it's struct for in-disk representation
-// which should follow C(=machine) representation
+/// https://docs.oasis-open.org/virtio/virtio/v1.1/csprd01/virtio-v1.1-csprd01.html#x1-430008
+// It must be page-aligned.
+// It needs repr(C) because it is read by device.
 // https://github.com/kaist-cp/rv6/issues/52
-#[repr(C)]
+#[repr(C, align(4096))]
 pub struct VirtqUsed {
+    /// always zero
     pub flags: u16,
+
+    /// device increments when it adds a ring[] entry
     pub id: u16,
+
     pub ring: [VirtqUsedElem; NUM],
 }

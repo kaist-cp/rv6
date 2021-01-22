@@ -17,7 +17,6 @@ use crate::{
     spinlock::Spinlock,
     trap::{trapinit, trapinithart},
     uart::Uart,
-    virtio_disk::virtio_disk_init,
     vm::KernelMemory,
 };
 
@@ -216,7 +215,7 @@ pub unsafe fn kernel_main() -> ! {
         KERNEL.bcache.get_mut().init();
 
         // Emulated hard disk.
-        virtio_disk_init(&mut KERNEL.virtqueue, KERNEL.file_system.disk.get_mut());
+        KERNEL.file_system.disk.get_mut().init();
 
         // First user process.
         KERNEL.procs.user_proc_init();

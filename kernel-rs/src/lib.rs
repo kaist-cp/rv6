@@ -62,7 +62,9 @@ mod trap;
 mod uart;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod utils;
+#[deny(unsafe_op_in_unsafe_fn)]
 mod virtio;
+#[deny(unsafe_op_in_unsafe_fn)]
 mod virtio_disk;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod vm;
