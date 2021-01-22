@@ -24,11 +24,11 @@ unsafes = defaultdict(lambda: 0)
 slocs = {}
 
 for file in glob.glob(path, recursive=True):
-    for line in subprocess.check_output(['count-unsafe', file], text=True).splitlines()[1:]:
+    for line in subprocess.check_output(['count-unsafe', file], universal_newlines=True).splitlines()[1:]:
         file, begin, end, cnt, ty = line.split(',')
         unsafes[file] += int(cnt)
 
-    stat = subprocess.check_output(['cloc', file], text=True).splitlines()[-2].strip()
+    stat = subprocess.check_output(['cloc', file], universal_newlines=True).splitlines()[-2].strip()
     sloc = int(space.split(stat)[-1])
 
     slocs[file] = sloc
