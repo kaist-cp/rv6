@@ -89,7 +89,7 @@ impl Pipe {
         }
     }
 
-    unsafe fn close(self: Pin<&Self>, writable: bool) -> bool {
+    pub fn close(self: Pin<&Self>, writable: bool) {
         let this = self.project_ref();
         let mut inner = this.inner.lock();
 
@@ -100,16 +100,18 @@ impl Pipe {
             inner.readopen = false;
             this.write_waitchannel.wakeup();
         }
+    }
+
+    fn closed(self: Pin<&Self>) -> bool {
+        let this = self.project_ref();
+        let inner = this.inner.lock();
 
         // Return whether pipe would be freed or not
         !inner.readopen && !inner.writeopen
     }
 }
 
-// TODO: Remove Copy and Clone
-#[derive(Copy, Clone)]
 pub struct AllocatedPipe {
-    // TODO: 'static ?
     pin: Pin<&'static Pipe>,
 }
 
@@ -166,14 +168,18 @@ impl AllocatedPipe {
     pub fn inner(&self) -> Pin<&Pipe> {
         self.pin
     }
+}
 
-    // TODO: use `Drop` instead of `close`
-    // TODO: use `self` instead of `&mut self`
-    // `&mut self` is used because `Drop` of `File` uses AllocatedPipe inside File.
-    // https://github.com/kaist-cp/rv6/pull/211#discussion_r491671723
-    pub unsafe fn close(&mut self, writable: bool) {
-        if Pipe::close(self.pin, writable) {
-            kernel().free(Page::from_usize(Pin::into_inner_unchecked(self.pin) as *const Pipe as _));
+impl Drop for AllocatedPipe {
+    fn drop(&mut self) {
+        if self.pin.closed() {
+            unsafe {
+                // Safe since we won't access the Pipe afterwards after closing.
+                let ptr = Pin::into_inner_unchecked(self.pin) as *const Pipe;
+
+                // Safe since this is a page that was allocated through `kernel().alloc()`.
+                kernel().free(Page::from_usize(ptr as _));
+            }
         }
     }
 }
