@@ -61,3 +61,5 @@ extern crate array_macro;
 extern crate static_assertions;
 #[macro_use]
 extern crate itertools;
+#[macro_use]
+extern crate pin_project;

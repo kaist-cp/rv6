@@ -5,7 +5,7 @@ use crate::{
     fs::RcInode,
     kernel::kernel,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
-    pipe::AllocatedPipe,
+    pipe::{Pipe, AllocatedPipe},
     proc::{myproc, Proc},
     spinlock::Spinlock,
     stat::Stat,
@@ -95,7 +95,7 @@ impl File {
         }
 
         match &self.typ {
-            FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0)),
+            FileType::Pipe { pipe } => Pipe::read(pipe.inner(), addr, usize::try_from(n).unwrap_or(0)),
             FileType::Inode { ip, off } => {
                 let mut ip = ip.deref().lock();
                 let curr_off = *off.get();
@@ -122,7 +122,7 @@ impl File {
         }
 
         match &self.typ {
-            FileType::Pipe { pipe } => pipe.write(addr, usize::try_from(n).unwrap_or(0)),
+            FileType::Pipe { pipe } => Pipe::write(pipe.inner(), addr, usize::try_from(n).unwrap_or(0)),
             FileType::Inode { ip, off } => {
                 // write a few blocks at a time to avoid exceeding
                 // the maximum log transaction size, including

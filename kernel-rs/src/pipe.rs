@@ -7,7 +7,7 @@ use crate::{
     spinlock::Spinlock,
     vm::UVAddr,
 };
-use core::{mem, ops::Deref, ptr};
+use core::{mem, ptr, pin::Pin};
 
 const PIPESIZE: usize = 512;
 
@@ -27,13 +27,16 @@ struct PipeInner {
     writeopen: bool,
 }
 
+#[pin_project]
 pub struct Pipe {
     inner: Spinlock<PipeInner>,
 
     /// WaitChannel for saying there are unread bytes in Pipe.data.
+    #[pin]
     read_waitchannel: WaitChannel,
 
     /// WaitChannel for saying all bytes in Pipe.data are already read.
+    #[pin]
     write_waitchannel: WaitChannel,
 }
 
@@ -41,18 +44,19 @@ impl Pipe {
     /// PipeInner::try_read() tries to read as much as possible.
     /// Pipe::read() executes try_read() until all bytes in pipe are read.
     //TODO : `n` should be u32
-    pub unsafe fn read(&self, addr: UVAddr, n: usize) -> Result<usize, ()> {
-        let mut inner = self.inner.lock();
+    pub unsafe fn read(self: Pin<&Self>, addr: UVAddr, n: usize) -> Result<usize, ()> {
+        let this = self.project_ref();
+        let mut inner = this.inner.lock();
         loop {
             match inner.try_read(addr, n) {
                 Ok(r) => {
                     //DOC: piperead-wakeup
-                    self.write_waitchannel.wakeup();
+                    this.write_waitchannel.wakeup();
                     return Ok(r);
                 }
                 Err(PipeError::WaitForIO) => {
                     //DOC: piperead-sleep
-                    self.read_waitchannel.sleep(&mut inner);
+                    this.read_waitchannel.sleep(&mut inner);
                 }
                 _ => return Err(()),
             }
@@ -61,22 +65,23 @@ impl Pipe {
 
     /// PipeInner::try_write() tries to write as much as possible.
     /// Pipe::write() executes try_write() until `n` bytes are written.
-    pub unsafe fn write(&self, addr: UVAddr, n: usize) -> Result<usize, ()> {
+    pub unsafe fn write(self: Pin<&Self>, addr: UVAddr, n: usize) -> Result<usize, ()> {
         let mut written = 0;
-        let mut inner = self.inner.lock();
+        let this = self.project_ref();
+        let mut inner = this.inner.lock();
         loop {
             match inner.try_write(addr + written, n - written) {
                 Ok(r) => {
                     written += r;
-                    self.read_waitchannel.wakeup();
+                    this.read_waitchannel.wakeup();
                     if written < n {
-                        self.write_waitchannel.sleep(&mut inner);
+                        this.write_waitchannel.sleep(&mut inner);
                     } else {
                         return Ok(written);
                     }
                 }
                 Err(PipeError::InvalidCopyin(i)) => {
-                    self.read_waitchannel.wakeup();
+                    this.read_waitchannel.wakeup();
                     return Ok(written + i);
                 }
                 _ => return Err(()),
@@ -84,15 +89,16 @@ impl Pipe {
         }
     }
 
-    unsafe fn close(&self, writable: bool) -> bool {
-        let mut inner = self.inner.lock();
+    unsafe fn close(self: Pin<&Self>, writable: bool) -> bool {
+        let this = self.project_ref();
+        let mut inner = this.inner.lock();
 
         if writable {
             inner.writeopen = false;
-            self.read_waitchannel.wakeup();
+            this.read_waitchannel.wakeup();
         } else {
             inner.readopen = false;
-            self.write_waitchannel.wakeup();
+            this.write_waitchannel.wakeup();
         }
 
         // Return whether pipe would be freed or not
@@ -103,14 +109,8 @@ impl Pipe {
 // TODO: Remove Copy and Clone
 #[derive(Copy, Clone)]
 pub struct AllocatedPipe {
-    ptr: *mut Pipe,
-}
-
-impl Deref for AllocatedPipe {
-    type Target = Pipe;
-    fn deref(&self) -> &Self::Target {
-        unsafe { &*self.ptr }
-    }
+    // TODO: 'static ?
+    pin: Pin<&'static Pipe>,
 }
 
 impl AllocatedPipe {
@@ -118,7 +118,7 @@ impl AllocatedPipe {
         let page = kernel().alloc().ok_or(())?;
         let ptr = page.into_usize() as *mut Pipe;
 
-        // `Pipe` must be align with `Page`
+        // `Pipe` must be aligned with `Page`.
         const_assert!(mem::size_of::<Pipe>() <= PGSIZE);
 
         //TODO(rv6): Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`
@@ -143,18 +143,28 @@ impl AllocatedPipe {
                 },
             );
         };
+        let pin = unsafe {
+            // Safe because after this `alloc()` function ends, we can access the `Pipe`
+            // only through `AllocatedPipe::pin`, which is `Pin<&Pipe>` type.
+            // Hence, the `Pipe` cannot be moved.
+            Pin::new_unchecked(&*ptr)
+        };
         let f0 = kernel()
             .ftable
-            .alloc_file(FileType::Pipe { pipe: Self { ptr } }, true, false)
+            .alloc_file(FileType::Pipe { pipe: Self { pin } }, true, false)
             // It is safe because ptr is an address of page, which obtained by alloc()
             .map_err(|_| kernel().free(unsafe { Page::from_usize(ptr as _) }))?;
         let f1 = kernel()
             .ftable
-            .alloc_file(FileType::Pipe { pipe: Self { ptr } }, false, true)
+            .alloc_file(FileType::Pipe { pipe: Self { pin } }, false, true)
             // It is safe because ptr is an address of page, which obtained by alloc()
             .map_err(|_| kernel().free(unsafe { Page::from_usize(ptr as _) }))?;
 
         Ok((f0, f1))
+    }
+
+    pub fn inner(&self) -> Pin<&Pipe> {
+        self.pin
     }
 
     // TODO: use `Drop` instead of `close`
@@ -162,8 +172,8 @@ impl AllocatedPipe {
     // `&mut self` is used because `Drop` of `File` uses AllocatedPipe inside File.
     // https://github.com/kaist-cp/rv6/pull/211#discussion_r491671723
     pub unsafe fn close(&mut self, writable: bool) {
-        if (*self.ptr).close(writable) {
-            kernel().free(Page::from_usize(self.ptr as *mut Pipe as _));
+        if Pipe::close(self.pin, writable) {
+            kernel().free(Page::from_usize(Pin::into_inner_unchecked(self.pin) as *const Pipe as _));
         }
     }
 }
