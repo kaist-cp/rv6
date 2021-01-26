@@ -6,6 +6,7 @@ use core::{
     mem::{self, MaybeUninit},
     ops::{Deref, DerefMut},
     ptr, slice, str,
+    pin::Pin,
     sync::atomic::{AtomicBool, AtomicI32, Ordering},
 };
 
@@ -240,7 +241,7 @@ impl WaitChannel {
 
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
-    pub fn sleep<T: Waitable>(&self, lk: &mut T) {
+    pub fn sleep<T: Waitable>(self: Pin<&Self>, lk: &mut T) {
         let p = unsafe {
             // TODO: Remove this unsafe part after resolving #258
             &*myproc()
@@ -263,7 +264,7 @@ impl WaitChannel {
         }
 
         // Go to sleep.
-        guard.deref_mut_info().waitchannel = self;
+        guard.deref_mut_info().waitchannel = self.get_ref();
         guard.deref_mut_info().state = Procstate::SLEEPING;
         unsafe {
             // Safe since we hold `p.lock()`, changed the process's state,
@@ -817,7 +818,9 @@ impl ProcessSystem {
 
             // Wait for a child to exit.
             //DOC: wait-sleep
-            ((*p).info.get_mut_unchecked().child_waitchannel).sleep(&mut parent_guard);
+            // TODO: Obtain a pin with `project_ref()` instead of making a new pin with `new_unchecked()`.
+            let waitchannel = Pin::new_unchecked(&(*p).info.get_mut_unchecked().child_waitchannel);
+            waitchannel.sleep(&mut parent_guard);
         }
     }
 

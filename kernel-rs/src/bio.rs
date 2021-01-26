@@ -21,13 +21,14 @@ use crate::{
 
 use core::mem;
 use core::ops::{Deref, DerefMut};
+use core::pin::Pin;
 
 pub struct BufEntry {
     dev: u32,
     pub blockno: u32,
 
     /// WaitChannel saying virtio_disk request is done.
-    pub vdisk_request_waitchannel: WaitChannel,
+    vdisk_request_waitchannel: WaitChannel,
 
     pub inner: Sleeplock<BufInner>,
 }
@@ -40,6 +41,13 @@ impl BufEntry {
             vdisk_request_waitchannel: WaitChannel::new(),
             inner: Sleeplock::new("buffer", BufInner::zero()),
         }
+    }
+
+    /// Returns the `WaitChannel` saying virtio_disk request is done.
+    pub fn get_waitchannel(&self) -> Pin<&WaitChannel> {
+        // TODO: change `&self` -> `self: Pin<&Self>`,
+        // and obtain a pin from `self` instead of making a new pin with `new_unchecked()`.
+        unsafe { Pin::new_unchecked(&self.vdisk_request_waitchannel) }
     }
 }
 
@@ -145,7 +153,7 @@ impl Bcache {
         )
     }
 
-    /// Return a unlocked buf with the contents of the indicated block.
+    /// Returns an unlocked buf with the contents of the indicated block.
     pub fn get_buf(&self, dev: u32, blockno: u32) -> BufUnlocked<'_> {
         let inner = self
             .find_or_alloc(

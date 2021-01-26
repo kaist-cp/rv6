@@ -112,6 +112,7 @@ impl Pipe {
 }
 
 pub struct AllocatedPipe {
+    // `Pipe` must not be movable, since `WaitChannel` must not be movable.
     pin: Pin<&'static Pipe>,
 }
 
@@ -173,10 +174,8 @@ impl AllocatedPipe {
 impl Drop for AllocatedPipe {
     fn drop(&mut self) {
         if self.pin.closed() {
+            let ptr = self.pin.get_ref() as *const Pipe;
             unsafe {
-                // Safe since we won't access the Pipe afterwards after closing.
-                let ptr = Pin::into_inner_unchecked(self.pin) as *const Pipe;
-
                 // Safe since this is a page that was allocated through `kernel().alloc()`.
                 kernel().free(Page::from_usize(ptr as _));
             }

@@ -4,9 +4,10 @@ use crate::spinlock::RawSpinlock;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
+use core::pin::Pin;
 
 pub struct SleepablelockGuard<'s, T> {
-    lock: &'s Sleepablelock<T>,
+    lock: Pin<&'s Sleepablelock<T>>,
     _marker: PhantomData<*const ()>,
 }
 
@@ -14,9 +15,11 @@ pub struct SleepablelockGuard<'s, T> {
 unsafe impl<'s, T: Sync> Sync for SleepablelockGuard<'s, T> {}
 
 /// Sleepable locks
+#[pin_project]
 pub struct Sleepablelock<T> {
     lock: RawSpinlock,
     /// WaitChannel saying spinlock is released.
+    #[pin]
     waitchannel: WaitChannel,
     data: UnsafeCell<T>,
 }
@@ -40,7 +43,11 @@ impl<T> Sleepablelock<T> {
         self.lock.acquire();
 
         SleepablelockGuard {
-            lock: self,
+            lock: unsafe {
+                // Safe since we maintain the `Pin` as long as the
+                // `SleepablelockGuard` is alive.
+                Pin::new_unchecked(self)
+            },
             _marker: PhantomData,
         }
     }
@@ -61,7 +68,8 @@ impl<T> Sleepablelock<T> {
 
 impl<T> SleepablelockGuard<'_, T> {
     pub fn sleep(&mut self) {
-        self.lock.waitchannel.sleep(self);
+        let lock = self.lock.project_ref();
+        lock.waitchannel.sleep(self);
     }
 
     pub fn wakeup(&self) {

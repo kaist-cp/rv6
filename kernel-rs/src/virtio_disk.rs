@@ -317,7 +317,7 @@ impl Disk {
 
         // Wait for virtio_disk_intr() to say request has finished.
         while b.deref_mut_inner().disk {
-            (*b).vdisk_request_waitchannel.sleep(this);
+            (*b).get_waitchannel().sleep(this);
         }
         this.info[desc[0].idx].b = ptr::null_mut();
         IntoIter::new(desc).for_each(|desc| this.desc.free(desc));
@@ -348,7 +348,7 @@ impl Disk {
 
             // disk is done with buf
             buf.deref_mut_inner().disk = false;
-            buf.vdisk_request_waitchannel.wakeup();
+            buf.get_waitchannel().wakeup();
 
             self.used_idx += 1;
         }
