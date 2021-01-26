@@ -5,8 +5,8 @@ use core::{
     cmp,
     mem::{self, MaybeUninit},
     ops::{Deref, DerefMut},
-    ptr, slice, str,
     pin::Pin,
+    ptr, slice, str,
     sync::atomic::{AtomicBool, AtomicI32, Ordering},
 };
 
@@ -285,6 +285,7 @@ impl WaitChannel {
 
     /// Wake up all processes sleeping on waitchannel.
     /// Must be called without any p->lock.
+    /// TODO: `&self` -> `self: Pin<&Self>`.
     pub fn wakeup(&self) {
         kernel().procs.wakeup_pool(self)
     }

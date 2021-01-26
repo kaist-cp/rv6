@@ -159,6 +159,7 @@ impl<T> Spinlock<T> {
         }
     }
 
+    // TODO: This should be removed.
     pub unsafe fn unlock(&self) {
         self.lock.release();
     }

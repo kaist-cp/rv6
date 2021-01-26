@@ -46,6 +46,7 @@ impl<T> Sleepablelock<T> {
             lock: unsafe {
                 // Safe since we maintain the `Pin` as long as the
                 // `SleepablelockGuard` is alive.
+                // TODO: Obtain a `Pin` from `self` instead of creating a new one.
                 Pin::new_unchecked(self)
             },
             _marker: PhantomData,

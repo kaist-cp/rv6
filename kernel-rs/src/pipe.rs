@@ -7,7 +7,7 @@ use crate::{
     spinlock::Spinlock,
     vm::UVAddr,
 };
-use core::{mem, ptr, pin::Pin};
+use core::{mem, pin::Pin, ptr};
 
 const PIPESIZE: usize = 512;
 
