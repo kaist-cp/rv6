@@ -8,7 +8,7 @@ use crate::{
     file::{Devsw, FileTable},
     fs::{FileSystem, Itable},
     kalloc::Kmem,
-    page::{Page, RawPage},
+    page::Page,
     param::{NCPU, NDEV},
     plic::{plicinit, plicinithart},
     println,
@@ -55,14 +55,6 @@ pub struct Kernel {
 
     pub bcache: Bcache,
 
-    /// Memory for virtio descriptors `&c` for queue 0.
-    ///
-    /// This is a global instead of allocated because it must be multiple contiguous pages, which
-    /// `kernel().alloc()` doesn't support, and page aligned.
-    // TODO(https://github.com/kaist-cp/rv6/issues/373)
-    // I moved out pages from Disk. Did I changed semantics (pointer indirection?)
-    virtqueue: [RawPage; 2],
-
     pub devsw: [Devsw; NDEV],
 
     pub ftable: FileTable,
@@ -85,7 +77,6 @@ impl Kernel {
             procs: ProcessSystem::zero(),
             cpus: [Cpu::new(); NCPU],
             bcache: Bcache::zero(),
-            virtqueue: [RawPage::DEFAULT, RawPage::DEFAULT],
             devsw: [Devsw {
                 read: None,
                 write: None,

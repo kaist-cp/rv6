@@ -91,7 +91,7 @@ impl FileSystem {
         }
     }
 
-    /// TODO(https://github.com/kaist-cp/rv6/issues/358
+    /// TODO(https://github.com/kaist-cp/rv6/issues/358)
     /// Calling log() after initialize is safe
     fn log(&self) -> &Sleepablelock<Log> {
         if let Some(log) = self.log.get() {
