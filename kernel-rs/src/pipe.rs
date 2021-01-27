@@ -100,8 +100,6 @@ impl Pipe {
     }
 }
 
-// TODO: Remove Copy and Clone
-#[derive(Copy, Clone)]
 pub struct AllocatedPipe {
     ptr: *mut Pipe,
 }

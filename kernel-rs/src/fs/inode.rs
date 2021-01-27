@@ -206,7 +206,7 @@ impl Dirent {
         unsafe { FileName::from_bytes(&self.name[..len]) }
     }
 
-    // TODO: Use iterator
+    // TODO(https://github.com/kaist-cp/rv6/issues/360): Use iterator
     fn read_entry(&mut self, ip: &mut InodeGuard<'_>, off: u32, panic_msg: &'static str) {
         let bytes_read = ip.read(
             KVAddr::new(self as *mut Dirent as usize),
@@ -445,9 +445,6 @@ impl InodeGuard<'_> {
             src = src.add(m as usize);
         }
 
-        // TODO(@kimjungwow) : To pass copyin() usertest, I reflect the commit on Nov 5, 2020 (below link).
-        // https://github.com/mit-pdos/xv6-riscv/commit/5e392531c07966fd8a6bee50e3e357c553fb2a2f
-        // This comment will be removed as we fetch upstream(mit-pdos)
         if off > self.deref_inner().size {
             self.deref_inner_mut().size = off;
         }
@@ -542,7 +539,7 @@ impl ArenaObject for Inode {
         if self.inner.get_mut().valid && self.inner.get_mut().nlink == 0 {
             // inode has no links and no other references: truncate and free.
 
-            // TODO(rv6)
+            // TODO(https://github.com/kaist-cp/rv6/issues/290)
             // Disk write operations must happen inside a transaction. However,
             // we cannot begin a new transaction here because beginning of a
             // transaction acquires a sleep lock while the spin lock of this
@@ -554,7 +551,6 @@ impl ArenaObject for Inode {
             // resulting FsTransaction value is never used. Such transactions
             // can be found in finalize in file.rs, sys_chdir in sysfile.rs,
             // close_files in proc.rs, and exec in exec.rs.
-            // https://github.com/kaist-cp/rv6/issues/290
             let tx = mem::ManuallyDrop::new(FsTransaction {
                 fs: &kernel().file_system,
             });

@@ -37,7 +37,8 @@ impl Console {
     }
 
     /// putc for Console.
-    /// TODO(@coolofficials): This function should be changed after refactoring Console-Uart-Printer relationship.
+    /// TODO(https://github.com/kaist-cp/rv6/issues/298)
+    /// This function should be changed after refactoring Console-Uart-Printer relationship.
     pub fn putc(&mut self, c: i32) {
         putc(c);
     }
@@ -48,7 +49,7 @@ impl Console {
             if VAddr::copy_in(&mut c, UVAddr::new(src.into_usize() + (i as usize))).is_err() {
                 return i;
             }
-            // TODO(@coolofficials): Temporarily using global function kernel().
+            // TODO(https://github.com/kaist-cp/rv6/issues/298): Temporarily using global function kernel().
             // This implementation should be changed after refactoring Console-Uart-Printer relationship.
             kernel().uart.putc(c[0] as i32);
         }
@@ -156,7 +157,8 @@ impl Printer {
     }
 
     /// putc for Printer.
-    /// TODO(@coolofficials): This function should be changed after refactoring Console-Uart-Printer relationship.
+    /// TODO(https://github.com/kaist-cp/rv6/issues/298)
+    /// This function should be changed after refactoring Console-Uart-Printer relationship.
     pub fn putc(&mut self, c: i32) {
         putc(c);
     }
@@ -172,7 +174,7 @@ impl fmt::Write for Printer {
 }
 
 /// Send one character to the uart.
-/// TODO(@coolofficials): This global function is temporary.
+/// TODO(https://github.com/kaist-cp/rv6/issues/298): This global function is temporary.
 /// After refactoring Console-Uart-Printer relationship, this function need to be removed.
 pub fn putc(c: i32) {
     if c == BACKSPACE {
@@ -211,7 +213,7 @@ pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
 
 /// User write()s to the console go here.
 unsafe fn consolewrite(src: UVAddr, n: i32) -> i32 {
-    // TODO(@coolofficials) Remove below comment.
+    // TODO(https://github.com/kaist-cp/rv6/issues/298) Remove below comment.
     // consolewrite() does not need console.lock() -- can lead to sleep() with lock held.
     kernel().console.get_mut_unchecked().write(src, n)
 }

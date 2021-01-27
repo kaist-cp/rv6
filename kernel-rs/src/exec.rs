@@ -93,12 +93,11 @@ impl Kernel {
             return Err(());
         }
 
-        // TODO(rv6)
+        // TODO(https://github.com/kaist-cp/rv6/issues/290)
         // The method namei can drop inodes. If namei succeeds, its return
         // value, ptr, will be dropped when this method returns. Deallocation
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
-        // https://github.com/kaist-cp/rv6/issues/290
         let tx = self.file_system.begin_transaction();
         let ptr = path.namei()?;
         let mut ip = ptr.lock();

@@ -27,7 +27,8 @@ impl RcFile<'static> {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
     fn fdalloc(self) -> Result<i32, Self> {
-        // TODO(rv6): These two unsafe blocks need to be safe after we refactor myproc()
+        // TODO(https://github.com/kaist-cp/rv6/issues/354)
+        // These two unsafe blocks need to be safe after we refactor myproc()
         let p = unsafe { myproc() };
         let mut data = unsafe { &mut *(*p).data.get() };
         for fd in 0..NOFILE {
@@ -152,7 +153,6 @@ impl Kernel {
 
         // Cannot unlink "." or "..".
         if !(name.as_bytes() == b"." || name.as_bytes() == b"..") {
-            // TODO: use other Result related functions
             if let Ok((ptr2, off)) = dp.dirlookup(&name) {
                 let mut ip = ptr2.lock();
                 assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
@@ -258,15 +258,15 @@ impl Kernel {
     /// Change the current directory.
     /// Returns Ok(()) on success, Err(()) on error.
     fn chdir(&self, dirname: &CStr) -> Result<(), ()> {
-        // TODO(rv6): These two unsafe blocks need to be safe after we refactor myproc()
+        // TODO(https://github.com/kaist-cp/rv6/issues/354)
+        // These two unsafe blocks need to be safe after we refactor myproc()
         let p = unsafe { myproc() };
         let mut data = unsafe { &mut *(*p).data.get() };
-        // TODO(rv6)
+        // TODO(https://github.com/kaist-cp/rv6/issues/290)
         // The method namei can drop inodes. If namei succeeds, its return
         // value, ptr, will be dropped when this method returns. Deallocation
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
-        // https://github.com/kaist-cp/rv6/issues/290
         let _tx = self.file_system.begin_transaction();
         let ptr = Path::new(dirname).namei()?;
         let ip = ptr.lock();
@@ -281,7 +281,8 @@ impl Kernel {
     /// Create a pipe, put read/write file descriptors in fd0 and fd1.
     /// Returns Ok(()) on success, Err(()) on error.
     fn pipe(&self, fdarray: UVAddr) -> Result<(), ()> {
-        // TODO(rv6): These two unsafe blocks need to be safe after we refactor myproc()
+        // TODO(https://github.com/kaist-cp/rv6/issues/354)
+        // These two unsafe blocks need to be safe after we refactor myproc()
         let p = unsafe { myproc() };
         let mut data = unsafe { &mut *(*p).data.get() };
         let (pipereader, pipewriter) = AllocatedPipe::alloc()?;

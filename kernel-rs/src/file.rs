@@ -132,9 +132,6 @@ impl File {
                 // might be writing a device like the console.
                 let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
 
-                // TODO(@kimjungwow) : To pass copyin() usertest, I reflect the commit on Nov 5, 2020 (below link).
-                // https://github.com/mit-pdos/xv6-riscv/commit/5e392531c07966fd8a6bee50e3e357c553fb2a2f
-                // This comment will be removed as we fetch upstream(mit-pdos)
                 let mut bytes_written: usize = 0;
                 while bytes_written < n as usize {
                     let bytes_to_write = cmp::min(n as usize - bytes_written, max);
@@ -180,11 +177,10 @@ impl ArenaObject for File {
             match typ {
                 FileType::Pipe { mut pipe } => unsafe { pipe.close(self.writable) },
                 FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
-                    // TODO(rv6)
+                    // TODO(https://github.com/kaist-cp/rv6/issues/290)
                     // The inode ip will be dropped by drop(ip). Deallocation
                     // of an inode may cause disk write operations, so we must
                     // begin a transaction here.
-                    // https://github.com/kaist-cp/rv6/issues/290
                     let _tx = kernel().file_system.begin_transaction();
                     drop(ip);
                 }

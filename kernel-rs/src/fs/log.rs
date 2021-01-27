@@ -143,7 +143,7 @@ impl Log {
     }
 
     /// Called at the start of each FS system call.
-    pub unsafe fn begin_op(this: &Sleepablelock<Self>) {
+    pub fn begin_op(this: &Sleepablelock<Self>) {
         let mut guard = this.lock();
         loop {
             if guard.committing ||
@@ -237,7 +237,7 @@ impl Log {
     ///   bp = Disk::read(...)
     ///   modify bp->data[]
     ///   write(bp)
-    pub unsafe fn write(&mut self, b: Buf<'static>) {
+    pub fn write(&mut self, b: Buf<'static>) {
         assert!(
             !(self.lh.len() >= LOGSIZE || self.lh.len() as i32 >= self.size - 1),
             "too big a transaction"
