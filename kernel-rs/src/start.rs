@@ -78,7 +78,7 @@ unsafe fn timerinit() {
     // scratch[0..2] : space for timervec to save registers.
     // scratch[3] : address of CLINT MTIMECMP register.
     // scratch[4] : desired interval (in cycles) between timer interrupts.
-    let scratch = &mut unsafe { TIMER_SCRATCH[id] }[..];
+    let scratch = unsafe { &mut TIMER_SCRATCH[id][..] };
     *unsafe { scratch.get_unchecked_mut(3) } = clint_mtimecmp(id);
     *unsafe { scratch.get_unchecked_mut(4) } = interval;
     unsafe { w_mscratch(&scratch[0] as *const _ as usize) };
