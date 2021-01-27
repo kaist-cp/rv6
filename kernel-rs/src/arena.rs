@@ -95,7 +95,7 @@ impl<T> ArrayEntry<T> {
 }
 
 impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
-    // TODO(rv6): unsafe...
+    // TODO(https://github.com/kaist-cp/rv6/issues/371): unsafe...
     pub const fn new(entries: [ArrayEntry<T>; CAPACITY]) -> Self {
         Self { entries }
     }
@@ -193,7 +193,8 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<ArrayAr
     unsafe fn dup(&self, handle: &Self::Handle) -> Self::Handle {
         let mut _this = self.lock();
 
-        // TODO: Make a ArrayArena trait and move this there.
+        // TODO(https://github.com/kaist-cp/rv6/issues/369)
+        // Make a ArrayArena trait and move this there.
         (*handle.ptr).refcnt += 1;
         Self::Handle {
             ptr: handle.ptr,
@@ -236,7 +237,7 @@ impl<T> MruEntry<T> {
 }
 
 impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
-    // TODO(rv6): unsafe...
+    // TODO(https://github.com/kaist-cp/rv6/issues/371): unsafe...
     pub const fn new(entries: [MruEntry<T>; CAPACITY]) -> Self {
         Self {
             entries,
@@ -270,8 +271,9 @@ impl<T> Drop for MruPtr<T> {
 }
 
 impl<T: 'static + ArenaObject, const CAPACITY: usize> Spinlock<MruArena<T, CAPACITY>> {
-    // TODO(rv6): a workarond for https://github.com/Gilnaa/memoffset/issues/49.  Assumes
-    // `list_entry` is located at the beginning of `MruEntry`.
+    // TODO(https://github.com/kaist-cp/rv6/issues/369)
+    // A workarond for https://github.com/Gilnaa/memoffset/issues/49.
+    // Assumes `list_entry` is located at the beginning of `MruEntry`.
     const LIST_ENTRY_OFFSET: usize = 0;
     // const LIST_ENTRY_OFFSET: usize = offset_of!(MruEntry<T>, list_entry);
 }
@@ -374,7 +376,8 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
     unsafe fn dup(&self, handle: &Self::Handle) -> Self::Handle {
         let mut _this = self.lock();
 
-        // TODO: Make a MruArena trait and move this there.
+        // TODO(https://github.com/kaist-cp/rv6/issues/369)
+        // Make a MruArena trait and move this there.
         (*handle.ptr).refcnt += 1;
         Self::Handle {
             ptr: handle.ptr,

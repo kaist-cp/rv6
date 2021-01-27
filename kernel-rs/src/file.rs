@@ -45,7 +45,8 @@ pub struct Devsw {
 
 pub type RcFile<'s> = Rc<FileTable, &'s FileTable>;
 
-// TODO: will be infered as we wrap *mut Pipe and *mut Inode.
+// TODO(https://github.com/kaist-cp/rv6/issues/374)
+// will be infered as we wrap *mut Pipe and *mut Inode.
 unsafe impl Send for File {}
 
 impl Default for FileType {
@@ -205,7 +206,7 @@ impl FileTable {
         readable: bool,
         writable: bool,
     ) -> Result<RcFile<'_>, ()> {
-        // TODO: idiomatic initialization.
+        // TODO(https://github.com/kaist-cp/rv6/issues/372): idiomatic initialization.
         let inner = self
             .alloc(|p| {
                 *p = File::new(typ, readable, writable);
