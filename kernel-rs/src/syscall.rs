@@ -34,6 +34,8 @@ pub unsafe fn fetchstr(addr: UVAddr, buf: &mut [u8]) -> Result<&CStr, ()> {
     Ok(CStr::from_ptr(buf.as_ptr()))
 }
 
+/// TODO(https://github.com/kaist-cp/rv6/issues/354)
+/// This will be safe function after we refactor myproc()
 unsafe fn argraw(n: usize) -> usize {
     let p = myproc();
     let data = &mut *(*p).data.get();
