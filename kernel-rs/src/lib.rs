@@ -56,8 +56,12 @@ mod start;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod stat;
 mod syscall;
+
+#[deny(unsafe_op_in_unsafe_fn)]
 mod sysfile;
 mod sysproc;
+
+#[deny(unsafe_op_in_unsafe_fn)]
 mod trap;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod uart;
