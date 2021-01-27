@@ -68,7 +68,7 @@ impl Page {
     ///   non-overwrapping arrays.
     pub unsafe fn from_usize(addr: usize) -> Self {
         Self {
-            inner: NonNull::new_unchecked(addr as *mut _),
+            inner: unsafe { NonNull::new_unchecked(addr as *mut _) },
         }
     }
 }

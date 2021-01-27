@@ -44,7 +44,7 @@ impl Pipe {
     pub unsafe fn read(&self, addr: UVAddr, n: usize) -> Result<usize, ()> {
         let mut inner = self.inner.lock();
         loop {
-            match inner.try_read(addr, n) {
+            match unsafe { inner.try_read(addr, n) } {
                 Ok(r) => {
                     //DOC: piperead-wakeup
                     self.write_waitchannel.wakeup();
@@ -65,7 +65,7 @@ impl Pipe {
         let mut written = 0;
         let mut inner = self.inner.lock();
         loop {
-            match inner.try_write(addr + written, n - written) {
+            match unsafe { inner.try_write(addr + written, n - written) } {
                 Ok(r) => {
                     written += r;
                     self.read_waitchannel.wakeup();
@@ -160,8 +160,8 @@ impl AllocatedPipe {
     // `&mut self` is used because `Drop` of `File` uses AllocatedPipe inside File.
     // https://github.com/kaist-cp/rv6/pull/211#discussion_r491671723
     pub unsafe fn close(&mut self, writable: bool) {
-        if (*self.ptr).close(writable) {
-            kernel().free(Page::from_usize(self.ptr as *mut Pipe as _));
+        if unsafe { (*self.ptr).close(writable) } {
+            kernel().free(unsafe { Page::from_usize(self.ptr as *mut Pipe as _) });
         }
     }
 }
@@ -175,11 +175,11 @@ pub enum PipeError {
 impl PipeInner {
     unsafe fn try_write(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
         let mut ch = [0 as u8];
-        let proc = myproc();
-        if !self.readopen || (*proc).killed() {
+        let proc = unsafe { myproc() };
+        if !self.readopen || unsafe { (*proc).killed() } {
             return Err(PipeError::InvalidStatus);
         }
-        let data = &mut *(*proc).data.get();
+        let data = unsafe { &mut *(*proc).data.get() };
         for i in 0..n {
             if self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
@@ -195,12 +195,12 @@ impl PipeInner {
     }
 
     unsafe fn try_read(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
-        let proc = myproc();
-        let data = &mut *(*proc).data.get();
+        let proc = unsafe { myproc() };
+        let data = unsafe { &mut *(*proc).data.get() };
 
         //DOC: pipe-empty
         if self.nread == self.nwrite && self.writeopen {
-            if (*proc).killed() {
+            if unsafe { (*proc).killed() } {
                 return Err(PipeError::InvalidStatus);
             }
             return Err(PipeError::WaitForIO);

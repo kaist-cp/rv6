@@ -46,10 +46,13 @@ mod kernel;
 mod list;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod memlayout;
+#[deny(unsafe_op_in_unsafe_fn)]
 mod page;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod param;
+#[deny(unsafe_op_in_unsafe_fn)]
 mod pipe;
+#[deny(unsafe_op_in_unsafe_fn)]
 mod plic;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod poweroff;
