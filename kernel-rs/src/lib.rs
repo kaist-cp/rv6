@@ -33,6 +33,7 @@ mod etrace;
 mod exec;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod fcntl;
+#[deny(unsafe_op_in_unsafe_fn)]
 mod file;
 mod fs;
 #[deny(unsafe_op_in_unsafe_fn)]

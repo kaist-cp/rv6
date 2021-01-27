@@ -6,7 +6,7 @@ use crate::{
     kernel::kernel,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
-    proc::{myproc, Proc},
+    proc::myproc,
     spinlock::Spinlock,
     stat::Stat,
     vm::UVAddr,
@@ -71,18 +71,20 @@ impl File {
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
     pub unsafe fn stat(&self, addr: UVAddr) -> Result<(), ()> {
-        let p: *mut Proc = myproc();
+        let p = unsafe { myproc() };
 
         match &self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                 let mut st = ip.stat();
-                (*(*p).data.get()).memory.copy_out(
-                    addr,
-                    slice::from_raw_parts_mut(
-                        &mut st as *mut Stat as *mut u8,
-                        mem::size_of::<Stat>() as usize,
-                    ),
-                )
+                unsafe {
+                    (*(*p).data.get()).memory.copy_out(
+                        addr,
+                        slice::from_raw_parts_mut(
+                            &mut st as *mut Stat as *mut u8,
+                            mem::size_of::<Stat>() as usize,
+                        ),
+                    )
+                }
             }
             _ => Err(()),
         }
@@ -96,13 +98,13 @@ impl File {
         }
 
         match &self.typ {
-            FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0)),
+            FileType::Pipe { pipe } => unsafe { pipe.read(addr, usize::try_from(n).unwrap_or(0)) },
             FileType::Inode { ip, off } => {
                 let mut ip = ip.deref().lock();
-                let curr_off = *off.get();
+                let curr_off = unsafe { *off.get() };
                 let ret = ip.read(addr, curr_off, n as u32);
                 if let Ok(v) = ret {
-                    *off.get() = curr_off.wrapping_add(v as u32);
+                    unsafe { *off.get() = curr_off.wrapping_add(v as u32) };
                 }
                 drop(ip);
                 ret
@@ -110,7 +112,7 @@ impl File {
             FileType::Device { major, .. } => kernel()
                 .devsw
                 .get(*major as usize)
-                .and_then(|dev| Some(dev.read?(addr, n) as usize))
+                .and_then(|dev| Some(unsafe { dev.read?(addr, n) } as usize))
                 .ok_or(()),
             FileType::None => panic!("File::read"),
         }
@@ -123,7 +125,7 @@ impl File {
         }
 
         match &self.typ {
-            FileType::Pipe { pipe } => pipe.write(addr, usize::try_from(n).unwrap_or(0)),
+            FileType::Pipe { pipe } => unsafe { pipe.write(addr, usize::try_from(n).unwrap_or(0)) },
             FileType::Inode { ip, off } => {
                 // write a few blocks at a time to avoid exceeding
                 // the maximum log transaction size, including
@@ -138,7 +140,7 @@ impl File {
                     let bytes_to_write = cmp::min(n as usize - bytes_written, max);
                     let tx = kernel().file_system.begin_transaction();
                     let mut ip = ip.deref().lock();
-                    let curr_off = *off.get();
+                    let curr_off = unsafe { *off.get() };
                     let r = ip
                         .write(
                             addr + bytes_written as usize,
@@ -147,7 +149,7 @@ impl File {
                             &tx,
                         )
                         .map(|v| {
-                            *off.get() = curr_off.wrapping_add(v as u32);
+                            unsafe { *off.get() = curr_off.wrapping_add(v as u32) };
                             v
                         })?;
                     if r != bytes_to_write as usize {
@@ -164,7 +166,7 @@ impl File {
             FileType::Device { major, .. } => kernel()
                 .devsw
                 .get(*major as usize)
-                .and_then(|dev| Some(dev.write?(addr, n) as usize))
+                .and_then(|dev| Some(unsafe { dev.write?(addr, n) } as usize))
                 .ok_or(()),
             FileType::None => panic!("File::read"),
         }
