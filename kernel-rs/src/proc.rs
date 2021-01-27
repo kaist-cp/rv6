@@ -239,7 +239,8 @@ impl WaitChannel {
     /// Reacquires lock when awakened.
     pub fn sleep<T: Waitable>(&self, lk: &mut T) {
         let p = unsafe {
-            // TODO: Remove this unsafe part after resolving #258
+            // TODO(https://github.com/kaist-cp/rv6/issues/354, 258)
+            // Remove this unsafe part after resolving #258, #354
             &*myproc()
         };
 
@@ -525,17 +526,16 @@ impl ProcData {
         for file in &mut self.open_files {
             *file = None;
         }
-        // TODO(rv6)
+        // TODO(https://github.com/kaist-cp/rv6/issues/290)
         // If self.cwd is not None, the inode inside self.cwd will be dropped
         // by assigning None to self.cwd. Deallocation of an inode may cause
         // disk write operations, so we must begin a transaction here.
-        // https://github.com/kaist-cp/rv6/issues/290
         let _tx = kernel().file_system.begin_transaction();
         self.cwd = None;
     }
 }
 
-/// TODO(@efenniht): pid, state, wakeup should be methods of ProcGuard.
+/// TODO(https://github.com/kaist-cp/rv6/issues/363): pid, state, wakeup should be methods of ProcGuard.
 impl Proc {
     const fn zero() -> Self {
         Self {

@@ -19,7 +19,8 @@
 #![feature(generic_associated_types)]
 #![feature(unsafe_block_in_unsafe_fn)]
 
-// TODO(rv6): We must apply #[deny(unsafe_op_in_unsafe_fn)] to every module.
+// TODO(https://github.com/kaist-cp/rv6/issues/335)
+// We must apply #[deny(unsafe_op_in_unsafe_fn)] to every module.
 mod arena;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod bio;

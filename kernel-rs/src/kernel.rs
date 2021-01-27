@@ -8,7 +8,7 @@ use crate::{
     file::{Devsw, FileTable},
     fs::{FileSystem, Itable},
     kalloc::Kmem,
-    page::{Page, RawPage},
+    page::Page,
     param::{NCPU, NDEV},
     plic::{plicinit, plicinithart},
     println,
@@ -21,8 +21,7 @@ use crate::{
 };
 
 /// The kernel.
-// TODO(rv6): remove pub from `pub static mut KERNEL`.
-pub static mut KERNEL: Kernel = Kernel::zero();
+static mut KERNEL: Kernel = Kernel::zero();
 
 /// After intialized, the kernel is safe to immutably access.
 #[inline]
@@ -36,7 +35,7 @@ pub struct Kernel {
     /// Sleeps waiting for there are some input in console buffer.
     pub console: Sleepablelock<Console>,
 
-    /// TODO(@coolofficials): Kernel owns uart temporarily.
+    /// TODO(https://github.com/kaist-cp/rv6/issues/298): Kernel owns uart temporarily.
     /// This might be changed after refactoring relationship between Console-Uart-Printer.
     pub uart: Uart,
 
@@ -55,13 +54,6 @@ pub struct Kernel {
     cpus: [Cpu; NCPU],
 
     pub bcache: Bcache,
-
-    /// Memory for virtio descriptors `&c` for queue 0.
-    ///
-    /// This is a global instead of allocated because it must be multiple contiguous pages, which
-    /// `kernel().alloc()` doesn't support, and page aligned.
-    // TODO(efenniht): I moved out pages from Disk. Did I changed semantics (pointer indirection?)
-    virtqueue: [RawPage; 2],
 
     pub devsw: [Devsw; NDEV],
 
@@ -85,7 +77,6 @@ impl Kernel {
             procs: ProcessSystem::zero(),
             cpus: [Cpu::new(); NCPU],
             bcache: Bcache::zero(),
-            virtqueue: [RawPage::DEFAULT, RawPage::DEFAULT],
             devsw: [Devsw {
                 read: None,
                 write: None,

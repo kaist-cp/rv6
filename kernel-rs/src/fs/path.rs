@@ -55,8 +55,6 @@ impl Path {
         &self.inner
     }
 
-    // TODO: Following functions should return a safe type rather than `*mut Inode`.
-
     pub fn root() -> RcInode<'static> {
         kernel().itable.get_inode(ROOTDEV as u32, ROOTINO)
     }
@@ -99,8 +97,7 @@ impl Path {
     /// assert_eq!(Path::from_bytes(b"////").skipelem(), None);
     /// # }
     /// ```
-    // TODO: Make an iterator.
-    // TODO: Fix doctests work.
+    // TODO(https://github.com/kaist-cp/rv6/issues/359): Fix doctests work.
     fn skipelem(&self) -> Option<(&Self, &FileName)> {
         let mut bytes = &self.inner;
 
@@ -139,7 +136,8 @@ impl Path {
         let mut ptr = if self.is_absolute() {
             Self::root()
         } else {
-            // TODO(rv6): accessing proc.data should be safe after refactoring myproc()
+            // TODO(https://github.com/kaist-cp/rv6/issues/354)
+            // Accessing proc.data should be safe after refactoring myproc()
             unsafe { (*(*myproc()).data.get()).cwd.clone().unwrap() }
         };
 

@@ -38,13 +38,14 @@ const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
 const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
 
 pub struct FileSystem {
-    /// TODO(rv6): initializing superblock should be run only once
-    /// because forkret() calls fsinit()
+    /// TODO(https://github.com/kaist-cp/rv6/issues/358)
+    /// Initializing superblock should be run only once because forkret() calls fsinit()
     /// There should be one superblock per disk device, but we run with
     /// only one device.
     superblock: Once<Superblock>,
 
-    /// TODO(rv6): document it / initializing log should be run
+    /// TODO(https://github.com/kaist-cp/rv6/issues/358)
+    /// document it / initializing log should be run
     /// only once because forkret() calls fsinit()
     log: Once<Sleepablelock<Log>>,
 
@@ -80,7 +81,8 @@ impl FileSystem {
         });
     }
 
-    /// TODO(rv6): calling superblock() after initialize is safe
+    /// TODO(https://github.com/kaist-cp/rv6/issues/358)
+    /// Calling superblock() after initialize is safe
     fn superblock(&self) -> &Superblock {
         if let Some(sb) = self.superblock.get() {
             sb
@@ -89,7 +91,8 @@ impl FileSystem {
         }
     }
 
-    /// TODO(rv6): calling log() after initialize is safe
+    /// TODO(https://github.com/kaist-cp/rv6/issues/358)
+    /// Calling log() after initialize is safe
     fn log(&self) -> &Sleepablelock<Log> {
         if let Some(log) = self.log.get() {
             log
@@ -100,10 +103,7 @@ impl FileSystem {
 
     /// Called for each FS system call.
     pub fn begin_transaction(&self) -> FsTransaction<'_> {
-        // TODO(rv6): safety?
-        unsafe {
-            Log::begin_op(self.log());
-        }
+        Log::begin_op(self.log());
         FsTransaction { fs: self }
     }
 }
