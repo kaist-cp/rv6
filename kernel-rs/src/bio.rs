@@ -94,7 +94,7 @@ impl BufInner {
 pub type Bcache = Spinlock<MruArena<BufEntry, NBUF>>;
 
 /// We can consider it as BufEntry.
-pub type BufUnlocked<'s> = Rc<Bcache, &'s Bcache>;
+pub type BufUnlocked<'s> = Rc<'s, Bcache, &'s Bcache>;
 
 /// # Safety
 ///
@@ -151,18 +151,15 @@ impl Bcache {
 
     /// Return a unlocked buf with the contents of the indicated block.
     pub fn get_buf(&self, dev: u32, blockno: u32) -> BufUnlocked<'_> {
-        let inner = self
-            .find_or_alloc(
-                |buf| buf.dev == dev && buf.blockno == blockno,
-                |buf| {
-                    buf.dev = dev;
-                    buf.blockno = blockno;
-                    buf.inner.get_mut().valid = false;
-                },
-            )
-            .expect("[BufGuard::new] no buffers");
-
-        unsafe { Rc::from_unchecked(self, inner) }
+        self.find_or_alloc(
+            |buf| buf.dev == dev && buf.blockno == blockno,
+            |buf| {
+                buf.dev = dev;
+                buf.blockno = blockno;
+                buf.inner.get_mut().valid = false;
+            },
+        )
+        .expect("[BufGuard::new] no buffers")
     }
 }
 
