@@ -296,7 +296,7 @@ impl<A: VAddr> PageTable<A> {
     /// # Safety
     ///
     /// Any page table returned by this method must not be used at all.
-    // TODO(rv6): This method should be removed by refactoring Proc.
+    // TODO(https://github.com/kaist-cp/rv6/issues/204): This method should be removed by refactoring Proc.
     pub const unsafe fn uninit() -> Self {
         Self {
             ptr: ptr::null_mut(),
@@ -373,7 +373,7 @@ impl<A: VAddr> PageTable<A> {
 
 impl<A: VAddr> Drop for PageTable<A> {
     fn drop(&mut self) {
-        // TODO(rv6)
+        // TODO(https://github.com/kaist-cp/rv6/issues/204)
         // This check is required because of uninit. When uninit is removed,
         // this check also can be removed.
         if !self.ptr.is_null() {
@@ -413,7 +413,7 @@ impl UserMemory {
     /// # Safety
     ///
     /// The result this method must not be used, except for calling size and being dropped.
-    // TODO(rv6): This method should be removed by refactoring Proc.
+    // TODO(https://github.com/kaist-cp/rv6/issues/204): This method should be removed by refactoring Proc.
     pub const unsafe fn uninit() -> Self {
         Self {
             // It is safe because this page table will not be used at all.
