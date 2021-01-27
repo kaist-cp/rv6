@@ -53,7 +53,7 @@ impl ListEntry {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.next as *const _ == self as *const _
+        ptr::eq(self.next, self)
     }
 
     pub fn remove(&mut self) {

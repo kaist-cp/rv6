@@ -4,10 +4,11 @@ use crate::{
     riscv::{intr_get, intr_off, intr_on},
 };
 use core::cell::UnsafeCell;
+use core::hint::spin_loop;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr;
-use core::sync::atomic::{spin_loop_hint, AtomicPtr, Ordering};
+use core::sync::atomic::{AtomicPtr, Ordering};
 
 /// Mutual exclusion lock.
 pub struct RawSpinlock {
@@ -53,7 +54,7 @@ impl RawSpinlock {
             )
             .is_err()
         {
-            spin_loop_hint();
+            spin_loop();
         }
 
         // Tell the C compiler and the processor to not move loads or stores
@@ -258,7 +259,7 @@ impl<T> SpinlockProtected<T> {
     /// TODO(https://github.com/kaist-cp/rv6/issues/375)
     /// This runtime cost can be removed by using a trait, such as `pub trait SpinlockID {}`.
     pub fn get_mut<'a: 'b, 'b>(&'a self, guard: &'b mut SpinlockProtectedGuard<'a>) -> &'b mut T {
-        assert!(self.lock as *const _ == guard.lock as *const _);
+        assert!(ptr::eq(self.lock, guard.lock));
         unsafe { &mut *self.data.get() }
     }
 

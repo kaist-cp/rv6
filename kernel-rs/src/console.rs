@@ -45,7 +45,7 @@ impl Console {
 
     unsafe fn write(&mut self, src: UVAddr, n: i32) -> i32 {
         for i in 0..n {
-            let mut c = [0 as u8];
+            let mut c = [0u8];
             if unsafe { VAddr::copy_in(&mut c, UVAddr::new(src.into_usize() + (i as usize))) }
                 .is_err()
             {

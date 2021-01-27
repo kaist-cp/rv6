@@ -174,7 +174,7 @@ pub enum PipeError {
 
 impl PipeInner {
     unsafe fn try_write(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
-        let mut ch = [0 as u8];
+        let mut ch = [0u8];
         let proc = unsafe { myproc() };
         if !self.readopen || unsafe { (*proc).killed() } {
             return Err(PipeError::InvalidStatus);

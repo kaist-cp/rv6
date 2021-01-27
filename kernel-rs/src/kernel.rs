@@ -1,6 +1,7 @@
 use core::fmt::{self, Write};
+use core::hint::spin_loop;
 use core::mem::MaybeUninit;
-use core::sync::atomic::{spin_loop_hint, AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::{
     bio::Bcache,
@@ -213,7 +214,7 @@ pub unsafe fn kernel_main() -> ! {
         STARTED.store(true, Ordering::Release);
     } else {
         while !STARTED.load(Ordering::Acquire) {
-            spin_loop_hint();
+            spin_loop();
         }
 
         println!("hart {} starting", cpuid());

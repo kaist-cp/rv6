@@ -66,11 +66,11 @@ impl Add<usize> for UVAddr {
 pub trait VAddr: Copy + Add<usize, Output = Self> {
     fn new(value: usize) -> Self;
 
-    fn into_usize(&self) -> usize;
+    fn into_usize(self) -> usize;
 
-    fn is_null(&self) -> bool;
+    fn is_null(self) -> bool;
 
-    fn is_page_aligned(&self) -> bool;
+    fn is_page_aligned(self) -> bool;
 
     /// Copy from either a user address, or kernel address.
     /// Returns Ok(()) on success, Err(()) on error.
@@ -86,15 +86,15 @@ impl VAddr for KVAddr {
         KVAddr(value)
     }
 
-    fn into_usize(&self) -> usize {
+    fn into_usize(self) -> usize {
         self.0
     }
 
-    fn is_null(&self) -> bool {
+    fn is_null(self) -> bool {
         self.0 == 0
     }
 
-    fn is_page_aligned(&self) -> bool {
+    fn is_page_aligned(self) -> bool {
         self.0 % PGSIZE == 0
     }
 
@@ -114,15 +114,15 @@ impl VAddr for UVAddr {
         UVAddr(value)
     }
 
-    fn into_usize(&self) -> usize {
+    fn into_usize(self) -> usize {
         self.0
     }
 
-    fn is_null(&self) -> bool {
+    fn is_null(self) -> bool {
         self.0 == 0
     }
 
-    fn is_page_aligned(&self) -> bool {
+    fn is_page_aligned(self) -> bool {
         self.0 % PGSIZE == 0
     }
 
