@@ -66,6 +66,8 @@ mod sleepablelock;
 mod sleeplock;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod spinlock;
+
+#[deny(unsafe_op_in_unsafe_fn)]
 mod start;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod stat;
