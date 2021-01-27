@@ -56,6 +56,7 @@ mod pipe;
 mod plic;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod poweroff;
+#[deny(unsafe_op_in_unsafe_fn)]
 mod proc;
 mod riscv;
 mod sleepablelock;
