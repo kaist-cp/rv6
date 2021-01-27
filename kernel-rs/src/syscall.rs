@@ -13,12 +13,12 @@ pub unsafe fn fetchaddr(addr: UVAddr) -> Result<usize, ()> {
     let p = myproc();
     let data = &mut *(*p).data.get();
     let mut ip = 0;
-    if addr.into_usize() >= data.sz
-        || addr.into_usize().wrapping_add(mem::size_of::<usize>()) > data.sz
+    if addr.into_usize() >= data.memory.size()
+        || addr.into_usize().wrapping_add(mem::size_of::<usize>()) > data.memory.size()
     {
         return Err(());
     }
-    data.pagetable.copy_in(
+    data.memory.copy_in(
         slice::from_raw_parts_mut(&mut ip as *mut usize as *mut u8, mem::size_of::<usize>()),
         addr,
     )?;
@@ -29,7 +29,7 @@ pub unsafe fn fetchaddr(addr: UVAddr) -> Result<usize, ()> {
 /// Returns reference to the string in the buffer.
 pub unsafe fn fetchstr(addr: UVAddr, buf: &mut [u8]) -> Result<&CStr, ()> {
     let p = myproc();
-    (*(*p).data.get()).pagetable.copy_in_str(buf, addr)?;
+    (*(*p).data.get()).memory.copy_in_str(buf, addr)?;
 
     Ok(CStr::from_ptr(buf.as_ptr()))
 }
@@ -38,12 +38,12 @@ unsafe fn argraw(n: usize) -> usize {
     let p = myproc();
     let data = &mut *(*p).data.get();
     match n {
-        0 => (*data.trapframe).a0,
-        1 => (*data.trapframe).a1,
-        2 => (*data.trapframe).a2,
-        3 => (*data.trapframe).a3,
-        4 => (*data.trapframe).a4,
-        5 => (*data.trapframe).a5,
+        0 => data.trap_frame().a0,
+        1 => data.trap_frame().a1,
+        2 => data.trap_frame().a2,
+        3 => data.trap_frame().a3,
+        4 => data.trap_frame().a4,
+        5 => data.trap_frame().a5,
         _ => panic!("argraw"),
     }
 }

@@ -1,4 +1,5 @@
 use core::fmt::{self, Write};
+use core::mem::MaybeUninit;
 use core::sync::atomic::{spin_loop_hint, AtomicBool, Ordering};
 
 use crate::{
@@ -6,20 +7,18 @@ use crate::{
     console::{consoleinit, Console, Printer},
     file::{Devsw, FileTable},
     fs::{FileSystem, Itable},
-    kalloc::{end, Kmem},
-    memlayout::PHYSTOP,
+    kalloc::Kmem,
     page::{Page, RawPage},
     param::{NCPU, NDEV},
     plic::{plicinit, plicinithart},
     println,
     proc::{cpuid, procinit, scheduler, Cpu, ProcessSystem},
-    riscv::PGSIZE,
     sleepablelock::Sleepablelock,
     spinlock::Spinlock,
     trap::{trapinit, trapinithart},
     uart::Uart,
     virtio_disk::virtio_disk_init,
-    vm::{KVAddr, PageTable},
+    vm::KernelMemory,
 };
 
 /// The kernel.
@@ -46,8 +45,8 @@ pub struct Kernel {
 
     kmem: Spinlock<Kmem>,
 
-    /// The kernel's page table.
-    pub page_table: PageTable<KVAddr>,
+    /// The kernel's memory manager.
+    memory: MaybeUninit<KernelMemory>,
 
     pub ticks: Sleepablelock<u32>,
 
@@ -82,7 +81,7 @@ impl Kernel {
             uart: Uart::new(),
             printer: Spinlock::new("PRINTLN", Printer::new()),
             kmem: Spinlock::new("KMEM", Kmem::new()),
-            page_table: unsafe { PageTable::zero() },
+            memory: MaybeUninit::uninit(),
             ticks: Sleepablelock::new("time", 0),
             procs: ProcessSystem::zero(),
             cpus: [Cpu::new(); NCPU],
@@ -111,12 +110,6 @@ impl Kernel {
     /// call to kernel().alloc().  (The exception is when
     /// initializing the allocator; see Kmem::init.)
     pub fn free(&self, mut page: Page) {
-        let pa = page.addr().into_usize();
-        debug_assert!(
-            pa % PGSIZE == 0 && (pa as *mut _) >= unsafe { end.as_mut_ptr() } && pa < PHYSTOP,
-            "[Kernel::free]"
-        );
-
         // Fill with junk to catch dangling refs.
         page.write_bytes(1);
 
@@ -198,11 +191,11 @@ pub unsafe fn kernel_main() -> ! {
         // Physical page allocator.
         KERNEL.kmem.get_mut().init();
 
-        // Create kernel page table.
-        KERNEL.page_table = PageTable::<KVAddr>::new().expect("PageTable::new failed");
+        // Create kernel memory manager.
+        let memory = KernelMemory::new().expect("PageTable::new failed");
 
         // Turn on paging.
-        KERNEL.page_table.init_hart();
+        KERNEL.memory.write(memory).init_hart();
 
         // Process system.
         procinit(&mut KERNEL.procs);
@@ -236,7 +229,7 @@ pub unsafe fn kernel_main() -> ! {
         println!("hart {} starting", cpuid());
 
         // Turn on paging.
-        KERNEL.page_table.init_hart();
+        KERNEL.memory.assume_init_mut().init_hart();
 
         // Install kernel trap vector.
         trapinithart();

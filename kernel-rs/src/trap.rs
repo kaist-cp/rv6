@@ -6,8 +6,8 @@ use crate::{
     println,
     proc::{cpuid, myproc, proc_yield, Proc, Procstate},
     riscv::{
-        intr_get, intr_off, intr_on, make_satp, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp,
-        w_sepc, w_sip, w_stvec, Sstatus, PGSIZE,
+        intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp, w_sepc, w_sip,
+        w_stvec, Sstatus, PGSIZE,
     },
 };
 use core::mem;
@@ -47,10 +47,10 @@ pub unsafe extern "C" fn usertrap() {
     w_stvec(kernelvec as _);
 
     let p: *mut Proc = myproc();
-    let mut data = &mut *(*p).data.get();
+    let data = &mut *(*p).data.get();
 
     // Save user program counter.
-    (*data.trapframe).epc = r_sepc();
+    data.trap_frame_mut().epc = r_sepc();
     if r_scause() == 8 {
         // system call
 
@@ -60,12 +60,15 @@ pub unsafe extern "C" fn usertrap() {
 
         // sepc points to the ecall instruction,
         // but we want to return to the next instruction.
-        (*data.trapframe).epc = ((*data.trapframe).epc).wrapping_add(4);
+        data.trap_frame_mut().epc = (data.trap_frame().epc).wrapping_add(4);
 
         // An interrupt will change sstatus &c registers,
         // so don't enable until done with those registers.
         intr_on();
-        (*data.trapframe).a0 = ok_or!(kernel().syscall((*data.trapframe).a7 as i32), usize::MAX);
+        data.trap_frame_mut().a0 = ok_or!(
+            kernel().syscall(data.trap_frame_mut().a7 as i32),
+            usize::MAX
+        );
     } else {
         which_dev = devintr();
         if which_dev == 0 {
@@ -98,7 +101,7 @@ pub unsafe extern "C" fn usertrap() {
 /// Return to user space.
 pub unsafe fn usertrapret() {
     let p: *mut Proc = myproc();
-    let mut data = &mut *(*p).data.get();
+    let data = &mut *(*p).data.get();
 
     // We're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
@@ -114,14 +117,14 @@ pub unsafe fn usertrapret() {
     // the process next re-enters the kernel.
 
     // kernel page table
-    (*data.trapframe).kernel_satp = r_satp();
+    data.trap_frame_mut().kernel_satp = r_satp();
 
     // process's kernel stack
-    (*data.trapframe).kernel_sp = data.kstack.wrapping_add(PGSIZE);
-    (*data.trapframe).kernel_trap = usertrap as usize;
+    data.trap_frame_mut().kernel_sp = data.kstack.wrapping_add(PGSIZE);
+    data.trap_frame_mut().kernel_trap = usertrap as usize;
 
     // hartid for cpuid()
-    (*data.trapframe).kernel_hartid = r_tp();
+    data.trap_frame_mut().kernel_hartid = r_tp();
 
     // Set up the registers that trampoline.S's sret will use
     // to get to user space.
@@ -137,10 +140,10 @@ pub unsafe fn usertrapret() {
     x.write();
 
     // Set S Exception Program Counter to the saved user pc.
-    w_sepc((*data.trapframe).epc);
+    w_sepc(data.trap_frame().epc);
 
     // Tell trampoline.S the user page table to switch to.
-    let satp: usize = make_satp(data.pagetable.as_usize());
+    let satp: usize = data.memory.satp();
 
     // Jump to trampoline.S at the top of memory, which
     // switches to the user page table, restores user registers,
