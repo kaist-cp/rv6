@@ -134,9 +134,9 @@ impl FsTransaction<'_> {
     /// Zero a block.
     unsafe fn bzero(&self, dev: u32, bno: u32) {
         let mut buf = kernel().bcache.get_buf(dev, bno).lock();
-        ptr::write_bytes(buf.deref_mut_inner().data.as_mut_ptr(), 0, BSIZE);
+        unsafe { ptr::write_bytes(buf.deref_mut_inner().data.as_mut_ptr(), 0, BSIZE) };
         buf.deref_mut_inner().valid = true;
-        self.write(buf);
+        unsafe { self.write(buf) };
     }
 
     /// Blocks.
@@ -149,8 +149,8 @@ impl FsTransaction<'_> {
                 if bp.deref_mut_inner().data[(bi / 8) as usize] & m == 0 {
                     // Is block free?
                     bp.deref_mut_inner().data[(bi / 8) as usize] |= m; // Mark block in use.
-                    self.write(bp);
-                    self.bzero(dev, b + bi);
+                    unsafe { self.write(bp) };
+                    unsafe { self.bzero(dev, b + bi) };
                     return b + bi;
                 }
             }
@@ -170,6 +170,6 @@ impl FsTransaction<'_> {
             "freeing free block"
         );
         bp.deref_mut_inner().data[(bi / 8) as usize] &= !m;
-        self.write(bp);
+        unsafe { self.write(bp) };
     }
 }

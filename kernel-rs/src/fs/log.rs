@@ -84,11 +84,13 @@ impl Log {
             let mut dbuf = dbuf.lock();
 
             // Copy block to dst.
-            ptr::copy(
-                lbuf.deref_inner().data.as_ptr(),
-                dbuf.deref_mut_inner().data.as_mut_ptr(),
-                BSIZE,
-            );
+            unsafe {
+                ptr::copy(
+                    lbuf.deref_inner().data.as_ptr(),
+                    dbuf.deref_mut_inner().data.as_mut_ptr(),
+                    BSIZE,
+                )
+            };
 
             // Write dst to disk.
             kernel().file_system.disk.write(&mut dbuf);
@@ -106,7 +108,7 @@ impl Log {
             .disk
             .read(self.dev as u32, self.start as u32);
         let lh = buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader;
-        for b in &(*lh).block[0..(*lh).n as usize] {
+        for b in unsafe { &(*lh).block[0..(*lh).n as usize] } {
             self.lh.push(
                 kernel()
                     .bcache
@@ -124,7 +126,7 @@ impl Log {
             .file_system
             .disk
             .read(self.dev as u32, self.start as u32);
-        let mut hb = &mut *(buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader);
+        let mut hb = unsafe { &mut *(buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader) };
         hb.n = self.lh.len() as u32;
         for (db, b) in izip!(&mut hb.block, &self.lh) {
             *db = (*b).blockno;
@@ -133,13 +135,13 @@ impl Log {
     }
 
     unsafe fn recover_from_log(&mut self) {
-        self.read_head();
+        unsafe { self.read_head() };
 
         // If committed, copy from log to disk.
-        self.install_trans(true);
+        unsafe { self.install_trans(true) };
 
         // Clear the log.
-        self.write_head();
+        unsafe { self.write_head() };
     }
 
     /// Called at the start of each FS system call.
@@ -180,7 +182,7 @@ impl Log {
         if do_commit {
             // Call commit w/o holding locks, since not allowed
             // to sleep with locks.
-            this.get_mut_unchecked().commit();
+            unsafe { this.get_mut_unchecked().commit() };
             let mut guard = this.lock();
             guard.committing = false;
             guard.wakeup();
@@ -202,11 +204,13 @@ impl Log {
                 .disk
                 .read(self.dev as u32, from.blockno);
 
-            ptr::copy(
-                from.deref_inner().data.as_ptr(),
-                to.deref_mut_inner().data.as_mut_ptr(),
-                BSIZE,
-            );
+            unsafe {
+                ptr::copy(
+                    from.deref_inner().data.as_ptr(),
+                    to.deref_mut_inner().data.as_mut_ptr(),
+                    BSIZE,
+                )
+            };
 
             // Write the log.
             kernel().file_system.disk.write(&mut to)
@@ -216,16 +220,16 @@ impl Log {
     unsafe fn commit(&mut self) {
         if !self.lh.is_empty() {
             // Write modified blocks from cache to self.
-            self.write_log();
+            unsafe { self.write_log() };
 
             // Write header to disk -- the real commit.
-            self.write_head();
+            unsafe { self.write_head() };
 
             // Now install writes to home locations.
-            self.install_trans(false);
+            unsafe { self.install_trans(false) };
 
             // Erase the transaction from the self.
-            self.write_head();
+            unsafe { self.write_head() };
         };
     }
 
