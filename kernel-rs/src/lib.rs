@@ -40,6 +40,7 @@ mod file;
 mod fs;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod kalloc;
+#[deny(unsafe_op_in_unsafe_fn)]
 mod kernel;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod list;

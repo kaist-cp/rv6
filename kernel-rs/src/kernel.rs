@@ -172,44 +172,44 @@ pub unsafe fn kernel_main() -> ! {
 
         // Console.
         Uart::init();
-        consoleinit(&mut KERNEL.devsw);
+        unsafe { consoleinit(&mut KERNEL.devsw) };
 
         println!();
         println!("rv6 kernel is booting");
         println!();
 
         // Physical page allocator.
-        KERNEL.kmem.get_mut().init();
+        unsafe { KERNEL.kmem.get_mut().init() };
 
         // Create kernel memory manager.
         let memory = KernelMemory::new().expect("PageTable::new failed");
 
         // Turn on paging.
-        KERNEL.memory.write(memory).init_hart();
+        unsafe { KERNEL.memory.write(memory).init_hart() };
 
         // Process system.
-        procinit(&mut KERNEL.procs);
+        unsafe { procinit(&mut KERNEL.procs) };
 
         // Trap vectors.
-        trapinit();
+        unsafe { trapinit() };
 
         // Install kernel trap vector.
-        trapinithart();
+        unsafe { trapinithart() };
 
         // Set up interrupt controller.
-        plicinit();
+        unsafe { plicinit() };
 
         // Ask PLIC for device interrupts.
-        plicinithart();
+        unsafe { plicinithart() };
 
         // Buffer cache.
-        KERNEL.bcache.get_mut().init();
+        unsafe { KERNEL.bcache.get_mut().init() };
 
         // Emulated hard disk.
-        KERNEL.file_system.disk.get_mut().init();
+        unsafe { KERNEL.file_system.disk.get_mut().init() };
 
         // First user process.
-        KERNEL.procs.user_proc_init();
+        unsafe { KERNEL.procs.user_proc_init() };
         STARTED.store(true, Ordering::Release);
     } else {
         while !STARTED.load(Ordering::Acquire) {
@@ -219,14 +219,14 @@ pub unsafe fn kernel_main() -> ! {
         println!("hart {} starting", cpuid());
 
         // Turn on paging.
-        KERNEL.memory.assume_init_mut().init_hart();
+        unsafe { KERNEL.memory.assume_init_mut().init_hart() };
 
         // Install kernel trap vector.
-        trapinithart();
+        unsafe { trapinithart() };
 
         // Ask PLIC for device interrupts.
-        plicinithart();
+        unsafe { plicinithart() };
     }
 
-    scheduler()
+    unsafe { scheduler() }
 }
