@@ -59,6 +59,8 @@ mod syscall;
 
 #[deny(unsafe_op_in_unsafe_fn)]
 mod sysfile;
+
+#[deny(unsafe_op_in_unsafe_fn)]
 mod sysproc;
 
 #[deny(unsafe_op_in_unsafe_fn)]
