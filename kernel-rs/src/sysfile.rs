@@ -86,8 +86,8 @@ where
         }
         return Err(());
     }
-    // TODO(https://github.com/kaist-cp/rv6/issues/154)
-    // It is not safe until we check safty of alloc_inode.
+    // TODO(https://github.com/kaist-cp/rv6/issues/335)
+    // Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     let ptr2 = unsafe { kernel().itable.alloc_inode(dp.dev, typ, tx) };
     let mut ip = ptr2.lock();
     ip.deref_inner_mut().nlink = 1;
@@ -324,8 +324,8 @@ impl Kernel {
 impl Kernel {
     /// Return a new file descriptor referring to the same file as given fd.
     /// Returns Ok(new file descriptor) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/354)
-    /// This is unsafe because fetching argument(argfd) is yet unsafe.
+    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
+    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_dup(&self) -> Result<usize, ()> {
         let (_, f) = argfd(0)?;
         let newfile = f.clone();
@@ -335,8 +335,8 @@ impl Kernel {
 
     /// Read n bytes into buf.
     /// Returns Ok(number read) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/354)
-    /// This is unsafe because fetching argument(argfd, argaddr, argint) is yet unsafe.
+    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
+    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_read(&self) -> Result<usize, ()> {
         let (_, f) = argfd(0)?;
         let n = argint(2)?;
@@ -346,8 +346,8 @@ impl Kernel {
 
     /// Write n bytes from buf to given file descriptor fd.
     /// Returns Ok(n) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/354)
-    /// This is unsafe because fetching argument(argfd, argaddr, argint) is yet unsafe.
+    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
+    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_write(&self) -> Result<usize, ()> {
         let (_, f) = argfd(0)?;
         let n = argint(2)?;
@@ -357,8 +357,8 @@ impl Kernel {
 
     /// Release open file fd.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/354)
-    /// This is unsafe because fetching argument(argfd) is yet unsafe.
+    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
+    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_close(&self) -> Result<usize, ()> {
         let (fd, _) = argfd(0)?;
         // TODO(https://github.com/kaist-cp/rv6/issues/354)
@@ -369,8 +369,8 @@ impl Kernel {
 
     /// Place info about an open file into struct stat.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/354)
-    /// This is unsafe because fetching argument(argfd, argaddr) is yet unsafe.
+    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
+    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_fstat(&self) -> Result<usize, ()> {
         let (_, f) = argfd(0)?;
         // user pointer to struct stat
@@ -381,8 +381,8 @@ impl Kernel {
 
     /// Create the path new as a link to the same inode as old.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/154)
-    /// This is unsafe because fetching argument(argstr) is yet unsafe.
+    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
+    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_link(&self) -> Result<usize, ()> {
         let mut new: [u8; MAXPATH] = [0; MAXPATH];
         let mut old: [u8; MAXPATH] = [0; MAXPATH];
@@ -394,8 +394,8 @@ impl Kernel {
 
     /// Remove a file.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/154)
-    /// This is unsafe because fetching argument(argstr) is yet unsafe.
+    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
+    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_unlink(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = argstr(0, &mut path)?;
@@ -405,8 +405,8 @@ impl Kernel {
 
     /// Open a file.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/154)
-    /// This is unsafe because fetching argument(argstr, argint) is yet unsafe.
+    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
+    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_open(&'static self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = argstr(0, &mut path)?;
@@ -418,8 +418,8 @@ impl Kernel {
 
     /// Create a new directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/154)
-    /// This is unsafe because fetching argument(argstr) is yet unsafe.
+    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
+    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_mkdir(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = argstr(0, &mut path)?;
@@ -429,8 +429,8 @@ impl Kernel {
 
     /// Create a new directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/154)
-    /// This is unsafe because fetching argument(argstr, argint) is yet unsafe.
+    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
+    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_mknod(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = argstr(0, &mut path)?;
@@ -442,8 +442,8 @@ impl Kernel {
 
     /// Change the current directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/154)
-    /// This is unsafe because fetching argument(argstr) is yet unsafe.
+    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
+    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_chdir(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = argstr(0, &mut path)?;
@@ -453,8 +453,8 @@ impl Kernel {
 
     /// Load a file and execute it with arguments.
     /// Returns Ok(argc argument to user main) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/154)
-    /// This is unsafe because it is using unsafe functions(argstr, argaddr, fetchaddr, fetchstr, exec)
+    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
+    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_exec(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let mut args = ArrayVec::<[Page; MAXARG]>::new();
@@ -496,8 +496,8 @@ impl Kernel {
 
     /// Create a pipe.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/354)
-    /// This is unsafe because fetching argument(argaddr) is yet unsafe.
+    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
+    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_pipe(&self) -> Result<usize, ()> {
         // user pointer to array of two integers
         let fdarray = UVAddr::new(argaddr(0)?);
