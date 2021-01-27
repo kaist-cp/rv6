@@ -174,7 +174,7 @@ impl ArenaObject for File {
         A::reacquire_after(guard, || {
             let typ = mem::replace(&mut self.typ, FileType::None);
             match typ {
-                FileType::Pipe { mut pipe } => unsafe { pipe.close(self.writable) },
+                FileType::Pipe { pipe } => pipe.close(self.writable),
                 FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                     // TODO(https://github.com/kaist-cp/rv6/issues/290)
                     // The inode ip will be dropped by drop(ip). Deallocation
