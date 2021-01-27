@@ -10,6 +10,7 @@
 // from qemu virtio_mmio.h
 
 use crate::memlayout::VIRTIO0;
+use bitflags::bitflags;
 use core::ptr;
 
 #[repr(usize)]

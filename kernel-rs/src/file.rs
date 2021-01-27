@@ -11,6 +11,7 @@ use crate::{
     stat::Stat,
     vm::UVAddr,
 };
+use array_macro::array;
 use core::{cell::UnsafeCell, cmp, convert::TryFrom, mem, ops::Deref, slice};
 
 pub enum FileType {
@@ -81,7 +82,7 @@ impl File {
                         addr,
                         slice::from_raw_parts_mut(
                             &mut st as *mut Stat as *mut u8,
-                            mem::size_of::<Stat>() as usize,
+                            mem::size_of::<Stat>(),
                         ),
                     )
                 }
@@ -142,17 +143,12 @@ impl File {
                     let mut ip = ip.deref().lock();
                     let curr_off = unsafe { *off.get() };
                     let r = ip
-                        .write(
-                            addr + bytes_written as usize,
-                            curr_off,
-                            bytes_to_write as u32,
-                            &tx,
-                        )
+                        .write(addr + bytes_written, curr_off, bytes_to_write as u32, &tx)
                         .map(|v| {
                             unsafe { *off.get() = curr_off.wrapping_add(v as u32) };
                             v
                         })?;
-                    if r != bytes_to_write as usize {
+                    if r != bytes_to_write {
                         // error from InodeGuard::write
                         break;
                     }

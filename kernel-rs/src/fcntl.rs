@@ -1,3 +1,5 @@
+use bitflags::bitflags;
+
 bitflags! {
     pub struct FcntlFlags: i32 {
         const O_RDONLY = 0;

@@ -1,4 +1,5 @@
 use crate::vm::{PAddr, VAddr};
+use bitflags::bitflags;
 
 /// Which hart (core) is this?
 #[inline]

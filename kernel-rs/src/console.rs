@@ -46,9 +46,7 @@ impl Console {
     unsafe fn write(&mut self, src: UVAddr, n: i32) -> i32 {
         for i in 0..n {
             let mut c = [0u8];
-            if unsafe { VAddr::copy_in(&mut c, UVAddr::new(src.into_usize() + (i as usize))) }
-                .is_err()
-            {
+            if unsafe { UVAddr::new(src.into_usize() + (i as usize)).copy_in(&mut c) }.is_err() {
                 return i;
             }
             // TODO(https://github.com/kaist-cp/rv6/issues/298): Temporarily using global function kernel().

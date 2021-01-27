@@ -78,7 +78,7 @@ where
             match ip.deref_inner().typ {
                 InodeType::File | InodeType::Device { .. } => {
                     let ret = f(&mut ip);
-                    mem::drop(ip);
+                    drop(ip);
                     return Ok((ptr2, ret));
                 }
                 _ => return Err(()),
@@ -108,7 +108,7 @@ where
     }
     dp.dirlink(&name, ip.inum, tx).expect("create: dirlink");
     let ret = f(&mut ip);
-    mem::drop(ip);
+    drop(ip);
     Ok((ptr2, ret))
 }
 
@@ -197,7 +197,7 @@ impl Kernel {
             if typ == InodeType::Dir && omode != FcntlFlags::O_RDONLY {
                 return Err(());
             }
-            mem::drop(ip);
+            drop(ip);
             (ptr, typ)
         };
 
@@ -272,7 +272,7 @@ impl Kernel {
         if ip.deref_inner().typ != InodeType::Dir {
             return Err(());
         }
-        mem::drop(ip);
+        drop(ip);
         data.cwd = Some(ptr);
         Ok(())
     }

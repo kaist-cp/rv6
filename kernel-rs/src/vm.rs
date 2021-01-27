@@ -74,11 +74,11 @@ pub trait VAddr: Copy + Add<usize, Output = Self> {
 
     /// Copy from either a user address, or kernel address.
     /// Returns Ok(()) on success, Err(()) on error.
-    unsafe fn copy_in(dst: &mut [u8], src: Self) -> Result<(), ()>;
+    unsafe fn copy_in(self, dst: &mut [u8]) -> Result<(), ()>;
 
     /// Copy to either a user address, or kernel address.
     /// Returns Ok(()) on success, Err(()) on error.
-    unsafe fn copy_out(dst: Self, src: &[u8]) -> Result<(), ()>;
+    unsafe fn copy_out(self, src: &[u8]) -> Result<(), ()>;
 }
 
 impl VAddr for KVAddr {
@@ -98,13 +98,13 @@ impl VAddr for KVAddr {
         self.0 % PGSIZE == 0
     }
 
-    unsafe fn copy_in(dst: &mut [u8], src: Self) -> Result<(), ()> {
-        unsafe { ptr::copy(src.into_usize() as *const u8, dst.as_mut_ptr(), dst.len()) };
+    unsafe fn copy_in(self, dst: &mut [u8]) -> Result<(), ()> {
+        unsafe { ptr::copy(self.into_usize() as *const u8, dst.as_mut_ptr(), dst.len()) };
         Ok(())
     }
 
-    unsafe fn copy_out(dst: Self, src: &[u8]) -> Result<(), ()> {
-        unsafe { ptr::copy(src.as_ptr(), dst.into_usize() as *mut u8, src.len()) };
+    unsafe fn copy_out(self, src: &[u8]) -> Result<(), ()> {
+        unsafe { ptr::copy(src.as_ptr(), self.into_usize() as *mut u8, src.len()) };
         Ok(())
     }
 }
@@ -126,16 +126,16 @@ impl VAddr for UVAddr {
         self.0 % PGSIZE == 0
     }
 
-    unsafe fn copy_in(dst: &mut [u8], src: Self) -> Result<(), ()> {
+    unsafe fn copy_in(self, dst: &mut [u8]) -> Result<(), ()> {
         unsafe { &mut *(*myproc()).data.get() }
             .memory
-            .copy_in(dst, src)
+            .copy_in(dst, self)
     }
 
-    unsafe fn copy_out(dst: Self, src: &[u8]) -> Result<(), ()> {
+    unsafe fn copy_out(self, src: &[u8]) -> Result<(), ()> {
         unsafe { &mut *(*myproc()).data.get() }
             .memory
-            .copy_out(dst, src)
+            .copy_out(self, src)
     }
 }
 
@@ -478,7 +478,7 @@ impl UserMemory {
     pub fn clone(&mut self, trap_frame: PAddr) -> Option<Self> {
         let new = Self::new(trap_frame, None)?;
         let mut new = scopeguard::guard(new, |mut new| {
-            new.dealloc(0);
+            let _ = new.dealloc(0);
         });
         for i in num_iter::range_step(0, self.size, PGSIZE) {
             let pte = self
@@ -543,7 +543,7 @@ impl UserMemory {
 
         let oldsz = self.size;
         let mut this = scopeguard::guard(self, |this| {
-            this.dealloc(oldsz);
+            let _ = this.dealloc(oldsz);
         });
         while pgroundup(this.size) < pgroundup(newsz) {
             let mut page = kernel().alloc().ok_or(())?;
@@ -579,10 +579,10 @@ impl UserMemory {
         match n.cmp(&0) {
             cmp::Ordering::Equal => (),
             cmp::Ordering::Greater => {
-                self.alloc(size + n as usize)?;
+                let _ = self.alloc(size + n as usize)?;
             }
             cmp::Ordering::Less => {
-                self.dealloc(size - (-n as usize));
+                let _ = self.dealloc(size - (-n as usize));
             }
         };
         Ok(size)
@@ -721,7 +721,7 @@ impl UserMemory {
 
 impl Drop for UserMemory {
     fn drop(&mut self) {
-        self.dealloc(0);
+        let _ = self.dealloc(0);
     }
 }
 
@@ -827,7 +827,7 @@ impl KernelMemory {
                 .insert_range(
                     KVAddr::new(va),
                     PGSIZE,
-                    PAddr::new(pa as usize),
+                    PAddr::new(pa),
                     PteFlags::R | PteFlags::W,
                 )
                 .ok()?;

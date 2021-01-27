@@ -1,5 +1,4 @@
 use core::cmp;
-use core::mem;
 use cstr_core::CStr;
 
 use crate::{kernel::kernel, param::ROOTDEV, proc::myproc};
@@ -56,7 +55,7 @@ impl Path {
     }
 
     pub fn root() -> RcInode<'static> {
-        kernel().itable.get_inode(ROOTDEV as u32, ROOTINO)
+        kernel().itable.get_inode(ROOTDEV, ROOTINO)
     }
 
     pub fn namei(&self) -> Result<RcInode<'static>, ()> {
@@ -152,11 +151,11 @@ impl Path {
             }
             if parent && path.inner.is_empty() {
                 // Stop one level early.
-                mem::drop(ip);
+                drop(ip);
                 return Ok((ptr, Some(name)));
             }
             let next = ip.dirlookup(name);
-            mem::drop(ip);
+            drop(ip);
             ptr = next?.0
         }
         if parent {

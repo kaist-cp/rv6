@@ -8,6 +8,7 @@ use crate::{
     vm::UVAddr,
 };
 use core::{mem, ops::Deref, ptr};
+use static_assertions::const_assert;
 
 const PIPESIZE: usize = 512;
 

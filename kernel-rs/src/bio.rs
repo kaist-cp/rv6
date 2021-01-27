@@ -19,6 +19,7 @@ use crate::{
     spinlock::Spinlock,
 };
 
+use array_macro::array;
 use core::mem;
 use core::ops::{Deref, DerefMut};
 

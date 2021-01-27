@@ -22,6 +22,8 @@
 //! Log appends are synchronous.
 use arrayvec::ArrayVec;
 use core::{mem, ptr};
+use itertools::*;
+use static_assertions::const_assert;
 
 use crate::{
     bio::{Buf, BufUnlocked},
@@ -78,7 +80,7 @@ impl Log {
             let lbuf = kernel()
                 .file_system
                 .disk
-                .read(self.dev as u32, (self.start + tail as i32 + 1) as u32);
+                .read(self.dev, (self.start + tail as i32 + 1) as u32);
 
             // Read dst.
             let mut dbuf = dbuf.lock();
@@ -103,18 +105,11 @@ impl Log {
 
     /// Read the log header from disk into the in-memory log header.
     unsafe fn read_head(&mut self) {
-        let mut buf = kernel()
-            .file_system
-            .disk
-            .read(self.dev as u32, self.start as u32);
+        let mut buf = kernel().file_system.disk.read(self.dev, self.start as u32);
         let lh = buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader;
         for b in unsafe { &(*lh).block[0..(*lh).n as usize] } {
-            self.lh.push(
-                kernel()
-                    .bcache
-                    .buf_unforget(self.dev as u32, *b as u32)
-                    .unwrap(),
-            );
+            self.lh
+                .push(kernel().bcache.buf_unforget(self.dev, *b).unwrap());
         }
     }
 
@@ -122,10 +117,7 @@ impl Log {
     /// This is the true point at which the
     /// current transaction commits.
     unsafe fn write_head(&mut self) {
-        let mut buf = kernel()
-            .file_system
-            .disk
-            .read(self.dev as u32, self.start as u32);
+        let mut buf = kernel().file_system.disk.read(self.dev, self.start as u32);
         let mut hb = unsafe { &mut *(buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader) };
         hb.n = self.lh.len() as u32;
         for (db, b) in izip!(&mut hb.block, &self.lh) {
@@ -196,13 +188,10 @@ impl Log {
             let mut to = kernel()
                 .file_system
                 .disk
-                .read(self.dev as u32, (self.start + tail as i32 + 1) as u32);
+                .read(self.dev, (self.start + tail as i32 + 1) as u32);
 
             // Cache block.
-            let from = kernel()
-                .file_system
-                .disk
-                .read(self.dev as u32, from.blockno);
+            let from = kernel().file_system.disk.read(self.dev, from.blockno);
 
             unsafe {
                 ptr::copy(

@@ -1,5 +1,6 @@
 #![allow(clippy::unit_arg)]
 
+use array_macro::array;
 use core::{
     cell::UnsafeCell,
     mem::{self, MaybeUninit},

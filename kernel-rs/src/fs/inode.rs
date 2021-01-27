@@ -67,6 +67,7 @@
 //! dev, and inum.  One must hold ip->lock in order to
 //! read or write that inode's ip->valid, ip->size, ip->type, &c.
 
+use array_macro::array;
 use core::{mem, ops::Deref, ptr};
 
 use crate::{
@@ -435,7 +436,10 @@ impl InodeGuard<'_> {
             let begin = off.wrapping_rem(BSIZE as u32) as usize;
             let end = begin + m as usize;
             unsafe {
-                if VAddr::copy_in(&mut bp.deref_mut_inner().data[begin..end], src).is_err() {
+                if src
+                    .copy_in(&mut bp.deref_mut_inner().data[begin..end])
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -516,7 +520,7 @@ impl InodeGuard<'_> {
         for off in (2 * DIRENT_SIZE as u32..self.deref_inner().size).step_by(DIRENT_SIZE) {
             let bytes_read = self.read(
                 KVAddr::new(&mut de as *mut Dirent as usize),
-                off as u32,
+                off,
                 DIRENT_SIZE as u32,
             );
             assert_eq!(bytes_read, Ok(DIRENT_SIZE), "is_dir_empty: readi");

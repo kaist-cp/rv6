@@ -67,9 +67,10 @@ impl FileSystem {
     }
 
     pub fn init(&self, dev: u32) {
-        self.superblock
+        let _ = self
+            .superblock
             .call_once(|| unsafe { Superblock::new(&self.disk.read(dev, 1)) });
-        self.log.call_once(|| {
+        let _ = self.log.call_once(|| {
             Sleepablelock::new(
                 "LOG",
                 Log::new(

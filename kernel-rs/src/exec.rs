@@ -9,7 +9,9 @@ use crate::{
     riscv::{pgroundup, PGSIZE},
     vm::{KVAddr, PAddr, UVAddr, UserMemory, VAddr},
 };
+use bitflags::bitflags;
 use core::{cmp, mem};
+use itertools::*;
 
 /// "\x7FELF" in little endian
 const ELF_MAGIC: u32 = 0x464c457f;
@@ -135,7 +137,7 @@ impl Kernel {
                 if ph.memsz < ph.filesz || ph.vaddr % PGSIZE != 0 {
                     return Err(());
                 }
-                mem.alloc(ph.vaddr.checked_add(ph.memsz).ok_or(())?)?;
+                let _ = mem.alloc(ph.vaddr.checked_add(ph.memsz).ok_or(())?)?;
                 mem.read_file(UVAddr::new(ph.vaddr), &mut ip, ph.off as _, ph.filesz as _)?;
             }
         }
