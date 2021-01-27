@@ -65,6 +65,7 @@ mod spinlock;
 mod start;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod stat;
+#[deny(unsafe_op_in_unsafe_fn)]
 mod syscall;
 
 #[deny(unsafe_op_in_unsafe_fn)]
