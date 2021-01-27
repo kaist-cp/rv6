@@ -278,23 +278,23 @@ pub unsafe fn r_time() -> u64 {
 /// Enable device interrupts.
 #[inline]
 pub unsafe fn intr_on() {
-    let mut y = Sstatus::read();
+    let mut y = unsafe { Sstatus::read() };
     y.insert(Sstatus::SIE);
-    y.write();
+    unsafe { y.write() };
 }
 
 /// Disable device interrupts.
 #[inline]
 pub unsafe fn intr_off() {
-    let mut x = Sstatus::read();
+    let mut x = unsafe { Sstatus::read() };
     x.remove(Sstatus::SIE);
-    x.write();
+    unsafe { x.write() };
 }
 
 /// Are device interrupts enabled?
 #[inline]
 pub unsafe fn intr_get() -> bool {
-    Sstatus::read().contains(Sstatus::SIE)
+    unsafe { Sstatus::read() }.contains(Sstatus::SIE)
 }
 
 /// Read and write tp, the thread pointer, which holds

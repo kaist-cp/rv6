@@ -58,9 +58,13 @@ mod plic;
 mod poweroff;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod proc;
+#[deny(unsafe_op_in_unsafe_fn)]
 mod riscv;
+#[deny(unsafe_op_in_unsafe_fn)]
 mod sleepablelock;
+#[deny(unsafe_op_in_unsafe_fn)]
 mod sleeplock;
+#[deny(unsafe_op_in_unsafe_fn)]
 mod spinlock;
 mod start;
 #[deny(unsafe_op_in_unsafe_fn)]
