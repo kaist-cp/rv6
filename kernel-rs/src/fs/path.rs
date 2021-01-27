@@ -23,7 +23,7 @@ impl FileName {
     /// `bytes` must not contain any NUL characters.
     pub unsafe fn from_bytes(bytes: &[u8]) -> &Self {
         debug_assert!(!bytes.contains(&0));
-        &*(&bytes[..cmp::min(DIRSIZ, bytes.len())] as *const [u8] as *const Self)
+        unsafe { &*(&bytes[..cmp::min(DIRSIZ, bytes.len())] as *const [u8] as *const Self) }
     }
 
     pub fn as_bytes(&self) -> &[u8] {
@@ -48,7 +48,7 @@ impl Path {
     ///
     /// `bytes` must not contain any NUL bytes.
     pub unsafe fn from_bytes(bytes: &[u8]) -> &Self {
-        &*(bytes as *const [u8] as *const Self)
+        unsafe { &*(bytes as *const [u8] as *const Self) }
     }
 
     pub fn as_bytes(&self) -> &[u8] {

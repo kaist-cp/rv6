@@ -46,7 +46,9 @@ impl Console {
     unsafe fn write(&mut self, src: UVAddr, n: i32) -> i32 {
         for i in 0..n {
             let mut c = [0 as u8];
-            if VAddr::copy_in(&mut c, UVAddr::new(src.into_usize() + (i as usize))).is_err() {
+            if unsafe { VAddr::copy_in(&mut c, UVAddr::new(src.into_usize() + (i as usize))) }
+                .is_err()
+            {
                 return i;
             }
             // TODO(https://github.com/kaist-cp/rv6/issues/298): Temporarily using global function kernel().
@@ -62,7 +64,7 @@ impl Console {
             // Wait until interrupt handler has put some
             // input into CONS.buffer.
             while this.r == this.w {
-                if (*myproc()).killed() {
+                if unsafe { (*myproc()).killed() } {
                     return -1;
                 }
                 this.sleep();
@@ -82,7 +84,7 @@ impl Console {
             } else {
                 // Copy the input byte to the user-space buffer.
                 let cbuf = [cin as u8];
-                if UVAddr::copy_out(dst, &cbuf).is_err() {
+                if unsafe { UVAddr::copy_out(dst, &cbuf) }.is_err() {
                     break;
                 }
                 dst = dst + 1;
@@ -215,7 +217,7 @@ pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
 unsafe fn consolewrite(src: UVAddr, n: i32) -> i32 {
     // TODO(https://github.com/kaist-cp/rv6/issues/298) Remove below comment.
     // consolewrite() does not need console.lock() -- can lead to sleep() with lock held.
-    kernel().console.get_mut_unchecked().write(src, n)
+    unsafe { kernel().console.get_mut_unchecked().write(src, n) }
 }
 
 /// User read()s from the console go here.
@@ -224,7 +226,7 @@ unsafe fn consolewrite(src: UVAddr, n: i32) -> i32 {
 /// or kernel address.
 unsafe fn consoleread(dst: UVAddr, n: i32) -> i32 {
     let mut console = kernel().console.lock();
-    Console::read(&mut console, dst, n)
+    unsafe { Console::read(&mut console, dst, n) }
 }
 
 /// The console input interrupt handler.
@@ -233,5 +235,5 @@ unsafe fn consoleread(dst: UVAddr, n: i32) -> i32 {
 /// wake up consoleread() if a whole line has arrived.
 pub unsafe fn consoleintr(cin: i32) {
     let mut console = kernel().console.lock();
-    Console::intr(&mut console, cin);
+    unsafe { Console::intr(&mut console, cin) };
 }

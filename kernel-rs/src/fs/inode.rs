@@ -308,37 +308,39 @@ impl InodeGuard<'_> {
             self.dev,
             kernel().file_system.superblock().iblock(self.inum),
         );
-        let mut dip = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
-            .add((self.inum as usize).wrapping_rem(IPB));
+        let mut dip = unsafe {
+            (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
+                .add((self.inum as usize).wrapping_rem(IPB))
+        };
         let inner = self.deref_inner();
         match inner.typ {
             InodeType::Device { major, minor } => {
-                (*dip).typ = DInodeType::Device;
-                (*dip).major = major;
-                (*dip).minor = minor;
+                unsafe { (*dip).typ = DInodeType::Device };
+                unsafe { (*dip).major = major };
+                unsafe { (*dip).minor = minor };
             }
             InodeType::None => {
-                (*dip).typ = DInodeType::None;
-                (*dip).major = 0;
-                (*dip).minor = 0;
+                unsafe { (*dip).typ = DInodeType::None };
+                unsafe { (*dip).major = 0 };
+                unsafe { (*dip).minor = 0 };
             }
             InodeType::Dir => {
-                (*dip).typ = DInodeType::Dir;
-                (*dip).major = 0;
-                (*dip).minor = 0;
+                unsafe { (*dip).typ = DInodeType::Dir };
+                unsafe { (*dip).major = 0 };
+                unsafe { (*dip).minor = 0 };
             }
             InodeType::File => {
-                (*dip).typ = DInodeType::File;
-                (*dip).major = 0;
-                (*dip).minor = 0;
+                unsafe { (*dip).typ = DInodeType::File };
+                unsafe { (*dip).major = 0 };
+                unsafe { (*dip).minor = 0 };
             }
         }
 
-        (*dip).nlink = inner.nlink;
-        (*dip).size = inner.size;
-        (*dip).addr_direct.copy_from_slice(&inner.addr_direct);
-        (*dip).addr_indirect = inner.addr_indirect;
-        tx.write(bp);
+        unsafe { (*dip).nlink = inner.nlink };
+        unsafe { (*dip).size = inner.size };
+        unsafe { (*dip).addr_direct.copy_from_slice(&inner.addr_direct) };
+        unsafe { (*dip).addr_indirect = inner.addr_indirect };
+        unsafe { tx.write(bp) };
     }
 
     /// Truncate inode (discard contents).
@@ -347,7 +349,7 @@ impl InodeGuard<'_> {
         let dev = self.dev;
         for addr in &mut self.deref_inner_mut().addr_direct {
             if *addr != 0 {
-                tx.bfree(dev, *addr);
+                unsafe { tx.bfree(dev, *addr) };
                 *addr = 0;
             }
         }
@@ -359,17 +361,17 @@ impl InodeGuard<'_> {
                 .read(dev, self.deref_inner().addr_indirect);
             let a = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
             for j in 0..NINDIRECT {
-                if *a.add(j) != 0 {
-                    tx.bfree(dev, *a.add(j));
+                if unsafe { *a.add(j) } != 0 {
+                    unsafe { tx.bfree(dev, *a.add(j)) };
                 }
             }
             drop(bp);
-            tx.bfree(dev, self.deref_inner().addr_indirect);
+            unsafe { tx.bfree(dev, self.deref_inner().addr_indirect) };
             self.deref_inner_mut().addr_indirect = 0
         }
 
         self.deref_inner_mut().size = 0;
-        self.update(tx);
+        unsafe { self.update(tx) };
     }
 
     /// Read data from inode.
@@ -677,25 +679,27 @@ impl Itable {
                 .file_system
                 .disk
                 .read(dev, kernel().file_system.superblock().iblock(inum));
-            let dip = (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
-                .add((inum as usize).wrapping_rem(IPB));
+            let dip = unsafe {
+                (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
+                    .add((inum as usize).wrapping_rem(IPB))
+            };
 
             // a free inode
-            if (*dip).typ == DInodeType::None {
-                ptr::write_bytes(dip, 0, 1);
+            if unsafe { (*dip).typ } == DInodeType::None {
+                unsafe { ptr::write_bytes(dip, 0, 1) };
                 match typ {
-                    InodeType::None => (*dip).typ = DInodeType::None,
-                    InodeType::Dir => (*dip).typ = DInodeType::Dir,
-                    InodeType::File => (*dip).typ = DInodeType::File,
+                    InodeType::None => unsafe { (*dip).typ = DInodeType::None },
+                    InodeType::Dir => unsafe { (*dip).typ = DInodeType::Dir },
+                    InodeType::File => unsafe { (*dip).typ = DInodeType::File },
                     InodeType::Device { major, minor } => {
-                        (*dip).typ = DInodeType::Device;
-                        (*dip).major = major;
-                        (*dip).minor = minor
+                        unsafe { (*dip).typ = DInodeType::Device };
+                        unsafe { (*dip).major = major };
+                        unsafe { (*dip).minor = minor }
                     }
                 }
 
                 // mark it allocated on the disk
-                tx.write(bp);
+                unsafe { tx.write(bp) };
                 return self.get_inode(dev, inum);
             }
         }

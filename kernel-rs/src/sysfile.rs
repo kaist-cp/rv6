@@ -45,13 +45,13 @@ impl RcFile<'static> {
 /// Fetch the nth word-sized system call argument as a file descriptor
 /// and return both the descriptor and the corresponding struct file.
 unsafe fn argfd(n: usize) -> Result<(i32, &'static RcFile<'static>), ()> {
-    let fd = argint(n)?;
+    let fd = unsafe { argint(n)? };
     if fd < 0 || fd >= NOFILE as i32 {
         return Err(());
     }
 
     let f = some_or!(
-        &(*(*myproc()).data.get()).open_files[fd as usize],
+        unsafe { &(*(*myproc()).data.get()).open_files[fd as usize] },
         return Err(())
     );
 
@@ -86,8 +86,6 @@ where
         }
         return Err(());
     }
-    // TODO(https://github.com/kaist-cp/rv6/issues/335)
-    // Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     let ptr2 = unsafe { kernel().itable.alloc_inode(dp.dev, typ, tx) };
     let mut ip = ptr2.lock();
     ip.deref_inner_mut().nlink = 1;
@@ -324,10 +322,8 @@ impl Kernel {
 impl Kernel {
     /// Return a new file descriptor referring to the same file as given fd.
     /// Returns Ok(new file descriptor) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
-    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_dup(&self) -> Result<usize, ()> {
-        let (_, f) = argfd(0)?;
+        let (_, f) = unsafe { argfd(0)? };
         let newfile = f.clone();
         let fd = newfile.fdalloc().map_err(|_| ())?;
         Ok(fd as usize)
@@ -335,136 +331,114 @@ impl Kernel {
 
     /// Read n bytes into buf.
     /// Returns Ok(number read) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
-    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_read(&self) -> Result<usize, ()> {
-        let (_, f) = argfd(0)?;
-        let n = argint(2)?;
-        let p = argaddr(1)?;
-        f.read(UVAddr::new(p), n)
+        let (_, f) = unsafe { argfd(0)? };
+        let n = unsafe { argint(2)? };
+        let p = unsafe { argaddr(1)? };
+        unsafe { f.read(UVAddr::new(p), n) }
     }
 
     /// Write n bytes from buf to given file descriptor fd.
     /// Returns Ok(n) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
-    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_write(&self) -> Result<usize, ()> {
-        let (_, f) = argfd(0)?;
-        let n = argint(2)?;
-        let p = argaddr(1)?;
-        f.write(UVAddr::new(p), n)
+        let (_, f) = unsafe { argfd(0)? };
+        let n = unsafe { argint(2)? };
+        let p = unsafe { argaddr(1)? };
+        unsafe { f.write(UVAddr::new(p), n) }
     }
 
     /// Release open file fd.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
-    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_close(&self) -> Result<usize, ()> {
-        let (fd, _) = argfd(0)?;
+        let (fd, _) = unsafe { argfd(0)? };
         // TODO(https://github.com/kaist-cp/rv6/issues/354)
         // This line should be safe after we refactor myporc()
-        (*(*myproc()).data.get()).open_files[fd as usize] = None;
+        unsafe { (*(*myproc()).data.get()).open_files[fd as usize] = None };
         Ok(0)
     }
 
     /// Place info about an open file into struct stat.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
-    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_fstat(&self) -> Result<usize, ()> {
-        let (_, f) = argfd(0)?;
+        let (_, f) = unsafe { argfd(0)? };
         // user pointer to struct stat
-        let st = argaddr(1)?;
-        f.stat(UVAddr::new(st))?;
+        let st = unsafe { argaddr(1)? };
+        unsafe { f.stat(UVAddr::new(st))? };
         Ok(0)
     }
 
     /// Create the path new as a link to the same inode as old.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
-    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_link(&self) -> Result<usize, ()> {
         let mut new: [u8; MAXPATH] = [0; MAXPATH];
         let mut old: [u8; MAXPATH] = [0; MAXPATH];
-        let old = argstr(0, &mut old)?;
-        let new = argstr(1, &mut new)?;
+        let old = unsafe { argstr(0, &mut old)? };
+        let new = unsafe { argstr(1, &mut new)? };
         self.link(old, new)?;
         Ok(0)
     }
 
     /// Remove a file.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
-    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_unlink(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = argstr(0, &mut path)?;
+        let path = unsafe { argstr(0, &mut path)? };
         self.unlink(path)?;
         Ok(0)
     }
 
     /// Open a file.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
-    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_open(&'static self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = argstr(0, &mut path)?;
+        let path = unsafe { argstr(0, &mut path)? };
         let path = Path::new(path);
-        let omode = argint(1)?;
+        let omode = unsafe { argint(1)? };
         let omode = FcntlFlags::from_bits_truncate(omode);
         self.open(path, omode)
     }
 
     /// Create a new directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
-    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_mkdir(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = argstr(0, &mut path)?;
+        let path = unsafe { argstr(0, &mut path)? };
         self.mkdir(path)?;
         Ok(0)
     }
 
     /// Create a new directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
-    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_mknod(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = argstr(0, &mut path)?;
-        let major = argint(1)? as u16;
-        let minor = argint(2)? as u16;
+        let path = unsafe { argstr(0, &mut path)? };
+        let major = unsafe { argint(1)? } as u16;
+        let minor = unsafe { argint(2)? } as u16;
         self.mknod(path, major, minor)?;
         Ok(0)
     }
 
     /// Change the current directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
-    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_chdir(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = argstr(0, &mut path)?;
+        let path = unsafe { argstr(0, &mut path)? };
         self.chdir(path)?;
         Ok(0)
     }
 
     /// Load a file and execute it with arguments.
     /// Returns Ok(argc argument to user main) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
-    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_exec(&self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let mut args = ArrayVec::<[Page; MAXARG]>::new();
-        let path = argstr(0, &mut path)?;
-        let uargv = argaddr(1)?;
+        let path = unsafe { argstr(0, &mut path)? };
+        let uargv = unsafe { argaddr(1)? };
 
         let mut success = false;
         for i in 0..MAXARG {
             let uarg = ok_or!(
-                fetchaddr(UVAddr::new(uargv + mem::size_of::<usize>() * i)),
+                unsafe { fetchaddr(UVAddr::new(uargv + mem::size_of::<usize>() * i)) },
                 break
             );
 
@@ -474,7 +448,7 @@ impl Kernel {
             }
 
             let mut page = some_or!(self.alloc(), break);
-            if fetchstr(UVAddr::new(uarg), &mut page[..]).is_err() {
+            if unsafe { fetchstr(UVAddr::new(uarg), &mut page[..]) }.is_err() {
                 self.free(page);
                 break;
             }
@@ -496,11 +470,9 @@ impl Kernel {
 
     /// Create a pipe.
     /// Returns Ok(0) on success, Err(()) on error.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/335)
-    /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_pipe(&self) -> Result<usize, ()> {
         // user pointer to array of two integers
-        let fdarray = UVAddr::new(argaddr(0)?);
+        let fdarray = UVAddr::new(unsafe { argaddr(0)? });
         self.pipe(fdarray)?;
         Ok(0)
     }

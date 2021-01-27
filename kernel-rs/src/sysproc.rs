@@ -9,45 +9,45 @@ use crate::{
 impl Kernel {
     /// Terminate the current process; status reported to wait(). No return.
     pub unsafe fn sys_exit(&self) -> Result<usize, ()> {
-        let n = argint(0)?;
-        self.procs.exit_current(n);
+        let n = unsafe { argint(0) }?;
+        unsafe { self.procs.exit_current(n) };
     }
 
     /// Return the current process’s PID.
     pub unsafe fn sys_getpid(&self) -> Result<usize, ()> {
-        Ok((*myproc()).pid() as _)
+        Ok(unsafe { (*myproc()).pid() } as _)
     }
 
     /// Create a process.
     /// Returns Ok(child’s PID) on success, Err(()) on error.
     pub unsafe fn sys_fork(&self) -> Result<usize, ()> {
-        Ok(self.procs.fork()? as _)
+        Ok(unsafe { self.procs.fork() }? as _)
     }
 
     /// Wait for a child to exit.
     /// Returns Ok(child’s PID) on success, Err(()) on error.
     pub unsafe fn sys_wait(&self) -> Result<usize, ()> {
-        let p = argaddr(0)?;
-        Ok(self.procs.wait(UVAddr::new(p))? as _)
+        let p = unsafe { argaddr(0) }?;
+        Ok(unsafe { self.procs.wait(UVAddr::new(p)) }? as _)
     }
 
     /// Grow process’s memory by n bytes.
     /// Returns Ok(start of new memory) on success, Err(()) on error.
     pub unsafe fn sys_sbrk(&self) -> Result<usize, ()> {
-        let n = argint(0)?;
-        let p = myproc();
-        let data = &mut *(*p).data.get();
+        let n = unsafe { argint(0) }?;
+        let p = unsafe { myproc() };
+        let data = unsafe { &mut *(*p).data.get() };
         data.memory.resize(n)
     }
 
     /// Pause for n clock ticks.
     /// Returns Ok(0) on success, Err(()) on error.
     pub unsafe fn sys_sleep(&self) -> Result<usize, ()> {
-        let n = argint(0)?;
+        let n = unsafe { argint(0) }?;
         let mut ticks = self.ticks.lock();
         let ticks0 = *ticks;
         while ticks.wrapping_sub(ticks0) < n as u32 {
-            if (*myproc()).killed() {
+            if unsafe { (*myproc()).killed() } {
                 return Err(());
             }
             ticks.sleep();
@@ -58,7 +58,7 @@ impl Kernel {
     /// Terminate process PID.
     /// Returns Ok(0) on success, Err(()) on error.
     pub unsafe fn sys_kill(&self) -> Result<usize, ()> {
-        let pid = argint(0)?;
+        let pid = unsafe { argint(0) }?;
         self.procs.kill(pid)?;
         Ok(0)
     }
@@ -71,7 +71,7 @@ impl Kernel {
 
     /// Shutdowns this machine, discarding all unsaved data. No return.
     pub unsafe fn sys_poweroff(&self) -> Result<usize, ()> {
-        let exitcode = argint(0)?;
+        let exitcode = unsafe { argint(0) }?;
         poweroff::machine_poweroff(exitcode as _);
     }
 }

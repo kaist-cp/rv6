@@ -48,7 +48,7 @@ pub const BPB: u32 = BSIZE.wrapping_mul(8) as u32;
 impl Superblock {
     /// Read the super block.
     pub unsafe fn new(buf: &Buf<'static>) -> Self {
-        let result = ptr::read(buf.deref_inner().data.as_ptr() as *const Superblock);
+        let result = unsafe { ptr::read(buf.deref_inner().data.as_ptr() as *const Superblock) };
         assert_eq!(result.magic, FSMAGIC, "invalid file system");
         result
     }

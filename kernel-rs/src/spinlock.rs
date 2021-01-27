@@ -174,7 +174,7 @@ impl<T> Spinlock<T> {
     /// refactoring.
     #[allow(clippy::mut_from_ref)]
     pub unsafe fn get_mut_unchecked(&self) -> &mut T {
-        &mut *self.data.get()
+        unsafe { &mut *self.data.get() }
     }
 
     pub fn get_mut(&mut self) -> &mut T {
@@ -287,22 +287,22 @@ impl Drop for SpinlockProtectedGuard<'_> {
 /// it takes two pop_off()s to undo two push_off()s.  Also, if interrupts
 /// are initially off, then push_off, pop_off leaves them off.
 pub unsafe fn push_off() {
-    let old = intr_get();
-    intr_off();
-    if (*(kernel().mycpu())).noff == 0 {
-        (*(kernel().mycpu())).interrupt_enabled = old
+    let old = unsafe { intr_get() };
+    unsafe { intr_off() };
+    if unsafe { (*(kernel().mycpu())).noff } == 0 {
+        unsafe { (*(kernel().mycpu())).interrupt_enabled = old }
     }
-    (*(kernel().mycpu())).noff += 1;
+    unsafe { (*(kernel().mycpu())).noff += 1 };
 }
 
 pub unsafe fn pop_off() {
     let mut c: *mut Cpu = kernel().mycpu();
-    assert!(!intr_get(), "pop_off - interruptible");
-    assert!((*c).noff >= 1, "pop_off");
+    assert!(!unsafe { intr_get() }, "pop_off - interruptible");
+    assert!(unsafe { (*c).noff } >= 1, "pop_off");
 
-    (*c).noff -= 1;
+    unsafe { (*c).noff -= 1 };
 
-    if (*c).noff == 0 && (*c).interrupt_enabled {
-        intr_on();
+    if unsafe { (*c).noff == 0 } && unsafe { (*c).interrupt_enabled } {
+        unsafe { intr_on() };
     }
 }

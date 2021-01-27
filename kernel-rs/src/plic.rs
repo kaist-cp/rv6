@@ -6,29 +6,29 @@ use crate::{
 
 pub unsafe fn plicinit() {
     // set desired IRQ priorities non-zero (otherwise disabled).
-    *((PLIC.wrapping_add(UART0_IRQ.wrapping_mul(4))) as *mut u32) = 1;
-    *((PLIC + VIRTIO0_IRQ * 4) as *mut u32) = 1;
+    unsafe { *((PLIC.wrapping_add(UART0_IRQ.wrapping_mul(4))) as *mut u32) = 1 };
+    unsafe { *((PLIC + VIRTIO0_IRQ * 4) as *mut u32) = 1 };
 }
 
 pub unsafe fn plicinithart() {
     let hart: usize = cpuid();
 
     // set uart's enable bit for this hart's S-mode.
-    *(plic_senable(hart) as *mut u32) = (1 << UART0_IRQ | 1 << VIRTIO0_IRQ) as u32;
+    unsafe { *(plic_senable(hart) as *mut u32) = (1 << UART0_IRQ | 1 << VIRTIO0_IRQ) as u32 };
 
     // set this hart's S-mode priority threshold to 0.
-    *(plic_spriority(hart) as *mut u32) = 0;
+    unsafe { *(plic_spriority(hart) as *mut u32) = 0 };
 }
 
 /// ask the PLIC what interrupt we should serve.
 pub unsafe fn plic_claim() -> u32 {
     let hart: usize = cpuid();
-    let irq: u32 = *(plic_sclaim(hart) as *mut u32);
+    let irq: u32 = unsafe { *(plic_sclaim(hart) as *mut u32) };
     irq
 }
 
 /// tell the PLIC we've served this IRQ.
 pub unsafe fn plic_complete(irq: u32) {
     let hart: usize = cpuid();
-    *(plic_sclaim(hart) as *mut u32) = irq;
+    unsafe { *(plic_sclaim(hart) as *mut u32) = irq };
 }

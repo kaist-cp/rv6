@@ -33,31 +33,31 @@ static mut TIMER_SCRATCH: [[usize; NCPU]; 5] = [[0; NCPU]; 5];
 #[no_mangle]
 pub unsafe fn start() {
     // set M Previous Privilege mode to Supervisor, for mret.
-    let mut x = Mstatus::read();
+    let mut x = unsafe { Mstatus::read() };
     x.remove(Mstatus::MPP_MASK);
     x.insert(Mstatus::MPP_S);
-    x.write();
+    unsafe { x.write() };
 
     // set M Exception Program Counter to main, for mret.  requires gcc -mcmodel=medany
-    w_mepc(kernel_main as usize);
+    unsafe { w_mepc(kernel_main as usize) };
 
     // disable paging for now.
-    w_satp(0);
+    unsafe { w_satp(0) };
 
     // delegate all interrupts and exceptions to supervisor mode.
-    w_medeleg(0xffff);
-    w_mideleg(0xffff);
-    let mut x = SIE::read();
+    unsafe { w_medeleg(0xffff) };
+    unsafe { w_mideleg(0xffff) };
+    let mut x = unsafe { SIE::read() };
     x.insert(SIE::SEIE);
     x.insert(SIE::STIE);
     x.insert(SIE::SSIE);
-    x.write();
+    unsafe { x.write() };
 
     // ask for clock interrupts.
-    timerinit();
+    unsafe { timerinit() };
 
     // keep each CPU's hartid in its tp register, for cpuid().
-    w_tp(r_mhartid());
+    unsafe { w_tp(r_mhartid()) };
 
     // switch to supervisor mode and jump to main().
     llvm_asm!("mret" : : : : "volatile");
@@ -68,31 +68,31 @@ pub unsafe fn start() {
 /// which turns them into software interrupts for devintr() in trap.c.
 unsafe fn timerinit() {
     // each CPU has a separate source of timer interrupts.
-    let id = r_mhartid();
+    let id = unsafe { r_mhartid() };
 
     // ask the CLINT for a timer interrupt.
     let interval: usize = 1_000_000; // cycles; about 1/10th second in qemu.
-    *(clint_mtimecmp(id) as *mut usize) = (*(CLINT_MTIME as *mut usize)) + interval;
+    unsafe { *(clint_mtimecmp(id) as *mut usize) = (*(CLINT_MTIME as *mut usize)) + interval };
 
     // prepare information in scratch[] for timervec.
     // scratch[0..2] : space for timervec to save registers.
     // scratch[3] : address of CLINT MTIMECMP register.
     // scratch[4] : desired interval (in cycles) between timer interrupts.
-    let scratch = &mut TIMER_SCRATCH[id][..];
-    *scratch.get_unchecked_mut(3) = clint_mtimecmp(id);
-    *scratch.get_unchecked_mut(4) = interval;
-    w_mscratch(&scratch[0] as *const _ as usize);
+    let scratch = unsafe { &mut TIMER_SCRATCH[id][..] };
+    *unsafe { scratch.get_unchecked_mut(3) } = clint_mtimecmp(id);
+    *unsafe { scratch.get_unchecked_mut(4) } = interval;
+    unsafe { w_mscratch(&scratch[0] as *const _ as usize) };
 
     // set the machine-mode trap handler.
-    w_mtvec(timervec as _);
+    unsafe { w_mtvec(timervec as _) };
 
     // enable machine-mode interrupts.
-    let mut x = Mstatus::read();
+    let mut x = unsafe { Mstatus::read() };
     x.insert(Mstatus::MIE);
-    x.write();
+    unsafe { x.write() };
 
     // enable machine-mode timer interrupts.
-    let mut y = MIE::read();
+    let mut y = unsafe { MIE::read() };
     y.insert(MIE::MTIE);
-    y.write();
+    unsafe { y.write() };
 }
