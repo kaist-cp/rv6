@@ -40,7 +40,7 @@ pub struct Pipe {
 impl Pipe {
     /// PipeInner::try_read() tries to read as much as possible.
     /// Pipe::read() executes try_read() until all bytes in pipe are read.
-    //TODO : `n` should be u32
+    //TODO(https://github.com/kaist-cp/rv6/issues/366) : `n` should be u32
     pub unsafe fn read(&self, addr: UVAddr, n: usize) -> Result<usize, ()> {
         let mut inner = self.inner.lock();
         loop {
@@ -119,7 +119,7 @@ impl AllocatedPipe {
         // `Pipe` must be align with `Page`
         const_assert!(mem::size_of::<Pipe>() <= PGSIZE);
 
-        //TODO(rv6): Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`
+        //TODO(https://github.com/kaist-cp/rv6/issues/367): Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`
         // It is safe because unique access to page is guaranteed since page is just allocated,
         // and the pipe size and alignment are compatible with the page.
         unsafe {
@@ -155,8 +155,8 @@ impl AllocatedPipe {
         Ok((f0, f1))
     }
 
-    // TODO: use `Drop` instead of `close`
-    // TODO: use `self` instead of `&mut self`
+    // TODO(https://github.com/kaist-cp/rv6/issues/365): use `Drop` instead of `close`
+    // TODO(https://github.com/kaist-cp/rv6/issues/365): use `self` instead of `&mut self`
     // `&mut self` is used because `Drop` of `File` uses AllocatedPipe inside File.
     // https://github.com/kaist-cp/rv6/pull/211#discussion_r491671723
     pub unsafe fn close(&mut self, writable: bool) {
