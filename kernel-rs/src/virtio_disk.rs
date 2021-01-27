@@ -64,7 +64,8 @@ struct VirtqAvail {
 #[repr(align(4096))]
 struct DiskInfo {
     /// is a descriptor free?
-    free: [bool; NUM], // TODO(rv6): can be implemented with bitmap
+    /// TODO(https://github.com/kaist-cp/rv6/issues/368): can be implemented with bitmap
+    free: [bool; NUM],
 
     /// we've looked this far in used.
     used_idx: u16,
