@@ -21,6 +21,7 @@
 
 // TODO(https://github.com/kaist-cp/rv6/issues/335)
 // We must apply #[deny(unsafe_op_in_unsafe_fn)] to every module.
+#[deny(unsafe_op_in_unsafe_fn)]
 mod arena;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod bio;

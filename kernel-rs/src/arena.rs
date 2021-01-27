@@ -195,7 +195,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<ArrayAr
 
         // TODO(https://github.com/kaist-cp/rv6/issues/369)
         // Make a ArrayArena trait and move this there.
-        (*handle.ptr).refcnt += 1;
+        unsafe { (*handle.ptr).refcnt += 1 };
         Self::Handle {
             ptr: handle.ptr,
             _marker: PhantomData,
@@ -208,12 +208,12 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<ArrayAr
     unsafe fn dealloc(&self, handle: Self::Handle) {
         let mut this = self.lock();
 
-        let entry = &mut *handle.ptr;
+        let entry = unsafe { &mut *handle.ptr };
         if entry.refcnt == 1 {
             entry.data.finalize::<Self>(&mut this);
         }
 
-        let entry = &mut *handle.ptr;
+        let entry = unsafe { &mut *handle.ptr };
         entry.refcnt -= 1;
         mem::forget(handle);
     }
@@ -378,7 +378,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
 
         // TODO(https://github.com/kaist-cp/rv6/issues/369)
         // Make a MruArena trait and move this there.
-        (*handle.ptr).refcnt += 1;
+        unsafe { (*handle.ptr).refcnt += 1 };
         Self::Handle {
             ptr: handle.ptr,
             _marker: PhantomData,
@@ -391,12 +391,12 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
     unsafe fn dealloc(&self, handle: Self::Handle) {
         let mut this = self.lock();
 
-        let entry = &mut *handle.ptr;
+        let entry = unsafe { &mut *handle.ptr };
         if entry.refcnt == 1 {
             entry.data.finalize::<Self>(&mut this);
         }
 
-        let entry = &mut *handle.ptr;
+        let entry = unsafe { &mut *handle.ptr };
         entry.refcnt -= 1;
 
         if entry.refcnt == 0 {
@@ -477,7 +477,7 @@ impl<A: Arena, T: Clone + Deref<Target = A>> Arena for T {
 
     unsafe fn dup(&self, handle: &Self::Handle) -> Self::Handle {
         let tag = self.clone();
-        let inner = ManuallyDrop::new(self.deref().dup(&handle.inner));
+        let inner = ManuallyDrop::new(unsafe { self.deref().dup(&handle.inner) });
         Self::Handle { tag, inner }
     }
 
@@ -485,7 +485,7 @@ impl<A: Arena, T: Clone + Deref<Target = A>> Arena for T {
     ///
     /// `pbox` must be allocated from the pool.
     unsafe fn dealloc(&self, mut pbox: Self::Handle) {
-        self.deref().dealloc(ManuallyDrop::take(&mut pbox.inner))
+        unsafe { self.deref().dealloc(ManuallyDrop::take(&mut pbox.inner)) }
     }
 
     fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R

@@ -360,7 +360,7 @@ impl Kernel {
     /// TODO(https://github.com/kaist-cp/rv6/issues/335)
     /// Remove TODO after apply #[deny(unsafe_op_in_unsafe_fn)]
     pub unsafe fn sys_close(&self) -> Result<usize, ()> {
-let (fd, _) = unsafe { argfd(0)? };
+        let (fd, _) = unsafe { argfd(0)? };
         // TODO(https://github.com/kaist-cp/rv6/issues/354)
         // This line should be safe after we refactor myporc()
         unsafe { (*(*myproc()).data.get()).open_files[fd as usize] = None };
