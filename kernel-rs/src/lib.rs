@@ -25,6 +25,7 @@
 mod arena;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod bio;
+#[deny(unsafe_op_in_unsafe_fn)]
 mod console;
 #[deny(unsafe_op_in_unsafe_fn)]
 mod etrace;
