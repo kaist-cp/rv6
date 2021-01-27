@@ -61,7 +61,7 @@ impl RawSpinlock {
         // references happen strictly after the lock is acquired.
         // On RISC-V, this emits a fence instruction.
         //
-        // TODO(@jeehoon): it's unnecessary.
+        // TODO(https://github.com/kaist-cp/rv6/issues/364): it's unnecessary.
         //
         // intrinsics::atomic_fence();
     }
@@ -77,7 +77,7 @@ impl RawSpinlock {
         // the lock is released.
         // On RISC-V, this emits a fence instruction.
         //
-        // TODO(@jeehoon): it's unnecessary.
+        // TODO(https://github.com/kaist-cp/rv6/issues/364): it's unnecessary.
         //
         // intrinsics::atomic_fence();
 

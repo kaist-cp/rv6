@@ -535,7 +535,7 @@ impl ProcData {
     }
 }
 
-/// TODO(@efenniht): pid, state, wakeup should be methods of ProcGuard.
+/// TODO(https://github.com/kaist-cp/rv6/issues/363): pid, state, wakeup should be methods of ProcGuard.
 impl Proc {
     const fn zero() -> Self {
         Self {
