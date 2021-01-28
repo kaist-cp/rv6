@@ -59,7 +59,7 @@ pub struct Context {
 #[derive(Copy, Clone)]
 pub struct Cpu {
     /// The process running on this cpu, or null.
-    pub proc: *mut Proc,
+    pub proc: ExecutingProc,
 
     /// swtch() here to enter scheduler().
     pub context: Context,
@@ -353,6 +353,23 @@ pub struct Proc {
     pub name: [u8; MAXPROCNAME],
 }
 
+#[derive(Copy, Clone)]
+/// Assumption: `ptr` is `executingproc`, and guard indicates ptr->info's spinlock is held.
+pub struct ExecutingProc {
+    ptr: *mut Proc,
+    guard: bool,
+}
+
+impl ExecutingProc {
+    const fn zero() -> Self {
+        ExecutingProc{ ptr: ptr::null_mut(), guard: false }
+    }
+
+    fn from_raw(ptr: *mut Proc) -> Self {
+        ExecutingProc{ ptr, guard: false }
+    }
+}
+
 /// Assumption: `ptr` is `myproc()`, and ptr->info's spinlock is held.
 struct ProcGuard {
     ptr: *const Proc,
@@ -463,7 +480,7 @@ impl DerefMut for ProcGuard {
 impl Cpu {
     pub const fn new() -> Self {
         Self {
-            proc: ptr::null_mut(),
+            proc: ExecutingProc::zero(),
             context: Context::new(),
             noff: 0,
             interrupt_enabled: false,
@@ -919,7 +936,7 @@ pub unsafe fn myproc() -> *mut Proc {
     let c = kernel().mycpu();
     let p = unsafe { (*c).proc };
     unsafe { pop_off() };
-    p
+    p.ptr
 }
 
 /// A user program that calls exec("/init").
@@ -939,7 +956,7 @@ const INITCODE: [u8; 52] = [
 ///    via swtch back to the scheduler.
 pub unsafe fn scheduler() -> ! {
     let mut c = kernel().mycpu();
-    unsafe { (*c).proc = ptr::null_mut() };
+    unsafe { (*c).proc = ExecutingProc::zero() };
     loop {
         // Avoid deadlock by ensuring that devices can interrupt.
         unsafe { intr_on() };
@@ -951,12 +968,12 @@ pub unsafe fn scheduler() -> ! {
                 // to release its lock and then reacquire it
                 // before jumping back to us.
                 guard.deref_mut_info().state = Procstate::RUNNING;
-                unsafe { (*c).proc = p as *const _ as *mut _ };
+                unsafe { (*c).proc = ExecutingProc::from_raw(p as *const _ as *mut _) };
                 unsafe { swtch(&mut (*c).context, &mut (*guard.data.get()).context) };
 
                 // Process is done running for now.
                 // It should have changed its p->state before coming back.
-                unsafe { (*c).proc = ptr::null_mut() }
+                unsafe { (*c).proc = ExecutingProc::zero() }
             }
         }
     }
