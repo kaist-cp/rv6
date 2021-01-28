@@ -114,7 +114,7 @@ impl Kernel {
         }
 
         let p = unsafe { &mut *myproc() };
-        let mut data = unsafe { &mut *p.data.get() };
+        let mut data = p.data.get_mut();
         let trap_frame = PAddr::new(data.trap_frame() as *const _ as _);
         let mut mem = UserMemory::new(trap_frame, None).ok_or(())?;
 

@@ -368,6 +368,18 @@ impl ExecutingProc {
     fn from_raw(ptr: *mut Proc) -> Self {
         ExecutingProc{ ptr, guard: false }
     }
+
+    fn deref_data(&self) -> &ProcData {
+        unsafe { &*(*self.ptr).data.get() }
+    }
+
+    fn deref_mut_data(&mut self) -> &mut ProcData {
+        unsafe { &mut *(*self.ptr).data.get() }
+    }
+
+    pub fn killed(&self) -> bool {
+        unsafe{ (*self.ptr).killed.load(Ordering::Acquire) }
+    }
 }
 
 /// Assumption: `ptr` is `myproc()`, and ptr->info's spinlock is held.
@@ -937,6 +949,15 @@ pub unsafe fn myproc() -> *mut Proc {
     let p = unsafe { (*c).proc };
     unsafe { pop_off() };
     p.ptr
+}
+
+/// Return the current struct Proc *, or zero if none.
+pub unsafe fn myexproc<'a>() -> &'a mut ExecutingProc {
+    unsafe { push_off() };
+    let c = kernel().mycpu();
+    let p = unsafe { &mut (*c).proc };
+    unsafe { pop_off() };
+    p
 }
 
 /// A user program that calls exec("/init").
