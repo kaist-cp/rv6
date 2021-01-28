@@ -1,4 +1,9 @@
-use crate::{kernel::{Kernel, kernel}, println, proc::myproc, vm::{UVAddr, VAddr}};
+use crate::{
+    kernel::{kernel, Kernel},
+    println,
+    proc::myproc,
+    vm::{UVAddr, VAddr},
+};
 use core::{mem, slice, str};
 use cstr_core::CStr;
 
@@ -35,7 +40,7 @@ pub unsafe fn fetchstr(addr: UVAddr, buf: &mut [u8]) -> Result<&CStr, ()> {
 /// This will be safe function after we refactor myproc()
 unsafe fn argraw(n: usize) -> usize {
     let p = unsafe { kernel().myexproc() };
-    let data =p.deref_data();
+    let data = p.deref_data();
     match n {
         0 => data.trap_frame().a0,
         1 => data.trap_frame().a1,

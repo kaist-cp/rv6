@@ -848,7 +848,7 @@ impl ProcessSystem {
             }
 
             // No point waiting if we don't have any children.
-            if !havekids || unsafe{ (*ptr).killed() } {
+            if !havekids || unsafe { (*ptr).killed() } {
                 return Err(());
             }
 
