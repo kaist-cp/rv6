@@ -9,21 +9,9 @@ use core::{
     sync::atomic::{AtomicBool, AtomicI32, Ordering},
 };
 
-use crate::{
-    file::RcFile,
-    fs::{Path, RcInode},
-    kernel::kernel,
-    memlayout::kstack,
-    page::Page,
-    param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
-    println,
-    riscv::{intr_get, intr_on, r_tp, PGSIZE},
-    spinlock::{
+use crate::{file::RcFile, fs::{Path, RcInode}, kernel::{Kernel, kernel}, memlayout::kstack, page::Page, param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV}, println, riscv::{intr_get, intr_on, r_tp, PGSIZE}, spinlock::{
         pop_off, push_off, RawSpinlock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
-    },
-    trap::usertrapret,
-    vm::{UVAddr, UserMemory, VAddr},
-};
+    }, trap::usertrapret, vm::{UVAddr, UserMemory, VAddr}};
 
 extern "C" {
     // swtch.S
@@ -369,11 +357,11 @@ impl ExecutingProc {
         ExecutingProc{ ptr, guard: false }
     }
 
-    fn deref_data(&self) -> &ProcData {
+    pub fn deref_data(&self) -> &ProcData {
         unsafe { &*(*self.ptr).data.get() }
     }
 
-    fn deref_mut_data(&mut self) -> &mut ProcData {
+    pub fn deref_mut_data(&mut self) -> &mut ProcData {
         unsafe { &mut *(*self.ptr).data.get() }
     }
 
@@ -951,13 +939,16 @@ pub unsafe fn myproc() -> *mut Proc {
     p.ptr
 }
 
-/// Return the current struct Proc *, or zero if none.
-pub unsafe fn myexproc<'a>() -> &'a mut ExecutingProc {
-    unsafe { push_off() };
-    let c = kernel().mycpu();
-    let p = unsafe { &mut (*c).proc };
-    unsafe { pop_off() };
-    p
+impl Kernel {
+    /// Return the shared reference of current ExecutingProc.
+    pub unsafe fn myexproc<'a>(&self) -> &'a mut ExecutingProc {
+        unsafe { push_off() };
+        let c = self.mycpu();
+        let p = unsafe { &mut (*c).proc };
+        assert!(!p.ptr.is_null(), "myexproc: No current proc");
+        unsafe { pop_off() };
+        p
+    }
 }
 
 /// A user program that calls exec("/init").

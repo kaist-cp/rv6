@@ -1,15 +1,7 @@
-use crate::{
-    fs::InodeGuard,
-    kernel::kernel,
-    memlayout::{kstack, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0},
-    page::Page,
-    param::NPROC,
-    proc::myproc,
-    riscv::{
+use crate::{fs::InodeGuard, kernel::kernel, memlayout::{kstack, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0}, page::Page, param::NPROC, riscv::{
         make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, px, sfence_vma, w_satp, PteFlags, MAXVA,
         PGSIZE,
-    },
-};
+    }};
 use core::{cmp, marker::PhantomData, mem, ops::Add, ptr, slice};
 
 extern "C" {
@@ -127,13 +119,13 @@ impl VAddr for UVAddr {
     }
 
     unsafe fn copy_in(self, dst: &mut [u8]) -> Result<(), ()> {
-        unsafe { &mut *(*myproc()).data.get() }
+        unsafe { kernel().myexproc().deref_mut_data() }
             .memory
             .copy_in(dst, self)
     }
 
     unsafe fn copy_out(self, src: &[u8]) -> Result<(), ()> {
-        unsafe { &mut *(*myproc()).data.get() }
+        unsafe { kernel().myexproc().deref_mut_data() }
             .memory
             .copy_out(self, src)
     }

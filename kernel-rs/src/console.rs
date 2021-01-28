@@ -1,4 +1,4 @@
-use crate::{file::Devsw, kernel::kernel, param::NDEV, proc::myexproc, sleepablelock::SleepablelockGuard, uart::Uart, vm::{UVAddr, VAddr}};
+use crate::{file::Devsw, kernel::kernel, param::NDEV, sleepablelock::SleepablelockGuard, uart::Uart, vm::{UVAddr, VAddr}};
 use core::fmt;
 
 const CONSOLE_IN_DEVSW: usize = 1;
@@ -54,7 +54,7 @@ impl Console {
             // Wait until interrupt handler has put some
             // input into CONS.buffer.
             while this.r == this.w {
-                if unsafe { myexproc().killed() } {
+                if unsafe { kernel().myexproc().killed() } {
                     return -1;
                 }
                 this.sleep();

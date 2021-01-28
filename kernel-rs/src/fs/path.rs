@@ -1,7 +1,7 @@
 use core::cmp;
 use cstr_core::CStr;
 
-use crate::{kernel::kernel, param::ROOTDEV, proc::myproc};
+use crate::{kernel::kernel, param::ROOTDEV};
 
 use super::{InodeType, RcInode, DIRSIZ, ROOTINO};
 
@@ -146,7 +146,7 @@ impl Path {
         } else {
             // TODO(https://github.com/kaist-cp/rv6/issues/354)
             // Accessing proc.data should be safe after refactoring myproc()
-            unsafe { (*(*myproc()).data.get()).cwd.clone().unwrap() }
+            unsafe { kernel().myexproc().deref_data().cwd.clone().unwrap() }
         };
 
         let mut path = self;

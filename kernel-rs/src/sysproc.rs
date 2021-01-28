@@ -1,4 +1,4 @@
-use crate::{kernel::Kernel, poweroff, proc::{myexproc, myproc}, syscall::{argaddr, argint}, vm::{UVAddr, VAddr}};
+use crate::{kernel::{Kernel, kernel}, poweroff, proc::myproc, syscall::{argaddr, argint}, vm::{UVAddr, VAddr}};
 
 impl Kernel {
     /// Terminate the current process; status reported to wait(). No return.
@@ -41,7 +41,7 @@ impl Kernel {
         let mut ticks = self.ticks.lock();
         let ticks0 = *ticks;
         while ticks.wrapping_sub(ticks0) < n as u32 {
-            if unsafe { myexproc().killed() } {
+            if unsafe { kernel().myexproc().killed() } {
                 return Err(());
             }
             ticks.sleep();
