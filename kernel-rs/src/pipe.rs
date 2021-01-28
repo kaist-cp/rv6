@@ -170,13 +170,11 @@ impl AllocatedPipe {
     }
 
     pub fn close(self, writable: bool) {
-        unsafe {
-            // Safe since `ptr` holds a `Pipe` stored in a valid page allocated from `kernel().alloc()`.
-            if self.ptr.as_ref().close(writable) {
-                // If `Pipe::close()` returned true, this means all `AllocatedPipe`s were closed.
-                // Hence, we can free the `Pipe`.
-                kernel().free(Page::from_usize(self.ptr.as_ptr() as _));
-            }
+        if self.deref().close(writable) {
+            // If `Pipe::close()` returned true, this means all `AllocatedPipe`s were closed.
+            // Hence, we can free the `Pipe`.
+            // Also, the following is safe since `ptr` holds a `Pipe` stored in a valid page allocated from `kernel().alloc()`.
+            kernel().free(unsafe { Page::from_usize(self.ptr.as_ptr() as _) });
         }
     }
 }
