@@ -99,7 +99,7 @@ impl File {
         }
 
         match &self.typ {
-            FileType::Pipe { pipe } => unsafe { pipe.read(addr, usize::try_from(n).unwrap_or(0)) },
+            FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0)),
             FileType::Inode { ip, off } => {
                 let mut ip = ip.deref().lock();
                 let curr_off = unsafe { *off.get() };
@@ -126,7 +126,7 @@ impl File {
         }
 
         match &self.typ {
-            FileType::Pipe { pipe } => unsafe { pipe.write(addr, usize::try_from(n).unwrap_or(0)) },
+            FileType::Pipe { pipe } => pipe.write(addr, usize::try_from(n).unwrap_or(0)),
             FileType::Inode { ip, off } => {
                 // write a few blocks at a time to avoid exceeding
                 // the maximum log transaction size, including

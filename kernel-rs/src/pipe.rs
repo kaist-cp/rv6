@@ -46,7 +46,7 @@ impl Pipe {
     pub fn read(&self, addr: UVAddr, n: usize) -> Result<usize, ()> {
         let mut inner = self.inner.lock();
         loop {
-            match unsafe { inner.try_read(addr, n) } {
+            match inner.try_read(addr, n) {
                 Ok(r) => {
                     //DOC: piperead-wakeup
                     self.write_waitchannel.wakeup();
@@ -71,7 +71,7 @@ impl Pipe {
         let mut written = 0;
         let mut inner = self.inner.lock();
         loop {
-            match unsafe { inner.try_write(addr + written, n - written) } {
+            match inner.try_write(addr + written, n - written) {
                 Ok(r) => {
                     written += r;
                     self.read_waitchannel.wakeup();
