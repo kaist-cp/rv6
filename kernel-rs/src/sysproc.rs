@@ -1,4 +1,10 @@
-use crate::{kernel::{Kernel, kernel}, poweroff, proc::myproc, syscall::{argaddr, argint}, vm::{UVAddr, VAddr}};
+use crate::{
+    kernel::{kernel, Kernel},
+    poweroff,
+    proc::myproc,
+    syscall::{argaddr, argint},
+    vm::{UVAddr, VAddr},
+};
 
 impl Kernel {
     /// Terminate the current process; status reported to wait(). No return.

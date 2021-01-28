@@ -9,9 +9,21 @@ use core::{
     sync::atomic::{AtomicBool, AtomicI32, Ordering},
 };
 
-use crate::{file::RcFile, fs::{Path, RcInode}, kernel::{Kernel, kernel}, memlayout::kstack, page::Page, param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV}, println, riscv::{intr_get, intr_on, r_tp, PGSIZE}, spinlock::{
+use crate::{
+    file::RcFile,
+    fs::{Path, RcInode},
+    kernel::{kernel, Kernel},
+    memlayout::kstack,
+    page::Page,
+    param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
+    println,
+    riscv::{intr_get, intr_on, r_tp, PGSIZE},
+    spinlock::{
         pop_off, push_off, RawSpinlock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
-    }, trap::usertrapret, vm::{UVAddr, UserMemory, VAddr}};
+    },
+    trap::usertrapret,
+    vm::{UVAddr, UserMemory, VAddr},
+};
 
 extern "C" {
     // swtch.S
@@ -350,11 +362,14 @@ pub struct ExecutingProc {
 
 impl ExecutingProc {
     const fn zero() -> Self {
-        ExecutingProc{ ptr: ptr::null_mut(), guard: false }
+        ExecutingProc {
+            ptr: ptr::null_mut(),
+            guard: false,
+        }
     }
 
     fn from_raw(ptr: *mut Proc) -> Self {
-        ExecutingProc{ ptr, guard: false }
+        ExecutingProc { ptr, guard: false }
     }
 
     pub fn deref_data(&self) -> &ProcData {
@@ -366,7 +381,7 @@ impl ExecutingProc {
     }
 
     pub fn killed(&self) -> bool {
-        unsafe{ (*self.ptr).killed.load(Ordering::Acquire) }
+        unsafe { (*self.ptr).killed.load(Ordering::Acquire) }
     }
 }
 

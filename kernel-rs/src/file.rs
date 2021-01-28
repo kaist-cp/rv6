@@ -6,7 +6,6 @@ use crate::{
     kernel::kernel,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
-    proc::myproc,
     spinlock::Spinlock,
     stat::Stat,
     vm::UVAddr,
@@ -68,13 +67,13 @@ impl File {
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
     pub unsafe fn stat(&self, addr: UVAddr) -> Result<(), ()> {
-        let p = unsafe { myproc() };
+        let p = unsafe { kernel().myexproc() };
 
         match &self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                 let mut st = ip.stat();
                 unsafe {
-                    (*(*p).data.get()).memory.copy_out(
+                    p.deref_mut_data().memory.copy_out(
                         addr,
                         slice::from_raw_parts_mut(
                             &mut st as *mut Stat as *mut u8,

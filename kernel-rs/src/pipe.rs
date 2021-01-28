@@ -2,7 +2,7 @@ use crate::{
     file::{FileType, RcFile},
     kernel::kernel,
     page::Page,
-    proc::{myproc, WaitChannel},
+    proc::WaitChannel,
     riscv::PGSIZE,
     spinlock::Spinlock,
     vm::UVAddr,
@@ -196,20 +196,11 @@ impl PipeInner {
     /// Otherwise, returns `Ok(i)` after successfully writing i >= 0 bytes.
     fn try_write(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
         let mut ch = [0u8];
-        let proc = unsafe {
-            // TODO(https://github.com/kaist-cp/rv6/issues/354)
-            // Remove this unsafe part after resolving #354.
-            &*myproc()
-        };
-        if !self.readopen || proc.killed() {
+        if !self.readopen || unsafe { kernel().myexproc().killed() } {
             return Err(PipeError::InvalidStatus);
         }
-
-        let data = unsafe {
-            // TODO(https://github.com/kaist-cp/rv6/issues/354)
-            // Remove this unsafe part after resolving #354.
-            &mut *proc.data.get()
-        };
+        let proc = unsafe { kernel().myexproc() };
+        let data = proc.deref_mut_data();
         for i in 0..n {
             if self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
@@ -229,24 +220,17 @@ impl PipeInner {
     /// If the pipe was empty, returns `Err(WaitForIO)`.
     /// If the process was killed, returns `Err(InvalidStatus)`.
     fn try_read(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
-        let proc = unsafe {
-            // TODO(https://github.com/kaist-cp/rv6/issues/354)
-            // Remove this unsafe part after resolving #354.
-            &*myproc()
-        };
         //DOC: pipe-empty
         if self.nread == self.nwrite && self.writeopen {
-            if proc.killed() {
+            if unsafe { kernel().myexproc().killed() } {
                 return Err(PipeError::InvalidStatus);
             }
             return Err(PipeError::WaitForIO);
         }
 
-        let data = unsafe {
-            // TODO(https://github.com/kaist-cp/rv6/issues/354)
-            // Remove this unsafe part after resolving #354.
-            &mut *proc.data.get()
-        };
+        let proc = unsafe { kernel().myexproc() };
+        let data = proc.deref_mut_data();
+
         //DOC: piperead-copy
         for i in 0..n {
             if self.nread == self.nwrite {
