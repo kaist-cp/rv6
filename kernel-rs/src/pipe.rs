@@ -104,6 +104,10 @@ impl Pipe {
 /// # Safety
 ///
 /// `ptr` always refers to a `Pipe`.
+/// Also, for a single `Pipe`, we have a single read-only `AllocatedPipe` and a single write-only `AllocatedPipe`.
+/// The `PipeInner`'s readopen/writeopen field denotes whether the read-only/write-only `AllocatedPipe` is still open,
+/// and hence, we can safely free the `Pipe` only after both the readopen/writeopen field is false, since this means
+/// all `AllocatedPipe`s were closed.
 pub struct AllocatedPipe {
     ptr: NonNull<Pipe>,
 }
@@ -119,7 +123,10 @@ impl Deref for AllocatedPipe {
 impl AllocatedPipe {
     pub fn alloc() -> Result<(RcFile<'static>, RcFile<'static>), ()> {
         let page = kernel().alloc().ok_or(())?;
-        let mut ptr = NonNull::new(page.into_usize() as *mut Pipe).expect("AllocatedPipe alloc");
+        let mut ptr = unsafe {
+            // Safe since by the invariant of `Page`, `page` is always non-null.
+            NonNull::new_unchecked(page.into_usize() as *mut Pipe)
+        };
 
         // `Pipe` must be aligned with `Page`.
         const_assert!(mem::size_of::<Pipe>() <= PGSIZE);
@@ -161,6 +168,8 @@ impl AllocatedPipe {
         unsafe {
             // Safe since `ptr` holds a `Pipe` stored in a valid page allocated from `kernel().alloc()`.
             if self.ptr.as_ref().close(writable) {
+                // If `Pipe::close()` returned true, this means all `AllocatedPipe`s were closed.
+                // Hence, we can free the `Pipe`.
                 kernel().free(Page::from_usize(self.ptr.as_ptr() as _));
             }
         }
