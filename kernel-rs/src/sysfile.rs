@@ -13,7 +13,6 @@ use crate::{
     page::Page,
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
     pipe::AllocatedPipe,
-    proc::myproc,
     some_or,
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
     vm::{UVAddr, VAddr},
@@ -51,7 +50,7 @@ unsafe fn argfd(n: usize) -> Result<(i32, &'static RcFile<'static>), ()> {
     }
 
     let f = some_or!(
-        unsafe { &(*(*myproc()).data.get()).open_files[fd as usize] },
+        unsafe { &(kernel().myexproc().deref_mut_data().open_files[fd as usize]) },
         return Err(())
     );
 
@@ -341,7 +340,7 @@ impl Kernel {
         let (fd, _) = unsafe { argfd(0)? };
         // TODO(https://github.com/kaist-cp/rv6/issues/354)
         // This line should be safe after we refactor myporc()
-        unsafe { (*(*myproc()).data.get()).open_files[fd as usize] = None };
+        unsafe { kernel().myexproc().deref_mut_data().open_files[fd as usize] = None };
         Ok(0)
     }
 
