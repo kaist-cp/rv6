@@ -1,17 +1,12 @@
-use crate::{
-    kernel::Kernel,
-    println,
-    proc::myproc,
-    vm::{UVAddr, VAddr},
-};
+use crate::{kernel::{Kernel, kernel}, println, proc::myproc, vm::{UVAddr, VAddr}};
 use core::{mem, slice, str};
 use cstr_core::CStr;
 
 /// Fetch the usize at addr from the current process.
 /// Returns Ok(fetched integer) on success, Err(()) on error.
 pub unsafe fn fetchaddr(addr: UVAddr) -> Result<usize, ()> {
-    let p = unsafe { myproc() };
-    let data = unsafe { &mut *(*p).data.get() };
+    let mut p = unsafe { kernel().myexproc() };
+    let data = p.deref_mut_data();
     let mut ip = 0;
     if addr.into_usize() >= data.memory.size()
         || addr.into_usize().wrapping_add(mem::size_of::<usize>()) > data.memory.size()
@@ -30,8 +25,8 @@ pub unsafe fn fetchaddr(addr: UVAddr) -> Result<usize, ()> {
 /// Fetch the nul-terminated string at addr from the current process.
 /// Returns reference to the string in the buffer.
 pub unsafe fn fetchstr(addr: UVAddr, buf: &mut [u8]) -> Result<&CStr, ()> {
-    let p = unsafe { myproc() };
-    unsafe { (*(*p).data.get()).memory.copy_in_str(buf, addr) }?;
+    let mut p = unsafe { kernel().myexproc() };
+    p.deref_mut_data().memory.copy_in_str(buf, addr)?;
 
     Ok(unsafe { CStr::from_ptr(buf.as_ptr()) })
 }
@@ -39,8 +34,8 @@ pub unsafe fn fetchstr(addr: UVAddr, buf: &mut [u8]) -> Result<&CStr, ()> {
 /// TODO(https://github.com/kaist-cp/rv6/issues/354)
 /// This will be safe function after we refactor myproc()
 unsafe fn argraw(n: usize) -> usize {
-    let p = unsafe { myproc() };
-    let data = unsafe { &mut *(*p).data.get() };
+    let p = unsafe { kernel().myexproc() };
+    let data =p.deref_data();
     match n {
         0 => data.trap_frame().a0,
         1 => data.trap_frame().a1,
