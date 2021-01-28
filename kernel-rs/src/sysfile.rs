@@ -13,6 +13,7 @@ use crate::{
     page::Page,
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
     pipe::AllocatedPipe,
+    proc::myproc,
     some_or,
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
     vm::{UVAddr, VAddr},
@@ -28,7 +29,7 @@ impl RcFile<'static> {
     fn fdalloc(self) -> Result<i32, Self> {
         // TODO(https://github.com/kaist-cp/rv6/issues/354)
         // These two unsafe blocks need to be safe after we refactor myproc()
-        let p = unsafe { kernel().myexproc() };
+        let mut p = unsafe { kernel().myexproc() };
         let mut data = p.deref_mut_data();
         for fd in 0..NOFILE {
             // user pointer to struct stat
@@ -49,8 +50,9 @@ unsafe fn argfd(n: usize) -> Result<(i32, &'static RcFile<'static>), ()> {
         return Err(());
     }
 
+    let p = unsafe { myproc() };
     let f = some_or!(
-        unsafe { &(kernel().myexproc().deref_mut_data().open_files[fd as usize]) },
+        unsafe { &(*(*p).data.get()).open_files[fd as usize] },
         return Err(())
     );
 
@@ -246,7 +248,7 @@ impl Kernel {
     fn chdir(&self, dirname: &CStr) -> Result<(), ()> {
         // TODO(https://github.com/kaist-cp/rv6/issues/354)
         // These two unsafe blocks need to be safe after we refactor myproc()
-        let p = unsafe { kernel().myexproc() };
+        let mut p = unsafe { kernel().myexproc() };
         let mut data = p.deref_mut_data();
         // TODO(https://github.com/kaist-cp/rv6/issues/290)
         // The method namei can drop inodes. If namei succeeds, its return
@@ -269,7 +271,7 @@ impl Kernel {
     fn pipe(&self, fdarray: UVAddr) -> Result<(), ()> {
         // TODO(https://github.com/kaist-cp/rv6/issues/354)
         // These two unsafe blocks need to be safe after we refactor myproc()
-        let p = unsafe { kernel().myexproc() };
+        let mut p = unsafe { kernel().myexproc() };
         let mut data = p.deref_mut_data();
         let (pipereader, pipewriter) = AllocatedPipe::alloc()?;
 

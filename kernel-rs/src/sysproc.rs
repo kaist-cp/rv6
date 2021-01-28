@@ -35,8 +35,8 @@ impl Kernel {
     /// Returns Ok(start of new memory) on success, Err(()) on error.
     pub unsafe fn sys_sbrk(&self) -> Result<usize, ()> {
         let n = unsafe { argint(0) }?;
-
-        let data = unsafe{kernel().myexprocdata()};
+        let mut p = unsafe { kernel().myexproc() };
+        let data = p.deref_mut_data();
         data.memory.resize(n)
     }
 

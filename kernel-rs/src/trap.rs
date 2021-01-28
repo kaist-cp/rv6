@@ -100,8 +100,8 @@ pub unsafe extern "C" fn usertrap() {
 
 /// Return to user space.
 pub unsafe fn usertrapret() {
-    let data = unsafe { kernel().myexprocdata() };
-    // let data = unsafe { &mut *(*p).data.get() };
+    let mut p = unsafe { kernel().myexproc() };
+    let data = p.deref_mut_data();
 
     // We're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until

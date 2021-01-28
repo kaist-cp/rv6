@@ -199,7 +199,7 @@ impl PipeInner {
         if !self.readopen || unsafe { kernel().myexproc().killed() } {
             return Err(PipeError::InvalidStatus);
         }
-        let proc = unsafe { kernel().myexproc() };
+        let mut proc = unsafe { kernel().myexproc() };
         let data = proc.deref_mut_data();
         for i in 0..n {
             if self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
@@ -228,7 +228,7 @@ impl PipeInner {
             return Err(PipeError::WaitForIO);
         }
 
-        let proc = unsafe { kernel().myexproc() };
+        let mut proc = unsafe { kernel().myexproc() };
         let data = proc.deref_mut_data();
 
         //DOC: piperead-copy

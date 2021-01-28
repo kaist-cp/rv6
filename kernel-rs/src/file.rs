@@ -67,7 +67,7 @@ impl File {
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
     pub unsafe fn stat(&self, addr: UVAddr) -> Result<(), ()> {
-        let p = unsafe { kernel().myexproc() };
+        let mut p = unsafe { kernel().myexproc() };
 
         match &self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {

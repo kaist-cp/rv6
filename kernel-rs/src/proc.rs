@@ -59,7 +59,7 @@ pub struct Context {
 #[derive(Copy, Clone)]
 pub struct Cpu {
     /// The process running on this cpu, or null.
-    pub proc: ExecutingProc,
+    pub proc: *mut Proc,
 
     /// swtch() here to enter scheduler().
     pub context: Context,
@@ -361,13 +361,6 @@ pub struct ExecutingProc {
 }
 
 impl ExecutingProc {
-    const fn zero() -> Self {
-        ExecutingProc {
-            ptr: ptr::null_mut(),
-            guard: false,
-        }
-    }
-
     fn from_raw(ptr: *mut Proc) -> Self {
         ExecutingProc { ptr, guard: false }
     }
@@ -495,7 +488,7 @@ impl DerefMut for ProcGuard {
 impl Cpu {
     pub const fn new() -> Self {
         Self {
-            proc: ExecutingProc::zero(),
+            proc: ptr::null_mut(),
             context: Context::new(),
             noff: 0,
             interrupt_enabled: false,
@@ -951,29 +944,29 @@ pub unsafe fn myproc() -> *mut Proc {
     let c = kernel().mycpu();
     let p = unsafe { (*c).proc };
     unsafe { pop_off() };
-    p.ptr
+    p
 }
 
 impl Kernel {
     /// Return the shared reference of current ExecutingProc.
-    pub unsafe fn myexproc<'a>(&self) -> &'a mut ExecutingProc {
+    pub unsafe fn myexproc(&self) -> ExecutingProc {
         unsafe { push_off() };
         let c = self.mycpu();
-        let p = unsafe { &mut (*c).proc };
-        assert!(!p.ptr.is_null(), "myexproc: No current proc");
+        let p = unsafe { (*c).proc };
+        assert!(!p.is_null(), "myexproc: No current proc");
         unsafe { pop_off() };
-        p
+        ExecutingProc::from_raw(p)
     }
 
-    /// Return the shared reference of current proc's data.
-    pub unsafe fn myexprocdata<'a>(&self) -> &'a mut ProcData {
-        unsafe { push_off() };
-        let c = self.mycpu();
-        assert!(!unsafe{(*c).proc.ptr}.is_null(), "myexproc: No current proc");
-        let p = unsafe { (*c).proc.deref_mut_data() };
-        unsafe { pop_off() };
-        p
-    }
+    // /// Return the shared reference of current proc's data.
+    // pub unsafe fn myexprocdata<'a>(&self) -> &'a mut ProcData {
+    //     unsafe { push_off() };
+    //     let c = self.mycpu();
+    //     assert!(!unsafe{(*c).proc}.is_null(), "myexproc: No current proc");
+    //     let p = unsafe { (*c).proc.deref_mut_data() };
+    //     unsafe { pop_off() };
+    //     p
+    // }
 }
 
 /// A user program that calls exec("/init").
@@ -993,7 +986,7 @@ const INITCODE: [u8; 52] = [
 ///    via swtch back to the scheduler.
 pub unsafe fn scheduler() -> ! {
     let mut c = kernel().mycpu();
-    unsafe { (*c).proc = ExecutingProc::zero() };
+    unsafe { (*c).proc = ptr::null_mut() };
     loop {
         // Avoid deadlock by ensuring that devices can interrupt.
         unsafe { intr_on() };
@@ -1005,12 +998,12 @@ pub unsafe fn scheduler() -> ! {
                 // to release its lock and then reacquire it
                 // before jumping back to us.
                 guard.deref_mut_info().state = Procstate::RUNNING;
-                unsafe { (*c).proc = ExecutingProc::from_raw(p as *const _ as *mut _) };
+                unsafe { (*c).proc = p as *const _ as *mut _ };
                 unsafe { swtch(&mut (*c).context, &mut (*guard.data.get()).context) };
 
                 // Process is done running for now.
                 // It should have changed its p->state before coming back.
-                unsafe { (*c).proc = ExecutingProc::zero() }
+                unsafe { (*c).proc = ptr::null_mut() }
             }
         }
     }
