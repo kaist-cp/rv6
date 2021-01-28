@@ -39,9 +39,11 @@ pub struct Pipe {
 }
 
 impl Pipe {
-    /// PipeInner::try_read() tries to read as much as possible.
-    /// Pipe::read() executes try_read() until all bytes in pipe are read.
-    //TODO(https://github.com/kaist-cp/rv6/issues/366) : `n` should be u32.
+    /// Tries to read up to `n` bytes using `Pipe::try_read()`.
+    /// If successfully read i > 0 bytes, wakeups the `write_waitchannel` and returns `Ok(i: usize)`.
+    /// If the pipe was empty, sleeps at `read_waitchannel` and tries again after wakeup.
+    /// If an error happened, returns `Err(())`.
+    // TODO(https://github.com/kaist-cp/rv6/issues/366) : `n` should be u32.
     pub fn read(&self, addr: UVAddr, n: usize) -> Result<usize, ()> {
         let mut inner = self.inner.lock();
         loop {
@@ -60,8 +62,12 @@ impl Pipe {
         }
     }
 
-    /// PipeInner::try_write() tries to write as much as possible.
-    /// Pipe::write() executes try_write() until `n` bytes are written.
+    /// Tries to write up to `n` bytes by repeatedly calling `Pipe::try_write()`.
+    /// Wakeups `read_waitchannel` for every successful `Pipe::try_write()`.
+    /// After successfully writing i >= 0 bytes, returns `Ok(i)`.
+    /// Note that we may have i < `n` if an copy-in error happened.
+    /// If the pipe was full, sleeps at `write_waitchannel` and tries again after wakeup.
+    /// If an error happened, returns `Err(())`.
     pub fn write(&self, addr: UVAddr, n: usize) -> Result<usize, ()> {
         let mut written = 0;
         let mut inner = self.inner.lock();
@@ -183,6 +189,10 @@ pub enum PipeError {
 }
 
 impl PipeInner {
+    /// Tries to write up to `n` bytes.
+    /// If the process was killed, returns `Err(InvalidStatus)`.
+    /// If an copy-in error happened after successfully writing i >= 0 bytes, returns `Err(InvalidCopyIn(i))`.
+    /// Otherwise, returns `Ok(i)` after successfully writing i >= 0 bytes.
     fn try_write(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
         let mut ch = [0u8];
         let proc = unsafe {
@@ -213,6 +223,10 @@ impl PipeInner {
         Ok(n)
     }
 
+    /// Tries to read up to `n` bytes.
+    /// If successful read i > 0 bytes, returns `Ok(i: usize)`.
+    /// If the pipe was empty, returns `Err(WaitForIO)`.
+    /// If the process was killed, returns `Err(InvalidStatus)`.
     fn try_read(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
         let proc = unsafe {
             // TODO(https://github.com/kaist-cp/rv6/issues/354)
