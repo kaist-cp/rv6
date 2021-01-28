@@ -46,18 +46,19 @@ pub unsafe extern "C" fn usertrap() {
     // since we're now in the kernel.
     unsafe { w_stvec(kernelvec as _) };
 
-    let p = unsafe { myproc() };
-    let data = unsafe { &mut *(*p).data.get() };
+    let mut p = unsafe { kernel().myexproc() };
+    let data = p.deref_mut_data();
 
     // Save user program counter.
     data.trap_frame_mut().epc = unsafe { r_sepc() };
     if unsafe { r_scause() } == 8 {
         // system call
 
-        if unsafe { (*p).killed() } {
+        if p.killed() {
             unsafe { kernel().procs.exit_current(-1) };
         }
 
+        let data = p.deref_mut_data();
         // sepc points to the ecall instruction,
         // but we want to return to the next instruction.
         data.trap_frame_mut().epc = (data.trap_frame().epc).wrapping_add(4);
@@ -75,18 +76,18 @@ pub unsafe extern "C" fn usertrap() {
             println!(
                 "usertrap(): unexpected scause {:018p} pid={}",
                 unsafe { r_scause() } as *const u8,
-                unsafe { (*p).pid() }
+                unsafe { (*p.ptr).pid() }
             );
             println!(
                 "            sepc={:018p} stval={:018p}",
                 unsafe { r_sepc() } as *const u8,
                 unsafe { r_stval() } as *const u8
             );
-            unsafe { (*p).kill() };
+            unsafe { (*p.ptr).kill() };
         }
     }
 
-    if unsafe { (*p).killed() } {
+    if p.killed() {
         unsafe { kernel().procs.exit_current(-1) };
     }
 
