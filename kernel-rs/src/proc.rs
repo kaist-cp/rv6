@@ -964,6 +964,16 @@ impl Kernel {
         unsafe { pop_off() };
         p
     }
+
+    /// Return the shared reference of current proc's data.
+    pub unsafe fn myexprocdata<'a>(&self) -> &'a mut ProcData {
+        unsafe { push_off() };
+        let c = self.mycpu();
+        assert!(!unsafe{(*c).proc.ptr}.is_null(), "myexproc: No current proc");
+        let p = unsafe { (*c).proc.deref_mut_data() };
+        unsafe { pop_off() };
+        p
+    }
 }
 
 /// A user program that calls exec("/init").
