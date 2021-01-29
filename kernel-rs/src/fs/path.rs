@@ -22,6 +22,10 @@ impl FileName {
     /// `bytes` must not contain any NUL characters.
     pub unsafe fn from_bytes(bytes: &[u8]) -> &Self {
         debug_assert!(!bytes.contains(&0));
+        // SAFETY: `&FileName` is layout-compatible with `[u8]` because of its
+        // attribute `#[repr(transparent)]`. Also, the slice satisfies the
+        // invariant of FileName because of the safety condition of this method
+        // and the fact that its length is at most DIRSIZ.
         unsafe { &*(&bytes[..cmp::min(DIRSIZ, bytes.len())] as *const [u8] as *const Self) }
     }
 
@@ -38,8 +42,9 @@ pub struct Path {
 
 impl Path {
     pub fn new(cstr: &CStr) -> &Self {
-        // SAFETY: `&Path` is layout-compatible with `[u8]` because of  its attribute
-        // `#[repr(transparent)]`.
+        // SAFETY: `&Path` is layout-compatible with `[u8]` because of its
+        // attribute `#[repr(transparent)]`. Also, the slice does not contain
+        // NUL according to the specification CStr::of to_bytes.
         unsafe { &*(cstr.to_bytes() as *const [u8] as *const Self) }
     }
 
@@ -47,6 +52,9 @@ impl Path {
     ///
     /// `bytes` must not contain any NUL bytes.
     pub unsafe fn from_bytes(bytes: &[u8]) -> &Self {
+        // SAFETY: `&Path` is layout-compatible with `[u8]` because of its
+        // attribute `#[repr(transparent)]`. Also, the slice does not contain
+        // NUL according to the safety condition of this method.
         unsafe { &*(bytes as *const [u8] as *const Self) }
     }
 
@@ -108,6 +116,7 @@ impl Path {
             .position(|ch| *ch == b'/')
             .unwrap_or(bytes.len());
 
+        // SAFETY: `bytes` is a subslice of `self.inner`, which contains no NUL characters.
         let name = unsafe { FileName::from_bytes(&bytes[..len]) };
 
         bytes = &bytes[len..];

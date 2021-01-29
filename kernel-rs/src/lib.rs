@@ -46,6 +46,7 @@
 #![feature(maybe_uninit_extra)]
 #![feature(generic_associated_types)]
 #![feature(unsafe_block_in_unsafe_fn)]
+#![feature(variant_count)]
 
 mod arena;
 mod bio;

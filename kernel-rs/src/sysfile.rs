@@ -7,7 +7,7 @@
 use crate::{
     fcntl::FcntlFlags,
     file::{FileType, RcFile},
-    fs::{Dirent, FileName, FsTransaction, InodeGuard, InodeType, Path, RcInode, DIRENT_SIZE},
+    fs::{Dirent, FileName, FsTransaction, InodeGuard, InodeType, Path, RcInode},
     kernel::{kernel, Kernel},
     ok_or,
     page::Page,
@@ -16,7 +16,7 @@ use crate::{
     proc::myproc,
     some_or,
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
-    vm::{KVAddr, UVAddr, VAddr},
+    vm::{UVAddr, VAddr},
 };
 
 use arrayvec::ArrayVec;
@@ -86,18 +86,16 @@ where
         }
         return Err(());
     }
-    let ptr2 = unsafe { kernel().itable.alloc_inode(dp.dev, typ, tx) };
+    let ptr2 = kernel().itable.alloc_inode(dp.dev, typ, tx);
     let mut ip = ptr2.lock();
     ip.deref_inner_mut().nlink = 1;
-    // It is safe to call update() because unique access to ip is guaranteed.
-    unsafe { ip.update(tx) };
+    ip.update(tx);
 
     // Create . and .. entries.
     if typ == InodeType::Dir {
         // for ".."
         dp.deref_inner_mut().nlink += 1;
-        // It is safe to call update() because unique access to dp is guaranteed.
-        unsafe { dp.update(tx) };
+        dp.update(tx);
 
         // No ip->nlink++ for ".": avoid cyclic ref count.
         // It is safe because b"." does not contain any NUL characters.
@@ -123,8 +121,7 @@ impl Kernel {
             return Err(());
         }
         ip.deref_inner_mut().nlink += 1;
-        // It is safe to call update() because unique access to ip is guaranteed.
-        unsafe { ip.update(&tx) };
+        ip.update(&tx);
         drop(ip);
 
         if let Ok((ptr2, name)) = Path::new(newname).nameiparent() {
@@ -137,15 +134,14 @@ impl Kernel {
 
         let mut ip = ptr.lock();
         ip.deref_inner_mut().nlink -= 1;
-        // It is safe to call update() because unique access to ip is guaranteed.
-        unsafe { ip.update(&tx) };
+        ip.update(&tx);
         Err(())
     }
 
     /// Remove a file(filename).
     /// Returns Ok(()) on success, Err(()) on error.
     fn unlink(&self, filename: &CStr) -> Result<(), ()> {
-        let mut de: Dirent = Default::default();
+        let de: Dirent = Default::default();
         let tx = self.file_system.begin_transaction();
         let (ptr, name) = Path::new(filename).nameiparent()?;
         let mut dp = ptr.lock();
@@ -157,23 +153,17 @@ impl Kernel {
                 assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
 
                 if ip.deref_inner().typ != InodeType::Dir || ip.is_dir_empty() {
-                    let bytes_write = dp.write(
-                        KVAddr::new(&mut de as *mut Dirent as usize),
-                        off,
-                        DIRENT_SIZE as u32,
-                        &tx,
-                    );
-                    assert_eq!(bytes_write, Ok(DIRENT_SIZE), "unlink: writei");
+                    // It is safe becuase Dirent can be safely transmuted to [u8; _], as it
+                    // contains only u16 and u8's, which do not have internal structures.
+                    unsafe { dp.write_kernel(&de, off, &tx) }.expect("unlink: writei");
                     if ip.deref_inner().typ == InodeType::Dir {
                         dp.deref_inner_mut().nlink -= 1;
-                        // It is safe to call update() because unique access to dp is guaranteed.
-                        unsafe { dp.update(&tx) };
+                        dp.update(&tx);
                     }
                     drop(dp);
                     drop(ptr);
                     ip.deref_inner_mut().nlink -= 1;
-                    // It is safe to call update() because unique access to ip is guaranteed.
-                    unsafe { ip.update(&tx) };
+                    ip.update(&tx);
                     return Ok(());
                 }
             }
@@ -223,9 +213,7 @@ impl Kernel {
         if omode.contains(FcntlFlags::O_TRUNC) && typ == InodeType::File {
             match &f.typ {
                 // It is safe to call itrunc because ip.lock() is held
-                FileType::Device { ip, .. } | FileType::Inode { ip, .. } => unsafe {
-                    ip.lock().itrunc(&tx)
-                },
+                FileType::Device { ip, .. } | FileType::Inode { ip, .. } => ip.lock().itrunc(&tx),
                 _ => panic!("sys_open : Not reach"),
             };
         }

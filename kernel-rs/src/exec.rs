@@ -7,7 +7,7 @@ use crate::{
     param::MAXARG,
     proc::myproc,
     riscv::{pgroundup, PGSIZE},
-    vm::{KVAddr, PAddr, UVAddr, UserMemory, VAddr},
+    vm::{PAddr, UVAddr, UserMemory, VAddr},
 };
 use bitflags::bitflags;
 use core::{cmp, mem};
@@ -106,12 +106,10 @@ impl Kernel {
 
         // Check ELF header
         let mut elf: ElfHdr = Default::default();
-        let bytes_read = ip.read(
-            KVAddr::new(&mut elf as *mut _ as _),
-            0,
-            mem::size_of::<ElfHdr>() as _,
-        )?;
-        if !(bytes_read == mem::size_of::<ElfHdr>() && elf.is_valid()) {
+        // It is safe becuase ElfHdr can be safely transmuted to [u8; _], as it
+        // contains only integers, which do not have internal structures.
+        unsafe { ip.read_kernel(&mut elf, 0) }?;
+        if !elf.is_valid() {
             return Err(());
         }
 
@@ -125,20 +123,15 @@ impl Kernel {
             let off = elf.phoff + i * mem::size_of::<ProgHdr>();
 
             let mut ph: ProgHdr = Default::default();
-            let bytes_read = ip.read(
-                KVAddr::new(&mut ph as *mut _ as _),
-                off as _,
-                mem::size_of::<ProgHdr>() as _,
-            )?;
-            if bytes_read != mem::size_of::<ProgHdr>() {
-                return Err(());
-            }
+            // It is safe becuase ProgHdr can be safely transmuted to [u8; _], as it
+            // contains only integers, which do not have internal structures.
+            unsafe { ip.read_kernel(&mut ph, off as _) }?;
             if ph.is_prog_load() {
                 if ph.memsz < ph.filesz || ph.vaddr % PGSIZE != 0 {
                     return Err(());
                 }
                 let _ = mem.alloc(ph.vaddr.checked_add(ph.memsz).ok_or(())?)?;
-                mem.read_file(UVAddr::new(ph.vaddr), &mut ip, ph.off as _, ph.filesz as _)?;
+                mem.load_file(UVAddr::new(ph.vaddr), &mut ip, ph.off as _, ph.filesz as _)?;
             }
         }
         drop(ip);
