@@ -7,7 +7,7 @@ use crate::{
     spinlock::Spinlock,
     vm::UVAddr,
 };
-use core::{mem, ops::Deref, ptr};
+use core::{mem, ops::Deref, ptr::NonNull};
 use static_assertions::const_assert;
 
 const PIPESIZE: usize = 512;
@@ -39,13 +39,14 @@ pub struct Pipe {
 }
 
 impl Pipe {
-    /// PipeInner::try_read() tries to read as much as possible.
-    /// Pipe::read() executes try_read() until all bytes in pipe are read.
-    //TODO(https://github.com/kaist-cp/rv6/issues/366) : `n` should be u32
-    pub unsafe fn read(&self, addr: UVAddr, n: usize) -> Result<usize, ()> {
+    /// Tries to read up to `n` bytes using `Pipe::try_read()`.
+    /// If successfully read i > 0 bytes, wakeups the `write_waitchannel` and returns `Ok(i: usize)`.
+    /// If the pipe was empty, sleeps at `read_waitchannel` and tries again after wakeup.
+    /// If an error happened, returns `Err(())`.
+    pub fn read(&self, addr: UVAddr, n: usize) -> Result<usize, ()> {
         let mut inner = self.inner.lock();
         loop {
-            match unsafe { inner.try_read(addr, n) } {
+            match inner.try_read(addr, n) {
                 Ok(r) => {
                     //DOC: piperead-wakeup
                     self.write_waitchannel.wakeup();
@@ -60,13 +61,17 @@ impl Pipe {
         }
     }
 
-    /// PipeInner::try_write() tries to write as much as possible.
-    /// Pipe::write() executes try_write() until `n` bytes are written.
-    pub unsafe fn write(&self, addr: UVAddr, n: usize) -> Result<usize, ()> {
+    /// Tries to write up to `n` bytes by repeatedly calling `Pipe::try_write()`.
+    /// Wakeups `read_waitchannel` for every successful `Pipe::try_write()`.
+    /// After successfully writing i >= 0 bytes, returns `Ok(i)`.
+    /// Note that we may have i < `n` if an copy-in error happened.
+    /// If the pipe was full, sleeps at `write_waitchannel` and tries again after wakeup.
+    /// If an error happened, returns `Err(())`.
+    pub fn write(&self, addr: UVAddr, n: usize) -> Result<usize, ()> {
         let mut written = 0;
         let mut inner = self.inner.lock();
         loop {
-            match unsafe { inner.try_write(addr + written, n - written) } {
+            match inner.try_write(addr + written, n - written) {
                 Ok(r) => {
                     written += r;
                     self.read_waitchannel.wakeup();
@@ -85,7 +90,7 @@ impl Pipe {
         }
     }
 
-    unsafe fn close(&self, writable: bool) -> bool {
+    fn close(&self, writable: bool) -> bool {
         let mut inner = self.inner.lock();
 
         if writable {
@@ -96,73 +101,80 @@ impl Pipe {
             self.write_waitchannel.wakeup();
         }
 
-        // Return whether pipe would be freed or not
+        // Return whether pipe should be freed or not.
         !inner.readopen && !inner.writeopen
     }
 }
 
+/// # Safety
+///
+/// `ptr` always refers to a `Pipe`.
+/// Also, for a single `Pipe`, we have a single read-only `AllocatedPipe` and a single write-only `AllocatedPipe`.
+/// The `PipeInner`'s readopen/writeopen field denotes whether the read-only/write-only `AllocatedPipe` is still open,
+/// and hence, we can safely free the `Pipe` only after both the readopen/writeopen field is false, since this means
+/// all `AllocatedPipe`s were closed.
 pub struct AllocatedPipe {
-    ptr: *mut Pipe,
+    ptr: NonNull<Pipe>,
 }
 
 impl Deref for AllocatedPipe {
     type Target = Pipe;
     fn deref(&self) -> &Self::Target {
-        unsafe { &*self.ptr }
+        // Safe since `ptr` always refers to a `Pipe`.
+        unsafe { self.ptr.as_ref() }
     }
 }
 
 impl AllocatedPipe {
     pub fn alloc() -> Result<(RcFile<'static>, RcFile<'static>), ()> {
         let page = kernel().alloc().ok_or(())?;
-        let ptr = page.into_usize() as *mut Pipe;
+        let mut ptr = unsafe {
+            // Safe since by the invariant of `Page`, `page` is always non-null.
+            NonNull::new_unchecked(page.into_usize() as *mut Pipe)
+        };
 
-        // `Pipe` must be align with `Page`
+        // `Pipe` must be aligned with `Page`.
         const_assert!(mem::size_of::<Pipe>() <= PGSIZE);
 
-        //TODO(https://github.com/kaist-cp/rv6/issues/367): Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`
-        // It is safe because unique access to page is guaranteed since page is just allocated,
-        // and the pipe size and alignment are compatible with the page.
+        //TODO(https://github.com/kaist-cp/rv6/issues/367): Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`.
         unsafe {
-            ptr::write(
-                ptr,
-                Pipe {
-                    inner: Spinlock::new(
-                        "pipe",
-                        PipeInner {
-                            data: [0; PIPESIZE],
-                            nwrite: 0,
-                            nread: 0,
-                            readopen: true,
-                            writeopen: true,
-                        },
-                    ),
-                    read_waitchannel: WaitChannel::new(),
-                    write_waitchannel: WaitChannel::new(),
-                },
-            );
-        };
+            // Safe since `ptr` holds a valid, unique page allocated from `kernel().alloc()`,
+            // and the pipe size and alignment are compatible with the page.
+            *ptr.as_mut() = Pipe {
+                inner: Spinlock::new(
+                    "pipe",
+                    PipeInner {
+                        data: [0; PIPESIZE],
+                        nwrite: 0,
+                        nread: 0,
+                        readopen: true,
+                        writeopen: true,
+                    },
+                ),
+                read_waitchannel: WaitChannel::new(),
+                write_waitchannel: WaitChannel::new(),
+            };
+        }
         let f0 = kernel()
             .ftable
             .alloc_file(FileType::Pipe { pipe: Self { ptr } }, true, false)
-            // It is safe because ptr is an address of page, which obtained by alloc()
-            .map_err(|_| kernel().free(unsafe { Page::from_usize(ptr as _) }))?;
+            // Safe since ptr is an address of a page obtained by alloc().
+            .map_err(|_| kernel().free(unsafe { Page::from_usize(ptr.as_ptr() as _) }))?;
         let f1 = kernel()
             .ftable
             .alloc_file(FileType::Pipe { pipe: Self { ptr } }, false, true)
-            // It is safe because ptr is an address of page, which obtained by alloc()
-            .map_err(|_| kernel().free(unsafe { Page::from_usize(ptr as _) }))?;
+            // Safe since ptr is an address of a page obtained by alloc().
+            .map_err(|_| kernel().free(unsafe { Page::from_usize(ptr.as_ptr() as _) }))?;
 
         Ok((f0, f1))
     }
 
-    // TODO(https://github.com/kaist-cp/rv6/issues/365): use `Drop` instead of `close`
-    // TODO(https://github.com/kaist-cp/rv6/issues/365): use `self` instead of `&mut self`
-    // `&mut self` is used because `Drop` of `File` uses AllocatedPipe inside File.
-    // https://github.com/kaist-cp/rv6/pull/211#discussion_r491671723
-    pub unsafe fn close(&mut self, writable: bool) {
-        if unsafe { (*self.ptr).close(writable) } {
-            kernel().free(unsafe { Page::from_usize(self.ptr as *mut Pipe as _) });
+    pub fn close(self, writable: bool) {
+        if self.deref().close(writable) {
+            // If `Pipe::close()` returned true, this means all `AllocatedPipe`s were closed.
+            // Hence, we can free the `Pipe`.
+            // Also, the following is safe since `ptr` holds a `Pipe` stored in a valid page allocated from `kernel().alloc()`.
+            kernel().free(unsafe { Page::from_usize(self.ptr.as_ptr() as _) });
         }
     }
 }
@@ -174,13 +186,26 @@ pub enum PipeError {
 }
 
 impl PipeInner {
-    unsafe fn try_write(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
+    /// Tries to write up to `n` bytes.
+    /// If the process was killed, returns `Err(InvalidStatus)`.
+    /// If an copy-in error happened after successfully writing i >= 0 bytes, returns `Err(InvalidCopyIn(i))`.
+    /// Otherwise, returns `Ok(i)` after successfully writing i >= 0 bytes.
+    fn try_write(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
         let mut ch = [0u8];
-        let proc = unsafe { myproc() };
-        if !self.readopen || unsafe { (*proc).killed() } {
+        let proc = unsafe {
+            // TODO(https://github.com/kaist-cp/rv6/issues/354)
+            // Remove this unsafe part after resolving #354.
+            &*myproc()
+        };
+        if !self.readopen || proc.killed() {
             return Err(PipeError::InvalidStatus);
         }
-        let data = unsafe { &mut *(*proc).data.get() };
+
+        let data = unsafe {
+            // TODO(https://github.com/kaist-cp/rv6/issues/354)
+            // Remove this unsafe part after resolving #354.
+            &mut *proc.data.get()
+        };
         for i in 0..n {
             if self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
@@ -195,18 +220,29 @@ impl PipeInner {
         Ok(n)
     }
 
-    unsafe fn try_read(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
-        let proc = unsafe { myproc() };
-        let data = unsafe { &mut *(*proc).data.get() };
-
+    /// Tries to read up to `n` bytes.
+    /// If successful read i > 0 bytes, returns `Ok(i: usize)`.
+    /// If the pipe was empty, returns `Err(WaitForIO)`.
+    /// If the process was killed, returns `Err(InvalidStatus)`.
+    fn try_read(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
+        let proc = unsafe {
+            // TODO(https://github.com/kaist-cp/rv6/issues/354)
+            // Remove this unsafe part after resolving #354.
+            &*myproc()
+        };
         //DOC: pipe-empty
         if self.nread == self.nwrite && self.writeopen {
-            if unsafe { (*proc).killed() } {
+            if proc.killed() {
                 return Err(PipeError::InvalidStatus);
             }
             return Err(PipeError::WaitForIO);
         }
 
+        let data = unsafe {
+            // TODO(https://github.com/kaist-cp/rv6/issues/354)
+            // Remove this unsafe part after resolving #354.
+            &mut *proc.data.get()
+        };
         //DOC: piperead-copy
         for i in 0..n {
             if self.nread == self.nwrite {
