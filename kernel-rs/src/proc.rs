@@ -364,11 +364,15 @@ impl ExecutingProc {
         ExecutingProc { ptr }
     }
 
+    pub unsafe fn proc(&self) -> &Proc {
+        unsafe { &*self.ptr }
+    }
+
     pub fn deref_data(&self) -> &ProcData {
         unsafe { &*(*self.ptr).data.get() }
     }
 
-    pub fn deref_mut_data(&mut self) -> &mut ProcData {
+    pub fn deref_mut_data(&self) -> &mut ProcData {
         unsafe { &mut *(*self.ptr).data.get() }
     }
 
@@ -754,8 +758,8 @@ impl ProcessSystem {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
-    pub unsafe fn fork(&self) -> Result<i32, ()> {
-        let mut p = unsafe { kernel().myexproc() };
+    pub unsafe fn fork(&self, p: &ExecutingProc) -> Result<i32, ()> {
+        // let mut p = unsafe { kernel().myexproc() };
         let pdata = p.deref_mut_data();
 
         // Allocate trap frame.
@@ -805,7 +809,7 @@ impl ProcessSystem {
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
     pub unsafe fn wait(&self, addr: UVAddr) -> Result<i32, ()> {
-        let mut p = unsafe { kernel().myexproc() };
+        let p = unsafe { kernel().myexproc() };
         let ptr = p.ptr;
         let data = p.deref_mut_data();
 
@@ -859,8 +863,8 @@ impl ProcessSystem {
     /// Exit the current process.  Does not return.
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
-    pub unsafe fn exit_current(&self, status: i32) -> ! {
-        let mut p = unsafe { kernel().myexproc() };
+    pub unsafe fn exit_current(&self, status: i32, p: &ExecutingProc) -> ! {
+        // let p = unsafe { kernel().myexproc() };
         assert_ne!(p.ptr, self.initial_proc, "init exiting");
         let data = p.deref_mut_data();
 

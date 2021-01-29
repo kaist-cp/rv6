@@ -46,7 +46,7 @@ pub unsafe extern "C" fn usertrap() {
     // since we're now in the kernel.
     unsafe { w_stvec(kernelvec as _) };
 
-    let mut p = unsafe { kernel().myexproc() };
+    let p = unsafe { &kernel().myexproc() };
     let data = p.deref_mut_data();
 
     // Save user program counter.
@@ -55,7 +55,7 @@ pub unsafe extern "C" fn usertrap() {
         // system call
 
         if p.killed() {
-            unsafe { kernel().procs.exit_current(-1) };
+            unsafe { kernel().procs.exit_current(-1, p) };
         }
 
         let data = p.deref_mut_data();
@@ -67,7 +67,7 @@ pub unsafe extern "C" fn usertrap() {
         // so don't enable until done with those registers.
         unsafe { intr_on() };
         data.trap_frame_mut().a0 = ok_or!(
-            unsafe { kernel().syscall(data.trap_frame_mut().a7 as i32) },
+            unsafe { kernel().syscall(data.trap_frame_mut().a7 as i32, p) },
             usize::MAX
         );
     } else {
@@ -88,7 +88,7 @@ pub unsafe extern "C" fn usertrap() {
     }
 
     if p.killed() {
-        unsafe { kernel().procs.exit_current(-1) };
+        unsafe { kernel().procs.exit_current(-1, p) };
     }
 
     // Give up the CPU if this is a timer interrupt.
@@ -101,7 +101,7 @@ pub unsafe extern "C" fn usertrap() {
 
 /// Return to user space.
 pub unsafe fn usertrapret() {
-    let mut p = unsafe { kernel().myexproc() };
+    let p = unsafe { kernel().myexproc() };
     let data = p.deref_mut_data();
 
     // We're about to switch the destination of traps from

@@ -29,7 +29,7 @@ impl RcFile<'static> {
     fn fdalloc(self) -> Result<i32, Self> {
         // TODO(https://github.com/kaist-cp/rv6/issues/354)
         // These two unsafe blocks need to be safe after we refactor myproc()
-        let mut p = unsafe { kernel().myexproc() };
+        let p = unsafe { kernel().myexproc() };
         let mut data = p.deref_mut_data();
         for fd in 0..NOFILE {
             // user pointer to struct stat
@@ -248,7 +248,7 @@ impl Kernel {
     fn chdir(&self, dirname: &CStr) -> Result<(), ()> {
         // TODO(https://github.com/kaist-cp/rv6/issues/354)
         // These two unsafe blocks need to be safe after we refactor myproc()
-        let mut p = unsafe { kernel().myexproc() };
+        let p = unsafe { kernel().myexproc() };
         let mut data = p.deref_mut_data();
         // TODO(https://github.com/kaist-cp/rv6/issues/290)
         // The method namei can drop inodes. If namei succeeds, its return
@@ -271,7 +271,7 @@ impl Kernel {
     fn pipe(&self, fdarray: UVAddr) -> Result<(), ()> {
         // TODO(https://github.com/kaist-cp/rv6/issues/354)
         // These two unsafe blocks need to be safe after we refactor myproc()
-        let mut p = unsafe { kernel().myexproc() };
+        let p = unsafe { kernel().myexproc() };
         let mut data = p.deref_mut_data();
         let (pipereader, pipewriter) = AllocatedPipe::alloc()?;
 

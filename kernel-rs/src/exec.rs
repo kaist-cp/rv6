@@ -112,7 +112,7 @@ impl Kernel {
             return Err(());
         }
 
-        let mut p = unsafe { kernel().myexproc() };
+        let p = unsafe { kernel().myexproc() };
         let ptr = p.ptr;
         let mut data = p.deref_mut_data();
         let trap_frame = PAddr::new(data.trap_frame() as *const _ as _);

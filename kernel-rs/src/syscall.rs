@@ -1,7 +1,7 @@
 use crate::{
     kernel::{kernel, Kernel},
     println,
-    proc::myproc,
+    proc::{myproc, ExecutingProc},
     vm::{UVAddr, VAddr},
 };
 use core::{mem, slice, str};
@@ -10,7 +10,7 @@ use cstr_core::CStr;
 /// Fetch the usize at addr from the current process.
 /// Returns Ok(fetched integer) on success, Err(()) on error.
 pub unsafe fn fetchaddr(addr: UVAddr) -> Result<usize, ()> {
-    let mut p = unsafe { kernel().myexproc() };
+    let p = unsafe { kernel().myexproc() };
     let data = p.deref_mut_data();
     let mut ip = 0;
     if addr.into_usize() >= data.memory.size()
@@ -30,7 +30,7 @@ pub unsafe fn fetchaddr(addr: UVAddr) -> Result<usize, ()> {
 /// Fetch the nul-terminated string at addr from the current process.
 /// Returns reference to the string in the buffer.
 pub unsafe fn fetchstr(addr: UVAddr, buf: &mut [u8]) -> Result<&CStr, ()> {
-    let mut p = unsafe { kernel().myexproc() };
+    let p = unsafe { kernel().myexproc() };
     p.deref_mut_data().memory.copy_in_str(buf, addr)?;
 
     Ok(unsafe { CStr::from_ptr(buf.as_ptr()) })
@@ -73,12 +73,12 @@ pub unsafe fn argstr(n: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
 }
 
 impl Kernel {
-    pub unsafe fn syscall(&'static self, num: i32) -> Result<usize, ()> {
+    pub unsafe fn syscall(&'static self, num: i32, proc: &ExecutingProc) -> Result<usize, ()> {
         let p = unsafe { myproc() };
 
         match num {
-            1 => unsafe { self.sys_fork() },
-            2 => unsafe { self.sys_exit() },
+            1 => unsafe { self.sys_fork(proc) },
+            2 => unsafe { self.sys_exit(proc) },
             3 => unsafe { self.sys_wait() },
             4 => unsafe { self.sys_pipe() },
             5 => unsafe { self.sys_read() },

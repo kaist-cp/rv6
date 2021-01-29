@@ -1,16 +1,16 @@
 use crate::{
     kernel::{kernel, Kernel},
     poweroff,
-    proc::myproc,
+    proc::{myproc, ExecutingProc},
     syscall::{argaddr, argint},
     vm::{UVAddr, VAddr},
 };
 
 impl Kernel {
     /// Terminate the current process; status reported to wait(). No return.
-    pub unsafe fn sys_exit(&self) -> Result<usize, ()> {
+    pub unsafe fn sys_exit(&self, proc: &ExecutingProc) -> Result<usize, ()> {
         let n = unsafe { argint(0) }?;
-        unsafe { self.procs.exit_current(n) };
+        unsafe { self.procs.exit_current(n, proc) };
     }
 
     /// Return the current process’s PID.
@@ -20,8 +20,8 @@ impl Kernel {
 
     /// Create a process.
     /// Returns Ok(child’s PID) on success, Err(()) on error.
-    pub unsafe fn sys_fork(&self) -> Result<usize, ()> {
-        Ok(unsafe { self.procs.fork() }? as _)
+    pub unsafe fn sys_fork(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+        Ok(unsafe { self.procs.fork(proc) }? as _)
     }
 
     /// Wait for a child to exit.
@@ -35,7 +35,7 @@ impl Kernel {
     /// Returns Ok(start of new memory) on success, Err(()) on error.
     pub unsafe fn sys_sbrk(&self) -> Result<usize, ()> {
         let n = unsafe { argint(0) }?;
-        let mut p = unsafe { kernel().myexproc() };
+        let p = unsafe { kernel().myexproc() };
         let data = p.deref_mut_data();
         data.memory.resize(n)
     }
