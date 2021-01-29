@@ -2,10 +2,9 @@
 
 use crate::{
     fs::Path,
-    kernel::Kernel,
+    kernel::{kernel, Kernel},
     page::Page,
     param::MAXARG,
-    proc::myproc,
     riscv::{pgroundup, PGSIZE},
     vm::{PAddr, UVAddr, UserMemory, VAddr},
 };
@@ -113,8 +112,9 @@ impl Kernel {
             return Err(());
         }
 
-        let p = unsafe { &mut *myproc() };
-        let mut data = p.data.get_mut();
+        let mut p = unsafe { kernel().myexproc() };
+        let ptr = p.ptr;
+        let mut data = p.deref_mut_data();
         let trap_frame = PAddr::new(data.trap_frame() as *const _ as _);
         let mut mem = UserMemory::new(trap_frame, None).ok_or(())?;
 
@@ -185,7 +185,7 @@ impl Kernel {
             .rposition(|c| *c == b'/')
             .map(|i| &path_str[(i + 1)..])
             .unwrap_or(path_str);
-        let p_name = &mut p.name;
+        let p_name = unsafe { &mut (*ptr).name };
         let len = cmp::min(p_name.len(), name.len());
         p_name[..len].copy_from_slice(&name[..len]);
         if len < p_name.len() {

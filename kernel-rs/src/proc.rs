@@ -353,17 +353,15 @@ pub struct Proc {
     pub name: [u8; MAXPROCNAME],
 }
 
-#[derive(Copy, Clone)]
 /// Assumption: `ptr` is `executingproc`, and guard indicates ptr->info's spinlock is held.
 pub struct ExecutingProc {
     // TODO: ptr is temporary pub because of pid() and kill()
     pub ptr: *mut Proc,
-    guard: bool,
 }
 
 impl ExecutingProc {
     fn from_raw(ptr: *mut Proc) -> Self {
-        ExecutingProc { ptr, guard: false }
+        ExecutingProc { ptr }
     }
 
     pub fn deref_data(&self) -> &ProcData {
