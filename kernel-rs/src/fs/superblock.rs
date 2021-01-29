@@ -1,6 +1,10 @@
 use core::{mem, ptr};
+use static_assertions::const_assert;
 
-use crate::{bio::Buf, param::BSIZE};
+use crate::{
+    bio::{Buf, BufData},
+    param::BSIZE,
+};
 
 use super::Dinode;
 
@@ -13,6 +17,7 @@ const FSMAGIC: u32 = 0x10203040;
 /// mkfs computes the super block and builds an initial file system. The
 /// super block describes the disk layout:
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct Superblock {
     /// Must be FSMAGIC
     magic: u32,
@@ -40,14 +45,21 @@ pub struct Superblock {
 }
 
 /// Inodes per block.
-pub const IPB: usize = BSIZE.wrapping_div(mem::size_of::<Dinode>());
+pub const IPB: usize = BSIZE / mem::size_of::<Dinode>();
 
 /// Bitmap bits per block
-pub const BPB: u32 = BSIZE.wrapping_mul(8) as u32;
+pub const BPB: usize = BSIZE * 8;
 
 impl Superblock {
     /// Read the super block.
-    pub unsafe fn new(buf: &Buf<'static>) -> Self {
+    pub fn new(buf: &Buf<'static>) -> Self {
+        const_assert!(mem::size_of::<Superblock>() <= BSIZE);
+        const_assert!(mem::align_of::<BufData>() % mem::align_of::<Superblock>() == 0);
+        // It is safe becuase
+        // * buf.data is larger than Superblock
+        // * buf.data is aligned properly.
+        // * Superblock contains only u32's, so does not have any requirements.
+        // * buf is locked, so we can access it exclusively.
         let result = unsafe { ptr::read(buf.deref_inner().data.as_ptr() as *const Superblock) };
         assert_eq!(result.magic, FSMAGIC, "invalid file system");
         result
@@ -55,11 +67,11 @@ impl Superblock {
 
     /// Block containing inode i
     pub const fn iblock(self, i: u32) -> u32 {
-        i.wrapping_div(IPB as u32).wrapping_add(self.inodestart)
+        i / IPB as u32 + self.inodestart
     }
 
     /// Block of free map containing bit for block b
     pub const fn bblock(self, b: u32) -> u32 {
-        b.wrapping_div(BPB).wrapping_add(self.bmapstart)
+        b / BPB as u32 + self.bmapstart
     }
 }

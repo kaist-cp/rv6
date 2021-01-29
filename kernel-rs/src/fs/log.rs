@@ -21,11 +21,12 @@
 //!   ...
 //! Log appends are synchronous.
 use arrayvec::ArrayVec;
-use core::{mem, ptr};
+use core::mem;
 use itertools::*;
 use static_assertions::const_assert;
 
 use crate::{
+    bio::BufData,
     bio::{Buf, BufUnlocked},
     kernel::kernel,
     param::{BSIZE, LOGSIZE, MAXOPBLOCKS},
@@ -44,7 +45,7 @@ pub struct Log {
     committing: bool,
 
     /// Contents of the header block, used to keep track in memory of logged block# before commit.
-    lh: ArrayVec<[BufUnlocked<'static>; LOGSIZE]>,
+    bufs: ArrayVec<[BufUnlocked<'static>; LOGSIZE]>,
 }
 
 /// Contents of the header block, used for the on-disk header block.
@@ -52,9 +53,6 @@ struct LogHeader {
     n: u32,
     block: [u32; LOGSIZE],
 }
-
-// `LogHeader` must be fit in a block.
-const_assert!(mem::size_of::<LogHeader>() < BSIZE);
 
 impl Log {
     pub fn new(dev: u32, start: i32, size: i32) -> Self {
@@ -64,18 +62,15 @@ impl Log {
             size,
             outstanding: 0,
             committing: false,
-            lh: ArrayVec::new(),
+            bufs: ArrayVec::new(),
         };
-        unsafe {
-            log.recover_from_log();
-        }
-
+        log.recover_from_log();
         log
     }
 
     /// Copy committed blocks from log to their home location.
-    unsafe fn install_trans(&mut self, recovering: bool) {
-        for (tail, dbuf) in self.lh.drain(..).enumerate() {
+    fn install_trans(&mut self) {
+        for (tail, dbuf) in self.bufs.drain(..).enumerate() {
             // Read log block.
             let lbuf = kernel()
                 .file_system
@@ -86,54 +81,64 @@ impl Log {
             let mut dbuf = dbuf.lock();
 
             // Copy block to dst.
-            unsafe {
-                ptr::copy(
-                    lbuf.deref_inner().data.as_ptr(),
-                    dbuf.deref_mut_inner().data.as_mut_ptr(),
-                    BSIZE,
-                )
-            };
+            dbuf.deref_inner_mut()
+                .data
+                .copy_from_slice(&lbuf.deref_inner().data[..]);
 
             // Write dst to disk.
             kernel().file_system.disk.write(&mut dbuf);
-
-            if recovering {
-                mem::forget(dbuf);
-            }
         }
     }
 
     /// Read the log header from disk into the in-memory log header.
-    unsafe fn read_head(&mut self) {
+    fn read_head(&mut self) {
         let mut buf = kernel().file_system.disk.read(self.dev, self.start as u32);
-        let lh = buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader;
-        for b in unsafe { &(*lh).block[0..(*lh).n as usize] } {
-            self.lh
-                .push(kernel().bcache.buf_unforget(self.dev, *b).unwrap());
+
+        const_assert!(mem::size_of::<LogHeader>() <= BSIZE);
+        const_assert!(mem::align_of::<BufData>() % mem::align_of::<LogHeader>() == 0);
+        // It is safe becuase
+        // * buf.data is larger than LogHeader
+        // * buf.data is aligned properly.
+        // * LogHeader contains only u32's, so does not have any requirements.
+        // * buf is locked, so we can access it exclusively.
+        let lh = unsafe { &mut *(buf.deref_inner_mut().data.as_mut_ptr() as *mut LogHeader) };
+
+        for b in &lh.block[0..lh.n as usize] {
+            self.bufs
+                .push(kernel().file_system.disk.read(self.dev, *b).unlock())
         }
     }
 
     /// Write in-memory log header to disk.
     /// This is the true point at which the
     /// current transaction commits.
-    unsafe fn write_head(&mut self) {
+    fn write_head(&mut self) {
         let mut buf = kernel().file_system.disk.read(self.dev, self.start as u32);
-        let mut hb = unsafe { &mut *(buf.deref_mut_inner().data.as_mut_ptr() as *mut LogHeader) };
-        hb.n = self.lh.len() as u32;
-        for (db, b) in izip!(&mut hb.block, &self.lh) {
-            *db = (*b).blockno;
+
+        const_assert!(mem::size_of::<LogHeader>() <= BSIZE);
+        const_assert!(mem::align_of::<BufData>() % mem::align_of::<LogHeader>() == 0);
+        // It is safe becuase
+        // * buf.data is larger than LogHeader
+        // * buf.data is aligned properly.
+        // * LogHeader contains only u32's, so does not have any requirements.
+        // * buf is locked, so we can access it exclusively.
+        let mut lh = unsafe { &mut *(buf.deref_inner_mut().data.as_mut_ptr() as *mut LogHeader) };
+
+        lh.n = self.bufs.len() as u32;
+        for (db, b) in izip!(&mut lh.block, &self.bufs) {
+            *db = b.blockno;
         }
         kernel().file_system.disk.write(&mut buf)
     }
 
-    unsafe fn recover_from_log(&mut self) {
-        unsafe { self.read_head() };
+    fn recover_from_log(&mut self) {
+        self.read_head();
 
         // If committed, copy from log to disk.
-        unsafe { self.install_trans(true) };
+        self.install_trans();
 
         // Clear the log.
-        unsafe { self.write_head() };
+        self.write_head();
     }
 
     /// Called at the start of each FS system call.
@@ -142,7 +147,7 @@ impl Log {
         loop {
             if guard.committing ||
             // This op might exhaust log space; wait for commit.
-            guard.lh.len() as i32 + (guard.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
+            guard.bufs.len() as i32 + (guard.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
             {
                 guard.sleep();
             } else {
@@ -154,7 +159,7 @@ impl Log {
 
     /// Called at the end of each FS system call.
     /// Commits if this was the last outstanding operation.
-    pub unsafe fn end_op(this: &Sleepablelock<Self>) {
+    pub fn end_op(this: &Sleepablelock<Self>) {
         let mut guard = this.lock();
         guard.outstanding -= 1;
         assert!(!guard.committing, "guard.committing");
@@ -174,6 +179,8 @@ impl Log {
         if do_commit {
             // Call commit w/o holding locks, since not allowed
             // to sleep with locks.
+            // It is safe because other threads neither read nor write this log
+            // when guard.committing is true.
             unsafe { this.get_mut_unchecked().commit() };
             let mut guard = this.lock();
             guard.committing = false;
@@ -182,8 +189,8 @@ impl Log {
     }
 
     /// Copy modified blocks from cache to self.
-    unsafe fn write_log(&mut self) {
-        for (tail, from) in self.lh.iter().enumerate() {
+    fn write_log(&mut self) {
+        for (tail, from) in self.bufs.iter().enumerate() {
             // Log block.
             let mut to = kernel()
                 .file_system
@@ -193,32 +200,28 @@ impl Log {
             // Cache block.
             let from = kernel().file_system.disk.read(self.dev, from.blockno);
 
-            unsafe {
-                ptr::copy(
-                    from.deref_inner().data.as_ptr(),
-                    to.deref_mut_inner().data.as_mut_ptr(),
-                    BSIZE,
-                )
-            };
+            to.deref_inner_mut()
+                .data
+                .copy_from_slice(&from.deref_inner().data[..]);
 
             // Write the log.
-            kernel().file_system.disk.write(&mut to)
+            kernel().file_system.disk.write(&mut to);
         }
     }
 
-    unsafe fn commit(&mut self) {
-        if !self.lh.is_empty() {
+    fn commit(&mut self) {
+        if !self.bufs.is_empty() {
             // Write modified blocks from cache to self.
-            unsafe { self.write_log() };
+            self.write_log();
 
             // Write header to disk -- the real commit.
-            unsafe { self.write_head() };
+            self.write_head();
 
             // Now install writes to home locations.
-            unsafe { self.install_trans(false) };
+            self.install_trans();
 
             // Erase the transaction from the self.
-            unsafe { self.write_head() };
+            self.write_head();
         };
     }
 
@@ -232,19 +235,19 @@ impl Log {
     ///   write(bp)
     pub fn write(&mut self, b: Buf<'static>) {
         assert!(
-            !(self.lh.len() >= LOGSIZE || self.lh.len() as i32 >= self.size - 1),
+            !(self.bufs.len() >= LOGSIZE || self.bufs.len() as i32 >= self.size - 1),
             "too big a transaction"
         );
         assert!(self.outstanding >= 1, "write outside of trans");
 
-        for buf in &self.lh {
+        for buf in &self.bufs {
             // Log absorbtion.
-            if buf.blockno == (*b).blockno {
+            if buf.blockno == b.blockno {
                 return;
             }
         }
 
         // Add new block to log?
-        self.lh.push(b.unlock());
+        self.bufs.push(b.unlock());
     }
 }
