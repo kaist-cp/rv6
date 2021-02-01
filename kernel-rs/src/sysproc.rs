@@ -1,5 +1,5 @@
 use crate::{
-    kernel::{kernel, Kernel},
+    kernel::Kernel,
     poweroff,
     proc::{myproc, ExecutingProc},
     syscall::{argaddr, argint},
@@ -41,12 +41,12 @@ impl Kernel {
 
     /// Pause for n clock ticks.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_sleep(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub fn sys_sleep(&self, proc: &ExecutingProc) -> Result<usize, ()> {
         let n = argint(0, proc)?;
         let mut ticks = self.ticks.lock();
         let ticks0 = *ticks;
         while ticks.wrapping_sub(ticks0) < n as u32 {
-            if unsafe { kernel().myexproc().killed() } {
+            if proc.proc().killed() {
                 return Err(());
             }
             ticks.sleep();

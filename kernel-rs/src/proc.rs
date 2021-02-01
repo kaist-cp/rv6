@@ -360,11 +360,11 @@ pub struct ExecutingProc {
 }
 
 impl ExecutingProc {
-    fn from_raw(ptr: *mut Proc) -> Self {
+    unsafe fn from_raw(ptr: *mut Proc) -> Self {
         ExecutingProc { ptr }
     }
 
-    pub unsafe fn proc(&self) -> &Proc {
+    pub fn proc(&self) -> &Proc {
         unsafe { &*self.ptr }
     }
 
@@ -374,10 +374,6 @@ impl ExecutingProc {
 
     pub fn deref_mut_data(&self) -> &mut ProcData {
         unsafe { &mut *(*self.ptr).data.get() }
-    }
-
-    pub fn killed(&self) -> bool {
-        unsafe { (*self.ptr).killed.load(Ordering::Acquire) }
     }
 }
 
@@ -759,7 +755,6 @@ impl ProcessSystem {
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
     pub unsafe fn fork(&self, p: &ExecutingProc) -> Result<i32, ()> {
-        // let mut p = unsafe { kernel().myexproc() };
         let pdata = p.deref_mut_data();
 
         // Allocate trap frame.
@@ -863,7 +858,6 @@ impl ProcessSystem {
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
     pub unsafe fn exit_current(&self, status: i32, p: &ExecutingProc) -> ! {
-        // let p = unsafe { kernel().myexproc() };
         assert_ne!(p.ptr, self.initial_proc, "init exiting");
         let data = p.deref_mut_data();
 
@@ -958,7 +952,7 @@ impl Kernel {
         let p = unsafe { (*c).proc };
         assert!(!p.is_null(), "myexproc: No current proc");
         unsafe { pop_off() };
-        ExecutingProc::from_raw(p)
+        unsafe { ExecutingProc::from_raw(p) }
     }
 
     // /// Return the shared reference of current proc's data.

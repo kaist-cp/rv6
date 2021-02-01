@@ -61,7 +61,7 @@ impl Console {
             // Wait until interrupt handler has put some
             // input into CONS.buffer.
             while this.r == this.w {
-                if unsafe { kernel().myexproc().killed() } {
+                if unsafe { kernel().myexproc().proc().killed() } {
                     return -1;
                 }
                 this.sleep();

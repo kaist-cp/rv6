@@ -1,7 +1,7 @@
 use crate::{
     kernel::Kernel,
     println,
-    proc::{myproc, ExecutingProc},
+    proc::ExecutingProc,
     vm::{UVAddr, VAddr},
 };
 use core::{mem, slice, str};
@@ -73,8 +73,6 @@ pub unsafe fn argstr<'a>(n: usize, buf: &mut [u8], p: &ExecutingProc) -> Result<
 
 impl Kernel {
     pub unsafe fn syscall(&'static self, num: i32, proc: &ExecutingProc) -> Result<usize, ()> {
-        let p = unsafe { myproc() };
-
         match num {
             1 => unsafe { self.sys_fork(proc) },
             2 => unsafe { self.sys_exit(proc) },
@@ -88,7 +86,7 @@ impl Kernel {
             10 => unsafe { self.sys_dup(proc) },
             11 => unsafe { self.sys_getpid() },
             12 => self.sys_sbrk(proc),
-            13 => unsafe { self.sys_sleep(proc) },
+            13 => self.sys_sleep(proc),
             14 => self.sys_uptime(),
             15 => unsafe { self.sys_open(proc) },
             16 => unsafe { self.sys_write(proc) },
@@ -101,8 +99,8 @@ impl Kernel {
             _ => {
                 println!(
                     "{} {}: unknown sys call {}",
-                    unsafe { (*p).pid() },
-                    str::from_utf8(unsafe { &(*p).name }).unwrap_or("???"),
+                    unsafe { proc.proc().pid() },
+                    str::from_utf8(&proc.proc().name).unwrap_or("???"),
                     num
                 );
                 Err(())
