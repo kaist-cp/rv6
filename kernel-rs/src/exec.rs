@@ -113,7 +113,6 @@ impl Kernel {
             return Err(());
         }
 
-        // let data = p.deref_mut_data();
         let trap_frame = PAddr::new(p.deref_mut_data().trap_frame() as *const _ as _);
         let mut mem = UserMemory::new(trap_frame, None).ok_or(())?;
 
