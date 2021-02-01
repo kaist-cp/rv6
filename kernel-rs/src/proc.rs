@@ -242,7 +242,7 @@ impl WaitChannel {
         let p = unsafe {
             // TODO(https://github.com/kaist-cp/rv6/issues/354, 258)
             // Remove this unsafe part after resolving #258, #354
-            &*myproc()
+            kernel().myexproc()
         };
 
         // Must acquire p->lock in order to
@@ -253,7 +253,7 @@ impl WaitChannel {
         // so it's okay to release lk.
 
         //DOC: sleeplock1
-        let mut guard = p.lock();
+        let mut guard = p.proc().lock();
         unsafe {
             // Temporarily release the inner `RawSpinlock`.
             // This is safe, since we don't access `lk` until re-acquiring the lock
@@ -1007,8 +1007,8 @@ pub unsafe fn scheduler() -> ! {
 
 /// Give up the CPU for one scheduling round.
 pub unsafe fn proc_yield() {
-    let p = unsafe { myproc() };
-    let mut guard = unsafe { (*p).lock() };
+    let p = unsafe { kernel().myexproc() };
+    let mut guard = p.proc().lock();
     guard.deref_mut_info().state = Procstate::RUNNABLE;
     unsafe { guard.sched() };
 }
@@ -1017,7 +1017,7 @@ pub unsafe fn proc_yield() {
 /// will swtch to forkret.
 unsafe fn forkret() {
     // Still holding p->lock from scheduler.
-    unsafe { (*myproc()).info.unlock() };
+    unsafe { kernel().myexproc().proc().info.unlock() };
 
     // File system initialization must be run in the context of a
     // regular process (e.g., because it calls sleep), and thus cannot

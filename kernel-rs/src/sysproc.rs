@@ -1,7 +1,7 @@
 use crate::{
     kernel::Kernel,
     poweroff,
-    proc::{myproc, ExecutingProc},
+    proc::ExecutingProc,
     syscall::{argaddr, argint},
     vm::{UVAddr, VAddr},
 };
@@ -14,8 +14,8 @@ impl Kernel {
     }
 
     /// Return the current process’s PID.
-    pub unsafe fn sys_getpid(&self) -> Result<usize, ()> {
-        Ok(unsafe { (*myproc()).pid() } as _)
+    pub unsafe fn sys_getpid(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+        Ok(unsafe { proc.proc().pid() } as _)
     }
 
     /// Create a process.

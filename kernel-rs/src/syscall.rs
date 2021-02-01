@@ -84,7 +84,7 @@ impl Kernel {
             8 => unsafe { self.sys_fstat(proc) },
             9 => unsafe { self.sys_chdir(proc) },
             10 => unsafe { self.sys_dup(proc) },
-            11 => unsafe { self.sys_getpid() },
+            11 => unsafe { self.sys_getpid(proc) },
             12 => self.sys_sbrk(proc),
             13 => self.sys_sleep(proc),
             14 => self.sys_uptime(),

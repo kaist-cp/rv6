@@ -1,5 +1,5 @@
 //! Sleeping locks
-use crate::proc::myproc;
+use crate::kernel::kernel;
 use crate::sleepablelock::Sleepablelock;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
@@ -28,7 +28,7 @@ impl RawSleeplock {
         while *guard != -1 {
             guard.sleep();
         }
-        *guard = unsafe { (*myproc()).pid() };
+        *guard = unsafe { kernel().myexproc().proc().pid() };
     }
 
     pub fn release(&self) {
@@ -39,7 +39,7 @@ impl RawSleeplock {
 
     pub fn holding(&self) -> bool {
         let guard = self.locked.lock();
-        *guard == unsafe { (*myproc()).pid() }
+        *guard == unsafe { kernel().myexproc().proc().pid() }
     }
 }
 
