@@ -9,7 +9,7 @@ use cstr_core::CStr;
 
 /// Fetch the usize at addr from the current process.
 /// Returns Ok(fetched integer) on success, Err(()) on error.
-pub unsafe fn fetchaddr(addr: UVAddr, p: &ExecutingProc) -> Result<usize, ()> {
+pub unsafe fn fetchaddr(addr: UVAddr, p: &mut ExecutingProc) -> Result<usize, ()> {
     let data = p.deref_mut_data();
     let mut ip = 0;
     if addr.into_usize() >= data.memory.size()
@@ -31,7 +31,7 @@ pub unsafe fn fetchaddr(addr: UVAddr, p: &ExecutingProc) -> Result<usize, ()> {
 pub unsafe fn fetchstr<'a>(
     addr: UVAddr,
     buf: &mut [u8],
-    p: &ExecutingProc,
+    p: &mut ExecutingProc,
 ) -> Result<&'a CStr, ()> {
     p.deref_mut_data().memory.copy_in_str(buf, addr)?;
 
@@ -66,13 +66,13 @@ pub fn argaddr(n: usize, p: &ExecutingProc) -> Result<usize, ()> {
 /// Fetch the nth word-sized system call argument as a null-terminated string.
 /// Copies into buf, at most max.
 /// Returns reference to the string in the buffer.
-pub unsafe fn argstr<'a>(n: usize, buf: &mut [u8], p: &ExecutingProc) -> Result<&'a CStr, ()> {
+pub unsafe fn argstr<'a>(n: usize, buf: &mut [u8], p: &mut ExecutingProc) -> Result<&'a CStr, ()> {
     let addr = argaddr(n, p)?;
     unsafe { fetchstr(UVAddr::new(addr), buf, p) }
 }
 
 impl Kernel {
-    pub unsafe fn syscall(&'static self, num: i32, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub unsafe fn syscall(&'static self, num: i32, proc: &mut ExecutingProc) -> Result<usize, ()> {
         match num {
             1 => unsafe { self.sys_fork(proc) },
             2 => unsafe { self.sys_exit(proc) },

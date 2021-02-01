@@ -43,7 +43,7 @@ impl Pipe {
     /// If successfully read i > 0 bytes, wakeups the `write_waitchannel` and returns `Ok(i: usize)`.
     /// If the pipe was empty, sleeps at `read_waitchannel` and tries again after wakeup.
     /// If an error happened, returns `Err(())`.
-    pub fn read(&self, addr: UVAddr, n: usize, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub fn read(&self, addr: UVAddr, n: usize, proc: &mut ExecutingProc) -> Result<usize, ()> {
         let mut inner = self.inner.lock();
         loop {
             match inner.try_read(addr, n, proc) {
@@ -67,7 +67,7 @@ impl Pipe {
     /// Note that we may have i < `n` if an copy-in error happened.
     /// If the pipe was full, sleeps at `write_waitchannel` and tries again after wakeup.
     /// If an error happened, returns `Err(())`.
-    pub fn write(&self, addr: UVAddr, n: usize, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub fn write(&self, addr: UVAddr, n: usize, proc: &mut ExecutingProc) -> Result<usize, ()> {
         let mut written = 0;
         let mut inner = self.inner.lock();
         loop {
@@ -198,7 +198,7 @@ impl PipeInner {
         &mut self,
         addr: UVAddr,
         n: usize,
-        proc: &ExecutingProc,
+        proc: &mut ExecutingProc,
     ) -> Result<usize, PipeError> {
         let mut ch = [0u8];
         if !self.readopen || proc.proc().killed() {
@@ -227,7 +227,7 @@ impl PipeInner {
         &mut self,
         addr: UVAddr,
         n: usize,
-        proc: &ExecutingProc,
+        proc: &mut ExecutingProc,
     ) -> Result<usize, PipeError> {
         //DOC: pipe-empty
         if self.nread == self.nwrite && self.writeopen {

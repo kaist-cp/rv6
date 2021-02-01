@@ -239,7 +239,7 @@ impl WaitChannel {
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
     pub fn sleep<T: Waitable>(&self, lk: &mut T) {
-        let p = kernel().myexproc();
+        let mut p = kernel().myexproc();
 
         // Must acquire p->lock in order to
         // change p->state and then call sched.
@@ -359,7 +359,7 @@ impl ExecutingProc {
         ExecutingProc { ptr }
     }
 
-    pub fn proc(&self) -> &mut Proc {
+    pub fn proc(&mut self) -> &mut Proc {
         unsafe { &mut *self.ptr }
     }
 
@@ -367,7 +367,7 @@ impl ExecutingProc {
         unsafe { &*(*self.ptr).data.get() }
     }
 
-    pub fn deref_mut_data(&self) -> &mut ProcData {
+    pub fn deref_mut_data(&mut self) -> &mut ProcData {
         unsafe { &mut *(*self.ptr).data.get() }
     }
 
@@ -753,7 +753,7 @@ impl ProcessSystem {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
-    pub unsafe fn fork(&self, p: &ExecutingProc) -> Result<i32, ()> {
+    pub unsafe fn fork(&self, p: &mut ExecutingProc) -> Result<i32, ()> {
         let pdata = p.deref_mut_data();
 
         // Allocate trap frame.
@@ -802,7 +802,7 @@ impl ProcessSystem {
 
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
-    pub unsafe fn wait(&self, addr: UVAddr, p: &ExecutingProc) -> Result<i32, ()> {
+    pub unsafe fn wait(&self, addr: UVAddr, p: &mut ExecutingProc) -> Result<i32, ()> {
         let ptr = p.ptr;
         let data = p.deref_mut_data();
 
@@ -856,7 +856,7 @@ impl ProcessSystem {
     /// Exit the current process.  Does not return.
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
-    pub unsafe fn exit_current(&self, status: i32, p: &ExecutingProc) -> ! {
+    pub unsafe fn exit_current(&self, status: i32, p: &mut ExecutingProc) -> ! {
         assert_ne!(p.ptr, self.initial_proc, "init exiting");
         let data = p.deref_mut_data();
 
@@ -993,7 +993,7 @@ pub unsafe fn scheduler() -> ! {
 }
 
 /// Give up the CPU for one scheduling round.
-pub unsafe fn proc_yield(p: &ExecutingProc) {
+pub unsafe fn proc_yield(p: &mut ExecutingProc) {
     let mut guard = p.proc().lock();
     guard.deref_mut_info().state = Procstate::RUNNABLE;
     unsafe { guard.sched() };
@@ -1002,7 +1002,7 @@ pub unsafe fn proc_yield(p: &ExecutingProc) {
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
 unsafe fn forkret() {
-    let p = &kernel().myexproc();
+    let p = &mut kernel().myexproc();
     // Still holding p->lock from scheduler.
     unsafe { p.proc().info.unlock() };
 

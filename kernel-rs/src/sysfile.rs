@@ -26,7 +26,7 @@ use cstr_core::CStr;
 impl RcFile<'static> {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
-    fn fdalloc(self, p: &ExecutingProc) -> Result<i32, Self> {
+    fn fdalloc(self, p: &mut ExecutingProc) -> Result<i32, Self> {
         let mut data = p.deref_mut_data();
         for fd in 0..NOFILE {
             // user pointer to struct stat
@@ -172,7 +172,12 @@ impl Kernel {
 
     /// Open a file; omode indicate read/write.
     /// Returns Ok(file descriptor) on success, Err(()) on error.
-    fn open(&'static self, name: &Path, omode: FcntlFlags, p: &ExecutingProc) -> Result<usize, ()> {
+    fn open(
+        &'static self,
+        name: &Path,
+        omode: FcntlFlags,
+        p: &mut ExecutingProc,
+    ) -> Result<usize, ()> {
         let tx = self.file_system.begin_transaction();
 
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
@@ -243,8 +248,7 @@ impl Kernel {
 
     /// Change the current directory.
     /// Returns Ok(()) on success, Err(()) on error.
-    fn chdir(&self, dirname: &CStr, p: &ExecutingProc) -> Result<(), ()> {
-        let mut data = p.deref_mut_data();
+    fn chdir(&self, dirname: &CStr, p: &mut ExecutingProc) -> Result<(), ()> {
         // TODO(https://github.com/kaist-cp/rv6/issues/290)
         // The method namei can drop inodes. If namei succeeds, its return
         // value, ptr, will be dropped when this method returns. Deallocation
@@ -257,20 +261,22 @@ impl Kernel {
             return Err(());
         }
         drop(ip);
+        let mut data = p.deref_mut_data();
         data.cwd = Some(ptr);
         Ok(())
     }
 
     /// Create a pipe, put read/write file descriptors in fd0 and fd1.
     /// Returns Ok(()) on success, Err(()) on error.
-    fn pipe(&self, fdarray: UVAddr, p: &ExecutingProc) -> Result<(), ()> {
-        let mut data = p.deref_mut_data();
+    fn pipe(&self, fdarray: UVAddr, p: &mut ExecutingProc) -> Result<(), ()> {
         let (pipereader, pipewriter) = AllocatedPipe::alloc()?;
 
         let mut fd0 = pipereader.fdalloc(p).map_err(|_| ())?;
         let mut fd1 = pipewriter
             .fdalloc(p)
-            .map_err(|_| data.open_files[fd0 as usize] = None)?;
+            .map_err(|_| p.deref_mut_data().open_files[fd0 as usize] = None)?;
+
+        let mut data = p.deref_mut_data();
 
         // It is safe because fdarray, fd0 is valid.
         if unsafe {
@@ -303,7 +309,7 @@ impl Kernel {
 impl Kernel {
     /// Return a new file descriptor referring to the same file as given fd.
     /// Returns Ok(new file descriptor) on success, Err(()) on error.
-    pub unsafe fn sys_dup(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub unsafe fn sys_dup(&self, proc: &mut ExecutingProc) -> Result<usize, ()> {
         let (_, f) = unsafe { argfd(0, proc)? };
         let newfile = f.clone();
         let fd = newfile.fdalloc(proc).map_err(|_| ())?;
@@ -312,7 +318,7 @@ impl Kernel {
 
     /// Read n bytes into buf.
     /// Returns Ok(number read) on success, Err(()) on error.
-    pub unsafe fn sys_read(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub unsafe fn sys_read(&self, proc: &mut ExecutingProc) -> Result<usize, ()> {
         let (_, f) = unsafe { argfd(0, proc)? };
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
@@ -321,7 +327,7 @@ impl Kernel {
 
     /// Write n bytes from buf to given file descriptor fd.
     /// Returns Ok(n) on success, Err(()) on error.
-    pub unsafe fn sys_write(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub unsafe fn sys_write(&self, proc: &mut ExecutingProc) -> Result<usize, ()> {
         let (_, f) = unsafe { argfd(0, proc)? };
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
@@ -330,7 +336,7 @@ impl Kernel {
 
     /// Release open file fd.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_close(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub unsafe fn sys_close(&self, proc: &mut ExecutingProc) -> Result<usize, ()> {
         let (fd, _) = unsafe { argfd(0, proc)? };
         proc.deref_mut_data().open_files[fd as usize] = None;
         Ok(0)
@@ -338,7 +344,7 @@ impl Kernel {
 
     /// Place info about an open file into struct stat.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_fstat(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub unsafe fn sys_fstat(&self, proc: &mut ExecutingProc) -> Result<usize, ()> {
         let (_, f) = unsafe { argfd(0, proc)? };
         // user pointer to struct stat
         let st = argaddr(1, proc)?;
@@ -348,7 +354,7 @@ impl Kernel {
 
     /// Create the path new as a link to the same inode as old.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_link(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub unsafe fn sys_link(&self, proc: &mut ExecutingProc) -> Result<usize, ()> {
         let mut new: [u8; MAXPATH] = [0; MAXPATH];
         let mut old: [u8; MAXPATH] = [0; MAXPATH];
         let old = unsafe { argstr(0, &mut old, proc)? };
@@ -359,7 +365,7 @@ impl Kernel {
 
     /// Remove a file.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_unlink(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub unsafe fn sys_unlink(&self, proc: &mut ExecutingProc) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = unsafe { argstr(0, &mut path, proc)? };
         self.unlink(path, proc)?;
@@ -368,7 +374,7 @@ impl Kernel {
 
     /// Open a file.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_open(&'static self, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub unsafe fn sys_open(&'static self, proc: &mut ExecutingProc) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = unsafe { argstr(0, &mut path, proc)? };
         let path = Path::new(path);
@@ -379,7 +385,7 @@ impl Kernel {
 
     /// Create a new directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_mkdir(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub unsafe fn sys_mkdir(&self, proc: &mut ExecutingProc) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = unsafe { argstr(0, &mut path, proc)? };
         self.mkdir(path, proc)?;
@@ -388,7 +394,7 @@ impl Kernel {
 
     /// Create a new directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_mknod(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub unsafe fn sys_mknod(&self, proc: &mut ExecutingProc) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = unsafe { argstr(0, &mut path, proc)? };
         let major = argint(1, proc)? as u16;
@@ -399,7 +405,7 @@ impl Kernel {
 
     /// Change the current directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_chdir(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub unsafe fn sys_chdir(&self, proc: &mut ExecutingProc) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = unsafe { argstr(0, &mut path, proc)? };
         self.chdir(path, proc)?;
@@ -408,7 +414,7 @@ impl Kernel {
 
     /// Load a file and execute it with arguments.
     /// Returns Ok(argc argument to user main) on success, Err(()) on error.
-    pub unsafe fn sys_exec(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub unsafe fn sys_exec(&self, proc: &mut ExecutingProc) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let mut args = ArrayVec::<[Page; MAXARG]>::new();
         let path = unsafe { argstr(0, &mut path, proc)? };
@@ -449,7 +455,7 @@ impl Kernel {
 
     /// Create a pipe.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub fn sys_pipe(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub fn sys_pipe(&self, proc: &mut ExecutingProc) -> Result<usize, ()> {
         // user pointer to array of two integers
         let fdarray = UVAddr::new(argaddr(0, proc)?);
         self.pipe(fdarray, proc)?;

@@ -90,7 +90,7 @@ impl ProgHdr {
 }
 
 impl Kernel {
-    pub fn exec(&self, path: &Path, args: &[Page], p: &ExecutingProc) -> Result<usize, ()> {
+    pub fn exec(&self, path: &Path, args: &[Page], p: &mut ExecutingProc) -> Result<usize, ()> {
         if args.len() > MAXARG {
             return Err(());
         }
@@ -113,8 +113,8 @@ impl Kernel {
             return Err(());
         }
 
-        let mut data = p.deref_mut_data();
-        let trap_frame = PAddr::new(data.trap_frame() as *const _ as _);
+        // let data = p.deref_mut_data();
+        let trap_frame = PAddr::new(p.deref_mut_data().trap_frame() as *const _ as _);
         let mut mem = UserMemory::new(trap_frame, None).ok_or(())?;
 
         // Load program into memory.
@@ -191,6 +191,7 @@ impl Kernel {
             p_name[len] = 0;
         }
 
+        let data = p.deref_mut_data();
         // Commit to the user image.
         data.memory = mem;
 

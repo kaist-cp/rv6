@@ -67,7 +67,7 @@ impl File {
 
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub unsafe fn stat(&self, addr: UVAddr, p: &ExecutingProc) -> Result<(), ()> {
+    pub unsafe fn stat(&self, addr: UVAddr, p: &mut ExecutingProc) -> Result<(), ()> {
         match &self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                 let mut st = ip.stat();
@@ -87,7 +87,7 @@ impl File {
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub unsafe fn read(&self, addr: UVAddr, n: i32, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub unsafe fn read(&self, addr: UVAddr, n: i32, proc: &mut ExecutingProc) -> Result<usize, ()> {
         if !self.readable {
             return Err(());
         }
@@ -114,7 +114,12 @@ impl File {
     }
     /// Write to file self.
     /// addr is a user virtual address.
-    pub unsafe fn write(&self, addr: UVAddr, n: i32, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub unsafe fn write(
+        &self,
+        addr: UVAddr,
+        n: i32,
+        proc: &mut ExecutingProc,
+    ) -> Result<usize, ()> {
         if !self.writable {
             return Err(());
         }

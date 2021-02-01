@@ -46,7 +46,7 @@ pub unsafe extern "C" fn usertrap() {
     // since we're now in the kernel.
     unsafe { w_stvec(kernelvec as _) };
 
-    let p = &kernel().myexproc();
+    let p = &mut kernel().myexproc();
     let data = p.deref_mut_data();
 
     // Save user program counter.
@@ -67,7 +67,7 @@ pub unsafe extern "C" fn usertrap() {
         // so don't enable until done with those registers.
         unsafe { intr_on() };
         data.trap_frame_mut().a0 = ok_or!(
-            unsafe { kernel().syscall(data.trap_frame_mut().a7 as i32, p) },
+            unsafe { kernel().syscall(data.trap_frame_mut().a7 as i32, &mut kernel().myexproc()) },
             usize::MAX
         );
     } else {
@@ -100,7 +100,7 @@ pub unsafe extern "C" fn usertrap() {
 }
 
 /// Return to user space.
-pub unsafe fn usertrapret(p: &ExecutingProc) {
+pub unsafe fn usertrapret(p: &mut ExecutingProc) {
     let data = p.deref_mut_data();
 
     // We're about to switch the destination of traps from
@@ -190,7 +190,7 @@ pub unsafe fn kerneltrap() {
         && !unsafe { kernel().myproc() }.is_null()
         && unsafe { kernel().myexproc().proc().state() } == Procstate::RUNNING
     {
-        unsafe { proc_yield(&kernel().myexproc()) };
+        unsafe { proc_yield(&mut kernel().myexproc()) };
     }
 
     // The yield() may have caused some traps to occur,
