@@ -36,13 +36,15 @@ impl RawSpinlock {
     ///
     /// # Safety
     ///
-    /// To ensure that all stores done in one critical section are visible in the
-    /// next critical section's loads, we use an atomic exchange with `Acquire` ordering
-    /// here and pair it with an atomic store with `Release` ordering in `RawSpinlock::release()`.
-    /// In this way, we tell the compiler/processor not to move loads that should
-    /// originally happen after acquiring the lock to actually happen before acquiring the lock,
-    /// since that may make loads read stale values. (Also see `RawSpinlock::release()`.)
-    /// Additionally, note that an extra fence is unneccessary due to the pair of Acquire/Release ordering.
+    /// To ensure that all stores done in one critical section are visible in the next critical section's loads,
+    /// we use an atomic exchange with `Acquire` ordering in `RawSpinlock::acquire()`,
+    /// and pair it with an atomic store with `Release` ordering in `RawSpinlock::release()`.
+    ///
+    /// In this way, we tell the compiler/processor not to move loads (stores) that should
+    /// originally happen after acquiring (before releasing) the lock to actually happen
+    /// before acquiring (after releasing) the lock. Otherwise, loads could read stale values.
+    ///
+    /// Additionally, note that an additional fence is unneccessary due to the pair of `Acquire`/`Release` orderings.
     pub fn acquire(&self) {
         // Disable interrupts to avoid deadlock.
         unsafe {
@@ -77,18 +79,11 @@ impl RawSpinlock {
     /// Releases the lock.
     ///
     /// # Safety
-    ///
-    /// To ensure that all stores done in one critical section are visible in the
-    /// next critical section's loads, we use an atomic store with `Release` ordering
-    /// here and pair it with an atomic exchange with `Acquire` ordering in `RawSpinlock::acquire()`.
-    /// In this way, we tell the compiler/processor not to move stores that should
-    /// originally happen before releasing the lock to actually happen after releasing the lock,
-    /// since that may make the next critical section's loads read stale values. (Also see `RawSpinlock::acquire()`.)
-    /// Additionally, note that an extra fence is unneccessary due to the pair of Acquire/Release ordering.
+    /// We use an atomic store with `Release` ordering here. See `RawSpinlock::acquire()` for more details.
     pub fn release(&self) {
         assert!(self.holding(), "release {}", self.name);
 
-        // Release the lock by storing ptr::null_mut() in `self.locked`,
+        // Release the lock by storing ptr::null_mut() in `self.locked`
         // using an atomic store. This is actually done using a fence in RISC-V.
         //
         // 0x80000f5c | fence   rw,w            (Enforces `Release` memory ordering)
