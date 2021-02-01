@@ -203,3 +203,5 @@ qemu-gdb: $K/kernel .gdbinit fs.img
 	@echo "*** Now run 'gdb' in another window." 1>&2
 	$(QEMU) $(QEMUOPTS) -S $(QEMUGDB)
 
+doc: $(KR)/src $(KR)/Cargo.lock $(KR)/Cargo.toml $(KR)/riscv64gc-unknown-none-elfhf.json
+	cargo rustdoc --manifest-path kernel-rs/Cargo.toml -- --document-private-items -A non_autolinks
