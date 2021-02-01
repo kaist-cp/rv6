@@ -808,8 +808,7 @@ impl ProcessSystem {
 
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
-    pub unsafe fn wait(&self, addr: UVAddr) -> Result<i32, ()> {
-        let p = unsafe { kernel().myexproc() };
+    pub unsafe fn wait(&self, addr: UVAddr, p: &ExecutingProc) -> Result<i32, ()> {
         let ptr = p.ptr;
         let data = p.deref_mut_data();
 
