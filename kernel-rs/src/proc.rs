@@ -340,7 +340,7 @@ pub struct Proc {
 
     info: Spinlock<ProcInfo>,
 
-    pub data: UnsafeCell<ProcData>,
+    data: UnsafeCell<ProcData>,
 
     /// If true, the process have been killed.
     killed: AtomicBool,
