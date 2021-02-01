@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Install dependencies
-        run: sudo apt-get install gcc-riscv64-linux-gnu qemu-system-misc
+        run: sudo apt update && sudo apt-get install gcc-riscv64-linux-gnu qemu-system-misc
       - name: Install latest nightly
         uses: actions-rs/toolchain@v1
         with:
