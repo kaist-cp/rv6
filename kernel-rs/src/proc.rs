@@ -363,6 +363,10 @@ impl ExecutingProc {
         ExecutingProc { ptr }
     }
 
+    fn raw(&self) -> *const Proc {
+        self.ptr as *const Proc
+    }
+
     pub fn proc(&self) -> &mut Proc {
         unsafe { &mut *self.ptr }
     }
@@ -953,16 +957,6 @@ impl Kernel {
         unsafe { pop_off() };
         unsafe { ExecutingProc::from_raw(p) }
     }
-
-    // /// Return the shared reference of current proc's data.
-    // pub unsafe fn myexprocdata<'a>(&self) -> &'a mut ProcData {
-    //     unsafe { push_off() };
-    //     let c = self.mycpu();
-    //     assert!(!unsafe{(*c).proc}.is_null(), "myexproc: No current proc");
-    //     let p = unsafe { (*c).proc.deref_mut_data() };
-    //     unsafe { pop_off() };
-    //     p
-    // }
 }
 
 /// A user program that calls exec("/init").
@@ -1006,8 +1000,7 @@ pub unsafe fn scheduler() -> ! {
 }
 
 /// Give up the CPU for one scheduling round.
-pub unsafe fn proc_yield() {
-    let p = unsafe { kernel().myexproc() };
+pub unsafe fn proc_yield(p: &ExecutingProc) {
     let mut guard = p.proc().lock();
     guard.deref_mut_info().state = Procstate::RUNNABLE;
     unsafe { guard.sched() };
@@ -1016,13 +1009,14 @@ pub unsafe fn proc_yield() {
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
 unsafe fn forkret() {
+    let p = unsafe { &kernel().myexproc() };
     // Still holding p->lock from scheduler.
-    unsafe { kernel().myexproc().proc().info.unlock() };
+    unsafe { p.proc().info.unlock() };
 
     // File system initialization must be run in the context of a
     // regular process (e.g., because it calls sleep), and thus cannot
     // be run from main().
     kernel().file_system.init(ROOTDEV);
 
-    unsafe { usertrapret() };
+    unsafe { usertrapret(p) };
 }

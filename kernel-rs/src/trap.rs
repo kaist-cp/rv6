@@ -4,7 +4,7 @@ use crate::{
     ok_or,
     plic::{plic_claim, plic_complete},
     println,
-    proc::{cpuid, myproc, proc_yield, Procstate},
+    proc::{cpuid, myproc, proc_yield, ExecutingProc, Procstate},
     riscv::{
         intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp, w_sepc, w_sip,
         w_stvec, Sstatus, PGSIZE,
@@ -93,15 +93,14 @@ pub unsafe extern "C" fn usertrap() {
 
     // Give up the CPU if this is a timer interrupt.
     if which_dev == 2 {
-        unsafe { proc_yield() };
+        unsafe { proc_yield(p) };
     }
 
-    unsafe { usertrapret() };
+    unsafe { usertrapret(p) };
 }
 
 /// Return to user space.
-pub unsafe fn usertrapret() {
-    let p = unsafe { kernel().myexproc() };
+pub unsafe fn usertrapret(p: &ExecutingProc) {
     let data = p.deref_mut_data();
 
     // We're about to switch the destination of traps from
@@ -189,9 +188,9 @@ pub unsafe fn kerneltrap() {
     // Give up the CPU if this is a timer interrupt.
     if which_dev == 2
         && !unsafe { myproc() }.is_null()
-        && unsafe { (*myproc()).state() } == Procstate::RUNNING
+        && unsafe { kernel().myexproc().proc().state() } == Procstate::RUNNING
     {
-        unsafe { proc_yield() };
+        unsafe { proc_yield(&kernel().myexproc()) };
     }
 
     // The yield() may have caused some traps to occur,
