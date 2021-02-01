@@ -76,14 +76,14 @@ pub unsafe extern "C" fn usertrap() {
             println!(
                 "usertrap(): unexpected scause {:018p} pid={}",
                 unsafe { r_scause() } as *const u8,
-                unsafe { (*p.ptr).pid() }
+                unsafe { p.proc().pid() }
             );
             println!(
                 "            sepc={:018p} stval={:018p}",
                 unsafe { r_sepc() } as *const u8,
                 unsafe { r_stval() } as *const u8
             );
-            unsafe { (*p.ptr).kill() };
+            p.proc().kill();
         }
     }
 

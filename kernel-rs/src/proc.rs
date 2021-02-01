@@ -355,8 +355,7 @@ pub struct Proc {
 
 /// Assumption: `ptr` is `executingproc`, and guard indicates ptr->info's spinlock is held.
 pub struct ExecutingProc {
-    // TODO: ptr is temporary pub because of pid() and kill()
-    pub ptr: *mut Proc,
+    ptr: *mut Proc,
 }
 
 impl ExecutingProc {
@@ -364,8 +363,8 @@ impl ExecutingProc {
         ExecutingProc { ptr }
     }
 
-    pub fn proc(&self) -> &Proc {
-        unsafe { &*self.ptr }
+    pub fn proc(&self) -> &mut Proc {
+        unsafe { &mut *self.ptr }
     }
 
     pub fn deref_data(&self) -> &ProcData {

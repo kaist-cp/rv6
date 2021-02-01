@@ -113,7 +113,6 @@ impl Kernel {
             return Err(());
         }
 
-        let ptr = p.ptr;
         let mut data = p.deref_mut_data();
         let trap_frame = PAddr::new(data.trap_frame() as *const _ as _);
         let mut mem = UserMemory::new(trap_frame, None).ok_or(())?;
@@ -185,7 +184,7 @@ impl Kernel {
             .rposition(|c| *c == b'/')
             .map(|i| &path_str[(i + 1)..])
             .unwrap_or(path_str);
-        let p_name = unsafe { &mut (*ptr).name };
+        let p_name = &mut p.proc().name;
         let len = cmp::min(p_name.len(), name.len());
         p_name[..len].copy_from_slice(&name[..len]);
         if len < p_name.len() {
