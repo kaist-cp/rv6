@@ -15,11 +15,11 @@ defaults:
 jobs:
   test:
     name: test
-    runs-on: ubuntu-20.04
+    runs-on: [self-hosted, ubuntu-20.04]
     steps:
       - uses: actions/checkout@v2
       - name: Install dependencies
-        run: sudo apt-get install gcc-riscv64-linux-gnu qemu-system-misc
+        run: sudo apt-get install -y gcc-riscv64-linux-gnu qemu-system-misc
       - name: Install latest nightly
         uses: actions-rs/toolchain@v1
         with:
@@ -33,7 +33,7 @@ jobs:
     if: github.event_name == 'push' && success()
     needs:
       - test
-    runs-on: ubuntu-20.04
+    runs-on: [self-hosted, ubuntu-20.04]
     steps:
       - name: Mark the job as a success
         run: exit 0
