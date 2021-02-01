@@ -941,7 +941,7 @@ pub fn cpuid() -> usize {
 impl Kernel {
     /// Return ExecutingProc. This is safe because we checked if current struct Proc* exists.
     pub unsafe fn myexproc(&self) -> ExecutingProc {
-        let p = unsafe{ self.myproc() };
+        let p = unsafe { self.myproc() };
         assert!(!p.is_null(), "myexproc: No current proc");
         unsafe { ExecutingProc::from_raw(p) }
     }
