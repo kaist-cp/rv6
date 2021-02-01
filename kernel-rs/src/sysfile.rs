@@ -315,7 +315,7 @@ impl Kernel {
         let (_, f) = unsafe { argfd(0, proc)? };
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
-        unsafe { f.read(UVAddr::new(p), n) }
+        unsafe { f.read(UVAddr::new(p), n, proc) }
     }
 
     /// Write n bytes from buf to given file descriptor fd.
@@ -324,7 +324,7 @@ impl Kernel {
         let (_, f) = unsafe { argfd(0, proc)? };
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
-        unsafe { f.write(UVAddr::new(p), n) }
+        unsafe { f.write(UVAddr::new(p), n, proc) }
     }
 
     /// Release open file fd.
@@ -341,7 +341,7 @@ impl Kernel {
         let (_, f) = unsafe { argfd(0, proc)? };
         // user pointer to struct stat
         let st = argaddr(1, proc)?;
-        unsafe { f.stat(UVAddr::new(st))? };
+        unsafe { f.stat(UVAddr::new(st), proc)? };
         Ok(0)
     }
 
@@ -434,7 +434,7 @@ impl Kernel {
         }
 
         let ret = if success {
-            self.exec(Path::new(path), &args)
+            self.exec(Path::new(path), &args, proc)
         } else {
             Err(())
         };

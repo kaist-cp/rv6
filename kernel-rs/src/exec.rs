@@ -2,9 +2,10 @@
 
 use crate::{
     fs::Path,
-    kernel::{kernel, Kernel},
+    kernel::Kernel,
     page::Page,
     param::MAXARG,
+    proc::ExecutingProc,
     riscv::{pgroundup, PGSIZE},
     vm::{PAddr, UVAddr, UserMemory, VAddr},
 };
@@ -89,7 +90,7 @@ impl ProgHdr {
 }
 
 impl Kernel {
-    pub fn exec(&self, path: &Path, args: &[Page]) -> Result<usize, ()> {
+    pub fn exec(&self, path: &Path, args: &[Page], p: &ExecutingProc) -> Result<usize, ()> {
         if args.len() > MAXARG {
             return Err(());
         }
@@ -112,7 +113,6 @@ impl Kernel {
             return Err(());
         }
 
-        let p = unsafe { kernel().myexproc() };
         let ptr = p.ptr;
         let mut data = p.deref_mut_data();
         let trap_frame = PAddr::new(data.trap_frame() as *const _ as _);

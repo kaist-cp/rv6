@@ -6,6 +6,7 @@ use crate::{
     kernel::kernel,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
+    proc::ExecutingProc,
     spinlock::Spinlock,
     stat::Stat,
     vm::UVAddr,
@@ -66,9 +67,7 @@ impl File {
 
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub unsafe fn stat(&self, addr: UVAddr) -> Result<(), ()> {
-        let p = unsafe { kernel().myexproc() };
-
+    pub unsafe fn stat(&self, addr: UVAddr, p: &ExecutingProc) -> Result<(), ()> {
         match &self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                 let mut st = ip.stat();
@@ -88,13 +87,13 @@ impl File {
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub unsafe fn read(&self, addr: UVAddr, n: i32) -> Result<usize, ()> {
+    pub unsafe fn read(&self, addr: UVAddr, n: i32, proc: &ExecutingProc) -> Result<usize, ()> {
         if !self.readable {
             return Err(());
         }
 
         match &self.typ {
-            FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0)),
+            FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0), proc),
             FileType::Inode { ip, off } => {
                 let mut ip = ip.deref().lock();
                 let curr_off = unsafe { *off.get() };
@@ -115,13 +114,13 @@ impl File {
     }
     /// Write to file self.
     /// addr is a user virtual address.
-    pub unsafe fn write(&self, addr: UVAddr, n: i32) -> Result<usize, ()> {
+    pub unsafe fn write(&self, addr: UVAddr, n: i32, proc: &ExecutingProc) -> Result<usize, ()> {
         if !self.writable {
             return Err(());
         }
 
         match &self.typ {
-            FileType::Pipe { pipe } => pipe.write(addr, usize::try_from(n).unwrap_or(0)),
+            FileType::Pipe { pipe } => pipe.write(addr, usize::try_from(n).unwrap_or(0), proc),
             FileType::Inode { ip, off } => {
                 // write a few blocks at a time to avoid exceeding
                 // the maximum log transaction size, including
