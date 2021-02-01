@@ -52,7 +52,7 @@ impl RawSpinlock {
 
         // RISC-V supports two forms of atomic instructions, 1) load-reserved/store-conditional and 2) atomic fetch-and-op,
         // and we use the former here.
-        // 
+        //
         // 0x80000fdc | lr.d.aq a2,(a0)         (load-reserved, dword, acquire-ordering)
         // 0x80000fe0 | bnez    a2,0x80000fe8   (goto snez)
         // 0x80000fe2 | sc.d    a3,a1,(a0)      (store-conditional, dword)
@@ -90,7 +90,7 @@ impl RawSpinlock {
 
         // Release the lock by storing ptr::null_mut() in `self.locked`,
         // using an atomic store. This is actually done using a fence in RISC-V.
-        // 
+        //
         // 0x80000f5c | fence   rw,w            (Enforces `Release` memory ordering)
         self.locked.store(ptr::null_mut(), Ordering::Release);
         unsafe {
