@@ -239,11 +239,7 @@ impl WaitChannel {
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
     pub fn sleep<T: Waitable>(&self, lk: &mut T) {
-        let p = unsafe {
-            // TODO(https://github.com/kaist-cp/rv6/issues/354, 258)
-            // Remove this unsafe part after resolving #258, #354
-            kernel().myexproc()
-        };
+        let p = kernel().myexproc();
 
         // Must acquire p->lock in order to
         // change p->state and then call sched.
@@ -939,8 +935,8 @@ pub fn cpuid() -> usize {
 }
 
 impl Kernel {
-    /// Return ExecutingProc. This is safe because we checked if current struct Proc* exists.
-    pub unsafe fn myexproc(&self) -> ExecutingProc {
+    /// Return ExecutingProc. This is safe because we checked if current struct Proc * exists.
+    pub fn myexproc(&self) -> ExecutingProc {
         let p = unsafe { self.myproc() };
         assert!(!p.is_null(), "myexproc: No current proc");
         unsafe { ExecutingProc::from_raw(p) }
@@ -1006,7 +1002,7 @@ pub unsafe fn proc_yield(p: &ExecutingProc) {
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
 unsafe fn forkret() {
-    let p = unsafe { &kernel().myexproc() };
+    let p = &kernel().myexproc();
     // Still holding p->lock from scheduler.
     unsafe { p.proc().info.unlock() };
 

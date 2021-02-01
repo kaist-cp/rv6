@@ -46,7 +46,7 @@ pub unsafe extern "C" fn usertrap() {
     // since we're now in the kernel.
     unsafe { w_stvec(kernelvec as _) };
 
-    let p = unsafe { &kernel().myexproc() };
+    let p = &kernel().myexproc();
     let data = p.deref_mut_data();
 
     // Save user program counter.
