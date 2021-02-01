@@ -69,16 +69,19 @@
 
 use array_macro::array;
 use core::{mem, ops::Deref, ptr};
+use static_assertions::const_assert;
 
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
+    bio::BufData,
     fs::FsTransaction,
     kernel::kernel,
     param::{BSIZE, NINODE},
+    proc::myproc,
     sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::Stat,
-    vm::{KVAddr, VAddr},
+    vm::UVAddr,
 };
 
 use super::{FileName, IPB, MAXFILE, NDIRECT, NINDIRECT};
@@ -161,11 +164,11 @@ pub type Itable = Spinlock<ArrayArena<Inode, NINODE>>;
 
 pub type RcInode<'s> = Rc<Itable, &'s Itable>;
 
-/// InodeGuard implies that `Sleeplock<InodeInner>` is held by current thread and transaction is opened.
+/// InodeGuard implies that `Sleeplock<InodeInner>` is held by current thread.
 ///
-/// # Invariant
+/// # Safety
 ///
-/// When `Sleeplock<InodeInner>` is held, InodeInner's valid is always true.
+/// `inode.inner` is locked.
 // Every disk write operation must happen inside a transaction. Reading an
 // opened file does not write anything on disk in any matter and thus does
 // not need to happen inside a transaction. At the same time, it requires
@@ -187,7 +190,7 @@ impl Dirent {
     /// Fill in name. If name is shorter than DIRSIZ, NUL character is appended as
     /// terminator.
     ///
-    /// `name` must contains no NUL characters, but this is not a safety invariant.
+    /// `name` must not contain NUL characters, but this is not a safety invariant.
     fn set_name(&mut self, name: &FileName) {
         let name = name.as_bytes();
         if name.len() == DIRSIZ {
@@ -209,12 +212,9 @@ impl Dirent {
 
     // TODO(https://github.com/kaist-cp/rv6/issues/360): Use iterator
     fn read_entry(&mut self, ip: &mut InodeGuard<'_>, off: u32, panic_msg: &'static str) {
-        let bytes_read = ip.read(
-            KVAddr::new(self as *mut Dirent as usize),
-            off,
-            DIRENT_SIZE as u32,
-        );
-        assert_eq!(bytes_read, Ok(DIRENT_SIZE), "{}", panic_msg)
+        // It is safe becuase Dirent can be safely transmuted to [u8; _], as it
+        // contains only u16 and u8's, which do not have internal structures.
+        unsafe { ip.read_kernel(self, off) }.expect(panic_msg)
     }
 }
 
@@ -228,10 +228,12 @@ impl Deref for InodeGuard<'_> {
 
 impl InodeGuard<'_> {
     pub fn deref_inner(&self) -> &InodeInner {
+        // It is safe becuase self.inner is locked.
         unsafe { self.inner.get_mut_unchecked() }
     }
 
     pub fn deref_inner_mut(&mut self) -> &mut InodeInner {
+        // It is safe becuase self.inner is locked and &mut self is exclusive.
         unsafe { self.inner.get_mut_unchecked() }
     }
 }
@@ -239,9 +241,8 @@ impl InodeGuard<'_> {
 /// Unlock and put the given inode.
 impl Drop for InodeGuard<'_> {
     fn drop(&mut self) {
-        unsafe {
-            self.inner.unlock();
-        }
+        // It is safe because self will be dropped.
+        unsafe { self.inner.unlock() };
     }
 }
 
@@ -268,17 +269,13 @@ impl InodeGuard<'_> {
             if de.inum == 0 {
                 break;
             }
-            off = (off as usize).wrapping_add(DIRENT_SIZE) as u32
+            off += DIRENT_SIZE as u32;
         }
-        de.inum = inum as u16;
+        de.inum = inum as _;
         de.set_name(name);
-        let bytes_write = self.write(
-            KVAddr::new(&mut de as *mut Dirent as usize),
-            off,
-            DIRENT_SIZE as u32,
-            tx,
-        );
-        assert_eq!(bytes_write, Ok(DIRENT_SIZE), "dirlink");
+        // It is safe becuase Dirent can be safely transmuted to [u8; _], as it
+        // contains only u16 and u8's, which do not have internal structures.
+        unsafe { self.write_kernel(&de, off, tx) }.expect("dirlink");
         Ok(())
     }
 
@@ -304,49 +301,57 @@ impl InodeGuard<'_> {
     /// Copy a modified in-memory inode to disk.
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk.
-    pub unsafe fn update(&self, tx: &FsTransaction<'_>) {
+    pub fn update(&self, tx: &FsTransaction<'_>) {
         let mut bp = kernel().file_system.disk.read(
             self.dev,
             kernel().file_system.superblock().iblock(self.inum),
         );
-        let mut dip = unsafe {
-            (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
-                .add((self.inum as usize).wrapping_rem(IPB))
+
+        const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
+        const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
+        // It is safe because
+        // * dip is aligned properly.
+        // * dip is inside bp.data.
+        // * dip will not be read.
+        let dip = unsafe {
+            &mut *(bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
+                .add(self.inum as usize % IPB)
         };
+
         let inner = self.deref_inner();
         match inner.typ {
             InodeType::Device { major, minor } => {
-                unsafe { (*dip).typ = DInodeType::Device };
-                unsafe { (*dip).major = major };
-                unsafe { (*dip).minor = minor };
+                dip.typ = DInodeType::Device;
+                dip.major = major;
+                dip.minor = minor;
             }
             InodeType::None => {
-                unsafe { (*dip).typ = DInodeType::None };
-                unsafe { (*dip).major = 0 };
-                unsafe { (*dip).minor = 0 };
+                dip.typ = DInodeType::None;
+                dip.major = 0;
+                dip.minor = 0;
             }
             InodeType::Dir => {
-                unsafe { (*dip).typ = DInodeType::Dir };
-                unsafe { (*dip).major = 0 };
-                unsafe { (*dip).minor = 0 };
+                dip.typ = DInodeType::Dir;
+                dip.major = 0;
+                dip.minor = 0;
             }
             InodeType::File => {
-                unsafe { (*dip).typ = DInodeType::File };
-                unsafe { (*dip).major = 0 };
-                unsafe { (*dip).minor = 0 };
+                dip.typ = DInodeType::File;
+                dip.major = 0;
+                dip.minor = 0;
             }
         }
 
-        unsafe { (*dip).nlink = inner.nlink };
-        unsafe { (*dip).size = inner.size };
-        unsafe { (*dip).addr_direct.copy_from_slice(&inner.addr_direct) };
-        unsafe { (*dip).addr_indirect = inner.addr_indirect };
+        dip.nlink = inner.nlink;
+        dip.size = inner.size;
+        dip.addr_direct.copy_from_slice(&inner.addr_direct);
+        dip.addr_indirect = inner.addr_indirect;
         unsafe { tx.write(bp) };
     }
 
     /// Truncate inode (discard contents).
     /// This function is called with Inode's lock is held.
-    pub unsafe fn itrunc(&mut self, tx: &FsTransaction<'_>) {
+    pub fn itrunc(&mut self, tx: &FsTransaction<'_>) {
         let dev = self.dev;
         for addr in &mut self.deref_inner_mut().addr_direct {
             if *addr != 0 {
@@ -360,10 +365,12 @@ impl InodeGuard<'_> {
                 .file_system
                 .disk
                 .read(dev, self.deref_inner().addr_indirect);
-            let a = bp.deref_mut_inner().data.as_mut_ptr() as *mut u32;
-            for j in 0..NINDIRECT {
-                if unsafe { *a.add(j) } != 0 {
-                    unsafe { tx.bfree(dev, *a.add(j)) };
+            // It is safe because u32 does not have internal structure.
+            let (prefix, data, _) = unsafe { bp.deref_mut_inner().data.align_to_mut::<u32>() };
+            debug_assert_eq!(prefix.len(), 0, "itrunc: Buf data unaligned");
+            for a in data {
+                if *a != 0 {
+                    unsafe { tx.bfree(dev, *a) };
                 }
             }
             drop(bp);
@@ -372,83 +379,198 @@ impl InodeGuard<'_> {
         }
 
         self.deref_inner_mut().size = 0;
-        unsafe { self.update(tx) };
+        self.update(tx);
+    }
+
+    /// Copy data into `dst` from the content of inode at offset `off`.
+    /// Return Ok(()) on success, Err(()) on failure.
+    ///
+    /// # Safety
+    ///
+    /// `T` can be safely `transmute`d to `[u8; size_of::<T>()]`.
+    pub unsafe fn read_kernel<T>(&mut self, dst: &mut T, off: u32) -> Result<(), ()> {
+        let bytes = self.read_bytes_kernel(
+            // It is safe because of the safety assumption of this method.
+            unsafe { core::slice::from_raw_parts_mut(dst as *mut _ as _, mem::size_of::<T>()) },
+            off,
+        );
+        if bytes == mem::size_of::<T>() {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    /// Copy data into `dst` from the content of inode at offset `off`.
+    /// Return the number of bytes copied.
+    pub fn read_bytes_kernel(&mut self, dst: &mut [u8], off: u32) -> usize {
+        self.read_internal(off, dst.len() as u32, |off, src| {
+            dst[off as usize..off as usize + src.len()].clone_from_slice(src);
+            Ok(())
+        })
+        .expect("read: should never fail")
+    }
+
+    /// Copy data into virtual address `dst` of the current process by `n` bytes
+    /// from the content of inode at offset `off`.
+    /// Returns Ok(number of bytes copied) on success, Err(()) on failure due to
+    /// accessing an invalid virtual address.
+    pub fn read_user(&mut self, dst: UVAddr, off: u32, n: u32) -> Result<usize, ()> {
+        self.read_internal(off, n, |off, src| {
+            unsafe { &mut *(*myproc()).data.get() }
+                .memory
+                .copy_out(dst + off as usize, src)
+        })
     }
 
     /// Read data from inode.
-    pub fn read<A: VAddr>(&mut self, mut dst: A, mut off: u32, mut n: u32) -> Result<usize, ()> {
+    ///
+    /// `f` takes an offset and a slice as arguments. `f(off, src)` should copy
+    /// the content of `src` to the interval beginning at `off`th byte of the
+    /// destination, which the caller of this method knows.
+    // This method takes a function as an argument, because writing to kernel
+    // memory and user memory are very different from each other. Writing to a
+    // consecutive region in kernel memory can be done at once by simple memcpy.
+    // However, writing to user memory needs page table accesses since a single
+    // consecutive region in user memory may split into several pages in
+    // physical memory.
+    fn read_internal<F: FnMut(u32, &[u8]) -> Result<(), ()>>(
+        &mut self,
+        mut off: u32,
+        mut n: u32,
+        mut f: F,
+    ) -> Result<usize, ()> {
         let inner = self.deref_inner();
         if off > inner.size || off.wrapping_add(n) < off {
             return Ok(0);
         }
-        if off.wrapping_add(n) > inner.size {
-            n = inner.size.wrapping_sub(off)
+        if off + n > inner.size {
+            n = inner.size - off;
         }
         let mut tot: u32 = 0;
         while tot < n {
             let mut bp = kernel()
                 .file_system
                 .disk
-                .read(self.dev, self.bmap((off as usize).wrapping_div(BSIZE)));
-            let m = core::cmp::min(
-                n.wrapping_sub(tot),
-                (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
-            );
-            let begin = off.wrapping_rem(BSIZE as u32) as usize;
+                .read(self.dev, self.bmap(off as usize / BSIZE));
+            let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
+            let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
-            unsafe {
-                VAddr::copy_out(dst, &bp.deref_mut_inner().data[begin..end])?;
-            }
-            tot = tot.wrapping_add(m);
-            off = off.wrapping_add(m);
-            dst = dst + (m as usize);
+            f(tot, &bp.deref_mut_inner().data[begin..end])?;
+            tot += m;
+            off += m;
         }
         Ok(tot as usize)
     }
 
-    /// Write data to inode.
-    /// Returns the number of bytes successfully written.
-    /// If the return value is less than the requested n,
-    /// there was an error of some kind.
-    pub fn write<A: VAddr>(
+    /// Copy data from `src` into the inode at offset `off`.
+    /// Return Ok(()) on success, Err(()) on failure.
+    ///
+    /// # Safety
+    ///
+    /// `T` can be safely `transmute`d to `[u8; size_of::<T>()]`.
+    pub unsafe fn write_kernel<T>(
         &mut self,
-        mut src: A,
-        mut off: u32,
+        src: &T,
+        off: u32,
+        tx: &FsTransaction<'_>,
+    ) -> Result<(), ()> {
+        let bytes = self.write_bytes_kernel(
+            unsafe { core::slice::from_raw_parts(src as *const _ as _, mem::size_of::<T>()) },
+            off,
+            tx,
+        )?;
+        if bytes == mem::size_of::<T>() {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    /// Copy data from `src` into the inode at offset `off`.
+    /// Returns Ok(number of bytes copied) on success, Err(()) on failure.
+    pub fn write_bytes_kernel(
+        &mut self,
+        src: &[u8],
+        off: u32,
+        tx: &FsTransaction<'_>,
+    ) -> Result<usize, ()> {
+        self.write_internal(
+            off,
+            src.len() as u32,
+            |off, dst| {
+                dst.clone_from_slice(&src[off as usize..off as usize + src.len()]);
+                Ok(())
+            },
+            tx,
+        )
+    }
+
+    /// Copy data from virtual address `src` of the current process by `n` bytes
+    /// into the inode at offset `off`.
+    /// Returns Ok(number of bytes copied) on success, Err(()) on failure.
+    pub fn write_user(
+        &mut self,
+        src: UVAddr,
+        off: u32,
         n: u32,
         tx: &FsTransaction<'_>,
     ) -> Result<usize, ()> {
-        if off > self.deref_inner().size || off.wrapping_add(n) < off {
+        self.write_internal(
+            off,
+            n,
+            |off, dst| {
+                unsafe { &mut *(*myproc()).data.get() }
+                    .memory
+                    .copy_in(dst, src + off as usize)
+            },
+            tx,
+        )
+    }
+
+    /// Write data to inode. Returns the number of bytes successfully written.
+    /// If the return value is less than the requested n, there was an error of
+    /// some kind.
+    ///
+    /// `f` takes an offset and a slice as arguments. `f(off, dst)` should copy
+    /// the content beginning at the `off`th byte of the source, which the
+    /// caller of this method knows, to `dst`.
+    // This method takes a function as an argument, because reading kernel
+    // memory and user memory are very different from each other. Reading a
+    // consecutive region in kernel memory can be done at once by simple memcpy.
+    // However, reading user memory needs page table accesses since a single
+    // consecutive region in user memory may split into several pages in
+    // physical memory.
+    fn write_internal<F: FnMut(u32, &mut [u8]) -> Result<(), ()>>(
+        &mut self,
+        mut off: u32,
+        n: u32,
+        mut f: F,
+        tx: &FsTransaction<'_>,
+    ) -> Result<usize, ()> {
+        if off > self.deref_inner().size {
             return Err(());
         }
-        if off.wrapping_add(n) as usize > MAXFILE.wrapping_mul(BSIZE) {
+        if off.checked_add(n).ok_or(())? as usize > MAXFILE * BSIZE {
             return Err(());
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = kernel().file_system.disk.read(
-                self.dev,
-                self.bmap_or_alloc((off as usize).wrapping_div(BSIZE), tx),
-            );
-            let m = core::cmp::min(
-                n.wrapping_sub(tot),
-                (BSIZE as u32).wrapping_sub(off.wrapping_rem(BSIZE as u32)),
-            );
-            let begin = off.wrapping_rem(BSIZE as u32) as usize;
+            let mut bp = kernel()
+                .file_system
+                .disk
+                .read(self.dev, self.bmap_or_alloc(off as usize / BSIZE, tx));
+            let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
+            let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
-            unsafe {
-                if src
-                    .copy_in(&mut bp.deref_mut_inner().data[begin..end])
-                    .is_err()
-                {
-                    break;
-                }
+            if f(tot, &mut bp.deref_mut_inner().data[begin..end]).is_err() {
+                break;
             }
             unsafe {
                 tx.write(bp);
             }
-            tot = tot.wrapping_add(m);
-            off = off.wrapping_add(m);
-            src = src.add(m as usize);
+            tot += m;
+            off += m;
         }
 
         if off > self.deref_inner().size {
@@ -458,9 +580,7 @@ impl InodeGuard<'_> {
         // Write the i-node back to disk even if the size didn't change
         // because the loop above might have called bmap() and added a new
         // block to self->addrs[].
-        unsafe {
-            self.update(tx);
-        }
+        self.update(tx);
         Ok(tot as usize)
     }
 
@@ -473,14 +593,14 @@ impl InodeGuard<'_> {
     /// Return the disk block address of the nth block in inode self.
     /// If there is no such block, bmap allocates one.
     fn bmap_or_alloc(&mut self, bn: usize, tx: &FsTransaction<'_>) -> u32 {
-        self.bmap_inner(bn, Some(tx))
+        self.bmap_internal(bn, Some(tx))
     }
 
     fn bmap(&mut self, bn: usize) -> u32 {
-        self.bmap_inner(bn, None)
+        self.bmap_internal(bn, None)
     }
 
-    fn bmap_inner(&mut self, bn: usize, tx_opt: Option<&FsTransaction<'_>>) -> u32 {
+    fn bmap_internal(&mut self, bn: usize, tx_opt: Option<&FsTransaction<'_>>) -> u32 {
         let inner = self.deref_inner();
 
         if bn < NDIRECT {
@@ -518,12 +638,9 @@ impl InodeGuard<'_> {
     pub fn is_dir_empty(&mut self) -> bool {
         let mut de: Dirent = Default::default();
         for off in (2 * DIRENT_SIZE as u32..self.deref_inner().size).step_by(DIRENT_SIZE) {
-            let bytes_read = self.read(
-                KVAddr::new(&mut de as *mut Dirent as usize),
-                off,
-                DIRENT_SIZE as u32,
-            );
-            assert_eq!(bytes_read, Ok(DIRENT_SIZE), "is_dir_empty: readi");
+            // It is safe becuase Dirent can be safely transmuted to [u8; _], as it
+            // contains only u16 and u8's, which do not have internal structures.
+            unsafe { self.read_kernel(&mut de, off) }.expect("is_dir_empty: read_kernel");
             if de.inum != 0 {
                 return false;
             }
@@ -565,7 +682,7 @@ impl ArenaObject for Inode {
             // so this acquiresleep() won't block (or deadlock).
             let mut ip = self.lock();
 
-            A::reacquire_after(guard, move || unsafe {
+            A::reacquire_after(guard, move || {
                 ip.itrunc(&tx);
                 ip.deref_inner_mut().typ = InodeType::None;
                 ip.update(&tx);
@@ -586,25 +703,34 @@ impl Inode {
                 self.dev,
                 kernel().file_system.superblock().iblock(self.inum),
             );
-            let dip: &mut Dinode = unsafe {
-                &mut *((bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
-                    .add((self.inum as usize).wrapping_rem(IPB)))
+
+            // It is safe because dip is inside bp.data.
+            let dip = unsafe {
+                (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
+                    .add(self.inum as usize % IPB)
             };
-            match (*dip).typ {
+            // It is safe because i16 does not have internal structure.
+            let t = unsafe { *(dip as *const i16) };
+            // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.
+            assert!(t < core::mem::variant_count::<DInodeType>() as i16);
+            // It is safe because dip is aligned properly and t < #(variants of DInodeType).
+            let dip = unsafe { &mut *dip };
+
+            match dip.typ {
                 DInodeType::None => guard.typ = InodeType::None,
                 DInodeType::Dir => guard.typ = InodeType::Dir,
                 DInodeType::File => guard.typ = InodeType::File,
                 DInodeType::Device => {
                     guard.typ = InodeType::Device {
-                        major: (*dip).major,
-                        minor: (*dip).minor,
+                        major: dip.major,
+                        minor: dip.minor,
                     }
                 }
             }
-            guard.nlink = (*dip).nlink;
-            guard.size = (*dip).size;
-            guard.addr_direct.copy_from_slice(&(*dip).addr_direct);
-            guard.addr_indirect = (*dip).addr_indirect;
+            guard.nlink = dip.nlink;
+            guard.size = dip.size;
+            guard.addr_direct.copy_from_slice(&dip.addr_direct);
+            guard.addr_indirect = dip.addr_indirect;
             drop(bp);
             guard.valid = true;
             assert_ne!(guard.typ, InodeType::None, "Inode::lock: no type");
@@ -672,33 +798,37 @@ impl Itable {
     /// Allocate an inode on device dev.
     /// Mark it as allocated by giving it type.
     /// Returns an unlocked but allocated and referenced inode.
-    pub unsafe fn alloc_inode(
-        &self,
-        dev: u32,
-        typ: InodeType,
-        tx: &FsTransaction<'_>,
-    ) -> RcInode<'_> {
+    pub fn alloc_inode(&self, dev: u32, typ: InodeType, tx: &FsTransaction<'_>) -> RcInode<'_> {
         for inum in 1..kernel().file_system.superblock().ninodes {
             let mut bp = kernel()
                 .file_system
                 .disk
                 .read(dev, kernel().file_system.superblock().iblock(inum));
+
+            const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
+            const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
+            // It is safe because dip is inside bp.data.
             let dip = unsafe {
-                (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
-                    .add((inum as usize).wrapping_rem(IPB))
+                (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode).add(inum as usize % IPB)
             };
+            // It is safe because i16 does not have internal structure.
+            let t = unsafe { *(dip as *const i16) };
+            // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.
+            assert!(t < core::mem::variant_count::<DInodeType>() as i16);
+            // It is safe because dip is aligned properly and t < #(variants of DInodeType).
+            let dip = unsafe { &mut *dip };
 
             // a free inode
-            if unsafe { (*dip).typ } == DInodeType::None {
-                unsafe { ptr::write_bytes(dip, 0, 1) };
+            if dip.typ == DInodeType::None {
+                unsafe { ptr::write_bytes(dip as _, 0, 1) };
                 match typ {
-                    InodeType::None => unsafe { (*dip).typ = DInodeType::None },
-                    InodeType::Dir => unsafe { (*dip).typ = DInodeType::Dir },
-                    InodeType::File => unsafe { (*dip).typ = DInodeType::File },
+                    InodeType::None => dip.typ = DInodeType::None,
+                    InodeType::Dir => dip.typ = DInodeType::Dir,
+                    InodeType::File => dip.typ = DInodeType::File,
                     InodeType::Device { major, minor } => {
-                        unsafe { (*dip).typ = DInodeType::Device };
-                        unsafe { (*dip).major = major };
-                        unsafe { (*dip).minor = minor }
+                        dip.typ = DInodeType::Device;
+                        dip.major = major;
+                        dip.minor = minor
                     }
                 }
 

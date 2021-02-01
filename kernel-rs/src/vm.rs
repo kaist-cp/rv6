@@ -512,22 +512,21 @@ impl UserMemory {
     /// page-aligned, and the pages from va to va + sz must already be mapped.
     ///
     /// Returns Ok(()) on success, Err(()) on failure.
-    pub fn read_file(
+    pub fn load_file(
         &mut self,
         va: UVAddr,
         ip: &mut InodeGuard<'_>,
         offset: u32,
         sz: u32,
     ) -> Result<(), ()> {
-        assert!(va.is_page_aligned(), "read_file: va must be page aligned");
+        assert!(va.is_page_aligned(), "load_file: va must be page aligned");
         for i in num_iter::range_step(0, sz, PGSIZE as _) {
-            let pa = self
+            let dst = self
                 .get_slice(va + i as usize)
-                .expect("read_file: address should exist")
-                .as_ptr();
-            let n = cmp::min(sz - i, PGSIZE as u32);
-            let bytes_read = ip.read(KVAddr::new(pa as _), offset.wrapping_add(i), n)?;
-            if bytes_read as u32 != n {
+                .expect("load_file: address should exist");
+            let n = cmp::min((sz - i) as usize, PGSIZE);
+            let bytes_read = ip.read_bytes_kernel(&mut dst[..n], offset + i);
+            if bytes_read != n {
                 return Err(());
             }
         }
