@@ -4,7 +4,7 @@ use crate::{
     ok_or,
     plic::{plic_claim, plic_complete},
     println,
-    proc::{cpuid, myproc, proc_yield, ExecutingProc, Procstate},
+    proc::{cpuid, proc_yield, ExecutingProc, Procstate},
     riscv::{
         intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp, w_sepc, w_sip,
         w_stvec, Sstatus, PGSIZE,
@@ -187,7 +187,7 @@ pub unsafe fn kerneltrap() {
 
     // Give up the CPU if this is a timer interrupt.
     if which_dev == 2
-        && !unsafe { myproc() }.is_null()
+        && !unsafe { kernel().myproc() }.is_null()
         && unsafe { kernel().myexproc().proc().state() } == Procstate::RUNNING
     {
         unsafe { proc_yield(&kernel().myexproc()) };

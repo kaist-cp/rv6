@@ -709,7 +709,7 @@ impl ProcessSystem {
     /// Wake up all processes in the pool sleeping on waitchannel.
     /// Must be called without any p->lock.
     pub fn wakeup_pool(&self, target: &WaitChannel) {
-        let myproc = unsafe { myproc() as *const Proc };
+        let myproc = unsafe { kernel().myproc() as *const Proc };
         for p in &self.process_pool {
             if p as *const Proc != myproc {
                 let mut guard = p.lock();
@@ -938,24 +938,21 @@ pub fn cpuid() -> usize {
     unsafe { r_tp() }
 }
 
-/// Return the current struct Proc *, or zero if none.
-pub unsafe fn myproc() -> *mut Proc {
-    unsafe { push_off() };
-    let c = kernel().mycpu();
-    let p = unsafe { (*c).proc };
-    unsafe { pop_off() };
-    p
-}
-
 impl Kernel {
-    /// Return the shared reference of current ExecutingProc.
+    /// Return ExecutingProc. This is safe because we checked if current struct Proc* exists.
     pub unsafe fn myexproc(&self) -> ExecutingProc {
+        let p = unsafe{ self.myproc() };
+        assert!(!p.is_null(), "myexproc: No current proc");
+        unsafe { ExecutingProc::from_raw(p) }
+    }
+
+    /// Return the current struct Proc *, or zero if none.
+    pub unsafe fn myproc(&self) -> *mut Proc {
         unsafe { push_off() };
         let c = self.mycpu();
         let p = unsafe { (*c).proc };
-        assert!(!p.is_null(), "myexproc: No current proc");
         unsafe { pop_off() };
-        unsafe { ExecutingProc::from_raw(p) }
+        p
     }
 }
 
