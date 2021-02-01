@@ -934,24 +934,6 @@ pub fn cpuid() -> usize {
     unsafe { r_tp() }
 }
 
-impl Kernel {
-    /// Return ExecutingProc. This is safe because we checked if current struct Proc * exists.
-    pub fn myexproc(&self) -> ExecutingProc {
-        let p = unsafe { self.myproc() };
-        assert!(!p.is_null(), "myexproc: No current proc");
-        unsafe { ExecutingProc::from_raw(p) }
-    }
-
-    /// Return the current struct Proc *, or zero if none.
-    pub unsafe fn myproc(&self) -> *mut Proc {
-        unsafe { push_off() };
-        let c = self.mycpu();
-        let p = unsafe { (*c).proc };
-        unsafe { pop_off() };
-        p
-    }
-}
-
 /// A user program that calls exec("/init").
 /// od -t xC initcode
 const INITCODE: [u8; 52] = [
@@ -1012,4 +994,22 @@ unsafe fn forkret() {
     kernel().file_system.init(ROOTDEV);
 
     unsafe { usertrapret(p) };
+}
+
+impl Kernel {
+    /// Return ExecutingProc. This is safe because we checked if current struct Proc * exists.
+    pub fn myexproc(&self) -> ExecutingProc {
+        let p = unsafe { self.myproc() };
+        assert!(!p.is_null(), "myexproc: No current proc");
+        unsafe { ExecutingProc::from_raw(p) }
+    }
+
+    /// Return the current struct Proc *, or zero if none.
+    pub unsafe fn myproc(&self) -> *mut Proc {
+        unsafe { push_off() };
+        let c = self.mycpu();
+        let p = unsafe { (*c).proc };
+        unsafe { pop_off() };
+        p
+    }
 }
