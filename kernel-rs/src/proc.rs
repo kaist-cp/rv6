@@ -363,10 +363,6 @@ impl ExecutingProc {
         ExecutingProc { ptr }
     }
 
-    fn raw(&self) -> *const Proc {
-        self.ptr as *const Proc
-    }
-
     pub fn proc(&self) -> &mut Proc {
         unsafe { &mut *self.ptr }
     }
@@ -377,6 +373,10 @@ impl ExecutingProc {
 
     pub fn deref_mut_data(&self) -> &mut ProcData {
         unsafe { &mut *(*self.ptr).data.get() }
+    }
+
+    pub fn deref_data_raw(&self) -> *mut ProcData {
+        unsafe { (*self.ptr).data.get() }
     }
 }
 

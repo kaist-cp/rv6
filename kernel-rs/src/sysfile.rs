@@ -13,7 +13,7 @@ use crate::{
     page::Page,
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
     pipe::AllocatedPipe,
-    proc::{myproc, ExecutingProc},
+    proc::ExecutingProc,
     some_or,
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
     vm::{UVAddr, VAddr},
@@ -47,9 +47,8 @@ unsafe fn argfd(n: usize, proc: &ExecutingProc) -> Result<(i32, &'static RcFile<
         return Err(());
     }
 
-    let p = unsafe { myproc() };
     let f = some_or!(
-        unsafe { &(*(*p).data.get()).open_files[fd as usize] },
+        unsafe { &(*proc.deref_data_raw()).open_files[fd as usize] },
         return Err(())
     );
 
