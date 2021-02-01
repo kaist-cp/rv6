@@ -62,12 +62,13 @@ fn create<F, T>(
     path: &Path,
     typ: InodeType,
     tx: &FsTransaction<'_>,
+    p: &ExecutingProc,
     f: F,
 ) -> Result<(RcInode<'static>, T), ()>
 where
     F: FnOnce(&mut InodeGuard<'_>) -> T,
 {
-    let (ptr, name) = path.nameiparent()?;
+    let (ptr, name) = path.nameiparent(p)?;
     let mut dp = ptr.lock();
     if let Ok((ptr2, _)) = dp.dirlookup(&name) {
         drop(dp);
@@ -111,9 +112,9 @@ where
 impl Kernel {
     /// Create another name(newname) for the file oldname.
     /// Returns Ok(()) on success, Err(()) on error.
-    fn link(&self, oldname: &CStr, newname: &CStr) -> Result<(), ()> {
+    fn link(&self, oldname: &CStr, newname: &CStr, p: &ExecutingProc) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
-        let ptr = Path::new(oldname).namei()?;
+        let ptr = Path::new(oldname).namei(p)?;
         let mut ip = ptr.lock();
         if ip.deref_inner().typ == InodeType::Dir {
             return Err(());
@@ -122,7 +123,7 @@ impl Kernel {
         ip.update(&tx);
         drop(ip);
 
-        if let Ok((ptr2, name)) = Path::new(newname).nameiparent() {
+        if let Ok((ptr2, name)) = Path::new(newname).nameiparent(p) {
             let mut dp = ptr2.lock();
             if dp.dev != ptr.dev || dp.dirlink(name, ptr.inum, &tx).is_err() {
             } else {
@@ -138,10 +139,10 @@ impl Kernel {
 
     /// Remove a file(filename).
     /// Returns Ok(()) on success, Err(()) on error.
-    fn unlink(&self, filename: &CStr) -> Result<(), ()> {
+    fn unlink(&self, filename: &CStr, p: &ExecutingProc) -> Result<(), ()> {
         let de: Dirent = Default::default();
         let tx = self.file_system.begin_transaction();
-        let (ptr, name) = Path::new(filename).nameiparent()?;
+        let (ptr, name) = Path::new(filename).nameiparent(p)?;
         let mut dp = ptr.lock();
 
         // Cannot unlink "." or "..".
@@ -176,9 +177,9 @@ impl Kernel {
         let tx = self.file_system.begin_transaction();
 
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
-            create(name, InodeType::File, &tx, |ip| ip.deref_inner().typ)?
+            create(name, InodeType::File, &tx, p, |ip| ip.deref_inner().typ)?
         } else {
-            let ptr = name.namei()?;
+            let ptr = name.namei(p)?;
             let ip = ptr.lock();
             let typ = ip.deref_inner().typ;
 
@@ -221,20 +222,21 @@ impl Kernel {
 
     /// Create a new directory.
     /// Returns Ok(()) on success, Err(()) on error.
-    fn mkdir(&self, dirname: &CStr) -> Result<(), ()> {
+    fn mkdir(&self, dirname: &CStr, p: &ExecutingProc) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
-        create(Path::new(dirname), InodeType::Dir, &tx, |_| ())?;
+        create(Path::new(dirname), InodeType::Dir, &tx, p, |_| ())?;
         Ok(())
     }
 
     /// Create a device file.
     /// Returns Ok(()) on success, Err(()) on error.
-    fn mknod(&self, filename: &CStr, major: u16, minor: u16) -> Result<(), ()> {
+    fn mknod(&self, filename: &CStr, major: u16, minor: u16, p: &ExecutingProc) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
         create(
             Path::new(filename),
             InodeType::Device { major, minor },
             &tx,
+            p,
             |_| (),
         )?;
         Ok(())
@@ -250,7 +252,7 @@ impl Kernel {
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
         let _tx = self.file_system.begin_transaction();
-        let ptr = Path::new(dirname).namei()?;
+        let ptr = Path::new(dirname).namei(p)?;
         let ip = ptr.lock();
         if ip.deref_inner().typ != InodeType::Dir {
             return Err(());
@@ -352,7 +354,7 @@ impl Kernel {
         let mut old: [u8; MAXPATH] = [0; MAXPATH];
         let old = unsafe { argstr(0, &mut old, proc)? };
         let new = unsafe { argstr(1, &mut new, proc)? };
-        self.link(old, new)?;
+        self.link(old, new, proc)?;
         Ok(0)
     }
 
@@ -361,7 +363,7 @@ impl Kernel {
     pub unsafe fn sys_unlink(&self, proc: &ExecutingProc) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = unsafe { argstr(0, &mut path, proc)? };
-        self.unlink(path)?;
+        self.unlink(path, proc)?;
         Ok(0)
     }
 
@@ -381,7 +383,7 @@ impl Kernel {
     pub unsafe fn sys_mkdir(&self, proc: &ExecutingProc) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = unsafe { argstr(0, &mut path, proc)? };
-        self.mkdir(path)?;
+        self.mkdir(path, proc)?;
         Ok(0)
     }
 
@@ -392,7 +394,7 @@ impl Kernel {
         let path = unsafe { argstr(0, &mut path, proc)? };
         let major = argint(1, proc)? as u16;
         let minor = argint(2, proc)? as u16;
-        self.mknod(path, major, minor)?;
+        self.mknod(path, major, minor, proc)?;
         Ok(0)
     }
 

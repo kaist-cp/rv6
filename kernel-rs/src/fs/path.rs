@@ -1,7 +1,7 @@
 use core::cmp;
 use cstr_core::CStr;
 
-use crate::{kernel::kernel, param::ROOTDEV};
+use crate::{kernel::kernel, param::ROOTDEV, proc::ExecutingProc};
 
 use super::{InodeType, RcInode, DIRSIZ, ROOTINO};
 
@@ -66,12 +66,12 @@ impl Path {
         kernel().itable.get_inode(ROOTDEV, ROOTINO)
     }
 
-    pub fn namei(&self) -> Result<RcInode<'static>, ()> {
-        Ok(self.namex(false)?.0)
+    pub fn namei(&self, proc: &ExecutingProc) -> Result<RcInode<'static>, ()> {
+        Ok(self.namex(false, proc)?.0)
     }
 
-    pub fn nameiparent(&self) -> Result<(RcInode<'static>, &FileName), ()> {
-        let (ip, name_in_path) = self.namex(true)?;
+    pub fn nameiparent(&self, proc: &ExecutingProc) -> Result<(RcInode<'static>, &FileName), ()> {
+        let (ip, name_in_path) = self.namex(true, proc)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
     }
@@ -140,13 +140,15 @@ impl Path {
     /// If parent != 0, return the inode for the parent and copy the final
     /// path element into name, which must have room for DIRSIZ bytes.
     /// Must be called inside a transaction since it calls Inode::put().
-    fn namex(&self, parent: bool) -> Result<(RcInode<'static>, Option<&FileName>), ()> {
+    fn namex(
+        &self,
+        parent: bool,
+        proc: &ExecutingProc,
+    ) -> Result<(RcInode<'static>, Option<&FileName>), ()> {
         let mut ptr = if self.is_absolute() {
             Self::root()
         } else {
-            // TODO(https://github.com/kaist-cp/rv6/issues/354)
-            // Accessing proc.data should be safe after refactoring myproc()
-            unsafe { kernel().myexproc().deref_data().cwd.clone().unwrap() }
+            proc.deref_data().cwd.clone().unwrap()
         };
 
         let mut path = self;
