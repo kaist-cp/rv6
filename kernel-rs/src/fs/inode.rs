@@ -161,11 +161,11 @@ pub type Itable = Spinlock<ArrayArena<Inode, NINODE>>;
 
 pub type RcInode<'s> = Rc<Itable, &'s Itable>;
 
-/// InodeGuard implies that Sleeplock<InodeInner> is held by current thread and transaction is opened.
+/// InodeGuard implies that `Sleeplock<InodeInner>` is held by current thread and transaction is opened.
 ///
 /// # Invariant
 ///
-/// When Sleeplock<InodeInner> is held, InodeInner's valid is always true.
+/// When `Sleeplock<InodeInner>` is held, InodeInner's valid is always true.
 // Every disk write operation must happen inside a transaction. Reading an
 // opened file does not write anything on disk in any matter and thus does
 // not need to happen inside a transaction. At the same time, it requires
