@@ -1,7 +1,7 @@
 //! rv6: post-modernization of Unix Version 6 with Rust and RISC-V.
 
 #![no_std]
-// Tries to deny all lints (`rustc -W help`).
+// Tries to deny all lints, except ones related to documentation (`rustc -W help`).
 #![deny(warnings)]
 #![deny(absolute_paths_not_starting_with_crate)]
 #![deny(anonymous_parameters)]
@@ -9,12 +9,12 @@
 #![deny(deprecated_in_future)]
 #![deny(elided_lifetimes_in_paths)]
 #![deny(explicit_outlives_requirements)]
-#![deny(invalid_html_tags)]
+//#![deny(invalid_html_tags)] //(rustdoc lint)
 #![deny(keyword_idents)]
 #![deny(macro_use_extern_crate)]
 #![deny(missing_debug_implementations)]
-#![deny(missing_docs)]
-#![deny(missing_doc_code_examples)]
+//#![deny(missing_docs)] //(rustdoc lint)
+//#![deny(missing_doc_code_examples)] //(rustdoc lint)
 #![deny(non_ascii_idents)]
 #![deny(pointer_structural_match)]
 // #![deny(single_use_lifetimes)]
@@ -31,7 +31,7 @@
 #![deny(unused_results)]
 #![deny(variant_size_differences)]
 #![deny(rust_2018_idioms)]
-#![deny(rustdoc)]
+//#![deny(rustdoc)] //(rustdoc lint)
 // TODO(https://github.com/kaist-cp/rv6/issues/120)
 #![allow(dead_code)]
 #![allow(incomplete_features)]
