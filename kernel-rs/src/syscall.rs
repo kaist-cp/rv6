@@ -38,9 +38,7 @@ pub unsafe fn fetchstr<'a>(
     Ok(unsafe { CStr::from_ptr(buf.as_ptr()) })
 }
 
-/// TODO(https://github.com/kaist-cp/rv6/issues/354)
-/// This will be safe function after we refactor myproc()
-unsafe fn argraw(n: usize, p: &ExecutingProc) -> usize {
+fn argraw(n: usize, p: &ExecutingProc) -> usize {
     let data = p.deref_data();
     match n {
         0 => data.trap_frame().a0,
@@ -54,22 +52,22 @@ unsafe fn argraw(n: usize, p: &ExecutingProc) -> usize {
 }
 
 /// Fetch the nth 32-bit system call argument.
-pub unsafe fn argint(n: usize, p: &ExecutingProc) -> Result<i32, ()> {
-    Ok(unsafe { argraw(n, p) } as i32)
+pub fn argint(n: usize, p: &ExecutingProc) -> Result<i32, ()> {
+    Ok(argraw(n, p) as i32)
 }
 
 /// Retrieve an argument as a pointer.
 /// Doesn't check for legality, since
 /// copyin/copyout will do that.
-pub unsafe fn argaddr(n: usize, p: &ExecutingProc) -> Result<usize, ()> {
-    Ok(unsafe { argraw(n, p) })
+pub fn argaddr(n: usize, p: &ExecutingProc) -> Result<usize, ()> {
+    Ok(argraw(n, p))
 }
 
 /// Fetch the nth word-sized system call argument as a null-terminated string.
 /// Copies into buf, at most max.
 /// Returns reference to the string in the buffer.
 pub unsafe fn argstr<'a>(n: usize, buf: &mut [u8], p: &ExecutingProc) -> Result<&'a CStr, ()> {
-    let addr = unsafe { argaddr(n, p) }?;
+    let addr = argaddr(n, p)?;
     unsafe { fetchstr(UVAddr::new(addr), buf, p) }
 }
 
@@ -81,15 +79,15 @@ impl Kernel {
             1 => unsafe { self.sys_fork(proc) },
             2 => unsafe { self.sys_exit(proc) },
             3 => unsafe { self.sys_wait(proc) },
-            4 => unsafe { self.sys_pipe(proc) },
+            4 => self.sys_pipe(proc),
             5 => unsafe { self.sys_read(proc) },
-            6 => unsafe { self.sys_kill(proc) },
+            6 => self.sys_kill(proc),
             7 => unsafe { self.sys_exec(proc) },
             8 => unsafe { self.sys_fstat(proc) },
             9 => unsafe { self.sys_chdir(proc) },
             10 => unsafe { self.sys_dup(proc) },
             11 => unsafe { self.sys_getpid() },
-            12 => unsafe { self.sys_sbrk(proc) },
+            12 => self.sys_sbrk(proc),
             13 => unsafe { self.sys_sleep(proc) },
             14 => self.sys_uptime(),
             15 => unsafe { self.sys_open(proc) },
@@ -99,7 +97,7 @@ impl Kernel {
             19 => unsafe { self.sys_link(proc) },
             20 => unsafe { self.sys_mkdir(proc) },
             21 => unsafe { self.sys_close(proc) },
-            22 => unsafe { self.sys_poweroff(proc) },
+            22 => self.sys_poweroff(proc),
             _ => {
                 println!(
                     "{} {}: unknown sys call {}",

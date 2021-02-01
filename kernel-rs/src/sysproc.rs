@@ -9,7 +9,7 @@ use crate::{
 impl Kernel {
     /// Terminate the current process; status reported to wait(). No return.
     pub unsafe fn sys_exit(&self, proc: &ExecutingProc) -> Result<usize, ()> {
-        let n = unsafe { argint(0, proc) }?;
+        let n = argint(0, proc)?;
         unsafe { self.procs.exit_current(n, proc) };
     }
 
@@ -27,14 +27,14 @@ impl Kernel {
     /// Wait for a child to exit.
     /// Returns Ok(child’s PID) on success, Err(()) on error.
     pub unsafe fn sys_wait(&self, proc: &ExecutingProc) -> Result<usize, ()> {
-        let p = unsafe { argaddr(0, proc) }?;
+        let p = argaddr(0, proc)?;
         Ok(unsafe { self.procs.wait(UVAddr::new(p), proc) }? as _)
     }
 
     /// Grow process’s memory by n bytes.
     /// Returns Ok(start of new memory) on success, Err(()) on error.
-    pub unsafe fn sys_sbrk(&self, proc: &ExecutingProc) -> Result<usize, ()> {
-        let n = unsafe { argint(0, proc) }?;
+    pub fn sys_sbrk(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+        let n = argint(0, proc)?;
         let data = proc.deref_mut_data();
         data.memory.resize(n)
     }
@@ -42,7 +42,7 @@ impl Kernel {
     /// Pause for n clock ticks.
     /// Returns Ok(0) on success, Err(()) on error.
     pub unsafe fn sys_sleep(&self, proc: &ExecutingProc) -> Result<usize, ()> {
-        let n = unsafe { argint(0, proc) }?;
+        let n = argint(0, proc)?;
         let mut ticks = self.ticks.lock();
         let ticks0 = *ticks;
         while ticks.wrapping_sub(ticks0) < n as u32 {
@@ -56,8 +56,8 @@ impl Kernel {
 
     /// Terminate process PID.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_kill(&self, proc: &ExecutingProc) -> Result<usize, ()> {
-        let pid = unsafe { argint(0, proc) }?;
+    pub fn sys_kill(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+        let pid = argint(0, proc)?;
         self.procs.kill(pid)?;
         Ok(0)
     }
@@ -69,8 +69,8 @@ impl Kernel {
     }
 
     /// Shutdowns this machine, discarding all unsaved data. No return.
-    pub unsafe fn sys_poweroff(&self, proc: &ExecutingProc) -> Result<usize, ()> {
-        let exitcode = unsafe { argint(0, proc) }?;
+    pub fn sys_poweroff(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+        let exitcode = argint(0, proc)?;
         poweroff::machine_poweroff(exitcode as _);
     }
 }

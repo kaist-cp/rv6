@@ -42,7 +42,7 @@ impl RcFile<'static> {
 /// Fetch the nth word-sized system call argument as a file descriptor
 /// and return both the descriptor and the corresponding struct file.
 unsafe fn argfd(n: usize, proc: &ExecutingProc) -> Result<(i32, &'static RcFile<'static>), ()> {
-    let fd = unsafe { argint(n, proc)? };
+    let fd = argint(n, proc)?;
     if fd < 0 || fd >= NOFILE as i32 {
         return Err(());
     }
@@ -313,8 +313,8 @@ impl Kernel {
     /// Returns Ok(number read) on success, Err(()) on error.
     pub unsafe fn sys_read(&self, proc: &ExecutingProc) -> Result<usize, ()> {
         let (_, f) = unsafe { argfd(0, proc)? };
-        let n = unsafe { argint(2, proc)? };
-        let p = unsafe { argaddr(1, proc)? };
+        let n = argint(2, proc)?;
+        let p = argaddr(1, proc)?;
         unsafe { f.read(UVAddr::new(p), n) }
     }
 
@@ -322,8 +322,8 @@ impl Kernel {
     /// Returns Ok(n) on success, Err(()) on error.
     pub unsafe fn sys_write(&self, proc: &ExecutingProc) -> Result<usize, ()> {
         let (_, f) = unsafe { argfd(0, proc)? };
-        let n = unsafe { argint(2, proc)? };
-        let p = unsafe { argaddr(1, proc)? };
+        let n = argint(2, proc)?;
+        let p = argaddr(1, proc)?;
         unsafe { f.write(UVAddr::new(p), n) }
     }
 
@@ -340,7 +340,7 @@ impl Kernel {
     pub unsafe fn sys_fstat(&self, proc: &ExecutingProc) -> Result<usize, ()> {
         let (_, f) = unsafe { argfd(0, proc)? };
         // user pointer to struct stat
-        let st = unsafe { argaddr(1, proc)? };
+        let st = argaddr(1, proc)?;
         unsafe { f.stat(UVAddr::new(st))? };
         Ok(0)
     }
@@ -371,7 +371,7 @@ impl Kernel {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = unsafe { argstr(0, &mut path, proc)? };
         let path = Path::new(path);
-        let omode = unsafe { argint(1, proc)? };
+        let omode = argint(1, proc)?;
         let omode = FcntlFlags::from_bits_truncate(omode);
         self.open(path, omode, proc)
     }
@@ -390,8 +390,8 @@ impl Kernel {
     pub unsafe fn sys_mknod(&self, proc: &ExecutingProc) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = unsafe { argstr(0, &mut path, proc)? };
-        let major = unsafe { argint(1, proc)? } as u16;
-        let minor = unsafe { argint(2, proc)? } as u16;
+        let major = argint(1, proc)? as u16;
+        let minor = argint(2, proc)? as u16;
         self.mknod(path, major, minor)?;
         Ok(0)
     }
@@ -411,7 +411,7 @@ impl Kernel {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let mut args = ArrayVec::<[Page; MAXARG]>::new();
         let path = unsafe { argstr(0, &mut path, proc)? };
-        let uargv = unsafe { argaddr(1, proc)? };
+        let uargv = argaddr(1, proc)?;
 
         let mut success = false;
         for i in 0..MAXARG {
@@ -448,9 +448,9 @@ impl Kernel {
 
     /// Create a pipe.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_pipe(&self, proc: &ExecutingProc) -> Result<usize, ()> {
+    pub fn sys_pipe(&self, proc: &ExecutingProc) -> Result<usize, ()> {
         // user pointer to array of two integers
-        let fdarray = UVAddr::new(unsafe { argaddr(0, proc)? });
+        let fdarray = UVAddr::new(argaddr(0, proc)?);
         self.pipe(fdarray, proc)?;
         Ok(0)
     }
