@@ -1029,6 +1029,7 @@ impl Kernel {
         if p.is_null() {
             return None;
         }
+        // This is safe wecause p is non-null.
         Some(unsafe { CurrentProc::from_raw(p) })
     }
 }
