@@ -6,7 +6,8 @@ use core::{
     marker::PhantomData,
     mem::{self, MaybeUninit},
     ops::{Deref, DerefMut},
-    ptr, slice, str,
+    ptr::{self, NonNull},
+    slice, str,
     sync::atomic::{AtomicBool, AtomicI32, Ordering},
 };
 
@@ -356,7 +357,7 @@ pub struct Proc {
 ///
 /// `ptr` is always not null pointer, and Proc's state is Procstate::RUNNING.
 pub struct CurrentProc<'p> {
-    ptr: *mut Proc,
+    ptr: NonNull<Proc>,
     _marker: PhantomData<&'p Proc>,
 }
 
@@ -366,13 +367,13 @@ impl CurrentProc<'_> {
     /// `ptr` must not be null pointer.
     unsafe fn from_raw(ptr: *mut Proc) -> Self {
         CurrentProc {
-            ptr,
+            ptr: unsafe { NonNull::new_unchecked(ptr) },
             _marker: PhantomData,
         }
     }
 
     fn raw(&self) -> *mut Proc {
-        self.ptr
+        self.ptr.as_ptr()
     }
 }
 
@@ -380,18 +381,18 @@ impl Deref for CurrentProc<'_> {
     type Target = Proc;
     fn deref(&self) -> &Self::Target {
         // Safe since `ptr` always refers to `Proc`.
-        unsafe { &*self.ptr }
+        unsafe { self.ptr.as_ref() }
     }
 }
 
 impl DerefMut for CurrentProc<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // Safe since `ptr` always refers to `Proc`.
-        unsafe { &mut *self.ptr }
+        unsafe { self.ptr.as_mut() }
     }
 }
 
-/// Assumption: `ptr` is `myproc()`, and ptr->info's spinlock is held.
+/// Assumption: `ptr` is `CurrentProc.ptr`, and ptr->info's spinlock is held.
 struct ProcGuard {
     ptr: *const Proc,
 }
@@ -891,19 +892,19 @@ impl ProcessSystem {
         unsafe { p.close_files() };
 
         // Give all children to init.
-        let mut parent_guard = unsafe { (*p.ptr).parent.assume_init_ref().lock() };
-        unsafe { self.reparent(p.ptr, &mut parent_guard) };
+        let mut parent_guard = unsafe { p.parent.assume_init_ref().lock() };
+        unsafe { self.reparent(p.raw(), &mut parent_guard) };
 
         // Parent might be sleeping in wait().
         unsafe {
-            (**(*p.ptr).parent.assume_init_ref().get_mut(&mut parent_guard))
+            (**p.parent.assume_init_ref().get_mut(&mut parent_guard))
                 .info
                 .get_mut_unchecked()
                 .child_waitchannel
                 .wakeup()
         };
 
-        let mut guard = unsafe { (*p.ptr).lock() };
+        let mut guard = p.lock();
 
         guard.deref_mut_info().xstate = status;
         guard.deref_mut_info().state = Procstate::ZOMBIE;
