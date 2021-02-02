@@ -63,7 +63,7 @@ impl Kernel {
 
     /// Return how many clock tick interrupts have occurred
     /// since start.
-    pub fn sys_uptime(&self) -> Result<usize, ()> {
+    pub fn sys_uptime(&self, _proc: &CurrentProc) -> Result<usize, ()> {
         Ok(*self.ticks.lock() as usize)
     }
 

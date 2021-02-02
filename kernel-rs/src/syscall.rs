@@ -85,7 +85,7 @@ impl Kernel {
             11 => unsafe { self.sys_getpid(proc) },
             12 => self.sys_sbrk(proc),
             13 => self.sys_sleep(proc),
-            14 => self.sys_uptime(),
+            14 => self.sys_uptime(proc),
             15 => unsafe { self.sys_open(proc) },
             16 => unsafe { self.sys_write(proc) },
             17 => unsafe { self.sys_mknod(proc) },
