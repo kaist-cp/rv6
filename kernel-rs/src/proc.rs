@@ -349,12 +349,19 @@ pub struct Proc {
     pub name: [u8; MAXPROCNAME],
 }
 
-/// Assumption: `ptr` is `CurrentProc`, and guard indicates ptr->info's spinlock is held.
+/// CurrentProc wraps mutable pointer of current CPU's proc.
+///
+/// # Safety
+///
+/// `ptr` is always not null pointer, and Proc's state is Procstate::RUNNING.
 pub struct CurrentProc {
     ptr: *mut Proc,
 }
 
 impl CurrentProc {
+    /// # Safety
+    ///
+    /// `ptr` must not be null pointer.
     unsafe fn from_raw(ptr: *mut Proc) -> Self {
         CurrentProc { ptr }
     }
