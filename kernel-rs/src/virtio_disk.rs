@@ -218,7 +218,7 @@ impl Sleepablelock<Disk> {
         let mut buf = kernel().bcache.get_buf(dev, blockno).lock();
         if !buf.deref_inner().valid {
             Disk::rw(&mut self.lock(), &mut buf, false);
-            buf.deref_mut_inner().valid = true;
+            buf.deref_inner_mut().valid = true;
         }
         buf
     }
@@ -348,7 +348,7 @@ impl Disk {
         };
 
         // Record struct Buf for virtio_disk_intr().
-        b.deref_mut_inner().disk = true;
+        b.deref_inner_mut().disk = true;
         // It does not break the invariant because b is &mut Buf, which refers
         // to a valid Buf.
         this.info.inflight[desc[0].idx].b = b;
@@ -403,7 +403,7 @@ impl Disk {
             let buf = unsafe { self.info.inflight[id].b.as_mut() }.expect("Disk::intr");
 
             // disk is done with buf
-            buf.deref_mut_inner().disk = false;
+            buf.deref_inner_mut().disk = false;
             buf.vdisk_request_waitchannel.wakeup();
 
             self.info.used_idx += 1;

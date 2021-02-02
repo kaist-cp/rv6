@@ -16,9 +16,6 @@ pub trait Arena: Sized {
     /// The guard type for arena.
     type Guard<'s>;
 
-    /// Creates handle from condition without increasing reference count.
-    fn unforget<C: Fn(&Self::Data) -> bool>(&self, c: C) -> Option<Self::Handle>;
-
     /// Find or alloc.
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,
@@ -121,21 +118,6 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<ArrayAr
     type Data = T;
     type Handle = ArrayPtr<T>;
     type Guard<'s> = SpinlockGuard<'s, ArrayArena<T, CAPACITY>>;
-
-    fn unforget<C: Fn(&Self::Data) -> bool>(&self, c: C) -> Option<Self::Handle> {
-        let mut this = self.lock();
-
-        for entry in &mut this.entries {
-            if entry.refcnt != 0 && c(&entry.data) {
-                return Some(Self::Handle {
-                    ptr: entry,
-                    _marker: PhantomData,
-                });
-            }
-        }
-
-        None
-    }
 
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,
@@ -283,29 +265,6 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
     type Handle = MruPtr<T>;
     type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
 
-    fn unforget<C: Fn(&Self::Data) -> bool>(&self, c: C) -> Option<Self::Handle> {
-        let this = self.lock();
-
-        // Is the block already cached?
-        let mut list_entry = this.head.next();
-        while list_entry as *const _ != &this.head as *const _ {
-            let entry = unsafe {
-                &mut *((list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET)
-                    as *mut MruEntry<T>)
-            };
-            if c(&entry.data) {
-                debug_assert!(entry.refcnt != 0);
-                return Some(Self::Handle {
-                    ptr: entry,
-                    _marker: PhantomData,
-                });
-            }
-            list_entry = list_entry.next();
-        }
-
-        None
-    }
-
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,
         c: C,
@@ -452,12 +411,6 @@ impl<A: Arena, T: Clone + Deref<Target = A>> Arena for T {
     type Data = A::Data;
     type Handle = Rc<A, T>;
     type Guard<'s> = <A as Arena>::Guard<'s>;
-
-    fn unforget<C: Fn(&Self::Data) -> bool>(&self, c: C) -> Option<Self::Handle> {
-        let tag = self.clone();
-        let inner = ManuallyDrop::new(tag.deref().unforget(c)?);
-        Some(Self::Handle { tag, inner })
-    }
 
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,

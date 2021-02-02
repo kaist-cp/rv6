@@ -314,7 +314,7 @@ impl InodeGuard<'_> {
         // * dip is inside bp.data.
         // * dip will not be read.
         let dip = unsafe {
-            &mut *(bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
+            &mut *(bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode)
                 .add(self.inum as usize % IPB)
         };
 
@@ -342,11 +342,11 @@ impl InodeGuard<'_> {
             }
         }
 
-        dip.nlink = inner.nlink;
-        dip.size = inner.size;
-        dip.addr_direct.copy_from_slice(&inner.addr_direct);
-        dip.addr_indirect = inner.addr_indirect;
-        unsafe { tx.write(bp) };
+        (*dip).nlink = inner.nlink;
+        (*dip).size = inner.size;
+        (*dip).addr_direct.copy_from_slice(&inner.addr_direct);
+        (*dip).addr_indirect = inner.addr_indirect;
+        tx.write(bp);
     }
 
     /// Truncate inode (discard contents).
@@ -355,7 +355,7 @@ impl InodeGuard<'_> {
         let dev = self.dev;
         for addr in &mut self.deref_inner_mut().addr_direct {
             if *addr != 0 {
-                unsafe { tx.bfree(dev, *addr) };
+                tx.bfree(dev, *addr);
                 *addr = 0;
             }
         }
@@ -366,15 +366,15 @@ impl InodeGuard<'_> {
                 .disk
                 .read(dev, self.deref_inner().addr_indirect);
             // It is safe because u32 does not have internal structure.
-            let (prefix, data, _) = unsafe { bp.deref_mut_inner().data.align_to_mut::<u32>() };
+            let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "itrunc: Buf data unaligned");
             for a in data {
                 if *a != 0 {
-                    unsafe { tx.bfree(dev, *a) };
+                    tx.bfree(dev, *a);
                 }
             }
             drop(bp);
-            unsafe { tx.bfree(dev, self.deref_inner().addr_indirect) };
+            tx.bfree(dev, self.deref_inner().addr_indirect);
             self.deref_inner_mut().addr_indirect = 0
         }
 
@@ -449,14 +449,14 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = kernel()
+            let bp = kernel()
                 .file_system
                 .disk
                 .read(self.dev, self.bmap(off as usize / BSIZE));
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
-            f(tot, &bp.deref_mut_inner().data[begin..end])?;
+            f(tot, &bp.deref_inner().data[begin..end])?;
             tot += m;
             off += m;
         }
@@ -563,12 +563,10 @@ impl InodeGuard<'_> {
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
-            if f(tot, &mut bp.deref_mut_inner().data[begin..end]).is_err() {
+            if f(tot, &mut bp.deref_inner_mut().data[begin..end]).is_err() {
                 break;
             }
-            unsafe {
-                tx.write(bp);
-            }
+            tx.write(bp);
             tot += m;
             off += m;
         }
@@ -606,7 +604,7 @@ impl InodeGuard<'_> {
         if bn < NDIRECT {
             let mut addr = inner.addr_direct[bn];
             if addr == 0 {
-                addr = unsafe { tx_opt.expect("bmap: out of range").balloc(self.dev) };
+                addr = tx_opt.expect("bmap: out of range").balloc(self.dev);
                 self.deref_inner_mut().addr_direct[bn] = addr;
             }
             addr
@@ -616,19 +614,19 @@ impl InodeGuard<'_> {
 
             let mut indirect = inner.addr_indirect;
             if indirect == 0 {
-                indirect = unsafe { tx_opt.expect("bmap: out of range").balloc(self.dev) };
+                indirect = tx_opt.expect("bmap: out of range").balloc(self.dev);
                 self.deref_inner_mut().addr_indirect = indirect;
             }
 
             let mut bp = kernel().file_system.disk.read(self.dev, indirect);
-            let (prefix, data, _) = unsafe { bp.deref_mut_inner().data.align_to_mut::<u32>() };
+            let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
             let mut addr = data[bn];
             if addr == 0 {
                 let tx = tx_opt.expect("bmap: out of range");
-                addr = unsafe { tx.balloc(self.dev) };
+                addr = tx.balloc(self.dev);
                 data[bn] = addr;
-                unsafe { tx.write(bp) };
+                tx.write(bp);
             }
             addr
         }
@@ -706,7 +704,7 @@ impl Inode {
 
             // It is safe because dip is inside bp.data.
             let dip = unsafe {
-                (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode)
+                (bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode)
                     .add(self.inum as usize % IPB)
             };
             // It is safe because i16 does not have internal structure.
@@ -809,7 +807,7 @@ impl Itable {
             const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
             // It is safe because dip is inside bp.data.
             let dip = unsafe {
-                (bp.deref_mut_inner().data.as_mut_ptr() as *mut Dinode).add(inum as usize % IPB)
+                (bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode).add(inum as usize % IPB)
             };
             // It is safe because i16 does not have internal structure.
             let t = unsafe { *(dip as *const i16) };
@@ -833,7 +831,7 @@ impl Itable {
                 }
 
                 // mark it allocated on the disk
-                unsafe { tx.write(bp) };
+                tx.write(bp);
                 return self.get_inode(dev, inum);
             }
         }

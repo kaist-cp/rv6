@@ -20,7 +20,7 @@ use crate::{
 };
 
 use array_macro::array;
-use core::mem;
+use core::mem::{self, ManuallyDrop};
 use core::ops::{Deref, DerefMut};
 
 pub struct BufEntry {
@@ -93,48 +93,51 @@ impl BufInner {
 
 pub type Bcache = Spinlock<MruArena<BufEntry, NBUF>>;
 
+/// We can consider it as BufEntry.
 pub type BufUnlocked<'s> = Rc<Bcache, &'s Bcache>;
 
+/// # Safety
+///
+/// (inner: BufEntry).inner is locked.
 pub struct Buf<'s> {
-    inner: BufUnlocked<'s>,
+    inner: ManuallyDrop<BufUnlocked<'s>>,
 }
 
-impl<'s> Deref for Buf<'s> {
-    type Target = BufUnlocked<'s>;
+impl<'s> Buf<'s> {
+    pub fn deref_inner(&self) -> &BufInner {
+        // It is safe becuase inner.inner is locked.
+        unsafe { self.inner.inner.get_mut_unchecked() }
+    }
+
+    pub fn deref_inner_mut(&mut self) -> &mut BufInner {
+        // It is safe becuase inner.inner is locked and &mut self is exclusive.
+        unsafe { self.inner.inner.get_mut_unchecked() }
+    }
+
+    pub fn unlock(mut self) -> BufUnlocked<'s> {
+        // It is safe because this method consumes self and self.inner will not
+        // be used again.
+        let inner = unsafe { ManuallyDrop::take(&mut self.inner) };
+        // It is safe because this method consumes self.
+        unsafe { inner.inner.unlock() };
+        mem::forget(self);
+        inner
+    }
+}
+
+impl Deref for Buf<'_> {
+    type Target = BufEntry;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-impl DerefMut for Buf<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-
-impl<'s> Buf<'s> {
-    pub fn deref_inner(&self) -> &BufInner {
-        unsafe { self.inner.inner.get_mut_unchecked() }
-    }
-
-    pub fn deref_inner_mut(&mut self) -> &mut BufInner {
-        unsafe { self.inner.inner.get_mut_unchecked() }
-    }
-
-    pub fn unlock(self) -> BufUnlocked<'s> {
-        unsafe {
-            self.inner.inner.unlock();
-            mem::transmute(self)
-        }
-    }
-}
-
 impl Drop for Buf<'_> {
     fn drop(&mut self) {
-        unsafe {
-            self.inner.inner.unlock();
-        }
+        // It is safe because self will be dropped and self.inner will not be
+        // used again.
+        unsafe { ManuallyDrop::take(&mut self.inner).inner.unlock() };
     }
 }
 
@@ -161,26 +164,13 @@ impl Bcache {
 
         unsafe { Rc::from_unchecked(self, inner) }
     }
-
-    /// Retrieves BufUnlocked without increasing reference count.
-    pub fn buf_unforget(&self, dev: u32, blockno: u32) -> Option<BufUnlocked<'_>> {
-        let inner = self.unforget(|buf| buf.dev == dev && buf.blockno == blockno)?;
-
-        Some(unsafe { Rc::from_unchecked(self, inner) })
-    }
 }
 
 impl<'s> BufUnlocked<'s> {
     pub fn lock(self) -> Buf<'s> {
         mem::forget(self.inner.lock());
-        Buf { inner: self }
-    }
-
-    pub fn deref_inner(&self) -> &BufInner {
-        unsafe { self.inner.get_mut_unchecked() }
-    }
-
-    pub fn deref_mut_inner(&mut self) -> &mut BufInner {
-        unsafe { self.inner.get_mut_unchecked() }
+        Buf {
+            inner: ManuallyDrop::new(self),
+        }
     }
 }
