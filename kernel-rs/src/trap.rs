@@ -46,7 +46,7 @@ pub unsafe extern "C" fn usertrap() {
     // since we're now in the kernel.
     unsafe { w_stvec(kernelvec as _) };
 
-    let p = &mut kernel().current_proc();
+    let p = &mut kernel().current_proc().expect("No current proc");
 
     // Save user program counter.
     p.trap_frame_mut().epc = unsafe { r_sepc() };
@@ -182,11 +182,12 @@ pub unsafe fn kerneltrap() {
     }
 
     // Give up the CPU if this is a timer interrupt.
-    if which_dev == 2
-        && !unsafe { kernel().myproc() }.is_null()
-        && unsafe { kernel().current_proc().state() } == Procstate::RUNNING
-    {
-        unsafe { proc_yield(&mut kernel().current_proc()) };
+    let p = kernel().current_proc();
+    if which_dev == 2 && p.is_some() {
+        let mut p = p.expect("No current proc.");
+        if unsafe { p.state() } == Procstate::RUNNING {
+            unsafe { proc_yield(&mut p) };
+        }
     }
 
     // The yield() may have caused some traps to occur,

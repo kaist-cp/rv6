@@ -126,11 +126,19 @@ impl VAddr for UVAddr {
     }
 
     unsafe fn copy_in(self, dst: &mut [u8]) -> Result<(), ()> {
-        kernel().current_proc().memory.copy_in(dst, self)
+        kernel()
+            .current_proc()
+            .expect("No current proc")
+            .memory
+            .copy_in(dst, self)
     }
 
     unsafe fn copy_out(self, src: &[u8]) -> Result<(), ()> {
-        kernel().current_proc().memory.copy_out(self, src)
+        kernel()
+            .current_proc()
+            .expect("No current proc")
+            .memory
+            .copy_out(self, src)
     }
 }
 

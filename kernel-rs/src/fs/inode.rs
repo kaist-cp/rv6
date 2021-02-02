@@ -418,6 +418,7 @@ impl InodeGuard<'_> {
         self.read_internal(off, n, |off, src| {
             kernel()
                 .current_proc()
+                .expect("No current proc")
                 .memory
                 .copy_out(dst + off as usize, src)
         })
@@ -522,6 +523,7 @@ impl InodeGuard<'_> {
             |off, dst| {
                 kernel()
                     .current_proc()
+                    .expect("No current proc")
                     .memory
                     .copy_in(dst, src + off as usize)
             },

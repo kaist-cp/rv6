@@ -239,7 +239,7 @@ impl WaitChannel {
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
     pub fn sleep<T: Waitable>(&self, lk: &mut T) {
-        let p = kernel().current_proc();
+        let p = kernel().current_proc().expect("No current proc");
 
         // Must acquire p->lock in order to
         // change p->state and then call sched.
@@ -734,7 +734,9 @@ impl ProcessSystem {
     /// Wake up all processes in the pool sleeping on waitchannel.
     /// Must be called without any p->lock.
     pub fn wakeup_pool(&self, target: &WaitChannel) {
-        let myproc = unsafe { kernel().myproc() as *const Proc };
+        let myproc = kernel()
+            .current_proc()
+            .map_or(ptr::null_mut() as *const Proc, |p| p.raw() as *const Proc);
         for p in &self.process_pool {
             if p as *const Proc != myproc {
                 let mut guard = p.lock();
@@ -1005,7 +1007,7 @@ pub unsafe fn proc_yield(p: &mut CurrentProc) {
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
 unsafe fn forkret() {
-    let p = &mut kernel().current_proc();
+    let p = &mut kernel().current_proc().expect("No current proc");
     // Still holding p->lock from scheduler.
     unsafe { p.info.unlock() };
 
@@ -1019,18 +1021,14 @@ unsafe fn forkret() {
 
 impl Kernel {
     /// Return CurrentProc. This is safe because we checked if current struct Proc * exists.
-    pub fn current_proc(&self) -> CurrentProc {
-        let p = unsafe { self.myproc() };
-        assert!(!p.is_null(), "current_proc: No current proc");
-        unsafe { CurrentProc::from_raw(p) }
-    }
-
-    /// Return the current struct Proc *, or zero if none.
-    pub unsafe fn myproc(&self) -> *mut Proc {
+    pub fn current_proc(&self) -> Option<CurrentProc> {
         unsafe { push_off() };
         let c = self.mycpu();
         let p = unsafe { (*c).proc };
         unsafe { pop_off() };
-        p
+        if p.is_null() {
+            return None;
+        }
+        Some(unsafe { CurrentProc::from_raw(p) })
     }
 }

@@ -61,7 +61,7 @@ impl Console {
             // Wait until interrupt handler has put some
             // input into CONS.buffer.
             while this.r == this.w {
-                if kernel().current_proc().killed() {
+                if kernel().current_proc().expect("No current proc").killed() {
                     return -1;
                 }
                 this.sleep();
