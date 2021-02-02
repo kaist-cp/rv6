@@ -3,10 +3,14 @@
 //! before calling its member functions.
 
 use core::ptr;
+use core::pin::Pin;
+use core::marker::PhantomPinned;
 
 pub struct ListEntry {
     next: *mut ListEntry,
     prev: *mut ListEntry,
+    // Add `PhantomPinned` to mark this struct as `!Unpin`, since `ListEntry`s must not move.
+    _marker: PhantomPinned,
 }
 
 impl ListEntry {
@@ -21,12 +25,15 @@ impl ListEntry {
         Self {
             prev: ptr::null_mut(),
             next: ptr::null_mut(),
+            _marker: PhantomPinned,
         }
     }
 
-    pub fn init(&mut self) {
-        self.next = self;
-        self.prev = self;
+    pub fn init(self: Pin<&mut Self>) {
+        // Safe since we don't move the inner data and don't leak the mutable reference.
+        let this = unsafe { self.get_unchecked_mut() };
+        this.next = this;
+        this.prev = this;
     }
 
     pub fn prev(&self) -> &Self {
@@ -38,24 +45,30 @@ impl ListEntry {
     }
 
     /// `e` <-> `this`
-    pub fn append(&mut self, e: &mut ListEntry) {
-        e.next = self;
-        e.prev = self.prev;
+    pub fn append(self: Pin<&mut Self>, e: Pin<&mut Self>) {
+        // Safe since we don't move the inner data and don't leak the mutable reference.
+        let this = unsafe { self.get_unchecked_mut() };
+        let elem = unsafe { e.get_unchecked_mut() };
 
+        elem.next = this;
+        elem.prev = this.prev;
         unsafe {
-            (*e.next).prev = e;
-            (*e.prev).next = e;
+            (*elem.next).prev = elem;
+            (*elem.prev).next = elem;
         }
     }
 
     /// `this` <-> `e`
-    pub fn prepend(&mut self, e: &mut ListEntry) {
-        e.next = self.next;
-        e.prev = self;
-
+    pub fn prepend(self: Pin<&mut Self>, e: Pin<&mut Self>) {
+        // Safe since we don't move the inner data and don't leak the mutable reference.
+        let this = unsafe { self.get_unchecked_mut() };
+        let elem = unsafe { e.get_unchecked_mut() };
+        
+        elem.next = this.next;
+        elem.prev = this;
         unsafe {
-            (*e.next).prev = e;
-            (*e.prev).next = e;
+            (*elem.next).prev = elem;
+            (*elem.prev).next = elem;
         }
     }
 
@@ -63,7 +76,7 @@ impl ListEntry {
         ptr::eq(self.next, self)
     }
 
-    pub fn remove(&mut self) {
+    pub fn remove(self: Pin<&mut Self>) {
         unsafe {
             (*self.prev).next = self.next;
             (*self.next).prev = self.prev;
@@ -71,9 +84,10 @@ impl ListEntry {
         self.init();
     }
 
-    pub fn list_pop_front(&mut self) -> &mut ListEntry {
-        let result = unsafe { &mut *self.next };
-        result.remove();
+    pub fn list_pop_front(self: Pin<&mut Self>) -> Pin<&mut Self> {
+        // Safe since we don't move the inner data and don't leak the mutable reference.
+        let mut result = unsafe { Pin::new_unchecked(&mut *self.next) };
+        result.as_mut().remove();
         result
     }
 }

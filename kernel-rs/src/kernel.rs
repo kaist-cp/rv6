@@ -204,7 +204,7 @@ pub unsafe fn kernel_main() -> ! {
         unsafe { plicinithart() };
 
         // Buffer cache.
-        unsafe { KERNEL.bcache.get_mut().init() };
+        unsafe { KERNEL.bcache.get_pin().init() };
 
         // Emulated hard disk.
         unsafe { KERNEL.file_system.disk.get_mut().init() };

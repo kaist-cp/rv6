@@ -4,6 +4,8 @@ use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;
 use core::ptr::{self, NonNull};
+use core::pin::Pin;
+use pin_project::pin_project;
 
 /// A homogeneous memory allocator, equipped with the box type representing an allocation.
 pub trait Arena: Sized {
@@ -96,16 +98,20 @@ impl<'s, T> ArrayPtr<'s, T> {
     }
 }
 
+#[pin_project]
 #[repr(C)]
 pub struct MruEntry<T> {
+    #[pin]
     list_entry: ListEntry,
     refcnt: usize,
     data: T,
 }
 
 /// A homogeneous memory allocator equipped with reference counts.
+#[pin_project]
 pub struct MruArena<T, const CAPACITY: usize> {
     entries: [MruEntry<T>; CAPACITY],
+    #[pin]
     head: ListEntry,
 }
 
@@ -155,7 +161,7 @@ impl<T> Drop for ArrayPtr<'_, T> {
     }
 }
 
-impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<ArrayArena<T, CAPACITY>> {
+impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena for Spinlock<ArrayArena<T, CAPACITY>> {
     type Data = T;
     type Handle<'s> = ArrayPtr<'s, T>;
     type Guard<'s> = SpinlockGuard<'s, ArrayArena<T, CAPACITY>>;
@@ -267,11 +273,17 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
         }
     }
 
-    pub fn init(&mut self) {
-        self.head.init();
+    pub fn init(self: Pin<&mut Self>) {
+        let mut this = self.project();
 
-        for entry in &mut self.entries {
-            self.head.prepend(&mut entry.list_entry);
+        this.head.as_mut().init();
+        // TODO: Pin of array's element?
+        for entry in this.entries {
+            unsafe {
+                // Safe since `MruEntry` is accessed only through `Pin`.
+                let entry = Pin::new_unchecked(&mut entry.list_entry);
+                this.head.as_mut().prepend(entry);
+            }
         }
     }
 }
@@ -388,16 +400,16 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
     unsafe fn dealloc(&self, mut handle: Self::Handle<'_>) {
         let mut this = self.lock();
 
-        let entry = unsafe { handle.ptr.as_mut() };
-        if entry.refcnt == 1 {
+        // Safe since `MruEntry` is accessed only through `Pin`.
+        let mut entry = unsafe { Pin::new_unchecked(handle.ptr.as_mut()).project() };
+        if *entry.refcnt == 1 {
             entry.data.finalize::<Self>(&mut this);
         }
+        *entry.refcnt -= 1;
 
-        entry.refcnt -= 1;
-
-        if entry.refcnt == 0 {
-            entry.list_entry.remove();
-            this.head.prepend(&mut entry.list_entry);
+        if *entry.refcnt == 0 {
+            entry.list_entry.as_mut().remove();
+            this.get_pin().project().head.prepend(entry.list_entry);
         }
 
         mem::forget(handle);

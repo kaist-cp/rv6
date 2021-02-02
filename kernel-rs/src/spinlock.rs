@@ -8,6 +8,7 @@ use core::hint::spin_loop;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr;
+use core::pin::Pin;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
 /// Mutual exclusion lock.
@@ -145,10 +146,6 @@ impl<T> Spinlock<T> {
         }
     }
 
-    pub fn into_inner(self) -> T {
-        self.data.into_inner()
-    }
-
     pub fn lock(&self) -> SpinlockGuard<'_, T> {
         self.lock.acquire();
 
@@ -167,6 +164,24 @@ impl<T> Spinlock<T> {
         self.lock.holding()
     }
 
+    pub fn raw(&self) -> *const RawSpinlock {
+        &self.lock as *const _
+    }
+
+    /// Returns a mutable reference to the inner data wrapped by a `Pin`.
+    pub fn get_pin(&mut self) -> Pin<&mut T> {
+        // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
+        unsafe { Pin::new_unchecked(&mut *self.data.get() ) }
+    }
+}
+
+impl<T: Unpin> Spinlock<T> {
+    pub fn into_inner(self) -> T {
+        self.data.into_inner()
+    }
+
+    /// Returns a mutable reference to the inner data.
+    ///
     /// # Safety
     ///
     /// `self` must not be shared by other threads. Use this function only in the middle of
@@ -176,12 +191,9 @@ impl<T> Spinlock<T> {
         unsafe { &mut *self.data.get() }
     }
 
+    /// Returns a mutable reference to the inner data.
     pub fn get_mut(&mut self) -> &mut T {
         unsafe { &mut *self.data.get() }
-    }
-
-    pub fn raw(&self) -> *const RawSpinlock {
-        &self.lock as *const _
     }
 }
 
@@ -194,6 +206,12 @@ impl<T> SpinlockGuard<'_, T> {
         let result = f();
         self.lock.lock.acquire();
         result
+    }
+
+    /// Returns a mutable reference to the inner data wrapped by a `Pin`.
+    pub fn get_pin(&mut self) -> Pin<&mut T> {
+        // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
+        unsafe { Pin::new_unchecked(&mut *self.lock.data.get()) }
     }
 }
 
@@ -219,7 +237,9 @@ impl<T> Deref for SpinlockGuard<'_, T> {
     }
 }
 
-impl<T> DerefMut for SpinlockGuard<'_, T> {
+// We can mutably dereference the guard only when `T: Unpin`.
+// If `T: !Unpin`, use `SpinlockGuard::get_pin()` instead.
+impl<T: Unpin> DerefMut for SpinlockGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.lock.data.get() }
     }
