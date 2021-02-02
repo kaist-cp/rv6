@@ -46,10 +46,10 @@ pub unsafe extern "C" fn usertrap() {
     // since we're now in the kernel.
     unsafe { w_stvec(kernelvec as _) };
 
-    let p = &mut kernel().current_proc().expect("No current proc");
+    let p = &kernel().current_proc().expect("No current proc");
 
     // Save user program counter.
-    p.trap_frame_mut().epc = unsafe { r_sepc() };
+    p.deref_mut_data().trap_frame_mut().epc = unsafe { r_sepc() };
     if unsafe { r_scause() } == 8 {
         // system call
 
@@ -59,13 +59,13 @@ pub unsafe extern "C" fn usertrap() {
 
         // sepc points to the ecall instruction,
         // but we want to return to the next instruction.
-        p.trap_frame_mut().epc = (p.trap_frame().epc).wrapping_add(4);
+        p.deref_mut_data().trap_frame_mut().epc = (p.trap_frame().epc).wrapping_add(4);
 
         // An interrupt will change sstatus &c registers,
         // so don't enable until done with those registers.
         unsafe { intr_on() };
-        p.trap_frame_mut().a0 = ok_or!(
-            unsafe { kernel().syscall(p.trap_frame_mut().a7 as i32, p) },
+        p.deref_mut_data().trap_frame_mut().a0 = ok_or!(
+            unsafe { kernel().syscall(p.deref_mut_data().trap_frame_mut().a7 as i32, p) },
             usize::MAX
         );
     } else {
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn usertrap() {
         unsafe { proc_yield(p) };
     }
 
-    unsafe { usertrapret(p) };
+    unsafe { usertrapret(p.deref_mut_data()) };
 }
 
 /// Return to user space.

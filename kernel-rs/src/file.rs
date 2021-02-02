@@ -87,7 +87,7 @@ impl File {
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub unsafe fn read(&self, addr: UVAddr, n: i32, proc: &mut Proc) -> Result<usize, ()> {
+    pub unsafe fn read(&self, addr: UVAddr, n: i32, proc: &Proc) -> Result<usize, ()> {
         if !self.readable {
             return Err(());
         }
@@ -97,7 +97,7 @@ impl File {
             FileType::Inode { ip, off } => {
                 let mut ip = ip.deref().lock();
                 let curr_off = unsafe { *off.get() };
-                let ret = ip.read_user(addr, curr_off, n as u32, proc);
+                let ret = ip.read_user(addr, curr_off, n as u32, proc.deref_mut_data());
                 if let Ok(v) = ret {
                     unsafe { *off.get() = curr_off.wrapping_add(v as u32) };
                 }
@@ -114,7 +114,7 @@ impl File {
     }
     /// Write to file self.
     /// addr is a user virtual address.
-    pub unsafe fn write(&self, addr: UVAddr, n: i32, proc: &mut Proc) -> Result<usize, ()> {
+    pub unsafe fn write(&self, addr: UVAddr, n: i32, proc: &Proc) -> Result<usize, ()> {
         if !self.writable {
             return Err(());
         }
@@ -141,7 +141,7 @@ impl File {
                             addr + bytes_written,
                             curr_off,
                             bytes_to_write as u32,
-                            proc,
+                            proc.deref_mut_data(),
                             &tx,
                         )
                         .map(|v| {

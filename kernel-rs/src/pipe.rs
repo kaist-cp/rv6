@@ -43,7 +43,7 @@ impl Pipe {
     /// If successfully read i > 0 bytes, wakeups the `write_waitchannel` and returns `Ok(i: usize)`.
     /// If the pipe was empty, sleeps at `read_waitchannel` and tries again after wakeup.
     /// If an error happened, returns `Err(())`.
-    pub fn read(&self, addr: UVAddr, n: usize, proc: &mut Proc) -> Result<usize, ()> {
+    pub fn read(&self, addr: UVAddr, n: usize, proc: &Proc) -> Result<usize, ()> {
         let mut inner = self.inner.lock();
         loop {
             match inner.try_read(addr, n, proc) {
@@ -67,7 +67,7 @@ impl Pipe {
     /// Note that we may have i < `n` if an copy-in error happened.
     /// If the pipe was full, sleeps at `write_waitchannel` and tries again after wakeup.
     /// If an error happened, returns `Err(())`.
-    pub fn write(&self, addr: UVAddr, n: usize, proc: &mut Proc) -> Result<usize, ()> {
+    pub fn write(&self, addr: UVAddr, n: usize, proc: &Proc) -> Result<usize, ()> {
         let mut written = 0;
         let mut inner = self.inner.lock();
         loop {
@@ -194,7 +194,7 @@ impl PipeInner {
     /// If the process was killed, returns `Err(InvalidStatus)`.
     /// If an copy-in error happened after successfully writing i >= 0 bytes, returns `Err(InvalidCopyIn(i))`.
     /// Otherwise, returns `Ok(i)` after successfully writing i >= 0 bytes.    
-    fn try_write(&mut self, addr: UVAddr, n: usize, proc: &mut Proc) -> Result<usize, PipeError> {
+    fn try_write(&mut self, addr: UVAddr, n: usize, proc: &Proc) -> Result<usize, PipeError> {
         let mut ch = [0u8];
         if !self.readopen || proc.killed() {
             return Err(PipeError::InvalidStatus);
@@ -204,7 +204,12 @@ impl PipeInner {
                 //DOC: pipewrite-full
                 return Ok(i);
             }
-            if proc.memory.copy_in(&mut ch, addr + i).is_err() {
+            if proc
+                .deref_mut_data()
+                .memory
+                .copy_in(&mut ch, addr + i)
+                .is_err()
+            {
                 return Err(PipeError::InvalidCopyin(i));
             }
             self.data[self.nwrite as usize % PIPESIZE] = ch[0];
@@ -217,7 +222,7 @@ impl PipeInner {
     /// If successful read i > 0 bytes, returns `Ok(i: usize)`.
     /// If the pipe was empty, returns `Err(WaitForIO)`.
     /// If the process was killed, returns `Err(InvalidStatus)`.
-    fn try_read(&mut self, addr: UVAddr, n: usize, proc: &mut Proc) -> Result<usize, PipeError> {
+    fn try_read(&mut self, addr: UVAddr, n: usize, proc: &Proc) -> Result<usize, PipeError> {
         //DOC: pipe-empty
         if self.nread == self.nwrite && self.writeopen {
             if proc.killed() {
@@ -233,7 +238,12 @@ impl PipeInner {
             }
             let ch = [self.data[self.nread as usize % PIPESIZE]];
             self.nread = self.nread.wrapping_add(1);
-            if proc.memory.copy_out(addr + i, &ch).is_err() {
+            if proc
+                .deref_mut_data()
+                .memory
+                .copy_out(addr + i, &ch)
+                .is_err()
+            {
                 return Ok(i);
             }
         }

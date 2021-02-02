@@ -6,8 +6,7 @@ use core::{
     marker::PhantomData,
     mem::{self, MaybeUninit},
     ops::{Deref, DerefMut},
-    ptr::{self, NonNull},
-    slice, str,
+    ptr, slice, str,
     sync::atomic::{AtomicBool, AtomicI32, Ordering},
 };
 
@@ -61,7 +60,7 @@ pub struct Context {
 #[derive(Copy, Clone)]
 pub struct Cpu {
     /// The process running on this cpu, or null.
-    pub proc: *mut Proc,
+    pub proc: *const Proc,
 
     /// swtch() here to enter scheduler().
     pub context: Context,
@@ -323,6 +322,9 @@ pub struct ProcData {
 
     /// Current directory.
     pub cwd: Option<RcInode<'static>>,
+
+    /// Process name (debugging).
+    pub name: [u8; MAXPROCNAME],
 }
 
 /// Per-process state.
@@ -338,7 +340,7 @@ pub struct Proc {
     /// this field in Proc::zero(), which is a const fn.
     /// Hence, this field gets initialized later in procinit() as
     /// `SpinlockProtected::new(&procs.wait_lock, ptr::null_mut())`.
-    parent: MaybeUninit<SpinlockProtected<*mut Proc>>,
+    parent: MaybeUninit<SpinlockProtected<*const Proc>>,
 
     info: Spinlock<ProcInfo>,
 
@@ -346,9 +348,6 @@ pub struct Proc {
 
     /// If true, the process have been killed.
     killed: AtomicBool,
-
-    /// Process name (debugging).
-    pub name: [u8; MAXPROCNAME],
 }
 
 /// CurrentProc wraps mutable pointer of current CPU's proc.
@@ -357,7 +356,7 @@ pub struct Proc {
 ///
 /// `ptr` is always not null pointer, and Proc's state is Procstate::RUNNING.
 pub struct CurrentProc<'p> {
-    ptr: NonNull<Proc>,
+    ptr: *const Proc,
     _marker: PhantomData<&'p Proc>,
 }
 
@@ -365,15 +364,15 @@ impl CurrentProc<'_> {
     /// # Safety
     ///
     /// `ptr` must not be null pointer.
-    unsafe fn from_raw(ptr: *mut Proc) -> Self {
+    unsafe fn from_raw(ptr: *const Proc) -> Self {
         CurrentProc {
-            ptr: unsafe { NonNull::new_unchecked(ptr) },
+            ptr,
             _marker: PhantomData,
         }
     }
 
-    fn raw(&self) -> *mut Proc {
-        self.ptr.as_ptr()
+    fn raw(&self) -> *const Proc {
+        self.ptr
     }
 }
 
@@ -381,14 +380,7 @@ impl Deref for CurrentProc<'_> {
     type Target = Proc;
     fn deref(&self) -> &Self::Target {
         // Safe since `ptr` always refers to `Proc`.
-        unsafe { self.ptr.as_ref() }
-    }
-}
-
-impl DerefMut for CurrentProc<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        // Safe since `ptr` always refers to `Proc`.
-        unsafe { self.ptr.as_mut() }
+        unsafe { &*self.ptr }
     }
 }
 
@@ -461,7 +453,7 @@ impl ProcGuard {
 
             // Clear the `ProcInfo`.
             self.deref_mut_info().pid = 0;
-            (*self).name[0] = 0;
+            (*self).deref_mut_data().name[0] = 0;
             self.deref_mut_info().waitchannel = ptr::null();
             self.killed = AtomicBool::new(false);
             self.deref_mut_info().xstate = 0;
@@ -553,6 +545,7 @@ impl ProcData {
             context: Context::new(),
             open_files: [None; NOFILE],
             cwd: None,
+            name: [0; MAXPROCNAME],
         }
     }
 
@@ -595,7 +588,6 @@ impl Proc {
             ),
             data: UnsafeCell::new(ProcData::new()),
             killed: AtomicBool::new(false),
-            name: [0; MAXPROCNAME],
         }
     }
 
@@ -631,6 +623,11 @@ impl Proc {
     pub fn deref_data_raw(&self) -> *mut ProcData {
         self.data.get()
     }
+
+    pub fn deref_mut_data(&self) -> &mut ProcData {
+        // Safety: Only current proc uses ProcData.
+        unsafe { &mut *self.data.get() }
+    }
 }
 
 impl Deref for Proc {
@@ -641,18 +638,11 @@ impl Deref for Proc {
     }
 }
 
-impl DerefMut for Proc {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        // Safety: Only current proc uses ProcData.
-        unsafe { &mut *self.data.get() }
-    }
-}
-
 /// Process system type containing & managing whole processes.
 pub struct ProcessSystem {
     nextpid: AtomicI32,
     process_pool: [Proc; NPROC],
-    initial_proc: *mut Proc,
+    initial_proc: *const Proc,
 
     // Helps ensure that wakeups of wait()ing
     // parents are not lost. Helps obey the
@@ -666,7 +656,7 @@ impl ProcessSystem {
         Self {
             nextpid: AtomicI32::new(1),
             process_pool: array![_ => Proc::zero(); NPROC],
-            initial_proc: ptr::null_mut(),
+            initial_proc: ptr::null(),
             wait_lock: RawSpinlock::new("wait_lock"),
         }
     }
@@ -708,7 +698,7 @@ impl ProcessSystem {
     /// Caller must provide a `SpinlockProtectedGuard`.
     unsafe fn reparent<'a: 'b, 'b>(
         &'a self,
-        p: *mut Proc,
+        p: *const Proc,
         parent_guard: &'b mut SpinlockProtectedGuard<'a>,
     ) {
         for pp in &self.process_pool {
@@ -782,7 +772,7 @@ impl ProcessSystem {
         // User stack pointer.
         data.trap_frame_mut().sp = PGSIZE;
         let name = b"initcode\x00";
-        (&mut (*guard).name[..name.len()]).copy_from_slice(name);
+        (&mut (*guard).deref_mut_data().name[..name.len()]).copy_from_slice(name);
         data.cwd = Some(Path::root());
         guard.deref_mut_info().state = Procstate::RUNNABLE;
     }
@@ -790,12 +780,16 @@ impl ProcessSystem {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
-    pub unsafe fn fork(&self, p: &mut CurrentProc<'_>) -> Result<i32, ()> {
+    pub unsafe fn fork(&self, p: &CurrentProc<'_>) -> Result<i32, ()> {
         // Allocate trap frame.
         let trap_frame = scopeguard::guard(kernel().alloc().ok_or(())?, |page| kernel().free(page));
 
         // Copy user memory from parent to child.
-        let memory = p.memory.clone(trap_frame.addr()).ok_or(())?;
+        let memory = p
+            .deref_mut_data()
+            .memory
+            .clone(trap_frame.addr())
+            .ok_or(())?;
 
         // Allocate process.
         let mut np = unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }?;
@@ -815,7 +809,7 @@ impl ProcessSystem {
         }
         npdata.cwd = Some(p.cwd.clone().unwrap());
 
-        np.name.copy_from_slice(&p.name);
+        np.deref_mut_data().name.copy_from_slice(&p.name);
 
         let pid = np.deref_mut_info().pid;
 
@@ -837,7 +831,7 @@ impl ProcessSystem {
 
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
-    pub unsafe fn wait(&self, addr: UVAddr, p: &mut CurrentProc<'_>) -> Result<i32, ()> {
+    pub unsafe fn wait(&self, addr: UVAddr, p: &CurrentProc<'_>) -> Result<i32, ()> {
         // Assumes that the process_pool has at least 1 element.
         let mut parent_guard = unsafe { self.process_pool[0].parent.assume_init_ref() }.lock();
 
@@ -855,7 +849,8 @@ impl ProcessSystem {
                     if state == Procstate::ZOMBIE {
                         let pid = np.deref_info().pid;
                         if !addr.is_null()
-                            && p.memory
+                            && p.deref_mut_data()
+                                .memory
                                 .copy_out(addr, unsafe {
                                     slice::from_raw_parts_mut(
                                         &mut np.deref_mut_info().xstate as *mut i32 as *mut u8,
@@ -887,9 +882,9 @@ impl ProcessSystem {
     /// Exit the current process.  Does not return.
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
-    pub unsafe fn exit_current(&self, status: i32, p: &mut CurrentProc<'_>) -> ! {
+    pub unsafe fn exit_current(&self, status: i32, p: &CurrentProc<'_>) -> ! {
         assert_ne!(p.raw(), self.initial_proc, "init exiting");
-        unsafe { p.close_files() };
+        unsafe { p.deref_mut_data().close_files() };
 
         // Give all children to init.
         let mut parent_guard = unsafe { p.parent.assume_init_ref().lock() };
@@ -992,7 +987,7 @@ pub unsafe fn scheduler() -> ! {
                 // to release its lock and then reacquire it
                 // before jumping back to us.
                 guard.deref_mut_info().state = Procstate::RUNNING;
-                unsafe { (*c).proc = p as *const _ as *mut _ };
+                unsafe { (*c).proc = p as *const _ };
                 unsafe { swtch(&mut (*c).context, &mut (*guard.data.get()).context) };
 
                 // Process is done running for now.
@@ -1004,7 +999,7 @@ pub unsafe fn scheduler() -> ! {
 }
 
 /// Give up the CPU for one scheduling round.
-pub unsafe fn proc_yield(p: &mut CurrentProc<'_>) {
+pub unsafe fn proc_yield(p: &CurrentProc<'_>) {
     let mut guard = p.lock();
     guard.deref_mut_info().state = Procstate::RUNNABLE;
     unsafe { guard.sched() };
@@ -1013,7 +1008,7 @@ pub unsafe fn proc_yield(p: &mut CurrentProc<'_>) {
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
 unsafe fn forkret() {
-    let p = &mut kernel().current_proc().expect("No current proc");
+    let p = &kernel().current_proc().expect("No current proc");
     // Still holding p->lock from scheduler.
     unsafe { p.info.unlock() };
 
@@ -1022,7 +1017,7 @@ unsafe fn forkret() {
     // be run from main().
     kernel().file_system.init(ROOTDEV);
 
-    unsafe { usertrapret(p) };
+    unsafe { usertrapret(p.deref_mut_data()) };
 }
 
 impl Kernel {

@@ -8,39 +8,39 @@ use crate::{
 
 impl Kernel {
     /// Terminate the current process; status reported to wait(). No return.
-    pub unsafe fn sys_exit(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub unsafe fn sys_exit(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let n = argint(0, proc)?;
         unsafe { self.procs.exit_current(n, proc) };
     }
 
     /// Return the current process’s PID.
-    pub unsafe fn sys_getpid(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub unsafe fn sys_getpid(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         Ok(unsafe { proc.pid() } as _)
     }
 
     /// Create a process.
     /// Returns Ok(child’s PID) on success, Err(()) on error.
-    pub unsafe fn sys_fork(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub unsafe fn sys_fork(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         Ok(unsafe { self.procs.fork(proc) }? as _)
     }
 
     /// Wait for a child to exit.
     /// Returns Ok(child’s PID) on success, Err(()) on error.
-    pub unsafe fn sys_wait(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub unsafe fn sys_wait(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let p = argaddr(0, proc)?;
         Ok(unsafe { self.procs.wait(UVAddr::new(p), proc) }? as _)
     }
 
     /// Grow process’s memory by n bytes.
     /// Returns Ok(start of new memory) on success, Err(()) on error.
-    pub fn sys_sbrk(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_sbrk(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let n = argint(0, proc)?;
-        proc.memory.resize(n)
+        proc.deref_mut_data().memory.resize(n)
     }
 
     /// Pause for n clock ticks.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub fn sys_sleep(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_sleep(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let n = argint(0, proc)?;
         let mut ticks = self.ticks.lock();
         let ticks0 = *ticks;

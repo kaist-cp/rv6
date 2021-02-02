@@ -305,16 +305,16 @@ impl Kernel {
 impl Kernel {
     /// Return a new file descriptor referring to the same file as given fd.
     /// Returns Ok(new file descriptor) on success, Err(()) on error.
-    pub unsafe fn sys_dup(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub unsafe fn sys_dup(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let (_, f) = unsafe { argfd(0, proc)? };
         let newfile = f.clone();
-        let fd = newfile.fdalloc(proc).map_err(|_| ())?;
+        let fd = newfile.fdalloc(proc.deref_mut_data()).map_err(|_| ())?;
         Ok(fd as usize)
     }
 
     /// Read n bytes into buf.
     /// Returns Ok(number read) on success, Err(()) on error.
-    pub unsafe fn sys_read(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub unsafe fn sys_read(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let (_, f) = unsafe { argfd(0, proc)? };
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
@@ -323,7 +323,7 @@ impl Kernel {
 
     /// Write n bytes from buf to given file descriptor fd.
     /// Returns Ok(n) on success, Err(()) on error.
-    pub unsafe fn sys_write(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub unsafe fn sys_write(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let (_, f) = unsafe { argfd(0, proc)? };
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
@@ -332,67 +332,67 @@ impl Kernel {
 
     /// Release open file fd.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_close(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub unsafe fn sys_close(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let (fd, _) = unsafe { argfd(0, proc)? };
-        proc.open_files[fd as usize] = None;
+        proc.deref_mut_data().open_files[fd as usize] = None;
         Ok(0)
     }
 
     /// Place info about an open file into struct stat.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_fstat(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub unsafe fn sys_fstat(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let (_, f) = unsafe { argfd(0, proc)? };
         // user pointer to struct stat
         let st = argaddr(1, proc)?;
-        unsafe { f.stat(UVAddr::new(st), proc)? };
+        unsafe { f.stat(UVAddr::new(st), proc.deref_mut_data())? };
         Ok(0)
     }
 
     /// Create the path new as a link to the same inode as old.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_link(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub unsafe fn sys_link(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let mut new: [u8; MAXPATH] = [0; MAXPATH];
         let mut old: [u8; MAXPATH] = [0; MAXPATH];
-        let old = unsafe { argstr(0, &mut old, proc)? };
-        let new = unsafe { argstr(1, &mut new, proc)? };
+        let old = unsafe { argstr(0, &mut old, proc.deref_mut_data())? };
+        let new = unsafe { argstr(1, &mut new, proc.deref_mut_data())? };
         self.link(old, new, proc)?;
         Ok(0)
     }
 
     /// Remove a file.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_unlink(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub unsafe fn sys_unlink(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = unsafe { argstr(0, &mut path, proc)? };
+        let path = unsafe { argstr(0, &mut path, proc.deref_mut_data())? };
         self.unlink(path, proc)?;
         Ok(0)
     }
 
     /// Open a file.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_open(&'static self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub unsafe fn sys_open(&'static self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = unsafe { argstr(0, &mut path, proc)? };
+        let path = unsafe { argstr(0, &mut path, proc.deref_mut_data())? };
         let path = Path::new(path);
         let omode = argint(1, proc)?;
         let omode = FcntlFlags::from_bits_truncate(omode);
-        self.open(path, omode, proc)
+        self.open(path, omode, proc.deref_mut_data())
     }
 
     /// Create a new directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_mkdir(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub unsafe fn sys_mkdir(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = unsafe { argstr(0, &mut path, proc)? };
+        let path = unsafe { argstr(0, &mut path, proc.deref_mut_data())? };
         self.mkdir(path, proc)?;
         Ok(0)
     }
 
     /// Create a new directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_mknod(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub unsafe fn sys_mknod(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = unsafe { argstr(0, &mut path, proc)? };
+        let path = unsafe { argstr(0, &mut path, proc.deref_mut_data())? };
         let major = argint(1, proc)? as u16;
         let minor = argint(2, proc)? as u16;
         self.mknod(path, major, minor, proc)?;
@@ -401,25 +401,30 @@ impl Kernel {
 
     /// Change the current directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_chdir(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub unsafe fn sys_chdir(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = unsafe { argstr(0, &mut path, proc)? };
-        self.chdir(path, proc)?;
+        let path = unsafe { argstr(0, &mut path, proc.deref_mut_data())? };
+        self.chdir(path, proc.deref_mut_data())?;
         Ok(0)
     }
 
     /// Load a file and execute it with arguments.
     /// Returns Ok(argc argument to user main) on success, Err(()) on error.
-    pub unsafe fn sys_exec(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub unsafe fn sys_exec(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let mut args = ArrayVec::<[Page; MAXARG]>::new();
-        let path = unsafe { argstr(0, &mut path, proc)? };
+        let path = unsafe { argstr(0, &mut path, proc.deref_mut_data())? };
         let uargv = argaddr(1, proc)?;
 
         let mut success = false;
         for i in 0..MAXARG {
             let uarg = ok_or!(
-                unsafe { fetchaddr(UVAddr::new(uargv + mem::size_of::<usize>() * i), proc) },
+                unsafe {
+                    fetchaddr(
+                        UVAddr::new(uargv + mem::size_of::<usize>() * i),
+                        proc.deref_mut_data(),
+                    )
+                },
                 break
             );
 
@@ -429,7 +434,8 @@ impl Kernel {
             }
 
             let mut page = some_or!(self.alloc(), break);
-            if unsafe { fetchstr(UVAddr::new(uarg), &mut page[..], proc) }.is_err() {
+            if unsafe { fetchstr(UVAddr::new(uarg), &mut page[..], proc.deref_mut_data()) }.is_err()
+            {
                 self.free(page);
                 break;
             }
@@ -451,10 +457,10 @@ impl Kernel {
 
     /// Create a pipe.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub fn sys_pipe(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_pipe(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         // user pointer to array of two integers
         let fdarray = UVAddr::new(argaddr(0, proc)?);
-        self.pipe(fdarray, proc)?;
+        self.pipe(fdarray, proc.deref_mut_data())?;
         Ok(0)
     }
 }

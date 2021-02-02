@@ -129,6 +129,7 @@ impl VAddr for UVAddr {
         kernel()
             .current_proc()
             .expect("No current proc")
+            .deref_mut_data()
             .memory
             .copy_in(dst, self)
     }
@@ -137,6 +138,7 @@ impl VAddr for UVAddr {
         kernel()
             .current_proc()
             .expect("No current proc")
+            .deref_mut_data()
             .memory
             .copy_out(self, src)
     }

@@ -90,7 +90,7 @@ impl ProgHdr {
 }
 
 impl Kernel {
-    pub fn exec(&self, path: &Path, args: &[Page], p: &mut Proc) -> Result<usize, ()> {
+    pub fn exec(&self, path: &Path, args: &[Page], p: &Proc) -> Result<usize, ()> {
         if args.len() > MAXARG {
             return Err(());
         }
@@ -183,7 +183,7 @@ impl Kernel {
             .rposition(|c| *c == b'/')
             .map(|i| &path_str[(i + 1)..])
             .unwrap_or(path_str);
-        let p_name = &mut p.name;
+        let p_name = &mut p.deref_mut_data().name;
         let len = cmp::min(p_name.len(), name.len());
         p_name[..len].copy_from_slice(&name[..len]);
         if len < p_name.len() {
@@ -191,18 +191,18 @@ impl Kernel {
         }
 
         // Commit to the user image.
-        p.memory = mem;
+        p.deref_mut_data().memory = mem;
 
         // arguments to user main(argc, argv)
         // argc is returned via the system call return
         // value, which goes in a0.
-        p.trap_frame_mut().a1 = sp;
+        p.deref_mut_data().trap_frame_mut().a1 = sp;
 
         // initial program counter = main
-        p.trap_frame_mut().epc = elf.entry;
+        p.deref_mut_data().trap_frame_mut().epc = elf.entry;
 
         // initial stack pointer
-        p.trap_frame_mut().sp = sp;
+        p.deref_mut_data().trap_frame_mut().sp = sp;
 
         // this ends up in a0, the first argument to main(argc, argv)
         Ok(argc)

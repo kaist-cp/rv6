@@ -70,11 +70,7 @@ pub unsafe fn argstr<'a>(n: usize, buf: &'a mut [u8], data: &mut ProcData) -> Re
 }
 
 impl Kernel {
-    pub unsafe fn syscall(
-        &'static self,
-        num: i32,
-        proc: &mut CurrentProc<'_>,
-    ) -> Result<usize, ()> {
+    pub unsafe fn syscall(&'static self, num: i32, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         match num {
             1 => unsafe { self.sys_fork(proc) },
             2 => unsafe { self.sys_exit(proc) },
