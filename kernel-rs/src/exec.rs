@@ -5,7 +5,7 @@ use crate::{
     kernel::Kernel,
     page::Page,
     param::MAXARG,
-    proc::ExecutingProc,
+    proc::CurrentProc,
     riscv::{pgroundup, PGSIZE},
     vm::{PAddr, UVAddr, UserMemory, VAddr},
 };
@@ -90,7 +90,7 @@ impl ProgHdr {
 }
 
 impl Kernel {
-    pub fn exec(&self, path: &Path, args: &[Page], p: &mut ExecutingProc) -> Result<usize, ()> {
+    pub fn exec(&self, path: &Path, args: &[Page], p: &mut CurrentProc) -> Result<usize, ()> {
         if args.len() > MAXARG {
             return Err(());
         }

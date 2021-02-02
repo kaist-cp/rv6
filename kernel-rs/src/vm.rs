@@ -127,7 +127,7 @@ impl VAddr for UVAddr {
 
     unsafe fn copy_in(self, dst: &mut [u8]) -> Result<(), ()> {
         kernel()
-            .myexproc()
+            .current_proc()
             .deref_mut_data()
             .memory
             .copy_in(dst, self)
@@ -135,7 +135,7 @@ impl VAddr for UVAddr {
 
     unsafe fn copy_out(self, src: &[u8]) -> Result<(), ()> {
         kernel()
-            .myexproc()
+            .current_proc()
             .deref_mut_data()
             .memory
             .copy_out(self, src)

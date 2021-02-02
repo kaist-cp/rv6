@@ -239,7 +239,7 @@ impl WaitChannel {
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
     pub fn sleep<T: Waitable>(&self, lk: &mut T) {
-        let p = kernel().myexproc();
+        let p = kernel().current_proc();
 
         // Must acquire p->lock in order to
         // change p->state and then call sched.
@@ -349,14 +349,14 @@ pub struct Proc {
     pub name: [u8; MAXPROCNAME],
 }
 
-/// Assumption: `ptr` is `executingproc`, and guard indicates ptr->info's spinlock is held.
-pub struct ExecutingProc {
+/// Assumption: `ptr` is `CurrentProc`, and guard indicates ptr->info's spinlock is held.
+pub struct CurrentProc {
     ptr: *mut Proc,
 }
 
-impl ExecutingProc {
+impl CurrentProc {
     unsafe fn from_raw(ptr: *mut Proc) -> Self {
-        ExecutingProc { ptr }
+        CurrentProc { ptr }
     }
 
     pub fn deref_data(&self) -> &ProcData {
@@ -372,7 +372,7 @@ impl ExecutingProc {
     }
 }
 
-impl Deref for ExecutingProc {
+impl Deref for CurrentProc {
     type Target = Proc;
     fn deref(&self) -> &Self::Target {
         // Safe since `ptr` always refers to `Proc`.
@@ -380,7 +380,7 @@ impl Deref for ExecutingProc {
     }
 }
 
-impl DerefMut for ExecutingProc {
+impl DerefMut for CurrentProc {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // Safe since `ptr` always refers to `Proc`.
         unsafe { &mut *self.ptr }
@@ -764,7 +764,7 @@ impl ProcessSystem {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
-    pub unsafe fn fork(&self, p: &mut ExecutingProc) -> Result<i32, ()> {
+    pub unsafe fn fork(&self, p: &mut CurrentProc) -> Result<i32, ()> {
         let pdata = p.deref_mut_data();
 
         // Allocate trap frame.
@@ -813,7 +813,7 @@ impl ProcessSystem {
 
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
-    pub unsafe fn wait(&self, addr: UVAddr, p: &mut ExecutingProc) -> Result<i32, ()> {
+    pub unsafe fn wait(&self, addr: UVAddr, p: &mut CurrentProc) -> Result<i32, ()> {
         let ptr = p.ptr;
         let data = p.deref_mut_data();
 
@@ -867,7 +867,7 @@ impl ProcessSystem {
     /// Exit the current process.  Does not return.
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
-    pub unsafe fn exit_current(&self, status: i32, p: &mut ExecutingProc) -> ! {
+    pub unsafe fn exit_current(&self, status: i32, p: &mut CurrentProc) -> ! {
         assert_ne!(p.ptr, self.initial_proc, "init exiting");
         let data = p.deref_mut_data();
 
@@ -986,7 +986,7 @@ pub unsafe fn scheduler() -> ! {
 }
 
 /// Give up the CPU for one scheduling round.
-pub unsafe fn proc_yield(p: &mut ExecutingProc) {
+pub unsafe fn proc_yield(p: &mut CurrentProc) {
     let mut guard = p.lock();
     guard.deref_mut_info().state = Procstate::RUNNABLE;
     unsafe { guard.sched() };
@@ -995,7 +995,7 @@ pub unsafe fn proc_yield(p: &mut ExecutingProc) {
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
 unsafe fn forkret() {
-    let p = &mut kernel().myexproc();
+    let p = &mut kernel().current_proc();
     // Still holding p->lock from scheduler.
     unsafe { p.info.unlock() };
 
@@ -1008,11 +1008,11 @@ unsafe fn forkret() {
 }
 
 impl Kernel {
-    /// Return ExecutingProc. This is safe because we checked if current struct Proc * exists.
-    pub fn myexproc(&self) -> ExecutingProc {
+    /// Return CurrentProc. This is safe because we checked if current struct Proc * exists.
+    pub fn current_proc(&self) -> CurrentProc {
         let p = unsafe { self.myproc() };
-        assert!(!p.is_null(), "myexproc: No current proc");
-        unsafe { ExecutingProc::from_raw(p) }
+        assert!(!p.is_null(), "current_proc: No current proc");
+        unsafe { CurrentProc::from_raw(p) }
     }
 
     /// Return the current struct Proc *, or zero if none.

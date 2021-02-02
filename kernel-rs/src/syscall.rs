@@ -1,7 +1,7 @@
 use crate::{
     kernel::Kernel,
     println,
-    proc::ExecutingProc,
+    proc::CurrentProc,
     vm::{UVAddr, VAddr},
 };
 use core::{mem, slice, str};
@@ -9,7 +9,7 @@ use cstr_core::CStr;
 
 /// Fetch the usize at addr from the current process.
 /// Returns Ok(fetched integer) on success, Err(()) on error.
-pub unsafe fn fetchaddr(addr: UVAddr, p: &mut ExecutingProc) -> Result<usize, ()> {
+pub unsafe fn fetchaddr(addr: UVAddr, p: &mut CurrentProc) -> Result<usize, ()> {
     let data = p.deref_mut_data();
     let mut ip = 0;
     if addr.into_usize() >= data.memory.size()
@@ -31,14 +31,14 @@ pub unsafe fn fetchaddr(addr: UVAddr, p: &mut ExecutingProc) -> Result<usize, ()
 pub unsafe fn fetchstr<'a>(
     addr: UVAddr,
     buf: &mut [u8],
-    p: &mut ExecutingProc,
+    p: &mut CurrentProc,
 ) -> Result<&'a CStr, ()> {
     p.deref_mut_data().memory.copy_in_str(buf, addr)?;
 
     Ok(unsafe { CStr::from_ptr(buf.as_ptr()) })
 }
 
-fn argraw(n: usize, p: &ExecutingProc) -> usize {
+fn argraw(n: usize, p: &CurrentProc) -> usize {
     let data = p.deref_data();
     match n {
         0 => data.trap_frame().a0,
@@ -52,27 +52,27 @@ fn argraw(n: usize, p: &ExecutingProc) -> usize {
 }
 
 /// Fetch the nth 32-bit system call argument.
-pub fn argint(n: usize, p: &ExecutingProc) -> Result<i32, ()> {
+pub fn argint(n: usize, p: &CurrentProc) -> Result<i32, ()> {
     Ok(argraw(n, p) as i32)
 }
 
 /// Retrieve an argument as a pointer.
 /// Doesn't check for legality, since
 /// copyin/copyout will do that.
-pub fn argaddr(n: usize, p: &ExecutingProc) -> Result<usize, ()> {
+pub fn argaddr(n: usize, p: &CurrentProc) -> Result<usize, ()> {
     Ok(argraw(n, p))
 }
 
 /// Fetch the nth word-sized system call argument as a null-terminated string.
 /// Copies into buf, at most max.
 /// Returns reference to the string in the buffer.
-pub unsafe fn argstr<'a>(n: usize, buf: &mut [u8], p: &mut ExecutingProc) -> Result<&'a CStr, ()> {
+pub unsafe fn argstr<'a>(n: usize, buf: &mut [u8], p: &mut CurrentProc) -> Result<&'a CStr, ()> {
     let addr = argaddr(n, p)?;
     unsafe { fetchstr(UVAddr::new(addr), buf, p) }
 }
 
 impl Kernel {
-    pub unsafe fn syscall(&'static self, num: i32, proc: &mut ExecutingProc) -> Result<usize, ()> {
+    pub unsafe fn syscall(&'static self, num: i32, proc: &mut CurrentProc) -> Result<usize, ()> {
         match num {
             1 => unsafe { self.sys_fork(proc) },
             2 => unsafe { self.sys_exit(proc) },
