@@ -15,7 +15,7 @@ impl Kernel {
 
     /// Return the current process’s PID.
     pub unsafe fn sys_getpid(&self, proc: &mut ExecutingProc) -> Result<usize, ()> {
-        Ok(unsafe { proc.proc().pid() } as _)
+        Ok(unsafe { proc.pid() } as _)
     }
 
     /// Create a process.
@@ -46,7 +46,7 @@ impl Kernel {
         let mut ticks = self.ticks.lock();
         let ticks0 = *ticks;
         while ticks.wrapping_sub(ticks0) < n as u32 {
-            if proc.proc().killed() {
+            if proc.killed() {
                 return Err(());
             }
             ticks.sleep();

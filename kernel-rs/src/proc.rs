@@ -239,7 +239,7 @@ impl WaitChannel {
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
     pub fn sleep<T: Waitable>(&self, lk: &mut T) {
-        let mut p = kernel().myexproc();
+        let p = kernel().myexproc();
 
         // Must acquire p->lock in order to
         // change p->state and then call sched.
@@ -249,7 +249,7 @@ impl WaitChannel {
         // so it's okay to release lk.
 
         //DOC: sleeplock1
-        let mut guard = p.proc().lock();
+        let mut guard = p.lock();
         unsafe {
             // Temporarily release the inner `RawSpinlock`.
             // This is safe, since we don't access `lk` until re-acquiring the lock
@@ -359,10 +359,6 @@ impl ExecutingProc {
         ExecutingProc { ptr }
     }
 
-    pub fn proc(&mut self) -> &mut Proc {
-        unsafe { &mut *self.ptr }
-    }
-
     pub fn deref_data(&self) -> &ProcData {
         unsafe { &*(*self.ptr).data.get() }
     }
@@ -373,6 +369,21 @@ impl ExecutingProc {
 
     pub fn deref_data_raw(&self) -> *mut ProcData {
         unsafe { (*self.ptr).data.get() }
+    }
+}
+
+impl Deref for ExecutingProc {
+    type Target = Proc;
+    fn deref(&self) -> &Self::Target {
+        // Safe since `ptr` always refers to `Proc`.
+        unsafe { &*self.ptr }
+    }
+}
+
+impl DerefMut for ExecutingProc {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // Safe since `ptr` always refers to `Proc`.
+        unsafe { &mut *self.ptr }
     }
 }
 
@@ -976,7 +987,7 @@ pub unsafe fn scheduler() -> ! {
 
 /// Give up the CPU for one scheduling round.
 pub unsafe fn proc_yield(p: &mut ExecutingProc) {
-    let mut guard = p.proc().lock();
+    let mut guard = p.lock();
     guard.deref_mut_info().state = Procstate::RUNNABLE;
     unsafe { guard.sched() };
 }
@@ -986,7 +997,7 @@ pub unsafe fn proc_yield(p: &mut ExecutingProc) {
 unsafe fn forkret() {
     let p = &mut kernel().myexproc();
     // Still holding p->lock from scheduler.
-    unsafe { p.proc().info.unlock() };
+    unsafe { p.info.unlock() };
 
     // File system initialization must be run in the context of a
     // regular process (e.g., because it calls sleep), and thus cannot

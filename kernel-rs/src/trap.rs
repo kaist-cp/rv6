@@ -54,7 +54,7 @@ pub unsafe extern "C" fn usertrap() {
     if unsafe { r_scause() } == 8 {
         // system call
 
-        if p.proc().killed() {
+        if p.killed() {
             unsafe { kernel().procs.exit_current(-1, p) };
         }
 
@@ -76,18 +76,18 @@ pub unsafe extern "C" fn usertrap() {
             println!(
                 "usertrap(): unexpected scause {:018p} pid={}",
                 unsafe { r_scause() } as *const u8,
-                unsafe { p.proc().pid() }
+                unsafe { p.pid() }
             );
             println!(
                 "            sepc={:018p} stval={:018p}",
                 unsafe { r_sepc() } as *const u8,
                 unsafe { r_stval() } as *const u8
             );
-            p.proc().kill();
+            p.kill();
         }
     }
 
-    if p.proc().killed() {
+    if p.killed() {
         unsafe { kernel().procs.exit_current(-1, p) };
     }
 
@@ -188,7 +188,7 @@ pub unsafe fn kerneltrap() {
     // Give up the CPU if this is a timer interrupt.
     if which_dev == 2
         && !unsafe { kernel().myproc() }.is_null()
-        && unsafe { kernel().myexproc().proc().state() } == Procstate::RUNNING
+        && unsafe { kernel().myexproc().state() } == Procstate::RUNNING
     {
         unsafe { proc_yield(&mut kernel().myexproc()) };
     }

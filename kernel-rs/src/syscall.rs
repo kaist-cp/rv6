@@ -99,8 +99,8 @@ impl Kernel {
             _ => {
                 println!(
                     "{} {}: unknown sys call {}",
-                    unsafe { proc.proc().pid() },
-                    str::from_utf8(&proc.proc().name).unwrap_or("???"),
+                    unsafe { proc.pid() },
+                    str::from_utf8(&proc.name).unwrap_or("???"),
                     num
                 );
                 Err(())

@@ -201,7 +201,7 @@ impl PipeInner {
         proc: &mut ExecutingProc,
     ) -> Result<usize, PipeError> {
         let mut ch = [0u8];
-        if !self.readopen || proc.proc().killed() {
+        if !self.readopen || proc.killed() {
             return Err(PipeError::InvalidStatus);
         }
         let data = proc.deref_mut_data();
@@ -231,7 +231,7 @@ impl PipeInner {
     ) -> Result<usize, PipeError> {
         //DOC: pipe-empty
         if self.nread == self.nwrite && self.writeopen {
-            if proc.proc().killed() {
+            if proc.killed() {
                 return Err(PipeError::InvalidStatus);
             }
             return Err(PipeError::WaitForIO);
