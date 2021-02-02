@@ -362,10 +362,6 @@ impl CurrentProc {
     fn raw(&self) -> *mut Proc {
         self.ptr
     }
-
-    pub fn deref_data_raw(&self) -> *mut ProcData {
-        unsafe { (*self.ptr).data.get() }
-    }
 }
 
 impl Deref for CurrentProc {
@@ -618,6 +614,10 @@ impl Proc {
             self.info.get_mut().state = Procstate::RUNNABLE
         }
     }
+
+    pub fn deref_data_raw(&self) -> *mut ProcData {
+        self.data.get()
+    }
 }
 
 impl Deref for Proc {
@@ -775,32 +775,32 @@ impl ProcessSystem {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
-    pub unsafe fn fork(&self, pdata: &mut CurrentProc) -> Result<i32, ()> {
+    pub unsafe fn fork(&self, p: &mut CurrentProc) -> Result<i32, ()> {
         // Allocate trap frame.
         let trap_frame = scopeguard::guard(kernel().alloc().ok_or(())?, |page| kernel().free(page));
 
         // Copy user memory from parent to child.
-        let memory = pdata.memory.clone(trap_frame.addr()).ok_or(())?;
+        let memory = p.memory.clone(trap_frame.addr()).ok_or(())?;
 
         // Allocate process.
         let mut np = unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }?;
         let mut npdata = unsafe { &mut *np.data.get() };
 
         // Copy saved user registers.
-        *npdata.trap_frame_mut() = *pdata.trap_frame();
+        *npdata.trap_frame_mut() = *p.trap_frame();
 
         // Cause fork to return 0 in the child.
         npdata.trap_frame_mut().a0 = 0;
 
         // Increment reference counts on open file descriptors.
         for i in 0..NOFILE {
-            if let Some(file) = &pdata.open_files[i] {
+            if let Some(file) = &p.open_files[i] {
                 npdata.open_files[i] = Some(file.clone())
             }
         }
-        npdata.cwd = Some(pdata.cwd.clone().unwrap());
+        npdata.cwd = Some(p.cwd.clone().unwrap());
 
-        np.name.copy_from_slice(&pdata.name);
+        np.name.copy_from_slice(&p.name);
 
         let pid = np.deref_mut_info().pid;
 
@@ -811,7 +811,7 @@ impl ProcessSystem {
 
         // Acquire the `wait_lock`, and write the parent field.
         let mut parent_guard = unsafe { (*child).parent.assume_init_ref().lock() };
-        *unsafe { (*child).parent.assume_init_ref() }.get_mut(&mut parent_guard) = pdata.raw();
+        *unsafe { (*child).parent.assume_init_ref() }.get_mut(&mut parent_guard) = p.raw();
 
         // Set the process's state to RUNNABLE.
         let mut np = unsafe { (*child).lock() };
@@ -873,7 +873,7 @@ impl ProcessSystem {
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
     pub unsafe fn exit_current(&self, status: i32, p: &mut CurrentProc) -> ! {
-        assert_ne!(p.ptr, self.initial_proc, "init exiting");
+        assert_ne!(p.raw(), self.initial_proc, "init exiting");
         unsafe { p.close_files() };
 
         // Give all children to init.

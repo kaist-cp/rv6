@@ -6,7 +6,7 @@ use crate::{
     kernel::kernel,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
-    proc::CurrentProc,
+    proc::{Proc, ProcData},
     spinlock::Spinlock,
     stat::Stat,
     vm::UVAddr,
@@ -67,12 +67,12 @@ impl File {
 
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub unsafe fn stat(&self, addr: UVAddr, p: &mut CurrentProc) -> Result<(), ()> {
+    pub unsafe fn stat(&self, addr: UVAddr, data: &mut ProcData) -> Result<(), ()> {
         match &self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                 let mut st = ip.stat();
                 unsafe {
-                    p.memory.copy_out(
+                    data.memory.copy_out(
                         addr,
                         slice::from_raw_parts_mut(
                             &mut st as *mut Stat as *mut u8,
@@ -87,7 +87,7 @@ impl File {
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub unsafe fn read(&self, addr: UVAddr, n: i32, proc: &mut CurrentProc) -> Result<usize, ()> {
+    pub unsafe fn read(&self, addr: UVAddr, n: i32, proc: &mut Proc) -> Result<usize, ()> {
         if !self.readable {
             return Err(());
         }
@@ -114,7 +114,7 @@ impl File {
     }
     /// Write to file self.
     /// addr is a user virtual address.
-    pub unsafe fn write(&self, addr: UVAddr, n: i32, proc: &mut CurrentProc) -> Result<usize, ()> {
+    pub unsafe fn write(&self, addr: UVAddr, n: i32, proc: &mut Proc) -> Result<usize, ()> {
         if !self.writable {
             return Err(());
         }

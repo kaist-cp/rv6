@@ -2,7 +2,7 @@ use crate::{
     file::{FileType, RcFile},
     kernel::kernel,
     page::Page,
-    proc::{CurrentProc, WaitChannel},
+    proc::{Proc, WaitChannel},
     riscv::PGSIZE,
     spinlock::Spinlock,
     vm::UVAddr,
@@ -43,7 +43,7 @@ impl Pipe {
     /// If successfully read i > 0 bytes, wakeups the `write_waitchannel` and returns `Ok(i: usize)`.
     /// If the pipe was empty, sleeps at `read_waitchannel` and tries again after wakeup.
     /// If an error happened, returns `Err(())`.
-    pub fn read(&self, addr: UVAddr, n: usize, proc: &mut CurrentProc) -> Result<usize, ()> {
+    pub fn read(&self, addr: UVAddr, n: usize, proc: &mut Proc) -> Result<usize, ()> {
         let mut inner = self.inner.lock();
         loop {
             match inner.try_read(addr, n, proc) {
@@ -67,7 +67,7 @@ impl Pipe {
     /// Note that we may have i < `n` if an copy-in error happened.
     /// If the pipe was full, sleeps at `write_waitchannel` and tries again after wakeup.
     /// If an error happened, returns `Err(())`.
-    pub fn write(&self, addr: UVAddr, n: usize, proc: &mut CurrentProc) -> Result<usize, ()> {
+    pub fn write(&self, addr: UVAddr, n: usize, proc: &mut Proc) -> Result<usize, ()> {
         let mut written = 0;
         let mut inner = self.inner.lock();
         loop {
@@ -194,12 +194,7 @@ impl PipeInner {
     /// If the process was killed, returns `Err(InvalidStatus)`.
     /// If an copy-in error happened after successfully writing i >= 0 bytes, returns `Err(InvalidCopyIn(i))`.
     /// Otherwise, returns `Ok(i)` after successfully writing i >= 0 bytes.    
-    fn try_write(
-        &mut self,
-        addr: UVAddr,
-        n: usize,
-        proc: &mut CurrentProc,
-    ) -> Result<usize, PipeError> {
+    fn try_write(&mut self, addr: UVAddr, n: usize, proc: &mut Proc) -> Result<usize, PipeError> {
         let mut ch = [0u8];
         if !self.readopen || proc.killed() {
             return Err(PipeError::InvalidStatus);
@@ -222,12 +217,7 @@ impl PipeInner {
     /// If successful read i > 0 bytes, returns `Ok(i: usize)`.
     /// If the pipe was empty, returns `Err(WaitForIO)`.
     /// If the process was killed, returns `Err(InvalidStatus)`.
-    fn try_read(
-        &mut self,
-        addr: UVAddr,
-        n: usize,
-        proc: &mut CurrentProc,
-    ) -> Result<usize, PipeError> {
+    fn try_read(&mut self, addr: UVAddr, n: usize, proc: &mut Proc) -> Result<usize, PipeError> {
         //DOC: pipe-empty
         if self.nread == self.nwrite && self.writeopen {
             if proc.killed() {

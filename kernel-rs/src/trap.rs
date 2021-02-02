@@ -4,7 +4,7 @@ use crate::{
     ok_or,
     plic::{plic_claim, plic_complete},
     println,
-    proc::{cpuid, proc_yield, CurrentProc, Procstate},
+    proc::{cpuid, proc_yield, ProcData, Procstate},
     riscv::{
         intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp, w_sepc, w_sip,
         w_stvec, Sstatus, PGSIZE,
@@ -98,7 +98,7 @@ pub unsafe extern "C" fn usertrap() {
 }
 
 /// Return to user space.
-pub unsafe fn usertrapret(data: &mut CurrentProc) {
+pub unsafe fn usertrapret(data: &mut ProcData) {
     // We're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
     // we're back in user space, where usertrap() is correct.
