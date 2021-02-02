@@ -184,9 +184,9 @@ pub unsafe fn kerneltrap() {
     // Give up the CPU if this is a timer interrupt.
     let p = kernel().current_proc();
     if which_dev == 2 && p.is_some() {
-        let mut p = p.expect("No current proc.");
+        let p = p.expect("No current proc.");
         if unsafe { p.state() } == Procstate::RUNNING {
-            unsafe { proc_yield(&mut p) };
+            unsafe { proc_yield(&p) };
         }
     }
 

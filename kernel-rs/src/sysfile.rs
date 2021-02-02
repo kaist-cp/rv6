@@ -443,7 +443,7 @@ impl Kernel {
         }
 
         let ret = if success {
-            self.exec(Path::new(path), &args, proc)
+            self.exec(Path::new(path), &args, proc.deref_mut_data())
         } else {
             Err(())
         };

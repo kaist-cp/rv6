@@ -624,6 +624,7 @@ impl Proc {
         self.data.get()
     }
 
+    #[allow(clippy::mut_from_ref)]
     pub fn deref_mut_data(&self) -> &mut ProcData {
         // Safety: Only current proc uses ProcData.
         unsafe { &mut *self.data.get() }
@@ -730,9 +731,7 @@ impl ProcessSystem {
     /// Wake up all processes in the pool sleeping on waitchannel.
     /// Must be called without any p->lock.
     pub fn wakeup_pool(&self, target: &WaitChannel) {
-        let myproc = kernel()
-            .current_proc()
-            .map_or(ptr::null_mut() as *const Proc, |p| p.raw() as *const Proc);
+        let myproc = kernel().current_proc().map_or(ptr::null(), |p| p.raw());
         for p in &self.process_pool {
             if p as *const Proc != myproc {
                 let mut guard = p.lock();
