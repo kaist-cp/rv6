@@ -453,6 +453,7 @@ impl Deref for ProcGuard {
     }
 }
 
+// TODO(travis1829): Change &mut Target -> Pin<&mut Target>
 impl DerefMut for ProcGuard {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *(self.ptr as *mut _) }

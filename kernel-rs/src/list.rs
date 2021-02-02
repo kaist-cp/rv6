@@ -10,7 +10,14 @@ pub struct ListEntry {
 }
 
 impl ListEntry {
-    pub const fn new() -> Self {
+    
+    /// Returns an uninitialized `ListEntry`,
+    ///
+    /// # Safety
+    ///
+    /// All `ListEntry` types must be used only after initializing it with
+    /// `ListEntry::init()`.
+    pub const unsafe fn new() -> Self {
         Self {
             prev: ptr::null_mut(),
             next: ptr::null_mut(),
@@ -64,7 +71,7 @@ impl ListEntry {
         self.init();
     }
 
-    pub fn list_pop_front(&self) -> &ListEntry {
+    pub fn list_pop_front(&mut self) -> &mut ListEntry {
         let result = unsafe { &mut *self.next };
         result.remove();
         result
