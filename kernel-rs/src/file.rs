@@ -97,7 +97,7 @@ impl File {
             FileType::Inode { ip, off } => {
                 let mut ip = ip.deref().lock();
                 let curr_off = unsafe { *off.get() };
-                let ret = ip.read_user(addr, curr_off, n as u32);
+                let ret = ip.read_user(addr, curr_off, n as u32, proc);
                 if let Ok(v) = ret {
                     unsafe { *off.get() = curr_off.wrapping_add(v as u32) };
                 }
@@ -137,7 +137,13 @@ impl File {
                     let mut ip = ip.deref().lock();
                     let curr_off = unsafe { *off.get() };
                     let r = ip
-                        .write_user(addr + bytes_written, curr_off, bytes_to_write as u32, &tx)
+                        .write_user(
+                            addr + bytes_written,
+                            curr_off,
+                            bytes_to_write as u32,
+                            proc,
+                            &tx,
+                        )
                         .map(|v| {
                             unsafe { *off.get() = curr_off.wrapping_add(v as u32) };
                             v
