@@ -162,7 +162,7 @@ pub struct Dinode {
 
 pub type Itable = Spinlock<ArrayArena<Inode, NINODE>>;
 
-pub type RcInode<'s> = Rc<Itable, &'s Itable>;
+pub type RcInode<'s> = Rc<'s, Itable, &'s Itable>;
 
 /// InodeGuard implies that `Sleeplock<InodeInner>` is held by current thread.
 ///
@@ -780,17 +780,15 @@ impl Itable {
     /// and return the in-memory copy. Does not lock
     /// the inode and does not read it from disk.
     pub fn get_inode(&self, dev: u32, inum: u32) -> RcInode<'_> {
-        let inner = self
-            .find_or_alloc(
-                |inode| inode.dev == dev && inode.inum == inum,
-                |inode| {
-                    inode.dev = dev;
-                    inode.inum = inum;
-                    inode.inner.get_mut().valid = false;
-                },
-            )
-            .expect("[Itable::get_inode] no inodes");
-        unsafe { Rc::from_unchecked(self, inner) }
+        self.find_or_alloc(
+            |inode| inode.dev == dev && inode.inum == inum,
+            |inode| {
+                inode.dev = dev;
+                inode.inum = inum;
+                inode.inner.get_mut().valid = false;
+            },
+        )
+        .expect("[Itable::get_inode] no inodes")
     }
 
     /// Allocate an inode on device dev.

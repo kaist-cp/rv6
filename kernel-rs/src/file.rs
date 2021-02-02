@@ -44,7 +44,7 @@ pub struct Devsw {
     pub write: Option<unsafe fn(_: UVAddr, _: i32) -> i32>,
 }
 
-pub type RcFile<'s> = Rc<FileTable, &'s FileTable>;
+pub type RcFile<'s> = Rc<'s, FileTable, &'s FileTable>;
 
 // TODO(https://github.com/kaist-cp/rv6/issues/374)
 // will be infered as we wrap *mut Pipe and *mut Inode.
@@ -205,12 +205,9 @@ impl FileTable {
         writable: bool,
     ) -> Result<RcFile<'_>, ()> {
         // TODO(https://github.com/kaist-cp/rv6/issues/372): idiomatic initialization.
-        let inner = self
-            .alloc(|p| {
-                *p = File::new(typ, readable, writable);
-            })
-            .ok_or(())?;
-
-        Ok(unsafe { Rc::from_unchecked(self, inner) })
+        self.alloc(|p| {
+            *p = File::new(typ, readable, writable);
+        })
+        .ok_or(())
     }
 }
