@@ -66,13 +66,8 @@ pub unsafe extern "C" fn usertrap() {
         // An interrupt will change sstatus &c registers,
         // so don't enable until done with those registers.
         unsafe { intr_on() };
-        data.trap_frame_mut().a0 = ok_or!(
-            unsafe {
-                kernel().syscall(
-                    data.trap_frame_mut().a7 as i32,
-                    &mut kernel().current_proc(),
-                )
-            },
+        p.deref_mut_data().trap_frame_mut().a0 = ok_or!(
+            unsafe { kernel().syscall(data.trap_frame_mut().a7 as i32, p) },
             usize::MAX
         );
     } else {
