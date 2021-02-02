@@ -3,6 +3,7 @@
 use array_macro::array;
 use core::{
     cell::UnsafeCell,
+    marker::PhantomData,
     mem::{self, MaybeUninit},
     ops::{Deref, DerefMut},
     ptr, slice, str,
@@ -354,16 +355,20 @@ pub struct Proc {
 /// # Safety
 ///
 /// `ptr` is always not null pointer, and Proc's state is Procstate::RUNNING.
-pub struct CurrentProc {
+pub struct CurrentProc<'p> {
     ptr: *mut Proc,
+    _marker: PhantomData<&'p Proc>,
 }
 
-impl CurrentProc {
+impl CurrentProc<'_> {
     /// # Safety
     ///
     /// `ptr` must not be null pointer.
     unsafe fn from_raw(ptr: *mut Proc) -> Self {
-        CurrentProc { ptr }
+        CurrentProc {
+            ptr,
+            _marker: PhantomData,
+        }
     }
 
     fn raw(&self) -> *mut Proc {
@@ -371,7 +376,7 @@ impl CurrentProc {
     }
 }
 
-impl Deref for CurrentProc {
+impl Deref for CurrentProc<'_> {
     type Target = Proc;
     fn deref(&self) -> &Self::Target {
         // Safe since `ptr` always refers to `Proc`.
@@ -379,7 +384,7 @@ impl Deref for CurrentProc {
     }
 }
 
-impl DerefMut for CurrentProc {
+impl DerefMut for CurrentProc<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // Safe since `ptr` always refers to `Proc`.
         unsafe { &mut *self.ptr }
@@ -784,7 +789,7 @@ impl ProcessSystem {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
-    pub unsafe fn fork(&self, p: &mut CurrentProc) -> Result<i32, ()> {
+    pub unsafe fn fork(&self, p: &mut CurrentProc<'_>) -> Result<i32, ()> {
         // Allocate trap frame.
         let trap_frame = scopeguard::guard(kernel().alloc().ok_or(())?, |page| kernel().free(page));
 
@@ -831,7 +836,7 @@ impl ProcessSystem {
 
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
-    pub unsafe fn wait(&self, addr: UVAddr, p: &mut CurrentProc) -> Result<i32, ()> {
+    pub unsafe fn wait(&self, addr: UVAddr, p: &mut CurrentProc<'_>) -> Result<i32, ()> {
         // Assumes that the process_pool has at least 1 element.
         let mut parent_guard = unsafe { self.process_pool[0].parent.assume_init_ref() }.lock();
 
@@ -881,7 +886,7 @@ impl ProcessSystem {
     /// Exit the current process.  Does not return.
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
-    pub unsafe fn exit_current(&self, status: i32, p: &mut CurrentProc) -> ! {
+    pub unsafe fn exit_current(&self, status: i32, p: &mut CurrentProc<'_>) -> ! {
         assert_ne!(p.raw(), self.initial_proc, "init exiting");
         unsafe { p.close_files() };
 
@@ -998,7 +1003,7 @@ pub unsafe fn scheduler() -> ! {
 }
 
 /// Give up the CPU for one scheduling round.
-pub unsafe fn proc_yield(p: &mut CurrentProc) {
+pub unsafe fn proc_yield(p: &mut CurrentProc<'_>) {
     let mut guard = p.lock();
     guard.deref_mut_info().state = Procstate::RUNNABLE;
     unsafe { guard.sched() };
@@ -1021,7 +1026,7 @@ unsafe fn forkret() {
 
 impl Kernel {
     /// Return CurrentProc. This is safe because we checked if current struct Proc * exists.
-    pub fn current_proc(&self) -> Option<CurrentProc> {
+    pub fn current_proc(&self) -> Option<CurrentProc<'_>> {
         unsafe { push_off() };
         let c = self.mycpu();
         let p = unsafe { (*c).proc };
