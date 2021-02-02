@@ -7,8 +7,8 @@ use core::cell::UnsafeCell;
 use core::hint::spin_loop;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
-use core::ptr;
 use core::pin::Pin;
+use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
 /// Mutual exclusion lock.
@@ -171,7 +171,7 @@ impl<T> Spinlock<T> {
     /// Returns a mutable reference to the inner data wrapped by a `Pin`.
     pub fn get_pin(&mut self) -> Pin<&mut T> {
         // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
-        unsafe { Pin::new_unchecked(&mut *self.data.get() ) }
+        unsafe { Pin::new_unchecked(&mut *self.data.get()) }
     }
 }
 

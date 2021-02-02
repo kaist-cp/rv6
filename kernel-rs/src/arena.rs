@@ -3,8 +3,8 @@ use crate::spinlock::{Spinlock, SpinlockGuard};
 use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;
-use core::ptr::{self, NonNull};
 use core::pin::Pin;
+use core::ptr::{self, NonNull};
 use pin_project::pin_project;
 
 /// A homogeneous memory allocator, equipped with the box type representing an allocation.
@@ -161,7 +161,9 @@ impl<T> Drop for ArrayPtr<'_, T> {
     }
 }
 
-impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena for Spinlock<ArrayArena<T, CAPACITY>> {
+impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
+    for Spinlock<ArrayArena<T, CAPACITY>>
+{
     type Data = T;
     type Handle<'s> = ArrayPtr<'s, T>;
     type Guard<'s> = SpinlockGuard<'s, ArrayArena<T, CAPACITY>>;

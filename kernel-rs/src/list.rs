@@ -2,9 +2,9 @@
 //! `ListEntry` types must be first initialized with init()
 //! before calling its member functions.
 
-use core::ptr;
-use core::pin::Pin;
 use core::marker::PhantomPinned;
+use core::pin::Pin;
+use core::ptr;
 
 pub struct ListEntry {
     next: *mut ListEntry,
@@ -14,7 +14,6 @@ pub struct ListEntry {
 }
 
 impl ListEntry {
-    
     /// Returns an uninitialized `ListEntry`,
     ///
     /// # Safety
@@ -63,7 +62,7 @@ impl ListEntry {
         // Safe since we don't move the inner data and don't leak the mutable reference.
         let this = unsafe { self.get_unchecked_mut() };
         let elem = unsafe { e.get_unchecked_mut() };
-        
+
         elem.next = this.next;
         elem.prev = this;
         unsafe {
