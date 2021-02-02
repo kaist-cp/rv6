@@ -148,7 +148,7 @@ impl Path {
         let mut ptr = if self.is_absolute() {
             Self::root()
         } else {
-            proc.deref_data().cwd.clone().unwrap()
+            proc.cwd.clone().unwrap()
         };
 
         let mut path = self;

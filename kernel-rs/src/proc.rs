@@ -359,12 +359,8 @@ impl CurrentProc {
         CurrentProc { ptr }
     }
 
-    pub fn deref_data(&self) -> &ProcData {
-        unsafe { &*(*self.ptr).data.get() }
-    }
-
-    pub fn deref_mut_data(&mut self) -> &mut ProcData {
-        unsafe { &mut *(*self.ptr).data.get() }
+    fn raw(&self) -> *mut Proc {
+        self.ptr
     }
 
     pub fn deref_data_raw(&self) -> *mut ProcData {
@@ -624,6 +620,21 @@ impl Proc {
     }
 }
 
+impl Deref for Proc {
+    type Target = ProcData;
+    fn deref(&self) -> &Self::Target {
+        // Safety: Only current proc uses ProcData.
+        unsafe { &*self.data.get() }
+    }
+}
+
+impl DerefMut for Proc {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // Safety: Only current proc uses ProcData.
+        unsafe { &mut *self.data.get() }
+    }
+}
+
 /// Process system type containing & managing whole processes.
 pub struct ProcessSystem {
     nextpid: AtomicI32,
@@ -764,9 +775,7 @@ impl ProcessSystem {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
-    pub unsafe fn fork(&self, p: &mut CurrentProc) -> Result<i32, ()> {
-        let pdata = p.deref_mut_data();
-
+    pub unsafe fn fork(&self, pdata: &mut CurrentProc) -> Result<i32, ()> {
         // Allocate trap frame.
         let trap_frame = scopeguard::guard(kernel().alloc().ok_or(())?, |page| kernel().free(page));
 
@@ -791,7 +800,7 @@ impl ProcessSystem {
         }
         npdata.cwd = Some(pdata.cwd.clone().unwrap());
 
-        np.name.copy_from_slice(unsafe { &(*p.ptr).name });
+        np.name.copy_from_slice(&pdata.name);
 
         let pid = np.deref_mut_info().pid;
 
@@ -802,7 +811,7 @@ impl ProcessSystem {
 
         // Acquire the `wait_lock`, and write the parent field.
         let mut parent_guard = unsafe { (*child).parent.assume_init_ref().lock() };
-        *unsafe { (*child).parent.assume_init_ref() }.get_mut(&mut parent_guard) = p.ptr;
+        *unsafe { (*child).parent.assume_init_ref() }.get_mut(&mut parent_guard) = pdata.raw();
 
         // Set the process's state to RUNNABLE.
         let mut np = unsafe { (*child).lock() };
@@ -814,9 +823,6 @@ impl ProcessSystem {
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
     pub unsafe fn wait(&self, addr: UVAddr, p: &mut CurrentProc) -> Result<i32, ()> {
-        let ptr = p.ptr;
-        let data = p.deref_mut_data();
-
         // Assumes that the process_pool has at least 1 element.
         let mut parent_guard = unsafe { self.process_pool[0].parent.assume_init_ref() }.lock();
 
@@ -824,7 +830,7 @@ impl ProcessSystem {
             // Scan through pool looking for exited children.
             let mut havekids = false;
             for np in &self.process_pool {
-                if *unsafe { np.parent.assume_init_ref() }.get_mut(&mut parent_guard) == ptr {
+                if *unsafe { np.parent.assume_init_ref() }.get_mut(&mut parent_guard) == p.raw() {
                     // Found a child.
                     // Make sure the child isn't still in exit() or swtch().
                     let mut np = np.lock();
@@ -834,8 +840,7 @@ impl ProcessSystem {
                     if state == Procstate::ZOMBIE {
                         let pid = np.deref_info().pid;
                         if !addr.is_null()
-                            && data
-                                .memory
+                            && p.memory
                                 .copy_out(addr, unsafe {
                                     slice::from_raw_parts_mut(
                                         &mut np.deref_mut_info().xstate as *mut i32 as *mut u8,
@@ -854,13 +859,13 @@ impl ProcessSystem {
             }
 
             // No point waiting if we don't have any children.
-            if !havekids || unsafe { (*ptr).killed() } {
+            if !havekids || p.killed() {
                 return Err(());
             }
 
             // Wait for a child to exit.
             //DOC: wait-sleep
-            (unsafe { (*ptr).info.get_mut_unchecked() }.child_waitchannel).sleep(&mut parent_guard);
+            (unsafe { p.info.get_mut_unchecked() }.child_waitchannel).sleep(&mut parent_guard);
         }
     }
 
@@ -869,9 +874,7 @@ impl ProcessSystem {
     /// until its parent calls wait().
     pub unsafe fn exit_current(&self, status: i32, p: &mut CurrentProc) -> ! {
         assert_ne!(p.ptr, self.initial_proc, "init exiting");
-        let data = p.deref_mut_data();
-
-        unsafe { data.close_files() };
+        unsafe { p.close_files() };
 
         // Give all children to init.
         let mut parent_guard = unsafe { (*p.ptr).parent.assume_init_ref().lock() };

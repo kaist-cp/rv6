@@ -26,8 +26,7 @@ use cstr_core::CStr;
 impl RcFile<'static> {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
-    fn fdalloc(self, p: &mut CurrentProc) -> Result<i32, Self> {
-        let mut data = p.deref_mut_data();
+    fn fdalloc(self, data: &mut CurrentProc) -> Result<i32, Self> {
         for fd in 0..NOFILE {
             // user pointer to struct stat
             if data.open_files[fd].is_none() {
@@ -261,8 +260,7 @@ impl Kernel {
             return Err(());
         }
         drop(ip);
-        let mut data = p.deref_mut_data();
-        data.cwd = Some(ptr);
+        p.cwd = Some(ptr);
         Ok(())
     }
 
@@ -274,13 +272,11 @@ impl Kernel {
         let mut fd0 = pipereader.fdalloc(p).map_err(|_| ())?;
         let mut fd1 = pipewriter
             .fdalloc(p)
-            .map_err(|_| p.deref_mut_data().open_files[fd0 as usize] = None)?;
-
-        let mut data = p.deref_mut_data();
+            .map_err(|_| p.open_files[fd0 as usize] = None)?;
 
         // It is safe because fdarray, fd0 is valid.
         if unsafe {
-            data.memory.copy_out(
+            p.memory.copy_out(
                 fdarray,
                 slice::from_raw_parts_mut(&mut fd0 as *mut i32 as *mut u8, mem::size_of::<i32>()),
             )
@@ -288,7 +284,7 @@ impl Kernel {
         .is_err()
             // It is safe because fdarray, fd1 is valid.
             || unsafe {
-                data.memory.copy_out(
+                p.memory.copy_out(
                     UVAddr::new(fdarray.into_usize().wrapping_add(mem::size_of::<i32>())),
                     slice::from_raw_parts_mut(
                         &mut fd1 as *mut i32 as *mut u8,
@@ -298,8 +294,8 @@ impl Kernel {
             }
             .is_err()
         {
-            data.open_files[fd0 as usize] = None;
-            data.open_files[fd1 as usize] = None;
+            p.open_files[fd0 as usize] = None;
+            p.open_files[fd1 as usize] = None;
             return Err(());
         }
         Ok(())
@@ -338,7 +334,7 @@ impl Kernel {
     /// Returns Ok(0) on success, Err(()) on error.
     pub unsafe fn sys_close(&self, proc: &mut CurrentProc) -> Result<usize, ()> {
         let (fd, _) = unsafe { argfd(0, proc)? };
-        proc.deref_mut_data().open_files[fd as usize] = None;
+        proc.open_files[fd as usize] = None;
         Ok(0)
     }
 

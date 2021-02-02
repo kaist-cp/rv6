@@ -47,10 +47,9 @@ pub unsafe extern "C" fn usertrap() {
     unsafe { w_stvec(kernelvec as _) };
 
     let p = &mut kernel().current_proc();
-    let data = p.deref_mut_data();
 
     // Save user program counter.
-    data.trap_frame_mut().epc = unsafe { r_sepc() };
+    p.trap_frame_mut().epc = unsafe { r_sepc() };
     if unsafe { r_scause() } == 8 {
         // system call
 
@@ -58,16 +57,15 @@ pub unsafe extern "C" fn usertrap() {
             unsafe { kernel().procs.exit_current(-1, p) };
         }
 
-        let data = p.deref_mut_data();
         // sepc points to the ecall instruction,
         // but we want to return to the next instruction.
-        data.trap_frame_mut().epc = (data.trap_frame().epc).wrapping_add(4);
+        p.trap_frame_mut().epc = (p.trap_frame().epc).wrapping_add(4);
 
         // An interrupt will change sstatus &c registers,
         // so don't enable until done with those registers.
         unsafe { intr_on() };
-        p.deref_mut_data().trap_frame_mut().a0 = ok_or!(
-            unsafe { kernel().syscall(data.trap_frame_mut().a7 as i32, p) },
+        p.trap_frame_mut().a0 = ok_or!(
+            unsafe { kernel().syscall(p.trap_frame_mut().a7 as i32, p) },
             usize::MAX
         );
     } else {
@@ -100,9 +98,7 @@ pub unsafe extern "C" fn usertrap() {
 }
 
 /// Return to user space.
-pub unsafe fn usertrapret(p: &mut CurrentProc) {
-    let data = p.deref_mut_data();
-
+pub unsafe fn usertrapret(data: &mut CurrentProc) {
     // We're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
     // we're back in user space, where usertrap() is correct.

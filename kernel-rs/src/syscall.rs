@@ -9,8 +9,7 @@ use cstr_core::CStr;
 
 /// Fetch the usize at addr from the current process.
 /// Returns Ok(fetched integer) on success, Err(()) on error.
-pub unsafe fn fetchaddr(addr: UVAddr, p: &mut CurrentProc) -> Result<usize, ()> {
-    let data = p.deref_mut_data();
+pub unsafe fn fetchaddr(addr: UVAddr, data: &mut CurrentProc) -> Result<usize, ()> {
     let mut ip = 0;
     if addr.into_usize() >= data.memory.size()
         || addr.into_usize().wrapping_add(mem::size_of::<usize>()) > data.memory.size()
@@ -33,13 +32,12 @@ pub unsafe fn fetchstr<'a>(
     buf: &mut [u8],
     p: &mut CurrentProc,
 ) -> Result<&'a CStr, ()> {
-    p.deref_mut_data().memory.copy_in_str(buf, addr)?;
+    p.memory.copy_in_str(buf, addr)?;
 
     Ok(unsafe { CStr::from_ptr(buf.as_ptr()) })
 }
 
-fn argraw(n: usize, p: &CurrentProc) -> usize {
-    let data = p.deref_data();
+fn argraw(n: usize, data: &CurrentProc) -> usize {
     match n {
         0 => data.trap_frame().a0,
         1 => data.trap_frame().a1,

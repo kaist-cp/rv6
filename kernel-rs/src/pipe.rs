@@ -204,13 +204,12 @@ impl PipeInner {
         if !self.readopen || proc.killed() {
             return Err(PipeError::InvalidStatus);
         }
-        let data = proc.deref_mut_data();
         for i in 0..n {
             if self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
                 return Ok(i);
             }
-            if data.memory.copy_in(&mut ch, addr + i).is_err() {
+            if proc.memory.copy_in(&mut ch, addr + i).is_err() {
                 return Err(PipeError::InvalidCopyin(i));
             }
             self.data[self.nwrite as usize % PIPESIZE] = ch[0];
@@ -237,8 +236,6 @@ impl PipeInner {
             return Err(PipeError::WaitForIO);
         }
 
-        let data = proc.deref_mut_data();
-
         //DOC: piperead-copy
         for i in 0..n {
             if self.nread == self.nwrite {
@@ -246,7 +243,7 @@ impl PipeInner {
             }
             let ch = [self.data[self.nread as usize % PIPESIZE]];
             self.nread = self.nread.wrapping_add(1);
-            if data.memory.copy_out(addr + i, &ch).is_err() {
+            if proc.memory.copy_out(addr + i, &ch).is_err() {
                 return Ok(i);
             }
         }

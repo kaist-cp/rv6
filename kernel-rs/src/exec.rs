@@ -113,7 +113,7 @@ impl Kernel {
             return Err(());
         }
 
-        let trap_frame = PAddr::new(p.deref_mut_data().trap_frame() as *const _ as _);
+        let trap_frame = PAddr::new(p.trap_frame() as *const _ as _);
         let mut mem = UserMemory::new(trap_frame, None).ok_or(())?;
 
         // Load program into memory.
@@ -190,20 +190,19 @@ impl Kernel {
             p_name[len] = 0;
         }
 
-        let data = p.deref_mut_data();
         // Commit to the user image.
-        data.memory = mem;
+        p.memory = mem;
 
         // arguments to user main(argc, argv)
         // argc is returned via the system call return
         // value, which goes in a0.
-        data.trap_frame_mut().a1 = sp;
+        p.trap_frame_mut().a1 = sp;
 
         // initial program counter = main
-        data.trap_frame_mut().epc = elf.entry;
+        p.trap_frame_mut().epc = elf.entry;
 
         // initial stack pointer
-        data.trap_frame_mut().sp = sp;
+        p.trap_frame_mut().sp = sp;
 
         // this ends up in a0, the first argument to main(argc, argv)
         Ok(argc)
