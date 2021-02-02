@@ -1020,7 +1020,9 @@ unsafe fn forkret() {
 }
 
 impl Kernel {
-    /// Return CurrentProc. This is safe because we checked if current struct Proc * exists.
+    /// Return Some<CurrentProc<'_'>> if current proc exists.
+    /// If current proc is null, return None.
+    /// This is safe because we checked if current struct Proc * exists.
     pub fn current_proc(&self) -> Option<CurrentProc<'_>> {
         unsafe { push_off() };
         let c = self.mycpu();
