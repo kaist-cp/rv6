@@ -13,13 +13,20 @@ pub struct ListEntry {
     _marker: PhantomPinned,
 }
 
+/// A list entry for doubly, circular, intrusive linked lists.
+/// 
+/// # Safety
+/// 
+/// All `ListEntry` types must be used only after initializing it with `ListEntry::init()`,
+/// or after appending/prepending it to another initialized `ListEntry`.
+/// After this, `ListEntry::{prev, next}` always refer to a valid, initialized `ListEntry`.
 impl ListEntry {
     /// Returns an uninitialized `ListEntry`,
     ///
     /// # Safety
     ///
-    /// All `ListEntry` types must be used only after initializing it with
-    /// `ListEntry::init()`.
+    /// All `ListEntry` types must be used only after initializing it with `ListEntry::init()`,
+    /// or after appending/prepending it to another initialized `ListEntry`.
     pub const unsafe fn new() -> Self {
         Self {
             prev: ptr::null_mut(),

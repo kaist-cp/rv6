@@ -29,7 +29,7 @@ spin = { version = "0.7.1", default-features = false }
 array-macro = "2.0.0"
 static_assertions = "1.1.0"
 itertools = { version = "0.10.0", default-features = false }
-pin-project = "1.0.4"
+pin-project = "1"
 
 # Compiler options for sysroot packages.
 # Cargo currently warns following packages are not dependencies.
