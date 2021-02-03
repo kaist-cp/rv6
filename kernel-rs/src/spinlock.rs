@@ -168,7 +168,7 @@ impl<T> Spinlock<T> {
         &self.lock as *const _
     }
 
-    /// Returns a mutable reference to the inner data wrapped by a `Pin`.
+    /// Returns a pinned mutable reference to the inner data.
     pub fn get_pin(&mut self) -> Pin<&mut T> {
         // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
         unsafe { Pin::new_unchecked(&mut *self.data.get()) }
@@ -208,7 +208,7 @@ impl<T> SpinlockGuard<'_, T> {
         result
     }
 
-    /// Returns a mutable reference to the inner data wrapped by a `Pin`.
+    /// Returns a pinned mutable reference to the inner data.
     pub fn get_pin(&mut self) -> Pin<&mut T> {
         // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
         unsafe { Pin::new_unchecked(&mut *self.lock.data.get()) }
@@ -219,6 +219,7 @@ impl<T> Waitable for SpinlockGuard<'_, T> {
     unsafe fn raw_release(&mut self) {
         self.lock.lock.release();
     }
+    
     unsafe fn raw_acquire(&mut self) {
         self.lock.lock.acquire();
     }
@@ -262,6 +263,20 @@ impl<T> SpinlockProtected<T> {
         }
     }
 
+    /// Check whether this cpu is holding the lock.
+    pub fn holding(&self) -> bool {
+        self.lock.holding()
+    }
+
+    /// Returns a pinned mutable reference to the inner data.
+    /// See `SpinlockProtected::get_mut()` for details.
+    pub fn get_pin<'a: 'b, 'b>(&'a self, guard: &'b mut SpinlockProtectedGuard<'a>) -> Pin<&'b mut T> {
+        assert!(ptr::eq(self.lock, guard.lock));
+        unsafe { Pin::new_unchecked(&mut *self.data.get()) }
+    }
+}
+
+impl<T: Unpin> SpinlockProtected<T> {
     /// Returns a mutable reference to the inner data, provided that the given
     /// `guard: SpinlockProtectedGuard` was obtained from a `SpinlockProtected`
     /// that refers to the same `RawSpinlock` with this `SpinlockProtected`.
@@ -279,11 +294,6 @@ impl<T> SpinlockProtected<T> {
     pub fn get_mut<'a: 'b, 'b>(&'a self, guard: &'b mut SpinlockProtectedGuard<'a>) -> &'b mut T {
         assert!(ptr::eq(self.lock, guard.lock));
         unsafe { &mut *self.data.get() }
-    }
-
-    /// Check whether this cpu is holding the lock.
-    pub fn holding(&self) -> bool {
-        self.lock.holding()
     }
 }
 

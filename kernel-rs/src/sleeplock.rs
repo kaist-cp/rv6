@@ -4,6 +4,7 @@ use crate::sleepablelock::Sleepablelock;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
+use core::pin::Pin;
 
 /// Long-term locks for processes
 struct RawSleeplock {
@@ -65,10 +66,6 @@ impl<T> Sleeplock<T> {
         }
     }
 
-    pub fn into_inner(self) -> T {
-        self.data.into_inner()
-    }
-
     pub fn lock(&self) -> SleeplockGuard<'_, T> {
         self.lock.acquire();
 
@@ -82,6 +79,19 @@ impl<T> Sleeplock<T> {
         self.lock.release();
     }
 
+    /// Returns a pinned mutable reference to the inner data.
+    pub fn get_pin(&mut self) -> Pin<&mut T> {
+        // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
+        unsafe { Pin::new_unchecked(&mut *self.data.get()) }
+    }
+}
+
+impl<T: Unpin> Sleeplock<T> {
+    pub fn into_inner(self) -> T {
+        self.data.into_inner()
+    }
+
+    /// Returns a mutable reference to the inner data.
     /// # Safety
     ///
     /// `self` must not be shared by other threads. Use this function only in the middle of
@@ -91,6 +101,7 @@ impl<T> Sleeplock<T> {
         unsafe { &mut *self.data.get() }
     }
 
+    /// Returns a mutable reference to the inner data.
     pub fn get_mut(&mut self) -> &mut T {
         unsafe { &mut *self.data.get() }
     }
@@ -99,6 +110,12 @@ impl<T> Sleeplock<T> {
 impl<T> SleeplockGuard<'_, T> {
     pub fn raw(&self) -> usize {
         self.lock as *const _ as usize
+    }
+
+    /// Returns a pinned mutable reference to the inner data.
+    pub fn get_pin(&mut self) -> Pin<&mut T> {
+        // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
+        unsafe { Pin::new_unchecked(&mut *self.lock.data.get()) }
     }
 }
 
@@ -115,6 +132,8 @@ impl<T> Deref for SleeplockGuard<'_, T> {
     }
 }
 
+// We can mutably dereference the guard only when `T: Unpin`.
+// If `T: !Unpin`, use `SleeplockGuard::get_pin()` instead.
 impl<T> DerefMut for SleeplockGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.lock.data.get() }

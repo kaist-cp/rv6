@@ -4,6 +4,7 @@ use crate::spinlock::RawSpinlock;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
+use core::pin::Pin;
 
 pub struct SleepablelockGuard<'s, T> {
     lock: &'s Sleepablelock<T>,
@@ -32,10 +33,6 @@ impl<T> Sleepablelock<T> {
         }
     }
 
-    pub fn into_inner(self) -> T {
-        self.data.into_inner()
-    }
-
     pub fn lock(&self) -> SleepablelockGuard<'_, T> {
         self.lock.acquire();
 
@@ -45,6 +42,19 @@ impl<T> Sleepablelock<T> {
         }
     }
 
+    /// Returns a pinned mutable reference to the inner data.
+    pub fn get_pin(&mut self) -> Pin<&mut T> {
+        // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
+        unsafe { Pin::new_unchecked(&mut *self.data.get()) }
+    }
+}
+
+impl<T: Unpin> Sleepablelock<T> {
+    pub fn into_inner(self) -> T {
+        self.data.into_inner()
+    }
+
+    /// Returns a mutable reference to the inner data.
     /// # Safety
     ///
     /// `self` must not be shared by other threads. Use this function only in the middle of
@@ -54,6 +64,7 @@ impl<T> Sleepablelock<T> {
         unsafe { &mut *self.data.get() }
     }
 
+    /// Returns a mutable reference to the inner data.
     pub fn get_mut(&mut self) -> &mut T {
         unsafe { &mut *self.data.get() }
     }
@@ -66,6 +77,12 @@ impl<T> SleepablelockGuard<'_, T> {
 
     pub fn wakeup(&self) {
         self.lock.waitchannel.wakeup();
+    }
+
+    /// Returns a pinned mutable reference to the inner data.
+    pub fn get_pin(&mut self) -> Pin<&mut T> {
+        // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
+        unsafe { Pin::new_unchecked(&mut *self.lock.data.get()) }
     }
 }
 
@@ -91,7 +108,9 @@ impl<T> Deref for SleepablelockGuard<'_, T> {
     }
 }
 
-impl<T> DerefMut for SleepablelockGuard<'_, T> {
+// We can mutably dereference the guard only when `T: Unpin`.
+// If `T: !Unpin`, use `SleeplockGuard::get_pin()` instead.
+impl<T: Unpin> DerefMut for SleepablelockGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.lock.data.get() }
     }
