@@ -14,9 +14,9 @@ pub struct ListEntry {
 }
 
 /// A list entry for doubly, circular, intrusive linked lists.
-/// 
+///
 /// # Safety
-/// 
+///
 /// All `ListEntry` types must be used only after initializing it with `ListEntry::init()`,
 /// or after appending/prepending it to another initialized `ListEntry`.
 /// After this, `ListEntry::{prev, next}` always refer to a valid, initialized `ListEntry`.

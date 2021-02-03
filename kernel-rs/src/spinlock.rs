@@ -219,7 +219,7 @@ impl<T> Waitable for SpinlockGuard<'_, T> {
     unsafe fn raw_release(&mut self) {
         self.lock.lock.release();
     }
-    
+
     unsafe fn raw_acquire(&mut self) {
         self.lock.lock.acquire();
     }
@@ -270,7 +270,10 @@ impl<T> SpinlockProtected<T> {
 
     /// Returns a pinned mutable reference to the inner data.
     /// See `SpinlockProtected::get_mut()` for details.
-    pub fn get_pin<'a: 'b, 'b>(&'a self, guard: &'b mut SpinlockProtectedGuard<'a>) -> Pin<&'b mut T> {
+    pub fn get_pin<'a: 'b, 'b>(
+        &'a self,
+        guard: &'b mut SpinlockProtectedGuard<'a>,
+    ) -> Pin<&'b mut T> {
         assert!(ptr::eq(self.lock, guard.lock));
         unsafe { Pin::new_unchecked(&mut *self.data.get()) }
     }
