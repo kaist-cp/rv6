@@ -771,7 +771,7 @@ impl ProcessSystem {
         // User stack pointer.
         data.trap_frame_mut().sp = PGSIZE;
         let name = b"initcode\x00";
-        (&mut (*guard).deref_mut_data().name[..name.len()]).copy_from_slice(name);
+        (&mut data.name[..name.len()]).copy_from_slice(name);
         data.cwd = Some(Path::root());
         guard.deref_mut_info().state = Procstate::RUNNABLE;
     }
@@ -792,7 +792,7 @@ impl ProcessSystem {
 
         // Allocate process.
         let np = unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }?;
-        let mut npdata = np.deref_mut_data();
+        let npdata = np.deref_mut_data();
 
         // Copy saved user registers.
         *npdata.trap_frame_mut() = *proc.trap_frame();
@@ -808,7 +808,7 @@ impl ProcessSystem {
         }
         npdata.cwd = Some(proc.cwd.clone().unwrap());
 
-        np.deref_mut_data().name.copy_from_slice(&proc.name);
+        npdata.name.copy_from_slice(&proc.name);
 
         let pid = np.deref_mut_info().pid;
 
