@@ -35,6 +35,7 @@ pub fn kernel() -> &'static Kernel {
 ///
 /// The `Kernel` never moves `_bcache_inner` and the outside can only obtain
 /// a pinned mutable reference to it.
+/// `CurrentProc`'s existence is only valid while it's `inner` is stored in `cpus`'s `Cpu`.
 pub struct Kernel {
     panicked: AtomicBool,
 

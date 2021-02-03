@@ -354,7 +354,7 @@ pub struct Proc {
 ///
 /// `inner` is always not null pointer.
 /// `inner` is current Cpu's proc, this means it's state is `RUNNING`.
-/// `Proc` lives during lifetime `'p`
+/// `Proc` lives during lifetime `'p`.
 pub struct CurrentProc<'p> {
     inner: *const Proc,
     _marker: PhantomData<&'p Proc>,
@@ -391,7 +391,7 @@ impl Deref for CurrentProc<'_> {
     }
 }
 
-/// Assumption: `ptr` is `CurrentProc.ptr`, and ptr->info's spinlock is held.
+/// Assumption: ptr->info's spinlock is held.
 struct ProcGuard {
     ptr: *const Proc,
 }
@@ -1016,9 +1016,9 @@ unsafe fn forkret() {
 }
 
 impl Kernel {
-    /// Return Some<CurrentProc<'_'>> if current proc exists.
-    /// If current proc is null, return None.
-    /// This is safe because we checked if current struct Proc * exists.
+    /// Returns `Some<CurrentProc<'_>>` if current proc exists.
+    /// If current proc is null, return `None`.
+    /// If `(*c).proc` is non-null, returned `CurrentProc` lives during self's lifetime.
     pub fn current_proc(&self) -> Option<CurrentProc<'_>> {
         unsafe { push_off() };
         let c = self.mycpu();
