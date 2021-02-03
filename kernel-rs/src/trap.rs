@@ -4,7 +4,7 @@ use crate::{
     ok_or,
     plic::{plic_claim, plic_complete},
     println,
-    proc::{cpuid, proc_yield, ProcData, Procstate},
+    proc::{cpuid, ProcData, Procstate},
     riscv::{
         intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp, w_sepc, w_sip,
         w_stvec, Sstatus, PGSIZE,
@@ -46,26 +46,26 @@ pub unsafe extern "C" fn usertrap() {
     // since we're now in the kernel.
     unsafe { w_stvec(kernelvec as _) };
 
-    let p = &kernel().current_proc().expect("No current proc");
+    let proc = &kernel().current_proc().expect("No current proc");
 
     // Save user program counter.
-    p.deref_mut_data().trap_frame_mut().epc = unsafe { r_sepc() };
+    proc.deref_mut_data().trap_frame_mut().epc = unsafe { r_sepc() };
     if unsafe { r_scause() } == 8 {
         // system call
 
-        if p.killed() {
-            unsafe { kernel().procs.exit_current(-1, p) };
+        if proc.killed() {
+            unsafe { kernel().procs.exit_current(-1, proc) };
         }
 
         // sepc points to the ecall instruction,
         // but we want to return to the next instruction.
-        p.deref_mut_data().trap_frame_mut().epc = (p.trap_frame().epc).wrapping_add(4);
+        proc.deref_mut_data().trap_frame_mut().epc = (proc.trap_frame().epc).wrapping_add(4);
 
         // An interrupt will change sstatus &c registers,
         // so don't enable until done with those registers.
         unsafe { intr_on() };
-        p.deref_mut_data().trap_frame_mut().a0 = ok_or!(
-            unsafe { kernel().syscall(p.deref_mut_data().trap_frame_mut().a7 as i32, p) },
+        proc.deref_mut_data().trap_frame_mut().a0 = ok_or!(
+            unsafe { kernel().syscall(proc.deref_mut_data().trap_frame_mut().a7 as i32, proc) },
             usize::MAX
         );
     } else {
@@ -74,27 +74,27 @@ pub unsafe extern "C" fn usertrap() {
             println!(
                 "usertrap(): unexpected scause {:018p} pid={}",
                 unsafe { r_scause() } as *const u8,
-                unsafe { p.pid() }
+                unsafe { proc.pid() }
             );
             println!(
                 "            sepc={:018p} stval={:018p}",
                 unsafe { r_sepc() } as *const u8,
                 unsafe { r_stval() } as *const u8
             );
-            p.kill();
+            proc.kill();
         }
     }
 
-    if p.killed() {
-        unsafe { kernel().procs.exit_current(-1, p) };
+    if proc.killed() {
+        unsafe { kernel().procs.exit_current(-1, proc) };
     }
 
     // Give up the CPU if this is a timer interrupt.
     if which_dev == 2 {
-        unsafe { proc_yield(p) };
+        unsafe { proc.proc_yield() };
     }
 
-    unsafe { usertrapret(p.deref_mut_data()) };
+    unsafe { usertrapret(proc.deref_mut_data()) };
 }
 
 /// Return to user space.
@@ -182,11 +182,11 @@ pub unsafe fn kerneltrap() {
     }
 
     // Give up the CPU if this is a timer interrupt.
-    let p = kernel().current_proc();
-    if which_dev == 2 && p.is_some() {
-        let p = p.expect("No current proc");
-        if unsafe { p.state() } == Procstate::RUNNING {
-            unsafe { proc_yield(&p) };
+    if which_dev == 2 {
+        if let Some(proc) = kernel().current_proc() {
+            if unsafe { proc.state() } == Procstate::RUNNING {
+                unsafe { proc.proc_yield() };
+            }
         }
     }
 

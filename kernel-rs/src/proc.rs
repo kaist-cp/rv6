@@ -5,7 +5,7 @@ use core::{
     cell::UnsafeCell,
     marker::PhantomData,
     mem::{self, MaybeUninit},
-    ops::{Deref, DerefMut},
+    ops::Deref,
     ptr, slice, str,
     sync::atomic::{AtomicBool, AtomicI32, Ordering},
 };
@@ -374,6 +374,13 @@ impl CurrentProc<'_> {
     fn raw(&self) -> *const Proc {
         self.inner
     }
+
+    /// Give up the CPU for one scheduling round.
+    pub unsafe fn proc_yield(&self) {
+        let mut guard = self.lock();
+        guard.deref_mut_info().state = Procstate::RUNNABLE;
+        unsafe { guard.sched() };
+    }
 }
 
 impl Deref for CurrentProc<'_> {
@@ -394,7 +401,8 @@ impl ProcGuard {
         unsafe { (*self.ptr).info.get_mut_unchecked() }
     }
 
-    fn deref_mut_info(&mut self) -> &mut ProcInfo {
+    #[allow(clippy::mut_from_ref)]
+    fn deref_mut_info(&self) -> &mut ProcInfo {
         unsafe { (*self.ptr).info.get_mut_unchecked() }
     }
 
@@ -448,16 +456,23 @@ impl ProcGuard {
 
             // Clear the process's parent field.
             if let Some(mut guard) = parent_guard {
-                *(*self).parent.assume_init_mut().get_mut(&mut guard) = ptr::null_mut();
+                *(*self).parent.assume_init_ref().get_mut(&mut guard) = ptr::null_mut();
             }
 
             // Clear the `ProcInfo`.
             self.deref_mut_info().pid = 0;
             (*self).deref_mut_data().name[0] = 0;
             self.deref_mut_info().waitchannel = ptr::null();
-            self.killed = AtomicBool::new(false);
+            self.killed.store(false, Ordering::Release);
             self.deref_mut_info().xstate = 0;
             self.deref_mut_info().state = Procstate::UNUSED;
+        }
+    }
+
+    /// Wake process from sleep().
+    fn wakeup(&self) {
+        if self.deref_info().state == Procstate::SLEEPING {
+            self.deref_mut_info().state = Procstate::RUNNABLE
         }
     }
 }
@@ -481,13 +496,6 @@ impl Deref for ProcGuard {
 
     fn deref(&self) -> &Self::Target {
         unsafe { &*self.ptr }
-    }
-}
-
-// TODO(travis1829): Change &mut Target -> Pin<&mut Target>
-impl DerefMut for ProcGuard {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *(self.ptr as *mut _) }
     }
 }
 
@@ -571,7 +579,7 @@ impl ProcData {
     }
 }
 
-/// TODO(https://github.com/kaist-cp/rv6/issues/363): pid, state, wakeup should be methods of ProcGuard.
+/// TODO(https://github.com/kaist-cp/rv6/issues/363): pid, state, should be methods of ProcGuard.
 impl Proc {
     const fn zero() -> Self {
         Self {
@@ -611,13 +619,6 @@ impl Proc {
 
     pub fn killed(&self) -> bool {
         self.killed.load(Ordering::Acquire)
-    }
-
-    /// Wake process from sleep().
-    fn wakeup(&mut self) {
-        if self.info.get_mut().state == Procstate::SLEEPING {
-            self.info.get_mut().state = Procstate::RUNNABLE
-        }
     }
 
     pub fn deref_data_raw(&self) -> *mut ProcData {
@@ -672,7 +673,7 @@ impl ProcessSystem {
     /// If there are no free procs, or a memory allocation fails, return Err.
     unsafe fn alloc(&self, trap_frame: Page, memory: UserMemory) -> Result<ProcGuard, ()> {
         for p in &self.process_pool {
-            let mut guard = p.lock();
+            let guard = p.lock();
             if guard.deref_info().state == Procstate::UNUSED {
                 let data = unsafe { &mut *guard.data.get() };
                 guard.deref_mut_info().pid = self.allocpid();
@@ -718,7 +719,7 @@ impl ProcessSystem {
     /// Returns Ok(()) on success, Err(()) on error.
     pub fn kill(&self, pid: i32) -> Result<(), ()> {
         for p in &self.process_pool {
-            let mut guard = p.lock();
+            let guard = p.lock();
             if guard.deref_info().pid == pid {
                 p.kill();
                 guard.wakeup();
@@ -734,7 +735,7 @@ impl ProcessSystem {
         let current_proc = kernel().current_proc().map_or(ptr::null(), |p| p.raw());
         for p in &self.process_pool {
             if p as *const Proc != current_proc {
-                let mut guard = p.lock();
+                let guard = p.lock();
                 if guard.deref_info().waitchannel == target as _ {
                     guard.wakeup()
                 }
@@ -755,9 +756,8 @@ impl ProcessSystem {
         let memory = UserMemory::new(trap_frame.addr(), Some(&INITCODE))
             .expect("user_proc_init: UserMemory::new");
 
-        let mut guard =
-            unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }
-                .expect("user_proc_init: ProcessSystem::alloc");
+        let guard = unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }
+            .expect("user_proc_init: ProcessSystem::alloc");
 
         self.initial_proc = guard.raw() as *mut _;
 
@@ -791,7 +791,7 @@ impl ProcessSystem {
             .ok_or(())?;
 
         // Allocate process.
-        let mut np = unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }?;
+        let np = unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }?;
         let mut npdata = unsafe { &mut *np.data.get() };
 
         // Copy saved user registers.
@@ -822,7 +822,7 @@ impl ProcessSystem {
         *unsafe { (*child).parent.assume_init_ref() }.get_mut(&mut parent_guard) = proc.raw();
 
         // Set the process's state to RUNNABLE.
-        let mut np = unsafe { (*child).lock() };
+        let np = unsafe { (*child).lock() };
         np.deref_mut_info().state = Procstate::RUNNABLE;
 
         Ok(pid)
@@ -982,7 +982,7 @@ pub unsafe fn scheduler() -> ! {
         unsafe { intr_on() };
 
         for p in &kernel().procs.process_pool {
-            let mut guard = p.lock();
+            let guard = p.lock();
             if guard.deref_info().state == Procstate::RUNNABLE {
                 // Switch to chosen process.  It is the process's job
                 // to release its lock and then reacquire it
@@ -997,13 +997,6 @@ pub unsafe fn scheduler() -> ! {
             }
         }
     }
-}
-
-/// Give up the CPU for one scheduling round.
-pub unsafe fn proc_yield(proc: &CurrentProc<'_>) {
-    let mut guard = proc.lock();
-    guard.deref_mut_info().state = Procstate::RUNNABLE;
-    unsafe { guard.sched() };
 }
 
 /// A fork child's very first scheduling by scheduler()
