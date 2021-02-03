@@ -5,7 +5,9 @@
 use core::marker::PhantomPinned;
 use core::pin::Pin;
 use core::ptr;
+use pin_project::{pin_project, pinned_drop};
 
+#[pin_project(PinnedDrop)]
 pub struct ListEntry {
     next: *mut ListEntry,
     prev: *mut ListEntry,
@@ -81,7 +83,7 @@ impl ListEntry {
         ptr::eq(self.next, self)
     }
 
-    pub fn remove(self: Pin<&mut Self>) {
+    pub fn remove(mut self: Pin<&mut Self>) {
         unsafe {
             (*self.prev).next = self.next;
             (*self.next).prev = self.prev;
@@ -89,10 +91,17 @@ impl ListEntry {
         self.init();
     }
 
-    pub fn list_pop_front(self: Pin<&mut Self>) -> Pin<&mut Self> {
+    pub fn list_pop_front(mut self: Pin<&mut Self>) -> Pin<&mut Self> {
         // Safe since we don't move the inner data and don't leak the mutable reference.
         let mut result = unsafe { Pin::new_unchecked(&mut *self.next) };
         result.as_mut().remove();
         result
+    }
+}
+
+#[pinned_drop]
+impl PinnedDrop for ListEntry {
+    fn drop(self: Pin<&mut Self>) {
+        self.remove();
     }
 }
