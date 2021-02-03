@@ -67,12 +67,12 @@ impl File {
 
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub unsafe fn stat(&self, addr: UVAddr, data: &mut ProcData) -> Result<(), ()> {
+    pub unsafe fn stat(&self, addr: UVAddr, proc_data: &mut ProcData) -> Result<(), ()> {
         match &self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                 let mut st = ip.stat();
                 unsafe {
-                    data.memory.copy_out(
+                    proc_data.memory.copy_out(
                         addr,
                         slice::from_raw_parts_mut(
                             &mut st as *mut Stat as *mut u8,

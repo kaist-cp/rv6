@@ -9,14 +9,14 @@ use cstr_core::CStr;
 
 /// Fetch the usize at addr from the current process.
 /// Returns Ok(fetched integer) on success, Err(()) on error.
-pub unsafe fn fetchaddr(addr: UVAddr, data: &mut ProcData) -> Result<usize, ()> {
+pub unsafe fn fetchaddr(addr: UVAddr, proc_data: &mut ProcData) -> Result<usize, ()> {
     let mut ip = 0;
-    if addr.into_usize() >= data.memory.size()
-        || addr.into_usize().wrapping_add(mem::size_of::<usize>()) > data.memory.size()
+    if addr.into_usize() >= proc_data.memory.size()
+        || addr.into_usize().wrapping_add(mem::size_of::<usize>()) > proc_data.memory.size()
     {
         return Err(());
     }
-    data.memory.copy_in(
+    proc_data.memory.copy_in(
         unsafe {
             slice::from_raw_parts_mut(&mut ip as *mut usize as *mut u8, mem::size_of::<usize>())
         },
@@ -30,43 +30,47 @@ pub unsafe fn fetchaddr(addr: UVAddr, data: &mut ProcData) -> Result<usize, ()> 
 pub unsafe fn fetchstr<'a>(
     addr: UVAddr,
     buf: &'a mut [u8],
-    data: &mut ProcData,
+    proc_data: &mut ProcData,
 ) -> Result<&'a CStr, ()> {
-    data.memory.copy_in_str(buf, addr)?;
+    proc_data.memory.copy_in_str(buf, addr)?;
 
     Ok(unsafe { CStr::from_ptr(buf.as_ptr()) })
 }
 
-fn argraw(n: usize, data: &ProcData) -> usize {
+fn argraw(n: usize, proc_data: &ProcData) -> usize {
     match n {
-        0 => data.trap_frame().a0,
-        1 => data.trap_frame().a1,
-        2 => data.trap_frame().a2,
-        3 => data.trap_frame().a3,
-        4 => data.trap_frame().a4,
-        5 => data.trap_frame().a5,
+        0 => proc_data.trap_frame().a0,
+        1 => proc_data.trap_frame().a1,
+        2 => proc_data.trap_frame().a2,
+        3 => proc_data.trap_frame().a3,
+        4 => proc_data.trap_frame().a4,
+        5 => proc_data.trap_frame().a5,
         _ => panic!("argraw"),
     }
 }
 
 /// Fetch the nth 32-bit system call argument.
-pub fn argint(n: usize, data: &ProcData) -> Result<i32, ()> {
-    Ok(argraw(n, data) as i32)
+pub fn argint(n: usize, proc_data: &ProcData) -> Result<i32, ()> {
+    Ok(argraw(n, proc_data) as i32)
 }
 
 /// Retrieve an argument as a pointer.
 /// Doesn't check for legality, since
 /// copyin/copyout will do that.
-pub fn argaddr(n: usize, data: &ProcData) -> Result<usize, ()> {
-    Ok(argraw(n, data))
+pub fn argaddr(n: usize, proc_data: &ProcData) -> Result<usize, ()> {
+    Ok(argraw(n, proc_data))
 }
 
 /// Fetch the nth word-sized system call argument as a null-terminated string.
 /// Copies into buf, at most max.
 /// Returns reference to the string in the buffer.
-pub unsafe fn argstr<'a>(n: usize, buf: &'a mut [u8], data: &mut ProcData) -> Result<&'a CStr, ()> {
-    let addr = argaddr(n, data)?;
-    unsafe { fetchstr(UVAddr::new(addr), buf, data) }
+pub unsafe fn argstr<'a>(
+    n: usize,
+    buf: &'a mut [u8],
+    proc_data: &mut ProcData,
+) -> Result<&'a CStr, ()> {
+    let addr = argaddr(n, proc_data)?;
+    unsafe { fetchstr(UVAddr::new(addr), buf, proc_data) }
 }
 
 impl Kernel {

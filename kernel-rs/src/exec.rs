@@ -90,7 +90,7 @@ impl ProgHdr {
 }
 
 impl Kernel {
-    pub fn exec(&self, path: &Path, args: &[Page], data: &mut ProcData) -> Result<usize, ()> {
+    pub fn exec(&self, path: &Path, args: &[Page], proc_data: &mut ProcData) -> Result<usize, ()> {
         if args.len() > MAXARG {
             return Err(());
         }
@@ -101,7 +101,7 @@ impl Kernel {
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
         let tx = self.file_system.begin_transaction();
-        let ptr = path.namei(data)?;
+        let ptr = path.namei(proc_data)?;
         let mut ip = ptr.lock();
 
         // Check ELF header
@@ -113,7 +113,7 @@ impl Kernel {
             return Err(());
         }
 
-        let trap_frame = PAddr::new(data.trap_frame() as *const _ as _);
+        let trap_frame = PAddr::new(proc_data.trap_frame() as *const _ as _);
         let mut mem = UserMemory::new(trap_frame, None).ok_or(())?;
 
         // Load program into memory.
@@ -183,7 +183,7 @@ impl Kernel {
             .rposition(|c| *c == b'/')
             .map(|i| &path_str[(i + 1)..])
             .unwrap_or(path_str);
-        let p_name = &mut data.name;
+        let p_name = &mut proc_data.name;
         let len = cmp::min(p_name.len(), name.len());
         p_name[..len].copy_from_slice(&name[..len]);
         if len < p_name.len() {
@@ -191,18 +191,18 @@ impl Kernel {
         }
 
         // Commit to the user image.
-        data.memory = mem;
+        proc_data.memory = mem;
 
         // arguments to user main(argc, argv)
         // argc is returned via the system call return
         // value, which goes in a0.
-        data.trap_frame_mut().a1 = sp;
+        proc_data.trap_frame_mut().a1 = sp;
 
         // initial program counter = main
-        data.trap_frame_mut().epc = elf.entry;
+        proc_data.trap_frame_mut().epc = elf.entry;
 
         // initial stack pointer
-        data.trap_frame_mut().sp = sp;
+        proc_data.trap_frame_mut().sp = sp;
 
         // this ends up in a0, the first argument to main(argc, argv)
         Ok(argc)

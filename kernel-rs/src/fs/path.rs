@@ -66,12 +66,12 @@ impl Path {
         kernel().itable.get_inode(ROOTDEV, ROOTINO)
     }
 
-    pub fn namei(&self, data: &ProcData) -> Result<RcInode<'static>, ()> {
-        Ok(self.namex(false, data)?.0)
+    pub fn namei(&self, proc_data: &ProcData) -> Result<RcInode<'static>, ()> {
+        Ok(self.namex(false, proc_data)?.0)
     }
 
-    pub fn nameiparent(&self, data: &ProcData) -> Result<(RcInode<'static>, &FileName), ()> {
-        let (ip, name_in_path) = self.namex(true, data)?;
+    pub fn nameiparent(&self, proc_data: &ProcData) -> Result<(RcInode<'static>, &FileName), ()> {
+        let (ip, name_in_path) = self.namex(true, proc_data)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
     }
@@ -143,12 +143,12 @@ impl Path {
     fn namex(
         &self,
         parent: bool,
-        data: &ProcData,
+        proc_data: &ProcData,
     ) -> Result<(RcInode<'static>, Option<&FileName>), ()> {
         let mut ptr = if self.is_absolute() {
             Self::root()
         } else {
-            data.cwd.clone().unwrap()
+            proc_data.cwd.clone().unwrap()
         };
 
         let mut path = self;

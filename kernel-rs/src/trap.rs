@@ -98,7 +98,7 @@ pub unsafe extern "C" fn usertrap() {
 }
 
 /// Return to user space.
-pub unsafe fn usertrapret(data: &mut ProcData) {
+pub unsafe fn usertrapret(proc_data: &mut ProcData) {
     // We're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
     // we're back in user space, where usertrap() is correct.
@@ -116,14 +116,14 @@ pub unsafe fn usertrapret(data: &mut ProcData) {
     // the process next re-enters the kernel.
 
     // kernel page table
-    data.trap_frame_mut().kernel_satp = unsafe { r_satp() };
+    proc_data.trap_frame_mut().kernel_satp = unsafe { r_satp() };
 
     // process's kernel stack
-    data.trap_frame_mut().kernel_sp = data.kstack.wrapping_add(PGSIZE);
-    data.trap_frame_mut().kernel_trap = usertrap as usize;
+    proc_data.trap_frame_mut().kernel_sp = proc_data.kstack.wrapping_add(PGSIZE);
+    proc_data.trap_frame_mut().kernel_trap = usertrap as usize;
 
     // hartid for cpuid()
-    data.trap_frame_mut().kernel_hartid = unsafe { r_tp() };
+    proc_data.trap_frame_mut().kernel_hartid = unsafe { r_tp() };
 
     // Set up the registers that trampoline.S's sret will use
     // to get to user space.
@@ -139,10 +139,10 @@ pub unsafe fn usertrapret(data: &mut ProcData) {
     unsafe { x.write() };
 
     // Set S Exception Program Counter to the saved user pc.
-    unsafe { w_sepc(data.trap_frame().epc) };
+    unsafe { w_sepc(proc_data.trap_frame().epc) };
 
     // Tell trampoline.S the user page table to switch to.
-    let satp: usize = data.memory.satp();
+    let satp: usize = proc_data.memory.satp();
 
     // Jump to trampoline.S at the top of memory, which
     // switches to the user page table, restores user registers,

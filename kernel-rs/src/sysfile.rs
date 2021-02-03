@@ -26,11 +26,11 @@ use cstr_core::CStr;
 impl RcFile<'static> {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
-    fn fdalloc(self, data: &mut ProcData) -> Result<i32, Self> {
+    fn fdalloc(self, proc_data: &mut ProcData) -> Result<i32, Self> {
         for fd in 0..NOFILE {
             // user pointer to struct stat
-            if data.open_files[fd].is_none() {
-                data.open_files[fd] = Some(self);
+            if proc_data.open_files[fd].is_none() {
+                proc_data.open_files[fd] = Some(self);
                 return Ok(fd as i32);
             }
         }
@@ -60,13 +60,13 @@ fn create<F, T>(
     path: &Path,
     typ: InodeType,
     tx: &FsTransaction<'_>,
-    data: &ProcData,
+    proc_data: &ProcData,
     f: F,
 ) -> Result<(RcInode<'static>, T), ()>
 where
     F: FnOnce(&mut InodeGuard<'_>) -> T,
 {
-    let (ptr, name) = path.nameiparent(data)?;
+    let (ptr, name) = path.nameiparent(proc_data)?;
     let mut dp = ptr.lock();
     if let Ok((ptr2, _)) = dp.dirlookup(&name) {
         drop(dp);
@@ -110,9 +110,9 @@ where
 impl Kernel {
     /// Create another name(newname) for the file oldname.
     /// Returns Ok(()) on success, Err(()) on error.
-    fn link(&self, oldname: &CStr, newname: &CStr, data: &ProcData) -> Result<(), ()> {
+    fn link(&self, oldname: &CStr, newname: &CStr, proc_data: &ProcData) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
-        let ptr = Path::new(oldname).namei(data)?;
+        let ptr = Path::new(oldname).namei(proc_data)?;
         let mut ip = ptr.lock();
         if ip.deref_inner().typ == InodeType::Dir {
             return Err(());
@@ -121,7 +121,7 @@ impl Kernel {
         ip.update(&tx);
         drop(ip);
 
-        if let Ok((ptr2, name)) = Path::new(newname).nameiparent(data) {
+        if let Ok((ptr2, name)) = Path::new(newname).nameiparent(proc_data) {
             let mut dp = ptr2.lock();
             if dp.dev != ptr.dev || dp.dirlink(name, ptr.inum, &tx).is_err() {
             } else {
@@ -137,10 +137,10 @@ impl Kernel {
 
     /// Remove a file(filename).
     /// Returns Ok(()) on success, Err(()) on error.
-    fn unlink(&self, filename: &CStr, data: &ProcData) -> Result<(), ()> {
+    fn unlink(&self, filename: &CStr, proc_data: &ProcData) -> Result<(), ()> {
         let de: Dirent = Default::default();
         let tx = self.file_system.begin_transaction();
-        let (ptr, name) = Path::new(filename).nameiparent(data)?;
+        let (ptr, name) = Path::new(filename).nameiparent(proc_data)?;
         let mut dp = ptr.lock();
 
         // Cannot unlink "." or "..".
@@ -175,14 +175,16 @@ impl Kernel {
         &'static self,
         name: &Path,
         omode: FcntlFlags,
-        data: &mut ProcData,
+        proc_data: &mut ProcData,
     ) -> Result<usize, ()> {
         let tx = self.file_system.begin_transaction();
 
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
-            create(name, InodeType::File, &tx, data, |ip| ip.deref_inner().typ)?
+            create(name, InodeType::File, &tx, proc_data, |ip| {
+                ip.deref_inner().typ
+            })?
         } else {
-            let ptr = name.namei(data)?;
+            let ptr = name.namei(proc_data)?;
             let ip = ptr.lock();
             let typ = ip.deref_inner().typ;
 
@@ -219,27 +221,33 @@ impl Kernel {
                 _ => panic!("sys_open : Not reach"),
             };
         }
-        let fd = f.fdalloc(data).map_err(|_| ())?;
+        let fd = f.fdalloc(proc_data).map_err(|_| ())?;
         Ok(fd as usize)
     }
 
     /// Create a new directory.
     /// Returns Ok(()) on success, Err(()) on error.
-    fn mkdir(&self, dirname: &CStr, data: &ProcData) -> Result<(), ()> {
+    fn mkdir(&self, dirname: &CStr, proc_data: &ProcData) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
-        create(Path::new(dirname), InodeType::Dir, &tx, data, |_| ())?;
+        create(Path::new(dirname), InodeType::Dir, &tx, proc_data, |_| ())?;
         Ok(())
     }
 
     /// Create a device file.
     /// Returns Ok(()) on success, Err(()) on error.
-    fn mknod(&self, filename: &CStr, major: u16, minor: u16, data: &ProcData) -> Result<(), ()> {
+    fn mknod(
+        &self,
+        filename: &CStr,
+        major: u16,
+        minor: u16,
+        proc_data: &ProcData,
+    ) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
         create(
             Path::new(filename),
             InodeType::Device { major, minor },
             &tx,
-            data,
+            proc_data,
             |_| (),
         )?;
         Ok(())
@@ -247,36 +255,36 @@ impl Kernel {
 
     /// Change the current directory.
     /// Returns Ok(()) on success, Err(()) on error.
-    fn chdir(&self, dirname: &CStr, data: &mut ProcData) -> Result<(), ()> {
+    fn chdir(&self, dirname: &CStr, proc_data: &mut ProcData) -> Result<(), ()> {
         // TODO(https://github.com/kaist-cp/rv6/issues/290)
         // The method namei can drop inodes. If namei succeeds, its return
         // value, ptr, will be dropped when this method returns. Deallocation
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
         let _tx = self.file_system.begin_transaction();
-        let ptr = Path::new(dirname).namei(data)?;
+        let ptr = Path::new(dirname).namei(proc_data)?;
         let ip = ptr.lock();
         if ip.deref_inner().typ != InodeType::Dir {
             return Err(());
         }
         drop(ip);
-        data.cwd = Some(ptr);
+        proc_data.cwd = Some(ptr);
         Ok(())
     }
 
     /// Create a pipe, put read/write file descriptors in fd0 and fd1.
     /// Returns Ok(()) on success, Err(()) on error.
-    fn pipe(&self, fdarray: UVAddr, data: &mut ProcData) -> Result<(), ()> {
+    fn pipe(&self, fdarray: UVAddr, proc_data: &mut ProcData) -> Result<(), ()> {
         let (pipereader, pipewriter) = AllocatedPipe::alloc()?;
 
-        let mut fd0 = pipereader.fdalloc(data).map_err(|_| ())?;
+        let mut fd0 = pipereader.fdalloc(proc_data).map_err(|_| ())?;
         let mut fd1 = pipewriter
-            .fdalloc(data)
-            .map_err(|_| data.open_files[fd0 as usize] = None)?;
+            .fdalloc(proc_data)
+            .map_err(|_| proc_data.open_files[fd0 as usize] = None)?;
 
         // It is safe because fdarray, fd0 is valid.
         if unsafe {
-            data.memory.copy_out(
+            proc_data.memory.copy_out(
                 fdarray,
                 slice::from_raw_parts_mut(&mut fd0 as *mut i32 as *mut u8, mem::size_of::<i32>()),
             )
@@ -284,7 +292,7 @@ impl Kernel {
         .is_err()
             // It is safe because fdarray, fd1 is valid.
             || unsafe {
-                data.memory.copy_out(
+                proc_data.memory.copy_out(
                     UVAddr::new(fdarray.into_usize().wrapping_add(mem::size_of::<i32>())),
                     slice::from_raw_parts_mut(
                         &mut fd1 as *mut i32 as *mut u8,
@@ -294,8 +302,8 @@ impl Kernel {
             }
             .is_err()
         {
-            data.open_files[fd0 as usize] = None;
-            data.open_files[fd1 as usize] = None;
+            proc_data.open_files[fd0 as usize] = None;
+            proc_data.open_files[fd1 as usize] = None;
             return Err(());
         }
         Ok(())
