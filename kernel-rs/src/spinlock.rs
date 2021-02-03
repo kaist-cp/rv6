@@ -138,8 +138,25 @@ pub struct SpinlockProtected<T> {
 
 unsafe impl<T: Send> Sync for SpinlockProtected<T> {}
 
-impl<T> Spinlock<T> {
+impl<T: Unpin> Spinlock<T> {
+    /// Returns a new `Spinlock` with name `name` and data `data`.
     pub const fn new(name: &'static str, data: T) -> Self {
+        Self {
+            lock: RawSpinlock::new(name),
+            data: UnsafeCell::new(data),
+        }
+    }
+}
+
+impl<T> Spinlock<T> {
+    /// Returns a new `Spinlock` with name `name` and data `data`.
+    ///
+    /// # Safety
+    ///
+    /// If `T: !Unpin`, `Spinlock` or `SpinlockGuard` will only provide pinned mutable references
+    /// of the inner data to the outside. However, it is still the caller's responsibility to
+    /// make sure that the `Spinlock` itself never gets moved.
+    pub const unsafe fn new_unchecked(name: &'static str, data: T) -> Self {
         Self {
             lock: RawSpinlock::new(name),
             data: UnsafeCell::new(data),
@@ -169,7 +186,7 @@ impl<T> Spinlock<T> {
     }
 
     /// Returns a pinned mutable reference to the inner data.
-    pub fn get_pin(&mut self) -> Pin<&mut T> {
+    pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
         // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
         unsafe { Pin::new_unchecked(&mut *self.data.get()) }
     }
@@ -209,7 +226,7 @@ impl<T> SpinlockGuard<'_, T> {
     }
 
     /// Returns a pinned mutable reference to the inner data.
-    pub fn get_pin(&mut self) -> Pin<&mut T> {
+    pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
         // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
         unsafe { Pin::new_unchecked(&mut *self.lock.data.get()) }
     }
@@ -239,7 +256,7 @@ impl<T> Deref for SpinlockGuard<'_, T> {
 }
 
 // We can mutably dereference the guard only when `T: Unpin`.
-// If `T: !Unpin`, use `SpinlockGuard::get_pin()` instead.
+// If `T: !Unpin`, use `SpinlockGuard::get_pin_mut()` instead.
 impl<T: Unpin> DerefMut for SpinlockGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.lock.data.get() }
@@ -270,7 +287,7 @@ impl<T> SpinlockProtected<T> {
 
     /// Returns a pinned mutable reference to the inner data.
     /// See `SpinlockProtected::get_mut()` for details.
-    pub fn get_pin<'a: 'b, 'b>(
+    pub fn get_pin_mut<'a: 'b, 'b>(
         &'a self,
         guard: &'b mut SpinlockProtectedGuard<'a>,
     ) -> Pin<&'b mut T> {

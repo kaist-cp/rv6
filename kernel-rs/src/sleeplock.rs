@@ -80,7 +80,7 @@ impl<T> Sleeplock<T> {
     }
 
     /// Returns a pinned mutable reference to the inner data.
-    pub fn get_pin(&mut self) -> Pin<&mut T> {
+    pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
         // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
         unsafe { Pin::new_unchecked(&mut *self.data.get()) }
     }
@@ -113,7 +113,7 @@ impl<T> SleeplockGuard<'_, T> {
     }
 
     /// Returns a pinned mutable reference to the inner data.
-    pub fn get_pin(&mut self) -> Pin<&mut T> {
+    pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
         // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
         unsafe { Pin::new_unchecked(&mut *self.lock.data.get()) }
     }
@@ -133,7 +133,7 @@ impl<T> Deref for SleeplockGuard<'_, T> {
 }
 
 // We can mutably dereference the guard only when `T: Unpin`.
-// If `T: !Unpin`, use `SleeplockGuard::get_pin()` instead.
+// If `T: !Unpin`, use `SleeplockGuard::get_pin_mut()` instead.
 impl<T> DerefMut for SleeplockGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.lock.data.get() }

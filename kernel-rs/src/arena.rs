@@ -110,6 +110,7 @@ pub struct MruEntry<T> {
 /// A homogeneous memory allocator equipped with reference counts.
 #[pin_project]
 pub struct MruArena<T, const CAPACITY: usize> {
+    #[pin]
     entries: [MruEntry<T>; CAPACITY],
     #[pin]
     head: ListEntry,
@@ -275,17 +276,23 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
         }
     }
 
-    pub fn init(self: Pin<&mut Self>) {
-        let mut this = self.project();
+    // Returns a pinned mutable reference to the `index`th element of `array`.
+    fn get_entry(array: Pin<&mut [MruEntry<T>; CAPACITY]>, index: usize) -> Pin<&mut MruEntry<T>> {
+        // Safe since we don't move `MruEntry` and access it only through `Pin`.
+        // That is, the data is pinned.
+        unsafe { Pin::new_unchecked(&mut (*array.get_unchecked_mut())[index]) }
+    }
+
+    pub fn init(mut self: Pin<&mut Self>) {
+        let mut this = self.as_mut().project();
 
         this.head.as_mut().init();
-        // TODO: Pin of array's element?
-        for entry in this.entries {
-            unsafe {
-                // Safe since `MruEntry` is accessed only through `Pin`.
-                let entry = Pin::new_unchecked(&mut entry.list_entry);
-                this.head.as_mut().prepend(entry);
-            }
+        for index in 0..this.entries.len() {
+            this.head.as_mut().prepend(
+                Self::get_entry(this.entries.as_mut(), index)
+                    .project()
+                    .list_entry,
+            );
         }
     }
 }
@@ -402,7 +409,8 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
     unsafe fn dealloc(&self, mut handle: Self::Handle<'_>) {
         let mut this = self.lock();
 
-        // Safe since `MruEntry` is accessed only through `Pin`.
+        // Safe since we don't move `MruEntry` and access it only through `Pin`.
+        // That is, the data is pinned.
         let mut entry = unsafe { Pin::new_unchecked(handle.ptr.as_mut()).project() };
         if *entry.refcnt == 1 {
             entry.data.finalize::<Self>(&mut this);
@@ -411,7 +419,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
 
         if *entry.refcnt == 0 {
             entry.list_entry.as_mut().remove();
-            this.get_pin().project().head.prepend(entry.list_entry);
+            this.get_pin_mut().project().head.prepend(entry.list_entry);
         }
 
         mem::forget(handle);

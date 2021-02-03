@@ -77,7 +77,8 @@ impl Kernel {
             ticks: Sleepablelock::new("time", 0),
             procs: ProcessSystem::zero(),
             cpus: [Cpu::new(); NCPU],
-            bcache: Bcache::zero(),
+            // Safe since the only way to access `bcache` is through `kernel()`, which is an immutable reference.
+            bcache: unsafe { Bcache::zero() },
             devsw: [Devsw {
                 read: None,
                 write: None,
@@ -204,7 +205,7 @@ pub unsafe fn kernel_main() -> ! {
         unsafe { plicinithart() };
 
         // Buffer cache.
-        unsafe { KERNEL.bcache.get_pin().init() };
+        unsafe { KERNEL.bcache.get_pin_mut().init() };
 
         // Emulated hard disk.
         unsafe { KERNEL.file_system.disk.get_mut().init() };

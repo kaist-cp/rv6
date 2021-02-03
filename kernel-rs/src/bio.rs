@@ -142,11 +142,16 @@ impl Drop for Buf<'_> {
 }
 
 impl Bcache {
-    pub const fn zero() -> Self {
-        Spinlock::new(
-            "BCACHE",
-            MruArena::new(array![_ => MruEntry::new(BufEntry::zero()); NBUF]),
-        )
+    /// # Safety
+    ///
+    /// The caller should make sure that `Bcache` never gets moved.
+    pub const unsafe fn zero() -> Self {
+        unsafe {
+            Spinlock::new_unchecked(
+                "BCACHE",
+                MruArena::new(array![_ => MruEntry::new(BufEntry::zero()); NBUF]),
+            )
+        }
     }
 
     /// Return a unlocked buf with the contents of the indicated block.

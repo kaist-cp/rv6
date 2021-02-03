@@ -9,8 +9,7 @@ use core::ptr;
 pub struct ListEntry {
     next: *mut ListEntry,
     prev: *mut ListEntry,
-    // Add `PhantomPinned` to mark this struct as `!Unpin`, since `ListEntry`s must not move.
-    _marker: PhantomPinned,
+    _marker: PhantomPinned, //`ListEntry` is `!Unpin`.
 }
 
 /// A list entry for doubly, circular, intrusive linked lists.
