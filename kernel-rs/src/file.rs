@@ -46,10 +46,6 @@ pub struct Devsw {
 
 pub type RcFile<'s> = Rc<'s, FileTable, &'s FileTable>;
 
-// TODO(https://github.com/kaist-cp/rv6/issues/374)
-// will be infered as we wrap *mut Pipe and *mut Inode.
-unsafe impl Send for File {}
-
 impl Default for FileType {
     fn default() -> Self {
         Self::None
