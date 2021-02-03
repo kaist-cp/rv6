@@ -398,12 +398,12 @@ struct ProcGuard {
 
 impl ProcGuard {
     fn deref_info(&self) -> &ProcInfo {
-        unsafe { (*self.ptr).info.get_mut_unchecked() }
+        unsafe { self.info.get_mut_unchecked() }
     }
 
     #[allow(clippy::mut_from_ref)]
     fn deref_mut_info(&self) -> &mut ProcInfo {
-        unsafe { (*self.ptr).info.get_mut_unchecked() }
+        unsafe { self.info.get_mut_unchecked() }
     }
 
     unsafe fn from_raw(ptr: *const Proc) -> Self {
@@ -456,7 +456,7 @@ impl ProcGuard {
 
             // Clear the process's parent field.
             if let Some(mut guard) = parent_guard {
-                *(*self).parent.assume_init_ref().get_mut(&mut guard) = ptr::null_mut();
+                *self.parent.assume_init_ref().get_mut(&mut guard) = ptr::null_mut();
             }
 
             // Clear the `ProcInfo`.
@@ -486,7 +486,7 @@ impl Drop for ProcGuard {
             if self.deref_info().state == Procstate::USED && self.memory.size() == 0 {
                 self.clear(None);
             }
-            (*self.ptr).info.unlock();
+            self.info.unlock();
         }
     }
 }
