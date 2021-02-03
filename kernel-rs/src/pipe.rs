@@ -117,8 +117,8 @@ pub struct AllocatedPipe {
     ptr: NonNull<Pipe>,
 }
 
-// `AllocatedPipe` is `Send` because we access `PipeInner` only after acquring a lock,
-// `AllocatedPipe` does not point to thread-local data.
+// `AllocatedPipe` is `Send` because we access `PipeInner` only after acquring a lock
+// and because `AllocatedPipe` does not point to thread-local data.
 unsafe impl Send for AllocatedPipe {}
 
 impl Deref for AllocatedPipe {
