@@ -6,7 +6,7 @@ use crate::{
     kernel::kernel,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
-    proc::{Proc, ProcData},
+    proc::{CurrentProc, ProcData},
     spinlock::Spinlock,
     stat::Stat,
     vm::UVAddr,
@@ -87,7 +87,7 @@ impl File {
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub unsafe fn read(&self, addr: UVAddr, n: i32, proc: &Proc) -> Result<usize, ()> {
+    pub unsafe fn read(&self, addr: UVAddr, n: i32, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         if !self.readable {
             return Err(());
         }
@@ -114,7 +114,7 @@ impl File {
     }
     /// Write to file self.
     /// addr is a user virtual address.
-    pub unsafe fn write(&self, addr: UVAddr, n: i32, proc: &Proc) -> Result<usize, ()> {
+    pub unsafe fn write(&self, addr: UVAddr, n: i32, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         if !self.writable {
             return Err(());
         }

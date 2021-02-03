@@ -1,6 +1,9 @@
 //! Sleepable locks
-use crate::proc::{WaitChannel, Waitable};
 use crate::spinlock::RawSpinlock;
+use crate::{
+    kernel::kernel,
+    proc::{WaitChannel, Waitable},
+};
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
@@ -72,7 +75,9 @@ impl<T: Unpin> Sleepablelock<T> {
 
 impl<T> SleepablelockGuard<'_, T> {
     pub fn sleep(&mut self) {
-        self.lock.waitchannel.sleep(self);
+        self.lock
+            .waitchannel
+            .sleep(self, &kernel().current_proc().expect("No current proc"));
     }
 
     pub fn wakeup(&self) {

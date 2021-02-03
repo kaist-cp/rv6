@@ -239,9 +239,7 @@ impl WaitChannel {
 
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
-    pub fn sleep<T: Waitable>(&self, lk: &mut T) {
-        let proc = kernel().current_proc().expect("No current proc");
-
+    pub fn sleep<T: Waitable>(&self, lk: &mut T, proc: &CurrentProc<'_>) {
         // Must acquire p->lock in order to
         // change p->state and then call sched.
         // Once we hold p->lock, we can be
@@ -354,7 +352,9 @@ pub struct Proc {
 ///
 /// # Safety
 ///
-/// `inner` is always not null pointer, and Proc's state is Procstate::RUNNING.
+/// `inner` is always not null pointer.
+/// `inner` is current Cpu's proc, this means it's state is `RUNNING`.
+/// `Proc` lives during lifetime `'p`
 pub struct CurrentProc<'p> {
     inner: *const Proc,
     _marker: PhantomData<&'p Proc>,
@@ -363,7 +363,7 @@ pub struct CurrentProc<'p> {
 impl CurrentProc<'_> {
     /// # Safety
     ///
-    /// `inner` must not be null pointer.
+    /// `ptr` must not be null pointer, and should be current Cpu's proc.
     unsafe fn from_raw(ptr: *const Proc) -> Self {
         CurrentProc {
             inner: ptr,
@@ -876,7 +876,8 @@ impl ProcessSystem {
 
             // Wait for a child to exit.
             //DOC: wait-sleep
-            (unsafe { proc.info.get_mut_unchecked() }.child_waitchannel).sleep(&mut parent_guard);
+            (unsafe { proc.info.get_mut_unchecked() }.child_waitchannel)
+                .sleep(&mut parent_guard, proc);
         }
     }
 
@@ -1026,7 +1027,7 @@ impl Kernel {
         if proc.is_null() {
             return None;
         }
-        // This is safe because p is non-null.
+        // This is safe because p is non-null and current Cpu's proc.
         Some(unsafe { CurrentProc::from_raw(proc) })
     }
 }

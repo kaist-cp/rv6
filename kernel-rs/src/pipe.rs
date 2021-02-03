@@ -2,7 +2,7 @@ use crate::{
     file::{FileType, RcFile},
     kernel::kernel,
     page::Page,
-    proc::{Proc, WaitChannel},
+    proc::{CurrentProc, Proc, WaitChannel},
     riscv::PGSIZE,
     spinlock::Spinlock,
     vm::UVAddr,
@@ -43,7 +43,7 @@ impl Pipe {
     /// If successfully read i > 0 bytes, wakeups the `write_waitchannel` and returns `Ok(i: usize)`.
     /// If the pipe was empty, sleeps at `read_waitchannel` and tries again after wakeup.
     /// If an error happened, returns `Err(())`.
-    pub fn read(&self, addr: UVAddr, n: usize, proc: &Proc) -> Result<usize, ()> {
+    pub fn read(&self, addr: UVAddr, n: usize, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let mut inner = self.inner.lock();
         loop {
             match inner.try_read(addr, n, proc) {
@@ -54,7 +54,7 @@ impl Pipe {
                 }
                 Err(PipeError::WaitForIO) => {
                     //DOC: piperead-sleep
-                    self.read_waitchannel.sleep(&mut inner);
+                    self.read_waitchannel.sleep(&mut inner, proc);
                 }
                 _ => return Err(()),
             }
@@ -67,7 +67,7 @@ impl Pipe {
     /// Note that we may have i < `n` if an copy-in error happened.
     /// If the pipe was full, sleeps at `write_waitchannel` and tries again after wakeup.
     /// If an error happened, returns `Err(())`.
-    pub fn write(&self, addr: UVAddr, n: usize, proc: &Proc) -> Result<usize, ()> {
+    pub fn write(&self, addr: UVAddr, n: usize, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let mut written = 0;
         let mut inner = self.inner.lock();
         loop {
@@ -76,7 +76,7 @@ impl Pipe {
                     written += r;
                     self.read_waitchannel.wakeup();
                     if written < n {
-                        self.write_waitchannel.sleep(&mut inner);
+                        self.write_waitchannel.sleep(&mut inner, proc);
                     } else {
                         return Ok(written);
                     }

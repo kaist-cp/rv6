@@ -376,7 +376,8 @@ impl Disk {
 
         // Wait for virtio_disk_intr() to say request has finished.
         while b.deref_inner().disk {
-            (*b).vdisk_request_waitchannel.sleep(this);
+            (*b).vdisk_request_waitchannel
+                .sleep(this, &kernel().current_proc().expect("No current proc"));
         }
         // As it assigns null, the invariant of inflight is maintained even if
         // b: &mut Buf becomes invalid after this method returns.
