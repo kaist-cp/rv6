@@ -6,7 +6,7 @@ use crate::{
     kernel::kernel,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
-    proc::{CurrentProc, ProcData},
+    proc::CurrentProc,
     spinlock::Spinlock,
     stat::Stat,
     vm::UVAddr,
@@ -67,12 +67,12 @@ impl File {
 
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub unsafe fn stat(&self, addr: UVAddr, proc_data: &mut ProcData) -> Result<(), ()> {
+    pub unsafe fn stat(&self, addr: UVAddr, proc: &CurrentProc<'_>) -> Result<(), ()> {
         match &self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                 let mut st = ip.stat();
                 unsafe {
-                    proc_data.memory.copy_out(
+                    proc.deref_mut_data().memory.copy_out(
                         addr,
                         slice::from_raw_parts_mut(
                             &mut st as *mut Stat as *mut u8,
@@ -97,7 +97,7 @@ impl File {
             FileType::Inode { ip, off } => {
                 let mut ip = ip.deref().lock();
                 let curr_off = unsafe { *off.get() };
-                let ret = ip.read_user(addr, curr_off, n as u32, proc.deref_mut_data());
+                let ret = ip.read_user(addr, curr_off, n as u32, proc);
                 if let Ok(v) = ret {
                     unsafe { *off.get() = curr_off.wrapping_add(v as u32) };
                 }
@@ -141,7 +141,7 @@ impl File {
                             addr + bytes_written,
                             curr_off,
                             bytes_to_write as u32,
-                            proc.deref_mut_data(),
+                            proc,
                             &tx,
                         )
                         .map(|v| {

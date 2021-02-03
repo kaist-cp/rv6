@@ -4,7 +4,7 @@ use crate::{
     ok_or,
     plic::{plic_claim, plic_complete},
     println,
-    proc::{cpuid, ProcData, Procstate},
+    proc::{cpuid, CurrentProc, Procstate},
     riscv::{
         intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp, w_sepc, w_sip,
         w_stvec, Sstatus, PGSIZE,
@@ -94,11 +94,11 @@ pub unsafe extern "C" fn usertrap() {
         unsafe { proc.proc_yield() };
     }
 
-    unsafe { usertrapret(proc.deref_mut_data()) };
+    unsafe { usertrapret(proc) };
 }
 
 /// Return to user space.
-pub unsafe fn usertrapret(proc_data: &mut ProcData) {
+pub unsafe fn usertrapret(proc: &CurrentProc<'_>) {
     // We're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
     // we're back in user space, where usertrap() is correct.
@@ -114,7 +114,7 @@ pub unsafe fn usertrapret(proc_data: &mut ProcData) {
 
     // Set up trapframe values that uservec will need when
     // the process next re-enters the kernel.
-
+    let proc_data = proc.deref_mut_data();
     // kernel page table
     proc_data.trap_frame_mut().kernel_satp = unsafe { r_satp() };
 

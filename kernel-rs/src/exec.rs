@@ -5,7 +5,7 @@ use crate::{
     kernel::Kernel,
     page::Page,
     param::MAXARG,
-    proc::ProcData,
+    proc::CurrentProc,
     riscv::{pgroundup, PGSIZE},
     vm::{PAddr, UVAddr, UserMemory, VAddr},
 };
@@ -90,7 +90,7 @@ impl ProgHdr {
 }
 
 impl Kernel {
-    pub fn exec(&self, path: &Path, args: &[Page], proc_data: &mut ProcData) -> Result<usize, ()> {
+    pub fn exec(&self, path: &Path, args: &[Page], proc: &CurrentProc<'_>) -> Result<usize, ()> {
         if args.len() > MAXARG {
             return Err(());
         }
@@ -101,7 +101,7 @@ impl Kernel {
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
         let tx = self.file_system.begin_transaction();
-        let ptr = path.namei(proc_data)?;
+        let ptr = path.namei(proc)?;
         let mut ip = ptr.lock();
 
         // Check ELF header
@@ -113,7 +113,7 @@ impl Kernel {
             return Err(());
         }
 
-        let trap_frame = PAddr::new(proc_data.trap_frame() as *const _ as _);
+        let trap_frame = PAddr::new(proc.trap_frame() as *const _ as _);
         let mut mem = UserMemory::new(trap_frame, None).ok_or(())?;
 
         // Load program into memory.
@@ -175,6 +175,8 @@ impl Kernel {
         // It is safe because any byte can be considered as a valid u8.
         let (_, ustack, _) = unsafe { ustack.align_to::<u8>() };
         mem.copy_out(UVAddr::new(sp), &ustack[..argv_size])?;
+
+        let proc_data = proc.deref_mut_data();
 
         // Save program name for debugging.
         let path_str = path.as_bytes();

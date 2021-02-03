@@ -1,7 +1,7 @@
 use core::cmp;
 use cstr_core::CStr;
 
-use crate::{kernel::kernel, param::ROOTDEV, proc::ProcData};
+use crate::{kernel::kernel, param::ROOTDEV, proc::CurrentProc};
 
 use super::{InodeType, RcInode, DIRSIZ, ROOTINO};
 
@@ -66,12 +66,12 @@ impl Path {
         kernel().itable.get_inode(ROOTDEV, ROOTINO)
     }
 
-    pub fn namei(&self, proc_data: &ProcData) -> Result<RcInode<'static>, ()> {
-        Ok(self.namex(false, proc_data)?.0)
+    pub fn namei(&self, proc: &CurrentProc<'_>) -> Result<RcInode<'static>, ()> {
+        Ok(self.namex(false, proc)?.0)
     }
 
-    pub fn nameiparent(&self, proc_data: &ProcData) -> Result<(RcInode<'static>, &FileName), ()> {
-        let (ip, name_in_path) = self.namex(true, proc_data)?;
+    pub fn nameiparent(&self, proc: &CurrentProc<'_>) -> Result<(RcInode<'static>, &FileName), ()> {
+        let (ip, name_in_path) = self.namex(true, proc)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
     }
@@ -143,12 +143,12 @@ impl Path {
     fn namex(
         &self,
         parent: bool,
-        proc_data: &ProcData,
+        proc: &CurrentProc<'_>,
     ) -> Result<(RcInode<'static>, Option<&FileName>), ()> {
         let mut ptr = if self.is_absolute() {
             Self::root()
         } else {
-            proc_data.cwd.clone().unwrap()
+            proc.cwd.clone().unwrap()
         };
 
         let mut path = self;

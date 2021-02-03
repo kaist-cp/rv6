@@ -77,7 +77,7 @@ use crate::{
     fs::FsTransaction,
     kernel::kernel,
     param::{BSIZE, NINODE},
-    proc::ProcData,
+    proc::CurrentProc,
     sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::Stat,
@@ -420,10 +420,12 @@ impl InodeGuard<'_> {
         dst: UVAddr,
         off: u32,
         n: u32,
-        proc_data: &mut ProcData,
+        proc: &CurrentProc<'_>,
     ) -> Result<usize, ()> {
         self.read_internal(off, n, |off, src| {
-            proc_data.memory.copy_out(dst + off as usize, src)
+            proc.deref_mut_data()
+                .memory
+                .copy_out(dst + off as usize, src)
         })
     }
 
@@ -518,13 +520,17 @@ impl InodeGuard<'_> {
         src: UVAddr,
         off: u32,
         n: u32,
-        proc_data: &mut ProcData,
+        proc: &CurrentProc<'_>,
         tx: &FsTransaction<'_>,
     ) -> Result<usize, ()> {
         self.write_internal(
             off,
             n,
-            |off, dst| proc_data.memory.copy_in(dst, src + off as usize),
+            |off, dst| {
+                proc.deref_mut_data()
+                    .memory
+                    .copy_in(dst, src + off as usize)
+            },
             tx,
         )
     }

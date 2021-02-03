@@ -1012,7 +1012,7 @@ unsafe fn forkret() {
     // be run from main().
     kernel().file_system.init(ROOTDEV);
 
-    unsafe { usertrapret(proc.deref_mut_data()) };
+    unsafe { usertrapret(proc) };
 }
 
 impl Kernel {
