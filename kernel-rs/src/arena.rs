@@ -84,8 +84,9 @@ pub struct ArrayPtr<'s, T> {
     _marker: PhantomData<&'s T>,
 }
 
-// `ArrayPtr` is `Send` because it does not impl `DerefMut`
-// and because it does not point to thread-local data.
+// `ArrayPtr` is `Send` because it does not impl `DerefMut`, and when we access
+// the inner `ArrayEntry`, we do it after acquring `ArrayArena`'s lock.
+// Also, `ArrayPtr` does not point to thread-local data.
 unsafe impl<T: Send> Send for ArrayPtr<'_, T> {}
 
 impl<'s, T> ArrayPtr<'s, T> {
