@@ -84,6 +84,10 @@ pub struct ArrayPtr<'s, T> {
     _marker: PhantomData<&'s T>,
 }
 
+// `ArrayPtr` is `Send` since it does not impl `DerefMut`,
+// and does not point to thread-local data.
+unsafe impl<T: Send> Send for ArrayPtr<'_, T> {}
+
 impl<'s, T> ArrayPtr<'s, T> {
     /// # Safety
     ///
