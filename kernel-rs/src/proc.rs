@@ -354,9 +354,9 @@ pub struct Proc {
 ///
 /// # Safety
 ///
-/// `ptr` is always not null pointer, and Proc's state is Procstate::RUNNING.
+/// `inner` is always not null pointer, and Proc's state is Procstate::RUNNING.
 pub struct CurrentProc<'p> {
-    ptr: *const Proc,
+    inner: *const Proc,
     _marker: PhantomData<&'p Proc>,
 }
 
@@ -366,13 +366,13 @@ impl CurrentProc<'_> {
     /// `ptr` must not be null pointer.
     unsafe fn from_raw(ptr: *const Proc) -> Self {
         CurrentProc {
-            ptr,
+            inner: ptr,
             _marker: PhantomData,
         }
     }
 
     fn raw(&self) -> *const Proc {
-        self.ptr
+        self.inner
     }
 }
 
@@ -380,7 +380,7 @@ impl Deref for CurrentProc<'_> {
     type Target = Proc;
     fn deref(&self) -> &Self::Target {
         // Safe since `ptr` always refers to `Proc`.
-        unsafe { &*self.ptr }
+        unsafe { &*self.inner }
     }
 }
 
