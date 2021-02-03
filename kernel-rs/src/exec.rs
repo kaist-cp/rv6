@@ -183,11 +183,11 @@ impl Kernel {
             .rposition(|c| *c == b'/')
             .map(|i| &path_str[(i + 1)..])
             .unwrap_or(path_str);
-        let p_name = &mut proc_data.name;
-        let len = cmp::min(p_name.len(), name.len());
-        p_name[..len].copy_from_slice(&name[..len]);
-        if len < p_name.len() {
-            p_name[len] = 0;
+        let proc_name = &mut proc_data.name;
+        let len = cmp::min(proc_name.len(), name.len());
+        proc_name[..len].copy_from_slice(&name[..len]);
+        if len < proc_name.len() {
+            proc_name[len] = 0;
         }
 
         // Commit to the user image.
