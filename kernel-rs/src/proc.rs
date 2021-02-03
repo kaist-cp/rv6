@@ -429,7 +429,7 @@ impl ProcGuard {
         let interrupt_enabled = unsafe { (*kernel().mycpu()).interrupt_enabled };
         unsafe {
             swtch(
-                &mut (*self.data.get()).context,
+                &mut self.deref_mut_data().context,
                 &mut (*kernel().mycpu()).context,
             )
         };
@@ -447,7 +447,7 @@ impl ProcGuard {
     fn clear(&mut self, parent_guard: Option<SpinlockProtectedGuard<'_>>) {
         unsafe {
             // Clear the `ProcData`.
-            let mut data = &mut *self.data.get();
+            let data = self.deref_mut_data();
             let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
             if !trap_frame.is_null() {
                 kernel().free(Page::from_usize(trap_frame as _));
@@ -461,7 +461,7 @@ impl ProcGuard {
 
             // Clear the `ProcInfo`.
             self.deref_mut_info().pid = 0;
-            (*self).deref_mut_data().name[0] = 0;
+            data.name[0] = 0;
             self.deref_mut_info().waitchannel = ptr::null();
             self.killed.store(false, Ordering::Release);
             self.deref_mut_info().xstate = 0;
@@ -483,7 +483,7 @@ impl Drop for ProcGuard {
             // If the ProcGuard was dropped while the process's state is still `USED`
             // and ProcData::sz == 0, this means an error happened while initializing a process.
             // Hence, clear the process's fields.
-            if self.deref_info().state == Procstate::USED && (*self.data.get()).memory.size() == 0 {
+            if self.deref_info().state == Procstate::USED && self.memory.size() == 0 {
                 self.clear(None);
             }
             (*self.ptr).info.unlock();
@@ -675,7 +675,7 @@ impl ProcessSystem {
         for p in &self.process_pool {
             let guard = p.lock();
             if guard.deref_info().state == Procstate::UNUSED {
-                let data = unsafe { &mut *guard.data.get() };
+                let data = guard.deref_mut_data();
                 guard.deref_mut_info().pid = self.allocpid();
                 guard.deref_mut_info().state = Procstate::USED;
 
@@ -761,7 +761,7 @@ impl ProcessSystem {
 
         self.initial_proc = guard.raw() as *mut _;
 
-        let data = unsafe { &mut *guard.data.get() };
+        let data = guard.deref_mut_data();
 
         // Prepare for the very first "return" from kernel to user.
 
@@ -792,7 +792,7 @@ impl ProcessSystem {
 
         // Allocate process.
         let np = unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }?;
-        let mut npdata = unsafe { &mut *np.data.get() };
+        let mut npdata = np.deref_mut_data();
 
         // Copy saved user registers.
         *npdata.trap_frame_mut() = *proc.trap_frame();
@@ -948,7 +948,7 @@ pub unsafe fn procinit(procs: &'static mut ProcessSystem) {
                 .as_mut_ptr()
                 .write(SpinlockProtected::new(&procs.wait_lock, ptr::null_mut()))
         };
-        unsafe { (&mut *(*p).data.get()).kstack = kstack(i) };
+        p.deref_mut_data().kstack = kstack(i);
     }
 }
 
@@ -990,7 +990,7 @@ pub unsafe fn scheduler() -> ! {
                 // before jumping back to us.
                 guard.deref_mut_info().state = Procstate::RUNNING;
                 unsafe { (*c).proc = p as *const _ };
-                unsafe { swtch(&mut (*c).context, &mut (*guard.data.get()).context) };
+                unsafe { swtch(&mut (*c).context, &mut guard.deref_mut_data().context) };
 
                 // Process is done running for now.
                 // It should have changed its p->state before coming back.
