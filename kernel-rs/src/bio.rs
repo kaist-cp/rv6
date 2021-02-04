@@ -95,7 +95,7 @@ impl BufInner {
 /// Type that actually stores the buffer cache.
 pub type BcacheInner = MruArena<BufEntry, NBUF>;
 /// Type that provides a pinned mutable reference of the buffer cache
-/// to the outside.
+/// wrapped by a `Spinlock` to the outside.
 // TODO: 'static?
 pub type Bcache = Spinlock<Pin<&'static mut MruArena<BufEntry, NBUF>>>;
 

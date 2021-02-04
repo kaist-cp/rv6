@@ -1,3 +1,4 @@
+use core::cell::UnsafeCell;
 use core::fmt::{self, Write};
 use core::hint::spin_loop;
 use core::mem::MaybeUninit;
@@ -33,8 +34,8 @@ pub fn kernel() -> &'static Kernel {
 
 /// # Safety
 ///
-/// The `Kernel` never moves `_bcache_inner` and only provides a
-/// pinned mutable reference of it to the outside.
+/// The `Kernel` never moves `_bcache_inner` and the outside can only obtain
+/// a pinned mutable reference to it.
 pub struct Kernel {
     panicked: AtomicBool,
 
@@ -59,7 +60,7 @@ pub struct Kernel {
 
     cpus: [Cpu; NCPU],
 
-    _bcache_inner: BcacheInner, // Never access this after initialization.
+    _bcache_inner: UnsafeCell<BcacheInner>, // Never access this after initialization.
     bcache: MaybeUninit<Bcache>,
 
     pub devsw: [Devsw; NDEV],
@@ -85,7 +86,7 @@ impl Kernel {
             cpus: [Cpu::new(); NCPU],
             // Safe since we never move `_bcache_inner` and only provide a
             // pinned mutable reference of it to the outside.
-            _bcache_inner: unsafe { BcacheInner::zero() },
+            _bcache_inner: unsafe { UnsafeCell::new(BcacheInner::zero()) },
             bcache: MaybeUninit::uninit(),
             devsw: [Devsw {
                 read: None,
@@ -223,7 +224,7 @@ pub unsafe fn kernel_main() -> ! {
         unsafe {
             KERNEL.bcache = MaybeUninit::new(Spinlock::new(
                 "BCACHE",
-                Pin::new_unchecked(&mut KERNEL._bcache_inner),
+                Pin::new_unchecked(KERNEL._bcache_inner.get_mut()),
             ));
             KERNEL.bcache.assume_init_mut().get_mut().as_mut().init()
         };
