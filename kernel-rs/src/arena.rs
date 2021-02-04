@@ -81,6 +81,7 @@ pub struct ArrayArena<T, const CAPACITY: usize> {
 /// # Safety
 ///
 /// `ptr` is a valid pointer to `ArrayEntry<T>` and has lifetime `'s`.
+/// Always acquire the `Spinlock<ArrayArena<T, CAPACITY>>` before modifying `ArrayEntry<T>`.
 pub struct ArrayPtr<'s, T> {
     ptr: NonNull<ArrayEntry<T>>,
     _marker: PhantomData<&'s T>,
@@ -118,10 +119,11 @@ pub struct MruArena<T, const CAPACITY: usize> {
 
 /// # Safety
 ///
-/// TODO
-pub struct MruPtr<T> {
+/// `ptr` is a valid pointer to `MruEntry<T>` and has lifetime `'s`.
+/// Always acquire the `Spinlock<MruArena<T, CAPACITY>>` before modifying `MruEntry<T>`.
+pub struct MruPtr<'s, T> {
     ptr: NonNull<MruEntry<T>>,
-    _marker: PhantomData<T>,
+    _marker: PhantomData<&'s T>,
 }
 
 /// # Safety
@@ -297,7 +299,7 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
     }
 }
 
-impl<T> Deref for MruPtr<T> {
+impl<T> Deref for MruPtr<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -305,7 +307,7 @@ impl<T> Deref for MruPtr<T> {
     }
 }
 
-impl<T> Drop for MruPtr<T> {
+impl<T> Drop for MruPtr<'_, T> {
     fn drop(&mut self) {
         // HACK(@efenniht): we really need linear type here:
         // https://github.com/rust-lang/rfcs/issues/814
@@ -323,7 +325,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Spinlock<MruArena<T, CAPAC
 
 impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruArena<T, CAPACITY>> {
     type Data = T;
-    type Handle<'s> = MruPtr<T>;
+    type Handle<'s> = MruPtr<'s, T>;
     type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
 
     fn find_or_alloc_handle<'s, C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
