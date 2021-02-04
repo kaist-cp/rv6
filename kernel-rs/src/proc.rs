@@ -472,7 +472,7 @@ impl ProcGuard {
     /// Wake process from sleep().
     fn wakeup(&self) {
         if self.deref_info().state == Procstate::SLEEPING {
-            self.deref_mut_info().state = Procstate::RUNNABLE
+            self.deref_mut_info().state = Procstate::RUNNABLE;
         }
     }
 }
@@ -1018,11 +1018,11 @@ unsafe fn forkret() {
 impl Kernel {
     /// Returns `Some<CurrentProc<'_>>` if current proc exists.
     /// If current proc is null, return `None`.
-    /// If `(*c).proc` is non-null, returned `CurrentProc` lives during self's lifetime.
+    /// If `(*c).proc` is non-null, returned `CurrentProc`'s `inner` lives during `&self`'s lifetime
     pub fn current_proc(&self) -> Option<CurrentProc<'_>> {
         unsafe { push_off() };
-        let c = self.mycpu();
-        let proc = unsafe { (*c).proc };
+        let cpu = self.mycpu();
+        let proc = unsafe { (*cpu).proc };
         unsafe { pop_off() };
         if proc.is_null() {
             return None;
