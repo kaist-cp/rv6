@@ -31,6 +31,10 @@ pub fn kernel() -> &'static Kernel {
     unsafe { &KERNEL }
 }
 
+/// # Safety
+///
+/// The `Kernel` never moves `_bcache_inner` and only provides a
+/// pinned mutable reference of it to the outside.
 pub struct Kernel {
     panicked: AtomicBool,
 
@@ -55,8 +59,8 @@ pub struct Kernel {
 
     cpus: [Cpu; NCPU],
 
-    _bcache_inner: BcacheInner, // Never access this again after initialization.
-    pub bcache: MaybeUninit<Bcache>,
+    _bcache_inner: BcacheInner, // Never access this after initialization.
+    bcache: MaybeUninit<Bcache>,
 
     pub devsw: [Devsw; NDEV],
 
@@ -140,6 +144,13 @@ impl Kernel {
     pub fn mycpu(&self) -> *mut Cpu {
         let id: usize = cpuid();
         &self.cpus[id] as *const _ as *mut _
+    }
+
+    /// # Safety
+    ///
+    /// Use only after `kernel_main()`, which is where `bcache` gets initialized.
+    pub fn get_bcache(&self) -> &Bcache {
+        unsafe { self.bcache.assume_init_ref() }
     }
 }
 
