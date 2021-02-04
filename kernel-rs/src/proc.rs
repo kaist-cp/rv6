@@ -1017,7 +1017,7 @@ impl Kernel {
     /// Returns `Some<CurrentProc<'_>>` if current proc exists.
     /// If current proc is null, return `None`.
     /// If `(*c).proc` is non-null, returned `CurrentProc`'s `inner` lives during `&self`'s lifetime
-    pub fn current_proc<'p>(&'p self) -> Option<CurrentProc<'p>> {
+    pub fn current_proc(&self) -> Option<CurrentProc<'_>> {
         unsafe { push_off() };
         let cpu = self.mycpu();
         let proc = unsafe { (*cpu).proc };
