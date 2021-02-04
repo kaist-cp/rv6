@@ -3,7 +3,9 @@ use crate::spinlock::{Spinlock, SpinlockGuard};
 use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;
+use core::pin::Pin;
 use core::ptr::{self, NonNull};
+use pin_project::pin_project;
 
 /// A homogeneous memory allocator, equipped with the box type representing an allocation.
 pub trait Arena: Sized {
@@ -79,6 +81,7 @@ pub struct ArrayArena<T, const CAPACITY: usize> {
 /// # Safety
 ///
 /// `ptr` is a valid pointer to `ArrayEntry<T>` and has lifetime `'s`.
+/// Always acquire the `Spinlock<ArrayArena<T, CAPACITY>>` before modifying `ArrayEntry<T>`.
 pub struct ArrayPtr<'s, T> {
     ptr: NonNull<ArrayEntry<T>>,
     _marker: PhantomData<&'s T>,
@@ -101,25 +104,31 @@ impl<'s, T> ArrayPtr<'s, T> {
     }
 }
 
+#[pin_project]
 #[repr(C)]
 pub struct MruEntry<T> {
+    #[pin]
     list_entry: ListEntry,
     refcnt: usize,
     data: T,
 }
 
 /// A homogeneous memory allocator equipped with reference counts.
+#[pin_project]
 pub struct MruArena<T, const CAPACITY: usize> {
+    #[pin]
     entries: [MruEntry<T>; CAPACITY],
+    #[pin]
     head: ListEntry,
 }
 
 /// # Safety
 ///
-/// TODO
-pub struct MruPtr<T> {
+/// `ptr` is a valid pointer to `MruEntry<T>` and has lifetime `'s`.
+/// Always acquire the `Spinlock<Pin<&mut MruArena<T, CAPACITY>>>` before modifying `MruEntry<T>`.
+pub struct MruPtr<'s, T> {
     ptr: NonNull<MruEntry<T>>,
-    _marker: PhantomData<T>,
+    _marker: PhantomData<&'s T>,
 }
 
 /// # Safety
@@ -160,7 +169,9 @@ impl<T> Drop for ArrayPtr<'_, T> {
     }
 }
 
-impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<ArrayArena<T, CAPACITY>> {
+impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
+    for Spinlock<ArrayArena<T, CAPACITY>>
+{
     type Data = T;
     type Handle<'s> = ArrayPtr<'s, T>;
     type Guard<'s> = SpinlockGuard<'s, ArrayArena<T, CAPACITY>>;
@@ -258,7 +269,7 @@ impl<T> MruEntry<T> {
         Self {
             refcnt: 0,
             data,
-            list_entry: ListEntry::new(),
+            list_entry: unsafe { ListEntry::new() },
         }
     }
 }
@@ -268,20 +279,32 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
     pub const fn new(entries: [MruEntry<T>; CAPACITY]) -> Self {
         Self {
             entries,
-            head: ListEntry::new(),
+            head: unsafe { ListEntry::new() },
         }
     }
 
-    pub fn init(&mut self) {
-        self.head.init();
+    // Returns a pinned mutable reference to the `index`th element of `array`.
+    fn get_entry(array: Pin<&mut [MruEntry<T>; CAPACITY]>, index: usize) -> Pin<&mut MruEntry<T>> {
+        // Safe since we don't move `MruEntry` and access it only through `Pin`.
+        // That is, the data is pinned.
+        unsafe { Pin::new_unchecked(&mut (*array.get_unchecked_mut())[index]) }
+    }
 
-        for entry in &mut self.entries {
-            self.head.prepend(&mut entry.list_entry);
+    pub fn init(mut self: Pin<&mut Self>) {
+        let mut this = self.as_mut().project();
+
+        this.head.as_mut().init();
+        for index in 0..this.entries.len() {
+            this.head.as_mut().prepend(
+                Self::get_entry(this.entries.as_mut(), index)
+                    .project()
+                    .list_entry,
+            );
         }
     }
 }
 
-impl<T> Deref for MruPtr<T> {
+impl<T> Deref for MruPtr<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -289,7 +312,7 @@ impl<T> Deref for MruPtr<T> {
     }
 }
 
-impl<T> Drop for MruPtr<T> {
+impl<T> Drop for MruPtr<'_, T> {
     fn drop(&mut self) {
         // HACK(@efenniht): we really need linear type here:
         // https://github.com/rust-lang/rfcs/issues/814
@@ -297,7 +320,7 @@ impl<T> Drop for MruPtr<T> {
     }
 }
 
-impl<T: 'static + ArenaObject, const CAPACITY: usize> Spinlock<MruArena<T, CAPACITY>> {
+impl<T: 'static + ArenaObject, const CAPACITY: usize> Spinlock<Pin<&mut MruArena<T, CAPACITY>>> {
     // TODO(https://github.com/kaist-cp/rv6/issues/369)
     // A workarond for https://github.com/Gilnaa/memoffset/issues/49.
     // Assumes `list_entry` is located at the beginning of `MruEntry`.
@@ -305,10 +328,13 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Spinlock<MruArena<T, CAPAC
     // const LIST_ENTRY_OFFSET: usize = offset_of!(MruEntry<T>, list_entry);
 }
 
-impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruArena<T, CAPACITY>> {
+//TODO: 'static?
+impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena
+    for Spinlock<Pin<&'static mut MruArena<T, CAPACITY>>>
+{
     type Data = T;
-    type Handle<'s> = MruPtr<T>;
-    type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
+    type Handle<'s> = MruPtr<'s, T>;
+    type Guard<'s> = SpinlockGuard<'s, Pin<&'static mut MruArena<T, CAPACITY>>>; //TODO: 'static?
 
     fn find_or_alloc_handle<'s, C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &'s self,
@@ -393,16 +419,17 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
     unsafe fn dealloc(&self, mut handle: Self::Handle<'_>) {
         let mut this = self.lock();
 
-        let entry = unsafe { handle.ptr.as_mut() };
-        if entry.refcnt == 1 {
+        // Safe since we don't move `MruEntry` and access it only through `Pin`.
+        // That is, the data is pinned.
+        let mut entry = unsafe { Pin::new_unchecked(handle.ptr.as_mut()).project() };
+        if *entry.refcnt == 1 {
             entry.data.finalize::<Self>(&mut this);
         }
+        *entry.refcnt -= 1;
 
-        entry.refcnt -= 1;
-
-        if entry.refcnt == 0 {
-            entry.list_entry.remove();
-            this.head.prepend(&mut entry.list_entry);
+        if *entry.refcnt == 0 {
+            entry.list_entry.as_mut().remove();
+            this.as_mut().project().head.prepend(entry.list_entry);
         }
 
         mem::forget(handle);

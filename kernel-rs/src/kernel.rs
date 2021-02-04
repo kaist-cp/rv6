@@ -11,6 +11,7 @@ use crate::{
     kalloc::Kmem,
     page::Page,
     param::{NCPU, NDEV},
+    pinned_kernel::pinned_kernel,
     plic::{plicinit, plicinithart},
     println,
     proc::{cpuid, procinit, scheduler, Cpu, ProcessSystem},
@@ -30,6 +31,10 @@ pub fn kernel() -> &'static Kernel {
     unsafe { &KERNEL }
 }
 
+/// # Safety
+///
+/// The `Kernel` never moves `_bcache_inner` and the outside can only obtain
+/// a pinned mutable reference to it.
 pub struct Kernel {
     panicked: AtomicBool,
 
@@ -54,7 +59,7 @@ pub struct Kernel {
 
     cpus: [Cpu; NCPU],
 
-    pub bcache: Bcache,
+    pub bcache: MaybeUninit<Bcache>,
 
     pub devsw: [Devsw; NDEV],
 
@@ -77,7 +82,7 @@ impl Kernel {
             ticks: Sleepablelock::new("time", 0),
             procs: ProcessSystem::zero(),
             cpus: [Cpu::new(); NCPU],
-            bcache: Bcache::zero(),
+            bcache: MaybeUninit::uninit(),
             devsw: [Devsw {
                 read: None,
                 write: None,
@@ -204,7 +209,18 @@ pub unsafe fn kernel_main() -> ! {
         unsafe { plicinithart() };
 
         // Buffer cache.
-        unsafe { KERNEL.bcache.get_mut().init() };
+        unsafe {
+            // Initialize the `KERNEL.bcache` field, and then initialize the `Bcache`.
+            KERNEL
+                .bcache
+                .write(Spinlock::new(
+                    "BCACHE",
+                    pinned_kernel().project().bcache_inner,
+                ))
+                .get_mut()
+                .as_mut()
+                .init()
+        };
 
         // Emulated hard disk.
         unsafe { KERNEL.file_system.disk.get_mut().init() };

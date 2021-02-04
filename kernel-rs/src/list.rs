@@ -2,24 +2,45 @@
 //! `ListEntry` types must be first initialized with init()
 //! before calling its member functions.
 
+use core::marker::PhantomPinned;
+use core::pin::Pin;
 use core::ptr;
+use pin_project::{pin_project, pinned_drop};
 
+#[pin_project(PinnedDrop)]
 pub struct ListEntry {
     next: *mut ListEntry,
     prev: *mut ListEntry,
+    _marker: PhantomPinned, //`ListEntry` is `!Unpin`.
 }
 
+/// A list entry for doubly, circular, intrusive linked lists.
+///
+/// # Safety
+///
+/// All `ListEntry` types must be used only after initializing it with `ListEntry::init()`,
+/// or after appending/prepending it to another initialized `ListEntry`.
+/// After this, `ListEntry::{prev, next}` always refer to a valid, initialized `ListEntry`.
 impl ListEntry {
-    pub const fn new() -> Self {
+    /// Returns an uninitialized `ListEntry`,
+    ///
+    /// # Safety
+    ///
+    /// All `ListEntry` types must be used only after initializing it with `ListEntry::init()`,
+    /// or after appending/prepending it to another initialized `ListEntry`.
+    pub const unsafe fn new() -> Self {
         Self {
             prev: ptr::null_mut(),
             next: ptr::null_mut(),
+            _marker: PhantomPinned,
         }
     }
 
-    pub fn init(&mut self) {
-        self.next = self;
-        self.prev = self;
+    pub fn init(self: Pin<&mut Self>) {
+        // Safe since we don't move the inner data and don't leak the mutable reference.
+        let this = unsafe { self.get_unchecked_mut() };
+        this.next = this;
+        this.prev = this;
     }
 
     pub fn prev(&self) -> &Self {
@@ -31,24 +52,30 @@ impl ListEntry {
     }
 
     /// `e` <-> `this`
-    pub fn append(&mut self, e: &mut ListEntry) {
-        e.next = self;
-        e.prev = self.prev;
+    pub fn append(self: Pin<&mut Self>, e: Pin<&mut Self>) {
+        // Safe since we don't move the inner data and don't leak the mutable reference.
+        let this = unsafe { self.get_unchecked_mut() };
+        let elem = unsafe { e.get_unchecked_mut() };
 
+        elem.next = this;
+        elem.prev = this.prev;
         unsafe {
-            (*e.next).prev = e;
-            (*e.prev).next = e;
+            (*elem.next).prev = elem;
+            (*elem.prev).next = elem;
         }
     }
 
     /// `this` <-> `e`
-    pub fn prepend(&mut self, e: &mut ListEntry) {
-        e.next = self.next;
-        e.prev = self;
+    pub fn prepend(self: Pin<&mut Self>, e: Pin<&mut Self>) {
+        // Safe since we don't move the inner data and don't leak the mutable reference.
+        let this = unsafe { self.get_unchecked_mut() };
+        let elem = unsafe { e.get_unchecked_mut() };
 
+        elem.next = this.next;
+        elem.prev = this;
         unsafe {
-            (*e.next).prev = e;
-            (*e.prev).next = e;
+            (*elem.next).prev = elem;
+            (*elem.prev).next = elem;
         }
     }
 
@@ -56,7 +83,7 @@ impl ListEntry {
         ptr::eq(self.next, self)
     }
 
-    pub fn remove(&mut self) {
+    pub fn remove(mut self: Pin<&mut Self>) {
         unsafe {
             (*self.prev).next = self.next;
             (*self.next).prev = self.prev;
@@ -64,9 +91,17 @@ impl ListEntry {
         self.init();
     }
 
-    pub fn list_pop_front(&self) -> &ListEntry {
-        let result = unsafe { &mut *self.next };
-        result.remove();
+    pub fn list_pop_front(mut self: Pin<&mut Self>) -> Pin<&mut Self> {
+        // Safe since we don't move the inner data and don't leak the mutable reference.
+        let mut result = unsafe { Pin::new_unchecked(&mut *self.next) };
+        result.as_mut().remove();
         result
+    }
+}
+
+#[pinned_drop]
+impl PinnedDrop for ListEntry {
+    fn drop(self: Pin<&mut Self>) {
+        self.remove();
     }
 }
