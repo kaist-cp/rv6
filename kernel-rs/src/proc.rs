@@ -356,15 +356,15 @@ pub struct Proc {
 /// `inner` is current Cpu's proc, this means it's state is `RUNNING`.
 /// `Proc` lives during lifetime `'p`.
 pub struct CurrentProc<'p> {
-    inner: *const Proc,
+    inner: &'p Proc,
     _marker: PhantomData<&'p Proc>,
 }
 
-impl CurrentProc<'_> {
+impl<'p> CurrentProc<'p> {
     /// # Safety
     ///
     /// `ptr` must not be null pointer, and should be current Cpu's proc.
-    unsafe fn from_raw(ptr: *const Proc) -> Self {
+    unsafe fn from_raw(ptr: &'p Proc) -> Self {
         CurrentProc {
             inner: ptr,
             _marker: PhantomData,
@@ -372,7 +372,7 @@ impl CurrentProc<'_> {
     }
 
     fn raw(&self) -> *const Proc {
-        self.inner
+        self.inner as *const Proc
     }
 
     /// Give up the CPU for one scheduling round.
@@ -387,7 +387,7 @@ impl Deref for CurrentProc<'_> {
     type Target = Proc;
     fn deref(&self) -> &Self::Target {
         // Safe since `inner` always refers to `Proc`.
-        unsafe { &*self.inner }
+        self.inner
     }
 }
 
@@ -1019,7 +1019,7 @@ impl Kernel {
     /// Returns `Some<CurrentProc<'_>>` if current proc exists.
     /// If current proc is null, return `None`.
     /// If `(*c).proc` is non-null, returned `CurrentProc`'s `inner` lives during `&self`'s lifetime
-    pub fn current_proc(&self) -> Option<CurrentProc<'_>> {
+    pub fn current_proc<'p>(&'p self) -> Option<CurrentProc<'p>> {
         unsafe { push_off() };
         let cpu = self.mycpu();
         let proc = unsafe { (*cpu).proc };
@@ -1028,6 +1028,6 @@ impl Kernel {
             return None;
         }
         // This is safe because p is non-null and current Cpu's proc.
-        Some(unsafe { CurrentProc::from_raw(proc) })
+        Some(unsafe { CurrentProc::from_raw(&(*proc)) })
     }
 }
