@@ -120,7 +120,7 @@ pub struct MruArena<T, const CAPACITY: usize> {
 /// # Safety
 ///
 /// `ptr` is a valid pointer to `MruEntry<T>` and has lifetime `'s`.
-/// Always acquire the `Spinlock<MruArena<T, CAPACITY>>` before modifying `MruEntry<T>`.
+/// Always acquire the `Spinlock<Pin<&mut MruArena<T, CAPACITY>>>` before modifying `MruEntry<T>`.
 pub struct MruPtr<'s, T> {
     ptr: NonNull<MruEntry<T>>,
     _marker: PhantomData<&'s T>,
@@ -315,7 +315,7 @@ impl<T> Drop for MruPtr<'_, T> {
     }
 }
 
-impl<T: 'static + ArenaObject, const CAPACITY: usize> Spinlock<MruArena<T, CAPACITY>> {
+impl<T: 'static + ArenaObject, const CAPACITY: usize> Spinlock<Pin<&mut MruArena<T, CAPACITY>>> {
     // TODO(https://github.com/kaist-cp/rv6/issues/369)
     // A workarond for https://github.com/Gilnaa/memoffset/issues/49.
     // Assumes `list_entry` is located at the beginning of `MruEntry`.
@@ -323,10 +323,13 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Spinlock<MruArena<T, CAPAC
     // const LIST_ENTRY_OFFSET: usize = offset_of!(MruEntry<T>, list_entry);
 }
 
-impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruArena<T, CAPACITY>> {
+//TODO: 'static?
+impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena
+    for Spinlock<Pin<&'static mut MruArena<T, CAPACITY>>>
+{
     type Data = T;
     type Handle<'s> = MruPtr<'s, T>;
-    type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
+    type Guard<'s> = SpinlockGuard<'s, Pin<&'static mut MruArena<T, CAPACITY>>>; //TODO: 'static?
 
     fn find_or_alloc_handle<'s, C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &'s self,
@@ -421,7 +424,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
 
         if *entry.refcnt == 0 {
             entry.list_entry.as_mut().remove();
-            this.get_pin_mut().project().head.prepend(entry.list_entry);
+            this.as_mut().project().head.prepend(entry.list_entry);
         }
 
         mem::forget(handle);
