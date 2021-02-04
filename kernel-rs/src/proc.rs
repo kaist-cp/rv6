@@ -352,9 +352,7 @@ pub struct Proc {
 ///
 /// # Safety
 ///
-/// `inner` is always not null pointer.
 /// `inner` is current Cpu's proc, this means it's state is `RUNNING`.
-/// `Proc` lives during lifetime `'p`.
 pub struct CurrentProc<'p> {
     inner: &'p Proc,
     _marker: PhantomData<&'p Proc>,
@@ -363,10 +361,10 @@ pub struct CurrentProc<'p> {
 impl<'p> CurrentProc<'p> {
     /// # Safety
     ///
-    /// `ptr` must not be null pointer, and should be current Cpu's proc.
-    unsafe fn from_raw(ptr: &'p Proc) -> Self {
+    /// `proc` should be current `Cpu`'s `proc`.
+    unsafe fn from_raw(proc: &'p Proc) -> Self {
         CurrentProc {
-            inner: ptr,
+            inner: proc,
             _marker: PhantomData,
         }
     }

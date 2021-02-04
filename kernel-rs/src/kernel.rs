@@ -36,7 +36,7 @@ pub fn kernel() -> &'static Kernel {
 /// The `Kernel` never moves `_bcache_inner` and the outside can only obtain
 /// a pinned mutable reference to it.
 /// If the `Cpu` executing the code has a non-null `Proc` pointer,
-/// the `Proc` pointer in `CurrentProc` is always valid while the `Kernel` is alive.
+/// the `Proc` in `CurrentProc` is always valid while the `Kernel` is alive.
 pub struct Kernel {
     panicked: AtomicBool,
 
