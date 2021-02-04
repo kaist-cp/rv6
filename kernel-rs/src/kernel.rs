@@ -1,18 +1,17 @@
-use core::cell::UnsafeCell;
 use core::fmt::{self, Write};
 use core::hint::spin_loop;
 use core::mem::MaybeUninit;
-use core::pin::Pin;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::{
-    bio::{Bcache, BcacheInner},
+    bio::Bcache,
     console::{consoleinit, Console, Printer},
     file::{Devsw, FileTable},
     fs::{FileSystem, Itable},
     kalloc::Kmem,
     page::Page,
     param::{NCPU, NDEV},
+    pinned_kernel::pinned_kernel,
     plic::{plicinit, plicinithart},
     println,
     proc::{cpuid, procinit, scheduler, Cpu, ProcessSystem},
@@ -60,8 +59,7 @@ pub struct Kernel {
 
     cpus: [Cpu; NCPU],
 
-    _bcache_inner: UnsafeCell<BcacheInner>, // Never access this after initialization.
-    bcache: MaybeUninit<Bcache>,
+    pub bcache: MaybeUninit<Bcache>,
 
     pub devsw: [Devsw; NDEV],
 
@@ -84,9 +82,6 @@ impl Kernel {
             ticks: Sleepablelock::new("time", 0),
             procs: ProcessSystem::zero(),
             cpus: [Cpu::new(); NCPU],
-            // Safe since we never move `_bcache_inner` and only provide a
-            // pinned mutable reference of it to the outside.
-            _bcache_inner: unsafe { UnsafeCell::new(BcacheInner::zero()) },
             bcache: MaybeUninit::uninit(),
             devsw: [Devsw {
                 read: None,
@@ -145,13 +140,6 @@ impl Kernel {
     pub fn mycpu(&self) -> *mut Cpu {
         let id: usize = cpuid();
         &self.cpus[id] as *const _ as *mut _
-    }
-
-    /// # Safety
-    ///
-    /// Use only after `kernel_main()`, which is where `bcache` gets initialized.
-    pub fn get_bcache(&self) -> &Bcache {
-        unsafe { self.bcache.assume_init_ref() }
     }
 }
 
@@ -224,7 +212,7 @@ pub unsafe fn kernel_main() -> ! {
         unsafe {
             KERNEL.bcache = MaybeUninit::new(Spinlock::new(
                 "BCACHE",
-                Pin::new_unchecked(KERNEL._bcache_inner.get_mut()),
+                pinned_kernel().project().bcache_inner,
             ));
             KERNEL.bcache.assume_init_mut().get_mut().as_mut().init()
         };
