@@ -3,7 +3,6 @@
 use array_macro::array;
 use core::{
     cell::UnsafeCell,
-    marker::PhantomData,
     mem::{self, MaybeUninit},
     ops::Deref,
     ptr, slice, str,
@@ -355,18 +354,14 @@ pub struct Proc {
 /// `inner` is current Cpu's proc, this means it's state is `RUNNING`.
 pub struct CurrentProc<'p> {
     inner: &'p Proc,
-    _marker: PhantomData<&'p Proc>,
 }
 
 impl<'p> CurrentProc<'p> {
     /// # Safety
     ///
     /// `proc` should be current `Cpu`'s `proc`.
-    unsafe fn from_raw(proc: &'p Proc) -> Self {
-        CurrentProc {
-            inner: proc,
-            _marker: PhantomData,
-        }
+    unsafe fn new(proc: &'p Proc) -> Self {
+        CurrentProc { inner: proc }
     }
 
     fn raw(&self) -> *const Proc {
@@ -384,7 +379,6 @@ impl<'p> CurrentProc<'p> {
 impl Deref for CurrentProc<'_> {
     type Target = Proc;
     fn deref(&self) -> &Self::Target {
-        // Safe since `inner` always refers to `Proc`.
         self.inner
     }
 }
@@ -1026,6 +1020,6 @@ impl Kernel {
             return None;
         }
         // This is safe because p is non-null and current Cpu's proc.
-        Some(unsafe { CurrentProc::from_raw(&(*proc)) })
+        Some(unsafe { CurrentProc::new(&(*proc)) })
     }
 }
