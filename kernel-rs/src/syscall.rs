@@ -1,7 +1,7 @@
 use crate::{
     kernel::Kernel,
     println,
-    proc::myproc,
+    proc::CurrentProc,
     vm::{UVAddr, VAddr},
 };
 use core::{mem, slice, str};
@@ -9,16 +9,14 @@ use cstr_core::CStr;
 
 /// Fetch the usize at addr from the current process.
 /// Returns Ok(fetched integer) on success, Err(()) on error.
-pub unsafe fn fetchaddr(addr: UVAddr) -> Result<usize, ()> {
-    let p = unsafe { myproc() };
-    let data = unsafe { &mut *(*p).data.get() };
+pub unsafe fn fetchaddr(addr: UVAddr, proc: &CurrentProc<'_>) -> Result<usize, ()> {
     let mut ip = 0;
-    if addr.into_usize() >= data.memory.size()
-        || addr.into_usize().wrapping_add(mem::size_of::<usize>()) > data.memory.size()
+    if addr.into_usize() >= proc.memory.size()
+        || addr.into_usize().wrapping_add(mem::size_of::<usize>()) > proc.memory.size()
     {
         return Err(());
     }
-    data.memory.copy_in(
+    proc.deref_mut_data().memory.copy_in(
         unsafe {
             slice::from_raw_parts_mut(&mut ip as *mut usize as *mut u8, mem::size_of::<usize>())
         },
@@ -29,81 +27,82 @@ pub unsafe fn fetchaddr(addr: UVAddr) -> Result<usize, ()> {
 
 /// Fetch the nul-terminated string at addr from the current process.
 /// Returns reference to the string in the buffer.
-pub unsafe fn fetchstr(addr: UVAddr, buf: &mut [u8]) -> Result<&CStr, ()> {
-    let p = unsafe { myproc() };
-    unsafe { (*(*p).data.get()).memory.copy_in_str(buf, addr) }?;
+pub unsafe fn fetchstr<'a>(
+    addr: UVAddr,
+    buf: &'a mut [u8],
+    proc: &CurrentProc<'_>,
+) -> Result<&'a CStr, ()> {
+    proc.deref_mut_data().memory.copy_in_str(buf, addr)?;
 
     Ok(unsafe { CStr::from_ptr(buf.as_ptr()) })
 }
 
-/// TODO(https://github.com/kaist-cp/rv6/issues/354)
-/// This will be safe function after we refactor myproc()
-unsafe fn argraw(n: usize) -> usize {
-    let p = unsafe { myproc() };
-    let data = unsafe { &mut *(*p).data.get() };
+fn argraw(n: usize, proc: &CurrentProc<'_>) -> usize {
     match n {
-        0 => data.trap_frame().a0,
-        1 => data.trap_frame().a1,
-        2 => data.trap_frame().a2,
-        3 => data.trap_frame().a3,
-        4 => data.trap_frame().a4,
-        5 => data.trap_frame().a5,
+        0 => proc.trap_frame().a0,
+        1 => proc.trap_frame().a1,
+        2 => proc.trap_frame().a2,
+        3 => proc.trap_frame().a3,
+        4 => proc.trap_frame().a4,
+        5 => proc.trap_frame().a5,
         _ => panic!("argraw"),
     }
 }
 
 /// Fetch the nth 32-bit system call argument.
-pub unsafe fn argint(n: usize) -> Result<i32, ()> {
-    Ok(unsafe { argraw(n) } as i32)
+pub fn argint(n: usize, proc: &CurrentProc<'_>) -> Result<i32, ()> {
+    Ok(argraw(n, proc) as i32)
 }
 
 /// Retrieve an argument as a pointer.
 /// Doesn't check for legality, since
 /// copyin/copyout will do that.
-pub unsafe fn argaddr(n: usize) -> Result<usize, ()> {
-    Ok(unsafe { argraw(n) })
+pub fn argaddr(n: usize, proc: &CurrentProc<'_>) -> Result<usize, ()> {
+    Ok(argraw(n, proc))
 }
 
 /// Fetch the nth word-sized system call argument as a null-terminated string.
 /// Copies into buf, at most max.
 /// Returns reference to the string in the buffer.
-pub unsafe fn argstr(n: usize, buf: &mut [u8]) -> Result<&CStr, ()> {
-    let addr = unsafe { argaddr(n) }?;
-    unsafe { fetchstr(UVAddr::new(addr), buf) }
+pub unsafe fn argstr<'a>(
+    n: usize,
+    buf: &'a mut [u8],
+    proc: &CurrentProc<'_>,
+) -> Result<&'a CStr, ()> {
+    let addr = argaddr(n, proc)?;
+    unsafe { fetchstr(UVAddr::new(addr), buf, proc) }
 }
 
 impl Kernel {
-    pub unsafe fn syscall(&'static self, num: i32) -> Result<usize, ()> {
-        let p = unsafe { myproc() };
-
+    pub unsafe fn syscall(&'static self, num: i32, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         match num {
-            1 => unsafe { self.sys_fork() },
-            2 => unsafe { self.sys_exit() },
-            3 => unsafe { self.sys_wait() },
-            4 => unsafe { self.sys_pipe() },
-            5 => unsafe { self.sys_read() },
-            6 => unsafe { self.sys_kill() },
-            7 => unsafe { self.sys_exec() },
-            8 => unsafe { self.sys_fstat() },
-            9 => unsafe { self.sys_chdir() },
-            10 => unsafe { self.sys_dup() },
-            11 => unsafe { self.sys_getpid() },
-            12 => unsafe { self.sys_sbrk() },
-            13 => unsafe { self.sys_sleep() },
-            14 => self.sys_uptime(),
-            15 => unsafe { self.sys_open() },
-            16 => unsafe { self.sys_write() },
-            17 => unsafe { self.sys_mknod() },
-            18 => unsafe { self.sys_unlink() },
-            19 => unsafe { self.sys_link() },
-            20 => unsafe { self.sys_mkdir() },
-            21 => unsafe { self.sys_close() },
-            22 => unsafe { self.sys_poweroff() },
+            1 => unsafe { self.sys_fork(proc) },
+            2 => unsafe { self.sys_exit(proc) },
+            3 => unsafe { self.sys_wait(proc) },
+            4 => self.sys_pipe(proc),
+            5 => unsafe { self.sys_read(proc) },
+            6 => self.sys_kill(proc),
+            7 => unsafe { self.sys_exec(proc) },
+            8 => unsafe { self.sys_fstat(proc) },
+            9 => unsafe { self.sys_chdir(proc) },
+            10 => unsafe { self.sys_dup(proc) },
+            11 => unsafe { self.sys_getpid(proc) },
+            12 => self.sys_sbrk(proc),
+            13 => self.sys_sleep(proc),
+            14 => self.sys_uptime(proc),
+            15 => unsafe { self.sys_open(proc) },
+            16 => unsafe { self.sys_write(proc) },
+            17 => unsafe { self.sys_mknod(proc) },
+            18 => unsafe { self.sys_unlink(proc) },
+            19 => unsafe { self.sys_link(proc) },
+            20 => unsafe { self.sys_mkdir(proc) },
+            21 => unsafe { self.sys_close(proc) },
+            22 => self.sys_poweroff(proc),
             _ => {
                 println!(
                     "{} {}: unknown sys call {}",
-                    unsafe { (*p).pid() },
-                    str::from_utf8(unsafe { &(*p).name }).unwrap_or("???"),
+                    unsafe { proc.pid() },
+                    str::from_utf8(&proc.name).unwrap_or("???"),
                     num
                 );
                 Err(())

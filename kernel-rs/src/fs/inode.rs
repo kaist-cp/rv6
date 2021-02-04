@@ -77,7 +77,7 @@ use crate::{
     fs::FsTransaction,
     kernel::kernel,
     param::{BSIZE, NINODE},
-    proc::myproc,
+    proc::CurrentProc,
     sleeplock::Sleeplock,
     spinlock::Spinlock,
     stat::Stat,
@@ -415,9 +415,15 @@ impl InodeGuard<'_> {
     /// from the content of inode at offset `off`.
     /// Returns Ok(number of bytes copied) on success, Err(()) on failure due to
     /// accessing an invalid virtual address.
-    pub fn read_user(&mut self, dst: UVAddr, off: u32, n: u32) -> Result<usize, ()> {
+    pub fn read_user(
+        &mut self,
+        dst: UVAddr,
+        off: u32,
+        n: u32,
+        proc: &CurrentProc<'_>,
+    ) -> Result<usize, ()> {
         self.read_internal(off, n, |off, src| {
-            unsafe { &mut *(*myproc()).data.get() }
+            proc.deref_mut_data()
                 .memory
                 .copy_out(dst + off as usize, src)
         })
@@ -514,13 +520,14 @@ impl InodeGuard<'_> {
         src: UVAddr,
         off: u32,
         n: u32,
+        proc: &CurrentProc<'_>,
         tx: &FsTransaction<'_>,
     ) -> Result<usize, ()> {
         self.write_internal(
             off,
             n,
             |off, dst| {
-                unsafe { &mut *(*myproc()).data.get() }
+                proc.deref_mut_data()
                     .memory
                     .copy_in(dst, src + off as usize)
             },

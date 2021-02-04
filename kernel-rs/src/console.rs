@@ -2,7 +2,6 @@ use crate::{
     file::Devsw,
     kernel::kernel,
     param::NDEV,
-    proc::myproc,
     sleepablelock::SleepablelockGuard,
     uart::Uart,
     vm::{UVAddr, VAddr},
@@ -62,7 +61,7 @@ impl Console {
             // Wait until interrupt handler has put some
             // input into CONS.buffer.
             while this.r == this.w {
-                if unsafe { (*myproc()).killed() } {
+                if kernel().current_proc().expect("No current proc").killed() {
                     return -1;
                 }
                 this.sleep();

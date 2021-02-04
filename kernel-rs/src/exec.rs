@@ -5,7 +5,7 @@ use crate::{
     kernel::Kernel,
     page::Page,
     param::MAXARG,
-    proc::myproc,
+    proc::CurrentProc,
     riscv::{pgroundup, PGSIZE},
     vm::{PAddr, UVAddr, UserMemory, VAddr},
 };
@@ -90,7 +90,7 @@ impl ProgHdr {
 }
 
 impl Kernel {
-    pub fn exec(&self, path: &Path, args: &[Page]) -> Result<usize, ()> {
+    pub fn exec(&self, path: &Path, args: &[Page], proc: &CurrentProc<'_>) -> Result<usize, ()> {
         if args.len() > MAXARG {
             return Err(());
         }
@@ -101,7 +101,7 @@ impl Kernel {
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
         let tx = self.file_system.begin_transaction();
-        let ptr = path.namei()?;
+        let ptr = path.namei(proc)?;
         let mut ip = ptr.lock();
 
         // Check ELF header
@@ -113,9 +113,7 @@ impl Kernel {
             return Err(());
         }
 
-        let p = unsafe { &mut *myproc() };
-        let mut data = unsafe { &mut *p.data.get() };
-        let trap_frame = PAddr::new(data.trap_frame() as *const _ as _);
+        let trap_frame = PAddr::new(proc.trap_frame() as *const _ as _);
         let mut mem = UserMemory::new(trap_frame, None).ok_or(())?;
 
         // Load program into memory.
@@ -178,6 +176,8 @@ impl Kernel {
         let (_, ustack, _) = unsafe { ustack.align_to::<u8>() };
         mem.copy_out(UVAddr::new(sp), &ustack[..argv_size])?;
 
+        let proc_data = proc.deref_mut_data();
+
         // Save program name for debugging.
         let path_str = path.as_bytes();
         let name = path_str
@@ -185,26 +185,26 @@ impl Kernel {
             .rposition(|c| *c == b'/')
             .map(|i| &path_str[(i + 1)..])
             .unwrap_or(path_str);
-        let p_name = &mut p.name;
-        let len = cmp::min(p_name.len(), name.len());
-        p_name[..len].copy_from_slice(&name[..len]);
-        if len < p_name.len() {
-            p_name[len] = 0;
+        let proc_name = &mut proc_data.name;
+        let len = cmp::min(proc_name.len(), name.len());
+        proc_name[..len].copy_from_slice(&name[..len]);
+        if len < proc_name.len() {
+            proc_name[len] = 0;
         }
 
         // Commit to the user image.
-        data.memory = mem;
+        proc_data.memory = mem;
 
         // arguments to user main(argc, argv)
         // argc is returned via the system call return
         // value, which goes in a0.
-        data.trap_frame_mut().a1 = sp;
+        proc_data.trap_frame_mut().a1 = sp;
 
         // initial program counter = main
-        data.trap_frame_mut().epc = elf.entry;
+        proc_data.trap_frame_mut().epc = elf.entry;
 
         // initial stack pointer
-        data.trap_frame_mut().sp = sp;
+        proc_data.trap_frame_mut().sp = sp;
 
         // this ends up in a0, the first argument to main(argc, argv)
         Ok(argc)

@@ -4,7 +4,7 @@ use crate::{
     ok_or,
     plic::{plic_claim, plic_complete},
     println,
-    proc::{cpuid, myproc, proc_yield, Proc, Procstate},
+    proc::{cpuid, CurrentProc, Procstate},
     riscv::{
         intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp, w_sepc, w_sip,
         w_stvec, Sstatus, PGSIZE,
@@ -46,27 +46,26 @@ pub unsafe extern "C" fn usertrap() {
     // since we're now in the kernel.
     unsafe { w_stvec(kernelvec as _) };
 
-    let p: *mut Proc = unsafe { myproc() };
-    let data = unsafe { &mut *(*p).data.get() };
+    let proc = &kernel().current_proc().expect("No current proc");
 
     // Save user program counter.
-    data.trap_frame_mut().epc = unsafe { r_sepc() };
+    proc.deref_mut_data().trap_frame_mut().epc = unsafe { r_sepc() };
     if unsafe { r_scause() } == 8 {
         // system call
 
-        if unsafe { (*p).killed() } {
-            unsafe { kernel().procs.exit_current(-1) };
+        if proc.killed() {
+            unsafe { kernel().procs.exit_current(-1, proc) };
         }
 
         // sepc points to the ecall instruction,
         // but we want to return to the next instruction.
-        data.trap_frame_mut().epc = (data.trap_frame().epc).wrapping_add(4);
+        proc.deref_mut_data().trap_frame_mut().epc = (proc.trap_frame().epc).wrapping_add(4);
 
         // An interrupt will change sstatus &c registers,
         // so don't enable until done with those registers.
         unsafe { intr_on() };
-        data.trap_frame_mut().a0 = ok_or!(
-            unsafe { kernel().syscall(data.trap_frame_mut().a7 as i32) },
+        proc.deref_mut_data().trap_frame_mut().a0 = ok_or!(
+            unsafe { kernel().syscall(proc.deref_mut_data().trap_frame_mut().a7 as i32, proc) },
             usize::MAX
         );
     } else {
@@ -75,34 +74,31 @@ pub unsafe extern "C" fn usertrap() {
             println!(
                 "usertrap(): unexpected scause {:018p} pid={}",
                 unsafe { r_scause() } as *const u8,
-                unsafe { (*p).pid() }
+                unsafe { proc.pid() }
             );
             println!(
                 "            sepc={:018p} stval={:018p}",
                 unsafe { r_sepc() } as *const u8,
                 unsafe { r_stval() } as *const u8
             );
-            unsafe { (*p).kill() };
+            proc.kill();
         }
     }
 
-    if unsafe { (*p).killed() } {
-        unsafe { kernel().procs.exit_current(-1) };
+    if proc.killed() {
+        unsafe { kernel().procs.exit_current(-1, proc) };
     }
 
     // Give up the CPU if this is a timer interrupt.
     if which_dev == 2 {
-        unsafe { proc_yield() };
+        unsafe { proc.proc_yield() };
     }
 
-    unsafe { usertrapret() };
+    unsafe { usertrapret(proc) };
 }
 
 /// Return to user space.
-pub unsafe fn usertrapret() {
-    let p: *mut Proc = unsafe { myproc() };
-    let data = unsafe { &mut *(*p).data.get() };
-
+pub unsafe fn usertrapret(proc: &CurrentProc<'_>) {
     // We're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
     // we're back in user space, where usertrap() is correct.
@@ -118,16 +114,16 @@ pub unsafe fn usertrapret() {
 
     // Set up trapframe values that uservec will need when
     // the process next re-enters the kernel.
-
+    let proc_data = proc.deref_mut_data();
     // kernel page table
-    data.trap_frame_mut().kernel_satp = unsafe { r_satp() };
+    proc_data.trap_frame_mut().kernel_satp = unsafe { r_satp() };
 
     // process's kernel stack
-    data.trap_frame_mut().kernel_sp = data.kstack.wrapping_add(PGSIZE);
-    data.trap_frame_mut().kernel_trap = usertrap as usize;
+    proc_data.trap_frame_mut().kernel_sp = proc_data.kstack.wrapping_add(PGSIZE);
+    proc_data.trap_frame_mut().kernel_trap = usertrap as usize;
 
     // hartid for cpuid()
-    data.trap_frame_mut().kernel_hartid = unsafe { r_tp() };
+    proc_data.trap_frame_mut().kernel_hartid = unsafe { r_tp() };
 
     // Set up the registers that trampoline.S's sret will use
     // to get to user space.
@@ -143,10 +139,10 @@ pub unsafe fn usertrapret() {
     unsafe { x.write() };
 
     // Set S Exception Program Counter to the saved user pc.
-    unsafe { w_sepc(data.trap_frame().epc) };
+    unsafe { w_sepc(proc_data.trap_frame().epc) };
 
     // Tell trampoline.S the user page table to switch to.
-    let satp: usize = data.memory.satp();
+    let satp: usize = proc_data.memory.satp();
 
     // Jump to trampoline.S at the top of memory, which
     // switches to the user page table, restores user registers,
@@ -186,11 +182,12 @@ pub unsafe fn kerneltrap() {
     }
 
     // Give up the CPU if this is a timer interrupt.
-    if which_dev == 2
-        && !unsafe { myproc() }.is_null()
-        && unsafe { (*myproc()).state() } == Procstate::RUNNING
-    {
-        unsafe { proc_yield() };
+    if which_dev == 2 {
+        if let Some(proc) = kernel().current_proc() {
+            if unsafe { proc.state() } == Procstate::RUNNING {
+                unsafe { proc.proc_yield() };
+            }
+        }
     }
 
     // The yield() may have caused some traps to occur,

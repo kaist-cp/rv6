@@ -6,7 +6,7 @@ use crate::{
     kernel::kernel,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
-    proc::myproc,
+    proc::CurrentProc,
     spinlock::Spinlock,
     stat::Stat,
     vm::UVAddr,
@@ -67,14 +67,12 @@ impl File {
 
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub unsafe fn stat(&self, addr: UVAddr) -> Result<(), ()> {
-        let p = unsafe { myproc() };
-
+    pub unsafe fn stat(&self, addr: UVAddr, proc: &CurrentProc<'_>) -> Result<(), ()> {
         match &self.typ {
             FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
                 let mut st = ip.stat();
                 unsafe {
-                    (*(*p).data.get()).memory.copy_out(
+                    proc.deref_mut_data().memory.copy_out(
                         addr,
                         slice::from_raw_parts_mut(
                             &mut st as *mut Stat as *mut u8,
@@ -89,17 +87,17 @@ impl File {
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub unsafe fn read(&self, addr: UVAddr, n: i32) -> Result<usize, ()> {
+    pub unsafe fn read(&self, addr: UVAddr, n: i32, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         if !self.readable {
             return Err(());
         }
 
         match &self.typ {
-            FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0)),
+            FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0), proc),
             FileType::Inode { ip, off } => {
                 let mut ip = ip.deref().lock();
                 let curr_off = unsafe { *off.get() };
-                let ret = ip.read_user(addr, curr_off, n as u32);
+                let ret = ip.read_user(addr, curr_off, n as u32, proc);
                 if let Ok(v) = ret {
                     unsafe { *off.get() = curr_off.wrapping_add(v as u32) };
                 }
@@ -116,13 +114,13 @@ impl File {
     }
     /// Write to file self.
     /// addr is a user virtual address.
-    pub unsafe fn write(&self, addr: UVAddr, n: i32) -> Result<usize, ()> {
+    pub unsafe fn write(&self, addr: UVAddr, n: i32, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         if !self.writable {
             return Err(());
         }
 
         match &self.typ {
-            FileType::Pipe { pipe } => pipe.write(addr, usize::try_from(n).unwrap_or(0)),
+            FileType::Pipe { pipe } => pipe.write(addr, usize::try_from(n).unwrap_or(0), proc),
             FileType::Inode { ip, off } => {
                 // write a few blocks at a time to avoid exceeding
                 // the maximum log transaction size, including
@@ -139,7 +137,13 @@ impl File {
                     let mut ip = ip.deref().lock();
                     let curr_off = unsafe { *off.get() };
                     let r = ip
-                        .write_user(addr + bytes_written, curr_off, bytes_to_write as u32, &tx)
+                        .write_user(
+                            addr + bytes_written,
+                            curr_off,
+                            bytes_to_write as u32,
+                            proc,
+                            &tx,
+                        )
                         .map(|v| {
                             unsafe { *off.get() = curr_off.wrapping_add(v as u32) };
                             v

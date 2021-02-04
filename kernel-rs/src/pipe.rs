@@ -2,7 +2,7 @@ use crate::{
     file::{FileType, RcFile},
     kernel::kernel,
     page::Page,
-    proc::{myproc, WaitChannel},
+    proc::{CurrentProc, WaitChannel},
     riscv::PGSIZE,
     spinlock::Spinlock,
     vm::UVAddr,
@@ -43,10 +43,10 @@ impl Pipe {
     /// If successfully read i > 0 bytes, wakeups the `write_waitchannel` and returns `Ok(i: usize)`.
     /// If the pipe was empty, sleeps at `read_waitchannel` and tries again after wakeup.
     /// If an error happened, returns `Err(())`.
-    pub fn read(&self, addr: UVAddr, n: usize) -> Result<usize, ()> {
+    pub fn read(&self, addr: UVAddr, n: usize, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let mut inner = self.inner.lock();
         loop {
-            match inner.try_read(addr, n) {
+            match inner.try_read(addr, n, proc) {
                 Ok(r) => {
                     //DOC: piperead-wakeup
                     self.write_waitchannel.wakeup();
@@ -54,7 +54,7 @@ impl Pipe {
                 }
                 Err(PipeError::WaitForIO) => {
                     //DOC: piperead-sleep
-                    self.read_waitchannel.sleep(&mut inner);
+                    self.read_waitchannel.sleep(&mut inner, proc);
                 }
                 _ => return Err(()),
             }
@@ -67,16 +67,16 @@ impl Pipe {
     /// Note that we may have i < `n` if an copy-in error happened.
     /// If the pipe was full, sleeps at `write_waitchannel` and tries again after wakeup.
     /// If an error happened, returns `Err(())`.
-    pub fn write(&self, addr: UVAddr, n: usize) -> Result<usize, ()> {
+    pub fn write(&self, addr: UVAddr, n: usize, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let mut written = 0;
         let mut inner = self.inner.lock();
         loop {
-            match inner.try_write(addr + written, n - written) {
+            match inner.try_write(addr + written, n - written, proc) {
                 Ok(r) => {
                     written += r;
                     self.read_waitchannel.wakeup();
                     if written < n {
-                        self.write_waitchannel.sleep(&mut inner);
+                        self.write_waitchannel.sleep(&mut inner, proc);
                     } else {
                         return Ok(written);
                     }
@@ -193,29 +193,28 @@ impl PipeInner {
     /// Tries to write up to `n` bytes.
     /// If the process was killed, returns `Err(InvalidStatus)`.
     /// If an copy-in error happened after successfully writing i >= 0 bytes, returns `Err(InvalidCopyIn(i))`.
-    /// Otherwise, returns `Ok(i)` after successfully writing i >= 0 bytes.
-    fn try_write(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
+    /// Otherwise, returns `Ok(i)` after successfully writing i >= 0 bytes.    
+    fn try_write(
+        &mut self,
+        addr: UVAddr,
+        n: usize,
+        proc: &CurrentProc<'_>,
+    ) -> Result<usize, PipeError> {
         let mut ch = [0u8];
-        let proc = unsafe {
-            // TODO(https://github.com/kaist-cp/rv6/issues/354)
-            // Remove this unsafe part after resolving #354.
-            &*myproc()
-        };
         if !self.readopen || proc.killed() {
             return Err(PipeError::InvalidStatus);
         }
-
-        let data = unsafe {
-            // TODO(https://github.com/kaist-cp/rv6/issues/354)
-            // Remove this unsafe part after resolving #354.
-            &mut *proc.data.get()
-        };
         for i in 0..n {
             if self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
                 return Ok(i);
             }
-            if data.memory.copy_in(&mut ch, addr + i).is_err() {
+            if proc
+                .deref_mut_data()
+                .memory
+                .copy_in(&mut ch, addr + i)
+                .is_err()
+            {
                 return Err(PipeError::InvalidCopyin(i));
             }
             self.data[self.nwrite as usize % PIPESIZE] = ch[0];
@@ -228,12 +227,12 @@ impl PipeInner {
     /// If successful read i > 0 bytes, returns `Ok(i: usize)`.
     /// If the pipe was empty, returns `Err(WaitForIO)`.
     /// If the process was killed, returns `Err(InvalidStatus)`.
-    fn try_read(&mut self, addr: UVAddr, n: usize) -> Result<usize, PipeError> {
-        let proc = unsafe {
-            // TODO(https://github.com/kaist-cp/rv6/issues/354)
-            // Remove this unsafe part after resolving #354.
-            &*myproc()
-        };
+    fn try_read(
+        &mut self,
+        addr: UVAddr,
+        n: usize,
+        proc: &CurrentProc<'_>,
+    ) -> Result<usize, PipeError> {
         //DOC: pipe-empty
         if self.nread == self.nwrite && self.writeopen {
             if proc.killed() {
@@ -242,11 +241,6 @@ impl PipeInner {
             return Err(PipeError::WaitForIO);
         }
 
-        let data = unsafe {
-            // TODO(https://github.com/kaist-cp/rv6/issues/354)
-            // Remove this unsafe part after resolving #354.
-            &mut *proc.data.get()
-        };
         //DOC: piperead-copy
         for i in 0..n {
             if self.nread == self.nwrite {
@@ -254,7 +248,12 @@ impl PipeInner {
             }
             let ch = [self.data[self.nread as usize % PIPESIZE]];
             self.nread = self.nread.wrapping_add(1);
-            if data.memory.copy_out(addr + i, &ch).is_err() {
+            if proc
+                .deref_mut_data()
+                .memory
+                .copy_out(addr + i, &ch)
+                .is_err()
+            {
                 return Ok(i);
             }
         }
