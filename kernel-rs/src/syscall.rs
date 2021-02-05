@@ -103,7 +103,7 @@ impl Kernel {
             _ => {
                 println!(
                     "{} {}: unknown sys call {}",
-                    unsafe { proc.pid() },
+                    proc.pid(),
                     str::from_utf8(&proc.name).unwrap_or("???"),
                     num
                 );

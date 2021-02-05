@@ -14,7 +14,7 @@ impl Kernel {
 
     /// Return the current process’s PID.
     pub unsafe fn sys_getpid(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
-        Ok(unsafe { proc.pid() } as _)
+        Ok(proc.pid() as _)
     }
 
     /// Create a process.
