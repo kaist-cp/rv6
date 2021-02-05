@@ -208,7 +208,7 @@ pub enum Procstate {
     USED,
 }
 
-pub type Pid = i32;
+type Pid = i32;
 
 /// Represents lock guards that can be slept in a `WaitChannel`.
 pub trait Waitable {
