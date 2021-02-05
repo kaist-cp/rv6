@@ -208,6 +208,8 @@ pub enum Procstate {
     USED,
 }
 
+pub type Pid = i32;
+
 /// Represents lock guards that can be slept in a `WaitChannel`.
 pub trait Waitable {
     /// Releases the inner `RawSpinlock`.
@@ -604,7 +606,7 @@ impl Proc {
         ProcGuard { ptr: self }
     }
 
-    pub fn pid(&self) -> i32 {
+    pub fn pid(&self) -> Pid {
         self.pid.load(Ordering::Acquire)
     }
 
@@ -727,7 +729,7 @@ impl ProcessSystem {
     /// The victim won't exit until it tries to return
     /// to user space (see usertrap() in trap.c).
     /// Returns Ok(()) on success, Err(()) on error.
-    pub fn kill(&self, pid: i32) -> Result<(), ()> {
+    pub fn kill(&self, pid: Pid) -> Result<(), ()> {
         for p in &self.process_pool {
             let guard = p.lock();
             if guard.pid() == pid {
@@ -789,7 +791,7 @@ impl ProcessSystem {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
-    pub unsafe fn fork(&self, proc: &CurrentProc<'_>) -> Result<i32, ()> {
+    pub unsafe fn fork(&self, proc: &CurrentProc<'_>) -> Result<Pid, ()> {
         // Allocate trap frame.
         let trap_frame = scopeguard::guard(kernel().alloc().ok_or(())?, |page| kernel().free(page));
 
@@ -840,7 +842,7 @@ impl ProcessSystem {
 
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
-    pub unsafe fn wait(&self, addr: UVAddr, proc: &CurrentProc<'_>) -> Result<i32, ()> {
+    pub unsafe fn wait(&self, addr: UVAddr, proc: &CurrentProc<'_>) -> Result<Pid, ()> {
         // Assumes that the process_pool has at least 1 element.
         let mut parent_guard = unsafe { self.process_pool[0].parent.assume_init_ref() }.lock();
 
