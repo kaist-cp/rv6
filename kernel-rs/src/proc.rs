@@ -1147,9 +1147,9 @@ unsafe fn forkret() {
 }
 
 impl KernelBuilder {
-    /// Returns `Some<CurrentProc<'_>>` if current proc exists.
-    /// If current proc is null, return `None`.
-    /// If `(*c).proc` is non-null, returned `CurrentProc`'s `inner` lives during `&self`'s lifetime
+    /// Returns `Some<CurrentProc<'_>>` if current proc exists (i.e. When (*cpu).proc is non-null.),
+    /// where the returned `CurrentProc`'s `inner` lives during `&self`'s lifetime.
+    /// Otherwise, returns `None` (when current proc is null).
     pub fn current_proc(&self) -> Option<CurrentProc<'_>> {
         unsafe { push_off() };
         let cpu = self.current_cpu();
