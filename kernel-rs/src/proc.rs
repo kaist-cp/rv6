@@ -675,7 +675,7 @@ impl ProcessSystem {
         }
     }
 
-    fn allocpid(&self) -> i32 {
+    fn allocpid(&self) -> Pid {
         self.nextpid.fetch_add(1, Ordering::Relaxed)
     }
 
