@@ -133,8 +133,7 @@ impl FsTransaction<'_> {
 
     /// Zero a block.
     fn bzero(&self, dev: u32, bno: u32) {
-        // Safe since the `Kernel` is initialized.
-        let mut buf = unsafe { kernel().bcache.assume_init_ref().get_buf(dev, bno).lock() };
+        let mut buf = kernel().get_bcache().get_buf(dev, bno).lock();
         buf.deref_inner_mut().data.fill(0);
         buf.deref_inner_mut().valid = true;
         self.write(buf);

@@ -69,7 +69,6 @@ mod list;
 mod memlayout;
 mod page;
 mod param;
-mod pinned_kernel;
 mod pipe;
 mod plic;
 mod poweroff;
