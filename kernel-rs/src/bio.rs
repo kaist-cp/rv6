@@ -11,6 +11,11 @@
 //! * Do not use the buffer after calling release.
 //! * Only one process at a time can use a buffer, so do not keep them longer than necessary.
 
+use core::mem::{self, ManuallyDrop};
+use core::ops::{Deref, DerefMut};
+
+use array_macro::array;
+
 use crate::{
     arena::{Arena, ArenaObject, MruArena, MruEntry, Rc},
     param::{BSIZE, NBUF},
@@ -18,10 +23,6 @@ use crate::{
     sleeplock::Sleeplock,
     spinlock::Spinlock,
 };
-
-use array_macro::array;
-use core::mem::{self, ManuallyDrop};
-use core::ops::{Deref, DerefMut};
 
 pub struct BufEntry {
     dev: u32,

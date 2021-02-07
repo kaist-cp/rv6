@@ -332,8 +332,8 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Spinlock<MruArena<T, CAPAC
 
 impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruArena<T, CAPACITY>> {
     type Data = T;
-    type Handle<'s> = MruPtr<'s, T>;
     type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
+    type Handle<'s> = MruPtr<'s, T>;
 
     fn find_or_alloc_handle<'s, C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &'s self,
