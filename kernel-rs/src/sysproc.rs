@@ -3,7 +3,6 @@ use crate::{
     poweroff,
     proc::CurrentProc,
     syscall::{argaddr, argint},
-    vm::{UVAddr, VAddr},
 };
 
 impl Kernel {
@@ -28,7 +27,7 @@ impl Kernel {
     /// Returns Ok(child’s PID) on success, Err(()) on error.
     pub unsafe fn sys_wait(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         let p = argaddr(0, proc)?;
-        Ok(unsafe { self.procs.wait(UVAddr::new(p), proc) }? as _)
+        Ok(unsafe { self.procs.wait(p.into(), proc) }? as _)
     }
 
     /// Grow process’s memory by n bytes.

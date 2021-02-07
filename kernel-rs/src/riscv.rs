@@ -1,6 +1,6 @@
 use bitflags::bitflags;
 
-use crate::vm::{PAddr, VAddr};
+use crate::vm::{Addr, PAddr, VAddr};
 
 /// Which hart (core) is this?
 #[inline]
@@ -369,13 +369,13 @@ bitflags! {
 
 /// Shift a physical address to the right place for a PTE.
 #[inline]
-pub const fn pa2pte(pa: PAddr) -> usize {
+pub fn pa2pte(pa: PAddr) -> usize {
     (pa.into_usize() >> 12) << 10
 }
 
 #[inline]
-pub const fn pte2pa(pte: usize) -> PAddr {
-    PAddr::new((pte >> 10) << 12)
+pub fn pte2pa(pte: usize) -> PAddr {
+    ((pte >> 10) << 12).into()
 }
 
 /// Extract the three 9-bit page table indices from a virtual address.

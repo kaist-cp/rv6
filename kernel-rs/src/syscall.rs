@@ -6,7 +6,7 @@ use crate::{
     kernel::Kernel,
     println,
     proc::CurrentProc,
-    vm::{UVAddr, VAddr},
+    vm::{Addr, UVAddr},
 };
 
 /// Fetch the usize at addr from the current process.
@@ -72,7 +72,7 @@ pub unsafe fn argstr<'a>(
     proc: &CurrentProc<'_>,
 ) -> Result<&'a CStr, ()> {
     let addr = argaddr(n, proc)?;
-    unsafe { fetchstr(UVAddr::new(addr), buf, proc) }
+    unsafe { fetchstr(addr.into(), buf, proc) }
 }
 
 impl Kernel {

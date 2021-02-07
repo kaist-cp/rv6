@@ -21,7 +21,7 @@ use crate::{
     proc::CurrentProc,
     some_or,
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
-    vm::{UVAddr, VAddr},
+    vm::UVAddr,
 };
 
 impl RcFile<'static> {
@@ -296,7 +296,7 @@ impl Kernel {
             // It is safe because fdarray, fd1 is valid.
             || unsafe {
                 proc_data.memory.copy_out(
-                    UVAddr::new(fdarray.into_usize().wrapping_add(mem::size_of::<i32>())),
+                    fdarray + mem::size_of::<i32>(),
                     slice::from_raw_parts_mut(
                         &mut fd1 as *mut i32 as *mut u8,
                         mem::size_of::<i32>(),
@@ -329,7 +329,7 @@ impl Kernel {
         let (_, f) = unsafe { argfd(0, proc)? };
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
-        unsafe { f.read(UVAddr::new(p), n, proc) }
+        unsafe { f.read(p.into(), n, proc) }
     }
 
     /// Write n bytes from buf to given file descriptor fd.
@@ -338,7 +338,7 @@ impl Kernel {
         let (_, f) = unsafe { argfd(0, proc)? };
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
-        unsafe { f.write(UVAddr::new(p), n, proc) }
+        unsafe { f.write(p.into(), n, proc) }
     }
 
     /// Release open file fd.
@@ -355,7 +355,7 @@ impl Kernel {
         let (_, f) = unsafe { argfd(0, proc)? };
         // user pointer to struct stat
         let st = argaddr(1, proc)?;
-        unsafe { f.stat(UVAddr::new(st), proc)? };
+        unsafe { f.stat(st.into(), proc)? };
         Ok(0)
     }
 
@@ -430,7 +430,7 @@ impl Kernel {
         let mut success = false;
         for i in 0..MAXARG {
             let uarg = ok_or!(
-                unsafe { fetchaddr(UVAddr::new(uargv + mem::size_of::<usize>() * i), proc,) },
+                unsafe { fetchaddr((uargv + mem::size_of::<usize>() * i).into(), proc,) },
                 break
             );
 
@@ -440,7 +440,7 @@ impl Kernel {
             }
 
             let mut page = some_or!(self.alloc(), break);
-            if unsafe { fetchstr(UVAddr::new(uarg), &mut page[..], proc) }.is_err() {
+            if unsafe { fetchstr(uarg.into(), &mut page[..], proc) }.is_err() {
                 self.free(page);
                 break;
             }
@@ -464,7 +464,7 @@ impl Kernel {
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_pipe(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         // user pointer to array of two integers
-        let fdarray = UVAddr::new(argaddr(0, proc)?);
+        let fdarray = argaddr(0, proc)?.into();
         self.pipe(fdarray, proc)?;
         Ok(0)
     }

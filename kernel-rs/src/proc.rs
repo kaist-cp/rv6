@@ -23,7 +23,7 @@ use crate::{
         pop_off, push_off, RawSpinlock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
     },
     trap::usertrapret,
-    vm::{UVAddr, UserMemory, VAddr},
+    vm::{Addr, UVAddr, UserMemory},
 };
 
 extern "C" {

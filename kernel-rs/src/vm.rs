@@ -20,58 +20,52 @@ extern "C" {
     static mut trampoline: [u8; 0];
 }
 
-#[derive(Clone, Copy)]
-pub struct PAddr(usize);
-
-#[derive(Clone, Copy)]
-pub struct KVAddr(usize);
-
-#[derive(Clone, Copy)]
-pub struct UVAddr(usize);
-
-impl Add<usize> for PAddr {
-    type Output = Self;
-
-    fn add(self, rhs: usize) -> Self::Output {
-        Self(self.0 + rhs)
-    }
-}
-
-impl PAddr {
-    pub const fn new(value: usize) -> Self {
-        PAddr(value)
-    }
-
-    pub const fn into_usize(self) -> usize {
-        self.0
-    }
-}
-
-impl Add<usize> for KVAddr {
-    type Output = Self;
-
-    fn add(self, rhs: usize) -> Self::Output {
-        Self(self.0 + rhs)
-    }
-}
-
-impl Add<usize> for UVAddr {
-    type Output = Self;
-
-    fn add(self, rhs: usize) -> Self::Output {
-        Self(self.0 + rhs)
-    }
-}
-
-pub trait VAddr: Copy + Add<usize, Output = Self> {
-    fn new(value: usize) -> Self;
-
+pub trait Addr: Copy + From<usize> + Add<usize, Output = Self> {
     fn into_usize(self) -> usize;
-
     fn is_null(self) -> bool;
-
     fn is_page_aligned(self) -> bool;
+}
 
+macro_rules! define_addr_type {
+    ($typ:ident) => {
+        #[derive(Clone, Copy)]
+        pub struct $typ(usize);
+
+        impl From<usize> for $typ {
+            fn from(value: usize) -> Self {
+                Self(value)
+            }
+        }
+
+        impl Add<usize> for $typ {
+            type Output = Self;
+
+            fn add(self, rhs: usize) -> Self::Output {
+                Self(self.0 + rhs)
+            }
+        }
+
+        impl Addr for $typ {
+            fn into_usize(self) -> usize {
+                self.0
+            }
+
+            fn is_null(self) -> bool {
+                self.0 == 0
+            }
+
+            fn is_page_aligned(self) -> bool {
+                self.0 % PGSIZE == 0
+            }
+        }
+    };
+}
+
+define_addr_type!(PAddr);
+define_addr_type!(KVAddr);
+define_addr_type!(UVAddr);
+
+pub trait VAddr: Addr {
     /// Copy from either a user address, or kernel address.
     /// Returns Ok(()) on success, Err(()) on error.
     unsafe fn copy_in(self, dst: &mut [u8]) -> Result<(), ()>;
@@ -82,22 +76,6 @@ pub trait VAddr: Copy + Add<usize, Output = Self> {
 }
 
 impl VAddr for KVAddr {
-    fn new(value: usize) -> Self {
-        KVAddr(value)
-    }
-
-    fn into_usize(self) -> usize {
-        self.0
-    }
-
-    fn is_null(self) -> bool {
-        self.0 == 0
-    }
-
-    fn is_page_aligned(self) -> bool {
-        self.0 % PGSIZE == 0
-    }
-
     unsafe fn copy_in(self, dst: &mut [u8]) -> Result<(), ()> {
         unsafe { ptr::copy(self.into_usize() as *const u8, dst.as_mut_ptr(), dst.len()) };
         Ok(())
@@ -110,22 +88,6 @@ impl VAddr for KVAddr {
 }
 
 impl VAddr for UVAddr {
-    fn new(value: usize) -> Self {
-        UVAddr(value)
-    }
-
-    fn into_usize(self) -> usize {
-        self.0
-    }
-
-    fn is_null(self) -> bool {
-        self.0 == 0
-    }
-
-    fn is_page_aligned(self) -> bool {
-        self.0 % PGSIZE == 0
-    }
-
     unsafe fn copy_in(self, dst: &mut [u8]) -> Result<(), ()> {
         kernel()
             .current_proc()
@@ -186,7 +148,7 @@ impl PageTableEntry {
 
     /// Make the entry refer to a given page-table page.
     fn set_table(&mut self, page: *mut RawPageTable) {
-        self.inner = pa2pte(PAddr::new(page as usize)) | PteFlags::V.bits();
+        self.inner = pa2pte((page as usize).into()) | PteFlags::V.bits();
     }
 
     /// Make the entry refer to a given address with a given permission.
@@ -349,7 +311,7 @@ impl<A: VAddr> PageTable<A> {
 
     fn insert(&mut self, va: A, pa: PAddr, perm: PteFlags) -> Result<(), ()> {
         let a = pgrounddown(va.into_usize());
-        let pte = self.get_mut(A::new(a), true).ok_or(())?;
+        let pte = self.get_mut(A::from(a), true).ok_or(())?;
         assert!(!pte.is_valid(), "PageTable::insert");
         pte.set_entry(pa, perm);
         Ok(())
@@ -443,20 +405,16 @@ impl UserMemory {
         // to/from user space, so not PTE_U.
         page_table
             .insert(
-                UVAddr::new(TRAMPOLINE),
+                TRAMPOLINE.into(),
                 // We assume that reading the address of trampoline is safe.
-                PAddr::new(unsafe { trampoline.as_mut_ptr() as usize }),
+                (unsafe { trampoline.as_mut_ptr() as usize }).into(),
                 PteFlags::R | PteFlags::X,
             )
             .ok()?;
 
         // Map the trapframe just below TRAMPOLINE, for trampoline.S.
         page_table
-            .insert(
-                UVAddr::new(TRAPFRAME),
-                trap_frame,
-                PteFlags::R | PteFlags::W,
-            )
+            .insert(TRAPFRAME.into(), trap_frame, PteFlags::R | PteFlags::W)
             .ok()?;
 
         let mut memory = Self {
@@ -489,7 +447,7 @@ impl UserMemory {
         for i in num_iter::range_step(0, self.size, PGSIZE) {
             let pte = self
                 .page_table
-                .get_mut(UVAddr::new(i), false)
+                .get_mut(i.into(), false)
                 .expect("clone_into: pte not found");
             assert!(pte.is_valid(), "clone_into: invalid page");
 
@@ -612,7 +570,7 @@ impl UserMemory {
         while len > 0 {
             let va = pgrounddown(dst);
             let poffset = dst - va;
-            let page = self.get_slice(VAddr::new(va)).ok_or(())?;
+            let page = self.get_slice(va.into()).ok_or(())?;
             let n = cmp::min(PGSIZE - poffset, len);
             page[poffset..poffset + n].copy_from_slice(&src[offset..offset + n]);
             len -= n;
@@ -632,7 +590,7 @@ impl UserMemory {
         while len > 0 {
             let va = pgrounddown(src);
             let poffset = src - va;
-            let page = self.get_slice(VAddr::new(va)).ok_or(())?;
+            let page = self.get_slice(va.into()).ok_or(())?;
             let n = cmp::min(PGSIZE - poffset, len);
             dst[offset..offset + n].copy_from_slice(&page[poffset..poffset + n]);
             len -= n;
@@ -653,7 +611,7 @@ impl UserMemory {
         while max > 0 {
             let va = pgrounddown(src);
             let poffset = src - va;
-            let page = self.get_slice(VAddr::new(va)).ok_or(())?;
+            let page = self.get_slice(va.into()).ok_or(())?;
             let n = cmp::min(PGSIZE - poffset, max);
 
             let from = &page[poffset..poffset + n];
@@ -699,7 +657,7 @@ impl UserMemory {
         // The invariant is maintained because page.addr() is the address of a page.
         let size = pgroundup(self.size);
         self.page_table
-            .insert(UVAddr::new(size), PAddr::new(pa), perm)
+            .insert(size.into(), pa.into(), perm)
             // This is safe because pa is the address of a given page.
             .map_err(|_| unsafe { Page::from_usize(pa) })?;
         self.size = size + PGSIZE;
@@ -715,7 +673,7 @@ impl UserMemory {
         self.size = pgroundup(self.size) - PGSIZE;
         let pa = self
             .page_table
-            .remove(UVAddr::new(self.size))
+            .remove(self.size.into())
             .expect("pop_page")
             .into_usize();
         // It is safe because pa is an address in page_table,
@@ -751,9 +709,9 @@ impl KernelMemory {
         // SiFive Test Finisher MMIO
         page_table
             .insert_range(
-                KVAddr::new(FINISHER),
+                FINISHER.into(),
                 PGSIZE,
-                PAddr::new(FINISHER),
+                FINISHER.into(),
                 PteFlags::R | PteFlags::W,
             )
             .ok()?;
@@ -761,9 +719,9 @@ impl KernelMemory {
         // Uart registers
         page_table
             .insert_range(
-                KVAddr::new(UART0),
+                UART0.into(),
                 PGSIZE,
-                PAddr::new(UART0),
+                UART0.into(),
                 PteFlags::R | PteFlags::W,
             )
             .ok()?;
@@ -771,9 +729,9 @@ impl KernelMemory {
         // Virtio mmio disk interface
         page_table
             .insert_range(
-                KVAddr::new(VIRTIO0),
+                VIRTIO0.into(),
                 PGSIZE,
-                PAddr::new(VIRTIO0),
+                VIRTIO0.into(),
                 PteFlags::R | PteFlags::W,
             )
             .ok()?;
@@ -781,9 +739,9 @@ impl KernelMemory {
         // PLIC
         page_table
             .insert_range(
-                KVAddr::new(PLIC),
+                PLIC.into(),
                 0x400000,
-                PAddr::new(PLIC),
+                PLIC.into(),
                 PteFlags::R | PteFlags::W,
             )
             .ok()?;
@@ -793,9 +751,9 @@ impl KernelMemory {
         let et = unsafe { etext.as_mut_ptr() as usize };
         page_table
             .insert_range(
-                KVAddr::new(KERNBASE),
+                KERNBASE.into(),
                 et - KERNBASE,
-                PAddr::new(KERNBASE),
+                KERNBASE.into(),
                 PteFlags::R | PteFlags::X,
             )
             .ok()?;
@@ -803,9 +761,9 @@ impl KernelMemory {
         // Map kernel data and the physical RAM we'll make use of.
         page_table
             .insert_range(
-                KVAddr::new(et),
+                et.into(),
                 PHYSTOP - et,
-                PAddr::new(et),
+                et.into(),
                 PteFlags::R | PteFlags::W,
             )
             .ok()?;
@@ -814,10 +772,10 @@ impl KernelMemory {
         // the highest virtual address in the kernel.
         page_table
             .insert_range(
-                KVAddr::new(TRAMPOLINE),
+                TRAMPOLINE.into(),
                 PGSIZE,
                 // We assume that reading the address of trampoline is safe.
-                PAddr::new(unsafe { trampoline.as_mut_ptr() as usize }),
+                unsafe { trampoline.as_mut_ptr() as usize }.into(),
                 PteFlags::R | PteFlags::X,
             )
             .ok()?;
@@ -829,12 +787,7 @@ impl KernelMemory {
             let pa = kernel().alloc()?.into_usize();
             let va: usize = kstack(i);
             page_table
-                .insert_range(
-                    KVAddr::new(va),
-                    PGSIZE,
-                    PAddr::new(pa),
-                    PteFlags::R | PteFlags::W,
-                )
+                .insert_range(va.into(), PGSIZE, pa.into(), PteFlags::R | PteFlags::W)
                 .ok()?;
         }
 

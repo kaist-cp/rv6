@@ -12,7 +12,7 @@ use crate::{
     param::MAXARG,
     proc::CurrentProc,
     riscv::{pgroundup, PGSIZE},
-    vm::{PAddr, UVAddr, UserMemory, VAddr},
+    vm::{PAddr, UserMemory},
 };
 
 /// "\x7FELF" in little endian
@@ -115,7 +115,7 @@ impl Kernel {
             return Err(());
         }
 
-        let trap_frame = PAddr::new(proc.trap_frame() as *const _ as _);
+        let trap_frame: PAddr = (proc.trap_frame() as *const _ as usize).into();
         let mut mem = UserMemory::new(trap_frame, None).ok_or(())?;
 
         // Load program into memory.
@@ -131,7 +131,7 @@ impl Kernel {
                     return Err(());
                 }
                 let _ = mem.alloc(ph.vaddr.checked_add(ph.memsz).ok_or(())?)?;
-                mem.load_file(UVAddr::new(ph.vaddr), &mut ip, ph.off as _, ph.filesz as _)?;
+                mem.load_file(ph.vaddr.into(), &mut ip, ph.off as _, ph.filesz as _)?;
             }
         }
         drop(ip);
@@ -141,7 +141,7 @@ impl Kernel {
         // Use the second as the user stack.
         let mut sz = pgroundup(mem.size());
         sz = mem.alloc(sz + 2 * PGSIZE)?;
-        mem.clear(UVAddr::new(sz - 2 * PGSIZE));
+        mem.clear((sz - 2 * PGSIZE).into());
         let mut sp: usize = sz;
         let stackbase: usize = sp - PGSIZE;
 
@@ -161,7 +161,7 @@ impl Kernel {
                 return Err(());
             }
 
-            mem.copy_out(UVAddr::new(sp), bytes)?;
+            mem.copy_out(sp.into(), bytes)?;
             *stack = sp;
         }
         let argc: usize = args.len();
@@ -176,7 +176,7 @@ impl Kernel {
         }
         // It is safe because any byte can be considered as a valid u8.
         let (_, ustack, _) = unsafe { ustack.align_to::<u8>() };
-        mem.copy_out(UVAddr::new(sp), &ustack[..argv_size])?;
+        mem.copy_out(sp.into(), &ustack[..argv_size])?;
 
         let proc_data = proc.deref_mut_data();
 

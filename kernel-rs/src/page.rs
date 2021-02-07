@@ -56,7 +56,7 @@ impl Page {
     }
 
     pub fn addr(&self) -> PAddr {
-        PAddr::new(self.inner.as_ptr() as _)
+        (self.inner.as_ptr() as usize).into()
     }
 
     /// # Safety
