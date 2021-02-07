@@ -33,15 +33,8 @@ pub fn kernel() -> &'static Kernel {
 
 /// # Safety
 ///
-<<<<<<< HEAD
-/// The `Kernel` never moves `_bcache_inner` and the outside can only obtain
-/// a pinned mutable reference to it.
-/// If the `Cpu` executing the code has a non-null `Proc` pointer,
-/// the `Proc` in `CurrentProc` is always valid while the `Kernel` is alive.
-=======
 /// The `Kernel` never moves `_bcache_inner` and only provides a
 /// pinned mutable reference of it to the outside.
->>>>>>> parent of 2a5612f3... Wrap `_bcache_inner` with `UnsafeCell`.
 pub struct Kernel {
     panicked: AtomicBool,
 
