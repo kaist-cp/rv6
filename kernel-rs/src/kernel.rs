@@ -54,7 +54,7 @@ pub struct Kernel {
 
     cpus: [Cpu; NCPU],
 
-    pub bcache: Bcache,
+    bcache: Bcache,
 
     pub devsw: [Devsw; NDEV],
 
@@ -136,6 +136,14 @@ impl Kernel {
     pub fn mycpu(&self) -> *mut Cpu {
         let id: usize = cpuid();
         &self.cpus[id] as *const _ as *mut _
+    }
+
+    /// Returns an immutable reference to the kernel's bcache.
+    ///
+    /// # Safety
+    /// Access it only after initializing the kernel using `kernel_main()`.
+    pub unsafe fn get_bcache(&self) -> &Bcache {
+        &self.bcache
     }
 }
 
