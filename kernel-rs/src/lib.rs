@@ -49,7 +49,6 @@
 #![feature(array_value_iter)]
 #![feature(const_fn)]
 #![feature(const_fn_union)]
-#![feature(const_mut_refs)]
 #![feature(maybe_uninit_extra)]
 #![feature(generic_associated_types)]
 #![feature(unsafe_block_in_unsafe_fn)]

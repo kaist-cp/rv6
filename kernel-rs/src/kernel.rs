@@ -1,11 +1,10 @@
 use core::fmt::{self, Write};
 use core::hint::spin_loop;
 use core::mem::MaybeUninit;
-use core::pin::Pin;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::{
-    bio::{Bcache, BcacheInner},
+    bio::Bcache,
     console::{consoleinit, Console, Printer},
     file::{Devsw, FileTable},
     fs::{FileSystem, Itable},
@@ -55,8 +54,7 @@ pub struct Kernel {
 
     cpus: [Cpu; NCPU],
 
-    _bcache_inner: BcacheInner, // Never access this again after initialization.
-    pub bcache: MaybeUninit<Bcache>,
+    pub bcache: Bcache,
 
     pub devsw: [Devsw; NDEV],
 
@@ -79,10 +77,8 @@ impl Kernel {
             ticks: Sleepablelock::new("time", 0),
             procs: ProcessSystem::zero(),
             cpus: [Cpu::new(); NCPU],
-            // Safe since we never move `_bcache_inner` and only provide a
-            // pinned mutable reference of it to the outside.
-            _bcache_inner: unsafe { BcacheInner::zero() },
-            bcache: MaybeUninit::uninit(),
+            // Safe since the only way to access `bcache` is through `kernel()`, which is an immutable reference.
+            bcache: unsafe { Bcache::zero() },
             devsw: [Devsw {
                 read: None,
                 write: None,
@@ -209,13 +205,7 @@ pub unsafe fn kernel_main() -> ! {
         unsafe { plicinithart() };
 
         // Buffer cache.
-        unsafe {
-            KERNEL.bcache = MaybeUninit::new(Spinlock::new(
-                "BCACHE",
-                Pin::new_unchecked(&mut KERNEL._bcache_inner),
-            ));
-            KERNEL.bcache.assume_init_mut().get_mut().as_mut().init()
-        };
+        unsafe { KERNEL.bcache.get_pin_mut().init() };
 
         // Emulated hard disk.
         unsafe { KERNEL.file_system.disk.get_mut().init() };
