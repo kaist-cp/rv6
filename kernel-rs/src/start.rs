@@ -59,8 +59,10 @@ pub unsafe fn start() {
     // keep each CPU's hartid in its tp register, for cpuid().
     unsafe { w_tp(r_mhartid()) };
 
-    // switch to supervisor mode and jump to main().
-    llvm_asm!("mret" : : : : "volatile");
+    unsafe {
+        // switch to supervisor mode and jump to main().
+        asm!("mret");
+    }
 }
 
 /// set up to receive timer interrupts in machine mode,

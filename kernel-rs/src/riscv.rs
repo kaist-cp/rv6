@@ -6,7 +6,9 @@ use crate::vm::{Addr, PAddr, VAddr};
 #[inline]
 pub unsafe fn r_mhartid() -> usize {
     let mut x;
-    llvm_asm!("csrr $0, mhartid" : "=r" (x) : : : "volatile");
+    unsafe {
+        asm!("csrr {}, mhartid", out(reg) x);
+    }
     x
 }
 
@@ -27,13 +29,17 @@ impl Mstatus {
     #[inline]
     pub unsafe fn read() -> Self {
         let mut x;
-        llvm_asm!("csrr $0, mstatus" : "=r" (x) : : : "volatile");
-        x
+        unsafe {
+            asm!("csrr {}, mstatus", out(reg) x);
+        }
+        Self::from_bits_truncate(x)
     }
 
     #[inline]
     pub unsafe fn write(self) {
-        llvm_asm!("csrw mstatus, $0" : : "r" (self) : : "volatile");
+        unsafe {
+            asm!("csrw mstatus, {}", in(reg) self.bits());
+        }
     }
 }
 
@@ -42,7 +48,9 @@ impl Mstatus {
 /// exception will go.
 #[inline]
 pub unsafe fn w_mepc(x: usize) {
-    llvm_asm!("csrw mepc, $0" : : "r" (x) : : "volatile");
+    unsafe {
+        asm!("csrw mepc, {}", in(reg) x);
+    }
 }
 
 bitflags! {
@@ -70,13 +78,17 @@ impl Sstatus {
     #[inline]
     pub unsafe fn read() -> Self {
         let mut x;
-        llvm_asm!("csrr $0, sstatus" : "=r" (x) : : : "volatile");
-        x
+        unsafe {
+            asm!("csrr {}, sstatus", out(reg) x);
+        }
+        Self::from_bits_truncate(x)
     }
 
     #[inline]
     pub unsafe fn write(self) {
-        llvm_asm!("csrw sstatus, $0" : : "r" (self) : : "volatile");
+        unsafe {
+            asm!("csrw sstatus, {}", in(reg) self.bits());
+        }
     }
 }
 
@@ -84,12 +96,16 @@ impl Sstatus {
 #[inline]
 pub unsafe fn r_sip() -> usize {
     let mut x;
-    llvm_asm!("csrr $0, sip" : "=r" (x) : : : "volatile");
+    unsafe {
+        asm!("csrr {}, sip", out(reg) x);
+    }
     x
 }
 #[inline]
 pub unsafe fn w_sip(x: usize) {
-    llvm_asm!("csrw sip, $0" : : "r" (x) : : "volatile");
+    unsafe {
+        asm!("csrw sip, {}", in(reg) x);
+    }
 }
 
 bitflags! {
@@ -111,13 +127,17 @@ impl SIE {
     #[inline]
     pub unsafe fn read() -> Self {
         let mut x;
-        llvm_asm!("csrr $0, sie" : "=r" (x) : : : "volatile");
-        x
+        unsafe {
+            asm!("csrr {}, sie", out(reg) x);
+        }
+        Self::from_bits_truncate(x)
     }
 
     #[inline]
     pub unsafe fn write(self) {
-        llvm_asm!("csrw sie, $0" : : "r" (self) : : "volatile");
+        unsafe {
+            asm!("csrw sie, {}", in(reg) self.bits());
+        }
     }
 }
 
@@ -138,14 +158,19 @@ bitflags! {
 impl MIE {
     #[inline]
     pub unsafe fn read() -> Self {
-        let mut x;
-        llvm_asm!("csrr $0, mie" : "=r" (x) : : : "volatile");
-        x
+        let mut x: usize;
+        unsafe {
+            asm!("csrr {}, mie", out(reg) x);
+        }
+        // TODO: `Self::from_bits_truncate(x)` makes the kernel unbootable.
+        unsafe { ::core::mem::transmute(x) }
     }
 
     #[inline]
     pub unsafe fn write(self) {
-        llvm_asm!("csrw mie, $0" : : "r" (self) : : "volatile");
+        unsafe {
+            asm!("csrw mie, {}", in(reg) self.bits());
+        }
     }
 }
 
@@ -154,13 +179,17 @@ impl MIE {
 /// exception will go.
 #[inline]
 pub unsafe fn w_sepc(x: usize) {
-    llvm_asm!("csrw sepc, $0" : : "r" (x) : : "volatile");
+    unsafe {
+        asm!("csrw sepc, {}", in(reg) x);
+    }
 }
 
 #[inline]
 pub unsafe fn r_sepc() -> usize {
     let mut x;
-    llvm_asm!("csrr $0, sepc" : "=r" (x) : : : "volatile");
+    unsafe {
+        asm!("csrr {}, sepc", out(reg) x);
+    }
     x
 }
 
@@ -168,46 +197,60 @@ pub unsafe fn r_sepc() -> usize {
 #[inline]
 pub unsafe fn r_medeleg() -> usize {
     let mut x;
-    llvm_asm!("csrr %0, medeleg" : "=r" (x) : : : "volatile");
+    unsafe {
+        asm!("csrr {}, medeleg", out(reg) x);
+    }
     x
 }
 
 #[inline]
 pub unsafe fn w_medeleg(x: usize) {
-    llvm_asm!("csrw medeleg, $0" : : "r" (x) : : "volatile");
+    unsafe {
+        asm!("csrw medeleg, {}", in(reg) x);
+    }
 }
 
 /// Machine Interrupt Delegation.
 #[inline]
 pub unsafe fn r_mideleg() -> usize {
     let mut x;
-    llvm_asm!("csrr %0, mideleg" : "=r" (x) : : : "volatile");
+    unsafe {
+        asm!("csrr {}, mideleg", out(reg) x);
+    }
     x
 }
 
 #[inline]
 pub unsafe fn w_mideleg(x: usize) {
-    llvm_asm!("csrw mideleg, $0" : : "r" (x) : : "volatile");
+    unsafe {
+        asm!("csrw mideleg, {}", in(reg) x);
+    }
 }
 
 /// Supervisor Trap-Vector Base Address
 /// low two bits are mode.
 #[inline]
 pub unsafe fn w_stvec(x: usize) {
-    llvm_asm!("csrw stvec, $0" : : "r" (x) : : "volatile");
+    unsafe {
+        asm!("csrw stvec, {}", in(reg) x);
+    }
 }
 
 #[inline]
 pub unsafe fn r_stvec() -> usize {
     let mut x;
-    llvm_asm!("csrr %0, stvec" : "=r" (x) : : : "volatile");
+    unsafe {
+        asm!("csrr {}, stvec", out(reg) x);
+    }
     x
 }
 
 /// Machine-mode interrupt vector.
 #[inline]
 pub unsafe fn w_mtvec(x: usize) {
-    llvm_asm!("csrw mtvec, $0" : : "r" (x) : : "volatile");
+    unsafe {
+        asm!("csrw mtvec, {}", in(reg) x);
+    }
 }
 
 /// Use riscv's sv39 page table scheme.
@@ -221,32 +264,42 @@ pub const fn make_satp(pagetable: usize) -> usize {
 /// holds the address of the page table.
 #[inline]
 pub unsafe fn w_satp(x: usize) {
-    llvm_asm!("csrw satp, $0" : : "r" (x) : : "volatile");
+    unsafe {
+        asm!("csrw satp, {}", in(reg) x);
+    }
 }
 
 #[inline]
 pub unsafe fn r_satp() -> usize {
     let mut x;
-    llvm_asm!("csrr $0, satp" : "=r" (x) : : : "volatile");
+    unsafe {
+        asm!("csrr {}, satp", out(reg) x);
+    }
     x
 }
 
 /// Supervisor Scratch register, for early trap handler in trampoline.S.
 #[inline]
 pub unsafe fn w_sscratch(x: usize) {
-    llvm_asm!("csrw sscratch, %0" : : "r" (x) : : : "volatile");
+    unsafe {
+        asm!("csrw sscratch, {}", in(reg) x);
+    }
 }
 
 #[inline]
 pub unsafe fn w_mscratch(x: usize) {
-    llvm_asm!("csrw mscratch, $0" : : "r" (x) : : "volatile");
+    unsafe {
+        asm!("csrw mscratch, {}", in(reg) x);
+    }
 }
 
 /// Supervisor Trap Cause.
 #[inline]
 pub unsafe fn r_scause() -> usize {
     let mut x;
-    llvm_asm!("csrr $0, scause" : "=r" (x) : : : "volatile");
+    unsafe {
+        asm!("csrr {}, scause", out(reg) x);
+    }
     x
 }
 
@@ -254,20 +307,26 @@ pub unsafe fn r_scause() -> usize {
 #[inline]
 pub unsafe fn r_stval() -> usize {
     let mut x;
-    llvm_asm!("csrr $0, stval" : "=r" (x) : : : "volatile");
+    unsafe {
+        asm!("csrr {}, stval", out(reg) x);
+    }
     x
 }
 
 /// Machine-mode Counter-Enable.
 #[inline]
 pub unsafe fn w_mcounteren(x: u64) {
-    llvm_asm!("csrw mcounteren, %0" : : "r" (x)  : : : "volatile");
+    unsafe {
+        asm!("csrw mcounteren, {}", in(reg) x);
+    }
 }
 
 #[inline]
 pub unsafe fn r_mcounteren() -> u64 {
     let mut x;
-    llvm_asm!("csrr %0, mcounteren" : "=r" (x) : : : "volatile");
+    unsafe {
+        asm!("csrr {}, mcounteren", out(reg) x);
+    }
     x
 }
 
@@ -275,7 +334,9 @@ pub unsafe fn r_mcounteren() -> u64 {
 #[inline]
 pub unsafe fn r_time() -> u64 {
     let mut x;
-    llvm_asm!("csrr %0, time" : "=r" (x) : : : "volatile");
+    unsafe {
+        asm!("csrr {}, time", out(reg) x);
+    }
     x
 }
 
@@ -306,34 +367,44 @@ pub unsafe fn intr_get() -> bool {
 #[inline]
 pub unsafe fn r_tp() -> usize {
     let mut x;
-    llvm_asm!("mv $0, tp" : "=r" (x) : : : "volatile");
+    unsafe {
+        asm!("mv {}, tp", out(reg) x);
+    }
     x
 }
 
 #[inline]
 pub unsafe fn r_sp() -> usize {
     let mut x;
-    llvm_asm!("mv %0, sp" : "=r" (x) : : : "volatile");
+    unsafe {
+        asm!("mv {}, sp", out(reg) x);
+    }
     x
 }
 
 #[inline]
 pub unsafe fn w_tp(x: usize) {
-    llvm_asm!("mv tp, $0" : : "r" (x) : : "volatile");
+    unsafe {
+        asm!("mv tp, {}", in(reg) x);
+    }
 }
 
 #[inline]
 pub unsafe fn r_ra() -> usize {
     let mut x;
-    llvm_asm!("mv %0, ra" : "=r" (x) : : : "volatile");
+    unsafe {
+        asm!("mv {}, ra", out(reg) x);
+    }
     x
 }
 
 /// Flush the TLB.
 #[inline]
 pub unsafe fn sfence_vma() {
-    // The zero, zero means flush all TLB entries.
-    llvm_asm!("sfence.vma zero, zero" : : : : "volatile");
+    unsafe {
+        // The zero, zero means flush all TLB entries.
+        asm!("sfence.vma zero, zero");
+    }
 }
 
 /// Bytes per page.
