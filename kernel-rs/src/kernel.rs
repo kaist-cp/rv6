@@ -212,16 +212,11 @@ pub unsafe fn kernel_main() -> ! {
 
         // Buffer cache.
         unsafe {
-            // Initialize the `KERNEL.bcache` field, and then initialize the `Bcache`.
-            KERNEL
-                .bcache
-                .write(Spinlock::new(
-                    "BCACHE",
-                    pinned_kernel().project().bcache_inner,
-                ))
-                .get_mut()
-                .as_mut()
-                .init()
+            KERNEL.bcache = MaybeUninit::new(Spinlock::new(
+                "BCACHE",
+                pinned_kernel().project().bcache_inner,
+            ));
+            KERNEL.bcache.assume_init_mut().get_mut().as_mut().init()
         };
 
         // Emulated hard disk.
