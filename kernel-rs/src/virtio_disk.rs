@@ -215,7 +215,7 @@ impl Sleepablelock<Disk> {
     /// Return a locked Buf with the `latest` contents of the indicated block.
     /// If buf.valid is true, we don't need to access Disk.
     pub fn read(&self, dev: u32, blockno: u32) -> Buf<'static> {
-        let mut buf = kernel().get_bcache().get_buf(dev, blockno).lock();
+        let mut buf = unsafe { kernel().bcache.assume_init_ref().get_buf(dev, blockno).lock() };
         if !buf.deref_inner().valid {
             Disk::rw(&mut self.lock(), &mut buf, false);
             buf.deref_inner_mut().valid = true;
