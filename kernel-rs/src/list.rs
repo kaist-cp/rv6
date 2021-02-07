@@ -47,9 +47,9 @@ impl ListEntry {
         this.next = next;
     }
 
-    pub fn init(self: Pin<&mut Self>) {
+    pub fn init(mut self: Pin<&mut Self>) {
         // Safe since we don't move the inner data and don't leak the mutable reference.
-        let weak = WeakPin::from_pin(self.as_ref());
+        let weak = WeakPin::from_pin(self.as_mut());
         let this = unsafe { self.get_unchecked_mut() };
         this.next = weak;
         this.prev = weak;
@@ -64,10 +64,10 @@ impl ListEntry {
     }
 
     /// `e` <-> `this`
-    pub fn append(self: Pin<&mut Self>, e: Pin<&mut Self>) {
+    pub fn append(mut self: Pin<&mut Self>, mut e: Pin<&mut Self>) {
         // Safe since we don't move the inner data and don't leak the mutable reference.
-        let this = WeakPin::from_pin(self.as_ref());
-        let elem = WeakPin::from_pin(e.as_ref());
+        let this = WeakPin::from_pin(self.as_mut());
+        let elem = WeakPin::from_pin(e.as_mut());
 
         elem.set_next(this);
         elem.set_prev(this.prev);
@@ -76,10 +76,10 @@ impl ListEntry {
     }
 
     /// `this` <-> `e`
-    pub fn prepend(self: Pin<&mut Self>, e: Pin<&mut Self>) {
+    pub fn prepend(mut self: Pin<&mut Self>, mut e: Pin<&mut Self>) {
         // Safe since we don't move the inner data and don't leak the mutable reference.
-        let this = WeakPin::from_pin(self.as_ref());
-        let elem = WeakPin::from_pin(e.as_ref());
+        let this = WeakPin::from_pin(self.as_mut());
+        let elem = WeakPin::from_pin(e.as_mut());
 
         elem.set_next(this.next);
         elem.set_prev(this);
@@ -87,13 +87,13 @@ impl ListEntry {
         elem.prev.set_next(elem);
     }
 
-    pub fn is_empty(self: Pin<&Self>) -> bool {
-        let this = WeakPin::from_pin(self);
-        this.next == this
-    }
+    // pub fn is_empty(self: Pin<&Self>) -> bool {
+    //     let this = WeakPin::from_pin(self);
+    //     this.next == this
+    // }
 
-    pub fn remove(self: Pin<&mut Self>) {
-        let this = WeakPin::from_pin(self.as_ref());
+    pub fn remove(mut self: Pin<&mut Self>) {
+        let this = WeakPin::from_pin(self.as_mut());
         this.prev.set_next(this.next);
         this.next.set_prev(this.prev);
         self.init();

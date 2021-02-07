@@ -23,10 +23,10 @@ impl<T> WeakPin<*mut T> {
         }
     }
 
-    /// Returns a `WeakPin<*mut T>` from a `Pin<&T>`.
+    /// Returns a `WeakPin<*mut T>` from a `Pin<&mut T>`.
     /// This is the only safe way to obtain a `WeakPin<*mut T>`.
     // TODO: Change it into `Pin::into_weak()` instead?
-    pub fn from_pin(pin: Pin<&T>) -> Self {
+    pub fn from_pin(pin: Pin<&mut T>) -> Self {
         Self {
             ptr: pin.as_ref().get_ref() as *const _ as *mut _,
         }
