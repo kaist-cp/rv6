@@ -1,12 +1,12 @@
 use core::{mem, ptr};
+
 use static_assertions::const_assert;
 
+use super::Dinode;
 use crate::{
     bio::{Buf, BufData},
     param::BSIZE,
 };
-
-use super::Dinode;
 
 const FSMAGIC: u32 = 0x10203040;
 

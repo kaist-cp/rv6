@@ -1,6 +1,8 @@
-use crate::bio::BcacheInner;
 use core::pin::Pin;
+
 use pin_project::pin_project;
+
+use crate::bio::BcacheInner;
 
 /// A static variable to safely store the kernel's structs
 /// that should never be moved.

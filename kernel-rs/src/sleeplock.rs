@@ -1,10 +1,11 @@
 //! Sleeping locks
-use crate::kernel::kernel;
-use crate::sleepablelock::Sleepablelock;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
+
+use crate::kernel::kernel;
+use crate::sleepablelock::Sleepablelock;
 
 /// Long-term locks for processes
 struct RawSleeplock {
@@ -127,6 +128,7 @@ impl<T> Drop for SleeplockGuard<'_, T> {
 
 impl<T> Deref for SleeplockGuard<'_, T> {
     type Target = T;
+
     fn deref(&self) -> &Self::Target {
         unsafe { &*self.lock.data.get() }
     }

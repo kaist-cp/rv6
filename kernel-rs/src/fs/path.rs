@@ -1,9 +1,9 @@
 use core::cmp;
+
 use cstr_core::CStr;
 
-use crate::{kernel::kernel, param::ROOTDEV, proc::CurrentProc};
-
 use super::{InodeType, RcInode, DIRSIZ, ROOTINO};
+use crate::{kernel::kernel, param::ROOTDEV, proc::CurrentProc};
 
 #[derive(PartialEq)]
 #[repr(transparent)]

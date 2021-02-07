@@ -1,6 +1,5 @@
 #![allow(clippy::unit_arg)]
 
-use array_macro::array;
 use core::{
     cell::UnsafeCell,
     mem::{self, MaybeUninit},
@@ -8,6 +7,8 @@ use core::{
     ptr, slice, str,
     sync::atomic::{AtomicBool, AtomicI32, Ordering},
 };
+
+use array_macro::array;
 
 use crate::{
     file::RcFile,
@@ -378,6 +379,7 @@ impl<'p> CurrentProc<'p> {
 
 impl Deref for CurrentProc<'_> {
     type Target = Proc;
+
     fn deref(&self) -> &Self::Target {
         self.inner
     }
@@ -626,6 +628,7 @@ impl Proc {
 
 impl Deref for Proc {
     type Target = ProcData;
+
     fn deref(&self) -> &Self::Target {
         // Safety: Only current proc uses ProcData.
         unsafe { &*self.data.get() }

@@ -1,3 +1,10 @@
+use core::array::IntoIter;
+use core::mem;
+use core::ptr;
+use core::sync::atomic::{fence, Ordering};
+
+use arrayvec::ArrayVec;
+
 /// Driver for qemu's virtio disk device.
 /// Uses qemu's mmio interface to virtio.
 /// qemu presents a "legacy" virtio interface.
@@ -11,13 +18,6 @@ use crate::{
     sleepablelock::{Sleepablelock, SleepablelockGuard},
     virtio::*,
 };
-
-use core::array::IntoIter;
-use core::mem;
-use core::ptr;
-use core::sync::atomic::{fence, Ordering};
-
-use arrayvec::ArrayVec;
 
 // It must be page-aligned.
 // It needs repr(C) because it is read by device.

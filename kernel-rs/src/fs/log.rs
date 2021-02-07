@@ -20,8 +20,9 @@
 //!   block C
 //!   ...
 //! Log appends are synchronous.
-use arrayvec::ArrayVec;
 use core::mem;
+
+use arrayvec::ArrayVec;
 use itertools::*;
 use static_assertions::const_assert;
 

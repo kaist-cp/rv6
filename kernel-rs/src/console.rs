@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::{
     file::Devsw,
     kernel::kernel,
@@ -6,7 +8,6 @@ use crate::{
     uart::Uart,
     vm::{UVAddr, VAddr},
 };
-use core::fmt;
 
 const CONSOLE_IN_DEVSW: usize = 1;
 /// Size of console input buffer.

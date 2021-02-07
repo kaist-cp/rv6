@@ -1,11 +1,13 @@
-use crate::list::*;
-use crate::spinlock::{Spinlock, SpinlockGuard};
 use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;
 use core::pin::Pin;
 use core::ptr::{self, NonNull};
+
 use pin_project::pin_project;
+
+use crate::list::*;
+use crate::spinlock::{Spinlock, SpinlockGuard};
 
 /// A homogeneous memory allocator, equipped with the box type representing an allocation.
 pub trait Arena: Sized {
@@ -173,8 +175,8 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     for Spinlock<ArrayArena<T, CAPACITY>>
 {
     type Data = T;
-    type Handle<'s> = ArrayPtr<'s, T>;
     type Guard<'s> = SpinlockGuard<'s, ArrayArena<T, CAPACITY>>;
+    type Handle<'s> = ArrayPtr<'s, T>;
 
     fn find_or_alloc_handle<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,
@@ -333,8 +335,10 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena
     for Spinlock<Pin<&'static mut MruArena<T, CAPACITY>>>
 {
     type Data = T;
+    type Guard<'s> = SpinlockGuard<'s, Pin<&'static mut MruArena<T, CAPACITY>>>;
     type Handle<'s> = MruPtr<'s, T>;
-    type Guard<'s> = SpinlockGuard<'s, Pin<&'static mut MruArena<T, CAPACITY>>>; //TODO: 'static?
+
+    //TODO: 'static?
 
     fn find_or_alloc_handle<'s, C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &'s self,

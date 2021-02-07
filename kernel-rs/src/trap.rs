@@ -1,3 +1,5 @@
+use core::mem;
+
 use crate::{
     kernel::kernel,
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
@@ -10,7 +12,6 @@ use crate::{
         w_stvec, Sstatus, PGSIZE,
     },
 };
-use core::mem;
 
 extern "C" {
     // trampoline.S

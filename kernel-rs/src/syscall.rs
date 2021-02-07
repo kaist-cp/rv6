@@ -1,11 +1,13 @@
+use core::{mem, slice, str};
+
+use cstr_core::CStr;
+
 use crate::{
     kernel::Kernel,
     println,
     proc::CurrentProc,
     vm::{UVAddr, VAddr},
 };
-use core::{mem, slice, str};
-use cstr_core::CStr;
 
 /// Fetch the usize at addr from the current process.
 /// Returns Ok(fetched integer) on success, Err(()) on error.

@@ -1,13 +1,14 @@
 //! Sleepable locks
+use core::cell::UnsafeCell;
+use core::marker::PhantomData;
+use core::ops::{Deref, DerefMut};
+use core::pin::Pin;
+
 use crate::spinlock::RawSpinlock;
 use crate::{
     kernel::kernel,
     proc::{WaitChannel, Waitable},
 };
-use core::cell::UnsafeCell;
-use core::marker::PhantomData;
-use core::ops::{Deref, DerefMut};
-use core::pin::Pin;
 
 pub struct SleepablelockGuard<'s, T> {
     lock: &'s Sleepablelock<T>,
@@ -95,6 +96,7 @@ impl<T> Waitable for SleepablelockGuard<'_, T> {
     unsafe fn raw_release(&mut self) {
         self.lock.lock.release();
     }
+
     unsafe fn raw_acquire(&mut self) {
         self.lock.lock.acquire();
     }
@@ -108,6 +110,7 @@ impl<T> Drop for SleepablelockGuard<'_, T> {
 
 impl<T> Deref for SleepablelockGuard<'_, T> {
     type Target = T;
+
     fn deref(&self) -> &Self::Target {
         unsafe { &*self.lock.data.get() }
     }

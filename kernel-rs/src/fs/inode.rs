@@ -67,10 +67,12 @@
 //! dev, and inum.  One must hold ip->lock in order to
 //! read or write that inode's ip->valid, ip->size, ip->type, &c.
 
-use array_macro::array;
 use core::{mem, ops::Deref, ptr};
+
+use array_macro::array;
 use static_assertions::const_assert;
 
+use super::{FileName, IPB, MAXFILE, NDIRECT, NINDIRECT};
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
     bio::BufData,
@@ -83,8 +85,6 @@ use crate::{
     stat::Stat,
     vm::UVAddr,
 };
-
-use super::{FileName, IPB, MAXFILE, NDIRECT, NINDIRECT};
 
 /// Directory is a file containing a sequence of Dirent structures.
 pub const DIRSIZ: usize = 14;

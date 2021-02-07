@@ -1,3 +1,7 @@
+use core::{mem, ops::Deref, ptr::NonNull};
+
+use static_assertions::const_assert;
+
 use crate::{
     file::{FileType, RcFile},
     kernel::kernel,
@@ -7,8 +11,6 @@ use crate::{
     spinlock::Spinlock,
     vm::UVAddr,
 };
-use core::{mem, ops::Deref, ptr::NonNull};
-use static_assertions::const_assert;
 
 const PIPESIZE: usize = 512;
 
@@ -123,6 +125,7 @@ unsafe impl Send for AllocatedPipe {}
 
 impl Deref for AllocatedPipe {
     type Target = Pipe;
+
     fn deref(&self) -> &Self::Target {
         // Safe since `ptr` always refers to a `Pipe`.
         unsafe { self.ptr.as_ref() }

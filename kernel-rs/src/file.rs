@@ -1,5 +1,9 @@
 //! Support functions for system calls that involve file descriptors.
 
+use core::{cell::UnsafeCell, cmp, convert::TryFrom, mem, ops::Deref, slice};
+
+use array_macro::array;
+
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
     fs::RcInode,
@@ -11,8 +15,6 @@ use crate::{
     stat::Stat,
     vm::UVAddr,
 };
-use array_macro::array;
-use core::{cell::UnsafeCell, cmp, convert::TryFrom, mem, ops::Deref, slice};
 
 pub enum FileType {
     None,
@@ -104,14 +106,17 @@ impl File {
                 drop(ip);
                 ret
             }
-            FileType::Device { major, .. } => kernel()
-                .devsw
-                .get(*major as usize)
-                .and_then(|dev| Some(unsafe { dev.read?(addr, n) } as usize))
-                .ok_or(()),
+            FileType::Device { major, .. } => {
+                kernel()
+                    .devsw
+                    .get(*major as usize)
+                    .and_then(|dev| Some(unsafe { dev.read?(addr, n) } as usize))
+                    .ok_or(())
+            }
             FileType::None => panic!("File::read"),
         }
     }
+
     /// Write to file self.
     /// addr is a user virtual address.
     pub unsafe fn write(&self, addr: UVAddr, n: i32, proc: &CurrentProc<'_>) -> Result<usize, ()> {
@@ -159,11 +164,13 @@ impl File {
                 }
                 Ok(n as usize)
             }
-            FileType::Device { major, .. } => kernel()
-                .devsw
-                .get(*major as usize)
-                .and_then(|dev| Some(unsafe { dev.write?(addr, n) } as usize))
-                .ok_or(()),
+            FileType::Device { major, .. } => {
+                kernel()
+                    .devsw
+                    .get(*major as usize)
+                    .and_then(|dev| Some(unsafe { dev.write?(addr, n) } as usize))
+                    .ok_or(())
+            }
             FileType::None => panic!("File::read"),
         }
     }

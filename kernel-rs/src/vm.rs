@@ -1,3 +1,5 @@
+use core::{cmp, marker::PhantomData, mem, ops::Add, ptr, slice};
+
 use crate::{
     fs::InodeGuard,
     kernel::kernel,
@@ -9,7 +11,6 @@ use crate::{
         PGSIZE,
     },
 };
-use core::{cmp, marker::PhantomData, mem, ops::Add, ptr, slice};
 
 extern "C" {
     // kernel.ld sets this to end of kernel code.

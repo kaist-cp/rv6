@@ -1,14 +1,14 @@
 //! Physical memory allocator, for user processes,
 //! kernel stacks, page-table pages,
 //! and pipe buffers. Allocates whole 4096-byte pages.
+use core::mem;
+use core::ptr;
+
 use crate::{
     memlayout::PHYSTOP,
     page::Page,
     riscv::{pgrounddown, pgroundup, PGSIZE},
 };
-
-use core::mem;
-use core::ptr;
 
 extern "C" {
     // first address after kernel.

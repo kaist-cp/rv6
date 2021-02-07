@@ -4,6 +4,11 @@
 
 #![allow(clippy::unit_arg)]
 
+use core::{cell::UnsafeCell, mem, slice};
+
+use arrayvec::ArrayVec;
+use cstr_core::CStr;
+
 use crate::{
     fcntl::FcntlFlags,
     file::{FileType, RcFile},
@@ -18,10 +23,6 @@ use crate::{
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
     vm::{UVAddr, VAddr},
 };
-
-use arrayvec::ArrayVec;
-use core::{cell::UnsafeCell, mem, slice};
-use cstr_core::CStr;
 
 impl RcFile<'static> {
     /// Allocate a file descriptor for the given file.
@@ -201,10 +202,12 @@ impl Kernel {
                 };
                 FileType::Device { ip, major }
             }
-            _ => FileType::Inode {
-                ip,
-                off: UnsafeCell::new(0),
-            },
+            _ => {
+                FileType::Inode {
+                    ip,
+                    off: UnsafeCell::new(0),
+                }
+            }
         };
 
         let f = self.ftable.alloc_file(

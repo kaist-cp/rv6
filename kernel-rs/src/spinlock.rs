@@ -1,8 +1,3 @@
-use crate::{
-    kernel::kernel,
-    proc::{Cpu, Waitable},
-    riscv::{intr_get, intr_off, intr_on},
-};
 use core::cell::UnsafeCell;
 use core::hint::spin_loop;
 use core::marker::PhantomData;
@@ -10,6 +5,12 @@ use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
+
+use crate::{
+    kernel::kernel,
+    proc::{Cpu, Waitable},
+    riscv::{intr_get, intr_off, intr_on},
+};
 
 /// Mutual exclusion lock.
 pub struct RawSpinlock {
@@ -250,6 +251,7 @@ impl<T> Drop for SpinlockGuard<'_, T> {
 
 impl<T> Deref for SpinlockGuard<'_, T> {
     type Target = T;
+
     fn deref(&self) -> &Self::Target {
         unsafe { &*self.lock.data.get() }
     }
@@ -321,6 +323,7 @@ impl Waitable for SpinlockProtectedGuard<'_> {
     unsafe fn raw_release(&mut self) {
         self.lock.release();
     }
+
     unsafe fn raw_acquire(&mut self) {
         self.lock.acquire();
     }

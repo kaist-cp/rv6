@@ -1,5 +1,10 @@
 #![allow(clippy::unit_arg)]
 
+use core::{cmp, mem};
+
+use bitflags::bitflags;
+use itertools::*;
+
 use crate::{
     fs::Path,
     kernel::Kernel,
@@ -9,9 +14,6 @@ use crate::{
     riscv::{pgroundup, PGSIZE},
     vm::{PAddr, UVAddr, UserMemory, VAddr},
 };
-use bitflags::bitflags;
-use core::{cmp, mem};
-use itertools::*;
 
 /// "\x7FELF" in little endian
 const ELF_MAGIC: u32 = 0x464c457f;

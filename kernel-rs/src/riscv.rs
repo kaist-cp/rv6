@@ -1,5 +1,6 @@
-use crate::vm::{PAddr, VAddr};
 use bitflags::bitflags;
+
+use crate::vm::{PAddr, VAddr};
 
 /// Which hart (core) is this?
 #[inline]
@@ -29,6 +30,7 @@ impl Mstatus {
         llvm_asm!("csrr $0, mstatus" : "=r" (x) : : : "volatile");
         x
     }
+
     #[inline]
     pub unsafe fn write(self) {
         llvm_asm!("csrw mstatus, $0" : : "r" (self) : : "volatile");
@@ -71,6 +73,7 @@ impl Sstatus {
         llvm_asm!("csrr $0, sstatus" : "=r" (x) : : : "volatile");
         x
     }
+
     #[inline]
     pub unsafe fn write(self) {
         llvm_asm!("csrw sstatus, $0" : : "r" (self) : : "volatile");

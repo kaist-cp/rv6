@@ -1,4 +1,7 @@
 //! Low-level driver routines for 16550a UART.
+use core::ptr;
+
+use self::UartCtrlRegs::{FCR, IER, ISR, LCR, LSR, RBR, THR};
 use crate::memlayout::UART0;
 use crate::{
     console::consoleintr,
@@ -7,9 +10,6 @@ use crate::{
     spinlock::{pop_off, push_off},
     utils::spin_loop,
 };
-use core::ptr;
-
-use self::UartCtrlRegs::{FCR, IER, ISR, LCR, LSR, RBR, THR};
 
 const UART_TX_BUF_SIZE: usize = 32;
 
