@@ -205,10 +205,12 @@ impl Kernel {
                 };
                 FileType::Device { ip, major }
             }
-            _ => FileType::Inode {
-                ip,
-                off: UnsafeCell::new(0),
-            },
+            _ => {
+                FileType::Inode {
+                    ip,
+                    off: UnsafeCell::new(0),
+                }
+            }
         };
 
         let f = self.ftable.alloc_file(
