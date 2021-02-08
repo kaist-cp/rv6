@@ -1,7 +1,10 @@
 use core::fmt::{self, Write};
 use core::hint::spin_loop;
 use core::mem::MaybeUninit;
+use core::pin::Pin;
 use core::sync::atomic::{AtomicBool, Ordering};
+
+use pin_project::pin_project;
 
 use crate::{
     bio::Bcache,
@@ -11,10 +14,9 @@ use crate::{
     kalloc::Kmem,
     page::Page,
     param::{NCPU, NDEV},
-    pinned_kernel::pinned_kernel,
     plic::{plicinit, plicinithart},
     println,
-    proc::{cpuid, procinit, scheduler, Cpu, ProcessSystem},
+    proc::{cpuid, scheduler, Cpu, ProcessSystem},
     sleepablelock::Sleepablelock,
     spinlock::Spinlock,
     trap::{trapinit, trapinithart},
@@ -26,17 +28,32 @@ use crate::{
 static mut KERNEL: Kernel = Kernel::zero();
 
 /// After intialized, the kernel is safe to immutably access.
+// TODO: unsafe?
 #[inline]
 pub fn kernel() -> &'static Kernel {
     unsafe { &KERNEL }
 }
 
+/// Returns a pinned mutable reference to the `KERNEL`.
+///
 /// # Safety
 ///
-/// The `Kernel` never moves `_bcache_inner` and the outside can only obtain
-/// a pinned mutable reference to it.
+/// The caller should make sure not to call this function multiple times.
+/// All mutable accesses to the `KERNEL` must be done through this.
+#[inline]
+unsafe fn kernel_unchecked_pin() -> Pin<&'static mut Kernel> {
+    // Safe if all mutable accesses to the `KERNEL` are done through this.
+    unsafe { Pin::new_unchecked(&mut KERNEL) }
+}
+
+/// # Safety
+///
+/// The `Kernel` is `!Unpin`, since it owns data that are `!Unpin`, such as the `bcache`.
+/// Hence, all mutable accesses to the `Kernel` or its inner data that are `!Unpin` must be done using a pin.
+///
 /// If the `Cpu` executing the code has a non-null `Proc` pointer,
 /// the `Proc` in `CurrentProc` is always valid while the `Kernel` is alive.
+#[pin_project]
 pub struct Kernel {
     panicked: AtomicBool,
 
@@ -57,11 +74,13 @@ pub struct Kernel {
     pub ticks: Sleepablelock<u32>,
 
     /// Current process system.
+    #[pin]
     pub procs: ProcessSystem,
 
     cpus: [Cpu; NCPU],
 
-    pub bcache: MaybeUninit<Bcache>,
+    #[pin]
+    bcache: Bcache,
 
     pub devsw: [Devsw; NDEV],
 
@@ -84,7 +103,8 @@ impl Kernel {
             ticks: Sleepablelock::new("time", 0),
             procs: ProcessSystem::zero(),
             cpus: [Cpu::new(); NCPU],
-            bcache: MaybeUninit::uninit(),
+            // Safe since the only way to access `bcache` is through `kernel()`, which is an immutable reference.
+            bcache: unsafe { Bcache::zero() },
             devsw: [Devsw {
                 read: None,
                 write: None,
@@ -143,6 +163,14 @@ impl Kernel {
         let id: usize = cpuid();
         &self.cpus[id] as *const _ as *mut _
     }
+
+    /// Returns an immutable reference to the kernel's bcache.
+    ///
+    /// # Safety
+    /// Access it only after initializing the kernel using `kernel_main()`.
+    pub unsafe fn get_bcache(&self) -> &Bcache {
+        &self.bcache
+    }
 }
 
 /// print! macro prints to the console using printer.
@@ -180,23 +208,29 @@ pub unsafe fn kernel_main() -> ! {
 
         // Console.
         Uart::init();
-        unsafe { consoleinit(&mut KERNEL.devsw) };
+        unsafe { consoleinit(kernel_unchecked_pin().project().devsw) };
 
         println!();
         println!("rv6 kernel is booting");
         println!();
 
         // Physical page allocator.
-        unsafe { KERNEL.kmem.get_mut().init() };
+        unsafe { kernel_unchecked_pin().project().kmem.get_mut().init() };
 
         // Create kernel memory manager.
         let memory = KernelMemory::new().expect("PageTable::new failed");
 
         // Turn on paging.
-        unsafe { KERNEL.memory.write(memory).init_hart() };
+        unsafe {
+            kernel_unchecked_pin()
+                .project()
+                .memory
+                .write(memory)
+                .init_hart()
+        };
 
         // Process system.
-        unsafe { procinit(&mut KERNEL.procs) };
+        unsafe { kernel_unchecked_pin().project().procs.init() };
 
         // Trap vectors.
         unsafe { trapinit() };
@@ -211,24 +245,21 @@ pub unsafe fn kernel_main() -> ! {
         unsafe { plicinithart() };
 
         // Buffer cache.
+        unsafe { kernel_unchecked_pin().project().bcache.get_pin_mut().init() };
+
+        // Emulated hard disk.
         unsafe {
-            // Initialize the `KERNEL.bcache` field, and then initialize the `Bcache`.
-            KERNEL
-                .bcache
-                .write(Spinlock::new(
-                    "BCACHE",
-                    pinned_kernel().project().bcache_inner,
-                ))
+            kernel_unchecked_pin()
+                .project()
+                .file_system
+                .disk
                 .get_mut()
-                .as_mut()
                 .init()
         };
 
-        // Emulated hard disk.
-        unsafe { KERNEL.file_system.disk.get_mut().init() };
-
         // First user process.
-        unsafe { KERNEL.procs.user_proc_init() };
+        // Temporarily create one more `Pin<&mut Kernel>`, just to initialize the first user process.
+        unsafe { kernel_unchecked_pin().project().procs.user_proc_init() };
         STARTED.store(true, Ordering::Release);
     } else {
         while !STARTED.load(Ordering::Acquire) {
@@ -238,7 +269,13 @@ pub unsafe fn kernel_main() -> ! {
         println!("hart {} starting", cpuid());
 
         // Turn on paging.
-        unsafe { KERNEL.memory.assume_init_mut().init_hart() };
+        unsafe {
+            kernel_unchecked_pin()
+                .project()
+                .memory
+                .assume_init_mut()
+                .init_hart()
+        };
 
         // Install kernel trap vector.
         unsafe { trapinithart() };

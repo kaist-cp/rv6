@@ -13,7 +13,6 @@
 
 use core::mem::{self, ManuallyDrop};
 use core::ops::{Deref, DerefMut};
-use core::pin::Pin;
 
 use array_macro::array;
 
@@ -93,13 +92,7 @@ impl BufInner {
     }
 }
 
-/// Type that actually stores the memory of the buffer cache.
-/// Should never be moved.
-pub type BcacheInner = MruArena<BufEntry, NBUF>;
-
-/// The buffer cache type.
-// TODO: 'static?
-pub type Bcache = Spinlock<Pin<&'static mut MruArena<BufEntry, NBUF>>>;
+pub type Bcache = Spinlock<MruArena<BufEntry, NBUF>>;
 
 /// We can consider it as BufEntry.
 pub type BufUnlocked<'s> = Rc<'s, Bcache, &'s Bcache>;
@@ -149,16 +142,19 @@ impl Drop for Buf<'_> {
     }
 }
 
-impl BcacheInner {
+impl Bcache {
     /// # Safety
     ///
     /// The caller should make sure that `Bcache` never gets moved.
     pub const unsafe fn zero() -> Self {
-        MruArena::new(array![_ => MruEntry::new(BufEntry::zero()); NBUF])
+        unsafe {
+            Spinlock::new_unchecked(
+                "BCACHE",
+                MruArena::new(array![_ => MruEntry::new(BufEntry::zero()); NBUF]),
+            )
+        }
     }
-}
 
-impl Bcache {
     /// Return a unlocked buf with the contents of the indicated block.
     pub fn get_buf(&self, dev: u32, blockno: u32) -> BufUnlocked<'_> {
         self.find_or_alloc(

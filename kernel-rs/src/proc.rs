@@ -4,11 +4,13 @@ use core::{
     cell::UnsafeCell,
     mem::{self, MaybeUninit},
     ops::Deref,
+    pin::Pin,
     ptr, slice, str,
     sync::atomic::{AtomicBool, AtomicI32, Ordering},
 };
 
 use array_macro::array;
+use pin_project::pin_project;
 
 use crate::{
     file::RcFile,
@@ -636,6 +638,7 @@ impl Deref for Proc {
 }
 
 /// Process system type containing & managing whole processes.
+#[pin_project]
 pub struct ProcessSystem {
     nextpid: AtomicI32,
     process_pool: [Proc; NPROC],
@@ -655,6 +658,18 @@ impl ProcessSystem {
             process_pool: array![_ => Proc::zero(); NPROC],
             initial_proc: ptr::null(),
             wait_lock: RawSpinlock::new("wait_lock"),
+        }
+    }
+
+    /// Initialize the proc table at boot time.
+    pub fn init(self: Pin<&'static mut Self>) {
+        // Safe since we don't move the `ProcessSystem`.
+        let this = unsafe { self.get_unchecked_mut() };
+        for (i, p) in this.process_pool.iter_mut().enumerate() {
+            let _ = p
+                .parent
+                .write(SpinlockProtected::new(&this.wait_lock, ptr::null_mut()));
+            p.deref_mut_data().kstack = kstack(i);
         }
     }
 
@@ -739,7 +754,7 @@ impl ProcessSystem {
     }
 
     /// Set up first user process.
-    pub unsafe fn user_proc_init(&mut self) {
+    pub unsafe fn user_proc_init(self: Pin<&mut Self>) {
         // Allocate trap frame.
         let trap_frame = scopeguard::guard(
             kernel().alloc().expect("user_proc_init: kernel().alloc"),
@@ -754,7 +769,7 @@ impl ProcessSystem {
         let guard = unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }
             .expect("user_proc_init: ProcessSystem::alloc");
 
-        self.initial_proc = guard.raw() as *mut _;
+        *self.project().initial_proc = guard.raw() as *mut _;
 
         let data = guard.deref_mut_data();
 
@@ -931,19 +946,6 @@ impl ProcessSystem {
                 }
             }
         }
-    }
-}
-
-/// Initialize the proc table at boot time.
-#[allow(clippy::ref_in_deref)]
-pub unsafe fn procinit(procs: &'static mut ProcessSystem) {
-    for (i, p) in procs.process_pool.iter_mut().enumerate() {
-        unsafe {
-            p.parent
-                .as_mut_ptr()
-                .write(SpinlockProtected::new(&procs.wait_lock, ptr::null_mut()))
-        };
-        p.deref_mut_data().kstack = kstack(i);
     }
 }
 
