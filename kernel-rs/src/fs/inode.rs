@@ -420,7 +420,7 @@ impl InodeGuard<'_> {
         dst: UVAddr,
         off: u32,
         n: u32,
-        proc: &CurrentProc<'_>,
+        proc: &mut CurrentProc<'_>,
     ) -> Result<usize, ()> {
         self.read_internal(off, n, |off, src| {
             proc.deref_mut_data()
@@ -520,7 +520,7 @@ impl InodeGuard<'_> {
         src: UVAddr,
         off: u32,
         n: u32,
-        proc: &CurrentProc<'_>,
+        proc: &mut CurrentProc<'_>,
         tx: &FsTransaction<'_>,
     ) -> Result<usize, ()> {
         self.write_internal(

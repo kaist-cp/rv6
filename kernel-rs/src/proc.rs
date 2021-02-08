@@ -384,6 +384,15 @@ impl<'p> CurrentProc<'p> {
         guard.deref_mut_info().state = Procstate::RUNNABLE;
         unsafe { guard.sched() };
     }
+
+    pub fn deref_data_raw(&mut self) -> *mut ProcData {
+        self.data.get()
+    }
+
+    pub fn deref_mut_data(&mut self) -> &mut ProcData {
+        // Safety: Only current proc uses ProcData.
+        unsafe { &mut *self.data.get() }
+    }
 }
 
 impl Deref for CurrentProc<'_> {
@@ -410,6 +419,12 @@ impl ProcGuard {
     fn deref_mut_info(&mut self) -> &mut ProcInfo {
         // It is safe becuase self.info is locked and &mut self is exclusive.
         unsafe { &mut *self.info.get_mut_raw() }
+    }
+
+    #[allow(clippy::mut_from_ref)]
+    pub fn deref_mut_data(&self) -> &mut ProcData {
+        // Safety: Only current proc uses ProcData.
+        unsafe { &mut *self.data.get() }
     }
 
     unsafe fn from_raw(ptr: *const Proc) -> Self {
@@ -626,16 +641,6 @@ impl Proc {
     pub fn killed(&self) -> bool {
         self.killed.load(Ordering::Acquire)
     }
-
-    pub fn deref_data_raw(&self) -> *mut ProcData {
-        self.data.get()
-    }
-
-    #[allow(clippy::mut_from_ref)]
-    pub fn deref_mut_data(&self) -> &mut ProcData {
-        // Safety: Only current proc uses ProcData.
-        unsafe { &mut *self.data.get() }
-    }
 }
 
 impl Deref for Proc {
@@ -679,7 +684,7 @@ impl ProcessSystem {
             let _ = p
                 .parent
                 .write(SpinlockProtected::new(&this.wait_lock, ptr::null_mut()));
-            p.deref_mut_data().kstack = kstack(i);
+                unsafe { &mut *p.data.get() }.kstack = kstack(i);
         }
     }
 
@@ -805,7 +810,7 @@ impl ProcessSystem {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
-    pub unsafe fn fork(&self, proc: &CurrentProc<'_>) -> Result<Pid, ()> {
+    pub unsafe fn fork(&self, proc: &mut CurrentProc<'_>) -> Result<Pid, ()> {
         // Allocate trap frame.
         let trap_frame = scopeguard::guard(kernel().alloc().ok_or(())?, |page| kernel().free(page));
 
@@ -856,7 +861,7 @@ impl ProcessSystem {
 
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
-    pub unsafe fn wait(&self, addr: UVAddr, proc: &CurrentProc<'_>) -> Result<Pid, ()> {
+    pub unsafe fn wait(&self, addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<Pid, ()> {
         // Assumes that the process_pool has at least 1 element.
         let mut parent_guard = unsafe { self.process_pool[0].parent.assume_init_ref() }.lock();
 
@@ -912,7 +917,7 @@ impl ProcessSystem {
     /// Exit the current process.  Does not return.
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
-    pub unsafe fn exit_current(&self, status: i32, proc: &CurrentProc<'_>) -> ! {
+    pub unsafe fn exit_current(&self, status: i32, proc: &mut CurrentProc<'_>) -> ! {
         assert_ne!(proc.raw(), self.initial_proc, "init exiting");
         unsafe { proc.deref_mut_data().close_files() };
 
@@ -1018,7 +1023,7 @@ pub unsafe fn scheduler() -> ! {
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
 unsafe fn forkret() {
-    let proc = &kernel().current_proc().expect("No current proc");
+    let proc = &mut kernel().current_proc().expect("No current proc");
     // Still holding p->lock from scheduler.
     unsafe { proc.info.unlock() };
 

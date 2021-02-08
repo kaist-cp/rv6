@@ -11,7 +11,7 @@ use crate::{
 
 /// Fetch the usize at addr from the current process.
 /// Returns Ok(fetched integer) on success, Err(()) on error.
-pub unsafe fn fetchaddr(addr: UVAddr, proc: &CurrentProc<'_>) -> Result<usize, ()> {
+pub unsafe fn fetchaddr(addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
     let mut ip = 0;
     if addr.into_usize() >= proc.memory.size()
         || addr.into_usize().wrapping_add(mem::size_of::<usize>()) > proc.memory.size()
@@ -32,7 +32,7 @@ pub unsafe fn fetchaddr(addr: UVAddr, proc: &CurrentProc<'_>) -> Result<usize, (
 pub unsafe fn fetchstr<'a>(
     addr: UVAddr,
     buf: &'a mut [u8],
-    proc: &CurrentProc<'_>,
+    proc: &mut CurrentProc<'_>,
 ) -> Result<&'a CStr, ()> {
     proc.deref_mut_data().memory.copy_in_str(buf, addr)?;
 
@@ -69,14 +69,18 @@ pub fn argaddr(n: usize, proc: &CurrentProc<'_>) -> Result<usize, ()> {
 pub unsafe fn argstr<'a>(
     n: usize,
     buf: &'a mut [u8],
-    proc: &CurrentProc<'_>,
+    proc: &mut CurrentProc<'_>,
 ) -> Result<&'a CStr, ()> {
     let addr = argaddr(n, proc)?;
     unsafe { fetchstr(addr.into(), buf, proc) }
 }
 
 impl Kernel {
-    pub unsafe fn syscall(&'static self, num: i32, proc: &CurrentProc<'_>) -> Result<usize, ()> {
+    pub unsafe fn syscall(
+        &'static self,
+        num: i32,
+        proc: &mut CurrentProc<'_>,
+    ) -> Result<usize, ()> {
         match num {
             1 => unsafe { self.sys_fork(proc) },
             2 => unsafe { self.sys_exit(proc) },
