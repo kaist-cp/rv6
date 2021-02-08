@@ -1,8 +1,10 @@
 use core::fmt::{self, Write};
 use core::hint::spin_loop;
 use core::mem::MaybeUninit;
-use core::sync::atomic::{AtomicBool, Ordering};
 use core::pin::Pin;
+use core::sync::atomic::{AtomicBool, Ordering};
+
+use pin_project::pin_project;
 
 use crate::{
     bio::Bcache,
@@ -14,15 +16,13 @@ use crate::{
     param::{NCPU, NDEV},
     plic::{plicinit, plicinithart},
     println,
-    proc::{cpuid, procinit, scheduler, Cpu, ProcessSystem},
+    proc::{cpuid, scheduler, Cpu, ProcessSystem},
     sleepablelock::Sleepablelock,
     spinlock::Spinlock,
     trap::{trapinit, trapinithart},
     uart::Uart,
     vm::KernelMemory,
 };
-
-use pin_project::pin_project;
 
 /// The kernel.
 static mut KERNEL: Kernel = Kernel::zero();
@@ -36,16 +36,16 @@ pub fn kernel() -> &'static Kernel {
 
 /// Returns a pinned mutable reference to the `KERNEL`.
 ///
-/// # Note
+/// # Safety
+/// The caller should make sure not to call this function multiple times.
 /// All mutable accesses to the `KERNEL` must be done through this.
-// TODO: Need a way to statically check only one exist.
-fn kernel_get_pin_mut() -> Pin<&'static mut Kernel> {
+unsafe fn kernel_get_unchecked_pin() -> Pin<&'static mut Kernel> {
     // Safe if all mutable accesses to the `KERNEL` are done through this.
     unsafe { Pin::new_unchecked(&mut KERNEL) }
 }
 
-/// # Safety	
-///	
+/// # Safety
+///
 /// The `Kernel` is `!Unpin`, since it owns data that are `!Unpin`, such as the `bcache`.
 /// Hence, all mutable accesses to the `Kernel` or its inner data that are `!Unpin` must be done using a pin.
 ///
@@ -200,7 +200,7 @@ fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
 /// start() jumps here in supervisor mode on all CPUs.
 pub unsafe fn kernel_main() -> ! {
     static STARTED: AtomicBool = AtomicBool::new(false);
-    let mut kernel = kernel_get_pin_mut().project();
+    let kernel = unsafe { kernel_get_unchecked_pin() }.project();
 
     if cpuid() == 0 {
         // Initialize the kernel.
@@ -223,8 +223,7 @@ pub unsafe fn kernel_main() -> ! {
         unsafe { kernel.memory.write(memory).init_hart() };
 
         // Process system.
-        // TODO: Change `&mut KERNEL.procs` -> `kernel.procs` after adding a lifetime to `ProcessSystem`, `Proc`.
-        unsafe { procinit(&mut KERNEL.procs) };
+        kernel.procs.init();
 
         // Trap vectors.
         unsafe { trapinit() };
@@ -245,7 +244,8 @@ pub unsafe fn kernel_main() -> ! {
         kernel.file_system.disk.get_mut().init();
 
         // First user process.
-        unsafe { kernel.procs.user_proc_init() };
+        // Temporarily create one more `Pin<&mut Kernel>`, just to initialize the first user process.
+        unsafe { kernel_get_unchecked_pin().project().procs.user_proc_init() };
         STARTED.store(true, Ordering::Release);
     } else {
         while !STARTED.load(Ordering::Acquire) {
