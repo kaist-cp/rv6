@@ -14,6 +14,7 @@ pub struct ListEntry {
     #[pin]
     _marker: PhantomPinned, //`ListEntry` is `!Unpin`.
 }
+// TODO: Add generic type to ListEntry? (Then, all `ListEntry` should be from the same type)
 
 /// A list entry for doubly, circular, intrusive linked lists.
 ///
@@ -31,25 +32,25 @@ impl ListEntry {
     /// or after appending/prepending it to another initialized `ListEntry`.
     pub const unsafe fn new() -> Self {
         Self {
-            prev: unsafe { WeakPin::zero() },
-            next: unsafe { WeakPin::zero() },
+            prev: unsafe { WeakPin::zero_mut() },
+            next: unsafe { WeakPin::zero_mut() },
             _marker: PhantomPinned,
         }
     }
 
-    pub fn set_prev(mut self: WeakPin<*mut Self>, prev: WeakPin<*mut Self>) {
+    fn set_prev(mut self: WeakPin<*mut Self>, prev: WeakPin<*mut Self>) {
         let this = unsafe { self.get_unchecked_mut() };
         this.prev = prev;
     }
 
-    pub fn set_next(mut self: WeakPin<*mut Self>, next: WeakPin<*mut Self>) {
+    fn set_next(mut self: WeakPin<*mut Self>, next: WeakPin<*mut Self>) {
         let this = unsafe { self.get_unchecked_mut() };
         this.next = next;
     }
 
     pub fn init(mut self: Pin<&mut Self>) {
         // Safe since we don't move the inner data and don't leak the mutable reference.
-        let weak = WeakPin::from_pin(self.as_mut());
+        let weak = WeakPin::from_pin_mut(self.as_mut());
         let this = unsafe { self.get_unchecked_mut() };
         this.next = weak;
         this.prev = weak;
@@ -59,15 +60,25 @@ impl ListEntry {
         &*self.prev
     }
 
+    // pub fn prev(self: Pin<&mut Self>) -> Pin<&mut Self> {
+    //     // Safe because of the `ListEntry`'s invariant.
+    //     unsafe { self.prev.get_unchecked_pin_mut() }
+    // }
+
     pub fn next(&self) -> &Self {
         &*self.next
     }
 
+    // pub fn next(self: Pin<&mut Self>) -> Pin<&mut Self> {
+    //     // Safe because of the `ListEntry`'s invariant.
+    //     unsafe { self.next.get_unchecked_pin_mut() }
+    // }
+
     /// `e` <-> `this`
     pub fn append(mut self: Pin<&mut Self>, mut e: Pin<&mut Self>) {
         // Safe since we don't move the inner data and don't leak the mutable reference.
-        let this = WeakPin::from_pin(self.as_mut());
-        let elem = WeakPin::from_pin(e.as_mut());
+        let this = WeakPin::from_pin_mut(self.as_mut());
+        let elem = WeakPin::from_pin_mut(e.as_mut());
 
         elem.set_next(this);
         elem.set_prev(this.prev);
@@ -78,8 +89,8 @@ impl ListEntry {
     /// `this` <-> `e`
     pub fn prepend(mut self: Pin<&mut Self>, mut e: Pin<&mut Self>) {
         // Safe since we don't move the inner data and don't leak the mutable reference.
-        let this = WeakPin::from_pin(self.as_mut());
-        let elem = WeakPin::from_pin(e.as_mut());
+        let this = WeakPin::from_pin_mut(self.as_mut());
+        let elem = WeakPin::from_pin_mut(e.as_mut());
 
         elem.set_next(this.next);
         elem.set_prev(this);
@@ -87,25 +98,26 @@ impl ListEntry {
         elem.prev.set_next(elem);
     }
 
-    // pub fn is_empty(self: Pin<&Self>) -> bool {
-    //     let this = WeakPin::from_pin(self);
-    //     this.next == this
-    // }
+    pub fn is_empty(self: Pin<&Self>) -> bool {
+        let this = WeakPin::from_pin_ref(self);
+        this.next == this
+    }
 
     pub fn remove(mut self: Pin<&mut Self>) {
-        let this = WeakPin::from_pin(self.as_mut());
+        let this = WeakPin::from_pin_mut(self.as_mut());
         this.prev.set_next(this.next);
         this.next.set_prev(this.prev);
         self.init();
     }
 
-    // not used
-    // pub fn list_pop_front(self: Pin<&mut Self>) -> Pin<&mut Self> {
-    //     // Safe since we don't move the inner data and don't leak the mutable reference.
-    //     let mut result = unsafe { Pin::new_unchecked(&mut *self.next) };
-    //     result.as_mut().remove();
-    //     result
-    // }
+    pub fn list_pop_front(self: Pin<&mut Self>) -> Pin<&mut Self> {
+        // Safe since we don't move the inner data and don't leak the mutable reference.
+        let mut result = unsafe { self.project().next.get_unchecked_pin_mut() };
+        result.as_mut().remove();
+        result
+    }
+
+    //TODO: Add container_of! macro that gets a `Pin<&mut Self>` as parameter.
 }
 
 #[pinned_drop]
