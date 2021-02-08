@@ -2,6 +2,7 @@ use core::fmt::{self, Write};
 use core::hint::spin_loop;
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicBool, Ordering};
+use core::pin::Pin;
 
 use crate::{
     bio::Bcache,
@@ -21,15 +22,36 @@ use crate::{
     vm::KernelMemory,
 };
 
+use pin_project::pin_project;
+
 /// The kernel.
 static mut KERNEL: Kernel = Kernel::zero();
 
 /// After intialized, the kernel is safe to immutably access.
+// TODO: unsafe?
 #[inline]
 pub fn kernel() -> &'static Kernel {
     unsafe { &KERNEL }
 }
 
+/// Returns a pinned mutable reference to the `KERNEL`.
+///
+/// # Note
+/// All mutable accesses to the `KERNEL` must be done through this.
+// TODO: Need a way to statically check only one exist.
+fn kernel_get_pin_mut() -> Pin<&'static mut Kernel> {
+    // Safe if all mutable accesses to the `KERNEL` are done through this.
+    unsafe { Pin::new_unchecked(&mut KERNEL) }
+}
+
+/// # Safety	
+///	
+/// The `Kernel` is `!Unpin`, since it owns data that are `!Unpin`, such as the `bcache`.
+/// Hence, all mutable accesses to the `Kernel` or its inner data that are `!Unpin` must be done using a pin.
+///
+/// If the `Cpu` executing the code has a non-null `Proc` pointer,
+/// the `Proc` in `CurrentProc` is always valid while the `Kernel` is alive.
+#[pin_project]
 pub struct Kernel {
     panicked: AtomicBool,
 
@@ -50,10 +72,12 @@ pub struct Kernel {
     pub ticks: Sleepablelock<u32>,
 
     /// Current process system.
+    #[pin]
     pub procs: ProcessSystem,
 
     cpus: [Cpu; NCPU],
 
+    #[pin]
     bcache: Bcache,
 
     pub devsw: [Devsw; NDEV],
@@ -176,28 +200,30 @@ fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
 /// start() jumps here in supervisor mode on all CPUs.
 pub unsafe fn kernel_main() -> ! {
     static STARTED: AtomicBool = AtomicBool::new(false);
+    let mut kernel = kernel_get_pin_mut().project();
 
     if cpuid() == 0 {
         // Initialize the kernel.
 
         // Console.
         Uart::init();
-        unsafe { consoleinit(&mut KERNEL.devsw) };
+        unsafe { consoleinit(kernel.devsw) };
 
         println!();
         println!("rv6 kernel is booting");
         println!();
 
         // Physical page allocator.
-        unsafe { KERNEL.kmem.get_mut().init() };
+        unsafe { kernel.kmem.get_mut().init() };
 
         // Create kernel memory manager.
         let memory = KernelMemory::new().expect("PageTable::new failed");
 
         // Turn on paging.
-        unsafe { KERNEL.memory.write(memory).init_hart() };
+        unsafe { kernel.memory.write(memory).init_hart() };
 
         // Process system.
+        // TODO: Change `&mut KERNEL.procs` -> `kernel.procs` after adding a lifetime to `ProcessSystem`, `Proc`.
         unsafe { procinit(&mut KERNEL.procs) };
 
         // Trap vectors.
@@ -213,13 +239,13 @@ pub unsafe fn kernel_main() -> ! {
         unsafe { plicinithart() };
 
         // Buffer cache.
-        unsafe { KERNEL.bcache.get_pin_mut().init() };
+        kernel.bcache.get_pin_mut().init();
 
         // Emulated hard disk.
-        unsafe { KERNEL.file_system.disk.get_mut().init() };
+        kernel.file_system.disk.get_mut().init();
 
         // First user process.
-        unsafe { KERNEL.procs.user_proc_init() };
+        unsafe { kernel.procs.user_proc_init() };
         STARTED.store(true, Ordering::Release);
     } else {
         while !STARTED.load(Ordering::Acquire) {
@@ -229,7 +255,7 @@ pub unsafe fn kernel_main() -> ! {
         println!("hart {} starting", cpuid());
 
         // Turn on paging.
-        unsafe { KERNEL.memory.assume_init_mut().init_hart() };
+        unsafe { kernel.memory.assume_init_mut().init_hart() };
 
         // Install kernel trap vector.
         unsafe { trapinithart() };

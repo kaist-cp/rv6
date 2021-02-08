@@ -935,14 +935,9 @@ impl ProcessSystem {
 }
 
 /// Initialize the proc table at boot time.
-#[allow(clippy::ref_in_deref)]
-pub unsafe fn procinit(procs: &'static mut ProcessSystem) {
+pub fn procinit(procs: &'static mut ProcessSystem) {
     for (i, p) in procs.process_pool.iter_mut().enumerate() {
-        unsafe {
-            p.parent
-                .as_mut_ptr()
-                .write(SpinlockProtected::new(&procs.wait_lock, ptr::null_mut()))
-        };
+        let _ = p.parent.write(SpinlockProtected::new(&procs.wait_lock, ptr::null_mut()));
         p.deref_mut_data().kstack = kstack(i);
     }
 }

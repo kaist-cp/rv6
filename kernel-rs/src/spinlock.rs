@@ -187,7 +187,7 @@ impl<T> Spinlock<T> {
     }
 
     /// Returns a pinned mutable reference to the inner data.
-    pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
+    pub fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut T> {
         // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
         unsafe { Pin::new_unchecked(&mut *self.data.get()) }
     }
