@@ -300,6 +300,9 @@ struct ProcInfo {
 
     /// Exit status to be returned to parent's wait.
     xstate: i32,
+
+    /// Process ID.
+    pid: Pid,
 }
 
 /// Proc::data are private to the process, so lock need not be held.
@@ -347,9 +350,6 @@ pub struct Proc {
 
     /// If true, the process have been killed.
     killed: AtomicBool,
-
-    /// Process ID.
-    pid: AtomicI32,
 }
 
 /// CurrentProc wraps mutable pointer of current CPU's proc.
@@ -371,6 +371,13 @@ impl<'p> CurrentProc<'p> {
 
     fn raw(&self) -> *const Proc {
         self.inner as *const Proc
+    }
+
+    /// # Safety
+    ///
+    /// `pid` is not modified while `CurrentProc` is present.
+    pub fn pid(&self) -> Pid {
+        unsafe { self.info.get_mut_unchecked().pid }
     }
 
     /// Give up the CPU for one scheduling round.
@@ -458,7 +465,7 @@ impl ProcGuard {
             }
 
             // Clear the `ProcInfo`.
-            self.pid.store(0, Ordering::Release);
+            self.deref_mut_info().pid = 0;
             data.name[0] = 0;
             self.deref_mut_info().waitchannel = ptr::null();
             self.killed.store(false, Ordering::Release);
@@ -593,21 +600,17 @@ impl Proc {
                     child_waitchannel: WaitChannel::new(),
                     waitchannel: ptr::null(),
                     xstate: 0,
+                    pid: 0,
                 },
             ),
             data: UnsafeCell::new(ProcData::new()),
             killed: AtomicBool::new(false),
-            pid: AtomicI32::new(0),
         }
     }
 
     pub fn lock(&self) -> ProcGuard {
         mem::forget(self.info.lock());
         ProcGuard { ptr: self }
-    }
-
-    pub fn pid(&self) -> Pid {
-        self.pid.load(Ordering::Acquire)
     }
 
     /// Kill and wake the process up.
@@ -688,7 +691,7 @@ impl ProcessSystem {
             let guard = p.lock();
             if guard.state() == Procstate::UNUSED {
                 let data = guard.deref_mut_data();
-                guard.pid.store(self.allocpid(), Ordering::Release);
+                guard.deref_mut_info().pid = self.allocpid();
                 guard.deref_mut_info().state = Procstate::USED;
 
                 // Initialize trap frame and page table.
@@ -732,7 +735,7 @@ impl ProcessSystem {
     pub fn kill(&self, pid: Pid) -> Result<(), ()> {
         for p in &self.process_pool {
             let guard = p.lock();
-            if guard.pid() == pid {
+            if guard.deref_info().pid == pid {
                 p.kill();
                 guard.wakeup();
                 return Ok(());
@@ -822,7 +825,7 @@ impl ProcessSystem {
 
         npdata.name.copy_from_slice(&proc.name);
 
-        let pid = np.pid();
+        let pid = np.deref_mut_info().pid;
 
         // Now drop the guard before we acquire the `wait_lock`.
         // This is because the lock order must be `wait_lock` -> `Proc::info`.
@@ -858,7 +861,7 @@ impl ProcessSystem {
 
                     havekids = true;
                     if np.state() == Procstate::ZOMBIE {
-                        let pid = np.pid();
+                        let pid = np.deref_mut_info().pid;
                         if !addr.is_null()
                             && proc
                                 .deref_mut_data()
@@ -935,12 +938,12 @@ impl ProcessSystem {
             // For null character recognization.
             // Required since str::from_utf8 cannot recognize interior null characters.
             let length = p.name.iter().position(|&c| c == 0).unwrap_or(p.name.len());
-            unsafe{
+            unsafe {
                 let info = p.info.get_mut_unchecked();
                 if info.state != Procstate::UNUSED {
                     println!(
                         "{} {} {}",
-                        p.pid(),
+                        info.pid,
                         Procstate::to_str(&info.state),
                         str::from_utf8(&p.name[0..length]).unwrap_or("???")
                     );
