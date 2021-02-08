@@ -390,7 +390,7 @@ impl<'p> CurrentProc<'p> {
     }
 
     pub fn deref_mut_data(&mut self) -> &mut ProcData {
-        // Safety: Only current proc uses ProcData.
+        // Safety: Only `CurrentProc` can use `ProcData` without lock.
         unsafe { &mut *self.data.get() }
     }
 }
