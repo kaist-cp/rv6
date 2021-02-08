@@ -2,10 +2,12 @@
 //! `ListEntry` types must be first initialized with init()
 //! before calling its member functions.
 
-use crate::pincell::WeakPin;
 use core::marker::PhantomPinned;
 use core::pin::Pin;
+
 use pin_project::{pin_project, pinned_drop};
+
+use crate::pincell::WeakPin;
 
 #[pin_project(PinnedDrop)]
 pub struct ListEntry {
@@ -39,40 +41,30 @@ impl ListEntry {
     }
 
     fn set_prev(mut self: WeakPin<*mut Self>, prev: WeakPin<*mut Self>) {
-        let this = unsafe { self.get_unchecked_mut() };
-        this.prev = prev;
+        let this = unsafe { self.get_unchecked_pin() }.project();
+        *this.prev = prev;
     }
 
     fn set_next(mut self: WeakPin<*mut Self>, next: WeakPin<*mut Self>) {
-        let this = unsafe { self.get_unchecked_mut() };
-        this.next = next;
+        let this = unsafe { self.get_unchecked_pin() }.project();
+        *this.next = next;
     }
 
     pub fn init(mut self: Pin<&mut Self>) {
         // Safe since we don't move the inner data and don't leak the mutable reference.
         let weak = WeakPin::from_pin_mut(self.as_mut());
-        let this = unsafe { self.get_unchecked_mut() };
-        this.next = weak;
-        this.prev = weak;
+        let this = self.project();
+        *this.next = weak;
+        *this.prev = weak;
     }
 
-    pub fn prev(&self) -> &Self {
-        &*self.prev
+    pub fn prev(self: Pin<&mut Self>) -> Pin<&mut Self> {
+        unsafe { self.project().prev.get_unchecked_pin() }
     }
 
-    // pub fn prev(self: Pin<&mut Self>) -> Pin<&mut Self> {
-    //     // Safe because of the `ListEntry`'s invariant.
-    //     unsafe { self.prev.get_unchecked_pin_mut() }
-    // }
-
-    pub fn next(&self) -> &Self {
-        &*self.next
+    pub fn next(self: Pin<&mut Self>) -> Pin<&mut Self> {
+        unsafe { self.project().next.get_unchecked_pin() }
     }
-
-    // pub fn next(self: Pin<&mut Self>) -> Pin<&mut Self> {
-    //     // Safe because of the `ListEntry`'s invariant.
-    //     unsafe { self.next.get_unchecked_pin_mut() }
-    // }
 
     /// `e` <-> `this`
     pub fn append(mut self: Pin<&mut Self>, mut e: Pin<&mut Self>) {
@@ -112,7 +104,7 @@ impl ListEntry {
 
     pub fn list_pop_front(self: Pin<&mut Self>) -> Pin<&mut Self> {
         // Safe since we don't move the inner data and don't leak the mutable reference.
-        let mut result = unsafe { self.project().next.get_unchecked_pin_mut() };
+        let mut result = unsafe { self.project().next.get_unchecked_pin() };
         result.as_mut().remove();
         result
     }

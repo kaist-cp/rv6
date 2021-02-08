@@ -2,6 +2,7 @@ use core::fmt::Pointer;
 use core::ops::Deref;
 use core::pin::Pin;
 use core::ptr;
+
 use pin_project::pin_project;
 
 /// `WeakPin<*const T>` or `WeakPin<*mut T>`.
@@ -44,6 +45,7 @@ impl<T> WeakPin<*const T> {
 
 impl<T> Deref for WeakPin<*const T> {
     type Target = T;
+
     fn deref(&self) -> &Self::Target {
         // Safe because of the drop guarantee.
         unsafe { &*self.ptr }
@@ -85,14 +87,19 @@ impl<T> WeakPin<*mut T> {
     }
 
     /// Upgrades it into `Pin<&mut T>`.
-    pub unsafe fn get_unchecked_pin_mut(&mut self) -> Pin<&mut T> {
+    ///
+    /// # Safety
+    ///
+    /// Make sure not to leak the `Pin<&mut T>`, or we may end up with multiple `Pin<&mut T>`.
+    pub unsafe fn get_unchecked_pin(&mut self) -> Pin<&mut T> {
         unsafe { Pin::new_unchecked(&mut *self.ptr) }
     }
 
+    // Do not use. Use `WeakPin::get_uncheck_pin()`, and `project()` it.
     /// Upgrades it into `&mut T`.
-    pub unsafe fn get_unchecked_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.ptr }
-    }
+    // pub unsafe fn get_unchecked_mut(&mut self) -> &mut T {
+    //     unsafe { &mut *self.ptr }
+    // }
 
     pub fn clone(&self) -> Self {
         Self { ptr: self.ptr }
@@ -101,6 +108,7 @@ impl<T> WeakPin<*mut T> {
 
 impl<T> Deref for WeakPin<*mut T> {
     type Target = T;
+
     fn deref(&self) -> &Self::Target {
         // Safe because of the drop guarantee.
         unsafe { &*self.ptr }

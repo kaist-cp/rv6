@@ -267,12 +267,25 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
 }
 
 impl<T> MruEntry<T> {
+    // TODO(https://github.com/kaist-cp/rv6/issues/369)
+    // A workarond for https://github.com/Gilnaa/memoffset/issues/49.
+    // Assumes `list_entry` is located at the beginning of `MruEntry`.
+    const LIST_ENTRY_OFFSET: usize = 0;
+
+    // const LIST_ENTRY_OFFSET: usize = offset_of!(MruEntry<T>, list_entry);
+
     pub const fn new(data: T) -> Self {
         Self {
             refcnt: 0,
             data,
             list_entry: unsafe { ListEntry::new() },
         }
+    }
+
+    pub fn from_list_entry(list_entry: Pin<&mut ListEntry>) -> Pin<&mut Self> {
+        let ptr = (list_entry.as_ref().get_ref() as *const _ as usize - Self::LIST_ENTRY_OFFSET)
+            as *mut MruEntry<T>;
+        unsafe { Pin::new_unchecked(&mut *ptr) }
     }
 }
 
@@ -322,14 +335,6 @@ impl<T> Drop for MruPtr<'_, T> {
     }
 }
 
-impl<T: 'static + ArenaObject, const CAPACITY: usize> Spinlock<MruArena<T, CAPACITY>> {
-    // TODO(https://github.com/kaist-cp/rv6/issues/369)
-    // A workarond for https://github.com/Gilnaa/memoffset/issues/49.
-    // Assumes `list_entry` is located at the beginning of `MruEntry`.
-    const LIST_ENTRY_OFFSET: usize = 0;
-    // const LIST_ENTRY_OFFSET: usize = offset_of!(MruEntry<T>, list_entry);
-}
-
 impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruArena<T, CAPACITY>> {
     type Data = T;
     type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
@@ -340,23 +345,22 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
         c: C,
         n: N,
     ) -> Option<Self::Handle<'s>> {
-        let this = self.lock();
+        let mut guard = self.lock();
+        let this = guard.get_pin_mut().project();
+        let head = this.head.as_ref().get_ref() as *const _;
 
         let mut list_entry = this.head.next();
-        let mut empty = ptr::null_mut();
-        while list_entry as *const _ != &this.head as *const _ {
-            let entry = unsafe {
-                &mut *((list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET)
-                    as *mut MruEntry<T>)
-            };
-            if c(&entry.data) {
-                entry.refcnt += 1;
+        let mut empty: *mut MruEntry<T> = ptr::null_mut();
+        while list_entry.as_ref().get_ref() as *const _ != head {
+            let mut entry = MruEntry::from_list_entry(list_entry.as_mut());
+            if c(&entry.as_mut().project().data) {
+                *entry.as_mut().project().refcnt += 1;
                 return Some(Self::Handle::<'s> {
-                    ptr: NonNull::from(entry),
+                    ptr: NonNull::from(entry.as_ref().get_ref()),
                     _marker: PhantomData,
                 });
             } else if entry.refcnt == 0 {
-                empty = entry;
+                empty = entry.as_ref().get_ref() as *const _ as *mut _;
             }
             list_entry = list_entry.next();
         }
@@ -375,19 +379,18 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
     }
 
     fn alloc_handle<'s, F: FnOnce(&mut Self::Data)>(&'s self, f: F) -> Option<Self::Handle<'s>> {
-        let this = self.lock();
+        let mut guard = self.lock();
+        let this = guard.get_pin_mut().project();
+        let head = this.head.as_ref().get_ref() as *const _;
 
         let mut list_entry = this.head.prev();
-        while list_entry as *const _ != &this.head as *const _ {
-            let entry = unsafe {
-                &mut *((list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET)
-                    as *mut MruEntry<T>)
-            };
-            if entry.refcnt == 0 {
-                entry.refcnt = 1;
-                f(&mut entry.data);
+        while list_entry.as_ref().get_ref() as *const _ != head {
+            let mut entry = MruEntry::from_list_entry(list_entry.as_mut());
+            if *entry.as_mut().project().refcnt == 0 {
+                *entry.as_mut().project().refcnt = 1;
+                f(&mut entry.as_mut().project().data);
                 return Some(Self::Handle::<'s> {
-                    ptr: NonNull::from(entry),
+                    ptr: NonNull::from(entry.as_ref().get_ref()),
                     _marker: PhantomData,
                 });
             }
