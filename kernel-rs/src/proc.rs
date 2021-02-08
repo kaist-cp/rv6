@@ -423,7 +423,7 @@ impl ProcGuard {
 
     #[allow(clippy::mut_from_ref)]
     pub fn deref_mut_data(&self) -> &mut ProcData {
-        // Safety: Only current proc uses ProcData.
+        // Safety: It is safe to access `ProcData` when lock is held.
         unsafe { &mut *self.data.get() }
     }
 
