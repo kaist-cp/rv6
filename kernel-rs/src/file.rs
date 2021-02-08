@@ -111,13 +111,11 @@ impl File {
                 drop(ip);
                 ret
             }
-            FileType::Device { major, .. } => {
-                kernel()
-                    .devsw
-                    .get(*major as usize)
-                    .and_then(|dev| Some(unsafe { dev.read?(addr, n) } as usize))
-                    .ok_or(())
-            }
+            FileType::Device { major, .. } => kernel()
+                .devsw
+                .get(*major as usize)
+                .and_then(|dev| Some(unsafe { dev.read?(addr, n) } as usize))
+                .ok_or(()),
             FileType::None => panic!("File::read"),
         }
     }
@@ -174,13 +172,11 @@ impl File {
                 }
                 Ok(n as usize)
             }
-            FileType::Device { major, .. } => {
-                kernel()
-                    .devsw
-                    .get(*major as usize)
-                    .and_then(|dev| Some(unsafe { dev.write?(addr, n) } as usize))
-                    .ok_or(())
-            }
+            FileType::Device { major, .. } => kernel()
+                .devsw
+                .get(*major as usize)
+                .and_then(|dev| Some(unsafe { dev.write?(addr, n) } as usize))
+                .ok_or(()),
             FileType::None => panic!("File::read"),
         }
     }

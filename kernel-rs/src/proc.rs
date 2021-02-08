@@ -684,7 +684,7 @@ impl ProcessSystem {
             let _ = p
                 .parent
                 .write(SpinlockProtected::new(&this.wait_lock, ptr::null_mut()));
-                unsafe { &mut *p.data.get() }.kstack = kstack(i);
+            unsafe { &mut *p.data.get() }.kstack = kstack(i);
         }
     }
 
