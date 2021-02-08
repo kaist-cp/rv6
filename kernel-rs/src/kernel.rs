@@ -37,9 +37,11 @@ pub fn kernel() -> &'static Kernel {
 /// Returns a pinned mutable reference to the `KERNEL`.
 ///
 /// # Safety
+///
 /// The caller should make sure not to call this function multiple times.
 /// All mutable accesses to the `KERNEL` must be done through this.
-unsafe fn kernel_get_unchecked_pin() -> Pin<&'static mut Kernel> {
+#[inline]
+unsafe fn kernel_unchecked_pin() -> Pin<&'static mut Kernel> {
     // Safe if all mutable accesses to the `KERNEL` are done through this.
     unsafe { Pin::new_unchecked(&mut KERNEL) }
 }
@@ -200,7 +202,7 @@ fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
 /// start() jumps here in supervisor mode on all CPUs.
 pub unsafe fn kernel_main() -> ! {
     static STARTED: AtomicBool = AtomicBool::new(false);
-    let kernel = unsafe { kernel_get_unchecked_pin() }.project();
+    let kernel = unsafe { kernel_unchecked_pin() }.project();
 
     if cpuid() == 0 {
         // Initialize the kernel.
@@ -245,7 +247,7 @@ pub unsafe fn kernel_main() -> ! {
 
         // First user process.
         // Temporarily create one more `Pin<&mut Kernel>`, just to initialize the first user process.
-        unsafe { kernel_get_unchecked_pin().project().procs.user_proc_init() };
+        unsafe { kernel_unchecked_pin().project().procs.user_proc_init() };
         STARTED.store(true, Ordering::Release);
     } else {
         while !STARTED.load(Ordering::Acquire) {
