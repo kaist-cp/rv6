@@ -202,30 +202,35 @@ fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
 /// start() jumps here in supervisor mode on all CPUs.
 pub unsafe fn kernel_main() -> ! {
     static STARTED: AtomicBool = AtomicBool::new(false);
-    let kernel = unsafe { kernel_unchecked_pin() }.project();
 
     if cpuid() == 0 {
         // Initialize the kernel.
 
         // Console.
         Uart::init();
-        unsafe { consoleinit(kernel.devsw) };
+        unsafe { consoleinit(kernel_unchecked_pin().project().devsw) };
 
         println!();
         println!("rv6 kernel is booting");
         println!();
 
         // Physical page allocator.
-        unsafe { kernel.kmem.get_mut().init() };
+        unsafe { kernel_unchecked_pin().project().kmem.get_mut().init() };
 
         // Create kernel memory manager.
         let memory = KernelMemory::new().expect("PageTable::new failed");
 
         // Turn on paging.
-        unsafe { kernel.memory.write(memory).init_hart() };
+        unsafe {
+            kernel_unchecked_pin()
+                .project()
+                .memory
+                .write(memory)
+                .init_hart()
+        };
 
         // Process system.
-        kernel.procs.init();
+        unsafe { kernel_unchecked_pin().project().procs.init() };
 
         // Trap vectors.
         unsafe { trapinit() };
@@ -240,10 +245,17 @@ pub unsafe fn kernel_main() -> ! {
         unsafe { plicinithart() };
 
         // Buffer cache.
-        kernel.bcache.get_pin_mut().init();
+        unsafe { kernel_unchecked_pin().project().bcache.get_pin_mut().init() };
 
         // Emulated hard disk.
-        kernel.file_system.disk.get_mut().init();
+        unsafe {
+            kernel_unchecked_pin()
+                .project()
+                .file_system
+                .disk
+                .get_mut()
+                .init()
+        };
 
         // First user process.
         // Temporarily create one more `Pin<&mut Kernel>`, just to initialize the first user process.
@@ -257,7 +269,13 @@ pub unsafe fn kernel_main() -> ! {
         println!("hart {} starting", cpuid());
 
         // Turn on paging.
-        unsafe { kernel.memory.assume_init_mut().init_hart() };
+        unsafe {
+            kernel_unchecked_pin()
+                .project()
+                .memory
+                .assume_init_mut()
+                .init_hart()
+        };
 
         // Install kernel trap vector.
         unsafe { trapinithart() };
