@@ -929,20 +929,22 @@ impl ProcessSystem {
     /// Print a process listing to the console for debugging.
     /// Runs when user types ^P on console.
     /// Doesn't acquire locks in order to avoid wedging a stuck machine further.
-    pub fn dump(&self) {
+    pub unsafe fn dump(&self) {
         println!();
         for p in &self.process_pool {
             // For null character recognization.
             // Required since str::from_utf8 cannot recognize interior null characters.
             let length = p.name.iter().position(|&c| c == 0).unwrap_or(p.name.len());
-            let guard = p.lock();
-            if guard.state() != Procstate::UNUSED {
-                println!(
-                    "{} {} {}",
-                    p.pid(),
-                    Procstate::to_str(&guard.state()),
-                    str::from_utf8(&p.name[0..length]).unwrap_or("???")
-                );
+            unsafe{
+                let info = p.info.get_mut_unchecked();
+                if info.state != Procstate::UNUSED {
+                    println!(
+                        "{} {} {}",
+                        p.pid(),
+                        Procstate::to_str(&info.state),
+                        str::from_utf8(&p.name[0..length]).unwrap_or("???")
+                    );
+                }
             }
         }
     }
