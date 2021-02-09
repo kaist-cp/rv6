@@ -185,6 +185,8 @@ pub unsafe fn kerneltrap() {
     // Give up the CPU if this is a timer interrupt.
     if which_dev == 2 {
         if let Some(proc) = kernel().current_proc() {
+            // Reading state without lock is safe because `proc_yield` and `sched`
+            // is called after we check if current process is `RUNNING`.
             if unsafe { proc.info.get_mut_unchecked().state } == Procstate::RUNNING {
                 unsafe { proc.proc_yield() };
             }
