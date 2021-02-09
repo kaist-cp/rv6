@@ -101,7 +101,7 @@ impl Console {
         match cin {
             // Print process list.
             m if m == ctrl('P') => {
-                kernel().procs.dump();
+                unsafe { kernel().procs.dump() };
             }
 
             // Kill line.

@@ -208,6 +208,8 @@ pub enum Procstate {
     USED,
 }
 
+type Pid = i32;
+
 /// Represents lock guards that can be slept in a `WaitChannel`.
 pub trait Waitable {
     /// Releases the inner `RawSpinlock`.
@@ -286,9 +288,9 @@ impl WaitChannel {
 }
 
 /// Proc::info's spinlock must be held when using these.
-struct ProcInfo {
+pub struct ProcInfo {
     /// Process state.
-    state: Procstate,
+    pub state: Procstate,
 
     /// If non-zero, sleeping on waitchannel.
     waitchannel: *const WaitChannel,
@@ -300,7 +302,7 @@ struct ProcInfo {
     xstate: i32,
 
     /// Process ID.
-    pid: i32,
+    pid: Pid,
 }
 
 /// Proc::data are private to the process, so lock need not be held.
@@ -342,7 +344,7 @@ pub struct Proc {
     /// `SpinlockProtected::new(&procs.wait_lock, ptr::null_mut())`.
     parent: MaybeUninit<SpinlockProtected<*const Proc>>,
 
-    info: Spinlock<ProcInfo>,
+    pub info: Spinlock<ProcInfo>,
 
     data: UnsafeCell<ProcData>,
 
@@ -371,6 +373,13 @@ impl<'p> CurrentProc<'p> {
         self.inner as *const Proc
     }
 
+    /// # Safety
+    ///
+    /// `pid` is not modified while `CurrentProc` is present.
+    pub fn pid(&self) -> Pid {
+        unsafe { self.info.get_mut_unchecked().pid }
+    }
+
     /// Give up the CPU for one scheduling round.
     pub unsafe fn proc_yield(&self) {
         let mut guard = self.lock();
@@ -388,7 +397,7 @@ impl Deref for CurrentProc<'_> {
 }
 
 /// Assumption: ptr->info's spinlock is held.
-struct ProcGuard {
+pub struct ProcGuard {
     ptr: *const Proc,
 }
 
@@ -419,7 +428,7 @@ impl ProcGuard {
     /// there's no process.
     unsafe fn sched(&mut self) {
         assert_eq!((*kernel().mycpu()).noff, 1, "sched locks");
-        assert_ne!(self.deref_info().state, Procstate::RUNNING, "sched running");
+        assert_ne!(self.state(), Procstate::RUNNING, "sched running");
         assert!(!unsafe { intr_get() }, "sched interruptible");
 
         let interrupt_enabled = unsafe { (*kernel().mycpu()).interrupt_enabled };
@@ -467,9 +476,13 @@ impl ProcGuard {
 
     /// Wake process from sleep().
     fn wakeup(&self) {
-        if self.deref_info().state == Procstate::SLEEPING {
+        if self.state() == Procstate::SLEEPING {
             self.deref_mut_info().state = Procstate::RUNNABLE;
         }
+    }
+
+    pub fn state(&self) -> Procstate {
+        self.deref_info().state
     }
 }
 
@@ -479,7 +492,7 @@ impl Drop for ProcGuard {
             // If the ProcGuard was dropped while the process's state is still `USED`
             // and ProcData::sz == 0, this means an error happened while initializing a process.
             // Hence, clear the process's fields.
-            if self.deref_info().state == Procstate::USED && self.memory.size() == 0 {
+            if self.state() == Procstate::USED && self.memory.size() == 0 {
                 self.clear(None);
             }
             self.info.unlock();
@@ -595,17 +608,9 @@ impl Proc {
         }
     }
 
-    fn lock(&self) -> ProcGuard {
+    pub fn lock(&self) -> ProcGuard {
         mem::forget(self.info.lock());
         ProcGuard { ptr: self }
-    }
-
-    pub unsafe fn pid(&self) -> i32 {
-        unsafe { self.info.get_mut_unchecked() }.pid
-    }
-
-    pub unsafe fn state(&self) -> Procstate {
-        unsafe { self.info.get_mut_unchecked() }.state
     }
 
     /// Kill and wake the process up.
@@ -673,7 +678,7 @@ impl ProcessSystem {
         }
     }
 
-    fn allocpid(&self) -> i32 {
+    fn allocpid(&self) -> Pid {
         self.nextpid.fetch_add(1, Ordering::Relaxed)
     }
 
@@ -684,7 +689,7 @@ impl ProcessSystem {
     unsafe fn alloc(&self, trap_frame: Page, memory: UserMemory) -> Result<ProcGuard, ()> {
         for p in &self.process_pool {
             let guard = p.lock();
-            if guard.deref_info().state == Procstate::UNUSED {
+            if guard.state() == Procstate::UNUSED {
                 let data = guard.deref_mut_data();
                 guard.deref_mut_info().pid = self.allocpid();
                 guard.deref_mut_info().state = Procstate::USED;
@@ -727,7 +732,7 @@ impl ProcessSystem {
     /// The victim won't exit until it tries to return
     /// to user space (see usertrap() in trap.c).
     /// Returns Ok(()) on success, Err(()) on error.
-    pub fn kill(&self, pid: i32) -> Result<(), ()> {
+    pub fn kill(&self, pid: Pid) -> Result<(), ()> {
         for p in &self.process_pool {
             let guard = p.lock();
             if guard.deref_info().pid == pid {
@@ -789,7 +794,7 @@ impl ProcessSystem {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
-    pub unsafe fn fork(&self, proc: &CurrentProc<'_>) -> Result<i32, ()> {
+    pub unsafe fn fork(&self, proc: &CurrentProc<'_>) -> Result<Pid, ()> {
         // Allocate trap frame.
         let trap_frame = scopeguard::guard(kernel().alloc().ok_or(())?, |page| kernel().free(page));
 
@@ -840,7 +845,7 @@ impl ProcessSystem {
 
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
-    pub unsafe fn wait(&self, addr: UVAddr, proc: &CurrentProc<'_>) -> Result<i32, ()> {
+    pub unsafe fn wait(&self, addr: UVAddr, proc: &CurrentProc<'_>) -> Result<Pid, ()> {
         // Assumes that the process_pool has at least 1 element.
         let mut parent_guard = unsafe { self.process_pool[0].parent.assume_init_ref() }.lock();
 
@@ -855,9 +860,8 @@ impl ProcessSystem {
                     let mut np = np.lock();
 
                     havekids = true;
-                    let state = np.deref_info().state;
-                    if state == Procstate::ZOMBIE {
-                        let pid = np.deref_info().pid;
+                    if np.state() == Procstate::ZOMBIE {
+                        let pid = np.deref_mut_info().pid;
                         if !addr.is_null()
                             && proc
                                 .deref_mut_data()
@@ -928,7 +932,7 @@ impl ProcessSystem {
     /// Print a process listing to the console for debugging.
     /// Runs when user types ^P on console.
     /// Doesn't acquire locks in order to avoid wedging a stuck machine further.
-    pub fn dump(&self) {
+    pub unsafe fn dump(&self) {
         println!();
         for p in &self.process_pool {
             // For null character recognization.
@@ -981,7 +985,7 @@ pub unsafe fn scheduler() -> ! {
 
         for p in &kernel().procs.process_pool {
             let guard = p.lock();
-            if guard.deref_info().state == Procstate::RUNNABLE {
+            if guard.state() == Procstate::RUNNABLE {
                 // Switch to chosen process.  It is the process's job
                 // to release its lock and then reacquire it
                 // before jumping back to us.

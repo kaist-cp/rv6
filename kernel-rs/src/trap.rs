@@ -75,7 +75,7 @@ pub unsafe extern "C" fn usertrap() {
             println!(
                 "usertrap(): unexpected scause {:018p} pid={}",
                 unsafe { r_scause() } as *const u8,
-                unsafe { proc.pid() }
+                proc.pid()
             );
             println!(
                 "            sepc={:018p} stval={:018p}",
@@ -185,7 +185,9 @@ pub unsafe fn kerneltrap() {
     // Give up the CPU if this is a timer interrupt.
     if which_dev == 2 {
         if let Some(proc) = kernel().current_proc() {
-            if unsafe { proc.state() } == Procstate::RUNNING {
+            // Reading state without lock is safe because `proc_yield` and `sched`
+            // is called after we check if current process is `RUNNING`.
+            if unsafe { proc.info.get_mut_unchecked().state } == Procstate::RUNNING {
                 unsafe { proc.proc_yield() };
             }
         }
