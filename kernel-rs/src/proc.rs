@@ -288,9 +288,9 @@ impl WaitChannel {
 }
 
 /// Proc::info's spinlock must be held when using these.
-struct ProcInfo {
+pub struct ProcInfo {
     /// Process state.
-    state: Procstate,
+    pub state: Procstate,
 
     /// If non-zero, sleeping on waitchannel.
     waitchannel: *const WaitChannel,
@@ -344,7 +344,7 @@ pub struct Proc {
     /// `SpinlockProtected::new(&procs.wait_lock, ptr::null_mut())`.
     parent: MaybeUninit<SpinlockProtected<*const Proc>>,
 
-    info: Spinlock<ProcInfo>,
+    pub info: Spinlock<ProcInfo>,
 
     data: UnsafeCell<ProcData>,
 
