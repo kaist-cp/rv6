@@ -7,6 +7,7 @@ use core::ptr::{self, NonNull};
 use pin_project::pin_project;
 
 use crate::list::*;
+use crate::pinned_array::PinnedArray;
 use crate::spinlock::{Spinlock, SpinlockGuard};
 
 /// A homogeneous memory allocator, equipped with the box type representing an allocation.
@@ -119,7 +120,7 @@ pub struct MruEntry<T> {
 #[pin_project]
 pub struct MruArena<T, const CAPACITY: usize> {
     #[pin]
-    entries: [MruEntry<T>; CAPACITY],
+    entries: PinnedArray<MruEntry<T>, CAPACITY>,
     #[pin]
     head: ListEntry,
 }
@@ -292,30 +293,19 @@ impl<T> MruEntry<T> {
 
 impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
     // TODO(https://github.com/kaist-cp/rv6/issues/371): unsafe...
-    pub const fn new(entries: [MruEntry<T>; CAPACITY]) -> Self {
+    pub const fn new(arr: [MruEntry<T>; CAPACITY]) -> Self {
         Self {
-            entries,
+            entries: PinnedArray::new(arr),
             head: unsafe { ListEntry::new() },
         }
     }
 
-    // Returns a pinned mutable reference to the `index`th element of `array`.
-    fn get_entry(array: Pin<&mut [MruEntry<T>; CAPACITY]>, index: usize) -> Pin<&mut MruEntry<T>> {
-        // Safe since we don't move `MruEntry` and access it only through `Pin`.
-        // That is, the data is pinned.
-        unsafe { Pin::new_unchecked(&mut (*array.get_unchecked_mut())[index]) }
-    }
-
-    pub fn init(mut self: Pin<&mut Self>) {
-        let mut this = self.as_mut().project();
+    pub fn init(self: Pin<&mut Self>) {
+        let mut this = self.project();
 
         this.head.as_mut().init();
-        for index in 0..this.entries.len() {
-            this.head.as_mut().prepend(
-                Self::get_entry(this.entries.as_mut(), index)
-                    .project()
-                    .list_entry,
-            );
+        for entry in this.entries {
+            this.head.as_mut().prepend(entry.project().list_entry);
         }
     }
 }

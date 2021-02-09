@@ -1,6 +1,6 @@
 use core::ops::Index;
-use core::slice;
 use core::pin::Pin;
+use core::slice;
 
 /// An array that holds pinned data, and hence, should also be pinned.
 /// From `&PinnedArray<T, N>`, you can get `&T` such as by `pinned_array[index]` or iterating.
@@ -35,8 +35,8 @@ impl<T, const N: usize> Index<usize> for PinnedArray<T, N> {
 }
 
 impl<'s, T, const N: usize> IntoIterator for &'s PinnedArray<T, N> {
-    type Item = &'s T;
     type IntoIter = slice::Iter<'s, T>;
+    type Item = &'s T;
 
     fn into_iter(self) -> slice::Iter<'s, T> {
         self.arr.iter()
@@ -44,8 +44,8 @@ impl<'s, T, const N: usize> IntoIterator for &'s PinnedArray<T, N> {
 }
 
 impl<'s, T, const N: usize> IntoIterator for Pin<&'s mut PinnedArray<T, N>> {
-    type Item = Pin<&'s mut T>;
     type IntoIter = IterMut<'s, T>;
+    type Item = Pin<&'s mut T>;
 
     fn into_iter(self) -> IterMut<'s, T> {
         IterMut {
