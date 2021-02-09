@@ -99,6 +99,15 @@ bitflags! {
         const F_ANY_LAYOUT = 1 << 27;
         const RING_F_INDIRECT_DESC = 1 << 28;
         const RING_F_EVENT_IDX = 1 << 29;
+
+        const ETC =
+            !Self::BLK_F_RO.bits &
+            !Self::BLK_F_SCSI.bits &
+            !Self::BLK_F_CONFIG_WCE.bits &
+            !Self::BLK_F_MQ.bits &
+            !Self::F_ANY_LAYOUT.bits &
+            !Self::RING_F_INDIRECT_DESC.bits &
+            !Self::RING_F_EVENT_IDX.bits;
     }
 }
 

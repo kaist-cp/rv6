@@ -249,19 +249,14 @@ impl Disk {
         MmioRegs::Status.write(status.bits());
 
         // Negotiate features
-        // It is safe because we just erase some bits and write the others back.
-        // Since some feature bits are not defined in VirtIOFeatures, we use
-        // `- (...)` instead of `& !(...)` to keep those bits. Note that `-` is
-        // set difference (https://docs.rs/bitflags/1.2.1/bitflags/#operators).
-        let features =
-            unsafe { VirtIOFeatures::from_bits_unchecked(MmioRegs::DeviceFeatures.read()) }
-                - (VirtIOFeatures::BLK_F_RO
-                    | VirtIOFeatures::BLK_F_SCSI
-                    | VirtIOFeatures::BLK_F_CONFIG_WCE
-                    | VirtIOFeatures::BLK_F_MQ
-                    | VirtIOFeatures::F_ANY_LAYOUT
-                    | VirtIOFeatures::RING_F_EVENT_IDX
-                    | VirtIOFeatures::RING_F_INDIRECT_DESC);
+        let features = VirtIOFeatures::from_bits_truncate(MmioRegs::DeviceFeatures.read())
+            - (VirtIOFeatures::BLK_F_RO
+                | VirtIOFeatures::BLK_F_SCSI
+                | VirtIOFeatures::BLK_F_CONFIG_WCE
+                | VirtIOFeatures::BLK_F_MQ
+                | VirtIOFeatures::F_ANY_LAYOUT
+                | VirtIOFeatures::RING_F_EVENT_IDX
+                | VirtIOFeatures::RING_F_INDIRECT_DESC);
 
         MmioRegs::DriverFeatures.write(features.bits());
 

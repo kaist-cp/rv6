@@ -4,7 +4,7 @@ use crate::vm::{Addr, PAddr, VAddr};
 
 /// Which hart (core) is this?
 #[inline]
-pub unsafe fn r_mhartid() -> usize {
+pub fn r_mhartid() -> usize {
     let mut x;
     unsafe {
         asm!("csrr {}, mhartid", out(reg) x);
@@ -27,7 +27,7 @@ bitflags! {
 
 impl Mstatus {
     #[inline]
-    pub unsafe fn read() -> Self {
+    pub fn read() -> Self {
         let mut x;
         unsafe {
             asm!("csrr {}, mstatus", out(reg) x);
@@ -76,7 +76,7 @@ bitflags! {
 
 impl Sstatus {
     #[inline]
-    pub unsafe fn read() -> Self {
+    pub fn read() -> Self {
         let mut x;
         unsafe {
             asm!("csrr {}, sstatus", out(reg) x);
@@ -94,7 +94,7 @@ impl Sstatus {
 
 /// Supervisor Interrupt Pending.
 #[inline]
-pub unsafe fn r_sip() -> usize {
+pub fn r_sip() -> usize {
     let mut x;
     unsafe {
         asm!("csrr {}, sip", out(reg) x);
@@ -125,7 +125,7 @@ bitflags! {
 
 impl SIE {
     #[inline]
-    pub unsafe fn read() -> Self {
+    pub fn read() -> Self {
         let mut x;
         unsafe {
             asm!("csrr {}, sie", out(reg) x);
@@ -152,18 +152,19 @@ bitflags! {
 
         /// software
         const MSIE = (1) << 3;
+
+        const ETC = !Self::MEIE.bits & !Self::MTIE.bits & !Self::MSIE.bits;
     }
 }
 
 impl MIE {
     #[inline]
-    pub unsafe fn read() -> Self {
+    pub fn read() -> Self {
         let mut x: usize;
         unsafe {
             asm!("csrr {}, mie", out(reg) x);
         }
-        // TODO: `Self::from_bits_truncate(x)` makes the kernel unbootable.
-        unsafe { ::core::mem::transmute(x) }
+        Self::from_bits_truncate(x)
     }
 
     #[inline]
@@ -185,7 +186,7 @@ pub unsafe fn w_sepc(x: usize) {
 }
 
 #[inline]
-pub unsafe fn r_sepc() -> usize {
+pub fn r_sepc() -> usize {
     let mut x;
     unsafe {
         asm!("csrr {}, sepc", out(reg) x);
@@ -195,7 +196,7 @@ pub unsafe fn r_sepc() -> usize {
 
 /// Machine Exception Delegation.
 #[inline]
-pub unsafe fn r_medeleg() -> usize {
+pub fn r_medeleg() -> usize {
     let mut x;
     unsafe {
         asm!("csrr {}, medeleg", out(reg) x);
@@ -212,7 +213,7 @@ pub unsafe fn w_medeleg(x: usize) {
 
 /// Machine Interrupt Delegation.
 #[inline]
-pub unsafe fn r_mideleg() -> usize {
+pub fn r_mideleg() -> usize {
     let mut x;
     unsafe {
         asm!("csrr {}, mideleg", out(reg) x);
@@ -237,7 +238,7 @@ pub unsafe fn w_stvec(x: usize) {
 }
 
 #[inline]
-pub unsafe fn r_stvec() -> usize {
+pub fn r_stvec() -> usize {
     let mut x;
     unsafe {
         asm!("csrr {}, stvec", out(reg) x);
@@ -270,7 +271,7 @@ pub unsafe fn w_satp(x: usize) {
 }
 
 #[inline]
-pub unsafe fn r_satp() -> usize {
+pub fn r_satp() -> usize {
     let mut x;
     unsafe {
         asm!("csrr {}, satp", out(reg) x);
@@ -295,7 +296,7 @@ pub unsafe fn w_mscratch(x: usize) {
 
 /// Supervisor Trap Cause.
 #[inline]
-pub unsafe fn r_scause() -> usize {
+pub fn r_scause() -> usize {
     let mut x;
     unsafe {
         asm!("csrr {}, scause", out(reg) x);
@@ -305,7 +306,7 @@ pub unsafe fn r_scause() -> usize {
 
 /// Supervisor Trap Value.
 #[inline]
-pub unsafe fn r_stval() -> usize {
+pub fn r_stval() -> usize {
     let mut x;
     unsafe {
         asm!("csrr {}, stval", out(reg) x);
@@ -322,7 +323,7 @@ pub unsafe fn w_mcounteren(x: u64) {
 }
 
 #[inline]
-pub unsafe fn r_mcounteren() -> u64 {
+pub fn r_mcounteren() -> u64 {
     let mut x;
     unsafe {
         asm!("csrr {}, mcounteren", out(reg) x);
@@ -332,7 +333,7 @@ pub unsafe fn r_mcounteren() -> u64 {
 
 /// Machine-mode cycle counter.
 #[inline]
-pub unsafe fn r_time() -> u64 {
+pub fn r_time() -> u64 {
     let mut x;
     unsafe {
         asm!("csrr {}, time", out(reg) x);
@@ -343,7 +344,7 @@ pub unsafe fn r_time() -> u64 {
 /// Enable device interrupts.
 #[inline]
 pub unsafe fn intr_on() {
-    let mut y = unsafe { Sstatus::read() };
+    let mut y = Sstatus::read();
     y.insert(Sstatus::SIE);
     unsafe { y.write() };
 }
@@ -351,21 +352,21 @@ pub unsafe fn intr_on() {
 /// Disable device interrupts.
 #[inline]
 pub unsafe fn intr_off() {
-    let mut x = unsafe { Sstatus::read() };
+    let mut x = Sstatus::read();
     x.remove(Sstatus::SIE);
     unsafe { x.write() };
 }
 
 /// Are device interrupts enabled?
 #[inline]
-pub unsafe fn intr_get() -> bool {
-    unsafe { Sstatus::read() }.contains(Sstatus::SIE)
+pub fn intr_get() -> bool {
+    Sstatus::read().contains(Sstatus::SIE)
 }
 
 /// Read and write tp, the thread pointer, which holds
 /// this core's hartid (core number), the index into cpus[].
 #[inline]
-pub unsafe fn r_tp() -> usize {
+pub fn r_tp() -> usize {
     let mut x;
     unsafe {
         asm!("mv {}, tp", out(reg) x);
@@ -374,7 +375,7 @@ pub unsafe fn r_tp() -> usize {
 }
 
 #[inline]
-pub unsafe fn r_sp() -> usize {
+pub fn r_sp() -> usize {
     let mut x;
     unsafe {
         asm!("mv {}, sp", out(reg) x);
@@ -390,7 +391,7 @@ pub unsafe fn w_tp(x: usize) {
 }
 
 #[inline]
-pub unsafe fn r_ra() -> usize {
+pub fn r_ra() -> usize {
     let mut x;
     unsafe {
         asm!("mv {}, ra", out(reg) x);

@@ -39,7 +39,7 @@ pub unsafe extern "C" fn usertrap() {
     let mut which_dev: i32 = 0;
 
     assert!(
-        !unsafe { Sstatus::read() }.contains(Sstatus::SPP),
+        !Sstatus::read().contains(Sstatus::SPP),
         "usertrap: not from user mode"
     );
 
@@ -50,8 +50,8 @@ pub unsafe extern "C" fn usertrap() {
     let proc = &kernel().current_proc().expect("No current proc");
 
     // Save user program counter.
-    proc.deref_mut_data().trap_frame_mut().epc = unsafe { r_sepc() };
-    if unsafe { r_scause() } == 8 {
+    proc.deref_mut_data().trap_frame_mut().epc = r_sepc();
+    if r_scause() == 8 {
         // system call
 
         if proc.killed() {
@@ -74,13 +74,13 @@ pub unsafe extern "C" fn usertrap() {
         if which_dev == 0 {
             println!(
                 "usertrap(): unexpected scause {:018p} pid={}",
-                unsafe { r_scause() } as *const u8,
+                r_scause() as *const u8,
                 proc.pid()
             );
             println!(
                 "            sepc={:018p} stval={:018p}",
-                unsafe { r_sepc() } as *const u8,
-                unsafe { r_stval() } as *const u8
+                r_sepc() as *const u8,
+                r_stval() as *const u8
             );
             proc.kill();
         }
@@ -117,20 +117,20 @@ pub unsafe fn usertrapret(proc: &CurrentProc<'_>) {
     // the process next re-enters the kernel.
     let proc_data = proc.deref_mut_data();
     // kernel page table
-    proc_data.trap_frame_mut().kernel_satp = unsafe { r_satp() };
+    proc_data.trap_frame_mut().kernel_satp = r_satp();
 
     // process's kernel stack
     proc_data.trap_frame_mut().kernel_sp = proc_data.kstack.wrapping_add(PGSIZE);
     proc_data.trap_frame_mut().kernel_trap = usertrap as usize;
 
     // hartid for cpuid()
-    proc_data.trap_frame_mut().kernel_hartid = unsafe { r_tp() };
+    proc_data.trap_frame_mut().kernel_hartid = r_tp();
 
     // Set up the registers that trampoline.S's sret will use
     // to get to user space.
 
     // Set S Previous Privilege mode to User.
-    let mut x = unsafe { Sstatus::read() };
+    let mut x = Sstatus::read();
 
     // Clear SPP to 0 for user mode.
     x.remove(Sstatus::SPP);
@@ -161,23 +161,23 @@ pub unsafe fn usertrapret(proc: &CurrentProc<'_>) {
 /// on whatever the current kernel stack is.
 #[no_mangle]
 pub unsafe fn kerneltrap() {
-    let sepc = unsafe { r_sepc() };
-    let sstatus = unsafe { Sstatus::read() };
-    let scause = unsafe { r_scause() };
+    let sepc = r_sepc();
+    let sstatus = Sstatus::read();
+    let scause = r_scause();
 
     assert!(
         sstatus.contains(Sstatus::SPP),
         "kerneltrap: not from supervisor mode"
     );
-    assert!(!unsafe { intr_get() }, "kerneltrap: interrupts enabled");
+    assert!(!intr_get(), "kerneltrap: interrupts enabled");
 
     let which_dev = unsafe { devintr() };
     if which_dev == 0 {
         println!("scause {:018p}", scause as *const u8);
         println!(
             "sepc={:018p} stval={:018p}",
-            unsafe { r_sepc() } as *const u8,
-            unsafe { r_stval() } as *const u8
+            r_sepc() as *const u8,
+            r_stval() as *const u8
         );
         panic!("kerneltrap");
     }
@@ -211,7 +211,7 @@ pub unsafe fn clockintr() {
 /// 1 if other device,
 /// 0 if not recognized.
 pub unsafe fn devintr() -> i32 {
-    let scause: usize = unsafe { r_scause() };
+    let scause: usize = r_scause();
 
     if scause & 0x8000000000000000 != 0 && scause & 0xff == 9 {
         // This is a supervisor external interrupt, via PLIC.

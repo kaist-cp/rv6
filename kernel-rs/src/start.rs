@@ -33,7 +33,7 @@ static mut TIMER_SCRATCH: [[usize; NCPU]; 5] = [[0; NCPU]; 5];
 #[no_mangle]
 pub unsafe fn start() {
     // set M Previous Privilege mode to Supervisor, for mret.
-    let mut x = unsafe { Mstatus::read() };
+    let mut x = Mstatus::read();
     x.remove(Mstatus::MPP_MASK);
     x.insert(Mstatus::MPP_S);
     unsafe { x.write() };
@@ -47,7 +47,7 @@ pub unsafe fn start() {
     // delegate all interrupts and exceptions to supervisor mode.
     unsafe { w_medeleg(0xffff) };
     unsafe { w_mideleg(0xffff) };
-    let mut x = unsafe { SIE::read() };
+    let mut x = SIE::read();
     x.insert(SIE::SEIE);
     x.insert(SIE::STIE);
     x.insert(SIE::SSIE);
@@ -70,7 +70,7 @@ pub unsafe fn start() {
 /// which turns them into software interrupts for devintr() in trap.c.
 unsafe fn timerinit() {
     // each CPU has a separate source of timer interrupts.
-    let id = unsafe { r_mhartid() };
+    let id = r_mhartid();
 
     // ask the CLINT for a timer interrupt.
     let interval: usize = 1_000_000; // cycles; about 1/10th second in qemu.
@@ -89,12 +89,12 @@ unsafe fn timerinit() {
     unsafe { w_mtvec(timervec as _) };
 
     // enable machine-mode interrupts.
-    let mut x = unsafe { Mstatus::read() };
+    let mut x = Mstatus::read();
     x.insert(Mstatus::MIE);
     unsafe { x.write() };
 
     // enable machine-mode timer interrupts.
-    let mut y = unsafe { MIE::read() };
+    let mut y = MIE::read();
     y.insert(MIE::MTIE);
     unsafe { y.write() };
 }
