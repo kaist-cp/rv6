@@ -450,6 +450,8 @@ impl ProcGuard {
         let interrupt_enabled = unsafe { (*kernel().mycpu()).interrupt_enabled };
         unsafe {
             swtch(
+                // TODO(#407): It is safe to use deref_mut_data because CurrentProc
+                // is not used same time with context switch.
                 &mut self.deref_mut_data().context,
                 &mut (*kernel().mycpu()).context,
             )
@@ -468,6 +470,7 @@ impl ProcGuard {
     fn clear(&mut self, parent_guard: Option<SpinlockProtectedGuard<'_>>) {
         unsafe {
             // Clear the `ProcData`.
+            // TODO(#407): It is safe to use deref_mut_data because we cleanup the `Proc` in this function.
             let data = self.deref_mut_data();
             let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
             if !trap_frame.is_null() {
@@ -699,7 +702,8 @@ impl ProcessSystem {
     unsafe fn alloc(&self, trap_frame: Page, memory: UserMemory) -> Result<ProcGuard, ()> {
         for p in &self.process_pool {
             let mut guard = p.lock();
-            if guard.state() == Procstate::UNUSED {
+            if guard.deref_info().state == Procstate::UNUSED {
+                // TODO(#407): It is safe to use deref_mut_data because this process is yet UNUSED.
                 let data = guard.deref_mut_data();
 
                 // Initialize trap frame and page table.
@@ -792,6 +796,7 @@ impl ProcessSystem {
 
         *self.project().initial_proc = guard.raw() as *mut _;
 
+        // TODO(#407): It is safe to use deref_mut_data because this process is not current process yet.
         let data = guard.deref_mut_data();
 
         // Prepare for the very first "return" from kernel to user.
@@ -823,6 +828,7 @@ impl ProcessSystem {
 
         // Allocate process.
         let mut np = unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }?;
+        // TODO(#407): It is safe to use deref_mut_data because this process is not current process yet.
         let npdata = np.deref_mut_data();
 
         // Copy saved user registers.
@@ -1010,6 +1016,7 @@ pub unsafe fn scheduler() -> ! {
                 // before jumping back to us.
                 guard.deref_mut_info().state = Procstate::RUNNING;
                 unsafe { (*c).proc = p as *const _ };
+                // TODO(#407): It is safe to use deref_mut_data because this process is not current process yet.
                 unsafe { swtch(&mut (*c).context, &mut guard.deref_mut_data().context) };
 
                 // Process is done running for now.
