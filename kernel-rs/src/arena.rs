@@ -7,7 +7,7 @@ use core::ptr::{self, NonNull};
 use pin_project::pin_project;
 
 use crate::list::*;
-use crate::pinned_array::PinnedArray;
+use crate::pinned_array::IterMut;
 use crate::spinlock::{Spinlock, SpinlockGuard};
 
 /// A homogeneous memory allocator, equipped with the box type representing an allocation.
@@ -120,7 +120,7 @@ pub struct MruEntry<T> {
 #[pin_project]
 pub struct MruArena<T, const CAPACITY: usize> {
     #[pin]
-    entries: PinnedArray<MruEntry<T>, CAPACITY>,
+    entries: [MruEntry<T>;CAPACITY],
     #[pin]
     head: ListEntry,
 }
@@ -293,9 +293,9 @@ impl<T> MruEntry<T> {
 
 impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
     // TODO(https://github.com/kaist-cp/rv6/issues/371): unsafe...
-    pub const fn new(arr: [MruEntry<T>; CAPACITY]) -> Self {
+    pub const fn new(entries: [MruEntry<T>; CAPACITY]) -> Self {
         Self {
-            entries: PinnedArray::new(arr),
+            entries,
             head: unsafe { ListEntry::new() },
         }
     }
@@ -304,7 +304,7 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
         let mut this = self.project();
 
         this.head.as_mut().init();
-        for entry in this.entries {
+        for entry in IterMut::from(this.entries) {
             this.head.as_mut().prepend(entry.project().list_entry);
         }
     }
