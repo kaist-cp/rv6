@@ -106,13 +106,15 @@ pub struct Buf<'s> {
 
 impl<'s> Buf<'s> {
     pub fn deref_inner(&self) -> &BufInner {
+        let entry: &BufEntry = &self.inner;
         // It is safe becuase inner.inner is locked.
-        unsafe { self.inner.inner.get_mut_unchecked() }
+        unsafe { &*entry.inner.get_mut_raw() }
     }
 
     pub fn deref_inner_mut(&mut self) -> &mut BufInner {
+        let entry: &BufEntry = &self.inner;
         // It is safe becuase inner.inner is locked and &mut self is exclusive.
-        unsafe { self.inner.inner.get_mut_unchecked() }
+        unsafe { &mut *entry.inner.get_mut_raw() }
     }
 
     pub fn unlock(mut self) -> BufUnlocked<'s> {

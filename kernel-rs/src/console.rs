@@ -215,7 +215,7 @@ pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
 unsafe fn consolewrite(src: UVAddr, n: i32) -> i32 {
     // TODO(https://github.com/kaist-cp/rv6/issues/298) Remove below comment.
     // consolewrite() does not need console.lock() -- can lead to sleep() with lock held.
-    unsafe { kernel().console.get_mut_unchecked().write(src, n) }
+    unsafe { (*kernel().console.get_mut_raw()).write(src, n) }
 }
 
 /// User read()s from the console go here.

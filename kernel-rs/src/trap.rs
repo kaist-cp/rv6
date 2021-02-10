@@ -187,7 +187,7 @@ pub unsafe fn kerneltrap() {
         if let Some(proc) = kernel().current_proc() {
             // Reading state without lock is safe because `proc_yield` and `sched`
             // is called after we check if current process is `RUNNING`.
-            if unsafe { proc.info.get_mut_unchecked().state } == Procstate::RUNNING {
+            if unsafe { (*proc.info.get_mut_raw()).state } == Procstate::RUNNING {
                 unsafe { proc.proc_yield() };
             }
         }
