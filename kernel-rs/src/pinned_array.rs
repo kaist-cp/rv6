@@ -14,7 +14,7 @@ pub struct IterMut<'s, T> {
 impl<'s, T, const N: usize> From<Pin<&'s mut [T; N]>> for IterMut<'s, T> {
     fn from(arr: Pin<&'s mut [T; N]>) -> Self {
         Self {
-            iter: unsafe { arr.get_unchecked_mut() }.into_iter()
+            iter: unsafe { arr.get_unchecked_mut() }.iter_mut(),
         }
     }
 }

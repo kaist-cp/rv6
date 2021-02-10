@@ -120,7 +120,7 @@ pub struct MruEntry<T> {
 #[pin_project]
 pub struct MruArena<T, const CAPACITY: usize> {
     #[pin]
-    entries: [MruEntry<T>;CAPACITY],
+    entries: [MruEntry<T>; CAPACITY],
     #[pin]
     head: ListEntry,
 }
