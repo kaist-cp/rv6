@@ -66,7 +66,7 @@ impl RawSpinlock {
             .locked
             .compare_exchange(
                 ptr::null_mut(),
-                kernel().mycpu(),
+                kernel().current_cpu(),
                 Ordering::Acquire,
                 // Okay to use `Relaxed` ordering since we don't enter the critical section anyway
                 // if the exchange fails.
@@ -98,7 +98,7 @@ impl RawSpinlock {
     /// Check whether this cpu is holding the lock.
     /// Interrupts must be off.
     pub fn holding(&self) -> bool {
-        self.locked.load(Ordering::Relaxed) == kernel().mycpu()
+        self.locked.load(Ordering::Relaxed) == kernel().current_cpu()
     }
 }
 
@@ -337,20 +337,22 @@ impl Drop for SpinlockProtectedGuard<'_> {
 pub unsafe fn push_off() {
     let old = intr_get();
     unsafe { intr_off() };
-    if unsafe { (*(kernel().mycpu())).noff } == 0 {
-        unsafe { (*(kernel().mycpu())).interrupt_enabled = old }
+
+    let mut cpu = kernel().current_cpu();
+    if unsafe { (*cpu).noff } == 0 {
+        unsafe { (*cpu).interrupt_enabled = old };
     }
-    unsafe { (*(kernel().mycpu())).noff += 1 };
+    unsafe { (*cpu).noff += 1 };
 }
 
 pub unsafe fn pop_off() {
-    let mut c: *mut Cpu = kernel().mycpu();
+    let mut cpu: *mut Cpu = kernel().current_cpu();
     assert!(!intr_get(), "pop_off - interruptible");
-    assert!(unsafe { (*c).noff } >= 1, "pop_off");
+    assert!(unsafe { (*cpu).noff } >= 1, "pop_off");
 
-    unsafe { (*c).noff -= 1 };
+    unsafe { (*cpu).noff -= 1 };
 
-    if unsafe { (*c).noff == 0 } && unsafe { (*c).interrupt_enabled } {
+    if unsafe { (*cpu).noff == 0 } && unsafe { (*cpu).interrupt_enabled } {
         unsafe { intr_on() };
     }
 }

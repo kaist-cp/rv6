@@ -1,9 +1,11 @@
+use core::cell::UnsafeCell;
 use core::fmt::{self, Write};
 use core::hint::spin_loop;
 use core::mem::MaybeUninit;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use array_macro::array;
 use pin_project::pin_project;
 
 use crate::{
@@ -77,7 +79,10 @@ pub struct Kernel {
     #[pin]
     pub procs: ProcessSystem,
 
-    cpus: [Cpu; NCPU],
+    // The `Cpu` struct of the current cpu can be mutated. To do so, we need to
+    // obtain mutable pointers to the elements of `cpus` from a shared reference
+    // of a `Kernel`. It requires interior mutability, so we use `UnsafeCell`.
+    cpus: [UnsafeCell<Cpu>; NCPU],
 
     #[pin]
     bcache: Bcache,
@@ -102,7 +107,7 @@ impl Kernel {
             memory: MaybeUninit::uninit(),
             ticks: Sleepablelock::new("time", 0),
             procs: ProcessSystem::zero(),
-            cpus: [Cpu::new(); NCPU],
+            cpus: array![_ => UnsafeCell::new(Cpu::new()); NCPU],
             // Safe since the only way to access `bcache` is through `kernel()`, which is an immutable reference.
             bcache: unsafe { Bcache::zero() },
             devsw: [Devsw {
@@ -159,9 +164,9 @@ impl Kernel {
     ///
     /// It is safe to call this function with interrupts enabled, but returned address may not be the
     /// current CPU since the scheduler can move the process to another CPU on time interrupt.
-    pub fn mycpu(&self) -> *mut Cpu {
+    pub fn current_cpu(&self) -> *mut Cpu {
         let id: usize = cpuid();
-        &self.cpus[id] as *const _ as *mut _
+        self.cpus[id].get()
     }
 
     /// Returns an immutable reference to the kernel's bcache.

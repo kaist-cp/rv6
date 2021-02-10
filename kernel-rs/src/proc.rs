@@ -451,18 +451,18 @@ impl ProcGuard {
     /// break in the few places where a lock is held but
     /// there's no process.
     unsafe fn sched(&mut self) {
-        assert_eq!((*kernel().mycpu()).noff, 1, "sched locks");
+        assert_eq!((*kernel().current_cpu()).noff, 1, "sched locks");
         assert_ne!(self.state(), Procstate::RUNNING, "sched running");
         assert!(!intr_get(), "sched interruptible");
 
-        let interrupt_enabled = unsafe { (*kernel().mycpu()).interrupt_enabled };
+        let interrupt_enabled = unsafe { (*kernel().current_cpu()).interrupt_enabled };
         unsafe {
             swtch(
                 &mut self.deref_mut_data().context,
-                &mut (*kernel().mycpu()).context,
+                &mut (*kernel().current_cpu()).context,
             )
         };
-        unsafe { (*kernel().mycpu()).interrupt_enabled = interrupt_enabled };
+        unsafe { (*kernel().current_cpu()).interrupt_enabled = interrupt_enabled };
     }
 
     /// Frees a `Proc` structure and the data hanging from it, including user pages.
@@ -998,8 +998,8 @@ const INITCODE: [u8; 52] = [
 ///  - eventually that process transfers control
 ///    via swtch back to the scheduler.
 pub unsafe fn scheduler() -> ! {
-    let mut c = kernel().mycpu();
-    unsafe { (*c).proc = ptr::null_mut() };
+    let mut cpu = kernel().current_cpu();
+    unsafe { (*cpu).proc = ptr::null_mut() };
     loop {
         // Avoid deadlock by ensuring that devices can interrupt.
         unsafe { intr_on() };
@@ -1011,12 +1011,12 @@ pub unsafe fn scheduler() -> ! {
                 // to release its lock and then reacquire it
                 // before jumping back to us.
                 guard.deref_mut_info().state = Procstate::RUNNING;
-                unsafe { (*c).proc = p as *const _ };
-                unsafe { swtch(&mut (*c).context, &mut guard.deref_mut_data().context) };
+                unsafe { (*cpu).proc = p as *const _ };
+                unsafe { swtch(&mut (*cpu).context, &mut guard.deref_mut_data().context) };
 
                 // Process is done running for now.
                 // It should have changed its p->state before coming back.
-                unsafe { (*c).proc = ptr::null_mut() }
+                unsafe { (*cpu).proc = ptr::null_mut() }
             }
         }
     }
@@ -1043,7 +1043,7 @@ impl Kernel {
     /// If `(*c).proc` is non-null, returned `CurrentProc`'s `inner` lives during `&self`'s lifetime
     pub fn current_proc(&self) -> Option<CurrentProc<'_>> {
         unsafe { push_off() };
-        let cpu = self.mycpu();
+        let cpu = self.current_cpu();
         let proc = unsafe { (*cpu).proc };
         unsafe { pop_off() };
         if proc.is_null() {
