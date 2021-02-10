@@ -429,7 +429,7 @@ impl ProcGuard {
     unsafe fn sched(&mut self) {
         assert_eq!((*kernel().mycpu()).noff, 1, "sched locks");
         assert_ne!(self.state(), Procstate::RUNNING, "sched running");
-        assert!(!unsafe { intr_get() }, "sched interruptible");
+        assert!(!intr_get(), "sched interruptible");
 
         let interrupt_enabled = unsafe { (*kernel().mycpu()).interrupt_enabled };
         unsafe {
@@ -958,7 +958,7 @@ impl ProcessSystem {
 /// It is safe to call this function with interrupts enabled, but the returned id may not be the
 /// current CPU since the scheduler can move the process to another CPU on time interrupt.
 pub fn cpuid() -> usize {
-    unsafe { r_tp() }
+    r_tp()
 }
 
 /// A user program that calls exec("/init").

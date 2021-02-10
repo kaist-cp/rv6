@@ -339,7 +339,7 @@ impl Drop for SpinlockProtectedGuard<'_> {
 /// it takes two pop_off()s to undo two push_off()s.  Also, if interrupts
 /// are initially off, then push_off, pop_off leaves them off.
 pub unsafe fn push_off() {
-    let old = unsafe { intr_get() };
+    let old = intr_get();
     unsafe { intr_off() };
     if unsafe { (*(kernel().mycpu())).noff } == 0 {
         unsafe { (*(kernel().mycpu())).interrupt_enabled = old }
@@ -349,7 +349,7 @@ pub unsafe fn push_off() {
 
 pub unsafe fn pop_off() {
     let mut c: *mut Cpu = kernel().mycpu();
-    assert!(!unsafe { intr_get() }, "pop_off - interruptible");
+    assert!(!intr_get(), "pop_off - interruptible");
     assert!(unsafe { (*c).noff } >= 1, "pop_off");
 
     unsafe { (*c).noff -= 1 };
