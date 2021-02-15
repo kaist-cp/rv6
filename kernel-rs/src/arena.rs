@@ -7,7 +7,7 @@ use core::ptr::{self, NonNull};
 use pin_project::pin_project;
 
 use crate::list::*;
-use crate::pinned_array::IterMut;
+use crate::pinned_array::IterPinMut;
 use crate::spinlock::{Spinlock, SpinlockGuard};
 
 /// A homogeneous memory allocator, equipped with the box type representing an allocation.
@@ -304,7 +304,8 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
         let mut this = self.project();
 
         this.head.as_mut().init();
-        for entry in IterMut::from(this.entries) {
+        let iter: IterPinMut<'_, MruEntry<T>> = this.entries.into();
+        for entry in iter {
             this.head.as_mut().prepend(entry.project().list_entry);
         }
     }
