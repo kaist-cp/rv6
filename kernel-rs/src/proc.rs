@@ -665,6 +665,7 @@ impl Deref for Proc {
 #[pin_project]
 pub struct ProcessSystem {
     nextpid: AtomicI32,
+    #[pin]
     process_pool: [Proc; NPROC],
     initial_proc: *const Proc,
 
@@ -689,7 +690,6 @@ impl ProcessSystem {
     pub fn init(self: Pin<&'static mut Self>) {
         // Safe since we don't move the `ProcessSystem`.
         let this = unsafe { self.get_unchecked_mut() };
-        // TODO: Use pinned iteration instead.
         for (i, p) in this.process_pool.iter_mut().enumerate() {
             let _ = p
                 .parent
