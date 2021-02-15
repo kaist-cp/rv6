@@ -47,7 +47,7 @@ pub unsafe extern "C" fn usertrap() {
     // since we're now in the kernel.
     unsafe { w_stvec(kernelvec as _) };
 
-    let proc = &kernel().current_proc().expect("No current proc");
+    let proc = &mut kernel().current_proc().expect("No current proc");
 
     // Save user program counter.
     proc.deref_mut_data().trap_frame_mut().epc = r_sepc();
@@ -99,7 +99,7 @@ pub unsafe extern "C" fn usertrap() {
 }
 
 /// Return to user space.
-pub unsafe fn usertrapret(proc: &CurrentProc<'_>) {
+pub unsafe fn usertrapret(proc: &mut CurrentProc<'_>) {
     // We're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
     // we're back in user space, where usertrap() is correct.

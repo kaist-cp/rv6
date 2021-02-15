@@ -92,7 +92,12 @@ impl ProgHdr {
 }
 
 impl Kernel {
-    pub fn exec(&self, path: &Path, args: &[Page], proc: &CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn exec(
+        &self,
+        path: &Path,
+        args: &[Page],
+        proc: &mut CurrentProc<'_>,
+    ) -> Result<usize, ()> {
         if args.len() > MAXARG {
             return Err(());
         }

@@ -384,6 +384,15 @@ impl<'p> CurrentProc<'p> {
         guard.deref_mut_info().state = Procstate::RUNNABLE;
         unsafe { guard.sched() };
     }
+
+    pub fn deref_data_raw(&mut self) -> *mut ProcData {
+        self.data.get()
+    }
+
+    pub fn deref_mut_data(&mut self) -> &mut ProcData {
+        // Safety: Only `CurrentProc` can use `ProcData` without lock.
+        unsafe { &mut *self.data.get() }
+    }
 }
 
 impl Deref for CurrentProc<'_> {
@@ -410,6 +419,20 @@ impl ProcGuard {
     fn deref_mut_info(&mut self) -> &mut ProcInfo {
         // It is safe becuase self.info is locked and &mut self is exclusive.
         unsafe { &mut *self.info.get_mut_raw() }
+    }
+
+    /// This method returns a mutable reference to its `ProcData`. There is no
+    /// data race between `ProcGuard`s since this method can be called only after
+    /// acquiring the lock of `info`. However, `CurrentProc` can create a mutable
+    /// reference to the `ProcData` without acquiring the lock. Therefore, this
+    /// method is unsafe, and the caller must ensure the below safety condition.
+    ///
+    /// # Safety
+    ///
+    /// This method must be called only when there is no `CurrentProc` referring
+    /// to the same `Proc`.
+    unsafe fn deref_mut_data(&mut self) -> &mut ProcData {
+        unsafe { &mut *self.data.get() }
     }
 
     unsafe fn from_raw(ptr: *const Proc) -> Self {
@@ -451,32 +474,33 @@ impl ProcGuard {
     /// If a `SpinlockProtectedGuard` was not provided, `p`'s parent field is not modified.
     /// Note that this is because accessing a parent field without a `SpinlockProtectedGuard` is illegal.
     fn clear(&mut self, parent_guard: Option<SpinlockProtectedGuard<'_>>) {
-        unsafe {
-            // Clear the `ProcData`.
-            let data = self.deref_mut_data();
-            let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
-            if !trap_frame.is_null() {
-                kernel().free(Page::from_usize(trap_frame as _));
-            }
-            data.memory = UserMemory::uninit();
-
-            // Clear the process's parent field.
-            if let Some(mut guard) = parent_guard {
-                *self.parent.assume_init_ref().get_mut(&mut guard) = ptr::null_mut();
-            }
-
-            // Clear the name.
-            data.name[0] = 0;
-
-            // Clear the `ProcInfo`.
-            let info = self.deref_mut_info();
-            info.waitchannel = ptr::null();
-            info.pid = 0;
-            info.xstate = 0;
-            info.state = Procstate::UNUSED;
-
-            self.killed.store(false, Ordering::Release);
+        // Safe since this process cannot be the current process any longer.
+        let data = unsafe { self.deref_mut_data() };
+        let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
+        if !trap_frame.is_null() {
+            // Safe since trap_frame uniquely refers to a valid page.
+            kernel().free(unsafe { Page::from_usize(trap_frame as _) });
         }
+        // Safe since memory will be initialized again when this process becomes initialized.
+        data.memory = unsafe { UserMemory::uninit() };
+
+        // Clear the name.
+        data.name[0] = 0;
+
+        // Clear the process's parent field.
+        if let Some(mut guard) = parent_guard {
+            // Safe since parent has been initialized in ProcessSystem::init.
+            unsafe { *self.parent.assume_init_ref().get_mut(&mut guard) = ptr::null_mut() };
+        }
+
+        // Clear the `ProcInfo`.
+        let info = self.deref_mut_info();
+        info.waitchannel = ptr::null();
+        info.pid = 0;
+        info.xstate = 0;
+        info.state = Procstate::UNUSED;
+
+        self.killed.store(false, Ordering::Release);
     }
 
     /// Wake process from sleep().
@@ -626,16 +650,6 @@ impl Proc {
     pub fn killed(&self) -> bool {
         self.killed.load(Ordering::Acquire)
     }
-
-    pub fn deref_data_raw(&self) -> *mut ProcData {
-        self.data.get()
-    }
-
-    #[allow(clippy::mut_from_ref)]
-    pub fn deref_mut_data(&self) -> &mut ProcData {
-        // Safety: Only current proc uses ProcData.
-        unsafe { &mut *self.data.get() }
-    }
 }
 
 impl Deref for Proc {
@@ -679,7 +693,7 @@ impl ProcessSystem {
             let _ = p
                 .parent
                 .write(SpinlockProtected::new(&this.wait_lock, ptr::null_mut()));
-            p.deref_mut_data().kstack = kstack(i);
+            unsafe { &mut *p.data.get() }.kstack = kstack(i);
         }
     }
 
@@ -694,8 +708,9 @@ impl ProcessSystem {
     unsafe fn alloc(&self, trap_frame: Page, memory: UserMemory) -> Result<ProcGuard, ()> {
         for p in &self.process_pool {
             let mut guard = p.lock();
-            if guard.state() == Procstate::UNUSED {
-                let data = guard.deref_mut_data();
+            if guard.deref_info().state == Procstate::UNUSED {
+                // Safe since this process cannot be the current process yet.
+                let data = unsafe { guard.deref_mut_data() };
 
                 // Initialize trap frame and page table.
                 data.trap_frame = trap_frame.into_usize() as _;
@@ -787,7 +802,8 @@ impl ProcessSystem {
 
         *self.project().initial_proc = guard.raw() as *mut _;
 
-        let data = guard.deref_mut_data();
+        // Safe since this process cannot be the current process yet.
+        let data = unsafe { guard.deref_mut_data() };
 
         // Prepare for the very first "return" from kernel to user.
 
@@ -805,7 +821,7 @@ impl ProcessSystem {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
-    pub unsafe fn fork(&self, proc: &CurrentProc<'_>) -> Result<Pid, ()> {
+    pub unsafe fn fork(&self, proc: &mut CurrentProc<'_>) -> Result<Pid, ()> {
         // Allocate trap frame.
         let trap_frame = scopeguard::guard(kernel().alloc().ok_or(())?, |page| kernel().free(page));
 
@@ -818,7 +834,8 @@ impl ProcessSystem {
 
         // Allocate process.
         let mut np = unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }?;
-        let npdata = np.deref_mut_data();
+        // Safe since this process cannot be the current process yet.
+        let npdata = unsafe { np.deref_mut_data() };
 
         // Copy saved user registers.
         *npdata.trap_frame_mut() = *proc.trap_frame();
@@ -856,7 +873,7 @@ impl ProcessSystem {
 
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
-    pub unsafe fn wait(&self, addr: UVAddr, proc: &CurrentProc<'_>) -> Result<Pid, ()> {
+    pub unsafe fn wait(&self, addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<Pid, ()> {
         // Assumes that the process_pool has at least 1 element.
         let mut parent_guard = unsafe { self.process_pool[0].parent.assume_init_ref() }.lock();
 
@@ -912,7 +929,7 @@ impl ProcessSystem {
     /// Exit the current process.  Does not return.
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
-    pub unsafe fn exit_current(&self, status: i32, proc: &CurrentProc<'_>) -> ! {
+    pub unsafe fn exit_current(&self, status: i32, proc: &mut CurrentProc<'_>) -> ! {
         assert_ne!(proc.raw(), self.initial_proc, "init exiting");
         unsafe { proc.deref_mut_data().close_files() };
 
@@ -1018,7 +1035,7 @@ pub unsafe fn scheduler() -> ! {
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
 unsafe fn forkret() {
-    let proc = &kernel().current_proc().expect("No current proc");
+    let proc = &mut kernel().current_proc().expect("No current proc");
     // Still holding p->lock from scheduler.
     unsafe { proc.info.unlock() };
 
