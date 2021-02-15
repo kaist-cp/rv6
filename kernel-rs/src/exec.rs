@@ -166,7 +166,7 @@ impl Kernel {
                 return Err(());
             }
 
-            mem.copy_out(sp.into(), bytes)?;
+            mem.copy_out_bytes(sp.into(), bytes)?;
             *stack = sp;
         }
         let argc: usize = args.len();
@@ -181,7 +181,7 @@ impl Kernel {
         }
         // It is safe because any byte can be considered as a valid u8.
         let (_, ustack, _) = unsafe { ustack.align_to::<u8>() };
-        mem.copy_out(sp.into(), &ustack[..argv_size])?;
+        mem.copy_out_bytes(sp.into(), &ustack[..argv_size])?;
 
         let proc_data = proc.deref_mut_data();
 

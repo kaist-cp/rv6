@@ -1,4 +1,4 @@
-use core::{mem, slice, str};
+use core::{mem, str};
 
 use cstr_core::CStr;
 
@@ -11,31 +11,27 @@ use crate::{
 
 /// Fetch the usize at addr from the current process.
 /// Returns Ok(fetched integer) on success, Err(()) on error.
-pub unsafe fn fetchaddr(addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+pub fn fetchaddr(addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
     let mut ip = 0;
-    if addr.into_usize() >= proc.memory.size()
-        || addr.into_usize().wrapping_add(mem::size_of::<usize>()) > proc.memory.size()
-    {
+    let sz = mem::size_of::<usize>();
+    if addr.into_usize() >= proc.memory.size() || addr.into_usize() + sz > proc.memory.size() {
         return Err(());
     }
-    proc.deref_mut_data().memory.copy_in(
-        unsafe {
-            slice::from_raw_parts_mut(&mut ip as *mut usize as *mut u8, mem::size_of::<usize>())
-        },
-        addr,
-    )?;
+    // Safe since usize does not have any internal structure.
+    unsafe { proc.deref_mut_data().memory.copy_in(&mut ip, addr) }?;
     Ok(ip)
 }
 
 /// Fetch the nul-terminated string at addr from the current process.
 /// Returns reference to the string in the buffer.
-pub unsafe fn fetchstr<'a>(
+pub fn fetchstr<'a>(
     addr: UVAddr,
     buf: &'a mut [u8],
     proc: &mut CurrentProc<'_>,
 ) -> Result<&'a CStr, ()> {
     proc.deref_mut_data().memory.copy_in_str(buf, addr)?;
 
+    // Safe because buf contains '\0' as copy_in_str has succeeded.
     Ok(unsafe { CStr::from_ptr(buf.as_ptr()) })
 }
 
@@ -66,13 +62,9 @@ pub fn argaddr(n: usize, proc: &CurrentProc<'_>) -> Result<usize, ()> {
 /// Fetch the nth word-sized system call argument as a null-terminated string.
 /// Copies into buf, at most max.
 /// Returns reference to the string in the buffer.
-pub unsafe fn argstr<'a>(
-    n: usize,
-    buf: &'a mut [u8],
-    proc: &mut CurrentProc<'_>,
-) -> Result<&'a CStr, ()> {
+pub fn argstr<'a>(n: usize, buf: &'a mut [u8], proc: &mut CurrentProc<'_>) -> Result<&'a CStr, ()> {
     let addr = argaddr(n, proc)?;
-    unsafe { fetchstr(addr.into(), buf, proc) }
+    fetchstr(addr.into(), buf, proc)
 }
 
 impl Kernel {
@@ -86,23 +78,23 @@ impl Kernel {
             2 => unsafe { self.sys_exit(proc) },
             3 => unsafe { self.sys_wait(proc) },
             4 => self.sys_pipe(proc),
-            5 => unsafe { self.sys_read(proc) },
+            5 => self.sys_read(proc),
             6 => self.sys_kill(proc),
-            7 => unsafe { self.sys_exec(proc) },
-            8 => unsafe { self.sys_fstat(proc) },
-            9 => unsafe { self.sys_chdir(proc) },
-            10 => unsafe { self.sys_dup(proc) },
-            11 => unsafe { self.sys_getpid(proc) },
+            7 => self.sys_exec(proc),
+            8 => self.sys_fstat(proc),
+            9 => self.sys_chdir(proc),
+            10 => self.sys_dup(proc),
+            11 => self.sys_getpid(proc),
             12 => self.sys_sbrk(proc),
             13 => self.sys_sleep(proc),
             14 => self.sys_uptime(proc),
-            15 => unsafe { self.sys_open(proc) },
-            16 => unsafe { self.sys_write(proc) },
-            17 => unsafe { self.sys_mknod(proc) },
-            18 => unsafe { self.sys_unlink(proc) },
-            19 => unsafe { self.sys_link(proc) },
-            20 => unsafe { self.sys_mkdir(proc) },
-            21 => unsafe { self.sys_close(proc) },
+            15 => self.sys_open(proc),
+            16 => self.sys_write(proc),
+            17 => self.sys_mknod(proc),
+            18 => self.sys_unlink(proc),
+            19 => self.sys_link(proc),
+            20 => self.sys_mkdir(proc),
+            21 => self.sys_close(proc),
             22 => self.sys_poweroff(proc),
             _ => {
                 println!(

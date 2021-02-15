@@ -5,7 +5,7 @@ use core::{
     mem::{self, MaybeUninit},
     ops::Deref,
     pin::Pin,
-    ptr, slice, str,
+    ptr, str,
     sync::atomic::{AtomicBool, AtomicI32, Ordering},
 };
 
@@ -891,12 +891,7 @@ impl ProcessSystem {
                             && proc
                                 .deref_mut_data()
                                 .memory
-                                .copy_out(addr, unsafe {
-                                    slice::from_raw_parts_mut(
-                                        &mut np.deref_mut_info().xstate as *mut i32 as *mut u8,
-                                        mem::size_of::<i32>(),
-                                    )
-                                })
+                                .copy_out(addr, &np.deref_info().xstate)
                                 .is_err()
                         {
                             return Err(());
