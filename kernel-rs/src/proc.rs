@@ -295,9 +295,6 @@ pub struct ProcInfo {
     /// If non-zero, sleeping on waitchannel.
     waitchannel: *const WaitChannel,
 
-    /// Waitchannel saying child proc is dead.
-    child_waitchannel: WaitChannel,
-
     /// Exit status to be returned to parent's wait.
     xstate: i32,
 
@@ -347,6 +344,9 @@ pub struct Proc {
     pub info: Spinlock<ProcInfo>,
 
     data: UnsafeCell<ProcData>,
+
+    /// Waitchannel saying child proc is dead.
+    child_waitchannel: WaitChannel,
 
     /// If true, the process have been killed.
     killed: AtomicBool,
@@ -626,13 +626,13 @@ impl Proc {
                 "proc",
                 ProcInfo {
                     state: Procstate::UNUSED,
-                    child_waitchannel: WaitChannel::new(),
                     waitchannel: ptr::null(),
                     xstate: 0,
                     pid: 0,
                 },
             ),
             data: UnsafeCell::new(ProcData::new()),
+            child_waitchannel: WaitChannel::new(),
             killed: AtomicBool::new(false),
         }
     }
@@ -744,11 +744,7 @@ impl ProcessSystem {
         for pp in &self.process_pool {
             if *unsafe { pp.parent.assume_init_ref() }.get_mut(parent_guard) == proc {
                 *unsafe { pp.parent.assume_init_ref() }.get_mut(parent_guard) = self.initial_proc;
-                unsafe {
-                    (*(*self.initial_proc).info.get_mut_raw())
-                        .child_waitchannel
-                        .wakeup()
-                };
+                unsafe { (*self.initial_proc).child_waitchannel.wakeup() };
             }
         }
     }
@@ -918,11 +914,7 @@ impl ProcessSystem {
 
             // Wait for a child to exit.
             //DOC: wait-sleep
-            unsafe {
-                (*proc.info.get_mut_raw())
-                    .child_waitchannel
-                    .sleep(&mut parent_guard, proc)
-            };
+            proc.child_waitchannel.sleep(&mut parent_guard, proc);
         }
     }
 
@@ -939,11 +931,9 @@ impl ProcessSystem {
 
         // Parent might be sleeping in wait().
         unsafe {
-            (*(**proc.parent.assume_init_ref().get_mut(&mut parent_guard))
-                .info
-                .get_mut_raw())
-            .child_waitchannel
-            .wakeup()
+            (**proc.parent.assume_init_ref().get_mut(&mut parent_guard))
+                .child_waitchannel
+                .wakeup()
         };
 
         let mut guard = proc.lock();
