@@ -19,6 +19,7 @@ use crate::{
     memlayout::kstack,
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
+    pincell::WeakPin,
     println,
     riscv::{intr_get, intr_on, r_tp, PGSIZE},
     spinlock::{
@@ -340,7 +341,7 @@ pub struct Proc {
     /// this field in Proc::zero(), which is a const fn.
     /// Hence, this field gets initialized later in procinit() as
     /// `SpinlockProtected::new(&procs.wait_lock, ptr::null_mut())`.
-    parent: MaybeUninit<SpinlockProtected<*const Proc>>,
+    parent: MaybeUninit<SpinlockProtected<WeakPin<*const Proc>>>,
 
     info: Spinlock<ProcInfo>,
 
@@ -369,6 +370,11 @@ impl<'p> CurrentProc<'p> {
 
     fn raw(&self) -> *const Proc {
         self.inner as *const Proc
+    }
+
+    fn weak(&self) -> WeakPin<*const Proc> {
+        // Safe since `Proc` is always pinned.
+        unsafe { WeakPin::from_raw(self.raw()) }
     }
 
     /// Give up the CPU for one scheduling round.
@@ -408,6 +414,11 @@ impl ProcGuard {
 
     fn raw(&self) -> *const Proc {
         self.ptr
+    }
+
+    fn weak(&self) -> WeakPin<*const Proc> {
+        // Safe since `Proc` is always pinned.
+        unsafe { WeakPin::from_raw(self.raw()) }
     }
 
     /// Switch to scheduler.  Must hold only p->lock
@@ -452,7 +463,7 @@ impl ProcGuard {
 
             // Clear the process's parent field.
             if let Some(mut guard) = parent_guard {
-                *self.parent.assume_init_ref().get_mut(&mut guard) = ptr::null_mut();
+                *self.parent.assume_init_ref().get_mut(&mut guard) = WeakPin::zero_ref();
             }
 
             // Clear the `ProcInfo`.
@@ -626,6 +637,14 @@ impl Proc {
         // Safety: Only current proc uses ProcData.
         unsafe { &mut *self.data.get() }
     }
+
+    pub fn wakeup_wait(self: WeakPin<*const Self>) {
+        // Safe since we're only waking up the `child_waitchannel`.
+        // TODO: Move `child_waitchannel` out of `ProcInfo`?
+        unsafe { self.info.get_mut_unchecked() }
+            .child_waitchannel
+            .wakeup()
+    }
 }
 
 impl Deref for Proc {
@@ -642,7 +661,7 @@ impl Deref for Proc {
 pub struct ProcessSystem {
     nextpid: AtomicI32,
     process_pool: [Proc; NPROC],
-    initial_proc: *const Proc,
+    initial_proc: WeakPin<*const Proc>,
 
     // Helps ensure that wakeups of wait()ing
     // parents are not lost. Helps obey the
@@ -656,7 +675,7 @@ impl ProcessSystem {
         Self {
             nextpid: AtomicI32::new(1),
             process_pool: array![_ => Proc::zero(); NPROC],
-            initial_proc: ptr::null(),
+            initial_proc: unsafe { WeakPin::zero_ref() },
             wait_lock: RawSpinlock::new("wait_lock"),
         }
     }
@@ -668,7 +687,9 @@ impl ProcessSystem {
         for (i, p) in this.process_pool.iter_mut().enumerate() {
             let _ = p
                 .parent
-                .write(SpinlockProtected::new(&this.wait_lock, ptr::null_mut()));
+                .write(SpinlockProtected::new(&this.wait_lock, unsafe {
+                    WeakPin::zero_ref()
+                }));
             p.deref_mut_data().kstack = kstack(i);
         }
     }
@@ -710,15 +731,13 @@ impl ProcessSystem {
     /// Caller must provide a `SpinlockProtectedGuard`.
     unsafe fn reparent<'a: 'b, 'b>(
         &'a self,
-        proc: *const Proc,
+        proc: WeakPin<*const Proc>,
         parent_guard: &'b mut SpinlockProtectedGuard<'a>,
     ) {
         for pp in &self.process_pool {
             if *unsafe { pp.parent.assume_init_ref() }.get_mut(parent_guard) == proc {
                 *unsafe { pp.parent.assume_init_ref() }.get_mut(parent_guard) = self.initial_proc;
-                unsafe { (*self.initial_proc).info.get_mut_unchecked() }
-                    .child_waitchannel
-                    .wakeup();
+                self.initial_proc.wakeup_wait();
             }
         }
     }
@@ -769,7 +788,7 @@ impl ProcessSystem {
         let guard = unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }
             .expect("user_proc_init: ProcessSystem::alloc");
 
-        *self.project().initial_proc = guard.raw() as *mut _;
+        *self.project().initial_proc = guard.weak();
 
         let data = guard.deref_mut_data();
 
@@ -828,8 +847,8 @@ impl ProcessSystem {
         drop(np);
 
         // Acquire the `wait_lock`, and write the parent field.
-        let mut parent_guard = unsafe { (*child).parent.assume_init_ref().lock() };
-        *unsafe { (*child).parent.assume_init_ref() }.get_mut(&mut parent_guard) = proc.raw();
+        let mut parent_guard = unsafe { (*child).parent.assume_init_ref() }.lock();
+        *unsafe { (*child).parent.assume_init_ref() }.get_mut(&mut parent_guard) = proc.weak();
 
         // Set the process's state to RUNNABLE.
         let np = unsafe { (*child).lock() };
@@ -848,7 +867,7 @@ impl ProcessSystem {
             // Scan through pool looking for exited children.
             let mut havekids = false;
             for np in &self.process_pool {
-                if *unsafe { np.parent.assume_init_ref() }.get_mut(&mut parent_guard) == proc.raw()
+                if *unsafe { np.parent.assume_init_ref() }.get_mut(&mut parent_guard) == proc.weak()
                 {
                     // Found a child.
                     // Make sure the child isn't still in exit() or swtch().
@@ -895,21 +914,17 @@ impl ProcessSystem {
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
     pub unsafe fn exit_current(&self, status: i32, proc: &CurrentProc<'_>) -> ! {
-        assert_ne!(proc.raw(), self.initial_proc, "init exiting");
+        assert!(proc.weak() == self.initial_proc, "init exiting");
         unsafe { proc.deref_mut_data().close_files() };
 
         // Give all children to init.
         let mut parent_guard = unsafe { proc.parent.assume_init_ref().lock() };
-        unsafe { self.reparent(proc.raw(), &mut parent_guard) };
+        unsafe { self.reparent(proc.weak(), &mut parent_guard) };
 
         // Parent might be sleeping in wait().
-        unsafe {
-            (**proc.parent.assume_init_ref().get_mut(&mut parent_guard))
-                .info
-                .get_mut_unchecked()
-                .child_waitchannel
-                .wakeup()
-        };
+        unsafe { proc.parent.assume_init_ref() }
+            .get_mut(&mut parent_guard)
+            .wakeup_wait();
 
         let mut guard = proc.lock();
 

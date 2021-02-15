@@ -33,6 +33,13 @@ impl<T> WeakPin<*const T> {
         }
     }
 
+    /// # Safety
+    ///
+    /// Only use if `T` is pinned.
+    pub unsafe fn from_raw(ptr: *const T) -> Self {
+        Self { ptr }
+    }
+
     pub fn get_ref(&self) -> &T {
         // Safe because of the drop guarantee.
         self.deref()
