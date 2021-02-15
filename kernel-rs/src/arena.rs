@@ -128,6 +128,7 @@ pub struct MruArena<T, const CAPACITY: usize> {
 ///
 /// `ptr` is a valid pointer to `MruEntry<T>` and has lifetime `'s`.
 /// Always acquire the `Spinlock<MruArena<T, CAPACITY>>` before modifying `MruEntry<T>`.
+/// Also, never move `MruEntry<T>`.
 pub struct MruPtr<'s, T> {
     ptr: NonNull<MruEntry<T>>,
     _marker: PhantomData<&'s T>,
@@ -360,7 +361,8 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
                     _marker: PhantomData,
                 });
             } else if entry.refcnt == 0 {
-                empty = entry.as_ref().get_ref() as *const _ as *mut _;
+                // Safe since `MruPtr` does not move `MruEntry`.
+                empty = unsafe { entry.as_mut().get_unchecked_mut() };
             }
             list_entry = list_entry.next();
         }
@@ -369,6 +371,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
             return None;
         }
 
+        // Safe since `MruPtr` does not move `MruEntry`.
         let entry = unsafe { &mut *empty };
         entry.refcnt = 1;
         n(&mut entry.data);
@@ -390,7 +393,8 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
                 *entry.as_mut().project().refcnt = 1;
                 f(&mut entry.as_mut().project().data);
                 return Some(Self::Handle::<'s> {
-                    ptr: NonNull::from(entry.as_ref().get_ref()),
+                    // Safe since `MruPtr` does not move `MruEntry`.
+                    ptr: NonNull::from(unsafe { entry.as_mut().get_unchecked_mut() }),
                     _marker: PhantomData,
                 });
             }
