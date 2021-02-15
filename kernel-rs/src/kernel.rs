@@ -269,13 +269,7 @@ pub unsafe fn kernel_main() -> ! {
         println!("hart {} starting", cpuid());
 
         // Turn on paging.
-        unsafe {
-            kernel_unchecked_pin()
-                .project()
-                .memory
-                .assume_init_mut()
-                .init_hart()
-        };
+        unsafe { kernel().memory.assume_init_ref().init_hart() };
 
         // Install kernel trap vector.
         unsafe { trapinithart() };

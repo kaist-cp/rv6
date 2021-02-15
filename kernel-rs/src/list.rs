@@ -45,12 +45,12 @@ impl ListEntry {
         this.prev = this;
     }
 
-    pub fn prev(&self) -> &Self {
-        unsafe { &*self.prev }
+    pub fn prev(self: Pin<&mut Self>) -> Pin<&mut Self> {
+        unsafe { Pin::new_unchecked(&mut **self.project().prev) }
     }
 
-    pub fn next(&self) -> &Self {
-        unsafe { &*self.next }
+    pub fn next(self: Pin<&mut Self>) -> Pin<&mut Self> {
+        unsafe { Pin::new_unchecked(&mut **self.project().next) }
     }
 
     /// `e` <-> `this`
