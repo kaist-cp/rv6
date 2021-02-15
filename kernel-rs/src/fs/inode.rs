@@ -229,12 +229,12 @@ impl Deref for InodeGuard<'_> {
 impl InodeGuard<'_> {
     pub fn deref_inner(&self) -> &InodeInner {
         // It is safe becuase self.inner is locked.
-        unsafe { self.inner.get_mut_unchecked() }
+        unsafe { &*self.inner.get_mut_raw() }
     }
 
     pub fn deref_inner_mut(&mut self) -> &mut InodeInner {
         // It is safe becuase self.inner is locked and &mut self is exclusive.
-        unsafe { self.inner.get_mut_unchecked() }
+        unsafe { &mut *self.inner.get_mut_raw() }
     }
 }
 

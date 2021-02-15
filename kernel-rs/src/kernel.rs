@@ -148,7 +148,7 @@ impl Kernel {
     /// Prints the given formatted string with the Printer.
     pub fn printer_write_fmt(&self, args: fmt::Arguments<'_>) -> fmt::Result {
         if self.is_panicked() {
-            unsafe { kernel().printer.get_mut_unchecked().write_fmt(args) }
+            unsafe { (*kernel().printer.get_mut_raw()).write_fmt(args) }
         } else {
             let mut lock = kernel().printer.lock();
             lock.write_fmt(args)

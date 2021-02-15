@@ -92,14 +92,11 @@ impl<T: Unpin> Sleeplock<T> {
         self.data.into_inner()
     }
 
-    /// Returns a mutable reference to the inner data.
-    /// # Safety
-    ///
-    /// `self` must not be shared by other threads. Use this function only in the middle of
-    /// refactoring.
-    #[allow(clippy::mut_from_ref)]
-    pub unsafe fn get_mut_unchecked(&self) -> &mut T {
-        unsafe { &mut *self.data.get() }
+    /// Returns a mutable pointer to the inner data.
+    /// The returned pointer is valid until this lock is moved or dropped.
+    /// The caller must ensure that accessing the pointer does not incur race.
+    pub fn get_mut_raw(&self) -> *mut T {
+        self.data.get()
     }
 
     /// Returns a mutable reference to the inner data.

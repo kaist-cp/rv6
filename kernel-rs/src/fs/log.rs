@@ -182,7 +182,7 @@ impl Log {
             // to sleep with locks.
             // It is safe because other threads neither read nor write this log
             // when guard.committing is true.
-            unsafe { this.get_mut_unchecked().commit() };
+            unsafe { (*this.get_mut_raw()).commit() };
             let mut guard = this.lock();
             guard.committing = false;
             guard.wakeup();

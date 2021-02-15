@@ -373,11 +373,9 @@ impl<'p> CurrentProc<'p> {
         self.inner as *const Proc
     }
 
-    /// # Safety
-    ///
-    /// `pid` is not modified while `CurrentProc` is present.
     pub fn pid(&self) -> Pid {
-        unsafe { self.info.get_mut_unchecked().pid }
+        // Safe because pid is not modified while CurrentProc exists.
+        unsafe { (*self.info.get_mut_raw()).pid }
     }
 
     /// Give up the CPU for one scheduling round.
@@ -396,19 +394,22 @@ impl Deref for CurrentProc<'_> {
     }
 }
 
-/// Assumption: ptr->info's spinlock is held.
+/// # Safety
+///
+/// (*ptr).info is locked.
 pub struct ProcGuard {
     ptr: *const Proc,
 }
 
 impl ProcGuard {
     fn deref_info(&self) -> &ProcInfo {
-        unsafe { self.info.get_mut_unchecked() }
+        // It is safe becuase self.info is locked.
+        unsafe { &*self.info.get_mut_raw() }
     }
 
-    #[allow(clippy::mut_from_ref)]
-    fn deref_mut_info(&self) -> &mut ProcInfo {
-        unsafe { self.info.get_mut_unchecked() }
+    fn deref_mut_info(&mut self) -> &mut ProcInfo {
+        // It is safe becuase self.info is locked and &mut self is exclusive.
+        unsafe { &mut *self.info.get_mut_raw() }
     }
 
     unsafe fn from_raw(ptr: *const Proc) -> Self {
@@ -464,18 +465,22 @@ impl ProcGuard {
                 *self.parent.assume_init_ref().get_mut(&mut guard) = ptr::null_mut();
             }
 
-            // Clear the `ProcInfo`.
-            self.deref_mut_info().pid = 0;
+            // Clear the name.
             data.name[0] = 0;
-            self.deref_mut_info().waitchannel = ptr::null();
+
+            // Clear the `ProcInfo`.
+            let info = self.deref_mut_info();
+            info.waitchannel = ptr::null();
+            info.pid = 0;
+            info.xstate = 0;
+            info.state = Procstate::UNUSED;
+
             self.killed.store(false, Ordering::Release);
-            self.deref_mut_info().xstate = 0;
-            self.deref_mut_info().state = Procstate::UNUSED;
         }
     }
 
     /// Wake process from sleep().
-    fn wakeup(&self) {
+    fn wakeup(&mut self) {
         if self.state() == Procstate::SLEEPING {
             self.deref_mut_info().state = Procstate::RUNNABLE;
         }
@@ -688,11 +693,9 @@ impl ProcessSystem {
     /// If there are no free procs, or a memory allocation fails, return Err.
     unsafe fn alloc(&self, trap_frame: Page, memory: UserMemory) -> Result<ProcGuard, ()> {
         for p in &self.process_pool {
-            let guard = p.lock();
+            let mut guard = p.lock();
             if guard.state() == Procstate::UNUSED {
                 let data = guard.deref_mut_data();
-                guard.deref_mut_info().pid = self.allocpid();
-                guard.deref_mut_info().state = Procstate::USED;
 
                 // Initialize trap frame and page table.
                 data.trap_frame = trap_frame.into_usize() as _;
@@ -703,6 +706,11 @@ impl ProcessSystem {
                 data.context = Default::default();
                 data.context.ra = forkret as usize;
                 data.context.sp = data.kstack.wrapping_add(PGSIZE);
+
+                let info = guard.deref_mut_info();
+                info.pid = self.allocpid();
+                info.state = Procstate::USED;
+
                 return Ok(guard);
             }
         }
@@ -721,9 +729,11 @@ impl ProcessSystem {
         for pp in &self.process_pool {
             if *unsafe { pp.parent.assume_init_ref() }.get_mut(parent_guard) == proc {
                 *unsafe { pp.parent.assume_init_ref() }.get_mut(parent_guard) = self.initial_proc;
-                unsafe { (*self.initial_proc).info.get_mut_unchecked() }
-                    .child_waitchannel
-                    .wakeup();
+                unsafe {
+                    (*(*self.initial_proc).info.get_mut_raw())
+                        .child_waitchannel
+                        .wakeup()
+                };
             }
         }
     }
@@ -734,7 +744,7 @@ impl ProcessSystem {
     /// Returns Ok(()) on success, Err(()) on error.
     pub fn kill(&self, pid: Pid) -> Result<(), ()> {
         for p in &self.process_pool {
-            let guard = p.lock();
+            let mut guard = p.lock();
             if guard.deref_info().pid == pid {
                 p.kill();
                 guard.wakeup();
@@ -750,7 +760,7 @@ impl ProcessSystem {
         let current_proc = kernel().current_proc().map_or(ptr::null(), |p| p.raw());
         for p in &self.process_pool {
             if p as *const Proc != current_proc {
-                let guard = p.lock();
+                let mut guard = p.lock();
                 if guard.deref_info().waitchannel == target as _ {
                     guard.wakeup()
                 }
@@ -771,8 +781,9 @@ impl ProcessSystem {
         let memory = UserMemory::new(trap_frame.addr(), Some(&INITCODE))
             .expect("user_proc_init: UserMemory::new");
 
-        let guard = unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }
-            .expect("user_proc_init: ProcessSystem::alloc");
+        let mut guard =
+            unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }
+                .expect("user_proc_init: ProcessSystem::alloc");
 
         *self.project().initial_proc = guard.raw() as *mut _;
 
@@ -806,7 +817,7 @@ impl ProcessSystem {
             .ok_or(())?;
 
         // Allocate process.
-        let np = unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }?;
+        let mut np = unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }?;
         let npdata = np.deref_mut_data();
 
         // Copy saved user registers.
@@ -837,7 +848,7 @@ impl ProcessSystem {
         *unsafe { (*child).parent.assume_init_ref() }.get_mut(&mut parent_guard) = proc.raw();
 
         // Set the process's state to RUNNABLE.
-        let np = unsafe { (*child).lock() };
+        let mut np = unsafe { (*child).lock() };
         np.deref_mut_info().state = Procstate::RUNNABLE;
 
         Ok(pid)
@@ -890,8 +901,11 @@ impl ProcessSystem {
 
             // Wait for a child to exit.
             //DOC: wait-sleep
-            (unsafe { proc.info.get_mut_unchecked() }.child_waitchannel)
-                .sleep(&mut parent_guard, proc);
+            unsafe {
+                (*proc.info.get_mut_raw())
+                    .child_waitchannel
+                    .sleep(&mut parent_guard, proc)
+            };
         }
     }
 
@@ -908,11 +922,11 @@ impl ProcessSystem {
 
         // Parent might be sleeping in wait().
         unsafe {
-            (**proc.parent.assume_init_ref().get_mut(&mut parent_guard))
+            (*(**proc.parent.assume_init_ref().get_mut(&mut parent_guard))
                 .info
-                .get_mut_unchecked()
-                .child_waitchannel
-                .wakeup()
+                .get_mut_raw())
+            .child_waitchannel
+            .wakeup()
         };
 
         let mut guard = proc.lock();
@@ -939,12 +953,12 @@ impl ProcessSystem {
             // Required since str::from_utf8 cannot recognize interior null characters.
             let length = p.name.iter().position(|&c| c == 0).unwrap_or(p.name.len());
             unsafe {
-                let info = p.info.get_mut_unchecked();
-                if info.state != Procstate::UNUSED {
+                let info = p.info.get_mut_raw();
+                if (*info).state != Procstate::UNUSED {
                     println!(
                         "{} {} {}",
-                        info.pid,
-                        Procstate::to_str(&info.state),
+                        (*info).pid,
+                        Procstate::to_str(&(*info).state),
                         str::from_utf8(&p.name[0..length]).unwrap_or("???")
                     );
                 }
@@ -984,7 +998,7 @@ pub unsafe fn scheduler() -> ! {
         unsafe { intr_on() };
 
         for p in &kernel().procs.process_pool {
-            let guard = p.lock();
+            let mut guard = p.lock();
             if guard.state() == Procstate::RUNNABLE {
                 // Switch to chosen process.  It is the process's job
                 // to release its lock and then reacquire it
