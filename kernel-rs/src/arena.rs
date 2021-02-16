@@ -7,6 +7,7 @@ use core::ptr::{self, NonNull};
 use pin_project::pin_project;
 
 use crate::list::*;
+use crate::pinned_array::IterPinMut;
 use crate::spinlock::{Spinlock, SpinlockGuard};
 
 /// A homogeneous memory allocator, equipped with the box type representing an allocation.
@@ -299,23 +300,13 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
         }
     }
 
-    // Returns a pinned mutable reference to the `index`th element of `array`.
-    fn get_entry(array: Pin<&mut [MruEntry<T>; CAPACITY]>, index: usize) -> Pin<&mut MruEntry<T>> {
-        // Safe since we don't move `MruEntry` and access it only through `Pin`.
-        // That is, the data is pinned.
-        unsafe { Pin::new_unchecked(&mut (*array.get_unchecked_mut())[index]) }
-    }
-
-    pub fn init(mut self: Pin<&mut Self>) {
-        let mut this = self.as_mut().project();
+    pub fn init(self: Pin<&mut Self>) {
+        let mut this = self.project();
 
         this.head.as_mut().init();
-        for index in 0..this.entries.len() {
-            this.head.as_mut().prepend(
-                Self::get_entry(this.entries.as_mut(), index)
-                    .project()
-                    .list_entry,
-            );
+        let iter: IterPinMut<'_, MruEntry<T>> = this.entries.into();
+        for entry in iter {
+            this.head.as_mut().prepend(entry.project().list_entry);
         }
     }
 }

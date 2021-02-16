@@ -665,6 +665,7 @@ impl Deref for Proc {
 #[pin_project]
 pub struct ProcessSystem {
     nextpid: AtomicI32,
+    #[pin]
     process_pool: [Proc; NPROC],
     initial_proc: *const Proc,
 
