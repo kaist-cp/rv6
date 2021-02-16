@@ -411,6 +411,8 @@ pub struct ProcGuard {
 }
 
 impl ProcGuard {
+    /// Initializes a `Proc`, using the given `pid`, `trap_frame`, and `memory`.
+    ///
     /// # Safety
     ///
     /// Only use for `Proc`s whose state is `UNUSED`.
@@ -661,6 +663,8 @@ impl Proc {
         }
     }
 
+    /// Initializes a `Proc`, using the given `pid`, `trap_frame`, and `memory`.
+    ///
     /// # Safety
     ///
     /// Only use for `Proc`s whose state is `UNUSED`.
@@ -719,8 +723,9 @@ impl ProcessSystem {
         }
     }
 
-    /// Initialize the proc table at boot time.
-    pub fn init(self: Pin<&'static mut Self>) {
+    /// Initializes the `ProcessSystem` at boot time,
+    /// and returns an immutable reference to it.
+    pub fn init(self: Pin<&'static mut Self>) -> &Self {
         // Safe since we don't move the `ProcessSystem`.
         let this = unsafe { self.get_unchecked_mut() };
         for (i, p) in this.process_pool.iter_mut().enumerate() {
@@ -729,6 +734,12 @@ impl ProcessSystem {
                 .write(SpinlockProtected::new(&this.wait_lock, ptr::null_mut()));
             unsafe { &mut *p.data.get() }.kstack = kstack(i);
         }
+
+        // Reserve a slot for the initial process.
+        this.process_pool[0].info.get_mut().state = Procstate::USED; // Temporarily set the state to `USED`.
+        this.initial_proc = &this.process_pool[0];
+
+        this
     }
 
     fn allocpid(&self) -> Pid {
@@ -801,7 +812,7 @@ impl ProcessSystem {
     }
 
     /// Set up first user process.
-    pub unsafe fn user_proc_init(self: Pin<&mut Self>) {
+    pub unsafe fn user_proc_init(&self) {
         // Allocate trap frame.
         let trap_frame = scopeguard::guard(
             kernel().alloc().expect("user_proc_init: kernel().alloc"),
@@ -813,11 +824,15 @@ impl ProcessSystem {
         let memory = UserMemory::new(trap_frame.addr(), Some(&INITCODE))
             .expect("user_proc_init: UserMemory::new");
 
-        let mut guard =
-            unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }
-                .expect("user_proc_init: ProcessSystem::alloc");
-
-        *self.project().initial_proc = guard.raw() as *mut _;
+        let mut guard = unsafe { &*self.initial_proc }.lock();
+        guard.deref_mut_info().state = Procstate::UNUSED; // Restore the state to `UNUSED`.
+        unsafe {
+            guard.init(
+                self.allocpid(),
+                scopeguard::ScopeGuard::into_inner(trap_frame),
+                memory,
+            );
+        }
 
         // Safe since this process cannot be the current process yet.
         let data = unsafe { guard.deref_mut_data() };
