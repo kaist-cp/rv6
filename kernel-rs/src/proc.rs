@@ -411,6 +411,30 @@ pub struct ProcGuard {
 }
 
 impl ProcGuard {
+    /// # Safety
+    ///
+    /// Only use for `Proc`s whose state is `UNUSED`.
+    /// Otherwise, the assertion will fail.
+    unsafe fn init(&mut self, pid: Pid, trap_frame: Page, memory: UserMemory) {
+        // Safe since this process cannot be the current process yet.
+        let data = unsafe { self.deref_mut_data() };
+
+        // Initialize trap frame and page table.
+        data.trap_frame = trap_frame.into_usize() as _;
+        data.memory = memory;
+
+        // Set up new context to start executing at forkret,
+        // which returns to user space.
+        data.context = Default::default();
+        data.context.ra = forkret as usize;
+        data.context.sp = data.kstack.wrapping_add(PGSIZE);
+
+        let info = self.deref_mut_info();
+        info.pid = pid;
+        assert!(info.state == Procstate::UNUSED);
+        info.state = Procstate::USED;
+    }
+
     fn deref_info(&self) -> &ProcInfo {
         // It is safe becuase self.info is locked.
         unsafe { &*self.info.get_mut_raw() }
@@ -637,6 +661,16 @@ impl Proc {
         }
     }
 
+    /// # Safety
+    ///
+    /// Only use for `Proc`s whose state is `UNUSED`.
+    /// Otherwise, the assertion will fail.
+    unsafe fn init(&mut self, pid: Pid, trap_frame: Page, memory: UserMemory) {
+        unsafe {
+            ProcGuard::from_raw(self).init(pid, trap_frame, memory);
+        }
+    }
+
     pub fn lock(&self) -> ProcGuard {
         mem::forget(self.info.lock());
         ProcGuard { ptr: self }
@@ -709,23 +743,10 @@ impl ProcessSystem {
         for p in &self.process_pool {
             let mut guard = p.lock();
             if guard.deref_info().state == Procstate::UNUSED {
-                // Safe since this process cannot be the current process yet.
-                let data = unsafe { guard.deref_mut_data() };
-
-                // Initialize trap frame and page table.
-                data.trap_frame = trap_frame.into_usize() as _;
-                data.memory = memory;
-
-                // Set up new context to start executing at forkret,
-                // which returns to user space.
-                data.context = Default::default();
-                data.context.ra = forkret as usize;
-                data.context.sp = data.kstack.wrapping_add(PGSIZE);
-
-                let info = guard.deref_mut_info();
-                info.pid = self.allocpid();
-                info.state = Procstate::USED;
-
+                // Safe since the process's state is Procstate::UNUSED.
+                unsafe {
+                    guard.init(self.allocpid(), trap_frame, memory);
+                }
                 return Ok(guard);
             }
         }
