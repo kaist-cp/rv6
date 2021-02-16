@@ -34,7 +34,7 @@ impl Kernel {
     /// Returns Ok(start of new memory) on success, Err(()) on error.
     pub fn sys_sbrk(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let n = argint(0, proc)?;
-        proc.deref_mut_data().memory.resize(n)
+        proc.memory_mut().resize(n)
     }
 
     /// Pause for n clock ticks.

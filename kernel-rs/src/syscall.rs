@@ -14,11 +14,11 @@ use crate::{
 pub fn fetchaddr(addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
     let mut ip = 0;
     let sz = mem::size_of::<usize>();
-    if addr.into_usize() >= proc.memory.size() || addr.into_usize() + sz > proc.memory.size() {
+    if addr.into_usize() >= proc.memory().size() || addr.into_usize() + sz > proc.memory().size() {
         return Err(());
     }
     // Safe since usize does not have any internal structure.
-    unsafe { proc.deref_mut_data().memory.copy_in(&mut ip, addr) }?;
+    unsafe { proc.memory_mut().copy_in(&mut ip, addr) }?;
     Ok(ip)
 }
 
@@ -29,7 +29,7 @@ pub fn fetchstr<'a>(
     buf: &'a mut [u8],
     proc: &mut CurrentProc<'_>,
 ) -> Result<&'a CStr, ()> {
-    proc.deref_mut_data().memory.copy_in_str(buf, addr)?;
+    proc.memory_mut().copy_in_str(buf, addr)?;
 
     // Safe because buf contains '\0' as copy_in_str has succeeded.
     Ok(unsafe { CStr::from_ptr(buf.as_ptr()) })
@@ -100,7 +100,7 @@ impl Kernel {
                 println!(
                     "{} {}: unknown sys call {}",
                     proc.pid(),
-                    str::from_utf8(&proc.name).unwrap_or("???"),
+                    str::from_utf8(&proc.deref_data().name).unwrap_or("???"),
                     num
                 );
                 Err(())

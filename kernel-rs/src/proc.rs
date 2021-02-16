@@ -311,7 +311,7 @@ pub struct ProcData {
     trap_frame: *mut TrapFrame,
 
     /// User memory manager
-    pub memory: UserMemory,
+    memory: MaybeUninit<UserMemory>,
 
     /// swtch() here to run process.
     context: Context,
@@ -320,7 +320,7 @@ pub struct ProcData {
     pub open_files: [Option<RcFile<'static>>; NOFILE],
 
     /// Current directory.
-    pub cwd: Option<RcInode<'static>>,
+    cwd: MaybeUninit<RcInode<'static>>,
 
     /// Process name (debugging).
     pub name: [u8; MAXPROCNAME],
@@ -330,8 +330,11 @@ pub struct ProcData {
 ///
 /// # Safety
 ///
-/// If info.state != UNUSED, then Page::from_usize(data.trap_frame) succeeds
-/// without breaking the invariant of Page.
+/// * If `info.state` ≠ `UNUSED`, then
+///   - `data.trap_frame` is a valid pointer, and `Page::from_usize(data.trap_frame)` is safe.
+///   - `data.memory` has been initialized.
+/// * If `info.state` ∉ { `UNUSED`, `USED` }, then
+///   - `data.cwd` has been initialized.
 pub struct Proc {
     /// Parent process.
     ///
@@ -373,9 +376,59 @@ impl<'p> CurrentProc<'p> {
         self.inner as *const Proc
     }
 
+    pub fn deref_data(&self) -> &ProcData {
+        // Safety: Only `CurrentProc` can use `ProcData` without lock.
+        unsafe { &*self.data.get() }
+    }
+
+    pub fn deref_mut_data(&mut self) -> &mut ProcData {
+        // Safety: Only `CurrentProc` can use `ProcData` without lock.
+        unsafe { &mut *self.data.get() }
+    }
+
+    pub fn deref_data_raw(&mut self) -> *mut ProcData {
+        self.data.get()
+    }
+
     pub fn pid(&self) -> Pid {
         // Safe because pid is not modified while CurrentProc exists.
         unsafe { (*self.info.get_mut_raw()).pid }
+    }
+
+    pub fn trap_frame(&self) -> &TrapFrame {
+        // Safe since trap_frame is a valid pointer according to the invariants
+        // of Proc and CurrentProc.
+        unsafe { &*self.deref_data().trap_frame }
+    }
+
+    pub fn trap_frame_mut(&mut self) -> &mut TrapFrame {
+        // Safe since trap_frame is a valid pointer according to the invariants
+        // of Proc and CurrentProc.
+        unsafe { &mut *self.deref_mut_data().trap_frame }
+    }
+
+    pub fn memory(&self) -> &UserMemory {
+        // Safe since memory has been initialized according to the invariants
+        // of Proc and CurrentProc.
+        unsafe { self.deref_data().memory.assume_init_ref() }
+    }
+
+    pub fn memory_mut(&mut self) -> &mut UserMemory {
+        // Safe since memory has been initialized according to the invariants
+        // of Proc and CurrentProc.
+        unsafe { self.deref_mut_data().memory.assume_init_mut() }
+    }
+
+    pub fn cwd(&self) -> &RcInode<'static> {
+        // Safe since cwd has been initialized according to the invariants
+        // of Proc and CurrentProc.
+        unsafe { self.deref_data().cwd.assume_init_ref() }
+    }
+
+    pub fn cwd_mut(&mut self) -> &mut RcInode<'static> {
+        // Safe since cwd has been initialized according to the invariants
+        // of Proc and CurrentProc.
+        unsafe { self.deref_mut_data().cwd.assume_init_mut() }
     }
 
     /// Give up the CPU for one scheduling round.
@@ -383,15 +436,6 @@ impl<'p> CurrentProc<'p> {
         let mut guard = self.lock();
         guard.deref_mut_info().state = Procstate::RUNNABLE;
         unsafe { guard.sched() };
-    }
-
-    pub fn deref_data_raw(&mut self) -> *mut ProcData {
-        self.data.get()
-    }
-
-    pub fn deref_mut_data(&mut self) -> &mut ProcData {
-        // Safety: Only `CurrentProc` can use `ProcData` without lock.
-        unsafe { &mut *self.data.get() }
     }
 }
 
@@ -405,7 +449,7 @@ impl Deref for CurrentProc<'_> {
 
 /// # Safety
 ///
-/// (*ptr).info is locked.
+/// `ptr` is a valid pointer and `(*ptr).info` is locked.
 pub struct ProcGuard {
     ptr: *const Proc,
 }
@@ -433,10 +477,6 @@ impl ProcGuard {
     /// to the same `Proc`.
     unsafe fn deref_mut_data(&mut self) -> &mut ProcData {
         unsafe { &mut *self.data.get() }
-    }
-
-    unsafe fn from_raw(ptr: *const Proc) -> Self {
-        Self { ptr }
     }
 
     fn raw(&self) -> *const Proc {
@@ -473,23 +513,20 @@ impl ProcGuard {
     ///
     /// If a `SpinlockProtectedGuard` was not provided, `p`'s parent field is not modified.
     /// Note that this is because accessing a parent field without a `SpinlockProtectedGuard` is illegal.
-    fn clear(&mut self, parent_guard: Option<SpinlockProtectedGuard<'_>>) {
+    unsafe fn clear(&mut self, parent_guard: Option<SpinlockProtectedGuard<'_>>) {
         // Safe since this process cannot be the current process any longer.
         let data = unsafe { self.deref_mut_data() };
         let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
-        if !trap_frame.is_null() {
-            // Safe since trap_frame uniquely refers to a valid page.
-            kernel().free(unsafe { Page::from_usize(trap_frame as _) });
-        }
+        // Safe since trap_frame uniquely refers to a valid page.
+        kernel().free(unsafe { Page::from_usize(trap_frame as _) });
         // Safe since memory will be initialized again when this process becomes initialized.
-        data.memory = unsafe { UserMemory::uninit() };
+        unsafe { data.memory.assume_init_drop() };
 
         // Clear the name.
         data.name[0] = 0;
 
         // Clear the process's parent field.
         if let Some(mut guard) = parent_guard {
-            // Safe since parent has been initialized in ProcessSystem::init.
             unsafe { *self.parent.assume_init_ref().get_mut(&mut guard) = ptr::null_mut() };
         }
 
@@ -517,15 +554,8 @@ impl ProcGuard {
 
 impl Drop for ProcGuard {
     fn drop(&mut self) {
-        unsafe {
-            // If the ProcGuard was dropped while the process's state is still `USED`
-            // and ProcData::sz == 0, this means an error happened while initializing a process.
-            // Hence, clear the process's fields.
-            if self.state() == Procstate::USED && self.memory.size() == 0 {
-                self.clear(None);
-            }
-            self.info.unlock();
-        }
+        // It is safe to unlock info because self will be dropped.
+        unsafe { self.info.unlock() };
     }
 }
 
@@ -533,6 +563,7 @@ impl Deref for ProcGuard {
     type Target = Proc;
 
     fn deref(&self) -> &Self::Target {
+        // Safe since ptr is a valid pointer.
         unsafe { &*self.ptr }
     }
 }
@@ -587,33 +618,12 @@ impl ProcData {
         Self {
             kstack: 0,
             trap_frame: ptr::null_mut(),
-            memory: unsafe { UserMemory::uninit() },
+            memory: MaybeUninit::uninit(),
             context: Context::new(),
             open_files: [None; NOFILE],
-            cwd: None,
+            cwd: MaybeUninit::uninit(),
             name: [0; MAXPROCNAME],
         }
-    }
-
-    pub fn trap_frame(&self) -> &TrapFrame {
-        unsafe { &*self.trap_frame }
-    }
-
-    pub fn trap_frame_mut(&mut self) -> &mut TrapFrame {
-        unsafe { &mut *self.trap_frame }
-    }
-
-    /// Close all open files.
-    unsafe fn close_files(&mut self) {
-        for file in &mut self.open_files {
-            *file = None;
-        }
-        // TODO(https://github.com/kaist-cp/rv6/issues/290)
-        // If self.cwd is not None, the inode inside self.cwd will be dropped
-        // by assigning None to self.cwd. Deallocation of an inode may cause
-        // disk write operations, so we must begin a transaction here.
-        let _tx = kernel().file_system.begin_transaction();
-        self.cwd = None;
     }
 }
 
@@ -652,15 +662,6 @@ impl Proc {
     }
 }
 
-impl Deref for Proc {
-    type Target = ProcData;
-
-    fn deref(&self) -> &Self::Target {
-        // Safety: Only current proc uses ProcData.
-        unsafe { &*self.data.get() }
-    }
-}
-
 /// Process system type containing & managing whole processes.
 #[pin_project]
 pub struct ProcessSystem {
@@ -694,7 +695,7 @@ impl ProcessSystem {
             let _ = p
                 .parent
                 .write(SpinlockProtected::new(&this.wait_lock, ptr::null_mut()));
-            unsafe { &mut *p.data.get() }.kstack = kstack(i);
+            p.data.get_mut().kstack = kstack(i);
         }
     }
 
@@ -706,7 +707,7 @@ impl ProcessSystem {
     /// If found, initialize state required to run in the kernel,
     /// and return with p->lock held.
     /// If there are no free procs, or a memory allocation fails, return Err.
-    unsafe fn alloc(&self, trap_frame: Page, memory: UserMemory) -> Result<ProcGuard, ()> {
+    fn alloc(&self, trap_frame: Page, memory: UserMemory) -> Result<ProcGuard, ()> {
         for p in &self.process_pool {
             let mut guard = p.lock();
             if guard.deref_info().state == Procstate::UNUSED {
@@ -715,16 +716,17 @@ impl ProcessSystem {
 
                 // Initialize trap frame and page table.
                 data.trap_frame = trap_frame.into_usize() as _;
-                data.memory = memory;
+                let _ = data.memory.write(memory);
 
                 // Set up new context to start executing at forkret,
                 // which returns to user space.
                 data.context = Default::default();
                 data.context.ra = forkret as usize;
-                data.context.sp = data.kstack.wrapping_add(PGSIZE);
+                data.context.sp = data.kstack + PGSIZE;
 
                 let info = guard.deref_mut_info();
                 info.pid = self.allocpid();
+                // It's safe because trap_frame and memory now have been initialized.
                 info.state = Procstate::USED;
 
                 return Ok(guard);
@@ -781,7 +783,7 @@ impl ProcessSystem {
     }
 
     /// Set up first user process.
-    pub unsafe fn user_proc_init(self: Pin<&mut Self>) {
+    pub fn user_proc_init(self: Pin<&mut Self>) {
         // Allocate trap frame.
         let trap_frame = scopeguard::guard(
             kernel().alloc().expect("user_proc_init: kernel().alloc"),
@@ -793,9 +795,9 @@ impl ProcessSystem {
         let memory = UserMemory::new(trap_frame.addr(), Some(&INITCODE))
             .expect("user_proc_init: UserMemory::new");
 
-        let mut guard =
-            unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }
-                .expect("user_proc_init: ProcessSystem::alloc");
+        let mut guard = self
+            .alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory)
+            .expect("user_proc_init: ProcessSystem::alloc");
 
         *self.project().initial_proc = guard.raw() as *mut _;
 
@@ -805,13 +807,17 @@ impl ProcessSystem {
         // Prepare for the very first "return" from kernel to user.
 
         // User program counter.
-        data.trap_frame_mut().epc = 0;
+        // Safe since trap_frame has been initialized by alloc.
+        unsafe { (*data.trap_frame).epc = 0 };
 
         // User stack pointer.
-        data.trap_frame_mut().sp = PGSIZE;
+        // Safe since trap_frame has been initialized by alloc.
+        unsafe { (*data.trap_frame).sp = PGSIZE };
+
         let name = b"initcode\x00";
         (&mut data.name[..name.len()]).copy_from_slice(name);
-        data.cwd = Some(Path::root());
+        let _ = data.cwd.write(Path::root());
+        // It's safe because cwd now has been initialized.
         guard.deref_mut_info().state = Procstate::RUNNABLE;
     }
 
@@ -823,32 +829,30 @@ impl ProcessSystem {
         let trap_frame = scopeguard::guard(kernel().alloc().ok_or(())?, |page| kernel().free(page));
 
         // Copy user memory from parent to child.
-        let memory = proc
-            .deref_mut_data()
-            .memory
-            .clone(trap_frame.addr())
-            .ok_or(())?;
+        let memory = proc.memory_mut().clone(trap_frame.addr()).ok_or(())?;
 
         // Allocate process.
-        let mut np = unsafe { self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory) }?;
+        let mut np = self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory)?;
         // Safe since this process cannot be the current process yet.
         let npdata = unsafe { np.deref_mut_data() };
 
         // Copy saved user registers.
-        *npdata.trap_frame_mut() = *proc.trap_frame();
+        // Safe since trap_frame has been initialized by alloc.
+        unsafe { *npdata.trap_frame = *proc.trap_frame() };
 
         // Cause fork to return 0 in the child.
-        npdata.trap_frame_mut().a0 = 0;
+        // Safe since trap_frame has been initialized by alloc.
+        unsafe { (*npdata.trap_frame).a0 = 0 };
 
         // Increment reference counts on open file descriptors.
         for i in 0..NOFILE {
-            if let Some(file) = &proc.open_files[i] {
+            if let Some(file) = &proc.deref_data().open_files[i] {
                 npdata.open_files[i] = Some(file.clone())
             }
         }
-        npdata.cwd = Some(proc.cwd.clone().unwrap());
+        let _ = npdata.cwd.write(proc.cwd_mut().clone());
 
-        npdata.name.copy_from_slice(&proc.name);
+        npdata.name.copy_from_slice(&proc.deref_data().name);
 
         let pid = np.deref_mut_info().pid;
 
@@ -863,6 +867,7 @@ impl ProcessSystem {
 
         // Set the process's state to RUNNABLE.
         let mut np = unsafe { (*child).lock() };
+        // It's safe because cwd now has been initialized.
         np.deref_mut_info().state = Procstate::RUNNABLE;
 
         Ok(pid)
@@ -889,15 +894,14 @@ impl ProcessSystem {
                         let pid = np.deref_mut_info().pid;
                         if !addr.is_null()
                             && proc
-                                .deref_mut_data()
-                                .memory
+                                .memory_mut()
                                 .copy_out(addr, &np.deref_info().xstate)
                                 .is_err()
                         {
                             return Err(());
                         }
                         // Reap the zombie child process.
-                        np.clear(Some(parent_guard));
+                        unsafe { np.clear(Some(parent_guard)) };
                         return Ok(pid);
                     }
                 }
@@ -919,7 +923,20 @@ impl ProcessSystem {
     /// until its parent calls wait().
     pub unsafe fn exit_current(&self, status: i32, proc: &mut CurrentProc<'_>) -> ! {
         assert_ne!(proc.raw(), self.initial_proc, "init exiting");
-        unsafe { proc.deref_mut_data().close_files() };
+
+        for file in &mut proc.deref_mut_data().open_files {
+            *file = None;
+        }
+
+        // TODO(https://github.com/kaist-cp/rv6/issues/290)
+        // If self.cwd is not None, the inode inside self.cwd will be dropped
+        // by assigning None to self.cwd. Deallocation of an inode may cause
+        // disk write operations, so we must begin a transaction here.
+        let tx = kernel().file_system.begin_transaction();
+        // Safe since CurrentProc's cwd has been initialized.
+        // It's ok to drop cwd as proc will not be used any longer.
+        unsafe { proc.deref_mut_data().cwd.assume_init_drop() };
+        drop(tx);
 
         // Give all children to init.
         let mut parent_guard = unsafe { proc.parent.assume_init_ref().lock() };
@@ -949,22 +966,26 @@ impl ProcessSystem {
     /// Print a process listing to the console for debugging.
     /// Runs when user types ^P on console.
     /// Doesn't acquire locks in order to avoid wedging a stuck machine further.
+    ///
+    /// # Note
+    ///
+    /// This method is unsafe and should be used only for debugging.
     pub unsafe fn dump(&self) {
         println!();
         for p in &self.process_pool {
-            // For null character recognization.
-            // Required since str::from_utf8 cannot recognize interior null characters.
-            let length = p.name.iter().position(|&c| c == 0).unwrap_or(p.name.len());
-            unsafe {
-                let info = p.info.get_mut_raw();
-                if (*info).state != Procstate::UNUSED {
-                    println!(
-                        "{} {} {}",
-                        (*info).pid,
-                        Procstate::to_str(&(*info).state),
-                        str::from_utf8(&p.name[0..length]).unwrap_or("???")
-                    );
-                }
+            let info = p.info.get_mut_raw();
+            let state = unsafe { &(*info).state };
+            if *state != Procstate::UNUSED {
+                let name = unsafe { &(*p.data.get()).name };
+                // For null character recognization.
+                // Required since str::from_utf8 cannot recognize interior null characters.
+                let length = name.iter().position(|&c| c == 0).unwrap_or(name.len());
+                println!(
+                    "{} {} {}",
+                    unsafe { (*info).pid },
+                    Procstate::to_str(state),
+                    str::from_utf8(&name[0..length]).unwrap_or("???")
+                );
             }
         }
     }
