@@ -13,7 +13,7 @@ impl Kernel {
     }
 
     /// Return the current process’s PID.
-    pub unsafe fn sys_getpid(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_getpid(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
         Ok(proc.pid() as _)
     }
 

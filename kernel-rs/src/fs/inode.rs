@@ -273,9 +273,7 @@ impl InodeGuard<'_> {
         }
         de.inum = inum as _;
         de.set_name(name);
-        // It is safe becuase Dirent can be safely transmuted to [u8; _], as it
-        // contains only u16 and u8's, which do not have internal structures.
-        unsafe { self.write_kernel(&de, off, tx) }.expect("dirlink");
+        self.write_kernel(&de, off, tx).expect("dirlink");
         Ok(())
     }
 
@@ -425,7 +423,7 @@ impl InodeGuard<'_> {
         self.read_internal(off, n, |off, src| {
             proc.deref_mut_data()
                 .memory
-                .copy_out(dst + off as usize, src)
+                .copy_out_bytes(dst + off as usize, src)
         })
     }
 
@@ -471,17 +469,10 @@ impl InodeGuard<'_> {
 
     /// Copy data from `src` into the inode at offset `off`.
     /// Return Ok(()) on success, Err(()) on failure.
-    ///
-    /// # Safety
-    ///
-    /// `T` can be safely `transmute`d to `[u8; size_of::<T>()]`.
-    pub unsafe fn write_kernel<T>(
-        &mut self,
-        src: &T,
-        off: u32,
-        tx: &FsTransaction<'_>,
-    ) -> Result<(), ()> {
+    pub fn write_kernel<T>(&mut self, src: &T, off: u32, tx: &FsTransaction<'_>) -> Result<(), ()> {
         let bytes = self.write_bytes_kernel(
+            // It is safe because src is a valid reference to T and
+            // u8 does not have any internal structure.
             unsafe { core::slice::from_raw_parts(src as *const _ as _, mem::size_of::<T>()) },
             off,
             tx,
@@ -529,7 +520,7 @@ impl InodeGuard<'_> {
             |off, dst| {
                 proc.deref_mut_data()
                     .memory
-                    .copy_in(dst, src + off as usize)
+                    .copy_in_bytes(dst, src + off as usize)
             },
             tx,
         )

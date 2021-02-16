@@ -1,12 +1,8 @@
 use core::fmt;
 
 use crate::{
-    file::Devsw,
-    kernel::kernel,
-    param::NDEV,
-    sleepablelock::SleepablelockGuard,
-    uart::Uart,
-    vm::{UVAddr, VAddr},
+    file::Devsw, kernel::kernel, param::NDEV, sleepablelock::SleepablelockGuard, uart::Uart,
+    vm::UVAddr,
 };
 
 const CONSOLE_IN_DEVSW: usize = 1;
@@ -46,7 +42,14 @@ impl Console {
     unsafe fn write(&mut self, src: UVAddr, n: i32) -> i32 {
         for i in 0..n {
             let mut c = [0u8];
-            if unsafe { (src + i as usize).copy_in(&mut c) }.is_err() {
+            if kernel()
+                .current_proc()
+                .expect("No current proc")
+                .deref_mut_data()
+                .memory
+                .copy_in_bytes(&mut c, src + i as usize)
+                .is_err()
+            {
                 return i;
             }
             // TODO(https://github.com/kaist-cp/rv6/issues/298): Temporarily using global function kernel().
@@ -82,7 +85,14 @@ impl Console {
             } else {
                 // Copy the input byte to the user-space buffer.
                 let cbuf = [cin as u8];
-                if unsafe { UVAddr::copy_out(dst, &cbuf) }.is_err() {
+                if kernel()
+                    .current_proc()
+                    .expect("No current proc")
+                    .deref_mut_data()
+                    .memory
+                    .copy_out_bytes(dst, &cbuf)
+                    .is_err()
+                {
                     break;
                 }
                 dst = dst + 1;
@@ -212,7 +222,7 @@ pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
 }
 
 /// User write()s to the console go here.
-unsafe fn consolewrite(src: UVAddr, n: i32) -> i32 {
+fn consolewrite(src: UVAddr, n: i32) -> i32 {
     // TODO(https://github.com/kaist-cp/rv6/issues/298) Remove below comment.
     // consolewrite() does not need console.lock() -- can lead to sleep() with lock held.
     unsafe { (*kernel().console.get_mut_raw()).write(src, n) }
@@ -222,7 +232,7 @@ unsafe fn consolewrite(src: UVAddr, n: i32) -> i32 {
 /// Copy (up to) a whole input line to dst.
 /// User_dist indicates whether dst is a user
 /// or kernel address.
-unsafe fn consoleread(dst: UVAddr, n: i32) -> i32 {
+fn consoleread(dst: UVAddr, n: i32) -> i32 {
     let mut console = kernel().console.lock();
     unsafe { Console::read(&mut console, dst, n) }
 }

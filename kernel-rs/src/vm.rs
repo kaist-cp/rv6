@@ -7,8 +7,8 @@ use crate::{
     page::Page,
     param::NPROC,
     riscv::{
-        make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, px, sfence_vma, w_satp, PteFlags, MAXVA,
-        PGSIZE,
+        make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pxshift, sfence_vma, w_satp, PteFlags,
+        MAXVA, PGSIZE, PXMASK,
     },
 };
 
@@ -66,46 +66,15 @@ define_addr_type!(KVAddr);
 define_addr_type!(UVAddr);
 
 pub trait VAddr: Addr {
-    /// Copy from either a user address, or kernel address.
-    /// Returns Ok(()) on success, Err(()) on error.
-    unsafe fn copy_in(self, dst: &mut [u8]) -> Result<(), ()>;
-
-    /// Copy to either a user address, or kernel address.
-    /// Returns Ok(()) on success, Err(()) on error.
-    unsafe fn copy_out(self, src: &[u8]) -> Result<(), ()>;
-}
-
-impl VAddr for KVAddr {
-    unsafe fn copy_in(self, dst: &mut [u8]) -> Result<(), ()> {
-        unsafe { ptr::copy(self.into_usize() as *const u8, dst.as_mut_ptr(), dst.len()) };
-        Ok(())
-    }
-
-    unsafe fn copy_out(self, src: &[u8]) -> Result<(), ()> {
-        unsafe { ptr::copy(src.as_ptr(), self.into_usize() as *mut u8, src.len()) };
-        Ok(())
+    #[inline]
+    fn px(&self, level: usize) -> usize {
+        (self.into_usize() >> pxshift(level)) & PXMASK
     }
 }
 
-impl VAddr for UVAddr {
-    unsafe fn copy_in(self, dst: &mut [u8]) -> Result<(), ()> {
-        kernel()
-            .current_proc()
-            .expect("No current proc")
-            .deref_mut_data()
-            .memory
-            .copy_in(dst, self)
-    }
+impl VAddr for KVAddr {}
 
-    unsafe fn copy_out(self, src: &[u8]) -> Result<(), ()> {
-        kernel()
-            .current_proc()
-            .expect("No current proc")
-            .deref_mut_data()
-            .memory
-            .copy_out(self, src)
-    }
-}
+impl VAddr for UVAddr {}
 
 /// # Safety
 ///
@@ -304,9 +273,9 @@ impl<A: VAddr> PageTable<A> {
         // according to the invariant.
         let mut page_table = unsafe { &mut *self.ptr };
         for level in (1..3).rev() {
-            page_table = page_table.get_table_mut(px(level, va), alloc)?;
+            page_table = page_table.get_table_mut(va.px(level), alloc)?;
         }
-        Some(page_table.get_entry_mut(px(0, va)))
+        Some(page_table.get_entry_mut(va.px(0)))
     }
 
     fn insert(&mut self, va: A, pa: PAddr, perm: PteFlags) -> Result<(), ()> {
@@ -563,7 +532,7 @@ impl UserMemory {
     /// Copy from kernel to user.
     /// Copy len bytes from src to virtual address dstva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    pub fn copy_out(&mut self, dstva: UVAddr, src: &[u8]) -> Result<(), ()> {
+    pub fn copy_out_bytes(&mut self, dstva: UVAddr, src: &[u8]) -> Result<(), ()> {
         let mut dst = dstva.into_usize();
         let mut len = src.len();
         let mut offset = 0;
@@ -580,10 +549,22 @@ impl UserMemory {
         Ok(())
     }
 
+    /// Copy from kernel to user.
+    /// Copy from src to virtual address dstva in a given page table.
+    /// Return Ok(()) on success, Err(()) on error.
+    pub fn copy_out<T>(&mut self, dstva: UVAddr, src: &T) -> Result<(), ()> {
+        self.copy_out_bytes(
+            dstva,
+            // It is safe because src is a valid reference to T and
+            // u8 does not have any internal structure.
+            unsafe { core::slice::from_raw_parts_mut(src as *const _ as _, mem::size_of::<T>()) },
+        )
+    }
+
     /// Copy from user to kernel.
     /// Copy len bytes to dst from virtual address srcva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    pub fn copy_in(&mut self, dst: &mut [u8], srcva: UVAddr) -> Result<(), ()> {
+    pub fn copy_in_bytes(&mut self, dst: &mut [u8], srcva: UVAddr) -> Result<(), ()> {
         let mut src = srcva.into_usize();
         let mut len = dst.len();
         let mut offset = 0;
@@ -598,6 +579,20 @@ impl UserMemory {
             src += n;
         }
         Ok(())
+    }
+
+    /// Copy from user to kernel.
+    /// Copy to dst from virtual address srcva in a given page table.
+    /// Return Ok(()) on success, Err(()) on error.
+    ///
+    /// # Safety
+    ///
+    /// `T` can be safely `transmute`d to `[u8; size_of::<T>()]`.
+    pub unsafe fn copy_in<T>(&mut self, dst: &mut T, srcva: UVAddr) -> Result<(), ()> {
+        self.copy_in_bytes(
+            unsafe { core::slice::from_raw_parts_mut(dst as *mut _ as _, mem::size_of::<T>()) },
+            srcva,
+        )
     }
 
     /// Copy a null-terminated string from user to kernel.

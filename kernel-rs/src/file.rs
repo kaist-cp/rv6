@@ -1,34 +1,36 @@
 //! Support functions for system calls that involve file descriptors.
 
-use core::{cell::UnsafeCell, cmp, convert::TryFrom, mem, ops::Deref, slice};
+use core::{cell::UnsafeCell, cmp, mem, ops::Deref, ops::DerefMut};
 
 use array_macro::array;
 
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
-    fs::RcInode,
+    fs::{InodeGuard, RcInode},
     kernel::kernel,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
     proc::CurrentProc,
     spinlock::Spinlock,
-    stat::Stat,
     vm::UVAddr,
 };
 
 pub enum FileType {
     None,
-    Pipe {
-        pipe: AllocatedPipe,
-    },
-    Inode {
-        ip: RcInode<'static>,
-        off: UnsafeCell<u32>,
-    },
-    Device {
-        ip: RcInode<'static>,
-        major: u16,
-    },
+    Pipe { pipe: AllocatedPipe },
+    Inode { inner: InodeFileType },
+    Device { ip: RcInode<'static>, major: u16 },
+}
+
+pub struct InodeFileType {
+    pub ip: RcInode<'static>,
+    // It should be accessed only when `ip` is locked.
+    pub off: UnsafeCell<u32>,
+}
+
+struct InodeFileTypeGuard<'a> {
+    ip: InodeGuard<'a>,
+    off: &'a mut u32,
 }
 
 pub struct File {
@@ -42,8 +44,8 @@ pub type FileTable = Spinlock<ArrayArena<File, NFILE>>;
 /// map major device number to device functions.
 #[derive(Copy, Clone)]
 pub struct Devsw {
-    pub read: Option<unsafe fn(_: UVAddr, _: i32) -> i32>,
-    pub write: Option<unsafe fn(_: UVAddr, _: i32) -> i32>,
+    pub read: Option<fn(_: UVAddr, _: i32) -> i32>,
+    pub write: Option<fn(_: UVAddr, _: i32) -> i32>,
 }
 
 pub type RcFile<'s> = Rc<'s, FileTable, &'s FileTable>;
@@ -51,6 +53,29 @@ pub type RcFile<'s> = Rc<'s, FileTable, &'s FileTable>;
 impl Default for FileType {
     fn default() -> Self {
         Self::None
+    }
+}
+
+impl InodeFileType {
+    fn lock(&self) -> InodeFileTypeGuard<'_> {
+        let ip = self.ip.lock();
+        // Safe since `ip` is locked and `off` can be exclusively accessed.
+        let off = unsafe { &mut *self.off.get() };
+        InodeFileTypeGuard { ip, off }
+    }
+}
+
+impl<'a> Deref for InodeFileTypeGuard<'a> {
+    type Target = InodeGuard<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.ip
+    }
+}
+
+impl<'a> DerefMut for InodeFileTypeGuard<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.ip
     }
 }
 
@@ -69,19 +94,14 @@ impl File {
 
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub unsafe fn stat(&self, addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
+    pub fn stat(&self, addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
         match &self.typ {
-            FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
-                let mut st = ip.stat();
-                unsafe {
-                    proc.deref_mut_data().memory.copy_out(
-                        addr,
-                        slice::from_raw_parts_mut(
-                            &mut st as *mut Stat as *mut u8,
-                            mem::size_of::<Stat>(),
-                        ),
-                    )
-                }
+            FileType::Inode {
+                inner: InodeFileType { ip, .. },
+            }
+            | FileType::Device { ip, .. } => {
+                let st = ip.stat();
+                proc.deref_mut_data().memory.copy_out(addr, &st)
             }
             _ => Err(()),
         }
@@ -89,33 +109,27 @@ impl File {
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub unsafe fn read(
-        &self,
-        addr: UVAddr,
-        n: i32,
-        proc: &mut CurrentProc<'_>,
-    ) -> Result<usize, ()> {
+    pub fn read(&self, addr: UVAddr, n: i32, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         if !self.readable {
             return Err(());
         }
 
         match &self.typ {
-            FileType::Pipe { pipe } => pipe.read(addr, usize::try_from(n).unwrap_or(0), proc),
-            FileType::Inode { ip, off } => {
-                let mut ip = ip.deref().lock();
-                let curr_off = unsafe { *off.get() };
+            FileType::Pipe { pipe } => pipe.read(addr, n as usize, proc),
+            FileType::Inode { inner } => {
+                let mut ip = inner.lock();
+                let curr_off = *ip.off;
                 let ret = ip.read_user(addr, curr_off, n as u32, proc);
                 if let Ok(v) = ret {
-                    unsafe { *off.get() = curr_off.wrapping_add(v as u32) };
+                    *ip.off += v as u32;
                 }
-                drop(ip);
                 ret
             }
             FileType::Device { major, .. } => {
                 kernel()
                     .devsw
                     .get(*major as usize)
-                    .and_then(|dev| Some(unsafe { dev.read?(addr, n) } as usize))
+                    .and_then(|dev| Some(dev.read?(addr, n) as usize))
                     .ok_or(())
             }
             FileType::None => panic!("File::read"),
@@ -124,19 +138,16 @@ impl File {
 
     /// Write to file self.
     /// addr is a user virtual address.
-    pub unsafe fn write(
-        &self,
-        addr: UVAddr,
-        n: i32,
-        proc: &mut CurrentProc<'_>,
-    ) -> Result<usize, ()> {
+    pub fn write(&self, addr: UVAddr, n: i32, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         if !self.writable {
             return Err(());
         }
 
         match &self.typ {
-            FileType::Pipe { pipe } => pipe.write(addr, usize::try_from(n).unwrap_or(0), proc),
-            FileType::Inode { ip, off } => {
+            FileType::Pipe { pipe } => pipe.write(addr, n as usize, proc),
+            FileType::Inode { inner } => {
+                let n = n as usize;
+
                 // write a few blocks at a time to avoid exceeding
                 // the maximum log transaction size, including
                 // i-node, indirect block, allocation blocks,
@@ -146,11 +157,11 @@ impl File {
                 let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
 
                 let mut bytes_written: usize = 0;
-                while bytes_written < n as usize {
-                    let bytes_to_write = cmp::min(n as usize - bytes_written, max);
+                while bytes_written < n {
+                    let bytes_to_write = cmp::min(n - bytes_written, max);
                     let tx = kernel().file_system.begin_transaction();
-                    let mut ip = ip.deref().lock();
-                    let curr_off = unsafe { *off.get() };
+                    let mut ip = inner.lock();
+                    let curr_off = *ip.off;
                     let r = ip
                         .write_user(
                             addr + bytes_written,
@@ -160,25 +171,25 @@ impl File {
                             &tx,
                         )
                         .map(|v| {
-                            unsafe { *off.get() = curr_off.wrapping_add(v as u32) };
+                            *ip.off += v as u32;
                             v
                         })?;
                     if r != bytes_to_write {
-                        // error from InodeGuard::write
+                        // error from write_user
                         break;
                     }
                     bytes_written += r;
                 }
-                if bytes_written != n as usize {
+                if bytes_written != n {
                     return Err(());
                 }
-                Ok(n as usize)
+                Ok(n)
             }
             FileType::Device { major, .. } => {
                 kernel()
                     .devsw
                     .get(*major as usize)
-                    .and_then(|dev| Some(unsafe { dev.write?(addr, n) } as usize))
+                    .and_then(|dev| Some(dev.write?(addr, n) as usize))
                     .ok_or(())
             }
             FileType::None => panic!("File::read"),
@@ -192,7 +203,10 @@ impl ArenaObject for File {
             let typ = mem::replace(&mut self.typ, FileType::None);
             match typ {
                 FileType::Pipe { pipe } => pipe.close(self.writable),
-                FileType::Inode { ip, .. } | FileType::Device { ip, .. } => {
+                FileType::Inode {
+                    inner: InodeFileType { ip, .. },
+                }
+                | FileType::Device { ip, .. } => {
                     // TODO(https://github.com/kaist-cp/rv6/issues/290)
                     // The inode ip will be dropped by drop(ip). Deallocation
                     // of an inode may cause disk write operations, so we must
@@ -222,9 +236,7 @@ impl FileTable {
         writable: bool,
     ) -> Result<RcFile<'_>, ()> {
         // TODO(https://github.com/kaist-cp/rv6/issues/372): idiomatic initialization.
-        self.alloc(|p| {
-            *p = File::new(typ, readable, writable);
-        })
-        .ok_or(())
+        self.alloc(|p| *p = File::new(typ, readable, writable))
+            .ok_or(())
     }
 }

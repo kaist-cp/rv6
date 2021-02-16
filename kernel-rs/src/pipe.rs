@@ -196,7 +196,7 @@ impl PipeInner {
     /// Tries to write up to `n` bytes.
     /// If the process was killed, returns `Err(InvalidStatus)`.
     /// If an copy-in error happened after successfully writing i >= 0 bytes, returns `Err(InvalidCopyIn(i))`.
-    /// Otherwise, returns `Ok(i)` after successfully writing i >= 0 bytes.    
+    /// Otherwise, returns `Ok(i)` after successfully writing i >= 0 bytes.
     fn try_write(
         &mut self,
         addr: UVAddr,
@@ -215,7 +215,7 @@ impl PipeInner {
             if proc
                 .deref_mut_data()
                 .memory
-                .copy_in(&mut ch, addr + i)
+                .copy_in_bytes(&mut ch, addr + i)
                 .is_err()
             {
                 return Err(PipeError::InvalidCopyin(i));
@@ -254,7 +254,7 @@ impl PipeInner {
             if proc
                 .deref_mut_data()
                 .memory
-                .copy_out(addr + i, &ch)
+                .copy_out_bytes(addr + i, &ch)
                 .is_err()
             {
                 return Ok(i);

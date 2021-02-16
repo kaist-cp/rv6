@@ -4,14 +4,14 @@
 
 #![allow(clippy::unit_arg)]
 
-use core::{cell::UnsafeCell, mem, slice};
+use core::{cell::UnsafeCell, mem};
 
 use arrayvec::ArrayVec;
 use cstr_core::CStr;
 
 use crate::{
     fcntl::FcntlFlags,
-    file::{FileType, RcFile},
+    file::{FileType, InodeFileType, RcFile},
     fs::{Dirent, FileName, FsTransaction, InodeGuard, InodeType, Path, RcInode},
     kernel::{kernel, Kernel},
     ok_or,
@@ -155,9 +155,7 @@ impl Kernel {
                 assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
 
                 if ip.deref_inner().typ != InodeType::Dir || ip.is_dir_empty() {
-                    // It is safe becuase Dirent can be safely transmuted to [u8; _], as it
-                    // contains only u16 and u8's, which do not have internal structures.
-                    unsafe { dp.write_kernel(&de, off, &tx) }.expect("unlink: writei");
+                    dp.write_kernel(&de, off, &tx).expect("unlink: writei");
                     if ip.deref_inner().typ == InodeType::Dir {
                         dp.deref_inner_mut().nlink -= 1;
                         dp.update(&tx);
@@ -207,8 +205,10 @@ impl Kernel {
             }
             _ => {
                 FileType::Inode {
-                    ip,
-                    off: UnsafeCell::new(0),
+                    inner: InodeFileType {
+                        ip,
+                        off: UnsafeCell::new(0),
+                    },
                 }
             }
         };
@@ -222,7 +222,10 @@ impl Kernel {
         if omode.contains(FcntlFlags::O_TRUNC) && typ == InodeType::File {
             match &f.typ {
                 // It is safe to call itrunc because ip.lock() is held
-                FileType::Device { ip, .. } | FileType::Inode { ip, .. } => ip.lock().itrunc(&tx),
+                FileType::Device { ip, .. }
+                | FileType::Inode {
+                    inner: InodeFileType { ip, .. },
+                } => ip.lock().itrunc(&tx),
                 _ => panic!("sys_open : Not reach"),
             };
         }
@@ -282,31 +285,17 @@ impl Kernel {
     fn pipe(&self, fdarray: UVAddr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
         let (pipereader, pipewriter) = AllocatedPipe::alloc()?;
 
-        let mut fd0 = pipereader.fdalloc(proc).map_err(|_| ())?;
-        let mut fd1 = pipewriter
+        let fd0 = pipereader.fdalloc(proc).map_err(|_| ())?;
+        let fd1 = pipewriter
             .fdalloc(proc)
             .map_err(|_| proc.deref_mut_data().open_files[fd0 as usize] = None)?;
 
         let proc_data = proc.deref_mut_data();
-        // It is safe because fdarray, fd0 is valid.
-        if unsafe {
-            proc_data.memory.copy_out(
-                fdarray,
-                slice::from_raw_parts_mut(&mut fd0 as *mut i32 as *mut u8, mem::size_of::<i32>()),
-            )
-        }
-        .is_err()
-            // It is safe because fdarray, fd1 is valid.
-            || unsafe {
-                proc_data.memory.copy_out(
-                    fdarray + mem::size_of::<i32>(),
-                    slice::from_raw_parts_mut(
-                        &mut fd1 as *mut i32 as *mut u8,
-                        mem::size_of::<i32>(),
-                    ),
-                )
-            }
-            .is_err()
+        if proc_data.memory.copy_out(fdarray, &fd0).is_err()
+            || proc_data
+                .memory
+                .copy_out(fdarray + mem::size_of::<i32>(), &fd1)
+                .is_err()
         {
             proc_data.open_files[fd0 as usize] = None;
             proc_data.open_files[fd1 as usize] = None;
@@ -319,7 +308,7 @@ impl Kernel {
 impl Kernel {
     /// Return a new file descriptor referring to the same file as given fd.
     /// Returns Ok(new file descriptor) on success, Err(()) on error.
-    pub unsafe fn sys_dup(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_dup(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let (_, f) = unsafe { argfd(0, proc)? };
         let newfile = f.clone();
         let fd = newfile.fdalloc(proc).map_err(|_| ())?;
@@ -328,25 +317,25 @@ impl Kernel {
 
     /// Read n bytes into buf.
     /// Returns Ok(number read) on success, Err(()) on error.
-    pub unsafe fn sys_read(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_read(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let (_, f) = unsafe { argfd(0, proc)? };
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
-        unsafe { f.read(p.into(), n, proc) }
+        f.read(p.into(), n, proc)
     }
 
     /// Write n bytes from buf to given file descriptor fd.
     /// Returns Ok(n) on success, Err(()) on error.
-    pub unsafe fn sys_write(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_write(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let (_, f) = unsafe { argfd(0, proc)? };
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
-        unsafe { f.write(p.into(), n, proc) }
+        f.write(p.into(), n, proc)
     }
 
     /// Release open file fd.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_close(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_close(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let (fd, _) = unsafe { argfd(0, proc)? };
         proc.deref_mut_data().open_files[fd as usize] = None;
         Ok(0)
@@ -354,39 +343,39 @@ impl Kernel {
 
     /// Place info about an open file into struct stat.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_fstat(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_fstat(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let (_, f) = unsafe { argfd(0, proc)? };
         // user pointer to struct stat
         let st = argaddr(1, proc)?;
-        unsafe { f.stat(st.into(), proc)? };
+        f.stat(st.into(), proc)?;
         Ok(0)
     }
 
     /// Create the path new as a link to the same inode as old.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_link(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_link(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let mut new: [u8; MAXPATH] = [0; MAXPATH];
         let mut old: [u8; MAXPATH] = [0; MAXPATH];
-        let old = unsafe { argstr(0, &mut old, proc)? };
-        let new = unsafe { argstr(1, &mut new, proc)? };
+        let old = argstr(0, &mut old, proc)?;
+        let new = argstr(1, &mut new, proc)?;
         self.link(old, new, proc)?;
         Ok(0)
     }
 
     /// Remove a file.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_unlink(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_unlink(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = unsafe { argstr(0, &mut path, proc)? };
+        let path = argstr(0, &mut path, proc)?;
         self.unlink(path, proc)?;
         Ok(0)
     }
 
     /// Open a file.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_open(&'static self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_open(&'static self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = unsafe { argstr(0, &mut path, proc)? };
+        let path = argstr(0, &mut path, proc)?;
         let path = Path::new(path);
         let omode = argint(1, proc)?;
         let omode = FcntlFlags::from_bits_truncate(omode);
@@ -395,18 +384,18 @@ impl Kernel {
 
     /// Create a new directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_mkdir(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_mkdir(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = unsafe { argstr(0, &mut path, proc)? };
+        let path = argstr(0, &mut path, proc)?;
         self.mkdir(path, proc)?;
         Ok(0)
     }
 
     /// Create a new directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_mknod(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_mknod(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = unsafe { argstr(0, &mut path, proc)? };
+        let path = argstr(0, &mut path, proc)?;
         let major = argint(1, proc)? as u16;
         let minor = argint(2, proc)? as u16;
         self.mknod(path, major, minor, proc)?;
@@ -415,25 +404,25 @@ impl Kernel {
 
     /// Change the current directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub unsafe fn sys_chdir(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_chdir(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = unsafe { argstr(0, &mut path, proc)? };
+        let path = argstr(0, &mut path, proc)?;
         self.chdir(path, proc)?;
         Ok(0)
     }
 
     /// Load a file and execute it with arguments.
     /// Returns Ok(argc argument to user main) on success, Err(()) on error.
-    pub unsafe fn sys_exec(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_exec(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let mut args = ArrayVec::<[Page; MAXARG]>::new();
-        let path = unsafe { argstr(0, &mut path, proc)? };
+        let path = argstr(0, &mut path, proc)?;
         let uargv = argaddr(1, proc)?;
 
         let mut success = false;
         for i in 0..MAXARG {
             let uarg = ok_or!(
-                unsafe { fetchaddr((uargv + mem::size_of::<usize>() * i).into(), proc,) },
+                fetchaddr((uargv + mem::size_of::<usize>() * i).into(), proc),
                 break
             );
 
@@ -443,7 +432,7 @@ impl Kernel {
             }
 
             let mut page = some_or!(self.alloc(), break);
-            if unsafe { fetchstr(uarg.into(), &mut page[..], proc) }.is_err() {
+            if fetchstr(uarg.into(), &mut page[..], proc).is_err() {
                 self.free(page);
                 break;
             }

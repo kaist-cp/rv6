@@ -1,6 +1,6 @@
 use bitflags::bitflags;
 
-use crate::vm::{Addr, PAddr, VAddr};
+use crate::vm::{Addr, PAddr};
 
 /// Which hart (core) is this?
 #[inline]
@@ -458,11 +458,6 @@ pub const PXMASK: usize = 0x1ff;
 #[inline]
 pub fn pxshift(level: usize) -> usize {
     PGSHIFT + 9 * level
-}
-
-#[inline]
-pub fn px<A: VAddr>(level: usize, va: A) -> usize {
-    (va.into_usize() >> pxshift(level)) & PXMASK
 }
 
 /// One beyond the highest possible virtual address.
