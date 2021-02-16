@@ -252,7 +252,6 @@ pub unsafe fn kernel_main() -> ! {
         kernel.file_system.disk.get_mut().init();
 
         // First user process.
-        // Temporarily create one more `Pin<&mut Kernel>`, just to initialize the first user process.
         unsafe { procs.user_proc_init() };
         STARTED.store(true, Ordering::Release);
     } else {
