@@ -310,14 +310,10 @@ impl<A: VAddr> PageTable<A> {
 
 impl<A: VAddr> Drop for PageTable<A> {
     fn drop(&mut self) {
-        // TODO(https://github.com/kaist-cp/rv6/issues/204)
-        // This check is required because of uninit. When uninit is removed,
-        // this check also can be removed.
-        if !self.ptr.is_null() {
-            // It is safe because this page table is being dropped, and its ptr will
-            // not be used anymore.
-            unsafe { (*self.ptr).free_walk() };
-        }
+        // It is safe because
+        // * self.ptr is a valid pointer.
+        // * this page table is being dropped, and its ptr will not be used anymore.
+        unsafe { (*self.ptr).free_walk() };
     }
 }
 
@@ -347,18 +343,6 @@ pub struct UserMemory {
 }
 
 impl UserMemory {
-    /// # Safety
-    ///
-    /// The result this method must not be used, except for calling size and being dropped.
-    // TODO(https://github.com/kaist-cp/rv6/issues/204): This method should be removed by refactoring Proc.
-    pub const unsafe fn uninit() -> Self {
-        Self {
-            // It is safe because this page table will not be used at all.
-            page_table: unsafe { PageTable::uninit() },
-            size: 0,
-        }
-    }
-
     /// Create a user page table with no user memory, but with the trampoline
     /// and a given trap frame. If `src_opt` is `Some(src)`, then load `src`
     /// into address 0 of the pagetable. In this case, src.len() must be less

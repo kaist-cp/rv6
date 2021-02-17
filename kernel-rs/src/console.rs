@@ -45,8 +45,7 @@ impl Console {
             if kernel()
                 .current_proc()
                 .expect("No current proc")
-                .deref_mut_data()
-                .memory
+                .memory_mut()
                 .copy_in_bytes(&mut c, src + i as usize)
                 .is_err()
             {
@@ -88,8 +87,7 @@ impl Console {
                 if kernel()
                     .current_proc()
                     .expect("No current proc")
-                    .deref_mut_data()
-                    .memory
+                    .memory_mut()
                     .copy_out_bytes(dst, &cbuf)
                     .is_err()
                 {

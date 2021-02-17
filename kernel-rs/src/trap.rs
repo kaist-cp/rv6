@@ -50,7 +50,7 @@ pub unsafe extern "C" fn usertrap() {
     let proc = &mut kernel().current_proc().expect("No current proc");
 
     // Save user program counter.
-    proc.deref_mut_data().trap_frame_mut().epc = r_sepc();
+    proc.trap_frame_mut().epc = r_sepc();
     if r_scause() == 8 {
         // system call
 
@@ -60,13 +60,13 @@ pub unsafe extern "C" fn usertrap() {
 
         // sepc points to the ecall instruction,
         // but we want to return to the next instruction.
-        proc.deref_mut_data().trap_frame_mut().epc = (proc.trap_frame().epc).wrapping_add(4);
+        proc.trap_frame_mut().epc = (proc.trap_frame().epc).wrapping_add(4);
 
         // An interrupt will change sstatus &c registers,
         // so don't enable until done with those registers.
         unsafe { intr_on() };
-        proc.deref_mut_data().trap_frame_mut().a0 = ok_or!(
-            unsafe { kernel().syscall(proc.deref_mut_data().trap_frame_mut().a7 as i32, proc) },
+        proc.trap_frame_mut().a0 = ok_or!(
+            unsafe { kernel().syscall(proc.trap_frame_mut().a7 as i32, proc) },
             usize::MAX
         );
     } else {
@@ -115,16 +115,16 @@ pub unsafe fn usertrapret(proc: &mut CurrentProc<'_>) {
 
     // Set up trapframe values that uservec will need when
     // the process next re-enters the kernel.
-    let proc_data = proc.deref_mut_data();
+
     // kernel page table
-    proc_data.trap_frame_mut().kernel_satp = r_satp();
+    proc.trap_frame_mut().kernel_satp = r_satp();
 
     // process's kernel stack
-    proc_data.trap_frame_mut().kernel_sp = proc_data.kstack.wrapping_add(PGSIZE);
-    proc_data.trap_frame_mut().kernel_trap = usertrap as usize;
+    proc.trap_frame_mut().kernel_sp = proc.deref_mut_data().kstack + PGSIZE;
+    proc.trap_frame_mut().kernel_trap = usertrap as usize;
 
     // hartid for cpuid()
-    proc_data.trap_frame_mut().kernel_hartid = r_tp();
+    proc.trap_frame_mut().kernel_hartid = r_tp();
 
     // Set up the registers that trampoline.S's sret will use
     // to get to user space.
@@ -140,10 +140,10 @@ pub unsafe fn usertrapret(proc: &mut CurrentProc<'_>) {
     unsafe { x.write() };
 
     // Set S Exception Program Counter to the saved user pc.
-    unsafe { w_sepc(proc_data.trap_frame().epc) };
+    unsafe { w_sepc(proc.trap_frame().epc) };
 
     // Tell trampoline.S the user page table to switch to.
-    let satp: usize = proc_data.memory.satp();
+    let satp: usize = proc.memory().satp();
 
     // Jump to trampoline.S at the top of memory, which
     // switches to the user page table, restores user registers,

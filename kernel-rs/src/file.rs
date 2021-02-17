@@ -101,7 +101,7 @@ impl File {
             }
             | FileType::Device { ip, .. } => {
                 let st = ip.stat();
-                proc.deref_mut_data().memory.copy_out(addr, &st)
+                proc.memory_mut().copy_out(addr, &st)
             }
             _ => Err(()),
         }

@@ -183,8 +183,6 @@ impl Kernel {
         let (_, ustack, _) = unsafe { ustack.align_to::<u8>() };
         mem.copy_out_bytes(sp.into(), &ustack[..argv_size])?;
 
-        let proc_data = proc.deref_mut_data();
-
         // Save program name for debugging.
         let path_str = path.as_bytes();
         let name = path_str
@@ -192,7 +190,7 @@ impl Kernel {
             .rposition(|c| *c == b'/')
             .map(|i| &path_str[(i + 1)..])
             .unwrap_or(path_str);
-        let proc_name = &mut proc_data.name;
+        let proc_name = &mut proc.deref_mut_data().name;
         let len = cmp::min(proc_name.len(), name.len());
         proc_name[..len].copy_from_slice(&name[..len]);
         if len < proc_name.len() {
@@ -200,18 +198,18 @@ impl Kernel {
         }
 
         // Commit to the user image.
-        proc_data.memory = mem;
+        let _ = mem::replace(proc.memory_mut(), mem);
 
         // arguments to user main(argc, argv)
         // argc is returned via the system call return
         // value, which goes in a0.
-        proc_data.trap_frame_mut().a1 = sp;
+        proc.trap_frame_mut().a1 = sp;
 
         // initial program counter = main
-        proc_data.trap_frame_mut().epc = elf.entry;
+        proc.trap_frame_mut().epc = elf.entry;
 
         // initial stack pointer
-        proc_data.trap_frame_mut().sp = sp;
+        proc.trap_frame_mut().sp = sp;
 
         // this ends up in a0, the first argument to main(argc, argv)
         Ok(argc)

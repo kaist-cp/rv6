@@ -276,7 +276,7 @@ impl Kernel {
             return Err(());
         }
         drop(ip);
-        proc.deref_mut_data().cwd = Some(ptr);
+        let _ = mem::replace(proc.cwd_mut(), ptr);
         Ok(())
     }
 
@@ -290,13 +290,13 @@ impl Kernel {
             .fdalloc(proc)
             .map_err(|_| proc.deref_mut_data().open_files[fd0 as usize] = None)?;
 
-        let proc_data = proc.deref_mut_data();
-        if proc_data.memory.copy_out(fdarray, &fd0).is_err()
-            || proc_data
-                .memory
+        if proc.memory_mut().copy_out(fdarray, &fd0).is_err()
+            || proc
+                .memory_mut()
                 .copy_out(fdarray + mem::size_of::<i32>(), &fd1)
                 .is_err()
         {
+            let proc_data = proc.deref_mut_data();
             proc_data.open_files[fd0 as usize] = None;
             proc_data.open_files[fd1 as usize] = None;
             return Err(());

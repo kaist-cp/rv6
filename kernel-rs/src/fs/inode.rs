@@ -421,9 +421,7 @@ impl InodeGuard<'_> {
         proc: &mut CurrentProc<'_>,
     ) -> Result<usize, ()> {
         self.read_internal(off, n, |off, src| {
-            proc.deref_mut_data()
-                .memory
-                .copy_out_bytes(dst + off as usize, src)
+            proc.memory_mut().copy_out_bytes(dst + off as usize, src)
         })
     }
 
@@ -517,11 +515,7 @@ impl InodeGuard<'_> {
         self.write_internal(
             off,
             n,
-            |off, dst| {
-                proc.deref_mut_data()
-                    .memory
-                    .copy_in_bytes(dst, src + off as usize)
-            },
+            |off, dst| proc.memory_mut().copy_in_bytes(dst, src + off as usize),
             tx,
         )
     }
