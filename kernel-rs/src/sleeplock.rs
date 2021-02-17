@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 
-use crate::kernel::kernel;
+use crate::kernel::kernel_builder;
 use crate::sleepablelock::Sleepablelock;
 
 /// Long-term locks for processes
@@ -29,7 +29,10 @@ impl RawSleeplock {
         while *guard != -1 {
             guard.sleep();
         }
-        *guard = kernel().current_proc().expect("No current proc").pid();
+        *guard = kernel_builder()
+            .current_proc()
+            .expect("No current proc")
+            .pid();
     }
 
     pub fn release(&self) {
@@ -40,7 +43,11 @@ impl RawSleeplock {
 
     pub fn holding(&self) -> bool {
         let guard = self.locked.lock();
-        *guard == kernel().current_proc().expect("No current proc").pid()
+        *guard
+            == kernel_builder()
+                .current_proc()
+                .expect("No current proc")
+                .pid()
     }
 }
 

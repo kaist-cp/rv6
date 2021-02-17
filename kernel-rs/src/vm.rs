@@ -2,7 +2,7 @@ use core::{cmp, marker::PhantomData, mem, ops::Add, ptr, slice};
 
 use crate::{
     fs::InodeGuard,
-    kernel::kernel,
+    kernel::kernel_builder,
     memlayout::{kstack, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0},
     page::Page,
     param::NPROC,
@@ -166,7 +166,7 @@ impl RawPageTable {
     /// Return `Ok(..)` if the allocation has succeeded.
     /// Return `None` if the allocation has failed.
     fn new() -> Option<*mut RawPageTable> {
-        let mut page = kernel().alloc()?;
+        let mut page = kernel_builder().alloc()?;
         page.write_bytes(0);
         // This line guarantees the invariant.
         Some(page.into_usize() as *mut RawPageTable)
@@ -217,7 +217,7 @@ impl RawPageTable {
         }
         // It is safe to convert inner to a Page because of the invariant.
         let page = unsafe { Page::from_usize(self.inner.as_ptr() as _) };
-        kernel().free(page);
+        kernel_builder().free(page);
     }
 }
 
@@ -377,12 +377,12 @@ impl UserMemory {
 
         if let Some(src) = src_opt {
             assert!(src.len() < PGSIZE, "new: more than a page");
-            let mut page = kernel().alloc()?;
+            let mut page = kernel_builder().alloc()?;
             page.write_bytes(0);
             (&mut page[..src.len()]).copy_from_slice(src);
             memory
                 .push_page(page, PteFlags::R | PteFlags::W | PteFlags::X | PteFlags::U)
-                .map_err(|page| kernel().free(page))
+                .map_err(|page| kernel_builder().free(page))
                 .ok()?;
         }
 
@@ -406,13 +406,13 @@ impl UserMemory {
 
             let pa = pte.get_pa();
             let flags = pte.get_flags();
-            let mut page = kernel().alloc()?;
+            let mut page = kernel_builder().alloc()?;
             // It is safe because pa is an address in page_table,
             // and, thus, it is the address of a page by the invariant.
             let src = unsafe { slice::from_raw_parts(pa.into_usize() as *const u8, PGSIZE) };
             page.copy_from_slice(src);
             new.push_page(page, flags)
-                .map_err(|page| kernel().free(page))
+                .map_err(|page| kernel_builder().free(page))
                 .ok()?;
         }
         let mut new = scopeguard::ScopeGuard::into_inner(new);
@@ -462,10 +462,10 @@ impl UserMemory {
             let _ = this.dealloc(oldsz);
         });
         while pgroundup(this.size) < pgroundup(newsz) {
-            let mut page = kernel().alloc().ok_or(())?;
+            let mut page = kernel_builder().alloc().ok_or(())?;
             page.write_bytes(0);
             this.push_page(page, PteFlags::R | PteFlags::W | PteFlags::X | PteFlags::U)
-                .map_err(|page| kernel().free(page))?;
+                .map_err(|page| kernel_builder().free(page))?;
         }
         let this = scopeguard::ScopeGuard::into_inner(this);
         this.size = newsz;
@@ -481,7 +481,7 @@ impl UserMemory {
 
         while pgroundup(newsz) < pgroundup(self.size) {
             if let Some(page) = self.pop_page() {
-                kernel().free(page);
+                kernel_builder().free(page);
             }
         }
         self.size = newsz;
@@ -763,7 +763,7 @@ impl KernelMemory {
         // Map it high in memory, followed by an invalid
         // guard page.
         for i in 0..NPROC {
-            let pa = kernel().alloc()?.into_usize();
+            let pa = kernel_builder().alloc()?.into_usize();
             let va: usize = kstack(i);
             page_table
                 .insert_range(va.into(), PGSIZE, pa.into(), PteFlags::R | PteFlags::W)

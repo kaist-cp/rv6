@@ -82,7 +82,7 @@ use crate::{
     arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
     bio::BufData,
     fs::FsTransaction,
-    kernel::kernel,
+    kernel::kernel_builder,
     param::{BSIZE, NINODE},
     proc::CurrentProc,
     sleeplock::Sleeplock,
@@ -306,7 +306,12 @@ impl InodeGuard<'_> {
 
         self.iter_dirents()
             .find(|(de, _)| de.inum != 0 && de.get_name() == name)
-            .map(|(de, off)| (kernel().itable.get_inode(self.dev, de.inum as u32), off))
+            .map(|(de, off)| {
+                (
+                    kernel_builder().itable.get_inode(self.dev, de.inum as u32),
+                    off,
+                )
+            })
             .ok_or(())
     }
 }
@@ -316,9 +321,9 @@ impl InodeGuard<'_> {
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk.
     pub fn update(&self, tx: &FsTransaction<'_>) {
-        let mut bp = kernel().file_system.disk.read(
+        let mut bp = kernel_builder().file_system.disk.read(
             self.dev,
-            kernel().file_system.superblock().iblock(self.inum),
+            kernel_builder().file_system.superblock().iblock(self.inum),
         );
 
         const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
@@ -375,7 +380,7 @@ impl InodeGuard<'_> {
         }
 
         if self.deref_inner().addr_indirect != 0 {
-            let mut bp = kernel()
+            let mut bp = kernel_builder()
                 .file_system
                 .disk
                 .read(dev, self.deref_inner().addr_indirect);
@@ -467,7 +472,7 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let bp = kernel()
+            let bp = kernel_builder()
                 .file_system
                 .disk
                 .read(self.dev, self.bmap(off as usize / BSIZE));
@@ -564,7 +569,7 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = kernel()
+            let mut bp = kernel_builder()
                 .file_system
                 .disk
                 .read(self.dev, self.bmap_or_alloc(off as usize / BSIZE, tx));
@@ -626,7 +631,7 @@ impl InodeGuard<'_> {
                 self.deref_inner_mut().addr_indirect = indirect;
             }
 
-            let mut bp = kernel().file_system.disk.read(self.dev, indirect);
+            let mut bp = kernel_builder().file_system.disk.read(self.dev, indirect);
             let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
             let mut addr = data[bn];
@@ -681,7 +686,7 @@ impl ArenaObject for Inode {
             // can be found in finalize in file.rs, sys_chdir in sysfile.rs,
             // close_files in proc.rs, and exec in exec.rs.
             let tx = mem::ManuallyDrop::new(FsTransaction {
-                fs: &kernel().file_system,
+                fs: &kernel_builder().file_system,
             });
 
             // self->ref == 1 means no other process can have self locked,
@@ -705,9 +710,9 @@ impl Inode {
     pub fn lock(&self) -> InodeGuard<'_> {
         let mut guard = self.inner.lock();
         if !guard.valid {
-            let mut bp = kernel().file_system.disk.read(
+            let mut bp = kernel_builder().file_system.disk.read(
                 self.dev,
-                kernel().file_system.superblock().iblock(self.inum),
+                kernel_builder().file_system.superblock().iblock(self.inum),
             );
 
             // It is safe because dip is inside bp.data.
@@ -803,11 +808,11 @@ impl Itable {
     /// Mark it as allocated by giving it type.
     /// Returns an unlocked but allocated and referenced inode.
     pub fn alloc_inode(&self, dev: u32, typ: InodeType, tx: &FsTransaction<'_>) -> RcInode<'_> {
-        for inum in 1..kernel().file_system.superblock().ninodes {
-            let mut bp = kernel()
+        for inum in 1..kernel_builder().file_system.superblock().ninodes {
+            let mut bp = kernel_builder()
                 .file_system
                 .disk
-                .read(dev, kernel().file_system.superblock().iblock(inum));
+                .read(dev, kernel_builder().file_system.superblock().iblock(inum));
 
             const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
             const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);

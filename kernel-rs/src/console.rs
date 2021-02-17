@@ -1,8 +1,8 @@
 use core::fmt;
 
 use crate::{
-    file::Devsw, kernel::kernel, param::NDEV, sleepablelock::SleepablelockGuard, uart::Uart,
-    vm::UVAddr,
+    file::Devsw, kernel::kernel_builder, param::NDEV, sleepablelock::SleepablelockGuard,
+    uart::Uart, vm::UVAddr,
 };
 
 const CONSOLE_IN_DEVSW: usize = 1;
@@ -42,7 +42,7 @@ impl Console {
     unsafe fn write(&mut self, src: UVAddr, n: i32) -> i32 {
         for i in 0..n {
             let mut c = [0u8];
-            if kernel()
+            if kernel_builder()
                 .current_proc()
                 .expect("No current proc")
                 .memory_mut()
@@ -53,7 +53,7 @@ impl Console {
             }
             // TODO(https://github.com/kaist-cp/rv6/issues/298): Temporarily using global function kernel().
             // This implementation should be changed after refactoring Console-Uart-Printer relationship.
-            kernel().uart.putc(c[0] as i32);
+            kernel_builder().uart.putc(c[0] as i32);
         }
         n
     }
@@ -64,7 +64,11 @@ impl Console {
             // Wait until interrupt handler has put some
             // input into CONS.buffer.
             while this.r == this.w {
-                if kernel().current_proc().expect("No current proc").killed() {
+                if kernel_builder()
+                    .current_proc()
+                    .expect("No current proc")
+                    .killed()
+                {
                     return -1;
                 }
                 this.sleep();
@@ -84,7 +88,7 @@ impl Console {
             } else {
                 // Copy the input byte to the user-space buffer.
                 let cbuf = [cin as u8];
-                if kernel()
+                if kernel_builder()
                     .current_proc()
                     .expect("No current proc")
                     .memory_mut()
@@ -109,7 +113,7 @@ impl Console {
         match cin {
             // Print process list.
             m if m == ctrl('P') => {
-                unsafe { kernel().procs.dump() };
+                unsafe { kernel_builder().procs.dump() };
             }
 
             // Kill line.
@@ -223,7 +227,7 @@ pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
 fn consolewrite(src: UVAddr, n: i32) -> i32 {
     // TODO(https://github.com/kaist-cp/rv6/issues/298) Remove below comment.
     // consolewrite() does not need console.lock() -- can lead to sleep() with lock held.
-    unsafe { (*kernel().console.get_mut_raw()).write(src, n) }
+    unsafe { (*kernel_builder().console.get_mut_raw()).write(src, n) }
 }
 
 /// User read()s from the console go here.
@@ -231,7 +235,7 @@ fn consolewrite(src: UVAddr, n: i32) -> i32 {
 /// User_dist indicates whether dst is a user
 /// or kernel address.
 fn consoleread(dst: UVAddr, n: i32) -> i32 {
-    let mut console = kernel().console.lock();
+    let mut console = kernel_builder().console.lock();
     unsafe { Console::read(&mut console, dst, n) }
 }
 
@@ -240,6 +244,6 @@ fn consoleread(dst: UVAddr, n: i32) -> i32 {
 /// Do erase/kill processing, append to CONS.buf,
 /// wake up consoleread() if a whole line has arrived.
 pub unsafe fn consoleintr(cin: i32) {
-    let mut console = kernel().console.lock();
+    let mut console = kernel_builder().console.lock();
     unsafe { Console::intr(&mut console, cin) };
 }

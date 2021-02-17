@@ -1,7 +1,7 @@
 use core::mem;
 
 use crate::{
-    kernel::kernel,
+    kernel::{kernel, Kernel},
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     ok_or,
     plic::{plic_claim, plic_complete},
@@ -25,7 +25,7 @@ extern "C" {
     fn kernelvec();
 }
 
-pub unsafe fn trapinit() {}
+pub fn trapinit() {}
 
 /// Set up to take exceptions and traps while in the kernel.
 pub unsafe fn trapinithart() {
@@ -47,7 +47,9 @@ pub unsafe extern "C" fn usertrap() {
     // since we're now in the kernel.
     unsafe { w_stvec(kernelvec as _) };
 
-    let proc = &mut kernel().current_proc().expect("No current proc");
+    // Safe since usertrap can be reached only after the initialization of the kernel
+    let kernel = unsafe { kernel() };
+    let mut proc = kernel.current_proc().expect("No current proc");
 
     // Save user program counter.
     proc.trap_frame_mut().epc = r_sepc();
@@ -55,7 +57,7 @@ pub unsafe extern "C" fn usertrap() {
         // system call
 
         if proc.killed() {
-            unsafe { kernel().procs.exit_current(-1, proc) };
+            kernel.procs().exit_current(-1, &mut proc);
         }
 
         // sepc points to the ecall instruction,
@@ -66,11 +68,11 @@ pub unsafe extern "C" fn usertrap() {
         // so don't enable until done with those registers.
         unsafe { intr_on() };
         proc.trap_frame_mut().a0 = ok_or!(
-            unsafe { kernel().syscall(proc.trap_frame_mut().a7 as i32, proc) },
+            kernel.syscall(proc.trap_frame_mut().a7 as i32, &mut proc),
             usize::MAX
         );
     } else {
-        which_dev = unsafe { devintr() };
+        which_dev = unsafe { devintr(&kernel) };
         if which_dev == 0 {
             println!(
                 "usertrap(): unexpected scause {:018p} pid={}",
@@ -87,7 +89,7 @@ pub unsafe extern "C" fn usertrap() {
     }
 
     if proc.killed() {
-        unsafe { kernel().procs.exit_current(-1, proc) };
+        kernel.procs().exit_current(-1, &mut proc);
     }
 
     // Give up the CPU if this is a timer interrupt.
@@ -99,7 +101,7 @@ pub unsafe extern "C" fn usertrap() {
 }
 
 /// Return to user space.
-pub unsafe fn usertrapret(proc: &mut CurrentProc<'_>) {
+pub unsafe fn usertrapret(mut proc: CurrentProc<'_>) {
     // We're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
     // we're back in user space, where usertrap() is correct.
@@ -149,11 +151,8 @@ pub unsafe fn usertrapret(proc: &mut CurrentProc<'_>) {
     // switches to the user page table, restores user registers,
     // and switches to user mode with sret.
     let fn_0: usize =
-        TRAMPOLINE.wrapping_add(
-            unsafe { userret.as_mut_ptr().offset_from(trampoline.as_mut_ptr()) } as usize,
-        );
-    let fn_0 =
-        unsafe { mem::transmute::<usize, unsafe extern "C" fn(_: usize, _: usize) -> ()>(fn_0) };
+        TRAMPOLINE + unsafe { userret.as_ptr().offset_from(trampoline.as_ptr()) } as usize;
+    let fn_0 = unsafe { mem::transmute::<_, unsafe extern "C" fn(usize, usize) -> ()>(fn_0) };
     unsafe { fn_0(TRAPFRAME, satp) };
 }
 
@@ -171,7 +170,10 @@ pub unsafe fn kerneltrap() {
     );
     assert!(!intr_get(), "kerneltrap: interrupts enabled");
 
-    let which_dev = unsafe { devintr() };
+    // Safe since kerneltrap can be reached only after the initialization of the kernel
+    let kernel = unsafe { kernel() };
+
+    let which_dev = unsafe { devintr(&kernel) };
     if which_dev == 0 {
         println!("scause {:018p}", scause as *const u8);
         println!(
@@ -184,7 +186,7 @@ pub unsafe fn kerneltrap() {
 
     // Give up the CPU if this is a timer interrupt.
     if which_dev == 2 {
-        if let Some(proc) = kernel().current_proc() {
+        if let Some(proc) = kernel.current_proc() {
             // Reading state without lock is safe because `proc_yield` and `sched`
             // is called after we check if current process is `RUNNING`.
             if unsafe { (*proc.info.get_mut_raw()).state } == Procstate::RUNNING {
@@ -199,8 +201,8 @@ pub unsafe fn kerneltrap() {
     unsafe { sstatus.write() };
 }
 
-pub unsafe fn clockintr() {
-    let mut ticks = kernel().ticks.lock();
+fn clockintr(kernel: &Kernel) {
+    let mut ticks = kernel.ticks.lock();
     *ticks = ticks.wrapping_add(1);
     ticks.wakeup();
 }
@@ -210,7 +212,7 @@ pub unsafe fn clockintr() {
 /// Returns 2 if timer interrupt,
 /// 1 if other device,
 /// 0 if not recognized.
-pub unsafe fn devintr() -> i32 {
+unsafe fn devintr(kernel: &Kernel) -> i32 {
     let scause: usize = r_scause();
 
     if scause & 0x8000000000000000 != 0 && scause & 0xff == 9 {
@@ -220,9 +222,9 @@ pub unsafe fn devintr() -> i32 {
         let irq = unsafe { plic_claim() };
 
         if irq as usize == UART0_IRQ {
-            kernel().uart.intr();
+            kernel.uart.intr();
         } else if irq as usize == VIRTIO0_IRQ {
-            kernel().file_system.disk.lock().intr();
+            kernel.file_system.disk.lock().intr();
         } else if irq != 0 {
             println!("unexpected interrupt irq={}\n", irq);
         }
@@ -240,7 +242,7 @@ pub unsafe fn devintr() -> i32 {
         // forwarded by timervec in kernelvec.S.
 
         if cpuid() == 0 {
-            unsafe { clockintr() };
+            clockintr(kernel);
         }
 
         // Acknowledge the software interrupt by clearing

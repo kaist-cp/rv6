@@ -16,7 +16,7 @@ use super::{
 };
 use crate::{
     bio::Buf,
-    kernel::kernel,
+    kernel::kernel_builder,
     param::BSIZE,
     riscv::{PGSHIFT, PGSIZE},
     sleepablelock::{Sleepablelock, SleepablelockGuard},
@@ -165,7 +165,7 @@ impl Sleepablelock<Disk> {
     /// Return a locked Buf with the `latest` contents of the indicated block.
     /// If buf.valid is true, we don't need to access Disk.
     pub fn read(&self, dev: u32, blockno: u32) -> Buf<'static> {
-        let mut buf = unsafe { kernel().get_bcache() }
+        let mut buf = unsafe { kernel_builder().get_bcache() }
             .get_buf(dev, blockno)
             .lock();
         if !buf.deref_inner().valid {
@@ -320,8 +320,10 @@ impl Disk {
 
         // Wait for virtio_disk_intr() to say request has finished.
         while b.deref_inner().disk {
-            (*b).vdisk_request_waitchannel
-                .sleep(this, &kernel().current_proc().expect("No current proc"));
+            (*b).vdisk_request_waitchannel.sleep(
+                this,
+                &kernel_builder().current_proc().expect("No current proc"),
+            );
         }
         // As it assigns null, the invariant of inflight is maintained even if
         // b: &mut Buf becomes invalid after this method returns.
