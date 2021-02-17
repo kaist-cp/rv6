@@ -42,19 +42,13 @@ impl RcFile<'static> {
 
 /// Fetch the nth word-sized system call argument as a file descriptor
 /// and return both the descriptor and the corresponding struct file.
-unsafe fn argfd(
-    n: usize,
-    proc: &mut CurrentProc<'_>,
-) -> Result<(i32, &'static RcFile<'static>), ()> {
+fn argfd<'a>(n: usize, proc: &'a CurrentProc<'a>) -> Result<(i32, &'a RcFile<'static>), ()> {
     let fd = argint(n, proc)?;
     if fd < 0 || fd >= NOFILE as i32 {
         return Err(());
     }
 
-    let f = some_or!(
-        unsafe { &(*proc.deref_data_raw()).open_files[fd as usize] },
-        return Err(())
-    );
+    let f = some_or!(&proc.deref_data().open_files[fd as usize], return Err(()));
 
     Ok((fd, f))
 }
@@ -309,7 +303,7 @@ impl Kernel {
     /// Return a new file descriptor referring to the same file as given fd.
     /// Returns Ok(new file descriptor) on success, Err(()) on error.
     pub fn sys_dup(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
-        let (_, f) = unsafe { argfd(0, proc)? };
+        let (_, f) = argfd(0, proc)?;
         let newfile = f.clone();
         let fd = newfile.fdalloc(proc).map_err(|_| ())?;
         Ok(fd as usize)
@@ -318,25 +312,27 @@ impl Kernel {
     /// Read n bytes into buf.
     /// Returns Ok(number read) on success, Err(()) on error.
     pub fn sys_read(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
-        let (_, f) = unsafe { argfd(0, proc)? };
+        let (_, f) = argfd(0, proc)?;
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
-        f.read(p.into(), n, proc)
+        // Safe since read will not access proc's open_files.
+        unsafe { (*(f as *const RcFile<'static>)).read(p.into(), n, proc) }
     }
 
     /// Write n bytes from buf to given file descriptor fd.
     /// Returns Ok(n) on success, Err(()) on error.
     pub fn sys_write(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
-        let (_, f) = unsafe { argfd(0, proc)? };
+        let (_, f) = argfd(0, proc)?;
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
-        f.write(p.into(), n, proc)
+        // Safe since write will not access proc's open_files.
+        unsafe { (*(f as *const RcFile<'static>)).write(p.into(), n, proc) }
     }
 
     /// Release open file fd.
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_close(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
-        let (fd, _) = unsafe { argfd(0, proc)? };
+        let (fd, _) = argfd(0, proc)?;
         proc.deref_mut_data().open_files[fd as usize] = None;
         Ok(0)
     }
@@ -344,10 +340,11 @@ impl Kernel {
     /// Place info about an open file into struct stat.
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_fstat(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
-        let (_, f) = unsafe { argfd(0, proc)? };
+        let (_, f) = argfd(0, proc)?;
         // user pointer to struct stat
         let st = argaddr(1, proc)?;
-        f.stat(st.into(), proc)?;
+        // Safe since stat will not access proc's open_files.
+        unsafe { (*(f as *const RcFile<'static>)).stat(st.into(), proc) }?;
         Ok(0)
     }
 

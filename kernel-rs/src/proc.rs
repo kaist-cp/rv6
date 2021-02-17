@@ -386,10 +386,6 @@ impl<'p> CurrentProc<'p> {
         unsafe { &mut *self.data.get() }
     }
 
-    pub fn deref_data_raw(&mut self) -> *mut ProcData {
-        self.data.get()
-    }
-
     pub fn pid(&self) -> Pid {
         // Safe because pid is not modified while CurrentProc exists.
         unsafe { (*self.info.get_mut_raw()).pid }
