@@ -433,7 +433,7 @@ impl ProcGuard {
 
         let info = self.deref_mut_info();
         info.pid = pid;
-        assert!(info.state == Procstate::UNUSED);
+        debug_assert!(info.state == Procstate::UNUSED);
         info.state = Procstate::USED;
     }
 
@@ -660,18 +660,6 @@ impl Proc {
             data: UnsafeCell::new(ProcData::new()),
             child_waitchannel: WaitChannel::new(),
             killed: AtomicBool::new(false),
-        }
-    }
-
-    /// Initializes a `Proc`, using the given `pid`, `trap_frame`, and `memory`.
-    ///
-    /// # Safety
-    ///
-    /// Only use for `Proc`s whose state is `UNUSED`.
-    /// Otherwise, the assertion will fail.
-    unsafe fn init(&mut self, pid: Pid, trap_frame: Page, memory: UserMemory) {
-        unsafe {
-            ProcGuard::from_raw(self).init(pid, trap_frame, memory);
         }
     }
 
