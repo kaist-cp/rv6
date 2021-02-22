@@ -67,7 +67,12 @@
 //! dev, and inum.  One must hold ip->lock in order to
 //! read or write that inode's ip->valid, ip->size, ip->type, &c.
 
-use core::{mem, ops::Deref, ptr};
+use core::{
+    iter::StepBy,
+    mem,
+    ops::{Deref, Range},
+    ptr,
+};
 
 use array_macro::array;
 use static_assertions::const_assert;
@@ -187,6 +192,14 @@ pub struct Dirent {
 }
 
 impl Dirent {
+    fn new(ip: &mut InodeGuard<'_>, off: u32) -> Result<Dirent, ()> {
+        let mut dirent = Dirent::default();
+        // It is safe becuase Dirent can be safely transmuted to [u8; _], as it
+        // contains only u16 and u8's, which do not have internal structures.
+        unsafe { ip.read_kernel(&mut dirent, off) }?;
+        Ok(dirent)
+    }
+
     /// Fill in name. If name is shorter than DIRSIZ, NUL character is appended as
     /// terminator.
     ///
@@ -209,12 +222,27 @@ impl Dirent {
         // Safety: self.name[..len] doesn't contain '\0', and len must be <= DIRSIZ.
         unsafe { FileName::from_bytes(&self.name[..len]) }
     }
+}
 
-    // TODO(https://github.com/kaist-cp/rv6/issues/360): Use iterator
-    fn read_entry(&mut self, ip: &mut InodeGuard<'_>, off: u32, panic_msg: &'static str) {
-        // It is safe becuase Dirent can be safely transmuted to [u8; _], as it
-        // contains only u16 and u8's, which do not have internal structures.
-        unsafe { ip.read_kernel(self, off) }.expect(panic_msg)
+struct DirentIter<'s, 't> {
+    guard: &'s mut InodeGuard<'t>,
+    iter: StepBy<Range<u32>>,
+}
+
+impl Iterator for DirentIter<'_, '_> {
+    type Item = (Dirent, u32);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let off = self.iter.next()?;
+        let dirent = Dirent::new(self.guard, off).expect("DirentIter");
+        Some((dirent, off))
+    }
+}
+
+impl<'t> InodeGuard<'t> {
+    fn iter_dirents<'s>(&'s mut self) -> DirentIter<'s, 't> {
+        let iter = (0..self.deref_inner().size).step_by(DIRENT_SIZE);
+        DirentIter { guard: self, iter }
     }
 }
 
@@ -255,22 +283,16 @@ impl InodeGuard<'_> {
         inum: u32,
         tx: &FsTransaction<'_>,
     ) -> Result<(), ()> {
-        let mut de: Dirent = Default::default();
-
         // Check that name is not present.
         if let Ok((_ip, _)) = self.dirlookup(name) {
             return Err(());
         };
 
         // Look for an empty Dirent.
-        let mut off: u32 = 0;
-        while off < self.deref_inner().size {
-            de.read_entry(self, off, "dirlink read");
-            if de.inum == 0 {
-                break;
-            }
-            off += DIRENT_SIZE as u32;
-        }
+        let (mut de, off) = self
+            .iter_dirents()
+            .find(|(de, _)| de.inum == 0)
+            .unwrap_or((Default::default(), self.deref_inner().size));
         de.inum = inum as _;
         de.set_name(name);
         self.write_kernel(&de, off, tx).expect("dirlink");
@@ -280,18 +302,12 @@ impl InodeGuard<'_> {
     /// Look for a directory entry in a directory.
     /// If found, return the entry and byte offset of entry.
     pub fn dirlookup(&mut self, name: &FileName) -> Result<(RcInode<'static>, u32), ()> {
-        let mut de: Dirent = Default::default();
-
         assert_eq!(self.deref_inner().typ, InodeType::Dir, "dirlookup not DIR");
 
-        for off in (0..self.deref_inner().size).step_by(DIRENT_SIZE) {
-            de.read_entry(self, off, "dirlookup read");
-            if de.inum != 0 && name == de.get_name() {
-                // entry matches path element
-                return Ok((kernel().itable.get_inode(self.dev, de.inum as u32), off));
-            }
-        }
-        Err(())
+        self.iter_dirents()
+            .find(|(de, _)| de.inum != 0 && de.get_name() == name)
+            .map(|(de, off)| (kernel().itable.get_inode(self.dev, de.inum as u32), off))
+            .ok_or(())
     }
 }
 
