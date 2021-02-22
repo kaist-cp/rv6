@@ -66,7 +66,6 @@ pub struct BufInner {
 #[repr(align(4))]
 pub struct BufData {
     pub inner: [u8; BSIZE],
-    // !Unpin
 }
 
 impl Deref for BufData {

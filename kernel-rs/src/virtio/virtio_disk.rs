@@ -130,7 +130,7 @@ impl DiskInfo {
         // Safe since we drop the element at `index` before assigning.
         let this = unsafe { self.get_unchecked_mut() };
         this.ops[index] = op;
-        &mut this.ops[index]
+        &this.ops[index]
     }
 
     /// Assigns a new `InflightInfo` at index `index` after dropping the original one.
@@ -139,7 +139,7 @@ impl DiskInfo {
         // Safe since we drop the element at `index` before assigning.
         let this = unsafe { self.get_unchecked_mut() };
         this.inflight[index] = inflight;
-        &mut this.inflight[index]
+        &this.inflight[index]
     }
 
     /// Drops the `InflightInfo` at index `index`, and fills it with `InflightInfo::zero()`.
