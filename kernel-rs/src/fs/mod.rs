@@ -13,6 +13,7 @@
 
 use core::{cmp, mem};
 
+use pin_project::pin_project;
 use spin::Once;
 
 use crate::{bio::Buf, kernel::kernel, param::BSIZE, sleepablelock::Sleepablelock, virtio::Disk};
@@ -36,6 +37,7 @@ const NDIRECT: usize = 12;
 const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
 const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
 
+#[pin_project]
 pub struct FileSystem {
     /// TODO(https://github.com/kaist-cp/rv6/issues/358)
     /// Initializing superblock should be run only once because forkret() calls fsinit()
@@ -49,6 +51,7 @@ pub struct FileSystem {
     log: Once<Sleepablelock<Log>>,
 
     /// It may sleep until some Descriptors are freed.
+    #[pin]
     pub disk: Sleepablelock<Disk>,
 }
 

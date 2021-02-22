@@ -2,6 +2,7 @@
 
 use core::{
     cell::UnsafeCell,
+    marker::PhantomPinned,
     mem::{self, MaybeUninit},
     ops::Deref,
     pin::Pin,
@@ -335,6 +336,7 @@ pub struct ProcData {
 ///   - `data.memory` has been initialized.
 /// * If `info.state` ∉ { `UNUSED`, `USED` }, then
 ///   - `data.cwd` has been initialized.
+#[pin_project]
 pub struct Proc {
     /// Parent process.
     ///
@@ -353,6 +355,10 @@ pub struct Proc {
 
     /// If true, the process have been killed.
     killed: AtomicBool,
+
+    // Should be `!Unpin`, because of the `Proc::parent` pointer.
+    #[pin]
+    _marker: PhantomPinned,
 }
 
 /// CurrentProc wraps mutable pointer of current CPU's proc.
@@ -640,6 +646,7 @@ impl Proc {
             data: UnsafeCell::new(ProcData::new()),
             child_waitchannel: WaitChannel::new(),
             killed: AtomicBool::new(false),
+            _marker: PhantomPinned,
         }
     }
 

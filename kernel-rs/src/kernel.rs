@@ -93,6 +93,7 @@ pub struct Kernel {
 
     pub itable: Itable,
 
+    #[pin]
     pub file_system: FileSystem,
 }
 
@@ -257,8 +258,9 @@ pub unsafe fn kernel_main() -> ! {
             kernel_unchecked_pin()
                 .project()
                 .file_system
+                .project()
                 .disk
-                .get_mut()
+                .get_pin_mut()
                 .init()
         };
 

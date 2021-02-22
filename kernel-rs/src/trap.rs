@@ -222,7 +222,7 @@ pub unsafe fn devintr() -> i32 {
         if irq as usize == UART0_IRQ {
             kernel().uart.intr();
         } else if irq as usize == VIRTIO0_IRQ {
-            kernel().file_system.disk.lock().intr();
+            kernel().file_system.disk.lock().get_pin_mut().intr();
         } else if irq != 0 {
             println!("unexpected interrupt irq={}\n", irq);
         }
