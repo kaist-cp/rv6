@@ -102,9 +102,6 @@ impl<T: 'static> OwnedLock<T> for Sleeplock<T> {
         }
     }
 
-    /// Returns a mutable pointer to the inner data.
-    /// The returned pointer is valid until this lock is moved or dropped.
-    /// The caller must ensure that accessing the pointer does not incur race.
     fn get_mut_raw(&self) -> *mut T {
         self.data.get()
     }
