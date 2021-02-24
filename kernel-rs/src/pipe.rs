@@ -5,10 +5,10 @@ use static_assertions::const_assert;
 use crate::{
     file::{FileType, RcFile},
     kernel::kernel_builder,
+    lock::{OwnedLock, Spinlock},
     page::Page,
     proc::{CurrentProc, WaitChannel},
     riscv::PGSIZE,
-    spinlock::{OwnedLock, Spinlock},
     vm::UVAddr,
 };
 

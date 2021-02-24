@@ -16,15 +16,15 @@ use crate::{
     file::RcFile,
     fs::{Path, RcInode},
     kernel::{kernel, kernel_builder, KernelBuilder},
+    lock::{
+        pop_off, push_off, OwnedLock, RawSpinlock, Spinlock, SpinlockProtected,
+        SpinlockProtectedGuard, Waitable,
+    },
     memlayout::kstack,
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
     println,
     riscv::{intr_get, intr_on, r_tp, PGSIZE},
-    spinlock::{
-        pop_off, push_off, OwnedLock, RawSpinlock, Spinlock, SpinlockProtected,
-        SpinlockProtectedGuard,
-    },
     trap::usertrapret,
     vm::{Addr, UVAddr, UserMemory},
 };
@@ -210,26 +210,6 @@ pub enum Procstate {
 }
 
 type Pid = i32;
-
-/// Represents lock guards that can be slept in a `WaitChannel`.
-pub trait Waitable {
-    /// Releases the inner `RawSpinlock`.
-    ///
-    /// # Safety
-    ///
-    /// `raw_release()` and `raw_acquire` must always be used as a pair.
-    /// Use these only for temporarily releasing (and then acquiring) the lock.
-    /// Also, do not access `self` until re-acquiring the lock with `raw_acquire()`.
-    unsafe fn raw_release(&mut self);
-
-    /// Acquires the inner `RawSpinlock`.
-    ///
-    /// # Safety
-    ///
-    /// `raw_release()` and `raw_acquire` must always be used as a pair.
-    /// Use these only for temporarily releasing (and then acquiring) the lock.
-    unsafe fn raw_acquire(&mut self);
-}
 
 pub struct WaitChannel {
     /// Required to make this type non-zero-sized. If it were zero-sized, multiple wait channels may

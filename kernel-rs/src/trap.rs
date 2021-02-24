@@ -2,6 +2,7 @@ use core::mem;
 
 use crate::{
     kernel::{kernel, Kernel},
+    lock::OwnedLock,
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     ok_or,
     plic::{plic_claim, plic_complete},
@@ -11,7 +12,6 @@ use crate::{
         intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp, w_sepc, w_sip,
         w_stvec, Sstatus, PGSIZE,
     },
-    spinlock::OwnedLock,
 };
 
 extern "C" {

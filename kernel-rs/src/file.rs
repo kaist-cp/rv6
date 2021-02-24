@@ -8,10 +8,10 @@ use crate::{
     arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
     fs::{InodeGuard, RcInode},
     kernel::kernel_builder,
+    lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
     proc::CurrentProc,
-    spinlock::Spinlock,
     vm::UVAddr,
 };
 
