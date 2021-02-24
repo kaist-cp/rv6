@@ -6,7 +6,7 @@ use crate::memlayout::UART0;
 use crate::{
     console::consoleintr,
     kernel::kernel_builder,
-    lock::{pop_off, push_off},
+    lock::{pop_off, push_off, OwnedLock},
     sleepablelock::{Sleepablelock, SleepablelockGuard},
     utils::spin_loop,
 };

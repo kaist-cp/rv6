@@ -1,7 +1,7 @@
 use core::fmt;
 
 use crate::{
-    file::Devsw, kernel::kernel_builder, param::NDEV, sleepablelock::SleepablelockGuard,
+    file::Devsw, kernel::kernel_builder, lock::OwnedLock, param::NDEV, sleepablelock::SleepablelockGuard,
     uart::Uart, vm::UVAddr,
 };
 

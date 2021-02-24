@@ -64,7 +64,6 @@ impl<T: 'static> OwnedLock<T> for Spinlock<T> {
         self.lock.release();
     }
 
-    /// Check whether this cpu is holding the lock.
     fn holding(&self) -> bool {
         self.lock.holding()
     }

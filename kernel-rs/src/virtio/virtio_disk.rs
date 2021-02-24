@@ -17,6 +17,7 @@ use super::{
 use crate::{
     bio::Buf,
     kernel::kernel_builder,
+    lock::OwnedLock,
     param::BSIZE,
     riscv::{PGSHIFT, PGSIZE},
     sleepablelock::{Sleepablelock, SleepablelockGuard},

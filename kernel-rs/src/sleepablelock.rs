@@ -5,15 +5,11 @@ use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 
 use crate::lock::RawSpinlock;
-use crate::{kernel::kernel_builder, lock::Waitable, proc::WaitChannel};
-
-pub struct SleepablelockGuard<'s, T> {
-    lock: &'s Sleepablelock<T>,
-    _marker: PhantomData<*const ()>,
-}
-
-// Do not implement Send; lock must be unlocked by the CPU that acquired it.
-unsafe impl<'s, T: Sync> Sync for SleepablelockGuard<'s, T> {}
+use crate::{
+    kernel::kernel_builder,
+    lock::{OwnedLock, UnpinLock, Waitable},
+    proc::WaitChannel,
+};
 
 /// Sleepable locks
 pub struct Sleepablelock<T> {
@@ -25,16 +21,43 @@ pub struct Sleepablelock<T> {
 
 unsafe impl<T: Send> Sync for Sleepablelock<T> {}
 
+pub struct SleepablelockGuard<'s, T> {
+    lock: &'s Sleepablelock<T>,
+    _marker: PhantomData<*const ()>,
+}
+
+// Do not implement Send; lock must be unlocked by the CPU that acquired it.
+unsafe impl<'s, T: Sync> Sync for SleepablelockGuard<'s, T> {}
+
 impl<T> Sleepablelock<T> {
-    pub const fn new(name: &'static str, data: T) -> Self {
+    /// Returns a new `Sleepablelock` with name `name` and data `data`.
+    ///
+    /// # Safety
+    ///
+    /// If `T: !Unpin`, `Sleepablelock` or `SleepablelockGuard` will only provide pinned mutable references
+    /// of the inner data to the outside. However, it is still the caller's responsibility to
+    /// make sure that the `Sleepablelock` itself never gets moved.
+    pub const unsafe fn new_unchecked(name: &'static str, data: T) -> Self {
         Self {
             lock: RawSpinlock::new(name),
             waitchannel: WaitChannel::new(),
             data: UnsafeCell::new(data),
         }
     }
+}
 
-    pub fn lock(&self) -> SleepablelockGuard<'_, T> {
+impl<T: Unpin> Sleepablelock<T> {
+    /// Returns a new `Sleepablelock` with name `name` and data `data`.
+    pub const fn new(name: &'static str, data: T) -> Self {
+        // Safe since `T: Unpin`.
+        unsafe { Self::new_unchecked(name, data) }
+    }
+}
+
+impl<T: 'static> OwnedLock<T> for Sleepablelock<T> {
+    type Guard<'s> = SleepablelockGuard<'s, T>;
+
+    fn lock(&self) -> SleepablelockGuard<'_, T> {
         self.lock.acquire();
 
         SleepablelockGuard {
@@ -43,28 +66,22 @@ impl<T> Sleepablelock<T> {
         }
     }
 
-    /// Returns a pinned mutable reference to the inner data.
-    pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
-        // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
-        unsafe { Pin::new_unchecked(&mut *self.data.get()) }
-    }
-}
-
-impl<T: Unpin> Sleepablelock<T> {
-    pub fn into_inner(self) -> T {
-        self.data.into_inner()
-    }
-
-    /// Returns a mutable pointer to the inner data.
-    /// The returned pointer is valid until this lock is moved or dropped.
-    /// The caller must ensure that accessing the pointer does not incur race.
-    pub fn get_mut_raw(&self) -> *mut T {
+    fn get_mut_raw(&self) -> *mut T {
         self.data.get()
     }
 
-    /// Returns a mutable reference to the inner data.
-    pub fn get_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.data.get() }
+    unsafe fn unlock(&self) {
+        self.lock.release();
+    }
+
+    fn holding(&self) -> bool {
+        self.lock.holding()
+    }
+}
+
+impl<T: 'static + Unpin> UnpinLock<T> for Sleepablelock<T> {
+    fn into_inner(self) -> T {
+        self.data.into_inner()
     }
 }
 
