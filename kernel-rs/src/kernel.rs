@@ -21,7 +21,7 @@ use crate::{
     println,
     proc::{cpuid, scheduler, Cpu, Procs, ProcsBuilder},
     sleepablelock::Sleepablelock,
-    spinlock::Spinlock,
+    spinlock::{OwnedLock, Spinlock, UnpinLock},
     trap::{trapinit, trapinithart},
     uart::Uart,
     vm::KernelMemory,

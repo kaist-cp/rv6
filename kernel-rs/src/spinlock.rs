@@ -139,13 +139,44 @@ pub struct SpinlockProtected<T> {
 
 unsafe impl<T: Send> Sync for SpinlockProtected<T> {}
 
-impl<T: Unpin> Spinlock<T> {
-    /// Returns a new `Spinlock` with name `name` and data `data`.
-    pub const fn new(name: &'static str, data: T) -> Self {
-        Self {
-            lock: RawSpinlock::new(name),
-            data: UnsafeCell::new(data),
-        }
+/// Locks that own its own `RawLock` and `data: T`.
+pub trait OwnedLock<T> {
+    type Guard<'s>;
+
+    /// Acquires the lock and returns the lock guard.
+    fn lock(&self) -> Self::Guard<'_>;
+
+    /// Returns a mutable reference to the inner data.
+    /// The returned pointer is valid until this lock is moved or dropped.
+    /// The caller must ensure that accessing the pointer does not incur race.
+    fn get_mut_raw(&self) -> *mut T;
+
+    /// Returns a pinned mutable reference to the inner data.
+    /// If `T: Unpin`, you can use the pin as a mutable reference or convert it into one by `Pin::get_mut()`.
+    fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut T> {
+        // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
+        unsafe { Pin::new_unchecked(&mut *self.get_mut_raw()) }
+    }
+
+    /// Unlock the lock.
+    ///
+    /// # Safety
+    ///
+    /// Use this only when we acquired the lock but did `mem::forget()` to the guard.
+    unsafe fn unlock(&self);
+
+    /// Check whether this cpu is holding the lock.
+    fn holding(&self) -> bool;
+}
+
+/// Locks that own its own `RawLock` and `data: T`, where `T: Unpin`.
+pub trait UnpinLock<T: Unpin>: OwnedLock<T> {
+    /// Consumes the lock and returns the inner data.
+    fn into_inner(self) -> T;
+
+    /// Returns a mutable reference to the inner data.
+    fn get_mut(&mut self) -> &mut T {
+        unsafe { &mut *self.get_mut_raw() }
     }
 }
 
@@ -163,8 +194,20 @@ impl<T> Spinlock<T> {
             data: UnsafeCell::new(data),
         }
     }
+}
 
-    pub fn lock(&self) -> SpinlockGuard<'_, T> {
+impl<T: Unpin> Spinlock<T> {
+    /// Returns a new `Spinlock` with name `name` and data `data`.
+    pub const fn new(name: &'static str, data: T) -> Self {
+        // Safe since `T: Unpin`.
+        unsafe { Self::new_unchecked(name, data) }
+    }
+}
+
+impl<T: 'static> OwnedLock<T> for Spinlock<T> {
+    type Guard<'s> = SpinlockGuard<'s, T>;
+
+    fn lock(&self) -> SpinlockGuard<'_, T> {
         self.lock.acquire();
 
         SpinlockGuard {
@@ -173,41 +216,23 @@ impl<T> Spinlock<T> {
         }
     }
 
-    pub unsafe fn unlock(&self) {
+    fn get_mut_raw(&self) -> *mut T {
+        self.data.get()
+    }
+
+    unsafe fn unlock(&self) {
         self.lock.release();
     }
 
     /// Check whether this cpu is holding the lock.
-    pub fn holding(&self) -> bool {
+    fn holding(&self) -> bool {
         self.lock.holding()
-    }
-
-    pub fn raw(&self) -> *const RawSpinlock {
-        &self.lock as *const _
-    }
-
-    /// Returns a pinned mutable reference to the inner data.
-    pub fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut T> {
-        // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
-        unsafe { Pin::new_unchecked(&mut *self.data.get()) }
     }
 }
 
-impl<T: Unpin> Spinlock<T> {
-    pub fn into_inner(self) -> T {
+impl<T: 'static + Unpin> UnpinLock<T> for Spinlock<T> {
+    fn into_inner(self) -> T {
         self.data.into_inner()
-    }
-
-    /// Returns a mutable pointer to the inner data.
-    /// The returned pointer is valid until this lock is moved or dropped.
-    /// The caller must ensure that accessing the pointer does not incur race.
-    pub fn get_mut_raw(&self) -> *mut T {
-        self.data.get()
-    }
-
-    /// Returns a mutable reference to the inner data.
-    pub fn get_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.data.get() }
     }
 }
 

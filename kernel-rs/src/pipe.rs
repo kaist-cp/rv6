@@ -8,7 +8,7 @@ use crate::{
     page::Page,
     proc::{CurrentProc, WaitChannel},
     riscv::PGSIZE,
-    spinlock::Spinlock,
+    spinlock::{OwnedLock, Spinlock},
     vm::UVAddr,
 };
 

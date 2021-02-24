@@ -11,6 +11,7 @@ use crate::{
         intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp, w_sepc, w_sip,
         w_stvec, Sstatus, PGSIZE,
     },
+    spinlock::OwnedLock,
 };
 
 extern "C" {

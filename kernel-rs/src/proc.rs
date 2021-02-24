@@ -22,7 +22,8 @@ use crate::{
     println,
     riscv::{intr_get, intr_on, r_tp, PGSIZE},
     spinlock::{
-        pop_off, push_off, RawSpinlock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
+        pop_off, push_off, OwnedLock, RawSpinlock, Spinlock, SpinlockProtected,
+        SpinlockProtectedGuard,
     },
     trap::usertrapret,
     vm::{Addr, UVAddr, UserMemory},
