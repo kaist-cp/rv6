@@ -18,10 +18,9 @@ use array_macro::array;
 
 use crate::{
     arena::{Arena, ArenaObject, MruArena, MruEntry, Rc},
-    lock::{OwnedLock, Spinlock, UnpinLock},
+    lock::{OwnedLock, Sleeplock, Spinlock, UnpinLock},
     param::{BSIZE, NBUF},
     proc::WaitChannel,
-    sleeplock::Sleeplock,
 };
 
 pub struct BufEntry {

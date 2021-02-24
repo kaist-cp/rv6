@@ -75,8 +75,6 @@ mod plic;
 mod poweroff;
 mod proc;
 mod riscv;
-mod sleepablelock;
-mod sleeplock;
 mod start;
 mod stat;
 mod syscall;

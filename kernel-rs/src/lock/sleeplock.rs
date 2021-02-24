@@ -4,11 +4,8 @@ use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 
-use crate::{
-    kernel::kernel_builder,
-    lock::{OwnedLock, UnpinLock},
-    sleepablelock::Sleepablelock,
-};
+use super::{OwnedLock, Sleepablelock, UnpinLock};
+use crate::kernel::kernel_builder;
 
 /// Long-term locks for processes
 struct RawSleeplock {

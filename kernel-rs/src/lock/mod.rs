@@ -6,10 +6,14 @@
 use core::pin::Pin;
 
 mod rawspinlock;
+mod sleepablelock;
+mod sleeplock;
 mod spinlock;
 mod spinlock_protected;
 
 pub use rawspinlock::*; //TODO: only use push_off/pop_off
+pub use sleepablelock::{Sleepablelock, SleepablelockGuard};
+pub use sleeplock::{Sleeplock, SleeplockGuard};
 pub use spinlock::{Spinlock, SpinlockGuard};
 pub use spinlock_protected::{SpinlockProtected, SpinlockProtectedGuard};
 

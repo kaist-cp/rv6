@@ -4,12 +4,8 @@ use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 
-use crate::lock::RawSpinlock;
-use crate::{
-    kernel::kernel_builder,
-    lock::{OwnedLock, UnpinLock, Waitable},
-    proc::WaitChannel,
-};
+use super::{OwnedLock, RawSpinlock, UnpinLock, Waitable};
+use crate::{kernel::kernel_builder, proc::WaitChannel};
 
 /// Sleepable locks
 pub struct Sleepablelock<T> {

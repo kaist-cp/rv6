@@ -17,10 +17,9 @@ use super::{
 use crate::{
     bio::Buf,
     kernel::kernel_builder,
-    lock::OwnedLock,
+    lock::{OwnedLock, Sleepablelock, SleepablelockGuard},
     param::BSIZE,
     riscv::{PGSHIFT, PGSIZE},
-    sleepablelock::{Sleepablelock, SleepablelockGuard},
 };
 
 // It must be page-aligned.

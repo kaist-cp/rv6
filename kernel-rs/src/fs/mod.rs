@@ -16,7 +16,10 @@ use core::{cmp, mem};
 use spin::Once;
 
 use crate::{
-    bio::Buf, kernel::kernel_builder, lock::OwnedLock, param::BSIZE, sleepablelock::Sleepablelock,
+    bio::Buf,
+    kernel::kernel_builder,
+    lock::{OwnedLock, Sleepablelock},
+    param::BSIZE,
     virtio::Disk,
 };
 

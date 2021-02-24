@@ -83,10 +83,9 @@ use crate::{
     bio::BufData,
     fs::FsTransaction,
     kernel::kernel_builder,
-    lock::{OwnedLock, Spinlock, UnpinLock},
+    lock::{OwnedLock, Sleeplock, Spinlock, UnpinLock},
     param::{BSIZE, NINODE},
     proc::CurrentProc,
-    sleeplock::Sleeplock,
     stat::Stat,
     vm::UVAddr,
 };
