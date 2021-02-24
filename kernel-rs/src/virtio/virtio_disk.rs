@@ -30,7 +30,7 @@ use crate::{
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C, align(4096))]
 #[pin_project]
-pub struct Disk {
+pub struct VirtIODisk {
     /// The first region is a set (not a ring) of DMA descriptors, with which
     /// the driver tells the device where to read and write individual disk
     /// operations. There are NUM descriptors. Most commands consist of a
@@ -99,7 +99,7 @@ struct VirtIOBlockOutHeader {
     _marker: PhantomPinned,
 }
 
-impl Disk {
+impl VirtIODisk {
     pub const fn zero() -> Self {
         Self {
             desc: [VirtqDesc::zero(); NUM],
@@ -215,7 +215,7 @@ impl Drop for Descriptor {
     }
 }
 
-impl Sleepablelock<Disk> {
+impl Sleepablelock<VirtIODisk> {
     /// Return a locked Buf with the `latest` contents of the indicated block.
     /// If buf.valid is true, we don't need to access Disk.
     pub fn read(&self, dev: u32, blockno: u32) -> Buf<'static> {
@@ -223,18 +223,18 @@ impl Sleepablelock<Disk> {
             .get_buf(dev, blockno)
             .lock();
         if !buf.deref_inner().valid {
-            Disk::rw(&mut self.lock(), &mut buf, false);
+            VirtIODisk::rw(&mut self.lock(), &mut buf, false);
             buf.deref_inner_mut().valid = true;
         }
         buf
     }
 
     pub fn write(&self, b: &mut Buf<'static>) {
-        Disk::rw(&mut self.lock(), b, true)
+        VirtIODisk::rw(&mut self.lock(), b, true)
     }
 }
 
-impl Disk {
+impl VirtIODisk {
     pub fn init(&self) {
         let mut status: VirtIOStatus = VirtIOStatus::empty();
 
