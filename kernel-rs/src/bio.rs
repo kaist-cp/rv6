@@ -18,7 +18,7 @@ use array_macro::array;
 
 use crate::{
     arena::{Arena, ArenaObject, MruArena, MruEntry, Rc},
-    lock::{OwnedLock, Sleeplock, Spinlock, UnpinLock},
+    lock::{Lock, Sleeplock, Spinlock},
     param::{BSIZE, NBUF},
     proc::WaitChannel,
 };

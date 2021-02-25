@@ -15,7 +15,7 @@ use crate::{
     file::{Devsw, FileTable},
     fs::{FileSystem, Itable},
     kalloc::Kmem,
-    lock::{OwnedLock, Sleepablelock, Spinlock, UnpinLock},
+    lock::{Lock, Sleepablelock, Spinlock},
     page::Page,
     param::{NCPU, NDEV},
     plic::{plicinit, plicinithart},

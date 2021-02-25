@@ -7,7 +7,7 @@ use core::ptr::{self, NonNull};
 use pin_project::pin_project;
 
 use crate::list::*;
-use crate::lock::{OwnedLock, Spinlock, SpinlockGuard};
+use crate::lock::{Lock, Spinlock, SpinlockGuard};
 use crate::pinned_array::IterPinMut;
 
 /// A homogeneous memory allocator, equipped with the box type representing an allocation.

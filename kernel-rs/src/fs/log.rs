@@ -30,7 +30,7 @@ use crate::{
     bio::BufData,
     bio::{Buf, BufUnlocked},
     kernel::kernel_builder,
-    lock::{OwnedLock, Sleepablelock},
+    lock::{Lock, Sleepablelock},
     param::{BSIZE, LOGSIZE, MAXOPBLOCKS},
 };
 

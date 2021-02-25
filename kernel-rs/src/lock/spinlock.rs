@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 
-use super::{OwnedLock, RawSpinlock, UnpinLock, Waitable};
+use super::{Lock, RawSpinlock, Waitable};
 
 pub struct Spinlock<T> {
     lock: RawSpinlock,
@@ -22,6 +22,7 @@ unsafe impl<'s, T: Sync> Sync for SpinlockGuard<'s, T> {}
 
 impl<T> Spinlock<T> {
     /// Returns a new `Spinlock` with name `name` and data `data`.
+    /// If `T: Unpin`, `Spinlock::new` should be used instead.
     ///
     /// # Safety
     ///
@@ -44,7 +45,8 @@ impl<T: Unpin> Spinlock<T> {
     }
 }
 
-impl<T: 'static> OwnedLock<T> for Spinlock<T> {
+impl<T: 'static> Lock for Spinlock<T> {
+    type Data = T;
     type Guard<'s> = SpinlockGuard<'s, T>;
 
     fn lock(&self) -> SpinlockGuard<'_, T> {
@@ -60,18 +62,16 @@ impl<T: 'static> OwnedLock<T> for Spinlock<T> {
         self.data.get()
     }
 
+    fn into_inner(self) -> T {
+        self.data.into_inner()
+    }
+
     unsafe fn unlock(&self) {
         self.lock.release();
     }
 
     fn holding(&self) -> bool {
         self.lock.holding()
-    }
-}
-
-impl<T: 'static + Unpin> UnpinLock<T> for Spinlock<T> {
-    fn into_inner(self) -> T {
-        self.data.into_inner()
     }
 }
 

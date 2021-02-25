@@ -1,6 +1,6 @@
 use crate::{
     kernel::Kernel,
-    lock::OwnedLock,
+    lock::Lock,
     poweroff,
     proc::CurrentProc,
     syscall::{argaddr, argint},

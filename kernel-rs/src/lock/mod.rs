@@ -2,6 +2,19 @@
 //!
 //! Contains types for locks and lock guards that provide mutual exclusion,
 //! and also includes traits that express their behaviors.
+//!
+//! # Locks and [`Pin`]
+//! Locks that own `!Unpin` data of type `T` should not give an `&mut T` of its data to the outside.
+//! Similarly, we should not be able to mutably dereference a lock guard if the data `T` is `!Unpin`.
+//! Otherwise, we could move the inner data, even when the lock itself is pinned.
+//!
+//! Therefore, locks in this module gives an `&mut T` to the outside only when `T: Unpin`.
+//! Otherwise, it only gives a [`Pin<&mut T>`].
+//! Similaraly, guards implement `DerefMut` only when `T: Unpin`, and if `T: !Unpin`,
+//! you should obtain a [`Pin<&mut T>`] from the guard and use it instead.
+//!
+//! # SpinlockProtected
+//! TODO
 
 use core::pin::Pin;
 
@@ -17,7 +30,7 @@ pub use sleeplock::{Sleeplock, SleeplockGuard};
 pub use spinlock::{Spinlock, SpinlockGuard};
 pub use spinlock_protected::{SpinlockProtected, SpinlockProtectedGuard};
 
-/// Represents lock guards that can be slept in a `WaitChannel`.
+/// Lock guards that can be slept in a `WaitChannel`.
 pub trait Waitable {
     /// Releases the inner `RawSpinlock`.
     ///
@@ -37,8 +50,9 @@ pub trait Waitable {
     unsafe fn raw_acquire(&mut self);
 }
 
-/// Locks that own its own `RawLock` and `data: T`.
-pub trait OwnedLock<T> {
+/// Locks that own a raw lock.
+pub trait Lock {
+    type Data;
     type Guard<'s>;
 
     /// Acquires the lock and returns the lock guard.
@@ -47,14 +61,28 @@ pub trait OwnedLock<T> {
     /// Returns a mutable reference to the inner data.
     /// The returned pointer is valid until this lock is moved or dropped.
     /// The caller must ensure that accessing the pointer does not incur race.
-    fn get_mut_raw(&self) -> *mut T;
+    /// Also, if `T: !Unpin`, the caller must not move the data using the pointer.
+    fn get_mut_raw(&self) -> *mut Self::Data;
 
     /// Returns a pinned mutable reference to the inner data.
-    /// If `T: Unpin`, you can use the pin as a mutable reference or convert it into one by `Pin::get_mut()`.
-    fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut T> {
+    fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut Self::Data> {
         // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
         unsafe { Pin::new_unchecked(&mut *self.get_mut_raw()) }
     }
+
+    /// Returns a mutable reference to the inner data.
+    fn get_mut(&mut self) -> &mut Self::Data
+    where
+        Self::Data: Unpin,
+    {
+        // Safe since we have a mutable reference of the lock.
+        unsafe { &mut *self.get_mut_raw() }
+    }
+
+    /// Consumes the lock and returns the inner data.
+    fn into_inner(self) -> Self::Data
+    where
+        Self::Data: Unpin;
 
     /// Unlock the lock.
     ///
@@ -65,15 +93,4 @@ pub trait OwnedLock<T> {
 
     /// Check whether this cpu is holding the lock.
     fn holding(&self) -> bool;
-}
-
-/// Locks that own its own `RawLock` and `data: T`, where `T: Unpin`.
-pub trait UnpinLock<T: Unpin>: OwnedLock<T> {
-    /// Consumes the lock and returns the inner data.
-    fn into_inner(self) -> T;
-
-    /// Returns a mutable reference to the inner data.
-    fn get_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.get_mut_raw() }
-    }
 }

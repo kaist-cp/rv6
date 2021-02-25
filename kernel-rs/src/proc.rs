@@ -17,8 +17,8 @@ use crate::{
     fs::{Path, RcInode},
     kernel::{kernel, kernel_builder, KernelBuilder},
     lock::{
-        pop_off, push_off, OwnedLock, RawSpinlock, Spinlock, SpinlockProtected,
-        SpinlockProtectedGuard, Waitable,
+        pop_off, push_off, Lock, RawSpinlock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
+        Waitable,
     },
     memlayout::kstack,
     page::Page,

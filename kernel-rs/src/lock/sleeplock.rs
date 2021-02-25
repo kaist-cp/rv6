@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 
-use super::{OwnedLock, Sleepablelock, UnpinLock};
+use super::{Lock, Sleepablelock};
 use crate::kernel::kernel_builder;
 
 /// Long-term locks for processes
@@ -68,6 +68,7 @@ unsafe impl<'s, T: Sync> Sync for SleeplockGuard<'s, T> {}
 
 impl<T> Sleeplock<T> {
     /// Returns a new `Sleeplock` with name `name` and data `data`.
+    /// If `T: Unpin`, `Sleeplock::new` should be used instead.
     ///
     /// # Safety
     ///
@@ -90,7 +91,8 @@ impl<T: Unpin> Sleeplock<T> {
     }
 }
 
-impl<T: 'static> OwnedLock<T> for Sleeplock<T> {
+impl<T: 'static> Lock for Sleeplock<T> {
+    type Data = T;
     type Guard<'s> = SleeplockGuard<'s, T>;
 
     fn lock(&self) -> SleeplockGuard<'_, T> {
@@ -106,18 +108,16 @@ impl<T: 'static> OwnedLock<T> for Sleeplock<T> {
         self.data.get()
     }
 
+    fn into_inner(self) -> T {
+        self.data.into_inner()
+    }
+
     unsafe fn unlock(&self) {
         self.lock.release();
     }
 
     fn holding(&self) -> bool {
         self.lock.holding()
-    }
-}
-
-impl<T: 'static + Unpin> UnpinLock<T> for Sleeplock<T> {
-    fn into_inner(self) -> T {
-        self.data.into_inner()
     }
 }
 
