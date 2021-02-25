@@ -53,6 +53,7 @@
 #![feature(generic_associated_types)]
 #![feature(unsafe_block_in_unsafe_fn)]
 #![feature(variant_count)]
+#![feature(arbitrary_self_types)]
 
 mod arena;
 mod bio;
@@ -88,3 +89,4 @@ mod utils;
 mod virtio;
 mod virtio_disk;
 mod vm;
+mod weakpin;

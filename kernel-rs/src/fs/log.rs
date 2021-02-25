@@ -127,7 +127,7 @@ impl Log {
 
         lh.n = self.bufs.len() as u32;
         for (db, b) in izip!(&mut lh.block, &self.bufs) {
-            *db = b.blockno;
+            *db = b.get_data().blockno;
         }
         kernel().file_system.disk.write(&mut buf)
     }
@@ -199,7 +199,10 @@ impl Log {
                 .read(self.dev, (self.start + tail as i32 + 1) as u32);
 
             // Cache block.
-            let from = kernel().file_system.disk.read(self.dev, from.blockno);
+            let from = kernel()
+                .file_system
+                .disk
+                .read(self.dev, from.get_data().blockno);
 
             to.deref_inner_mut()
                 .data
@@ -243,7 +246,7 @@ impl Log {
 
         for buf in &self.bufs {
             // Log absorbtion.
-            if buf.blockno == b.blockno {
+            if buf.get_data().blockno == b.blockno {
                 return;
             }
         }

@@ -9,6 +9,7 @@ use pin_project::pin_project;
 use crate::list::*;
 use crate::pinned_array::IterPinMut;
 use crate::spinlock::{Spinlock, SpinlockGuard};
+use crate::weakpin::WeakPin;
 
 /// A homogeneous memory allocator, equipped with the box type representing an allocation.
 pub trait Arena: Sized {
@@ -289,6 +290,11 @@ impl<T> MruEntry<T> {
             as *mut MruEntry<T>;
         unsafe { Pin::new_unchecked(&mut *ptr) }
     }
+
+    #[allow(clippy::needless_lifetimes)]
+    pub fn get_data<'s>(self: &'s WeakPin<*mut Self>) -> &'s T {
+        unsafe { &(*self.get_raw()).data }
+    }
 }
 
 impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
@@ -330,8 +336,9 @@ impl<T> Drop for MruPtr<'_, T> {
 impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruArena<T, CAPACITY>> {
     type Data = T;
     type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
-    type Handle<'s> = MruPtr<'s, T>;
+    type Handle<'s> = WeakPin<*mut MruEntry<T>>;
 
+    #[allow(clippy::needless_lifetimes)]
     fn find_or_alloc_handle<'s, C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &'s self,
         c: C,
@@ -342,36 +349,31 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
         let head = this.head.as_ref().get_ref() as *const _;
 
         let mut list_entry = this.head.next();
-        let mut empty: *mut MruEntry<T> = ptr::null_mut();
+        let mut handle = unsafe { WeakPin::zero_mut() };
         while list_entry.as_ref().get_ref() as *const _ != head {
             let mut entry = MruEntry::from_list_entry(list_entry.as_mut());
             if c(&entry.as_mut().project().data) {
                 *entry.as_mut().project().refcnt += 1;
-                return Some(Self::Handle::<'s> {
-                    ptr: NonNull::from(entry.as_ref().get_ref()),
-                    _marker: PhantomData,
-                });
+                return Some(WeakPin::from(entry));
             } else if entry.refcnt == 0 {
                 // Safe since `MruPtr` does not move `MruEntry`.
-                empty = unsafe { entry.as_mut().get_unchecked_mut() };
+                handle = WeakPin::from(entry);
             }
             list_entry = list_entry.next();
         }
 
-        if empty.is_null() {
+        if handle == unsafe { WeakPin::zero_mut() } {
             return None;
         }
 
         // Safe since `MruPtr` does not move `MruEntry`.
-        let entry = unsafe { &mut *empty };
-        entry.refcnt = 1;
-        n(&mut entry.data);
-        Some(Self::Handle::<'s> {
-            ptr: NonNull::from(entry),
-            _marker: PhantomData,
-        })
+        let mut entry = unsafe { handle.get_unchecked_pin_mut() };
+        *entry.as_mut().project().refcnt = 1;
+        n(entry.as_mut().project().data);
+        Some(handle)
     }
 
+    #[allow(clippy::needless_lifetimes)]
     fn alloc_handle<'s, F: FnOnce(&mut Self::Data)>(&'s self, f: F) -> Option<Self::Handle<'s>> {
         let mut guard = self.lock();
         let this = guard.get_pin_mut().project();
@@ -383,11 +385,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
             if *entry.as_mut().project().refcnt == 0 {
                 *entry.as_mut().project().refcnt = 1;
                 f(&mut entry.as_mut().project().data);
-                return Some(Self::Handle::<'s> {
-                    // Safe since `MruPtr` does not move `MruEntry`.
-                    ptr: NonNull::from(unsafe { entry.as_mut().get_unchecked_mut() }),
-                    _marker: PhantomData,
-                });
+                return Some(WeakPin::from(entry));
             }
             list_entry = list_entry.prev();
         }
@@ -403,11 +401,9 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
 
         // TODO(https://github.com/kaist-cp/rv6/issues/369)
         // Make a MruArena trait and move this there.
-        unsafe { (*handle.ptr.as_ptr()).refcnt += 1 };
-        Self::Handle::<'s> {
-            ptr: handle.ptr,
-            _marker: PhantomData,
-        }
+        let mut this = unsafe { Pin::new_unchecked(&mut *handle.get_raw()) };
+        *this.as_mut().project().refcnt += 1;
+        WeakPin::from(this)
     }
 
     /// # Safety
@@ -418,7 +414,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
 
         // Safe since we don't move `MruEntry` and access it only through `Pin`.
         // That is, the data is pinned.
-        let mut entry = unsafe { Pin::new_unchecked(handle.ptr.as_mut()).project() };
+        let mut entry = unsafe { handle.get_unchecked_pin_mut().project() };
         if *entry.refcnt == 1 {
             entry.data.finalize::<Self>(&mut this);
         }

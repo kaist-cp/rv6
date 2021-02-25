@@ -6,13 +6,15 @@
 //!   That is, the `WeakPin` is valid until the referent gets drop.
 //!   Also, even after the referent gets dropped, if the referent appropriately updated all `WeakPin`s
 //!   that used to point to it, the `WeakPin`s are still valid.
-//!   To help this, `WeakPin`s are `!Clone`, and can only be obtained in a controlled way.
+//!   To help this, `WeakPin`s are `!Clone` (and `!Copy`), and can only be obtained in a controlled way.
 //! * If you can assume that the `WeakPin` is valid, you only need to worry about the stacked borrow rules.
 //!   That is, you at least don't need to worry that the `WeakPin` may not point to a type `T`.
 //!   Note that this is possible with raw pointers, such as by type conversion or pointer arithmetic.
 //! However, `WeakPin`s are less safe than references, since
 //! * You have to manually guarantee that the `WeakPin` is valid.
 //! * You have to manually check for the borrow rules.
+//!
+//! # Usages
 //!
 //! `WeakPin`s are useful when you want to split a struct/array,
 //! or when its totally legal to access a specific part of a struct/array according to the stacked borrow rules.
@@ -26,12 +28,13 @@
 //! and make the API of the struct safely accept `WeakPin`s.
 //!
 //! `WeakPin`'s are useful when you want to express a permission level lower than references.
-//! Using this, you can express OS concepts, such as processes or wait channels.
+//! Using this, you can express OS concepts, such as processes or wait channels,
+//! or implement self referential structs in a clearer way.
 //!
 //! e.g.`&mut T`: Highest authority. Can mutate any part or call any method.
 //!     `&T`    : Medium authority. Can only access any part and can call lesser methods.
 //!    `WeakPin`: Lowest authority. Can't access any part and can call even lesser methods.
-//!               (e.g. Only carefully allow operations that don't break the stacked borrow rules.)
+//!               (e.g. Can only use carefully allowed methods that don't break the stacked borrow rules.)
 //!
 //! In these ways, you can encapsulate the unsafe blocks inside the type's API,
 //! instead of making the unsafe spread all around.
@@ -59,19 +62,17 @@ impl<T> WeakPin<*const T> {
     ///
     /// # Safety
     ///
-    /// The caller must manually check that the `WeakPin` is valid.
-    /// The caller must manually check for the stacked borrow rules.
+    /// * The caller must manually check that the `WeakPin` is valid.
+    /// * The caller must manually check for the stacked borrow rules.
     pub unsafe fn get_unchecked_pin(&mut self) -> Pin<&T> {
-        Pin::new_unchecked(&*self.ptr)
+        unsafe { Pin::new_unchecked(&*self.ptr) }
     }
 }
 
 impl<T> From<Pin<&T>> for WeakPin<*const T> {
     //safe?
     fn from(pin: Pin<&T>) -> Self {
-        Self {
-            ptr: pin.get_ref(),
-        }
+        Self { ptr: pin.get_ref() }
     }
 }
 
@@ -99,10 +100,14 @@ impl<T> WeakPin<*mut T> {
     ///
     /// # Safety
     ///
-    /// The caller must manually check that the `WeakPin` is valid.
-    /// The caller must manually check for the stacked borrow rules.
+    /// * The caller must manually check that the `WeakPin` is valid.
+    /// * The caller must manually check for the stacked borrow rules.
     pub unsafe fn get_unchecked_pin_mut(&mut self) -> Pin<&mut T> {
         unsafe { Pin::new_unchecked(&mut *self.ptr) }
+    }
+
+    pub fn get_raw(&self) -> *mut T {
+        self.ptr
     }
 }
 
@@ -112,6 +117,15 @@ impl<T> From<Pin<&mut T>> for WeakPin<*mut T> {
         Self {
             ptr: unsafe { pin.get_unchecked_mut() },
         }
+    }
+}
+
+// TODO: must remove!!!
+impl<T> Deref for WeakPin<*mut T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.ptr }
     }
 }
 

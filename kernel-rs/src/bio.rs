@@ -106,13 +106,13 @@ pub struct Buf<'s> {
 
 impl<'s> Buf<'s> {
     pub fn deref_inner(&self) -> &BufInner {
-        let entry: &BufEntry = &self.inner;
+        let entry: &BufEntry = &self.inner.get_data();
         // It is safe becuase inner.inner is locked.
         unsafe { &*entry.inner.get_mut_raw() }
     }
 
     pub fn deref_inner_mut(&mut self) -> &mut BufInner {
-        let entry: &BufEntry = &self.inner;
+        let entry: &BufEntry = &self.inner.get_data();
         // It is safe becuase inner.inner is locked and &mut self is exclusive.
         unsafe { &mut *entry.inner.get_mut_raw() }
     }
@@ -122,7 +122,7 @@ impl<'s> Buf<'s> {
         // be used again.
         let inner = unsafe { ManuallyDrop::take(&mut self.inner) };
         // It is safe because this method consumes self.
-        unsafe { inner.inner.unlock() };
+        unsafe { inner.get_data().inner.unlock() };
         mem::forget(self);
         inner
     }
@@ -132,7 +132,7 @@ impl Deref for Buf<'_> {
     type Target = BufEntry;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner
+        &self.inner.get_data()
     }
 }
 
@@ -140,7 +140,12 @@ impl Drop for Buf<'_> {
     fn drop(&mut self) {
         // It is safe because self will be dropped and self.inner will not be
         // used again.
-        unsafe { ManuallyDrop::take(&mut self.inner).inner.unlock() };
+        unsafe {
+            ManuallyDrop::take(&mut self.inner)
+                .get_data()
+                .inner
+                .unlock()
+        };
     }
 }
 
@@ -173,7 +178,7 @@ impl Bcache {
 
 impl<'s> BufUnlocked<'s> {
     pub fn lock(self) -> Buf<'s> {
-        mem::forget(self.inner.lock());
+        mem::forget(self.get_data().inner.lock());
         Buf {
             inner: ManuallyDrop::new(self),
         }
