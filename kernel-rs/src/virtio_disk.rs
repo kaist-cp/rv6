@@ -236,20 +236,14 @@ impl Disk {
 
         // MMIO registers are located below KERNBASE, while kernel text and data
         // are located above KERNBASE, so we can safely read/write MMIO registers.
-        assert!(
-            MmioRegs::MagicValue.read() == 0x74726976
-                && MmioRegs::Version.read() == 1
-                && MmioRegs::DeviceId.read() == 2
-                && MmioRegs::VendorId.read() == 0x554d4551,
-            "could not find virtio disk"
-        );
+        MmioRegs::check();
         status.insert(VirtIOStatus::ACKNOWLEDGE);
-        MmioRegs::Status.write(status.bits());
+        MmioRegs::set_status(&status);
         status.insert(VirtIOStatus::DRIVER);
-        MmioRegs::Status.write(status.bits());
+        MmioRegs::set_status(&status);
 
         // Negotiate features
-        let features = VirtIOFeatures::from_bits_truncate(MmioRegs::DeviceFeatures.read())
+        let features = MmioRegs::get_features()
             - (VirtIOFeatures::BLK_F_RO
                 | VirtIOFeatures::BLK_F_SCSI
                 | VirtIOFeatures::BLK_F_CONFIG_WCE
@@ -258,24 +252,24 @@ impl Disk {
                 | VirtIOFeatures::RING_F_EVENT_IDX
                 | VirtIOFeatures::RING_F_INDIRECT_DESC);
 
-        MmioRegs::DriverFeatures.write(features.bits());
+        MmioRegs::set_features(&features);
 
         // Tell device that feature negotiation is complete.
         status.insert(VirtIOStatus::FEATURES_OK);
-        MmioRegs::Status.write(status.bits());
+        MmioRegs::set_status(&status);
 
         // Tell device we're completely ready.
         status.insert(VirtIOStatus::DRIVER_OK);
-        MmioRegs::Status.write(status.bits());
-        MmioRegs::GuestPageSize.write(PGSIZE as _);
+        MmioRegs::set_status(&status);
+        MmioRegs::set_pg_size(PGSIZE as _);
 
         // Initialize queue 0.
-        MmioRegs::QueueSel.write(0);
-        let max = MmioRegs::QueueNumMax.read();
+        MmioRegs::select_queue(0);
+        let max = MmioRegs::get_max_queue();
         assert!(max != 0, "virtio disk has no queue 0");
         assert!(max >= NUM as u32, "virtio disk max queue too short");
-        MmioRegs::QueueNum.write(NUM as _);
-        MmioRegs::QueuePfn.write((self.desc.as_ptr() as usize >> PGSHIFT) as _);
+        MmioRegs::set_queue_size(NUM as _);
+        MmioRegs::set_queue_page_num((self.desc.as_ptr() as usize >> PGSHIFT) as _);
 
         // plic.rs and trap.rs arrange for interrupts from VIRTIO0_IRQ.
     }
@@ -311,6 +305,7 @@ impl Disk {
         // Format the three descriptors.
         // qemu's virtio-blk.c reads them.
 
+        // 1. Set the first descriptor.
         let buf0 = &mut this.info.ops[desc[0].idx];
         *buf0 = VirtIOBlockOutHeader::new(write, sector);
 
@@ -321,6 +316,7 @@ impl Disk {
             next: desc[1].idx as _,
         };
 
+        // 2. Set the second descriptor.
         // Device reads/writes b->data
         this.desc[desc[1].idx] = VirtqDesc {
             addr: b.deref_inner().data.as_ptr() as _,
@@ -333,6 +329,7 @@ impl Disk {
             next: desc[2].idx as _,
         };
 
+        // 3. Set the third descriptor.
         // device writes 0 on success
         this.info.inflight[desc[0].idx].status = true;
 
@@ -361,8 +358,11 @@ impl Disk {
 
         fence(Ordering::SeqCst);
 
+        // Safe since the all three descriptors' fields are well set.
         // Value is queue number.
-        MmioRegs::QueueNotify.write(0);
+        unsafe {
+            MmioRegs::notify_queue(0);
+        }
 
         // Wait for virtio_disk_intr() to say request has finished.
         while b.deref_inner().disk {
@@ -383,7 +383,7 @@ impl Disk {
         // the "used" ring, in which case we may process the new
         // completion entries in this interrupt, and have nothing to do
         // in the next interrupt, which is harmless.
-        MmioRegs::InterruptAck.write(MmioRegs::InterruptStatus.read() & 0x3);
+        MmioRegs::intr_ack_all();
 
         fence(Ordering::SeqCst);
 

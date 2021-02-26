@@ -50,7 +50,7 @@ pub enum MmioRegs {
 }
 
 impl MmioRegs {
-    pub fn read(self) -> u32 {
+    fn read(self) -> u32 {
         // It is safe because
         // * `src` is valid, as the kernel can access [VIRTIO0..VIRTIO0+PGSIZE).
         // * `src` is properly aligned, as self % 4 == 0.
@@ -61,13 +61,97 @@ impl MmioRegs {
         unsafe { ptr::read_volatile((VIRTIO0 as *mut u8).add(self as _) as _) }
     }
 
-    pub fn write(self, src: u32) {
-        // It is safe because
+    unsafe fn write(self, src: u32) {
+        // Usually, this is safe because
         // * `dst` is valid, as the kernel can access [VIRTIO0..VIRTIO0+PGSIZE).
         // * `dst` is properly aligned, as self % 4 == 0.
         // * volatile concurrent accesses are safe.
         //   (https://github.com/kaist-cp/rv6/issues/188#issuecomment-683548362)
+        // However, the caller should be aware of the side effects caused by the driver.
         unsafe { ptr::write_volatile((VIRTIO0 as *mut u8).add(self as _) as _, src) }
+    }
+
+    /// Checks the virtio disk's properties.
+    pub fn check() {
+        assert!(
+            MmioRegs::MagicValue.read() == 0x74726976
+                && MmioRegs::Version.read() == 1
+                && MmioRegs::DeviceId.read() == 2
+                && MmioRegs::VendorId.read() == 0x554d4551,
+            "could not find virtio disk"
+        );
+    }
+
+    /// Sets the virtio status.
+    pub fn set_status(status: &VirtIOStatus) {
+        unsafe {
+            MmioRegs::Status.write(status.bits());
+        }
+    }
+
+    /// Returns the device's virtio features.
+    pub fn get_features() -> VirtIOFeatures {
+        VirtIOFeatures::from_bits_truncate(MmioRegs::DeviceFeatures.read())
+    }
+
+    /// Sets the device's virtio features.
+    pub fn set_features(features: &VirtIOFeatures) {
+        unsafe {
+            MmioRegs::DriverFeatures.write(features.bits());
+        }
+    }
+
+    /// Sets the page size for PFN.
+    pub fn set_pg_size(size: u32) {
+        unsafe {
+            MmioRegs::GuestPageSize.write(size);
+        }
+    }
+
+    /// Selects the current queue.
+    pub fn select_queue(num: u32) {
+        unsafe {
+            MmioRegs::QueueSel.write(num);
+        }
+    }
+
+    /// Returns the max size of the current selected queue.
+    pub fn get_max_queue() -> u32 {
+        MmioRegs::QueueNumMax.read()
+    }
+
+    /// Sets the current selected queue's size.
+    pub fn set_queue_size(size: u32) {
+        unsafe {
+            MmioRegs::QueueNum.write(size);
+        }
+    }
+
+    /// Sets the physical page number of the current selected queue.
+    pub fn set_queue_page_num(pg_num: u32) {
+        unsafe {
+            MmioRegs::QueuePfn.write(pg_num);
+        }
+    }
+
+    /// Notifies the given queue number.
+    ///
+    /// # Safety
+    ///
+    /// After notifying the queue, the driver will read/write the address given through the descriptors.
+    /// The caller must make sure not to give a wrong address.
+    pub unsafe fn notify_queue(num: u32) {
+        unsafe {
+            MmioRegs::QueueNotify.write(num);
+        }
+    }
+
+    /// Acknowledges all interrupts.
+    pub fn intr_ack_all() {
+        let intr_status = MmioRegs::InterruptStatus.read() & 0x3;
+        unsafe {
+            MmioRegs::InterruptAck.write(intr_status);
+        }
     }
 }
 
