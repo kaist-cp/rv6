@@ -43,22 +43,6 @@ pub struct Disk {
     info: DiskInfo,
 }
 
-/// The (entire) avail ring, from the spec.
-/// https://docs.oasis-open.org/virtio/virtio/v1.1/csprd01/virtio-v1.1-csprd01.html#x1-380006
-// It needs repr(C) because it is read by device.
-// https://github.com/kaist-cp/rv6/issues/52
-#[repr(C)]
-struct VirtqAvail {
-    /// always zero
-    flags: u16,
-
-    /// Tells the device how far to look in `ring`.
-    idx: u16,
-
-    /// `desc` indices the device should process.
-    ring: [u16; NUM],
-}
-
 // It must be page-aligned because a virtqueue (desc + avail + used) occupies
 // two or more physically-contiguous pages.
 #[repr(align(4096))]
@@ -107,43 +91,6 @@ impl Disk {
             used: VirtqUsed::zero(),
             info: DiskInfo::zero(),
         }
-    }
-}
-
-impl VirtqDesc {
-    const fn zero() -> Self {
-        Self {
-            addr: 0,
-            len: 0,
-            flags: VirtqDescFlags::FREED,
-            next: 0,
-        }
-    }
-}
-
-impl VirtqAvail {
-    const fn zero() -> Self {
-        Self {
-            flags: 0,
-            idx: 0,
-            ring: [0; NUM],
-        }
-    }
-}
-
-impl VirtqUsed {
-    const fn zero() -> Self {
-        Self {
-            flags: 0,
-            id: 0,
-            ring: [VirtqUsedElem::zero(); NUM],
-        }
-    }
-}
-
-impl VirtqUsedElem {
-    const fn zero() -> Self {
-        Self { id: 0, len: 0 }
     }
 }
 

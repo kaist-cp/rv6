@@ -223,6 +223,37 @@ bitflags! {
     }
 }
 
+/// The (entire) avail ring, from the spec.
+/// https://docs.oasis-open.org/virtio/virtio/v1.1/csprd01/virtio-v1.1-csprd01.html#x1-380006
+// It needs repr(C) because it is read by device.
+// https://github.com/kaist-cp/rv6/issues/52
+#[repr(C)]
+pub struct VirtqAvail {
+    /// always zero
+    pub flags: u16,
+
+    /// Tells the device how far to look in `ring`.
+    pub idx: u16,
+
+    /// `desc` indices the device should process.
+    pub ring: [u16; NUM],
+}
+
+/// https://docs.oasis-open.org/virtio/virtio/v1.1/csprd01/virtio-v1.1-csprd01.html#x1-430008
+// It must be page-aligned.
+// It needs repr(C) because it is read by device.
+// https://github.com/kaist-cp/rv6/issues/52
+#[repr(C, align(4096))]
+pub struct VirtqUsed {
+    /// always zero
+    pub flags: u16,
+
+    /// device increments when it adds a ring[] entry
+    pub id: u16,
+
+    pub ring: [VirtqUsedElem; NUM],
+}
+
 /// One entry in the "used" ring, with which the device tells the driver about
 /// completed requests.
 /// https://docs.oasis-open.org/virtio/virtio/v1.1/csprd01/virtio-v1.1-csprd01.html#x1-430008
@@ -244,17 +275,39 @@ pub const VIRTIO_BLK_T_IN: u32 = 0;
 /// write the disk
 pub const VIRTIO_BLK_T_OUT: u32 = 1;
 
-/// https://docs.oasis-open.org/virtio/virtio/v1.1/csprd01/virtio-v1.1-csprd01.html#x1-430008
-// It must be page-aligned.
-// It needs repr(C) because it is read by device.
-// https://github.com/kaist-cp/rv6/issues/52
-#[repr(C, align(4096))]
-pub struct VirtqUsed {
-    /// always zero
-    pub flags: u16,
+impl VirtqDesc {
+    pub const fn zero() -> Self {
+        Self {
+            addr: 0,
+            len: 0,
+            flags: VirtqDescFlags::FREED,
+            next: 0,
+        }
+    }
+}
 
-    /// device increments when it adds a ring[] entry
-    pub id: u16,
+impl VirtqAvail {
+    pub const fn zero() -> Self {
+        Self {
+            flags: 0,
+            idx: 0,
+            ring: [0; NUM],
+        }
+    }
+}
 
-    pub ring: [VirtqUsedElem; NUM],
+impl VirtqUsed {
+    pub const fn zero() -> Self {
+        Self {
+            flags: 0,
+            id: 0,
+            ring: [VirtqUsedElem::zero(); NUM],
+        }
+    }
+}
+
+impl VirtqUsedElem {
+    pub const fn zero() -> Self {
+        Self { id: 0, len: 0 }
+    }
 }
