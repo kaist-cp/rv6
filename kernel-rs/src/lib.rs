@@ -86,5 +86,4 @@ mod trap;
 mod uart;
 mod utils;
 mod virtio;
-mod virtio_disk;
 mod vm;

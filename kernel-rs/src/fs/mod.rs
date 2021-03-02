@@ -15,9 +15,7 @@ use core::{cmp, mem};
 
 use spin::Once;
 
-use crate::{
-    bio::Buf, kernel::kernel, param::BSIZE, sleepablelock::Sleepablelock, virtio_disk::Disk,
-};
+use crate::{bio::Buf, kernel::kernel, param::BSIZE, sleepablelock::Sleepablelock, virtio::Disk};
 
 mod inode;
 mod log;

@@ -15,8 +15,12 @@ use bitflags::bitflags;
 
 use crate::memlayout::VIRTIO0;
 
+mod virtio_disk;
+
+pub use virtio_disk::Disk;
+
 #[repr(usize)]
-pub enum MmioRegs {
+enum MmioRegs {
     /// 0x74726976
     MagicValue = 0x000,
     /// version; 1 is legacy
@@ -157,7 +161,7 @@ impl MmioRegs {
 
 bitflags! {
     /// Status register bits, from qemu virtio_config.h
-    pub struct VirtIOStatus: u32 {
+    struct VirtIOStatus: u32 {
         const ACKNOWLEDGE = 0b0001;
         const DRIVER = 0b0010;
         const DRIVER_OK = 0b0100;
@@ -167,7 +171,7 @@ bitflags! {
 
 bitflags! {
     // Device feature bits
-    pub struct VirtIOFeatures: u32 {
+    struct VirtIOFeatures: u32 {
         /// Disk is read-only
         const BLK_F_RO = 1 << 5;
 
@@ -196,7 +200,7 @@ bitflags! {
 }
 
 /// This many virtio descriptors. It must be a power of two.
-pub const NUM: usize = 1 << 3;
+const NUM: usize = 1 << 3;
 
 /// A single descriptor, from the spec.
 /// https://docs.oasis-open.org/virtio/virtio/v1.1/csprd01/virtio-v1.1-csprd01.html#x1-320005
@@ -204,7 +208,7 @@ pub const NUM: usize = 1 << 3;
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub struct VirtqDesc {
+struct VirtqDesc {
     pub addr: usize,
     pub len: u32,
     pub flags: VirtqDescFlags,
@@ -212,7 +216,7 @@ pub struct VirtqDesc {
 }
 
 bitflags! {
-    pub struct VirtqDescFlags: u16 {
+    struct VirtqDescFlags: u16 {
         const FREED = 0b00;
 
         /// chained with another descriptor
@@ -228,7 +232,7 @@ bitflags! {
 // It needs repr(C) because it is read by device.
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
-pub struct VirtqAvail {
+struct VirtqAvail {
     /// always zero
     pub flags: u16,
 
@@ -244,7 +248,7 @@ pub struct VirtqAvail {
 // It needs repr(C) because it is read by device.
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C, align(4096))]
-pub struct VirtqUsed {
+struct VirtqUsed {
     /// always zero
     pub flags: u16,
 
@@ -261,7 +265,7 @@ pub struct VirtqUsed {
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub struct VirtqUsedElem {
+struct VirtqUsedElem {
     /// index of start of completed descriptor chain
     pub id: u32,
 
@@ -270,10 +274,10 @@ pub struct VirtqUsedElem {
 
 /// for disk ops
 /// read the disk
-pub const VIRTIO_BLK_T_IN: u32 = 0;
+const VIRTIO_BLK_T_IN: u32 = 0;
 
 /// write the disk
-pub const VIRTIO_BLK_T_OUT: u32 = 1;
+const VIRTIO_BLK_T_OUT: u32 = 1;
 
 impl VirtqDesc {
     pub const fn zero() -> Self {

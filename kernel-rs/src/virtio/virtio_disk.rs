@@ -1,3 +1,8 @@
+/// Driver for qemu's virtio disk device.
+/// Uses qemu's mmio interface to virtio.
+/// qemu presents a "legacy" virtio interface.
+///
+/// qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 use core::array::IntoIter;
 use core::mem;
 use core::ptr;
@@ -5,18 +10,16 @@ use core::sync::atomic::{fence, Ordering};
 
 use arrayvec::ArrayVec;
 
-/// Driver for qemu's virtio disk device.
-/// Uses qemu's mmio interface to virtio.
-/// qemu presents a "legacy" virtio interface.
-///
-/// qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+use super::{
+    MmioRegs, VirtIOFeatures, VirtIOStatus, VirtqAvail, VirtqDesc, VirtqDescFlags, VirtqUsed, NUM,
+    VIRTIO_BLK_T_IN, VIRTIO_BLK_T_OUT,
+};
 use crate::{
     bio::Buf,
     kernel::kernel,
     param::BSIZE,
     riscv::{PGSHIFT, PGSIZE},
     sleepablelock::{Sleepablelock, SleepablelockGuard},
-    virtio::*,
 };
 
 // It must be page-aligned.
