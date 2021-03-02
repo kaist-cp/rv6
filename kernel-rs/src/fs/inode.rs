@@ -777,11 +777,16 @@ impl Inode {
 }
 
 impl Itable {
-    pub const fn zero() -> Self {
-        Spinlock::new(
-            "ITABLE",
-            ArrayArena::new(array![_ => ArrayEntry::new(Inode::zero()); NINODE]),
-        )
+    /// # Safety
+    ///
+    /// The caller should make sure that `Itable` never gets moved.
+    pub const unsafe fn zero() -> Self {
+        unsafe {
+            Spinlock::new_unchecked(
+                "ITABLE",
+                ArrayArena::new(array![_ => ArrayEntry::new(Inode::zero()); NINODE]),
+            )
+        }
     }
 
     /// Find the inode with number inum on device dev

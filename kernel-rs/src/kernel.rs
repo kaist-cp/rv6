@@ -114,8 +114,9 @@ impl Kernel {
                 read: None,
                 write: None,
             }; NDEV],
-            ftable: FileTable::zero(),
-            itable: Itable::zero(),
+            // Safe since the only way to access `ftable` and `itable` is through `kernel()`, which is an immutable reference.
+            ftable: unsafe { FileTable::zero() },
+            itable: unsafe { Itable::zero() },
             file_system: FileSystem::zero(),
         }
     }

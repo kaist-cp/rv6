@@ -1,4 +1,4 @@
-use core::marker::PhantomData;
+use core::marker::{PhantomData, PhantomPinned};
 use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;
 use core::pin::Pin;
@@ -71,13 +71,18 @@ pub trait ArenaObject {
     fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>);
 }
 
+#[pin_project]
 pub struct ArrayEntry<T> {
     refcnt: usize,
     data: T,
+    #[pin]
+    _marker: PhantomPinned,
 }
 
 /// A homogeneous memory allocator equipped with reference counts.
+#[pin_project]
 pub struct ArrayArena<T, const CAPACITY: usize> {
+    #[pin]
     entries: [ArrayEntry<T>; CAPACITY],
 }
 
@@ -145,7 +150,11 @@ pub struct Rc<'s, A: Arena, T: Deref<Target = A>> {
 
 impl<T> ArrayEntry<T> {
     pub const fn new(data: T) -> Self {
-        Self { refcnt: 0, data }
+        Self {
+            refcnt: 0,
+            data,
+            _marker: PhantomPinned,
+        }
     }
 }
 
@@ -185,18 +194,24 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         c: C,
         n: N,
     ) -> Option<Self::Handle<'_>> {
-        let mut this = self.lock();
+        let mut guard = self.lock();
+        let this = guard.get_pin_mut().project();
 
         let mut empty: *mut ArrayEntry<T> = ptr::null_mut();
-        for entry in &mut this.entries {
+        let iter: IterPinMut<'_, ArrayEntry<T>> = this.entries.into();
+        for mut entry in iter {
             if entry.refcnt != 0 {
-                if c(&entry.data) {
-                    entry.refcnt += 1;
+                if c(&entry.as_mut().project().data) {
+                    *entry.as_mut().project().refcnt += 1;
                     // It is safe because entry is a part of self, whose lifetime is 's.
-                    return Some(unsafe { ArrayPtr::new(NonNull::from(entry)) });
+                    // Also, we do not use the entry until it gets deallocated.
+                    return Some(unsafe {
+                        ArrayPtr::new(NonNull::from(entry.get_unchecked_mut()))
+                    });
                 }
             } else if empty.is_null() {
-                empty = entry;
+                // Safe since we do not use the entry until it gets deallocated.
+                empty = unsafe { entry.get_unchecked_mut() };
                 break;
             }
         }
@@ -214,14 +229,17 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     }
 
     fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Self::Handle<'_>> {
-        let mut this = self.lock();
+        let mut guard = self.lock();
+        let this = guard.get_pin_mut().project();
 
-        for entry in &mut this.entries {
+        let iter: IterPinMut<'_, ArrayEntry<T>> = this.entries.into();
+        for mut entry in iter {
             if entry.refcnt == 0 {
-                entry.refcnt = 1;
-                f(&mut entry.data);
+                *entry.as_mut().project().refcnt = 1;
+                f(entry.as_mut().project().data);
                 // It is safe because entry is a part of self, whose lifetime is 's.
-                return Some(unsafe { ArrayPtr::new(NonNull::from(entry)) });
+                // Also, we do not use the entry until it gets deallocated.
+                return Some(unsafe { ArrayPtr::new(NonNull::from(entry.get_unchecked_mut())) });
             }
         }
 

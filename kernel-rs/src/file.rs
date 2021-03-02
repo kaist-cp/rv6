@@ -221,11 +221,16 @@ impl ArenaObject for File {
 }
 
 impl FileTable {
-    pub const fn zero() -> Self {
-        Spinlock::new(
-            "FTABLE",
-            ArrayArena::new(array![_ => ArrayEntry::new(File::zero()); NFILE]),
-        )
+    /// # Safety
+    ///
+    /// The caller should make sure that `FileTable` never gets moved.
+    pub const unsafe fn zero() -> Self {
+        unsafe {
+            Spinlock::new_unchecked(
+                "FTABLE",
+                ArrayArena::new(array![_ => ArrayEntry::new(File::zero()); NFILE]),
+            )
+        }
     }
 
     /// Allocate a file structure.
