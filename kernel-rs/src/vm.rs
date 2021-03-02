@@ -1,4 +1,13 @@
-use core::{cmp, marker::PhantomData, mem, ops::Add, ptr, slice};
+use core::{
+    cmp,
+    marker::{PhantomData, PhantomPinned},
+    mem,
+    ops::Add,
+    pin::Pin,
+    ptr, slice,
+};
+
+use pin_project::pin_project;
 
 use crate::{
     fs::InodeGuard,
@@ -141,10 +150,10 @@ impl PageTableEntry {
     /// Return `Some(..)` if it refers to a page-table page.
     /// Return `None` if it refers to a data page.
     /// Return `None` if it is invalid.
-    fn as_table_mut(&mut self) -> Option<&mut RawPageTable> {
+    fn as_table_mut(&mut self) -> Option<Pin<&mut RawPageTable>> {
         if self.is_table() {
             // This is safe because of the invariant.
-            Some(unsafe { &mut *(pte2pa(self.inner).into_usize() as *mut _) })
+            Some(unsafe { Pin::new_unchecked(&mut *(pte2pa(self.inner).into_usize() as *mut _)) })
         } else {
             None
         }
@@ -157,8 +166,12 @@ const PTE_PER_PT: usize = PGSIZE / mem::size_of::<PageTableEntry>();
 ///
 /// It should be converted to a Page by Page::from_usize(self.inner.as_ptr() as _)
 /// without breaking the invariants of Page.
+/// Also, it is always pinned.
+#[pin_project]
 struct RawPageTable {
     inner: [PageTableEntry; PTE_PER_PT],
+    #[pin]
+    _marker: PhantomPinned,
 }
 
 impl RawPageTable {
@@ -178,8 +191,12 @@ impl RawPageTable {
     /// allocation has failed.
     /// Return `None` if the `index`th entry refers to a data page.
     /// Return `None` if the `index`th entry is invalid and `alloc` is false.
-    fn get_table_mut(&mut self, index: usize, alloc: bool) -> Option<&mut RawPageTable> {
-        let pte = &mut self.inner[index];
+    fn get_table_mut(
+        self: Pin<&mut Self>,
+        index: usize,
+        alloc: bool,
+    ) -> Option<Pin<&mut RawPageTable>> {
+        let pte = &mut self.project().inner[index];
         if !pte.is_valid() {
             if !alloc {
                 return None;
@@ -193,8 +210,8 @@ impl RawPageTable {
     /// Return a `PageTableEntry` if the `index`th entry refers to a data page.
     /// Return a `PageTableEntry` if the `index`th entry is invalid.
     /// Panic if the `index`th entry refers to a page-table page.
-    fn get_entry_mut(&mut self, index: usize) -> &mut PageTableEntry {
-        let pte = &mut self.inner[index];
+    fn get_entry_mut(self: Pin<&mut Self>, index: usize) -> &mut PageTableEntry {
+        let pte = &mut self.project().inner[index];
         assert!(!pte.is_table());
         pte
     }
@@ -206,9 +223,9 @@ impl RawPageTable {
     ///
     /// This method frees the page table itself, so this page table must
     /// not be used after an invocation of this method.
-    unsafe fn free_walk(&mut self) {
+    unsafe fn free_walk(mut self: Pin<&mut Self>) {
         // There are 2^9 = 512 PTEs in a page table.
-        for pte in &mut self.inner {
+        for pte in self.as_mut().project().inner {
             if let Some(ptable) = pte.as_table_mut() {
                 // It is safe because ptable will not be used anymore.
                 unsafe { ptable.free_walk() };
@@ -270,8 +287,8 @@ impl<A: VAddr> PageTable<A> {
     fn get_mut(&mut self, va: A, alloc: bool) -> Option<&mut PageTableEntry> {
         assert!(va.into_usize() < MAXVA, "PageTable::get_mut");
         // It is safe because self.ptr uniquely refers to a valid RawPageTable
-        // according to the invariant.
-        let mut page_table = unsafe { &mut *self.ptr };
+        // according to the invariant. Also, we always pin the `RawPageTable`.
+        let mut page_table = unsafe { Pin::new_unchecked(&mut *self.ptr) };
         for level in (1..3).rev() {
             page_table = page_table.get_table_mut(va.px(level), alloc)?;
         }
@@ -313,7 +330,7 @@ impl<A: VAddr> Drop for PageTable<A> {
         // It is safe because
         // * self.ptr is a valid pointer.
         // * this page table is being dropped, and its ptr will not be used anymore.
-        unsafe { (*self.ptr).free_walk() };
+        unsafe { Pin::new_unchecked(&mut *self.ptr).free_walk() };
     }
 }
 
