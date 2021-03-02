@@ -76,7 +76,7 @@ impl MmioRegs {
     }
 
     /// Checks the virtio disk's properties.
-    pub fn check() {
+    fn check() {
         assert!(
             MmioRegs::MagicValue.read() == 0x74726976
                 && MmioRegs::Version.read() == 1
@@ -87,52 +87,52 @@ impl MmioRegs {
     }
 
     /// Sets the virtio status.
-    pub fn set_status(status: &VirtIOStatus) {
+    fn set_status(status: &VirtIOStatus) {
         unsafe {
             MmioRegs::Status.write(status.bits());
         }
     }
 
     /// Returns the device's virtio features.
-    pub fn get_features() -> VirtIOFeatures {
+    fn get_features() -> VirtIOFeatures {
         VirtIOFeatures::from_bits_truncate(MmioRegs::DeviceFeatures.read())
     }
 
     /// Sets the device's virtio features.
-    pub fn set_features(features: &VirtIOFeatures) {
+    fn set_features(features: &VirtIOFeatures) {
         unsafe {
             MmioRegs::DriverFeatures.write(features.bits());
         }
     }
 
     /// Sets the page size for PFN.
-    pub fn set_pg_size(size: u32) {
+    fn set_pg_size(size: u32) {
         unsafe {
             MmioRegs::GuestPageSize.write(size);
         }
     }
 
     /// Selects the current queue.
-    pub fn select_queue(num: u32) {
+    fn select_queue(num: u32) {
         unsafe {
             MmioRegs::QueueSel.write(num);
         }
     }
 
     /// Returns the max size of the current selected queue.
-    pub fn get_max_queue() -> u32 {
+    fn get_max_queue() -> u32 {
         MmioRegs::QueueNumMax.read()
     }
 
     /// Sets the current selected queue's size.
-    pub fn set_queue_size(size: u32) {
+    fn set_queue_size(size: u32) {
         unsafe {
             MmioRegs::QueueNum.write(size);
         }
     }
 
     /// Sets the physical page number of the current selected queue.
-    pub fn set_queue_page_num(pg_num: u32) {
+    fn set_queue_page_num(pg_num: u32) {
         unsafe {
             MmioRegs::QueuePfn.write(pg_num);
         }
@@ -144,14 +144,14 @@ impl MmioRegs {
     ///
     /// After notifying the queue, the driver will read/write the address given through the descriptors.
     /// The caller must make sure not to give a wrong address.
-    pub unsafe fn notify_queue(num: u32) {
+    unsafe fn notify_queue(num: u32) {
         unsafe {
             MmioRegs::QueueNotify.write(num);
         }
     }
 
     /// Acknowledges all interrupts.
-    pub fn intr_ack_all() {
+    fn intr_ack_all() {
         let intr_status = MmioRegs::InterruptStatus.read() & 0x3;
         unsafe {
             MmioRegs::InterruptAck.write(intr_status);
@@ -209,10 +209,10 @@ const NUM: usize = 1 << 3;
 #[repr(C)]
 #[derive(Copy, Clone)]
 struct VirtqDesc {
-    pub addr: usize,
-    pub len: u32,
-    pub flags: VirtqDescFlags,
-    pub next: u16,
+    addr: usize,
+    len: u32,
+    flags: VirtqDescFlags,
+    next: u16,
 }
 
 bitflags! {
@@ -234,13 +234,13 @@ bitflags! {
 #[repr(C)]
 struct VirtqAvail {
     /// always zero
-    pub flags: u16,
+    flags: u16,
 
     /// Tells the device how far to look in `ring`.
-    pub idx: u16,
+    idx: u16,
 
     /// `desc` indices the device should process.
-    pub ring: [u16; NUM],
+    ring: [u16; NUM],
 }
 
 /// https://docs.oasis-open.org/virtio/virtio/v1.1/csprd01/virtio-v1.1-csprd01.html#x1-430008
@@ -250,12 +250,12 @@ struct VirtqAvail {
 #[repr(C, align(4096))]
 struct VirtqUsed {
     /// always zero
-    pub flags: u16,
+    flags: u16,
 
     /// device increments when it adds a ring[] entry
-    pub id: u16,
+    id: u16,
 
-    pub ring: [VirtqUsedElem; NUM],
+    ring: [VirtqUsedElem; NUM],
 }
 
 /// One entry in the "used" ring, with which the device tells the driver about
@@ -267,9 +267,9 @@ struct VirtqUsed {
 #[derive(Copy, Clone)]
 struct VirtqUsedElem {
     /// index of start of completed descriptor chain
-    pub id: u32,
+    id: u32,
 
-    pub len: u32,
+    len: u32,
 }
 
 /// for disk ops
@@ -280,7 +280,7 @@ const VIRTIO_BLK_T_IN: u32 = 0;
 const VIRTIO_BLK_T_OUT: u32 = 1;
 
 impl VirtqDesc {
-    pub const fn zero() -> Self {
+    const fn zero() -> Self {
         Self {
             addr: 0,
             len: 0,
@@ -291,7 +291,7 @@ impl VirtqDesc {
 }
 
 impl VirtqAvail {
-    pub const fn zero() -> Self {
+    const fn zero() -> Self {
         Self {
             flags: 0,
             idx: 0,
@@ -301,7 +301,7 @@ impl VirtqAvail {
 }
 
 impl VirtqUsed {
-    pub const fn zero() -> Self {
+    const fn zero() -> Self {
         Self {
             flags: 0,
             id: 0,
@@ -311,7 +311,7 @@ impl VirtqUsed {
 }
 
 impl VirtqUsedElem {
-    pub const fn zero() -> Self {
+    const fn zero() -> Self {
         Self { id: 0, len: 0 }
     }
 }
