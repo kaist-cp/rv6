@@ -204,7 +204,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
                 if c(&entry.as_mut().project().data) {
                     *entry.as_mut().project().refcnt += 1;
                     // It is safe because entry is a part of self, whose lifetime is 's.
-                    // Also, we do not use the entry until it gets deallocated.
+                    // Also, the arena does not use the entry until it gets deallocated.
                     return Some(unsafe {
                         ArrayPtr::new(NonNull::from(entry.get_unchecked_mut()))
                     });
@@ -238,7 +238,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
                 *entry.as_mut().project().refcnt = 1;
                 f(entry.as_mut().project().data);
                 // It is safe because entry is a part of self, whose lifetime is 's.
-                // Also, we do not use the entry until it gets deallocated.
+                // Also, the arena does not use the entry until it gets deallocated.
                 return Some(unsafe { ArrayPtr::new(NonNull::from(entry.get_unchecked_mut())) });
             }
         }
