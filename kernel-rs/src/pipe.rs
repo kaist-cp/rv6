@@ -1,4 +1,4 @@
-use core::{mem, ops::Deref, ptr::NonNull};
+use core::{marker::PhantomPinned, mem, ops::Deref, ptr::NonNull};
 
 use static_assertions::const_assert;
 
@@ -38,6 +38,9 @@ pub struct Pipe {
 
     /// WaitChannel for saying all bytes in Pipe.data are already read.
     write_waitchannel: WaitChannel,
+
+    /// Must be `!Unpin`, since `AllocatedPipe::ptr` points to `Pipe`.
+    _marker: PhantomPinned,
 }
 
 impl Pipe {
@@ -160,6 +163,7 @@ impl AllocatedPipe {
                 ),
                 read_waitchannel: WaitChannel::new(),
                 write_waitchannel: WaitChannel::new(),
+                _marker: PhantomPinned,
             };
         }
         let f0 = kernel()
