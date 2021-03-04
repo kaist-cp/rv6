@@ -71,6 +71,7 @@ pub trait ArenaObject {
     fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>);
 }
 
+// `ArrayEntry` should be pinned, since `ArrayPtr` points to it.
 #[pin_project]
 pub struct ArrayEntry<T> {
     refcnt: usize,
@@ -90,6 +91,7 @@ pub struct ArrayArena<T, const CAPACITY: usize> {
 ///
 /// `ptr` is a valid pointer to `ArrayEntry<T>` and has lifetime `'s`.
 /// Always acquire the `Spinlock<ArrayArena<T, CAPACITY>>` before modifying `ArrayEntry<T>`.
+/// Also, never move `ArrayEntry<T>`.
 pub struct ArrayPtr<'s, T> {
     ptr: NonNull<ArrayEntry<T>>,
     _marker: PhantomData<&'s T>,
@@ -112,6 +114,8 @@ impl<'s, T> ArrayPtr<'s, T> {
     }
 }
 
+// `MruEntry` should be pinned, because `MruPtr` points to it
+// and because `ListEntry` is pinned.
 #[pin_project]
 #[repr(C)]
 pub struct MruEntry<T> {

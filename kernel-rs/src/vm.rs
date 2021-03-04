@@ -166,7 +166,7 @@ const PTE_PER_PT: usize = PGSIZE / mem::size_of::<PageTableEntry>();
 ///
 /// It should be converted to a Page by Page::from_usize(self.inner.as_ptr() as _)
 /// without breaking the invariants of Page.
-/// Also, it is always pinned.
+/// Also, it is always pinned, since `PageTable` points to it.
 #[pin_project]
 struct RawPageTable {
     inner: [PageTableEntry; PTE_PER_PT],
