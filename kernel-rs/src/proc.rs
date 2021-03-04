@@ -356,7 +356,8 @@ pub struct Proc {
     /// If true, the process have been killed.
     killed: AtomicBool,
 
-    // Should be `!Unpin`, because of the `Proc::parent` pointer.
+    // `Proc` should be `!Unpin`, because there are many pointers that point to `Proc`,
+    // such as `Proc::parent`, `Cpu::proc`, or `ProcessSystem::initial_proc`.
     #[pin]
     _marker: PhantomPinned,
 }
