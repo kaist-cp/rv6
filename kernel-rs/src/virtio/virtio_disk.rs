@@ -186,7 +186,7 @@ impl Disk {
 
         // MMIO registers are located below KERNBASE, while kernel text and data
         // are located above KERNBASE, so we can safely read/write MMIO registers.
-        MmioRegs::check();
+        MmioRegs::check_virtio_disk();
         status.insert(VirtIOStatus::ACKNOWLEDGE);
         MmioRegs::set_status(&status);
         status.insert(VirtIOStatus::DRIVER);
@@ -214,12 +214,7 @@ impl Disk {
         MmioRegs::set_pg_size(PGSIZE as _);
 
         // Initialize queue 0.
-        MmioRegs::select_queue(0);
-        let max = MmioRegs::get_max_queue();
-        assert!(max != 0, "virtio disk has no queue 0");
-        assert!(max >= NUM as u32, "virtio disk max queue too short");
-        MmioRegs::set_queue_size(NUM as _);
-        MmioRegs::set_queue_page_num((self.desc.as_ptr() as usize >> PGSHIFT) as _);
+        MmioRegs::select_and_init_queue(0, NUM as _, (self.desc.as_ptr() as usize >> PGSHIFT) as _)
 
         // plic.rs and trap.rs arrange for interrupts from VIRTIO0_IRQ.
     }
