@@ -2,7 +2,6 @@ use core::mem;
 
 use crate::{
     kernel::{kernel, Kernel},
-    lock::Lock,
     memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
     ok_or,
     plic::{plic_claim, plic_complete},

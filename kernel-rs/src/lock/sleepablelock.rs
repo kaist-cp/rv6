@@ -1,29 +1,52 @@
 //! Sleepable locks
 use core::cell::UnsafeCell;
-use core::marker::PhantomData;
-use core::ops::{Deref, DerefMut};
-use core::pin::Pin;
 
-use super::{Lock, RawSpinlock, Waitable};
+use super::{Guard, Lock, RawLock, RawSpinlock};
 use crate::{kernel::kernel_builder, proc::WaitChannel};
 
-/// Sleepable locks
-pub struct Sleepablelock<T> {
+/// Mutual exclusion spin locks that can sleep.
+pub struct RawSleepablelock {
     lock: RawSpinlock,
     /// WaitChannel saying spinlock is released.
     waitchannel: WaitChannel,
-    data: UnsafeCell<T>,
 }
 
-unsafe impl<T: Send> Sync for Sleepablelock<T> {}
+/// Similar to `Spinlock`, but guards of this lock can sleep.   
+pub type Sleepablelock<T> = Lock<RawSleepablelock, T>;
+pub type SleepablelockGuard<'s, T> = Guard<'s, RawSleepablelock, T>;
 
-pub struct SleepablelockGuard<'s, T> {
-    lock: &'s Sleepablelock<T>,
-    _marker: PhantomData<*const ()>,
+impl RawSleepablelock {
+    /// Mutual exclusion spin locks.
+    const fn new(name: &'static str) -> Self {
+        Self {
+            lock: RawSpinlock::new(name),
+            waitchannel: WaitChannel::new(),
+        }
+    }
+
+    pub fn sleep<T>(&self, guard: &mut Guard<'_, Self, T>) {
+        self.waitchannel
+            .sleep(guard, &kernel_builder().current_proc().expect("No current proc"));
+    }
+
+    pub fn wakeup(&self) {
+        self.waitchannel.wakeup();
+    }
 }
 
-// Do not implement Send; lock must be unlocked by the CPU that acquired it.
-unsafe impl<'s, T: Sync> Sync for SleepablelockGuard<'s, T> {}
+impl RawLock for RawSleepablelock {
+    fn acquire(&self) {
+        self.lock.acquire();
+    }
+
+    fn release(&self) {
+        self.lock.release();
+    }
+
+    fn holding(&self) -> bool {
+        self.lock.holding()
+    }
+}
 
 impl<T> Sleepablelock<T> {
     /// Returns a new `Sleepablelock` with name `name` and data `data`.
@@ -36,8 +59,7 @@ impl<T> Sleepablelock<T> {
     /// make sure that the `Sleepablelock` itself never gets moved.
     pub const unsafe fn new_unchecked(name: &'static str, data: T) -> Self {
         Self {
-            lock: RawSpinlock::new(name),
-            waitchannel: WaitChannel::new(),
+            lock: RawSleepablelock::new(name),
             data: UnsafeCell::new(data),
         }
     }
@@ -51,83 +73,12 @@ impl<T: Unpin> Sleepablelock<T> {
     }
 }
 
-impl<T: 'static> Lock for Sleepablelock<T> {
-    type Data = T;
-    type Guard<'s> = SleepablelockGuard<'s, T>;
-
-    fn lock(&self) -> SleepablelockGuard<'_, T> {
-        self.lock.acquire();
-
-        SleepablelockGuard {
-            lock: self,
-            _marker: PhantomData,
-        }
-    }
-
-    fn get_mut_raw(&self) -> *mut T {
-        self.data.get()
-    }
-
-    fn into_inner(self) -> T {
-        self.data.into_inner()
-    }
-
-    unsafe fn unlock(&self) {
-        self.lock.release();
-    }
-
-    fn holding(&self) -> bool {
-        self.lock.holding()
-    }
-}
-
 impl<T> SleepablelockGuard<'_, T> {
     pub fn sleep(&mut self) {
-        self.lock.waitchannel.sleep(
-            self,
-            &kernel_builder().current_proc().expect("No current proc"),
-        );
+        self.lock.lock.sleep(self);
     }
 
     pub fn wakeup(&self) {
-        self.lock.waitchannel.wakeup();
-    }
-
-    /// Returns a pinned mutable reference to the inner data.
-    pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
-        // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
-        unsafe { Pin::new_unchecked(&mut *self.lock.data.get()) }
-    }
-}
-
-impl<T> Waitable for SleepablelockGuard<'_, T> {
-    unsafe fn raw_release(&mut self) {
-        self.lock.lock.release();
-    }
-
-    unsafe fn raw_acquire(&mut self) {
-        self.lock.lock.acquire();
-    }
-}
-
-impl<T> Drop for SleepablelockGuard<'_, T> {
-    fn drop(&mut self) {
-        self.lock.lock.release();
-    }
-}
-
-impl<T> Deref for SleepablelockGuard<'_, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { &*self.lock.data.get() }
-    }
-}
-
-// We can mutably dereference the guard only when `T: Unpin`.
-// If `T: !Unpin`, use `SleeplockGuard::get_pin()` instead.
-impl<T: Unpin> DerefMut for SleepablelockGuard<'_, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.lock.data.get() }
+        self.lock.lock.wakeup();
     }
 }

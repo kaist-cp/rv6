@@ -16,18 +16,19 @@
 //! # SpinlockProtected
 //! TODO
 
+use core::cell::UnsafeCell;
+use core::marker::PhantomData;
+use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 
-mod rawspinlock;
 mod sleepablelock;
 mod sleeplock;
 mod spinlock;
 mod spinlock_protected;
 
-pub use rawspinlock::*; //TODO: only use push_off/pop_off
 pub use sleepablelock::{Sleepablelock, SleepablelockGuard};
 pub use sleeplock::{Sleeplock, SleeplockGuard};
-pub use spinlock::{Spinlock, SpinlockGuard};
+pub use spinlock::{pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard}; /* TODO: Remove RawSpinlock */
 pub use spinlock_protected::{SpinlockProtected, SpinlockProtectedGuard};
 
 /// Lock guards that can be slept in a `WaitChannel`.
@@ -50,47 +51,136 @@ pub trait Waitable {
     unsafe fn raw_acquire(&mut self);
 }
 
-/// Locks that own a raw lock.
-pub trait Lock {
-    type Data;
-    type Guard<'s>;
+pub trait RawLock {
+    /// Acquires the lock.
+    fn acquire(&self);
+    /// Releases the lock.
+    fn release(&self);
+    /// Check whether this cpu is holding the lock.
+    fn holding(&self) -> bool;
+}
 
+pub struct Lock<R: RawLock, T> {
+    lock: R,
+    data: UnsafeCell<T>,
+}
+
+unsafe impl<R: RawLock, T: Send> Sync for Lock<R, T> {}
+
+pub struct Guard<'s, R: RawLock, T> {
+    lock: &'s Lock<R, T>,
+    _marker: PhantomData<*const ()>,
+}
+
+// Do not implement Send; lock must be unlocked by the CPU that acquired it.
+unsafe impl<'s, T: Sync> Sync for SpinlockGuard<'s, T> {}
+
+impl<R: RawLock, T> Lock<R, T> {
     /// Acquires the lock and returns the lock guard.
-    fn lock(&self) -> Self::Guard<'_>;
+    pub fn lock(&self) -> Guard<'_, R, T> {
+        self.lock.acquire();
+
+        Guard {
+            lock: self,
+            _marker: PhantomData,
+        }
+    }
 
     /// Returns a mutable reference to the inner data.
     /// The returned pointer is valid until this lock is moved or dropped.
     /// The caller must ensure that accessing the pointer does not incur race.
     /// Also, if `T: !Unpin`, the caller must not move the data using the pointer.
-    fn get_mut_raw(&self) -> *mut Self::Data;
+    pub fn get_mut_raw(&self) -> *mut T {
+        self.data.get()
+    }
 
     /// Returns a pinned mutable reference to the inner data.
-    fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut Self::Data> {
+    pub fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut T> {
         // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
         unsafe { Pin::new_unchecked(&mut *self.get_mut_raw()) }
     }
 
     /// Returns a mutable reference to the inner data.
-    fn get_mut(&mut self) -> &mut Self::Data
+    pub fn get_mut(&mut self) -> &mut T
     where
-        Self::Data: Unpin,
+        T: Unpin,
     {
         // Safe since we have a mutable reference of the lock.
         unsafe { &mut *self.get_mut_raw() }
     }
 
     /// Consumes the lock and returns the inner data.
-    fn into_inner(self) -> Self::Data
+    pub fn into_inner(self) -> T
     where
-        Self::Data: Unpin;
+        T: Unpin,
+    {
+        self.data.into_inner()
+    }
+
+    // TODO: Add lock_and_forget()?
 
     /// Unlock the lock.
     ///
     /// # Safety
     ///
     /// Use this only when we acquired the lock but did `mem::forget()` to the guard.
-    unsafe fn unlock(&self);
+    pub unsafe fn unlock(&self) {
+        self.lock.release();
+    }
 
     /// Check whether this cpu is holding the lock.
-    fn holding(&self) -> bool;
+    pub fn holding(&self) -> bool {
+        self.lock.holding()
+    }
+}
+
+impl<R: RawLock, T> Guard<'_, R, T> {
+    pub fn reacquire_after<F, U>(&mut self, f: F) -> U
+    where
+        F: FnOnce() -> U,
+    {
+        self.lock.lock.release();
+        let result = f();
+        self.lock.lock.acquire();
+        result
+    }
+
+    /// Returns a pinned mutable reference to the inner data.
+    pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
+        // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
+        unsafe { Pin::new_unchecked(&mut *self.lock.data.get()) }
+    }
+}
+
+// TODO: Remove
+impl<R: RawLock, T> Waitable for Guard<'_, R, T> {
+    unsafe fn raw_release(&mut self) {
+        self.lock.lock.release();
+    }
+
+    unsafe fn raw_acquire(&mut self) {
+        self.lock.lock.acquire();
+    }
+}
+
+impl<R: RawLock, T> Drop for Guard<'_, R, T> {
+    fn drop(&mut self) {
+        self.lock.lock.release();
+    }
+}
+
+impl<R: RawLock, T> Deref for Guard<'_, R, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.lock.data.get() }
+    }
+}
+
+// We can mutably dereference the guard only when `T: Unpin`.
+// If `T: !Unpin`, use `Guard::get_pin_mut()` instead.
+impl<R: RawLock, T: Unpin> DerefMut for Guard<'_, R, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *self.lock.data.get() }
+    }
 }

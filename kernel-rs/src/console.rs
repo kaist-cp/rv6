@@ -1,12 +1,7 @@
 use core::fmt;
 
 use crate::{
-    file::Devsw,
-    kernel::kernel_builder,
-    lock::{Lock, SleepablelockGuard},
-    param::NDEV,
-    uart::Uart,
-    vm::UVAddr,
+    file::Devsw, kernel::kernel_builder, lock::SleepablelockGuard, param::NDEV, uart::Uart, vm::UVAddr,
 };
 
 const CONSOLE_IN_DEVSW: usize = 1;

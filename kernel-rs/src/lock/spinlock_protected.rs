@@ -1,6 +1,6 @@
 use core::{cell::UnsafeCell, marker::PhantomData, pin::Pin, ptr};
 
-use super::{RawSpinlock, Waitable};
+use super::{RawLock, RawSpinlock, Waitable};
 
 /// Similar to `Spinlock<T>`, but instead of internally owning a `RawSpinlock`,
 /// this stores a `'static` reference to an external `RawSpinlock` that was provided by the caller.
