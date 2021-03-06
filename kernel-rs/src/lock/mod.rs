@@ -28,28 +28,8 @@ mod spinlock_protected;
 
 pub use sleepablelock::{Sleepablelock, SleepablelockGuard};
 pub use sleeplock::{Sleeplock, SleeplockGuard};
-pub use spinlock::{pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard}; /* TODO: Remove RawSpinlock */
+pub use spinlock::{pop_off, push_off, EmptySpinlock, Spinlock, SpinlockGuard};
 pub use spinlock_protected::{SpinlockProtected, SpinlockProtectedGuard};
-
-/// Lock guards that can be slept in a `WaitChannel`.
-pub trait Waitable {
-    /// Releases the inner `RawSpinlock`.
-    ///
-    /// # Safety
-    ///
-    /// `raw_release()` and `raw_acquire` must always be used as a pair.
-    /// Use these only for temporarily releasing (and then acquiring) the lock.
-    /// Also, do not access `self` until re-acquiring the lock with `raw_acquire()`.
-    unsafe fn raw_release(&mut self);
-
-    /// Acquires the inner `RawSpinlock`.
-    ///
-    /// # Safety
-    ///
-    /// `raw_release()` and `raw_acquire` must always be used as a pair.
-    /// Use these only for temporarily releasing (and then acquiring) the lock.
-    unsafe fn raw_acquire(&mut self);
-}
 
 pub trait RawLock {
     /// Acquires the lock.
@@ -73,7 +53,7 @@ pub struct Guard<'s, R: RawLock, T> {
 }
 
 // Do not implement Send; lock must be unlocked by the CPU that acquired it.
-unsafe impl<'s, T: Sync> Sync for SpinlockGuard<'s, T> {}
+unsafe impl<'s, R: RawLock, T: Sync> Sync for Guard<'s, R, T> {}
 
 impl<R: RawLock, T> Lock<R, T> {
     /// Acquires the lock and returns the lock guard.
@@ -150,15 +130,25 @@ impl<R: RawLock, T> Guard<'_, R, T> {
         // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
         unsafe { Pin::new_unchecked(&mut *self.lock.data.get()) }
     }
-}
 
-// TODO: Remove
-impl<R: RawLock, T> Waitable for Guard<'_, R, T> {
-    unsafe fn raw_release(&mut self) {
+    /// Releases the inner `RawSpinlock`.
+    ///
+    /// # Safety
+    ///
+    /// `raw_release()` and `raw_acquire` must always be used as a pair.
+    /// Use these only for temporarily releasing (and then acquiring) the lock.
+    /// Also, do not access `self` until re-acquiring the lock with `raw_acquire()`.
+    pub unsafe fn raw_release(&mut self) {
         self.lock.lock.release();
     }
 
-    unsafe fn raw_acquire(&mut self) {
+    /// Acquires the inner `RawSpinlock`.
+    ///
+    /// # Safety
+    ///
+    /// `raw_release()` and `raw_acquire` must always be used as a pair.
+    /// Use these only for temporarily releasing (and then acquiring) the lock.
+    pub unsafe fn raw_acquire(&mut self) {
         self.lock.lock.acquire();
     }
 }

@@ -25,6 +25,7 @@ pub struct RawSpinlock {
 /// Locks that busy wait (spin).
 pub type Spinlock<T> = Lock<RawSpinlock, T>;
 pub type SpinlockGuard<'s, T> = Guard<'s, RawSpinlock, T>;
+pub type EmptySpinlock = Spinlock<()>;
 
 impl RawSpinlock {
     /// Mutual exclusion spin locks.
@@ -157,5 +158,12 @@ impl<T: Unpin> Spinlock<T> {
     pub const fn new(name: &'static str, data: T) -> Self {
         // Safe since `T: Unpin`.
         unsafe { Self::new_unchecked(name, data) }
+    }
+}
+
+impl EmptySpinlock {
+    /// Returns a new `EmptySpinlock` that holds no data. Use for synchronization.
+    pub const fn empty(name: &'static str) -> Self {
+        Self::new(name, ())
     }
 }

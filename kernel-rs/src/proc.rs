@@ -17,8 +17,8 @@ use crate::{
     fs::{Path, RcInode},
     kernel::{kernel, kernel_builder, KernelBuilder},
     lock::{
-        pop_off, push_off, RawSpinlock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
-        Waitable,
+        pop_off, push_off, EmptySpinlock, Guard, RawLock, Spinlock, SpinlockProtected,
+        SpinlockProtectedGuard,
     },
     memlayout::kstack,
     page::Page,
@@ -224,7 +224,7 @@ impl WaitChannel {
 
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
-    pub fn sleep<T: Waitable>(&self, lk: &mut T, proc: &CurrentProc<'_>) {
+    pub fn sleep<R: RawLock, T>(&self, lk: &mut Guard<'_, R, T>, proc: &CurrentProc<'_>) {
         // Must acquire p->lock in order to
         // change p->state and then call sched.
         // Once we hold p->lock, we can be
@@ -646,7 +646,7 @@ pub struct ProcsBuilder {
     // parents are not lost. Helps obey the
     // memory model when using p->parent.
     // Must be acquired before any p->lock.
-    wait_lock: RawSpinlock,
+    wait_lock: EmptySpinlock,
 }
 
 /// # Safety
@@ -728,7 +728,7 @@ impl ProcsBuilder {
             nextpid: AtomicI32::new(1),
             process_pool: array![_ => ProcBuilder::zero(); NPROC],
             initial_proc: ptr::null(),
-            wait_lock: RawSpinlock::new("wait_lock"),
+            wait_lock: EmptySpinlock::empty("wait_lock"),
         }
     }
 

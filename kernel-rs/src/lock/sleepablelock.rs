@@ -1,7 +1,7 @@
 //! Sleepable locks
 use core::cell::UnsafeCell;
 
-use super::{Guard, Lock, RawLock, RawSpinlock};
+use super::{spinlock::RawSpinlock, Guard, Lock, RawLock};
 use crate::{kernel::kernel_builder, proc::WaitChannel};
 
 /// Mutual exclusion spin locks that can sleep.
