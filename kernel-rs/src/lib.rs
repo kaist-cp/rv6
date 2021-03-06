@@ -78,6 +78,7 @@ mod proc;
 mod riscv;
 mod start;
 mod stat;
+mod static_refcell;
 mod syscall;
 mod sysfile;
 mod sysproc;
