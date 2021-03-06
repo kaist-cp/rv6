@@ -3,6 +3,7 @@
 //! Contains types for locks and lock guards that provide mutual exclusion,
 //! and also includes traits that express their behaviors.
 //!
+//!
 //! # Locks and [`Pin`]
 //! Locks that own `!Unpin` data of type `T` should not give an `&mut T` of its data to the outside.
 //! Similarly, we should not be able to mutably dereference a lock guard if the data `T` is `!Unpin`.
@@ -10,11 +11,17 @@
 //!
 //! Therefore, locks in this module gives an `&mut T` to the outside only when `T: Unpin`.
 //! Otherwise, it only gives a [`Pin<&mut T>`].
-//! Similaraly, guards implement `DerefMut` only when `T: Unpin`, and if `T: !Unpin`,
+//! Similaraly, guards implement [DerefMut](`core::ops::DerefMut`) only when `T: Unpin`, and if `T: !Unpin`,
 //! you should obtain a [`Pin<&mut T>`] from the guard and use it instead.
 //!
+//!
 //! # SpinlockProtected
-//! TODO
+//! [`SpinlockProtected`] owns its data but does not have its own raw lock.
+//! Instead, it borrows a raw lock from another [`EmptySpinlock`] and protects its data using it.
+//! This is useful when multiple fragmented data must be protected by a single lock.
+//! * e.g. By making multiple [`SpinlockProtected<T>`]s refer to a single [`EmptySpinlock`],
+//!   you can make multiple data be protected by a single [`EmptySpinlock`], and hence,
+//!   implement global locks.
 
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
