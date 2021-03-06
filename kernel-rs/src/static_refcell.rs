@@ -1,6 +1,7 @@
 use core::cell::{Cell, UnsafeCell};
 use core::marker::PhantomPinned;
 use core::ops::{Deref, DerefMut};
+use core::pin::Pin;
 
 const BORROWED_MUT: usize = usize::MAX;
 
@@ -41,8 +42,8 @@ impl<T> StaticRefCell<T> {
             true => None,
             false => {
                 self.ref_cnt.set(self.ref_cnt.get() + 1);
-                Some(Ref{ptr: self})
-            },
+                Some(Ref { ptr: self })
+            }
         }
     }
 
@@ -51,7 +52,9 @@ impl<T> StaticRefCell<T> {
             true => None,
             false => {
                 self.ref_cnt.set(BORROWED_MUT);
-                Some(RefMut{ptr: self as *const _ as *mut _}) //TODO: okay?
+                Some(RefMut {
+                    ptr: self as *const _ as *mut _,
+                }) //TODO: okay?
             }
         }
     }
@@ -75,6 +78,7 @@ impl<T> Drop for StaticRefCell<T> {
 
 impl<T> Deref for Ref<T> {
     type Target = T;
+
     fn deref(&self) -> &Self::Target {
         unsafe { &*(*self.ptr).data.get() }
     }
@@ -87,22 +91,31 @@ impl<T> Drop for Ref<T> {
     }
 }
 
+impl<T> RefMut<T> {
+    fn get_pin_mut(&mut self) -> Pin<&mut T> {
+        unsafe { Pin::new_unchecked(&mut *(*self.ptr).data.get()) }
+    }
+}
+
 impl<T> Deref for RefMut<T> {
     type Target = T;
+
     fn deref(&self) -> &Self::Target {
         unsafe { &*(*self.ptr).data.get() }
     }
 }
 
-impl<T> DerefMut for RefMut<T> {
+impl<T: Unpin> DerefMut for RefMut<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *(*self.ptr).data.get() }
+        self.get_pin_mut().get_mut()
     }
 }
 
 impl<T> Drop for RefMut<T> {
     fn drop(&mut self) {
-        unsafe { (*self.ptr).ref_cnt.set(0); }
+        unsafe {
+            (*self.ptr).ref_cnt.set(0);
+        }
     }
 }
 
