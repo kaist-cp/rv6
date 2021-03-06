@@ -1,4 +1,5 @@
 use core::cell::{Cell, UnsafeCell};
+use core::convert::TryFrom;
 use core::marker::PhantomPinned;
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
@@ -6,52 +7,52 @@ use core::pin::Pin;
 const BORROWED_MUT: usize = usize::MAX;
 
 /// Similar to `RefCell<T>`, but does not use lifetimes.
-struct StaticRefCell<T> {
+pub struct StaticRefCell<T> {
     data: UnsafeCell<T>,
-    ref_cnt: Cell<usize>,
+    refcnt: Cell<usize>,
     _pin: PhantomPinned,
 }
 
-struct Ref<T> {
+pub struct Ref<T> {
     ptr: *const StaticRefCell<T>,
 }
 
-struct RefMut<T> {
+pub struct RefMut<T> {
     ptr: *mut StaticRefCell<T>,
 }
 
 impl<T> StaticRefCell<T> {
-    pub fn new(data: T) -> Self {
+    pub const fn new(data: T) -> Self {
         Self {
             data: UnsafeCell::new(data),
-            ref_cnt: Cell::new(0),
+            refcnt: Cell::new(0),
             _pin: PhantomPinned,
         }
     }
 
     fn is_borrowed(&self) -> bool {
-        self.ref_cnt.get() != 0 && self.ref_cnt.get() != BORROWED_MUT
+        self.refcnt.get() != 0 && self.refcnt.get() != BORROWED_MUT
     }
 
     fn is_borrowed_mut(&self) -> bool {
-        self.ref_cnt.get() == BORROWED_MUT
+        self.refcnt.get() == BORROWED_MUT
     }
 
     pub fn try_borrow(&self) -> Option<Ref<T>> {
         match self.is_borrowed_mut() {
             true => None,
             false => {
-                self.ref_cnt.set(self.ref_cnt.get() + 1);
+                self.refcnt.set(self.refcnt.get() + 1);
                 Some(Ref { ptr: self })
             }
         }
     }
 
     pub fn try_borrow_mut(&self) -> Option<RefMut<T>> {
-        match self.is_borrowed() {
+        match self.is_borrowed() || self.is_borrowed_mut() {
             true => None,
             false => {
-                self.ref_cnt.set(BORROWED_MUT);
+                self.refcnt.set(BORROWED_MUT);
                 Some(RefMut {
                     ptr: self as *const _ as *mut _,
                 }) //TODO: okay?
@@ -76,6 +77,25 @@ impl<T> Drop for StaticRefCell<T> {
     }
 }
 
+impl<T> From<RefMut<T>> for Ref<T> {
+    fn from(r: RefMut<T>) -> Self {
+        let ptr = r.ptr;
+        drop(r);
+        unsafe {
+            (*ptr).refcnt.set(1);
+        }
+        Self { ptr }
+    }
+}
+
+impl<T> Clone for Ref<T> {
+    fn clone(&self) -> Self {
+        let refcnt = unsafe { &(*self.ptr).refcnt };
+        refcnt.set(refcnt.get() + 1);
+        Self { ptr: self.ptr }
+    }
+}
+
 impl<T> Deref for Ref<T> {
     type Target = T;
 
@@ -86,14 +106,30 @@ impl<T> Deref for Ref<T> {
 
 impl<T> Drop for Ref<T> {
     fn drop(&mut self) {
-        let ref_cnt = unsafe { &(*self.ptr).ref_cnt };
-        ref_cnt.set(ref_cnt.get() - 1);
+        let refcnt = unsafe { &(*self.ptr).refcnt };
+        refcnt.set(refcnt.get() - 1);
     }
 }
 
 impl<T> RefMut<T> {
-    fn get_pin_mut(&mut self) -> Pin<&mut T> {
+    pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
         unsafe { Pin::new_unchecked(&mut *(*self.ptr).data.get()) }
+    }
+}
+
+impl<T> TryFrom<Ref<T>> for RefMut<T> {
+    type Error = ();
+
+    fn try_from(r: Ref<T>) -> Result<Self, Self::Error> {
+        let refcnt = unsafe { &(*r.ptr).refcnt };
+        if refcnt.get() == 1 {
+            let ptr = r.ptr;
+            drop(r);
+            refcnt.set(BORROWED_MUT);
+            Ok(RefMut { ptr: ptr as *mut _ })
+        } else {
+            Err(())
+        }
     }
 }
 
@@ -114,7 +150,7 @@ impl<T: Unpin> DerefMut for RefMut<T> {
 impl<T> Drop for RefMut<T> {
     fn drop(&mut self) {
         unsafe {
-            (*self.ptr).ref_cnt.set(0);
+            (*self.ptr).refcnt.set(0);
         }
     }
 }

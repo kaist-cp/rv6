@@ -805,7 +805,7 @@ impl Itable {
     pub const fn zero() -> Self {
         Spinlock::new(
             "ITABLE",
-            ArrayArena::new(array![_ => ArrayEntry::new(Inode::zero()); NINODE]),
+            ArrayArena::new(array![_ => ArrayEntry::new_celled(Inode::zero()); NINODE]),
         )
     }
 

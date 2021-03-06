@@ -1,3 +1,4 @@
+use core::convert::TryFrom;
 use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;
@@ -9,6 +10,7 @@ use pin_project::pin_project;
 use crate::list::*;
 use crate::lock::{Spinlock, SpinlockGuard};
 use crate::pinned_array::IterPinMut;
+use crate::static_refcell::{Ref, RefMut, StaticRefCell};
 
 /// A homogeneous memory allocator, equipped with the box type representing an allocation.
 pub trait Arena: Sized {
@@ -82,22 +84,22 @@ pub trait ArenaObject {
     fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>);
 }
 
+// TODO: Remove `ArrayEntry<T>` and just use `StaticRefCell`?
 pub struct ArrayEntry<T> {
-    refcnt: usize,
     data: T,
 }
 
 /// A homogeneous memory allocator equipped with reference counts.
 pub struct ArrayArena<T, const CAPACITY: usize> {
-    entries: [ArrayEntry<T>; CAPACITY],
+    entries: [StaticRefCell<ArrayEntry<T>>; CAPACITY],
 }
 
 /// # Safety
 ///
-/// `ptr` is a valid pointer to `ArrayEntry<T>` and has lifetime `'s`.
 /// Always acquire the `Spinlock<ArrayArena<T, CAPACITY>>` before modifying `ArrayEntry<T>`.
 pub struct ArrayPtr<'s, T> {
-    ptr: NonNull<ArrayEntry<T>>,
+    //TODO: Still need lifetimes?
+    ptr: Ref<ArrayEntry<T>>,
     _marker: PhantomData<&'s T>,
 }
 
@@ -107,10 +109,7 @@ pub struct ArrayPtr<'s, T> {
 unsafe impl<T: Send> Send for ArrayPtr<'_, T> {}
 
 impl<'s, T> ArrayPtr<'s, T> {
-    /// # Safety
-    ///
-    /// `ptr` should be a valid pointer to `ArrayEntry<T>` and have lifetime `'s`.
-    unsafe fn new(ptr: NonNull<ArrayEntry<T>>) -> ArrayPtr<'s, T> {
+    fn new(ptr: Ref<ArrayEntry<T>>) -> ArrayPtr<'s, T> {
         Self {
             ptr,
             _marker: PhantomData,
@@ -155,14 +154,18 @@ pub struct Rc<'s, A: Arena, T: Deref<Target = A>> {
 }
 
 impl<T> ArrayEntry<T> {
-    pub const fn new(data: T) -> Self {
-        Self { refcnt: 0, data }
+    const fn new(data: T) -> Self {
+        Self { data }
+    }
+
+    pub const fn new_celled(data: T) -> StaticRefCell<Self> {
+        StaticRefCell::new(Self::new(data))
     }
 }
 
 impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
     // TODO(https://github.com/kaist-cp/rv6/issues/371): unsafe...
-    pub const fn new(entries: [ArrayEntry<T>; CAPACITY]) -> Self {
+    pub const fn new(entries: [StaticRefCell<ArrayEntry<T>>; CAPACITY]) -> Self {
         Self { entries }
     }
 }
@@ -171,18 +174,18 @@ impl<T> Deref for ArrayPtr<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        // It is safe because of the invariant.
-        unsafe { &self.ptr.as_ref().data }
+        &self.ptr.data
     }
 }
 
-impl<T> Drop for ArrayPtr<'_, T> {
-    fn drop(&mut self) {
-        // HACK(@efenniht): we really need linear type here:
-        // https://github.com/rust-lang/rfcs/issues/814
-        panic!("ArrayPtr must never drop: use ArrayArena::dealloc instead.");
-    }
-}
+// TODO: Just add an extra field to `ArrayPtr`?
+// impl<T> Drop for ArrayPtr<'_, T> {
+//     fn drop(&mut self) {
+//         // HACK(@efenniht): we really need linear type here:
+//         // https://github.com/rust-lang/rfcs/issues/814
+//         panic!("ArrayPtr must never drop: use ArrayArena::dealloc instead.");
+//     }
+// }
 
 impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     for Spinlock<ArrayArena<T, CAPACITY>>
@@ -196,48 +199,43 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         c: C,
         n: N,
     ) -> Option<Self::Handle<'_>> {
-        let mut this = self.lock();
+        let this = self.lock();
 
-        let mut empty: *mut ArrayEntry<T> = ptr::null_mut();
-        for entry in &mut this.entries {
-            if entry.refcnt != 0 {
-                if c(&entry.data) {
-                    entry.refcnt += 1;
-                    // It is safe because entry is a part of self, whose lifetime is 's.
-                    return Some(unsafe { ArrayPtr::new(NonNull::from(entry)) });
+        let mut empty = None;
+        for entry in &this.entries {
+            match entry.try_borrow_mut() {
+                None => {
+                    let r = entry.borrow();
+                    if c(&r.data) {
+                        return Some(ArrayPtr::new(r));
+                    }
                 }
-            } else if empty.is_null() {
-                empty = entry;
-                // Note: Do not use `break` here.
-                // We must first search through all entries, and then alloc at empty
-                // only if the entry we're finding for doesn't exist.
+                Some(rm) => {
+                    if empty.is_none() {
+                        empty = Some(rm);
+                    }
+                    // Note: Do not use `break` here.
+                    // We must first search through all entries, and then alloc at empty
+                    // only if the entry we're finding for doesn't exist.
+                }
             }
         }
 
-        if empty.is_null() {
-            return None;
-        }
-
-        // It is safe because empty is a one of this.entries.
-        let entry = unsafe { &mut *empty };
-        entry.refcnt = 1;
-        n(&mut entry.data);
-        // It is safe because entry is a part of self, whose lifetime is 's.
-        Some(unsafe { ArrayPtr::new(NonNull::from(entry)) })
+        empty.map(|mut rm| {
+            n(&mut rm.data);
+            ArrayPtr::new(rm.into())
+        })
     }
 
     fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Self::Handle<'_>> {
-        let mut this = self.lock();
+        let this = self.lock();
 
-        for entry in &mut this.entries {
-            if entry.refcnt == 0 {
-                entry.refcnt = 1;
-                f(&mut entry.data);
-                // It is safe because entry is a part of self, whose lifetime is 's.
-                return Some(unsafe { ArrayPtr::new(NonNull::from(entry)) });
+        for entry in &this.entries {
+            if let Some(mut rm) = entry.try_borrow_mut() {
+                f(&mut rm.data);
+                return Some(ArrayPtr::new(rm.into()));
             }
         }
-
         None
     }
 
@@ -249,28 +247,19 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
 
         // TODO(https://github.com/kaist-cp/rv6/issues/369)
         // Make a ArrayArena trait and move this there.
-        // It is safe becuase of the invariant of ArrayPtr.
-        unsafe { (*handle.ptr.as_ptr()).refcnt += 1 };
-        Self::Handle::<'s> {
-            ptr: handle.ptr,
-            _marker: PhantomData,
-        }
+        ArrayPtr::new(handle.ptr.clone())
     }
 
     /// # Safety
     ///
     /// `handle` must be allocated from `self`.
-    unsafe fn dealloc(&self, mut handle: Self::Handle<'_>) {
+    unsafe fn dealloc(&self, handle: Self::Handle<'_>) {
         let mut this = self.lock();
 
-        // It is safe becuase of the invariant of ArrayPtr.
-        let entry = unsafe { handle.ptr.as_mut() };
-        if entry.refcnt == 1 {
-            entry.data.finalize::<Self>(&mut this);
+        let r = handle.ptr;
+        if let Ok(mut rm) = RefMut::<ArrayEntry<T>>::try_from(r) {
+            rm.data.finalize::<Self>(&mut this);
         }
-
-        entry.refcnt -= 1;
-        mem::forget(handle);
     }
 
     unsafe fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R

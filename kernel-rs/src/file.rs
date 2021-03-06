@@ -242,7 +242,7 @@ impl FileTable {
     pub const fn zero() -> Self {
         Spinlock::new(
             "FTABLE",
-            ArrayArena::new(array![_ => ArrayEntry::new(File::zero()); NFILE]),
+            ArrayArena::new(array![_ => ArrayEntry::new_celled(File::zero()); NFILE]),
         )
     }
 
