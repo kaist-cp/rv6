@@ -10,7 +10,7 @@ use crate::{
     riscv::{intr_get, intr_off, intr_on},
 };
 
-/// Mutual exclusion lock.
+/// Mutual exclusion lock that busy waits (spin).
 pub struct RawSpinlock {
     /// Name of lock.
     name: &'static str,
@@ -137,27 +137,11 @@ pub unsafe fn pop_off() {
 
 impl<T> Spinlock<T> {
     /// Returns a new `Spinlock` with name `name` and data `data`.
-    /// If `T: Unpin`, `Spinlock::new` should be used instead.
-    ///
-    /// # Safety
-    ///
-    /// If `T: !Unpin`, `Spinlock` or `SpinlockGuard` will only provide pinned mutable references
-    /// of the inner data to the outside. However, it is still the caller's responsibility to
-    /// make sure that the `Spinlock` itself never gets moved.
-    // TODO: Change this to private.
-    pub const unsafe fn new_unchecked(name: &'static str, data: T) -> Self {
+    pub const fn new(name: &'static str, data: T) -> Self {
         Self {
             lock: RawSpinlock::new(name),
             data: UnsafeCell::new(data),
         }
-    }
-}
-
-impl<T: Unpin> Spinlock<T> {
-    /// Returns a new `Spinlock` with name `name` and data `data`.
-    pub const fn new(name: &'static str, data: T) -> Self {
-        // Safe since `T: Unpin`.
-        unsafe { Self::new_unchecked(name, data) }
     }
 }
 

@@ -97,8 +97,6 @@ impl<R: RawLock, T> Lock<R, T> {
         self.data.into_inner()
     }
 
-    // TODO: Add lock_and_forget()?
-
     /// Unlock the lock.
     ///
     /// # Safety
@@ -171,6 +169,6 @@ impl<R: RawLock, T> Deref for Guard<'_, R, T> {
 // If `T: !Unpin`, use `Guard::get_pin_mut()` instead.
 impl<R: RawLock, T: Unpin> DerefMut for Guard<'_, R, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.lock.data.get() }
+        self.get_pin_mut().get_mut()
     }
 }

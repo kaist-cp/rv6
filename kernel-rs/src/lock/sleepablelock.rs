@@ -50,26 +50,11 @@ impl RawLock for RawSleepablelock {
 
 impl<T> Sleepablelock<T> {
     /// Returns a new `Sleepablelock` with name `name` and data `data`.
-    /// If `T: Unpin`, `Sleepablelock::new` should be used instead.
-    ///
-    /// # Safety
-    ///
-    /// If `T: !Unpin`, `Sleepablelock` or `SleepablelockGuard` will only provide pinned mutable references
-    /// of the inner data to the outside. However, it is still the caller's responsibility to
-    /// make sure that the `Sleepablelock` itself never gets moved.
-    pub const unsafe fn new_unchecked(name: &'static str, data: T) -> Self {
+    pub const fn new(name: &'static str, data: T) -> Self {
         Self {
             lock: RawSleepablelock::new(name),
             data: UnsafeCell::new(data),
         }
-    }
-}
-
-impl<T: Unpin> Sleepablelock<T> {
-    /// Returns a new `Sleepablelock` with name `name` and data `data`.
-    pub const fn new(name: &'static str, data: T) -> Self {
-        // Safe since `T: Unpin`.
-        unsafe { Self::new_unchecked(name, data) }
     }
 }
 
