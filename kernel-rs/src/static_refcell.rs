@@ -22,6 +22,7 @@ pub struct RefMut<T> {
 }
 
 impl<T> StaticRefCell<T> {
+    /// Returns a new `StaticRefCell<T>` that owns `data`.
     pub const fn new(data: T) -> Self {
         Self {
             data: UnsafeCell::new(data),
@@ -30,14 +31,18 @@ impl<T> StaticRefCell<T> {
         }
     }
 
+    /// Returns true if its borrowed immutably or mutably.
     fn is_borrowed(&self) -> bool {
-        self.refcnt.get() != 0 && self.refcnt.get() != BORROWED_MUT
+        self.refcnt.get() != 0
     }
 
+    /// Returns true if its mutably borrowed.
     fn is_borrowed_mut(&self) -> bool {
         self.refcnt.get() == BORROWED_MUT
     }
 
+    /// Immutably borrows the `StaticRefCell` if it is not mutably borrowed.
+    /// Otherwise, returns `None`.
     pub fn try_borrow(&self) -> Option<Ref<T>> {
         match self.is_borrowed_mut() {
             true => None,
@@ -48,8 +53,10 @@ impl<T> StaticRefCell<T> {
         }
     }
 
+    /// Mutably borrows the `StaticRefCell` if it is not borrowed.
+    /// Otherwise, returns `None`.
     pub fn try_borrow_mut(&self) -> Option<RefMut<T>> {
-        match self.is_borrowed() || self.is_borrowed_mut() {
+        match self.is_borrowed() {
             true => None,
             false => {
                 self.refcnt.set(BORROWED_MUT);
@@ -60,10 +67,14 @@ impl<T> StaticRefCell<T> {
         }
     }
 
+    /// Immutably borrows the `StaticRefCell` if it is not mutably borrowed.
+    /// Otherwise, panics.
     pub fn borrow(&self) -> Ref<T> {
         self.try_borrow().expect("already mutably borrowed")
     }
 
+    /// Mutably borrows the `StaticRefCell` if it is not borrowed.
+    /// Otherwise, panics.
     pub fn borrow_mut(&self) -> RefMut<T> {
         self.try_borrow_mut().expect("already borrowed")
     }
@@ -71,8 +82,8 @@ impl<T> StaticRefCell<T> {
 
 impl<T> Drop for StaticRefCell<T> {
     fn drop(&mut self) {
-        if self.is_borrowed() || self.is_borrowed_mut() {
-            panic!("already borrowed");
+        if self.is_borrowed() {
+            panic!("dropped while borrowed");
         }
     }
 }
@@ -107,11 +118,13 @@ impl<T> Deref for Ref<T> {
 impl<T> Drop for Ref<T> {
     fn drop(&mut self) {
         let refcnt = unsafe { &(*self.ptr).refcnt };
+        debug_assert!(refcnt.get() != 0 && refcnt.get() != BORROWED_MUT);
         refcnt.set(refcnt.get() - 1);
     }
 }
 
 impl<T> RefMut<T> {
+    /// Returns a pinned mutable reference to the inner data.
     pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
         unsafe { Pin::new_unchecked(&mut *(*self.ptr).data.get()) }
     }
@@ -150,6 +163,7 @@ impl<T: Unpin> DerefMut for RefMut<T> {
 impl<T> Drop for RefMut<T> {
     fn drop(&mut self) {
         unsafe {
+            debug_assert!((*self.ptr).refcnt.get() == BORROWED_MUT);
             (*self.ptr).refcnt.set(0);
         }
     }

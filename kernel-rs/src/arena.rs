@@ -205,9 +205,11 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         for entry in &this.entries {
             match entry.try_borrow_mut() {
                 None => {
-                    let r = entry.borrow();
-                    if c(&r.data) {
-                        return Some(ArrayPtr::new(r));
+                    // TODO: synchronization issue in Arena? (https://github.com/kaist-cp/rv6/issues/393)
+                    if let Some(r) = entry.try_borrow() {
+                        if c(&r.data) {
+                            return Some(ArrayPtr::new(r));
+                        }
                     }
                 }
                 Some(rm) => {
@@ -256,8 +258,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     unsafe fn dealloc(&self, handle: Self::Handle<'_>) {
         let mut this = self.lock();
 
-        let r = handle.ptr;
-        if let Ok(mut rm) = RefMut::<ArrayEntry<T>>::try_from(r) {
+        if let Ok(mut rm) = RefMut::<ArrayEntry<T>>::try_from(handle.ptr) {
             rm.data.finalize::<Self>(&mut this);
         }
     }
