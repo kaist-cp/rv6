@@ -154,12 +154,8 @@ pub struct Rc<'s, A: Arena, T: Deref<Target = A>> {
 }
 
 impl<T> ArrayEntry<T> {
-    const fn new(data: T) -> Self {
-        Self { data }
-    }
-
     pub const fn new_celled(data: T) -> StaticRefCell<Self> {
-        StaticRefCell::new(Self::new(data))
+        StaticRefCell::new(Self { data })
     }
 }
 
