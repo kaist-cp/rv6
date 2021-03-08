@@ -1,16 +1,16 @@
 use core::{cell::UnsafeCell, marker::PhantomData, pin::Pin, ptr};
 
-use super::{spinlock::RawSpinlock, EmptySpinlock, Guard, RawLock};
+use super::{spinlock::RawSpinlock, Guard, RawLock, Spinlock};
 
 /// Similar to `Spinlock<T>`, but instead of internally owning a `RawSpinlock`,
-/// this stores a `'static` reference to an external `RawSpinlock` that was provided by the caller.
-/// By making multiple `SpinlockProtected<T>`'s refer to a single `RawSpinlock`,
-/// you can make multiple data be protected by a single `RawSpinlock`, and hence,
+/// this stores a `'static` reference to an external `Spinlock<()>` that was provided by the caller.
+/// By making multiple `SpinlockProtected<T>`'s refer to a single `Spinlock<()>`,
+/// you can make multiple data be protected by a single `Spinlock<()>`, and hence,
 /// implement global locks.
 /// To dereference the inner data, you must use `SpinlockProtected<T>::get_mut`, instead of
 /// trying to dereference the `SpinlockProtectedGuard`.
 pub struct SpinlockProtected<T> {
-    lock: &'static EmptySpinlock,
+    lock: &'static Spinlock<()>,
     data: UnsafeCell<T>,
 }
 
@@ -19,7 +19,7 @@ unsafe impl<T: Send> Sync for SpinlockProtected<T> {}
 pub type SpinlockProtectedGuard<'s> = Guard<'s, RawSpinlock, ()>;
 
 impl<T> SpinlockProtected<T> {
-    pub const fn new(lock: &'static EmptySpinlock, data: T) -> Self {
+    pub const fn new(lock: &'static Spinlock<()>, data: T) -> Self {
         Self {
             lock,
             data: UnsafeCell::new(data),
@@ -33,11 +33,6 @@ impl<T> SpinlockProtected<T> {
             lock: self.lock,
             _marker: PhantomData,
         }
-    }
-
-    /// Check whether this cpu is holding the lock.
-    pub fn holding(&self) -> bool {
-        self.lock.holding()
     }
 
     /// Returns a pinned mutable reference to the inner data, provided that the given
@@ -67,7 +62,6 @@ impl<T: Unpin> SpinlockProtected<T> {
     /// Returns a mutable reference to the inner data.
     /// See `SpinlockProtected::get_mut()` for details.
     pub fn get_mut<'a: 'b, 'b>(&'a self, guard: &'b mut SpinlockProtectedGuard<'_>) -> &'b mut T {
-        assert!(ptr::eq(self.lock, guard.lock));
         self.get_pin_mut(guard).get_mut()
     }
 }

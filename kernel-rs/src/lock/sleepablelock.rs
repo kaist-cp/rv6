@@ -7,30 +7,22 @@ use crate::{kernel::kernel_builder, proc::WaitChannel};
 /// Mutual exclusion spin locks that can sleep.
 pub struct RawSleepablelock {
     lock: RawSpinlock,
-    /// WaitChannel saying spinlock is released.
+    /// WaitChannel used to sleep/wakeup the lock's guard.
     waitchannel: WaitChannel,
 }
 
 /// Similar to `Spinlock`, but guards of this lock can sleep.   
 pub type Sleepablelock<T> = Lock<RawSleepablelock, T>;
+/// Guards of `Sleepablelock<T>`. These guards can `sleep()`/`wakeup()`.
 pub type SleepablelockGuard<'s, T> = Guard<'s, RawSleepablelock, T>;
 
 impl RawSleepablelock {
-    /// Mutual exclusion spin locks.
+    /// Mutual exclusion sleepable locks.
     const fn new(name: &'static str) -> Self {
         Self {
             lock: RawSpinlock::new(name),
             waitchannel: WaitChannel::new(),
         }
-    }
-
-    pub fn sleep<T>(&self, guard: &mut Guard<'_, Self, T>) {
-        self.waitchannel
-            .sleep(guard, &kernel_builder().current_proc().expect("No current proc"));
-    }
-
-    pub fn wakeup(&self) {
-        self.waitchannel.wakeup();
     }
 }
 
@@ -60,10 +52,13 @@ impl<T> Sleepablelock<T> {
 
 impl<T> SleepablelockGuard<'_, T> {
     pub fn sleep(&mut self) {
-        self.lock.lock.sleep(self);
+        self.lock
+            .lock
+            .waitchannel
+            .sleep(self, &kernel_builder().current_proc().expect("No current proc"));
     }
 
     pub fn wakeup(&self) {
-        self.lock.lock.wakeup();
+        self.lock.lock.waitchannel.wakeup();
     }
 }

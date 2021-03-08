@@ -1,7 +1,6 @@
 //! The lock module.
 //!
-//! Contains types for locks and lock guards that provide mutual exclusion,
-//! and also includes traits that express their behaviors.
+//! Contains types that provide mutual exclusion.
 //!
 //!
 //! # Locks and [`Pin`]
@@ -17,10 +16,10 @@
 //!
 //! # SpinlockProtected
 //! [`SpinlockProtected`] owns its data but does not have its own raw lock.
-//! Instead, it borrows a raw lock from another [`EmptySpinlock`] and protects its data using it.
+//! Instead, it borrows a raw lock from another [`Spinlock<()>`] and protects its data using it.
 //! This is useful when multiple fragmented data must be protected by a single lock.
-//! * e.g. By making multiple [`SpinlockProtected<T>`]s refer to a single [`EmptySpinlock`],
-//!   you can make multiple data be protected by a single [`EmptySpinlock`], and hence,
+//! * e.g. By making multiple [`SpinlockProtected<T>`]s refer to a single [`Spinlock<()>`],
+//!   you can make multiple data be protected by a single [`Spinlock<()>`], and hence,
 //!   implement global locks.
 
 use core::cell::UnsafeCell;
@@ -35,7 +34,7 @@ mod spinlock_protected;
 
 pub use sleepablelock::{Sleepablelock, SleepablelockGuard};
 pub use sleeplock::{Sleeplock, SleeplockGuard};
-pub use spinlock::{pop_off, push_off, EmptySpinlock, Spinlock, SpinlockGuard};
+pub use spinlock::{pop_off, push_off, Spinlock, SpinlockGuard};
 pub use spinlock_protected::{SpinlockProtected, SpinlockProtectedGuard};
 
 pub trait RawLock {
@@ -47,6 +46,7 @@ pub trait RawLock {
     fn holding(&self) -> bool;
 }
 
+/// Locks that provide mutual exclusion and has its own `RawLock`.
 pub struct Lock<R: RawLock, T> {
     lock: R,
     data: UnsafeCell<T>,
@@ -54,6 +54,7 @@ pub struct Lock<R: RawLock, T> {
 
 unsafe impl<R: RawLock, T: Send> Sync for Lock<R, T> {}
 
+/// Guards that guarantee exclusive mutable access to the lock's inner data.
 pub struct Guard<'s, R: RawLock, T> {
     lock: &'s Lock<R, T>,
     _marker: PhantomData<*const ()>,
@@ -111,11 +112,6 @@ impl<R: RawLock, T> Lock<R, T> {
     /// Use this only when we acquired the lock but did `mem::forget()` to the guard.
     pub unsafe fn unlock(&self) {
         self.lock.release();
-    }
-
-    /// Check whether this cpu is holding the lock.
-    pub fn holding(&self) -> bool {
-        self.lock.holding()
     }
 }
 

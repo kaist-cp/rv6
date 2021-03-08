@@ -15,6 +15,7 @@ pub struct RawSleeplock {
 
 /// Locks that sleep instead of busy wait.
 pub type Sleeplock<T> = Lock<RawSleeplock, T>;
+/// Guards of `Sleeplock<T>`.
 pub type SleeplockGuard<'s, T> = Guard<'s, RawSleeplock, T>;
 
 impl RawSleeplock {

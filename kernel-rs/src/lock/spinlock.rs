@@ -1,3 +1,4 @@
+//! Spin locks
 use core::cell::UnsafeCell;
 use core::hint::spin_loop;
 use core::ptr;
@@ -24,8 +25,8 @@ pub struct RawSpinlock {
 
 /// Locks that busy wait (spin).
 pub type Spinlock<T> = Lock<RawSpinlock, T>;
+/// Guards of `Spinlock<T>`.
 pub type SpinlockGuard<'s, T> = Guard<'s, RawSpinlock, T>;
-pub type EmptySpinlock = Spinlock<()>;
 
 impl RawSpinlock {
     /// Mutual exclusion spin locks.
@@ -145,8 +146,8 @@ impl<T> Spinlock<T> {
     }
 }
 
-impl EmptySpinlock {
-    /// Returns a new `EmptySpinlock` that holds no data. Use for synchronization.
+impl Spinlock<()> {
+    /// Returns a new `Spinlock` that holds no data. Use for synchronization.
     pub const fn empty(name: &'static str) -> Self {
         Self::new(name, ())
     }

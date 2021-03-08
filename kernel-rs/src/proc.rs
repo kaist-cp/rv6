@@ -17,8 +17,7 @@ use crate::{
     fs::{Path, RcInode},
     kernel::{kernel, kernel_builder, KernelBuilder},
     lock::{
-        pop_off, push_off, EmptySpinlock, Guard, RawLock, Spinlock, SpinlockProtected,
-        SpinlockProtectedGuard,
+        pop_off, push_off, Guard, RawLock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
     },
     memlayout::kstack,
     page::Page,
@@ -646,7 +645,7 @@ pub struct ProcsBuilder {
     // parents are not lost. Helps obey the
     // memory model when using p->parent.
     // Must be acquired before any p->lock.
-    wait_lock: EmptySpinlock,
+    wait_lock: Spinlock<()>,
 }
 
 /// # Safety
@@ -728,7 +727,7 @@ impl ProcsBuilder {
             nextpid: AtomicI32::new(1),
             process_pool: array![_ => ProcBuilder::zero(); NPROC],
             initial_proc: ptr::null(),
-            wait_lock: EmptySpinlock::empty("wait_lock"),
+            wait_lock: Spinlock::empty("wait_lock"),
         }
     }
 
@@ -1128,8 +1127,8 @@ unsafe fn forkret() {
 }
 
 impl KernelBuilder {
-    /// Returns `Some<CurrentProc<'_>>` if current proc exists (i.e. When (*cpu).proc is non-null.),
-    /// where the returned `CurrentProc`'s `inner` lives during `&self`'s lifetime.
+    /// Returns `Some<CurrentProc<'_>>` if current proc exists (i.e. When (*cpu).proc is non-null),
+    /// where the returned `CurrentProc`'s `inner` is valid during `&self`'s lifetime.
     /// Otherwise, returns `None` (when current proc is null).
     pub fn current_proc(&self) -> Option<CurrentProc<'_>> {
         unsafe { push_off() };
