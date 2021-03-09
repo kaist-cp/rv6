@@ -211,10 +211,19 @@ impl Disk {
         // Tell device we're completely ready.
         status.insert(VirtIOStatus::DRIVER_OK);
         MmioRegs::set_status(&status);
-        MmioRegs::set_pg_size(PGSIZE as _);
+        // Safe since page size is `PGSIZE`.
+        unsafe {
+            MmioRegs::set_pg_size(PGSIZE as _);
+        }
 
         // Initialize queue 0.
-        MmioRegs::select_and_init_queue(0, NUM as _, (self.desc.as_ptr() as usize >> PGSHIFT) as _)
+        unsafe {
+            MmioRegs::select_and_init_queue(
+                0,
+                NUM as _,
+                (self.desc.as_ptr() as usize >> PGSHIFT) as _,
+            );
+        }
 
         // plic.rs and trap.rs arrange for interrupts from VIRTIO0_IRQ.
     }

@@ -19,6 +19,13 @@ mod virtio_disk;
 
 pub use virtio_disk::Disk;
 
+/// Memory mapped IO registers.
+/// The kernel and virtio driver communicates to each other using these registers.
+///
+/// # Safety
+///
+/// * The `GuestPageSize` should be set to the page size of the guest architecture.
+/// * All queues should be correctly initialized.
 #[repr(usize)]
 enum MmioRegs {
     /// 0x74726976
@@ -118,9 +125,9 @@ impl MmioRegs {
     ///
     /// # Safety
     ///
-    /// The virtio driver uses this info to calculate addresses.
+    /// The virtio driver will uses this info to calculate addresses.
     /// Hence, the caller must give the correct page size. Otherwise, the driver may read/write at wrong addresses.
-    fn set_pg_size(size: u32) {
+    unsafe fn set_pg_size(size: u32) {
         // Simply telling the page size does not cause side effects.
         unsafe {
             MmioRegs::GuestPageSize.write(size);
@@ -133,7 +140,7 @@ impl MmioRegs {
     ///
     /// The virtio driver will later use this info to read/write descriptors.
     /// Hence, the caller must give correct info.
-    fn select_and_init_queue(queue_num: u32, queue_size: u32, queue_pg_num: u32) {
+    unsafe fn select_and_init_queue(queue_num: u32, queue_size: u32, queue_pg_num: u32) {
         // Simply selecting and initializing the queue does not cause side effects.
         unsafe {
             MmioRegs::QueueSel.write(queue_num);
@@ -153,10 +160,7 @@ impl MmioRegs {
     /// # Safety
     ///
     /// After notifying the queue, the driver will try to access the queue and read/write at the addresses given through descriptors.
-    /// This may cause undefined behavior if any of the following is not true.
-    /// * The correct page size was given.
-    /// * The queue at `num` was correctly initialized.
-    /// * The descriptors were well set and contains correct addresses.
+    /// This may cause undefined behavior if the descriptors were not well set or contains wrong addresses.
     unsafe fn notify_queue(num: u32) {
         unsafe {
             MmioRegs::QueueNotify.write(num);
