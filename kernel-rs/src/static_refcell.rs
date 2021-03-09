@@ -32,13 +32,18 @@ impl<T> StaticRefCell<T> {
     }
 
     /// Returns true if its borrowed immutably or mutably.
-    fn is_borrowed(&self) -> bool {
+    pub fn is_borrowed(&self) -> bool {
         self.refcnt.get() != 0
     }
 
     /// Returns true if its mutably borrowed.
-    fn is_borrowed_mut(&self) -> bool {
+    pub fn is_borrowed_mut(&self) -> bool {
         self.refcnt.get() == BORROWED_MUT
+    }
+
+    /// Returns a raw pointer to the inner data.
+    pub fn as_ptr(&self) -> *mut T {
+        self.data.get()
     }
 
     /// Immutably borrows the `StaticRefCell` if it is not mutably borrowed.

@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;
 use core::pin::Pin;
-use core::ptr::{self, NonNull};
+use core::ptr;
 
 use pin_project::pin_project;
 
@@ -91,7 +91,7 @@ pub struct ArrayArena<T, const CAPACITY: usize> {
 
 /// # Safety
 ///
-/// Always acquire the `Spinlock<ArrayArena<T, CAPACITY>>` before modifying `ArrayEntry<T>`.
+/// Always acquire the `Spinlock<ArrayArena<T, CAPACITY>>` before duplicating or finalizing.
 pub struct ArrayPtr<'s, T> {
     r: Ref<T>,
     _marker: PhantomData<&'s T>,
@@ -102,22 +102,12 @@ pub struct ArrayPtr<'s, T> {
 // Also, `ArrayPtr` does not point to thread-local data.
 unsafe impl<T: Send> Send for ArrayPtr<'_, T> {}
 
-impl<'s, T> ArrayPtr<'s, T> {
-    fn new(r: Ref<T>) -> ArrayPtr<'s, T> {
-        Self {
-            r,
-            _marker: PhantomData,
-        }
-    }
-}
-
 #[pin_project]
 #[repr(C)]
 pub struct MruEntry<T> {
     #[pin]
     list_entry: ListEntry,
-    refcnt: usize,
-    data: T,
+    data: StaticRefCell<T>,
 }
 
 /// A homogeneous memory allocator equipped with reference counts.
@@ -131,11 +121,9 @@ pub struct MruArena<T, const CAPACITY: usize> {
 
 /// # Safety
 ///
-/// `ptr` is a valid pointer to `MruEntry<T>` and has lifetime `'s`.
-/// Always acquire the `Spinlock<MruArena<T, CAPACITY>>` before modifying `MruEntry<T>`.
-/// Also, never move `MruEntry<T>`.
+/// Always acquire the `Spinlock<MruArena<T, CAPACITY>>` before duplicating or finalizing.
 pub struct MruPtr<'s, T> {
-    ptr: NonNull<MruEntry<T>>,
+    r: Ref<T>,
     _marker: PhantomData<&'s T>,
 }
 
@@ -151,6 +139,15 @@ impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
     // TODO(https://github.com/kaist-cp/rv6/issues/371): unsafe...
     pub const fn new(entries: [StaticRefCell<T>; CAPACITY]) -> Self {
         Self { entries }
+    }
+}
+
+impl<'s, T> ArrayPtr<'s, T> {
+    fn new(r: Ref<T>) -> ArrayPtr<'s, T> {
+        Self {
+            r,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -181,6 +178,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
             match entry.try_borrow_mut() {
                 None => {
                     // TODO: synchronization issue in Arena? (https://github.com/kaist-cp/rv6/issues/393)
+                    // runtime cost?
                     if let Some(r) = entry.try_borrow() {
                         if c(&r) {
                             return Some(ArrayPtr::new(r));
@@ -252,15 +250,15 @@ impl<T> MruEntry<T> {
     // TODO(https://github.com/kaist-cp/rv6/issues/369)
     // A workarond for https://github.com/Gilnaa/memoffset/issues/49.
     // Assumes `list_entry` is located at the beginning of `MruEntry`.
+    const DATA_OFFSET: usize = mem::size_of::<ListEntry>();
     const LIST_ENTRY_OFFSET: usize = 0;
 
     // const LIST_ENTRY_OFFSET: usize = offset_of!(MruEntry<T>, list_entry);
 
     pub const fn new(data: T) -> Self {
         Self {
-            refcnt: 0,
-            data,
             list_entry: unsafe { ListEntry::new() },
+            data: StaticRefCell::new(data),
         }
     }
 }
@@ -295,79 +293,66 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
     }
 }
 
+impl<'s, T> MruPtr<'s, T> {
+    fn new(r: Ref<T>) -> MruPtr<'s, T> {
+        Self {
+            r,
+            _marker: PhantomData,
+        }
+    }
+}
+
 impl<T> Deref for MruPtr<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &self.ptr.as_ref().data }
+        &self.r
     }
 }
 
-impl<T> Drop for MruPtr<'_, T> {
-    fn drop(&mut self) {
-        // HACK(@efenniht): we really need linear type here:
-        // https://github.com/rust-lang/rfcs/issues/814
-        panic!("MruPtr must never drop: use MruArena::dealloc instead.");
-    }
-}
-
-impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruArena<T, CAPACITY>> {
+impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
+    for Spinlock<MruArena<T, CAPACITY>>
+{
     type Data = T;
     type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
     type Handle<'s> = MruPtr<'s, T>;
 
-    #[allow(clippy::cast_ref_to_mut)]
-    fn find_or_alloc_handle<'s, C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
-        &'s self,
+    fn find_or_alloc_handle<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
+        &self,
         c: C,
         n: N,
-    ) -> Option<Self::Handle<'s>> {
+    ) -> Option<Self::Handle<'_>> {
         let this = self.lock();
-        let mut empty: *mut MruEntry<T> = ptr::null_mut();
+        let mut empty: *const MruEntry<T> = ptr::null();
         // Safe since the whole `MruArena` is protected by a lock.
         for entry in unsafe { this.list.iter_unchecked() } {
-            if c(&entry.data) {
-                // Safe since we just increase the refcnt.
-                // TODO: Remove this after PR #435.
-                let entry = unsafe { &mut *(entry as *const _ as *mut MruEntry<T>) };
-                entry.refcnt += 1;
-                return Some(Self::Handle::<'s> {
-                    ptr: NonNull::from(entry),
-                    _marker: PhantomData,
-                });
-            } else if entry.refcnt == 0 {
-                empty = entry as *const _ as *mut _;
+            if !entry.data.is_borrowed() {
+                empty = entry as *const _;
+            }
+            if let Some(r) = entry.data.try_borrow() {
+                if c(&r) {
+                    return Some(MruPtr::new(r));
+                }
             }
         }
 
-        if empty.is_null() {
-            return None;
+        match empty.is_null() {
+            true => None,
+            false => {
+                let mut rm = unsafe { &*empty }.data.borrow_mut();
+                n(&mut rm);
+                Some(MruPtr::new(rm.into()))
+            }
         }
-        // Safe since we hold the `MruArena` lock, and nobody uses the `MruEntry`.
-        let entry = unsafe { &mut *empty };
-        entry.refcnt = 1;
-        n(&mut entry.data);
-        Some(Self::Handle::<'s> {
-            ptr: NonNull::from(entry),
-            _marker: PhantomData,
-        })
     }
 
-    #[allow(clippy::cast_ref_to_mut)]
-    fn alloc_handle<'s, F: FnOnce(&mut Self::Data)>(&'s self, f: F) -> Option<Self::Handle<'s>> {
+    fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Self::Handle<'_>> {
         let this = self.lock();
         // Safe since the whole `MruArena` is protected by a lock.
         for entry in unsafe { this.list.iter_unchecked().rev() } {
-            if entry.refcnt == 0 {
-                // Safe since we hold the `MruArena` lock, and nobody uses the `MruEntry`.
-                // TODO: Remove this after PR #435.
-                let entry = unsafe { &mut *(entry as *const _ as *mut MruEntry<T>) };
-                entry.refcnt = 1;
-                f(&mut entry.data);
-                return Some(Self::Handle::<'s> {
-                    ptr: NonNull::from(entry),
-                    _marker: PhantomData,
-                });
+            if let Some(mut rm) = entry.data.try_borrow_mut() {
+                f(&mut rm);
+                return Some(MruPtr::new(rm.into()));
             }
         }
 
@@ -382,32 +367,24 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
 
         // TODO(https://github.com/kaist-cp/rv6/issues/369)
         // Make a MruArena trait and move this there.
-        unsafe { (*handle.ptr.as_ptr()).refcnt += 1 };
-        Self::Handle::<'s> {
-            ptr: handle.ptr,
-            _marker: PhantomData,
-        }
+        MruPtr::new(handle.r.clone())
     }
 
     /// # Safety
     ///
     /// `handle` must be allocated from `self`.
-    unsafe fn dealloc(&self, mut handle: Self::Handle<'_>) {
+    unsafe fn dealloc(&self, handle: Self::Handle<'_>) {
         let mut this = self.lock();
 
-        // Safe since we mutate the `MruEntry`'s data only when this is the last handle.
-        let mut entry = unsafe { handle.ptr.as_mut() };
-        if entry.refcnt == 1 {
-            entry.data.finalize::<Self>(&mut this);
+        if let Ok(mut rm) = RefMut::<T>::try_from(handle.r) {
+            rm.finalize::<Self>(&mut this);
+            let ptr = ((&*rm) as *const _ as *const StaticRefCell<MruEntry<T>> as usize
+                - MruEntry::<T>::DATA_OFFSET) as *const MruEntry<T>;
+            this.get_pin_mut()
+                .project()
+                .list
+                .push_back(unsafe { &*ptr });
         }
-        entry.refcnt -= 1;
-
-        if entry.refcnt == 0 {
-            entry.list_entry.remove();
-            this.list.push_back(entry);
-        }
-
-        mem::forget(handle);
     }
 
     unsafe fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
