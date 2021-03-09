@@ -17,7 +17,7 @@ use pin_project::pin_project;
 use spin::Once;
 
 use crate::{
-    bio::Buf, kernel::kernel, param::BSIZE, sleepablelock::Sleepablelock, virtio::VirtIODisk,
+    bio::Buf, kernel::kernel, param::BSIZE, sleepablelock::Sleepablelock, virtio::VirtIoDisk,
 };
 
 mod inode;
@@ -54,7 +54,7 @@ pub struct FileSystem {
 
     /// It may sleep until some Descriptors are freed.
     #[pin]
-    pub disk: Sleepablelock<VirtIODisk>,
+    pub disk: Sleepablelock<VirtIoDisk>,
 }
 
 pub struct FsTransaction<'s> {
@@ -66,7 +66,7 @@ impl FileSystem {
         Self {
             superblock: Once::new(),
             log: Once::new(),
-            disk: Sleepablelock::new("virtio_disk", VirtIODisk::zero()),
+            disk: Sleepablelock::new("virtio_disk", VirtIoDisk::zero()),
         }
     }
 

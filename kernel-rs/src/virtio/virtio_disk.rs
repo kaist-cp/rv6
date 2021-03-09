@@ -14,7 +14,7 @@ use arrayvec::ArrayVec;
 use pin_project::pin_project;
 
 use super::{
-    MmioRegs, VirtIOFeatures, VirtIOStatus, VirtqAvail, VirtqDesc, VirtqDescFlags, VirtqUsed, NUM,
+    MmioRegs, VirtIoFeatures, VirtIoStatus, VirtqAvail, VirtqDesc, VirtqDescFlags, VirtqUsed, NUM,
     VIRTIO_BLK_T_IN, VIRTIO_BLK_T_OUT,
 };
 use crate::{
@@ -30,7 +30,7 @@ use crate::{
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C, align(4096))]
 #[pin_project]
-pub struct VirtIODisk {
+pub struct VirtIoDisk {
     /// The first region is a set (not a ring) of DMA descriptors, with which
     /// the driver tells the device where to read and write individual disk
     /// operations. There are NUM descriptors. Most commands consist of a
@@ -70,7 +70,7 @@ struct DiskInfo {
 
     /// Disk command headers. One-for-one with descriptors, for convenience.
     #[pin]
-    ops: [VirtIOBlockOutHeader; NUM],
+    ops: [VirtIoBlockOutHeader; NUM],
 }
 
 /// # Safety
@@ -92,14 +92,14 @@ struct InflightInfo {
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
 #[derive(Copy, Clone)]
-struct VirtIOBlockOutHeader {
+struct VirtIoBlockOutHeader {
     typ: u32,
     reserved: u32,
     sector: usize,
     _marker: PhantomPinned,
 }
 
-impl VirtIODisk {
+impl VirtIoDisk {
     pub const fn zero() -> Self {
         Self {
             desc: [VirtqDesc::zero(); NUM],
@@ -116,17 +116,17 @@ impl DiskInfo {
             free: [true; NUM],
             used_idx: 0,
             inflight: [InflightInfo::zero(); NUM],
-            ops: [VirtIOBlockOutHeader::zero(); NUM],
+            ops: [VirtIoBlockOutHeader::zero(); NUM],
         }
     }
 
-    /// Assigns a new `VirtIOBlockOutHeader` at index `index` after dropping the original one.
+    /// Assigns a new `VirtIoBlockOutHeader` at index `index` after dropping the original one.
     /// Then, returns an immutable reference to it.
     fn set_op(
         self: Pin<&mut Self>,
         index: usize,
-        op: VirtIOBlockOutHeader,
-    ) -> &VirtIOBlockOutHeader {
+        op: VirtIoBlockOutHeader,
+    ) -> &VirtIoBlockOutHeader {
         // Safe since we drop the element at `index` before assigning.
         let this = unsafe { self.get_unchecked_mut() };
         this.ops[index] = op;
@@ -169,7 +169,7 @@ impl InflightInfo {
     }
 }
 
-impl VirtIOBlockOutHeader {
+impl VirtIoBlockOutHeader {
     const fn zero() -> Self {
         Self {
             typ: 0,
@@ -215,7 +215,7 @@ impl Drop for Descriptor {
     }
 }
 
-impl Sleepablelock<VirtIODisk> {
+impl Sleepablelock<VirtIoDisk> {
     /// Return a locked Buf with the `latest` contents of the indicated block.
     /// If buf.valid is true, we don't need to access Disk.
     pub fn read(&self, dev: u32, blockno: u32) -> Buf<'static> {
@@ -223,47 +223,47 @@ impl Sleepablelock<VirtIODisk> {
             .get_buf(dev, blockno)
             .lock();
         if !buf.deref_inner().valid {
-            VirtIODisk::rw(&mut self.lock(), &mut buf, false);
+            VirtIoDisk::rw(&mut self.lock(), &mut buf, false);
             buf.deref_inner_mut().valid = true;
         }
         buf
     }
 
     pub fn write(&self, b: &mut Buf<'static>) {
-        VirtIODisk::rw(&mut self.lock(), b, true)
+        VirtIoDisk::rw(&mut self.lock(), b, true)
     }
 }
 
-impl VirtIODisk {
+impl VirtIoDisk {
     pub fn init(&self) {
-        let mut status: VirtIOStatus = VirtIOStatus::empty();
+        let mut status: VirtIoStatus = VirtIoStatus::empty();
 
         // MMIO registers are located below KERNBASE, while kernel text and data
         // are located above KERNBASE, so we can safely read/write MMIO registers.
         MmioRegs::check_virtio_disk();
-        status.insert(VirtIOStatus::ACKNOWLEDGE);
+        status.insert(VirtIoStatus::ACKNOWLEDGE);
         MmioRegs::set_status(&status);
-        status.insert(VirtIOStatus::DRIVER);
+        status.insert(VirtIoStatus::DRIVER);
         MmioRegs::set_status(&status);
 
         // Negotiate features
         let features = MmioRegs::get_features()
-            - (VirtIOFeatures::BLK_F_RO
-                | VirtIOFeatures::BLK_F_SCSI
-                | VirtIOFeatures::BLK_F_CONFIG_WCE
-                | VirtIOFeatures::BLK_F_MQ
-                | VirtIOFeatures::F_ANY_LAYOUT
-                | VirtIOFeatures::RING_F_EVENT_IDX
-                | VirtIOFeatures::RING_F_INDIRECT_DESC);
+            - (VirtIoFeatures::BLK_F_RO
+                | VirtIoFeatures::BLK_F_SCSI
+                | VirtIoFeatures::BLK_F_CONFIG_WCE
+                | VirtIoFeatures::BLK_F_MQ
+                | VirtIoFeatures::F_ANY_LAYOUT
+                | VirtIoFeatures::RING_F_EVENT_IDX
+                | VirtIoFeatures::RING_F_INDIRECT_DESC);
 
         MmioRegs::set_features(&features);
 
         // Tell device that feature negotiation is complete.
-        status.insert(VirtIOStatus::FEATURES_OK);
+        status.insert(VirtIoStatus::FEATURES_OK);
         MmioRegs::set_status(&status);
 
         // Tell device we're completely ready.
-        status.insert(VirtIOStatus::DRIVER_OK);
+        status.insert(VirtIoStatus::DRIVER_OK);
         MmioRegs::set_status(&status);
         // Safe since page size is `PGSIZE`.
         unsafe {
@@ -319,11 +319,11 @@ impl VirtIODisk {
         let buf0 = this
             .info
             .as_mut()
-            .set_op(desc[0].idx, VirtIOBlockOutHeader::new(write, sector));
+            .set_op(desc[0].idx, VirtIoBlockOutHeader::new(write, sector));
 
         this.desc[desc[0].idx] = VirtqDesc {
             addr: buf0 as *const _ as _,
-            len: mem::size_of::<VirtIOBlockOutHeader>() as _,
+            len: mem::size_of::<VirtIoBlockOutHeader>() as _,
             flags: VirtqDescFlags::NEXT,
             next: desc[1].idx as _,
         };

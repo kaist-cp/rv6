@@ -17,7 +17,7 @@ use crate::memlayout::VIRTIO0;
 
 mod virtio_disk;
 
-pub use virtio_disk::VirtIODisk;
+pub use virtio_disk::VirtIoDisk;
 
 /// Memory mapped IO registers.
 /// The kernel and virtio driver communicates to each other using these registers.
@@ -101,7 +101,7 @@ impl MmioRegs {
     }
 
     /// Sets the virtio status.
-    fn set_status(status: &VirtIOStatus) {
+    fn set_status(status: &VirtIoStatus) {
         // Simply setting status bits does not cause side effects.
         unsafe {
             MmioRegs::Status.write(status.bits());
@@ -109,12 +109,12 @@ impl MmioRegs {
     }
 
     /// Returns the device's virtio features.
-    fn get_features() -> VirtIOFeatures {
-        VirtIOFeatures::from_bits_truncate(MmioRegs::DeviceFeatures.read())
+    fn get_features() -> VirtIoFeatures {
+        VirtIoFeatures::from_bits_truncate(MmioRegs::DeviceFeatures.read())
     }
 
     /// Sets the device's virtio features.
-    fn set_features(features: &VirtIOFeatures) {
+    fn set_features(features: &VirtIoFeatures) {
         // Simply setting features bits does not cause side effects.
         unsafe {
             MmioRegs::DriverFeatures.write(features.bits());
@@ -179,7 +179,7 @@ impl MmioRegs {
 
 bitflags! {
     /// Status register bits, from qemu virtio_config.h
-    struct VirtIOStatus: u32 {
+    struct VirtIoStatus: u32 {
         const ACKNOWLEDGE = 0b0001;
         const DRIVER = 0b0010;
         const DRIVER_OK = 0b0100;
@@ -189,7 +189,7 @@ bitflags! {
 
 bitflags! {
     // Device feature bits
-    struct VirtIOFeatures: u32 {
+    struct VirtIoFeatures: u32 {
         /// Disk is read-only
         const BLK_F_RO = 1 << 5;
 
