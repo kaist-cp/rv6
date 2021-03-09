@@ -10,7 +10,7 @@ if len(sys.argv) > 1:
 
 if subprocess.call('which count-unsafe > /dev/null 2>&1', shell=True) != 0:
     print('''Please install count-unsafe by\n
-`rustup update nightly && cargo +nightly install --git https://github.com/efenniht/count-unsafe`''')
+`rustup update nightly && cargo +nightly install --git https://github.com/Medowhill/count-unsafe`''')
     exit(-1)
 
 if subprocess.call('which cloc > /dev/null 2>&1', shell=True) != 0:
