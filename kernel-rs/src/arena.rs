@@ -84,22 +84,16 @@ pub trait ArenaObject {
     fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>);
 }
 
-// TODO: Remove `ArrayEntry<T>` and just use `StaticRefCell`?
-pub struct ArrayEntry<T> {
-    data: T,
-}
-
 /// A homogeneous memory allocator equipped with reference counts.
 pub struct ArrayArena<T, const CAPACITY: usize> {
-    entries: [StaticRefCell<ArrayEntry<T>>; CAPACITY],
+    entries: [StaticRefCell<T>; CAPACITY],
 }
 
 /// # Safety
 ///
 /// Always acquire the `Spinlock<ArrayArena<T, CAPACITY>>` before modifying `ArrayEntry<T>`.
 pub struct ArrayPtr<'s, T> {
-    //TODO: Still need lifetimes?
-    ptr: Ref<ArrayEntry<T>>,
+    r: Ref<T>,
     _marker: PhantomData<&'s T>,
 }
 
@@ -109,9 +103,9 @@ pub struct ArrayPtr<'s, T> {
 unsafe impl<T: Send> Send for ArrayPtr<'_, T> {}
 
 impl<'s, T> ArrayPtr<'s, T> {
-    fn new(ptr: Ref<ArrayEntry<T>>) -> ArrayPtr<'s, T> {
+    fn new(r: Ref<T>) -> ArrayPtr<'s, T> {
         Self {
-            ptr,
+            r,
             _marker: PhantomData,
         }
     }
@@ -153,15 +147,9 @@ pub struct Rc<'s, A: Arena, T: Deref<Target = A>> {
     inner: ManuallyDrop<A::Handle<'s>>,
 }
 
-impl<T> ArrayEntry<T> {
-    pub const fn new_celled(data: T) -> StaticRefCell<Self> {
-        StaticRefCell::new(Self { data })
-    }
-}
-
 impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
     // TODO(https://github.com/kaist-cp/rv6/issues/371): unsafe...
-    pub const fn new(entries: [StaticRefCell<ArrayEntry<T>>; CAPACITY]) -> Self {
+    pub const fn new(entries: [StaticRefCell<T>; CAPACITY]) -> Self {
         Self { entries }
     }
 }
@@ -170,18 +158,9 @@ impl<T> Deref for ArrayPtr<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.ptr.data
+        &self.r
     }
 }
-
-// TODO: Just add an extra field to `ArrayPtr`?
-// impl<T> Drop for ArrayPtr<'_, T> {
-//     fn drop(&mut self) {
-//         // HACK(@efenniht): we really need linear type here:
-//         // https://github.com/rust-lang/rfcs/issues/814
-//         panic!("ArrayPtr must never drop: use ArrayArena::dealloc instead.");
-//     }
-// }
 
 impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     for Spinlock<ArrayArena<T, CAPACITY>>
@@ -203,7 +182,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
                 None => {
                     // TODO: synchronization issue in Arena? (https://github.com/kaist-cp/rv6/issues/393)
                     if let Some(r) = entry.try_borrow() {
-                        if c(&r.data) {
+                        if c(&r) {
                             return Some(ArrayPtr::new(r));
                         }
                     }
@@ -220,7 +199,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         }
 
         empty.map(|mut rm| {
-            n(&mut rm.data);
+            n(&mut rm);
             ArrayPtr::new(rm.into())
         })
     }
@@ -230,7 +209,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
 
         for entry in &this.entries {
             if let Some(mut rm) = entry.try_borrow_mut() {
-                f(&mut rm.data);
+                f(&mut rm);
                 return Some(ArrayPtr::new(rm.into()));
             }
         }
@@ -240,22 +219,24 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     /// # Safety
     ///
     /// `handle` must be allocated from `self`.
+    // TODO: If we wrap `ArrayPtr::r` with `SpinlockProtected`, then we can just use `clone` instead.
     unsafe fn dup<'s>(&self, handle: &Self::Handle<'s>) -> Self::Handle<'s> {
         let mut _this = self.lock();
 
         // TODO(https://github.com/kaist-cp/rv6/issues/369)
         // Make a ArrayArena trait and move this there.
-        ArrayPtr::new(handle.ptr.clone())
+        ArrayPtr::new(handle.r.clone())
     }
 
     /// # Safety
     ///
     /// `handle` must be allocated from `self`.
+    // TODO: If we wrap `ArrayPtr::r` with `SpinlockProtected`, then we can just use `drop` instead.
     unsafe fn dealloc(&self, handle: Self::Handle<'_>) {
         let mut this = self.lock();
 
-        if let Ok(mut rm) = RefMut::<ArrayEntry<T>>::try_from(handle.ptr) {
-            rm.data.finalize::<Self>(&mut this);
+        if let Ok(mut rm) = RefMut::<T>::try_from(handle.r) {
+            rm.finalize::<Self>(&mut this);
         }
     }
 

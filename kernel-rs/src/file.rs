@@ -5,13 +5,14 @@ use core::{cell::UnsafeCell, cmp, mem, ops::Deref, ops::DerefMut};
 use array_macro::array;
 
 use crate::{
-    arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
+    arena::{Arena, ArenaObject, ArrayArena, Rc},
     fs::{FileSystem, InodeGuard, RcInode},
     kernel::kernel_builder,
     lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
     proc::CurrentProc,
+    static_refcell::StaticRefCell,
     vm::UVAddr,
 };
 
@@ -242,7 +243,7 @@ impl FileTable {
     pub const fn zero() -> Self {
         Spinlock::new(
             "FTABLE",
-            ArrayArena::new(array![_ => ArrayEntry::new_celled(File::zero()); NFILE]),
+            ArrayArena::new(array![_ => StaticRefCell::new(File::zero()); NFILE]),
         )
     }
 
