@@ -131,27 +131,6 @@ impl<R: RawLock, T> Guard<'_, R, T> {
         // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
         unsafe { Pin::new_unchecked(&mut *self.lock.data.get()) }
     }
-
-    /// Releases the inner `RawSpinlock`.
-    ///
-    /// # Safety
-    ///
-    /// `raw_release()` and `raw_acquire` must always be used as a pair.
-    /// Use these only for temporarily releasing (and then acquiring) the lock.
-    /// Also, do not access `self` until re-acquiring the lock with `raw_acquire()`.
-    pub unsafe fn raw_release(&mut self) {
-        self.lock.lock.release();
-    }
-
-    /// Acquires the inner `RawSpinlock`.
-    ///
-    /// # Safety
-    ///
-    /// `raw_release()` and `raw_acquire` must always be used as a pair.
-    /// Use these only for temporarily releasing (and then acquiring) the lock.
-    pub unsafe fn raw_acquire(&mut self) {
-        self.lock.lock.acquire();
-    }
 }
 
 impl<R: RawLock, T> Drop for Guard<'_, R, T> {

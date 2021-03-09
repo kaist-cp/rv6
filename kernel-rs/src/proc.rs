@@ -223,7 +223,7 @@ impl WaitChannel {
 
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
-    pub fn sleep<R: RawLock, T>(&self, lk: &mut Guard<'_, R, T>, proc: &CurrentProc<'_>) {
+    pub fn sleep<R: RawLock, T>(&self, lock_guard: &mut Guard<'_, R, T>, proc: &CurrentProc<'_>) {
         // Must acquire p->lock in order to
         // change p->state and then call sched.
         // Once we hold p->lock, we can be
@@ -233,31 +233,22 @@ impl WaitChannel {
 
         //DOC: sleeplock1
         let mut guard = proc.lock();
-        unsafe {
-            // Temporarily release the inner `RawSpinlock`.
-            // This is safe, since we don't access `lk` until re-acquiring the lock
-            // at `lk.raw_acquire()`.
-            lk.raw_release();
-        }
+        lock_guard.reacquire_after(move || {
+            // Go to sleep.
+            guard.deref_mut_info().waitchannel = self;
+            guard.deref_mut_info().state = Procstate::SLEEPING;
+            unsafe {
+                // Safe since we hold `p.lock()`, changed the process's state,
+                // and device interrupts are disabled by `push_off()` in `p.lock()`.
+                guard.sched();
+            }
 
-        // Go to sleep.
-        guard.deref_mut_info().waitchannel = self;
-        guard.deref_mut_info().state = Procstate::SLEEPING;
-        unsafe {
-            // Safe since we hold `p.lock()`, changed the process's state,
-            // and device interrupts are disabled by `push_off()` in `p.lock()`.
-            guard.sched();
-        }
+            // Tidy up.
+            guard.deref_mut_info().waitchannel = ptr::null();
 
-        // Tidy up.
-        guard.deref_mut_info().waitchannel = ptr::null();
-
-        // Reacquire original lock.
-        drop(guard);
-        unsafe {
-            // Safe since this is paired with a previous `lk.raw_release()`.
-            lk.raw_acquire();
-        }
+            // Reacquire original lock.
+            drop(guard);
+        });
     }
 
     /// Wake up all processes sleeping on waitchannel.
@@ -1127,8 +1118,7 @@ unsafe fn forkret() {
 }
 
 impl KernelBuilder {
-    /// Returns `Some<CurrentProc<'_>>` if current proc exists (i.e. When (*cpu).proc is non-null),
-    /// where the returned `CurrentProc`'s `inner` is valid during `&self`'s lifetime.
+    /// Returns `Some<CurrentProc<'_>>` if current proc exists (i.e. When (*cpu).proc is non-null).
     /// Otherwise, returns `None` (when current proc is null).
     pub fn current_proc(&self) -> Option<CurrentProc<'_>> {
         unsafe { push_off() };
