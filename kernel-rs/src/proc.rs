@@ -233,6 +233,7 @@ impl WaitChannel {
 
         //DOC: sleeplock1
         let mut guard = proc.lock();
+        // Release the lock while we sleep on the waitchannel, and reacquire after the process wakes up.
         lock_guard.reacquire_after(move || {
             // Go to sleep.
             guard.deref_mut_info().waitchannel = self;
@@ -246,8 +247,10 @@ impl WaitChannel {
             // Tidy up.
             guard.deref_mut_info().waitchannel = ptr::null();
 
-            // Reacquire original lock.
+            // Now we can drop the process guard since the process woke up.
             drop(guard);
+
+            // Reacquire original lock.
         });
     }
 
