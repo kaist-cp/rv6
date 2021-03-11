@@ -1,7 +1,7 @@
 //! Sleepable locks
 use core::cell::UnsafeCell;
 
-use super::{spinlock::RawSpinlock, Guard, Lock, RawLock};
+use super::{spinlock::RawSpinlock, Guard, Lock, RawLock, Waitable};
 use crate::{kernel::kernel_builder, proc::WaitChannel};
 
 /// Mutual exclusion spin locks that can sleep.
@@ -60,5 +60,17 @@ impl<T> SleepablelockGuard<'_, T> {
 
     pub fn wakeup(&self) {
         self.lock.lock.waitchannel.wakeup();
+    }
+}
+
+impl<T> Waitable for SleepablelockGuard<'_, T> {
+    fn reacquire_after<F, U>(&mut self, f: F) -> U
+    where
+        F: FnOnce() -> U,
+    {
+        self.lock.lock.release();
+        let result = f();
+        self.lock.lock.acquire();
+        result
     }
 }

@@ -46,6 +46,14 @@ pub trait RawLock {
     fn holding(&self) -> bool;
 }
 
+pub trait Waitable {
+    /// Temporarily releases the lock and calls function `f`.
+    /// After `f` returns, reacquires the lock and returns the result of the function call.
+    fn reacquire_after<F, U>(&mut self, f: F) -> U
+    where
+        F: FnOnce() -> U;
+}
+
 /// Locks that provide mutual exclusion and has its own `RawLock`.
 pub struct Lock<R: RawLock, T> {
     lock: R,
@@ -116,18 +124,6 @@ impl<R: RawLock, T> Lock<R, T> {
 }
 
 impl<R: RawLock, T> Guard<'_, R, T> {
-    /// Temporarily releases the lock and calls function `f`.
-    /// After `f` returns, reacquires the lock and returns the result of the function call.
-    pub fn reacquire_after<F, U>(&mut self, f: F) -> U
-    where
-        F: FnOnce() -> U,
-    {
-        self.lock.lock.release();
-        let result = f();
-        self.lock.lock.acquire();
-        result
-    }
-
     /// Returns a pinned mutable reference to the inner data.
     pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
         // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
