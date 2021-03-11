@@ -220,9 +220,6 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     // TODO: If we wrap `ArrayPtr::r` with `SpinlockProtected`, then we can just use `clone` instead.
     unsafe fn dup<'s>(&self, handle: &Self::Handle<'s>) -> Self::Handle<'s> {
         let mut _this = self.lock();
-
-        // TODO(https://github.com/kaist-cp/rv6/issues/369)
-        // Make a ArrayArena trait and move this there.
         ArrayPtr::new(handle.r.clone())
     }
 
@@ -364,9 +361,6 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     /// `handle` must be allocated from `self`.
     unsafe fn dup<'s>(&self, handle: &Self::Handle<'s>) -> Self::Handle<'s> {
         let mut _this = self.lock();
-
-        // TODO(https://github.com/kaist-cp/rv6/issues/369)
-        // Make a MruArena trait and move this there.
         MruPtr::new(handle.r.clone())
     }
 
