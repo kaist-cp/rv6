@@ -721,7 +721,7 @@ impl ProcsBuilder {
             nextpid: AtomicI32::new(1),
             process_pool: array![_ => ProcBuilder::zero(); NPROC],
             initial_proc: ptr::null(),
-            wait_lock: Spinlock::empty("wait_lock"),
+            wait_lock: Spinlock::new("wait_lock", ()),
         }
     }
 

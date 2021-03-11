@@ -145,10 +145,3 @@ impl<T> Spinlock<T> {
         }
     }
 }
-
-impl Spinlock<()> {
-    /// Returns a new `Spinlock` that holds no data. Use for synchronization.
-    pub const fn empty(name: &'static str) -> Self {
-        Self::new(name, ())
-    }
-}
