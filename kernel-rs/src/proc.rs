@@ -232,7 +232,7 @@ impl WaitChannel {
         //DOC: sleeplock1
         let mut guard = proc.lock();
         // Release the lock while we sleep on the waitchannel, and reacquire after the process wakes up.
-        lock_guard.reacquire_inner_spinlock(move || {
+        lock_guard.reacquire_spinlock_after(move || {
             // Go to sleep.
             guard.deref_mut_info().waitchannel = self;
             guard.deref_mut_info().state = Procstate::SLEEPING;
