@@ -3,7 +3,7 @@ use core::cmp;
 use cstr_core::CStr;
 
 use super::{InodeType, RcInode, DIRSIZ, ROOTINO};
-use crate::{kernel::kernel, param::ROOTDEV, proc::CurrentProc};
+use crate::{kernel::kernel_builder, param::ROOTDEV, proc::CurrentProc};
 
 #[derive(PartialEq)]
 #[repr(transparent)]
@@ -63,7 +63,7 @@ impl Path {
     }
 
     pub fn root() -> RcInode<'static> {
-        kernel().itable.get_inode(ROOTDEV, ROOTINO)
+        kernel_builder().itable.get_inode(ROOTDEV, ROOTINO)
     }
 
     pub fn namei(&self, proc: &CurrentProc<'_>) -> Result<RcInode<'static>, ()> {

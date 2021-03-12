@@ -4,7 +4,7 @@ use static_assertions::const_assert;
 
 use crate::{
     file::{FileType, RcFile},
-    kernel::kernel,
+    kernel::kernel_builder,
     page::Page,
     proc::{CurrentProc, WaitChannel},
     riscv::PGSIZE,
@@ -134,7 +134,7 @@ impl Deref for AllocatedPipe {
 
 impl AllocatedPipe {
     pub fn alloc() -> Result<(RcFile<'static>, RcFile<'static>), ()> {
-        let page = kernel().alloc().ok_or(())?;
+        let page = kernel_builder().alloc().ok_or(())?;
         let mut ptr = unsafe {
             // Safe since by the invariant of `Page`, `page` is always non-null.
             NonNull::new_unchecked(page.into_usize() as *mut Pipe)
@@ -162,16 +162,16 @@ impl AllocatedPipe {
                 write_waitchannel: WaitChannel::new(),
             };
         }
-        let f0 = kernel()
+        let f0 = kernel_builder()
             .ftable
             .alloc_file(FileType::Pipe { pipe: Self { ptr } }, true, false)
             // Safe since ptr is an address of a page obtained by alloc().
-            .map_err(|_| kernel().free(unsafe { Page::from_usize(ptr.as_ptr() as _) }))?;
-        let f1 = kernel()
+            .map_err(|_| kernel_builder().free(unsafe { Page::from_usize(ptr.as_ptr() as _) }))?;
+        let f1 = kernel_builder()
             .ftable
             .alloc_file(FileType::Pipe { pipe: Self { ptr } }, false, true)
             // Safe since ptr is an address of a page obtained by alloc().
-            .map_err(|_| kernel().free(unsafe { Page::from_usize(ptr.as_ptr() as _) }))?;
+            .map_err(|_| kernel_builder().free(unsafe { Page::from_usize(ptr.as_ptr() as _) }))?;
 
         Ok((f0, f1))
     }
@@ -181,7 +181,7 @@ impl AllocatedPipe {
             // If `Pipe::close()` returned true, this means all `AllocatedPipe`s were closed.
             // Hence, we can free the `Pipe`.
             // Also, the following is safe since `ptr` holds a `Pipe` stored in a valid page allocated from `kernel().alloc()`.
-            kernel().free(unsafe { Page::from_usize(self.ptr.as_ptr() as _) });
+            kernel_builder().free(unsafe { Page::from_usize(self.ptr.as_ptr() as _) });
         }
     }
 }

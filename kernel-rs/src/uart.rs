@@ -5,7 +5,7 @@ use self::UartCtrlRegs::{FCR, IER, ISR, LCR, LSR, RBR, THR};
 use crate::memlayout::UART0;
 use crate::{
     console::consoleintr,
-    kernel::kernel,
+    kernel::kernel_builder,
     sleepablelock::{Sleepablelock, SleepablelockGuard},
     spinlock::{pop_off, push_off},
     utils::spin_loop,
@@ -147,7 +147,7 @@ impl Uart {
     /// by write().
     pub fn putc(&self, c: i32) {
         let mut guard = self.tx_lock.lock();
-        if kernel().is_panicked() {
+        if kernel_builder().is_panicked() {
             spin_loop();
         }
         loop {
@@ -173,7 +173,7 @@ impl Uart {
         unsafe {
             push_off();
         }
-        if kernel().is_panicked() {
+        if kernel_builder().is_panicked() {
             spin_loop();
         }
 

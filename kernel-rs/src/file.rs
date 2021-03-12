@@ -7,7 +7,7 @@ use array_macro::array;
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
     fs::{InodeGuard, RcInode},
-    kernel::kernel,
+    kernel::kernel_builder,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
     proc::CurrentProc,
@@ -126,7 +126,7 @@ impl File {
                 ret
             }
             FileType::Device { major, .. } => {
-                kernel()
+                kernel_builder()
                     .devsw
                     .get(*major as usize)
                     .and_then(|dev| Some(dev.read?(addr, n) as usize))
@@ -159,7 +159,7 @@ impl File {
                 let mut bytes_written: usize = 0;
                 while bytes_written < n {
                     let bytes_to_write = cmp::min(n - bytes_written, max);
-                    let tx = kernel().file_system.begin_transaction();
+                    let tx = kernel_builder().file_system.begin_transaction();
                     let mut ip = inner.lock();
                     let curr_off = *ip.off;
                     let r = ip
@@ -186,7 +186,7 @@ impl File {
                 Ok(n)
             }
             FileType::Device { major, .. } => {
-                kernel()
+                kernel_builder()
                     .devsw
                     .get(*major as usize)
                     .and_then(|dev| Some(dev.write?(addr, n) as usize))
@@ -211,7 +211,7 @@ impl ArenaObject for File {
                     // The inode ip will be dropped by drop(ip). Deallocation
                     // of an inode may cause disk write operations, so we must
                     // begin a transaction here.
-                    let _tx = kernel().file_system.begin_transaction();
+                    let _tx = kernel_builder().file_system.begin_transaction();
                     drop(ip);
                 }
                 _ => (),

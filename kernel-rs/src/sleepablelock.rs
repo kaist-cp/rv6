@@ -6,7 +6,7 @@ use core::pin::Pin;
 
 use crate::spinlock::RawSpinlock;
 use crate::{
-    kernel::kernel,
+    kernel::kernel_builder,
     proc::{WaitChannel, Waitable},
 };
 
@@ -73,9 +73,10 @@ impl<T: Unpin> Sleepablelock<T> {
 
 impl<T> SleepablelockGuard<'_, T> {
     pub fn sleep(&mut self) {
-        self.lock
-            .waitchannel
-            .sleep(self, &kernel().current_proc().expect("No current proc"));
+        self.lock.waitchannel.sleep(
+            self,
+            &kernel_builder().current_proc().expect("No current proc"),
+        );
     }
 
     pub fn wakeup(&self) {

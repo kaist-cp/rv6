@@ -7,7 +7,7 @@ use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
 use crate::{
-    kernel::kernel,
+    kernel::kernel_builder,
     proc::{Cpu, Waitable},
     riscv::{intr_get, intr_off, intr_on},
 };
@@ -66,7 +66,7 @@ impl RawSpinlock {
             .locked
             .compare_exchange(
                 ptr::null_mut(),
-                kernel().current_cpu(),
+                kernel_builder().current_cpu(),
                 Ordering::Acquire,
                 // Okay to use `Relaxed` ordering since we don't enter the critical section anyway
                 // if the exchange fails.
@@ -98,7 +98,7 @@ impl RawSpinlock {
     /// Check whether this cpu is holding the lock.
     /// Interrupts must be off.
     pub fn holding(&self) -> bool {
-        self.locked.load(Ordering::Relaxed) == kernel().current_cpu()
+        self.locked.load(Ordering::Relaxed) == kernel_builder().current_cpu()
     }
 }
 
@@ -309,7 +309,7 @@ impl<T: Unpin> SpinlockProtected<T> {
     /// that refers to the same `RawSpinlock`.
     /// TODO(https://github.com/kaist-cp/rv6/issues/375)
     /// This runtime cost can be removed by using a trait, such as `pub trait SpinlockID {}`.
-    pub fn get_mut<'a: 'b, 'b>(&'a self, guard: &'b mut SpinlockProtectedGuard<'a>) -> &'b mut T {
+    pub fn get_mut<'a: 'b, 'b>(&'a self, guard: &'b mut SpinlockProtectedGuard<'_>) -> &'b mut T {
         assert!(ptr::eq(self.lock, guard.lock));
         unsafe { &mut *self.data.get() }
     }
@@ -338,7 +338,7 @@ pub unsafe fn push_off() {
     let old = intr_get();
     unsafe { intr_off() };
 
-    let mut cpu = kernel().current_cpu();
+    let mut cpu = kernel_builder().current_cpu();
     if unsafe { (*cpu).noff } == 0 {
         unsafe { (*cpu).interrupt_enabled = old };
     }
@@ -346,7 +346,7 @@ pub unsafe fn push_off() {
 }
 
 pub unsafe fn pop_off() {
-    let mut cpu: *mut Cpu = kernel().current_cpu();
+    let mut cpu: *mut Cpu = kernel_builder().current_cpu();
     assert!(!intr_get(), "pop_off - interruptible");
     assert!(unsafe { (*cpu).noff } >= 1, "pop_off");
 

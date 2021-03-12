@@ -2,6 +2,7 @@ use core::cell::UnsafeCell;
 use core::fmt::{self, Write};
 use core::hint::spin_loop;
 use core::mem::MaybeUninit;
+use core::ops::Deref;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -18,7 +19,7 @@ use crate::{
     param::{NCPU, NDEV},
     plic::{plicinit, plicinithart},
     println,
-    proc::{cpuid, scheduler, Cpu, ProcessSystem},
+    proc::{cpuid, scheduler, Cpu, Procs, ProcsBuilder},
     sleepablelock::Sleepablelock,
     spinlock::Spinlock,
     trap::{trapinit, trapinithart},
@@ -27,13 +28,20 @@ use crate::{
 };
 
 /// The kernel.
-static mut KERNEL: Kernel = Kernel::zero();
+static mut KERNEL: KernelBuilder = KernelBuilder::zero();
 
 /// After intialized, the kernel is safe to immutably access.
-// TODO: unsafe?
+// TODO: make it unsafe
 #[inline]
-pub fn kernel() -> &'static Kernel {
+pub fn kernel_builder() -> &'static KernelBuilder {
     unsafe { &KERNEL }
+}
+
+#[inline]
+pub unsafe fn kernel() -> &'static Kernel {
+    // Safe to cast &KernelBuilder into &Kernel
+    // since Kernel has a transparent memory layout.
+    unsafe { &*(kernel_builder() as *const _ as *const _) }
 }
 
 /// Returns a pinned mutable reference to the `KERNEL`.
@@ -43,7 +51,7 @@ pub fn kernel() -> &'static Kernel {
 /// The caller should make sure not to call this function multiple times.
 /// All mutable accesses to the `KERNEL` must be done through this.
 #[inline]
-unsafe fn kernel_unchecked_pin() -> Pin<&'static mut Kernel> {
+unsafe fn kernel_builder_unchecked_pin() -> Pin<&'static mut KernelBuilder> {
     // Safe if all mutable accesses to the `KERNEL` are done through this.
     unsafe { Pin::new_unchecked(&mut KERNEL) }
 }
@@ -56,7 +64,7 @@ unsafe fn kernel_unchecked_pin() -> Pin<&'static mut Kernel> {
 /// If the `Cpu` executing the code has a non-null `Proc` pointer,
 /// the `Proc` in `CurrentProc` is always valid while the `Kernel` is alive.
 #[pin_project]
-pub struct Kernel {
+pub struct KernelBuilder {
     panicked: AtomicBool,
 
     /// Sleeps waiting for there are some input in console buffer.
@@ -77,7 +85,7 @@ pub struct Kernel {
 
     /// Current process system.
     #[pin]
-    pub procs: ProcessSystem,
+    pub procs: ProcsBuilder,
 
     // The `Cpu` struct of the current cpu can be mutated. To do so, we need to
     // obtain mutable pointers to the elements of `cpus` from a shared reference
@@ -96,7 +104,28 @@ pub struct Kernel {
     pub file_system: FileSystem,
 }
 
+#[repr(transparent)]
+pub struct Kernel {
+    inner: KernelBuilder,
+}
+
 impl Kernel {
+    pub fn procs(&self) -> &Procs {
+        // Safe to cast &ProcsBuilder into &Procs
+        // since Procs has a transparent memory layout.
+        unsafe { &*(&self.inner.procs as *const _ as *const _) }
+    }
+}
+
+impl Deref for Kernel {
+    type Target = KernelBuilder;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl KernelBuilder {
     const fn zero() -> Self {
         Self {
             panicked: AtomicBool::new(false),
@@ -106,7 +135,7 @@ impl Kernel {
             kmem: Spinlock::new("KMEM", Kmem::new()),
             memory: MaybeUninit::uninit(),
             ticks: Sleepablelock::new("time", 0),
-            procs: ProcessSystem::zero(),
+            procs: ProcsBuilder::zero(),
             cpus: array![_ => UnsafeCell::new(Cpu::new()); NCPU],
             // Safe since the only way to access `bcache` is through `kernel()`, which is an immutable reference.
             bcache: unsafe { Bcache::zero() },
@@ -136,14 +165,14 @@ impl Kernel {
         // Fill with junk to catch dangling refs.
         page.write_bytes(1);
 
-        kernel().kmem.lock().free(page);
+        self.kmem.lock().free(page);
     }
 
     /// Allocate one 4096-byte page of physical memory.
     /// Returns a pointer that the kernel can use.
     /// Returns None if the memory cannot be allocated.
     pub fn alloc(&self) -> Option<Page> {
-        let mut page = kernel().kmem.lock().alloc()?;
+        let mut page = self.kmem.lock().alloc()?;
 
         // fill with junk
         page.write_bytes(5);
@@ -153,9 +182,9 @@ impl Kernel {
     /// Prints the given formatted string with the Printer.
     pub fn printer_write_fmt(&self, args: fmt::Arguments<'_>) -> fmt::Result {
         if self.is_panicked() {
-            unsafe { (*kernel().printer.get_mut_raw()).write_fmt(args) }
+            unsafe { (*self.printer.get_mut_raw()).write_fmt(args) }
         } else {
-            let mut lock = kernel().printer.lock();
+            let mut lock = self.printer.lock();
             lock.write_fmt(args)
         }
     }
@@ -182,7 +211,7 @@ impl Kernel {
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {
-        $crate::kernel::kernel().printer_write_fmt(format_args!($($arg)*)).unwrap();
+        $crate::kernel::kernel_builder().printer_write_fmt(format_args!($($arg)*)).unwrap();
     };
 }
 
@@ -198,7 +227,7 @@ macro_rules! println {
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
     // Freeze other CPUs.
-    kernel().panic();
+    kernel_builder().panic();
     println!("{}", info);
 
     crate::utils::spin_loop()
@@ -213,21 +242,27 @@ pub unsafe fn kernel_main() -> ! {
 
         // Console.
         Uart::init();
-        unsafe { consoleinit(kernel_unchecked_pin().project().devsw) };
+        unsafe { consoleinit(kernel_builder_unchecked_pin().project().devsw) };
 
         println!();
         println!("rv6 kernel is booting");
         println!();
 
         // Physical page allocator.
-        unsafe { kernel_unchecked_pin().project().kmem.get_mut().init() };
+        unsafe {
+            kernel_builder_unchecked_pin()
+                .project()
+                .kmem
+                .get_mut()
+                .init()
+        };
 
         // Create kernel memory manager.
         let memory = KernelMemory::new().expect("PageTable::new failed");
 
         // Turn on paging.
         unsafe {
-            kernel_unchecked_pin()
+            kernel_builder_unchecked_pin()
                 .project()
                 .memory
                 .write(memory)
@@ -235,10 +270,10 @@ pub unsafe fn kernel_main() -> ! {
         };
 
         // Process system.
-        unsafe { kernel_unchecked_pin().project().procs.init() };
+        unsafe { kernel_builder_unchecked_pin().project().procs.init() };
 
         // Trap vectors.
-        unsafe { trapinit() };
+        trapinit();
 
         // Install kernel trap vector.
         unsafe { trapinithart() };
@@ -250,11 +285,17 @@ pub unsafe fn kernel_main() -> ! {
         unsafe { plicinithart() };
 
         // Buffer cache.
-        unsafe { kernel_unchecked_pin().project().bcache.get_pin_mut().init() };
+        unsafe {
+            kernel_builder_unchecked_pin()
+                .project()
+                .bcache
+                .get_pin_mut()
+                .init()
+        };
 
         // Emulated hard disk.
         unsafe {
-            kernel_unchecked_pin()
+            kernel_builder_unchecked_pin()
                 .project()
                 .file_system
                 .disk
@@ -264,7 +305,12 @@ pub unsafe fn kernel_main() -> ! {
 
         // First user process.
         // Temporarily create one more `Pin<&mut Kernel>`, just to initialize the first user process.
-        unsafe { kernel_unchecked_pin().project().procs.user_proc_init() };
+        unsafe {
+            kernel_builder_unchecked_pin()
+                .project()
+                .procs
+                .user_proc_init()
+        };
         STARTED.store(true, Ordering::Release);
     } else {
         while !STARTED.load(Ordering::Acquire) {
@@ -274,7 +320,7 @@ pub unsafe fn kernel_main() -> ! {
         println!("hart {} starting", cpuid());
 
         // Turn on paging.
-        unsafe { kernel().memory.assume_init_ref().init_hart() };
+        unsafe { kernel_builder().memory.assume_init_ref().init_hart() };
 
         // Install kernel trap vector.
         unsafe { trapinithart() };

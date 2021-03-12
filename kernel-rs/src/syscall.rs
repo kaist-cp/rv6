@@ -68,15 +68,11 @@ pub fn argstr<'a>(n: usize, buf: &'a mut [u8], proc: &mut CurrentProc<'_>) -> Re
 }
 
 impl Kernel {
-    pub unsafe fn syscall(
-        &'static self,
-        num: i32,
-        proc: &mut CurrentProc<'_>,
-    ) -> Result<usize, ()> {
+    pub fn syscall(&'static self, num: i32, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         match num {
-            1 => unsafe { self.sys_fork(proc) },
-            2 => unsafe { self.sys_exit(proc) },
-            3 => unsafe { self.sys_wait(proc) },
+            1 => self.sys_fork(proc),
+            2 => self.sys_exit(proc),
+            3 => self.sys_wait(proc),
             4 => self.sys_pipe(proc),
             5 => self.sys_read(proc),
             6 => self.sys_kill(proc),

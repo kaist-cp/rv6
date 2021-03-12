@@ -13,7 +13,7 @@ use crate::{
     fcntl::FcntlFlags,
     file::{FileType, InodeFileType, RcFile},
     fs::{Dirent, FileName, FsTransaction, InodeGuard, InodeType, Path, RcInode},
-    kernel::{kernel, Kernel},
+    kernel::{kernel_builder, Kernel},
     ok_or,
     page::Page,
     param::{MAXARG, MAXPATH, NDEV, NOFILE},
@@ -82,7 +82,7 @@ where
         }
         return Err(());
     }
-    let ptr2 = kernel().itable.alloc_inode(dp.dev, typ, tx);
+    let ptr2 = kernel_builder().itable.alloc_inode(dp.dev, typ, tx);
     let mut ip = ptr2.lock();
     ip.deref_inner_mut().nlink = 1;
     ip.update(tx);

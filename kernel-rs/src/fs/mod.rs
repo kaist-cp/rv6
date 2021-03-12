@@ -15,7 +15,9 @@ use core::{cmp, mem};
 
 use spin::Once;
 
-use crate::{bio::Buf, kernel::kernel, param::BSIZE, sleepablelock::Sleepablelock, virtio::Disk};
+use crate::{
+    bio::Buf, kernel::kernel_builder, param::BSIZE, sleepablelock::Sleepablelock, virtio::Disk,
+};
 
 mod inode;
 mod log;
@@ -131,7 +133,9 @@ impl FsTransaction<'_> {
 
     /// Zero a block.
     fn bzero(&self, dev: u32, bno: u32) {
-        let mut buf = unsafe { kernel().get_bcache() }.get_buf(dev, bno).lock();
+        let mut buf = unsafe { kernel_builder().get_bcache() }
+            .get_buf(dev, bno)
+            .lock();
         buf.deref_inner_mut().data.fill(0);
         buf.deref_inner_mut().valid = true;
         self.write(buf);
