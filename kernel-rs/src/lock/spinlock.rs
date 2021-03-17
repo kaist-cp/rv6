@@ -4,7 +4,7 @@ use core::hint::spin_loop;
 use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
-use super::{Guard, Lock, RawLock, Waitable};
+use super::{Guard, Lock, RawLock};
 use crate::{
     kernel::kernel_builder,
     proc::Cpu,
@@ -143,17 +143,5 @@ impl<T> Spinlock<T> {
             lock: RawSpinlock::new(name),
             data: UnsafeCell::new(data),
         }
-    }
-}
-
-impl<T> Waitable for SpinlockGuard<'_, T> {
-    fn reacquire_after<F, U>(&mut self, f: F) -> U
-    where
-        F: FnOnce() -> U,
-    {
-        self.lock.lock.release();
-        let result = f();
-        self.lock.lock.acquire();
-        result
     }
 }

@@ -16,7 +16,9 @@ use crate::{
     file::RcFile,
     fs::{Path, RcInode},
     kernel::{kernel, kernel_builder, KernelBuilder},
-    lock::{pop_off, push_off, Spinlock, SpinlockProtected, SpinlockProtectedGuard, Waitable},
+    lock::{
+        pop_off, push_off, Guard, RawLock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
+    },
     memlayout::kstack,
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
@@ -221,7 +223,7 @@ impl WaitChannel {
 
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
-    pub fn sleep<T: Waitable>(&self, lock_guard: &mut T, proc: &CurrentProc<'_>) {
+    pub fn sleep<R: RawLock, T>(&self, lock_guard: &mut Guard<'_, R, T>, proc: &CurrentProc<'_>) {
         // Must acquire p->lock in order to
         // change p->state and then call sched.
         // Once we hold p->lock, we can be
