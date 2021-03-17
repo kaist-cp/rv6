@@ -473,3 +473,28 @@ impl<'s, A: Arena, T: Clone + Deref<Target = A>> Clone for Rc<'s, A, T> {
         Self { tag, inner }
     }
 }
+
+// Rc is invariant to its lifetime parameter. The reason is that Rc has A::Handle<'s> where A
+// implements Arena and A::Handle is an arbitrary type constructor, which should be considered
+// invariant. When Rc is instantiated with ArrayArena, A::Handle is ArrayPtr, which is covariant. In
+// this case, we want Rc<'b, A, T> <: Rc<'a, A, T>. To make this subtyping possible, we define
+// narrow_lifetime to upcast Rc<'b, A, T> to Rc<'a, A, T>. This method can be removed when we remove
+// lifetimes from Rc.
+// TODO(https://github.com/kaist-cp/rv6/issues/444): remove narrow_lifetime
+impl<
+        'b,
+        T: 'static + ArenaObject + Unpin,
+        S: Clone + Deref<Target = Spinlock<ArrayArena<T, CAPACITY>>>,
+        const CAPACITY: usize,
+    > Rc<'b, Spinlock<ArrayArena<T, CAPACITY>>, S>
+{
+    pub fn narrow_lifetime<'a>(mut self) -> Rc<'a, Spinlock<ArrayArena<T, CAPACITY>>, S>
+    where
+        'b: 'a,
+    {
+        let tag = self.tag.clone();
+        let inner = ManuallyDrop::new(unsafe { ManuallyDrop::take(&mut self.inner) });
+        mem::forget(self);
+        Rc { tag, inner }
+    }
+}

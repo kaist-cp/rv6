@@ -72,6 +72,7 @@ impl RawLock for RawSpinlock {
             .locked
             .compare_exchange(
                 ptr::null_mut(),
+                // TODO: remove kernel_builder()
                 kernel_builder().current_cpu(),
                 Ordering::Acquire,
                 // Okay to use `Relaxed` ordering since we don't enter the critical section anyway
@@ -104,6 +105,7 @@ impl RawLock for RawSpinlock {
     /// Check whether this cpu is holding the lock.
     /// Interrupts must be off.
     fn holding(&self) -> bool {
+        // TODO: remove kernel_builder()
         self.locked.load(Ordering::Relaxed) == kernel_builder().current_cpu()
     }
 }
@@ -115,6 +117,7 @@ pub unsafe fn push_off() {
     let old = intr_get();
     unsafe { intr_off() };
 
+    // TODO: remove kernel_builder()
     let mut cpu = kernel_builder().current_cpu();
     if unsafe { (*cpu).noff } == 0 {
         unsafe { (*cpu).interrupt_enabled = old };
@@ -125,6 +128,7 @@ pub unsafe fn push_off() {
 /// pop_off() should be paired with push_off().
 /// See push_off() for more details.
 pub unsafe fn pop_off() {
+    // TODO: remove kernel_builder()
     let mut cpu: *mut Cpu = kernel_builder().current_cpu();
     assert!(!intr_get(), "pop_off - interruptible");
     assert!(unsafe { (*cpu).noff } >= 1, "pop_off");

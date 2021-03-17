@@ -100,7 +100,7 @@ pub struct KernelBuilder {
 
     pub itable: Itable,
 
-    pub file_system: FileSystem,
+    pub file_system: FileSystem<'static>,
 }
 
 #[repr(transparent)]
@@ -303,7 +303,6 @@ pub unsafe fn kernel_main() -> ! {
         };
 
         // First user process.
-        // Temporarily create one more `Pin<&mut Kernel>`, just to initialize the first user process.
         unsafe {
             kernel_builder_unchecked_pin()
                 .project()

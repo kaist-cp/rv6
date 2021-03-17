@@ -42,6 +42,7 @@ impl Console {
     unsafe fn write(&mut self, src: UVAddr, n: i32) -> i32 {
         for i in 0..n {
             let mut c = [0u8];
+            // TODO: remove kernel_builder()
             if kernel_builder()
                 .current_proc()
                 .expect("No current proc")
@@ -64,6 +65,7 @@ impl Console {
             // Wait until interrupt handler has put some
             // input into CONS.buffer.
             while this.r == this.w {
+                // TODO: remove kernel_builder()
                 if kernel_builder()
                     .current_proc()
                     .expect("No current proc")
@@ -88,6 +90,7 @@ impl Console {
             } else {
                 // Copy the input byte to the user-space buffer.
                 let cbuf = [cin as u8];
+                // TODO: remove kernel_builder()
                 if kernel_builder()
                     .current_proc()
                     .expect("No current proc")
@@ -113,6 +116,7 @@ impl Console {
         match cin {
             // Print process list.
             m if m == ctrl('P') => {
+                // TODO: remove kernel_builder()
                 unsafe { kernel_builder().procs.dump() };
             }
 
@@ -227,6 +231,7 @@ pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
 fn consolewrite(src: UVAddr, n: i32) -> i32 {
     // TODO(https://github.com/kaist-cp/rv6/issues/298) Remove below comment.
     // consolewrite() does not need console.lock() -- can lead to sleep() with lock held.
+    // TODO: remove kernel_builder()
     unsafe { (*kernel_builder().console.get_mut_raw()).write(src, n) }
 }
 
@@ -235,6 +240,7 @@ fn consolewrite(src: UVAddr, n: i32) -> i32 {
 /// User_dist indicates whether dst is a user
 /// or kernel address.
 fn consoleread(dst: UVAddr, n: i32) -> i32 {
+    // TODO: remove kernel_builder()
     let mut console = kernel_builder().console.lock();
     unsafe { Console::read(&mut console, dst, n) }
 }
@@ -244,6 +250,7 @@ fn consoleread(dst: UVAddr, n: i32) -> i32 {
 /// Do erase/kill processing, append to CONS.buf,
 /// wake up consoleread() if a whole line has arrived.
 pub unsafe fn consoleintr(cin: i32) {
+    // TODO: remove kernel_builder()
     let mut console = kernel_builder().console.lock();
     unsafe { Console::intr(&mut console, cin) };
 }

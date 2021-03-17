@@ -4,7 +4,7 @@ use static_assertions::const_assert;
 
 use crate::{
     file::{FileType, RcFile},
-    kernel::kernel_builder,
+    kernel::Kernel,
     lock::Spinlock,
     page::Page,
     proc::{CurrentProc, WaitChannel},
@@ -132,9 +132,9 @@ impl Deref for AllocatedPipe {
     }
 }
 
-impl AllocatedPipe {
-    pub fn alloc() -> Result<(RcFile<'static>, RcFile<'static>), ()> {
-        let page = kernel_builder().alloc().ok_or(())?;
+impl Kernel {
+    pub fn allocate_pipe(&self) -> Result<(RcFile<'_>, RcFile<'_>), ()> {
+        let page = self.alloc().ok_or(())?;
         let mut ptr = unsafe {
             // Safe since by the invariant of `Page`, `page` is always non-null.
             NonNull::new_unchecked(page.into_usize() as *mut Pipe)
@@ -162,26 +162,42 @@ impl AllocatedPipe {
                 write_waitchannel: WaitChannel::new(),
             };
         }
-        let f0 = kernel_builder()
+        let f0 = self
             .ftable
-            .alloc_file(FileType::Pipe { pipe: Self { ptr } }, true, false)
+            .alloc_file(
+                FileType::Pipe {
+                    pipe: AllocatedPipe { ptr },
+                },
+                true,
+                false,
+            )
             // Safe since ptr is an address of a page obtained by alloc().
-            .map_err(|_| kernel_builder().free(unsafe { Page::from_usize(ptr.as_ptr() as _) }))?;
-        let f1 = kernel_builder()
+            .map_err(|_| self.free(unsafe { Page::from_usize(ptr.as_ptr() as _) }))?;
+        let f1 = self
             .ftable
-            .alloc_file(FileType::Pipe { pipe: Self { ptr } }, false, true)
+            .alloc_file(
+                FileType::Pipe {
+                    pipe: AllocatedPipe { ptr },
+                },
+                false,
+                true,
+            )
             // Safe since ptr is an address of a page obtained by alloc().
-            .map_err(|_| kernel_builder().free(unsafe { Page::from_usize(ptr.as_ptr() as _) }))?;
+            .map_err(|_| self.free(unsafe { Page::from_usize(ptr.as_ptr() as _) }))?;
 
         Ok((f0, f1))
     }
+}
 
-    pub fn close(self, writable: bool) {
+impl AllocatedPipe {
+    pub fn close(self, writable: bool) -> Option<Page> {
         if self.deref().close(writable) {
             // If `Pipe::close()` returned true, this means all `AllocatedPipe`s were closed.
             // Hence, we can free the `Pipe`.
             // Also, the following is safe since `ptr` holds a `Pipe` stored in a valid page allocated from `kernel().alloc()`.
-            kernel_builder().free(unsafe { Page::from_usize(self.ptr.as_ptr() as _) });
+            Some(unsafe { Page::from_usize(self.ptr.as_ptr() as _) })
+        } else {
+            None
         }
     }
 }
