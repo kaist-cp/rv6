@@ -29,9 +29,9 @@ use static_assertions::const_assert;
 use crate::{
     bio::BufData,
     bio::{Buf, BufUnlocked},
-    kernel::kernel_builder,
     lock::Sleepablelock,
     param::{BSIZE, LOGSIZE, MAXOPBLOCKS},
+    virtio::Disk,
 };
 
 pub struct Log {
@@ -56,7 +56,7 @@ struct LogHeader {
 }
 
 impl Log {
-    pub fn new(dev: u32, start: i32, size: i32) -> Self {
+    pub fn new(dev: u32, start: i32, size: i32, disk: &Sleepablelock<Disk>) -> Self {
         let mut log = Self {
             dev,
             start,
@@ -65,18 +65,15 @@ impl Log {
             committing: false,
             bufs: ArrayVec::new(),
         };
-        log.recover_from_log();
+        log.recover_from_log(disk);
         log
     }
 
     /// Copy committed blocks from log to their home location.
-    fn install_trans(&mut self) {
+    fn install_trans(&mut self, disk: &Sleepablelock<Disk>) {
         for (tail, dbuf) in self.bufs.drain(..).enumerate() {
             // Read log block.
-            let lbuf = kernel_builder()
-                .file_system
-                .disk
-                .read(self.dev, (self.start + tail as i32 + 1) as u32);
+            let lbuf = disk.read(self.dev, (self.start + tail as i32 + 1) as u32);
 
             // Read dst.
             let mut dbuf = dbuf.lock();
@@ -87,16 +84,13 @@ impl Log {
                 .copy_from_slice(&lbuf.deref_inner().data[..]);
 
             // Write dst to disk.
-            kernel_builder().file_system.disk.write(&mut dbuf);
+            disk.write(&mut dbuf);
         }
     }
 
     /// Read the log header from disk into the in-memory log header.
-    fn read_head(&mut self) {
-        let mut buf = kernel_builder()
-            .file_system
-            .disk
-            .read(self.dev, self.start as u32);
+    fn read_head(&mut self, disk: &Sleepablelock<Disk>) {
+        let mut buf = disk.read(self.dev, self.start as u32);
 
         const_assert!(mem::size_of::<LogHeader>() <= BSIZE);
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<LogHeader>() == 0);
@@ -108,24 +102,15 @@ impl Log {
         let lh = unsafe { &mut *(buf.deref_inner_mut().data.as_mut_ptr() as *mut LogHeader) };
 
         for b in &lh.block[0..lh.n as usize] {
-            self.bufs.push(
-                kernel_builder()
-                    .file_system
-                    .disk
-                    .read(self.dev, *b)
-                    .unlock(),
-            )
+            self.bufs.push(disk.read(self.dev, *b).unlock())
         }
     }
 
     /// Write in-memory log header to disk.
     /// This is the true point at which the
     /// current transaction commits.
-    fn write_head(&mut self) {
-        let mut buf = kernel_builder()
-            .file_system
-            .disk
-            .read(self.dev, self.start as u32);
+    fn write_head(&mut self, disk: &Sleepablelock<Disk>) {
+        let mut buf = disk.read(self.dev, self.start as u32);
 
         const_assert!(mem::size_of::<LogHeader>() <= BSIZE);
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<LogHeader>() == 0);
@@ -140,17 +125,17 @@ impl Log {
         for (db, b) in izip!(&mut lh.block, &self.bufs) {
             *db = b.blockno;
         }
-        kernel_builder().file_system.disk.write(&mut buf)
+        disk.write(&mut buf)
     }
 
-    fn recover_from_log(&mut self) {
-        self.read_head();
+    fn recover_from_log(&mut self, disk: &Sleepablelock<Disk>) {
+        self.read_head(disk);
 
         // If committed, copy from log to disk.
-        self.install_trans();
+        self.install_trans(disk);
 
         // Clear the log.
-        self.write_head();
+        self.write_head(disk);
     }
 
     /// Called at the start of each FS system call.
@@ -171,7 +156,7 @@ impl Log {
 
     /// Called at the end of each FS system call.
     /// Commits if this was the last outstanding operation.
-    pub fn end_op(this: &Sleepablelock<Self>) {
+    pub fn end_op(this: &Sleepablelock<Self>, disk: &Sleepablelock<Disk>) {
         let mut guard = this.lock();
         guard.outstanding -= 1;
         assert!(!guard.committing, "guard.committing");
@@ -193,7 +178,7 @@ impl Log {
             // to sleep with locks.
             // It is safe because other threads neither read nor write this log
             // when guard.committing is true.
-            unsafe { (*this.get_mut_raw()).commit() };
+            unsafe { (*this.get_mut_raw()).commit(disk) };
             let mut guard = this.lock();
             guard.committing = false;
             guard.wakeup();
@@ -201,42 +186,36 @@ impl Log {
     }
 
     /// Copy modified blocks from cache to self.
-    fn write_log(&mut self) {
+    fn write_log(&mut self, disk: &Sleepablelock<Disk>) {
         for (tail, from) in self.bufs.iter().enumerate() {
             // Log block.
-            let mut to = kernel_builder()
-                .file_system
-                .disk
-                .read(self.dev, (self.start + tail as i32 + 1) as u32);
+            let mut to = disk.read(self.dev, (self.start + tail as i32 + 1) as u32);
 
             // Cache block.
-            let from = kernel_builder()
-                .file_system
-                .disk
-                .read(self.dev, from.blockno);
+            let from = disk.read(self.dev, from.blockno);
 
             to.deref_inner_mut()
                 .data
                 .copy_from_slice(&from.deref_inner().data[..]);
 
             // Write the log.
-            kernel_builder().file_system.disk.write(&mut to);
+            disk.write(&mut to);
         }
     }
 
-    fn commit(&mut self) {
+    fn commit(&mut self, disk: &Sleepablelock<Disk>) {
         if !self.bufs.is_empty() {
             // Write modified blocks from cache to self.
-            self.write_log();
+            self.write_log(disk);
 
             // Write header to disk -- the real commit.
-            self.write_head();
+            self.write_head(disk);
 
             // Now install writes to home locations.
-            self.install_trans();
+            self.install_trans(disk);
 
             // Erase the transaction from the self.
-            self.write_head();
+            self.write_head(disk);
         };
     }
 

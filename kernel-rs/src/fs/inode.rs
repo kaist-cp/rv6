@@ -79,11 +79,12 @@ use static_assertions::const_assert;
 
 use super::{FileName, IPB, MAXFILE, NDIRECT, NINDIRECT};
 use crate::{
-    arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
+    arena::{narrow_lifetime, Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
     bio::BufData,
-    fs::FsTransaction,
+    fs::{FsTransaction, ROOTINO},
     kernel::kernel_builder,
     lock::{Sleeplock, Spinlock},
+    param::ROOTDEV,
     param::{BSIZE, NINODE},
     proc::CurrentProc,
     stat::Stat,
@@ -167,6 +168,12 @@ pub struct Dinode {
 pub type Itable = Spinlock<ArrayArena<Inode, NINODE>>;
 
 pub type RcInode<'s> = Rc<'s, Itable, &'s Itable>;
+
+impl RcInode<'static> {
+    pub fn narrow_lifetime<'s>(self) -> RcInode<'s> {
+        narrow_lifetime(self)
+    }
+}
 
 /// InodeGuard implies that `Sleeplock<InodeInner>` is held by current thread.
 ///
@@ -281,9 +288,10 @@ impl InodeGuard<'_> {
         name: &FileName,
         inum: u32,
         tx: &FsTransaction<'_>,
+        itable: &Itable,
     ) -> Result<(), ()> {
         // Check that name is not present.
-        if let Ok((_ip, _)) = self.dirlookup(name) {
+        if let Ok((_ip, _)) = self.dirlookup(name, itable) {
             return Err(());
         };
 
@@ -300,17 +308,16 @@ impl InodeGuard<'_> {
 
     /// Look for a directory entry in a directory.
     /// If found, return the entry and byte offset of entry.
-    pub fn dirlookup(&mut self, name: &FileName) -> Result<(RcInode<'static>, u32), ()> {
+    pub fn dirlookup<'a>(
+        &mut self,
+        name: &FileName,
+        itable: &'a Itable,
+    ) -> Result<(RcInode<'a>, u32), ()> {
         assert_eq!(self.deref_inner().typ, InodeType::Dir, "dirlookup not DIR");
 
         self.iter_dirents()
             .find(|(de, _)| de.inum != 0 && de.get_name() == name)
-            .map(|(de, off)| {
-                (
-                    kernel_builder().itable.get_inode(self.dev, de.inum as u32),
-                    off,
-                )
-            })
+            .map(|(de, off)| (itable.get_inode(self.dev, de.inum as u32), off))
             .ok_or(())
     }
 }
@@ -786,6 +793,10 @@ impl Itable {
             "ITABLE",
             ArrayArena::new(array![_ => ArrayEntry::new(Inode::zero()); NINODE]),
         )
+    }
+
+    pub fn root(&self) -> RcInode<'_> {
+        self.get_inode(ROOTDEV, ROOTINO)
     }
 
     /// Find the inode with number inum on device dev

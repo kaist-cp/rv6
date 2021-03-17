@@ -14,7 +14,7 @@ use pin_project::pin_project;
 
 use crate::{
     file::RcFile,
-    fs::{Path, RcInode},
+    fs::RcInode,
     kernel::{kernel, kernel_builder, KernelBuilder},
     lock::{
         pop_off, push_off, Guard, RawLock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
@@ -792,7 +792,7 @@ impl ProcsBuilder {
     }
 
     /// Set up first user process.
-    pub fn user_proc_init(self: Pin<&mut Self>) {
+    pub fn user_proc_init(self: Pin<&mut Self>, cwd: RcInode<'static>) {
         // Allocate trap frame.
         let trap_frame = scopeguard::guard(
             kernel_builder()
@@ -827,7 +827,7 @@ impl ProcsBuilder {
 
         let name = b"initcode\x00";
         (&mut data.name[..name.len()]).copy_from_slice(name);
-        let _ = data.cwd.write(Path::root());
+        let _ = data.cwd.write(cwd);
         // It's safe because cwd now has been initialized.
         guard.deref_mut_info().state = Procstate::RUNNABLE;
     }

@@ -13,11 +13,10 @@ use crate::{
     fcntl::FcntlFlags,
     file::{FileType, InodeFileType, RcFile},
     fs::{Dirent, FileName, FsTransaction, InodeGuard, InodeType, Path, RcInode},
-    kernel::{kernel_builder, Kernel},
+    kernel::Kernel,
     ok_or,
     page::Page,
-    param::{MAXARG, MAXPATH, NDEV, NOFILE},
-    pipe::AllocatedPipe,
+    param::{MAXARG, MAXPATH, NOFILE},
     proc::CurrentProc,
     some_or,
     syscall::{argaddr, argint, argstr, fetchaddr, fetchstr},
@@ -53,65 +52,79 @@ fn argfd<'a>(n: usize, proc: &'a CurrentProc<'a>) -> Result<(i32, &'a RcFile<'st
     Ok((fd, f))
 }
 
-/// Create an inode with given type.
-/// Returns Ok(created inode, result of given function f) on success, Err(()) on error.
-fn create<F, T>(
-    path: &Path,
-    typ: InodeType,
-    tx: &FsTransaction<'_>,
-    proc: &CurrentProc<'_>,
-    f: F,
-) -> Result<(RcInode<'static>, T), ()>
-where
-    F: FnOnce(&mut InodeGuard<'_>) -> T,
-{
-    let (ptr, name) = path.nameiparent(proc)?;
-    let mut dp = ptr.lock();
-    if let Ok((ptr2, _)) = dp.dirlookup(&name) {
-        drop(dp);
-        let mut ip = ptr2.lock();
-        if typ == InodeType::File {
-            match ip.deref_inner().typ {
-                InodeType::File | InodeType::Device { .. } => {
-                    let ret = f(&mut ip);
-                    drop(ip);
-                    return Ok((ptr2, ret));
-                }
-                _ => return Err(()),
-            }
-        }
-        return Err(());
-    }
-    let ptr2 = kernel_builder().itable.alloc_inode(dp.dev, typ, tx);
-    let mut ip = ptr2.lock();
-    ip.deref_inner_mut().nlink = 1;
-    ip.update(tx);
-
-    // Create . and .. entries.
-    if typ == InodeType::Dir {
-        // for ".."
-        dp.deref_inner_mut().nlink += 1;
-        dp.update(tx);
-
-        // No ip->nlink++ for ".": avoid cyclic ref count.
-        // It is safe because b"." does not contain any NUL characters.
-        ip.dirlink(unsafe { FileName::from_bytes(b".") }, ip.inum, tx)
-            // It is safe because b".." does not contain any NUL characters.
-            .and_then(|_| ip.dirlink(unsafe { FileName::from_bytes(b"..") }, dp.inum, tx))
-            .expect("create dots");
-    }
-    dp.dirlink(&name, ip.inum, tx).expect("create: dirlink");
-    let ret = f(&mut ip);
-    drop(ip);
-    Ok((ptr2, ret))
-}
-
 impl Kernel {
+    /// Create an inode with given type.
+    /// Returns Ok(created inode, result of given function f) on success, Err(()) on error.
+    fn create<F, T>(
+        &self,
+        path: &Path,
+        typ: InodeType,
+        tx: &FsTransaction<'_>,
+        proc: &CurrentProc<'_>,
+        f: F,
+    ) -> Result<(RcInode<'_>, T), ()>
+    where
+        F: FnOnce(&mut InodeGuard<'_>) -> T,
+    {
+        let (ptr, name) = path.nameiparent(proc, &self.itable)?;
+        let mut dp = ptr.lock();
+        if let Ok((ptr2, _)) = dp.dirlookup(&name, &self.itable) {
+            drop(dp);
+            let mut ip = ptr2.lock();
+            if typ == InodeType::File {
+                match ip.deref_inner().typ {
+                    InodeType::File | InodeType::Device { .. } => {
+                        let ret = f(&mut ip);
+                        drop(ip);
+                        return Ok((ptr2, ret));
+                    }
+                    _ => return Err(()),
+                }
+            }
+            return Err(());
+        }
+        let ptr2 = self.itable.alloc_inode(dp.dev, typ, tx);
+        let mut ip = ptr2.lock();
+        ip.deref_inner_mut().nlink = 1;
+        ip.update(tx);
+
+        // Create . and .. entries.
+        if typ == InodeType::Dir {
+            // for ".."
+            dp.deref_inner_mut().nlink += 1;
+            dp.update(tx);
+
+            // No ip->nlink++ for ".": avoid cyclic ref count.
+            // It is safe because b"." does not contain any NUL characters.
+            ip.dirlink(
+                unsafe { FileName::from_bytes(b".") },
+                ip.inum,
+                tx,
+                &self.itable,
+            )
+            // It is safe because b".." does not contain any NUL characters.
+            .and_then(|_| {
+                ip.dirlink(
+                    unsafe { FileName::from_bytes(b"..") },
+                    dp.inum,
+                    tx,
+                    &self.itable,
+                )
+            })
+            .expect("create dots");
+        }
+        dp.dirlink(&name, ip.inum, tx, &self.itable)
+            .expect("create: dirlink");
+        let ret = f(&mut ip);
+        drop(ip);
+        Ok((ptr2, ret))
+    }
+
     /// Create another name(newname) for the file oldname.
     /// Returns Ok(()) on success, Err(()) on error.
     fn link(&self, oldname: &CStr, newname: &CStr, proc: &CurrentProc<'_>) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
-        let ptr = Path::new(oldname).namei(proc)?;
+        let ptr = Path::new(oldname).namei(proc, &self.itable)?;
         let mut ip = ptr.lock();
         if ip.deref_inner().typ == InodeType::Dir {
             return Err(());
@@ -120,9 +133,9 @@ impl Kernel {
         ip.update(&tx);
         drop(ip);
 
-        if let Ok((ptr2, name)) = Path::new(newname).nameiparent(proc) {
+        if let Ok((ptr2, name)) = Path::new(newname).nameiparent(proc, &self.itable) {
             let mut dp = ptr2.lock();
-            if dp.dev != ptr.dev || dp.dirlink(name, ptr.inum, &tx).is_err() {
+            if dp.dev != ptr.dev || dp.dirlink(name, ptr.inum, &tx, &self.itable).is_err() {
             } else {
                 return Ok(());
             }
@@ -139,12 +152,12 @@ impl Kernel {
     fn unlink(&self, filename: &CStr, proc: &CurrentProc<'_>) -> Result<(), ()> {
         let de: Dirent = Default::default();
         let tx = self.file_system.begin_transaction();
-        let (ptr, name) = Path::new(filename).nameiparent(proc)?;
+        let (ptr, name) = Path::new(filename).nameiparent(proc, &self.itable)?;
         let mut dp = ptr.lock();
 
         // Cannot unlink "." or "..".
         if !(name.as_bytes() == b"." || name.as_bytes() == b"..") {
-            if let Ok((ptr2, off)) = dp.dirlookup(&name) {
+            if let Ok((ptr2, off)) = dp.dirlookup(&name, &self.itable) {
                 let mut ip = ptr2.lock();
                 assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
 
@@ -177,9 +190,9 @@ impl Kernel {
         let tx = self.file_system.begin_transaction();
 
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
-            create(name, InodeType::File, &tx, proc, |ip| ip.deref_inner().typ)?
+            self.create(name, InodeType::File, &tx, proc, |ip| ip.deref_inner().typ)?
         } else {
-            let ptr = name.namei(proc)?;
+            let ptr = name.namei(proc, &self.itable)?;
             let ip = ptr.lock();
             let typ = ip.deref_inner().typ;
 
@@ -192,9 +205,7 @@ impl Kernel {
 
         let filetype = match typ {
             InodeType::Device { major, .. } => {
-                if major as usize >= NDEV {
-                    return Err(());
-                };
+                let major = self.devsw.get(major as usize).ok_or(())?;
                 FileType::Device { ip, major }
             }
             _ => {
@@ -231,7 +242,7 @@ impl Kernel {
     /// Returns Ok(()) on success, Err(()) on error.
     fn mkdir(&self, dirname: &CStr, proc: &CurrentProc<'_>) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
-        create(Path::new(dirname), InodeType::Dir, &tx, proc, |_| ())?;
+        self.create(Path::new(dirname), InodeType::Dir, &tx, proc, |_| ())?;
         Ok(())
     }
 
@@ -245,7 +256,7 @@ impl Kernel {
         proc: &CurrentProc<'_>,
     ) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
-        create(
+        self.create(
             Path::new(filename),
             InodeType::Device { major, minor },
             &tx,
@@ -257,14 +268,14 @@ impl Kernel {
 
     /// Change the current directory.
     /// Returns Ok(()) on success, Err(()) on error.
-    fn chdir(&self, dirname: &CStr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
+    fn chdir(&'static self, dirname: &CStr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
         // TODO(https://github.com/kaist-cp/rv6/issues/290)
         // The method namei can drop inodes. If namei succeeds, its return
         // value, ptr, will be dropped when this method returns. Deallocation
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
         let _tx = self.file_system.begin_transaction();
-        let ptr = Path::new(dirname).namei(proc)?;
+        let ptr = Path::new(dirname).namei(proc, &self.itable)?;
         let ip = ptr.lock();
         if ip.deref_inner().typ != InodeType::Dir {
             return Err(());
@@ -276,8 +287,8 @@ impl Kernel {
 
     /// Create a pipe, put read/write file descriptors in fd0 and fd1.
     /// Returns Ok(()) on success, Err(()) on error.
-    fn pipe(&self, fdarray: UVAddr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
-        let (pipereader, pipewriter) = AllocatedPipe::alloc()?;
+    fn pipe(&'static self, fdarray: UVAddr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
+        let (pipereader, pipewriter) = self.allocate_pipe()?;
 
         let fd0 = pipereader.fdalloc(proc).map_err(|_| ())?;
         let fd1 = pipewriter
@@ -326,7 +337,7 @@ impl Kernel {
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
         // Safe since write will not access proc's open_files.
-        unsafe { (*(f as *const RcFile<'static>)).write(p.into(), n, proc) }
+        unsafe { (*(f as *const RcFile<'static>)).write(p.into(), n, proc, &self.file_system) }
     }
 
     /// Release open file fd.
@@ -401,7 +412,7 @@ impl Kernel {
 
     /// Change the current directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub fn sys_chdir(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_chdir(&'static self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = argstr(0, &mut path, proc)?;
         self.chdir(path, proc)?;
@@ -451,7 +462,7 @@ impl Kernel {
 
     /// Create a pipe.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub fn sys_pipe(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_pipe(&'static self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         // user pointer to array of two integers
         let fdarray = argaddr(0, proc)?.into();
         self.pipe(fdarray, proc)?;

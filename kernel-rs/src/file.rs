@@ -5,8 +5,8 @@ use core::{cell::UnsafeCell, cmp, mem, ops::Deref, ops::DerefMut};
 use array_macro::array;
 
 use crate::{
-    arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
-    fs::{InodeGuard, RcInode},
+    arena::{narrow_lifetime, Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
+    fs::{FileSystem, InodeGuard, RcInode},
     kernel::kernel_builder,
     lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
@@ -17,9 +17,16 @@ use crate::{
 
 pub enum FileType {
     None,
-    Pipe { pipe: AllocatedPipe },
-    Inode { inner: InodeFileType },
-    Device { ip: RcInode<'static>, major: u16 },
+    Pipe {
+        pipe: AllocatedPipe,
+    },
+    Inode {
+        inner: InodeFileType,
+    },
+    Device {
+        ip: RcInode<'static>,
+        major: &'static Devsw,
+    },
 }
 
 pub struct InodeFileType {
@@ -49,6 +56,12 @@ pub struct Devsw {
 }
 
 pub type RcFile<'s> = Rc<'s, FileTable, &'s FileTable>;
+
+impl RcFile<'static> {
+    pub fn narrow_lifetime<'s>(self) -> RcFile<'s> {
+        narrow_lifetime(self)
+    }
+}
 
 impl Default for FileType {
     fn default() -> Self {
@@ -125,20 +138,20 @@ impl File {
                 }
                 ret
             }
-            FileType::Device { major, .. } => {
-                kernel_builder()
-                    .devsw
-                    .get(*major as usize)
-                    .and_then(|dev| Some(dev.read?(addr, n) as usize))
-                    .ok_or(())
-            }
+            FileType::Device { major, .. } => major.read.ok_or(()).map(|f| f(addr, n) as usize),
             FileType::None => panic!("File::read"),
         }
     }
 
     /// Write to file self.
     /// addr is a user virtual address.
-    pub fn write(&self, addr: UVAddr, n: i32, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn write(
+        &self,
+        addr: UVAddr,
+        n: i32,
+        proc: &mut CurrentProc<'_>,
+        fs: &FileSystem,
+    ) -> Result<usize, ()> {
         if !self.writable {
             return Err(());
         }
@@ -159,7 +172,7 @@ impl File {
                 let mut bytes_written: usize = 0;
                 while bytes_written < n {
                     let bytes_to_write = cmp::min(n - bytes_written, max);
-                    let tx = kernel_builder().file_system.begin_transaction();
+                    let tx = fs.begin_transaction();
                     let mut ip = inner.lock();
                     let curr_off = *ip.off;
                     let r = ip
@@ -185,13 +198,7 @@ impl File {
                 }
                 Ok(n)
             }
-            FileType::Device { major, .. } => {
-                kernel_builder()
-                    .devsw
-                    .get(*major as usize)
-                    .and_then(|dev| Some(dev.write?(addr, n) as usize))
-                    .ok_or(())
-            }
+            FileType::Device { major, .. } => major.write.ok_or(()).map(|f| f(addr, n) as usize),
             FileType::None => panic!("File::read"),
         }
     }
@@ -202,7 +209,11 @@ impl ArenaObject for File {
         A::reacquire_after(guard, || {
             let typ = mem::replace(&mut self.typ, FileType::None);
             match typ {
-                FileType::Pipe { pipe } => pipe.close(self.writable),
+                FileType::Pipe { pipe } => {
+                    if let Some(page) = pipe.close(self.writable) {
+                        kernel_builder().free(page);
+                    }
+                }
                 FileType::Inode {
                     inner: InodeFileType { ip, .. },
                 }

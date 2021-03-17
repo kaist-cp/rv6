@@ -473,3 +473,18 @@ impl<'s, A: Arena, T: Clone + Deref<Target = A>> Clone for Rc<'s, A, T> {
         Self { tag, inner }
     }
 }
+
+pub fn narrow_lifetime<
+    'a,
+    'b: 'a,
+    T: 'static + ArenaObject + Unpin,
+    S: Clone + Deref<Target = Spinlock<ArrayArena<T, CAPACITY>>>,
+    const CAPACITY: usize,
+>(
+    mut rc: Rc<'b, Spinlock<ArrayArena<T, CAPACITY>>, S>,
+) -> Rc<'a, Spinlock<ArrayArena<T, CAPACITY>>, S> {
+    let tag = rc.tag.clone();
+    let inner = ManuallyDrop::new(unsafe { ManuallyDrop::take(&mut rc.inner) });
+    mem::forget(rc);
+    Rc { tag, inner }
+}

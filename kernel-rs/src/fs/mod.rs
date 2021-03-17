@@ -76,6 +76,7 @@ impl FileSystem {
                     dev,
                     self.superblock().logstart as i32,
                     self.superblock().nlog as i32,
+                    &self.disk,
                 ),
             )
         });
@@ -112,7 +113,7 @@ impl Drop for FsTransaction<'_> {
     fn drop(&mut self) {
         // Called at the end of each FS system call.
         // Commits if this was the last outstanding operation.
-        Log::end_op(self.fs.log());
+        Log::end_op(self.fs.log(), &self.fs.disk);
     }
 }
 
