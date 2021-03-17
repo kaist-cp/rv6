@@ -49,7 +49,7 @@ pub trait RawLock {
 pub trait Waitable {
     /// Temporarily releases the lock and calls function `f`.
     /// After `f` returns, reacquires the lock and returns the result of the function call.
-    fn reacquire_spinlock_after<F, U>(&mut self, f: F) -> U
+    fn reacquire_inner_spinlock<F, U>(&mut self, f: F) -> U
     where
         F: FnOnce() -> U;
 }
