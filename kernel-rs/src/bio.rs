@@ -18,10 +18,9 @@ use array_macro::array;
 
 use crate::{
     arena::{Arena, ArenaObject, MruArena, MruEntry, Rc},
+    lock::{Sleeplock, Spinlock},
     param::{BSIZE, NBUF},
     proc::WaitChannel,
-    sleeplock::Sleeplock,
-    spinlock::Spinlock,
 };
 
 pub struct BufEntry {
@@ -150,7 +149,7 @@ impl Bcache {
     /// The caller should make sure that `Bcache` never gets moved.
     pub const unsafe fn zero() -> Self {
         unsafe {
-            Spinlock::new_unchecked(
+            Spinlock::new(
                 "BCACHE",
                 MruArena::new(array![_ => MruEntry::new(BufEntry::zero()); NBUF]),
             )

@@ -30,8 +30,8 @@ use crate::{
     bio::BufData,
     bio::{Buf, BufUnlocked},
     kernel::kernel_builder,
+    lock::Sleepablelock,
     param::{BSIZE, LOGSIZE, MAXOPBLOCKS},
-    sleepablelock::Sleepablelock,
 };
 
 pub struct Log {

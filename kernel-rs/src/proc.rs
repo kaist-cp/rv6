@@ -16,14 +16,14 @@ use crate::{
     file::RcFile,
     fs::{Path, RcInode},
     kernel::{kernel, kernel_builder, KernelBuilder},
+    lock::{
+        pop_off, push_off, Guard, RawLock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
+    },
     memlayout::kstack,
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
     println,
     riscv::{intr_get, intr_on, r_tp, PGSIZE},
-    spinlock::{
-        pop_off, push_off, RawSpinlock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
-    },
     trap::usertrapret,
     vm::{Addr, UVAddr, UserMemory},
 };
@@ -210,26 +210,6 @@ pub enum Procstate {
 
 type Pid = i32;
 
-/// Represents lock guards that can be slept in a `WaitChannel`.
-pub trait Waitable {
-    /// Releases the inner `RawSpinlock`.
-    ///
-    /// # Safety
-    ///
-    /// `raw_release()` and `raw_acquire` must always be used as a pair.
-    /// Use these only for temporarily releasing (and then acquiring) the lock.
-    /// Also, do not access `self` until re-acquiring the lock with `raw_acquire()`.
-    unsafe fn raw_release(&mut self);
-
-    /// Acquires the inner `RawSpinlock`.
-    ///
-    /// # Safety
-    ///
-    /// `raw_release()` and `raw_acquire` must always be used as a pair.
-    /// Use these only for temporarily releasing (and then acquiring) the lock.
-    unsafe fn raw_acquire(&mut self);
-}
-
 pub struct WaitChannel {
     /// Required to make this type non-zero-sized. If it were zero-sized, multiple wait channels may
     /// have the same address, spuriously waking up more threads.
@@ -243,7 +223,7 @@ impl WaitChannel {
 
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
-    pub fn sleep<T: Waitable>(&self, lk: &mut T, proc: &CurrentProc<'_>) {
+    pub fn sleep<R: RawLock, T>(&self, lock_guard: &mut Guard<'_, R, T>, proc: &CurrentProc<'_>) {
         // Must acquire p->lock in order to
         // change p->state and then call sched.
         // Once we hold p->lock, we can be
@@ -253,31 +233,25 @@ impl WaitChannel {
 
         //DOC: sleeplock1
         let mut guard = proc.lock();
-        unsafe {
-            // Temporarily release the inner `RawSpinlock`.
-            // This is safe, since we don't access `lk` until re-acquiring the lock
-            // at `lk.raw_acquire()`.
-            lk.raw_release();
-        }
+        // Release the lock while we sleep on the waitchannel, and reacquire after the process wakes up.
+        lock_guard.reacquire_after(move || {
+            // Go to sleep.
+            guard.deref_mut_info().waitchannel = self;
+            guard.deref_mut_info().state = Procstate::SLEEPING;
+            unsafe {
+                // Safe since we hold `p.lock()`, changed the process's state,
+                // and device interrupts are disabled by `push_off()` in `p.lock()`.
+                guard.sched();
+            }
 
-        // Go to sleep.
-        guard.deref_mut_info().waitchannel = self;
-        guard.deref_mut_info().state = Procstate::SLEEPING;
-        unsafe {
-            // Safe since we hold `p.lock()`, changed the process's state,
-            // and device interrupts are disabled by `push_off()` in `p.lock()`.
-            guard.sched();
-        }
+            // Tidy up.
+            guard.deref_mut_info().waitchannel = ptr::null();
 
-        // Tidy up.
-        guard.deref_mut_info().waitchannel = ptr::null();
+            // Now we can drop the process guard since the process woke up.
+            drop(guard);
 
-        // Reacquire original lock.
-        drop(guard);
-        unsafe {
-            // Safe since this is paired with a previous `lk.raw_release()`.
-            lk.raw_acquire();
-        }
+            // Reacquire original lock.
+        });
     }
 
     /// Wake up all processes sleeping on waitchannel.
@@ -665,7 +639,7 @@ pub struct ProcsBuilder {
     // parents are not lost. Helps obey the
     // memory model when using p->parent.
     // Must be acquired before any p->lock.
-    wait_lock: RawSpinlock,
+    wait_lock: Spinlock<()>,
 }
 
 /// # Safety
@@ -747,7 +721,7 @@ impl ProcsBuilder {
             nextpid: AtomicI32::new(1),
             process_pool: array![_ => ProcBuilder::zero(); NPROC],
             initial_proc: ptr::null(),
-            wait_lock: RawSpinlock::new("wait_lock"),
+            wait_lock: Spinlock::new("wait_lock", ()),
         }
     }
 
@@ -1147,9 +1121,8 @@ unsafe fn forkret() {
 }
 
 impl KernelBuilder {
-    /// Returns `Some<CurrentProc<'_>>` if current proc exists.
-    /// If current proc is null, return `None`.
-    /// If `(*c).proc` is non-null, returned `CurrentProc`'s `inner` lives during `&self`'s lifetime
+    /// Returns `Some<CurrentProc<'_>>` if current proc exists (i.e. When (*cpu).proc is non-null).
+    /// Otherwise, returns `None` (when current proc is null).
     pub fn current_proc(&self) -> Option<CurrentProc<'_>> {
         unsafe { push_off() };
         let cpu = self.current_cpu();
