@@ -264,7 +264,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     where
         F: FnOnce() -> R,
     {
-        guard.reacquire_inner_spinlock(f)
+        guard.reacquire_after(f)
     }
 }
 
@@ -436,7 +436,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
     where
         F: FnOnce() -> R,
     {
-        guard.reacquire_inner_spinlock(f)
+        guard.reacquire_after(f)
     }
 }
 

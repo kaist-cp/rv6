@@ -64,7 +64,7 @@ impl<T> SleepablelockGuard<'_, T> {
 }
 
 impl<T> Waitable for SleepablelockGuard<'_, T> {
-    fn reacquire_inner_spinlock<F, U>(&mut self, f: F) -> U
+    fn reacquire_after<F, U>(&mut self, f: F) -> U
     where
         F: FnOnce() -> U,
     {
