@@ -52,10 +52,10 @@ impl<T> Sleepablelock<T> {
 
 impl<T> SleepablelockGuard<'_, T> {
     pub fn sleep(&mut self) {
-        self.lock
-            .lock
-            .waitchannel
-            .sleep(self, &kernel_builder().current_proc().expect("No current proc"));
+        self.lock.lock.waitchannel.sleep(
+            self,
+            &kernel_builder().current_proc().expect("No current proc"),
+        );
     }
 
     pub fn wakeup(&self) {
