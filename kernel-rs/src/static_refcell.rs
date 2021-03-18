@@ -18,7 +18,7 @@ pub struct Ref<T> {
 }
 
 pub struct RefMut<T> {
-    ptr: *mut StaticRefCell<T>,
+    ptr: *const StaticRefCell<T>,
 }
 
 impl<T> StaticRefCell<T> {
@@ -48,8 +48,14 @@ impl<T> StaticRefCell<T> {
 
     /// Immutably borrows the `StaticRefCell` if it is not mutably borrowed.
     /// Otherwise, returns `None`.
+    ///
+    /// # Note
+    ///
+    /// `StaticRefCell` allows only up to `usize::MAX` - 1 number of `Ref<T>` to coexist.
+    /// Hence, this function will return `None` if the caller tries to borrow more than `usize::MAX` - 1 times.
     pub fn try_borrow(&self) -> Option<Ref<T>> {
-        match self.is_borrowed_mut() {
+        let refcnt = self.refcnt.get();
+        match refcnt == BORROWED_MUT - 1 || refcnt == BORROWED_MUT {
             true => None,
             false => {
                 self.refcnt.set(self.refcnt.get() + 1);
@@ -66,8 +72,8 @@ impl<T> StaticRefCell<T> {
             false => {
                 self.refcnt.set(BORROWED_MUT);
                 Some(RefMut {
-                    ptr: self as *const _ as *mut _,
-                }) //TODO: okay?
+                    ptr: self as *const _,
+                })
             }
         }
     }
@@ -131,6 +137,7 @@ impl<T> Drop for Ref<T> {
 impl<T> RefMut<T> {
     /// Returns a pinned mutable reference to the inner data.
     pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
+        // TODO: Add safety reasoning
         unsafe { Pin::new_unchecked(&mut *(*self.ptr).data.get()) }
     }
 }
@@ -144,7 +151,7 @@ impl<T> TryFrom<Ref<T>> for RefMut<T> {
             let ptr = r.ptr;
             drop(r);
             refcnt.set(BORROWED_MUT);
-            Ok(RefMut { ptr: ptr as *mut _ })
+            Ok(RefMut { ptr })
         } else {
             Err(())
         }
@@ -159,6 +166,9 @@ impl<T> Deref for RefMut<T> {
     }
 }
 
+// If `T: !Unpin`, we should not be able to obtain a mutable reference to the inner data.
+// Hence, `RefMut<T>` implements `DerefMut` only when `T: Unpin`.
+// Use `RefMut::get_pin_mut` instead when `T: !Unpin`.
 impl<T: Unpin> DerefMut for RefMut<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.get_pin_mut().get_mut()
