@@ -3,7 +3,6 @@ use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;
 use core::pin::Pin;
-use core::ptr;
 
 use pin_project::pin_project;
 
@@ -246,10 +245,12 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
 impl<T> MruEntry<T> {
     // TODO(https://github.com/kaist-cp/rv6/issues/369)
     // A workarond for https://github.com/Gilnaa/memoffset/issues/49.
-    // Assumes `list_entry` is located at the beginning of `MruEntry`.
+    // Assumes `list_entry` is located at the beginning of `MruEntry`
+    // and `data` is located at `mem::size_of::<ListEntry>()`.
     const DATA_OFFSET: usize = mem::size_of::<ListEntry>();
     const LIST_ENTRY_OFFSET: usize = 0;
 
+    // const DATA_OFFSET: usize = offset_of!(MruEntry<T>, data);
     // const LIST_ENTRY_OFFSET: usize = offset_of!(MruEntry<T>, list_entry);
 
     pub const fn new(data: T) -> Self {
@@ -320,11 +321,11 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         n: N,
     ) -> Option<Self::Handle<'_>> {
         let this = self.lock();
-        let mut empty: *const MruEntry<T> = ptr::null();
+        let mut empty = None;
         // Safe since the whole `MruArena` is protected by a lock.
         for entry in unsafe { this.list.iter_unchecked() } {
             if !entry.data.is_borrowed() {
-                empty = entry as *const _;
+                empty = Some(entry);
             }
             if let Some(r) = entry.data.try_borrow() {
                 if c(&r) {
@@ -333,14 +334,11 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
             }
         }
 
-        match empty.is_null() {
-            true => None,
-            false => {
-                let mut rm = unsafe { &*empty }.data.borrow_mut();
-                n(&mut rm);
-                Some(MruPtr::new(rm.into()))
-            }
-        }
+        empty.map(|entry| {
+            let mut rm = entry.data.borrow_mut();
+            n(&mut rm);
+            MruPtr::new(rm.into())
+        })
     }
 
     fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Self::Handle<'_>> {
