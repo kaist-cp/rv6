@@ -259,6 +259,13 @@ impl<T> MruEntry<T> {
             data: StaticRefCell::new(data),
         }
     }
+
+    /// For the `MruEntry<T>` that corresponds to the given `RefMut<T>`, we move it to the front of the list.
+    fn finalize_entry(r: RefMut<T>, list: &List<MruEntry<T>>) {
+        let ptr = (r.get_cell() as *const _ as usize - Self::DATA_OFFSET) as *mut MruEntry<T>;
+        let entry = unsafe { &*ptr };
+        list.push_back(entry);
+    }
 }
 
 // Safe since `MruEntry` owns a `ListEntry`.
@@ -370,12 +377,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
 
         if let Ok(mut rm) = RefMut::<T>::try_from(handle.r) {
             rm.finalize::<Self>(&mut this);
-            let ptr = ((&*rm) as *const _ as *const StaticRefCell<MruEntry<T>> as usize
-                - MruEntry::<T>::DATA_OFFSET) as *const MruEntry<T>;
-            this.get_pin_mut()
-                .project()
-                .list
-                .push_back(unsafe { &*ptr });
+            MruEntry::finalize_entry(rm, &this.list);
         }
     }
 

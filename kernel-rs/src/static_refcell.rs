@@ -99,6 +99,13 @@ impl<T> Drop for StaticRefCell<T> {
     }
 }
 
+impl<T> Ref<T> {
+    /// Returns a reference to the `StaticRefCell` that this `Ref` came from.
+    pub fn get_cell(&self) -> &StaticRefCell<T> {
+        unsafe { &*self.ptr }
+    }
+}
+
 impl<T> From<RefMut<T>> for Ref<T> {
     fn from(r: RefMut<T>) -> Self {
         let ptr = r.ptr;
@@ -139,6 +146,11 @@ impl<T> RefMut<T> {
     pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
         // TODO: Add safety reasoning
         unsafe { Pin::new_unchecked(&mut *(*self.ptr).data.get()) }
+    }
+
+    /// Returns a reference to the `StaticRefCell` that this `RefMut` came from.
+    pub fn get_cell(&self) -> &StaticRefCell<T> {
+        unsafe { &*self.ptr }
     }
 }
 
