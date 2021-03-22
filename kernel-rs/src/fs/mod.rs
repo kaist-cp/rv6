@@ -46,7 +46,7 @@ pub struct FileSystem {
     /// TODO(https://github.com/kaist-cp/rv6/issues/358)
     /// document it / initializing log should be run
     /// only once because forkret() calls fsinit()
-    log: Once<Sleepablelock<Log>>,
+    log: Once<Sleepablelock<Log<'static>>>,
 
     /// It may sleep until some Descriptors are freed.
     pub disk: Sleepablelock<Disk>,
@@ -65,7 +65,7 @@ impl FileSystem {
         }
     }
 
-    pub fn init(&self, dev: u32) {
+    pub fn init(&'static self, dev: u32) {
         let _ = self
             .superblock
             .call_once(|| Superblock::new(&self.disk.read(dev, 1)));
@@ -94,7 +94,7 @@ impl FileSystem {
 
     /// TODO(https://github.com/kaist-cp/rv6/issues/358)
     /// Calling log() after initialize is safe
-    fn log(&self) -> &Sleepablelock<Log> {
+    fn log(&self) -> &Sleepablelock<Log<'static>> {
         if let Some(log) = self.log.get() {
             log
         } else {
@@ -113,7 +113,7 @@ impl Drop for FsTransaction<'_> {
     fn drop(&mut self) {
         // Called at the end of each FS system call.
         // Commits if this was the last outstanding operation.
-        Log::end_op(self.fs.log(), &self.fs.disk);
+        Log::end_op(self.fs.log());
     }
 }
 
