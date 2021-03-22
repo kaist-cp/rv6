@@ -144,7 +144,7 @@ impl File {
         addr: UVAddr,
         n: i32,
         proc: &mut CurrentProc<'_>,
-        fs: &FileSystem,
+        fs: &FileSystem<'_>,
     ) -> Result<usize, ()> {
         if !self.writable {
             return Err(());

@@ -100,7 +100,7 @@ pub struct KernelBuilder {
 
     pub itable: Itable,
 
-    pub file_system: FileSystem,
+    pub file_system: FileSystem<'static>,
 }
 
 #[repr(transparent)]

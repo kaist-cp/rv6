@@ -36,7 +36,7 @@ const NDIRECT: usize = 12;
 const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
 const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
 
-pub struct FileSystem {
+pub struct FileSystem<'s> {
     /// TODO(https://github.com/kaist-cp/rv6/issues/358)
     /// Initializing superblock should be run only once because forkret() calls fsinit()
     /// There should be one superblock per disk device, but we run with
@@ -46,17 +46,17 @@ pub struct FileSystem {
     /// TODO(https://github.com/kaist-cp/rv6/issues/358)
     /// document it / initializing log should be run
     /// only once because forkret() calls fsinit()
-    log: Once<Sleepablelock<Log<'static>>>,
+    log: Once<Sleepablelock<Log<'s>>>,
 
     /// It may sleep until some Descriptors are freed.
     pub disk: Sleepablelock<Disk>,
 }
 
-pub struct FsTransaction<'s> {
-    fs: &'s FileSystem,
+pub struct FsTransaction<'s, 't> {
+    fs: &'s FileSystem<'t>,
 }
 
-impl FileSystem {
+impl<'s> FileSystem<'s> {
     pub const fn zero() -> Self {
         Self {
             superblock: Once::new(),
@@ -65,7 +65,7 @@ impl FileSystem {
         }
     }
 
-    pub fn init(&'static self, dev: u32) {
+    pub fn init(&'s self, dev: u32) {
         let _ = self
             .superblock
             .call_once(|| Superblock::new(&self.disk.read(dev, 1)));
@@ -94,7 +94,7 @@ impl FileSystem {
 
     /// TODO(https://github.com/kaist-cp/rv6/issues/358)
     /// Calling log() after initialize is safe
-    fn log(&self) -> &Sleepablelock<Log<'static>> {
+    fn log(&self) -> &Sleepablelock<Log<'s>> {
         if let Some(log) = self.log.get() {
             log
         } else {
@@ -103,13 +103,13 @@ impl FileSystem {
     }
 
     /// Called for each FS system call.
-    pub fn begin_transaction(&self) -> FsTransaction<'_> {
+    pub fn begin_transaction(&self) -> FsTransaction<'_, 's> {
         Log::begin_op(self.log());
         FsTransaction { fs: self }
     }
 }
 
-impl Drop for FsTransaction<'_> {
+impl Drop for FsTransaction<'_, '_> {
     fn drop(&mut self) {
         // Called at the end of each FS system call.
         // Commits if this was the last outstanding operation.
@@ -117,7 +117,7 @@ impl Drop for FsTransaction<'_> {
     }
 }
 
-impl FsTransaction<'_> {
+impl FsTransaction<'_, '_> {
     /// Caller has modified b->data and is done with the buffer.
     /// Record the block number and pin in the cache by increasing refcnt.
     /// commit()/write_log() will do the disk write.

@@ -48,7 +48,7 @@ pub struct Log<'a> {
     /// Contents of the header block, used to keep track in memory of logged block# before commit.
     bufs: ArrayVec<[BufUnlocked<'static>; LOGSIZE]>,
 
-    disk: &'a Sleepablelock<Disk>
+    disk: &'a Sleepablelock<Disk>,
 }
 
 /// Contents of the header block, used for the on-disk header block.
@@ -76,7 +76,9 @@ impl<'a> Log<'a> {
     fn install_trans(&mut self) {
         for (tail, dbuf) in self.bufs.drain(..).enumerate() {
             // Read log block.
-            let lbuf = self.disk.read(self.dev, (self.start + tail as i32 + 1) as u32);
+            let lbuf = self
+                .disk
+                .read(self.dev, (self.start + tail as i32 + 1) as u32);
 
             // Read dst.
             let mut dbuf = dbuf.lock();
@@ -192,7 +194,9 @@ impl<'a> Log<'a> {
     fn write_log(&mut self) {
         for (tail, from) in self.bufs.iter().enumerate() {
             // Log block.
-            let mut to = self.disk.read(self.dev, (self.start + tail as i32 + 1) as u32);
+            let mut to = self
+                .disk
+                .read(self.dev, (self.start + tail as i32 + 1) as u32);
 
             // Cache block.
             let from = self.disk.read(self.dev, from.blockno);
