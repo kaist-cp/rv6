@@ -257,6 +257,7 @@ impl WaitChannel {
     /// Wake up all processes sleeping on waitchannel.
     /// Must be called without any p->lock.
     pub fn wakeup(&self) {
+        // TODO: remove kernel_builder()
         kernel_builder().procs.wakeup_pool(self)
     }
 }
@@ -466,17 +467,21 @@ impl ProcGuard {
     /// break in the few places where a lock is held but
     /// there's no process.
     unsafe fn sched(&mut self) {
+        // TODO: remove kernel_builder()
         assert_eq!((*kernel_builder().current_cpu()).noff, 1, "sched locks");
         assert_ne!(self.state(), Procstate::RUNNING, "sched running");
         assert!(!intr_get(), "sched interruptible");
 
+        // TODO: remove kernel_builder()
         let interrupt_enabled = unsafe { (*kernel_builder().current_cpu()).interrupt_enabled };
         unsafe {
             swtch(
                 &mut self.deref_mut_data().context,
+                // TODO: remove kernel_builder()
                 &mut (*kernel_builder().current_cpu()).context,
             )
         };
+        // TODO: remove kernel_builder()
         unsafe { (*kernel_builder().current_cpu()).interrupt_enabled = interrupt_enabled };
     }
 
@@ -492,6 +497,7 @@ impl ProcGuard {
         let data = unsafe { self.deref_mut_data() };
         let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
         // Safe since trap_frame uniquely refers to a valid page.
+        // TODO: remove kernel_builder()
         kernel_builder().free(unsafe { Page::from_usize(trap_frame as _) });
         // Safe since memory will be initialized again when this process becomes initialized.
         unsafe { data.memory.assume_init_drop() };
@@ -771,6 +777,7 @@ impl ProcsBuilder {
             }
         }
 
+        // TODO: remove kernel_builder()
         kernel_builder().free(trap_frame);
         Err(())
     }
@@ -778,6 +785,7 @@ impl ProcsBuilder {
     /// Wake up all processes in the pool sleeping on waitchannel.
     /// Must be called without any p->lock.
     pub fn wakeup_pool(&self, target: &WaitChannel) {
+        // TODO: remove kernel_builder()
         let current_proc = kernel_builder()
             .current_proc()
             .map_or(ptr::null(), |p| p.raw());
@@ -795,9 +803,11 @@ impl ProcsBuilder {
     pub fn user_proc_init(self: Pin<&mut Self>, cwd: RcInode<'static>) {
         // Allocate trap frame.
         let trap_frame = scopeguard::guard(
+            // TODO: remove kernel_builder()
             kernel_builder()
                 .alloc()
                 .expect("user_proc_init: kernel().alloc"),
+            // TODO: remove kernel_builder()
             |page| kernel_builder().free(page),
         );
 
@@ -892,7 +902,9 @@ impl Procs {
     /// Returns Ok(new process id) on success, Err(()) on error.
     pub fn fork(&self, proc: &mut CurrentProc<'_>) -> Result<Pid, ()> {
         // Allocate trap frame.
+        // TODO: remove kernel_builder()
         let trap_frame = scopeguard::guard(kernel_builder().alloc().ok_or(())?, |page| {
+            // TODO: remove kernel_builder()
             kernel_builder().free(page)
         });
 
@@ -1020,6 +1032,7 @@ impl Procs {
         // If self.cwd is not None, the inode inside self.cwd will be dropped
         // by assigning None to self.cwd. Deallocation of an inode may cause
         // disk write operations, so we must begin a transaction here.
+        // TODO: remove kernel_builder()
         let tx = kernel_builder().file_system.begin_transaction();
         // Safe since CurrentProc's cwd has been initialized.
         // It's ok to drop cwd as proc will not be used any longer.
@@ -1106,6 +1119,7 @@ pub unsafe fn scheduler() -> ! {
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
 unsafe fn forkret() {
+    // TODO: remove kernel_builder()
     let kernel = kernel_builder();
 
     let proc = kernel.current_proc().expect("No current proc");

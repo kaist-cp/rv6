@@ -79,7 +79,7 @@ use static_assertions::const_assert;
 
 use super::{FileName, IPB, MAXFILE, NDIRECT, NINDIRECT};
 use crate::{
-    arena::{narrow_lifetime, Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
+    arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
     bio::BufData,
     fs::{FsTransaction, ROOTINO},
     kernel::kernel_builder,
@@ -168,12 +168,6 @@ pub struct Dinode {
 pub type Itable = Spinlock<ArrayArena<Inode, NINODE>>;
 
 pub type RcInode<'s> = Rc<'s, Itable, &'s Itable>;
-
-impl RcInode<'static> {
-    pub fn narrow_lifetime<'s>(self) -> RcInode<'s> {
-        narrow_lifetime(self)
-    }
-}
 
 /// InodeGuard implies that `Sleeplock<InodeInner>` is held by current thread.
 ///
@@ -327,8 +321,10 @@ impl InodeGuard<'_> {
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk.
     pub fn update(&self, tx: &FsTransaction<'_>) {
+        // TODO: remove kernel_builder()
         let mut bp = kernel_builder().file_system.disk.read(
             self.dev,
+            // TODO: remove kernel_builder()
             kernel_builder().file_system.superblock().iblock(self.inum),
         );
 
@@ -386,6 +382,7 @@ impl InodeGuard<'_> {
         }
 
         if self.deref_inner().addr_indirect != 0 {
+            // TODO: remove kernel_builder()
             let mut bp = kernel_builder()
                 .file_system
                 .disk
@@ -478,6 +475,7 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
+            // TODO: remove kernel_builder()
             let bp = kernel_builder()
                 .file_system
                 .disk
@@ -575,6 +573,7 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
+            // TODO: remove kernel_builder()
             let mut bp = kernel_builder()
                 .file_system
                 .disk
@@ -637,6 +636,7 @@ impl InodeGuard<'_> {
                 self.deref_inner_mut().addr_indirect = indirect;
             }
 
+            // TODO: remove kernel_builder()
             let mut bp = kernel_builder().file_system.disk.read(self.dev, indirect);
             let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
@@ -692,6 +692,7 @@ impl ArenaObject for Inode {
             // can be found in finalize in file.rs, sys_chdir in sysfile.rs,
             // close_files in proc.rs, and exec in exec.rs.
             let tx = mem::ManuallyDrop::new(FsTransaction {
+                // TODO: remove kernel_builder()
                 fs: &kernel_builder().file_system,
             });
 
@@ -716,8 +717,10 @@ impl Inode {
     pub fn lock(&self) -> InodeGuard<'_> {
         let mut guard = self.inner.lock();
         if !guard.valid {
+            // TODO: remove kernel_builder()
             let mut bp = kernel_builder().file_system.disk.read(
                 self.dev,
+                // TODO: remove kernel_builder()
                 kernel_builder().file_system.superblock().iblock(self.inum),
             );
 
@@ -818,10 +821,13 @@ impl Itable {
     /// Mark it as allocated by giving it type.
     /// Returns an unlocked but allocated and referenced inode.
     pub fn alloc_inode(&self, dev: u32, typ: InodeType, tx: &FsTransaction<'_>) -> RcInode<'_> {
+        // TODO: remove kernel_builder()
         for inum in 1..kernel_builder().file_system.superblock().ninodes {
+            // TODO: remove kernel_builder()
             let mut bp = kernel_builder()
                 .file_system
                 .disk
+                // TODO: remove kernel_builder()
                 .read(dev, kernel_builder().file_system.superblock().iblock(inum));
 
             const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());

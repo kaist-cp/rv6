@@ -132,6 +132,7 @@ impl FsTransaction<'_> {
 
     /// Zero a block.
     fn bzero(&self, dev: u32, bno: u32) {
+        // TODO: remove kernel_builder()
         let mut buf = unsafe { kernel_builder().get_bcache() }
             .get_buf(dev, bno)
             .lock();

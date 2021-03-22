@@ -5,7 +5,7 @@ use core::{cell::UnsafeCell, cmp, mem, ops::Deref, ops::DerefMut};
 use array_macro::array;
 
 use crate::{
-    arena::{narrow_lifetime, Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
+    arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
     fs::{FileSystem, InodeGuard, RcInode},
     kernel::kernel_builder,
     lock::Spinlock,
@@ -56,12 +56,6 @@ pub struct Devsw {
 }
 
 pub type RcFile<'s> = Rc<'s, FileTable, &'s FileTable>;
-
-impl RcFile<'static> {
-    pub fn narrow_lifetime<'s>(self) -> RcFile<'s> {
-        narrow_lifetime(self)
-    }
-}
 
 impl Default for FileType {
     fn default() -> Self {
@@ -211,6 +205,7 @@ impl ArenaObject for File {
             match typ {
                 FileType::Pipe { pipe } => {
                     if let Some(page) = pipe.close(self.writable) {
+                        // TODO: remove kernel_builder()
                         kernel_builder().free(page);
                     }
                 }
@@ -222,6 +217,7 @@ impl ArenaObject for File {
                     // The inode ip will be dropped by drop(ip). Deallocation
                     // of an inode may cause disk write operations, so we must
                     // begin a transaction here.
+                    // TODO: remove kernel_builder()
                     let _tx = kernel_builder().file_system.begin_transaction();
                     drop(ip);
                 }

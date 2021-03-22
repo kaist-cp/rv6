@@ -33,6 +33,7 @@ impl RawLock for RawSleeplock {
         while *guard != -1 {
             guard.sleep();
         }
+        // TODO: remove kernel_builder()
         *guard = kernel_builder()
             .current_proc()
             .expect("No current proc")
@@ -47,6 +48,7 @@ impl RawLock for RawSleeplock {
 
     fn holding(&self) -> bool {
         let guard = self.locked.lock();
+        // TODO: remove kernel_builder()
         *guard
             == kernel_builder()
                 .current_proc()
