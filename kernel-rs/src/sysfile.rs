@@ -70,18 +70,16 @@ impl Kernel {
         let mut dp = ptr.lock();
         if let Ok((ptr2, _)) = dp.dirlookup(&name, &self.itable) {
             drop(dp);
-            let mut ip = ptr2.lock();
-            if typ == InodeType::File {
-                match ip.deref_inner().typ {
-                    InodeType::File | InodeType::Device { .. } => {
-                        let ret = f(&mut ip);
-                        drop(ip);
-                        return Ok((ptr2, ret));
-                    }
-                    _ => return Err(()),
-                }
+            if typ != InodeType::File {
+                return Err(());
             }
-            return Err(());
+            let mut ip = ptr2.lock();
+            if let InodeType::None | InodeType::Dir = ip.deref_inner().typ {
+                return Err(());
+            }
+            let ret = f(&mut ip);
+            drop(ip);
+            return Ok((ptr2, ret));
         }
         let ptr2 = self.itable.alloc_inode(dp.dev, typ, tx);
         let mut ip = ptr2.lock();
