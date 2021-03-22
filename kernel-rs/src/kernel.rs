@@ -100,7 +100,7 @@ pub struct KernelBuilder {
 
     pub itable: Itable,
 
-    pub file_system: FileSystem,
+    pub file_system: FileSystem<'static>,
 }
 
 #[repr(transparent)]
@@ -302,13 +302,15 @@ pub unsafe fn kernel_main() -> ! {
                 .init()
         };
 
+        // The initial cwd of the first user process.
+        let cwd = unsafe { kernel_builder_unchecked_pin().project().itable.root() };
+
         // First user process.
-        // Temporarily create one more `Pin<&mut Kernel>`, just to initialize the first user process.
         unsafe {
             kernel_builder_unchecked_pin()
                 .project()
                 .procs
-                .user_proc_init()
+                .user_proc_init(cwd)
         };
         STARTED.store(true, Ordering::Release);
     } else {

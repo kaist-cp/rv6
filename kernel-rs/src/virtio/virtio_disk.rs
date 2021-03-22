@@ -165,6 +165,7 @@ impl Sleepablelock<Disk> {
     /// Return a locked Buf with the `latest` contents of the indicated block.
     /// If buf.valid is true, we don't need to access Disk.
     pub fn read(&self, dev: u32, blockno: u32) -> Buf<'static> {
+        // TODO: remove kernel_builder()
         let mut buf = unsafe { kernel_builder().get_bcache() }
             .get_buf(dev, blockno)
             .lock();
@@ -322,6 +323,7 @@ impl Disk {
         while b.deref_inner().disk {
             (*b).vdisk_request_waitchannel.sleep(
                 this,
+                // TODO: remove kernel_builder()
                 &kernel_builder().current_proc().expect("No current proc"),
             );
         }

@@ -2,8 +2,8 @@ use core::cmp;
 
 use cstr_core::CStr;
 
-use super::{InodeType, RcInode, DIRSIZ, ROOTINO};
-use crate::{kernel::kernel_builder, param::ROOTDEV, proc::CurrentProc};
+use super::{InodeType, RcInode, DIRSIZ};
+use crate::{fs::inode::Itable, proc::CurrentProc};
 
 #[derive(PartialEq)]
 #[repr(transparent)]
@@ -62,16 +62,16 @@ impl Path {
         &self.inner
     }
 
-    pub fn root() -> RcInode<'static> {
-        kernel_builder().itable.get_inode(ROOTDEV, ROOTINO)
+    pub fn namei<'s>(&self, proc: &CurrentProc<'_>, itable: &'s Itable) -> Result<RcInode<'s>, ()> {
+        Ok(self.namex(false, proc, itable)?.0)
     }
 
-    pub fn namei(&self, proc: &CurrentProc<'_>) -> Result<RcInode<'static>, ()> {
-        Ok(self.namex(false, proc)?.0)
-    }
-
-    pub fn nameiparent(&self, proc: &CurrentProc<'_>) -> Result<(RcInode<'static>, &FileName), ()> {
-        let (ip, name_in_path) = self.namex(true, proc)?;
+    pub fn nameiparent<'s>(
+        &self,
+        proc: &CurrentProc<'_>,
+        itable: &'s Itable,
+    ) -> Result<(RcInode<'s>, &FileName), ()> {
+        let (ip, name_in_path) = self.namex(true, proc, itable)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
     }
@@ -140,15 +140,16 @@ impl Path {
     /// If parent != 0, return the inode for the parent and copy the final
     /// path element into name, which must have room for DIRSIZ bytes.
     /// Must be called inside a transaction since it calls Inode::put().
-    fn namex(
+    fn namex<'s>(
         &self,
         parent: bool,
         proc: &CurrentProc<'_>,
-    ) -> Result<(RcInode<'static>, Option<&FileName>), ()> {
-        let mut ptr = if self.is_absolute() {
-            Self::root()
+        itable: &'s Itable,
+    ) -> Result<(RcInode<'s>, Option<&FileName>), ()> {
+        let mut ptr: RcInode<'s> = if self.is_absolute() {
+            itable.root()
         } else {
-            proc.cwd().clone()
+            proc.cwd().clone().narrow_lifetime()
         };
 
         let mut path = self;
@@ -165,7 +166,7 @@ impl Path {
                 drop(ip);
                 return Ok((ptr, Some(name)));
             }
-            let next = ip.dirlookup(name);
+            let next = ip.dirlookup(name, itable);
             drop(ip);
             ptr = next?.0
         }

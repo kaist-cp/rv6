@@ -473,3 +473,24 @@ impl<'s, A: Arena, T: Clone + Deref<Target = A>> Clone for Rc<'s, A, T> {
         Self { tag, inner }
     }
 }
+
+// When 'b: 'a, we want Rc<'b, A, T> <: Rc<'a, A, T>. However, Rc is currently invariant to its
+// first lifetime parameter. The reason is unclear, but we suspect generic associated types are
+// problematic. As a workaround, we define narrow_lifetime to upcast Rc<'b, A, T> to Rc<'a, A, T>.
+impl<
+        'b,
+        T: 'static + ArenaObject + Unpin,
+        S: Clone + Deref<Target = Spinlock<ArrayArena<T, CAPACITY>>>,
+        const CAPACITY: usize,
+    > Rc<'b, Spinlock<ArrayArena<T, CAPACITY>>, S>
+{
+    pub fn narrow_lifetime<'a>(mut self) -> Rc<'a, Spinlock<ArrayArena<T, CAPACITY>>, S>
+    where
+        'b: 'a,
+    {
+        let tag = self.tag.clone();
+        let inner = ManuallyDrop::new(unsafe { ManuallyDrop::take(&mut self.inner) });
+        mem::forget(self);
+        Rc { tag, inner }
+    }
+}
