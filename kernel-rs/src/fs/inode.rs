@@ -81,9 +81,10 @@ use super::{FileName, IPB, MAXFILE, NDIRECT, NINDIRECT};
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
     bio::BufData,
-    fs::FsTransaction,
+    fs::{FsTransaction, ROOTINO},
     kernel::kernel_builder,
     lock::{Sleeplock, Spinlock},
+    param::ROOTDEV,
     param::{BSIZE, NINODE},
     proc::CurrentProc,
     stat::Stat,
@@ -280,10 +281,11 @@ impl InodeGuard<'_> {
         &mut self,
         name: &FileName,
         inum: u32,
-        tx: &FsTransaction<'_>,
+        tx: &FsTransaction<'_, '_>,
+        itable: &Itable,
     ) -> Result<(), ()> {
         // Check that name is not present.
-        if let Ok((_ip, _)) = self.dirlookup(name) {
+        if let Ok((_ip, _)) = self.dirlookup(name, itable) {
             return Err(());
         };
 
@@ -300,17 +302,16 @@ impl InodeGuard<'_> {
 
     /// Look for a directory entry in a directory.
     /// If found, return the entry and byte offset of entry.
-    pub fn dirlookup(&mut self, name: &FileName) -> Result<(RcInode<'static>, u32), ()> {
+    pub fn dirlookup<'a>(
+        &mut self,
+        name: &FileName,
+        itable: &'a Itable,
+    ) -> Result<(RcInode<'a>, u32), ()> {
         assert_eq!(self.deref_inner().typ, InodeType::Dir, "dirlookup not DIR");
 
         self.iter_dirents()
             .find(|(de, _)| de.inum != 0 && de.get_name() == name)
-            .map(|(de, off)| {
-                (
-                    kernel_builder().itable.get_inode(self.dev, de.inum as u32),
-                    off,
-                )
-            })
+            .map(|(de, off)| (itable.get_inode(self.dev, de.inum as u32), off))
             .ok_or(())
     }
 }
@@ -319,9 +320,11 @@ impl InodeGuard<'_> {
     /// Copy a modified in-memory inode to disk.
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk.
-    pub fn update(&self, tx: &FsTransaction<'_>) {
+    pub fn update(&self, tx: &FsTransaction<'_, '_>) {
+        // TODO: remove kernel_builder()
         let mut bp = kernel_builder().file_system.disk.read(
             self.dev,
+            // TODO: remove kernel_builder()
             kernel_builder().file_system.superblock().iblock(self.inum),
         );
 
@@ -369,7 +372,7 @@ impl InodeGuard<'_> {
 
     /// Truncate inode (discard contents).
     /// This function is called with Inode's lock is held.
-    pub fn itrunc(&mut self, tx: &FsTransaction<'_>) {
+    pub fn itrunc(&mut self, tx: &FsTransaction<'_, '_>) {
         let dev = self.dev;
         for addr in &mut self.deref_inner_mut().addr_direct {
             if *addr != 0 {
@@ -379,6 +382,7 @@ impl InodeGuard<'_> {
         }
 
         if self.deref_inner().addr_indirect != 0 {
+            // TODO: remove kernel_builder()
             let mut bp = kernel_builder()
                 .file_system
                 .disk
@@ -471,6 +475,7 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
+            // TODO: remove kernel_builder()
             let bp = kernel_builder()
                 .file_system
                 .disk
@@ -487,7 +492,12 @@ impl InodeGuard<'_> {
 
     /// Copy data from `src` into the inode at offset `off`.
     /// Return Ok(()) on success, Err(()) on failure.
-    pub fn write_kernel<T>(&mut self, src: &T, off: u32, tx: &FsTransaction<'_>) -> Result<(), ()> {
+    pub fn write_kernel<T>(
+        &mut self,
+        src: &T,
+        off: u32,
+        tx: &FsTransaction<'_, '_>,
+    ) -> Result<(), ()> {
         let bytes = self.write_bytes_kernel(
             // It is safe because src is a valid reference to T and
             // u8 does not have any internal structure.
@@ -508,7 +518,7 @@ impl InodeGuard<'_> {
         &mut self,
         src: &[u8],
         off: u32,
-        tx: &FsTransaction<'_>,
+        tx: &FsTransaction<'_, '_>,
     ) -> Result<usize, ()> {
         self.write_internal(
             off,
@@ -530,7 +540,7 @@ impl InodeGuard<'_> {
         off: u32,
         n: u32,
         proc: &mut CurrentProc<'_>,
-        tx: &FsTransaction<'_>,
+        tx: &FsTransaction<'_, '_>,
     ) -> Result<usize, ()> {
         self.write_internal(
             off,
@@ -558,7 +568,7 @@ impl InodeGuard<'_> {
         mut off: u32,
         n: u32,
         mut f: F,
-        tx: &FsTransaction<'_>,
+        tx: &FsTransaction<'_, '_>,
     ) -> Result<usize, ()> {
         if off > self.deref_inner().size {
             return Err(());
@@ -568,6 +578,7 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
+            // TODO: remove kernel_builder()
             let mut bp = kernel_builder()
                 .file_system
                 .disk
@@ -602,7 +613,7 @@ impl InodeGuard<'_> {
     /// listed in block self->addr_indirect.
     /// Return the disk block address of the nth block in inode self.
     /// If there is no such block, bmap allocates one.
-    fn bmap_or_alloc(&mut self, bn: usize, tx: &FsTransaction<'_>) -> u32 {
+    fn bmap_or_alloc(&mut self, bn: usize, tx: &FsTransaction<'_, '_>) -> u32 {
         self.bmap_internal(bn, Some(tx))
     }
 
@@ -610,7 +621,7 @@ impl InodeGuard<'_> {
         self.bmap_internal(bn, None)
     }
 
-    fn bmap_internal(&mut self, bn: usize, tx_opt: Option<&FsTransaction<'_>>) -> u32 {
+    fn bmap_internal(&mut self, bn: usize, tx_opt: Option<&FsTransaction<'_, '_>>) -> u32 {
         let inner = self.deref_inner();
 
         if bn < NDIRECT {
@@ -630,6 +641,7 @@ impl InodeGuard<'_> {
                 self.deref_inner_mut().addr_indirect = indirect;
             }
 
+            // TODO: remove kernel_builder()
             let mut bp = kernel_builder().file_system.disk.read(self.dev, indirect);
             let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
@@ -685,6 +697,7 @@ impl ArenaObject for Inode {
             // can be found in finalize in file.rs, sys_chdir in sysfile.rs,
             // close_files in proc.rs, and exec in exec.rs.
             let tx = mem::ManuallyDrop::new(FsTransaction {
+                // TODO: remove kernel_builder()
                 fs: &kernel_builder().file_system,
             });
 
@@ -709,8 +722,10 @@ impl Inode {
     pub fn lock(&self) -> InodeGuard<'_> {
         let mut guard = self.inner.lock();
         if !guard.valid {
+            // TODO: remove kernel_builder()
             let mut bp = kernel_builder().file_system.disk.read(
                 self.dev,
+                // TODO: remove kernel_builder()
                 kernel_builder().file_system.superblock().iblock(self.inum),
             );
 
@@ -788,6 +803,10 @@ impl Itable {
         )
     }
 
+    pub fn root(&self) -> RcInode<'_> {
+        self.get_inode(ROOTDEV, ROOTINO)
+    }
+
     /// Find the inode with number inum on device dev
     /// and return the in-memory copy. Does not lock
     /// the inode and does not read it from disk.
@@ -806,11 +825,14 @@ impl Itable {
     /// Allocate an inode on device dev.
     /// Mark it as allocated by giving it type.
     /// Returns an unlocked but allocated and referenced inode.
-    pub fn alloc_inode(&self, dev: u32, typ: InodeType, tx: &FsTransaction<'_>) -> RcInode<'_> {
+    pub fn alloc_inode(&self, dev: u32, typ: InodeType, tx: &FsTransaction<'_, '_>) -> RcInode<'_> {
+        // TODO: remove kernel_builder()
         for inum in 1..kernel_builder().file_system.superblock().ninodes {
+            // TODO: remove kernel_builder()
             let mut bp = kernel_builder()
                 .file_system
                 .disk
+                // TODO: remove kernel_builder()
                 .read(dev, kernel_builder().file_system.superblock().iblock(inum));
 
             const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());

@@ -29,12 +29,12 @@ use static_assertions::const_assert;
 use crate::{
     bio::BufData,
     bio::{Buf, BufUnlocked},
-    kernel::kernel_builder,
     lock::Sleepablelock,
     param::{BSIZE, LOGSIZE, MAXOPBLOCKS},
+    virtio::Disk,
 };
 
-pub struct Log {
+pub struct Log<'a> {
     dev: u32,
     start: i32,
     size: i32,
@@ -47,6 +47,8 @@ pub struct Log {
 
     /// Contents of the header block, used to keep track in memory of logged block# before commit.
     bufs: ArrayVec<[BufUnlocked<'static>; LOGSIZE]>,
+
+    disk: &'a Sleepablelock<Disk>,
 }
 
 /// Contents of the header block, used for the on-disk header block.
@@ -55,8 +57,8 @@ struct LogHeader {
     block: [u32; LOGSIZE],
 }
 
-impl Log {
-    pub fn new(dev: u32, start: i32, size: i32) -> Self {
+impl<'a> Log<'a> {
+    pub fn new(dev: u32, start: i32, size: i32, disk: &'a Sleepablelock<Disk>) -> Self {
         let mut log = Self {
             dev,
             start,
@@ -64,6 +66,7 @@ impl Log {
             outstanding: 0,
             committing: false,
             bufs: ArrayVec::new(),
+            disk,
         };
         log.recover_from_log();
         log
@@ -73,8 +76,7 @@ impl Log {
     fn install_trans(&mut self) {
         for (tail, dbuf) in self.bufs.drain(..).enumerate() {
             // Read log block.
-            let lbuf = kernel_builder()
-                .file_system
+            let lbuf = self
                 .disk
                 .read(self.dev, (self.start + tail as i32 + 1) as u32);
 
@@ -87,16 +89,13 @@ impl Log {
                 .copy_from_slice(&lbuf.deref_inner().data[..]);
 
             // Write dst to disk.
-            kernel_builder().file_system.disk.write(&mut dbuf);
+            self.disk.write(&mut dbuf);
         }
     }
 
     /// Read the log header from disk into the in-memory log header.
     fn read_head(&mut self) {
-        let mut buf = kernel_builder()
-            .file_system
-            .disk
-            .read(self.dev, self.start as u32);
+        let mut buf = self.disk.read(self.dev, self.start as u32);
 
         const_assert!(mem::size_of::<LogHeader>() <= BSIZE);
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<LogHeader>() == 0);
@@ -108,13 +107,7 @@ impl Log {
         let lh = unsafe { &mut *(buf.deref_inner_mut().data.as_mut_ptr() as *mut LogHeader) };
 
         for b in &lh.block[0..lh.n as usize] {
-            self.bufs.push(
-                kernel_builder()
-                    .file_system
-                    .disk
-                    .read(self.dev, *b)
-                    .unlock(),
-            )
+            self.bufs.push(self.disk.read(self.dev, *b).unlock())
         }
     }
 
@@ -122,10 +115,7 @@ impl Log {
     /// This is the true point at which the
     /// current transaction commits.
     fn write_head(&mut self) {
-        let mut buf = kernel_builder()
-            .file_system
-            .disk
-            .read(self.dev, self.start as u32);
+        let mut buf = self.disk.read(self.dev, self.start as u32);
 
         const_assert!(mem::size_of::<LogHeader>() <= BSIZE);
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<LogHeader>() == 0);
@@ -140,7 +130,7 @@ impl Log {
         for (db, b) in izip!(&mut lh.block, &self.bufs) {
             *db = b.blockno;
         }
-        kernel_builder().file_system.disk.write(&mut buf)
+        self.disk.write(&mut buf)
     }
 
     fn recover_from_log(&mut self) {
@@ -204,23 +194,19 @@ impl Log {
     fn write_log(&mut self) {
         for (tail, from) in self.bufs.iter().enumerate() {
             // Log block.
-            let mut to = kernel_builder()
-                .file_system
+            let mut to = self
                 .disk
                 .read(self.dev, (self.start + tail as i32 + 1) as u32);
 
             // Cache block.
-            let from = kernel_builder()
-                .file_system
-                .disk
-                .read(self.dev, from.blockno);
+            let from = self.disk.read(self.dev, from.blockno);
 
             to.deref_inner_mut()
                 .data
                 .copy_from_slice(&from.deref_inner().data[..]);
 
             // Write the log.
-            kernel_builder().file_system.disk.write(&mut to);
+            self.disk.write(&mut to);
         }
     }
 

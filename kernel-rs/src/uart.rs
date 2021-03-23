@@ -146,6 +146,7 @@ impl Uart {
     /// by write().
     pub fn putc(&self, c: i32) {
         let mut guard = self.tx_lock.lock();
+        // TODO: remove kernel_builder()
         if kernel_builder().is_panicked() {
             spin_loop();
         }
@@ -172,6 +173,7 @@ impl Uart {
         unsafe {
             push_off();
         }
+        // TODO: remove kernel_builder()
         if kernel_builder().is_panicked() {
             spin_loop();
         }

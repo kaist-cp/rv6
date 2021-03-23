@@ -6,7 +6,7 @@ use array_macro::array;
 
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
-    fs::{InodeGuard, RcInode},
+    fs::{FileSystem, InodeGuard, RcInode},
     kernel::kernel_builder,
     lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
@@ -17,17 +17,32 @@ use crate::{
 
 pub enum FileType {
     None,
-    Pipe { pipe: AllocatedPipe },
-    Inode { inner: InodeFileType },
-    Device { ip: RcInode<'static>, major: u16 },
+    Pipe {
+        pipe: AllocatedPipe,
+    },
+    Inode {
+        inner: InodeFileType,
+    },
+    Device {
+        ip: RcInode<'static>,
+        major: &'static Devsw,
+    },
 }
 
+/// It has an inode and an offset.
+///
+/// # Safety
+///
+/// The offset should be accessed only when the inode is locked.
 pub struct InodeFileType {
     pub ip: RcInode<'static>,
     // It should be accessed only when `ip` is locked.
     pub off: UnsafeCell<u32>,
 }
 
+/// It can be acquired when the inode of `InodeFileType` is locked. `ip` is the guard of the locked
+/// inode. `off` is a mutable reference to the offset. Accessing `off` is guaranteed to be safe
+/// since the inode is locked.
 struct InodeFileTypeGuard<'a> {
     ip: InodeGuard<'a>,
     off: &'a mut u32,
@@ -125,20 +140,20 @@ impl File {
                 }
                 ret
             }
-            FileType::Device { major, .. } => {
-                kernel_builder()
-                    .devsw
-                    .get(*major as usize)
-                    .and_then(|dev| Some(dev.read?(addr, n) as usize))
-                    .ok_or(())
-            }
+            FileType::Device { major, .. } => major.read.ok_or(()).map(|f| f(addr, n) as usize),
             FileType::None => panic!("File::read"),
         }
     }
 
     /// Write to file self.
     /// addr is a user virtual address.
-    pub fn write(&self, addr: UVAddr, n: i32, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn write(
+        &self,
+        addr: UVAddr,
+        n: i32,
+        proc: &mut CurrentProc<'_>,
+        fs: &FileSystem<'_>,
+    ) -> Result<usize, ()> {
         if !self.writable {
             return Err(());
         }
@@ -159,7 +174,7 @@ impl File {
                 let mut bytes_written: usize = 0;
                 while bytes_written < n {
                     let bytes_to_write = cmp::min(n - bytes_written, max);
-                    let tx = kernel_builder().file_system.begin_transaction();
+                    let tx = fs.begin_transaction();
                     let mut ip = inner.lock();
                     let curr_off = *ip.off;
                     let r = ip
@@ -185,13 +200,7 @@ impl File {
                 }
                 Ok(n)
             }
-            FileType::Device { major, .. } => {
-                kernel_builder()
-                    .devsw
-                    .get(*major as usize)
-                    .and_then(|dev| Some(dev.write?(addr, n) as usize))
-                    .ok_or(())
-            }
+            FileType::Device { major, .. } => major.write.ok_or(()).map(|f| f(addr, n) as usize),
             FileType::None => panic!("File::read"),
         }
     }
@@ -202,7 +211,12 @@ impl ArenaObject for File {
         A::reacquire_after(guard, || {
             let typ = mem::replace(&mut self.typ, FileType::None);
             match typ {
-                FileType::Pipe { pipe } => pipe.close(self.writable),
+                FileType::Pipe { pipe } => {
+                    if let Some(page) = pipe.close(self.writable) {
+                        // TODO: remove kernel_builder()
+                        kernel_builder().free(page);
+                    }
+                }
                 FileType::Inode {
                     inner: InodeFileType { ip, .. },
                 }
@@ -211,6 +225,7 @@ impl ArenaObject for File {
                     // The inode ip will be dropped by drop(ip). Deallocation
                     // of an inode may cause disk write operations, so we must
                     // begin a transaction here.
+                    // TODO: remove kernel_builder()
                     let _tx = kernel_builder().file_system.begin_transaction();
                     drop(ip);
                 }

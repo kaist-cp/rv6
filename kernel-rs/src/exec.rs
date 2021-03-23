@@ -108,7 +108,7 @@ impl Kernel {
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
         let tx = self.file_system.begin_transaction();
-        let ptr = path.namei(proc)?;
+        let ptr = path.namei(proc, &self.itable)?;
         let mut ip = ptr.lock();
 
         // Check ELF header

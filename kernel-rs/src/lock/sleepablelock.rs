@@ -11,7 +11,7 @@ pub struct RawSleepablelock {
     waitchannel: WaitChannel,
 }
 
-/// Similar to `Spinlock`, but guards of this lock can sleep.   
+/// Similar to `Spinlock`, but guards of this lock can sleep.
 pub type Sleepablelock<T> = Lock<RawSleepablelock, T>;
 /// Guards of `Sleepablelock<T>`. These guards can `sleep()`/`wakeup()`.
 pub type SleepablelockGuard<'s, T> = Guard<'s, RawSleepablelock, T>;
@@ -54,6 +54,7 @@ impl<T> SleepablelockGuard<'_, T> {
     pub fn sleep(&mut self) {
         self.lock.lock.waitchannel.sleep(
             self,
+            // TODO: remove kernel_builder()
             &kernel_builder().current_proc().expect("No current proc"),
         );
     }
