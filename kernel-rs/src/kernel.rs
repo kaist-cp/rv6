@@ -100,7 +100,7 @@ pub struct KernelBuilder {
 
     pub itable: Itable,
 
-    pub file_system: FileSystem<'static>,
+    pub file_system: FileSystem,
 }
 
 #[repr(transparent)]
@@ -297,6 +297,7 @@ pub unsafe fn kernel_main() -> ! {
             kernel_builder_unchecked_pin()
                 .project()
                 .file_system
+                .log
                 .disk
                 .get_mut()
                 .init()

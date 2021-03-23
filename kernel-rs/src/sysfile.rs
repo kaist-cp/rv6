@@ -59,7 +59,7 @@ impl Kernel {
         &self,
         path: &Path,
         typ: InodeType,
-        tx: &FsTransaction<'_, '_>,
+        tx: &FsTransaction<'_>,
         proc: &CurrentProc<'_>,
         f: F,
     ) -> Result<(RcInode<'_>, T), ()>

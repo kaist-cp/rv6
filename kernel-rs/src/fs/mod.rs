@@ -15,7 +15,7 @@ use core::{cmp, mem};
 
 use spin::Once;
 
-use crate::{bio::Buf, kernel::kernel_builder, lock::Sleepablelock, param::BSIZE, virtio::Disk};
+use crate::{bio::Buf, kernel::kernel_builder, param::BSIZE};
 
 mod inode;
 mod log;
@@ -25,7 +25,7 @@ mod superblock;
 pub use inode::{
     Dinode, Dirent, Inode, InodeGuard, InodeInner, InodeType, Itable, RcInode, DIRENT_SIZE, DIRSIZ,
 };
-pub use log::Log;
+pub use log::{Log, LogLocked};
 pub use path::{FileName, Path};
 pub use superblock::{Superblock, BPB, IPB};
 
@@ -36,7 +36,7 @@ const NDIRECT: usize = 12;
 const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
 const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
 
-pub struct FileSystem<'s> {
+pub struct FileSystem {
     /// TODO(https://github.com/kaist-cp/rv6/issues/358)
     /// Initializing superblock should be run only once because forkret() calls fsinit()
     /// There should be one superblock per disk device, but we run with
@@ -46,40 +46,29 @@ pub struct FileSystem<'s> {
     /// TODO(https://github.com/kaist-cp/rv6/issues/358)
     /// document it / initializing log should be run
     /// only once because forkret() calls fsinit()
-    log: Once<Sleepablelock<Log<'s>>>,
-
-    /// It may sleep until some Descriptors are freed.
-    pub disk: Sleepablelock<Disk>,
+    pub log: Log,
 }
 
-pub struct FsTransaction<'s, 't> {
-    fs: &'s FileSystem<'t>,
+pub struct FsTransaction<'s> {
+    fs: &'s FileSystem,
 }
 
-impl<'s> FileSystem<'s> {
+impl FileSystem {
     pub const fn zero() -> Self {
         Self {
             superblock: Once::new(),
-            log: Once::new(),
-            disk: Sleepablelock::new("virtio_disk", Disk::zero()),
+            log: Log::zero(),
         }
     }
 
-    pub fn init(&'s self, dev: u32) {
-        let _ = self
-            .superblock
-            .call_once(|| Superblock::new(&self.disk.read(dev, 1)));
-        let _ = self.log.call_once(|| {
-            Sleepablelock::new(
-                "LOG",
-                Log::new(
-                    dev,
-                    self.superblock().logstart as i32,
-                    self.superblock().nlog as i32,
-                    &self.disk,
-                ),
-            )
-        });
+    pub fn init(&self, dev: u32) {
+        if !self.superblock.is_completed() {
+            let superblock = self
+                .superblock
+                .call_once(|| Superblock::new(&self.log.disk.read(dev, 1)));
+            self.log
+                .init(dev, superblock.logstart as i32, superblock.nlog as i32);
+        }
     }
 
     /// TODO(https://github.com/kaist-cp/rv6/issues/358)
@@ -92,32 +81,22 @@ impl<'s> FileSystem<'s> {
         }
     }
 
-    /// TODO(https://github.com/kaist-cp/rv6/issues/358)
-    /// Calling log() after initialize is safe
-    fn log(&self) -> &Sleepablelock<Log<'s>> {
-        if let Some(log) = self.log.get() {
-            log
-        } else {
-            unreachable!()
-        }
-    }
-
     /// Called for each FS system call.
-    pub fn begin_transaction(&self) -> FsTransaction<'_, 's> {
-        Log::begin_op(self.log());
+    pub fn begin_transaction(&self) -> FsTransaction<'_> {
+        self.log.begin_op();
         FsTransaction { fs: self }
     }
 }
 
-impl Drop for FsTransaction<'_, '_> {
+impl Drop for FsTransaction<'_> {
     fn drop(&mut self) {
         // Called at the end of each FS system call.
         // Commits if this was the last outstanding operation.
-        Log::end_op(self.fs.log());
+        self.fs.log.end_op();
     }
 }
 
-impl FsTransaction<'_, '_> {
+impl FsTransaction<'_> {
     /// Caller has modified b->data and is done with the buffer.
     /// Record the block number and pin in the cache by increasing refcnt.
     /// commit()/write_log() will do the disk write.
@@ -127,7 +106,7 @@ impl FsTransaction<'_, '_> {
     ///   modify bp->data[]
     ///   write(bp)
     fn write(&self, b: Buf<'static>) {
-        self.fs.log().lock().write(b);
+        self.fs.log.lock().write(b);
     }
 
     /// Zero a block.
@@ -145,7 +124,7 @@ impl FsTransaction<'_, '_> {
     /// Allocate a zeroed disk block.
     fn balloc(&self, dev: u32) -> u32 {
         for b in num_iter::range_step(0, self.fs.superblock().size, BPB as u32) {
-            let mut bp = self.fs.disk.read(dev, self.fs.superblock().bblock(b));
+            let mut bp = self.fs.log.disk.read(dev, self.fs.superblock().bblock(b));
             for bi in 0..cmp::min(BPB as u32, self.fs.superblock().size - b) {
                 let m = 1 << (bi % 8);
                 if bp.deref_inner_mut().data[(bi / 8) as usize] & m == 0 {
@@ -163,7 +142,7 @@ impl FsTransaction<'_, '_> {
 
     /// Free a disk block.
     fn bfree(&self, dev: u32, b: u32) {
-        let mut bp = self.fs.disk.read(dev, self.fs.superblock().bblock(b));
+        let mut bp = self.fs.log.disk.read(dev, self.fs.superblock().bblock(b));
         let bi = b as usize % BPB;
         let m = 1u8 << (bi % 8);
         assert_ne!(
