@@ -53,8 +53,8 @@ pub struct LogLocked<'a> {
 /// * A `Ref` has a mutable reference to a `LogInner`.
 ///
 /// We need both variants. To access a `LogInner` by acquiring a lock, we make a `Guard`.
-/// In `Log::init` and `Log::end_op`, we need to access a `LogInner` without acquiring a lock. For
-/// this purpose, we make a `Ref`.
+/// In `Log::init` and `Log::end_op`, we need to access a `LogInner` without acquiring a lock. (To
+/// check their safety, see their implementations.) For this purpose, we make a `Ref`.
 pub enum LogLockedInner<'a> {
     Guard(SleepablelockGuard<'a, LogInner>),
     Ref(&'a mut LogInner),
@@ -143,29 +143,23 @@ impl Log {
         guard.outstanding -= 1;
         assert!(!guard.committing, "guard.committing");
 
-        let do_commit = if guard.outstanding == 0 {
+        if guard.outstanding == 0 {
+            // Since outstanding is 0, no ongoing transaction exists.
+            // The lock is still held, so new transactions cannot start.
             guard.committing = true;
-            true
-        } else {
-            // begin_op() may be waiting for LOG space,
-            // and decrementing log.outstanding has decreased
-            // the amount of reserved space.
-            guard.wakeup();
-            false
-        };
-        drop(guard);
+            // Committing is true, so new transactions cannot start even after releasing the lock.
 
-        if do_commit {
             // Call commit w/o holding locks, since not allowed to sleep with locks.
+            guard.reacquire_after(||
+                // Safe: there is no another transaction, so `inner` cannot be read or written.
+                unsafe { self.lock_unchecked() }.commit());
 
-            // It is safe because other threads neither read nor write this log
-            // when guard.committing is true.
-            unsafe { self.lock_unchecked().commit() };
-
-            let mut guard = self.inner().lock();
             guard.committing = false;
-            guard.wakeup();
-        };
+        }
+
+        // begin_op() may be waiting for LOG space, and decrementing log.outstanding has decreased
+        // the amount of reserved space.
+        guard.wakeup();
     }
 }
 
@@ -300,15 +294,10 @@ impl LogLocked<'_> {
         );
         assert!(self.outstanding >= 1, "write outside of trans");
 
-        for buf in &self.bufs {
-            // Log absorbtion.
-            if buf.blockno == b.blockno {
-                return;
-            }
+        if self.bufs.iter().all(|buf| buf.blockno != b.blockno) {
+            // Add new block to log
+            self.bufs.push(b.unlock());
         }
-
-        // Add new block to log
-        self.bufs.push(b.unlock());
     }
 }
 
