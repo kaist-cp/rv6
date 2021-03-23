@@ -21,20 +21,46 @@
 //!   ...
 //! Log appends are synchronous.
 use core::mem;
+use core::ops::{Deref, DerefMut};
 
 use arrayvec::ArrayVec;
 use itertools::*;
+use spin::Once;
 use static_assertions::const_assert;
 
 use crate::{
-    bio::BufData,
-    bio::{Buf, BufUnlocked},
-    lock::Sleepablelock,
+    bio::{Buf, BufData, BufUnlocked},
+    lock::{Sleepablelock, SleepablelockGuard},
     param::{BSIZE, LOGSIZE, MAXOPBLOCKS},
     virtio::Disk,
 };
 
-pub struct Log<'a> {
+pub struct Log {
+    inner: Once<Sleepablelock<LogInner>>,
+    pub disk: Sleepablelock<Disk>,
+}
+
+/// A `LogLocked` is a `Log` whose `inner` can be accessed safely.
+/// Its `inner`, whose type is `LogLockedInner<'a>`, provides a reference to a `LogInner`.
+pub struct LogLocked<'a> {
+    inner: LogLockedInner<'a>,
+    disk: &'a Sleepablelock<Disk>,
+}
+
+/// A `LogLockedInner` provides a reference to a `LogInner`.
+///
+/// * A `Guard` has a guard of a `Sleepablelock` holding a `LogInner`.
+/// * A `Ref` has a mutable reference to a `LogInner`.
+///
+/// We need both variants. To access a `LogInner` by acquiring a lock, we make a `Guard`.
+/// In `Log::init` and `Log::end_op`, we need to access a `LogInner` without acquiring a lock. (To
+/// check their safety, see their implementations.) For this purpose, we make a `Ref`.
+pub enum LogLockedInner<'a> {
+    Guard(SleepablelockGuard<'a, LogInner>),
+    Ref(&'a mut LogInner),
+}
+
+pub struct LogInner {
     dev: u32,
     start: i32,
     size: i32,
@@ -47,8 +73,6 @@ pub struct Log<'a> {
 
     /// Contents of the header block, used to keep track in memory of logged block# before commit.
     bufs: ArrayVec<[BufUnlocked<'static>; LOGSIZE]>,
-
-    disk: &'a Sleepablelock<Disk>,
 }
 
 /// Contents of the header block, used for the on-disk header block.
@@ -57,28 +81,103 @@ struct LogHeader {
     block: [u32; LOGSIZE],
 }
 
-impl<'a> Log<'a> {
-    pub fn new(dev: u32, start: i32, size: i32, disk: &'a Sleepablelock<Disk>) -> Self {
-        let mut log = Self {
+impl Log {
+    pub const fn zero() -> Self {
+        Self {
+            inner: Once::new(),
+            disk: Sleepablelock::new("DISK", Disk::zero()),
+        }
+    }
+
+    pub fn init(&self, dev: u32, start: i32, size: i32) {
+        let mut inner = LogInner {
             dev,
             start,
             size,
             outstanding: 0,
             committing: false,
             bufs: ArrayVec::new(),
-            disk,
         };
-        log.recover_from_log();
-        log
+        LogLocked::new(LogLockedInner::Ref(&mut inner), &self.disk).recover_from_log();
+        let _ = self.inner.call_once(|| Sleepablelock::new("LOG", inner));
     }
 
+    fn inner(&self) -> &Sleepablelock<LogInner> {
+        self.inner.get().expect("LogInner")
+    }
+
+    pub fn lock(&self) -> LogLocked<'_> {
+        LogLocked::new(LogLockedInner::Guard(self.inner().lock()), &self.disk)
+    }
+
+    /// # Safety
+    ///
+    /// Other threads must not read nor write this log while the returned `LogLocked` is alive.
+    unsafe fn lock_unchecked(&self) -> LogLocked<'_> {
+        LogLocked::new(
+            LogLockedInner::Ref(unsafe { &mut *self.inner().get_mut_raw() }),
+            &self.disk,
+        )
+    }
+
+    /// Called at the start of each FS system call.
+    pub fn begin_op(&self) {
+        let mut guard = self.inner().lock();
+        loop {
+            if guard.committing ||
+            // This op might exhaust log space; wait for commit.
+            guard.bufs.len() as i32 + (guard.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
+            {
+                guard.sleep();
+            } else {
+                guard.outstanding += 1;
+                break;
+            }
+        }
+    }
+
+    /// Called at the end of each FS system call.
+    /// Commits if this was the last outstanding operation.
+    pub fn end_op(&self) {
+        let mut guard = self.inner().lock();
+        guard.outstanding -= 1;
+        assert!(!guard.committing, "guard.committing");
+
+        if guard.outstanding == 0 {
+            // Since outstanding is 0, no ongoing transaction exists.
+            // The lock is still held, so new transactions cannot start.
+            guard.committing = true;
+            // Committing is true, so new transactions cannot start even after releasing the lock.
+
+            // Call commit w/o holding locks, since not allowed to sleep with locks.
+            guard.reacquire_after(||
+                // Safe: there is no another transaction, so `inner` cannot be read or written.
+                unsafe { self.lock_unchecked() }.commit());
+
+            guard.committing = false;
+        }
+
+        // begin_op() may be waiting for LOG space, and decrementing log.outstanding has decreased
+        // the amount of reserved space.
+        guard.wakeup();
+    }
+}
+
+impl<'a> LogLocked<'a> {
+    fn new(inner: LogLockedInner<'a>, disk: &'a Sleepablelock<Disk>) -> Self {
+        Self { inner, disk }
+    }
+}
+
+impl LogLocked<'_> {
     /// Copy committed blocks from log to their home location.
     fn install_trans(&mut self) {
-        for (tail, dbuf) in self.bufs.drain(..).enumerate() {
+        let dev = self.inner.dev;
+        let start = self.inner.start;
+
+        for (tail, dbuf) in self.inner.bufs.drain(..).enumerate() {
             // Read log block.
-            let lbuf = self
-                .disk
-                .read(self.dev, (self.start + tail as i32 + 1) as u32);
+            let lbuf = self.disk.read(dev, (start + tail as i32 + 1) as u32);
 
             // Read dst.
             let mut dbuf = dbuf.lock();
@@ -107,7 +206,8 @@ impl<'a> Log<'a> {
         let lh = unsafe { &mut *(buf.deref_inner_mut().data.as_mut_ptr() as *mut LogHeader) };
 
         for b in &lh.block[0..lh.n as usize] {
-            self.bufs.push(self.disk.read(self.dev, *b).unlock())
+            let buf = self.disk.read(self.dev, *b).unlock();
+            self.bufs.push(buf);
         }
     }
 
@@ -141,53 +241,6 @@ impl<'a> Log<'a> {
 
         // Clear the log.
         self.write_head();
-    }
-
-    /// Called at the start of each FS system call.
-    pub fn begin_op(this: &Sleepablelock<Self>) {
-        let mut guard = this.lock();
-        loop {
-            if guard.committing ||
-            // This op might exhaust log space; wait for commit.
-            guard.bufs.len() as i32 + (guard.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
-            {
-                guard.sleep();
-            } else {
-                guard.outstanding += 1;
-                break;
-            }
-        }
-    }
-
-    /// Called at the end of each FS system call.
-    /// Commits if this was the last outstanding operation.
-    pub fn end_op(this: &Sleepablelock<Self>) {
-        let mut guard = this.lock();
-        guard.outstanding -= 1;
-        assert!(!guard.committing, "guard.committing");
-
-        let do_commit = if guard.outstanding == 0 {
-            guard.committing = true;
-            true
-        } else {
-            // begin_op() may be waiting for LOG space,
-            // and decrementing log.outstanding has decreased
-            // the amount of reserved space.
-            guard.wakeup();
-            false
-        };
-        drop(guard);
-
-        if do_commit {
-            // Call commit w/o holding locks, since not allowed
-            // to sleep with locks.
-            // It is safe because other threads neither read nor write this log
-            // when guard.committing is true.
-            unsafe { (*this.get_mut_raw()).commit() };
-            let mut guard = this.lock();
-            guard.committing = false;
-            guard.wakeup();
-        };
     }
 
     /// Copy modified blocks from cache to self.
@@ -241,14 +294,43 @@ impl<'a> Log<'a> {
         );
         assert!(self.outstanding >= 1, "write outside of trans");
 
-        for buf in &self.bufs {
-            // Log absorbtion.
-            if buf.blockno == b.blockno {
-                return;
-            }
+        if self.bufs.iter().all(|buf| buf.blockno != b.blockno) {
+            // Add new block to log
+            self.bufs.push(b.unlock());
         }
+    }
+}
 
-        // Add new block to log?
-        self.bufs.push(b.unlock());
+impl<'a> Deref for LogLocked<'a> {
+    type Target = LogLockedInner<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<'a> DerefMut for LogLocked<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl Deref for LogLockedInner<'_> {
+    type Target = LogInner;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            LogLockedInner::Guard(guard) => &guard,
+            LogLockedInner::Ref(r) => &r,
+        }
+    }
+}
+
+impl DerefMut for LogLockedInner<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            LogLockedInner::Guard(ref mut guard) => guard,
+            LogLockedInner::Ref(ref mut r) => r,
+        }
     }
 }

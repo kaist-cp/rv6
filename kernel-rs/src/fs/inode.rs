@@ -281,7 +281,7 @@ impl InodeGuard<'_> {
         &mut self,
         name: &FileName,
         inum: u32,
-        tx: &FsTransaction<'_, '_>,
+        tx: &FsTransaction<'_>,
         itable: &Itable,
     ) -> Result<(), ()> {
         // Check that name is not present.
@@ -320,9 +320,9 @@ impl InodeGuard<'_> {
     /// Copy a modified in-memory inode to disk.
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk.
-    pub fn update(&self, tx: &FsTransaction<'_, '_>) {
+    pub fn update(&self, tx: &FsTransaction<'_>) {
         // TODO: remove kernel_builder()
-        let mut bp = kernel_builder().file_system.disk.read(
+        let mut bp = kernel_builder().file_system.log.disk.read(
             self.dev,
             // TODO: remove kernel_builder()
             kernel_builder().file_system.superblock().iblock(self.inum),
@@ -372,7 +372,7 @@ impl InodeGuard<'_> {
 
     /// Truncate inode (discard contents).
     /// This function is called with Inode's lock is held.
-    pub fn itrunc(&mut self, tx: &FsTransaction<'_, '_>) {
+    pub fn itrunc(&mut self, tx: &FsTransaction<'_>) {
         let dev = self.dev;
         for addr in &mut self.deref_inner_mut().addr_direct {
             if *addr != 0 {
@@ -385,6 +385,7 @@ impl InodeGuard<'_> {
             // TODO: remove kernel_builder()
             let mut bp = kernel_builder()
                 .file_system
+                .log
                 .disk
                 .read(dev, self.deref_inner().addr_indirect);
             // It is safe because u32 does not have internal structure.
@@ -478,6 +479,7 @@ impl InodeGuard<'_> {
             // TODO: remove kernel_builder()
             let bp = kernel_builder()
                 .file_system
+                .log
                 .disk
                 .read(self.dev, self.bmap(off as usize / BSIZE));
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
@@ -492,12 +494,7 @@ impl InodeGuard<'_> {
 
     /// Copy data from `src` into the inode at offset `off`.
     /// Return Ok(()) on success, Err(()) on failure.
-    pub fn write_kernel<T>(
-        &mut self,
-        src: &T,
-        off: u32,
-        tx: &FsTransaction<'_, '_>,
-    ) -> Result<(), ()> {
+    pub fn write_kernel<T>(&mut self, src: &T, off: u32, tx: &FsTransaction<'_>) -> Result<(), ()> {
         let bytes = self.write_bytes_kernel(
             // It is safe because src is a valid reference to T and
             // u8 does not have any internal structure.
@@ -518,7 +515,7 @@ impl InodeGuard<'_> {
         &mut self,
         src: &[u8],
         off: u32,
-        tx: &FsTransaction<'_, '_>,
+        tx: &FsTransaction<'_>,
     ) -> Result<usize, ()> {
         self.write_internal(
             off,
@@ -540,7 +537,7 @@ impl InodeGuard<'_> {
         off: u32,
         n: u32,
         proc: &mut CurrentProc<'_>,
-        tx: &FsTransaction<'_, '_>,
+        tx: &FsTransaction<'_>,
     ) -> Result<usize, ()> {
         self.write_internal(
             off,
@@ -568,7 +565,7 @@ impl InodeGuard<'_> {
         mut off: u32,
         n: u32,
         mut f: F,
-        tx: &FsTransaction<'_, '_>,
+        tx: &FsTransaction<'_>,
     ) -> Result<usize, ()> {
         if off > self.deref_inner().size {
             return Err(());
@@ -581,6 +578,7 @@ impl InodeGuard<'_> {
             // TODO: remove kernel_builder()
             let mut bp = kernel_builder()
                 .file_system
+                .log
                 .disk
                 .read(self.dev, self.bmap_or_alloc(off as usize / BSIZE, tx));
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
@@ -613,7 +611,7 @@ impl InodeGuard<'_> {
     /// listed in block self->addr_indirect.
     /// Return the disk block address of the nth block in inode self.
     /// If there is no such block, bmap allocates one.
-    fn bmap_or_alloc(&mut self, bn: usize, tx: &FsTransaction<'_, '_>) -> u32 {
+    fn bmap_or_alloc(&mut self, bn: usize, tx: &FsTransaction<'_>) -> u32 {
         self.bmap_internal(bn, Some(tx))
     }
 
@@ -621,7 +619,7 @@ impl InodeGuard<'_> {
         self.bmap_internal(bn, None)
     }
 
-    fn bmap_internal(&mut self, bn: usize, tx_opt: Option<&FsTransaction<'_, '_>>) -> u32 {
+    fn bmap_internal(&mut self, bn: usize, tx_opt: Option<&FsTransaction<'_>>) -> u32 {
         let inner = self.deref_inner();
 
         if bn < NDIRECT {
@@ -642,7 +640,11 @@ impl InodeGuard<'_> {
             }
 
             // TODO: remove kernel_builder()
-            let mut bp = kernel_builder().file_system.disk.read(self.dev, indirect);
+            let mut bp = kernel_builder()
+                .file_system
+                .log
+                .disk
+                .read(self.dev, indirect);
             let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
             let mut addr = data[bn];
@@ -723,7 +725,7 @@ impl Inode {
         let mut guard = self.inner.lock();
         if !guard.valid {
             // TODO: remove kernel_builder()
-            let mut bp = kernel_builder().file_system.disk.read(
+            let mut bp = kernel_builder().file_system.log.disk.read(
                 self.dev,
                 // TODO: remove kernel_builder()
                 kernel_builder().file_system.superblock().iblock(self.inum),
@@ -825,12 +827,13 @@ impl Itable {
     /// Allocate an inode on device dev.
     /// Mark it as allocated by giving it type.
     /// Returns an unlocked but allocated and referenced inode.
-    pub fn alloc_inode(&self, dev: u32, typ: InodeType, tx: &FsTransaction<'_, '_>) -> RcInode<'_> {
+    pub fn alloc_inode(&self, dev: u32, typ: InodeType, tx: &FsTransaction<'_>) -> RcInode<'_> {
         // TODO: remove kernel_builder()
         for inum in 1..kernel_builder().file_system.superblock().ninodes {
             // TODO: remove kernel_builder()
             let mut bp = kernel_builder()
                 .file_system
+                .log
                 .disk
                 // TODO: remove kernel_builder()
                 .read(dev, kernel_builder().file_system.superblock().iblock(inum));
