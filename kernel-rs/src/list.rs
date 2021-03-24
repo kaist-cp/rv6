@@ -4,13 +4,13 @@
 //! # Lifetime-less intrusive linked lists
 //!
 //! Intrusive linked lists are interesting and useful because the list does not own the nodes.
-//! However, it can also be unsafe if the nodes could move or drop while it's inside the list.
+//! However, it can also be unsafe if the nodes could move or drop while it's inserted in the list.
 //! Hence, many intrusive linked lists written in Rust use lifetimes and prohibit nodes
 //! from being moved or dropped during the list's whole lifetime.
 //! However, this means nodes cannot be mutated, moved or dropped even after it was removed from the list.
 //!
-//! On contrast, this list does not use lifetimes and allows nodes from being mutated or dropped
-//! even when its inside the list. When a node gets dropped, we simply remove it from the list.
+//! In contrast, [`List`] does not use lifetimes and allows nodes from being mutated or dropped
+//! even when its inserted in the list. When a node gets dropped, we simply remove it from the list.
 //! Instead, a `List` or `ListEntry`'s methods never returns a reference to a node or `ListEntry`, and always
 //! returns a raw pointer instead. This is because a node could get mutated or dropped at any time, and hence,
 //! the caller should make sure the node is not under mutation or already dropped when dereferencing the raw pointer.
@@ -157,11 +157,15 @@ impl<T: ListNode> List<T> {
 
     /// Provides an unsafe forward iterator.
     ///
+    /// # Note
+    ///
+    /// The caller should be careful when removing nodes currently accessed by iterators.
+    /// If an iterator's current node gets removed, the iterator will get stuck at the current node and never advance.
+    ///
     /// # Safety
     ///
-    /// The caller must make sure that the iterator's **current** items does not get removed, mutated, or dropped.
-    /// * If the item gets removed, the iterator will loop forever.
-    /// * If the item gets mutated/dropped, using the iterator may lead to undefined behavior.
+    /// The caller should be even more careful when mutating or dropping nodes that are currently
+    /// accessed by iterators. This can lead to undefined behavior.
     pub unsafe fn unsafe_iter(&self) -> Iter<'_, T> {
         Iter {
             last: &self.head,
