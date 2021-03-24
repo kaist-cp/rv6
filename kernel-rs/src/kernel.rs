@@ -104,15 +104,17 @@ pub struct KernelBuilder {
 }
 
 #[repr(transparent)]
+/// # Safety
+///
+/// `inner.procs` is initialized.
 pub struct Kernel {
     inner: KernelBuilder,
 }
 
 impl Kernel {
     pub fn procs(&self) -> &Procs {
-        // Safe to cast &ProcsBuilder into &Procs
-        // since Procs has a transparent memory layout.
-        unsafe { &*(&self.inner.procs as *const _ as *const _) }
+        // Safe: `self.inner.procs` is initialized according to the invariant.
+        unsafe { self.inner.procs.as_procs_unchecked() }
     }
 }
 
@@ -269,7 +271,7 @@ pub unsafe fn kernel_main() -> ! {
         };
 
         // Process system.
-        unsafe { kernel_builder_unchecked_pin().project().procs.init() };
+        let procs = unsafe { kernel_builder_unchecked_pin().project().procs.init() };
 
         // Trap vectors.
         trapinit();
@@ -304,12 +306,7 @@ pub unsafe fn kernel_main() -> ! {
         };
 
         // First user process.
-        unsafe {
-            kernel_builder_unchecked_pin()
-                .project()
-                .procs
-                .user_proc_init()
-        };
+        procs.user_proc_init();
         STARTED.store(true, Ordering::Release);
     } else {
         while !STARTED.load(Ordering::Acquire) {

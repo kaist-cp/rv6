@@ -1,7 +1,11 @@
 use core::fmt;
 
 use crate::{
-    file::Devsw, kernel::kernel_builder, lock::SleepablelockGuard, param::NDEV, uart::Uart,
+    file::Devsw,
+    kernel::{kernel, kernel_builder},
+    lock::SleepablelockGuard,
+    param::NDEV,
+    uart::Uart,
     vm::UVAddr,
 };
 
@@ -116,8 +120,8 @@ impl Console {
         match cin {
             // Print process list.
             m if m == ctrl('P') => {
-                // TODO: remove kernel_builder()
-                unsafe { kernel_builder().procs.dump() };
+                // TODO: remove kernel()
+                unsafe { kernel().procs().dump() };
             }
 
             // Kill line.
