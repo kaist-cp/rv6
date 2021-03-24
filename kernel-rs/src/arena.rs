@@ -208,7 +208,9 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
                 }
             } else if empty.is_null() {
                 empty = entry;
-                break;
+                // Note: Do not use `break` here.
+                // We must first search through all entries, and then alloc at empty
+                // only if the entry we're finding for doesn't exist.
             }
         }
 
