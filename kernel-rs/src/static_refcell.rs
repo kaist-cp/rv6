@@ -1,3 +1,34 @@
+//! `StaticRefCell<T>`.
+//! Similar to `RefCell<T>`, but can be stored inside other dynamically checked types without
+//! bothering the outer type's dynamic checks.
+//!
+//! # Storing a dynamically checked type inside a dynamically checked type
+//! Both `RefCell<T>`s and `StaticRefCell<T>`s use runtime checks to provide safe interior mutability.
+//! However, the two have different semantics when they are stored inside another dynamically checked type.
+//! In the `RefCell`'s case, the two dynamic checks become **connected**,
+//! but in the `StaticRefCell`'s case, the two dynamic checks remain **independent**.
+//!
+//!
+//! For example, if you store a `RefCell<T>` inside a `Spinlock`, the `SpinlockGuard`
+//! can drop only after all `Ref<'s, T>`/`RefMut<'s, T>` drops. Hence, the `Spinlock` maintains
+//! locked while borrowing the `RefCell<T>`'s data.
+//!
+//! On contrast, if you store a `StaticRefCell<T>` inside a `Spinlock`, the `SpinlockGuard`
+//! can drop before the `Ref<T>`/`RefMut<T>` drops. Hence, the `Spinlock` does not need to be
+//! locked while borrowing the `StaticRefCell<T>`'s data.
+//! Note that you can also later acquire a `SpinlockGuard<'s, T>` again and then try to obtain a `RefMut<T>`,
+//! but that this will success only if all `Ref<T>`/`RefMut<T>` dropped.
+//!
+//! Similarly, if you store a `RefCell<T>` inside another `RefCell<U>`, you can't drop a `Ref<'s, U>`
+//! while the inner `RefCell<T>` is borrowed. This means you can't mutate the outer `RefCell<U>`'s data.
+//! However, if you mutably borrowed the *outer* `RefCell<U>`'s data, you can mutably access the *inner* `RefCell<T>`'s
+//! data without going through a runtime check.
+//!
+//! On contrast, if you stored a `StaticRefCell<T>` inside a `RefCell<U>`, you can drop a `Ref<'s, U>`
+//! even if the inner `StaticRefCell` is borrowed. This means you can mutate the outer `RefCell<U>`'s data.
+//! However, even if you mutably borrowed the *outer* `RefCell<U>`'s data, you can mutably access the *inner* `StaticRefCell`'s
+//! data only after succeeding a runtime check.
+
 use core::cell::{Cell, UnsafeCell};
 use core::convert::TryFrom;
 use core::marker::PhantomPinned;
@@ -7,6 +38,7 @@ use core::pin::Pin;
 const BORROWED_MUT: usize = usize::MAX;
 
 /// Similar to `RefCell<T>`, but does not use lifetimes.
+/// See the module documentation for details.
 pub struct StaticRefCell<T> {
     data: UnsafeCell<T>,
     refcnt: Cell<usize>,
@@ -55,26 +87,24 @@ impl<T> StaticRefCell<T> {
     /// Hence, this function will return `None` if the caller tries to borrow more than `usize::MAX` - 1 times.
     pub fn try_borrow(&self) -> Option<Ref<T>> {
         let refcnt = self.refcnt.get();
-        match refcnt == BORROWED_MUT - 1 || refcnt == BORROWED_MUT {
-            true => None,
-            false => {
-                self.refcnt.set(self.refcnt.get() + 1);
-                Some(Ref { ptr: self })
-            }
+        if refcnt == BORROWED_MUT - 1 || refcnt == BORROWED_MUT {
+            None
+        } else {
+            self.refcnt.set(self.refcnt.get() + 1);
+            Some(Ref { ptr: self })
         }
     }
 
     /// Mutably borrows the `StaticRefCell` if it is not borrowed.
     /// Otherwise, returns `None`.
     pub fn try_borrow_mut(&self) -> Option<RefMut<T>> {
-        match self.is_borrowed() {
-            true => None,
-            false => {
-                self.refcnt.set(BORROWED_MUT);
-                Some(RefMut {
-                    ptr: self as *const _,
-                })
-            }
+        if self.is_borrowed() {
+            None
+        } else {
+            self.refcnt.set(BORROWED_MUT);
+            Some(RefMut {
+                ptr: self as *const _,
+            })
         }
     }
 
@@ -100,9 +130,9 @@ impl<T> Drop for StaticRefCell<T> {
 }
 
 impl<T> Ref<T> {
-    /// Returns a reference to the `StaticRefCell` that this `Ref` came from.
-    pub fn get_cell(&self) -> &StaticRefCell<T> {
-        unsafe { &*self.ptr }
+    /// Returns a raw pointer to the `StaticRefCell` that this `Ref` came from.
+    pub fn get_cell(&self) -> *const StaticRefCell<T> {
+        self.ptr
     }
 }
 
@@ -144,13 +174,13 @@ impl<T> Drop for Ref<T> {
 impl<T> RefMut<T> {
     /// Returns a pinned mutable reference to the inner data.
     pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
-        // TODO: Add safety reasoning
+        // TODO: Add safety reasoning after fixing issue #439
         unsafe { Pin::new_unchecked(&mut *(*self.ptr).data.get()) }
     }
 
-    /// Returns a reference to the `StaticRefCell` that this `RefMut` came from.
-    pub fn get_cell(&self) -> &StaticRefCell<T> {
-        unsafe { &*self.ptr }
+    /// Returns a raw pointer to the `StaticRefCell` that this `RefMut` came from.
+    pub fn get_cell(&self) -> *const StaticRefCell<T> {
+        self.ptr
     }
 }
 
@@ -195,20 +225,3 @@ impl<T> Drop for RefMut<T> {
         }
     }
 }
-
-// fn main() {
-//     let blah = StaticRefCell::new(10);
-//     let r = blah.borrow();
-//     assert!(*r == 10);
-//     drop(r); // if not included, panics
-//     let mut r2 = blah.borrow_mut();
-//     *r2 = 5;
-//     assert!(*r2 == 5);
-//     drop(r2); // if not included, panics
-//     let r3 = blah.borrow();
-//     assert!(*r3 == 5);
-//     drop(r3);
-//     let mut r4 = blah.borrow_mut();
-//     *r4 = 10;
-//     assert!(*r4 == 10);
-// }

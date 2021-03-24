@@ -261,7 +261,12 @@ impl<T> MruEntry<T> {
     }
 
     /// For the `MruEntry<T>` that corresponds to the given `RefMut<T>`, we move it to the front of the list.
-    fn finalize_entry(r: RefMut<T>, list: &List<MruEntry<T>>) {
+    ///
+    /// # Safety
+    ///
+    /// Only use this if the given `RefMut<T>` was obtained from an `MruEntry<T>`,
+    /// which is contained inside the `list`.
+    unsafe fn finalize_entry(r: RefMut<T>, list: &List<MruEntry<T>>) {
         let ptr = (r.get_cell() as *const _ as usize - Self::DATA_OFFSET) as *mut MruEntry<T>;
         let entry = unsafe { &*ptr };
         list.push_back(entry);
@@ -377,7 +382,9 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
 
         if let Ok(mut rm) = RefMut::<T>::try_from(handle.r) {
             rm.finalize::<Self>(&mut this);
-            MruEntry::finalize_entry(rm, &this.list);
+            // Safe since the `handle` was obtained from an `MruEntry`,
+            // which is contained inside `&this.list`.
+            unsafe { MruEntry::finalize_entry(rm, &this.list) };
         }
     }
 
