@@ -257,8 +257,8 @@ impl WaitChannel {
     /// Wake up all processes sleeping on waitchannel.
     /// Must be called without any p->lock.
     pub fn wakeup(&self) {
-        // TODO: remove kernel_builder()
-        kernel_builder().procs.wakeup_pool(self)
+        // TODO: remove kernel()
+        unsafe { kernel() }.procs().wakeup_pool(self)
     }
 }
 
@@ -348,10 +348,6 @@ impl<'p> CurrentProc<'p> {
         CurrentProc { inner: proc }
     }
 
-    fn raw(&self) -> *const Proc {
-        self.inner as *const Proc
-    }
-
     pub fn deref_data(&self) -> &ProcData {
         // Safety: Only `CurrentProc` can use `ProcData` without lock.
         unsafe { &*self.data.get() }
@@ -427,7 +423,7 @@ impl Deref for CurrentProc<'_> {
 ///
 /// * `proc.info` is locked.
 pub struct ProcGuard<'s> {
-    proc: &'s ProcBuilder,
+    proc: &'s Proc,
 }
 
 impl ProcGuard<'_> {
@@ -453,10 +449,6 @@ impl ProcGuard<'_> {
     /// to the same `ProcBuilder`.
     unsafe fn deref_mut_data(&mut self) -> &mut ProcData {
         unsafe { &mut *self.data.get() }
-    }
-
-    fn raw(&self) -> *const ProcBuilder {
-        self.proc
     }
 
     /// Switch to scheduler.  Must hold only p->lock
@@ -488,11 +480,7 @@ impl ProcGuard<'_> {
     /// Frees a `ProcBuilder` structure and the data hanging from it, including user pages.
     /// Also, clears `p`'s parent field into `ptr::null_mut()`.
     /// The caller must provide a `ProcGuard`.
-    ///
-    /// # Safety
-    ///
-    /// `self.parent` must have been initialized.
-    unsafe fn clear(&mut self, mut parent_guard: SpinlockProtectedGuard<'_>) {
+    fn clear(&mut self, mut parent_guard: SpinlockProtectedGuard<'_>) {
         // Safe since this process cannot be the current process any longer.
         let data = unsafe { self.deref_mut_data() };
         let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
@@ -506,8 +494,7 @@ impl ProcGuard<'_> {
         data.name[0] = 0;
 
         // Clear the process's parent field.
-        // Safe due to the safety condition of this method.
-        unsafe { *self.parent.assume_init_ref().get_mut(&mut parent_guard) = ptr::null_mut() };
+        *self.parent().get_mut(&mut parent_guard) = ptr::null_mut();
         drop(parent_guard);
 
         // Clear the `ProcInfo`.
@@ -530,6 +517,17 @@ impl ProcGuard<'_> {
     pub fn state(&self) -> Procstate {
         self.deref_info().state
     }
+
+    fn reacquire_after<F, U>(&mut self, f: F) -> U
+    where
+        F: FnOnce(&Proc) -> U,
+    {
+        // Safe: releasing is temporal, and `self` as `ProcGuard` cannot be used in `f`.
+        unsafe { self.info.unlock() };
+        let result = f(&self);
+        mem::forget(self.info.lock());
+        result
+    }
 }
 
 impl Drop for ProcGuard<'_> {
@@ -540,11 +538,10 @@ impl Drop for ProcGuard<'_> {
 }
 
 impl Deref for ProcGuard<'_> {
-    type Target = ProcBuilder;
+    type Target = Proc;
 
     fn deref(&self) -> &Self::Target {
-        // Safe since ptr is a valid pointer.
-        &self.proc
+        self.proc
     }
 }
 
@@ -626,20 +623,19 @@ impl ProcBuilder {
             killed: AtomicBool::new(false),
         }
     }
-
-    pub fn lock(&self) -> ProcGuard<'_> {
-        mem::forget(self.info.lock());
-        ProcGuard { proc: self }
-    }
 }
 
 /// Process system type containing & managing whole processes.
+///
+/// # Safety
+///
+/// `initial_proc` is null or valid.
 #[pin_project]
 pub struct ProcsBuilder {
     nextpid: AtomicI32,
     #[pin]
     process_pool: [ProcBuilder; NPROC],
-    initial_proc: *const ProcBuilder,
+    initial_proc: *const Proc,
 
     // Helps ensure that wakeups of wait()ing
     // parents are not lost. Helps obey the
@@ -652,18 +648,12 @@ pub struct ProcsBuilder {
 ///
 /// `inner` has been initialized:
 /// * `parent` of every `ProcBuilder` in `inner.process_pool` has been initialized.
-/// * `inner.initial_proc` is a valid pointer.
+/// * 'inner.wait_lock` must not be accessed.
 #[repr(transparent)]
+#[pin_project]
 pub struct Procs {
-    pub inner: ProcsBuilder,
-}
-
-impl Deref for Procs {
-    type Target = ProcsBuilder;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
+    #[pin]
+    inner: ProcsBuilder,
 }
 
 struct ProcIter<'a> {
@@ -711,6 +701,11 @@ impl Proc {
     pub fn killed(&self) -> bool {
         self.killed.load(Ordering::Acquire)
     }
+
+    pub fn lock(&self) -> ProcGuard<'_> {
+        mem::forget(self.info.lock());
+        ProcGuard { proc: self }
+    }
 }
 
 impl Deref for Proc {
@@ -732,19 +727,56 @@ impl ProcsBuilder {
     }
 
     /// Initialize the proc table at boot time.
-    pub fn init(self: Pin<&'static mut Self>) {
-        // Safe since we don't move the `Procs`.
+    pub fn init(self: Pin<&'static mut Self>) -> Pin<&'static mut Procs> {
+        // Safe: we don't move the `Procs`.
         let this = unsafe { self.get_unchecked_mut() };
+        // Safe: we cast `wait_lock` to a raw pointer and cast again the raw pointer to a reference
+        // because we want to return `self` from this method. The returned `self` is `Procs`, not
+        // `ProcsBuilder`, and `Procs` disallows accessing `wait_lock` by its invariant. Therefore,
+        // it's okay that both `&self` (for `wait_lock`) and `&mut self` (for the return value) are
+        // alive at the same time.
+        let wait_lock = unsafe { &*(&this.wait_lock as *const _) };
         for (i, p) in this.process_pool.iter_mut().enumerate() {
             let _ = p
                 .parent
-                .write(SpinlockProtected::new(&this.wait_lock, ptr::null_mut()));
+                .write(SpinlockProtected::new(wait_lock, ptr::null_mut()));
             p.data.get_mut().kstack = kstack(i);
         }
+        // Safe: `parent` of every process in `self` has been initialized.
+        let this = unsafe { this.as_procs_mut_unchecked() };
+        // Safe: `this` has been pinned already.
+        unsafe { Pin::new_unchecked(this) }
     }
 
-    fn allocpid(&self) -> Pid {
-        self.nextpid.fetch_add(1, Ordering::Relaxed)
+    /// # Safety
+    ///
+    /// `parent` of every process in `self` must have been initialized.
+    pub unsafe fn as_procs_unchecked(&self) -> &Procs {
+        // Safe: `Procs` has a transparent memory layout, and `parent` of every process in `self`
+        // has been initialized according to the safety condition of this method.
+        unsafe { &*(self as *const _ as *const Procs) }
+    }
+
+    /// # Safety
+    ///
+    /// `parent` of every process in `self` must have been initialized.
+    pub unsafe fn as_procs_mut_unchecked(&mut self) -> &mut Procs {
+        // Safe: `Procs` has a transparent memory layout, and `parent` of every process in `self`
+        // has been initialized according to the safety condition of this method.
+        unsafe { &mut *(self as *mut _ as *mut Procs) }
+    }
+}
+
+impl Procs {
+    fn process_pool(&self) -> ProcIter<'_> {
+        // Safe due to the invariant
+        unsafe { ProcIter::new(self.inner.process_pool.iter()) }
+    }
+
+    fn initial_proc(&self) -> &Proc {
+        assert!(!self.inner.initial_proc.is_null());
+        // Safe due to the invariant
+        unsafe { &*(self.inner.initial_proc as *const _) }
     }
 
     /// Look into process system for an UNUSED proc.
@@ -752,7 +784,7 @@ impl ProcsBuilder {
     /// and return with p->lock held.
     /// If there are no free procs, or a memory allocation fails, return Err.
     fn alloc(&self, trap_frame: Page, memory: UserMemory) -> Result<ProcGuard<'_>, ()> {
-        for p in &self.process_pool {
+        for p in self.process_pool() {
             let mut guard = p.lock();
             if guard.deref_info().state == Procstate::UNUSED {
                 // Safe since this process cannot be the current process yet.
@@ -782,15 +814,19 @@ impl ProcsBuilder {
         Err(())
     }
 
+    fn allocpid(&self) -> Pid {
+        self.inner.nextpid.fetch_add(1, Ordering::Relaxed)
+    }
+
     /// Wake up all processes in the pool sleeping on waitchannel.
     /// Must be called without any p->lock.
     pub fn wakeup_pool(&self, target: &WaitChannel) {
         // TODO: remove kernel_builder()
         let current_proc = kernel_builder()
             .current_proc()
-            .map_or(ptr::null(), |p| p.raw());
-        for p in &self.process_pool {
-            if p as *const ProcBuilder != current_proc as *const _ {
+            .map_or(ptr::null(), |p| p.deref());
+        for p in self.process_pool() {
+            if p as *const _ != current_proc {
                 let mut guard = p.lock();
                 if guard.deref_info().waitchannel == target as _ {
                     guard.wakeup()
@@ -840,48 +876,13 @@ impl ProcsBuilder {
         // It's safe because cwd now has been initialized.
         guard.deref_mut_info().state = Procstate::RUNNABLE;
 
-        let initial_proc = guard.raw() as *mut _;
+        let initial_proc = guard.deref() as *const _;
         drop(guard);
-        *self.project().initial_proc = initial_proc;
-    }
 
-    /// Print a process listing to the console for debugging.
-    /// Runs when user types ^P on console.
-    /// Doesn't acquire locks in order to avoid wedging a stuck machine further.
-    ///
-    /// # Note
-    ///
-    /// This method is unsafe and should be used only for debugging.
-    pub unsafe fn dump(&self) {
-        println!();
-        for p in &self.process_pool {
-            let info = p.info.get_mut_raw();
-            let state = unsafe { &(*info).state };
-            if *state != Procstate::UNUSED {
-                let name = unsafe { &(*p.data.get()).name };
-                // For null character recognization.
-                // Required since str::from_utf8 cannot recognize interior null characters.
-                let length = name.iter().position(|&c| c == 0).unwrap_or(name.len());
-                println!(
-                    "{} {} {}",
-                    unsafe { (*info).pid },
-                    Procstate::to_str(state),
-                    str::from_utf8(&name[0..length]).unwrap_or("???")
-                );
-            }
-        }
-    }
-}
-
-impl Procs {
-    fn process_pool(&self) -> ProcIter<'_> {
-        // Safe due to the invariant
-        unsafe { ProcIter::new(self.process_pool.iter()) }
-    }
-
-    fn initial_proc(&self) -> &Proc {
-        // Safe due to the invariant
-        unsafe { &*(self.initial_proc as *const _) }
+        // It does not break the invariant since
+        // * initial_proc is a pointer to a `Proc` inside self.
+        // * self is pinned.
+        *self.project().inner.project().initial_proc = initial_proc;
     }
 
     /// Pass p's abandoned children to init.
@@ -939,21 +940,16 @@ impl Procs {
 
         let pid = np.deref_mut_info().pid;
 
-        // Safe since np.raw() is a valid pointer and can be treated as Proc
-        // because self is Procs.
-        let child: &Proc = unsafe { &*(np.raw() as *const _) };
-
         // Now drop the guard before we acquire the `wait_lock`.
         // This is because the lock order must be `wait_lock` -> `Proc::info`.
-        drop(np);
-
-        // Acquire the `wait_lock`, and write the parent field.
-        let mut parent_guard = child.parent().lock();
-        *child.parent().get_mut(&mut parent_guard) = proc.raw();
+        np.reacquire_after(|np| {
+            // Acquire the `wait_lock`, and write the parent field.
+            let mut parent_guard = np.parent().lock();
+            *np.parent().get_mut(&mut parent_guard) = (*proc).deref();
+        });
 
         // Set the process's state to RUNNABLE.
-        let mut np = child.lock();
-        // It's safe because cwd now has been initialized.
+        // It does not break the invariant because cwd now has been initialized.
         np.deref_mut_info().state = Procstate::RUNNABLE;
 
         Ok(pid)
@@ -970,7 +966,7 @@ impl Procs {
             // Scan through pool looking for exited children.
             let mut havekids = false;
             for np in self.process_pool() {
-                if *np.parent().get_mut(&mut parent_guard) == proc.raw() {
+                if *np.parent().get_mut(&mut parent_guard) == (*proc).deref() {
                     // Found a child.
                     // Make sure the child isn't still in exit() or swtch().
                     let mut np = np.lock();
@@ -987,8 +983,7 @@ impl Procs {
                             return Err(());
                         }
                         // Reap the zombie child process.
-                        // Safe since np has been created from Proc.
-                        unsafe { np.clear(parent_guard) };
+                        np.clear(parent_guard);
                         return Ok(pid);
                     }
                 }
@@ -1025,7 +1020,11 @@ impl Procs {
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
     pub fn exit_current(&self, status: i32, proc: &mut CurrentProc<'_>) -> ! {
-        assert_ne!(proc.raw(), self.initial_proc() as _, "init exiting");
+        assert_ne!(
+            (*proc).deref() as *const _,
+            self.initial_proc() as _,
+            "init exiting"
+        );
 
         for file in &mut proc.deref_mut_data().open_files {
             *file = None;
@@ -1044,7 +1043,7 @@ impl Procs {
 
         // Give all children to init.
         let mut parent_guard = proc.parent().lock();
-        self.reparent(proc.raw(), &mut parent_guard);
+        self.reparent((*proc).deref(), &mut parent_guard);
 
         // Parent might be sleeping in wait().
         let parent = *proc.parent().get_mut(&mut parent_guard);
@@ -1067,6 +1066,33 @@ impl Procs {
         unsafe { guard.sched() };
 
         unreachable!("zombie exit")
+    }
+
+    /// Print a process listing to the console for debugging.
+    /// Runs when user types ^P on console.
+    /// Doesn't acquire locks in order to avoid wedging a stuck machine further.
+    ///
+    /// # Note
+    ///
+    /// This method is unsafe and should be used only for debugging.
+    pub unsafe fn dump(&self) {
+        println!();
+        for p in self.process_pool() {
+            let info = p.info.get_mut_raw();
+            let state = unsafe { &(*info).state };
+            if *state != Procstate::UNUSED {
+                let name = unsafe { &(*p.data.get()).name };
+                // For null character recognization.
+                // Required since str::from_utf8 cannot recognize interior null characters.
+                let length = name.iter().position(|&c| c == 0).unwrap_or(name.len());
+                println!(
+                    "{} {} {}",
+                    unsafe { (*info).pid },
+                    Procstate::to_str(state),
+                    str::from_utf8(&name[0..length]).unwrap_or("???")
+                );
+            }
+        }
     }
 }
 
