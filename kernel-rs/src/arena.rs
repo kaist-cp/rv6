@@ -111,7 +111,7 @@ impl<'s, T> ArrayPtr<'s, T> {
 #[repr(C)]
 pub struct MruEntry<T> {
     #[pin]
-    list_entry: ListEntry,
+    list_entry: ListEntry<Self>,
     refcnt: usize,
     data: T,
 }
@@ -122,7 +122,7 @@ pub struct MruArena<T, const CAPACITY: usize> {
     #[pin]
     entries: [MruEntry<T>; CAPACITY],
     #[pin]
-    head: ListEntry,
+    list: List<MruEntry<T>>,
 }
 
 /// # Safety
@@ -283,11 +283,16 @@ impl<T> MruEntry<T> {
             list_entry: unsafe { ListEntry::new() },
         }
     }
+}
 
-    pub fn from_list_entry(list_entry: Pin<&mut ListEntry>) -> Pin<&mut Self> {
-        let ptr = (list_entry.as_ref().get_ref() as *const _ as usize - Self::LIST_ENTRY_OFFSET)
-            as *mut MruEntry<T>;
-        unsafe { Pin::new_unchecked(&mut *ptr) }
+// Safe since `MruEntry` owns a `ListEntry`.
+unsafe impl<T> ListNode for MruEntry<T> {
+    fn get_list_entry(&self) -> &ListEntry<Self> {
+        &self.list_entry
+    }
+
+    fn from_list_entry(list_entry: *const ListEntry<Self>) -> *const Self {
+        (list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET) as *const Self
     }
 }
 
@@ -296,17 +301,16 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
     pub const fn new(entries: [MruEntry<T>; CAPACITY]) -> Self {
         Self {
             entries,
-            head: unsafe { ListEntry::new() },
+            list: unsafe { List::new() },
         }
     }
 
     pub fn init(self: Pin<&mut Self>) {
         let mut this = self.project();
-
-        this.head.as_mut().init();
-        let iter: IterPinMut<'_, MruEntry<T>> = this.entries.into();
-        for entry in iter {
-            this.head.as_mut().prepend(entry.project().list_entry);
+        this.list.as_mut().init();
+        for mut entry in IterPinMut::from(this.entries) {
+            entry.as_mut().project().list_entry.init();
+            this.list.push_front(&entry);
         }
     }
 }
@@ -332,37 +336,34 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
     type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
     type Handle<'s> = MruPtr<'s, T>;
 
+    #[allow(clippy::cast_ref_to_mut)]
     fn find_or_alloc_handle<'s, C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &'s self,
         c: C,
         n: N,
     ) -> Option<Self::Handle<'s>> {
-        let mut guard = self.lock();
-        let this = guard.get_pin_mut().project();
-        let head = this.head.as_ref().get_ref() as *const _;
-
-        let mut list_entry = this.head.next();
+        let this = self.lock();
         let mut empty: *mut MruEntry<T> = ptr::null_mut();
-        while list_entry.as_ref().get_ref() as *const _ != head {
-            let mut entry = MruEntry::from_list_entry(list_entry.as_mut());
-            if c(&entry.as_mut().project().data) {
-                *entry.as_mut().project().refcnt += 1;
+        // Safe since the whole `MruArena` is protected by a lock.
+        for entry in unsafe { this.list.unsafe_iter() } {
+            if c(&entry.data) {
+                // Safe since we just increase the refcnt.
+                // TODO: Remove this after PR #435.
+                let entry = unsafe { &mut *(entry as *const _ as *mut MruEntry<T>) };
+                entry.refcnt += 1;
                 return Some(Self::Handle::<'s> {
-                    ptr: NonNull::from(entry.as_ref().get_ref()),
+                    ptr: NonNull::from(entry),
                     _marker: PhantomData,
                 });
             } else if entry.refcnt == 0 {
-                // Safe since `MruPtr` does not move `MruEntry`.
-                empty = unsafe { entry.as_mut().get_unchecked_mut() };
+                empty = entry as *const _ as *mut _;
             }
-            list_entry = list_entry.next();
         }
 
         if empty.is_null() {
             return None;
         }
-
-        // Safe since `MruPtr` does not move `MruEntry`.
+        // Safe since we hold the `MruArena` lock, and nobody uses the `MruEntry`.
         let entry = unsafe { &mut *empty };
         entry.refcnt = 1;
         n(&mut entry.data);
@@ -372,24 +373,22 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
         })
     }
 
+    #[allow(clippy::cast_ref_to_mut)]
     fn alloc_handle<'s, F: FnOnce(&mut Self::Data)>(&'s self, f: F) -> Option<Self::Handle<'s>> {
-        let mut guard = self.lock();
-        let this = guard.get_pin_mut().project();
-        let head = this.head.as_ref().get_ref() as *const _;
-
-        let mut list_entry = this.head.prev();
-        while list_entry.as_ref().get_ref() as *const _ != head {
-            let mut entry = MruEntry::from_list_entry(list_entry.as_mut());
-            if *entry.as_mut().project().refcnt == 0 {
-                *entry.as_mut().project().refcnt = 1;
-                f(&mut entry.as_mut().project().data);
+        let this = self.lock();
+        // Safe since the whole `MruArena` is protected by a lock.
+        for entry in unsafe { this.list.unsafe_iter().rev() } {
+            if entry.refcnt == 0 {
+                // Safe since we hold the `MruArena` lock, and nobody uses the `MruEntry`.
+                // TODO: Remove this after PR #435.
+                let entry = unsafe { &mut *(entry as *const _ as *mut MruEntry<T>) };
+                entry.refcnt = 1;
+                f(&mut entry.data);
                 return Some(Self::Handle::<'s> {
-                    // Safe since `MruPtr` does not move `MruEntry`.
-                    ptr: NonNull::from(unsafe { entry.as_mut().get_unchecked_mut() }),
+                    ptr: NonNull::from(entry),
                     _marker: PhantomData,
                 });
             }
-            list_entry = list_entry.prev();
         }
 
         None
@@ -416,17 +415,16 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
     unsafe fn dealloc(&self, mut handle: Self::Handle<'_>) {
         let mut this = self.lock();
 
-        // Safe since we don't move `MruEntry` and access it only through `Pin`.
-        // That is, the data is pinned.
-        let mut entry = unsafe { Pin::new_unchecked(handle.ptr.as_mut()).project() };
-        if *entry.refcnt == 1 {
+        // Safe since we mutate the `MruEntry`'s data only when this is the last handle.
+        let mut entry = unsafe { handle.ptr.as_mut() };
+        if entry.refcnt == 1 {
             entry.data.finalize::<Self>(&mut this);
         }
-        *entry.refcnt -= 1;
+        entry.refcnt -= 1;
 
-        if *entry.refcnt == 0 {
-            entry.list_entry.as_mut().remove();
-            this.get_pin_mut().project().head.prepend(entry.list_entry);
+        if entry.refcnt == 0 {
+            entry.list_entry.remove();
+            this.list.push_back(entry);
         }
 
         mem::forget(handle);
