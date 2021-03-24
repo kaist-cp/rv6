@@ -707,13 +707,17 @@ impl ArenaObject for Inode {
             // so this acquiresleep() won't block (or deadlock).
             let mut ip = self.lock();
 
-            A::reacquire_after(guard, move || {
-                ip.itrunc(&tx);
-                ip.deref_inner_mut().typ = InodeType::None;
-                ip.update(&tx);
-                ip.deref_inner_mut().valid = false;
-                drop(ip);
-            });
+            // This is safe because `nlink` is 0. That is, there is no way to reach to inode,
+            // so the `Itable` never tries to obtain an `Rc` referring this `Inode`.
+            unsafe {
+                A::reacquire_after(guard, move || {
+                    ip.itrunc(&tx);
+                    ip.deref_inner_mut().typ = InodeType::None;
+                    ip.update(&tx);
+                    ip.deref_inner_mut().valid = false;
+                    drop(ip);
+                });
+            }
         }
     }
 }

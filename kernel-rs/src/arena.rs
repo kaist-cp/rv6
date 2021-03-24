@@ -62,12 +62,23 @@ pub trait Arena: Sized {
     /// `handle` must be allocated from `self`.
     unsafe fn dealloc(&self, handle: Self::Handle<'_>);
 
-    fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
+    /// Temporarily releases the lock while calling `f`, and re-acquires the lock after `f` returned.
+    ///
+    /// # Safety
+    ///
+    /// The caller must be careful when calling this inside `ArenaObject::finalize`.
+    /// If you use this while finalizing an `ArenaObject`, the `Arena`'s lock will be temporarily released,
+    /// and hence, another thread may use `Arena::find_or_alloc` to obtain an `Rc` referring to the `ArenaObject`
+    /// we are **currently finalizing**. Therefore, in this case, make sure no thread tries to `find_or_alloc`
+    /// for an `ArenaObject` that may be under finalization.
+    unsafe fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
     where
         F: FnOnce() -> R;
 }
 
 pub trait ArenaObject {
+    /// Finalizes the `ArenaObject`.
+    /// This function is automatically called when the last `Rc` refereing to this `ArenaObject` gets dropped.
     fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>);
 }
 
@@ -260,7 +271,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         mem::forget(handle);
     }
 
-    fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
+    unsafe fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
     where
         F: FnOnce() -> R,
     {
@@ -432,7 +443,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
         mem::forget(handle);
     }
 
-    fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
+    unsafe fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
     where
         F: FnOnce() -> R,
     {

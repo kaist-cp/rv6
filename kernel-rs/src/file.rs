@@ -208,30 +208,33 @@ impl File {
 
 impl ArenaObject for File {
     fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>) {
-        A::reacquire_after(guard, || {
-            let typ = mem::replace(&mut self.typ, FileType::None);
-            match typ {
-                FileType::Pipe { pipe } => {
-                    if let Some(page) = pipe.close(self.writable) {
-                        // TODO: remove kernel_builder()
-                        kernel_builder().free(page);
+        // Safe because `FileTable` does not use `Arena::find_or_alloc`.
+        unsafe {
+            A::reacquire_after(guard, || {
+                let typ = mem::replace(&mut self.typ, FileType::None);
+                match typ {
+                    FileType::Pipe { pipe } => {
+                        if let Some(page) = pipe.close(self.writable) {
+                            // TODO: remove kernel_builder()
+                            kernel_builder().free(page);
+                        }
                     }
+                    FileType::Inode {
+                        inner: InodeFileType { ip, .. },
+                    }
+                    | FileType::Device { ip, .. } => {
+                        // TODO(https://github.com/kaist-cp/rv6/issues/290)
+                        // The inode ip will be dropped by drop(ip). Deallocation
+                        // of an inode may cause disk write operations, so we must
+                        // begin a transaction here.
+                        // TODO: remove kernel_builder()
+                        let _tx = kernel_builder().file_system.begin_transaction();
+                        drop(ip);
+                    }
+                    _ => (),
                 }
-                FileType::Inode {
-                    inner: InodeFileType { ip, .. },
-                }
-                | FileType::Device { ip, .. } => {
-                    // TODO(https://github.com/kaist-cp/rv6/issues/290)
-                    // The inode ip will be dropped by drop(ip). Deallocation
-                    // of an inode may cause disk write operations, so we must
-                    // begin a transaction here.
-                    // TODO: remove kernel_builder()
-                    let _tx = kernel_builder().file_system.begin_transaction();
-                    drop(ip);
-                }
-                _ => (),
-            }
-        });
+            });
+        }
     }
 }
 
