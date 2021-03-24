@@ -425,12 +425,12 @@ impl Deref for CurrentProc<'_> {
 
 /// # Safety
 ///
-/// `ptr` is a valid pointer and `(*ptr).info` is locked.
-pub struct ProcGuard {
-    ptr: *const ProcBuilder,
+/// * `proc.info` is locked.
+pub struct ProcGuard<'s> {
+    proc: &'s ProcBuilder,
 }
 
-impl ProcGuard {
+impl ProcGuard<'_> {
     fn deref_info(&self) -> &ProcInfo {
         // It is safe becuase self.info is locked.
         unsafe { &*self.info.get_mut_raw() }
@@ -456,7 +456,7 @@ impl ProcGuard {
     }
 
     fn raw(&self) -> *const ProcBuilder {
-        self.ptr
+        self.proc
     }
 
     /// Switch to scheduler.  Must hold only p->lock
@@ -532,19 +532,19 @@ impl ProcGuard {
     }
 }
 
-impl Drop for ProcGuard {
+impl Drop for ProcGuard<'_> {
     fn drop(&mut self) {
         // It is safe to unlock info because self will be dropped.
         unsafe { self.info.unlock() };
     }
 }
 
-impl Deref for ProcGuard {
+impl Deref for ProcGuard<'_> {
     type Target = ProcBuilder;
 
     fn deref(&self) -> &Self::Target {
         // Safe since ptr is a valid pointer.
-        unsafe { &*self.ptr }
+        &self.proc
     }
 }
 
@@ -627,9 +627,9 @@ impl ProcBuilder {
         }
     }
 
-    pub fn lock(&self) -> ProcGuard {
+    pub fn lock(&self) -> ProcGuard<'_> {
         mem::forget(self.info.lock());
-        ProcGuard { ptr: self }
+        ProcGuard { proc: self }
     }
 }
 
@@ -751,7 +751,7 @@ impl ProcsBuilder {
     /// If found, initialize state required to run in the kernel,
     /// and return with p->lock held.
     /// If there are no free procs, or a memory allocation fails, return Err.
-    fn alloc(&self, trap_frame: Page, memory: UserMemory) -> Result<ProcGuard, ()> {
+    fn alloc(&self, trap_frame: Page, memory: UserMemory) -> Result<ProcGuard<'_>, ()> {
         for p in &self.process_pool {
             let mut guard = p.lock();
             if guard.deref_info().state == Procstate::UNUSED {
@@ -820,8 +820,6 @@ impl ProcsBuilder {
             .alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory)
             .expect("user_proc_init: Procs::alloc");
 
-        *self.project().initial_proc = guard.raw() as *mut _;
-
         // Safe since this process cannot be the current process yet.
         let data = unsafe { guard.deref_mut_data() };
 
@@ -841,6 +839,10 @@ impl ProcsBuilder {
         let _ = data.cwd.write(kernel_builder().itable.root());
         // It's safe because cwd now has been initialized.
         guard.deref_mut_info().state = Procstate::RUNNABLE;
+
+        let initial_proc = guard.raw() as *mut _;
+        drop(guard);
+        *self.project().initial_proc = initial_proc;
     }
 
     /// Print a process listing to the console for debugging.
