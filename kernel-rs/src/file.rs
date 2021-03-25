@@ -12,7 +12,7 @@ use crate::{
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
     proc::CurrentProc,
-    static_refcell::StaticRefCell,
+    rc_cell::RcCell,
     vm::UVAddr,
 };
 
@@ -243,7 +243,7 @@ impl FileTable {
     pub const fn zero() -> Self {
         Spinlock::new(
             "FTABLE",
-            ArrayArena::new(array![_ => StaticRefCell::new(File::zero()); NFILE]),
+            ArrayArena::new(array![_ => RcCell::new(File::zero()); NFILE]),
         )
     }
 

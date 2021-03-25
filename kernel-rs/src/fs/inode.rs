@@ -87,8 +87,8 @@ use crate::{
     param::ROOTDEV,
     param::{BSIZE, NINODE},
     proc::CurrentProc,
+    rc_cell::RcCell,
     stat::Stat,
-    static_refcell::StaticRefCell,
     vm::UVAddr,
 };
 
@@ -806,7 +806,7 @@ impl Itable {
     pub const fn zero() -> Self {
         Spinlock::new(
             "ITABLE",
-            ArrayArena::new(array![_ => StaticRefCell::new(Inode::zero()); NINODE]),
+            ArrayArena::new(array![_ => RcCell::new(Inode::zero()); NINODE]),
         )
     }
 

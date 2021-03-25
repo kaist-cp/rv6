@@ -9,7 +9,7 @@ use pin_project::pin_project;
 use crate::list::*;
 use crate::lock::{Spinlock, SpinlockGuard};
 use crate::pinned_array::IterPinMut;
-use crate::static_refcell::{Ref, RefMut, StaticRefCell};
+use crate::rc_cell::{RcCell, Ref, RefMut};
 
 /// A homogeneous memory allocator, equipped with the box type representing an allocation.
 pub trait Arena: Sized {
@@ -85,7 +85,7 @@ pub trait ArenaObject {
 
 /// A homogeneous memory allocator equipped with reference counts.
 pub struct ArrayArena<T, const CAPACITY: usize> {
-    entries: [StaticRefCell<T>; CAPACITY],
+    entries: [RcCell<T>; CAPACITY],
 }
 
 /// # Safety
@@ -106,7 +106,7 @@ unsafe impl<T: Send> Send for ArrayPtr<'_, T> {}
 pub struct MruEntry<T> {
     #[pin]
     list_entry: ListEntry,
-    data: StaticRefCell<T>,
+    data: RcCell<T>,
 }
 
 /// A homogeneous memory allocator equipped with reference counts.
@@ -136,7 +136,7 @@ pub struct Rc<'s, A: Arena, T: Deref<Target = A>> {
 
 impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
     // TODO(https://github.com/kaist-cp/rv6/issues/371): unsafe...
-    pub const fn new(entries: [StaticRefCell<T>; CAPACITY]) -> Self {
+    pub const fn new(entries: [RcCell<T>; CAPACITY]) -> Self {
         Self { entries }
     }
 }
@@ -256,7 +256,7 @@ impl<T> MruEntry<T> {
     pub const fn new(data: T) -> Self {
         Self {
             list_entry: unsafe { ListEntry::new() },
-            data: StaticRefCell::new(data),
+            data: RcCell::new(data),
         }
     }
 
