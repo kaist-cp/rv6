@@ -165,6 +165,33 @@ impl<T> List<T> {
     ///
     /// The caller should be even more careful when mutating or dropping nodes that are currently
     /// accessed by iterators. This can lead to undefined behavior.
+    ///
+    /// # Examples
+    ///
+    /// *Incorrect* usage of this method.
+    ///
+    /// ```rust,no_run
+    /// // Make and initialize a `List` and a `ListNode`.
+    /// let mut list = unsafe { List::new() };
+    /// let mut node = Some(unsafe { ListNode::new(10) });
+    /// let list_pin = unsafe { Pin::new_unchecked(&mut list) };
+    /// let node_pin = unsafe { Pin::new_unchecked(node.as_mut().expect("")) };
+    /// list_pin.init();
+    /// node_pin.init();
+    ///
+    /// // Push the `ListNode` to the `List`.
+    /// list.push_front(node.as_ref().expect(""));
+    ///
+    /// // Use an unsafe iterator.
+    /// for n in unsafe { list.iter_unchecked() } {
+    ///     assert!(**n == 10); // okay!
+    ///     node = None;
+    ///     assert!(**n == 10); // not okay! reading data of already dropped node!
+    ///                         // undefined behavior! ⚠️
+    /// }
+    ///
+    /// assert!(node.is_none());
+    /// ```
     pub unsafe fn iter_unchecked(&self) -> Iter<'_, T> {
         Iter {
             last: &self.head,
