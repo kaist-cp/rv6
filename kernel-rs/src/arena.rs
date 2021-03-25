@@ -110,8 +110,6 @@ impl<'s, T> ArrayPtr<'s, T> {
 #[pin_project]
 #[repr(C)]
 pub struct MruEntry<T> {
-    #[pin]
-    list_entry: ListEntry,
     refcnt: usize,
     data: T,
 }
@@ -120,7 +118,7 @@ pub struct MruEntry<T> {
 #[pin_project]
 pub struct MruArena<T, const CAPACITY: usize> {
     #[pin]
-    entries: [MruEntry<T>; CAPACITY],
+    entries: [ListNode<MruEntry<T>>; CAPACITY],
     #[pin]
     list: List<MruEntry<T>>,
 }
@@ -131,7 +129,7 @@ pub struct MruArena<T, const CAPACITY: usize> {
 /// Always acquire the `Spinlock<MruArena<T, CAPACITY>>` before modifying `MruEntry<T>`.
 /// Also, never move `MruEntry<T>`.
 pub struct MruPtr<'s, T> {
-    ptr: NonNull<MruEntry<T>>,
+    ptr: NonNull<ListNode<MruEntry<T>>>,
     _marker: PhantomData<&'s T>,
 }
 
@@ -277,28 +275,13 @@ impl<T> MruEntry<T> {
     // const LIST_ENTRY_OFFSET: usize = offset_of!(MruEntry<T>, list_entry);
 
     pub const fn new(data: T) -> Self {
-        Self {
-            refcnt: 0,
-            data,
-            list_entry: unsafe { ListEntry::new() },
-        }
-    }
-}
-
-// Safe since `MruEntry` owns a `ListEntry`.
-unsafe impl<T> ListNode for MruEntry<T> {
-    fn get_list_entry(&self) -> &ListEntry {
-        &self.list_entry
-    }
-
-    fn from_list_entry(list_entry: *const ListEntry) -> *const Self {
-        (list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET) as *const Self
+        Self { refcnt: 0, data }
     }
 }
 
 impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
     // TODO(https://github.com/kaist-cp/rv6/issues/371): unsafe...
-    pub const fn new(entries: [MruEntry<T>; CAPACITY]) -> Self {
+    pub const fn new(entries: [ListNode<MruEntry<T>>; CAPACITY]) -> Self {
         Self {
             entries,
             list: unsafe { List::new() },
@@ -309,7 +292,7 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
         let mut this = self.project();
         this.list.as_mut().init();
         for mut entry in IterPinMut::from(this.entries) {
-            entry.as_mut().project().list_entry.init();
+            entry.as_mut().init();
             this.list.push_front(&entry);
         }
     }
@@ -343,13 +326,13 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
         n: N,
     ) -> Option<Self::Handle<'s>> {
         let this = self.lock();
-        let mut empty: *mut MruEntry<T> = ptr::null_mut();
+        let mut empty: *mut ListNode<MruEntry<T>> = ptr::null_mut();
         // Safe since the whole `MruArena` is protected by a lock.
         for entry in unsafe { this.list.iter_unchecked() } {
             if c(&entry.data) {
                 // Safe since we just increase the refcnt.
                 // TODO: Remove this after PR #435.
-                let entry = unsafe { &mut *(entry as *const _ as *mut MruEntry<T>) };
+                let entry = unsafe { &mut *(entry as *const _ as *mut ListNode<MruEntry<T>>) };
                 entry.refcnt += 1;
                 return Some(Self::Handle::<'s> {
                     ptr: NonNull::from(entry),
@@ -381,7 +364,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
             if entry.refcnt == 0 {
                 // Safe since we hold the `MruArena` lock, and nobody uses the `MruEntry`.
                 // TODO: Remove this after PR #435.
-                let entry = unsafe { &mut *(entry as *const _ as *mut MruEntry<T>) };
+                let entry = unsafe { &mut *(entry as *const _ as *mut ListNode<MruEntry<T>>) };
                 entry.refcnt = 1;
                 f(&mut entry.data);
                 return Some(Self::Handle::<'s> {
@@ -416,14 +399,14 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
         let mut this = self.lock();
 
         // Safe since we mutate the `MruEntry`'s data only when this is the last handle.
-        let mut entry = unsafe { handle.ptr.as_mut() };
+        let entry = unsafe { handle.ptr.as_mut() };
         if entry.refcnt == 1 {
             entry.data.finalize::<Self>(&mut this);
         }
         entry.refcnt -= 1;
 
         if entry.refcnt == 0 {
-            entry.list_entry.remove();
+            entry.remove();
             this.list.push_back(entry);
         }
 
