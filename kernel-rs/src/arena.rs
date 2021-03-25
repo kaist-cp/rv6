@@ -111,7 +111,7 @@ impl<'s, T> ArrayPtr<'s, T> {
 #[repr(C)]
 pub struct MruEntry<T> {
     #[pin]
-    list_entry: ListEntry<Self>,
+    list_entry: ListEntry,
     refcnt: usize,
     data: T,
 }
@@ -287,11 +287,11 @@ impl<T> MruEntry<T> {
 
 // Safe since `MruEntry` owns a `ListEntry`.
 unsafe impl<T> ListNode for MruEntry<T> {
-    fn get_list_entry(&self) -> &ListEntry<Self> {
+    fn get_list_entry(&self) -> &ListEntry {
         &self.list_entry
     }
 
-    fn from_list_entry(list_entry: *const ListEntry<Self>) -> *const Self {
+    fn from_list_entry(list_entry: *const ListEntry) -> *const Self {
         (list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET) as *const Self
     }
 }
@@ -345,7 +345,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
         let this = self.lock();
         let mut empty: *mut MruEntry<T> = ptr::null_mut();
         // Safe since the whole `MruArena` is protected by a lock.
-        for entry in unsafe { this.list.unsafe_iter() } {
+        for entry in unsafe { this.list.iter_unchecked() } {
             if c(&entry.data) {
                 // Safe since we just increase the refcnt.
                 // TODO: Remove this after PR #435.
@@ -377,7 +377,7 @@ impl<T: 'static + ArenaObject, const CAPACITY: usize> Arena for Spinlock<MruAren
     fn alloc_handle<'s, F: FnOnce(&mut Self::Data)>(&'s self, f: F) -> Option<Self::Handle<'s>> {
         let this = self.lock();
         // Safe since the whole `MruArena` is protected by a lock.
-        for entry in unsafe { this.list.unsafe_iter().rev() } {
+        for entry in unsafe { this.list.iter_unchecked().rev() } {
             if entry.refcnt == 0 {
                 // Safe since we hold the `MruArena` lock, and nobody uses the `MruEntry`.
                 // TODO: Remove this after PR #435.

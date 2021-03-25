@@ -17,7 +17,7 @@
 // TODO: Also allow move.
 
 use core::cell::Cell;
-use core::marker::PhantomPinned;
+use core::marker::{PhantomData, PhantomPinned};
 use core::pin::Pin;
 use core::ptr;
 
@@ -35,13 +35,15 @@ use pin_project::{pin_project, pinned_drop};
 #[pin_project(PinnedDrop)]
 pub struct List<T: ListNode> {
     #[pin]
-    head: ListEntry<T>,
+    head: ListEntry,
+    _marker: PhantomData<T>,
 }
 
 /// An iterator over the elements of `List`.
 pub struct Iter<'s, T: ListNode> {
-    last: &'s ListEntry<T>,
-    curr: &'s ListEntry<T>,
+    last: &'s ListEntry,
+    curr: &'s ListEntry,
+    _marker: PhantomData<T>,
 }
 
 /// Intrusive linked list nodes that can be inserted into a `List`.
@@ -52,11 +54,11 @@ pub struct Iter<'s, T: ListNode> {
 /// The required functions should provide conversion between the struct and its `ListEntry`.
 pub unsafe trait ListNode: Sized {
     /// Returns a reference of this struct's `ListEntry`.
-    fn get_list_entry(&self) -> &ListEntry<Self>;
+    fn get_list_entry(&self) -> &ListEntry;
 
     /// Returns a raw pointer which points to the struct that owns the given `list_entry`.
     /// You may want to use `offset_of!` to implement this.
-    fn from_list_entry(list_entry: *const ListEntry<Self>) -> *const Self;
+    fn from_list_entry(list_entry: *const ListEntry) -> *const Self;
 }
 
 /// A list entry for doubly, intrusive linked lists.
@@ -66,7 +68,7 @@ pub unsafe trait ListNode: Sized {
 /// * All `ListEntry` types must be used only after initializing it with `ListEntry::init`.
 /// After this, `ListEntry::{prev, next}` always refer to a valid, initialized `ListEntry`.
 #[pin_project(PinnedDrop)]
-pub struct ListEntry<T: ListNode> {
+pub struct ListEntry {
     prev: Cell<*const Self>,
     next: Cell<*const Self>,
     #[pin]
@@ -82,6 +84,7 @@ impl<T: ListNode> List<T> {
     pub const unsafe fn new() -> Self {
         Self {
             head: unsafe { ListEntry::new() },
+            _marker: PhantomData,
         }
     }
 
@@ -118,12 +121,12 @@ impl<T: ListNode> List<T> {
     /// Push `elt` at the back of the list after unlinking it.
     // TODO: Use PinFreeze<T>?
     pub fn push_back(&self, elt: &T) {
-        self.head.push_back(elt);
+        self.head.push_back(elt.get_list_entry());
     }
 
     /// Push `elt` at the front of the list after unlinking it.
     pub fn push_front(&self, elt: &T) {
-        self.head.push_front(elt);
+        self.head.push_front(elt.get_list_entry());
     }
 
     /// Removes the last node from the list and returns a raw pointer to it,
@@ -166,10 +169,11 @@ impl<T: ListNode> List<T> {
     ///
     /// The caller should be even more careful when mutating or dropping nodes that are currently
     /// accessed by iterators. This can lead to undefined behavior.
-    pub unsafe fn unsafe_iter(&self) -> Iter<'_, T> {
+    pub unsafe fn iter_unchecked(&self) -> Iter<'_, T> {
         Iter {
             last: &self.head,
             curr: unsafe { &*self.head.next() },
+            _marker: PhantomData,
         }
     }
 }
@@ -210,7 +214,7 @@ impl<'s, T: 's + ListNode> DoubleEndedIterator for Iter<'s, T> {
     }
 }
 
-impl<T: ListNode> ListEntry<T> {
+impl ListEntry {
     /// Returns an uninitialized `ListEntry`,
     ///
     /// # Safety
@@ -258,32 +262,30 @@ impl<T: ListNode> ListEntry<T> {
     }
 
     /// Inserts `elt` at the back of this `ListEntry` after unlinking `elt`.
-    pub fn push_back(&self, elt: &T) {
-        let e = elt.get_list_entry();
-        if !e.is_unlinked() {
-            e.remove();
+    fn push_back(&self, elt: &Self) {
+        if !elt.is_unlinked() {
+            elt.remove();
         }
 
-        e.next.set(self);
-        e.prev.set(self.prev());
+        elt.next.set(self);
+        elt.prev.set(self.prev());
         unsafe {
-            (*e.next()).prev.set(e);
-            (*e.prev()).next.set(e);
+            (*elt.next()).prev.set(elt);
+            (*elt.prev()).next.set(elt);
         }
     }
 
     /// Inserts `elt` in front of this `ListEntry` after unlinking `elt`.
-    pub fn push_front(&self, elt: &T) {
-        let e = elt.get_list_entry();
-        if !e.is_unlinked() {
-            e.remove();
+    fn push_front(&self, elt: &Self) {
+        if !elt.is_unlinked() {
+            elt.remove();
         }
 
-        e.next.set(self.next());
-        e.prev.set(self);
+        elt.next.set(self.next());
+        elt.prev.set(self);
         unsafe {
-            (*e.next()).prev.set(e);
-            (*e.prev()).next.set(e);
+            (*elt.next()).prev.set(elt);
+            (*elt.prev()).next.set(elt);
         }
     }
 
@@ -299,7 +301,7 @@ impl<T: ListNode> ListEntry<T> {
 }
 
 #[pinned_drop]
-impl<T: ListNode> PinnedDrop for ListEntry<T> {
+impl PinnedDrop for ListEntry {
     fn drop(self: Pin<&mut Self>) {
         self.remove();
     }
