@@ -81,7 +81,7 @@ use super::{FileName, IPB, MAXFILE, NDIRECT, NINDIRECT};
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
     bio::BufData,
-    fs::{FsTransaction, ROOTINO},
+    fs::{FsTransaction, Path, ROOTINO},
     kernel::kernel_builder,
     lock::{Sleeplock, Spinlock},
     param::ROOTDEV,
@@ -809,10 +809,6 @@ impl Itable {
         )
     }
 
-    pub fn root(&self) -> RcInode<'_> {
-        self.get_inode(ROOTDEV, ROOTINO)
-    }
-
     /// Find the inode with number inum on device dev
     /// and return the in-memory copy. Does not lock
     /// the inode and does not read it from disk.
@@ -875,5 +871,57 @@ impl Itable {
             }
         }
         panic!("[Itable::alloc_inode] no inodes");
+    }
+
+    pub fn root(&self) -> RcInode<'_> {
+        self.get_inode(ROOTDEV, ROOTINO)
+    }
+
+    pub fn namei(&self, path: &Path, proc: &CurrentProc<'_>) -> Result<RcInode<'_>, ()> {
+        Ok(self.namex(path, false, proc)?.0)
+    }
+
+    pub fn nameiparent<'s>(
+        &self,
+        path: &'s Path,
+        proc: &CurrentProc<'_>,
+    ) -> Result<(RcInode<'_>, &'s FileName), ()> {
+        let (ip, name_in_path) = self.namex(path, true, proc)?;
+        let name_in_path = name_in_path.ok_or(())?;
+        Ok((ip, name_in_path))
+    }
+
+    fn namex<'s>(
+        &self,
+        mut path: &'s Path,
+        parent: bool,
+        proc: &CurrentProc<'_>,
+    ) -> Result<(RcInode<'_>, Option<&'s FileName>), ()> {
+        let mut ptr = if path.is_absolute() {
+            self.root()
+        } else {
+            proc.cwd().clone().narrow_lifetime()
+        };
+
+        while let Some((new_path, name)) = path.skipelem() {
+            path = new_path;
+
+            let mut ip = ptr.lock();
+            if ip.deref_inner().typ != InodeType::Dir {
+                return Err(());
+            }
+            if parent && path.is_empty_string() {
+                // Stop one level early.
+                drop(ip);
+                return Ok((ptr, Some(name)));
+            }
+            let next = ip.dirlookup(name, self);
+            drop(ip);
+            ptr = next?.0
+        }
+        if parent {
+            return Err(());
+        }
+        Ok((ptr, None))
     }
 }

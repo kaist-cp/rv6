@@ -2,8 +2,7 @@ use core::cmp;
 
 use cstr_core::CStr;
 
-use super::{InodeType, RcInode, DIRSIZ};
-use crate::{fs::inode::Itable, proc::CurrentProc};
+use super::DIRSIZ;
 
 #[derive(PartialEq)]
 #[repr(transparent)]
@@ -62,20 +61,6 @@ impl Path {
         &self.inner
     }
 
-    pub fn namei<'s>(&self, proc: &CurrentProc<'_>, itable: &'s Itable) -> Result<RcInode<'s>, ()> {
-        Ok(self.namex(false, proc, itable)?.0)
-    }
-
-    pub fn nameiparent<'s>(
-        &self,
-        proc: &CurrentProc<'_>,
-        itable: &'s Itable,
-    ) -> Result<(RcInode<'s>, &FileName), ()> {
-        let (ip, name_in_path) = self.namex(true, proc, itable)?;
-        let name_in_path = name_in_path.ok_or(())?;
-        Ok((ip, name_in_path))
-    }
-
     /// Returns `Some((path, name))` where,
     ///  - `name` is the next path element from `self`, and
     ///  - `path` is the remaining path.
@@ -105,7 +90,7 @@ impl Path {
     /// # }
     /// ```
     // TODO(https://github.com/kaist-cp/rv6/issues/359): Fix doctests work.
-    fn skipelem(&self) -> Option<(&Self, &FileName)> {
+    pub fn skipelem(&self) -> Option<(&Self, &FileName)> {
         let mut bytes = &self.inner;
 
         let name_start = bytes.iter().position(|ch| *ch != b'/')?;
@@ -132,47 +117,11 @@ impl Path {
     }
 
     /// Returns `true` if `Path` begins with `'/'`.
-    fn is_absolute(&self) -> bool {
+    pub fn is_absolute(&self) -> bool {
         !self.inner.is_empty() && self.inner[0] == b'/'
     }
 
-    /// Look up and return the inode for a path name.
-    /// If parent != 0, return the inode for the parent and copy the final
-    /// path element into name, which must have room for DIRSIZ bytes.
-    /// Must be called inside a transaction since it calls Inode::put().
-    fn namex<'s>(
-        &self,
-        parent: bool,
-        proc: &CurrentProc<'_>,
-        itable: &'s Itable,
-    ) -> Result<(RcInode<'s>, Option<&FileName>), ()> {
-        let mut ptr: RcInode<'s> = if self.is_absolute() {
-            itable.root()
-        } else {
-            proc.cwd().clone().narrow_lifetime()
-        };
-
-        let mut path = self;
-
-        while let Some((new_path, name)) = path.skipelem() {
-            path = new_path;
-
-            let mut ip = ptr.lock();
-            if ip.deref_inner().typ != InodeType::Dir {
-                return Err(());
-            }
-            if parent && path.inner.is_empty() {
-                // Stop one level early.
-                drop(ip);
-                return Ok((ptr, Some(name)));
-            }
-            let next = ip.dirlookup(name, itable);
-            drop(ip);
-            ptr = next?.0
-        }
-        if parent {
-            return Err(());
-        }
-        Ok((ptr, None))
+    pub fn is_empty_string(&self) -> bool {
+        self.inner.is_empty()
     }
 }
