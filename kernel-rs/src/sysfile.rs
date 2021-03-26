@@ -66,7 +66,7 @@ impl Kernel {
     where
         F: FnOnce(&mut InodeGuard<'_>) -> T,
     {
-        let (ptr, name) = path.nameiparent(proc, &self.itable)?;
+        let (ptr, name) = self.itable.nameiparent(path, proc)?;
         let mut dp = ptr.lock();
         if let Ok((ptr2, _)) = dp.dirlookup(&name, &self.itable) {
             drop(dp);
@@ -122,7 +122,7 @@ impl Kernel {
     /// Returns Ok(()) on success, Err(()) on error.
     fn link(&self, oldname: &CStr, newname: &CStr, proc: &CurrentProc<'_>) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
-        let ptr = Path::new(oldname).namei(proc, &self.itable)?;
+        let ptr = self.itable.namei(Path::new(oldname), proc)?;
         let mut ip = ptr.lock();
         if ip.deref_inner().typ == InodeType::Dir {
             return Err(());
@@ -131,7 +131,7 @@ impl Kernel {
         ip.update(&tx);
         drop(ip);
 
-        if let Ok((ptr2, name)) = Path::new(newname).nameiparent(proc, &self.itable) {
+        if let Ok((ptr2, name)) = self.itable.nameiparent(Path::new(newname), proc) {
             let mut dp = ptr2.lock();
             if dp.dev != ptr.dev || dp.dirlink(name, ptr.inum, &tx, &self.itable).is_err() {
             } else {
@@ -150,7 +150,7 @@ impl Kernel {
     fn unlink(&self, filename: &CStr, proc: &CurrentProc<'_>) -> Result<(), ()> {
         let de: Dirent = Default::default();
         let tx = self.file_system.begin_transaction();
-        let (ptr, name) = Path::new(filename).nameiparent(proc, &self.itable)?;
+        let (ptr, name) = self.itable.nameiparent(Path::new(filename), proc)?;
         let mut dp = ptr.lock();
 
         // Cannot unlink "." or "..".
@@ -190,7 +190,7 @@ impl Kernel {
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
             self.create(name, InodeType::File, &tx, proc, |ip| ip.deref_inner().typ)?
         } else {
-            let ptr = name.namei(proc, &self.itable)?;
+            let ptr = self.itable.namei(name, proc)?;
             let ip = ptr.lock();
             let typ = ip.deref_inner().typ;
 
@@ -274,7 +274,7 @@ impl Kernel {
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
         let _tx = self.file_system.begin_transaction();
-        let ptr = Path::new(dirname).namei(proc, &self.itable)?;
+        let ptr = self.itable.namei(Path::new(dirname), proc)?;
         let ip = ptr.lock();
         if ip.deref_inner().typ != InodeType::Dir {
             return Err(());
