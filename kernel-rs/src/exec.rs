@@ -113,7 +113,7 @@ impl Kernel {
 
         // Check ELF header
         let mut elf: ElfHdr = Default::default();
-        // It is safe becuase ElfHdr can be safely transmuted to [u8; _], as it
+        // SAFETY: ElfHdr can be safely transmuted to [u8; _], as it
         // contains only integers, which do not have internal structures.
         unsafe { ip.read_kernel(&mut elf, 0) }?;
         if !elf.is_valid() {
@@ -128,7 +128,7 @@ impl Kernel {
             let off = elf.phoff + i * mem::size_of::<ProgHdr>();
 
             let mut ph: ProgHdr = Default::default();
-            // It is safe becuase ProgHdr can be safely transmuted to [u8; _], as it
+            // SAFETY: ProgHdr can be safely transmuted to [u8; _], as it
             // contains only integers, which do not have internal structures.
             unsafe { ip.read_kernel(&mut ph, off as _) }?;
             if ph.is_prog_load() {
@@ -179,7 +179,7 @@ impl Kernel {
         if sp < stackbase {
             return Err(());
         }
-        // It is safe because any byte can be considered as a valid u8.
+        // SAFETY: any byte can be considered as a valid u8.
         let (_, ustack, _) = unsafe { ustack.align_to::<u8>() };
         mem.copy_out_bytes(sp.into(), &ustack[..argv_size])?;
 

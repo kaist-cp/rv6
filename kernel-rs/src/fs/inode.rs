@@ -195,7 +195,7 @@ pub struct Dirent {
 impl Dirent {
     fn new(ip: &mut InodeGuard<'_>, off: u32) -> Result<Dirent, ()> {
         let mut dirent = Dirent::default();
-        // It is safe becuase Dirent can be safely transmuted to [u8; _], as it
+        // SAFETY: Dirent can be safely transmuted to [u8; _], as it
         // contains only u16 and u8's, which do not have internal structures.
         unsafe { ip.read_kernel(&mut dirent, off) }?;
         Ok(dirent)
@@ -220,7 +220,7 @@ impl Dirent {
     /// It contains no NUL characters.
     fn get_name(&self) -> &FileName {
         let len = self.name.iter().position(|ch| *ch == 0).unwrap_or(DIRSIZ);
-        // Safety: self.name[..len] doesn't contain '\0', and len must be <= DIRSIZ.
+        // SAFETY: self.name[..len] doesn't contain '\0', and len must be <= DIRSIZ.
         unsafe { FileName::from_bytes(&self.name[..len]) }
     }
 }
@@ -257,12 +257,12 @@ impl Deref for InodeGuard<'_> {
 
 impl InodeGuard<'_> {
     pub fn deref_inner(&self) -> &InodeInner {
-        // It is safe becuase self.inner is locked.
+        // SAFETY: self.inner is locked.
         unsafe { &*self.inner.get_mut_raw() }
     }
 
     pub fn deref_inner_mut(&mut self) -> &mut InodeInner {
-        // It is safe becuase self.inner is locked and &mut self is exclusive.
+        // SAFETY: self.inner is locked and &mut self is exclusive.
         unsafe { &mut *self.inner.get_mut_raw() }
     }
 }
@@ -270,7 +270,7 @@ impl InodeGuard<'_> {
 /// Unlock and put the given inode.
 impl Drop for InodeGuard<'_> {
     fn drop(&mut self) {
-        // It is safe because self will be dropped.
+        // SAFETY: self will be dropped.
         unsafe { self.inner.unlock() };
     }
 }
@@ -331,7 +331,7 @@ impl InodeGuard<'_> {
 
         const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
-        // It is safe because
+        // SAFETY:
         // * dip is aligned properly.
         // * dip is inside bp.data.
         // * dip will not be read.
@@ -389,7 +389,7 @@ impl InodeGuard<'_> {
                 .log
                 .disk
                 .read(dev, self.deref_inner().addr_indirect);
-            // It is safe because u32 does not have internal structure.
+            // SAFETY: u32 does not have internal structure.
             let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "itrunc: Buf data unaligned");
             for a in data {
@@ -414,7 +414,7 @@ impl InodeGuard<'_> {
     /// `T` can be safely `transmute`d to `[u8; size_of::<T>()]`.
     pub unsafe fn read_kernel<T>(&mut self, dst: &mut T, off: u32) -> Result<(), ()> {
         let bytes = self.read_bytes_kernel(
-            // It is safe because of the safety assumption of this method.
+            // SAFETY: the safety assumption of this method.
             unsafe { core::slice::from_raw_parts_mut(dst as *mut _ as _, mem::size_of::<T>()) },
             off,
         );
@@ -497,7 +497,7 @@ impl InodeGuard<'_> {
     /// Return Ok(()) on success, Err(()) on failure.
     pub fn write_kernel<T>(&mut self, src: &T, off: u32, tx: &FsTransaction<'_>) -> Result<(), ()> {
         let bytes = self.write_bytes_kernel(
-            // It is safe because src is a valid reference to T and
+            // SAFETY: src is a valid reference to T and
             // u8 does not have any internal structure.
             unsafe { core::slice::from_raw_parts(src as *const _ as _, mem::size_of::<T>()) },
             off,
@@ -663,7 +663,7 @@ impl InodeGuard<'_> {
     pub fn is_dir_empty(&mut self) -> bool {
         let mut de: Dirent = Default::default();
         for off in (2 * DIRENT_SIZE as u32..self.deref_inner().size).step_by(DIRENT_SIZE) {
-            // It is safe becuase Dirent can be safely transmuted to [u8; _], as it
+            // SAFETY: Dirent can be safely transmuted to [u8; _], as it
             // contains only u16 and u8's, which do not have internal structures.
             unsafe { self.read_kernel(&mut de, off) }.expect("is_dir_empty: read_kernel");
             if de.inum != 0 {
@@ -708,7 +708,7 @@ impl ArenaObject for Inode {
             // so this acquiresleep() won't block (or deadlock).
             let mut ip = self.lock();
 
-            // This is safe because `nlink` is 0. That is, there is no way to reach to inode,
+            // SAFETY: `nlink` is 0. That is, there is no way to reach to inode,
             // so the `Itable` never tries to obtain an `Rc` referring this `Inode`.
             unsafe {
                 A::reacquire_after(guard, move || {
@@ -736,16 +736,16 @@ impl Inode {
                 kernel_builder().file_system.superblock().iblock(self.inum),
             );
 
-            // It is safe because dip is inside bp.data.
+            // SAFETY: dip is inside bp.data.
             let dip = unsafe {
                 (bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode)
                     .add(self.inum as usize % IPB)
             };
-            // It is safe because i16 does not have internal structure.
+            // SAFETY: i16 does not have internal structure.
             let t = unsafe { *(dip as *const i16) };
             // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.
             assert!(t < core::mem::variant_count::<DInodeType>() as i16);
-            // It is safe because dip is aligned properly and t < #(variants of DInodeType).
+            // SAFETY: dip is aligned properly and t < #(variants of DInodeType).
             let dip = unsafe { &mut *dip };
 
             match dip.typ {
@@ -846,15 +846,15 @@ impl Itable {
 
             const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
             const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
-            // It is safe because dip is inside bp.data.
+            // SAFETY: dip is inside bp.data.
             let dip = unsafe {
                 (bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode).add(inum as usize % IPB)
             };
-            // It is safe because i16 does not have internal structure.
+            // SAFETY: i16 does not have internal structure.
             let t = unsafe { *(dip as *const i16) };
             // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.
             assert!(t < core::mem::variant_count::<DInodeType>() as i16);
-            // It is safe because dip is aligned properly and t < #(variants of DInodeType).
+            // SAFETY: dip is aligned properly and t < #(variants of DInodeType).
             let dip = unsafe { &mut *dip };
 
             // a free inode

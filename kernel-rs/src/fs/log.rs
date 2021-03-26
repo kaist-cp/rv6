@@ -151,7 +151,7 @@ impl Log {
 
             // Call commit w/o holding locks, since not allowed to sleep with locks.
             guard.reacquire_after(||
-                // Safe: there is no another transaction, so `inner` cannot be read or written.
+                // SAFETY: there is no another transaction, so `inner` cannot be read or written.
                 unsafe { self.lock_unchecked() }.commit());
 
             guard.committing = false;
@@ -198,7 +198,7 @@ impl LogLocked<'_> {
 
         const_assert!(mem::size_of::<LogHeader>() <= BSIZE);
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<LogHeader>() == 0);
-        // It is safe becuase
+        // SAFETY:
         // * buf.data is larger than LogHeader
         // * buf.data is aligned properly.
         // * LogHeader contains only u32's, so does not have any requirements.
@@ -219,7 +219,7 @@ impl LogLocked<'_> {
 
         const_assert!(mem::size_of::<LogHeader>() <= BSIZE);
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<LogHeader>() == 0);
-        // It is safe becuase
+        // SAFETY:
         // * buf.data is larger than LogHeader
         // * buf.data is aligned properly.
         // * LogHeader contains only u32's, so does not have any requirements.

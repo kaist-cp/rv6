@@ -93,14 +93,14 @@ impl Kernel {
             dp.update(tx);
 
             // No ip->nlink++ for ".": avoid cyclic ref count.
-            // It is safe because b"." does not contain any NUL characters.
+            // SAFETY: b"." does not contain any NUL characters.
             ip.dirlink(
                 unsafe { FileName::from_bytes(b".") },
                 ip.inum,
                 tx,
                 &self.itable,
             )
-            // It is safe because b".." does not contain any NUL characters.
+            // SAFETY: b".." does not contain any NUL characters.
             .and_then(|_| {
                 ip.dirlink(
                     unsafe { FileName::from_bytes(b"..") },
@@ -325,7 +325,7 @@ impl Kernel {
         let (_, f) = argfd(0, proc)?;
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
-        // Safe since read will not access proc's open_files.
+        // SAFETY: read will not access proc's open_files.
         unsafe { (*(f as *const RcFile<'static>)).read(p.into(), n, proc) }
     }
 
@@ -335,7 +335,7 @@ impl Kernel {
         let (_, f) = argfd(0, proc)?;
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
-        // Safe since write will not access proc's open_files.
+        // SAFETY: write will not access proc's open_files.
         unsafe { (*(f as *const RcFile<'static>)).write(p.into(), n, proc, &self.file_system) }
     }
 
@@ -353,7 +353,7 @@ impl Kernel {
         let (_, f) = argfd(0, proc)?;
         // user pointer to struct stat
         let st = argaddr(1, proc)?;
-        // Safe since stat will not access proc's open_files.
+        // SAFETY: stat will not access proc's open_files.
         unsafe { (*(f as *const RcFile<'static>)).stat(st.into(), proc) }?;
         Ok(0)
     }

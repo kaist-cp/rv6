@@ -106,21 +106,21 @@ pub struct Buf<'s> {
 impl<'s> Buf<'s> {
     pub fn deref_inner(&self) -> &BufInner {
         let entry: &BufEntry = &self.inner;
-        // It is safe becuase inner.inner is locked.
+        // SAFETY: inner.inner is locked.
         unsafe { &*entry.inner.get_mut_raw() }
     }
 
     pub fn deref_inner_mut(&mut self) -> &mut BufInner {
         let entry: &BufEntry = &self.inner;
-        // It is safe becuase inner.inner is locked and &mut self is exclusive.
+        // SAFETY: inner.inner is locked and &mut self is exclusive.
         unsafe { &mut *entry.inner.get_mut_raw() }
     }
 
     pub fn unlock(mut self) -> BufUnlocked<'s> {
-        // It is safe because this method consumes self and self.inner will not
+        // SAFETY: this method consumes self and self.inner will not
         // be used again.
         let inner = unsafe { ManuallyDrop::take(&mut self.inner) };
-        // It is safe because this method consumes self.
+        // SAFETY: this method consumes self.
         unsafe { inner.inner.unlock() };
         mem::forget(self);
         inner
@@ -137,7 +137,7 @@ impl Deref for Buf<'_> {
 
 impl Drop for Buf<'_> {
     fn drop(&mut self) {
-        // It is safe because self will be dropped and self.inner will not be
+        // SAFETY: self will be dropped and self.inner will not be
         // used again.
         unsafe { ManuallyDrop::take(&mut self.inner).inner.unlock() };
     }

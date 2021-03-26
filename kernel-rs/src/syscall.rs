@@ -17,7 +17,7 @@ pub fn fetchaddr(addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<usize, ()> 
     if addr.into_usize() >= proc.memory().size() || addr.into_usize() + sz > proc.memory().size() {
         return Err(());
     }
-    // Safe since usize does not have any internal structure.
+    // SAFETY: usize does not have any internal structure.
     unsafe { proc.memory_mut().copy_in(&mut ip, addr) }?;
     Ok(ip)
 }
@@ -31,7 +31,7 @@ pub fn fetchstr<'a>(
 ) -> Result<&'a CStr, ()> {
     proc.memory_mut().copy_in_str(buf, addr)?;
 
-    // Safe because buf contains '\0' as copy_in_str has succeeded.
+    // SAFETY: buf contains '\0' as copy_in_str has succeeded.
     Ok(unsafe { CStr::from_ptr(buf.as_ptr()) })
 }
 

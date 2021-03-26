@@ -62,7 +62,7 @@ enum MmioRegs {
 
 impl MmioRegs {
     fn read(self) -> u32 {
-        // It is safe because
+        // SAFETY:
         // * `src` is valid, as the kernel can access [VIRTIO0..VIRTIO0+PGSIZE).
         // * `src` is properly aligned, as self % 4 == 0.
         // * `src` points to a properly initialized value, as u32 does not have
@@ -78,7 +78,7 @@ impl MmioRegs {
     /// For example, after writing at `QueueNotify`, the virtio driver reads/writes the address given by the kernel.
     /// If a wrong address was given, this could lead to undefined behavior.
     unsafe fn write(self, dst: u32) {
-        // It is safe to simply write at registers because
+        // SAFETY:
         // * `dst` is valid, as the kernel can access [VIRTIO0..VIRTIO0+PGSIZE).
         // * `dst` is properly aligned, as self % 4 == 0.
         // * volatile concurrent accesses are safe.
@@ -102,7 +102,7 @@ impl MmioRegs {
 
     /// Sets the virtio status.
     fn set_status(status: &VirtIOStatus) {
-        // Simply setting status bits does not cause side effects.
+        // SAFETY: simply setting status bits does not cause side effects.
         unsafe {
             MmioRegs::Status.write(status.bits());
         }
@@ -115,7 +115,7 @@ impl MmioRegs {
 
     /// Sets the device's virtio features.
     fn set_features(features: &VirtIOFeatures) {
-        // Simply setting features bits does not cause side effects.
+        // SAFETY: simply setting features bits does not cause side effects.
         unsafe {
             MmioRegs::DriverFeatures.write(features.bits());
         }
@@ -128,7 +128,7 @@ impl MmioRegs {
     /// The virtio driver will uses this info to calculate addresses.
     /// Hence, the caller must give the correct page size. Otherwise, the driver may read/write at wrong addresses.
     unsafe fn set_pg_size(size: u32) {
-        // Simply telling the page size does not cause side effects.
+        // SAFETY: simply telling the page size does not cause side effects.
         unsafe {
             MmioRegs::GuestPageSize.write(size);
         }
@@ -141,7 +141,7 @@ impl MmioRegs {
     /// The virtio driver will later use this info to read/write descriptors.
     /// Hence, the caller must give correct info.
     unsafe fn select_and_init_queue(queue_num: u32, queue_size: u32, queue_pg_num: u32) {
-        // Simply selecting and initializing the queue does not cause side effects.
+        // SAFETY: simply selecting and initializing the queue does not cause side effects.
         unsafe {
             MmioRegs::QueueSel.write(queue_num);
         }
@@ -170,7 +170,7 @@ impl MmioRegs {
     /// Acknowledges all interrupts.
     fn intr_ack_all() {
         let intr_status = MmioRegs::InterruptStatus.read() & 0x3;
-        // Simply acknowledging interrupts does not cause undefined behavior.
+        // SAFETY: simply acknowledging interrupts does not cause undefined behavior.
         unsafe {
             MmioRegs::InterruptAck.write(intr_status);
         }
