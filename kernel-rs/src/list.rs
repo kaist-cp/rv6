@@ -1,5 +1,5 @@
 //! Doubly intrusive linked list with head node.
-//! A `List` or `ListEntry` must be first initialized before using its methods.
+//! A [`List`] or [`ListEntry`] must be first initialized before using its methods.
 //!
 //! # Lifetime-less intrusive linked lists
 //!
@@ -11,7 +11,7 @@
 //!
 //! In contrast, [`List`] does not use lifetimes and allows nodes from being mutated or dropped
 //! even when its inserted in the list. When a node gets dropped, we simply remove it from the list.
-//! Instead, a `List` or `ListEntry`'s methods never returns a reference to a node or `ListEntry`, and always
+//! Instead, a [`List`] or [`ListEntry`]'s methods never returns a reference to a node or [`ListEntry`], and always
 //! returns a raw pointer instead. This is because a node could get mutated or dropped at any time, and hence,
 //! the caller should make sure the node is not under mutation or already dropped when dereferencing the raw pointer.
 // TODO: Also allow move.
@@ -61,7 +61,7 @@ pub unsafe trait ListNode: Sized {
     fn from_list_entry(list_entry: *const ListEntry) -> *const Self;
 }
 
-/// A list entry for doubly, intrusive linked lists.
+/// A low level primitive for doubly, intrusive linked lists and nodes.
 ///
 /// # Safety
 ///
@@ -169,6 +169,52 @@ impl<T: ListNode> List<T> {
     ///
     /// The caller should be even more careful when mutating or dropping nodes that are currently
     /// accessed by iterators. This can lead to undefined behavior.
+    ///
+    /// # Examples
+    ///
+    /// *Incorrect* usage of this method.
+    ///
+    /// ```rust,no_run
+    /// # #[pin_project]
+    /// # struct Node {
+    /// #     data: usize,
+    /// #     #[pin]
+    /// #     list_entry: ListEntry,
+    /// # }
+    /// #
+    /// # unsafe impl ListNode for Node {
+    /// #     fn get_list_entry(&self) -> &ListEntry {
+    /// #         &self.list_entry
+    /// #     }
+    /// #
+    /// #     fn from_list_entry(list_entry: *const ListEntry) -> *const Self {
+    /// #         (list_entry as usize - offset_of!(Node, list_entry)) as *const Self
+    /// #     }
+    /// # }
+    /// #
+    /// # fn main() {
+    ///     // Make and initialize a `List` and a `Node` that implements the `ListNode` trait.
+    ///     let mut list = unsafe { List::new() };
+    ///     let mut node = Some(unsafe { Node { data: 10, list_entry: ListEntry::new() }});
+    ///     let list_pin = unsafe { Pin::new_unchecked(&mut list) };
+    ///     let node_pin = unsafe { Pin::new_unchecked(node.as_mut().expect("")) };
+    ///     list_pin.init();
+    ///     node_pin.project().list_entry.init();
+    ///
+    ///     // Push the `ListNode` to the `List`.
+    ///     list.push_front(node.as_ref().expect(""));
+    ///
+    ///     // Use an unsafe iterator.
+    ///     for n in unsafe { list.iter_unchecked() } {
+    ///         assert!(n.data == 10);  // okay!
+    ///         node = None;
+    ///         assert!(n.data == 10);  // not okay! reading data of already dropped node!
+    ///                                 // undefined behavior! ⚠️
+    ///     }
+    ///
+    ///     assert!(node.is_none());
+    /// # }
+    /// ```
     pub unsafe fn iter_unchecked(&self) -> Iter<'_, T> {
         Iter {
             last: &self.head,
