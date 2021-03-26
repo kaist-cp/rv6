@@ -122,7 +122,7 @@ pub struct MruArena<T, const CAPACITY: usize> {
     #[pin]
     entries: [MruEntry<T>; CAPACITY],
     #[pin]
-    list: List<MruEntry<T>>,
+    list: List<MruEntry<T>, 0>,
 }
 
 /// # Safety
@@ -285,8 +285,7 @@ impl<T> MruEntry<T> {
     }
 }
 
-// Safe since `MruEntry` owns a `ListEntry`.
-unsafe impl<T> ListNode for MruEntry<T> {
+impl<T> ListNode<0> for MruEntry<T> {
     fn get_list_entry(&self) -> &ListEntry {
         &self.list_entry
     }
