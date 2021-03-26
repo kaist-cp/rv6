@@ -144,24 +144,22 @@ impl Kernel {
         const_assert!(mem::size_of::<Pipe>() <= PGSIZE);
 
         //TODO(https://github.com/kaist-cp/rv6/issues/367): Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`.
-        unsafe {
-            // Safe since `ptr` holds a valid, unique page allocated from `kernel().alloc()`,
-            // and the pipe size and alignment are compatible with the page.
-            *ptr.as_mut() = Pipe {
-                inner: Spinlock::new(
-                    "pipe",
-                    PipeInner {
-                        data: [0; PIPESIZE],
-                        nwrite: 0,
-                        nread: 0,
-                        readopen: true,
-                        writeopen: true,
-                    },
-                ),
-                read_waitchannel: WaitChannel::new(),
-                write_waitchannel: WaitChannel::new(),
-            };
-        }
+        // Safe since `ptr` holds a valid, unique page allocated from `self.alloc()`,
+        // and the pipe size and alignment are compatible with the page.
+        let _ = unsafe { ptr.as_uninit_mut() }.write(Pipe {
+            inner: Spinlock::new(
+                "pipe",
+                PipeInner {
+                    data: [0; PIPESIZE],
+                    nwrite: 0,
+                    nread: 0,
+                    readopen: true,
+                    writeopen: true,
+                },
+            ),
+            read_waitchannel: WaitChannel::new(),
+            write_waitchannel: WaitChannel::new(),
+        });
         let f0 = self
             .ftable
             .alloc_file(
