@@ -18,7 +18,6 @@ use array_macro::array;
 
 use crate::{
     arena::{Arena, ArenaObject, MruArena, MruEntry, Rc},
-    list::ListNode,
     lock::{Sleeplock, Spinlock},
     param::{BSIZE, NBUF},
     proc::WaitChannel,
@@ -152,7 +151,7 @@ impl Bcache {
         unsafe {
             Spinlock::new(
                 "BCACHE",
-                MruArena::new(array![_ => ListNode::new(MruEntry::new(BufEntry::zero())); NBUF]),
+                MruArena::new(array![_ => MruEntry::new(BufEntry::zero()); NBUF]),
             )
         }
     }
