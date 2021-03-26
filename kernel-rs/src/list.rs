@@ -14,23 +14,7 @@
 //! Instead, a [`List`] or [`ListEntry`]'s methods never returns a reference to a node or [`ListEntry`], and always
 //! returns a raw pointer instead. This is because a node could get mutated or dropped at any time, and hence,
 //! the caller should make sure the node is not under mutation or already dropped when dereferencing the raw pointer.
-//!
-//! # Nodes with more than one [`ListEntry`]
-//!
-//! Often, an intrusive linked list node may have more than one list entry.
-//! That is, a node may be currently inserted in more than one list at a time.
-//!
-//! To express this in [`List`] and [`ListNode`], these types require an extra parameter called `ENTRY_INDEX`.
-//! The `ENTRY_INDEX` denotes which [`ListEntry`] must be used when inserting/removing a [`ListNode`] into/from a [`List`].
-//!
-//! ```rust,no_run
-//! struct Node(usize, ListEntry, ListEntry);
-//! impl ListNode<0> for Node { /* Omitted */} // Implements conversion b/t `Node` and its first `ListEntry`.
-//! impl ListNode<1> for Node { /* Omitted */} // Implements conversion b/t `Node` and its second `ListEntry`.
-//!
-//! static list1: List<Node, 0> = unsafe { List::new() }; // Uses the first `ListEntry` of `Node`.
-//! static list2: List<Node, 1> = unsafe { List::new() }; // Uses the second `ListEntry` of `Node`.
-//! ```
+// TODO: Also allow move.
 
 use core::cell::Cell;
 use core::marker::{PhantomData, PhantomPinned};
@@ -41,7 +25,6 @@ use pin_project::{pin_project, pinned_drop};
 
 /// A doubly linked list.
 /// Can only contain types that implement the `ListNode` trait.
-/// The `ENTRY_INDEX` denotes which `ListEntry` we must use between `ListNode`'s multiple `ListEntry`s.
 /// Use only after initialization.
 ///
 /// # Safety
@@ -50,74 +33,26 @@ use pin_project::{pin_project, pinned_drop};
 /// * Exactly one of them is the `head`.
 /// * All other of them are a `ListEntry` owned by a `T: ListNode`.
 #[pin_project(PinnedDrop)]
-pub struct List<T: ListNode<ENTRY_INDEX>, const ENTRY_INDEX: usize> {
+pub struct List<T: ListNode> {
     #[pin]
     head: ListEntry,
     _marker: PhantomData<T>,
 }
 
 /// An iterator over the elements of `List`.
-pub struct Iter<'s, T: ListNode<ENTRY_INDEX>, const ENTRY_INDEX: usize> {
+pub struct Iter<'s, T: ListNode> {
     last: &'s ListEntry,
     curr: &'s ListEntry,
     _marker: PhantomData<T>,
 }
 
-/// An intrusive linked list node that owns one or more `ListEntry`s.
+/// Intrusive linked list nodes that can be inserted into a `List`.
+///
+/// # Safety
+///
+/// Only implement this for structs that own a `ListEntry`.
 /// The required functions should provide conversion between the struct and its `ListEntry`.
-/// If a type has more than one `ListEntry`, you should make it implement this
-/// trait multiple times but with a different `ENTRY_INDEX` for each time.
-///
-/// # Examples
-///
-/// An example of a type that owns a single `ListEntry`.
-/// ```rust,no_run
-/// struct Item {
-///     data: usize,
-///     entry: ListEntry,
-/// }
-/// impl ListNode<0> for Item {
-///     fn get_list_entry(&self) -> &ListEntry {
-///         &self.data
-///     }
-///
-///     fn from_list_entry(list_entry: *const ListEntry) -> *const Self {
-///         (list_entry as usize - offset_of!(Item, entry)) as *const Self
-///     }
-/// }
-/// ```
-///
-/// An example of a type that owns multiple `ListEntry`s.
-/// ```rust,no_run
-/// struct Item {
-///     data: usize,
-///     entry1: ListEntry,
-///     entry2: ListEntry,
-/// }
-///
-/// impl ListNode<0> for Item {
-///     fn get_list_entry(&self) -> &ListEntry {
-///         &self.entry1
-///     }
-///
-///     fn from_list_entry(list_entry: *const ListEntry) -> *const Self {
-///         (list_entry as usize - offset_of!(Item, entry1)) as *const Self
-///     }
-/// }
-///
-/// impl ListNode<1> for Item {
-///     fn get_list_entry(&self) -> &ListEntry {
-///         &self.entry2
-///     }
-///
-///     fn from_list_entry(list_entry: *const ListEntry) -> *const Self {
-///         (list_entry as usize - offset_of!(Item, entry2)) as *const Self
-///     }
-/// }
-/// ```
-/// Note that we used `ENTRY_INDEX = 0` for `entry1`,
-/// but used `ENTRY_INDEX = 1` for `entry2`.
-pub trait ListNode<const ENTRY_INDEX: usize>: Sized {
+pub unsafe trait ListNode: Sized {
     /// Returns a reference of this struct's `ListEntry`.
     fn get_list_entry(&self) -> &ListEntry;
 
@@ -127,7 +62,6 @@ pub trait ListNode<const ENTRY_INDEX: usize>: Sized {
 }
 
 /// A low level primitive for doubly, intrusive linked lists and nodes.
-/// Can be linked to other `ListEntry`s only through `List`'s methods.
 ///
 /// # Safety
 ///
@@ -141,7 +75,7 @@ pub struct ListEntry {
     _marker: PhantomPinned, //`ListEntry` is `!Unpin`.
 }
 
-impl<T: ListNode<ENTRY_INDEX>, const ENTRY_INDEX: usize> List<T, ENTRY_INDEX> {
+impl<T: ListNode> List<T> {
     /// Returns an uninitialized `List`,
     ///
     /// # Safety
@@ -281,7 +215,7 @@ impl<T: ListNode<ENTRY_INDEX>, const ENTRY_INDEX: usize> List<T, ENTRY_INDEX> {
     ///     assert!(node.is_none());
     /// # }
     /// ```
-    pub unsafe fn iter_unchecked(&self) -> Iter<'_, T, ENTRY_INDEX> {
+    pub unsafe fn iter_unchecked(&self) -> Iter<'_, T> {
         Iter {
             last: &self.head,
             curr: unsafe { &*self.head.next() },
@@ -291,15 +225,13 @@ impl<T: ListNode<ENTRY_INDEX>, const ENTRY_INDEX: usize> List<T, ENTRY_INDEX> {
 }
 
 #[pinned_drop]
-impl<T: ListNode<ENTRY_INDEX>, const ENTRY_INDEX: usize> PinnedDrop for List<T, ENTRY_INDEX> {
+impl<T: ListNode> PinnedDrop for List<T> {
     fn drop(self: Pin<&mut Self>) {
         self.clear();
     }
 }
 
-impl<'s, T: 's + ListNode<ENTRY_INDEX>, const ENTRY_INDEX: usize> Iterator
-    for Iter<'s, T, ENTRY_INDEX>
-{
+impl<'s, T: 's + ListNode> Iterator for Iter<'s, T> {
     type Item = &'s T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -315,9 +247,7 @@ impl<'s, T: 's + ListNode<ENTRY_INDEX>, const ENTRY_INDEX: usize> Iterator
     }
 }
 
-impl<'s, T: 's + ListNode<ENTRY_INDEX>, const ENTRY_INDEX: usize> DoubleEndedIterator
-    for Iter<'s, T, ENTRY_INDEX>
-{
+impl<'s, T: 's + ListNode> DoubleEndedIterator for Iter<'s, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if ptr::eq(self.last, self.curr) {
             None
