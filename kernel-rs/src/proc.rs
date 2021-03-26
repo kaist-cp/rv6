@@ -15,7 +15,7 @@ use pin_project::pin_project;
 use crate::{
     file::RcFile,
     fs::RcInode,
-    kernel::{kernel, kernel_builder, KernelBuilder},
+    kernel::{kernel, kernel_builder, Allocator, KernelBuilder},
     lock::{
         pop_off, push_off, Guard, RawLock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
     },
@@ -832,20 +832,16 @@ impl Procs {
     }
 
     /// Set up first user process.
-    pub fn user_proc_init(self: Pin<&mut Self>) {
+    pub fn user_proc_init(self: Pin<&mut Self>, allocator: Allocator) {
         // Allocate trap frame.
         let trap_frame = scopeguard::guard(
-            // TODO: remove kernel_builder()
-            kernel_builder()
-                .alloc()
-                .expect("user_proc_init: kernel().alloc"),
-            // TODO: remove kernel_builder()
-            |page| kernel_builder().free(page),
+            allocator.alloc().expect("user_proc_init: kernel().alloc"),
+            |page| allocator.free(page),
         );
 
         // Allocate one user page and copy init's instructions
         // and data into it.
-        let memory = UserMemory::new(trap_frame.addr(), Some(&INITCODE))
+        let memory = UserMemory::new(trap_frame.addr(), Some(&INITCODE), allocator)
             .expect("user_proc_init: UserMemory::new");
 
         let mut guard = self
@@ -900,13 +896,10 @@ impl Procs {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
-    pub fn fork(&self, proc: &mut CurrentProc<'_>) -> Result<Pid, ()> {
+    pub fn fork(&self, proc: &mut CurrentProc<'_>, allocator: Allocator) -> Result<Pid, ()> {
         // Allocate trap frame.
-        // TODO: remove kernel_builder()
-        let trap_frame = scopeguard::guard(kernel_builder().alloc().ok_or(())?, |page| {
-            // TODO: remove kernel_builder()
-            kernel_builder().free(page)
-        });
+        let trap_frame =
+            scopeguard::guard(allocator.alloc().ok_or(())?, |page| allocator.free(page));
 
         // Copy user memory from parent to child.
         let memory = proc.memory_mut().clone(trap_frame.addr()).ok_or(())?;

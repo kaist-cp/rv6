@@ -106,7 +106,8 @@ pub struct KernelBuilder {
 #[repr(transparent)]
 /// # Safety
 ///
-/// `inner.procs` is initialized.
+/// * `inner.kmem` is initialized.
+/// * `inner.procs` is initialized.
 pub struct Kernel {
     inner: KernelBuilder,
 }
@@ -115,6 +116,11 @@ impl Kernel {
     pub fn procs(&self) -> &Procs {
         // SAFETY: `self.inner.procs` is initialized according to the invariant.
         unsafe { self.inner.procs.as_procs_unchecked() }
+    }
+
+    pub fn allocator(&self) -> Allocator {
+        // SAFETY: self.inner.kmem is initialized.
+        unsafe { Allocator::new_unchecked() }
     }
 }
 
@@ -209,6 +215,31 @@ impl KernelBuilder {
     }
 }
 
+/// # Safety
+///
+/// `KERNEL.kmem` has been initialized already.
+#[derive(Copy, Clone)]
+pub struct Allocator;
+
+impl Allocator {
+    /// # Safety
+    ///
+    /// `KERNEL.kmem` has been initialized already.
+    pub unsafe fn new_unchecked() -> Allocator {
+        Allocator
+    }
+
+    pub fn alloc(&self) -> Option<Page> {
+        // SAFETY: `KERNEL.kmem` has been initialized already.
+        kernel_builder().alloc()
+    }
+
+    pub fn free(&self, page: Page) {
+        // SAFETY: `KERNEL.kmem` has been initialized already.
+        kernel_builder().free(page);
+    }
+}
+
 /// print! macro prints to the console using printer.
 #[macro_export]
 macro_rules! print {
@@ -258,9 +289,11 @@ pub unsafe fn kernel_main() -> ! {
                 .get_mut()
                 .init()
         };
+        // SAFETY: kmem has been initialized.
+        let allocator = unsafe { Allocator::new_unchecked() };
 
         // Create kernel memory manager.
-        let memory = KernelMemory::new().expect("PageTable::new failed");
+        let memory = KernelMemory::new(allocator).expect("PageTable::new failed");
 
         // Turn on paging.
         unsafe {
@@ -307,7 +340,7 @@ pub unsafe fn kernel_main() -> ! {
         };
 
         // First user process.
-        procs.user_proc_init();
+        procs.user_proc_init(allocator);
         STARTED.store(true, Ordering::Release);
     } else {
         while !STARTED.load(Ordering::Acquire) {

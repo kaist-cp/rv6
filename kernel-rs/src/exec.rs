@@ -121,7 +121,7 @@ impl Kernel {
         }
 
         let trap_frame: PAddr = (proc.trap_frame() as *const _ as usize).into();
-        let mut mem = UserMemory::new(trap_frame, None).ok_or(())?;
+        let mut mem = UserMemory::new(trap_frame, None, self.allocator()).ok_or(())?;
 
         // Load program into memory.
         for i in 0..elf.phnum as usize {

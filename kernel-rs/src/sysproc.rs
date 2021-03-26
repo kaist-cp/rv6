@@ -15,7 +15,7 @@ impl Kernel {
     /// Create a process.
     /// Returns Ok(child’s PID) on success, Err(()) on error.
     pub fn sys_fork(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
-        Ok(self.procs().fork(proc)? as _)
+        Ok(self.procs().fork(proc, self.allocator())? as _)
     }
 
     /// Wait for a child to exit.
