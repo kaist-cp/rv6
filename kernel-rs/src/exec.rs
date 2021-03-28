@@ -4,6 +4,7 @@ use core::{cmp, mem};
 
 use bitflags::bitflags;
 use itertools::*;
+use zerocopy::AsBytes;
 
 use crate::{
     fs::Path,
@@ -22,7 +23,7 @@ const ELF_MAGIC: u32 = 0x464c457f;
 const ELF_PROG_LOAD: u32 = 1;
 
 /// File header
-#[derive(Default, Clone)]
+#[derive(Default, Clone, AsBytes)]
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
@@ -48,6 +49,7 @@ struct ElfHdr {
 
 bitflags! {
     /// Flag bits for ProgHdr flags
+    #[derive(AsBytes)]
     #[repr(C)]
     struct ProgFlags: u32 {
         const EXEC = 1;
@@ -63,7 +65,7 @@ impl Default for ProgFlags {
 }
 
 /// Program section header
-#[derive(Default, Clone)]
+#[derive(Default, Clone, AsBytes)]
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
@@ -115,7 +117,7 @@ impl Kernel {
         let mut elf: ElfHdr = Default::default();
         // It is safe becuase ElfHdr can be safely transmuted to [u8; _], as it
         // contains only integers, which do not have internal structures.
-        unsafe { ip.read_kernel(&mut elf, 0) }?;
+        ip.read_kernel(&mut elf, 0)?;
         if !elf.is_valid() {
             return Err(());
         }
@@ -130,7 +132,7 @@ impl Kernel {
             let mut ph: ProgHdr = Default::default();
             // It is safe becuase ProgHdr can be safely transmuted to [u8; _], as it
             // contains only integers, which do not have internal structures.
-            unsafe { ip.read_kernel(&mut ph, off as _) }?;
+            ip.read_kernel(&mut ph, off as _)?;
             if ph.is_prog_load() {
                 if ph.memsz < ph.filesz || ph.vaddr % PGSIZE != 0 {
                     return Err(());
