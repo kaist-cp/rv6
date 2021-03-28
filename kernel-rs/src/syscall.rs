@@ -18,7 +18,7 @@ pub fn fetchaddr(addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<usize, ()> 
         return Err(());
     }
     // Safe since usize does not have any internal structure.
-    unsafe { proc.memory_mut().copy_in(&mut ip, addr) }?;
+    proc.memory_mut().copy_in(&mut ip, addr)?;
     Ok(ip)
 }
 
