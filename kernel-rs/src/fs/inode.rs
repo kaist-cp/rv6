@@ -187,6 +187,7 @@ pub struct InodeGuard<'a> {
 }
 
 // It needs repr(C) for deriving zerocopy::AsBytes trait.
+// DIRSIZ should match conditions for AsBytes.
 // https://docs.rs/zerocopy/0.3.0/zerocopy/trait.AsBytes.html
 #[derive(Default, AsBytes)]
 #[repr(C)]

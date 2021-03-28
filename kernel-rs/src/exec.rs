@@ -115,8 +115,6 @@ impl Kernel {
 
         // Check ELF header
         let mut elf: ElfHdr = Default::default();
-        // It is safe becuase ElfHdr can be safely transmuted to [u8; _], as it
-        // contains only integers, which do not have internal structures.
         ip.read_kernel(&mut elf, 0)?;
         if !elf.is_valid() {
             return Err(());
