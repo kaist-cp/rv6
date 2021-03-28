@@ -199,8 +199,6 @@ pub struct Dirent {
 impl Dirent {
     fn new(ip: &mut InodeGuard<'_>, off: u32) -> Result<Dirent, ()> {
         let mut dirent = Dirent::default();
-        // It is safe becuase Dirent can be safely transmuted to [u8; _], as it
-        // contains only u16 and u8's, which do not have internal structures.
         ip.read_kernel(&mut dirent, off)?;
         Ok(dirent)
     }
