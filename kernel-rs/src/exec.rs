@@ -130,8 +130,6 @@ impl Kernel {
             let off = elf.phoff + i * mem::size_of::<ProgHdr>();
 
             let mut ph: ProgHdr = Default::default();
-            // It is safe becuase ProgHdr can be safely transmuted to [u8; _], as it
-            // contains only integers, which do not have internal structures.
             ip.read_kernel(&mut ph, off as _)?;
             if ph.is_prog_load() {
                 if ph.memsz < ph.filesz || ph.vaddr % PGSIZE != 0 {

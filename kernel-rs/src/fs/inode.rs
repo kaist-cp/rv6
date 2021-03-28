@@ -415,6 +415,7 @@ impl InodeGuard<'_> {
     /// # Safety
     ///
     /// `T` can be safely `transmute`d to `[u8; size_of::<T>()]`.
+    /// https://docs.rs/zerocopy/0.3.0/zerocopy/trait.AsBytes.html
     pub fn read_kernel<T: AsBytes>(&mut self, dst: &mut T, off: u32) -> Result<(), ()> {
         let bytes = self.read_bytes_kernel(
             // It is safe because of the safety assumption of this method.
@@ -666,8 +667,6 @@ impl InodeGuard<'_> {
     pub fn is_dir_empty(&mut self) -> bool {
         let mut de: Dirent = Default::default();
         for off in (2 * DIRENT_SIZE as u32..self.deref_inner().size).step_by(DIRENT_SIZE) {
-            // It is safe becuase Dirent can be safely transmuted to [u8; _], as it
-            // contains only u16 and u8's, which do not have internal structures.
             self.read_kernel(&mut de, off)
                 .expect("is_dir_empty: read_kernel");
             if de.inum != 0 {
