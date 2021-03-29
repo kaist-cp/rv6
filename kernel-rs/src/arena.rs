@@ -1,5 +1,4 @@
 use core::convert::TryFrom;
-use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;
 use core::pin::Pin;
@@ -88,19 +87,6 @@ pub struct ArrayArena<T, const CAPACITY: usize> {
     entries: [RcCell<T>; CAPACITY],
 }
 
-/// # Safety
-///
-/// Always acquire the `Spinlock<ArrayArena<T, CAPACITY>>` before duplicating or finalizing.
-pub struct ArrayPtr<'s, T> {
-    r: Ref<T>,
-    _marker: PhantomData<&'s T>,
-}
-
-// `ArrayPtr` is `Send` because it does not impl `DerefMut`, and when we access
-// the inner `ArrayEntry`, we do it after acquring `ArrayArena`'s lock.
-// Also, `ArrayPtr` does not point to thread-local data.
-unsafe impl<T: Send> Send for ArrayPtr<'_, T> {}
-
 #[pin_project]
 #[repr(C)]
 pub struct MruEntry<T> {
@@ -120,19 +106,16 @@ pub struct MruArena<T, const CAPACITY: usize> {
 
 /// # Safety
 ///
-/// Always acquire the `Spinlock<MruArena<T, CAPACITY>>` before duplicating or finalizing.
-pub struct MruPtr<'s, T> {
-    r: Ref<T>,
-    _marker: PhantomData<&'s T>,
-}
-
-/// # Safety
-///
 /// `inner` is allocated from `tag`
 pub struct Rc<'s, A: Arena, T: Deref<Target = A>> {
     tag: T,
     inner: ManuallyDrop<A::Handle<'s>>,
 }
+
+// `Rc` is `Send` because it does not impl `DerefMut`,
+// and when we access the inner `Arena`, we do it after acquiring `Arena`'s lock.
+// Also, `Rc` does not point to thread-local data.
+unsafe impl<'s, A: Arena, T: Deref<Target = A>> Send for Rc<'s, A, T> {}
 
 impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
     // TODO(https://github.com/kaist-cp/rv6/issues/371): unsafe...
@@ -141,29 +124,12 @@ impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
     }
 }
 
-impl<'s, T> ArrayPtr<'s, T> {
-    fn new(r: Ref<T>) -> ArrayPtr<'s, T> {
-        Self {
-            r,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<T> Deref for ArrayPtr<'_, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.r
-    }
-}
-
 impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     for Spinlock<ArrayArena<T, CAPACITY>>
 {
     type Data = T;
     type Guard<'s> = SpinlockGuard<'s, ArrayArena<T, CAPACITY>>;
-    type Handle<'s> = ArrayPtr<'s, T>;
+    type Handle<'s> = Ref<T>;
 
     fn find_or_alloc_handle<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,
@@ -184,7 +150,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
             } else if let Some(r) = entry.try_borrow() {
                 // The entry is not under finalization. Check its data.
                 if c(&r) {
-                    return Some(ArrayPtr::new(r));
+                    return Some(r);
                 }
             }
         }
@@ -192,7 +158,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         empty.map(|cell| {
             let mut rm = cell.borrow_mut();
             n(&mut rm);
-            ArrayPtr::new(rm.into())
+            rm.into()
         })
     }
 
@@ -202,7 +168,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         for entry in &this.entries {
             if let Some(mut rm) = entry.try_borrow_mut() {
                 f(&mut rm);
-                return Some(ArrayPtr::new(rm.into()));
+                return Some(rm.into());
             }
         }
         None
@@ -214,7 +180,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     // TODO: If we wrap `ArrayPtr::r` with `SpinlockProtected`, then we can just use `clone` instead.
     unsafe fn dup<'s>(&self, handle: &Self::Handle<'s>) -> Self::Handle<'s> {
         let mut _this = self.lock();
-        ArrayPtr::new(handle.r.clone())
+        handle.clone()
     }
 
     /// # Safety
@@ -224,7 +190,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     unsafe fn dealloc(&self, handle: Self::Handle<'_>) {
         let mut this = self.lock();
 
-        if let Ok(mut rm) = RefMut::<T>::try_from(handle.r) {
+        if let Ok(mut rm) = RefMut::<T>::try_from(handle) {
             rm.finalize::<Self>(&mut this);
         }
     }
@@ -298,29 +264,12 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
     }
 }
 
-impl<'s, T> MruPtr<'s, T> {
-    fn new(r: Ref<T>) -> MruPtr<'s, T> {
-        Self {
-            r,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<T> Deref for MruPtr<'_, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.r
-    }
-}
-
 impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     for Spinlock<MruArena<T, CAPACITY>>
 {
     type Data = T;
     type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
-    type Handle<'s> = MruPtr<'s, T>;
+    type Handle<'s> = Ref<T>;
 
     fn find_or_alloc_handle<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,
@@ -336,7 +285,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
             }
             if let Some(r) = entry.data.try_borrow() {
                 if c(&r) {
-                    return Some(MruPtr::new(r));
+                    return Some(r);
                 }
             }
         }
@@ -344,7 +293,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         empty.map(|entry| {
             let mut rm = entry.data.borrow_mut();
             n(&mut rm);
-            MruPtr::new(rm.into())
+            rm.into()
         })
     }
 
@@ -354,7 +303,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         for entry in unsafe { this.list.iter_unchecked().rev() } {
             if let Some(mut rm) = entry.data.try_borrow_mut() {
                 f(&mut rm);
-                return Some(MruPtr::new(rm.into()));
+                return Some(rm.into());
             }
         }
 
@@ -366,7 +315,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     /// `handle` must be allocated from `self`.
     unsafe fn dup<'s>(&self, handle: &Self::Handle<'s>) -> Self::Handle<'s> {
         let mut _this = self.lock();
-        MruPtr::new(handle.r.clone())
+        handle.clone()
     }
 
     /// # Safety
@@ -375,7 +324,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     unsafe fn dealloc(&self, handle: Self::Handle<'_>) {
         let mut this = self.lock();
 
-        if let Ok(mut rm) = RefMut::<T>::try_from(handle.r) {
+        if let Ok(mut rm) = RefMut::<T>::try_from(handle) {
             rm.finalize::<Self>(&mut this);
             // Safe since the `handle` was obtained from an `MruEntry`,
             // which is contained inside `&this.list`.
