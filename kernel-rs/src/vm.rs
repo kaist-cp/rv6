@@ -1,4 +1,5 @@
 use core::{cmp, marker::PhantomData, mem, ops::Add, slice};
+
 use zerocopy::FromBytes;
 
 use crate::{
@@ -567,7 +568,7 @@ impl UserMemory {
     /// Copy from user to kernel.
     /// Copy to dst from virtual address srcva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    pub fn copy_in<T:FromBytes>(&mut self, dst: &mut T, srcva: UVAddr) -> Result<(), ()> {
+    pub fn copy_in<T: FromBytes>(&mut self, dst: &mut T, srcva: UVAddr) -> Result<(), ()> {
         self.copy_in_bytes(
             // SAFETY: It's safe because T implements FromBytes trait.
             // https://docs.rs/zerocopy/0.3.0/zerocopy/trait.FromBytes.html

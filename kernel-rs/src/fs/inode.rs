@@ -410,7 +410,7 @@ impl InodeGuard<'_> {
 
     /// Copy data into `dst` from the content of inode at offset `off`.
     /// Return Ok(()) on success, Err(()) on failure.
-    pub fn read_kernel<T:FromBytes>(&mut self, dst: &mut T, off: u32) -> Result<(), ()> {
+    pub fn read_kernel<T: FromBytes>(&mut self, dst: &mut T, off: u32) -> Result<(), ()> {
         let bytes = self.read_bytes_kernel(
             // SAFETY: It's safe because T implements FromBytes trait.
             // https://docs.rs/zerocopy/0.3.0/zerocopy/trait.FromBytes.html
@@ -662,7 +662,8 @@ impl InodeGuard<'_> {
     pub fn is_dir_empty(&mut self) -> bool {
         let mut de: Dirent = Default::default();
         for off in (2 * DIRENT_SIZE as u32..self.deref_inner().size).step_by(DIRENT_SIZE) {
-            self.read_kernel(&mut de, off).expect("is_dir_empty: read_kernel");
+            self.read_kernel(&mut de, off)
+                .expect("is_dir_empty: read_kernel");
             if de.inum != 0 {
                 return false;
             }
