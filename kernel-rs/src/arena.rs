@@ -124,7 +124,7 @@ pub struct Rc<'s, A: Arena, T: Deref<Target = A>> {
 // `Rc` is `Send` because it does not impl `DerefMut`,
 // and when we access the inner `Arena`, we do it after acquiring `Arena`'s lock.
 // Also, `Rc` does not point to thread-local data.
-unsafe impl<'s, A: Arena, T: Deref<Target = A>> Send for Rc<'s, A, T> {}
+unsafe impl<'s, S: Sync, A: Arena<Data = S>, T: Deref<Target = A>> Send for Rc<'s, A, T> {}
 
 impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
     // TODO(https://github.com/kaist-cp/rv6/issues/371): unsafe...
