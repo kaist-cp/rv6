@@ -567,11 +567,7 @@ impl UserMemory {
     /// Copy from user to kernel.
     /// Copy to dst from virtual address srcva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    ///
-    /// # Safety
-    ///
-    /// It is safe to transmute `T` to `[u8; size_of::<T>()]`.
-    pub unsafe fn copy_in<T:FromBytes>(&mut self, dst: &mut T, srcva: UVAddr) -> Result<(), ()> {
+    pub fn copy_in<T:FromBytes>(&mut self, dst: &mut T, srcva: UVAddr) -> Result<(), ()> {
         self.copy_in_bytes(
             unsafe { core::slice::from_raw_parts_mut(dst as *mut _ as _, mem::size_of::<T>()) },
             srcva,
