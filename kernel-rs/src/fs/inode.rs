@@ -76,7 +76,7 @@ use core::{
 
 use array_macro::array;
 use static_assertions::const_assert;
-use zerocopy::FromBytes;
+use zerocopy::{AsBytes, FromBytes};
 
 use super::{FileName, IPB, MAXFILE, NDIRECT, NINDIRECT};
 use crate::{
@@ -98,7 +98,8 @@ pub const DIRSIZ: usize = 14;
 /// dirent size
 pub const DIRENT_SIZE: usize = mem::size_of::<Dirent>();
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+/// Need to become a C style enum.
+#[derive(Copy, Clone, PartialEq, Debug, AsBytes, FromBytes)]
 #[repr(i16)]
 pub enum InodeType {
     None,
@@ -186,7 +187,7 @@ pub struct InodeGuard<'a> {
     pub inode: &'a Inode,
 }
 
-#[derive(Default, FromBytes)]
+#[derive(Default, AsBytes, FromBytes)]
 // It needs repr(C) for deriving zerocopy::FromBytes trait.
 // DIRSIZ should match conditions for FromBytes.
 // https://docs.rs/zerocopy/0.3.0/zerocopy/trait.FromBytes.html
@@ -410,13 +411,8 @@ impl InodeGuard<'_> {
 
     /// Copy data into `dst` from the content of inode at offset `off`.
     /// Return Ok(()) on success, Err(()) on failure.
-    pub fn read_kernel<T: FromBytes>(&mut self, dst: &mut T, off: u32) -> Result<(), ()> {
-        let bytes = self.read_bytes_kernel(
-            // SAFETY: It's safe because T implements FromBytes trait.
-            // https://docs.rs/zerocopy/0.3.0/zerocopy/trait.FromBytes.html
-            unsafe { core::slice::from_raw_parts_mut(dst as *mut _ as _, mem::size_of::<T>()) },
-            off,
-        );
+    pub fn read_kernel<T: AsBytes + FromBytes>(&mut self, dst: &mut T, off: u32) -> Result<(), ()> {
+        let bytes = self.read_bytes_kernel(dst.as_bytes_mut(), off);
         if bytes == mem::size_of::<T>() {
             Ok(())
         } else {

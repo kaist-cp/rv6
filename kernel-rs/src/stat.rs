@@ -1,5 +1,7 @@
+use zerocopy::{AsBytes, FromBytes};
+
 use crate::fs::InodeType;
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, AsBytes, FromBytes)]
 #[repr(C)]
 pub struct Stat {
     /// File system's disk device

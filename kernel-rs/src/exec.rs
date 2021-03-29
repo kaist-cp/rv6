@@ -4,7 +4,7 @@ use core::{cmp, mem};
 
 use bitflags::bitflags;
 use itertools::*;
-use zerocopy::FromBytes;
+use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
     fs::Path,
@@ -23,11 +23,12 @@ const ELF_MAGIC: u32 = 0x464c457f;
 const ELF_PROG_LOAD: u32 = 1;
 
 /// File header
-#[derive(Default, Clone, FromBytes)]
+#[derive(Default, Clone, AsBytes, FromBytes)]
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
-// repr(C) is also required for FromBytes.
+// repr(C) is also required for AsBytes & FromBytes.
+// https://docs.rs/zerocopy/0.3.0/zerocopy/trait.AsBytes.html
 // https://docs.rs/zerocopy/0.3.0/zerocopy/trait.FromBytes.html
 #[repr(C)]
 struct ElfHdr {
@@ -50,8 +51,11 @@ struct ElfHdr {
 }
 
 bitflags! {
-    #[derive(FromBytes)]
+    #[derive(AsBytes, FromBytes)]
     /// Flag bits for ProgHdr flags
+    // It needs repr(C) for AsBytes & FromBytes.
+    // https://docs.rs/zerocopy/0.3.0/zerocopy/trait.AsBytes.html
+    // https://docs.rs/zerocopy/0.3.0/zerocopy/trait.FromBytes.html
     #[repr(C)]
     struct ProgFlags: u32 {
         const EXEC = 1;
@@ -67,11 +71,12 @@ impl Default for ProgFlags {
 }
 
 /// Program section header
-#[derive(Default, Clone, FromBytes)]
+#[derive(Default, Clone, AsBytes, FromBytes)]
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
-// repr(C) is also required for FromBytes.
+// repr(C) is also required for AsBytes & FromBytes.
+// https://docs.rs/zerocopy/0.3.0/zerocopy/trait.AsBytes.html
 // https://docs.rs/zerocopy/0.3.0/zerocopy/trait.FromBytes.html
 #[repr(C)]
 struct ProgHdr {

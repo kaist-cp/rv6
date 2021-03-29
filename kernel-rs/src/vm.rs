@@ -1,6 +1,6 @@
 use core::{cmp, marker::PhantomData, mem, ops::Add, slice};
 
-use zerocopy::FromBytes;
+use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
     fs::InodeGuard,
@@ -536,13 +536,8 @@ impl UserMemory {
     /// Copy from kernel to user.
     /// Copy from src to virtual address dstva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    pub fn copy_out<T>(&mut self, dstva: UVAddr, src: &T) -> Result<(), ()> {
-        self.copy_out_bytes(
-            dstva,
-            // It is safe because src is a valid reference to T and
-            // u8 does not have any internal structure.
-            unsafe { core::slice::from_raw_parts_mut(src as *const _ as _, mem::size_of::<T>()) },
-        )
+    pub fn copy_out<T: AsBytes + FromBytes>(&mut self, dstva: UVAddr, src: &T) -> Result<(), ()> {
+        self.copy_out_bytes(dstva, src.as_bytes_mut())
     }
 
     /// Copy from user to kernel.
@@ -568,13 +563,12 @@ impl UserMemory {
     /// Copy from user to kernel.
     /// Copy to dst from virtual address srcva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    pub fn copy_in<T: FromBytes>(&mut self, dst: &mut T, srcva: UVAddr) -> Result<(), ()> {
-        self.copy_in_bytes(
-            // SAFETY: It's safe because T implements FromBytes trait.
-            // https://docs.rs/zerocopy/0.3.0/zerocopy/trait.FromBytes.html
-            unsafe { core::slice::from_raw_parts_mut(dst as *mut _ as _, mem::size_of::<T>()) },
-            srcva,
-        )
+    pub fn copy_in<T: AsBytes + FromBytes>(
+        &mut self,
+        dst: &mut T,
+        srcva: UVAddr,
+    ) -> Result<(), ()> {
+        self.copy_in_bytes(dst.as_bytes_mut(), srcva)
     }
 
     /// Copy a null-terminated string from user to kernel.
