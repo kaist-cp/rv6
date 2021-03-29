@@ -1,4 +1,5 @@
 use core::convert::TryFrom;
+use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;
 use core::pin::Pin;
@@ -13,11 +14,7 @@ use crate::rc_cell::{RcCell, Ref, RefMut};
 /// A homogeneous memory allocator, equipped with the box type representing an allocation.
 pub trait Arena: Sized {
     /// The value type of the allocator.
-    type Data;
-
-    /// The object handle type of the allocator.
-    type Handle<'s>;
-
+    type Data: ArenaObject;
     /// The guard type for arena.
     type Guard<'s>;
 
@@ -26,7 +23,7 @@ pub trait Arena: Sized {
         &self,
         c: C,
         n: N,
-    ) -> Option<Self::Handle<'_>>;
+    ) -> Option<Ref<Self::Data>>;
 
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,
@@ -39,7 +36,7 @@ pub trait Arena: Sized {
     }
 
     /// Failable allocation.
-    fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Self::Handle<'_>>;
+    fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Ref<Self::Data>>;
 
     fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Rc<'_, Self, &Self>> {
         let inner = self.alloc_handle(f)?;
@@ -52,7 +49,8 @@ pub trait Arena: Sized {
     /// # Safety
     ///
     /// `handle` must be allocated from `self`.
-    unsafe fn dup<'s>(&self, handle: &Self::Handle<'s>) -> Self::Handle<'s>;
+    // TODO: If we wrap `ArrayPtr::r` with `SpinlockProtected`, then we can just use `clone` instead.
+    unsafe fn dup(&self, handle: &Ref<Self::Data>) -> Ref<Self::Data>;
 
     /// Deallocate a given handle, and finalize the referred object if there are
     /// no more handles.
@@ -60,7 +58,8 @@ pub trait Arena: Sized {
     /// # Safety
     ///
     /// `handle` must be allocated from `self`.
-    unsafe fn dealloc(&self, handle: Self::Handle<'_>);
+    // TODO: If we wrap `ArrayPtr::r` with `SpinlockProtected`, then we can just use `drop` instead.
+    unsafe fn dealloc(&self, handle: Ref<Self::Data>);
 
     /// Temporarily releases the lock while calling `f`, and re-acquires the lock after `f` returned.
     ///
@@ -109,7 +108,8 @@ pub struct MruArena<T, const CAPACITY: usize> {
 /// `inner` is allocated from `tag`
 pub struct Rc<'s, A: Arena, T: Deref<Target = A>> {
     tag: T,
-    inner: ManuallyDrop<A::Handle<'s>>,
+    inner: ManuallyDrop<Ref<A::Data>>,
+    _marker: PhantomData<&'s A>, // TODO: Remove after #444
 }
 
 // `Rc` is `Send` because it does not impl `DerefMut`,
@@ -129,13 +129,12 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
 {
     type Data = T;
     type Guard<'s> = SpinlockGuard<'s, ArrayArena<T, CAPACITY>>;
-    type Handle<'s> = Ref<T>;
 
     fn find_or_alloc_handle<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,
         c: C,
         n: N,
-    ) -> Option<Self::Handle<'_>> {
+    ) -> Option<Ref<Self::Data>> {
         let this = self.lock();
 
         let mut empty = None;
@@ -162,7 +161,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         })
     }
 
-    fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Self::Handle<'_>> {
+    fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Ref<Self::Data>> {
         let this = self.lock();
 
         for entry in &this.entries {
@@ -174,20 +173,12 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         None
     }
 
-    /// # Safety
-    ///
-    /// `handle` must be allocated from `self`.
-    // TODO: If we wrap `ArrayPtr::r` with `SpinlockProtected`, then we can just use `clone` instead.
-    unsafe fn dup<'s>(&self, handle: &Self::Handle<'s>) -> Self::Handle<'s> {
+    unsafe fn dup(&self, handle: &Ref<Self::Data>) -> Ref<Self::Data> {
         let mut _this = self.lock();
         handle.clone()
     }
 
-    /// # Safety
-    ///
-    /// `handle` must be allocated from `self`.
-    // TODO: If we wrap `ArrayPtr::r` with `SpinlockProtected`, then we can just use `drop` instead.
-    unsafe fn dealloc(&self, handle: Self::Handle<'_>) {
+    unsafe fn dealloc(&self, handle: Ref<Self::Data>) {
         let mut this = self.lock();
 
         if let Ok(mut rm) = RefMut::<T>::try_from(handle) {
@@ -269,13 +260,12 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
 {
     type Data = T;
     type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
-    type Handle<'s> = Ref<T>;
 
     fn find_or_alloc_handle<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,
         c: C,
         n: N,
-    ) -> Option<Self::Handle<'_>> {
+    ) -> Option<Ref<Self::Data>> {
         let this = self.lock();
         let mut empty = None;
         // Safe since the whole `MruArena` is protected by a lock.
@@ -297,7 +287,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         })
     }
 
-    fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Self::Handle<'_>> {
+    fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Ref<Self::Data>> {
         let this = self.lock();
         // Safe since the whole `MruArena` is protected by a lock.
         for entry in unsafe { this.list.iter_unchecked().rev() } {
@@ -310,18 +300,12 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         None
     }
 
-    /// # Safety
-    ///
-    /// `handle` must be allocated from `self`.
-    unsafe fn dup<'s>(&self, handle: &Self::Handle<'s>) -> Self::Handle<'s> {
+    unsafe fn dup(&self, handle: &Ref<Self::Data>) -> Ref<Self::Data> {
         let mut _this = self.lock();
         handle.clone()
     }
 
-    /// # Safety
-    ///
-    /// `handle` must be allocated from `self`.
-    unsafe fn dealloc(&self, handle: Self::Handle<'_>) {
+    unsafe fn dealloc(&self, handle: Ref<Self::Data>) {
         let mut this = self.lock();
 
         if let Ok(mut rm) = RefMut::<T>::try_from(handle) {
@@ -341,7 +325,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
 }
 
 impl<'s, A: Arena, T: Deref<Target = A>> Deref for Rc<'s, A, T> {
-    type Target = A::Handle<'s>;
+    type Target = A::Data;
 
     fn deref(&self) -> &Self::Target {
         self.inner.deref()
@@ -359,9 +343,13 @@ impl<'s, A: Arena, T: Deref<Target = A>> Rc<'s, A, T> {
     /// # Safety
     ///
     /// `inner` must be allocated from `tag`
-    pub unsafe fn from_unchecked(tag: T, inner: A::Handle<'s>) -> Self {
+    pub unsafe fn from_unchecked(tag: T, inner: Ref<A::Data>) -> Self {
         let inner = ManuallyDrop::new(inner);
-        Self { tag, inner }
+        Self {
+            tag,
+            inner,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -370,7 +358,11 @@ impl<'s, A: Arena, T: Clone + Deref<Target = A>> Clone for Rc<'s, A, T> {
         let tag = self.tag.clone();
         // It is safe because inner is allocated from tag.
         let inner = ManuallyDrop::new(unsafe { tag.dup(&self.inner) });
-        Self { tag, inner }
+        Self {
+            tag,
+            inner,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -395,6 +387,10 @@ impl<
         let tag = self.tag.clone();
         let inner = ManuallyDrop::new(unsafe { ManuallyDrop::take(&mut self.inner) });
         mem::forget(self);
-        Rc { tag, inner }
+        Rc {
+            tag,
+            inner,
+            _marker: PhantomData,
+        }
     }
 }
