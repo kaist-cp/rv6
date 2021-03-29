@@ -77,6 +77,17 @@ impl<T> RcCell<T> {
         self.data.get()
     }
 
+    /// If the `RcCell` is not borrowed, returns a pinned mutable reference to the underlying data.
+    /// Otherwise, returns `None`.
+    pub fn get_pin_mut(self: Pin<&mut Self>) -> Option<Pin<&mut T>> {
+        if self.is_borrowed() {
+            None
+        } else {
+            // SAFETY: `self` is pinned.
+            Some(unsafe { Pin::new_unchecked(&mut *self.data.get()) })
+        }
+    }
+
     /// Immutably borrows the `RcCell` if it is not mutably borrowed.
     /// Otherwise, returns `None`.
     ///
