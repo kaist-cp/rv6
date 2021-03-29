@@ -569,6 +569,8 @@ impl UserMemory {
     /// Return Ok(()) on success, Err(()) on error.
     pub fn copy_in<T:FromBytes>(&mut self, dst: &mut T, srcva: UVAddr) -> Result<(), ()> {
         self.copy_in_bytes(
+            // SAFETY: It's safe because T implements FromBytes trait.
+            // https://docs.rs/zerocopy/0.3.0/zerocopy/trait.FromBytes.html
             unsafe { core::slice::from_raw_parts_mut(dst as *mut _ as _, mem::size_of::<T>()) },
             srcva,
         )

@@ -76,6 +76,7 @@ use core::{
 
 use array_macro::array;
 use static_assertions::const_assert;
+use zerocopy::FromBytes;
 
 use super::{FileName, IPB, MAXFILE, NDIRECT, NINDIRECT};
 use crate::{
@@ -185,7 +186,11 @@ pub struct InodeGuard<'a> {
     pub inode: &'a Inode,
 }
 
-#[derive(Default)]
+#[derive(Default, FromBytes)]
+// It needs repr(C) for deriving zerocopy::FromBytes trait.
+// DIRSIZ should match conditions for FromBytes.
+// https://docs.rs/zerocopy/0.3.0/zerocopy/trait.FromBytes.html
+#[repr(C)]
 pub struct Dirent {
     pub inum: u16,
     name: [u8; DIRSIZ],
@@ -194,9 +199,7 @@ pub struct Dirent {
 impl Dirent {
     fn new(ip: &mut InodeGuard<'_>, off: u32) -> Result<Dirent, ()> {
         let mut dirent = Dirent::default();
-        // It is safe becuase Dirent can be safely transmuted to [u8; _], as it
-        // contains only u16 and u8's, which do not have internal structures.
-        unsafe { ip.read_kernel(&mut dirent, off) }?;
+        ip.read_kernel(&mut dirent, off)?;
         Ok(dirent)
     }
 
@@ -407,13 +410,10 @@ impl InodeGuard<'_> {
 
     /// Copy data into `dst` from the content of inode at offset `off`.
     /// Return Ok(()) on success, Err(()) on failure.
-    ///
-    /// # Safety
-    ///
-    /// `T` can be safely `transmute`d to `[u8; size_of::<T>()]`.
-    pub unsafe fn read_kernel<T>(&mut self, dst: &mut T, off: u32) -> Result<(), ()> {
+    pub fn read_kernel<T:FromBytes>(&mut self, dst: &mut T, off: u32) -> Result<(), ()> {
         let bytes = self.read_bytes_kernel(
-            // It is safe because of the safety assumption of this method.
+            // SAFETY: It's safe because T implements FromBytes trait.
+            // https://docs.rs/zerocopy/0.3.0/zerocopy/trait.FromBytes.html
             unsafe { core::slice::from_raw_parts_mut(dst as *mut _ as _, mem::size_of::<T>()) },
             off,
         );
@@ -662,9 +662,7 @@ impl InodeGuard<'_> {
     pub fn is_dir_empty(&mut self) -> bool {
         let mut de: Dirent = Default::default();
         for off in (2 * DIRENT_SIZE as u32..self.deref_inner().size).step_by(DIRENT_SIZE) {
-            // It is safe becuase Dirent can be safely transmuted to [u8; _], as it
-            // contains only u16 and u8's, which do not have internal structures.
-            unsafe { self.read_kernel(&mut de, off) }.expect("is_dir_empty: read_kernel");
+            self.read_kernel(&mut de, off).expect("is_dir_empty: read_kernel");
             if de.inum != 0 {
                 return false;
             }
