@@ -34,7 +34,7 @@ use core::pin::Pin;
 
 const BORROWED_MUT: usize = usize::MAX;
 
-/// Similar to `RefCell<T>`, but does not use lifetimes.
+/// Similar to `RefCell<T>`, but provides lifetime-less `Ref<T>` and `RefMut<T>`.
 /// See the module documentation for details.
 pub struct RcCell<T> {
     data: UnsafeCell<T>,
@@ -42,10 +42,12 @@ pub struct RcCell<T> {
     _pin: PhantomPinned,
 }
 
+/// A lifetme-less wrapper type for an immutably borrowed value from a RcCell<T>.
 pub struct Ref<T> {
     ptr: *const RcCell<T>,
 }
 
+/// A lifetme-less wrapper type for a mutably borrowed value from a RcCell<T>.
 pub struct RefMut<T> {
     ptr: *const RcCell<T>,
 }
@@ -80,8 +82,8 @@ impl<T> RcCell<T> {
     ///
     /// # Note
     ///
-    /// `RcCell` allows only up to `usize::MAX` - 1 number of `Ref<T>` to coexist.
-    /// Hence, this function will return `None` if the caller tries to borrow more than `usize::MAX` - 1 times.
+    /// `RcCell` allows only up to `usize::MAX - 1` number of `Ref<T>` to coexist.
+    /// Hence, this function will return `None` if the caller tries to borrow more than `usize::MAX - 1` times.
     pub fn try_borrow(&self) -> Option<Ref<T>> {
         let refcnt = self.refcnt.get();
         if refcnt == BORROWED_MUT - 1 || refcnt == BORROWED_MUT {
@@ -133,9 +135,7 @@ impl<T> From<RefMut<T>> for Ref<T> {
     fn from(r: RefMut<T>) -> Self {
         let ptr = r.ptr;
         drop(r);
-        unsafe {
-            (*ptr).refcnt.set(1);
-        }
+        unsafe { (*ptr).refcnt.set(1) };
         Self { ptr }
     }
 }
@@ -143,7 +143,7 @@ impl<T> From<RefMut<T>> for Ref<T> {
 impl<T> Clone for Ref<T> {
     fn clone(&self) -> Self {
         let refcnt = unsafe { &(*self.ptr).refcnt };
-        assert!(refcnt.get() != BORROWED_MUT - 1);
+        assert!(refcnt.get() != BORROWED_MUT - 1, "borrowed too many times");
         refcnt.set(refcnt.get() + 1);
         Self { ptr: self.ptr }
     }
