@@ -1,4 +1,5 @@
 use core::{cmp, marker::PhantomData, mem, ops::Add, slice};
+use zerocopy::FromBytes;
 
 use crate::{
     fs::InodeGuard,
@@ -569,8 +570,8 @@ impl UserMemory {
     ///
     /// # Safety
     ///
-    /// `T` can be safely `transmute`d to `[u8; size_of::<T>()]`.
-    pub unsafe fn copy_in<T>(&mut self, dst: &mut T, srcva: UVAddr) -> Result<(), ()> {
+    /// It is safe to transmute `T` to `[u8; size_of::<T>()]`.
+    pub unsafe fn copy_in<T:FromBytes>(&mut self, dst: &mut T, srcva: UVAddr) -> Result<(), ()> {
         self.copy_in_bytes(
             unsafe { core::slice::from_raw_parts_mut(dst as *mut _ as _, mem::size_of::<T>()) },
             srcva,

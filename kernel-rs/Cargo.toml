@@ -30,6 +30,7 @@ array-macro = "2.0.0"
 static_assertions = "1.1.0"
 itertools = { version = "0.10.0", default-features = false }
 pin-project = "1"
+zerocopy = { version = "0.3.0", default-features = false }
 
 # Compiler options for sysroot packages.
 # Cargo currently warns following packages are not dependencies.
