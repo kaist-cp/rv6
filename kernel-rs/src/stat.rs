@@ -1,4 +1,3 @@
-use crate::fs::InodeType;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Stat {
@@ -9,7 +8,7 @@ pub struct Stat {
     pub ino: u32,
 
     /// Type of file
-    pub typ: InodeType,
+    pub typ: u16,
 
     /// Number of links to file
     pub nlink: i16,

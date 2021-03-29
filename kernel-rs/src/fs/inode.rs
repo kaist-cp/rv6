@@ -794,7 +794,12 @@ impl Inode {
         Stat {
             dev: self.dev as i32,
             ino: self.inum,
-            typ: inner.typ,
+            typ: match inner.typ {
+                InodeType::None => 0,
+                InodeType::Dir => 1,
+                InodeType::File => 2,
+                InodeType::Device { .. } => 3,
+            },
             nlink: inner.nlink,
             size: inner.size as usize,
         }
