@@ -11,19 +11,48 @@ use crate::lock::{Spinlock, SpinlockGuard};
 use crate::pinned_array::IterPinMut;
 use crate::rc_cell::{RcCell, Ref, RefMut};
 
+/// The private part of arena.rs.
+mod arena_private {
+    use crate::rc_cell::Ref;
+
+    /// The private part of `Arena` trait.
+    pub trait ArenaInner: Sized {
+        /// The value type of the allocator.
+        type Data: super::ArenaObject;
+
+        /// Find or alloc.
+        fn find_or_alloc_handle<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
+            &self,
+            c: C,
+            n: N,
+        ) -> Option<Ref<Self::Data>>;
+
+        /// Failable allocation.
+        fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Ref<Self::Data>>;
+
+        /// Duplicate a given handle, and increase the reference count.
+        ///
+        /// # Safety
+        ///
+        /// `handle` must be allocated from `self`.
+        // TODO: If we wrap `ArrayPtr::r` with `SpinlockProtected`, then we can just use `clone` instead.
+        unsafe fn dup(&self, handle: &Ref<Self::Data>) -> Ref<Self::Data>;
+
+        /// Deallocate a given handle, and finalize the referred object if there are
+        /// no more handles.
+        ///
+        /// # Safety
+        ///
+        /// `handle` must be allocated from `self`.
+        // TODO: If we wrap `ArrayPtr::r` with `SpinlockProtected`, then we can just use `drop` instead.
+        unsafe fn dealloc(&self, handle: Ref<Self::Data>);
+    }
+}
+
 /// A homogeneous memory allocator, equipped with the box type representing an allocation.
-pub trait Arena: Sized {
-    /// The value type of the allocator.
-    type Data: ArenaObject;
+pub trait Arena: arena_private::ArenaInner {
     /// The guard type for arena.
     type Guard<'s>;
-
-    /// Find or alloc.
-    fn find_or_alloc_handle<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
-        &self,
-        c: C,
-        n: N,
-    ) -> Option<Ref<Self::Data>>;
 
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,
@@ -35,31 +64,11 @@ pub trait Arena: Sized {
         Some(unsafe { Rc::from_unchecked(self, inner) })
     }
 
-    /// Failable allocation.
-    fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Ref<Self::Data>>;
-
     fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Rc<'_, Self, &Self>> {
         let inner = self.alloc_handle(f)?;
         // It is safe becuase inner has been allocated from self.
         Some(unsafe { Rc::from_unchecked(self, inner) })
     }
-
-    /// Duplicate a given handle, and increase the reference count.
-    ///
-    /// # Safety
-    ///
-    /// `handle` must be allocated from `self`.
-    // TODO: If we wrap `ArrayPtr::r` with `SpinlockProtected`, then we can just use `clone` instead.
-    unsafe fn dup(&self, handle: &Ref<Self::Data>) -> Ref<Self::Data>;
-
-    /// Deallocate a given handle, and finalize the referred object if there are
-    /// no more handles.
-    ///
-    /// # Safety
-    ///
-    /// `handle` must be allocated from `self`.
-    // TODO: If we wrap `ArrayPtr::r` with `SpinlockProtected`, then we can just use `drop` instead.
-    unsafe fn dealloc(&self, handle: Ref<Self::Data>);
 
     /// Temporarily releases the lock while calling `f`, and re-acquires the lock after `f` returned.
     ///
@@ -124,11 +133,10 @@ impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
     }
 }
 
-impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
+impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> arena_private::ArenaInner
     for Spinlock<ArrayArena<T, CAPACITY>>
 {
     type Data = T;
-    type Guard<'s> = SpinlockGuard<'s, ArrayArena<T, CAPACITY>>;
 
     fn find_or_alloc_handle<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,
@@ -185,6 +193,12 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
             rm.finalize::<Self>(&mut this);
         }
     }
+}
+
+impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
+    for Spinlock<ArrayArena<T, CAPACITY>>
+{
+    type Guard<'s> = SpinlockGuard<'s, ArrayArena<T, CAPACITY>>;
 
     unsafe fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
     where
@@ -255,11 +269,10 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
     }
 }
 
-impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
+impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> arena_private::ArenaInner
     for Spinlock<MruArena<T, CAPACITY>>
 {
     type Data = T;
-    type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
 
     fn find_or_alloc_handle<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,
@@ -315,6 +328,12 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
             unsafe { MruEntry::finalize_entry(rm, &this.list) };
         }
     }
+}
+
+impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
+    for Spinlock<MruArena<T, CAPACITY>>
+{
+    type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
 
     unsafe fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
     where
