@@ -1,4 +1,3 @@
-//! `RcCell<T>`.
 //! Similar to `RefCell<T>`, but provides lifetime-less `Ref<T>` and `RefMut<T>`.
 //! Instead, this type panics if it gets dropped before all `Ref<T>`/`RefMut<T>` drops.
 //! Also, this type must be pinned at all time.
@@ -88,7 +87,7 @@ impl<T> RcCell<T> {
         if refcnt == BORROWED_MUT - 1 || refcnt == BORROWED_MUT {
             None
         } else {
-            self.refcnt.set(self.refcnt.get() + 1);
+            self.refcnt.set(refcnt + 1);
             Some(Ref { ptr: self })
         }
     }
@@ -100,9 +99,7 @@ impl<T> RcCell<T> {
             None
         } else {
             self.refcnt.set(BORROWED_MUT);
-            Some(RefMut {
-                ptr: self as *const _,
-            })
+            Some(RefMut { ptr: self })
         }
     }
 
@@ -121,9 +118,7 @@ impl<T> RcCell<T> {
 
 impl<T> Drop for RcCell<T> {
     fn drop(&mut self) {
-        if self.is_borrowed() {
-            panic!("dropped while borrowed");
-        }
+        assert!(!self.is_borrowed(), "dropped while borrowed");
     }
 }
 
@@ -148,6 +143,7 @@ impl<T> From<RefMut<T>> for Ref<T> {
 impl<T> Clone for Ref<T> {
     fn clone(&self) -> Self {
         let refcnt = unsafe { &(*self.ptr).refcnt };
+        assert!(refcnt.get() != BORROWED_MUT - 1);
         refcnt.set(refcnt.get() + 1);
         Self { ptr: self.ptr }
     }

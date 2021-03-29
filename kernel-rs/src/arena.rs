@@ -174,28 +174,23 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
 
         let mut empty = None;
         for entry in &this.entries {
-            match entry.try_borrow_mut() {
-                None => {
-                    // TODO: synchronization issue in Arena? (https://github.com/kaist-cp/rv6/issues/393)
-                    // runtime cost?
-                    if let Some(r) = entry.try_borrow() {
-                        if c(&r) {
-                            return Some(ArrayPtr::new(r));
-                        }
-                    }
+            if !entry.is_borrowed() {
+                if empty.is_none() {
+                    empty = Some(entry)
                 }
-                Some(rm) => {
-                    if empty.is_none() {
-                        empty = Some(rm);
-                    }
-                    // Note: Do not use `break` here.
-                    // We must first search through all entries, and then alloc at empty
-                    // only if the entry we're finding for doesn't exist.
+                // Note: Do not use `break` here.
+                // We must first search through all entries, and then alloc at empty
+                // only if the entry we're finding for doesn't exist.
+            } else if let Some(r) = entry.try_borrow() {
+                // The entry is not under finalization. Check its data.
+                if c(&r) {
+                    return Some(ArrayPtr::new(r));
                 }
             }
         }
 
-        empty.map(|mut rm| {
+        empty.map(|cell| {
+            let mut rm = cell.borrow_mut();
             n(&mut rm);
             ArrayPtr::new(rm.into())
         })
