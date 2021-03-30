@@ -93,6 +93,7 @@ pub struct ArrayArena<T, const CAPACITY: usize> {
 pub struct MruEntry<T> {
     #[pin]
     list_entry: ListEntry,
+    #[pin]
     data: RcCell<T>,
 }
 
@@ -271,10 +272,12 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         c: C,
         n: N,
     ) -> Option<Ref<Self::Data>> {
-        let this = self.lock();
+        let mut guard = self.lock();
+        let this = guard.get_pin_mut().project();
+
         let mut empty: Option<*mut RcCell<T>> = None;
         // Safe since the whole `MruArena` is protected by a lock.
-        for entry in unsafe { this.list.iter_unchecked() } {
+        for entry in unsafe { this.list.iter_pin_mut_unchecked() } {
             if !entry.data.is_borrowed() {
                 empty = Some(&entry.data as *const _ as *mut _);
             } else if let Some(r) = entry.data.try_borrow() {
@@ -293,11 +296,19 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     }
 
     fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Ref<Self::Data>> {
-        let this = self.lock();
+        let mut guard = self.lock();
+        let this = guard.get_pin_mut().project();
+
         // Safe since the whole `MruArena` is protected by a lock.
-        for entry in unsafe { this.list.iter_unchecked().rev() } {
+        for mut entry in unsafe { this.list.iter_pin_mut_unchecked().rev() } {
             if !entry.data.is_borrowed() {
-                f(unsafe { &mut *entry.data.as_ptr() });
+                f(entry
+                    .as_mut()
+                    .project()
+                    .data
+                    .get_pin_mut()
+                    .unwrap()
+                    .get_mut());
                 return Some(entry.data.borrow());
             }
         }
