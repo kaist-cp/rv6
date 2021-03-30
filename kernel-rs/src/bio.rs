@@ -94,7 +94,7 @@ impl BufInner {
 pub type Bcache = Spinlock<MruArena<BufEntry, NBUF>>;
 
 /// A reference counted smart pointer to a `BufEntry`.
-pub type BufUnlocked = Rc<BufEntry, Bcache>;
+pub type BufUnlocked = Rc<Bcache>;
 
 /// A locked `BufEntry`.
 ///

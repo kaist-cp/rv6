@@ -169,7 +169,7 @@ pub struct Dinode {
 pub type Itable = Spinlock<ArrayArena<Inode, NINODE>>;
 
 /// A reference counted smart pointer to an `Inode`.
-pub type RcInode = Rc<Inode, Itable>;
+pub type RcInode = Rc<Itable>;
 
 /// InodeGuard implies that `Sleeplock<InodeInner>` is held by current thread.
 ///

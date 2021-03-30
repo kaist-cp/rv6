@@ -57,7 +57,8 @@ pub struct Devsw {
     pub write: Option<fn(_: UVAddr, _: i32) -> i32>,
 }
 
-pub type RcFile = Rc<File, FileTable>;
+/// A reference counted smart pointer to a `File`.
+pub type RcFile = Rc<FileTable>;
 
 impl Default for FileType {
     fn default() -> Self {

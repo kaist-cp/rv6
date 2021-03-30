@@ -28,7 +28,7 @@ pub trait Arena: Sized {
         &self,
         c: C,
         n: N,
-    ) -> Option<Rc<Self::Data, Self>> {
+    ) -> Option<Rc<Self>> {
         let inner = self.find_or_alloc_handle(c, n)?;
         // SAFETY: `inner` was allocated from `self`.
         Some(unsafe { Rc::from_unchecked(self, inner) })
@@ -37,7 +37,7 @@ pub trait Arena: Sized {
     /// Failable allocation.
     fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Ref<Self::Data>>;
 
-    fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Rc<Self::Data, Self>> {
+    fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Rc<Self>> {
         let inner = self.alloc_handle(f)?;
         // SAFETY: `inner` was allocated from `self`.
         Some(unsafe { Rc::from_unchecked(self, inner) })
@@ -105,14 +105,15 @@ pub struct MruArena<T, const CAPACITY: usize> {
     list: List<MruEntry<T>>,
 }
 
-/// A thread-safe reference counted pointer, where `T` was allocated from `A: Arena`.
+/// A thread-safe reference counted pointer, allocated from `A: Arena`.
+/// The data type is same as `A::Data`.
 ///
 /// # Safety
 ///
 /// `inner` is allocated from `arena`.
 /// We can safely dereference `arena` until `inner` gets dropped,
 /// because we panic if the arena drops earlier than `inner`.
-pub struct Rc<T, A: Arena<Data = T>> {
+pub struct Rc<A: Arena> {
     arena: *const A,
     inner: ManuallyDrop<Ref<A::Data>>,
 }
@@ -120,7 +121,7 @@ pub struct Rc<T, A: Arena<Data = T>> {
 // `Rc` is `Send` because it does not impl `DerefMut`,
 // and when we access the inner `Arena`, we do it after acquiring `Arena`'s lock.
 // Also, `Rc` does not point to thread-local data.
-unsafe impl<T: Sync, A: Arena<Data = T>> Send for Rc<T, A> {}
+unsafe impl<T: Sync, A: Arena<Data = T>> Send for Rc<A> {}
 
 impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
     // TODO(https://github.com/kaist-cp/rv6/issues/371): unsafe...
@@ -343,7 +344,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     }
 }
 
-impl<T, A: Arena<Data = T>> Rc<T, A> {
+impl<T, A: Arena<Data = T>> Rc<A> {
     /// # Safety
     ///
     /// `inner` must be allocated from `arena`
@@ -359,7 +360,7 @@ impl<T, A: Arena<Data = T>> Rc<T, A> {
     }
 }
 
-impl<T, A: Arena<Data = T>> Deref for Rc<T, A> {
+impl<T, A: Arena<Data = T>> Deref for Rc<A> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -367,14 +368,14 @@ impl<T, A: Arena<Data = T>> Deref for Rc<T, A> {
     }
 }
 
-impl<T, A: Arena<Data = T>> Drop for Rc<T, A> {
+impl<A: Arena> Drop for Rc<A> {
     fn drop(&mut self) {
         // SAFETY: `inner` was allocated from `arena`.
         unsafe { (&*self.arena).dealloc(ManuallyDrop::take(&mut self.inner)) };
     }
 }
 
-impl<T, A: Arena<Data = T>> Clone for Rc<T, A> {
+impl<A: Arena> Clone for Rc<A> {
     fn clone(&self) -> Self {
         // SAFETY: `inner` was allocated from `arena`.
         let inner = ManuallyDrop::new(unsafe { self.get_arena().dup(&self.inner) });
