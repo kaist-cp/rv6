@@ -413,11 +413,8 @@ impl InodeGuard<'_> {
 
     /// Copy data into `dst` from the content of inode at offset `off`.
     /// Return Ok(()) on success, Err(()) on failure.
-    pub fn read_kernel<T:AsBytes+FromBytes>(&mut self, dst: &mut T, off: u32) -> Result<(), ()> {
-        let bytes = self.read_bytes_kernel(
-            dst.as_bytes_mut(),
-            off,
-        );
+    pub fn read_kernel<T: AsBytes + FromBytes>(&mut self, dst: &mut T, off: u32) -> Result<(), ()> {
+        let bytes = self.read_bytes_kernel(dst.as_bytes_mut(), off);
         if bytes == mem::size_of::<T>() {
             Ok(())
         } else {
@@ -495,12 +492,13 @@ impl InodeGuard<'_> {
 
     /// Copy data from `src` into the inode at offset `off`.
     /// Return Ok(()) on success, Err(()) on failure.
-    pub fn write_kernel<T:AsBytes+FromBytes>(&mut self, src: &T, off: u32, tx: &FsTransaction<'_>) -> Result<(), ()> {
-        let bytes = self.write_bytes_kernel(
-            src.as_bytes(),
-            off,
-            tx,
-        )?;
+    pub fn write_kernel<T: AsBytes + FromBytes>(
+        &mut self,
+        src: &T,
+        off: u32,
+        tx: &FsTransaction<'_>,
+    ) -> Result<(), ()> {
+        let bytes = self.write_bytes_kernel(src.as_bytes(), off, tx)?;
         if bytes == mem::size_of::<T>() {
             Ok(())
         } else {
@@ -661,7 +659,8 @@ impl InodeGuard<'_> {
     pub fn is_dir_empty(&mut self) -> bool {
         let mut de: Dirent = Default::default();
         for off in (2 * DIRENT_SIZE as u32..self.deref_inner().size).step_by(DIRENT_SIZE) {
-            self.read_kernel(&mut de, off).expect("is_dir_empty: read_kernel");
+            self.read_kernel(&mut de, off)
+                .expect("is_dir_empty: read_kernel");
             if de.inum != 0 {
                 return false;
             }
