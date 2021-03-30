@@ -1,28 +1,23 @@
-use crate::{
-    kernel::Kernel,
-    poweroff,
-    proc::CurrentProc,
-    syscall::{argaddr, argint},
-};
+use crate::{kernel::Kernel, poweroff, proc::CurrentProc};
 
 impl Kernel {
     /// Terminate the current process; status reported to wait(). No return.
     pub fn sys_exit(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
-        let n = argint(0, proc)?;
+        let n = self.argint(0, proc)?;
         self.procs().exit_current(n, proc);
     }
 
     /// Create a process.
     /// Returns Ok(child’s PID) on success, Err(()) on error.
     pub fn sys_fork(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
-        Ok(self.procs().fork(proc, self.allocator())? as _)
+        Ok(self.procs().fork(proc, &self.kmem)? as _)
     }
 
     /// Wait for a child to exit.
     /// Returns Ok(child’s PID) on success, Err(()) on error.
     pub fn sys_wait(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
-        let p = argaddr(0, proc)?;
-        Ok(self.procs().wait(p.into(), proc)? as _)
+        let p = self.argaddr(0, proc)?;
+        Ok(self.procs().wait(p.into(), proc, &self.kmem)? as _)
     }
 
     /// Return the current process’s PID.
@@ -33,14 +28,14 @@ impl Kernel {
     /// Grow process’s memory by n bytes.
     /// Returns Ok(start of new memory) on success, Err(()) on error.
     pub fn sys_sbrk(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
-        let n = argint(0, proc)?;
-        proc.memory_mut().resize(n)
+        let n = self.argint(0, proc)?;
+        proc.memory_mut().resize(n, &self.kmem)
     }
 
     /// Pause for n clock ticks.
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_sleep(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
-        let n = argint(0, proc)?;
+        let n = self.argint(0, proc)?;
         let mut ticks = self.ticks.lock();
         let ticks0 = *ticks;
         while ticks.wrapping_sub(ticks0) < n as u32 {
@@ -55,7 +50,7 @@ impl Kernel {
     /// Terminate process PID.
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_kill(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
-        let pid = argint(0, proc)?;
+        let pid = self.argint(0, proc)?;
         self.procs().kill(pid)?;
         Ok(0)
     }
@@ -68,7 +63,7 @@ impl Kernel {
 
     /// Shutdowns this machine, discarding all unsaved data. No return.
     pub fn sys_poweroff(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
-        let exitcode = argint(0, proc)?;
+        let exitcode = self.argint(0, proc)?;
         poweroff::machine_poweroff(exitcode as _);
     }
 }

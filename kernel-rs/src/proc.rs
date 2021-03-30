@@ -15,7 +15,8 @@ use pin_project::pin_project;
 use crate::{
     file::RcFile,
     fs::RcInode,
-    kernel::{kernel, kernel_builder, Allocator, KernelBuilder},
+    kalloc::Kmem,
+    kernel::{kernel, kernel_builder, KernelBuilder},
     lock::{
         pop_off, push_off, Guard, RawLock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
     },
@@ -476,15 +477,26 @@ impl ProcGuard<'_> {
     /// Frees a `ProcBuilder` structure and the data hanging from it, including user pages.
     /// Also, clears `p`'s parent field into `ptr::null_mut()`.
     /// The caller must provide a `ProcGuard`.
-    fn clear(&mut self, mut parent_guard: SpinlockProtectedGuard<'_>) {
+    ///
+    /// # Safety
+    ///
+    /// `self.info.state` ≠ `UNUSED`
+    unsafe fn clear(&mut self, mut parent_guard: SpinlockProtectedGuard<'_>) {
         // SAFETY: this process cannot be the current process any longer.
         let data = unsafe { self.deref_mut_data() };
         let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
-        // SAFETY: trap_frame uniquely refers to a valid page.
         // TODO: remove kernel_builder()
-        kernel_builder().free(unsafe { Page::from_usize(trap_frame as _) });
-        // SAFETY: memory will be initialized again when this process becomes initialized.
-        unsafe { data.memory.assume_init_drop() };
+        let allocator = &kernel_builder().kmem;
+        // SAFETY: trap_frame uniquely refers to a valid page.
+        allocator.free(unsafe { Page::from_usize(trap_frame as _) });
+        // SAFETY:
+        // * ok to assume_init() because memory has been initialized according to the invariant.
+        // * ok to replace memory with uninit() because state will become UNUSED.
+        unsafe {
+            mem::replace(&mut data.memory, MaybeUninit::uninit())
+                .assume_init()
+                .free(allocator)
+        };
 
         // Clear the name.
         data.name[0] = 0;
@@ -806,7 +818,9 @@ impl Procs {
         }
 
         // TODO: remove kernel_builder()
-        kernel_builder().free(trap_frame);
+        let allocator = &kernel_builder().kmem;
+        allocator.free(trap_frame);
+        memory.free(allocator);
         Err(())
     }
 
@@ -832,7 +846,7 @@ impl Procs {
     }
 
     /// Set up first user process.
-    pub fn user_proc_init(self: Pin<&mut Self>, allocator: Allocator) {
+    pub fn user_proc_init(self: Pin<&mut Self>, allocator: &Spinlock<Kmem>) {
         // Allocate trap frame.
         let trap_frame = scopeguard::guard(
             allocator.alloc().expect("user_proc_init: kernel().alloc"),
@@ -896,13 +910,16 @@ impl Procs {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
-    pub fn fork(&self, proc: &mut CurrentProc<'_>, allocator: Allocator) -> Result<Pid, ()> {
+    pub fn fork(&self, proc: &mut CurrentProc<'_>, allocator: &Spinlock<Kmem>) -> Result<Pid, ()> {
         // Allocate trap frame.
         let trap_frame =
             scopeguard::guard(allocator.alloc().ok_or(())?, |page| allocator.free(page));
 
         // Copy user memory from parent to child.
-        let memory = proc.memory_mut().clone(trap_frame.addr()).ok_or(())?;
+        let memory = proc
+            .memory_mut()
+            .clone(trap_frame.addr(), allocator)
+            .ok_or(())?;
 
         // Allocate process.
         let mut np = self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory)?;
@@ -946,7 +963,12 @@ impl Procs {
 
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
-    pub fn wait(&self, addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<Pid, ()> {
+    pub fn wait(
+        &self,
+        addr: UVAddr,
+        proc: &mut CurrentProc<'_>,
+        allocator: &Spinlock<Kmem>,
+    ) -> Result<Pid, ()> {
         // Assumes that the process_pool has at least 1 element.
         let some_proc = self.process_pool().next().unwrap();
         let mut parent_guard = some_proc.parent().lock();
@@ -966,13 +988,14 @@ impl Procs {
                         if !addr.is_null()
                             && proc
                                 .memory_mut()
-                                .copy_out(addr, &np.deref_info().xstate)
+                                .copy_out(addr, &np.deref_info().xstate, allocator)
                                 .is_err()
                         {
                             return Err(());
                         }
                         // Reap the zombie child process.
-                        np.clear(parent_guard);
+                        // SAFETY: np.state() equals ZOMBIE.
+                        unsafe { np.clear(parent_guard) };
                         return Ok(pid);
                     }
                 }

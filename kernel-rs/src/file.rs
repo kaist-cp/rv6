@@ -7,6 +7,7 @@ use array_macro::array;
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, Rc},
     fs::{FileSystem, InodeGuard, RcInode},
+    kalloc::Kmem,
     kernel::kernel_builder,
     lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
@@ -104,14 +105,19 @@ impl File {
 
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub fn stat(&self, addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
+    pub fn stat(
+        &self,
+        addr: UVAddr,
+        proc: &mut CurrentProc<'_>,
+        allocator: &Spinlock<Kmem>,
+    ) -> Result<(), ()> {
         match &self.typ {
             FileType::Inode {
                 inner: InodeFileType { ip, .. },
             }
             | FileType::Device { ip, .. } => {
                 let st = ip.stat();
-                proc.memory_mut().copy_out(addr, &st)
+                proc.memory_mut().copy_out(addr, &st, allocator)
             }
             _ => Err(()),
         }
@@ -119,17 +125,23 @@ impl File {
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub fn read(&self, addr: UVAddr, n: i32, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn read(
+        &self,
+        addr: UVAddr,
+        n: i32,
+        proc: &mut CurrentProc<'_>,
+        allocator: &Spinlock<Kmem>,
+    ) -> Result<usize, ()> {
         if !self.readable {
             return Err(());
         }
 
         match &self.typ {
-            FileType::Pipe { pipe } => pipe.read(addr, n as usize, proc),
+            FileType::Pipe { pipe } => pipe.read(addr, n as usize, proc, allocator),
             FileType::Inode { inner } => {
                 let mut ip = inner.lock();
                 let curr_off = *ip.off;
-                let ret = ip.read_user(addr, curr_off, n as u32, proc);
+                let ret = ip.read_user(addr, curr_off, n as u32, proc, allocator);
                 if let Ok(v) = ret {
                     *ip.off += v as u32;
                 }
@@ -148,13 +160,14 @@ impl File {
         n: i32,
         proc: &mut CurrentProc<'_>,
         fs: &FileSystem,
+        allocator: &Spinlock<Kmem>,
     ) -> Result<usize, ()> {
         if !self.writable {
             return Err(());
         }
 
         match &self.typ {
-            FileType::Pipe { pipe } => pipe.write(addr, n as usize, proc),
+            FileType::Pipe { pipe } => pipe.write(addr, n as usize, proc, allocator),
             FileType::Inode { inner } => {
                 let n = n as usize;
 
@@ -179,6 +192,7 @@ impl File {
                             bytes_to_write as u32,
                             proc,
                             &tx,
+                            allocator,
                         )
                         .map(|v| {
                             *ip.off += v as u32;
@@ -211,7 +225,7 @@ impl ArenaObject for File {
                     FileType::Pipe { pipe } => {
                         if let Some(page) = pipe.close(self.writable) {
                             // TODO: remove kernel_builder()
-                            kernel_builder().free(page);
+                            kernel_builder().kmem.free(page);
                         }
                     }
                     FileType::Inode {

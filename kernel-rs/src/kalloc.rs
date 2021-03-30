@@ -5,6 +5,7 @@ use core::mem;
 use core::ptr;
 
 use crate::{
+    lock::Spinlock,
     memlayout::PHYSTOP,
     page::Page,
     riscv::{pgrounddown, pgroundup, PGSIZE},
@@ -56,8 +57,10 @@ impl Kmem {
         }
     }
 
-    pub fn free(&mut self, pa: Page) {
-        let pa = pa.into_usize();
+    pub fn free(&mut self, mut page: Page) {
+        // Fill with junk to catch dangling refs.
+        page.write_bytes(1);
+        let pa = page.into_usize();
         debug_assert!(
             // SAFETY: safe to acquire only the address of a static variable.
             pa % PGSIZE == 0 && (unsafe { end.as_ptr() as usize }..PHYSTOP).contains(&pa),
@@ -78,6 +81,19 @@ impl Kmem {
         // is maintained by the invariant.
         let next = unsafe { (*self.head).next };
         // SAFETY: the first element is a valid page by the invariant.
-        Some(unsafe { Page::from_usize(mem::replace(&mut self.head, next) as _) })
+        let mut page = unsafe { Page::from_usize(mem::replace(&mut self.head, next) as _) };
+        // fill with junk
+        page.write_bytes(5);
+        Some(page)
+    }
+}
+
+impl Spinlock<Kmem> {
+    pub fn free(&self, page: Page) {
+        self.lock().free(page);
+    }
+
+    pub fn alloc(&self) -> Option<Page> {
+        self.lock().alloc()
     }
 }
