@@ -1,5 +1,9 @@
-#[derive(Copy, Clone)]
-#[repr(C)]
+use zerocopy::{AsBytes, FromBytes};
+
+#[derive(Copy, Clone, AsBytes, FromBytes)]
+// repr(packed) is required for AsBytes.
+// https://docs.rs/zerocopy/0.3.0/zerocopy/trait.AsBytes.html
+#[repr(packed)]
 pub struct Stat {
     /// File system's disk device
     pub dev: i32,

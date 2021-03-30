@@ -4,6 +4,7 @@ use core::{cmp, mem};
 
 use bitflags::bitflags;
 use itertools::*;
+use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
     fs::Path,
@@ -22,10 +23,13 @@ const ELF_MAGIC: u32 = 0x464c457f;
 const ELF_PROG_LOAD: u32 = 1;
 
 /// File header
-#[derive(Default, Clone)]
+#[derive(Default, Clone, AsBytes, FromBytes)]
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
+// repr(C) is also required for AsBytes & FromBytes.
+// https://docs.rs/zerocopy/0.3.0/zerocopy/trait.AsBytes.html
+// https://docs.rs/zerocopy/0.3.0/zerocopy/trait.FromBytes.html
 #[repr(C)]
 struct ElfHdr {
     /// must equal ELF_MAGIC
@@ -48,6 +52,10 @@ struct ElfHdr {
 
 bitflags! {
     /// Flag bits for ProgHdr flags
+    #[derive(AsBytes, FromBytes)]
+    // repr(C) is also required for AsBytes & FromBytes.
+    // https://docs.rs/zerocopy/0.3.0/zerocopy/trait.AsBytes.html
+    // https://docs.rs/zerocopy/0.3.0/zerocopy/trait.FromBytes.html
     #[repr(C)]
     struct ProgFlags: u32 {
         const EXEC = 1;
@@ -63,10 +71,13 @@ impl Default for ProgFlags {
 }
 
 /// Program section header
-#[derive(Default, Clone)]
+#[derive(Default, Clone, AsBytes, FromBytes)]
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
+// repr(C) is also required for AsBytes & FromBytes.
+// https://docs.rs/zerocopy/0.3.0/zerocopy/trait.AsBytes.html
+// https://docs.rs/zerocopy/0.3.0/zerocopy/trait.FromBytes.html
 #[repr(C)]
 struct ProgHdr {
     typ: u32,
@@ -113,9 +124,7 @@ impl Kernel {
 
         // Check ELF header
         let mut elf: ElfHdr = Default::default();
-        // SAFETY: ElfHdr can be safely transmuted to [u8; _], as it
-        // contains only integers, which do not have internal structures.
-        unsafe { ip.read_kernel(&mut elf, 0) }?;
+        ip.read_kernel(&mut elf, 0)?;
         if !elf.is_valid() {
             return Err(());
         }
@@ -128,9 +137,7 @@ impl Kernel {
             let off = elf.phoff + i * mem::size_of::<ProgHdr>();
 
             let mut ph: ProgHdr = Default::default();
-            // SAFETY: ProgHdr can be safely transmuted to [u8; _], as it
-            // contains only integers, which do not have internal structures.
-            unsafe { ip.read_kernel(&mut ph, off as _) }?;
+            ip.read_kernel(&mut ph, off as _)?;
             if ph.is_prog_load() {
                 if ph.memsz < ph.filesz || ph.vaddr % PGSIZE != 0 {
                     return Err(());

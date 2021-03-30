@@ -1,5 +1,7 @@
 use core::{cmp, marker::PhantomData, mem, ops::Add, slice};
 
+use zerocopy::{AsBytes, FromBytes};
+
 use crate::{
     fs::InodeGuard,
     kernel::kernel_builder,
@@ -534,12 +536,10 @@ impl UserMemory {
     /// Copy from kernel to user.
     /// Copy from src to virtual address dstva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    pub fn copy_out<T>(&mut self, dstva: UVAddr, src: &T) -> Result<(), ()> {
+    pub fn copy_out<T:AsBytes+FromBytes>(&mut self, dstva: UVAddr, src: &T) -> Result<(), ()> {
         self.copy_out_bytes(
             dstva,
-            // SAFETY: src is a valid reference to T and
-            // u8 does not have any internal structure.
-            unsafe { core::slice::from_raw_parts_mut(src as *const _ as _, mem::size_of::<T>()) },
+            src.as_bytes(),
         )
     }
 
@@ -566,13 +566,9 @@ impl UserMemory {
     /// Copy from user to kernel.
     /// Copy to dst from virtual address srcva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    ///
-    /// # Safety
-    ///
-    /// `T` can be safely `transmute`d to `[u8; size_of::<T>()]`.
-    pub unsafe fn copy_in<T>(&mut self, dst: &mut T, srcva: UVAddr) -> Result<(), ()> {
+    pub fn copy_in<T:AsBytes+FromBytes>(&mut self, dst: &mut T, srcva: UVAddr) -> Result<(), ()> {
         self.copy_in_bytes(
-            unsafe { core::slice::from_raw_parts_mut(dst as *mut _ as _, mem::size_of::<T>()) },
+            dst.as_bytes_mut(),
             srcva,
         )
     }
