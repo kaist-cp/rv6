@@ -52,7 +52,7 @@ pub const BPB: usize = BSIZE * 8;
 
 impl Superblock {
     /// Read the super block.
-    pub fn new(buf: &Buf<'static>) -> Self {
+    pub fn new(buf: &Buf) -> Self {
         const_assert!(mem::size_of::<Superblock>() <= BSIZE);
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Superblock>() == 0);
         // SAFETY:

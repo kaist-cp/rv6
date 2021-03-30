@@ -18,16 +18,9 @@ use crate::{
 
 pub enum FileType {
     None,
-    Pipe {
-        pipe: AllocatedPipe,
-    },
-    Inode {
-        inner: InodeFileType,
-    },
-    Device {
-        ip: RcInode<'static>,
-        major: &'static Devsw,
-    },
+    Pipe { pipe: AllocatedPipe },
+    Inode { inner: InodeFileType },
+    Device { ip: RcInode, major: &'static Devsw },
 }
 
 /// It has an inode and an offset.
@@ -36,7 +29,7 @@ pub enum FileType {
 ///
 /// The offset should be accessed only when the inode is locked.
 pub struct InodeFileType {
-    pub ip: RcInode<'static>,
+    pub ip: RcInode,
     // It should be accessed only when `ip` is locked.
     pub off: UnsafeCell<u32>,
 }
@@ -64,7 +57,8 @@ pub struct Devsw {
     pub write: Option<fn(_: UVAddr, _: i32) -> i32>,
 }
 
-pub type RcFile<'s> = Rc<'s, FileTable, &'s FileTable>;
+/// A reference counted smart pointer to a `File`.
+pub type RcFile = Rc<FileTable>;
 
 impl Default for FileType {
     fn default() -> Self {
@@ -248,12 +242,7 @@ impl FileTable {
     }
 
     /// Allocate a file structure.
-    pub fn alloc_file(
-        &self,
-        typ: FileType,
-        readable: bool,
-        writable: bool,
-    ) -> Result<RcFile<'_>, ()> {
+    pub fn alloc_file(&self, typ: FileType, readable: bool, writable: bool) -> Result<RcFile, ()> {
         // TODO(https://github.com/kaist-cp/rv6/issues/372): idiomatic initialization.
         self.alloc(|p| *p = File::new(typ, readable, writable))
             .ok_or(())

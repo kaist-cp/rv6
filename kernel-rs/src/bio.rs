@@ -93,17 +93,19 @@ impl BufInner {
 
 pub type Bcache = Spinlock<MruArena<BufEntry, NBUF>>;
 
-/// We can consider it as BufEntry.
-pub type BufUnlocked<'s> = Rc<'s, Bcache, &'s Bcache>;
+/// A reference counted smart pointer to a `BufEntry`.
+pub type BufUnlocked = Rc<Bcache>;
 
+/// A locked `BufEntry`.
+///
 /// # Safety
 ///
 /// (inner: BufEntry).inner is locked.
-pub struct Buf<'s> {
-    inner: ManuallyDrop<BufUnlocked<'s>>,
+pub struct Buf {
+    inner: ManuallyDrop<BufUnlocked>,
 }
 
-impl<'s> Buf<'s> {
+impl Buf {
     pub fn deref_inner(&self) -> &BufInner {
         let entry: &BufEntry = &self.inner;
         // SAFETY: inner.inner is locked.
@@ -116,9 +118,8 @@ impl<'s> Buf<'s> {
         unsafe { &mut *entry.inner.get_mut_raw() }
     }
 
-    pub fn unlock(mut self) -> BufUnlocked<'s> {
-        // SAFETY: this method consumes self and self.inner will not
-        // be used again.
+    pub fn unlock(mut self) -> BufUnlocked {
+        // SAFETY: this method consumes self and self.inner will not be used again.
         let inner = unsafe { ManuallyDrop::take(&mut self.inner) };
         // SAFETY: this method consumes self.
         unsafe { inner.inner.unlock() };
@@ -127,7 +128,7 @@ impl<'s> Buf<'s> {
     }
 }
 
-impl Deref for Buf<'_> {
+impl Deref for Buf {
     type Target = BufEntry;
 
     fn deref(&self) -> &Self::Target {
@@ -135,7 +136,7 @@ impl Deref for Buf<'_> {
     }
 }
 
-impl Drop for Buf<'_> {
+impl Drop for Buf {
     fn drop(&mut self) {
         // SAFETY: self will be dropped and self.inner will not be
         // used again.
@@ -157,7 +158,7 @@ impl Bcache {
     }
 
     /// Return a unlocked buf with the contents of the indicated block.
-    pub fn get_buf(&self, dev: u32, blockno: u32) -> BufUnlocked<'_> {
+    pub fn get_buf(&self, dev: u32, blockno: u32) -> BufUnlocked {
         self.find_or_alloc(
             |buf| buf.dev == dev && buf.blockno == blockno,
             |buf| {
@@ -170,8 +171,8 @@ impl Bcache {
     }
 }
 
-impl<'s> BufUnlocked<'s> {
-    pub fn lock(self) -> Buf<'s> {
+impl BufUnlocked {
+    pub fn lock(self) -> Buf {
         mem::forget(self.inner.lock());
         Buf {
             inner: ManuallyDrop::new(self),

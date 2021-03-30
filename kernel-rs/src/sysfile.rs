@@ -23,7 +23,7 @@ use crate::{
     vm::UVAddr,
 };
 
-impl RcFile<'static> {
+impl RcFile {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
     fn fdalloc(self, proc: &mut CurrentProc<'_>) -> Result<i32, Self> {
@@ -41,7 +41,7 @@ impl RcFile<'static> {
 
 /// Fetch the nth word-sized system call argument as a file descriptor
 /// and return both the descriptor and the corresponding struct file.
-fn argfd<'a>(n: usize, proc: &'a CurrentProc<'a>) -> Result<(i32, &'a RcFile<'static>), ()> {
+fn argfd<'a>(n: usize, proc: &'a CurrentProc<'a>) -> Result<(i32, &'a RcFile), ()> {
     let fd = argint(n, proc)?;
     if fd < 0 || fd >= NOFILE as i32 {
         return Err(());
@@ -62,7 +62,7 @@ impl Kernel {
         tx: &FsTransaction<'_>,
         proc: &CurrentProc<'_>,
         f: F,
-    ) -> Result<(RcInode<'_>, T), ()>
+    ) -> Result<(RcInode, T), ()>
     where
         F: FnOnce(&mut InodeGuard<'_>) -> T,
     {
@@ -266,8 +266,7 @@ impl Kernel {
 
     /// Change the current directory.
     /// Returns Ok(()) on success, Err(()) on error.
-    // TODO(https://github.com/kaist-cp/rv6/issues/444): &'static self -> &self
-    fn chdir(&'static self, dirname: &CStr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
+    fn chdir(&self, dirname: &CStr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
         // TODO(https://github.com/kaist-cp/rv6/issues/290)
         // The method namei can drop inodes. If namei succeeds, its return
         // value, ptr, will be dropped when this method returns. Deallocation
@@ -286,7 +285,7 @@ impl Kernel {
 
     /// Create a pipe, put read/write file descriptors in fd0 and fd1.
     /// Returns Ok(()) on success, Err(()) on error.
-    fn pipe(&'static self, fdarray: UVAddr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
+    fn pipe(&self, fdarray: UVAddr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
         let (pipereader, pipewriter) = self.allocate_pipe()?;
 
         let fd0 = pipereader.fdalloc(proc).map_err(|_| ())?;
@@ -326,7 +325,7 @@ impl Kernel {
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
         // SAFETY: read will not access proc's open_files.
-        unsafe { (*(f as *const RcFile<'static>)).read(p.into(), n, proc) }
+        unsafe { (*(f as *const RcFile)).read(p.into(), n, proc) }
     }
 
     /// Write n bytes from buf to given file descriptor fd.
@@ -336,7 +335,7 @@ impl Kernel {
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
         // SAFETY: write will not access proc's open_files.
-        unsafe { (*(f as *const RcFile<'static>)).write(p.into(), n, proc, &self.file_system) }
+        unsafe { (*(f as *const RcFile)).write(p.into(), n, proc, &self.file_system) }
     }
 
     /// Release open file fd.
@@ -354,7 +353,7 @@ impl Kernel {
         // user pointer to struct stat
         let st = argaddr(1, proc)?;
         // SAFETY: stat will not access proc's open_files.
-        unsafe { (*(f as *const RcFile<'static>)).stat(st.into(), proc) }?;
+        unsafe { (*(f as *const RcFile)).stat(st.into(), proc) }?;
         Ok(0)
     }
 
@@ -411,7 +410,7 @@ impl Kernel {
 
     /// Change the current directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub fn sys_chdir(&'static self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_chdir(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = argstr(0, &mut path, proc)?;
         self.chdir(path, proc)?;
@@ -461,7 +460,7 @@ impl Kernel {
 
     /// Create a pipe.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub fn sys_pipe(&'static self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_pipe(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         // user pointer to array of two integers
         let fdarray = argaddr(0, proc)?.into();
         self.pipe(fdarray, proc)?;

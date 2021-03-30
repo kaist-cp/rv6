@@ -72,7 +72,7 @@ pub struct LogInner {
     committing: bool,
 
     /// Contents of the header block, used to keep track in memory of logged block# before commit.
-    bufs: ArrayVec<[BufUnlocked<'static>; LOGSIZE]>,
+    bufs: ArrayVec<[BufUnlocked; LOGSIZE]>,
 }
 
 /// Contents of the header block, used for the on-disk header block.
@@ -287,7 +287,7 @@ impl LogLocked<'_> {
     ///   bp = Disk::read(...)
     ///   modify bp->data[]
     ///   write(bp)
-    pub fn write(&mut self, b: Buf<'static>) {
+    pub fn write(&mut self, b: Buf) {
         assert!(
             !(self.bufs.len() >= LOGSIZE || self.bufs.len() as i32 >= self.size - 1),
             "too big a transaction"

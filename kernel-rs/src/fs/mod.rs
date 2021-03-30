@@ -105,7 +105,7 @@ impl FsTransaction<'_> {
     ///   bp = kernel().file_system.disk.read(...)
     ///   modify bp->data[]
     ///   write(bp)
-    fn write(&self, b: Buf<'static>) {
+    fn write(&self, b: Buf) {
         self.fs.log.lock().write(b);
     }
 

@@ -1,5 +1,4 @@
 use core::convert::TryFrom;
-use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;
 use core::pin::Pin;
@@ -29,18 +28,18 @@ pub trait Arena: Sized {
         &self,
         c: C,
         n: N,
-    ) -> Option<Rc<'_, Self, &Self>> {
+    ) -> Option<Rc<Self>> {
         let inner = self.find_or_alloc_handle(c, n)?;
-        // SAFETY: becuase inner has been allocated from self.
+        // SAFETY: `inner` was allocated from `self`.
         Some(unsafe { Rc::from_unchecked(self, inner) })
     }
 
     /// Failable allocation.
     fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Ref<Self::Data>>;
 
-    fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Rc<'_, Self, &Self>> {
+    fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Rc<Self>> {
         let inner = self.alloc_handle(f)?;
-        // SAFETY: becuase inner has been allocated from self.
+        // SAFETY: `inner` was allocated from `self`.
         Some(unsafe { Rc::from_unchecked(self, inner) })
     }
 
@@ -106,19 +105,23 @@ pub struct MruArena<T, const CAPACITY: usize> {
     list: List<MruEntry<T>>,
 }
 
+/// A thread-safe reference counted pointer, allocated from `A: Arena`.
+/// The data type is same as `A::Data`.
+///
 /// # Safety
 ///
-/// `inner` is allocated from `tag`
-pub struct Rc<'s, A: Arena, T: Deref<Target = A>> {
-    tag: T,
+/// `inner` is allocated from `arena`.
+/// We can safely dereference `arena` until `inner` gets dropped,
+/// because we panic if the arena drops earlier than `inner`.
+pub struct Rc<A: Arena> {
+    arena: *const A,
     inner: ManuallyDrop<Ref<A::Data>>,
-    _marker: PhantomData<&'s A>, // TODO: Remove after #444
 }
 
 // `Rc` is `Send` because it does not impl `DerefMut`,
 // and when we access the inner `Arena`, we do it after acquiring `Arena`'s lock.
 // Also, `Rc` does not point to thread-local data.
-unsafe impl<'s, S: Sync, A: Arena<Data = S>, T: Deref<Target = A>> Send for Rc<'s, A, T> {}
+unsafe impl<T: Sync, A: Arena<Data = T>> Send for Rc<A> {}
 
 impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
     // TODO(https://github.com/kaist-cp/rv6/issues/371): unsafe...
@@ -341,73 +344,44 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     }
 }
 
-impl<'s, A: Arena, T: Deref<Target = A>> Deref for Rc<'s, A, T> {
-    type Target = A::Data;
+impl<T, A: Arena<Data = T>> Rc<A> {
+    /// # Safety
+    ///
+    /// `inner` must be allocated from `arena`
+    pub unsafe fn from_unchecked(arena: &A, inner: Ref<T>) -> Self {
+        let inner = ManuallyDrop::new(inner);
+        Self { arena, inner }
+    }
 
-    fn deref(&self) -> &Self::Target {
+    /// Returns a reference to the arena that the `Rc` was allocated from.
+    fn get_arena(&self) -> &A {
+        // SAFETY: Safe because of `Rc`'s invariant.
+        unsafe { &*self.arena }
+    }
+}
+
+impl<T, A: Arena<Data = T>> Deref for Rc<A> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
         self.inner.deref()
     }
 }
 
-impl<'s, A: Arena, T: Deref<Target = A>> Drop for Rc<'s, A, T> {
+impl<A: Arena> Drop for Rc<A> {
     fn drop(&mut self) {
-        // SAFETY: inner is allocated from tag.
-        unsafe { self.tag.dealloc(ManuallyDrop::take(&mut self.inner)) };
+        // SAFETY: `inner` was allocated from `arena`.
+        unsafe { (&*self.arena).dealloc(ManuallyDrop::take(&mut self.inner)) };
     }
 }
 
-impl<'s, A: Arena, T: Deref<Target = A>> Rc<'s, A, T> {
-    /// # Safety
-    ///
-    /// `inner` must be allocated from `tag`
-    pub unsafe fn from_unchecked(tag: T, inner: Ref<A::Data>) -> Self {
-        let inner = ManuallyDrop::new(inner);
-        Self {
-            tag,
-            inner,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<'s, A: Arena, T: Clone + Deref<Target = A>> Clone for Rc<'s, A, T> {
+impl<A: Arena> Clone for Rc<A> {
     fn clone(&self) -> Self {
-        let tag = self.tag.clone();
-        // SAFETY: inner is allocated from tag.
-        let inner = ManuallyDrop::new(unsafe { tag.dup(&self.inner) });
+        // SAFETY: `inner` was allocated from `arena`.
+        let inner = ManuallyDrop::new(unsafe { self.get_arena().dup(&self.inner) });
         Self {
-            tag,
+            arena: self.arena,
             inner,
-            _marker: PhantomData,
-        }
-    }
-}
-
-// Rc is invariant to its lifetime parameter. The reason is that Rc has A::Handle<'s> where A
-// implements Arena and A::Handle is an arbitrary type constructor, which should be considered
-// invariant. When Rc is instantiated with ArrayArena, A::Handle is ArrayPtr, which is covariant. In
-// this case, we want Rc<'b, A, T> <: Rc<'a, A, T>. To make this subtyping possible, we define
-// narrow_lifetime to upcast Rc<'b, A, T> to Rc<'a, A, T>. This method can be removed when we remove
-// lifetimes from Rc.
-// TODO(https://github.com/kaist-cp/rv6/issues/444): remove narrow_lifetime
-impl<
-        'b,
-        T: 'static + ArenaObject + Unpin,
-        S: Clone + Deref<Target = Spinlock<ArrayArena<T, CAPACITY>>>,
-        const CAPACITY: usize,
-    > Rc<'b, Spinlock<ArrayArena<T, CAPACITY>>, S>
-{
-    pub fn narrow_lifetime<'a>(mut self) -> Rc<'a, Spinlock<ArrayArena<T, CAPACITY>>, S>
-    where
-        'b: 'a,
-    {
-        let tag = self.tag.clone();
-        let inner = ManuallyDrop::new(unsafe { ManuallyDrop::take(&mut self.inner) });
-        mem::forget(self);
-        Rc {
-            tag,
-            inner,
-            _marker: PhantomData,
         }
     }
 }

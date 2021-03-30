@@ -292,10 +292,10 @@ pub struct ProcData {
     context: Context,
 
     /// Open files.
-    pub open_files: [Option<RcFile<'static>>; NOFILE],
+    pub open_files: [Option<RcFile>; NOFILE],
 
     /// Current directory.
-    cwd: MaybeUninit<RcInode<'static>>,
+    cwd: MaybeUninit<RcInode>,
 
     /// Process name (debugging).
     pub name: [u8; MAXPROCNAME],
@@ -387,13 +387,13 @@ impl<'p> CurrentProc<'p> {
         unsafe { self.deref_mut_data().memory.assume_init_mut() }
     }
 
-    pub fn cwd(&self) -> &RcInode<'static> {
+    pub fn cwd(&self) -> &RcInode {
         // SAFETY: cwd has been initialized according to the invariants
         // of ProcBuilder and CurrentProc.
         unsafe { self.deref_data().cwd.assume_init_ref() }
     }
 
-    pub fn cwd_mut(&mut self) -> &mut RcInode<'static> {
+    pub fn cwd_mut(&mut self) -> &mut RcInode {
         // SAFETY: cwd has been initialized according to the invariants
         // of ProcBuilder and CurrentProc.
         unsafe { self.deref_mut_data().cwd.assume_init_mut() }
