@@ -46,6 +46,13 @@ pub struct Iter<'s, T: ListNode> {
     _marker: PhantomData<T>,
 }
 
+/// A pinned mutable iterator over the elements of `List`.
+pub struct IterPinMut<'s, T: ListNode> {
+    last: *const ListEntry,
+    curr: *const ListEntry,
+    _marker: PhantomData<&'s mut T>,
+}
+
 /// Intrusive linked list nodes that can be inserted into a `List`.
 ///
 /// # Safety
@@ -222,6 +229,14 @@ impl<T: ListNode> List<T> {
             _marker: PhantomData,
         }
     }
+
+    pub unsafe fn iter_pin_mut_unchecked(self: Pin<&mut Self>) -> IterPinMut<'_, T> {
+        IterPinMut {
+            last: &self.head,
+            curr: unsafe { &*self.head.next() },
+            _marker: PhantomData,
+        }
+    }
 }
 
 #[pinned_drop]
@@ -256,6 +271,37 @@ impl<'s, T: 's + ListNode> DoubleEndedIterator for Iter<'s, T> {
             self.last = unsafe { &*self.last.prev() };
             // Safe since `self.last` is a `ListEntry` contained inside a `T`.
             Some(unsafe { &*T::from_list_entry(self.last) })
+        }
+    }
+}
+
+impl<'s, T: 's + ListNode> Iterator for IterPinMut<'s, T> {
+    type Item = Pin<&'s mut T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if ptr::eq(self.last, self.curr) {
+            None
+        } else {
+            // Safe since `self.curr` is a `ListEntry` contained inside a `T`.
+            let ptr = T::from_list_entry(self.curr) as *mut T;
+            let res = Some(unsafe { Pin::new_unchecked(&mut *ptr) });
+            debug_assert_ne!(self.curr, unsafe { &*self.curr }.next(), "loops forever");
+            self.curr = unsafe { &*self.curr }.next();
+            res
+        }
+    }
+}
+
+impl<'s, T: 's + ListNode> DoubleEndedIterator for IterPinMut<'s, T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if ptr::eq(self.last, self.curr) {
+            None
+        } else {
+            debug_assert_ne!(self.last, unsafe { &*self.last }.prev(), "loops forever");
+            self.last = unsafe { &*self.last }.prev();
+            // Safe since `self.last` is a `ListEntry` contained inside a `T`.
+            let ptr = T::from_list_entry(self.last) as *mut T;
+            Some(unsafe { Pin::new_unchecked(&mut *ptr) })
         }
     }
 }
