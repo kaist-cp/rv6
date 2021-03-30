@@ -38,7 +38,7 @@ pub fn kernel_builder() -> &'static KernelBuilder {
 
 #[inline]
 pub unsafe fn kernel() -> &'static Kernel {
-    // Safe to cast &KernelBuilder into &Kernel
+    // SAFETY: Safe to cast &KernelBuilder into &Kernel
     // since Kernel has a transparent memory layout.
     unsafe { &*(kernel_builder() as *const _ as *const _) }
 }
@@ -51,7 +51,7 @@ pub unsafe fn kernel() -> &'static Kernel {
 /// All mutable accesses to the `KERNEL` must be done through this.
 #[inline]
 unsafe fn kernel_builder_unchecked_pin() -> Pin<&'static mut KernelBuilder> {
-    // Safe if all mutable accesses to the `KERNEL` are done through this.
+    // SAFETY: safe if all mutable accesses to the `KERNEL` are done through this.
     unsafe { Pin::new_unchecked(&mut KERNEL) }
 }
 
@@ -113,7 +113,7 @@ pub struct Kernel {
 
 impl Kernel {
     pub fn procs(&self) -> &Procs {
-        // Safe: `self.inner.procs` is initialized according to the invariant.
+        // SAFETY: `self.inner.procs` is initialized according to the invariant.
         unsafe { self.inner.procs.as_procs_unchecked() }
     }
 }
@@ -138,7 +138,7 @@ impl KernelBuilder {
             ticks: Sleepablelock::new("time", 0),
             procs: ProcsBuilder::zero(),
             cpus: array![_ => UnsafeCell::new(Cpu::new()); NCPU],
-            // Safe since the only way to access `bcache` is through `kernel()`, which is an immutable reference.
+            // SAFETY: the only way to access `bcache` is through `kernel()`, which is an immutable reference.
             bcache: unsafe { Bcache::zero() },
             devsw: [Devsw {
                 read: None,
@@ -202,6 +202,7 @@ impl KernelBuilder {
     /// Returns an immutable reference to the kernel's bcache.
     ///
     /// # Safety
+    ///
     /// Access it only after initializing the kernel using `kernel_main()`.
     pub unsafe fn get_bcache(&self) -> &Bcache {
         &self.bcache

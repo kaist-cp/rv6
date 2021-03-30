@@ -143,7 +143,7 @@ impl PageTableEntry {
     /// Return `None` if it is invalid.
     fn as_table_mut(&mut self) -> Option<&mut RawPageTable> {
         if self.is_table() {
-            // This is safe because of the invariant.
+            // SAFETY: invariant.
             Some(unsafe { &mut *(pte2pa(self.inner).into_usize() as *mut _) })
         } else {
             None
@@ -211,12 +211,12 @@ impl RawPageTable {
         // There are 2^9 = 512 PTEs in a page table.
         for pte in &mut self.inner {
             if let Some(ptable) = pte.as_table_mut() {
-                // It is safe because ptable will not be used anymore.
+                // SAFETY: ptable will not be used anymore.
                 unsafe { ptable.free_walk() };
                 pte.invalidate();
             }
         }
-        // It is safe to convert inner to a Page because of the invariant.
+        // SAFETY: safe to convert inner to a Page because of the invariant.
         let page = unsafe { Page::from_usize(self.inner.as_ptr() as _) };
         // TODO: remove kernel_builder()
         kernel_builder().free(page);
@@ -260,7 +260,7 @@ impl<A: VAddr> PageTable<A> {
     ///    0..11 -- 12 bits of byte offset within the page.
     fn get_mut(&mut self, va: A, alloc: bool) -> Option<&mut PageTableEntry> {
         assert!(va.into_usize() < MAXVA, "PageTable::get_mut");
-        // It is safe because self.ptr uniquely refers to a valid RawPageTable
+        // SAFETY: self.ptr uniquely refers to a valid RawPageTable
         // according to the invariant.
         let mut page_table = unsafe { &mut *self.ptr };
         for level in (1..3).rev() {
@@ -301,7 +301,7 @@ impl<A: VAddr> PageTable<A> {
 
 impl<A: VAddr> Drop for PageTable<A> {
     fn drop(&mut self) {
-        // It is safe because
+        // SAFETY:
         // * self.ptr is a valid pointer.
         // * this page table is being dropped, and its ptr will not be used anymore.
         unsafe { (*self.ptr).free_walk() };
@@ -350,7 +350,7 @@ impl UserMemory {
         page_table
             .insert(
                 TRAMPOLINE.into(),
-                // We assume that reading the address of trampoline is safe.
+                // SAFETY: we assume that reading the address of trampoline is safe.
                 (unsafe { trampoline.as_mut_ptr() as usize }).into(),
                 PteFlags::R | PteFlags::X,
             )
@@ -401,8 +401,8 @@ impl UserMemory {
             let flags = pte.get_flags();
             // TODO: remove kernel_builder()
             let mut page = kernel_builder().alloc()?;
-            // It is safe because pa is an address in page_table,
-            // and, thus, it is the address of a page by the invariant.
+            // SAFETY: pa is an address in page_table,
+            // and thus it is the address of a page by the invariant.
             let src = unsafe { slice::from_raw_parts(pa.into_usize() as *const u8, PGSIZE) };
             page.copy_from_slice(src);
             new.push_page(page, flags)
@@ -537,7 +537,7 @@ impl UserMemory {
     pub fn copy_out<T>(&mut self, dstva: UVAddr, src: &T) -> Result<(), ()> {
         self.copy_out_bytes(
             dstva,
-            // It is safe because src is a valid reference to T and
+            // SAFETY: src is a valid reference to T and
             // u8 does not have any internal structure.
             unsafe { core::slice::from_raw_parts_mut(src as *const _ as _, mem::size_of::<T>()) },
         )
@@ -623,7 +623,7 @@ impl UserMemory {
         if !pte.is_user() {
             return None;
         }
-        // It is safe because va < TRAPFRAME, so pte.get_pa() is the address of a page.
+        // SAFETY: va < TRAPFRAME, so pte.get_pa() is the address of a page.
         Some(unsafe { slice::from_raw_parts_mut(pte.get_pa().into_usize() as _, PGSIZE) })
     }
 
@@ -635,7 +635,7 @@ impl UserMemory {
         let size = pgroundup(self.size);
         self.page_table
             .insert(size.into(), pa.into(), perm)
-            // This is safe because pa is the address of a given page.
+            // SAFETY: pa is the address of a given page.
             .map_err(|_| unsafe { Page::from_usize(pa) })?;
         self.size = size + PGSIZE;
         Ok(())
@@ -653,7 +653,7 @@ impl UserMemory {
             .remove(self.size.into())
             .expect("pop_page")
             .into_usize();
-        // It is safe because pa is an address in page_table,
+        // SAFETY: pa is an address in page_table,
         // and, thus, it is the address of a page by the invariant.
         Some(unsafe { Page::from_usize(pa) })
     }
@@ -724,7 +724,7 @@ impl KernelMemory {
             .ok()?;
 
         // Map kernel text executable and read-only.
-        // We assume that reading the address of etext is safe.
+        // SAFETY: we assume that reading the address of etext is safe.
         let et = unsafe { etext.as_mut_ptr() as usize };
         page_table
             .insert_range(
@@ -751,7 +751,7 @@ impl KernelMemory {
             .insert_range(
                 TRAMPOLINE.into(),
                 PGSIZE,
-                // We assume that reading the address of trampoline is safe.
+                // SAFETY: we assume that reading the address of trampoline is safe.
                 unsafe { trampoline.as_mut_ptr() as usize }.into(),
                 PteFlags::R | PteFlags::X,
             )

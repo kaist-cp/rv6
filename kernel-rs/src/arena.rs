@@ -31,7 +31,7 @@ pub trait Arena: Sized {
         n: N,
     ) -> Option<Rc<'_, Self, &Self>> {
         let inner = self.find_or_alloc_handle(c, n)?;
-        // It is safe becuase inner has been allocated from self.
+        // SAFETY: becuase inner has been allocated from self.
         Some(unsafe { Rc::from_unchecked(self, inner) })
     }
 
@@ -40,7 +40,7 @@ pub trait Arena: Sized {
 
     fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Rc<'_, Self, &Self>> {
         let inner = self.alloc_handle(f)?;
-        // It is safe becuase inner has been allocated from self.
+        // SAFETY: becuase inner has been allocated from self.
         Some(unsafe { Rc::from_unchecked(self, inner) })
     }
 
@@ -231,7 +231,7 @@ impl<T> MruEntry<T> {
     }
 }
 
-// Safe since `MruEntry` owns a `ListEntry`.
+// SAFETY: `MruEntry` owns a `ListEntry`.
 unsafe impl<T> ListNode for MruEntry<T> {
     fn get_list_entry(&self) -> &ListEntry {
         &self.list_entry
@@ -276,7 +276,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         let this = guard.get_pin_mut().project();
 
         let mut empty: Option<*mut RcCell<T>> = None;
-        // Safe since the whole `MruArena` is protected by a lock.
+        // SAFETY: the whole `MruArena` is protected by a lock.
         for entry in unsafe { this.list.iter_pin_mut_unchecked() } {
             if !entry.data.is_borrowed() {
                 empty = Some(&entry.data as *const _ as *mut _);
@@ -300,7 +300,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         let mut guard = self.lock();
         let this = guard.get_pin_mut().project();
 
-        // Safe since the whole `MruArena` is protected by a lock.
+        // SAFETY: the whole `MruArena` is protected by a lock.
         for mut entry in unsafe { this.list.iter_pin_mut_unchecked().rev() } {
             if !entry.data.is_borrowed() {
                 f(entry
@@ -327,7 +327,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
 
         if let Ok(mut rm) = RefMut::<T>::try_from(handle) {
             rm.finalize::<Self>(&mut this);
-            // Safe since the `handle` was obtained from an `MruEntry`,
+            // SAFETY: the `handle` was obtained from an `MruEntry`,
             // which is contained inside `&this.list`.
             unsafe { MruEntry::finalize_entry(rm, &this.list) };
         }
@@ -351,7 +351,7 @@ impl<'s, A: Arena, T: Deref<Target = A>> Deref for Rc<'s, A, T> {
 
 impl<'s, A: Arena, T: Deref<Target = A>> Drop for Rc<'s, A, T> {
     fn drop(&mut self) {
-        // It is safe because inner is allocated from tag.
+        // SAFETY: inner is allocated from tag.
         unsafe { self.tag.dealloc(ManuallyDrop::take(&mut self.inner)) };
     }
 }
@@ -373,7 +373,7 @@ impl<'s, A: Arena, T: Deref<Target = A>> Rc<'s, A, T> {
 impl<'s, A: Arena, T: Clone + Deref<Target = A>> Clone for Rc<'s, A, T> {
     fn clone(&self) -> Self {
         let tag = self.tag.clone();
-        // It is safe because inner is allocated from tag.
+        // SAFETY: inner is allocated from tag.
         let inner = ManuallyDrop::new(unsafe { tag.dup(&self.inner) });
         Self {
             tag,

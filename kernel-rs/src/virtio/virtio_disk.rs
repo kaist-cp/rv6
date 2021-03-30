@@ -212,7 +212,7 @@ impl Disk {
         // Tell device we're completely ready.
         status.insert(VirtIOStatus::DRIVER_OK);
         MmioRegs::set_status(&status);
-        // Safe since page size is `PGSIZE`.
+        // SAFETY: page size is `PGSIZE`.
         unsafe {
             MmioRegs::set_pg_size(PGSIZE as _);
         }
@@ -313,7 +313,7 @@ impl Disk {
 
         fence(Ordering::SeqCst);
 
-        // Safe since the all three descriptors' fields are well set.
+        // SAFETY: the all three descriptors' fields are well set.
         // Value is queue number.
         unsafe {
             MmioRegs::notify_queue(0);
@@ -354,7 +354,7 @@ impl Disk {
 
             assert!(!self.info.inflight[id].status, "Disk::intr status");
 
-            // It is safe because, from the invariant, b refers to a valid
+            // SAFETY: from the invariant, b refers to a valid
             // buffer unless it is null.
             let buf = unsafe { self.info.inflight[id].b.as_mut() }.expect("Disk::intr");
 

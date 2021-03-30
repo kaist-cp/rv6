@@ -55,7 +55,7 @@ impl Superblock {
     pub fn new(buf: &Buf<'static>) -> Self {
         const_assert!(mem::size_of::<Superblock>() <= BSIZE);
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Superblock>() == 0);
-        // It is safe becuase
+        // SAFETY:
         // * buf.data is larger than Superblock
         // * buf.data is aligned properly.
         // * Superblock contains only u32's, so does not have any requirements.

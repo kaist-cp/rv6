@@ -127,7 +127,7 @@ impl Deref for AllocatedPipe {
     type Target = Pipe;
 
     fn deref(&self) -> &Self::Target {
-        // Safe since `ptr` always refers to a `Pipe`.
+        // SAFETY: `ptr` always refers to a `Pipe`.
         unsafe { self.ptr.as_ref() }
     }
 }
@@ -135,16 +135,14 @@ impl Deref for AllocatedPipe {
 impl Kernel {
     pub fn allocate_pipe(&self) -> Result<(RcFile<'_>, RcFile<'_>), ()> {
         let page = self.alloc().ok_or(())?;
-        let mut ptr = unsafe {
-            // Safe since by the invariant of `Page`, `page` is always non-null.
-            NonNull::new_unchecked(page.into_usize() as *mut Pipe)
-        };
+        // SAFETY: by the invariant of `Page`, `page` is always non-null.
+        let mut ptr = unsafe { NonNull::new_unchecked(page.into_usize() as *mut Pipe) };
 
         // `Pipe` must be aligned with `Page`.
         const_assert!(mem::size_of::<Pipe>() <= PGSIZE);
 
         //TODO(https://github.com/kaist-cp/rv6/issues/367): Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`.
-        // Safe since `ptr` holds a valid, unique page allocated from `self.alloc()`,
+        // SAFETY: `ptr` holds a valid, unique page allocated from `self.alloc()`,
         // and the pipe size and alignment are compatible with the page.
         let _ = unsafe { ptr.as_uninit_mut() }.write(Pipe {
             inner: Spinlock::new(
@@ -169,7 +167,7 @@ impl Kernel {
                 true,
                 false,
             )
-            // Safe since ptr is an address of a page obtained by alloc().
+            // SAFETY: ptr is an address of a page obtained by alloc().
             .map_err(|_| self.free(unsafe { Page::from_usize(ptr.as_ptr() as _) }))?;
         let f1 = self
             .ftable
@@ -180,7 +178,7 @@ impl Kernel {
                 false,
                 true,
             )
-            // Safe since ptr is an address of a page obtained by alloc().
+            // SAFETY: ptr is an address of a page obtained by alloc().
             .map_err(|_| self.free(unsafe { Page::from_usize(ptr.as_ptr() as _) }))?;
 
         Ok((f0, f1))
@@ -190,6 +188,7 @@ impl Kernel {
 impl AllocatedPipe {
     pub fn close(self, writable: bool) -> Option<Page> {
         if self.deref().close(writable) {
+            // SAFETY:
             // If `Pipe::close()` returned true, this means all `AllocatedPipe`s were closed.
             // Hence, we can free the `Pipe`.
             // Also, the following is safe since `ptr` holds a `Pipe` stored in a valid page allocated from `kernel().alloc()`.

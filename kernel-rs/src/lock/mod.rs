@@ -84,7 +84,7 @@ impl<R: RawLock, T> Lock<R, T> {
 
     /// Returns a pinned mutable reference to the inner data.
     pub fn get_pin_mut(self: Pin<&mut Self>) -> Pin<&mut T> {
-        // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
+        // SAFETY: for `T: !Unpin`, we only provide pinned references and don't move `T`.
         unsafe { Pin::new_unchecked(&mut *self.get_mut_raw()) }
     }
 
@@ -93,7 +93,7 @@ impl<R: RawLock, T> Lock<R, T> {
     where
         T: Unpin,
     {
-        // Safe since we have a mutable reference of the lock.
+        // SAFETY: we have a mutable reference of the lock.
         unsafe { &mut *self.get_mut_raw() }
     }
 
@@ -130,7 +130,7 @@ impl<R: RawLock, T> Guard<'_, R, T> {
 
     /// Returns a pinned mutable reference to the inner data.
     pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
-        // Safe since for `T: !Unpin`, we only provide pinned references and don't move `T`.
+        // SAFETY: for `T: !Unpin`, we only provide pinned references and don't move `T`.
         unsafe { Pin::new_unchecked(&mut *self.lock.data.get()) }
     }
 }

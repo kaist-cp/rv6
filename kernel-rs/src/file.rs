@@ -75,7 +75,7 @@ impl Default for FileType {
 impl InodeFileType {
     fn lock(&self) -> InodeFileTypeGuard<'_> {
         let ip = self.ip.lock();
-        // Safe since `ip` is locked and `off` can be exclusively accessed.
+        // SAFETY: `ip` is locked and `off` can be exclusively accessed.
         let off = unsafe { &mut *self.off.get() };
         InodeFileTypeGuard { ip, off }
     }
@@ -209,7 +209,7 @@ impl File {
 
 impl ArenaObject for File {
     fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>) {
-        // Safe because `FileTable` does not use `Arena::find_or_alloc`.
+        // SAFETY: `FileTable` does not use `Arena::find_or_alloc`.
         unsafe {
             A::reacquire_after(guard, || {
                 let typ = mem::replace(&mut self.typ, FileType::None);

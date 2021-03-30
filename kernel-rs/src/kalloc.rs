@@ -43,11 +43,11 @@ impl Kmem {
     /// There must be no existing pages. It implies that this method should be
     /// called only once.
     pub unsafe fn init(&mut self) {
-        // It is safe to acquire only the address of a static variable.
+        // SAFETY: safe to acquire only the address of a static variable.
         let pa_start = pgroundup(unsafe { end.as_ptr() as usize });
         let pa_end = pgrounddown(PHYSTOP);
         for pa in num_iter::range_step(pa_start, pa_end, PGSIZE) {
-            // It is safe because
+            // SAFETY:
             // * pa_start is a multiple of PGSIZE, and pa is so
             // * end <= pa < PHYSTOP
             // * the safety condition of this method guarantees that the
@@ -59,12 +59,12 @@ impl Kmem {
     pub fn free(&mut self, pa: Page) {
         let pa = pa.into_usize();
         debug_assert!(
-            // It is safe to acquire only the address of a static variable.
+            // SAFETY: safe to acquire only the address of a static variable.
             pa % PGSIZE == 0 && (unsafe { end.as_ptr() as usize }..PHYSTOP).contains(&pa),
             "Kmem::free"
         );
         let mut r = pa as *mut Run;
-        // By the invariant of Page, it does not create a cycle in this list and
+        // SAFETY: By the invariant of Page, it does not create a cycle in this list and
         // thus is safe.
         unsafe { (*r).next = self.head };
         self.head = r;
@@ -74,10 +74,10 @@ impl Kmem {
         if self.head.is_null() {
             return None;
         }
-        // It is safe because head is not null and the structure of this list
+        // SAFETY: head is not null and the structure of this list
         // is maintained by the invariant.
         let next = unsafe { (*self.head).next };
-        // It is safe because the first element is a valid page by the invariant.
+        // SAFETY: the first element is a valid page by the invariant.
         Some(unsafe { Page::from_usize(mem::replace(&mut self.head, next) as _) })
     }
 }

@@ -47,7 +47,7 @@ pub unsafe extern "C" fn usertrap() {
     // since we're now in the kernel.
     unsafe { w_stvec(kernelvec as _) };
 
-    // Safe since usertrap can be reached only after the initialization of the kernel
+    // SAFETY: usertrap can be reached only after the initialization of the kernel
     let kernel = unsafe { kernel() };
     let mut proc = kernel.current_proc().expect("No current proc");
 
@@ -170,7 +170,7 @@ pub unsafe fn kerneltrap() {
     );
     assert!(!intr_get(), "kerneltrap: interrupts enabled");
 
-    // Safe since kerneltrap can be reached only after the initialization of the kernel
+    // SAFETY: kerneltrap can be reached only after the initialization of the kernel
     let kernel = unsafe { kernel() };
 
     let which_dev = unsafe { devintr(&kernel) };
@@ -187,6 +187,7 @@ pub unsafe fn kerneltrap() {
     // Give up the CPU if this is a timer interrupt.
     if which_dev == 2 {
         if let Some(proc) = kernel.current_proc() {
+            // SAFETY:
             // Reading state without lock is safe because `proc_yield` and `sched`
             // is called after we check if current process is `RUNNING`.
             if unsafe { (*proc.info.get_mut_raw()).state } == Procstate::RUNNING {
