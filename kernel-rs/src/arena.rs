@@ -82,7 +82,9 @@ pub trait ArenaObject {
 }
 
 /// A homogeneous memory allocator equipped with reference counts.
+#[pin_project]
 pub struct ArrayArena<T, const CAPACITY: usize> {
+    #[pin]
     entries: [RcCell<T>; CAPACITY],
 }
 
@@ -135,13 +137,14 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         c: C,
         n: N,
     ) -> Option<Ref<Self::Data>> {
-        let this = self.lock();
+        let mut guard = self.lock();
+        let this = guard.get_pin_mut().project();
 
-        let mut empty = None;
-        for entry in &this.entries {
+        let mut empty: Option<*mut RcCell<T>> = None;
+        for entry in IterPinMut::from(this.entries) {
             if !entry.is_borrowed() {
                 if empty.is_none() {
-                    empty = Some(entry)
+                    empty = Some(entry.as_ref().get_ref() as *const _ as *mut _)
                 }
                 // Note: Do not use `break` here.
                 // We must first search through all entries, and then alloc at empty
@@ -154,20 +157,22 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
             }
         }
 
-        empty.map(|cell| {
-            let mut rm = cell.borrow_mut();
-            n(&mut rm);
-            rm.into()
+        empty.map(|cell_raw| {
+            // SAFETY: `cell` is not referenced or borrowed. Also, it is already pinned.
+            let mut cell = unsafe { Pin::new_unchecked(&mut *cell_raw) };
+            n(cell.as_mut().get_pin_mut().unwrap().get_mut());
+            cell.borrow()
         })
     }
 
     fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Ref<Self::Data>> {
-        let this = self.lock();
+        let mut guard = self.lock();
+        let this = guard.get_pin_mut().project();
 
-        for entry in &this.entries {
-            if let Some(mut rm) = entry.try_borrow_mut() {
-                f(&mut rm);
-                return Some(rm.into());
+        for mut entry in IterPinMut::from(this.entries) {
+            if !entry.is_borrowed() {
+                f(entry.as_mut().get_pin_mut().unwrap().get_mut());
+                return Some(entry.borrow());
             }
         }
         None
@@ -267,23 +272,23 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         n: N,
     ) -> Option<Ref<Self::Data>> {
         let this = self.lock();
-        let mut empty = None;
+        let mut empty: Option<*mut RcCell<T>> = None;
         // Safe since the whole `MruArena` is protected by a lock.
         for entry in unsafe { this.list.iter_unchecked() } {
             if !entry.data.is_borrowed() {
-                empty = Some(entry);
-            }
-            if let Some(r) = entry.data.try_borrow() {
+                empty = Some(&entry.data as *const _ as *mut _);
+            } else if let Some(r) = entry.data.try_borrow() {
                 if c(&r) {
                     return Some(r);
                 }
             }
         }
 
-        empty.map(|entry| {
-            let mut rm = entry.data.borrow_mut();
-            n(&mut rm);
-            rm.into()
+        empty.map(|cell_raw| {
+            // SAFETY: `cell` is not referenced or borrowed. Also, it is already pinned.
+            let mut cell = unsafe { Pin::new_unchecked(&mut *cell_raw) };
+            n(cell.as_mut().get_pin_mut().unwrap().get_mut());
+            cell.borrow()
         })
     }
 
@@ -291,9 +296,9 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         let this = self.lock();
         // Safe since the whole `MruArena` is protected by a lock.
         for entry in unsafe { this.list.iter_unchecked().rev() } {
-            if let Some(mut rm) = entry.data.try_borrow_mut() {
-                f(&mut rm);
-                return Some(rm.into());
+            if !entry.data.is_borrowed() {
+                f(unsafe { &mut *entry.data.as_ptr() });
+                return Some(entry.data.borrow());
             }
         }
 
