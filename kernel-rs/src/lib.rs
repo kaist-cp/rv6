@@ -75,6 +75,7 @@ mod pipe;
 mod plic;
 mod poweroff;
 mod proc;
+mod rc_cell;
 mod riscv;
 mod start;
 mod stat;

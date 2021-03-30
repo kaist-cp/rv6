@@ -79,7 +79,7 @@ use static_assertions::const_assert;
 
 use super::{FileName, IPB, MAXFILE, NDIRECT, NINDIRECT};
 use crate::{
-    arena::{Arena, ArenaObject, ArrayArena, ArrayEntry, Rc},
+    arena::{Arena, ArenaObject, ArrayArena, Rc},
     bio::BufData,
     fs::{FsTransaction, Path, ROOTINO},
     kernel::kernel_builder,
@@ -87,6 +87,7 @@ use crate::{
     param::ROOTDEV,
     param::{BSIZE, NINODE},
     proc::CurrentProc,
+    rc_cell::RcCell,
     stat::Stat,
     vm::UVAddr,
 };
@@ -810,7 +811,7 @@ impl Itable {
     pub const fn zero() -> Self {
         Spinlock::new(
             "ITABLE",
-            ArrayArena::new(array![_ => ArrayEntry::new(Inode::zero()); NINODE]),
+            ArrayArena::new(array![_ => RcCell::new(Inode::zero()); NINODE]),
         )
     }
 
