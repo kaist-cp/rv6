@@ -133,7 +133,7 @@ impl Deref for AllocatedPipe {
 }
 
 impl Kernel {
-    pub fn allocate_pipe(&self) -> Result<(RcFile<'_>, RcFile<'_>), ()> {
+    pub fn allocate_pipe(&self) -> Result<(RcFile, RcFile), ()> {
         let page = self.alloc().ok_or(())?;
         // SAFETY: by the invariant of `Page`, `page` is always non-null.
         let mut ptr = unsafe { NonNull::new_unchecked(page.into_usize() as *mut Pipe) };

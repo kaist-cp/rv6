@@ -23,7 +23,7 @@ use crate::{
     vm::UVAddr,
 };
 
-impl RcFile<'static> {
+impl RcFile {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
     fn fdalloc(self, proc: &mut CurrentProc<'_>) -> Result<i32, Self> {
@@ -41,7 +41,7 @@ impl RcFile<'static> {
 
 /// Fetch the nth word-sized system call argument as a file descriptor
 /// and return both the descriptor and the corresponding struct file.
-fn argfd<'a>(n: usize, proc: &'a CurrentProc<'a>) -> Result<(i32, &'a RcFile<'static>), ()> {
+fn argfd<'a>(n: usize, proc: &'a CurrentProc<'a>) -> Result<(i32, &'a RcFile), ()> {
     let fd = argint(n, proc)?;
     if fd < 0 || fd >= NOFILE as i32 {
         return Err(());
@@ -62,7 +62,7 @@ impl Kernel {
         tx: &FsTransaction<'_>,
         proc: &CurrentProc<'_>,
         f: F,
-    ) -> Result<(RcInode<'_>, T), ()>
+    ) -> Result<(RcInode, T), ()>
     where
         F: FnOnce(&mut InodeGuard<'_>) -> T,
     {
@@ -326,7 +326,7 @@ impl Kernel {
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
         // SAFETY: read will not access proc's open_files.
-        unsafe { (*(f as *const RcFile<'static>)).read(p.into(), n, proc) }
+        unsafe { (*(f as *const RcFile)).read(p.into(), n, proc) }
     }
 
     /// Write n bytes from buf to given file descriptor fd.
@@ -336,7 +336,7 @@ impl Kernel {
         let n = argint(2, proc)?;
         let p = argaddr(1, proc)?;
         // SAFETY: write will not access proc's open_files.
-        unsafe { (*(f as *const RcFile<'static>)).write(p.into(), n, proc, &self.file_system) }
+        unsafe { (*(f as *const RcFile)).write(p.into(), n, proc, &self.file_system) }
     }
 
     /// Release open file fd.
@@ -354,7 +354,7 @@ impl Kernel {
         // user pointer to struct stat
         let st = argaddr(1, proc)?;
         // SAFETY: stat will not access proc's open_files.
-        unsafe { (*(f as *const RcFile<'static>)).stat(st.into(), proc) }?;
+        unsafe { (*(f as *const RcFile)).stat(st.into(), proc) }?;
         Ok(0)
     }
 

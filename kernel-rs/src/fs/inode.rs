@@ -168,7 +168,8 @@ pub struct Dinode {
 
 pub type Itable = Spinlock<ArrayArena<Inode, NINODE>>;
 
-pub type RcInode<'s> = Rc<'s, Itable, &'s Itable>;
+/// A reference counted smart pointer to an `Inode`.
+pub type RcInode = Rc<Inode, Itable>;
 
 /// InodeGuard implies that `Sleeplock<InodeInner>` is held by current thread.
 ///
@@ -307,7 +308,7 @@ impl InodeGuard<'_> {
         &mut self,
         name: &FileName,
         itable: &'a Itable,
-    ) -> Result<(RcInode<'a>, u32), ()> {
+    ) -> Result<(RcInode, u32), ()> {
         assert_eq!(self.deref_inner().typ, InodeType::Dir, "dirlookup not DIR");
 
         self.iter_dirents()
@@ -818,7 +819,7 @@ impl Itable {
     /// Find the inode with number inum on device dev
     /// and return the in-memory copy. Does not lock
     /// the inode and does not read it from disk.
-    pub fn get_inode(&self, dev: u32, inum: u32) -> RcInode<'_> {
+    pub fn get_inode(&self, dev: u32, inum: u32) -> RcInode {
         self.find_or_alloc(
             |inode| inode.dev == dev && inode.inum == inum,
             |inode| {
@@ -833,7 +834,7 @@ impl Itable {
     /// Allocate an inode on device dev.
     /// Mark it as allocated by giving it type.
     /// Returns an unlocked but allocated and referenced inode.
-    pub fn alloc_inode(&self, dev: u32, typ: InodeType, tx: &FsTransaction<'_>) -> RcInode<'_> {
+    pub fn alloc_inode(&self, dev: u32, typ: InodeType, tx: &FsTransaction<'_>) -> RcInode {
         // TODO: remove kernel_builder()
         for inum in 1..kernel_builder().file_system.superblock().ninodes {
             // TODO: remove kernel_builder()
@@ -879,11 +880,11 @@ impl Itable {
         panic!("[Itable::alloc_inode] no inodes");
     }
 
-    pub fn root(&self) -> RcInode<'_> {
+    pub fn root(&self) -> RcInode {
         self.get_inode(ROOTDEV, ROOTINO)
     }
 
-    pub fn namei(&self, path: &Path, proc: &CurrentProc<'_>) -> Result<RcInode<'_>, ()> {
+    pub fn namei(&self, path: &Path, proc: &CurrentProc<'_>) -> Result<RcInode, ()> {
         Ok(self.namex(path, false, proc)?.0)
     }
 
@@ -891,7 +892,7 @@ impl Itable {
         &self,
         path: &'s Path,
         proc: &CurrentProc<'_>,
-    ) -> Result<(RcInode<'_>, &'s FileName), ()> {
+    ) -> Result<(RcInode, &'s FileName), ()> {
         let (ip, name_in_path) = self.namex(path, true, proc)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
@@ -902,11 +903,11 @@ impl Itable {
         mut path: &'s Path,
         parent: bool,
         proc: &CurrentProc<'_>,
-    ) -> Result<(RcInode<'_>, Option<&'s FileName>), ()> {
+    ) -> Result<(RcInode, Option<&'s FileName>), ()> {
         let mut ptr = if path.is_absolute() {
             self.root()
         } else {
-            proc.cwd().clone().narrow_lifetime()
+            proc.cwd().clone()
         };
 
         while let Some((new_path, name)) = path.skipelem() {

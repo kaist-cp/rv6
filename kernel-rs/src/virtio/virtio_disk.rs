@@ -70,7 +70,7 @@ struct DiskInfo {
 /// `b` refers to a valid `Buf` unless it is null.
 #[derive(Copy, Clone)]
 struct InflightInfo {
-    b: *mut Buf<'static>,
+    b: *mut Buf,
     status: bool,
 }
 
@@ -164,7 +164,7 @@ impl Drop for Descriptor {
 impl Sleepablelock<Disk> {
     /// Return a locked Buf with the `latest` contents of the indicated block.
     /// If buf.valid is true, we don't need to access Disk.
-    pub fn read(&self, dev: u32, blockno: u32) -> Buf<'static> {
+    pub fn read(&self, dev: u32, blockno: u32) -> Buf {
         // TODO: remove kernel_builder()
         let mut buf = unsafe { kernel_builder().get_bcache() }
             .get_buf(dev, blockno)
@@ -176,7 +176,7 @@ impl Sleepablelock<Disk> {
         buf
     }
 
-    pub fn write(&self, b: &mut Buf<'static>) {
+    pub fn write(&self, b: &mut Buf) {
         Disk::rw(&mut self.lock(), b, true)
     }
 }
@@ -233,7 +233,7 @@ impl Disk {
     // By the construction of the kernel page table in KernelMemory::new, the
     // virtual addresses of the MMIO registers are mapped to the proper physical
     // addresses. Therefore, this method is safe.
-    fn rw(this: &mut SleepablelockGuard<'_, Self>, b: &mut Buf<'static>, write: bool) {
+    fn rw(this: &mut SleepablelockGuard<'_, Self>, b: &mut Buf, write: bool) {
         let sector: usize = (*b).blockno as usize * (BSIZE / 512);
 
         // The spec's Section 5.2 says that legacy block operations use
