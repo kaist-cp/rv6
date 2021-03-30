@@ -16,7 +16,6 @@ use crate::{
     fs::{FileSystem, Itable},
     kalloc::Kmem,
     lock::{Sleepablelock, Spinlock},
-    page::Page,
     param::{NCPU, NDEV},
     plic::{plicinit, plicinithart},
     println,
@@ -75,7 +74,7 @@ pub struct KernelBuilder {
 
     pub printer: Spinlock<Printer>,
 
-    kmem: Spinlock<Kmem>,
+    pub kmem: Spinlock<Kmem>,
 
     /// The kernel's memory manager.
     memory: MaybeUninit<KernelMemory>,
@@ -158,28 +157,6 @@ impl KernelBuilder {
         self.panicked.load(Ordering::Acquire)
     }
 
-    /// Free the page of physical memory pointed at by v,
-    /// which normally should have been returned by a
-    /// call to kernel().alloc().  (The exception is when
-    /// initializing the allocator; see Kmem::init.)
-    pub fn free(&self, mut page: Page) {
-        // Fill with junk to catch dangling refs.
-        page.write_bytes(1);
-
-        self.kmem.lock().free(page);
-    }
-
-    /// Allocate one 4096-byte page of physical memory.
-    /// Returns a pointer that the kernel can use.
-    /// Returns None if the memory cannot be allocated.
-    pub fn alloc(&self) -> Option<Page> {
-        let mut page = self.kmem.lock().alloc()?;
-
-        // fill with junk
-        page.write_bytes(5);
-        Some(page)
-    }
-
     /// Prints the given formatted string with the Printer.
     pub fn printer_write_fmt(&self, args: fmt::Arguments<'_>) -> fmt::Result {
         if self.is_panicked() {
@@ -240,39 +217,29 @@ pub unsafe fn kernel_main() -> ! {
     static STARTED: AtomicBool = AtomicBool::new(false);
 
     if cpuid() == 0 {
+        let kernel = unsafe { kernel_builder_unchecked_pin().project() };
+
         // Initialize the kernel.
 
         // Console.
         Uart::init();
-        unsafe { consoleinit(kernel_builder_unchecked_pin().project().devsw) };
+        unsafe { consoleinit(kernel.devsw) };
 
         println!();
         println!("rv6 kernel is booting");
         println!();
 
         // Physical page allocator.
-        unsafe {
-            kernel_builder_unchecked_pin()
-                .project()
-                .kmem
-                .get_mut()
-                .init()
-        };
+        unsafe { kernel.kmem.get_mut().init() };
 
         // Create kernel memory manager.
-        let memory = KernelMemory::new().expect("PageTable::new failed");
+        let memory = KernelMemory::new(kernel.kmem).expect("PageTable::new failed");
 
         // Turn on paging.
-        unsafe {
-            kernel_builder_unchecked_pin()
-                .project()
-                .memory
-                .write(memory)
-                .init_hart()
-        };
+        unsafe { kernel.memory.write(memory).init_hart() };
 
         // Process system.
-        let procs = unsafe { kernel_builder_unchecked_pin().project().procs.init() };
+        let procs = kernel.procs.init();
 
         // Trap vectors.
         trapinit();
@@ -287,27 +254,14 @@ pub unsafe fn kernel_main() -> ! {
         unsafe { plicinithart() };
 
         // Buffer cache.
-        unsafe {
-            kernel_builder_unchecked_pin()
-                .project()
-                .bcache
-                .get_pin_mut()
-                .init()
-        };
+        kernel.bcache.get_pin_mut().init();
 
         // Emulated hard disk.
-        unsafe {
-            kernel_builder_unchecked_pin()
-                .project()
-                .file_system
-                .log
-                .disk
-                .get_mut()
-                .init()
-        };
+        kernel.file_system.log.disk.get_mut().init();
 
         // First user process.
-        procs.user_proc_init();
+        procs.user_proc_init(kernel.kmem);
+
         STARTED.store(true, Ordering::Release);
     } else {
         while !STARTED.load(Ordering::Acquire) {
@@ -317,7 +271,7 @@ pub unsafe fn kernel_main() -> ! {
         println!("hart {} starting", cpuid());
 
         // Turn on paging.
-        unsafe { kernel_builder().memory.assume_init_ref().init_hart() };
+        unsafe { kernel().memory.assume_init_ref().init_hart() };
 
         // Install kernel trap vector.
         unsafe { trapinithart() };

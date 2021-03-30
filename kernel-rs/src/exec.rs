@@ -121,8 +121,8 @@ impl Kernel {
         }
 
         let trap_frame: PAddr = (proc.trap_frame() as *const _ as usize).into();
-        let mut mem = UserMemory::new(trap_frame, None).ok_or(())?;
-
+        let mem = UserMemory::new(trap_frame, None, &self.kmem).ok_or(())?;
+        let mut mem = scopeguard::guard(mem, |mem| mem.free(&self.kmem));
         // Load program into memory.
         for i in 0..elf.phnum as usize {
             let off = elf.phoff + i * mem::size_of::<ProgHdr>();
@@ -135,8 +135,14 @@ impl Kernel {
                 if ph.memsz < ph.filesz || ph.vaddr % PGSIZE != 0 {
                     return Err(());
                 }
-                let _ = mem.alloc(ph.vaddr.checked_add(ph.memsz).ok_or(())?)?;
-                mem.load_file(ph.vaddr.into(), &mut ip, ph.off as _, ph.filesz as _)?;
+                let _ = mem.alloc(ph.vaddr.checked_add(ph.memsz).ok_or(())?, &self.kmem)?;
+                mem.load_file(
+                    ph.vaddr.into(),
+                    &mut ip,
+                    ph.off as _,
+                    ph.filesz as _,
+                    &self.kmem,
+                )?;
             }
         }
         drop(ip);
@@ -145,8 +151,8 @@ impl Kernel {
         // Allocate two pages at the next page boundary.
         // Use the second as the user stack.
         let mut sz = pgroundup(mem.size());
-        sz = mem.alloc(sz + 2 * PGSIZE)?;
-        mem.clear((sz - 2 * PGSIZE).into());
+        sz = mem.alloc(sz + 2 * PGSIZE, &self.kmem)?;
+        mem.clear((sz - 2 * PGSIZE).into(), &self.kmem);
         let mut sp: usize = sz;
         let stackbase: usize = sp - PGSIZE;
 
@@ -166,7 +172,7 @@ impl Kernel {
                 return Err(());
             }
 
-            mem.copy_out_bytes(sp.into(), bytes)?;
+            mem.copy_out_bytes(sp.into(), bytes, &self.kmem)?;
             *stack = sp;
         }
         let argc: usize = args.len();
@@ -181,7 +187,7 @@ impl Kernel {
         }
         // SAFETY: any byte can be considered as a valid u8.
         let (_, ustack, _) = unsafe { ustack.align_to::<u8>() };
-        mem.copy_out_bytes(sp.into(), &ustack[..argv_size])?;
+        mem.copy_out_bytes(sp.into(), &ustack[..argv_size], &self.kmem)?;
 
         // Save program name for debugging.
         let path_str = path.as_bytes();
@@ -198,7 +204,7 @@ impl Kernel {
         }
 
         // Commit to the user image.
-        let _ = mem::replace(proc.memory_mut(), mem);
+        mem::replace(proc.memory_mut(), scopeguard::ScopeGuard::into_inner(mem)).free(&self.kmem);
 
         // arguments to user main(argc, argv)
         // argc is returned via the system call return

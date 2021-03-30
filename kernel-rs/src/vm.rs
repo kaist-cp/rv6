@@ -2,7 +2,8 @@ use core::{cmp, marker::PhantomData, mem, ops::Add, slice};
 
 use crate::{
     fs::InodeGuard,
-    kernel::kernel_builder,
+    kalloc::Kmem,
+    lock::Spinlock,
     memlayout::{kstack, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0},
     page::Page,
     param::NPROC,
@@ -165,9 +166,8 @@ impl RawPageTable {
     /// Make a new emtpy raw page table by allocating a new page.
     /// Return `Ok(..)` if the allocation has succeeded.
     /// Return `None` if the allocation has failed.
-    fn new() -> Option<*mut RawPageTable> {
-        // TODO: remove kernel_builder()
-        let mut page = kernel_builder().alloc()?;
+    fn new(allocator: &Spinlock<Kmem>) -> Option<*mut RawPageTable> {
+        let mut page = allocator.alloc()?;
         page.write_bytes(0);
         // This line guarantees the invariant.
         Some(page.into_usize() as *mut RawPageTable)
@@ -179,13 +179,18 @@ impl RawPageTable {
     /// allocation has failed.
     /// Return `None` if the `index`th entry refers to a data page.
     /// Return `None` if the `index`th entry is invalid and `alloc` is false.
-    fn get_table_mut(&mut self, index: usize, alloc: bool) -> Option<&mut RawPageTable> {
+    fn get_table_mut(
+        &mut self,
+        index: usize,
+        alloc: bool,
+        allocator: &Spinlock<Kmem>,
+    ) -> Option<&mut RawPageTable> {
         let pte = &mut self.inner[index];
         if !pte.is_valid() {
             if !alloc {
                 return None;
             }
-            let table = Self::new()?;
+            let table = Self::new(allocator)?;
             pte.set_table(table);
         }
         pte.as_table_mut()
@@ -207,26 +212,25 @@ impl RawPageTable {
     ///
     /// This method frees the page table itself, so this page table must
     /// not be used after an invocation of this method.
-    unsafe fn free_walk(&mut self) {
+    unsafe fn free_walk(&mut self, allocator: &Spinlock<Kmem>) {
         // There are 2^9 = 512 PTEs in a page table.
         for pte in &mut self.inner {
             if let Some(ptable) = pte.as_table_mut() {
                 // SAFETY: ptable will not be used anymore.
-                unsafe { ptable.free_walk() };
+                unsafe { ptable.free_walk(allocator) };
                 pte.invalidate();
             }
         }
         // SAFETY: safe to convert inner to a Page because of the invariant.
         let page = unsafe { Page::from_usize(self.inner.as_ptr() as _) };
-        // TODO: remove kernel_builder()
-        kernel_builder().free(page);
+        allocator.free(page);
     }
 }
 
 /// # Safety
 ///
 /// ptr uniquely refers to a valid 3-level RawPageTable.
-pub struct PageTable<A: VAddr> {
+struct PageTable<A: VAddr> {
     ptr: *mut RawPageTable,
     _marker: PhantomData<A>,
 }
@@ -235,9 +239,9 @@ impl<A: VAddr> PageTable<A> {
     /// Make a new empty page table by allocating a new page.
     /// Return `Ok(..)` if the allocation has succeeded.
     /// Return `None` if the allocation has failed.
-    fn new() -> Option<Self> {
+    fn new(allocator: &Spinlock<Kmem>) -> Option<Self> {
         Some(Self {
-            ptr: RawPageTable::new()?,
+            ptr: RawPageTable::new(allocator)?,
             _marker: PhantomData,
         })
     }
@@ -258,20 +262,31 @@ impl<A: VAddr> PageTable<A> {
     ///   21..29 -- 9 bits of level-1 index.
     ///   12..20 -- 9 bits of level-0 index.
     ///    0..11 -- 12 bits of byte offset within the page.
-    fn get_mut(&mut self, va: A, alloc: bool) -> Option<&mut PageTableEntry> {
+    fn get_mut(
+        &mut self,
+        va: A,
+        alloc: bool,
+        allocator: &Spinlock<Kmem>,
+    ) -> Option<&mut PageTableEntry> {
         assert!(va.into_usize() < MAXVA, "PageTable::get_mut");
         // SAFETY: self.ptr uniquely refers to a valid RawPageTable
         // according to the invariant.
         let mut page_table = unsafe { &mut *self.ptr };
         for level in (1..3).rev() {
-            page_table = page_table.get_table_mut(va.px(level), alloc)?;
+            page_table = page_table.get_table_mut(va.px(level), alloc, allocator)?;
         }
         Some(page_table.get_entry_mut(va.px(0)))
     }
 
-    fn insert(&mut self, va: A, pa: PAddr, perm: PteFlags) -> Result<(), ()> {
+    fn insert(
+        &mut self,
+        va: A,
+        pa: PAddr,
+        perm: PteFlags,
+        allocator: &Spinlock<Kmem>,
+    ) -> Result<(), ()> {
         let a = pgrounddown(va.into_usize());
-        let pte = self.get_mut(A::from(a), true).ok_or(())?;
+        let pte = self.get_mut(A::from(a), true, allocator).ok_or(())?;
         assert!(!pte.is_valid(), "PageTable::insert");
         pte.set_entry(pa, perm);
         Ok(())
@@ -281,30 +296,46 @@ impl<A: VAddr> PageTable<A> {
     /// physical addresses starting at pa. va and size might not
     /// be page-aligned. Returns Ok(()) on success, Err(()) if walk() couldn't
     /// allocate a needed page-table page.
-    fn insert_range(&mut self, va: A, size: usize, pa: PAddr, perm: PteFlags) -> Result<(), ()> {
+    fn insert_range(
+        &mut self,
+        va: A,
+        size: usize,
+        pa: PAddr,
+        perm: PteFlags,
+        allocator: &Spinlock<Kmem>,
+    ) -> Result<(), ()> {
         let start = pgrounddown(va.into_usize());
         let end = pgrounddown(va.into_usize() + size - 1usize);
         for i in num_iter::range_step_inclusive(0, end - start, PGSIZE) {
-            self.insert(va + i, pa + i, perm)?;
+            self.insert(va + i, pa + i, perm, allocator)?;
         }
         Ok(())
     }
 
-    fn remove(&mut self, va: A) -> Option<PAddr> {
-        let pte = self.get_mut(va, false)?;
+    fn remove(&mut self, va: A, allocator: &Spinlock<Kmem>) -> Option<PAddr> {
+        let pte = self.get_mut(va, false, allocator)?;
         assert!(pte.is_data(), "PageTable::remove");
         let pa = pte.get_pa();
         pte.invalidate();
         Some(pa)
     }
+
+    // # Safety
+    //
+    // This page table must not be used after invoking this method.
+    unsafe fn free(&mut self, allocator: &Spinlock<Kmem>) {
+        // SAFETY:
+        // * self.ptr is a valid pointer.
+        // * this page table is being dropped, and its ptr will not be used anymore.
+        unsafe { (*self.ptr).free_walk(allocator) };
+    }
 }
 
 impl<A: VAddr> Drop for PageTable<A> {
     fn drop(&mut self) {
-        // SAFETY:
-        // * self.ptr is a valid pointer.
-        // * this page table is being dropped, and its ptr will not be used anymore.
-        unsafe { (*self.ptr).free_walk() };
+        // HACK(@efenniht): we really need linear type here:
+        // https://github.com/rust-lang/rfcs/issues/814
+        panic!("PageTable must never drop.");
     }
 }
 
@@ -340,8 +371,16 @@ impl UserMemory {
     /// than a page.
     /// Return Some(..) if every allocation has succeeded.
     /// Return None otherwise.
-    pub fn new(trap_frame: PAddr, src_opt: Option<&[u8]>) -> Option<Self> {
-        let mut page_table = PageTable::new()?;
+    pub fn new(
+        trap_frame: PAddr,
+        src_opt: Option<&[u8]>,
+        allocator: &Spinlock<Kmem>,
+    ) -> Option<Self> {
+        let page_table = PageTable::new(allocator)?;
+        let mut page_table = scopeguard::guard(page_table, |mut page_table| {
+            unsafe { page_table.free(allocator) };
+            mem::forget(page_table);
+        });
 
         // Map the trampoline code (for system call return)
         // at the highest user virtual address.
@@ -353,29 +392,37 @@ impl UserMemory {
                 // SAFETY: we assume that reading the address of trampoline is safe.
                 (unsafe { trampoline.as_mut_ptr() as usize }).into(),
                 PteFlags::R | PteFlags::X,
+                allocator,
             )
             .ok()?;
 
         // Map the trapframe just below TRAMPOLINE, for trampoline.S.
         page_table
-            .insert(TRAPFRAME.into(), trap_frame, PteFlags::R | PteFlags::W)
+            .insert(
+                TRAPFRAME.into(),
+                trap_frame,
+                PteFlags::R | PteFlags::W,
+                allocator,
+            )
             .ok()?;
 
         let mut memory = Self {
-            page_table,
+            page_table: scopeguard::ScopeGuard::into_inner(page_table),
             size: 0,
         };
 
         if let Some(src) = src_opt {
             assert!(src.len() < PGSIZE, "new: more than a page");
-            // TODO: remove kernel_builder()
-            let mut page = kernel_builder().alloc()?;
+            let mut page = allocator.alloc()?;
             page.write_bytes(0);
             (&mut page[..src.len()]).copy_from_slice(src);
             memory
-                .push_page(page, PteFlags::R | PteFlags::W | PteFlags::X | PteFlags::U)
-                // TODO: remove kernel_builder()
-                .map_err(|page| kernel_builder().free(page))
+                .push_page(
+                    page,
+                    PteFlags::R | PteFlags::W | PteFlags::X | PteFlags::U,
+                    allocator,
+                )
+                .map_err(|page| allocator.free(page))
                 .ok()?;
         }
 
@@ -385,29 +432,27 @@ impl UserMemory {
     /// Makes a new memory by copying a given memory. Copies both the page
     /// table and the physical memory. Returns Some(memory) on success, None on
     /// failure. Frees any allocated pages on failure.
-    pub fn clone(&mut self, trap_frame: PAddr) -> Option<Self> {
-        let new = Self::new(trap_frame, None)?;
+    pub fn clone(&mut self, trap_frame: PAddr, allocator: &Spinlock<Kmem>) -> Option<Self> {
+        let new = Self::new(trap_frame, None, allocator)?;
         let mut new = scopeguard::guard(new, |mut new| {
-            let _ = new.dealloc(0);
+            let _ = new.dealloc(0, allocator);
         });
         for i in num_iter::range_step(0, self.size, PGSIZE) {
             let pte = self
                 .page_table
-                .get_mut(i.into(), false)
+                .get_mut(i.into(), false, allocator)
                 .expect("clone_into: pte not found");
             assert!(pte.is_valid(), "clone_into: invalid page");
 
             let pa = pte.get_pa();
             let flags = pte.get_flags();
-            // TODO: remove kernel_builder()
-            let mut page = kernel_builder().alloc()?;
+            let mut page = allocator.alloc()?;
             // SAFETY: pa is an address in page_table,
             // and thus it is the address of a page by the invariant.
             let src = unsafe { slice::from_raw_parts(pa.into_usize() as *const u8, PGSIZE) };
             page.copy_from_slice(src);
-            new.push_page(page, flags)
-                // TODO: remove kernel_builder()
-                .map_err(|page| kernel_builder().free(page))
+            new.push_page(page, flags, allocator)
+                .map_err(|page| allocator.free(page))
                 .ok()?;
         }
         let mut new = scopeguard::ScopeGuard::into_inner(new);
@@ -430,11 +475,12 @@ impl UserMemory {
         ip: &mut InodeGuard<'_>,
         offset: u32,
         sz: u32,
+        allocator: &Spinlock<Kmem>,
     ) -> Result<(), ()> {
         assert!(va.is_page_aligned(), "load_file: va must be page aligned");
         for i in num_iter::range_step(0, sz, PGSIZE as _) {
             let dst = self
-                .get_slice(va + i as usize)
+                .get_slice(va + i as usize, allocator)
                 .expect("load_file: address should exist");
             let n = cmp::min((sz - i) as usize, PGSIZE);
             let bytes_read = ip.read_bytes_kernel(&mut dst[..n], offset + i);
@@ -447,22 +493,24 @@ impl UserMemory {
 
     /// Allocate PTEs and physical memory to grow process to newsz, which need
     /// not be page aligned. Returns Ok(new size) or Err(()) on error.
-    pub fn alloc(&mut self, newsz: usize) -> Result<usize, ()> {
+    pub fn alloc(&mut self, newsz: usize, allocator: &Spinlock<Kmem>) -> Result<usize, ()> {
         if newsz <= self.size {
             return Ok(self.size);
         }
 
         let oldsz = self.size;
         let mut this = scopeguard::guard(self, |this| {
-            let _ = this.dealloc(oldsz);
+            let _ = this.dealloc(oldsz, allocator);
         });
         while pgroundup(this.size) < pgroundup(newsz) {
-            // TODO: remove kernel_builder()
-            let mut page = kernel_builder().alloc().ok_or(())?;
+            let mut page = allocator.alloc().ok_or(())?;
             page.write_bytes(0);
-            this.push_page(page, PteFlags::R | PteFlags::W | PteFlags::X | PteFlags::U)
-                // TODO: remove kernel_builder()
-                .map_err(|page| kernel_builder().free(page))?;
+            this.push_page(
+                page,
+                PteFlags::R | PteFlags::W | PteFlags::X | PteFlags::U,
+                allocator,
+            )
+            .map_err(|page| allocator.free(page))?;
         }
         let this = scopeguard::ScopeGuard::into_inner(this);
         this.size = newsz;
@@ -471,15 +519,14 @@ impl UserMemory {
 
     /// Deallocate user pages to bring the process size to newsz, which need
     /// not be page-aligned. Returns the new process size.
-    pub fn dealloc(&mut self, newsz: usize) -> usize {
+    pub fn dealloc(&mut self, newsz: usize, allocator: &Spinlock<Kmem>) -> usize {
         if self.size <= newsz {
             return self.size;
         }
 
         while pgroundup(newsz) < pgroundup(self.size) {
-            if let Some(page) = self.pop_page() {
-                // TODO: remove kernel_builder()
-                kernel_builder().free(page);
+            if let Some(page) = self.pop_page(allocator) {
+                allocator.free(page);
             }
         }
         self.size = newsz;
@@ -488,15 +535,15 @@ impl UserMemory {
 
     /// Grow or shrink process size by n bytes.
     /// Return Ok(old size) on success, Err(()) on failure.
-    pub fn resize(&mut self, n: i32) -> Result<usize, ()> {
+    pub fn resize(&mut self, n: i32, allocator: &Spinlock<Kmem>) -> Result<usize, ()> {
         let size = self.size;
         match n.cmp(&0) {
             cmp::Ordering::Equal => (),
             cmp::Ordering::Greater => {
-                let _ = self.alloc(size + n as usize)?;
+                let _ = self.alloc(size + n as usize, allocator)?;
             }
             cmp::Ordering::Less => {
-                let _ = self.dealloc(size - (-n as usize));
+                let _ = self.dealloc(size - (-n as usize), allocator);
             }
         };
         Ok(size)
@@ -504,9 +551,9 @@ impl UserMemory {
 
     /// Mark a PTE invalid for user access.
     /// Used by exec for the user stack guard page.
-    pub fn clear(&mut self, va: UVAddr) {
+    pub fn clear(&mut self, va: UVAddr, allocator: &Spinlock<Kmem>) {
         self.page_table
-            .get_mut(va, false)
+            .get_mut(va, false, allocator)
             .expect("clear")
             .clear_user();
     }
@@ -514,14 +561,19 @@ impl UserMemory {
     /// Copy from kernel to user.
     /// Copy len bytes from src to virtual address dstva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    pub fn copy_out_bytes(&mut self, dstva: UVAddr, src: &[u8]) -> Result<(), ()> {
+    pub fn copy_out_bytes(
+        &mut self,
+        dstva: UVAddr,
+        src: &[u8],
+        allocator: &Spinlock<Kmem>,
+    ) -> Result<(), ()> {
         let mut dst = dstva.into_usize();
         let mut len = src.len();
         let mut offset = 0;
         while len > 0 {
             let va = pgrounddown(dst);
             let poffset = dst - va;
-            let page = self.get_slice(va.into()).ok_or(())?;
+            let page = self.get_slice(va.into(), allocator).ok_or(())?;
             let n = cmp::min(PGSIZE - poffset, len);
             page[poffset..poffset + n].copy_from_slice(&src[offset..offset + n]);
             len -= n;
@@ -534,26 +586,37 @@ impl UserMemory {
     /// Copy from kernel to user.
     /// Copy from src to virtual address dstva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    pub fn copy_out<T>(&mut self, dstva: UVAddr, src: &T) -> Result<(), ()> {
+    pub fn copy_out<T>(
+        &mut self,
+        dstva: UVAddr,
+        src: &T,
+        allocator: &Spinlock<Kmem>,
+    ) -> Result<(), ()> {
         self.copy_out_bytes(
             dstva,
             // SAFETY: src is a valid reference to T and
             // u8 does not have any internal structure.
             unsafe { core::slice::from_raw_parts_mut(src as *const _ as _, mem::size_of::<T>()) },
+            allocator,
         )
     }
 
     /// Copy from user to kernel.
     /// Copy len bytes to dst from virtual address srcva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    pub fn copy_in_bytes(&mut self, dst: &mut [u8], srcva: UVAddr) -> Result<(), ()> {
+    pub fn copy_in_bytes(
+        &mut self,
+        dst: &mut [u8],
+        srcva: UVAddr,
+        allocator: &Spinlock<Kmem>,
+    ) -> Result<(), ()> {
         let mut src = srcva.into_usize();
         let mut len = dst.len();
         let mut offset = 0;
         while len > 0 {
             let va = pgrounddown(src);
             let poffset = src - va;
-            let page = self.get_slice(va.into()).ok_or(())?;
+            let page = self.get_slice(va.into(), allocator).ok_or(())?;
             let n = cmp::min(PGSIZE - poffset, len);
             dst[offset..offset + n].copy_from_slice(&page[poffset..poffset + n]);
             len -= n;
@@ -570,10 +633,16 @@ impl UserMemory {
     /// # Safety
     ///
     /// `T` can be safely `transmute`d to `[u8; size_of::<T>()]`.
-    pub unsafe fn copy_in<T>(&mut self, dst: &mut T, srcva: UVAddr) -> Result<(), ()> {
+    pub unsafe fn copy_in<T>(
+        &mut self,
+        dst: &mut T,
+        srcva: UVAddr,
+        allocator: &Spinlock<Kmem>,
+    ) -> Result<(), ()> {
         self.copy_in_bytes(
             unsafe { core::slice::from_raw_parts_mut(dst as *mut _ as _, mem::size_of::<T>()) },
             srcva,
+            allocator,
         )
     }
 
@@ -581,14 +650,19 @@ impl UserMemory {
     /// Copy bytes to dst from virtual address srcva in a given page table,
     /// until a '\0', or max.
     /// Return OK(()) on success, Err(()) on error.
-    pub fn copy_in_str(&mut self, dst: &mut [u8], srcva: UVAddr) -> Result<(), ()> {
+    pub fn copy_in_str(
+        &mut self,
+        dst: &mut [u8],
+        srcva: UVAddr,
+        allocator: &Spinlock<Kmem>,
+    ) -> Result<(), ()> {
         let mut src = srcva.into_usize();
         let mut offset = 0;
         let mut max = dst.len();
         while max > 0 {
             let va = pgrounddown(src);
             let poffset = src - va;
-            let page = self.get_slice(va.into()).ok_or(())?;
+            let page = self.get_slice(va.into(), allocator).ok_or(())?;
             let n = cmp::min(PGSIZE - poffset, max);
 
             let from = &page[poffset..poffset + n];
@@ -615,11 +689,11 @@ impl UserMemory {
     }
 
     /// Return a page at va as a slice. Some(page) on success, None on failure.
-    fn get_slice(&mut self, va: UVAddr) -> Option<&mut [u8]> {
+    fn get_slice(&mut self, va: UVAddr, allocator: &Spinlock<Kmem>) -> Option<&mut [u8]> {
         if va.into_usize() >= TRAPFRAME {
             return None;
         }
-        let pte = self.page_table.get_mut(va, false)?;
+        let pte = self.page_table.get_mut(va, false, allocator)?;
         if !pte.is_user() {
             return None;
         }
@@ -629,12 +703,17 @@ impl UserMemory {
 
     /// Increase the size by appending a given page with given flags.
     /// Ok(()) on success, Err(given page) on failure.
-    fn push_page(&mut self, page: Page, perm: PteFlags) -> Result<(), Page> {
+    fn push_page(
+        &mut self,
+        page: Page,
+        perm: PteFlags,
+        allocator: &Spinlock<Kmem>,
+    ) -> Result<(), Page> {
         let pa = page.into_usize();
         // The invariant is maintained because page.addr() is the address of a page.
         let size = pgroundup(self.size);
         self.page_table
-            .insert(size.into(), pa.into(), perm)
+            .insert(size.into(), pa.into(), perm, allocator)
             // SAFETY: pa is the address of a given page.
             .map_err(|_| unsafe { Page::from_usize(pa) })?;
         self.size = size + PGSIZE;
@@ -643,25 +722,34 @@ impl UserMemory {
 
     /// Decrease the size by removing the most recently appended page.
     /// Some(page) if size > 0, None if size = 0.
-    fn pop_page(&mut self) -> Option<Page> {
+    fn pop_page(&mut self, allocator: &Spinlock<Kmem>) -> Option<Page> {
         if self.size == 0 {
             return None;
         }
         self.size = pgroundup(self.size) - PGSIZE;
         let pa = self
             .page_table
-            .remove(self.size.into())
+            .remove(self.size.into(), allocator)
             .expect("pop_page")
             .into_usize();
         // SAFETY: pa is an address in page_table,
         // and, thus, it is the address of a page by the invariant.
         Some(unsafe { Page::from_usize(pa) })
     }
+
+    pub fn free(mut self, allocator: &Spinlock<Kmem>) {
+        let _ = self.dealloc(0, allocator);
+        // SAFETY: self will be dropped.
+        unsafe { self.page_table.free(allocator) };
+        mem::forget(self);
+    }
 }
 
 impl Drop for UserMemory {
     fn drop(&mut self) {
-        let _ = self.dealloc(0);
+        // HACK(@efenniht): we really need linear type here:
+        // https://github.com/rust-lang/rfcs/issues/814
+        panic!("UserMemory must never drop.");
     }
 }
 
@@ -680,8 +768,12 @@ pub struct KernelMemory {
 
 impl KernelMemory {
     /// Make a direct-map page table for the kernel.
-    pub fn new() -> Option<Self> {
-        let mut page_table = PageTable::new()?;
+    pub fn new(allocator: &Spinlock<Kmem>) -> Option<Self> {
+        let page_table = PageTable::new(allocator)?;
+        let mut page_table = scopeguard::guard(page_table, |mut page_table| {
+            unsafe { page_table.free(allocator) };
+            mem::forget(page_table);
+        });
 
         // SiFive Test Finisher MMIO
         page_table
@@ -690,6 +782,7 @@ impl KernelMemory {
                 PGSIZE,
                 FINISHER.into(),
                 PteFlags::R | PteFlags::W,
+                allocator,
             )
             .ok()?;
 
@@ -700,6 +793,7 @@ impl KernelMemory {
                 PGSIZE,
                 UART0.into(),
                 PteFlags::R | PteFlags::W,
+                allocator,
             )
             .ok()?;
 
@@ -710,6 +804,7 @@ impl KernelMemory {
                 PGSIZE,
                 VIRTIO0.into(),
                 PteFlags::R | PteFlags::W,
+                allocator,
             )
             .ok()?;
 
@@ -720,6 +815,7 @@ impl KernelMemory {
                 0x400000,
                 PLIC.into(),
                 PteFlags::R | PteFlags::W,
+                allocator,
             )
             .ok()?;
 
@@ -732,6 +828,7 @@ impl KernelMemory {
                 et - KERNBASE,
                 KERNBASE.into(),
                 PteFlags::R | PteFlags::X,
+                allocator,
             )
             .ok()?;
 
@@ -742,6 +839,7 @@ impl KernelMemory {
                 PHYSTOP - et,
                 et.into(),
                 PteFlags::R | PteFlags::W,
+                allocator,
             )
             .ok()?;
 
@@ -754,6 +852,7 @@ impl KernelMemory {
                 // SAFETY: we assume that reading the address of trampoline is safe.
                 unsafe { trampoline.as_mut_ptr() as usize }.into(),
                 PteFlags::R | PteFlags::X,
+                allocator,
             )
             .ok()?;
 
@@ -761,15 +860,22 @@ impl KernelMemory {
         // Map it high in memory, followed by an invalid
         // guard page.
         for i in 0..NPROC {
-            // TODO: remove kernel_builder()
-            let pa = kernel_builder().alloc()?.into_usize();
+            let pa = allocator.alloc()?.into_usize();
             let va: usize = kstack(i);
             page_table
-                .insert_range(va.into(), PGSIZE, pa.into(), PteFlags::R | PteFlags::W)
+                .insert_range(
+                    va.into(),
+                    PGSIZE,
+                    pa.into(),
+                    PteFlags::R | PteFlags::W,
+                    allocator,
+                )
                 .ok()?;
         }
 
-        Some(Self { page_table })
+        Some(Self {
+            page_table: scopeguard::ScopeGuard::into_inner(page_table),
+        })
     }
 
     /// Switch h/w page table register to the kernel's page table, and enable paging.
