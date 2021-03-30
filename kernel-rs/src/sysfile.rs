@@ -266,8 +266,7 @@ impl Kernel {
 
     /// Change the current directory.
     /// Returns Ok(()) on success, Err(()) on error.
-    // TODO(https://github.com/kaist-cp/rv6/issues/444): &'static self -> &self
-    fn chdir(&'static self, dirname: &CStr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
+    fn chdir(&self, dirname: &CStr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
         // TODO(https://github.com/kaist-cp/rv6/issues/290)
         // The method namei can drop inodes. If namei succeeds, its return
         // value, ptr, will be dropped when this method returns. Deallocation
@@ -286,7 +285,7 @@ impl Kernel {
 
     /// Create a pipe, put read/write file descriptors in fd0 and fd1.
     /// Returns Ok(()) on success, Err(()) on error.
-    fn pipe(&'static self, fdarray: UVAddr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
+    fn pipe(&self, fdarray: UVAddr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
         let (pipereader, pipewriter) = self.allocate_pipe()?;
 
         let fd0 = pipereader.fdalloc(proc).map_err(|_| ())?;
@@ -411,7 +410,7 @@ impl Kernel {
 
     /// Change the current directory.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub fn sys_chdir(&'static self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_chdir(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = argstr(0, &mut path, proc)?;
         self.chdir(path, proc)?;
@@ -461,7 +460,7 @@ impl Kernel {
 
     /// Create a pipe.
     /// Returns Ok(0) on success, Err(()) on error.
-    pub fn sys_pipe(&'static self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn sys_pipe(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         // user pointer to array of two integers
         let fdarray = argaddr(0, proc)?.into();
         self.pipe(fdarray, proc)?;
