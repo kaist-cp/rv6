@@ -280,7 +280,8 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         for entry in unsafe { this.list.iter_pin_mut_unchecked() } {
             if !entry.data.is_borrowed() {
                 empty = Some(&entry.data as *const _ as *mut _);
-            } else if let Some(r) = entry.data.try_borrow() {
+            }
+            if let Some(r) = entry.data.try_borrow() {
                 if c(&r) {
                     return Some(r);
                 }
