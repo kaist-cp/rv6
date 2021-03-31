@@ -136,13 +136,7 @@ impl Kernel {
                     return Err(());
                 }
                 let _ = mem.alloc(ph.vaddr.checked_add(ph.memsz).ok_or(())?, &self.kmem)?;
-                mem.load_file(
-                    ph.vaddr.into(),
-                    &mut ip,
-                    ph.off as _,
-                    ph.filesz as _,
-                    &self.kmem,
-                )?;
+                mem.load_file(ph.vaddr.into(), &mut ip, ph.off as _, ph.filesz as _)?;
             }
         }
         drop(ip);
@@ -152,7 +146,7 @@ impl Kernel {
         // Use the second as the user stack.
         let mut sz = pgroundup(mem.size());
         sz = mem.alloc(sz + 2 * PGSIZE, &self.kmem)?;
-        mem.clear((sz - 2 * PGSIZE).into(), &self.kmem);
+        mem.clear((sz - 2 * PGSIZE).into());
         let mut sp: usize = sz;
         let stackbase: usize = sp - PGSIZE;
 
@@ -172,7 +166,7 @@ impl Kernel {
                 return Err(());
             }
 
-            mem.copy_out_bytes(sp.into(), bytes, &self.kmem)?;
+            mem.copy_out_bytes(sp.into(), bytes)?;
             *stack = sp;
         }
         let argc: usize = args.len();
@@ -187,7 +181,7 @@ impl Kernel {
         }
         // SAFETY: any byte can be considered as a valid u8.
         let (_, ustack, _) = unsafe { ustack.align_to::<u8>() };
-        mem.copy_out_bytes(sp.into(), &ustack[..argv_size], &self.kmem)?;
+        mem.copy_out_bytes(sp.into(), &ustack[..argv_size])?;
 
         // Save program name for debugging.
         let path_str = path.as_bytes();

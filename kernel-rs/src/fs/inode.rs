@@ -82,7 +82,6 @@ use crate::{
     arena::{Arena, ArenaObject, ArrayArena, Rc},
     bio::BufData,
     fs::{FsTransaction, Path, ROOTINO},
-    kalloc::Kmem,
     kernel::kernel_builder,
     lock::{Sleeplock, Spinlock},
     param::ROOTDEV,
@@ -447,11 +446,9 @@ impl InodeGuard<'_> {
         off: u32,
         n: u32,
         proc: &mut CurrentProc<'_>,
-        allocator: &Spinlock<Kmem>,
     ) -> Result<usize, ()> {
         self.read_internal(off, n, |off, src| {
-            proc.memory_mut()
-                .copy_out_bytes(dst + off as usize, src, allocator)
+            proc.memory_mut().copy_out_bytes(dst + off as usize, src)
         })
     }
 
@@ -543,15 +540,11 @@ impl InodeGuard<'_> {
         n: u32,
         proc: &mut CurrentProc<'_>,
         tx: &FsTransaction<'_>,
-        allocator: &Spinlock<Kmem>,
     ) -> Result<usize, ()> {
         self.write_internal(
             off,
             n,
-            |off, dst| {
-                proc.memory_mut()
-                    .copy_in_bytes(dst, src + off as usize, allocator)
-            },
+            |off, dst| proc.memory_mut().copy_in_bytes(dst, src + off as usize),
             tx,
         )
     }

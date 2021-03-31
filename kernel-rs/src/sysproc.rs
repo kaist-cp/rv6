@@ -3,7 +3,7 @@ use crate::{kernel::Kernel, poweroff, proc::CurrentProc};
 impl Kernel {
     /// Terminate the current process; status reported to wait(). No return.
     pub fn sys_exit(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
-        let n = self.argint(0, proc)?;
+        let n = proc.argint(0)?;
         self.procs().exit_current(n, proc);
     }
 
@@ -16,8 +16,8 @@ impl Kernel {
     /// Wait for a child to exit.
     /// Returns Ok(child’s PID) on success, Err(()) on error.
     pub fn sys_wait(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
-        let p = self.argaddr(0, proc)?;
-        Ok(self.procs().wait(p.into(), proc, &self.kmem)? as _)
+        let p = proc.argaddr(0)?;
+        Ok(self.procs().wait(p.into(), proc)? as _)
     }
 
     /// Return the current process’s PID.
@@ -28,14 +28,14 @@ impl Kernel {
     /// Grow process’s memory by n bytes.
     /// Returns Ok(start of new memory) on success, Err(()) on error.
     pub fn sys_sbrk(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
-        let n = self.argint(0, proc)?;
+        let n = proc.argint(0)?;
         proc.memory_mut().resize(n, &self.kmem)
     }
 
     /// Pause for n clock ticks.
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_sleep(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
-        let n = self.argint(0, proc)?;
+        let n = proc.argint(0)?;
         let mut ticks = self.ticks.lock();
         let ticks0 = *ticks;
         while ticks.wrapping_sub(ticks0) < n as u32 {
@@ -50,7 +50,7 @@ impl Kernel {
     /// Terminate process PID.
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_kill(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
-        let pid = self.argint(0, proc)?;
+        let pid = proc.argint(0)?;
         self.procs().kill(pid)?;
         Ok(0)
     }
@@ -63,7 +63,7 @@ impl Kernel {
 
     /// Shutdowns this machine, discarding all unsaved data. No return.
     pub fn sys_poweroff(&self, proc: &CurrentProc<'_>) -> Result<usize, ()> {
-        let exitcode = self.argint(0, proc)?;
+        let exitcode = proc.argint(0)?;
         poweroff::machine_poweroff(exitcode as _);
     }
 }

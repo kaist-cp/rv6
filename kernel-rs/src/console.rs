@@ -51,8 +51,7 @@ impl Console {
                 .current_proc()
                 .expect("No current proc")
                 .memory_mut()
-                // TODO: remove kernel_builder()
-                .copy_in_bytes(&mut c, src + i as usize, &kernel_builder().kmem)
+                .copy_in_bytes(&mut c, src + i as usize)
                 .is_err()
             {
                 return i;
@@ -100,8 +99,7 @@ impl Console {
                     .current_proc()
                     .expect("No current proc")
                     .memory_mut()
-                    // TODO: remove kernel_builder()
-                    .copy_out_bytes(dst, &cbuf, &kernel_builder().kmem)
+                    .copy_out_bytes(dst, &cbuf)
                     .is_err()
                 {
                     break;

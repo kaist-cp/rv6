@@ -963,12 +963,7 @@ impl Procs {
 
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
-    pub fn wait(
-        &self,
-        addr: UVAddr,
-        proc: &mut CurrentProc<'_>,
-        allocator: &Spinlock<Kmem>,
-    ) -> Result<Pid, ()> {
+    pub fn wait(&self, addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<Pid, ()> {
         // Assumes that the process_pool has at least 1 element.
         let some_proc = self.process_pool().next().unwrap();
         let mut parent_guard = some_proc.parent().lock();
@@ -988,7 +983,7 @@ impl Procs {
                         if !addr.is_null()
                             && proc
                                 .memory_mut()
-                                .copy_out(addr, &np.deref_info().xstate, allocator)
+                                .copy_out(addr, &np.deref_info().xstate)
                                 .is_err()
                         {
                             return Err(());
