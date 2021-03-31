@@ -198,7 +198,7 @@ impl File {
     }
 }
 
-#[rustfmt::skip] // Need this to use #![feature(const_trait_impl)]
+#[rustfmt::skip] // Need this if lower than rustfmt 1.4.34
 impl const Default for File {
     fn default() -> Self {
         Self::zero()
@@ -239,7 +239,7 @@ impl ArenaObject for File {
 
 impl FileTable {
     pub const fn zero() -> Self {
-        ArrayArena::<File, NFILE>::new_locked("FTABLE")
+        Spinlock::new("FTABLE", ArrayArena::<File, NFILE>::new())
     }
 
     /// Allocate a file structure.

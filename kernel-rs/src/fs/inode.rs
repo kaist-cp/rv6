@@ -673,7 +673,7 @@ impl InodeGuard<'_> {
     }
 }
 
-#[rustfmt::skip] // Need this to use #![feature(const_trait_impl)]
+#[rustfmt::skip] // Need this if lower than rustfmt 1.4.34
 impl const Default for Inode {
     fn default() -> Self {
         Self::zero()
@@ -815,7 +815,7 @@ impl Inode {
 
 impl Itable {
     pub const fn zero() -> Self {
-        ArrayArena::<Inode, NINODE>::new_locked("ITABLE")
+        Spinlock::new("ITABLE", ArrayArena::<Inode, NINODE>::new())
     }
 
     /// Find the inode with number inum on device dev

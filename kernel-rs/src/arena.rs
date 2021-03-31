@@ -125,21 +125,21 @@ pub struct Rc<A: Arena> {
 unsafe impl<T: Sync, A: Arena<Data = T>> Send for Rc<A> {}
 
 impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
-    /// Returns an `ArrayArena` of size `CAPACITY` that is wrapped by a `Spinlock`
-    /// and filled with `D`'s const default value. Note that `D` must `impl const [Default]`.
+    /// Returns an `ArrayArena` of size `CAPACITY` that is filled with `D`'s const default value.
+    /// Note that `D` must `impl const Default`.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// let arr_arena = ArrayArena::<D, 100>::new_locked("arr_arena");
+    /// let arr_arena = ArrayArena::<D, 100>::new();
     /// ```
-    pub const fn new_locked<D: Default>(name: &'static str) -> Spinlock<ArrayArena<D, CAPACITY>> {
-        Spinlock::new(
-            name,
-            ArrayArena {
-                entries: array![_ => RcCell::new(Default::default()); CAPACITY],
-            },
-        )
+    // Note: We cannot use the generic `T` in the following function, since we need to only allow
+    // types that `impl const Default`, not just `impl Default`.
+    #[allow(clippy::new_ret_no_self)]
+    pub const fn new<D: Default>() -> ArrayArena<D, CAPACITY> {
+        ArrayArena {
+            entries: array![_ => RcCell::new(Default::default()); CAPACITY],
+        }
     }
 }
 
@@ -259,22 +259,22 @@ unsafe impl<T> ListNode for MruEntry<T> {
 }
 
 impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
-    /// Returns an `MruArena` of size `CAPACITY` that is wrapped by a `Spinlock`
-    /// and filled with `D`'s const default value. Note that `D` must `impl const [Default]`.
+    /// Returns an `MruArena` of size `CAPACITY` that is filled with `D`'s const default value.
+    /// Note that `D` must `impl const Default`.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// let mru_arena = MruArena::<D, 100>::new_locked("mru_arena");
+    /// let mru_arena = MruArena::<D, 100>::new();
     /// ```
-    pub const fn new_locked<D: Default>(name: &'static str) -> Spinlock<MruArena<D, CAPACITY>> {
-        Spinlock::new(
-            name,
-            MruArena {
-                entries: array![_ => MruEntry::new(Default::default()); CAPACITY],
-                list: unsafe { List::new() },
-            },
-        )
+    // Note: We cannot use the generic `T` in the following function, since we need to only allow
+    // types that `impl const Default`, not just `impl Default`.
+    #[allow(clippy::new_ret_no_self)]
+    pub const fn new<D: Default>() -> MruArena<D, CAPACITY> {
+        MruArena {
+            entries: array![_ => MruEntry::new(Default::default()); CAPACITY],
+            list: unsafe { List::new() },
+        }
     }
 
     pub fn init(self: Pin<&mut Self>) {

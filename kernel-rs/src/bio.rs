@@ -42,7 +42,7 @@ impl BufEntry {
     }
 }
 
-#[rustfmt::skip] // Need this to use #![feature(const_trait_impl)]
+#[rustfmt::skip] // Need this if lower than rustfmt 1.4.34
 impl const Default for BufEntry {
     fn default() -> Self {
         Self::zero()
@@ -154,7 +154,7 @@ impl Bcache {
     ///
     /// The caller should make sure that `Bcache` never gets moved.
     pub const unsafe fn zero() -> Self {
-        MruArena::<BufEntry, NBUF>::new_locked("BCACHE")
+        Spinlock::new("BCACHE", MruArena::<BufEntry, NBUF>::new())
     }
 
     /// Return a unlocked buf with the contents of the indicated block.
