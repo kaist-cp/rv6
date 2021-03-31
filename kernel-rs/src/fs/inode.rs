@@ -74,7 +74,6 @@ use core::{
     ptr,
 };
 
-use array_macro::array;
 use static_assertions::const_assert;
 
 use super::{FileName, IPB, MAXFILE, NDIRECT, NINDIRECT};
@@ -87,7 +86,6 @@ use crate::{
     param::ROOTDEV,
     param::{BSIZE, NINODE},
     proc::CurrentProc,
-    rc_cell::RcCell,
     stat::Stat,
     vm::UVAddr,
 };
@@ -675,6 +673,13 @@ impl InodeGuard<'_> {
     }
 }
 
+#[rustfmt::skip] // Need this to use #![feature(const_trait_impl)]
+impl const Default for Inode {
+    fn default() -> Self {
+        Self::zero()
+    }
+}
+
 impl ArenaObject for Inode {
     /// Drop a reference to an in-memory inode.
     /// If that was the last reference, the inode table entry can
@@ -810,10 +815,7 @@ impl Inode {
 
 impl Itable {
     pub const fn zero() -> Self {
-        Spinlock::new(
-            "ITABLE",
-            ArrayArena::new(array![_ => RcCell::new(Inode::zero()); NINODE]),
-        )
+        ArrayArena::<Inode, NINODE>::new_locked("ITABLE")
     }
 
     /// Find the inode with number inum on device dev

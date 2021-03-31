@@ -3,6 +3,7 @@ use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;
 use core::pin::Pin;
 
+use array_macro::array;
 use pin_project::pin_project;
 
 use crate::list::*;
@@ -124,9 +125,21 @@ pub struct Rc<A: Arena> {
 unsafe impl<T: Sync, A: Arena<Data = T>> Send for Rc<A> {}
 
 impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
-    // TODO(https://github.com/kaist-cp/rv6/issues/371): unsafe...
-    pub const fn new(entries: [RcCell<T>; CAPACITY]) -> Self {
-        Self { entries }
+    /// Returns an `ArrayArena` of size `CAPACITY` that is wrapped by a `Spinlock`
+    /// and filled with `D`'s const default value. Note that `D` must `impl const [Default]`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// let arr_arena = ArrayArena::<D, 100>::new_locked("arr_arena");
+    /// ```
+    pub const fn new_locked<D: Default>(name: &'static str) -> Spinlock<ArrayArena<D, CAPACITY>> {
+        Spinlock::new(
+            name,
+            ArrayArena {
+                entries: array![_ => RcCell::new(Default::default()); CAPACITY],
+            },
+        )
     }
 }
 
@@ -246,12 +259,22 @@ unsafe impl<T> ListNode for MruEntry<T> {
 }
 
 impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
-    // TODO(https://github.com/kaist-cp/rv6/issues/371): unsafe...
-    pub const fn new(entries: [MruEntry<T>; CAPACITY]) -> Self {
-        Self {
-            entries,
-            list: unsafe { List::new() },
-        }
+    /// Returns an `MruArena` of size `CAPACITY` that is wrapped by a `Spinlock`
+    /// and filled with `D`'s const default value. Note that `D` must `impl const [Default]`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// let mru_arena = MruArena::<D, 100>::new_locked("mru_arena");
+    /// ```
+    pub const fn new_locked<D: Default>(name: &'static str) -> Spinlock<MruArena<D, CAPACITY>> {
+        Spinlock::new(
+            name,
+            MruArena {
+                entries: array![_ => MruEntry::new(Default::default()); CAPACITY],
+                list: unsafe { List::new() },
+            },
+        )
     }
 
     pub fn init(self: Pin<&mut Self>) {

@@ -2,8 +2,6 @@
 
 use core::{cell::UnsafeCell, cmp, mem, ops::Deref, ops::DerefMut};
 
-use array_macro::array;
-
 use crate::{
     arena::{Arena, ArenaObject, ArrayArena, Rc},
     fs::{FileSystem, InodeGuard, RcInode},
@@ -12,7 +10,6 @@ use crate::{
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
     proc::CurrentProc,
-    rc_cell::RcCell,
     vm::UVAddr,
 };
 
@@ -201,6 +198,13 @@ impl File {
     }
 }
 
+#[rustfmt::skip] // Need this to use #![feature(const_trait_impl)]
+impl const Default for File {
+    fn default() -> Self {
+        Self::zero()
+    }
+}
+
 impl ArenaObject for File {
     fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>) {
         // SAFETY: `FileTable` does not use `Arena::find_or_alloc`.
@@ -235,10 +239,7 @@ impl ArenaObject for File {
 
 impl FileTable {
     pub const fn zero() -> Self {
-        Spinlock::new(
-            "FTABLE",
-            ArrayArena::new(array![_ => RcCell::new(File::zero()); NFILE]),
-        )
+        ArrayArena::<File, NFILE>::new_locked("FTABLE")
     }
 
     /// Allocate a file structure.
