@@ -175,22 +175,18 @@ impl RawPageTable {
 
     /// Return `Some(..)` if the `index`th entry refers to a page-table page.
     /// Return `Some(..)` by allocating a new page if the `index`th
-    /// entry is invalid but `alloc` is true. The result becomes `None` when the
+    /// entry is invalid but `allocator` is `Some`. The result becomes `None` when the
     /// allocation has failed.
     /// Return `None` if the `index`th entry refers to a data page.
-    /// Return `None` if the `index`th entry is invalid and `alloc` is false.
+    /// Return `None` if the `index`th entry is invalid and `allocator` is `None`.
     fn get_table_mut(
         &mut self,
         index: usize,
-        alloc: bool,
-        allocator: &Spinlock<Kmem>,
+        allocator: Option<&Spinlock<Kmem>>,
     ) -> Option<&mut RawPageTable> {
         let pte = &mut self.inner[index];
         if !pte.is_valid() {
-            if !alloc {
-                return None;
-            }
-            let table = Self::new(allocator)?;
+            let table = Self::new(allocator?)?;
             pte.set_table(table);
         }
         pte.as_table_mut()
@@ -251,7 +247,7 @@ impl<A: VAddr> PageTable<A> {
     }
 
     /// Return the reference of the PTE in this page table
-    /// that corresponds to virtual address `va`. If `alloc` is true,
+    /// that corresponds to virtual address `va`. If `allocator` is `Some`,
     /// create any required page-table pages.
     ///
     /// The risc-v Sv39 scheme has three levels of page-table
@@ -265,15 +261,14 @@ impl<A: VAddr> PageTable<A> {
     fn get_mut(
         &mut self,
         va: A,
-        alloc: bool,
-        allocator: &Spinlock<Kmem>,
+        allocator: Option<&Spinlock<Kmem>>,
     ) -> Option<&mut PageTableEntry> {
         assert!(va.into_usize() < MAXVA, "PageTable::get_mut");
         // SAFETY: self.ptr uniquely refers to a valid RawPageTable
         // according to the invariant.
         let mut page_table = unsafe { &mut *self.ptr };
         for level in (1..3).rev() {
-            page_table = page_table.get_table_mut(va.px(level), alloc, allocator)?;
+            page_table = page_table.get_table_mut(va.px(level), allocator)?;
         }
         Some(page_table.get_entry_mut(va.px(0)))
     }
@@ -286,7 +281,7 @@ impl<A: VAddr> PageTable<A> {
         allocator: &Spinlock<Kmem>,
     ) -> Result<(), ()> {
         let a = pgrounddown(va.into_usize());
-        let pte = self.get_mut(A::from(a), true, allocator).ok_or(())?;
+        let pte = self.get_mut(A::from(a), Some(allocator)).ok_or(())?;
         assert!(!pte.is_valid(), "PageTable::insert");
         pte.set_entry(pa, perm);
         Ok(())
@@ -312,8 +307,8 @@ impl<A: VAddr> PageTable<A> {
         Ok(())
     }
 
-    fn remove(&mut self, va: A, allocator: &Spinlock<Kmem>) -> Option<PAddr> {
-        let pte = self.get_mut(va, false, allocator)?;
+    fn remove(&mut self, va: A) -> Option<PAddr> {
+        let pte = self.get_mut(va, None)?;
         assert!(pte.is_data(), "PageTable::remove");
         let pa = pte.get_pa();
         pte.invalidate();
@@ -440,7 +435,7 @@ impl UserMemory {
         for i in num_iter::range_step(0, self.size, PGSIZE) {
             let pte = self
                 .page_table
-                .get_mut(i.into(), false, allocator)
+                .get_mut(i.into(), None)
                 .expect("clone_into: pte not found");
             assert!(pte.is_valid(), "clone_into: invalid page");
 
@@ -475,12 +470,11 @@ impl UserMemory {
         ip: &mut InodeGuard<'_>,
         offset: u32,
         sz: u32,
-        allocator: &Spinlock<Kmem>,
     ) -> Result<(), ()> {
         assert!(va.is_page_aligned(), "load_file: va must be page aligned");
         for i in num_iter::range_step(0, sz, PGSIZE as _) {
             let dst = self
-                .get_slice(va + i as usize, allocator)
+                .get_slice(va + i as usize)
                 .expect("load_file: address should exist");
             let n = cmp::min((sz - i) as usize, PGSIZE);
             let bytes_read = ip.read_bytes_kernel(&mut dst[..n], offset + i);
@@ -525,7 +519,7 @@ impl UserMemory {
         }
 
         while pgroundup(newsz) < pgroundup(self.size) {
-            if let Some(page) = self.pop_page(allocator) {
+            if let Some(page) = self.pop_page() {
                 allocator.free(page);
             }
         }
@@ -551,9 +545,9 @@ impl UserMemory {
 
     /// Mark a PTE invalid for user access.
     /// Used by exec for the user stack guard page.
-    pub fn clear(&mut self, va: UVAddr, allocator: &Spinlock<Kmem>) {
+    pub fn clear(&mut self, va: UVAddr) {
         self.page_table
-            .get_mut(va, false, allocator)
+            .get_mut(va, None)
             .expect("clear")
             .clear_user();
     }
@@ -561,19 +555,14 @@ impl UserMemory {
     /// Copy from kernel to user.
     /// Copy len bytes from src to virtual address dstva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    pub fn copy_out_bytes(
-        &mut self,
-        dstva: UVAddr,
-        src: &[u8],
-        allocator: &Spinlock<Kmem>,
-    ) -> Result<(), ()> {
+    pub fn copy_out_bytes(&mut self, dstva: UVAddr, src: &[u8]) -> Result<(), ()> {
         let mut dst = dstva.into_usize();
         let mut len = src.len();
         let mut offset = 0;
         while len > 0 {
             let va = pgrounddown(dst);
             let poffset = dst - va;
-            let page = self.get_slice(va.into(), allocator).ok_or(())?;
+            let page = self.get_slice(va.into()).ok_or(())?;
             let n = cmp::min(PGSIZE - poffset, len);
             page[poffset..poffset + n].copy_from_slice(&src[offset..offset + n]);
             len -= n;
@@ -586,37 +575,26 @@ impl UserMemory {
     /// Copy from kernel to user.
     /// Copy from src to virtual address dstva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    pub fn copy_out<T>(
-        &mut self,
-        dstva: UVAddr,
-        src: &T,
-        allocator: &Spinlock<Kmem>,
-    ) -> Result<(), ()> {
+    pub fn copy_out<T>(&mut self, dstva: UVAddr, src: &T) -> Result<(), ()> {
         self.copy_out_bytes(
             dstva,
             // SAFETY: src is a valid reference to T and
             // u8 does not have any internal structure.
             unsafe { core::slice::from_raw_parts_mut(src as *const _ as _, mem::size_of::<T>()) },
-            allocator,
         )
     }
 
     /// Copy from user to kernel.
     /// Copy len bytes to dst from virtual address srcva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    pub fn copy_in_bytes(
-        &mut self,
-        dst: &mut [u8],
-        srcva: UVAddr,
-        allocator: &Spinlock<Kmem>,
-    ) -> Result<(), ()> {
+    pub fn copy_in_bytes(&mut self, dst: &mut [u8], srcva: UVAddr) -> Result<(), ()> {
         let mut src = srcva.into_usize();
         let mut len = dst.len();
         let mut offset = 0;
         while len > 0 {
             let va = pgrounddown(src);
             let poffset = src - va;
-            let page = self.get_slice(va.into(), allocator).ok_or(())?;
+            let page = self.get_slice(va.into()).ok_or(())?;
             let n = cmp::min(PGSIZE - poffset, len);
             dst[offset..offset + n].copy_from_slice(&page[poffset..poffset + n]);
             len -= n;
@@ -633,16 +611,10 @@ impl UserMemory {
     /// # Safety
     ///
     /// `T` can be safely `transmute`d to `[u8; size_of::<T>()]`.
-    pub unsafe fn copy_in<T>(
-        &mut self,
-        dst: &mut T,
-        srcva: UVAddr,
-        allocator: &Spinlock<Kmem>,
-    ) -> Result<(), ()> {
+    pub unsafe fn copy_in<T>(&mut self, dst: &mut T, srcva: UVAddr) -> Result<(), ()> {
         self.copy_in_bytes(
             unsafe { core::slice::from_raw_parts_mut(dst as *mut _ as _, mem::size_of::<T>()) },
             srcva,
-            allocator,
         )
     }
 
@@ -650,19 +622,14 @@ impl UserMemory {
     /// Copy bytes to dst from virtual address srcva in a given page table,
     /// until a '\0', or max.
     /// Return OK(()) on success, Err(()) on error.
-    pub fn copy_in_str(
-        &mut self,
-        dst: &mut [u8],
-        srcva: UVAddr,
-        allocator: &Spinlock<Kmem>,
-    ) -> Result<(), ()> {
+    pub fn copy_in_str(&mut self, dst: &mut [u8], srcva: UVAddr) -> Result<(), ()> {
         let mut src = srcva.into_usize();
         let mut offset = 0;
         let mut max = dst.len();
         while max > 0 {
             let va = pgrounddown(src);
             let poffset = src - va;
-            let page = self.get_slice(va.into(), allocator).ok_or(())?;
+            let page = self.get_slice(va.into()).ok_or(())?;
             let n = cmp::min(PGSIZE - poffset, max);
 
             let from = &page[poffset..poffset + n];
@@ -689,11 +656,11 @@ impl UserMemory {
     }
 
     /// Return a page at va as a slice. Some(page) on success, None on failure.
-    fn get_slice(&mut self, va: UVAddr, allocator: &Spinlock<Kmem>) -> Option<&mut [u8]> {
+    fn get_slice(&mut self, va: UVAddr) -> Option<&mut [u8]> {
         if va.into_usize() >= TRAPFRAME {
             return None;
         }
-        let pte = self.page_table.get_mut(va, false, allocator)?;
+        let pte = self.page_table.get_mut(va, None)?;
         if !pte.is_user() {
             return None;
         }
@@ -722,14 +689,14 @@ impl UserMemory {
 
     /// Decrease the size by removing the most recently appended page.
     /// Some(page) if size > 0, None if size = 0.
-    fn pop_page(&mut self, allocator: &Spinlock<Kmem>) -> Option<Page> {
+    fn pop_page(&mut self) -> Option<Page> {
         if self.size == 0 {
             return None;
         }
         self.size = pgroundup(self.size) - PGSIZE;
         let pa = self
             .page_table
-            .remove(self.size.into(), allocator)
+            .remove(self.size.into())
             .expect("pop_page")
             .into_usize();
         // SAFETY: pa is an address in page_table,

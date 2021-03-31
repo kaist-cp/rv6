@@ -4,7 +4,6 @@ use static_assertions::const_assert;
 
 use crate::{
     file::{FileType, RcFile},
-    kalloc::Kmem,
     kernel::Kernel,
     lock::Spinlock,
     page::Page,
@@ -46,16 +45,10 @@ impl Pipe {
     /// If successfully read i > 0 bytes, wakeups the `write_waitchannel` and returns `Ok(i: usize)`.
     /// If the pipe was empty, sleeps at `read_waitchannel` and tries again after wakeup.
     /// If an error happened, returns `Err(())`.
-    pub fn read(
-        &self,
-        addr: UVAddr,
-        n: usize,
-        proc: &mut CurrentProc<'_>,
-        allocator: &Spinlock<Kmem>,
-    ) -> Result<usize, ()> {
+    pub fn read(&self, addr: UVAddr, n: usize, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let mut inner = self.inner.lock();
         loop {
-            match inner.try_read(addr, n, proc, allocator) {
+            match inner.try_read(addr, n, proc) {
                 Ok(r) => {
                     //DOC: piperead-wakeup
                     self.write_waitchannel.wakeup();
@@ -76,17 +69,11 @@ impl Pipe {
     /// Note that we may have i < `n` if an copy-in error happened.
     /// If the pipe was full, sleeps at `write_waitchannel` and tries again after wakeup.
     /// If an error happened, returns `Err(())`.
-    pub fn write(
-        &self,
-        addr: UVAddr,
-        n: usize,
-        proc: &mut CurrentProc<'_>,
-        allocator: &Spinlock<Kmem>,
-    ) -> Result<usize, ()> {
+    pub fn write(&self, addr: UVAddr, n: usize, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let mut written = 0;
         let mut inner = self.inner.lock();
         loop {
-            match inner.try_write(addr + written, n - written, proc, allocator) {
+            match inner.try_write(addr + written, n - written, proc) {
                 Ok(r) => {
                     written += r;
                     self.read_waitchannel.wakeup();
@@ -234,7 +221,6 @@ impl PipeInner {
         addr: UVAddr,
         n: usize,
         proc: &mut CurrentProc<'_>,
-        allocator: &Spinlock<Kmem>,
     ) -> Result<usize, PipeError> {
         let mut ch = [0u8];
         if !self.readopen || proc.killed() {
@@ -245,11 +231,7 @@ impl PipeInner {
                 //DOC: pipewrite-full
                 return Ok(i);
             }
-            if proc
-                .memory_mut()
-                .copy_in_bytes(&mut ch, addr + i, allocator)
-                .is_err()
-            {
+            if proc.memory_mut().copy_in_bytes(&mut ch, addr + i).is_err() {
                 return Err(PipeError::InvalidCopyin(i));
             }
             self.data[self.nwrite as usize % PIPESIZE] = ch[0];
@@ -267,7 +249,6 @@ impl PipeInner {
         addr: UVAddr,
         n: usize,
         proc: &mut CurrentProc<'_>,
-        allocator: &Spinlock<Kmem>,
     ) -> Result<usize, PipeError> {
         //DOC: pipe-empty
         if self.nread == self.nwrite && self.writeopen {
@@ -284,11 +265,7 @@ impl PipeInner {
             }
             let ch = [self.data[self.nread as usize % PIPESIZE]];
             self.nread = self.nread.wrapping_add(1);
-            if proc
-                .memory_mut()
-                .copy_out_bytes(addr + i, &ch, allocator)
-                .is_err()
-            {
+            if proc.memory_mut().copy_out_bytes(addr + i, &ch).is_err() {
                 return Ok(i);
             }
         }
