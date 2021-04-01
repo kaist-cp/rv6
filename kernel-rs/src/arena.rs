@@ -6,7 +6,7 @@ use core::pin::Pin;
 use pin_project::pin_project;
 
 use crate::list::*;
-use crate::lock::{Spinlock, SpinlockGuard, Waitable};
+use crate::lock::{Spinlock, SpinlockGuard};
 use crate::pinned_array::IterPinMut;
 use crate::rc_cell::{RcCell, Ref, RefMut};
 

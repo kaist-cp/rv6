@@ -30,7 +30,7 @@ use static_assertions::const_assert;
 
 use crate::{
     bio::{Buf, BufData, BufUnlocked},
-    lock::{Sleepablelock, SleepablelockGuard, Waitable},
+    lock::{Sleepablelock, SleepablelockGuard},
     param::{BSIZE, LOGSIZE, MAXOPBLOCKS},
     virtio::Disk,
 };

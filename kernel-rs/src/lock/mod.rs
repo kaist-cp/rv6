@@ -13,7 +13,7 @@
 //!
 //! # SpinlockProtected
 //! [`SpinlockProtected`] owns its data but does not have its own raw lock.
-//! Instead, it borrows aanother [`Spinlock`] and protects its data using it.
+//! Instead, it borrows another [`Spinlock`] and protects its data using it.
 //! That is, a [`Spinlock`] protects its own data *and* all other connected [`SpinlockProtected`]s' data.
 //!
 //! This is useful in several cases.
@@ -43,7 +43,7 @@ mod spinlock_protected;
 pub use sleepablelock::{Sleepablelock, SleepablelockGuard};
 pub use sleeplock::{Sleeplock, SleeplockGuard};
 pub use spinlock::{pop_off, push_off, Spinlock, SpinlockGuard};
-pub use spinlock_protected::{SpinlockProtected, SpinlockProtectedGuard};
+pub use spinlock_protected::SpinlockProtected;
 
 pub trait RawLock {
     /// Acquires the lock.
@@ -52,14 +52,6 @@ pub trait RawLock {
     fn release(&self);
     /// Check whether this cpu is holding the lock.
     fn holding(&self) -> bool;
-}
-
-pub trait Waitable {
-    /// Temporarily releases the lock and calls function `f`.
-    /// After `f` returns, reacquires the lock and returns the result of the function call.
-    fn reacquire_after<F, U>(&mut self, f: F) -> U
-    where
-        F: FnOnce() -> U;
 }
 
 /// Locks that provide mutual exclusion and has its own `RawLock`.
@@ -131,8 +123,10 @@ impl<R: RawLock, T> Lock<R, T> {
     }
 }
 
-impl<R: RawLock, T> Waitable for Guard<'_, R, T> {
-    fn reacquire_after<F, U>(&mut self, f: F) -> U
+impl<R: RawLock, T> Guard<'_, R, T> {
+    /// Temporarily releases the lock and calls function `f`.
+    /// After `f` returns, reacquires the lock and returns the result of the function call.
+    pub fn reacquire_after<F, U>(&mut self, f: F) -> U
     where
         F: FnOnce() -> U,
     {
@@ -141,9 +135,7 @@ impl<R: RawLock, T> Waitable for Guard<'_, R, T> {
         self.lock.lock.acquire();
         result
     }
-}
 
-impl<R: RawLock, T> Guard<'_, R, T> {
     /// Returns a pinned mutable reference to the inner data.
     pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
         // SAFETY: for `T: !Unpin`, we only provide pinned references and don't move `T`.

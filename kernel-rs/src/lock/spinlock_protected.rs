@@ -1,6 +1,6 @@
-use core::{cell::UnsafeCell, marker::PhantomData, pin::Pin, ptr};
+use core::{cell::UnsafeCell, pin::Pin, ptr};
 
-use super::{spinlock::RawSpinlock, RawLock, Spinlock, SpinlockGuard, Waitable};
+use super::{Spinlock, SpinlockGuard};
 
 /// `SpinlockProtected<T, &Spinlock<U>>`.
 /// Similar to `Spinlock<T>`, but uses a shared raw lock.
@@ -19,15 +19,8 @@ pub struct SpinlockProtected<T, P> {
 
 unsafe impl<T: Send, P> Sync for SpinlockProtected<T, P> {}
 
-pub struct SpinlockProtectedGuard<'s> {
-    lock: &'s RawSpinlock,
-    _marker: PhantomData<*const ()>,
-}
-
-// Do not implement Send; lock must be unlocked by the CPU that acquired it.
-unsafe impl<'s> Sync for SpinlockProtectedGuard<'s> {}
-
 impl<T, U> SpinlockProtected<T, &'static Spinlock<U>> {
+    /// Returns a `SpinlockProtected` that protects `data` using the given `lock`.
     pub const fn new(lock: &'static Spinlock<U>, data: T) -> Self {
         Self {
             lock,
@@ -35,13 +28,11 @@ impl<T, U> SpinlockProtected<T, &'static Spinlock<U>> {
         }
     }
 
-    pub fn lock(&self) -> SpinlockProtectedGuard<'_> {
-        self.lock.lock.acquire();
-
-        SpinlockProtectedGuard {
-            lock: &self.lock.lock,
-            _marker: PhantomData,
-        }
+    /// Acquires the lock and returns the `SpinlockGuard`.
+    /// * To access `self`'s inner data, use `SpinlockProtected::get_pin_mut` with the returned guard.
+    /// * To access the borrowed `Spinlock`'s data, just dereference the returned guard.
+    pub fn lock(&self) -> SpinlockGuard<'_, U> {
+        self.lock.lock()
     }
 
     /// Returns a reference to the `Spinlock` that `self` borrowed from.
@@ -58,8 +49,8 @@ impl<T, U> SpinlockProtected<T, &'static Spinlock<U>> {
     }
 
     /// Returns a pinned mutable reference to the inner data, provided that the given
-    /// `guard: SpinlockProtectedGuard` was obtained from a `SpinlockProtected`
-    /// that borrows the same `Spinlock` with this `SpinlockProtected`.
+    /// `guard` was obtained by `lock()`ing `self` or `self`'s corresponding `Spinlock`.
+    /// Otherwise, panics.
     ///
     /// # Note
     ///
@@ -73,9 +64,9 @@ impl<T, U> SpinlockProtected<T, &'static Spinlock<U>> {
     /// This runtime cost can be removed by using a trait, such as `pub trait SpinlockID {}`.
     pub fn get_pin_mut<'a: 'b, 'b>(
         &'a self,
-        guard: &'b mut SpinlockProtectedGuard<'_>,
+        guard: &'b mut SpinlockGuard<'_, U>,
     ) -> Pin<&'b mut T> {
-        assert!(ptr::eq(&self.lock.lock, guard.lock));
+        assert!(ptr::eq(self.lock, guard.lock));
         unsafe { Pin::new_unchecked(&mut *self.data.get()) }
     }
 }
@@ -83,37 +74,7 @@ impl<T, U> SpinlockProtected<T, &'static Spinlock<U>> {
 impl<T: Unpin, U> SpinlockProtected<T, &'static Spinlock<U>> {
     /// Returns a mutable reference to the inner data.
     /// See `SpinlockProtected::get_mut()` for details.
-    pub fn get_mut<'a: 'b, 'b>(&'a self, guard: &'b mut SpinlockProtectedGuard<'_>) -> &'b mut T {
+    pub fn get_mut<'a: 'b, 'b>(&'a self, guard: &'b mut SpinlockGuard<'_, U>) -> &'b mut T {
         self.get_pin_mut(guard).get_mut()
-    }
-}
-
-impl SpinlockProtectedGuard<'_> {
-    /// Converts `self` into a guard of the given `lock: Spinlock`.
-    /// Panics if `self`'s corresponding `SpinlockProtected` was not obtained from the given `lock: Spinlock`.
-    pub fn into_spinlock_guard<T>(self, lock: &Spinlock<T>) -> SpinlockGuard<'_, T> {
-        assert!(ptr::eq(self.lock, &lock.lock));
-        SpinlockGuard {
-            lock,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl Waitable for SpinlockProtectedGuard<'_> {
-    fn reacquire_after<F, U>(&mut self, f: F) -> U
-    where
-        F: FnOnce() -> U,
-    {
-        self.lock.release();
-        let result = f();
-        self.lock.acquire();
-        result
-    }
-}
-
-impl Drop for SpinlockProtectedGuard<'_> {
-    fn drop(&mut self) {
-        self.lock.release();
     }
 }

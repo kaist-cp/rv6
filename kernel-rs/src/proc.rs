@@ -17,7 +17,7 @@ use crate::{
     fs::RcInode,
     kalloc::Kmem,
     kernel::{kernel, kernel_builder, KernelBuilder},
-    lock::{pop_off, push_off, Spinlock, SpinlockProtected, SpinlockProtectedGuard, Waitable},
+    lock::{pop_off, push_off, Guard, RawLock, Spinlock, SpinlockGuard, SpinlockProtected},
     memlayout::kstack,
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
@@ -222,7 +222,7 @@ impl WaitChannel {
 
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
-    pub fn sleep<W: Waitable>(&self, lock_guard: &mut W, proc: &CurrentProc<'_>) {
+    pub fn sleep<R: RawLock, T>(&self, lock_guard: &mut Guard<'_, R, T>, proc: &CurrentProc<'_>) {
         // Must acquire p->lock in order to
         // change p->state and then call sched.
         // Once we hold p->lock, we can be
@@ -479,7 +479,7 @@ impl ProcGuard<'_> {
     /// # Safety
     ///
     /// `self.info.state` ≠ `UNUSED`
-    unsafe fn clear(&mut self, mut parent_guard: SpinlockProtectedGuard<'_>) {
+    unsafe fn clear(&mut self, mut parent_guard: SpinlockGuard<'_, ()>) {
         // SAFETY: this process cannot be the current process any longer.
         let data = unsafe { self.deref_mut_data() };
         let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
@@ -890,11 +890,11 @@ impl Procs {
     }
 
     /// Pass p's abandoned children to init.
-    /// Caller must provide a `SpinlockProtectedGuard`.
+    /// Caller must provide a `SpinlockGuard`.
     fn reparent<'a: 'b, 'b>(
         &'a self,
         proc: *const Proc,
-        parent_guard: &'b mut SpinlockProtectedGuard<'_>,
+        parent_guard: &'b mut SpinlockGuard<'_, ()>,
     ) {
         for pp in self.process_pool() {
             let parent = pp.parent().get_mut(parent_guard);
