@@ -1,7 +1,5 @@
 //! The lock module.
-//!
 //! Contains types that provide mutual exclusion.
-//!
 //!
 //! # Locks and [`Pin`]
 //! Locks that own `!Unpin` data of type `T` should not give an `&mut T` of its data to the outside.
@@ -13,14 +11,24 @@
 //! Similaraly, guards implement [DerefMut](`core::ops::DerefMut`) only when `T: Unpin`, and if `T: !Unpin`,
 //! you should obtain a [`Pin<&mut T>`] from the guard and use it instead.
 //!
-//!
 //! # SpinlockProtected
 //! [`SpinlockProtected`] owns its data but does not have its own raw lock.
-//! Instead, it borrows a raw lock from another [`Spinlock<()>`] and protects its data using it.
-//! This is useful when multiple fragmented data must be protected by a single lock.
-//! * e.g. By making multiple [`SpinlockProtected<T>`]s refer to a single [`Spinlock<()>`],
-//!   you can make multiple data be protected by a single [`Spinlock<()>`], and hence,
-//!   implement global locks.
+//! Instead, it borrows aanother [`Spinlock`] and protects its data using it.
+//! That is, a [`Spinlock`] protects its own data *and* all other connected [`SpinlockProtected`]s' data.
+//!
+//! This is useful in several cases.
+//! * When multiple fragmented data must be protected by a single lock.
+//!   * e.g. By making multiple [`SpinlockProtected<T>`]s refer to a single [`Spinlock`],
+//!     you can make multiple data be protected by a single [`Spinlock`], and hence,
+//!     implement global locks. In this case, you may want to use an [`Spinlock<()>`]
+//!     if the [`Spinlock`] doesn't need to hold data.
+//! * When you want a lifetime-less smart pointer (such as [`Ref`](crate::rc_cell::Ref) or [`Rc`](std::rc::Rc))
+//!   that points to the *inside* of a lock protected data.
+//!   * e.g. Suppose a [`Spinlock`] holds a [`RcCell`](crate::rc_cell::RcCell). Suppose you want to provide a
+//!     [`Ref`](crate::rc_cell::Ref) that borrows this [`RcCell`](crate::rc_cell::RcCell) to the outside, but still want
+//!     accesses to the [`RcCell`](crate::rc_cell::RcCell)'s inner data to be synchronized.
+//!     Then, instead of providing a [`Ref`](crate::rc_cell::Ref), you should provide a [`Ref`](crate::rc_cell::Ref) wrapped by a [`SpinlockProtected`]
+//!     to the outside.
 
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
@@ -44,6 +52,14 @@ pub trait RawLock {
     fn release(&self);
     /// Check whether this cpu is holding the lock.
     fn holding(&self) -> bool;
+}
+
+pub trait Waitable {
+    /// Temporarily releases the lock and calls function `f`.
+    /// After `f` returns, reacquires the lock and returns the result of the function call.
+    fn reacquire_after<F, U>(&mut self, f: F) -> U
+    where
+        F: FnOnce() -> U;
 }
 
 /// Locks that provide mutual exclusion and has its own `RawLock`.
@@ -74,7 +90,7 @@ impl<R: RawLock, T> Lock<R, T> {
         }
     }
 
-    /// Returns a mutable reference to the inner data.
+    /// Returns a raw pointer to the inner data.
     /// The returned pointer is valid until this lock is moved or dropped.
     /// The caller must ensure that accessing the pointer does not incur race.
     /// Also, if `T: !Unpin`, the caller must not move the data using the pointer.
@@ -115,10 +131,8 @@ impl<R: RawLock, T> Lock<R, T> {
     }
 }
 
-impl<R: RawLock, T> Guard<'_, R, T> {
-    /// Temporarily releases the lock and calls function `f`.
-    /// After `f` returns, reacquires the lock and returns the result of the function call.
-    pub fn reacquire_after<F, U>(&mut self, f: F) -> U
+impl<R: RawLock, T> Waitable for Guard<'_, R, T> {
+    fn reacquire_after<F, U>(&mut self, f: F) -> U
     where
         F: FnOnce() -> U,
     {
@@ -127,7 +141,9 @@ impl<R: RawLock, T> Guard<'_, R, T> {
         self.lock.lock.acquire();
         result
     }
+}
 
+impl<R: RawLock, T> Guard<'_, R, T> {
     /// Returns a pinned mutable reference to the inner data.
     pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
         // SAFETY: for `T: !Unpin`, we only provide pinned references and don't move `T`.

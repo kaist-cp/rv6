@@ -17,9 +17,7 @@ use crate::{
     fs::RcInode,
     kalloc::Kmem,
     kernel::{kernel, kernel_builder, KernelBuilder},
-    lock::{
-        pop_off, push_off, Guard, RawLock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
-    },
+    lock::{pop_off, push_off, Spinlock, SpinlockProtected, SpinlockProtectedGuard, Waitable},
     memlayout::kstack,
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
@@ -224,7 +222,7 @@ impl WaitChannel {
 
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
-    pub fn sleep<R: RawLock, T>(&self, lock_guard: &mut Guard<'_, R, T>, proc: &CurrentProc<'_>) {
+    pub fn sleep<W: Waitable>(&self, lock_guard: &mut W, proc: &CurrentProc<'_>) {
         // Must acquire p->lock in order to
         // change p->state and then call sched.
         // Once we hold p->lock, we can be
@@ -319,7 +317,7 @@ pub struct ProcBuilder {
     /// this field in ProcBuilder::zero(), which is a const fn.
     /// Hence, this field gets initialized later in procinit() as
     /// `SpinlockProtected::new(&procs.wait_lock, ptr::null_mut())`.
-    parent: MaybeUninit<SpinlockProtected<*const Proc>>,
+    parent: MaybeUninit<SpinlockProtected<*const Proc, &'static Spinlock<()>>>,
 
     pub info: Spinlock<ProcInfo>,
 
@@ -696,7 +694,7 @@ pub struct Proc {
 }
 
 impl Proc {
-    fn parent(&self) -> &SpinlockProtected<*const Proc> {
+    fn parent(&self) -> &SpinlockProtected<*const Proc, &'static Spinlock<()>> {
         // SAFETY: invariant
         unsafe { self.parent.assume_init_ref() }
     }
