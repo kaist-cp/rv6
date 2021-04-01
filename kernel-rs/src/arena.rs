@@ -3,6 +3,7 @@ use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;
 use core::pin::Pin;
 
+use array_macro::array;
 use pin_project::pin_project;
 
 use crate::list::*;
@@ -124,9 +125,21 @@ pub struct Rc<A: Arena> {
 unsafe impl<T: Sync, A: Arena<Data = T>> Send for Rc<A> {}
 
 impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
-    // TODO(https://github.com/kaist-cp/rv6/issues/371): unsafe...
-    pub const fn new(entries: [RcCell<T>; CAPACITY]) -> Self {
-        Self { entries }
+    /// Returns an `ArrayArena` of size `CAPACITY` that is filled with `D`'s const default value.
+    /// Note that `D` must `impl const Default`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// let arr_arena = ArrayArena::<D, 100>::new();
+    /// ```
+    // Note: We cannot use the generic `T` in the following function, since we need to only allow
+    // types that `impl const Default`, not just `impl Default`.
+    #[allow(clippy::new_ret_no_self)]
+    pub const fn new<D: Default>() -> ArrayArena<D, CAPACITY> {
+        ArrayArena {
+            entries: array![_ => RcCell::new(Default::default()); CAPACITY],
+        }
     }
 }
 
@@ -246,10 +259,20 @@ unsafe impl<T> ListNode for MruEntry<T> {
 }
 
 impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
-    // TODO(https://github.com/kaist-cp/rv6/issues/371): unsafe...
-    pub const fn new(entries: [MruEntry<T>; CAPACITY]) -> Self {
-        Self {
-            entries,
+    /// Returns an `MruArena` of size `CAPACITY` that is filled with `D`'s const default value.
+    /// Note that `D` must `impl const Default`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// let mru_arena = MruArena::<D, 100>::new();
+    /// ```
+    // Note: We cannot use the generic `T` in the following function, since we need to only allow
+    // types that `impl const Default`, not just `impl Default`.
+    #[allow(clippy::new_ret_no_self)]
+    pub const fn new<D: Default>() -> MruArena<D, CAPACITY> {
+        MruArena {
+            entries: array![_ => MruEntry::new(Default::default()); CAPACITY],
             list: unsafe { List::new() },
         }
     }

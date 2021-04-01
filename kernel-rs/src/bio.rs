@@ -14,10 +14,8 @@
 use core::mem::{self, ManuallyDrop};
 use core::ops::{Deref, DerefMut};
 
-use array_macro::array;
-
 use crate::{
-    arena::{Arena, ArenaObject, MruArena, MruEntry, Rc},
+    arena::{Arena, ArenaObject, MruArena, Rc},
     lock::{Sleeplock, Spinlock},
     param::{BSIZE, NBUF},
     proc::WaitChannel,
@@ -41,6 +39,13 @@ impl BufEntry {
             vdisk_request_waitchannel: WaitChannel::new(),
             inner: Sleeplock::new("buffer", BufInner::zero()),
         }
+    }
+}
+
+#[rustfmt::skip] // Need this if lower than rustfmt 1.4.34
+impl const Default for BufEntry {
+    fn default() -> Self {
+        Self::zero()
     }
 }
 
@@ -149,12 +154,7 @@ impl Bcache {
     ///
     /// The caller should make sure that `Bcache` never gets moved.
     pub const unsafe fn zero() -> Self {
-        unsafe {
-            Spinlock::new(
-                "BCACHE",
-                MruArena::new(array![_ => MruEntry::new(BufEntry::zero()); NBUF]),
-            )
-        }
+        Spinlock::new("BCACHE", MruArena::<BufEntry, NBUF>::new())
     }
 
     /// Return a unlocked buf with the contents of the indicated block.

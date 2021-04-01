@@ -74,6 +74,7 @@ pub struct KernelBuilder {
 
     pub printer: Spinlock<Printer>,
 
+    #[pin]
     pub kmem: Spinlock<Kmem>,
 
     /// The kernel's memory manager.
@@ -132,7 +133,7 @@ impl KernelBuilder {
             console: Sleepablelock::new("CONS", Console::new()),
             uart: Uart::new(),
             printer: Spinlock::new("PRINTLN", Printer::new()),
-            kmem: Spinlock::new("KMEM", Kmem::new()),
+            kmem: Spinlock::new("KMEM", unsafe { Kmem::new() }),
             memory: MaybeUninit::uninit(),
             ticks: Sleepablelock::new("time", 0),
             procs: ProcsBuilder::zero(),
@@ -217,7 +218,7 @@ pub unsafe fn kernel_main() -> ! {
     static STARTED: AtomicBool = AtomicBool::new(false);
 
     if cpuid() == 0 {
-        let kernel = unsafe { kernel_builder_unchecked_pin().project() };
+        let mut kernel = unsafe { kernel_builder_unchecked_pin().project() };
 
         // Initialize the kernel.
 
@@ -230,10 +231,11 @@ pub unsafe fn kernel_main() -> ! {
         println!();
 
         // Physical page allocator.
-        unsafe { kernel.kmem.get_mut().init() };
+        unsafe { kernel.kmem.as_mut().get_pin_mut().init() };
 
         // Create kernel memory manager.
-        let memory = KernelMemory::new(kernel.kmem).expect("PageTable::new failed");
+        let memory =
+            KernelMemory::new(kernel.kmem.as_ref().get_ref()).expect("PageTable::new failed");
 
         // Turn on paging.
         unsafe { kernel.memory.write(memory).init_hart() };
@@ -260,7 +262,7 @@ pub unsafe fn kernel_main() -> ! {
         kernel.file_system.log.disk.get_mut().init();
 
         // First user process.
-        procs.user_proc_init(kernel.kmem);
+        procs.user_proc_init(kernel.kmem.as_ref().get_ref());
 
         STARTED.store(true, Ordering::Release);
     } else {

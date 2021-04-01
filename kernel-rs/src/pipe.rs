@@ -1,14 +1,11 @@
 use core::{mem, ops::Deref, ptr::NonNull};
 
-use static_assertions::const_assert;
-
 use crate::{
     file::{FileType, RcFile},
     kernel::Kernel,
     lock::Spinlock,
     page::Page,
     proc::{CurrentProc, WaitChannel},
-    riscv::PGSIZE,
     vm::UVAddr,
 };
 
@@ -135,16 +132,12 @@ impl Deref for AllocatedPipe {
 impl Kernel {
     pub fn allocate_pipe(&self) -> Result<(RcFile, RcFile), ()> {
         let page = self.kmem.alloc().ok_or(())?;
-        // SAFETY: by the invariant of `Page`, `page` is always non-null.
-        let mut ptr = unsafe { NonNull::new_unchecked(page.into_usize() as *mut Pipe) };
+        let mut page = scopeguard::guard(page, |page| self.kmem.free(page));
+        let ptr = page.as_uninit_mut();
 
-        // `Pipe` must be aligned with `Page`.
-        const_assert!(mem::size_of::<Pipe>() <= PGSIZE);
-
-        //TODO(https://github.com/kaist-cp/rv6/issues/367): Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`.
-        // SAFETY: `ptr` holds a valid, unique page allocated from `self.alloc()`,
-        // and the pipe size and alignment are compatible with the page.
-        let _ = unsafe { ptr.as_uninit_mut() }.write(Pipe {
+        // TODO(https://github.com/kaist-cp/rv6/issues/367):
+        // Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`.
+        let ptr = NonNull::from(ptr.write(Pipe {
             inner: Spinlock::new(
                 "pipe",
                 PipeInner {
@@ -157,36 +150,24 @@ impl Kernel {
             ),
             read_waitchannel: WaitChannel::new(),
             write_waitchannel: WaitChannel::new(),
-        });
-        let f0 = self
-            .ftable
-            .alloc_file(
-                FileType::Pipe {
-                    pipe: AllocatedPipe { ptr },
-                },
-                true,
-                false,
-            )
-            // SAFETY: ptr is an address of a page obtained by alloc().
-            .map_err(|_| {
-                self.kmem
-                    .free(unsafe { Page::from_usize(ptr.as_ptr() as _) })
-            })?;
-        let f1 = self
-            .ftable
-            .alloc_file(
-                FileType::Pipe {
-                    pipe: AllocatedPipe { ptr },
-                },
-                false,
-                true,
-            )
-            // SAFETY: ptr is an address of a page obtained by alloc().
-            .map_err(|_| {
-                self.kmem
-                    .free(unsafe { Page::from_usize(ptr.as_ptr() as _) })
-            })?;
+        }));
+        let f0 = self.ftable.alloc_file(
+            FileType::Pipe {
+                pipe: AllocatedPipe { ptr },
+            },
+            true,
+            false,
+        )?;
+        let f1 = self.ftable.alloc_file(
+            FileType::Pipe {
+                pipe: AllocatedPipe { ptr },
+            },
+            false,
+            true,
+        )?;
 
+        // Since files have been created successfully, prevent the page from being deallocated.
+        mem::forget(scopeguard::ScopeGuard::into_inner(page));
         Ok((f0, f1))
     }
 }
@@ -197,7 +178,7 @@ impl AllocatedPipe {
             // SAFETY:
             // If `Pipe::close()` returned true, this means all `AllocatedPipe`s were closed.
             // Hence, we can free the `Pipe`.
-            // Also, the following is safe since `ptr` holds a `Pipe` stored in a valid page allocated from `kernel().alloc()`.
+            // Also, the following is safe since `ptr` holds a `Pipe` stored in a valid page allocated from `Kmem::alloc`.
             Some(unsafe { Page::from_usize(self.ptr.as_ptr() as _) })
         } else {
             None
