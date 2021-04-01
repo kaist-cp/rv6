@@ -227,7 +227,9 @@ unsafe fn devintr(kernel: &Kernel) -> i32 {
         } else if irq as usize == VIRTIO0_IRQ {
             kernel.file_system.log.disk.lock().intr();
         } else if irq != 0 {
-            println!("unexpected interrupt irq={}\n", irq);
+            // Use `panic!` instead of `println` to prevent stack overflow.
+            // https://github.com/kaist-cp/rv6/issues/311
+            panic!("unexpected interrupt irq={}\n", irq);
         }
 
         // The PLIC allows each device to raise at most one
