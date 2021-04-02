@@ -1,8 +1,11 @@
 use core::{cell::UnsafeCell, pin::Pin, ptr};
 
-use super::{Guard, Lock, RawLock};
+use super::{
+    sleepablelock::RawSleepablelock, sleeplock::RawSleeplock, spinlock::RawSpinlock, Guard, Lock,
+    RawLock,
+};
 
-/// `LockProtected<T, &Lock<R, U>>`, such as `LockProtected<T, &'s Spinlock<U>>`.
+/// `LockProtected<'s, R, U, T>`, such as `LockProtected<'s, RawSpinlock, U, T>`.
 /// Similar to `Lock<R, T>`, but uses a shared raw lock.
 /// At creation, a `LockProtected` borrows a raw lock from a `Lock` and uses it to protect its data.
 /// In this way, we can make a single raw lock be shared by a `Lock` and multiple `LockProtected`s.
@@ -10,15 +13,22 @@ use super::{Guard, Lock, RawLock};
 ///
 /// # Note
 ///
-/// To dereference the inner data, you must use `LockProtected<T>::get_mut`.
-pub struct LockProtected<T, P> {
-    lock: P,
+/// To dereference the inner data, you must use `LockProtected::get_mut`.
+pub struct LockProtected<'s, R: RawLock, U, T> {
+    lock: &'s Lock<R, U>,
     data: UnsafeCell<T>,
 }
 
-unsafe impl<T: Send, P> Sync for LockProtected<T, P> {}
+unsafe impl<'s, R: RawLock, U: Send, T: Send> Sync for LockProtected<'s, R, U, T> {}
 
-impl<'s, T, R: RawLock, U> LockProtected<T, &'s Lock<R, U>> {
+/// A `LockProtected` that borrows a `Sleepablelock<U>`.
+pub type SleepablelockProtected<'s, U, T> = LockProtected<'s, RawSleepablelock, U, T>;
+/// A `LockProtected` that borrows a `Sleeplock<U>`.
+pub type SleeplockProtected<'s, U, T> = LockProtected<'s, RawSleeplock, U, T>;
+/// A `LockProtected` that borrows a `Spinlock<U>`.
+pub type SpinlockProtected<'s, U, T> = LockProtected<'s, RawSpinlock, U, T>;
+
+impl<'s, R: RawLock, U, T> LockProtected<'s, R, U, T> {
     /// Returns a `LockProtected` that protects `data` using the given `lock`.
     /// `lock` could be any [`Lock`], such as [Spinlock](super::Spinlock), [Sleepablelock](super::Sleepablelock), or [Sleeplock](super::Sleeplock).
     ///
@@ -26,7 +36,7 @@ impl<'s, T, R: RawLock, U> LockProtected<T, &'s Lock<R, U>> {
     ///
     /// ```rust,no_run
     /// let spinlock: Spinlock<usize> = Spinlock::new("spinlock", 10);
-    /// let spinlock_protected: LockProtected<isize, &Spinlock<usize>> = LockProtected::new(&spinlock, -20);
+    /// let spinlock_protected: SpinlockProtected<'_, usize, isize> = LockProtected::new(&spinlock, -20);
     /// ```
     pub const fn new(lock: &'s Lock<R, U>, data: T) -> Self {
         Self {
@@ -74,7 +84,7 @@ impl<'s, T, R: RawLock, U> LockProtected<T, &'s Lock<R, U>> {
     }
 }
 
-impl<'s, T: Unpin, R: RawLock, U> LockProtected<T, &'s Lock<R, U>> {
+impl<'s, R: RawLock, U, T: Unpin> LockProtected<'s, R, U, T> {
     /// Returns a mutable reference to the inner data.
     /// See `LockProtected::get_pin_mut()` for details.
     pub fn get_mut<'a: 'b, 'b>(&'a self, guard: &'b mut Guard<'_, R, U>) -> &'b mut T {
