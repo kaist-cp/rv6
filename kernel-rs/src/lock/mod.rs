@@ -11,23 +11,23 @@
 //! Similaraly, guards implement [DerefMut](`core::ops::DerefMut`) only when `T: Unpin`, and if `T: !Unpin`,
 //! you should obtain a [`Pin<&mut T>`] from the guard and use it instead.
 //!
-//! # SpinlockProtected
-//! [`SpinlockProtected`] owns its data but does not have its own raw lock.
-//! Instead, it borrows another [`Spinlock`] and protects its data using it.
-//! That is, a [`Spinlock`] protects its own data *and* all other connected [`SpinlockProtected`]s' data.
+//! # LockProtected
+//! [`LockProtected`] owns its data but does not have its own raw lock.
+//! Instead, it borrows another [`Lock`] (such as [`Spinlock`], [`Sleepablelock`], or [`Sleeplock`]) and protects its data using it.
+//! That is, a [`Lock`] protects its own data *and* all other connected [`LockProtected`]s' data.
 //!
 //! This is useful in several cases.
 //! * When multiple fragmented data must be protected by a single lock.
-//!   * e.g. By making multiple [`SpinlockProtected<T>`]s refer to a single [`Spinlock`],
+//!   * e.g. By making multiple [`LockProtected`]s borrow a single [`Spinlock`],
 //!     you can make multiple data be protected by a single [`Spinlock`], and hence,
 //!     implement global locks. In this case, you may want to use an [`Spinlock<()>`]
 //!     if the [`Spinlock`] doesn't need to hold data.
 //! * When you want a lifetime-less smart pointer (such as [`Ref`](crate::rc_cell::Ref) or [`Rc`](std::rc::Rc))
 //!   that points to the *inside* of a lock protected data.
-//!   * e.g. Suppose a [`Spinlock`] holds a [`RcCell`](crate::rc_cell::RcCell). Suppose you want to provide a
+//!   * e.g. Suppose a [`Lock`] holds a [`RcCell`](crate::rc_cell::RcCell). Suppose you want to provide a
 //!     [`Ref`](crate::rc_cell::Ref) that borrows this [`RcCell`](crate::rc_cell::RcCell) to the outside, but still want
 //!     accesses to the [`RcCell`](crate::rc_cell::RcCell)'s inner data to be synchronized.
-//!     Then, instead of providing a [`Ref`](crate::rc_cell::Ref), you should provide a [`Ref`](crate::rc_cell::Ref) wrapped by a [`SpinlockProtected`]
+//!     Then, instead of providing a [`Ref`](crate::rc_cell::Ref), you should provide a [`Ref`](crate::rc_cell::Ref) wrapped by a [`LockProtected`]
 //!     to the outside.
 
 use core::cell::UnsafeCell;
@@ -35,15 +35,15 @@ use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 
+mod lock_protected;
 mod sleepablelock;
 mod sleeplock;
 mod spinlock;
-mod spinlock_protected;
 
+pub use lock_protected::LockProtected;
 pub use sleepablelock::{Sleepablelock, SleepablelockGuard};
 pub use sleeplock::{Sleeplock, SleeplockGuard};
 pub use spinlock::{pop_off, push_off, Spinlock, SpinlockGuard};
-pub use spinlock_protected::SpinlockProtected;
 
 pub trait RawLock {
     /// Acquires the lock.
