@@ -17,7 +17,7 @@ use crate::{
     fs::RcInode,
     kalloc::Kmem,
     kernel::{kernel, kernel_builder, KernelBuilder},
-    lock::{pop_off, push_off, Guard, RawLock, Spinlock, SpinlockGuard, SpinlockProtected},
+    lock::{pop_off, push_off, Guard, RawLock, RemoteSpinlock, Spinlock, SpinlockGuard},
     memlayout::kstack,
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
@@ -316,8 +316,8 @@ pub struct ProcBuilder {
     /// We have to use a `MaybeUninit` type here, since we can't initialize
     /// this field in ProcBuilder::zero(), which is a const fn.
     /// Hence, this field gets initialized later in procinit() as
-    /// `SpinlockProtected::new(&procs.wait_lock, ptr::null_mut())`.
-    parent: MaybeUninit<SpinlockProtected<'static, (), *const Proc>>,
+    /// `RemoteSpinlock::new(&procs.wait_lock, ptr::null_mut())`.
+    parent: MaybeUninit<RemoteSpinlock<'static, (), *const Proc>>,
 
     pub info: Spinlock<ProcInfo>,
 
@@ -694,7 +694,7 @@ pub struct Proc {
 }
 
 impl Proc {
-    fn parent(&self) -> &SpinlockProtected<'static, (), *const Proc> {
+    fn parent(&self) -> &RemoteSpinlock<'static, (), *const Proc> {
         // SAFETY: invariant
         unsafe { self.parent.assume_init_ref() }
     }
@@ -745,7 +745,7 @@ impl ProcsBuilder {
         for (i, p) in this.process_pool.iter_mut().enumerate() {
             let _ = p
                 .parent
-                .write(SpinlockProtected::new(wait_lock, ptr::null_mut()));
+                .write(RemoteSpinlock::new(wait_lock, ptr::null_mut()));
             p.data.get_mut().kstack = kstack(i);
         }
         // SAFETY: `parent` of every process in `self` has been initialized.
