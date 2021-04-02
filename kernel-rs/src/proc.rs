@@ -17,9 +17,7 @@ use crate::{
     fs::RcInode,
     kalloc::Kmem,
     kernel::{kernel, kernel_builder, KernelBuilder},
-    lock::{
-        pop_off, push_off, Guard, RawLock, Spinlock, SpinlockProtected, SpinlockProtectedGuard,
-    },
+    lock::{pop_off, push_off, Guard, RawLock, RemoteSpinlock, Spinlock, SpinlockGuard},
     memlayout::kstack,
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
@@ -318,8 +316,8 @@ pub struct ProcBuilder {
     /// We have to use a `MaybeUninit` type here, since we can't initialize
     /// this field in ProcBuilder::zero(), which is a const fn.
     /// Hence, this field gets initialized later in procinit() as
-    /// `SpinlockProtected::new(&procs.wait_lock, ptr::null_mut())`.
-    parent: MaybeUninit<SpinlockProtected<*const Proc>>,
+    /// `RemoteSpinlock::new(&procs.wait_lock, ptr::null_mut())`.
+    parent: MaybeUninit<RemoteSpinlock<'static, (), *const Proc>>,
 
     pub info: Spinlock<ProcInfo>,
 
@@ -481,7 +479,7 @@ impl ProcGuard<'_> {
     /// # Safety
     ///
     /// `self.info.state` ≠ `UNUSED`
-    unsafe fn clear(&mut self, mut parent_guard: SpinlockProtectedGuard<'_>) {
+    unsafe fn clear(&mut self, mut parent_guard: SpinlockGuard<'_, ()>) {
         // SAFETY: this process cannot be the current process any longer.
         let data = unsafe { self.deref_mut_data() };
         let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
@@ -696,7 +694,7 @@ pub struct Proc {
 }
 
 impl Proc {
-    fn parent(&self) -> &SpinlockProtected<*const Proc> {
+    fn parent(&self) -> &RemoteSpinlock<'static, (), *const Proc> {
         // SAFETY: invariant
         unsafe { self.parent.assume_init_ref() }
     }
@@ -747,7 +745,7 @@ impl ProcsBuilder {
         for (i, p) in this.process_pool.iter_mut().enumerate() {
             let _ = p
                 .parent
-                .write(SpinlockProtected::new(wait_lock, ptr::null_mut()));
+                .write(RemoteSpinlock::new(wait_lock, ptr::null_mut()));
             p.data.get_mut().kstack = kstack(i);
         }
         // SAFETY: `parent` of every process in `self` has been initialized.
@@ -892,11 +890,11 @@ impl Procs {
     }
 
     /// Pass p's abandoned children to init.
-    /// Caller must provide a `SpinlockProtectedGuard`.
+    /// Caller must provide a `SpinlockGuard`.
     fn reparent<'a: 'b, 'b>(
         &'a self,
         proc: *const Proc,
-        parent_guard: &'b mut SpinlockProtectedGuard<'_>,
+        parent_guard: &'b mut SpinlockGuard<'_, ()>,
     ) {
         for pp in self.process_pool() {
             let parent = pp.parent().get_mut(parent_guard);

@@ -49,7 +49,7 @@ pub trait Arena: Sized {
     /// # Safety
     ///
     /// `handle` must be allocated from `self`.
-    // TODO: If we wrap `ArrayPtr::r` with `SpinlockProtected`, then we can just use `clone` instead.
+    // TODO: If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `clone` instead.
     unsafe fn dup(&self, handle: &Ref<Self::Data>) -> Ref<Self::Data>;
 
     /// Deallocate a given handle, and finalize the referred object if there are
@@ -58,7 +58,7 @@ pub trait Arena: Sized {
     /// # Safety
     ///
     /// `handle` must be allocated from `self`.
-    // TODO: If we wrap `ArrayPtr::r` with `SpinlockProtected`, then we can just use `drop` instead.
+    // TODO: If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `drop` instead.
     unsafe fn dealloc(&self, handle: Ref<Self::Data>);
 
     /// Temporarily releases the lock while calling `f`, and re-acquires the lock after `f` returned.
