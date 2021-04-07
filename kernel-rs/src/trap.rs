@@ -48,56 +48,60 @@ pub unsafe extern "C" fn usertrap() {
     unsafe { w_stvec(kernelvec as _) };
 
     // SAFETY: usertrap can be reached only after the initialization of the kernel
-    let kernel = unsafe { kernel() };
-    let mut proc = kernel.current_proc().expect("No current proc");
+    // TODO: Too many unnecessary unsafe lines?
+    unsafe {
+        kernel(|kernel| {
+            let mut proc = kernel.current_proc().expect("No current proc");
 
-    // Save user program counter.
-    proc.trap_frame_mut().epc = r_sepc();
-    if r_scause() == 8 {
-        // system call
+            // Save user program counter.
+            proc.trap_frame_mut().epc = r_sepc();
+            if r_scause() == 8 {
+                // system call
 
-        if proc.killed() {
-            kernel.procs().exit_current(-1, &mut proc);
-        }
+                if proc.killed() {
+                    kernel.procs().exit_current(-1, &mut proc);
+                }
 
-        // sepc points to the ecall instruction,
-        // but we want to return to the next instruction.
-        proc.trap_frame_mut().epc = (proc.trap_frame().epc).wrapping_add(4);
+                // sepc points to the ecall instruction,
+                // but we want to return to the next instruction.
+                proc.trap_frame_mut().epc = (proc.trap_frame().epc).wrapping_add(4);
 
-        // An interrupt will change sstatus &c registers,
-        // so don't enable until done with those registers.
-        unsafe { intr_on() };
-        proc.trap_frame_mut().a0 = ok_or!(
-            kernel.syscall(proc.trap_frame_mut().a7 as i32, &mut proc),
-            usize::MAX
-        );
-    } else {
-        which_dev = unsafe { devintr(&kernel) };
-        if which_dev == 0 {
-            println!(
-                "usertrap(): unexpected scause {:018p} pid={}",
-                r_scause() as *const u8,
-                proc.pid()
-            );
-            println!(
-                "            sepc={:018p} stval={:018p}",
-                r_sepc() as *const u8,
-                r_stval() as *const u8
-            );
-            proc.kill();
-        }
+                // An interrupt will change sstatus &c registers,
+                // so don't enable until done with those registers.
+                intr_on();
+                proc.trap_frame_mut().a0 = ok_or!(
+                    kernel.syscall(proc.trap_frame_mut().a7 as i32, &mut proc),
+                    usize::MAX
+                );
+            } else {
+                which_dev = devintr(&kernel);
+                if which_dev == 0 {
+                    println!(
+                        "usertrap(): unexpected scause {:018p} pid={}",
+                        r_scause() as *const u8,
+                        proc.pid()
+                    );
+                    println!(
+                        "            sepc={:018p} stval={:018p}",
+                        r_sepc() as *const u8,
+                        r_stval() as *const u8
+                    );
+                    proc.kill();
+                }
+            }
+
+            if proc.killed() {
+                kernel.procs().exit_current(-1, &mut proc);
+            }
+
+            // Give up the CPU if this is a timer interrupt.
+            if which_dev == 2 {
+                proc.proc_yield();
+            }
+
+            usertrapret(proc);
+        });
     }
-
-    if proc.killed() {
-        kernel.procs().exit_current(-1, &mut proc);
-    }
-
-    // Give up the CPU if this is a timer interrupt.
-    if which_dev == 2 {
-        unsafe { proc.proc_yield() };
-    }
-
-    unsafe { usertrapret(proc) };
 }
 
 /// Return to user space.
@@ -171,29 +175,32 @@ pub unsafe fn kerneltrap() {
     assert!(!intr_get(), "kerneltrap: interrupts enabled");
 
     // SAFETY: kerneltrap can be reached only after the initialization of the kernel
-    let kernel = unsafe { kernel() };
-
-    let which_dev = unsafe { devintr(&kernel) };
-    if which_dev == 0 {
-        println!("scause {:018p}", scause as *const u8);
-        println!(
-            "sepc={:018p} stval={:018p}",
-            r_sepc() as *const u8,
-            r_stval() as *const u8
-        );
-        panic!("kerneltrap");
-    }
-
-    // Give up the CPU if this is a timer interrupt.
-    if which_dev == 2 {
-        if let Some(proc) = kernel.current_proc() {
-            // SAFETY:
-            // Reading state without lock is safe because `proc_yield` and `sched`
-            // is called after we check if current process is `RUNNING`.
-            if unsafe { (*proc.info.get_mut_raw()).state } == Procstate::RUNNING {
-                unsafe { proc.proc_yield() };
+    // TODO: Too many unnecessary unsafe lines?
+    unsafe {
+        kernel(|kernel| {
+            let which_dev = devintr(&kernel);
+            if which_dev == 0 {
+                println!("scause {:018p}", scause as *const u8);
+                println!(
+                    "sepc={:018p} stval={:018p}",
+                    r_sepc() as *const u8,
+                    r_stval() as *const u8
+                );
+                panic!("kerneltrap");
             }
-        }
+
+            // Give up the CPU if this is a timer interrupt.
+            if which_dev == 2 {
+                if let Some(proc) = kernel.current_proc() {
+                    // SAFETY:
+                    // Reading state without lock is safe because `proc_yield` and `sched`
+                    // is called after we check if current process is `RUNNING`.
+                    if (*proc.info.get_mut_raw()).state == Procstate::RUNNING {
+                        proc.proc_yield();
+                    }
+                }
+            }
+        });
     }
 
     // The yield() may have caused some traps to occur,
@@ -202,7 +209,7 @@ pub unsafe fn kerneltrap() {
     unsafe { sstatus.write() };
 }
 
-fn clockintr(kernel: &Kernel) {
+fn clockintr(kernel: &Kernel<'_>) {
     let mut ticks = kernel.ticks.lock();
     *ticks = ticks.wrapping_add(1);
     ticks.wakeup();
@@ -213,7 +220,7 @@ fn clockintr(kernel: &Kernel) {
 /// Returns 2 if timer interrupt,
 /// 1 if other device,
 /// 0 if not recognized.
-unsafe fn devintr(kernel: &Kernel) -> i32 {
+unsafe fn devintr(kernel: &Kernel<'_>) -> i32 {
     let scause: usize = r_scause();
 
     if scause & 0x8000000000000000 != 0 && scause & 0xff == 9 {

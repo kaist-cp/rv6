@@ -257,7 +257,7 @@ impl WaitChannel {
     /// Must be called without any p->lock.
     pub fn wakeup(&self) {
         // TODO: remove kernel()
-        unsafe { kernel() }.procs().wakeup_pool(self)
+        unsafe { kernel(|kernel| kernel.procs().wakeup_pool(self)) }
     }
 }
 
@@ -1125,28 +1125,31 @@ const INITCODE: [u8; 52] = [
 ///  - eventually that process transfers control
 ///    via swtch back to the scheduler.
 pub unsafe fn scheduler() -> ! {
-    let kernel = unsafe { kernel() };
-    let mut cpu = kernel.current_cpu();
-    unsafe { (*cpu).proc = ptr::null_mut() };
-    loop {
-        // Avoid deadlock by ensuring that devices can interrupt.
-        unsafe { intr_on() };
+    unsafe {
+        kernel(|kernel| {
+            let mut cpu = kernel.current_cpu();
+            (*cpu).proc = ptr::null_mut();
+            loop {
+                // Avoid deadlock by ensuring that devices can interrupt.
+                intr_on();
 
-        for p in kernel.procs().process_pool() {
-            let mut guard = p.lock();
-            if guard.state() == Procstate::RUNNABLE {
-                // Switch to chosen process.  It is the process's job
-                // to release its lock and then reacquire it
-                // before jumping back to us.
-                guard.deref_mut_info().state = Procstate::RUNNING;
-                unsafe { (*cpu).proc = p as *const _ };
-                unsafe { swtch(&mut (*cpu).context, &mut guard.deref_mut_data().context) };
+                for p in kernel.procs().process_pool() {
+                    let mut guard = p.lock();
+                    if guard.state() == Procstate::RUNNABLE {
+                        // Switch to chosen process.  It is the process's job
+                        // to release its lock and then reacquire it
+                        // before jumping back to us.
+                        guard.deref_mut_info().state = Procstate::RUNNING;
+                        (*cpu).proc = p as *const _;
+                        swtch(&mut (*cpu).context, &mut guard.deref_mut_data().context);
 
-                // Process is done running for now.
-                // It should have changed its p->state before coming back.
-                unsafe { (*cpu).proc = ptr::null_mut() }
+                        // Process is done running for now.
+                        // It should have changed its p->state before coming back.
+                        (*cpu).proc = ptr::null_mut()
+                    }
+                }
             }
-        }
+        })
     }
 }
 

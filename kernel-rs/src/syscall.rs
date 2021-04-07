@@ -9,7 +9,7 @@ use crate::{
     vm::{Addr, UVAddr},
 };
 
-impl Kernel {
+impl<'id> Kernel<'id> {
     pub fn syscall(&'static self, num: i32, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         match num {
             1 => self.sys_fork(proc),

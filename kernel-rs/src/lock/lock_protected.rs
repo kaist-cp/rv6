@@ -105,7 +105,8 @@ impl<'s, R: RawLock, U, T: Unpin> RemoteLock<'s, R, U, T> {
 
 /// A type that holds an invariant, unique lifetime called `'id`.
 /// This lifetime is actually more like an identifier/token, rather than a lifetime.
-type Id<'id> = PhantomData<Cell<&'id mut ()>>;
+/// TODO: Move this somewhere else?
+pub type Id<'id> = PhantomData<Cell<&'id mut ()>>;
 
 /// A branded lock.
 /// The `'id` tag uniquely distinguishes `BrandedLock`s and its related `BrandedGuard`/`BrandedRemoteLock`.

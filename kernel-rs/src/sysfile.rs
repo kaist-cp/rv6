@@ -38,7 +38,7 @@ impl RcFile {
     }
 }
 
-impl Kernel {
+impl<'id> Kernel<'id> {
     /// Create an inode with given type.
     /// Returns Ok(created inode, result of given function f) on success, Err(()) on error.
     fn create<F, T>(
@@ -294,7 +294,7 @@ impl Kernel {
     }
 }
 
-impl Kernel {
+impl<'id> Kernel<'id> {
     /// Return a new file descriptor referring to the same file as given fd.
     /// Returns Ok(new file descriptor) on success, Err(()) on error.
     pub fn sys_dup(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {

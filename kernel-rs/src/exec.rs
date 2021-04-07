@@ -91,7 +91,7 @@ impl ProgHdr {
     }
 }
 
-impl Kernel {
+impl<'id> Kernel<'id> {
     pub fn exec(
         &self,
         path: &Path,

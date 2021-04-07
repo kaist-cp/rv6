@@ -121,7 +121,7 @@ impl Console {
             // Print process list.
             m if m == ctrl('P') => {
                 // TODO: remove kernel()
-                unsafe { kernel().procs().dump() };
+                unsafe { kernel(|kernel| kernel.procs().dump()) };
             }
 
             // Kill line.

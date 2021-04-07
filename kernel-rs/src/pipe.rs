@@ -129,7 +129,7 @@ impl Deref for AllocatedPipe {
     }
 }
 
-impl Kernel {
+impl<'id> Kernel<'id> {
     pub fn allocate_pipe(&self) -> Result<(RcFile, RcFile), ()> {
         let page = self.kmem.alloc().ok_or(())?;
         let mut page = scopeguard::guard(page, |page| self.kmem.free(page));

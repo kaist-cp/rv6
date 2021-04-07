@@ -15,7 +15,7 @@ use crate::{
     file::{Devsw, FileTable},
     fs::{FileSystem, Itable},
     kalloc::Kmem,
-    lock::{Sleepablelock, Spinlock},
+    lock::{Id, Sleepablelock, Spinlock},
     param::{NCPU, NDEV},
     plic::{plicinit, plicinithart},
     println,
@@ -35,11 +35,10 @@ pub fn kernel_builder() -> &'static KernelBuilder {
     unsafe { &KERNEL }
 }
 
-#[inline]
-pub unsafe fn kernel() -> &'static Kernel {
+pub unsafe fn kernel<F: for<'new_id> FnOnce(&'static Kernel<'new_id>) -> R, R>(f: F) -> R {
     // SAFETY: Safe to cast &KernelBuilder into &Kernel
     // since Kernel has a transparent memory layout.
-    unsafe { &*(kernel_builder() as *const _ as *const _) }
+    f(unsafe { &*(kernel_builder() as *const _ as *const _) })
 }
 
 /// Returns a pinned mutable reference to the `KERNEL`.
@@ -104,21 +103,25 @@ pub struct KernelBuilder {
 }
 
 #[repr(transparent)]
+/// An initialized kernel.
+/// The `'id` tag uniquely distinguishes multiple `Kernel` instances.
+///
 /// # Safety
 ///
 /// `inner.procs` is initialized.
-pub struct Kernel {
+pub struct Kernel<'id> {
+    _marker: Id<'id>,
     inner: KernelBuilder,
 }
 
-impl Kernel {
+impl<'id> Kernel<'id> {
     pub fn procs(&self) -> &Procs {
         // SAFETY: `self.inner.procs` is initialized according to the invariant.
         unsafe { self.inner.procs.as_procs_unchecked() }
     }
 }
 
-impl Deref for Kernel {
+impl<'id> Deref for Kernel<'id> {
     type Target = KernelBuilder;
 
     fn deref(&self) -> &Self::Target {
@@ -273,7 +276,7 @@ pub unsafe fn kernel_main() -> ! {
         println!("hart {} starting", cpuid());
 
         // Turn on paging.
-        unsafe { kernel().memory.assume_init_ref().init_hart() };
+        unsafe { kernel(|kernel| kernel.memory.assume_init_ref().init_hart()) };
 
         // Install kernel trap vector.
         unsafe { trapinithart() };

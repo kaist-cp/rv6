@@ -1,6 +1,6 @@
 use crate::{kernel::Kernel, poweroff, proc::CurrentProc};
 
-impl Kernel {
+impl<'id> Kernel<'id> {
     /// Terminate the current process; status reported to wait(). No return.
     pub fn sys_exit(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let n = proc.argint(0)?;
