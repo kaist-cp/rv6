@@ -43,7 +43,7 @@ mod spinlock;
 pub use lock_protected::{RemoteSleepablelock, RemoteSleeplock, RemoteSpinlock};
 pub use sleepablelock::{Sleepablelock, SleepablelockGuard};
 pub use sleeplock::{Sleeplock, SleeplockGuard};
-pub use spinlock::{pop_off, push_off, Spinlock, SpinlockGuard};
+pub use spinlock::{Spinlock, SpinlockGuard};
 
 pub trait RawLock {
     /// Acquires the lock.
@@ -138,8 +138,10 @@ impl<R: RawLock, T> Guard<'_, R, T> {
 
     /// Returns a pinned mutable reference to the inner data.
     pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
+        // SAFETY: self.lock.lock is held, so self.lock.data can be exclusively accessed.
+        let ptr = unsafe { &mut *self.lock.data.get() };
         // SAFETY: for `T: !Unpin`, we only provide pinned references and don't move `T`.
-        unsafe { Pin::new_unchecked(&mut *self.lock.data.get()) }
+        unsafe { Pin::new_unchecked(ptr) }
     }
 }
 

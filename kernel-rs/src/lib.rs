@@ -65,6 +65,7 @@ mod exec;
 mod fcntl;
 mod file;
 mod fs;
+mod intr;
 mod kalloc;
 mod kernel;
 mod list;

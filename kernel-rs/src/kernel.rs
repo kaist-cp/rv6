@@ -14,12 +14,13 @@ use crate::{
     console::{consoleinit, Console, Printer},
     file::{Devsw, FileTable},
     fs::{FileSystem, Itable},
+    intr::HeldInterrupts,
     kalloc::Kmem,
     lock::{Sleepablelock, Spinlock},
     param::{NCPU, NDEV},
     plic::{plicinit, plicinithart},
     println,
-    proc::{cpuid, scheduler, Cpu, Procs, ProcsBuilder},
+    proc::{cpuid, Cpu, Procs, ProcsBuilder},
     trap::{trapinit, trapinithart},
     uart::Uart,
     vm::KernelMemory,
@@ -172,9 +173,14 @@ impl KernelBuilder {
     ///
     /// It is safe to call this function with interrupts enabled, but returned address may not be the
     /// current CPU since the scheduler can move the process to another CPU on time interrupt.
-    pub fn current_cpu(&self) -> *mut Cpu {
+    pub fn current_cpu_raw(&self) -> *mut Cpu {
         let id: usize = cpuid();
         self.cpus[id].get()
+    }
+
+    pub fn current_cpu<'a>(&'a self, _held: &'a mut HeldInterrupts) -> &'a mut Cpu {
+        // SAFETY: cpu can be exclusively accessed because interrupts are disabled.
+        unsafe { &mut *self.current_cpu_raw() }
     }
 
     /// Returns an immutable reference to the kernel's bcache.
@@ -282,5 +288,5 @@ pub unsafe fn kernel_main() -> ! {
         unsafe { plicinithart() };
     }
 
-    unsafe { scheduler() }
+    unsafe { kernel().scheduler() }
 }

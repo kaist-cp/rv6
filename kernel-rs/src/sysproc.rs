@@ -17,7 +17,7 @@ impl Kernel {
     /// Returns Ok(child’s PID) on success, Err(()) on error.
     pub fn sys_wait(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let p = proc.argaddr(0)?;
-        Ok(self.procs().wait(p.into(), proc)? as _)
+        Ok(self.procs().wait(p.into(), proc, &self.kmem)? as _)
     }
 
     /// Return the current process’s PID.

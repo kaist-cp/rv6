@@ -5,8 +5,9 @@ use self::UartCtrlRegs::{FCR, IER, ISR, LCR, LSR, RBR, THR};
 use crate::memlayout::UART0;
 use crate::{
     console::consoleintr,
+    intr::HeldInterrupts,
     kernel::kernel_builder,
-    lock::{pop_off, push_off, Sleepablelock, SleepablelockGuard},
+    lock::{Sleepablelock, SleepablelockGuard},
     utils::spin_loop,
 };
 
@@ -170,9 +171,8 @@ impl Uart {
     /// to echo characters. It spins waiting for the uart's
     /// output register to be empty.
     pub fn putc_sync(c: i32) {
-        unsafe {
-            push_off();
-        }
+        let held = HeldInterrupts::new();
+
         // TODO: remove kernel_builder()
         if kernel_builder().is_panicked() {
             spin_loop();
@@ -183,9 +183,7 @@ impl Uart {
 
         THR.write(c as u8);
 
-        unsafe {
-            pop_off();
-        }
+        drop(held);
     }
 
     /// If the UART is idle, and a character is waiting

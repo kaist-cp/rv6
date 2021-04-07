@@ -15,9 +15,10 @@ use pin_project::pin_project;
 use crate::{
     file::RcFile,
     fs::RcInode,
+    intr::HeldInterrupts,
     kalloc::Kmem,
-    kernel::{kernel, kernel_builder, KernelBuilder},
-    lock::{pop_off, push_off, Guard, RawLock, RemoteSpinlock, Spinlock, SpinlockGuard},
+    kernel::{kernel, kernel_builder, Kernel, KernelBuilder},
+    lock::{Guard, RawLock, RemoteSpinlock, Spinlock, SpinlockGuard},
     memlayout::kstack,
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
@@ -453,23 +454,23 @@ impl ProcGuard<'_> {
     /// be proc->interrupt_enabled and proc->noff, but that would
     /// break in the few places where a lock is held but
     /// there's no process.
+    ///
+    /// # Safety
+    ///
+    /// This method must be called only after the initialization of the kernel.
     unsafe fn sched(&mut self) {
-        // TODO: remove kernel_builder()
-        assert_eq!((*kernel_builder().current_cpu()).noff, 1, "sched locks");
-        assert_ne!(self.state(), Procstate::RUNNING, "sched running");
-        assert!(!intr_get(), "sched interruptible");
+        let kernel = unsafe { kernel() };
 
-        // TODO: remove kernel_builder()
-        let interrupt_enabled = unsafe { (*kernel_builder().current_cpu()).interrupt_enabled };
-        unsafe {
-            swtch(
-                &mut self.deref_mut_data().context,
-                // TODO: remove kernel_builder()
-                &mut (*kernel_builder().current_cpu()).context,
-            )
-        };
-        // TODO: remove kernel_builder()
-        unsafe { (*kernel_builder().current_cpu()).interrupt_enabled = interrupt_enabled };
+        assert!(!intr_get(), "sched interruptible");
+        // SAFETY: not interruptible; cpu can be exclusively accessed until swtch is called.
+        let cpu = unsafe { &mut *kernel.current_cpu_raw() };
+
+        assert_eq!(cpu.noff, 1, "sched locks");
+        assert_ne!(self.state(), Procstate::RUNNING, "sched running");
+
+        let interrupt_enabled = cpu.interrupt_enabled;
+        unsafe { swtch(&mut self.deref_mut_data().context, &mut cpu.context) };
+        unsafe { (*kernel.current_cpu_raw()).interrupt_enabled = interrupt_enabled };
     }
 
     /// Frees a `ProcBuilder` structure and the data hanging from it, including user pages.
@@ -479,12 +480,14 @@ impl ProcGuard<'_> {
     /// # Safety
     ///
     /// `self.info.state` ≠ `UNUSED`
-    unsafe fn clear(&mut self, mut parent_guard: SpinlockGuard<'_, ()>) {
+    unsafe fn clear(
+        &mut self,
+        mut parent_guard: SpinlockGuard<'_, ()>,
+        allocator: &Spinlock<Kmem>,
+    ) {
         // SAFETY: this process cannot be the current process any longer.
         let data = unsafe { self.deref_mut_data() };
         let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
-        // TODO: remove kernel_builder()
-        let allocator = &kernel_builder().kmem;
         // SAFETY: trap_frame uniquely refers to a valid page.
         allocator.free(unsafe { Page::from_usize(trap_frame as _) });
         // SAFETY:
@@ -961,7 +964,12 @@ impl Procs {
 
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
-    pub fn wait(&self, addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<Pid, ()> {
+    pub fn wait(
+        &self,
+        addr: UVAddr,
+        proc: &mut CurrentProc<'_>,
+        allocator: &Spinlock<Kmem>,
+    ) -> Result<Pid, ()> {
         // Assumes that the process_pool has at least 1 element.
         let some_proc = self.process_pool().next().unwrap();
         let mut parent_guard = some_proc.parent().lock();
@@ -988,7 +996,7 @@ impl Procs {
                         }
                         // Reap the zombie child process.
                         // SAFETY: np.state() equals ZOMBIE.
-                        unsafe { np.clear(parent_guard) };
+                        unsafe { np.clear(parent_guard, allocator) };
                         return Ok(pid);
                     }
                 }
@@ -1117,34 +1125,35 @@ const INITCODE: [u8; 52] = [
     0x6e, 0x69, 0x74, 0, 0, 0x24, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-/// Per-CPU process scheduler.
-/// Each CPU calls scheduler() after setting itself up.
-/// Scheduler never returns.  It loops, doing:
-///  - choose a process to run.
-///  - swtch to start running that process.
-///  - eventually that process transfers control
-///    via swtch back to the scheduler.
-pub unsafe fn scheduler() -> ! {
-    let kernel = unsafe { kernel() };
-    let mut cpu = kernel.current_cpu();
-    unsafe { (*cpu).proc = ptr::null_mut() };
-    loop {
-        // Avoid deadlock by ensuring that devices can interrupt.
-        unsafe { intr_on() };
+impl Kernel {
+    /// Per-CPU process scheduler.
+    /// Each CPU calls scheduler() after setting itself up.
+    /// Scheduler never returns.  It loops, doing:
+    ///  - choose a process to run.
+    ///  - swtch to start running that process.
+    ///  - eventually that process transfers control
+    ///    via swtch back to the scheduler.
+    pub unsafe fn scheduler(&self) -> ! {
+        let cpu = self.current_cpu_raw();
+        unsafe { (*cpu).proc = ptr::null_mut() };
+        loop {
+            // Avoid deadlock by ensuring that devices can interrupt.
+            unsafe { intr_on() };
 
-        for p in kernel.procs().process_pool() {
-            let mut guard = p.lock();
-            if guard.state() == Procstate::RUNNABLE {
-                // Switch to chosen process.  It is the process's job
-                // to release its lock and then reacquire it
-                // before jumping back to us.
-                guard.deref_mut_info().state = Procstate::RUNNING;
-                unsafe { (*cpu).proc = p as *const _ };
-                unsafe { swtch(&mut (*cpu).context, &mut guard.deref_mut_data().context) };
+            for p in self.procs().process_pool() {
+                let mut guard = p.lock();
+                if guard.state() == Procstate::RUNNABLE {
+                    // Switch to chosen process.  It is the process's job
+                    // to release its lock and then reacquire it
+                    // before jumping back to us.
+                    guard.deref_mut_info().state = Procstate::RUNNING;
+                    unsafe { (*cpu).proc = p as *const _ };
+                    unsafe { swtch(&mut (*cpu).context, &mut guard.deref_mut_data().context) };
 
-                // Process is done running for now.
-                // It should have changed its p->state before coming back.
-                unsafe { (*cpu).proc = ptr::null_mut() }
+                    // Process is done running for now.
+                    // It should have changed its p->state before coming back.
+                    unsafe { (*cpu).proc = ptr::null_mut() }
+                }
             }
         }
     }
@@ -1152,12 +1161,16 @@ pub unsafe fn scheduler() -> ! {
 
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
+///
+/// # Safety
+///
+/// This function must be called only after the initialization of the kernel.
 unsafe fn forkret() {
-    // TODO: remove kernel_builder()
-    let kernel = kernel_builder();
+    // SAFETY: the safety condition of this function
+    let kernel = unsafe { kernel() };
 
     let proc = kernel.current_proc().expect("No current proc");
-    // Still holding p->lock from scheduler.
+    // SAFETY: Still holding p->lock from scheduler.
     unsafe { proc.info.unlock() };
 
     // File system initialization must be run in the context of a
@@ -1172,14 +1185,14 @@ impl KernelBuilder {
     /// Returns `Some<CurrentProc<'_>>` if current proc exists (i.e. When (*cpu).proc is non-null).
     /// Otherwise, returns `None` (when current proc is null).
     pub fn current_proc(&self) -> Option<CurrentProc<'_>> {
-        unsafe { push_off() };
-        let cpu = self.current_cpu();
-        let proc = unsafe { (*cpu).proc };
-        unsafe { pop_off() };
+        let mut held = HeldInterrupts::new();
+        let cpu = self.current_cpu(&mut held);
+        let proc = cpu.proc;
+        drop(held);
         if proc.is_null() {
             return None;
         }
-        // This is safe because p is non-null and current Cpu's proc.
+        // SAFETY: proc is non-null and current Cpu's proc.
         Some(unsafe { CurrentProc::new(&(*proc)) })
     }
 }

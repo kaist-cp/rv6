@@ -1,17 +1,19 @@
 //! Spin locks
-use core::cell::UnsafeCell;
+use core::cell::{Cell, UnsafeCell};
 use core::hint::spin_loop;
+use core::mem::MaybeUninit;
 use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
 use super::{Guard, Lock, RawLock};
-use crate::{
-    kernel::kernel_builder,
-    proc::Cpu,
-    riscv::{intr_get, intr_off, intr_on},
-};
+use crate::{intr::HeldInterrupts, kernel::kernel_builder, proc::Cpu};
 
 /// Mutual exclusion lock that busy waits (spin).
+///
+/// # Safety
+///
+/// When `self.holding()` is true, `self.held` has been initialized, and thus interrupts are
+/// disabled.
 pub struct RawSpinlock {
     /// Name of lock.
     name: &'static str,
@@ -21,6 +23,7 @@ pub struct RawSpinlock {
     ///
     /// Records info about lock acquisition for holding() and debugging.
     locked: AtomicPtr<Cpu>,
+    held: Cell<MaybeUninit<HeldInterrupts>>,
 }
 
 /// Locks that busy wait (spin).
@@ -34,6 +37,7 @@ impl RawSpinlock {
         Self {
             locked: AtomicPtr::new(ptr::null_mut()),
             name,
+            held: Cell::new(MaybeUninit::uninit()),
         }
     }
 }
@@ -42,7 +46,7 @@ impl RawLock for RawSpinlock {
     /// Acquires the lock.
     /// Loops (spins) until the lock is acquired.
     ///
-    /// # Safety
+    /// # Note
     ///
     /// To ensure that all stores done in one critical section are visible in the next critical section's loads,
     /// we use an atomic exchange with `Acquire` ordering in `RawSpinlock::acquire()`,
@@ -55,9 +59,8 @@ impl RawLock for RawSpinlock {
     /// Additionally, note that an additional fence is unneccessary due to the pair of `Acquire`/`Release` orderings.
     fn acquire(&self) {
         // Disable interrupts to avoid deadlock.
-        unsafe {
-            push_off();
-        }
+        let held = HeldInterrupts::new();
+
         assert!(!self.holding(), "acquire {}", self.name);
 
         // RISC-V supports two forms of atomic instructions, 1) load-reserved/store-conditional and 2) atomic fetch-and-op,
@@ -73,7 +76,7 @@ impl RawLock for RawSpinlock {
             .compare_exchange(
                 ptr::null_mut(),
                 // TODO: remove kernel_builder()
-                kernel_builder().current_cpu(),
+                kernel_builder().current_cpu_raw(),
                 Ordering::Acquire,
                 // Okay to use `Relaxed` ordering since we don't enter the critical section anyway
                 // if the exchange fails.
@@ -83,11 +86,14 @@ impl RawLock for RawSpinlock {
         {
             spin_loop();
         }
+
+        self.held.set(MaybeUninit::new(held));
     }
 
     /// Releases the lock.
     ///
-    /// # Safety
+    /// # Note
+    ///
     /// We use an atomic store with `Release` ordering here. See `RawSpinlock::acquire()` for more details.
     fn release(&self) {
         assert!(self.holding(), "release {}", self.name);
@@ -97,46 +103,15 @@ impl RawLock for RawSpinlock {
         //
         // 0x80000f5c | fence   rw,w            (Enforces `Release` memory ordering)
         self.locked.store(ptr::null_mut(), Ordering::Release);
-        unsafe {
-            pop_off();
-        }
+        // SAFETY: held has been initialized according to the invariant.
+        let _ = unsafe { self.held.replace(MaybeUninit::uninit()).assume_init() };
     }
 
     /// Check whether this cpu is holding the lock.
     /// Interrupts must be off.
     fn holding(&self) -> bool {
         // TODO: remove kernel_builder()
-        self.locked.load(Ordering::Relaxed) == kernel_builder().current_cpu()
-    }
-}
-
-/// push_off/pop_off are like intr_off()/intr_on() except that they are matched:
-/// it takes two pop_off()s to undo two push_off()s.  Also, if interrupts
-/// are initially off, then push_off, pop_off leaves them off.
-pub unsafe fn push_off() {
-    let old = intr_get();
-    unsafe { intr_off() };
-
-    // TODO: remove kernel_builder()
-    let mut cpu = kernel_builder().current_cpu();
-    if unsafe { (*cpu).noff } == 0 {
-        unsafe { (*cpu).interrupt_enabled = old };
-    }
-    unsafe { (*cpu).noff += 1 };
-}
-
-/// pop_off() should be paired with push_off().
-/// See push_off() for more details.
-pub unsafe fn pop_off() {
-    // TODO: remove kernel_builder()
-    let mut cpu: *mut Cpu = kernel_builder().current_cpu();
-    assert!(!intr_get(), "pop_off - interruptible");
-    assert!(unsafe { (*cpu).noff } >= 1, "pop_off");
-
-    unsafe { (*cpu).noff -= 1 };
-
-    if unsafe { (*cpu).noff == 0 } && unsafe { (*cpu).interrupt_enabled } {
-        unsafe { intr_on() };
+        self.locked.load(Ordering::Relaxed) == kernel_builder().current_cpu_raw()
     }
 }
 
