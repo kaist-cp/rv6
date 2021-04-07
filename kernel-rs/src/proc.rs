@@ -17,7 +17,7 @@ use crate::{
     fs::RcInode,
     kalloc::Kmem,
     kernel::{kernel, kernel_builder, KernelBuilder},
-    lock::{pop_off, push_off, Guard, RawLock, RemoteSpinlock, Spinlock, SpinlockGuard},
+    lock::{pop_off, push_off, Guard, Id, RawLock, RemoteSpinlock, Spinlock, SpinlockGuard},
     memlayout::kstack,
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
@@ -657,7 +657,8 @@ pub struct ProcsBuilder {
 /// * 'inner.wait_lock` must not be accessed.
 #[repr(transparent)]
 #[pin_project]
-pub struct Procs {
+pub struct Procs<'id> {
+    _marker: Id<'id>,
     #[pin]
     inner: ProcsBuilder,
 }
@@ -733,7 +734,7 @@ impl ProcsBuilder {
     }
 
     /// Initialize the proc table at boot time.
-    pub fn init(self: Pin<&'static mut Self>) -> Pin<&'static mut Procs> {
+    pub fn init<'id>(self: Pin<&'static mut Self>) -> Pin<&'static mut Procs<'id>> {
         // SAFETY: we don't move the `Procs`.
         let this = unsafe { self.get_unchecked_mut() };
         // SAFETY: we cast `wait_lock` to a raw pointer and cast again the raw pointer to a reference
@@ -757,23 +758,23 @@ impl ProcsBuilder {
     /// # Safety
     ///
     /// `parent` of every process in `self` must have been initialized.
-    pub unsafe fn as_procs_unchecked(&self) -> &Procs {
+    pub unsafe fn as_procs_unchecked<'id>(&self) -> &Procs<'id> {
         // SAFETY: `Procs` has a transparent memory layout, and `parent` of every process in `self`
         // has been initialized according to the safety condition of this method.
-        unsafe { &*(self as *const _ as *const Procs) }
+        unsafe { &*(self as *const _ as *const Procs<'id>) }
     }
 
     /// # Safety
     ///
     /// `parent` of every process in `self` must have been initialized.
-    pub unsafe fn as_procs_mut_unchecked(&mut self) -> &mut Procs {
+    pub unsafe fn as_procs_mut_unchecked<'id>(&mut self) -> &mut Procs<'id> {
         // SAFETY: `Procs` has a transparent memory layout, and `parent` of every process in `self`
         // has been initialized according to the safety condition of this method.
-        unsafe { &mut *(self as *mut _ as *mut Procs) }
+        unsafe { &mut *(self as *mut _ as *mut Procs<'id>) }
     }
 }
 
-impl Procs {
+impl<'id> Procs<'id> {
     fn process_pool(&self) -> ProcIter<'_> {
         // SAFETY: invariant
         unsafe { ProcIter::new(self.inner.process_pool.iter()) }

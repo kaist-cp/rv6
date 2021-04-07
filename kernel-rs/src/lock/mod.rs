@@ -40,7 +40,10 @@ mod sleepablelock;
 mod sleeplock;
 mod spinlock;
 
-pub use lock_protected::{Id, RemoteSleepablelock, RemoteSleeplock, RemoteSpinlock};
+pub use lock_protected::{
+    BrandedRemoteSpinlock, BrandedSpinlock, Id, RemoteSleepablelock, RemoteSleeplock,
+    RemoteSpinlock,
+};
 pub use sleepablelock::{Sleepablelock, SleepablelockGuard};
 pub use sleeplock::{Sleeplock, SleeplockGuard};
 pub use spinlock::{pop_off, push_off, Spinlock, SpinlockGuard};

@@ -53,6 +53,15 @@ unsafe fn kernel_builder_unchecked_pin() -> Pin<&'static mut KernelBuilder> {
     unsafe { Pin::new_unchecked(&mut KERNEL) }
 }
 
+// TODO: Remove later? Use `Id::new()` instead?
+unsafe fn kernel_pin_mut<F: for<'new_id> FnOnce(Pin<&'static mut Kernel<'new_id>>) -> R, R>(
+    f: F,
+) -> R {
+    // SAFETY: Safe to cast &KernelBuilder into &Kernel
+    // since Kernel has a transparent memory layout.
+    f(unsafe { Pin::new_unchecked(&mut *(kernel_builder() as *const _ as *const _ as *mut _)) })
+}
+
 /// # Safety
 ///
 /// The `Kernel` is `!Unpin`, since it owns data that are `!Unpin`, such as the `bcache`.
@@ -109,13 +118,15 @@ pub struct KernelBuilder {
 /// # Safety
 ///
 /// `inner.procs` is initialized.
+#[pin_project]
 pub struct Kernel<'id> {
-    _marker: Id<'id>,
+    id: Id<'id>,
+    #[pin]
     inner: KernelBuilder,
 }
 
 impl<'id> Kernel<'id> {
-    pub fn procs(&self) -> &Procs {
+    pub fn procs(&self) -> &Procs<'id> {
         // SAFETY: `self.inner.procs` is initialized according to the invariant.
         unsafe { self.inner.procs.as_procs_unchecked() }
     }
@@ -244,7 +255,8 @@ pub unsafe fn kernel_main() -> ! {
         unsafe { kernel.memory.write(memory).init_hart() };
 
         // Process system.
-        let procs = kernel.procs.init();
+        let procs =
+            unsafe { kernel_pin_mut(|kernel| kernel.project().inner.project().procs.init()) };
 
         // Trap vectors.
         trapinit();
