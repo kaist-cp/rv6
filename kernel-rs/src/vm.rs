@@ -1,13 +1,14 @@
-use core::{cmp, marker::PhantomData, mem, ops::Add, slice};
+use core::{cmp, marker::PhantomData, mem, slice};
 
 use crate::{
+    arch::addr::{
+        pa2pte, pgrounddown, pgroundup, pte2pa, Addr, KVAddr, PAddr, PteFlags, UVAddr, VAddr,
+        MAXVA, PGSIZE,
+    },
     arch::memlayout::{
         kstack, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0,
     },
-    arch::riscv::{
-        make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pxshift, sfence_vma, w_satp, PteFlags,
-        MAXVA, PGSIZE, PXMASK,
-    },
+    arch::riscv::{make_satp, sfence_vma, w_satp},
     fs::InodeGuard,
     kalloc::Kmem,
     lock::Spinlock,
@@ -22,62 +23,6 @@ extern "C" {
     // trampoline.S
     static mut trampoline: [u8; 0];
 }
-
-pub trait Addr: Copy + From<usize> + Add<usize, Output = Self> {
-    fn into_usize(self) -> usize;
-    fn is_null(self) -> bool;
-    fn is_page_aligned(self) -> bool;
-}
-
-macro_rules! define_addr_type {
-    ($typ:ident) => {
-        #[derive(Clone, Copy)]
-        pub struct $typ(usize);
-
-        impl From<usize> for $typ {
-            fn from(value: usize) -> Self {
-                Self(value)
-            }
-        }
-
-        impl Add<usize> for $typ {
-            type Output = Self;
-
-            fn add(self, rhs: usize) -> Self::Output {
-                Self(self.0 + rhs)
-            }
-        }
-
-        impl Addr for $typ {
-            fn into_usize(self) -> usize {
-                self.0
-            }
-
-            fn is_null(self) -> bool {
-                self.0 == 0
-            }
-
-            fn is_page_aligned(self) -> bool {
-                self.0 % PGSIZE == 0
-            }
-        }
-    };
-}
-
-define_addr_type!(PAddr);
-define_addr_type!(KVAddr);
-define_addr_type!(UVAddr);
-
-pub trait VAddr: Addr {
-    #[inline]
-    fn px(&self, level: usize) -> usize {
-        (self.into_usize() >> pxshift(level)) & PXMASK
-    }
-}
-
-impl VAddr for KVAddr {}
-
-impl VAddr for UVAddr {}
 
 /// # Safety
 ///

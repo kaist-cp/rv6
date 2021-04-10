@@ -3,6 +3,7 @@
 use core::{cell::UnsafeCell, cmp, mem, ops::Deref, ops::DerefMut};
 
 use crate::{
+    arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena, Rc},
     fs::{FileSystem, InodeGuard, RcInode},
     kernel::kernel_builder,
@@ -10,7 +11,6 @@ use crate::{
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
     proc::CurrentProc,
-    vm::UVAddr,
 };
 
 pub enum FileType {

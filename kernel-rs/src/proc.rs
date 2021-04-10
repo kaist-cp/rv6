@@ -14,8 +14,9 @@ use itertools::izip;
 use pin_project::pin_project;
 
 use crate::{
+    arch::addr::{Addr, UVAddr, PGSIZE},
     arch::memlayout::kstack,
-    arch::riscv::{intr_get, intr_on, r_tp, PGSIZE},
+    arch::riscv::{intr_get, intr_on, r_tp},
     file::RcFile,
     fs::RcInode,
     kalloc::Kmem,
@@ -25,7 +26,7 @@ use crate::{
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
     println,
     trap::usertrapret,
-    vm::{Addr, UVAddr, UserMemory},
+    vm::UserMemory,
 };
 
 extern "C" {

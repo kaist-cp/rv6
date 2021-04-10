@@ -6,13 +6,13 @@ use bitflags::bitflags;
 use itertools::*;
 
 use crate::{
-    arch::riscv::{pgroundup, PGSIZE},
+    arch::addr::{pgroundup, PAddr, PGSIZE},
     fs::Path,
     kernel::Kernel,
     page::Page,
     param::MAXARG,
     proc::CurrentProc,
-    vm::{PAddr, UserMemory},
+    vm::UserMemory,
 };
 
 /// "\x7FELF" in little endian

@@ -210,7 +210,7 @@ fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
     kernel_builder().panic();
     println!("{}", info);
 
-    crate::utils::spin_loop()
+    crate::util::spin_loop()
 }
 
 /// start() jumps here in supervisor mode on all CPUs.

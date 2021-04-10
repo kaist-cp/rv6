@@ -15,7 +15,7 @@
 //! 80000000 -- entry.S, then kernel text and data
 //! end -- start of kernel page allocation area
 //! PHYSTOP -- end RAM used by the kernel
-use crate::arch::riscv::{MAXVA, PGSIZE};
+use crate::arch::addr::{MAXVA, PGSIZE};
 
 /// SiFive Test Finisher. (virt device only)
 pub const FINISHER: usize = 0x100000;

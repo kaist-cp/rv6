@@ -7,9 +7,9 @@ use array_macro::array;
 use pin_project::pin_project;
 
 use crate::lock::{Spinlock, SpinlockGuard};
-use crate::utils::list::*;
-use crate::utils::pinned_array::IterPinMut;
-use crate::utils::rc_cell::{RcCell, Ref, RefMut};
+use crate::util::list::*;
+use crate::util::pinned_array::IterPinMut;
+use crate::util::rc_cell::{RcCell, Ref, RefMut};
 
 /// A homogeneous memory allocator, equipped with the box type representing an allocation.
 pub trait Arena: Sized {

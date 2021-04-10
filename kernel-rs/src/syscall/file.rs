@@ -11,6 +11,7 @@ use bitflags::bitflags;
 use cstr_core::CStr;
 
 use crate::{
+    arch::addr::UVAddr,
     file::{FileType, InodeFileType, RcFile},
     fs::{Dirent, FileName, FsTransaction, InodeGuard, InodeType, Path, RcInode},
     kernel::Kernel,
@@ -19,7 +20,6 @@ use crate::{
     param::{MAXARG, MAXPATH},
     proc::CurrentProc,
     some_or,
-    vm::UVAddr,
 };
 
 bitflags! {

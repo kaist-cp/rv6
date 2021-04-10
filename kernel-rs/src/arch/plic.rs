@@ -1,7 +1,7 @@
 //! the riscv Platform Level Interrupt Controller (PLIC).
-use crate::{
-    arch::memlayout::{plic_sclaim, plic_senable, plic_spriority, PLIC, UART0_IRQ, VIRTIO0_IRQ},
-    proc::cpuid,
+use crate::arch::{
+    memlayout::{plic_sclaim, plic_senable, plic_spriority, PLIC, UART0_IRQ, VIRTIO0_IRQ},
+    riscv::r_tp,
 };
 
 pub unsafe fn plicinit() {
@@ -11,7 +11,7 @@ pub unsafe fn plicinit() {
 }
 
 pub unsafe fn plicinithart() {
-    let hart: usize = cpuid();
+    let hart: usize = r_tp();
 
     // set uart's enable bit for this hart's S-mode.
     unsafe { *(plic_senable(hart) as *mut u32) = (1 << UART0_IRQ | 1 << VIRTIO0_IRQ) as u32 };
@@ -22,13 +22,13 @@ pub unsafe fn plicinithart() {
 
 /// ask the PLIC what interrupt we should serve.
 pub unsafe fn plic_claim() -> u32 {
-    let hart: usize = cpuid();
+    let hart: usize = r_tp();
     let irq: u32 = unsafe { *(plic_sclaim(hart) as *mut u32) };
     irq
 }
 
 /// tell the PLIC we've served this IRQ.
 pub unsafe fn plic_complete(irq: u32) {
-    let hart: usize = cpuid();
+    let hart: usize = r_tp();
     unsafe { *(plic_sclaim(hart) as *mut u32) = irq };
 }

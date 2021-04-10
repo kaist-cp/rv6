@@ -1,12 +1,12 @@
 use core::{mem, ops::Deref, ptr::NonNull};
 
 use crate::{
+    arch::addr::UVAddr,
     file::{FileType, RcFile},
     kernel::Kernel,
     lock::Spinlock,
     page::Page,
     proc::{CurrentProc, WaitChannel},
-    vm::UVAddr,
 };
 
 const PIPESIZE: usize = 512;

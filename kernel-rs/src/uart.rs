@@ -7,7 +7,7 @@ use crate::{
     console::consoleintr,
     kernel::kernel_builder,
     lock::{pop_off, push_off, Sleepablelock, SleepablelockGuard},
-    utils::spin_loop,
+    util::spin_loop,
 };
 
 const UART_TX_BUF_SIZE: usize = 32;
