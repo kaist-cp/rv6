@@ -1,6 +1,3 @@
-// TODO(https://github.com/kaist-cp/rv6/issues/120)
-#![allow(dead_code)]
-
 //! The lock module.
 //! Contains types that provide mutual exclusion.
 //!
@@ -32,6 +29,9 @@
 //!     accesses to the [`RcCell`](crate::rc_cell::RcCell)'s inner data to be synchronized.
 //!     Then, instead of providing a [`Ref`](crate::rc_cell::Ref), you should provide a [`Ref`](crate::rc_cell::Ref) wrapped by a `RemoteLock`.
 //!     to the outside.
+
+// TODO(https://github.com/kaist-cp/rv6/issues/120)
+#![allow(dead_code)]
 
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;

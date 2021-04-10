@@ -32,9 +32,6 @@ use crate::{
 extern "C" {
     // swtch.S
     fn swtch(_: *mut Context, _: *mut Context);
-
-    // // trampoline.S
-    // static mut trampoline: [u8; 0];
 }
 
 /// Saved registers for kernel context switches.

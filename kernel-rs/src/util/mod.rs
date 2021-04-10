@@ -1,7 +1,7 @@
+//! Utilities.
+
 // TODO(https://github.com/kaist-cp/rv6/issues/120)
 #![allow(dead_code)]
-
-//! Data structures.
 
 pub mod etrace;
 pub mod list;
