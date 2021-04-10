@@ -16,7 +16,7 @@ use crate::{
     kernel::Kernel,
     ok_or,
     page::Page,
-    param::{MAXARG, MAXPATH, NOFILE},
+    param::{MAXARG, MAXPATH},
     proc::CurrentProc,
     some_or,
     vm::UVAddr,
@@ -27,10 +27,9 @@ impl RcFile {
     /// Takes over file reference from caller on success.
     fn fdalloc(self, proc: &mut CurrentProc<'_>) -> Result<i32, Self> {
         let proc_data = proc.deref_mut_data();
-        for fd in 0..NOFILE {
-            // user pointer to struct stat
-            if proc_data.open_files[fd].is_none() {
-                proc_data.open_files[fd] = Some(self);
+        for (fd, f) in proc_data.open_files.iter_mut().enumerate() {
+            if f.is_none() {
+                *f = Some(self);
                 return Ok(fd as i32);
             }
         }
@@ -459,12 +458,13 @@ impl CurrentProc<'_> {
     /// and return both the descriptor and the corresponding struct file.
     fn argfd(&self, n: usize) -> Result<(i32, &'_ RcFile), ()> {
         let fd = self.argint(n)?;
-        if fd < 0 || fd >= NOFILE as i32 {
-            return Err(());
-        }
-
-        let f = some_or!(&self.deref_data().open_files[fd as usize], return Err(()));
-
+        let f = self
+            .deref_data()
+            .open_files
+            .get(fd as usize)
+            .ok_or(())?
+            .as_ref()
+            .ok_or(())?;
         Ok((fd, f))
     }
 }
