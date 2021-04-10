@@ -1,6 +1,6 @@
 use core::ptr;
 
-use crate::memlayout;
+use crate::arch::memlayout;
 
 /// Shutdowns this machine, discarding all unsaved data.
 ///

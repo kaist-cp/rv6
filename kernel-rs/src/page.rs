@@ -6,7 +6,7 @@ use core::{
     ptr::NonNull,
 };
 
-use crate::{riscv::PGSIZE, vm::PAddr};
+use crate::{arch::riscv::PGSIZE, vm::PAddr};
 
 /// Page type.
 #[repr(align(4096))]

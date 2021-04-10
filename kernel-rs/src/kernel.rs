@@ -10,6 +10,7 @@ use array_macro::array;
 use pin_project::pin_project;
 
 use crate::{
+    arch::plic::{plicinit, plicinithart},
     bio::Bcache,
     console::{consoleinit, Console, Printer},
     file::{Devsw, FileTable},
@@ -17,7 +18,6 @@ use crate::{
     kalloc::Kmem,
     lock::{Sleepablelock, Spinlock},
     param::{NCPU, NDEV},
-    plic::{plicinit, plicinithart},
     println,
     proc::{cpuid, scheduler, Cpu, Procs, ProcsBuilder},
     trap::{trapinit, trapinithart},

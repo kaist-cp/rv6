@@ -57,25 +57,21 @@
 #![feature(variant_count)]
 #![feature(ptr_as_uninit)]
 
+mod arch;
 mod arena;
 mod bio;
 mod console;
-mod etrace;
 mod exec;
-mod fcntl;
 mod file;
 mod fs;
 mod kalloc;
 mod kernel;
 mod lock;
-mod memlayout;
 mod page;
 mod param;
 mod pipe;
-mod plic;
 mod poweroff;
 mod proc;
-mod riscv;
 mod start;
 mod syscall;
 mod trap;

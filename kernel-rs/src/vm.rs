@@ -1,16 +1,18 @@
 use core::{cmp, marker::PhantomData, mem, ops::Add, slice};
 
 use crate::{
-    fs::InodeGuard,
-    kalloc::Kmem,
-    lock::Spinlock,
-    memlayout::{kstack, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0},
-    page::Page,
-    param::NPROC,
-    riscv::{
+    arch::memlayout::{
+        kstack, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0,
+    },
+    arch::riscv::{
         make_satp, pa2pte, pgrounddown, pgroundup, pte2pa, pxshift, sfence_vma, w_satp, PteFlags,
         MAXVA, PGSIZE, PXMASK,
     },
+    fs::InodeGuard,
+    kalloc::Kmem,
+    lock::Spinlock,
+    page::Page,
+    param::NPROC,
 };
 
 extern "C" {
@@ -826,6 +828,7 @@ impl KernelMemory {
         // Allocate a page for the process's kernel stack.
         // Map it high in memory, followed by an invalid
         // guard page.
+        // TODO(rv6): use iterator
         for i in 0..NPROC {
             let pa = allocator.alloc()?.into_usize();
             let va: usize = kstack(i);

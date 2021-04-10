@@ -7,10 +7,10 @@
 use core::{cell::UnsafeCell, mem};
 
 use arrayvec::ArrayVec;
+use bitflags::bitflags;
 use cstr_core::CStr;
 
 use crate::{
-    fcntl::FcntlFlags,
     file::{FileType, InodeFileType, RcFile},
     fs::{Dirent, FileName, FsTransaction, InodeGuard, InodeType, Path, RcInode},
     kernel::Kernel,
@@ -21,6 +21,16 @@ use crate::{
     some_or,
     vm::UVAddr,
 };
+
+bitflags! {
+    struct FcntlFlags: i32 {
+        const O_RDONLY = 0;
+        const O_WRONLY = 0x1;
+        const O_RDWR = 0x2;
+        const O_CREATE = 0x200;
+        const O_TRUNC = 0x400;
+    }
+}
 
 impl RcFile {
     /// Allocate a file descriptor for the given file.

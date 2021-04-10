@@ -1,5 +1,6 @@
 //! Data structures.
 
+pub mod etrace;
 pub mod list;
 pub mod pinned_array;
 pub mod rc_cell;

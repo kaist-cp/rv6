@@ -36,7 +36,7 @@ impl<'s, R: RawLock, U, T> RemoteLock<'s, R, U, T> {
     ///
     /// ```rust,no_run
     /// let spinlock: Spinlock<usize> = Spinlock::new("spinlock", 10);
-    /// let spinlock_protected: RemoteSpinlock<'_, usize, isize> = RemoteLock::new(&spinlock, -20);
+    /// let spinlock_remote: RemoteSpinlock<'_, usize, isize> = RemoteLock::new(&spinlock, -20);
     /// ```
     pub const fn new(lock: &'s Lock<R, U>, data: T) -> Self {
         Self {

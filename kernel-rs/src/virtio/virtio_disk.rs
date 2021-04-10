@@ -15,11 +15,11 @@ use super::{
     VIRTIO_BLK_T_IN, VIRTIO_BLK_T_OUT,
 };
 use crate::{
+    arch::riscv::{PGSHIFT, PGSIZE},
     bio::Buf,
     kernel::kernel_builder,
     lock::{Sleepablelock, SleepablelockGuard},
     param::BSIZE,
-    riscv::{PGSHIFT, PGSIZE},
 };
 
 // It must be page-aligned.

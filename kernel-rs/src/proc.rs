@@ -10,19 +10,20 @@ use core::{
 };
 
 use array_macro::array;
+use itertools::izip;
 use pin_project::pin_project;
 
 use crate::{
+    arch::memlayout::kstack,
+    arch::riscv::{intr_get, intr_on, r_tp, PGSIZE},
     file::RcFile,
     fs::RcInode,
     kalloc::Kmem,
     kernel::{kernel, kernel_builder, KernelBuilder},
     lock::{pop_off, push_off, Guard, RawLock, RemoteSpinlock, Spinlock, SpinlockGuard},
-    memlayout::kstack,
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
     println,
-    riscv::{intr_get, intr_on, r_tp, PGSIZE},
     trap::usertrapret,
     vm::{Addr, UVAddr, UserMemory},
 };
@@ -933,9 +934,12 @@ impl Procs {
         unsafe { (*npdata.trap_frame).a0 = 0 };
 
         // Increment reference counts on open file descriptors.
-        for i in 0..NOFILE {
-            if let Some(file) = &proc.deref_data().open_files[i] {
-                npdata.open_files[i] = Some(file.clone())
+        for (nf, f) in izip!(
+            npdata.open_files.iter_mut(),
+            proc.deref_data().open_files.iter()
+        ) {
+            if let Some(file) = f {
+                *nf = Some(file.clone());
             }
         }
         let _ = npdata.cwd.write(proc.cwd_mut().clone());

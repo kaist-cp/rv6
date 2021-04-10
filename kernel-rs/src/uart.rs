@@ -2,7 +2,7 @@
 use core::ptr;
 
 use self::UartCtrlRegs::{FCR, IER, ISR, LCR, LSR, RBR, THR};
-use crate::memlayout::UART0;
+use crate::arch::memlayout::UART0;
 use crate::{
     console::consoleintr,
     kernel::kernel_builder,

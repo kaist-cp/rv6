@@ -13,7 +13,7 @@ use core::ptr;
 
 use bitflags::bitflags;
 
-use crate::memlayout::VIRTIO0;
+use crate::arch::memlayout::VIRTIO0;
 
 mod virtio_disk;
 

@@ -1,6 +1,6 @@
 //! the riscv Platform Level Interrupt Controller (PLIC).
 use crate::{
-    memlayout::{plic_sclaim, plic_senable, plic_spriority, PLIC, UART0_IRQ, VIRTIO0_IRQ},
+    arch::memlayout::{plic_sclaim, plic_senable, plic_spriority, PLIC, UART0_IRQ, VIRTIO0_IRQ},
     proc::cpuid,
 };
 

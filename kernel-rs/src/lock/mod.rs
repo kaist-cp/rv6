@@ -35,12 +35,12 @@ use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 
-mod lock_protected;
+mod remotelock;
 mod sleepablelock;
 mod sleeplock;
 mod spinlock;
 
-pub use lock_protected::{RemoteSleepablelock, RemoteSleeplock, RemoteSpinlock};
+pub use remotelock::{RemoteSleepablelock, RemoteSleeplock, RemoteSpinlock};
 pub use sleepablelock::{Sleepablelock, SleepablelockGuard};
 pub use sleeplock::{Sleeplock, SleeplockGuard};
 pub use spinlock::{pop_off, push_off, Spinlock, SpinlockGuard};
