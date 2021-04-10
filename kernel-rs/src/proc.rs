@@ -600,12 +600,16 @@ impl Procstate {
 
 impl ProcData {
     const fn new() -> Self {
+        const fn none<T>(_: usize) -> Option<T> {
+            None
+        }
+
         Self {
             kstack: 0,
             trap_frame: ptr::null_mut(),
             memory: MaybeUninit::uninit(),
             context: Context::new(),
-            open_files: [None; NOFILE],
+            open_files: array![_ => None; NOFILE],
             cwd: MaybeUninit::uninit(),
             name: [0; MAXPROCNAME],
         }

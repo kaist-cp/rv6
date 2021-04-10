@@ -416,7 +416,7 @@ impl Kernel {
     /// Returns Ok(argc argument to user main) on success, Err(()) on error.
     pub fn sys_exec(&self, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let mut args = ArrayVec::<[Page; MAXARG]>::new();
+        let mut args = ArrayVec::<Page, MAXARG>::new();
         let path = proc.argstr(0, &mut path)?;
         let uargv = proc.argaddr(1)?;
 

@@ -14,7 +14,6 @@ use crate::arch::addr::{PAddr, PGSIZE};
 const_assert!(PGSIZE == 4096);
 
 /// Page type.
-///
 #[repr(align(4096))]
 pub struct RawPage {
     inner: [u8; PGSIZE],
