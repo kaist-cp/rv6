@@ -39,20 +39,18 @@
 // #![deny(missing_doc_code_examples)]
 // #![deny(missing_docs)]
 // #![deny(rustdoc)]
-#![allow(dead_code)] // TODO(https://github.com/kaist-cp/rv6/issues/120)
 #![allow(incomplete_features)]
 #![allow(clippy::upper_case_acronyms)]
 #![feature(asm)]
-#![feature(const_fn_fn_ptr_basics)]
-#![feature(maybe_uninit_ref)]
 #![feature(const_fn)]
+#![feature(const_fn_fn_ptr_basics)]
 #![feature(const_fn_union)]
-#![feature(const_trait_impl)]
 #![feature(const_precise_live_drops)]
-#![feature(maybe_uninit_extra)]
+#![feature(const_trait_impl)]
 #![feature(generic_associated_types)]
+#![feature(maybe_uninit_extra)]
+#![feature(maybe_uninit_ref)]
 #![feature(variant_count)]
-#![feature(ptr_as_uninit)]
 
 mod arch;
 mod arena;

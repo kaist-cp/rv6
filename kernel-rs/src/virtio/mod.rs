@@ -1,3 +1,6 @@
+// TODO(https://github.com/kaist-cp/rv6/issues/120)
+#![allow(dead_code)]
+
 //! virtio device definitions.
 //! for both the mmio interface, and virtio descriptors.
 //! only tested with qemu.

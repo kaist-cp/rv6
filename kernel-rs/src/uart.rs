@@ -1,3 +1,6 @@
+// TODO(https://github.com/kaist-cp/rv6/issues/120)
+#![allow(dead_code)]
+
 //! Low-level driver routines for 16550a UART.
 use core::ptr;
 

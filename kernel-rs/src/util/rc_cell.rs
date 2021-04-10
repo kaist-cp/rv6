@@ -135,13 +135,6 @@ impl<T> Drop for RcCell<T> {
     }
 }
 
-impl<T> Ref<T> {
-    /// Returns a raw pointer to the `RcCell` that this `Ref` came from.
-    pub fn get_cell(&self) -> *const RcCell<T> {
-        self.ptr
-    }
-}
-
 impl<T> From<RefMut<T>> for Ref<T> {
     fn from(r: RefMut<T>) -> Self {
         let ptr = r.ptr;

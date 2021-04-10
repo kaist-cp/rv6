@@ -21,7 +21,7 @@ use crate::{
     fs::RcInode,
     kalloc::Kmem,
     kernel::{kernel, kernel_builder, KernelBuilder},
-    lock::{pop_off, push_off, Guard, RawLock, RemoteSpinlock, Spinlock, SpinlockGuard},
+    lock::{pop_off, push_off, Guard, RawLock, RawSpinlock, RemoteLock, Spinlock, SpinlockGuard},
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
     println,
@@ -33,8 +33,8 @@ extern "C" {
     // swtch.S
     fn swtch(_: *mut Context, _: *mut Context);
 
-    // trampoline.S
-    static mut trampoline: [u8; 0];
+    // // trampoline.S
+    // static mut trampoline: [u8; 0];
 }
 
 /// Saved registers for kernel context switches.
@@ -319,7 +319,7 @@ pub struct ProcBuilder {
     /// this field in ProcBuilder::zero(), which is a const fn.
     /// Hence, this field gets initialized later in procinit() as
     /// `RemoteSpinlock::new(&procs.wait_lock, ptr::null_mut())`.
-    parent: MaybeUninit<RemoteSpinlock<'static, (), *const Proc>>,
+    parent: MaybeUninit<RemoteLock<'static, RawSpinlock, (), *const Proc>>,
 
     pub info: Spinlock<ProcInfo>,
 
@@ -600,10 +600,6 @@ impl Procstate {
 
 impl ProcData {
     const fn new() -> Self {
-        const fn none<T>(_: usize) -> Option<T> {
-            None
-        }
-
         Self {
             kstack: 0,
             trap_frame: ptr::null_mut(),
@@ -700,7 +696,7 @@ pub struct Proc {
 }
 
 impl Proc {
-    fn parent(&self) -> &RemoteSpinlock<'static, (), *const Proc> {
+    fn parent(&self) -> &RemoteLock<'static, RawSpinlock, (), *const Proc> {
         // SAFETY: invariant
         unsafe { self.parent.assume_init_ref() }
     }
@@ -749,9 +745,7 @@ impl ProcsBuilder {
         // alive at the same time.
         let wait_lock = unsafe { &*(&this.wait_lock as *const _) };
         for (i, p) in this.process_pool.iter_mut().enumerate() {
-            let _ = p
-                .parent
-                .write(RemoteSpinlock::new(wait_lock, ptr::null_mut()));
+            let _ = p.parent.write(RemoteLock::new(wait_lock, ptr::null_mut()));
             p.data.get_mut().kstack = kstack(i);
         }
         // SAFETY: `parent` of every process in `self` has been initialized.

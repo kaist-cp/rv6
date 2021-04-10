@@ -30,9 +30,6 @@ pub struct Page {
 }
 
 impl RawPage {
-    /// HACK(@efenniht): Workaround for non-const `Default::default`.
-    pub const DEFAULT: Self = Self { inner: [0; PGSIZE] };
-
     pub fn write_bytes(&mut self, value: u8) {
         unsafe {
             ptr::write_bytes(&mut self.inner, value, 1);

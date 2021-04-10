@@ -1,3 +1,6 @@
+// TODO(https://github.com/kaist-cp/rv6/issues/120)
+#![allow(dead_code)]
+
 //! The lock module.
 //! Contains types that provide mutual exclusion.
 //!
@@ -40,10 +43,10 @@ mod sleepablelock;
 mod sleeplock;
 mod spinlock;
 
-pub use remotelock::{RemoteSleepablelock, RemoteSleeplock, RemoteSpinlock};
+pub use remotelock::RemoteLock;
 pub use sleepablelock::{Sleepablelock, SleepablelockGuard};
 pub use sleeplock::{Sleeplock, SleeplockGuard};
-pub use spinlock::{pop_off, push_off, Spinlock, SpinlockGuard};
+pub use spinlock::{pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard};
 
 pub trait RawLock {
     /// Acquires the lock.
