@@ -20,6 +20,7 @@ use crate::{bio::Buf, kernel::kernel_builder, param::BSIZE};
 mod inode;
 mod log;
 mod path;
+mod stat;
 mod superblock;
 
 pub use inode::{
@@ -27,6 +28,7 @@ pub use inode::{
 };
 pub use log::{Log, LogLocked};
 pub use path::{FileName, Path};
+pub use stat::Stat;
 pub use superblock::{Superblock, BPB, IPB};
 
 /// root i-number

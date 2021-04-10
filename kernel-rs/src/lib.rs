@@ -80,7 +80,6 @@ mod proc;
 mod rc_cell;
 mod riscv;
 mod start;
-mod stat;
 mod syscall;
 mod sysfile;
 mod sysproc;
