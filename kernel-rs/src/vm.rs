@@ -1,9 +1,10 @@
 use core::{cmp, marker::PhantomData, mem, slice};
 
+use bitflags::bitflags;
+
 use crate::{
     arch::addr::{
-        pa2pte, pgrounddown, pgroundup, pte2pa, Addr, KVAddr, PAddr, PteFlags, UVAddr, VAddr,
-        MAXVA, PGSIZE,
+        pa2pte, pgrounddown, pgroundup, pte2pa, Addr, KVAddr, PAddr, UVAddr, VAddr, MAXVA, PGSIZE,
     },
     arch::memlayout::{
         kstack, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0,
@@ -22,6 +23,21 @@ extern "C" {
 
     // trampoline.S
     static mut trampoline: [u8; 0];
+}
+
+bitflags! {
+    pub struct PteFlags: usize {
+        /// valid
+        const V = 1 << 0;
+        /// readable
+        const R = 1 << 1;
+        /// writable
+        const W = 1 << 2;
+        /// executable
+        const X = 1 << 3;
+        /// user-accessible
+        const U = 1 << 4;
+    }
 }
 
 /// # Safety
@@ -215,9 +231,9 @@ impl<A: VAddr> PageTable<A> {
         // according to the invariant.
         let mut page_table = unsafe { &mut *self.ptr };
         for level in (1..3).rev() {
-            page_table = page_table.get_table_mut(va.px(level), allocator)?;
+            page_table = page_table.get_table_mut(va.page_table_index(level), allocator)?;
         }
-        Some(page_table.get_entry_mut(va.px(0)))
+        Some(page_table.get_entry_mut(va.page_table_index(0)))
     }
 
     fn insert(
