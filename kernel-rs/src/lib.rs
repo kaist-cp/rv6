@@ -51,6 +51,7 @@
 #![feature(maybe_uninit_extra)]
 #![feature(maybe_uninit_ref)]
 #![feature(variant_count)]
+#![feature(option_insert)]
 
 mod arch;
 mod arena;

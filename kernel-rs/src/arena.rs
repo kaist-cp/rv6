@@ -1,4 +1,3 @@
-use core::convert::TryFrom;
 use core::mem::{self, ManuallyDrop};
 use core::ops::Deref;
 use core::pin::Pin;
@@ -9,7 +8,7 @@ use pin_project::pin_project;
 use crate::lock::{Spinlock, SpinlockGuard};
 use crate::util::list::*;
 use crate::util::pinned_array::IterPinMut;
-use crate::util::rc_cell::{RcCell, Ref, RefMut};
+use crate::util::stack_rc::{StackRc, StackRcBox};
 
 /// A homogeneous memory allocator, equipped with the box type representing an allocation.
 pub trait Arena: Sized {
@@ -23,7 +22,7 @@ pub trait Arena: Sized {
         &self,
         c: C,
         n: N,
-    ) -> Option<Ref<Self::Data>>;
+    ) -> Option<StackRc<Self::Data>>;
 
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,
@@ -36,7 +35,7 @@ pub trait Arena: Sized {
     }
 
     /// Failable allocation.
-    fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Ref<Self::Data>>;
+    fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<StackRc<Self::Data>>;
 
     fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Rc<Self>> {
         let inner = self.alloc_handle(f)?;
@@ -50,7 +49,7 @@ pub trait Arena: Sized {
     ///
     /// `handle` must be allocated from `self`.
     // TODO: If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `clone` instead.
-    unsafe fn dup(&self, handle: &Ref<Self::Data>) -> Ref<Self::Data>;
+    unsafe fn dup(&self, handle: &StackRc<Self::Data>) -> StackRc<Self::Data>;
 
     /// Deallocate a given handle, and finalize the referred object if there are
     /// no more handles.
@@ -59,7 +58,7 @@ pub trait Arena: Sized {
     ///
     /// `handle` must be allocated from `self`.
     // TODO: If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `drop` instead.
-    unsafe fn dealloc(&self, handle: Ref<Self::Data>);
+    unsafe fn dealloc(&self, handle: StackRc<Self::Data>);
 
     /// Temporarily releases the lock while calling `f`, and re-acquires the lock after `f` returned.
     ///
@@ -85,7 +84,7 @@ pub trait ArenaObject {
 #[pin_project]
 pub struct ArrayArena<T, const CAPACITY: usize> {
     #[pin]
-    entries: [RcCell<T>; CAPACITY],
+    entries: [StackRcBox<T>; CAPACITY],
 }
 
 #[pin_project]
@@ -94,7 +93,7 @@ pub struct MruEntry<T> {
     #[pin]
     list_entry: ListEntry,
     #[pin]
-    data: RcCell<T>,
+    data: StackRcBox<T>,
 }
 
 /// A homogeneous memory allocator equipped with reference counts.
@@ -116,7 +115,7 @@ pub struct MruArena<T, const CAPACITY: usize> {
 /// because we panic if the arena drops earlier than `inner`.
 pub struct Rc<A: Arena> {
     arena: *const A,
-    inner: ManuallyDrop<Ref<A::Data>>,
+    inner: ManuallyDrop<StackRc<A::Data>>,
 }
 
 // `Rc` is `Send` because it does not impl `DerefMut`,
@@ -138,7 +137,7 @@ impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
     #[allow(clippy::new_ret_no_self)]
     pub const fn new<D: Default>() -> ArrayArena<D, CAPACITY> {
         ArrayArena {
-            entries: array![_ => RcCell::new(Default::default()); CAPACITY],
+            entries: array![_ => StackRcBox::new(Default::default()); CAPACITY],
         }
     }
 }
@@ -153,59 +152,56 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         &self,
         c: C,
         n: N,
-    ) -> Option<Ref<Self::Data>> {
+    ) -> Option<StackRc<Self::Data>> {
         let mut guard = self.lock();
-        let this = guard.get_pin_mut().project();
+        let entries: Pin<&mut [StackRcBox<T>; CAPACITY]> = guard.get_pin_mut().project().entries;
 
-        let mut empty: Option<*mut RcCell<T>> = None;
-        for entry in IterPinMut::from(this.entries) {
-            if !entry.is_borrowed() {
-                if empty.is_none() {
-                    empty = Some(entry.as_ref().get_ref() as *const _ as *mut _)
-                }
+        let mut empty: Option<StackRc<T>> = None;
+        for rc_box in IterPinMut::from(entries) {
+            let rc = StackRc::new(rc_box);
+            if StackRc::is_unique(&rc) {
+                let _ = empty.get_or_insert(rc);
+
                 // Note: Do not use `break` here.
                 // We must first search through all entries, and then alloc at empty
                 // only if the entry we're finding for doesn't exist.
-            } else if let Some(r) = entry.try_borrow() {
-                // The entry is not under finalization. Check its data.
-                if c(&r) {
-                    return Some(r);
-                }
+            } else if c(&rc) {
+                return Some(rc);
             }
         }
 
-        empty.map(|cell_raw| {
-            // SAFETY: `cell` is not referenced or borrowed. Also, it is already pinned.
-            let mut cell = unsafe { Pin::new_unchecked(&mut *cell_raw) };
-            n(cell.as_mut().get_pin_mut().unwrap().get_mut());
-            cell.borrow()
+        empty.map(|mut rc| {
+            // SAFETY: StackRc::is_unique(&rc) is true.
+            n(unsafe { StackRc::get_mut_unchecked(&mut rc) });
+            rc
         })
     }
 
-    fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Ref<Self::Data>> {
+    fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<StackRc<Self::Data>> {
         let mut guard = self.lock();
-        let this = guard.get_pin_mut().project();
+        let entries: Pin<&mut [StackRcBox<T>; CAPACITY]> = guard.get_pin_mut().project().entries;
 
-        for mut entry in IterPinMut::from(this.entries) {
-            if !entry.is_borrowed() {
-                f(entry.as_mut().get_pin_mut().unwrap().get_mut());
-                return Some(entry.borrow());
+        for rc_box in IterPinMut::from(entries) {
+            if !rc_box.has_reference() {
+                let mut rc = StackRc::new(rc_box);
+                // SAFETY: since rc_box.has_reference() was false, rc is unique.
+                f(unsafe { StackRc::get_mut_unchecked(&mut rc) });
+                return Some(rc);
             }
         }
+
         None
     }
 
-    unsafe fn dup(&self, handle: &Ref<Self::Data>) -> Ref<Self::Data> {
+    unsafe fn dup(&self, handle: &StackRc<Self::Data>) -> StackRc<Self::Data> {
         let mut _this = self.lock();
         handle.clone()
     }
 
-    unsafe fn dealloc(&self, handle: Ref<Self::Data>) {
+    unsafe fn dealloc(&self, mut handle: StackRc<Self::Data>) {
         let mut this = self.lock();
 
-        if let Ok(mut rm) = RefMut::<T>::try_from(handle) {
-            rm.finalize::<Self>(&mut this);
-        }
+        let _ = StackRc::use_mut(&mut handle, |rm| rm.finalize::<Self>(&mut this));
     }
 
     unsafe fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
@@ -230,7 +226,7 @@ impl<T> MruEntry<T> {
     pub const fn new(data: T) -> Self {
         Self {
             list_entry: unsafe { ListEntry::new() },
-            data: RcCell::new(data),
+            data: StackRcBox::new(data),
         }
     }
 
@@ -240,8 +236,9 @@ impl<T> MruEntry<T> {
     ///
     /// Only use this if the given `RefMut<T>` was obtained from an `MruEntry<T>`,
     /// which is contained inside the `list`.
-    unsafe fn finalize_entry(r: RefMut<T>, list: &List<MruEntry<T>>) {
-        let ptr = (r.get_cell() as *const _ as usize - Self::DATA_OFFSET) as *mut MruEntry<T>;
+    unsafe fn finalize_entry(rc: StackRc<T>, list: &List<MruEntry<T>>) {
+        let ptr =
+            (StackRc::inner(&rc) as *const _ as usize - Self::DATA_OFFSET) as *const MruEntry<T>;
         let entry = unsafe { &*ptr };
         list.push_back(entry);
     }
@@ -297,65 +294,64 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         &self,
         c: C,
         n: N,
-    ) -> Option<Ref<Self::Data>> {
+    ) -> Option<StackRc<Self::Data>> {
         let mut guard = self.lock();
         let this = guard.get_pin_mut().project();
 
-        let mut empty: Option<*mut RcCell<T>> = None;
+        let mut empty: Option<StackRc<T>> = None;
         // SAFETY: the whole `MruArena` is protected by a lock.
         for entry in unsafe { this.list.iter_pin_mut_unchecked() } {
-            if !entry.data.is_borrowed() {
-                empty = Some(&entry.data as *const _ as *mut _);
+            let rc_box: Pin<&mut StackRcBox<T>> = entry.project().data;
+            let rc = StackRc::new(rc_box);
+            if c(&rc) {
+                return Some(rc);
             }
-            if let Some(r) = entry.data.try_borrow() {
-                if c(&r) {
-                    return Some(r);
-                }
+            if StackRc::is_unique(&rc) {
+                let _ = empty.insert(rc);
+
+                // Note: Do not use `break` here.
+                // We must first search through all entries, and then alloc at empty
+                // only if the entry we're finding for doesn't exist.
             }
         }
 
-        empty.map(|cell_raw| {
-            // SAFETY: `cell` is not referenced or borrowed. Also, it is already pinned.
-            let mut cell = unsafe { Pin::new_unchecked(&mut *cell_raw) };
-            n(cell.as_mut().get_pin_mut().unwrap().get_mut());
-            cell.borrow()
+        empty.map(|mut rc| {
+            // SAFETY: StackRc::is_unique(&rc) is true.
+            n(unsafe { StackRc::get_mut_unchecked(&mut rc) });
+            rc
         })
     }
 
-    fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Ref<Self::Data>> {
+    fn alloc_handle<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<StackRc<Self::Data>> {
         let mut guard = self.lock();
         let this = guard.get_pin_mut().project();
 
         // SAFETY: the whole `MruArena` is protected by a lock.
-        for mut entry in unsafe { this.list.iter_pin_mut_unchecked().rev() } {
-            if !entry.data.is_borrowed() {
-                f(entry
-                    .as_mut()
-                    .project()
-                    .data
-                    .get_pin_mut()
-                    .unwrap()
-                    .get_mut());
-                return Some(entry.data.borrow());
+        for entry in unsafe { this.list.iter_pin_mut_unchecked() }.rev() {
+            let rc_box: Pin<&mut StackRcBox<T>> = entry.project().data;
+            if !rc_box.has_reference() {
+                let mut rc = StackRc::new(rc_box);
+                // SAFETY: since rc_box.has_reference() was false, rc is unique.
+                f(unsafe { StackRc::get_mut_unchecked(&mut rc) });
+                return Some(rc);
             }
         }
 
         None
     }
 
-    unsafe fn dup(&self, handle: &Ref<Self::Data>) -> Ref<Self::Data> {
+    unsafe fn dup(&self, handle: &StackRc<Self::Data>) -> StackRc<Self::Data> {
         let mut _this = self.lock();
         handle.clone()
     }
 
-    unsafe fn dealloc(&self, handle: Ref<Self::Data>) {
+    unsafe fn dealloc(&self, mut handle: StackRc<Self::Data>) {
         let mut this = self.lock();
 
-        if let Ok(mut rm) = RefMut::<T>::try_from(handle) {
-            rm.finalize::<Self>(&mut this);
+        if StackRc::use_mut(&mut handle, |rm| rm.finalize::<Self>(&mut this)).is_some() {
             // SAFETY: the `handle` was obtained from an `MruEntry`,
             // which is contained inside `&this.list`.
-            unsafe { MruEntry::finalize_entry(rm, &this.list) };
+            unsafe { MruEntry::finalize_entry(handle, &this.list) };
         }
     }
 
@@ -371,7 +367,7 @@ impl<T, A: Arena<Data = T>> Rc<A> {
     /// # Safety
     ///
     /// `inner` must be allocated from `arena`
-    pub unsafe fn from_unchecked(arena: &A, inner: Ref<T>) -> Self {
+    pub unsafe fn from_unchecked(arena: &A, inner: StackRc<T>) -> Self {
         let inner = ManuallyDrop::new(inner);
         Self { arena, inner }
     }
