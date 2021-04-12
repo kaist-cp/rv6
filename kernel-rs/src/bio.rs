@@ -42,7 +42,6 @@ impl BufEntry {
     }
 }
 
-#[rustfmt::skip] // Need this if lower than rustfmt 1.4.34
 impl const Default for BufEntry {
     fn default() -> Self {
         Self::zero()

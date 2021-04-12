@@ -198,7 +198,6 @@ impl File {
     }
 }
 
-#[rustfmt::skip] // Need this if lower than rustfmt 1.4.34
 impl const Default for File {
     fn default() -> Self {
         Self::zero()
