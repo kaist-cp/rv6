@@ -672,7 +672,6 @@ impl InodeGuard<'_> {
     }
 }
 
-#[rustfmt::skip] // Need this if lower than rustfmt 1.4.34
 impl const Default for Inode {
     fn default() -> Self {
         Self::zero()
