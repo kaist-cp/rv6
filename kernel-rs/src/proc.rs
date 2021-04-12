@@ -20,7 +20,7 @@ use crate::{
     file::RcFile,
     fs::RcInode,
     kalloc::Kmem,
-    kernel::{kernel, kernel_builder, KernelBuilder},
+    kernel::{kernel, kernel_builder, Kernel, KernelBuilder},
     lock::{pop_off, push_off, Guard, RawLock, RawSpinlock, RemoteLock, Spinlock, SpinlockGuard},
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
@@ -732,7 +732,7 @@ impl ProcsBuilder {
     }
 
     /// Initialize the proc table at boot time.
-    pub fn init(self: Pin<&'static mut Self>) -> Pin<&'static mut Procs> {
+    pub fn init(self: Pin<&mut Self>) -> Pin<&mut Procs> {
         // SAFETY: we don't move the `Procs`.
         let this = unsafe { self.get_unchecked_mut() };
         // SAFETY: we cast `wait_lock` to a raw pointer and cast again the raw pointer to a reference
@@ -1117,34 +1117,36 @@ const INITCODE: [u8; 52] = [
     0x6e, 0x69, 0x74, 0, 0, 0x24, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-/// Per-CPU process scheduler.
-/// Each CPU calls scheduler() after setting itself up.
-/// Scheduler never returns.  It loops, doing:
-///  - choose a process to run.
-///  - swtch to start running that process.
-///  - eventually that process transfers control
-///    via swtch back to the scheduler.
-pub unsafe fn scheduler() -> ! {
-    let kernel = unsafe { kernel() };
-    let mut cpu = kernel.current_cpu();
-    unsafe { (*cpu).proc = ptr::null_mut() };
-    loop {
-        // Avoid deadlock by ensuring that devices can interrupt.
-        unsafe { intr_on() };
+impl Kernel {
+    /// Per-CPU process scheduler.
+    /// Each CPU calls scheduler() after setting itself up.
+    /// Scheduler never returns.  It loops, doing:
+    ///  - choose a process to run.
+    ///  - swtch to start running that process.
+    ///  - eventually that process transfers control
+    ///    via swtch back to the scheduler.
+    pub unsafe fn scheduler(&self) -> ! {
+        let kernel = unsafe { kernel() };
+        let mut cpu = kernel.current_cpu();
+        unsafe { (*cpu).proc = ptr::null_mut() };
+        loop {
+            // Avoid deadlock by ensuring that devices can interrupt.
+            unsafe { intr_on() };
 
-        for p in kernel.procs().process_pool() {
-            let mut guard = p.lock();
-            if guard.state() == Procstate::RUNNABLE {
-                // Switch to chosen process.  It is the process's job
-                // to release its lock and then reacquire it
-                // before jumping back to us.
-                guard.deref_mut_info().state = Procstate::RUNNING;
-                unsafe { (*cpu).proc = p as *const _ };
-                unsafe { swtch(&mut (*cpu).context, &mut guard.deref_mut_data().context) };
+            for p in kernel.procs().process_pool() {
+                let mut guard = p.lock();
+                if guard.state() == Procstate::RUNNABLE {
+                    // Switch to chosen process.  It is the process's job
+                    // to release its lock and then reacquire it
+                    // before jumping back to us.
+                    guard.deref_mut_info().state = Procstate::RUNNING;
+                    unsafe { (*cpu).proc = p as *const _ };
+                    unsafe { swtch(&mut (*cpu).context, &mut guard.deref_mut_data().context) };
 
-                // Process is done running for now.
-                // It should have changed its p->state before coming back.
-                unsafe { (*cpu).proc = ptr::null_mut() }
+                    // Process is done running for now.
+                    // It should have changed its p->state before coming back.
+                    unsafe { (*cpu).proc = ptr::null_mut() }
+                }
             }
         }
     }
