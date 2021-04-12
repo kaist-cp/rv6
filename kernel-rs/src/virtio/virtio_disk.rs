@@ -15,11 +15,11 @@ use super::{
     VIRTIO_BLK_T_IN, VIRTIO_BLK_T_OUT,
 };
 use crate::{
+    arch::addr::{PGSHIFT, PGSIZE},
     bio::Buf,
     kernel::kernel_builder,
     lock::{Sleepablelock, SleepablelockGuard},
     param::BSIZE,
-    riscv::{PGSHIFT, PGSIZE},
 };
 
 // It must be page-aligned.
@@ -381,7 +381,7 @@ impl Disk {
     /// Allocate three descriptors (they need not be contiguous).
     /// Disk transfers always use three descriptors.
     fn alloc_three_descriptors(&mut self) -> Option<[Descriptor; 3]> {
-        let mut descs = ArrayVec::<[_; 3]>::new();
+        let mut descs = ArrayVec::<_, 3>::new();
 
         for _ in 0..3 {
             if let Some(desc) = self.alloc() {

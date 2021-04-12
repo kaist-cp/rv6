@@ -10,29 +10,28 @@ use core::{
 };
 
 use array_macro::array;
+use itertools::izip;
 use pin_project::pin_project;
 
 use crate::{
+    arch::addr::{Addr, UVAddr, PGSIZE},
+    arch::memlayout::kstack,
+    arch::riscv::{intr_get, intr_on, r_tp},
     file::RcFile,
     fs::RcInode,
     kalloc::Kmem,
     kernel::{kernel, kernel_builder, KernelBuilder},
-    lock::{pop_off, push_off, Guard, RawLock, RemoteSpinlock, Spinlock, SpinlockGuard},
-    memlayout::kstack,
+    lock::{pop_off, push_off, Guard, RawLock, RawSpinlock, RemoteLock, Spinlock, SpinlockGuard},
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
     println,
-    riscv::{intr_get, intr_on, r_tp, PGSIZE},
     trap::usertrapret,
-    vm::{Addr, UVAddr, UserMemory},
+    vm::UserMemory,
 };
 
 extern "C" {
     // swtch.S
     fn swtch(_: *mut Context, _: *mut Context);
-
-    // trampoline.S
-    static mut trampoline: [u8; 0];
 }
 
 /// Saved registers for kernel context switches.
@@ -317,7 +316,7 @@ pub struct ProcBuilder {
     /// this field in ProcBuilder::zero(), which is a const fn.
     /// Hence, this field gets initialized later in procinit() as
     /// `RemoteSpinlock::new(&procs.wait_lock, ptr::null_mut())`.
-    parent: MaybeUninit<RemoteSpinlock<'static, (), *const Proc>>,
+    parent: MaybeUninit<RemoteLock<'static, RawSpinlock, (), *const Proc>>,
 
     pub info: Spinlock<ProcInfo>,
 
@@ -603,7 +602,7 @@ impl ProcData {
             trap_frame: ptr::null_mut(),
             memory: MaybeUninit::uninit(),
             context: Context::new(),
-            open_files: [None; NOFILE],
+            open_files: array![_ => None; NOFILE],
             cwd: MaybeUninit::uninit(),
             name: [0; MAXPROCNAME],
         }
@@ -694,7 +693,7 @@ pub struct Proc {
 }
 
 impl Proc {
-    fn parent(&self) -> &RemoteSpinlock<'static, (), *const Proc> {
+    fn parent(&self) -> &RemoteLock<'static, RawSpinlock, (), *const Proc> {
         // SAFETY: invariant
         unsafe { self.parent.assume_init_ref() }
     }
@@ -743,9 +742,7 @@ impl ProcsBuilder {
         // alive at the same time.
         let wait_lock = unsafe { &*(&this.wait_lock as *const _) };
         for (i, p) in this.process_pool.iter_mut().enumerate() {
-            let _ = p
-                .parent
-                .write(RemoteSpinlock::new(wait_lock, ptr::null_mut()));
+            let _ = p.parent.write(RemoteLock::new(wait_lock, ptr::null_mut()));
             p.data.get_mut().kstack = kstack(i);
         }
         // SAFETY: `parent` of every process in `self` has been initialized.
@@ -933,9 +930,12 @@ impl Procs {
         unsafe { (*npdata.trap_frame).a0 = 0 };
 
         // Increment reference counts on open file descriptors.
-        for i in 0..NOFILE {
-            if let Some(file) = &proc.deref_data().open_files[i] {
-                npdata.open_files[i] = Some(file.clone())
+        for (nf, f) in izip!(
+            npdata.open_files.iter_mut(),
+            proc.deref_data().open_files.iter()
+        ) {
+            if let Some(file) = f {
+                *nf = Some(file.clone());
             }
         }
         let _ = npdata.cwd.write(proc.cwd_mut().clone());

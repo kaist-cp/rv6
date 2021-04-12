@@ -6,13 +6,13 @@ use bitflags::bitflags;
 use itertools::*;
 
 use crate::{
+    arch::addr::{pgroundup, PAddr, PGSIZE},
     fs::Path,
     kernel::Kernel,
     page::Page,
     param::MAXARG,
     proc::CurrentProc,
-    riscv::{pgroundup, PGSIZE},
-    vm::{PAddr, UserMemory},
+    vm::UserMemory,
 };
 
 /// "\x7FELF" in little endian
@@ -124,6 +124,7 @@ impl Kernel {
         let mem = UserMemory::new(trap_frame, None, &self.kmem).ok_or(())?;
         let mut mem = scopeguard::guard(mem, |mem| mem.free(&self.kmem));
         // Load program into memory.
+        // TODO(rv6): use iterator
         for i in 0..elf.phnum as usize {
             let off = elf.phoff + i * mem::size_of::<ProgHdr>();
 

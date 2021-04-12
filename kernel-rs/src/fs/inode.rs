@@ -76,8 +76,9 @@ use core::{
 
 use static_assertions::const_assert;
 
-use super::{FileName, IPB, MAXFILE, NDIRECT, NINDIRECT};
+use super::{FileName, Stat, IPB, MAXFILE, NDIRECT, NINDIRECT};
 use crate::{
+    arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena, Rc},
     bio::BufData,
     fs::{FsTransaction, Path, ROOTINO},
@@ -86,8 +87,6 @@ use crate::{
     param::ROOTDEV,
     param::{BSIZE, NINODE},
     proc::CurrentProc,
-    stat::Stat,
-    vm::UVAddr,
 };
 
 /// Directory is a file containing a sequence of Dirent structures.

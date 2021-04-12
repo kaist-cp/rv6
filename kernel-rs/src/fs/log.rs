@@ -72,7 +72,7 @@ pub struct LogInner {
     committing: bool,
 
     /// Contents of the header block, used to keep track in memory of logged block# before commit.
-    bufs: ArrayVec<[BufUnlocked; LOGSIZE]>,
+    bufs: ArrayVec<BufUnlocked, LOGSIZE>,
 }
 
 /// Contents of the header block, used for the on-disk header block.

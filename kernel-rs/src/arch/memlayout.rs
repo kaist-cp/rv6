@@ -15,7 +15,7 @@
 //! 80000000 -- entry.S, then kernel text and data
 //! end -- start of kernel page allocation area
 //! PHYSTOP -- end RAM used by the kernel
-use crate::riscv::{MAXVA, PGSIZE};
+use crate::arch::addr::{MAXVA, PGSIZE};
 
 /// SiFive Test Finisher. (virt device only)
 pub const FINISHER: usize = 0x100000;
@@ -41,7 +41,9 @@ pub const CLINT_MTIME: usize = CLINT.wrapping_add(0xbff8);
 
 /// qemu puts platform-level interrupt controller (PLIC) here.
 pub const PLIC: usize = 0xc000000;
+
 pub const PLIC_PENDING: usize = PLIC.wrapping_add(0x1000);
+
 pub const fn plic_senable(hart: usize) -> usize {
     PLIC.wrapping_add(0x2080)
         .wrapping_add((hart).wrapping_mul(0x100))

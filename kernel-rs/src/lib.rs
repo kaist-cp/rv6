@@ -39,53 +39,37 @@
 // #![deny(missing_doc_code_examples)]
 // #![deny(missing_docs)]
 // #![deny(rustdoc)]
-#![allow(dead_code)] // TODO(https://github.com/kaist-cp/rv6/issues/120)
 #![allow(incomplete_features)]
+#![allow(clippy::upper_case_acronyms)]
 #![feature(asm)]
-#![feature(const_fn_fn_ptr_basics)]
-#![feature(const_wrapping_int_methods)]
-#![feature(maybe_uninit_ref)]
-#![feature(const_in_array_repeat_expressions)]
-#![feature(array_value_iter)]
 #![feature(const_fn)]
+#![feature(const_fn_fn_ptr_basics)]
 #![feature(const_fn_union)]
-#![feature(const_trait_impl)]
 #![feature(const_precise_live_drops)]
-#![feature(maybe_uninit_extra)]
+#![feature(const_trait_impl)]
 #![feature(generic_associated_types)]
-#![feature(unsafe_block_in_unsafe_fn)]
+#![feature(maybe_uninit_extra)]
+#![feature(maybe_uninit_ref)]
 #![feature(variant_count)]
-#![feature(ptr_as_uninit)]
 
+mod arch;
 mod arena;
 mod bio;
 mod console;
-mod etrace;
 mod exec;
-mod fcntl;
 mod file;
 mod fs;
 mod kalloc;
 mod kernel;
-mod list;
 mod lock;
-mod memlayout;
 mod page;
 mod param;
-mod pinned_array;
 mod pipe;
-mod plic;
-mod poweroff;
 mod proc;
-mod rc_cell;
-mod riscv;
 mod start;
-mod stat;
 mod syscall;
-mod sysfile;
-mod sysproc;
 mod trap;
 mod uart;
-mod utils;
+mod util;
 mod virtio;
 mod vm;

@@ -1,3 +1,6 @@
+// TODO(https://github.com/kaist-cp/rv6/issues/120)
+#![allow(dead_code)]
+
 //! virtio device definitions.
 //! for both the mmio interface, and virtio descriptors.
 //! only tested with qemu.
@@ -13,7 +16,7 @@ use core::ptr;
 
 use bitflags::bitflags;
 
-use crate::memlayout::VIRTIO0;
+use crate::arch::memlayout::VIRTIO0;
 
 mod virtio_disk;
 

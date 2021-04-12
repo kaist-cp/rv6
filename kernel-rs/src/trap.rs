@@ -1,16 +1,16 @@
 use core::mem;
 
 use crate::{
-    kernel::{kernel, Kernel},
-    memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
-    ok_or,
-    plic::{plic_claim, plic_complete},
-    println,
-    proc::{cpuid, CurrentProc, Procstate},
-    riscv::{
+    arch::addr::PGSIZE,
+    arch::memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
+    arch::plic::{plic_claim, plic_complete},
+    arch::riscv::{
         intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp, w_sepc, w_sip,
-        w_stvec, Sstatus, PGSIZE,
+        w_stvec, Sstatus,
     },
+    kernel::{kernel, Kernel},
+    ok_or, println,
+    proc::{cpuid, CurrentProc, Procstate},
 };
 
 extern "C" {

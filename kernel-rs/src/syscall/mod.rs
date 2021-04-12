@@ -3,11 +3,14 @@ use core::{mem, str};
 use cstr_core::CStr;
 
 use crate::{
+    arch::addr::{Addr, UVAddr},
     kernel::Kernel,
     println,
     proc::CurrentProc,
-    vm::{Addr, UVAddr},
 };
+
+mod file;
+mod proc;
 
 impl Kernel {
     pub fn syscall(&'static self, num: i32, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {

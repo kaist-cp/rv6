@@ -1,13 +1,16 @@
+// TODO(https://github.com/kaist-cp/rv6/issues/120)
+#![allow(dead_code)]
+
 //! Low-level driver routines for 16550a UART.
 use core::ptr;
 
 use self::UartCtrlRegs::{FCR, IER, ISR, LCR, LSR, RBR, THR};
-use crate::memlayout::UART0;
+use crate::arch::memlayout::UART0;
 use crate::{
     console::consoleintr,
     kernel::kernel_builder,
     lock::{pop_off, push_off, Sleepablelock, SleepablelockGuard},
-    utils::spin_loop,
+    util::spin_loop,
 };
 
 const UART_TX_BUF_SIZE: usize = 32;

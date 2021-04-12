@@ -6,7 +6,12 @@ use core::{
     ptr::NonNull,
 };
 
-use crate::{riscv::PGSIZE, vm::PAddr};
+use static_assertions::const_assert;
+
+use crate::arch::addr::{PAddr, PGSIZE};
+
+// `RawPage` must be aligned with PGSIZE.
+const_assert!(PGSIZE == 4096);
 
 /// Page type.
 #[repr(align(4096))]
@@ -25,9 +30,6 @@ pub struct Page {
 }
 
 impl RawPage {
-    /// HACK(@efenniht): Workaround for non-const `Default::default`.
-    pub const DEFAULT: Self = Self { inner: [0; PGSIZE] };
-
     pub fn write_bytes(&mut self, value: u8) {
         unsafe {
             ptr::write_bytes(&mut self.inner, value, 1);

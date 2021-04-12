@@ -6,11 +6,11 @@ use core::{mem, pin::Pin};
 use pin_project::pin_project;
 
 use crate::{
-    list::{List, ListEntry, ListNode},
+    arch::addr::{pgrounddown, pgroundup, PGSIZE},
+    arch::memlayout::PHYSTOP,
     lock::Spinlock,
-    memlayout::PHYSTOP,
     page::Page,
-    riscv::{pgrounddown, pgroundup, PGSIZE},
+    util::list::{List, ListEntry, ListNode},
 };
 
 extern "C" {

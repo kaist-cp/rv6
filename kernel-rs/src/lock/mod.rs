@@ -30,20 +30,23 @@
 //!     Then, instead of providing a [`Ref`](crate::rc_cell::Ref), you should provide a [`Ref`](crate::rc_cell::Ref) wrapped by a `RemoteLock`.
 //!     to the outside.
 
+// TODO(https://github.com/kaist-cp/rv6/issues/120)
+#![allow(dead_code)]
+
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 
-mod lock_protected;
+mod remotelock;
 mod sleepablelock;
 mod sleeplock;
 mod spinlock;
 
-pub use lock_protected::{RemoteSleepablelock, RemoteSleeplock, RemoteSpinlock};
+pub use remotelock::RemoteLock;
 pub use sleepablelock::{Sleepablelock, SleepablelockGuard};
 pub use sleeplock::{Sleeplock, SleeplockGuard};
-pub use spinlock::{pop_off, push_off, Spinlock, SpinlockGuard};
+pub use spinlock::{pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard};
 
 pub trait RawLock {
     /// Acquires the lock.

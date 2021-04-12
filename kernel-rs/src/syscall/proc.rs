@@ -1,4 +1,4 @@
-use crate::{kernel::Kernel, poweroff, proc::CurrentProc};
+use crate::{arch::poweroff, kernel::Kernel, proc::CurrentProc};
 
 impl Kernel {
     /// Terminate the current process; status reported to wait(). No return.

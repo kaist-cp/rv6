@@ -1,3 +1,6 @@
+// TODO(https://github.com/kaist-cp/rv6/issues/120)
+#![allow(dead_code)]
+
 /// Maximum number of processes.
 pub const NPROC: usize = 64;
 

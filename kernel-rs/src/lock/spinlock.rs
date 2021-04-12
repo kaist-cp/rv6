@@ -6,9 +6,9 @@ use core::sync::atomic::{AtomicPtr, Ordering};
 
 use super::{Guard, Lock, RawLock};
 use crate::{
+    arch::riscv::{intr_get, intr_off, intr_on},
     kernel::kernel_builder,
     proc::Cpu,
-    riscv::{intr_get, intr_off, intr_on},
 };
 
 /// Mutual exclusion lock that busy waits (spin).

@@ -1,9 +1,6 @@
 use core::{cell::UnsafeCell, pin::Pin, ptr};
 
-use super::{
-    sleepablelock::RawSleepablelock, sleeplock::RawSleeplock, spinlock::RawSpinlock, Guard, Lock,
-    RawLock,
-};
+use super::{Guard, Lock, RawLock};
 
 /// `RemoteLock<'s, R, U, T>`, such as `RemoteLock<'s, RawSpinlock, U, T>`.
 /// Similar to `Lock<R, T>`, but uses a shared raw lock.
@@ -21,13 +18,6 @@ pub struct RemoteLock<'s, R: RawLock, U, T> {
 
 unsafe impl<'s, R: RawLock, U: Send, T: Send> Sync for RemoteLock<'s, R, U, T> {}
 
-/// A `RemoteLock` that borrows a `Sleepablelock<U>`.
-pub type RemoteSleepablelock<'s, U, T> = RemoteLock<'s, RawSleepablelock, U, T>;
-/// A `RemoteLock` that borrows a `Sleeplock<U>`.
-pub type RemoteSleeplock<'s, U, T> = RemoteLock<'s, RawSleeplock, U, T>;
-/// A `RemoteLock` that borrows a `Spinlock<U>`.
-pub type RemoteSpinlock<'s, U, T> = RemoteLock<'s, RawSpinlock, U, T>;
-
 impl<'s, R: RawLock, U, T> RemoteLock<'s, R, U, T> {
     /// Returns a `RemoteLock` that protects `data` using the given `lock`.
     /// `lock` could be any [`Lock`], such as [Spinlock](super::Spinlock), [Sleepablelock](super::Sleepablelock), or [Sleeplock](super::Sleeplock).
@@ -36,7 +26,7 @@ impl<'s, R: RawLock, U, T> RemoteLock<'s, R, U, T> {
     ///
     /// ```rust,no_run
     /// let spinlock: Spinlock<usize> = Spinlock::new("spinlock", 10);
-    /// let spinlock_protected: RemoteSpinlock<'_, usize, isize> = RemoteLock::new(&spinlock, -20);
+    /// let spinlock_remote: RemoteSpinlock<'_, usize, isize> = RemoteLock::new(&spinlock, -20);
     /// ```
     pub const fn new(lock: &'s Lock<R, U>, data: T) -> Self {
         Self {
