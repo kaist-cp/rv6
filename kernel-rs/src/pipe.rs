@@ -207,7 +207,6 @@ impl PipeInner {
         if !self.readopen || proc.killed() {
             return Err(PipeError::InvalidStatus);
         }
-        // TODO(rv6): use iterator
         for i in 0..n {
             if self.nwrite == self.nread.wrapping_add(PIPESIZE as u32) {
                 //DOC: pipewrite-full
@@ -241,7 +240,6 @@ impl PipeInner {
         }
 
         //DOC: piperead-copy
-        // TODO(rv6): use iterator
         for i in 0..n {
             if self.nread == self.nwrite {
                 return Ok(i);

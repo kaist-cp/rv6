@@ -789,7 +789,6 @@ impl KernelMemory {
         // Allocate a page for the process's kernel stack.
         // Map it high in memory, followed by an invalid
         // guard page.
-        // TODO(rv6): use iterator
         for i in 0..NPROC {
             let pa = allocator.alloc()?.into_usize();
             let va: usize = kstack(i);
