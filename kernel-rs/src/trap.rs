@@ -25,7 +25,7 @@ extern "C" {
     fn kernelvec();
 }
 
-/// A zero-sized token, where each cpu has exactly only one `CpuToken`.
+/// A zero-sized token, where each cpu has exactly only one `CpuToken` while its in the kernel.
 /// For some types, the current cpu can safely obtain mutable references only by providing an `&mut CpuToken`,
 /// since this prevents the cpu (or the whole kernel) from obtaining multiple mutable references to the same instance.
 #[repr(C)]
@@ -43,7 +43,7 @@ pub unsafe fn trapinithart() {
 /// Handle an interrupt, exception, or system call from user space.
 /// Called from trampoline.S.
 #[no_mangle]
-pub unsafe extern "C" fn usertrap(_token: CpuToken) {
+pub unsafe extern "C" fn usertrap(mut token: CpuToken) {
     let mut which_dev: i32 = 0;
 
     assert!(
@@ -57,7 +57,7 @@ pub unsafe extern "C" fn usertrap(_token: CpuToken) {
 
     // SAFETY: usertrap can be reached only after the initialization of the kernel
     let kernel = unsafe { kernel() };
-    let mut proc = kernel.current_proc().expect("No current proc");
+    let mut proc = kernel.current_proc(&mut token).expect("No current proc");
 
     // Save user program counter.
     proc.trap_frame_mut().epc = r_sepc();
@@ -105,11 +105,11 @@ pub unsafe extern "C" fn usertrap(_token: CpuToken) {
         unsafe { proc.proc_yield() };
     }
 
-    unsafe { usertrapret(proc) };
+    unsafe { usertrapret(proc, token) };
 }
 
 /// Return to user space.
-pub unsafe fn usertrapret(mut proc: CurrentProc<'_>) {
+pub unsafe fn usertrapret(mut proc: CurrentProc<'_>, _token: CpuToken) {
     // We're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
     // we're back in user space, where usertrap() is correct.
@@ -194,7 +194,7 @@ pub unsafe fn kerneltrap() {
 
     // Give up the CPU if this is a timer interrupt.
     if which_dev == 2 {
-        if let Some(proc) = kernel.current_proc() {
+        if let Some(proc) = unsafe { kernel.current_proc_unchecked() } {
             // SAFETY:
             // Reading state without lock is safe because `proc_yield` and `sched`
             // is called after we check if current process is `RUNNING`.

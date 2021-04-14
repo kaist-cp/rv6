@@ -324,7 +324,7 @@ impl Disk {
             (*b).vdisk_request_waitchannel.sleep(
                 this,
                 // TODO: remove kernel_builder()
-                &kernel_builder().current_proc().expect("No current proc"),
+                &unsafe { kernel_builder().current_proc_unchecked() }.expect("No current proc"),
             );
         }
         // As it assigns null, the invariant of inflight is maintained even if

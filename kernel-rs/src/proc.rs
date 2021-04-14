@@ -25,7 +25,7 @@ use crate::{
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
     println,
-    trap::usertrapret,
+    trap::{usertrapret, CpuToken},
     vm::UserMemory,
 };
 
@@ -827,9 +827,8 @@ impl Procs {
     /// Must be called without any p->lock.
     pub fn wakeup_pool(&self, target: &WaitChannel) {
         // TODO: remove kernel_builder()
-        let current_proc = kernel_builder()
-            .current_proc()
-            .map_or(ptr::null(), |p| p.deref());
+        let current_proc =
+            unsafe { kernel_builder().current_proc_unchecked() }.map_or(ptr::null(), |p| p.deref());
         for p in self.process_pool() {
             if p as *const _ != current_proc {
                 let mut guard = p.lock();
@@ -1152,11 +1151,11 @@ pub unsafe fn scheduler() -> ! {
 
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
-unsafe fn forkret() {
+unsafe fn forkret(token: CpuToken) {
     // TODO: remove kernel_builder()
     let kernel = kernel_builder();
 
-    let proc = kernel.current_proc().expect("No current proc");
+    let proc = unsafe { kernel.current_proc_unchecked() }.expect("No current proc");
     // Still holding p->lock from scheduler.
     unsafe { proc.info.unlock() };
 
@@ -1165,13 +1164,18 @@ unsafe fn forkret() {
     // be run from main().
     kernel.file_system.init(ROOTDEV);
 
-    unsafe { usertrapret(proc) };
+    unsafe { usertrapret(proc, token) };
 }
 
 impl KernelBuilder {
     /// Returns `Some<CurrentProc<'_>>` if current proc exists (i.e. When (*cpu).proc is non-null).
     /// Otherwise, returns `None` (when current proc is null).
-    pub fn current_proc(&self) -> Option<CurrentProc<'_>> {
+    ///
+    /// # Safety
+    ///
+    /// For each cpu, only one `CurrentProc` must exist.
+    /// Otherwise, we can have multiple mutable references to the same `ProcData`.
+    pub unsafe fn current_proc_unchecked(&self) -> Option<CurrentProc<'_>> {
         unsafe { push_off() };
         let cpu = self.current_cpu();
         let proc = unsafe { (*cpu).proc };
@@ -1181,5 +1185,14 @@ impl KernelBuilder {
         }
         // This is safe because p is non-null and current Cpu's proc.
         Some(unsafe { CurrentProc::new(&(*proc)) })
+    }
+
+    /// Returns `Some<CurrentProc<'_>>` if current proc exists (i.e. When (*cpu).proc is non-null).
+    /// Otherwise, returns `None` (when current proc is null).
+    pub fn current_proc(&self, _token: &mut CpuToken) -> Option<CurrentProc<'_>> {
+        // SAFETY: This function is safe because,
+        // * A `ProcData` is never pointed by two or more `Cpu::proc` fields, and
+        // * A cpu only has one `CpuToken`.
+        unsafe { self.current_proc_unchecked() }
     }
 }

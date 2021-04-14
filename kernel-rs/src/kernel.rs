@@ -172,6 +172,7 @@ impl KernelBuilder {
     ///
     /// It is safe to call this function with interrupts enabled, but returned address may not be the
     /// current CPU since the scheduler can move the process to another CPU on time interrupt.
+    // TODO: `current_cpu` should require a `&mut CpuToken` from the caller.
     pub fn current_cpu(&self) -> *mut Cpu {
         let id: usize = cpuid();
         self.cpus[id].get()
