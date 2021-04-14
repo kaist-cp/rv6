@@ -25,6 +25,14 @@ extern "C" {
     fn kernelvec();
 }
 
+/// A zero-sized token, where each cpu has exactly only one `CpuToken`.
+/// For some types, the current cpu can safely obtain mutable references only by providing an `&mut CpuToken`,
+/// since this prevents the cpu (or the whole kernel) from obtaining multiple mutable references to the same instance.
+#[repr(C)]
+pub struct CpuToken {
+    _marker: [usize; 0],
+}
+
 pub fn trapinit() {}
 
 /// Set up to take exceptions and traps while in the kernel.
@@ -35,7 +43,7 @@ pub unsafe fn trapinithart() {
 /// Handle an interrupt, exception, or system call from user space.
 /// Called from trampoline.S.
 #[no_mangle]
-pub unsafe extern "C" fn usertrap() {
+pub unsafe extern "C" fn usertrap(_token: CpuToken) {
     let mut which_dev: i32 = 0;
 
     assert!(
