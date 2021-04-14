@@ -10,7 +10,7 @@ use crate::{
     },
     kernel::{kernel, Kernel},
     ok_or, println,
-    proc::{cpuid, CurrentProc, Procstate},
+    proc::{cpuid, CurrentProcMut, Procstate},
 };
 
 extern "C" {
@@ -57,7 +57,9 @@ pub unsafe extern "C" fn usertrap(mut token: CpuToken) {
 
     // SAFETY: usertrap can be reached only after the initialization of the kernel
     let kernel = unsafe { kernel() };
-    let mut proc = kernel.current_proc(&mut token).expect("No current proc");
+    let mut proc = kernel
+        .current_proc_mut(&mut token)
+        .expect("No current proc");
 
     // Save user program counter.
     proc.trap_frame_mut().epc = r_sepc();
@@ -109,7 +111,7 @@ pub unsafe extern "C" fn usertrap(mut token: CpuToken) {
 }
 
 /// Return to user space.
-pub unsafe fn usertrapret(mut proc: CurrentProc<'_>, _token: CpuToken) {
+pub unsafe fn usertrapret(mut proc: CurrentProcMut<'_>, _token: CpuToken) {
     // We're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
     // we're back in user space, where usertrap() is correct.
@@ -194,7 +196,7 @@ pub unsafe fn kerneltrap() {
 
     // Give up the CPU if this is a timer interrupt.
     if which_dev == 2 {
-        if let Some(proc) = unsafe { kernel.current_proc_unchecked() } {
+        if let Some(proc) = unsafe { kernel.current_proc_mut_unchecked() } {
             // SAFETY:
             // Reading state without lock is safe because `proc_yield` and `sched`
             // is called after we check if current process is `RUNNING`.

@@ -11,7 +11,7 @@ use crate::{
     kernel::Kernel,
     page::Page,
     param::MAXARG,
-    proc::CurrentProc,
+    proc::CurrentProcMut,
     vm::UserMemory,
 };
 
@@ -96,7 +96,7 @@ impl Kernel {
         &self,
         path: &Path,
         args: &[Page],
-        proc: &mut CurrentProc<'_>,
+        proc: &mut CurrentProcMut<'_>,
     ) -> Result<usize, ()> {
         if args.len() > MAXARG {
             return Err(());

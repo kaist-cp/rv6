@@ -329,71 +329,90 @@ pub struct ProcBuilder {
     killed: AtomicBool,
 }
 
-/// CurrentProc wraps mutable pointer of current CPU's proc.
+/// A reference to the current CPU's `Proc`.
 ///
 /// # Safety
 ///
-/// `inner` is current Cpu's proc, this means it's state is `RUNNING`.
+/// `inner` is the current Cpu's proc, whose state should be `RUNNING`.
 pub struct CurrentProc<'p> {
     inner: &'p Proc,
 }
 
 impl<'p> CurrentProc<'p> {
-    /// # Safety
-    ///
-    /// `proc` should be current `Cpu`'s `proc`.
-    unsafe fn new(proc: &'p Proc) -> Self {
-        CurrentProc { inner: proc }
+    pub fn pid(&self) -> Pid {
+        // SAFETY: pid is not modified while CurrentProc exists.
+        unsafe { (*self.info.get_mut_raw()).pid }
+    }
+}
+
+impl Deref for CurrentProc<'_> {
+    type Target = Proc;
+
+    fn deref(&self) -> &Self::Target {
+        self.inner
+    }
+}
+
+/// A reference to the current CPU's `Proc`.
+/// Unlike `CurrentProcMut`, you can mutate the current proc's `ProcData` using this type.
+/// Nevertheless, this type can coexist with `CurrentProc`s.
+pub struct CurrentProcMut<'p> {
+    inner: CurrentProc<'p>,
+}
+
+impl<'p> CurrentProcMut<'p> {
+    pub fn as_current_proc(&self) -> &CurrentProc<'p> {
+        &self.inner
     }
 
     pub fn deref_data(&self) -> &ProcData {
-        // SAFETY: Only `CurrentProc` can use `ProcData` without lock.
+        // SAFETY: Only `CurrentProcMut` can use `ProcData` without lock.
         unsafe { &*self.data.get() }
     }
 
     pub fn deref_mut_data(&mut self) -> &mut ProcData {
-        // SAFETY: Only `CurrentProc` can use `ProcData` without lock.
+        // SAFETY: Only `CurrentProcMut` can use `ProcData` without lock.
         unsafe { &mut *self.data.get() }
     }
 
     pub fn pid(&self) -> Pid {
-        // SAFETY: pid is not modified while CurrentProc exists.
+        // SAFETY: pid is not modified while CurrentProcMut exists.
         unsafe { (*self.info.get_mut_raw()).pid }
     }
 
     pub fn trap_frame(&self) -> &TrapFrame {
         // SAFETY: trap_frame is a valid pointer according to the invariants
-        // of ProcBuilder and CurrentProc.
+        // of ProcBuilder and CurrentProcMut.
         unsafe { &*self.deref_data().trap_frame }
     }
 
     pub fn trap_frame_mut(&mut self) -> &mut TrapFrame {
         // SAFETY: trap_frame is a valid pointer according to the invariants
-        // of ProcBuilder and CurrentProc.
+        // of ProcBuilder and CurrentProcMut.
         unsafe { &mut *self.deref_mut_data().trap_frame }
     }
 
     pub fn memory(&self) -> &UserMemory {
         // SAFETY: memory has been initialized according to the invariants
-        // of ProcBuilder and CurrentProc.
+        // of ProcBuilder and CurrentProcMut.
         unsafe { self.deref_data().memory.assume_init_ref() }
     }
 
     pub fn memory_mut(&mut self) -> &mut UserMemory {
         // SAFETY: memory has been initialized according to the invariants
-        // of ProcBuilder and CurrentProc.
+        // of ProcBuilder and CurrentProcMut.
         unsafe { self.deref_mut_data().memory.assume_init_mut() }
     }
 
     pub fn cwd(&self) -> &RcInode {
         // SAFETY: cwd has been initialized according to the invariants
-        // of ProcBuilder and CurrentProc.
+        // of ProcBuilder and CurrentProcMut.
         unsafe { self.deref_data().cwd.assume_init_ref() }
     }
 
     pub fn cwd_mut(&mut self) -> &mut RcInode {
         // SAFETY: cwd has been initialized according to the invariants
-        // of ProcBuilder and CurrentProc.
+        // of ProcBuilder and CurrentProcMut.
         unsafe { self.deref_mut_data().cwd.assume_init_mut() }
     }
 
@@ -405,11 +424,11 @@ impl<'p> CurrentProc<'p> {
     }
 }
 
-impl Deref for CurrentProc<'_> {
+impl Deref for CurrentProcMut<'_> {
     type Target = Proc;
 
     fn deref(&self) -> &Self::Target {
-        self.inner
+        &self.inner.inner
     }
 }
 
@@ -433,13 +452,13 @@ impl ProcGuard<'_> {
 
     /// This method returns a mutable reference to its `ProcData`. There is no
     /// data race between `ProcGuard`s since this method can be called only after
-    /// acquiring the lock of `info`. However, `CurrentProc` can create a mutable
+    /// acquiring the lock of `info`. However, `CurrentProcMut` can create a mutable
     /// reference to the `ProcData` without acquiring the lock. Therefore, this
     /// method is unsafe, and the caller must ensure the below safety condition.
     ///
     /// # Safety
     ///
-    /// This method must be called only when there is no `CurrentProc` referring
+    /// This method must be called only when there is no `CurrentProcMut` referring
     /// to the same `ProcBuilder`.
     unsafe fn deref_mut_data(&mut self) -> &mut ProcData {
         unsafe { &mut *self.data.get() }
@@ -827,8 +846,9 @@ impl Procs {
     /// Must be called without any p->lock.
     pub fn wakeup_pool(&self, target: &WaitChannel) {
         // TODO: remove kernel_builder()
-        let current_proc =
-            unsafe { kernel_builder().current_proc_unchecked() }.map_or(ptr::null(), |p| p.deref());
+        let current_proc = kernel_builder()
+            .current_proc()
+            .map_or(ptr::null(), |p| p.deref());
         for p in self.process_pool() {
             if p as *const _ != current_proc {
                 let mut guard = p.lock();
@@ -904,7 +924,11 @@ impl Procs {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
-    pub fn fork(&self, proc: &mut CurrentProc<'_>, allocator: &Spinlock<Kmem>) -> Result<Pid, ()> {
+    pub fn fork(
+        &self,
+        proc: &mut CurrentProcMut<'_>,
+        allocator: &Spinlock<Kmem>,
+    ) -> Result<Pid, ()> {
         // Allocate trap frame.
         let trap_frame =
             scopeguard::guard(allocator.alloc().ok_or(())?, |page| allocator.free(page));
@@ -960,7 +984,7 @@ impl Procs {
 
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
-    pub fn wait(&self, addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<Pid, ()> {
+    pub fn wait(&self, addr: UVAddr, proc: &mut CurrentProcMut<'_>) -> Result<Pid, ()> {
         // Assumes that the process_pool has at least 1 element.
         let some_proc = self.process_pool().next().unwrap();
         let mut parent_guard = some_proc.parent().lock();
@@ -1000,7 +1024,8 @@ impl Procs {
 
             // Wait for a child to exit.
             //DOC: wait-sleep
-            proc.child_waitchannel.sleep(&mut parent_guard, proc);
+            proc.child_waitchannel
+                .sleep(&mut parent_guard, proc.as_current_proc());
         }
     }
 
@@ -1023,7 +1048,7 @@ impl Procs {
     /// Exit the current process.  Does not return.
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
-    pub fn exit_current(&self, status: i32, proc: &mut CurrentProc<'_>) -> ! {
+    pub fn exit_current(&self, status: i32, proc: &mut CurrentProcMut<'_>) -> ! {
         assert_ne!(
             (*proc).deref() as *const _,
             self.initial_proc() as _,
@@ -1040,7 +1065,7 @@ impl Procs {
         // disk write operations, so we must begin a transaction here.
         // TODO: remove kernel_builder()
         let tx = kernel_builder().file_system.begin_transaction();
-        // SAFETY: CurrentProc's cwd has been initialized.
+        // SAFETY: CurrentProcMut's cwd has been initialized.
         // It's ok to drop cwd as proc will not be used any longer.
         unsafe { proc.deref_mut_data().cwd.assume_init_drop() };
         drop(tx);
@@ -1055,7 +1080,7 @@ impl Procs {
         // only when proc is the initial process, which cannot be the case.
         assert!(!parent.is_null());
         // SAFETY: parent is a valid pointer according to the invariants of
-        // ProcBuilder and CurrentProc.
+        // ProcBuilder and CurrentProcMut.
         unsafe { (*parent).child_waitchannel.wakeup() };
 
         let mut guard = proc.lock();
@@ -1151,11 +1176,13 @@ pub unsafe fn scheduler() -> ! {
 
 /// A fork child's very first scheduling by scheduler()
 /// will swtch to forkret.
-unsafe fn forkret(token: CpuToken) {
+unsafe fn forkret(mut token: CpuToken) {
     // TODO: remove kernel_builder()
     let kernel = kernel_builder();
 
-    let proc = unsafe { kernel.current_proc_unchecked() }.expect("No current proc");
+    let proc = kernel
+        .current_proc_mut(&mut token)
+        .expect("No current proc");
     // Still holding p->lock from scheduler.
     unsafe { proc.info.unlock() };
 
@@ -1168,31 +1195,44 @@ unsafe fn forkret(token: CpuToken) {
 }
 
 impl KernelBuilder {
-    /// Returns `Some<CurrentProc<'_>>` if current proc exists (i.e. When (*cpu).proc is non-null).
-    /// Otherwise, returns `None` (when current proc is null).
-    ///
-    /// # Safety
-    ///
-    /// For each cpu, only one `CurrentProc` must exist.
-    /// Otherwise, we can have multiple mutable references to the same `ProcData`.
-    pub unsafe fn current_proc_unchecked(&self) -> Option<CurrentProc<'_>> {
+    /// Returns a non-null pointer to the current proc, if exists.
+    /// Otherwise, returns null.
+    fn get_current_proc(&self) -> Option<&Proc> {
         unsafe { push_off() };
         let cpu = self.current_cpu();
         let proc = unsafe { (*cpu).proc };
         unsafe { pop_off() };
         if proc.is_null() {
-            return None;
+            None
+        } else {
+            // This is safe because proc is non-null and is the current Cpu's proc.
+            Some(unsafe { &*proc })
         }
-        // This is safe because p is non-null and current Cpu's proc.
-        Some(unsafe { CurrentProc::new(&(*proc)) })
     }
 
     /// Returns `Some<CurrentProc<'_>>` if current proc exists (i.e. When (*cpu).proc is non-null).
     /// Otherwise, returns `None` (when current proc is null).
-    pub fn current_proc(&self, _token: &mut CpuToken) -> Option<CurrentProc<'_>> {
+    pub fn current_proc(&self) -> Option<CurrentProc<'_>> {
+        self.get_current_proc().map(|inner| CurrentProc { inner })
+    }
+
+    /// Returns `Some<CurrentProcMut<'_>>` if current proc exists (i.e. When (*cpu).proc is non-null).
+    /// Otherwise, returns `None` (when current proc is null).
+    ///
+    /// # Safety
+    ///
+    /// For each cpu, only one `CurrentProcMut` must exist.
+    /// Otherwise, we can have multiple mutable references to the same `ProcData`.
+    pub unsafe fn current_proc_mut_unchecked(&self) -> Option<CurrentProcMut<'_>> {
+        self.current_proc().map(|inner| CurrentProcMut { inner })
+    }
+
+    /// Returns `Some<CurrentProcMut<'_>>` if current proc exists (i.e. When (*cpu).proc is non-null).
+    /// Otherwise, returns `None` (when current proc is null).
+    pub fn current_proc_mut(&self, _token: &mut CpuToken) -> Option<CurrentProcMut<'_>> {
         // SAFETY: This function is safe because,
         // * A `ProcData` is never pointed by two or more `Cpu::proc` fields, and
         // * A cpu only has one `CpuToken`.
-        unsafe { self.current_proc_unchecked() }
+        unsafe { self.current_proc_mut_unchecked() }
     }
 }

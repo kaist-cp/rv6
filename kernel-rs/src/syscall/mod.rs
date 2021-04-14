@@ -6,14 +6,14 @@ use crate::{
     arch::addr::{Addr, UVAddr},
     kernel::Kernel,
     println,
-    proc::CurrentProc,
+    proc::CurrentProcMut,
 };
 
 mod file;
 mod proc;
 
 impl Kernel {
-    pub fn syscall(&'static self, num: i32, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn syscall(&'static self, num: i32, proc: &mut CurrentProcMut<'_>) -> Result<usize, ()> {
         match num {
             1 => self.sys_fork(proc),
             2 => self.sys_exit(proc),
@@ -50,7 +50,7 @@ impl Kernel {
     }
 }
 
-impl CurrentProc<'_> {
+impl CurrentProcMut<'_> {
     /// Fetch the usize at addr from the current process.
     /// Returns Ok(fetched integer) on success, Err(()) on error.
     pub fn fetchaddr(&mut self, addr: UVAddr) -> Result<usize, ()> {

@@ -10,7 +10,7 @@ use crate::{
     lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
-    proc::CurrentProc,
+    proc::CurrentProcMut,
 };
 
 pub enum FileType {
@@ -101,7 +101,7 @@ impl File {
 
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub fn stat(&self, addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
+    pub fn stat(&self, addr: UVAddr, proc: &mut CurrentProcMut<'_>) -> Result<(), ()> {
         match &self.typ {
             FileType::Inode {
                 inner: InodeFileType { ip, .. },
@@ -116,7 +116,7 @@ impl File {
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub fn read(&self, addr: UVAddr, n: i32, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn read(&self, addr: UVAddr, n: i32, proc: &mut CurrentProcMut<'_>) -> Result<usize, ()> {
         if !self.readable {
             return Err(());
         }
@@ -143,7 +143,7 @@ impl File {
         &self,
         addr: UVAddr,
         n: i32,
-        proc: &mut CurrentProc<'_>,
+        proc: &mut CurrentProcMut<'_>,
         fs: &FileSystem,
     ) -> Result<usize, ()> {
         if !self.writable {

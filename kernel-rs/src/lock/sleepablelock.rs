@@ -55,7 +55,7 @@ impl<T> SleepablelockGuard<'_, T> {
         self.lock.lock.waitchannel.sleep(
             self,
             // TODO: remove kernel_builder()
-            &unsafe { kernel_builder().current_proc_unchecked() }.expect("No current proc"),
+            &kernel_builder().current_proc().expect("No current proc"),
         );
     }
 

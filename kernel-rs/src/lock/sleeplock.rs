@@ -34,7 +34,8 @@ impl RawLock for RawSleeplock {
             guard.sleep();
         }
         // TODO: remove kernel_builder()
-        *guard = unsafe { kernel_builder().current_proc_unchecked() }
+        *guard = kernel_builder()
+            .current_proc()
             .expect("No current proc")
             .pid();
     }
@@ -49,7 +50,8 @@ impl RawLock for RawSleeplock {
         let guard = self.locked.lock();
         // TODO: remove kernel_builder()
         *guard
-            == unsafe { kernel_builder().current_proc_unchecked() }
+            == kernel_builder()
+                .current_proc()
                 .expect("No current proc")
                 .pid()
     }

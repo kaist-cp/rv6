@@ -6,7 +6,7 @@ use crate::{
     kernel::Kernel,
     lock::Spinlock,
     page::Page,
-    proc::{CurrentProc, WaitChannel},
+    proc::{CurrentProcMut, WaitChannel},
 };
 
 const PIPESIZE: usize = 512;
@@ -42,7 +42,7 @@ impl Pipe {
     /// If successfully read i > 0 bytes, wakeups the `write_waitchannel` and returns `Ok(i: usize)`.
     /// If the pipe was empty, sleeps at `read_waitchannel` and tries again after wakeup.
     /// If an error happened, returns `Err(())`.
-    pub fn read(&self, addr: UVAddr, n: usize, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn read(&self, addr: UVAddr, n: usize, proc: &mut CurrentProcMut<'_>) -> Result<usize, ()> {
         let mut inner = self.inner.lock();
         loop {
             match inner.try_read(addr, n, proc) {
@@ -53,7 +53,8 @@ impl Pipe {
                 }
                 Err(PipeError::WaitForIO) => {
                     //DOC: piperead-sleep
-                    self.read_waitchannel.sleep(&mut inner, proc);
+                    self.read_waitchannel
+                        .sleep(&mut inner, proc.as_current_proc());
                 }
                 _ => return Err(()),
             }
@@ -66,7 +67,12 @@ impl Pipe {
     /// Note that we may have i < `n` if an copy-in error happened.
     /// If the pipe was full, sleeps at `write_waitchannel` and tries again after wakeup.
     /// If an error happened, returns `Err(())`.
-    pub fn write(&self, addr: UVAddr, n: usize, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn write(
+        &self,
+        addr: UVAddr,
+        n: usize,
+        proc: &mut CurrentProcMut<'_>,
+    ) -> Result<usize, ()> {
         let mut written = 0;
         let mut inner = self.inner.lock();
         loop {
@@ -75,7 +81,8 @@ impl Pipe {
                     written += r;
                     self.read_waitchannel.wakeup();
                     if written < n {
-                        self.write_waitchannel.sleep(&mut inner, proc);
+                        self.write_waitchannel
+                            .sleep(&mut inner, proc.as_current_proc());
                     } else {
                         return Ok(written);
                     }
@@ -201,7 +208,7 @@ impl PipeInner {
         &mut self,
         addr: UVAddr,
         n: usize,
-        proc: &mut CurrentProc<'_>,
+        proc: &mut CurrentProcMut<'_>,
     ) -> Result<usize, PipeError> {
         let mut ch = [0u8];
         if !self.readopen || proc.killed() {
@@ -229,7 +236,7 @@ impl PipeInner {
         &mut self,
         addr: UVAddr,
         n: usize,
-        proc: &mut CurrentProc<'_>,
+        proc: &mut CurrentProcMut<'_>,
     ) -> Result<usize, PipeError> {
         //DOC: pipe-empty
         if self.nread == self.nwrite && self.writeopen {

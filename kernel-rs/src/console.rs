@@ -47,7 +47,7 @@ impl Console {
         for i in 0..n {
             let mut c = [0u8];
             // TODO: remove kernel_builder()
-            if unsafe { kernel_builder().current_proc_unchecked() }
+            if unsafe { kernel_builder().current_proc_mut_unchecked() }
                 .expect("No current proc")
                 .memory_mut()
                 .copy_in_bytes(&mut c, src + i as usize)
@@ -69,7 +69,7 @@ impl Console {
             // input into CONS.buffer.
             while this.r == this.w {
                 // TODO: remove kernel_builder()
-                if unsafe { kernel_builder().current_proc_unchecked() }
+                if unsafe { kernel_builder().current_proc_mut_unchecked() }
                     .expect("No current proc")
                     .killed()
                 {
@@ -93,7 +93,7 @@ impl Console {
                 // Copy the input byte to the user-space buffer.
                 let cbuf = [cin as u8];
                 // TODO: remove kernel_builder()
-                if unsafe { kernel_builder().current_proc_unchecked() }
+                if unsafe { kernel_builder().current_proc_mut_unchecked() }
                     .expect("No current proc")
                     .memory_mut()
                     .copy_out_bytes(dst, &cbuf)
