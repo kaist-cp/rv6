@@ -7,12 +7,15 @@
 //! #![feature(const_generics)]
 //! #![feature(const_evaluatable_checked)]
 //!
-//! fn transmute<T, U>(_t: T) -> U
+//! unsafe fn transmute<T, U>(t: T) -> U
 //! where
 //!     Assert2<
 //!         { mem::size_of::<T>() == mem::size_of::<U>() },
 //!         { mem::align_of::<T>() == mem::align_of::<U>() },
-//!     >: True;
+//!     >: True
+//! {
+//!     /* Omitted */
+//! }
 //! ```
 
 pub struct Assert<const EXPR: bool>;
