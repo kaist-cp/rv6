@@ -45,6 +45,8 @@
 #![feature(const_fn)]
 #![feature(const_fn_fn_ptr_basics)]
 #![feature(const_fn_union)]
+#![feature(const_generics)]
+#![feature(const_evaluatable_checked)]
 #![feature(const_precise_live_drops)]
 #![feature(const_trait_impl)]
 #![feature(generic_associated_types)]

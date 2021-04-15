@@ -14,6 +14,7 @@ test = []
 [profile.dev]
 panic = "abort"
 opt-level = 1
+incremental = false
 
 [profile.release]
 panic = "abort"
