@@ -65,8 +65,8 @@ impl Default for FileType {
 }
 
 impl InodeFileType {
-    fn lock(&self, fs: &FileSystem) -> InodeFileTypeGuard<'_> {
-        let ip = self.ip.lock(fs);
+    fn lock(&self, fs: &FileSystem, bcache: &Bcache) -> InodeFileTypeGuard<'_> {
+        let ip = self.ip.lock(fs, bcache);
         // SAFETY: `ip` is locked and `off` can be exclusively accessed.
         let off = unsafe { &mut *self.off.get() };
         InodeFileTypeGuard { ip, off }
@@ -132,7 +132,7 @@ impl File {
         match &self.typ {
             FileType::Pipe { pipe } => pipe.read(addr, n as usize, proc),
             FileType::Inode { inner } => {
-                let mut ip = inner.lock(fs);
+                let mut ip = inner.lock(fs, bcache);
                 let curr_off = *ip.off;
                 let ret = ip.read_user(addr, curr_off, n as u32, proc, fs, bcache);
                 if let Ok(v) = ret {
@@ -176,7 +176,7 @@ impl File {
                 while bytes_written < n {
                     let bytes_to_write = cmp::min(n - bytes_written, max);
                     let tx = fs.begin_transaction();
-                    let mut ip = inner.lock(fs);
+                    let mut ip = inner.lock(fs, bcache);
                     let curr_off = *ip.off;
                     let r = ip
                         .write_user(

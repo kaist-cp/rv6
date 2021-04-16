@@ -29,7 +29,7 @@ use spin::Once;
 use static_assertions::const_assert;
 
 use crate::{
-    bio::{Buf, BufData, BufUnlocked},
+    bio::{Bcache, Buf, BufData, BufUnlocked},
     lock::{Sleepablelock, SleepablelockGuard},
     param::{BSIZE, LOGSIZE, MAXOPBLOCKS},
     virtio::Disk,
@@ -89,7 +89,7 @@ impl Log {
         }
     }
 
-    pub fn init(&self, dev: u32, start: i32, size: i32) {
+    pub fn init(&self, dev: u32, start: i32, size: i32, bcache: &Bcache) {
         let mut inner = LogInner {
             dev,
             start,
@@ -98,7 +98,7 @@ impl Log {
             committing: false,
             bufs: ArrayVec::new(),
         };
-        LogLocked::new(LogLockedInner::Ref(&mut inner), &self.disk).recover_from_log();
+        LogLocked::new(LogLockedInner::Ref(&mut inner), &self.disk).recover_from_log(bcache);
         let _ = self.inner.call_once(|| Sleepablelock::new("LOG", inner));
     }
 
@@ -138,7 +138,7 @@ impl Log {
 
     /// Called at the end of each FS system call.
     /// Commits if this was the last outstanding operation.
-    pub fn end_op(&self) {
+    pub fn end_op(&self, bcache: &Bcache) {
         let mut guard = self.inner().lock();
         guard.outstanding -= 1;
         assert!(!guard.committing, "guard.committing");
@@ -152,7 +152,7 @@ impl Log {
             // Call commit w/o holding locks, since not allowed to sleep with locks.
             guard.reacquire_after(||
                 // SAFETY: there is no another transaction, so `inner` cannot be read or written.
-                unsafe { self.lock_unchecked() }.commit());
+                unsafe { self.lock_unchecked() }.commit(bcache));
 
             guard.committing = false;
         }
@@ -171,13 +171,15 @@ impl<'a> LogLocked<'a> {
 
 impl LogLocked<'_> {
     /// Copy committed blocks from log to their home location.
-    fn install_trans(&mut self) {
+    fn install_trans(&mut self, bcache: &Bcache) {
         let dev = self.inner.dev;
         let start = self.inner.start;
 
         for (tail, dbuf) in self.inner.bufs.drain(..).enumerate() {
             // Read log block.
-            let lbuf = self.disk.read(dev, (start + tail as i32 + 1) as u32);
+            let lbuf = self
+                .disk
+                .read(dev, (start + tail as i32 + 1) as u32, bcache);
 
             // Read dst.
             let mut dbuf = dbuf.lock();
@@ -193,8 +195,8 @@ impl LogLocked<'_> {
     }
 
     /// Read the log header from disk into the in-memory log header.
-    fn read_head(&mut self) {
-        let mut buf = self.disk.read(self.dev, self.start as u32);
+    fn read_head(&mut self, bcache: &Bcache) {
+        let mut buf = self.disk.read(self.dev, self.start as u32, bcache);
 
         const_assert!(mem::size_of::<LogHeader>() <= BSIZE);
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<LogHeader>() == 0);
@@ -206,7 +208,7 @@ impl LogLocked<'_> {
         let lh = unsafe { &mut *(buf.deref_inner_mut().data.as_mut_ptr() as *mut LogHeader) };
 
         for b in &lh.block[0..lh.n as usize] {
-            let buf = self.disk.read(self.dev, *b).unlock();
+            let buf = self.disk.read(self.dev, *b, bcache).unlock();
             self.bufs.push(buf);
         }
     }
@@ -214,8 +216,8 @@ impl LogLocked<'_> {
     /// Write in-memory log header to disk.
     /// This is the true point at which the
     /// current transaction commits.
-    fn write_head(&mut self) {
-        let mut buf = self.disk.read(self.dev, self.start as u32);
+    fn write_head(&mut self, bcache: &Bcache) {
+        let mut buf = self.disk.read(self.dev, self.start as u32, bcache);
 
         const_assert!(mem::size_of::<LogHeader>() <= BSIZE);
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<LogHeader>() == 0);
@@ -233,26 +235,26 @@ impl LogLocked<'_> {
         self.disk.write(&mut buf)
     }
 
-    fn recover_from_log(&mut self) {
-        self.read_head();
+    fn recover_from_log(&mut self, bcache: &Bcache) {
+        self.read_head(bcache);
 
         // If committed, copy from log to disk.
-        self.install_trans();
+        self.install_trans(bcache);
 
         // Clear the log.
-        self.write_head();
+        self.write_head(bcache);
     }
 
     /// Copy modified blocks from cache to self.
-    fn write_log(&mut self) {
+    fn write_log(&mut self, bcache: &Bcache) {
         for (tail, from) in self.bufs.iter().enumerate() {
             // Log block.
             let mut to = self
                 .disk
-                .read(self.dev, (self.start + tail as i32 + 1) as u32);
+                .read(self.dev, (self.start + tail as i32 + 1) as u32, bcache);
 
             // Cache block.
-            let from = self.disk.read(self.dev, from.blockno);
+            let from = self.disk.read(self.dev, from.blockno, bcache);
 
             to.deref_inner_mut()
                 .data
@@ -263,19 +265,19 @@ impl LogLocked<'_> {
         }
     }
 
-    fn commit(&mut self) {
+    fn commit(&mut self, bcache: &Bcache) {
         if !self.bufs.is_empty() {
             // Write modified blocks from cache to self.
-            self.write_log();
+            self.write_log(bcache);
 
             // Write header to disk -- the real commit.
-            self.write_head();
+            self.write_head(bcache);
 
             // Now install writes to home locations.
-            self.install_trans();
+            self.install_trans(bcache);
 
             // Erase the transaction from the self.
-            self.write_head();
+            self.write_head(bcache);
         };
     }
 

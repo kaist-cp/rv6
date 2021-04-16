@@ -64,7 +64,7 @@ impl Kernel {
         let (ptr, name) = self
             .itable
             .nameiparent(path, proc, &self.file_system, unsafe { self.get_bcache() })?;
-        let mut dp = ptr.lock(&self.file_system);
+        let mut dp = ptr.lock(&self.file_system, unsafe { self.get_bcache() });
         if let Ok((ptr2, _)) = dp.dirlookup(&name, &self.itable, &self.file_system, unsafe {
             self.get_bcache()
         }) {
@@ -72,7 +72,7 @@ impl Kernel {
             if typ != InodeType::File {
                 return Err(());
             }
-            let mut ip = ptr2.lock(&self.file_system);
+            let mut ip = ptr2.lock(&self.file_system, unsafe { self.get_bcache() });
             if let InodeType::None | InodeType::Dir = ip.deref_inner().typ {
                 return Err(());
             }
@@ -80,16 +80,20 @@ impl Kernel {
             drop(ip);
             return Ok((ptr2, ret));
         }
-        let ptr2 = self.itable.alloc_inode(dp.dev, typ, tx, &self.file_system);
-        let mut ip = ptr2.lock(&self.file_system);
+        let ptr2 = self
+            .itable
+            .alloc_inode(dp.dev, typ, tx, &self.file_system, unsafe {
+                self.get_bcache()
+            });
+        let mut ip = ptr2.lock(&self.file_system, unsafe { self.get_bcache() });
         ip.deref_inner_mut().nlink = 1;
-        ip.update(tx, &self.file_system);
+        ip.update(tx, &self.file_system, unsafe { self.get_bcache() });
 
         // Create . and .. entries.
         if typ == InodeType::Dir {
             // for ".."
             dp.deref_inner_mut().nlink += 1;
-            dp.update(tx, &self.file_system);
+            dp.update(tx, &self.file_system, unsafe { self.get_bcache() });
 
             // No ip->nlink++ for ".": avoid cyclic ref count.
             // SAFETY: b"." does not contain any NUL characters.
@@ -137,12 +141,12 @@ impl Kernel {
             .namei(Path::new(oldname), proc, &self.file_system, unsafe {
                 self.get_bcache()
             })?;
-        let mut ip = ptr.lock(&self.file_system);
+        let mut ip = ptr.lock(&self.file_system, unsafe { self.get_bcache() });
         if ip.deref_inner().typ == InodeType::Dir {
             return Err(());
         }
         ip.deref_inner_mut().nlink += 1;
-        ip.update(&tx, &self.file_system);
+        ip.update(&tx, &self.file_system, unsafe { self.get_bcache() });
         drop(ip);
 
         if let Ok((ptr2, name)) =
@@ -151,7 +155,7 @@ impl Kernel {
                     self.get_bcache()
                 })
         {
-            let mut dp = ptr2.lock(&self.file_system);
+            let mut dp = ptr2.lock(&self.file_system, unsafe { self.get_bcache() });
             if dp.dev != ptr.dev
                 || dp
                     .dirlink(
@@ -169,9 +173,9 @@ impl Kernel {
             }
         }
 
-        let mut ip = ptr.lock(&self.file_system);
+        let mut ip = ptr.lock(&self.file_system, unsafe { self.get_bcache() });
         ip.deref_inner_mut().nlink -= 1;
-        ip.update(&tx, &self.file_system);
+        ip.update(&tx, &self.file_system, unsafe { self.get_bcache() });
         Err(())
     }
 
@@ -185,14 +189,14 @@ impl Kernel {
                 .nameiparent(Path::new(filename), proc, &self.file_system, unsafe {
                     self.get_bcache()
                 })?;
-        let mut dp = ptr.lock(&self.file_system);
+        let mut dp = ptr.lock(&self.file_system, unsafe { self.get_bcache() });
 
         // Cannot unlink "." or "..".
         if !(name.as_bytes() == b"." || name.as_bytes() == b"..") {
             if let Ok((ptr2, off)) = dp.dirlookup(&name, &self.itable, &self.file_system, unsafe {
                 self.get_bcache()
             }) {
-                let mut ip = ptr2.lock(&self.file_system);
+                let mut ip = ptr2.lock(&self.file_system, unsafe { self.get_bcache() });
                 assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
 
                 if ip.deref_inner().typ != InodeType::Dir
@@ -204,12 +208,12 @@ impl Kernel {
                     .expect("unlink: writei");
                     if ip.deref_inner().typ == InodeType::Dir {
                         dp.deref_inner_mut().nlink -= 1;
-                        dp.update(&tx, &self.file_system);
+                        dp.update(&tx, &self.file_system, unsafe { self.get_bcache() });
                     }
                     drop(dp);
                     drop(ptr);
                     ip.deref_inner_mut().nlink -= 1;
-                    ip.update(&tx, &self.file_system);
+                    ip.update(&tx, &self.file_system, unsafe { self.get_bcache() });
                     return Ok(());
                 }
             }
@@ -234,7 +238,7 @@ impl Kernel {
             let ptr = self
                 .itable
                 .namei(name, proc, &self.file_system, unsafe { self.get_bcache() })?;
-            let ip = ptr.lock(&self.file_system);
+            let ip = ptr.lock(&self.file_system, unsafe { self.get_bcache() });
             let typ = ip.deref_inner().typ;
 
             if typ == InodeType::Dir && omode != FcntlFlags::O_RDONLY {
@@ -271,7 +275,10 @@ impl Kernel {
                 FileType::Device { ip, .. }
                 | FileType::Inode {
                     inner: InodeFileType { ip, .. },
-                } => ip.lock(&self.file_system).itrunc(&tx, &self.file_system),
+                } => {
+                    ip.lock(&self.file_system, unsafe { self.get_bcache() })
+                        .itrunc(&tx, &self.file_system, unsafe { self.get_bcache() })
+                }
                 _ => panic!("sys_open : Not reach"),
             };
         }
@@ -321,7 +328,7 @@ impl Kernel {
             .namei(Path::new(dirname), proc, &self.file_system, unsafe {
                 self.get_bcache()
             })?;
-        let ip = ptr.lock(&self.file_system);
+        let ip = ptr.lock(&self.file_system, unsafe { self.get_bcache() });
         if ip.deref_inner().typ != InodeType::Dir {
             return Err(());
         }

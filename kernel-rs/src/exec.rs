@@ -111,7 +111,7 @@ impl Kernel {
         let ptr = self
             .itable
             .namei(path, proc, &self.file_system, unsafe { self.get_bcache() })?;
-        let mut ip = ptr.lock(&self.file_system);
+        let mut ip = ptr.lock(&self.file_system, unsafe { self.get_bcache() });
 
         // Check ELF header
         let mut elf: ElfHdr = Default::default();

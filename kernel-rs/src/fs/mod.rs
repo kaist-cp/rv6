@@ -17,6 +17,7 @@ use spin::Once;
 
 use crate::{
     bio::{Bcache, Buf},
+    kernel::kernel,
     param::BSIZE,
 };
 
@@ -66,13 +67,17 @@ impl FileSystem {
         }
     }
 
-    pub fn init(&self, dev: u32) {
+    pub fn init(&self, dev: u32, bcache: &Bcache) {
         if !self.superblock.is_completed() {
             let superblock = self
                 .superblock
-                .call_once(|| Superblock::new(&self.log.disk.read(dev, 1)));
-            self.log
-                .init(dev, superblock.logstart as i32, superblock.nlog as i32);
+                .call_once(|| Superblock::new(&self.log.disk.read(dev, 1, bcache)));
+            self.log.init(
+                dev,
+                superblock.logstart as i32,
+                superblock.nlog as i32,
+                bcache,
+            );
         }
     }
 
@@ -95,9 +100,11 @@ impl FileSystem {
 
 impl Drop for FsTransaction<'_> {
     fn drop(&mut self) {
+        // TODO: remove kernel()
+        let bcache = unsafe { kernel().get_bcache() };
         // Called at the end of each FS system call.
         // Commits if this was the last outstanding operation.
-        self.fs.log.end_op();
+        self.fs.log.end_op(bcache);
     }
 }
 
@@ -126,7 +133,11 @@ impl FsTransaction<'_> {
     /// Allocate a zeroed disk block.
     fn balloc(&self, dev: u32, bcache: &Bcache) -> u32 {
         for b in num_iter::range_step(0, self.fs.superblock().size, BPB as u32) {
-            let mut bp = self.fs.log.disk.read(dev, self.fs.superblock().bblock(b));
+            let mut bp = self
+                .fs
+                .log
+                .disk
+                .read(dev, self.fs.superblock().bblock(b), bcache);
             for bi in 0..cmp::min(BPB as u32, self.fs.superblock().size - b) {
                 let m = 1 << (bi % 8);
                 if bp.deref_inner_mut().data[(bi / 8) as usize] & m == 0 {
@@ -143,8 +154,12 @@ impl FsTransaction<'_> {
     }
 
     /// Free a disk block.
-    fn bfree(&self, dev: u32, b: u32) {
-        let mut bp = self.fs.log.disk.read(dev, self.fs.superblock().bblock(b));
+    fn bfree(&self, dev: u32, b: u32, bcache: &Bcache) {
+        let mut bp = self
+            .fs
+            .log
+            .disk
+            .read(dev, self.fs.superblock().bblock(b), bcache);
         let bi = b as usize % BPB;
         let m = 1u8 << (bi % 8);
         assert_ne!(

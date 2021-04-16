@@ -16,7 +16,7 @@ use super::{
 };
 use crate::{
     arch::addr::{PGSHIFT, PGSIZE},
-    bio::Buf,
+    bio::{Bcache, Buf},
     kernel::kernel_builder,
     lock::{Sleepablelock, SleepablelockGuard},
     param::BSIZE,
@@ -164,11 +164,8 @@ impl Drop for Descriptor {
 impl Sleepablelock<Disk> {
     /// Return a locked Buf with the `latest` contents of the indicated block.
     /// If buf.valid is true, we don't need to access Disk.
-    pub fn read(&self, dev: u32, blockno: u32) -> Buf {
-        // TODO: remove kernel_builder()
-        let mut buf = unsafe { kernel_builder().get_bcache() }
-            .get_buf(dev, blockno)
-            .lock();
+    pub fn read(&self, dev: u32, blockno: u32, bcache: &Bcache) -> Buf {
+        let mut buf = bcache.get_buf(dev, blockno).lock();
         if !buf.deref_inner().valid {
             Disk::rw(&mut self.lock(), &mut buf, false);
             buf.deref_inner_mut().valid = true;

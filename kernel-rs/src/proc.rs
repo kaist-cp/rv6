@@ -1163,7 +1163,9 @@ unsafe fn forkret() {
     // File system initialization must be run in the context of a
     // regular process (e.g., because it calls sleep), and thus cannot
     // be run from main().
-    kernel.file_system.init(ROOTDEV);
+    kernel
+        .file_system
+        .init(ROOTDEV, unsafe { kernel.get_bcache() });
 
     unsafe { usertrapret(proc) };
 }

@@ -82,7 +82,7 @@ use crate::{
     arena::{Arena, ArenaObject, ArrayArena, Rc},
     bio::{Bcache, BufData},
     fs::{FileSystem, FsTransaction, Path, ROOTINO},
-    kernel::kernel_builder,
+    kernel::kernel,
     lock::{Sleeplock, Spinlock},
     param::ROOTDEV,
     param::{BSIZE, NINODE},
@@ -340,11 +340,11 @@ impl InodeGuard<'_> {
     /// Copy a modified in-memory inode to disk.
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk.
-    pub fn update(&self, tx: &FsTransaction<'_>, fs: &FileSystem) {
+    pub fn update(&self, tx: &FsTransaction<'_>, fs: &FileSystem, bcache: &Bcache) {
         let mut bp = fs
             .log
             .disk
-            .read(self.dev, fs.superblock().iblock(self.inum));
+            .read(self.dev, fs.superblock().iblock(self.inum), bcache);
 
         const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
@@ -390,32 +390,35 @@ impl InodeGuard<'_> {
 
     /// Truncate inode (discard contents).
     /// This function is called with Inode's lock is held.
-    pub fn itrunc(&mut self, tx: &FsTransaction<'_>, fs: &FileSystem) {
+    pub fn itrunc(&mut self, tx: &FsTransaction<'_>, fs: &FileSystem, bcache: &Bcache) {
         let dev = self.dev;
         for addr in &mut self.deref_inner_mut().addr_direct {
             if *addr != 0 {
-                tx.bfree(dev, *addr);
+                tx.bfree(dev, *addr, bcache);
                 *addr = 0;
             }
         }
 
         if self.deref_inner().addr_indirect != 0 {
-            let mut bp = fs.log.disk.read(dev, self.deref_inner().addr_indirect);
+            let mut bp = fs
+                .log
+                .disk
+                .read(dev, self.deref_inner().addr_indirect, bcache);
             // SAFETY: u32 does not have internal structure.
             let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "itrunc: Buf data unaligned");
             for a in data {
                 if *a != 0 {
-                    tx.bfree(dev, *a);
+                    tx.bfree(dev, *a, bcache);
                 }
             }
             drop(bp);
-            tx.bfree(dev, self.deref_inner().addr_indirect);
+            tx.bfree(dev, self.deref_inner().addr_indirect, bcache);
             self.deref_inner_mut().addr_indirect = 0
         }
 
         self.deref_inner_mut().size = 0;
-        self.update(tx, fs);
+        self.update(tx, fs, bcache);
     }
 
     /// Copy data into `dst` from the content of inode at offset `off`.
@@ -517,10 +520,11 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let bp = fs
-                .log
-                .disk
-                .read(self.dev, self.bmap(off as usize / BSIZE, fs, bcache));
+            let bp = fs.log.disk.read(
+                self.dev,
+                self.bmap(off as usize / BSIZE, fs, bcache),
+                bcache,
+            );
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
@@ -636,6 +640,7 @@ impl InodeGuard<'_> {
             let mut bp = fs.log.disk.read(
                 self.dev,
                 self.bmap_or_alloc(off as usize / BSIZE, tx, fs, bcache),
+                bcache,
             );
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
@@ -655,7 +660,7 @@ impl InodeGuard<'_> {
         // Write the i-node back to disk even if the size didn't change
         // because the loop above might have called bmap() and added a new
         // block to self->addrs[].
-        self.update(tx, fs);
+        self.update(tx, fs, bcache);
         Ok(tot as usize)
     }
 
@@ -707,7 +712,7 @@ impl InodeGuard<'_> {
                 self.deref_inner_mut().addr_indirect = indirect;
             }
 
-            let mut bp = fs.log.disk.read(self.dev, indirect);
+            let mut bp = fs.log.disk.read(self.dev, indirect, bcache);
             let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
             let mut addr = data[bn];
@@ -756,8 +761,9 @@ impl ArenaObject for Inode {
         if self.inner.get_mut().valid && self.inner.get_mut().nlink == 0 {
             // inode has no links and no other references: truncate and free.
 
-            // TODO: remove kernel_builder()
-            let fs = &kernel_builder().file_system;
+            // TODO: remove kernel()
+            let fs = unsafe { &kernel().file_system };
+            let bcache = unsafe { kernel().get_bcache() };
 
             // TODO(https://github.com/kaist-cp/rv6/issues/290)
             // Disk write operations must happen inside a transaction. However,
@@ -775,15 +781,15 @@ impl ArenaObject for Inode {
 
             // self->ref == 1 means no other process can have self locked,
             // so this acquiresleep() won't block (or deadlock).
-            let mut ip = self.lock(fs);
+            let mut ip = self.lock(fs, bcache);
 
             // SAFETY: `nlink` is 0. That is, there is no way to reach to inode,
             // so the `Itable` never tries to obtain an `Rc` referring this `Inode`.
             unsafe {
                 A::reacquire_after(guard, move || {
-                    ip.itrunc(&tx, fs);
+                    ip.itrunc(&tx, fs, bcache);
                     ip.deref_inner_mut().typ = InodeType::None;
-                    ip.update(&tx, fs);
+                    ip.update(&tx, fs, bcache);
                     ip.deref_inner_mut().valid = false;
                     drop(ip);
                 });
@@ -795,13 +801,13 @@ impl ArenaObject for Inode {
 impl Inode {
     /// Lock the given inode.
     /// Reads the inode from disk if necessary.
-    pub fn lock(&self, fs: &FileSystem) -> InodeGuard<'_> {
+    pub fn lock(&self, fs: &FileSystem, bcache: &Bcache) -> InodeGuard<'_> {
         let mut guard = self.inner.lock();
         if !guard.valid {
             let mut bp = fs
                 .log
                 .disk
-                .read(self.dev, fs.superblock().iblock(self.inum));
+                .read(self.dev, fs.superblock().iblock(self.inum), bcache);
 
             // SAFETY: dip is inside bp.data.
             let dip = unsafe {
@@ -903,9 +909,10 @@ impl Itable {
         typ: InodeType,
         tx: &FsTransaction<'_>,
         fs: &FileSystem,
+        bcache: &Bcache,
     ) -> RcInode {
         for inum in 1..fs.superblock().ninodes {
-            let mut bp = fs.log.disk.read(dev, fs.superblock().iblock(inum));
+            let mut bp = fs.log.disk.read(dev, fs.superblock().iblock(inum), bcache);
 
             const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
             const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
@@ -985,7 +992,7 @@ impl Itable {
         while let Some((new_path, name)) = path.skipelem() {
             path = new_path;
 
-            let mut ip = ptr.lock(fs);
+            let mut ip = ptr.lock(fs, bcache);
             if ip.deref_inner().typ != InodeType::Dir {
                 return Err(());
             }
