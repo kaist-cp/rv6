@@ -61,14 +61,14 @@ impl Kernel {
     where
         F: FnOnce(&mut InodeGuard<'_>) -> T,
     {
-        let (ptr, name) = self.itable.nameiparent(path, proc)?;
-        let mut dp = ptr.lock();
-        if let Ok((ptr2, _)) = dp.dirlookup(&name, &self.itable) {
+        let (ptr, name) = self.itable.nameiparent(path, proc, &self.file_system)?;
+        let mut dp = ptr.lock(&self.file_system);
+        if let Ok((ptr2, _)) = dp.dirlookup(&name, &self.itable, &self.file_system) {
             drop(dp);
             if typ != InodeType::File {
                 return Err(());
             }
-            let mut ip = ptr2.lock();
+            let mut ip = ptr2.lock(&self.file_system);
             if let InodeType::None | InodeType::Dir = ip.deref_inner().typ {
                 return Err(());
             }
@@ -76,16 +76,16 @@ impl Kernel {
             drop(ip);
             return Ok((ptr2, ret));
         }
-        let ptr2 = self.itable.alloc_inode(dp.dev, typ, tx);
-        let mut ip = ptr2.lock();
+        let ptr2 = self.itable.alloc_inode(dp.dev, typ, tx, &self.file_system);
+        let mut ip = ptr2.lock(&self.file_system);
         ip.deref_inner_mut().nlink = 1;
-        ip.update(tx);
+        ip.update(tx, &self.file_system);
 
         // Create . and .. entries.
         if typ == InodeType::Dir {
             // for ".."
             dp.deref_inner_mut().nlink += 1;
-            dp.update(tx);
+            dp.update(tx, &self.file_system);
 
             // No ip->nlink++ for ".": avoid cyclic ref count.
             // SAFETY: b"." does not contain any NUL characters.
@@ -94,6 +94,7 @@ impl Kernel {
                 ip.inum,
                 tx,
                 &self.itable,
+                &self.file_system,
             )
             // SAFETY: b".." does not contain any NUL characters.
             .and_then(|_| {
@@ -102,11 +103,12 @@ impl Kernel {
                     dp.inum,
                     tx,
                     &self.itable,
+                    &self.file_system,
                 )
             })
             .expect("create dots");
         }
-        dp.dirlink(&name, ip.inum, tx, &self.itable)
+        dp.dirlink(&name, ip.inum, tx, &self.itable, &self.file_system)
             .expect("create: dirlink");
         let ret = f(&mut ip);
         drop(ip);
@@ -117,26 +119,35 @@ impl Kernel {
     /// Returns Ok(()) on success, Err(()) on error.
     fn link(&self, oldname: &CStr, newname: &CStr, proc: &CurrentProc<'_>) -> Result<(), ()> {
         let tx = self.file_system.begin_transaction();
-        let ptr = self.itable.namei(Path::new(oldname), proc)?;
-        let mut ip = ptr.lock();
+        let ptr = self
+            .itable
+            .namei(Path::new(oldname), proc, &self.file_system)?;
+        let mut ip = ptr.lock(&self.file_system);
         if ip.deref_inner().typ == InodeType::Dir {
             return Err(());
         }
         ip.deref_inner_mut().nlink += 1;
-        ip.update(&tx);
+        ip.update(&tx, &self.file_system);
         drop(ip);
 
-        if let Ok((ptr2, name)) = self.itable.nameiparent(Path::new(newname), proc) {
-            let mut dp = ptr2.lock();
-            if dp.dev != ptr.dev || dp.dirlink(name, ptr.inum, &tx, &self.itable).is_err() {
+        if let Ok((ptr2, name)) =
+            self.itable
+                .nameiparent(Path::new(newname), proc, &self.file_system)
+        {
+            let mut dp = ptr2.lock(&self.file_system);
+            if dp.dev != ptr.dev
+                || dp
+                    .dirlink(name, ptr.inum, &tx, &self.itable, &self.file_system)
+                    .is_err()
+            {
             } else {
                 return Ok(());
             }
         }
 
-        let mut ip = ptr.lock();
+        let mut ip = ptr.lock(&self.file_system);
         ip.deref_inner_mut().nlink -= 1;
-        ip.update(&tx);
+        ip.update(&tx, &self.file_system);
         Err(())
     }
 
@@ -145,25 +156,28 @@ impl Kernel {
     fn unlink(&self, filename: &CStr, proc: &CurrentProc<'_>) -> Result<(), ()> {
         let de: Dirent = Default::default();
         let tx = self.file_system.begin_transaction();
-        let (ptr, name) = self.itable.nameiparent(Path::new(filename), proc)?;
-        let mut dp = ptr.lock();
+        let (ptr, name) = self
+            .itable
+            .nameiparent(Path::new(filename), proc, &self.file_system)?;
+        let mut dp = ptr.lock(&self.file_system);
 
         // Cannot unlink "." or "..".
         if !(name.as_bytes() == b"." || name.as_bytes() == b"..") {
-            if let Ok((ptr2, off)) = dp.dirlookup(&name, &self.itable) {
-                let mut ip = ptr2.lock();
+            if let Ok((ptr2, off)) = dp.dirlookup(&name, &self.itable, &self.file_system) {
+                let mut ip = ptr2.lock(&self.file_system);
                 assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
 
-                if ip.deref_inner().typ != InodeType::Dir || ip.is_dir_empty() {
-                    dp.write_kernel(&de, off, &tx).expect("unlink: writei");
+                if ip.deref_inner().typ != InodeType::Dir || ip.is_dir_empty(&self.file_system) {
+                    dp.write_kernel(&de, off, &tx, &self.file_system)
+                        .expect("unlink: writei");
                     if ip.deref_inner().typ == InodeType::Dir {
                         dp.deref_inner_mut().nlink -= 1;
-                        dp.update(&tx);
+                        dp.update(&tx, &self.file_system);
                     }
                     drop(dp);
                     drop(ptr);
                     ip.deref_inner_mut().nlink -= 1;
-                    ip.update(&tx);
+                    ip.update(&tx, &self.file_system);
                     return Ok(());
                 }
             }
@@ -185,8 +199,8 @@ impl Kernel {
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
             self.create(name, InodeType::File, &tx, proc, |ip| ip.deref_inner().typ)?
         } else {
-            let ptr = self.itable.namei(name, proc)?;
-            let ip = ptr.lock();
+            let ptr = self.itable.namei(name, proc, &self.file_system)?;
+            let ip = ptr.lock(&self.file_system);
             let typ = ip.deref_inner().typ;
 
             if typ == InodeType::Dir && omode != FcntlFlags::O_RDONLY {
@@ -223,7 +237,7 @@ impl Kernel {
                 FileType::Device { ip, .. }
                 | FileType::Inode {
                     inner: InodeFileType { ip, .. },
-                } => ip.lock().itrunc(&tx),
+                } => ip.lock(&self.file_system).itrunc(&tx, &self.file_system),
                 _ => panic!("sys_open : Not reach"),
             };
         }
@@ -268,8 +282,10 @@ impl Kernel {
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
         let _tx = self.file_system.begin_transaction();
-        let ptr = self.itable.namei(Path::new(dirname), proc)?;
-        let ip = ptr.lock();
+        let ptr = self
+            .itable
+            .namei(Path::new(dirname), proc, &self.file_system)?;
+        let ip = ptr.lock(&self.file_system);
         if ip.deref_inner().typ != InodeType::Dir {
             return Err(());
         }
@@ -320,7 +336,7 @@ impl Kernel {
         let n = proc.argint(2)?;
         let p = proc.argaddr(1)?;
         // SAFETY: read will not access proc's open_files.
-        unsafe { (*(f as *const RcFile)).read(p.into(), n, proc) }
+        unsafe { (*(f as *const RcFile)).read(p.into(), n, proc, &self.file_system) }
     }
 
     /// Write n bytes from buf to given file descriptor fd.

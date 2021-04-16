@@ -64,8 +64,8 @@ impl Default for FileType {
 }
 
 impl InodeFileType {
-    fn lock(&self) -> InodeFileTypeGuard<'_> {
-        let ip = self.ip.lock();
+    fn lock(&self, fs: &FileSystem) -> InodeFileTypeGuard<'_> {
+        let ip = self.ip.lock(fs);
         // SAFETY: `ip` is locked and `off` can be exclusively accessed.
         let off = unsafe { &mut *self.off.get() };
         InodeFileTypeGuard { ip, off }
@@ -116,7 +116,13 @@ impl File {
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub fn read(&self, addr: UVAddr, n: i32, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn read(
+        &self,
+        addr: UVAddr,
+        n: i32,
+        proc: &mut CurrentProc<'_>,
+        fs: &FileSystem,
+    ) -> Result<usize, ()> {
         if !self.readable {
             return Err(());
         }
@@ -124,9 +130,9 @@ impl File {
         match &self.typ {
             FileType::Pipe { pipe } => pipe.read(addr, n as usize, proc),
             FileType::Inode { inner } => {
-                let mut ip = inner.lock();
+                let mut ip = inner.lock(fs);
                 let curr_off = *ip.off;
-                let ret = ip.read_user(addr, curr_off, n as u32, proc);
+                let ret = ip.read_user(addr, curr_off, n as u32, proc, fs);
                 if let Ok(v) = ret {
                     *ip.off += v as u32;
                 }
@@ -167,7 +173,7 @@ impl File {
                 while bytes_written < n {
                     let bytes_to_write = cmp::min(n - bytes_written, max);
                     let tx = fs.begin_transaction();
-                    let mut ip = inner.lock();
+                    let mut ip = inner.lock(fs);
                     let curr_off = *ip.off;
                     let r = ip
                         .write_user(
@@ -176,6 +182,7 @@ impl File {
                             bytes_to_write as u32,
                             proc,
                             &tx,
+                            fs,
                         )
                         .map(|v| {
                             *ip.off += v as u32;
