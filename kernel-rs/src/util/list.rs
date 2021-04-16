@@ -354,7 +354,7 @@ impl ListEntry {
     }
 
     /// Inserts `elt` at the back of this `ListEntry` after unlinking `elt`.
-    fn push_back(&self, elt: &Self) {
+    pub(super) fn push_back(&self, elt: &Self) {
         if !elt.is_unlinked() {
             elt.remove();
         }
@@ -368,7 +368,7 @@ impl ListEntry {
     }
 
     /// Inserts `elt` in front of this `ListEntry` after unlinking `elt`.
-    fn push_front(&self, elt: &Self) {
+    pub(super) fn push_front(&self, elt: &Self) {
         if !elt.is_unlinked() {
             elt.remove();
         }

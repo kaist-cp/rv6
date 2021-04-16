@@ -4,6 +4,7 @@
 #![allow(dead_code)]
 
 pub mod branded;
+pub mod branded_list;
 pub mod etrace;
 pub mod list;
 pub mod pinned_array;
