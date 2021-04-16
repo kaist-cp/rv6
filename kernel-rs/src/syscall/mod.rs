@@ -4,44 +4,43 @@ use cstr_core::CStr;
 
 use crate::{
     arch::addr::{Addr, UVAddr},
-    kernel::Kernel,
     println,
-    proc::CurrentProc,
+    proc::{CurrentProc, KernelCtx},
 };
 
 mod file;
 mod proc;
 
-impl Kernel {
-    pub fn syscall(&'static self, num: i32, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+impl KernelCtx<'_> {
+    pub fn syscall(&mut self, num: i32) -> Result<usize, ()> {
         match num {
-            1 => self.sys_fork(proc),
-            2 => self.sys_exit(proc),
-            3 => self.sys_wait(proc),
-            4 => self.sys_pipe(proc),
-            5 => self.sys_read(proc),
-            6 => self.sys_kill(proc),
-            7 => self.sys_exec(proc),
-            8 => self.sys_fstat(proc),
-            9 => self.sys_chdir(proc),
-            10 => self.sys_dup(proc),
-            11 => self.sys_getpid(proc),
-            12 => self.sys_sbrk(proc),
-            13 => self.sys_sleep(proc),
-            14 => self.sys_uptime(proc),
-            15 => self.sys_open(proc),
-            16 => self.sys_write(proc),
-            17 => self.sys_mknod(proc),
-            18 => self.sys_unlink(proc),
-            19 => self.sys_link(proc),
-            20 => self.sys_mkdir(proc),
-            21 => self.sys_close(proc),
-            22 => self.sys_poweroff(proc),
+            1 => self.sys_fork(),
+            2 => self.sys_exit(),
+            3 => self.sys_wait(),
+            4 => self.sys_pipe(),
+            5 => self.sys_read(),
+            6 => self.sys_kill(),
+            7 => self.sys_exec(),
+            8 => self.sys_fstat(),
+            9 => self.sys_chdir(),
+            10 => self.sys_dup(),
+            11 => self.sys_getpid(),
+            12 => self.sys_sbrk(),
+            13 => self.sys_sleep(),
+            14 => self.sys_uptime(),
+            15 => self.sys_open(),
+            16 => self.sys_write(),
+            17 => self.sys_mknod(),
+            18 => self.sys_unlink(),
+            19 => self.sys_link(),
+            20 => self.sys_mkdir(),
+            21 => self.sys_close(),
+            22 => self.sys_poweroff(),
             _ => {
                 println!(
                     "{} {}: unknown sys call {}",
-                    proc.pid(),
-                    str::from_utf8(&proc.deref_data().name).unwrap_or("???"),
+                    self.proc.pid(),
+                    str::from_utf8(&self.proc.deref_data().name).unwrap_or("???"),
                     num
                 );
                 Err(())

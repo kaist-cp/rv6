@@ -2,7 +2,7 @@
 use core::cell::UnsafeCell;
 
 use super::{Guard, Lock, RawLock, Sleepablelock};
-use crate::kernel::kernel_builder;
+use crate::proc::kernel_ctx;
 
 /// Long-term locks for processes
 pub struct RawSleeplock {
@@ -33,11 +33,8 @@ impl RawLock for RawSleeplock {
         while *guard != -1 {
             guard.sleep();
         }
-        // TODO: remove kernel_builder()
-        *guard = kernel_builder()
-            .current_proc()
-            .expect("No current proc")
-            .pid();
+        // TODO: remove kernel_ctx()
+        *guard = unsafe { kernel_ctx() }.proc.pid();
     }
 
     fn release(&self) {
@@ -48,12 +45,8 @@ impl RawLock for RawSleeplock {
 
     fn holding(&self) -> bool {
         let guard = self.locked.lock();
-        // TODO: remove kernel_builder()
-        *guard
-            == kernel_builder()
-                .current_proc()
-                .expect("No current proc")
-                .pid()
+        // TODO: remove kernel_ctx()
+        *guard == unsafe { kernel_ctx() }.proc.pid()
     }
 }
 

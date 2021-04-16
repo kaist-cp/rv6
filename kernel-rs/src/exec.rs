@@ -8,10 +8,9 @@ use itertools::*;
 use crate::{
     arch::addr::{pgroundup, PAddr, PGSIZE},
     fs::Path,
-    kernel::Kernel,
     page::Page,
     param::MAXARG,
-    proc::CurrentProc,
+    proc::KernelCtx,
     vm::UserMemory,
 };
 
@@ -91,13 +90,8 @@ impl ProgHdr {
     }
 }
 
-impl Kernel {
-    pub fn exec(
-        &self,
-        path: &Path,
-        args: &[Page],
-        proc: &mut CurrentProc<'_>,
-    ) -> Result<usize, ()> {
+impl KernelCtx<'_> {
+    pub fn exec(&mut self, path: &Path, args: &[Page]) -> Result<usize, ()> {
         if args.len() > MAXARG {
             return Err(());
         }
@@ -107,8 +101,8 @@ impl Kernel {
         // value, ptr, will be dropped when this method returns. Deallocation
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
-        let tx = self.file_system.begin_transaction();
-        let ptr = self.itable.namei(path, proc)?;
+        let tx = self.kernel.file_system.begin_transaction();
+        let ptr = self.kernel.itable.namei(path, self)?;
         let mut ip = ptr.lock();
 
         // Check ELF header
@@ -120,9 +114,10 @@ impl Kernel {
             return Err(());
         }
 
-        let trap_frame: PAddr = (proc.trap_frame() as *const _ as usize).into();
-        let mem = UserMemory::new(trap_frame, None, &self.kmem).ok_or(())?;
-        let mut mem = scopeguard::guard(mem, |mem| mem.free(&self.kmem));
+        let trap_frame: PAddr = (self.proc.trap_frame() as *const _ as usize).into();
+        let mem = UserMemory::new(trap_frame, None, &self.kernel.kmem).ok_or(())?;
+        let kmem = &self.kernel.kmem;
+        let mut mem = scopeguard::guard(mem, |mem| mem.free(kmem));
         // Load program into memory.
         // TODO(rv6): use iterator
         for i in 0..elf.phnum as usize {
@@ -136,7 +131,7 @@ impl Kernel {
                 if ph.memsz < ph.filesz || ph.vaddr % PGSIZE != 0 {
                     return Err(());
                 }
-                let _ = mem.alloc(ph.vaddr.checked_add(ph.memsz).ok_or(())?, &self.kmem)?;
+                let _ = mem.alloc(ph.vaddr.checked_add(ph.memsz).ok_or(())?, &self.kernel.kmem)?;
                 mem.load_file(ph.vaddr.into(), &mut ip, ph.off as _, ph.filesz as _)?;
             }
         }
@@ -146,7 +141,7 @@ impl Kernel {
         // Allocate two pages at the next page boundary.
         // Use the second as the user stack.
         let mut sz = pgroundup(mem.size());
-        sz = mem.alloc(sz + 2 * PGSIZE, &self.kmem)?;
+        sz = mem.alloc(sz + 2 * PGSIZE, &self.kernel.kmem)?;
         mem.clear((sz - 2 * PGSIZE).into());
         let mut sp: usize = sz;
         let stackbase: usize = sp - PGSIZE;
@@ -191,7 +186,7 @@ impl Kernel {
             .rposition(|c| *c == b'/')
             .map(|i| &path_str[(i + 1)..])
             .unwrap_or(path_str);
-        let proc_name = &mut proc.deref_mut_data().name;
+        let proc_name = &mut self.proc.deref_mut_data().name;
         let len = cmp::min(proc_name.len(), name.len());
         proc_name[..len].copy_from_slice(&name[..len]);
         if len < proc_name.len() {
@@ -199,18 +194,22 @@ impl Kernel {
         }
 
         // Commit to the user image.
-        mem::replace(proc.memory_mut(), scopeguard::ScopeGuard::into_inner(mem)).free(&self.kmem);
+        mem::replace(
+            self.proc.memory_mut(),
+            scopeguard::ScopeGuard::into_inner(mem),
+        )
+        .free(&self.kernel.kmem);
 
         // arguments to user main(argc, argv)
         // argc is returned via the system call return
         // value, which goes in a0.
-        proc.trap_frame_mut().a1 = sp;
+        self.proc.trap_frame_mut().a1 = sp;
 
         // initial program counter = main
-        proc.trap_frame_mut().epc = elf.entry;
+        self.proc.trap_frame_mut().epc = elf.entry;
 
         // initial stack pointer
-        proc.trap_frame_mut().sp = sp;
+        self.proc.trap_frame_mut().sp = sp;
 
         // this ends up in a0, the first argument to main(argc, argv)
         Ok(argc)

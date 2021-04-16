@@ -5,19 +5,19 @@ use core::{cell::UnsafeCell, cmp, mem, ops::Deref, ops::DerefMut};
 use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena, Rc},
-    fs::{FileSystem, InodeGuard, RcInode},
+    fs::{InodeGuard, RcInode},
     kernel::kernel_builder,
     lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
-    proc::CurrentProc,
+    proc::KernelCtx,
 };
 
 pub enum FileType {
     None,
     Pipe { pipe: AllocatedPipe },
     Inode { inner: InodeFileType },
-    Device { ip: RcInode, major: &'static Devsw },
+    Device { ip: RcInode, major: *const Devsw },
 }
 
 /// It has an inode and an offset.
@@ -101,14 +101,14 @@ impl File {
 
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub fn stat(&self, addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<(), ()> {
+    pub fn stat(&self, addr: UVAddr, ctx: &mut KernelCtx<'_>) -> Result<(), ()> {
         match &self.typ {
             FileType::Inode {
                 inner: InodeFileType { ip, .. },
             }
             | FileType::Device { ip, .. } => {
                 let st = ip.stat();
-                proc.memory_mut().copy_out(addr, &st)
+                ctx.proc.memory_mut().copy_out(addr, &st)
             }
             _ => Err(()),
         }
@@ -116,42 +116,38 @@ impl File {
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub fn read(&self, addr: UVAddr, n: i32, proc: &mut CurrentProc<'_>) -> Result<usize, ()> {
+    pub fn read(&self, addr: UVAddr, n: i32, ctx: &mut KernelCtx<'_>) -> Result<usize, ()> {
         if !self.readable {
             return Err(());
         }
 
         match &self.typ {
-            FileType::Pipe { pipe } => pipe.read(addr, n as usize, proc),
+            FileType::Pipe { pipe } => pipe.read(addr, n as usize, ctx),
             FileType::Inode { inner } => {
                 let mut ip = inner.lock();
                 let curr_off = *ip.off;
-                let ret = ip.read_user(addr, curr_off, n as u32, proc);
+                let ret = ip.read_user(addr, curr_off, n as u32, ctx);
                 if let Ok(v) = ret {
                     *ip.off += v as u32;
                 }
                 ret
             }
-            FileType::Device { major, .. } => major.read.ok_or(()).map(|f| f(addr, n) as usize),
+            FileType::Device { major, .. } => unsafe {
+                (**major).read.ok_or(()).map(|f| f(addr, n) as usize)
+            },
             FileType::None => panic!("File::read"),
         }
     }
 
     /// Write to file self.
     /// addr is a user virtual address.
-    pub fn write(
-        &self,
-        addr: UVAddr,
-        n: i32,
-        proc: &mut CurrentProc<'_>,
-        fs: &FileSystem,
-    ) -> Result<usize, ()> {
+    pub fn write(&self, addr: UVAddr, n: i32, ctx: &mut KernelCtx<'_>) -> Result<usize, ()> {
         if !self.writable {
             return Err(());
         }
 
         match &self.typ {
-            FileType::Pipe { pipe } => pipe.write(addr, n as usize, proc),
+            FileType::Pipe { pipe } => pipe.write(addr, n as usize, ctx),
             FileType::Inode { inner } => {
                 let n = n as usize;
 
@@ -166,7 +162,7 @@ impl File {
                 let mut bytes_written: usize = 0;
                 while bytes_written < n {
                     let bytes_to_write = cmp::min(n - bytes_written, max);
-                    let tx = fs.begin_transaction();
+                    let tx = ctx.kernel.file_system.begin_transaction();
                     let mut ip = inner.lock();
                     let curr_off = *ip.off;
                     let r = ip
@@ -174,7 +170,7 @@ impl File {
                             addr + bytes_written,
                             curr_off,
                             bytes_to_write as u32,
-                            proc,
+                            ctx,
                             &tx,
                         )
                         .map(|v| {
@@ -192,7 +188,9 @@ impl File {
                 }
                 Ok(n)
             }
-            FileType::Device { major, .. } => major.write.ok_or(()).map(|f| f(addr, n) as usize),
+            FileType::Device { major, .. } => unsafe {
+                (**major).write.ok_or(()).map(|f| f(addr, n) as usize)
+            },
             FileType::None => panic!("File::read"),
         }
     }

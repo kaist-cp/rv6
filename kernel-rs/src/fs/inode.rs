@@ -86,7 +86,7 @@ use crate::{
     lock::{Sleeplock, Spinlock},
     param::ROOTDEV,
     param::{BSIZE, NINODE},
-    proc::CurrentProc,
+    proc::KernelCtx,
 };
 
 /// Directory is a file containing a sequence of Dirent structures.
@@ -442,10 +442,12 @@ impl InodeGuard<'_> {
         dst: UVAddr,
         off: u32,
         n: u32,
-        proc: &mut CurrentProc<'_>,
+        ctx: &mut KernelCtx<'_>,
     ) -> Result<usize, ()> {
         self.read_internal(off, n, |off, src| {
-            proc.memory_mut().copy_out_bytes(dst + off as usize, src)
+            ctx.proc
+                .memory_mut()
+                .copy_out_bytes(dst + off as usize, src)
         })
     }
 
@@ -535,13 +537,13 @@ impl InodeGuard<'_> {
         src: UVAddr,
         off: u32,
         n: u32,
-        proc: &mut CurrentProc<'_>,
+        ctx: &mut KernelCtx<'_>,
         tx: &FsTransaction<'_>,
     ) -> Result<usize, ()> {
         self.write_internal(
             off,
             n,
-            |off, dst| proc.memory_mut().copy_in_bytes(dst, src + off as usize),
+            |off, dst| ctx.proc.memory_mut().copy_in_bytes(dst, src + off as usize),
             tx,
         )
     }
@@ -884,16 +886,16 @@ impl Itable {
         self.get_inode(ROOTDEV, ROOTINO)
     }
 
-    pub fn namei(&self, path: &Path, proc: &CurrentProc<'_>) -> Result<RcInode, ()> {
+    pub fn namei(&self, path: &Path, proc: &KernelCtx<'_>) -> Result<RcInode, ()> {
         Ok(self.namex(path, false, proc)?.0)
     }
 
     pub fn nameiparent<'s>(
         &self,
         path: &'s Path,
-        proc: &CurrentProc<'_>,
+        ctx: &KernelCtx<'_>,
     ) -> Result<(RcInode, &'s FileName), ()> {
-        let (ip, name_in_path) = self.namex(path, true, proc)?;
+        let (ip, name_in_path) = self.namex(path, true, ctx)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
     }
@@ -902,12 +904,12 @@ impl Itable {
         &self,
         mut path: &'s Path,
         parent: bool,
-        proc: &CurrentProc<'_>,
+        ctx: &KernelCtx<'_>,
     ) -> Result<(RcInode, Option<&'s FileName>), ()> {
         let mut ptr = if path.is_absolute() {
             self.root()
         } else {
-            proc.cwd().clone()
+            ctx.proc.cwd().clone()
         };
 
         while let Some((new_path, name)) = path.skipelem() {

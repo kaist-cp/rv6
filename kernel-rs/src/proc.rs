@@ -20,12 +20,11 @@ use crate::{
     file::RcFile,
     fs::RcInode,
     kalloc::Kmem,
-    kernel::{kernel, kernel_builder, KernelBuilder},
+    kernel::{kernel, kernel_builder, Kernel},
     lock::{pop_off, push_off, Guard, RawLock, RawSpinlock, RemoteLock, Spinlock, SpinlockGuard},
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
     println,
-    trap::usertrapret,
     vm::UserMemory,
 };
 
@@ -221,7 +220,7 @@ impl WaitChannel {
 
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
-    pub fn sleep<R: RawLock, T>(&self, lock_guard: &mut Guard<'_, R, T>, proc: &CurrentProc<'_>) {
+    pub fn sleep<R: RawLock, T>(&self, lock_guard: &mut Guard<'_, R, T>, ctx: &KernelCtx<'_>) {
         // Must acquire p->lock in order to
         // change p->state and then call sched.
         // Once we hold p->lock, we can be
@@ -230,7 +229,7 @@ impl WaitChannel {
         // so it's okay to release lk.
 
         //DOC: sleeplock1
-        let mut guard = proc.lock();
+        let mut guard = ctx.proc.lock();
         // Release the lock while we sleep on the waitchannel, and reacquire after the process wakes up.
         lock_guard.reacquire_after(move || {
             // Go to sleep.
@@ -329,6 +328,24 @@ pub struct ProcBuilder {
     killed: AtomicBool,
 }
 
+/// It is the context of the current thread. It consists of `&Kernel`, which denotes the current
+/// kernel, and `CurrentProc`, which denotes the current process.
+///
+/// We do not put `&Kernel` inside `CurrentProc` because we often need to access `&Kernel` while
+/// mutably borrowing `CurrentProc`. Since `&Kernel` and `CurrentProc` are separate fields of
+/// `KernelCtx`, we can separately borrow `&Kernel` and `CurrentProc` when we use `KernelCtx`.
+///
+/// `KernelCtx` has `CurrentProc` instead of `Proc` because `CurrentProc` has more abilities than
+/// `Proc`. `CurrentProc` allows accessing `ProcData` and the `MaybeUninit` fields, and `KernelCtx`
+/// requires these abilities.
+///
+/// Methods that (possibly) need to access both `&Kernel` and `CurrentProc` take `KernelCtx` as
+/// arguments. Otherwise, methods can take only one of `&Kernel` and `CurrentProc` as arguments.
+pub struct KernelCtx<'p> {
+    pub kernel: &'p Kernel,
+    pub proc: CurrentProc<'p>,
+}
+
 /// CurrentProc wraps mutable pointer of current CPU's proc.
 ///
 /// # Safety
@@ -398,7 +415,8 @@ impl<'p> CurrentProc<'p> {
     }
 
     /// Give up the CPU for one scheduling round.
-    pub unsafe fn proc_yield(&self) {
+    // Its name cannot be `yield` because `yield` is a reserved keyword.
+    pub unsafe fn yield_cpu(&self) {
         let mut guard = self.lock();
         guard.deref_mut_info().state = Procstate::RUNNABLE;
         unsafe { guard.sched() };
@@ -826,10 +844,11 @@ impl Procs {
     /// Wake up all processes in the pool sleeping on waitchannel.
     /// Must be called without any p->lock.
     pub fn wakeup_pool(&self, target: &WaitChannel) {
-        // TODO: remove kernel_builder()
-        let current_proc = kernel_builder()
-            .current_proc()
-            .map_or(ptr::null(), |p| p.deref());
+        // This method can be reached from the kernel mode because `Kernel::clock_intr` calls
+        // `wakeup`, which calls this method. Thus, it does not call `kernel_ctx`.
+        // TODO: remove kernel()
+        let current_proc =
+            unsafe { kernel().current_proc() }.map_or(ptr::null(), |proc| proc.deref());
         for p in self.process_pool() {
             if p as *const _ != current_proc {
                 let mut guard = p.lock();
@@ -905,13 +924,15 @@ impl Procs {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
-    pub fn fork(&self, proc: &mut CurrentProc<'_>, allocator: &Spinlock<Kmem>) -> Result<Pid, ()> {
+    pub fn fork(&self, ctx: &mut KernelCtx<'_>) -> Result<Pid, ()> {
+        let allocator = &ctx.kernel.kmem;
         // Allocate trap frame.
         let trap_frame =
             scopeguard::guard(allocator.alloc().ok_or(())?, |page| allocator.free(page));
 
         // Copy user memory from parent to child.
-        let memory = proc
+        let memory = ctx
+            .proc
             .memory_mut()
             .clone(trap_frame.addr(), allocator)
             .ok_or(())?;
@@ -923,7 +944,7 @@ impl Procs {
 
         // Copy saved user registers.
         // SAFETY: trap_frame has been initialized by alloc.
-        unsafe { *npdata.trap_frame = *proc.trap_frame() };
+        unsafe { *npdata.trap_frame = *ctx.proc.trap_frame() };
 
         // Cause fork to return 0 in the child.
         // SAFETY: trap_frame has been initialized by alloc.
@@ -932,15 +953,15 @@ impl Procs {
         // Increment reference counts on open file descriptors.
         for (nf, f) in izip!(
             npdata.open_files.iter_mut(),
-            proc.deref_data().open_files.iter()
+            ctx.proc.deref_data().open_files.iter()
         ) {
             if let Some(file) = f {
                 *nf = Some(file.clone());
             }
         }
-        let _ = npdata.cwd.write(proc.cwd_mut().clone());
+        let _ = npdata.cwd.write(ctx.proc.cwd_mut().clone());
 
-        npdata.name.copy_from_slice(&proc.deref_data().name);
+        npdata.name.copy_from_slice(&ctx.proc.deref_data().name);
 
         let pid = np.deref_mut_info().pid;
 
@@ -949,7 +970,7 @@ impl Procs {
         np.reacquire_after(|np| {
             // Acquire the `wait_lock`, and write the parent field.
             let mut parent_guard = np.parent().lock();
-            *np.parent().get_mut(&mut parent_guard) = (*proc).deref();
+            *np.parent().get_mut(&mut parent_guard) = ctx.proc.deref();
         });
 
         // Set the process's state to RUNNABLE.
@@ -961,7 +982,7 @@ impl Procs {
 
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
-    pub fn wait(&self, addr: UVAddr, proc: &mut CurrentProc<'_>) -> Result<Pid, ()> {
+    pub fn wait(&self, addr: UVAddr, ctx: &mut KernelCtx<'_>) -> Result<Pid, ()> {
         // Assumes that the process_pool has at least 1 element.
         let some_proc = self.process_pool().next().unwrap();
         let mut parent_guard = some_proc.parent().lock();
@@ -970,7 +991,7 @@ impl Procs {
             // Scan through pool looking for exited children.
             let mut havekids = false;
             for np in self.process_pool() {
-                if *np.parent().get_mut(&mut parent_guard) == (*proc).deref() {
+                if *np.parent().get_mut(&mut parent_guard) == ctx.proc.deref() {
                     // Found a child.
                     // Make sure the child isn't still in exit() or swtch().
                     let mut np = np.lock();
@@ -979,7 +1000,8 @@ impl Procs {
                     if np.state() == Procstate::ZOMBIE {
                         let pid = np.deref_mut_info().pid;
                         if !addr.is_null()
-                            && proc
+                            && ctx
+                                .proc
                                 .memory_mut()
                                 .copy_out(addr, &np.deref_info().xstate)
                                 .is_err()
@@ -995,13 +1017,13 @@ impl Procs {
             }
 
             // No point waiting if we don't have any children.
-            if !havekids || proc.killed() {
+            if !havekids || ctx.proc.killed() {
                 return Err(());
             }
 
             // Wait for a child to exit.
             //DOC: wait-sleep
-            proc.child_waitchannel.sleep(&mut parent_guard, proc);
+            ctx.proc.child_waitchannel.sleep(&mut parent_guard, ctx);
         }
     }
 
@@ -1024,14 +1046,14 @@ impl Procs {
     /// Exit the current process.  Does not return.
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
-    pub fn exit_current(&self, status: i32, proc: &mut CurrentProc<'_>) -> ! {
+    pub fn exit_current(&self, status: i32, ctx: &mut KernelCtx<'_>) -> ! {
         assert_ne!(
-            (*proc).deref() as *const _,
+            ctx.proc.deref() as *const _,
             self.initial_proc() as _,
             "init exiting"
         );
 
-        for file in &mut proc.deref_mut_data().open_files {
+        for file in &mut ctx.proc.deref_mut_data().open_files {
             *file = None;
         }
 
@@ -1043,15 +1065,15 @@ impl Procs {
         let tx = kernel_builder().file_system.begin_transaction();
         // SAFETY: CurrentProc's cwd has been initialized.
         // It's ok to drop cwd as proc will not be used any longer.
-        unsafe { proc.deref_mut_data().cwd.assume_init_drop() };
+        unsafe { ctx.proc.deref_mut_data().cwd.assume_init_drop() };
         drop(tx);
 
         // Give all children to init.
-        let mut parent_guard = proc.parent().lock();
-        self.reparent((*proc).deref(), &mut parent_guard);
+        let mut parent_guard = ctx.proc.parent().lock();
+        self.reparent(ctx.proc.deref(), &mut parent_guard);
 
         // Parent might be sleeping in wait().
-        let parent = *proc.parent().get_mut(&mut parent_guard);
+        let parent = *ctx.proc.parent().get_mut(&mut parent_guard);
         // TODO: this assertion is actually unneccessary because parent is null
         // only when proc is the initial process, which cannot be the case.
         assert!(!parent.is_null());
@@ -1059,7 +1081,7 @@ impl Procs {
         // ProcBuilder and CurrentProc.
         unsafe { (*parent).child_waitchannel.wakeup() };
 
-        let mut guard = proc.lock();
+        let mut guard = ctx.proc.lock();
 
         guard.deref_mut_info().xstate = status;
         guard.deref_mut_info().state = Procstate::ZOMBIE;
@@ -1150,36 +1172,45 @@ pub unsafe fn scheduler() -> ! {
     }
 }
 
-/// A fork child's very first scheduling by scheduler()
-/// will swtch to forkret.
+/// A fork child's very first scheduling by scheduler() will swtch to forkret.
 unsafe fn forkret() {
-    // TODO: remove kernel_builder()
-    let kernel = kernel_builder();
-
-    let proc = kernel.current_proc().expect("No current proc");
+    let ctx = unsafe { kernel_ctx() };
     // Still holding p->lock from scheduler.
-    unsafe { proc.info.unlock() };
+    unsafe { ctx.proc.info.unlock() };
 
     // File system initialization must be run in the context of a
     // regular process (e.g., because it calls sleep), and thus cannot
     // be run from main().
-    kernel.file_system.init(ROOTDEV);
+    ctx.kernel.file_system.init(ROOTDEV);
 
-    unsafe { usertrapret(proc) };
+    unsafe { ctx.user_trap_ret() };
 }
 
-impl KernelBuilder {
+impl Kernel {
     /// Returns `Some<CurrentProc<'_>>` if current proc exists (i.e. When (*cpu).proc is non-null).
     /// Otherwise, returns `None` (when current proc is null).
-    pub fn current_proc(&self) -> Option<CurrentProc<'_>> {
+    ///
+    /// # Safety
+    ///
+    /// At most one `CurrentProc` or `KernelCtx` object can exist at a single time in each thread.
+    /// Therefore, it must not be called if the result of `current_proc` or `kernel_ctx` is alive.
+    pub unsafe fn current_proc(&self) -> Option<CurrentProc<'_>> {
         unsafe { push_off() };
         let cpu = self.current_cpu();
         let proc = unsafe { (*cpu).proc };
         unsafe { pop_off() };
-        if proc.is_null() {
-            return None;
-        }
         // This is safe because p is non-null and current Cpu's proc.
-        Some(unsafe { CurrentProc::new(&(*proc)) })
+        unsafe { proc.as_ref() }.map(|proc| unsafe { CurrentProc::new(proc) })
     }
+}
+
+/// # Safety
+///
+/// * It must be called only after the initialization of the kernel.
+/// * At most one `CurrentProc` or `KernelCtx` object can exist at a single time in each thread.
+///   Therefore, it must not be called if the result of `current_proc` or `kernel_ctx` is alive.
+pub unsafe fn kernel_ctx() -> KernelCtx<'static> {
+    let kernel = unsafe { kernel() };
+    let proc = unsafe { kernel.current_proc() }.expect("No current proc");
+    KernelCtx { kernel, proc }
 }
