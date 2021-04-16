@@ -5,9 +5,8 @@ use core::{cell::UnsafeCell, cmp, mem, ops::Deref, ops::DerefMut};
 use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena, Rc},
-    bio::Bcache,
-    fs::{FileSystem, InodeGuard, RcInode},
-    kernel::kernel_builder,
+    fs::{InodeGuard, RcInode},
+    kernel::{kernel_builder, Kernel},
     lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
@@ -65,8 +64,8 @@ impl Default for FileType {
 }
 
 impl InodeFileType {
-    fn lock(&self, fs: &FileSystem, bcache: &Bcache) -> InodeFileTypeGuard<'_> {
-        let ip = self.ip.lock(fs, bcache);
+    fn lock(&self, kernel: &Kernel) -> InodeFileTypeGuard<'_> {
+        let ip = self.ip.lock(kernel);
         // SAFETY: `ip` is locked and `off` can be exclusively accessed.
         let off = unsafe { &mut *self.off.get() };
         InodeFileTypeGuard { ip, off }
@@ -122,8 +121,7 @@ impl File {
         addr: UVAddr,
         n: i32,
         proc: &mut CurrentProc<'_>,
-        fs: &FileSystem,
-        bcache: &Bcache,
+        kernel: &Kernel,
     ) -> Result<usize, ()> {
         if !self.readable {
             return Err(());
@@ -132,9 +130,9 @@ impl File {
         match &self.typ {
             FileType::Pipe { pipe } => pipe.read(addr, n as usize, proc),
             FileType::Inode { inner } => {
-                let mut ip = inner.lock(fs, bcache);
+                let mut ip = inner.lock(kernel);
                 let curr_off = *ip.off;
-                let ret = ip.read_user(addr, curr_off, n as u32, proc, fs, bcache);
+                let ret = ip.read_user(addr, curr_off, n as u32, proc, kernel);
                 if let Ok(v) = ret {
                     *ip.off += v as u32;
                 }
@@ -152,8 +150,7 @@ impl File {
         addr: UVAddr,
         n: i32,
         proc: &mut CurrentProc<'_>,
-        fs: &FileSystem,
-        bcache: &Bcache,
+        kernel: &Kernel,
     ) -> Result<usize, ()> {
         if !self.writable {
             return Err(());
@@ -175,8 +172,8 @@ impl File {
                 let mut bytes_written: usize = 0;
                 while bytes_written < n {
                     let bytes_to_write = cmp::min(n - bytes_written, max);
-                    let tx = fs.begin_transaction();
-                    let mut ip = inner.lock(fs, bcache);
+                    let tx = kernel.file_system.begin_transaction();
+                    let mut ip = inner.lock(kernel);
                     let curr_off = *ip.off;
                     let r = ip
                         .write_user(
@@ -185,8 +182,7 @@ impl File {
                             bytes_to_write as u32,
                             proc,
                             &tx,
-                            fs,
-                            bcache,
+                            kernel,
                         )
                         .map(|v| {
                             *ip.off += v as u32;
