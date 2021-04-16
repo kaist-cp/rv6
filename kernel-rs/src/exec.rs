@@ -108,14 +108,16 @@ impl Kernel {
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
         let tx = self.file_system.begin_transaction();
-        let ptr = self.itable.namei(path, proc, &self.file_system)?;
+        let ptr = self
+            .itable
+            .namei(path, proc, &self.file_system, unsafe { self.get_bcache() })?;
         let mut ip = ptr.lock(&self.file_system);
 
         // Check ELF header
         let mut elf: ElfHdr = Default::default();
         // SAFETY: ElfHdr can be safely transmuted to [u8; _], as it
         // contains only integers, which do not have internal structures.
-        unsafe { ip.read_kernel(&mut elf, 0, &self.file_system) }?;
+        unsafe { ip.read_kernel(&mut elf, 0, &self.file_system, self.get_bcache()) }?;
         if !elf.is_valid() {
             return Err(());
         }
@@ -131,7 +133,7 @@ impl Kernel {
             let mut ph: ProgHdr = Default::default();
             // SAFETY: ProgHdr can be safely transmuted to [u8; _], as it
             // contains only integers, which do not have internal structures.
-            unsafe { ip.read_kernel(&mut ph, off as _, &self.file_system) }?;
+            unsafe { ip.read_kernel(&mut ph, off as _, &self.file_system, self.get_bcache()) }?;
             if ph.is_prog_load() {
                 if ph.memsz < ph.filesz || ph.vaddr % PGSIZE != 0 {
                     return Err(());
@@ -143,6 +145,7 @@ impl Kernel {
                     ph.off as _,
                     ph.filesz as _,
                     &self.file_system,
+                    unsafe { self.get_bcache() },
                 )?;
             }
         }

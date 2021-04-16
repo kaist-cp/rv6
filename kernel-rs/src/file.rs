@@ -5,6 +5,7 @@ use core::{cell::UnsafeCell, cmp, mem, ops::Deref, ops::DerefMut};
 use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena, Rc},
+    bio::Bcache,
     fs::{FileSystem, InodeGuard, RcInode},
     kernel::kernel_builder,
     lock::Spinlock,
@@ -122,6 +123,7 @@ impl File {
         n: i32,
         proc: &mut CurrentProc<'_>,
         fs: &FileSystem,
+        bcache: &Bcache,
     ) -> Result<usize, ()> {
         if !self.readable {
             return Err(());
@@ -132,7 +134,7 @@ impl File {
             FileType::Inode { inner } => {
                 let mut ip = inner.lock(fs);
                 let curr_off = *ip.off;
-                let ret = ip.read_user(addr, curr_off, n as u32, proc, fs);
+                let ret = ip.read_user(addr, curr_off, n as u32, proc, fs, bcache);
                 if let Ok(v) = ret {
                     *ip.off += v as u32;
                 }
@@ -151,6 +153,7 @@ impl File {
         n: i32,
         proc: &mut CurrentProc<'_>,
         fs: &FileSystem,
+        bcache: &Bcache,
     ) -> Result<usize, ()> {
         if !self.writable {
             return Err(());
@@ -183,6 +186,7 @@ impl File {
                             proc,
                             &tx,
                             fs,
+                            bcache,
                         )
                         .map(|v| {
                             *ip.off += v as u32;

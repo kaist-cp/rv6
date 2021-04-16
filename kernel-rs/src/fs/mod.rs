@@ -15,7 +15,10 @@ use core::{cmp, mem};
 
 use spin::Once;
 
-use crate::{bio::Buf, kernel::kernel_builder, param::BSIZE};
+use crate::{
+    bio::{Bcache, Buf},
+    param::BSIZE,
+};
 
 mod inode;
 mod log;
@@ -112,11 +115,8 @@ impl FsTransaction<'_> {
     }
 
     /// Zero a block.
-    fn bzero(&self, dev: u32, bno: u32) {
-        // TODO: remove kernel_builder()
-        let mut buf = unsafe { kernel_builder().get_bcache() }
-            .get_buf(dev, bno)
-            .lock();
+    fn bzero(&self, dev: u32, bno: u32, bcache: &Bcache) {
+        let mut buf = bcache.get_buf(dev, bno).lock();
         buf.deref_inner_mut().data.fill(0);
         buf.deref_inner_mut().valid = true;
         self.write(buf);
@@ -124,7 +124,7 @@ impl FsTransaction<'_> {
 
     /// Blocks.
     /// Allocate a zeroed disk block.
-    fn balloc(&self, dev: u32) -> u32 {
+    fn balloc(&self, dev: u32, bcache: &Bcache) -> u32 {
         for b in num_iter::range_step(0, self.fs.superblock().size, BPB as u32) {
             let mut bp = self.fs.log.disk.read(dev, self.fs.superblock().bblock(b));
             for bi in 0..cmp::min(BPB as u32, self.fs.superblock().size - b) {
@@ -133,7 +133,7 @@ impl FsTransaction<'_> {
                     // Is block free?
                     bp.deref_inner_mut().data[(bi / 8) as usize] |= m; // Mark block in use.
                     self.write(bp);
-                    self.bzero(dev, b + bi);
+                    self.bzero(dev, b + bi, bcache);
                     return b + bi;
                 }
             }

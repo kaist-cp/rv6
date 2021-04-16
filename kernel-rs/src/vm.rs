@@ -10,6 +10,7 @@ use crate::{
         kstack, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0,
     },
     arch::riscv::{make_satp, sfence_vma, w_satp},
+    bio::Bcache,
     fs::{FileSystem, InodeGuard},
     kalloc::Kmem,
     lock::Spinlock,
@@ -434,6 +435,7 @@ impl UserMemory {
         offset: u32,
         sz: u32,
         fs: &FileSystem,
+        bcache: &Bcache,
     ) -> Result<(), ()> {
         assert!(va.is_page_aligned(), "load_file: va must be page aligned");
         for i in num_iter::range_step(0, sz, PGSIZE as _) {
@@ -441,7 +443,7 @@ impl UserMemory {
                 .get_slice(va + i as usize)
                 .expect("load_file: address should exist");
             let n = cmp::min((sz - i) as usize, PGSIZE);
-            let bytes_read = ip.read_bytes_kernel(&mut dst[..n], offset + i, fs);
+            let bytes_read = ip.read_bytes_kernel(&mut dst[..n], offset + i, fs, bcache);
             if bytes_read != n {
                 return Err(());
             }

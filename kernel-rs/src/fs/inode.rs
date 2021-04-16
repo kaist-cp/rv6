@@ -80,7 +80,7 @@ use super::{FileName, Stat, IPB, MAXFILE, NDIRECT, NINDIRECT};
 use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena, Rc},
-    bio::BufData,
+    bio::{Bcache, BufData},
     fs::{FileSystem, FsTransaction, Path, ROOTINO},
     kernel::kernel_builder,
     lock::{Sleeplock, Spinlock},
@@ -191,11 +191,16 @@ pub struct Dirent {
 }
 
 impl Dirent {
-    fn new(ip: &mut InodeGuard<'_>, off: u32, fs: &FileSystem) -> Result<Dirent, ()> {
+    fn new(
+        ip: &mut InodeGuard<'_>,
+        off: u32,
+        fs: &FileSystem,
+        bcache: &Bcache,
+    ) -> Result<Dirent, ()> {
         let mut dirent = Dirent::default();
         // SAFETY: Dirent can be safely transmuted to [u8; _], as it
         // contains only u16 and u8's, which do not have internal structures.
-        unsafe { ip.read_kernel(&mut dirent, off, fs) }?;
+        unsafe { ip.read_kernel(&mut dirent, off, fs, bcache) }?;
         Ok(dirent)
     }
 
@@ -226,6 +231,7 @@ impl Dirent {
 struct DirentIter<'s, 't> {
     guard: &'s mut InodeGuard<'t>,
     fs: &'s FileSystem,
+    bcache: &'s Bcache,
     iter: StepBy<Range<u32>>,
 }
 
@@ -234,17 +240,22 @@ impl Iterator for DirentIter<'_, '_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let off = self.iter.next()?;
-        let dirent = Dirent::new(self.guard, off, self.fs).expect("DirentIter");
+        let dirent = Dirent::new(self.guard, off, self.fs, self.bcache).expect("DirentIter");
         Some((dirent, off))
     }
 }
 
 impl<'t> InodeGuard<'t> {
-    fn iter_dirents<'s>(&'s mut self, fs: &'s FileSystem) -> DirentIter<'s, 't> {
+    fn iter_dirents<'s>(
+        &'s mut self,
+        fs: &'s FileSystem,
+        bcache: &'s Bcache,
+    ) -> DirentIter<'s, 't> {
         let iter = (0..self.deref_inner().size).step_by(DIRENT_SIZE);
         DirentIter {
             guard: self,
             fs,
+            bcache,
             iter,
         }
     }
@@ -288,20 +299,22 @@ impl InodeGuard<'_> {
         tx: &FsTransaction<'_>,
         itable: &Itable,
         fs: &FileSystem,
+        bcache: &Bcache,
     ) -> Result<(), ()> {
         // Check that name is not present.
-        if let Ok((_ip, _)) = self.dirlookup(name, itable, fs) {
+        if let Ok((_ip, _)) = self.dirlookup(name, itable, fs, bcache) {
             return Err(());
         };
 
         // Look for an empty Dirent.
         let (mut de, off) = self
-            .iter_dirents(fs)
+            .iter_dirents(fs, bcache)
             .find(|(de, _)| de.inum == 0)
             .unwrap_or((Default::default(), self.deref_inner().size));
         de.inum = inum as _;
         de.set_name(name);
-        self.write_kernel(&de, off, tx, fs).expect("dirlink");
+        self.write_kernel(&de, off, tx, fs, bcache)
+            .expect("dirlink");
         Ok(())
     }
 
@@ -312,10 +325,11 @@ impl InodeGuard<'_> {
         name: &FileName,
         itable: &'a Itable,
         fs: &FileSystem,
+        bcache: &Bcache,
     ) -> Result<(RcInode, u32), ()> {
         assert_eq!(self.deref_inner().typ, InodeType::Dir, "dirlookup not DIR");
 
-        self.iter_dirents(fs)
+        self.iter_dirents(fs, bcache)
             .find(|(de, _)| de.inum != 0 && de.get_name() == name)
             .map(|(de, off)| (itable.get_inode(self.dev, de.inum as u32), off))
             .ok_or(())
@@ -415,12 +429,14 @@ impl InodeGuard<'_> {
         dst: &mut T,
         off: u32,
         fs: &FileSystem,
+        bcache: &Bcache,
     ) -> Result<(), ()> {
         let bytes = self.read_bytes_kernel(
             // SAFETY: the safety assumption of this method.
             unsafe { core::slice::from_raw_parts_mut(dst as *mut _ as _, mem::size_of::<T>()) },
             off,
             fs,
+            bcache,
         );
         if bytes == mem::size_of::<T>() {
             Ok(())
@@ -431,7 +447,13 @@ impl InodeGuard<'_> {
 
     /// Copy data into `dst` from the content of inode at offset `off`.
     /// Return the number of bytes copied.
-    pub fn read_bytes_kernel(&mut self, dst: &mut [u8], off: u32, fs: &FileSystem) -> usize {
+    pub fn read_bytes_kernel(
+        &mut self,
+        dst: &mut [u8],
+        off: u32,
+        fs: &FileSystem,
+        bcache: &Bcache,
+    ) -> usize {
         self.read_internal(
             off,
             dst.len() as u32,
@@ -440,6 +462,7 @@ impl InodeGuard<'_> {
                 Ok(())
             },
             fs,
+            bcache,
         )
         .expect("read: should never fail")
     }
@@ -455,12 +478,14 @@ impl InodeGuard<'_> {
         n: u32,
         proc: &mut CurrentProc<'_>,
         fs: &FileSystem,
+        bcache: &Bcache,
     ) -> Result<usize, ()> {
         self.read_internal(
             off,
             n,
             |off, src| proc.memory_mut().copy_out_bytes(dst + off as usize, src),
             fs,
+            bcache,
         )
     }
 
@@ -481,6 +506,7 @@ impl InodeGuard<'_> {
         mut n: u32,
         mut f: F,
         fs: &FileSystem,
+        bcache: &Bcache,
     ) -> Result<usize, ()> {
         let inner = self.deref_inner();
         if off > inner.size || off.wrapping_add(n) < off {
@@ -494,7 +520,7 @@ impl InodeGuard<'_> {
             let bp = fs
                 .log
                 .disk
-                .read(self.dev, self.bmap(off as usize / BSIZE, fs));
+                .read(self.dev, self.bmap(off as usize / BSIZE, fs, bcache));
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
@@ -513,6 +539,7 @@ impl InodeGuard<'_> {
         off: u32,
         tx: &FsTransaction<'_>,
         fs: &FileSystem,
+        bcache: &Bcache,
     ) -> Result<(), ()> {
         let bytes = self.write_bytes_kernel(
             // SAFETY: src is a valid reference to T and
@@ -521,6 +548,7 @@ impl InodeGuard<'_> {
             off,
             tx,
             fs,
+            bcache,
         )?;
         if bytes == mem::size_of::<T>() {
             Ok(())
@@ -537,6 +565,7 @@ impl InodeGuard<'_> {
         off: u32,
         tx: &FsTransaction<'_>,
         fs: &FileSystem,
+        bcache: &Bcache,
     ) -> Result<usize, ()> {
         self.write_internal(
             off,
@@ -547,6 +576,7 @@ impl InodeGuard<'_> {
             },
             tx,
             fs,
+            bcache,
         )
     }
 
@@ -561,6 +591,7 @@ impl InodeGuard<'_> {
         proc: &mut CurrentProc<'_>,
         tx: &FsTransaction<'_>,
         fs: &FileSystem,
+        bcache: &Bcache,
     ) -> Result<usize, ()> {
         self.write_internal(
             off,
@@ -568,6 +599,7 @@ impl InodeGuard<'_> {
             |off, dst| proc.memory_mut().copy_in_bytes(dst, src + off as usize),
             tx,
             fs,
+            bcache,
         )
     }
 
@@ -591,6 +623,7 @@ impl InodeGuard<'_> {
         mut f: F,
         tx: &FsTransaction<'_>,
         fs: &FileSystem,
+        bcache: &Bcache,
     ) -> Result<usize, ()> {
         if off > self.deref_inner().size {
             return Err(());
@@ -600,10 +633,10 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = fs
-                .log
-                .disk
-                .read(self.dev, self.bmap_or_alloc(off as usize / BSIZE, tx, fs));
+            let mut bp = fs.log.disk.read(
+                self.dev,
+                self.bmap_or_alloc(off as usize / BSIZE, tx, fs, bcache),
+            );
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
@@ -634,12 +667,18 @@ impl InodeGuard<'_> {
     /// listed in block self->addr_indirect.
     /// Return the disk block address of the nth block in inode self.
     /// If there is no such block, bmap allocates one.
-    fn bmap_or_alloc(&mut self, bn: usize, tx: &FsTransaction<'_>, fs: &FileSystem) -> u32 {
-        self.bmap_internal(bn, Some(tx), fs)
+    fn bmap_or_alloc(
+        &mut self,
+        bn: usize,
+        tx: &FsTransaction<'_>,
+        fs: &FileSystem,
+        bcache: &Bcache,
+    ) -> u32 {
+        self.bmap_internal(bn, Some(tx), fs, bcache)
     }
 
-    fn bmap(&mut self, bn: usize, fs: &FileSystem) -> u32 {
-        self.bmap_internal(bn, None, fs)
+    fn bmap(&mut self, bn: usize, fs: &FileSystem, bcache: &Bcache) -> u32 {
+        self.bmap_internal(bn, None, fs, bcache)
     }
 
     fn bmap_internal(
@@ -647,13 +686,14 @@ impl InodeGuard<'_> {
         bn: usize,
         tx_opt: Option<&FsTransaction<'_>>,
         fs: &FileSystem,
+        bcache: &Bcache,
     ) -> u32 {
         let inner = self.deref_inner();
 
         if bn < NDIRECT {
             let mut addr = inner.addr_direct[bn];
             if addr == 0 {
-                addr = tx_opt.expect("bmap: out of range").balloc(self.dev);
+                addr = tx_opt.expect("bmap: out of range").balloc(self.dev, bcache);
                 self.deref_inner_mut().addr_direct[bn] = addr;
             }
             addr
@@ -663,7 +703,7 @@ impl InodeGuard<'_> {
 
             let mut indirect = inner.addr_indirect;
             if indirect == 0 {
-                indirect = tx_opt.expect("bmap: out of range").balloc(self.dev);
+                indirect = tx_opt.expect("bmap: out of range").balloc(self.dev, bcache);
                 self.deref_inner_mut().addr_indirect = indirect;
             }
 
@@ -673,7 +713,7 @@ impl InodeGuard<'_> {
             let mut addr = data[bn];
             if addr == 0 {
                 let tx = tx_opt.expect("bmap: out of range");
-                addr = tx.balloc(self.dev);
+                addr = tx.balloc(self.dev, bcache);
                 data[bn] = addr;
                 tx.write(bp);
             }
@@ -682,12 +722,13 @@ impl InodeGuard<'_> {
     }
 
     /// Is the directory dp empty except for "." and ".." ?
-    pub fn is_dir_empty(&mut self, fs: &FileSystem) -> bool {
+    pub fn is_dir_empty(&mut self, fs: &FileSystem, bcache: &Bcache) -> bool {
         let mut de: Dirent = Default::default();
         for off in (2 * DIRENT_SIZE as u32..self.deref_inner().size).step_by(DIRENT_SIZE) {
             // SAFETY: Dirent can be safely transmuted to [u8; _], as it
             // contains only u16 and u8's, which do not have internal structures.
-            unsafe { self.read_kernel(&mut de, off, fs) }.expect("is_dir_empty: read_kernel");
+            unsafe { self.read_kernel(&mut de, off, fs, bcache) }
+                .expect("is_dir_empty: read_kernel");
             if de.inum != 0 {
                 return false;
             }
@@ -910,8 +951,9 @@ impl Itable {
         path: &Path,
         proc: &CurrentProc<'_>,
         fs: &FileSystem,
+        bcache: &Bcache,
     ) -> Result<RcInode, ()> {
-        Ok(self.namex(path, false, proc, fs)?.0)
+        Ok(self.namex(path, false, proc, fs, bcache)?.0)
     }
 
     pub fn nameiparent<'s>(
@@ -919,8 +961,9 @@ impl Itable {
         path: &'s Path,
         proc: &CurrentProc<'_>,
         fs: &FileSystem,
+        bcache: &Bcache,
     ) -> Result<(RcInode, &'s FileName), ()> {
-        let (ip, name_in_path) = self.namex(path, true, proc, fs)?;
+        let (ip, name_in_path) = self.namex(path, true, proc, fs, bcache)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
     }
@@ -931,6 +974,7 @@ impl Itable {
         parent: bool,
         proc: &CurrentProc<'_>,
         fs: &FileSystem,
+        bcache: &Bcache,
     ) -> Result<(RcInode, Option<&'s FileName>), ()> {
         let mut ptr = if path.is_absolute() {
             self.root()
@@ -950,7 +994,7 @@ impl Itable {
                 drop(ip);
                 return Ok((ptr, Some(name)));
             }
-            let next = ip.dirlookup(name, self, fs);
+            let next = ip.dirlookup(name, self, fs, bcache);
             drop(ip);
             ptr = next?.0
         }
