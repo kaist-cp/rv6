@@ -17,9 +17,10 @@ use super::{
 use crate::{
     arch::addr::{PGSHIFT, PGSIZE},
     bio::Buf,
-    kernel::kernel_builder,
+    kernel::kernel,
     lock::{Sleepablelock, SleepablelockGuard},
     param::BSIZE,
+    proc::kernel_ctx,
 };
 
 // It must be page-aligned.
@@ -165,8 +166,8 @@ impl Sleepablelock<Disk> {
     /// Return a locked Buf with the `latest` contents of the indicated block.
     /// If buf.valid is true, we don't need to access Disk.
     pub fn read(&self, dev: u32, blockno: u32) -> Buf {
-        // TODO: remove kernel_builder()
-        let mut buf = unsafe { kernel_builder().get_bcache() }
+        // TODO: remove kernel()
+        let mut buf = unsafe { kernel().get_bcache() }
             .get_buf(dev, blockno)
             .lock();
         if !buf.deref_inner().valid {
@@ -323,8 +324,8 @@ impl Disk {
         while b.deref_inner().disk {
             (*b).vdisk_request_waitchannel.sleep(
                 this,
-                // TODO: remove kernel_builder()
-                &kernel_builder().current_proc().expect("No current proc"),
+                // TODO: remove kernel_ctx()
+                &unsafe { kernel_ctx() },
             );
         }
         // As it assigns null, the invariant of inflight is maintained even if
