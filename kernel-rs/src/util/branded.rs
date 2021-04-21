@@ -107,9 +107,9 @@
 //! #   }
 //! # }
 //!
-//! pub struct BorrowedBook<'s> {
+//! pub struct BorrowedBook<'id, 's> {
 //!     /* Omitted */
-//! #   index: usize,
+//! #   index: Branded<'id, usize>,
 //! #   _marker: PhantomData<&'s Book>,
 //! }
 //!
@@ -125,26 +125,25 @@
 //! #       }
 //!     }
 //!
-//!     pub fn borrow_book<'id>(self: Branded<'id, &Self>) -> Branded<'id, BorrowedBook<'_>> {
+//!     pub fn borrow_book<'id>(self: Branded<'id, &Self>) -> BorrowedBook<'id, '_> {
 //!         /* Omitted */
 //! #       // Note: In the following, you can avoid using runtime check if you use more complex code.
 //! #       for index in 0..self.books.len() {
 //! #           if !self.books[index].borrowed.get() {
 //! #               self.books[index].borrowed.set(true);
-//! #               let result = BorrowedBook {
-//! #                   index,
+//! #               return BorrowedBook {
+//! #                   index: self.brand(index),
 //! #                   _marker: PhantomData,
 //! #               };
-//! #               return unsafe { self.brand(result) };
 //! #           }
 //! #       }
 //! #       panic!("no unborrowed books left");
 //!     }
 //!
-//!     pub fn return_book<'id>(self: Branded<'id, &Self>, book: Branded<'id, BorrowedBook<'_>>) {
+//!     pub fn return_book<'id>(self: Branded<'id, &Self>, book: BorrowedBook<'id, '_>) {
 //!         /* Omitted */
 //! #       // Note: In the following, you can avoid using runtime check if you use more complex code.
-//! #       self.books[book.into_inner().index].borrowed.set(false);
+//! #       self.books[book.index.into_inner()].borrowed.set(false);
 //!     }
 //! }
 //! ```
@@ -169,6 +168,16 @@
 //! Therefore, if we try to do `branded_library_b.return_book(book_from_a);`, a compile error happens because
 //! the lifetime `'id` attached to `branded_library_b` and `book_from_a` are incompatible.
 //! Note that a compile error does not happen if we do `branded_library_a.return_book(book_from_a);` instead.
+//!
+//! # Using `Branded<'id, T>` after wrapping it
+//!
+//! Note that `Branded::brand` is a safe function.
+//! Nevertheless, if you wrap the result of `Branded::brand` with your own wrapper and make your own API only return/accept that type,
+//! you can still make sure that the `'id` tag is propagated to other types only in a controlled way.
+//!
+//! For example, in the previous example, note that `Library::borrow_book` or `Library::return_book` returns/accepts `BorrowedBook<'id, 's>`
+//! instead of `Branded<'id, BorrowedBook<'s>>`. In the former case, the user can obtain a `BorrowedBook` only through the `Library`'s API,
+//! but in the latter case, this may not be true.
 
 use core::{
     cell::Cell,
@@ -202,7 +211,13 @@ impl<'id, T> Branded<'id, T> {
 
     /// Returns a new `Branded` that wraps `inner` and has the same `'id` with `self`.
     /// This is the only way to create a new `Branded` that has the same `'id` with another `Branded`.
-    pub unsafe fn brand<U>(&self, inner: U) -> Branded<'id, U> {
+    ///
+    /// # Note
+    ///
+    /// This function is not an unsafe function. If you want the user to be able to obtain a `Branded`
+    /// only through a restricted way, you should wrap the `Branded` instead.
+    /// See the module documentation for details.
+    pub fn brand<U>(&self, inner: U) -> Branded<'id, U> {
         Branded {
             _id: PhantomData,
             inner,
