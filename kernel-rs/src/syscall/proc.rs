@@ -4,20 +4,20 @@ impl KernelCtx<'_, '_> {
     /// Terminate the current process; status reported to wait(). No return.
     pub fn sys_exit(&mut self) -> Result<usize, ()> {
         let n = self.proc().argint(0)?;
-        self.kernel().procs().exit_current(n, self);
+        self.kernel().procs_ref().exit_current(n, self);
     }
 
     /// Create a process.
     /// Returns Ok(child’s PID) on success, Err(()) on error.
     pub fn sys_fork(&mut self) -> Result<usize, ()> {
-        Ok(self.kernel().procs().fork(self)? as _)
+        Ok(self.kernel().procs_ref().fork(self)? as _)
     }
 
     /// Wait for a child to exit.
     /// Returns Ok(child’s PID) on success, Err(()) on error.
     pub fn sys_wait(&mut self) -> Result<usize, ()> {
         let p = self.proc().argaddr(0)?;
-        Ok(self.kernel().procs().wait(p.into(), self)? as _)
+        Ok(self.kernel().procs_ref().wait(p.into(), self)? as _)
     }
 
     /// Return the current process’s PID.

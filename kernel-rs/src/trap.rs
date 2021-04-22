@@ -70,7 +70,7 @@ impl KernelCtx<'_, '_> {
             // system call
 
             if self.proc().killed() {
-                self.kernel().procs().exit_current(-1, &mut self);
+                self.kernel().procs_ref().exit_current(-1, &mut self);
             }
 
             // sepc points to the ecall instruction,
@@ -100,7 +100,7 @@ impl KernelCtx<'_, '_> {
         }
 
         if self.proc().killed() {
-            self.kernel().procs().exit_current(-1, &mut self);
+            self.kernel().procs_ref().exit_current(-1, &mut self);
         }
 
         // Give up the CPU if this is a timer interrupt.
@@ -235,7 +235,7 @@ impl KernelRef<'_, '_> {
             if irq as usize == UART0_IRQ {
                 self.uart.intr();
             } else if irq as usize == VIRTIO0_IRQ {
-                self.fs().log.disk.lock().intr();
+                self.file_system.log.disk.lock().intr();
             } else if irq != 0 {
                 // Use `panic!` instead of `println` to prevent stack overflow.
                 // https://github.com/kaist-cp/rv6/issues/311

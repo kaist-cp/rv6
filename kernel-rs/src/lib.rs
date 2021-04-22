@@ -42,6 +42,7 @@
 #![allow(incomplete_features)]
 #![allow(clippy::upper_case_acronyms)]
 #![feature(asm)]
+#![feature(arbitrary_self_types)]
 #![feature(const_fn)]
 #![feature(const_fn_fn_ptr_basics)]
 #![feature(const_fn_union)]

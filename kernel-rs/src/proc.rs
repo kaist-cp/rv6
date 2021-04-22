@@ -20,7 +20,7 @@ use crate::{
     file::RcFile,
     fs::RcInode,
     kalloc::Kmem,
-    kernel::{kernel, kernel_builder, kernel_ref, KernelRef},
+    kernel::{kernel, kernel_builder, kernel_ref, Kernel, KernelRef},
     lock::{pop_off, push_off, Guard, RawLock, RawSpinlock, RemoteLock, Spinlock, SpinlockGuard},
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
@@ -1214,7 +1214,7 @@ unsafe fn forkret() {
     }
 }
 
-impl<'id, 's> KernelRef<'id, 's> {
+impl Kernel {
     /// Returns `Some<CurrentProc<'id, '_>>` if current proc exists (i.e. When (*cpu).proc is non-null).
     /// Note that `'id` is same with the given `KernelRef`'s `'id`.
     /// Otherwise, returns `None` (when current proc is null).
@@ -1223,7 +1223,7 @@ impl<'id, 's> KernelRef<'id, 's> {
     ///
     /// At most one `CurrentProc` or `KernelCtx` object can exist at a single time in each thread.
     /// Therefore, it must not be called if the result of `current_proc` or `kernel_ctx` is alive.
-    pub unsafe fn current_proc(&self) -> Option<CurrentProc<'id, 's>> {
+    pub unsafe fn current_proc<'id, 's>(self: &KernelRef<'id, 's>) -> Option<CurrentProc<'id, 's>> {
         unsafe { push_off() };
         let cpu = self.current_cpu();
         let proc = unsafe { (*cpu).proc };
@@ -1234,6 +1234,11 @@ impl<'id, 's> KernelRef<'id, 's> {
                 inner: self.get_inner().brand(proc),
             }
         })
+    }
+
+    /// Returns a `ProcsRef` that points to the kernel's `Procs`.
+    pub fn procs_ref<'id, 's>(self: &KernelRef<'id, 's>) -> ProcsRef<'id, 's> {
+        ProcsRef(self.get_inner().brand(self.get_inner().procs()))
     }
 }
 
@@ -1251,12 +1256,5 @@ pub unsafe fn kernel_ctx<'s, F: for<'new_id> FnOnce(KernelCtx<'new_id, 's>) -> R
             let proc = kref.current_proc().expect("No current proc");
             f(KernelCtx { kernel: kref, proc })
         })
-    }
-}
-
-impl<'id, 's> KernelRef<'id, 's> {
-    /// Returns a `ProcsRef` that points to the kernel's `Procs`.
-    pub fn procs(&self) -> ProcsRef<'id, 's> {
-        ProcsRef(self.get_inner().brand(self.get_inner().procs()))
     }
 }
