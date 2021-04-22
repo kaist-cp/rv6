@@ -951,7 +951,7 @@ impl Procs {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
-    pub fn fork(&self, ctx: &mut KernelCtx<'_, '_>) -> Result<Pid, ()> {
+    pub fn fork<'id>(self: &ProcsRef<'id, '_>, ctx: &mut KernelCtx<'id, '_>) -> Result<Pid, ()> {
         let allocator = &ctx.kernel.kmem;
         // Allocate trap frame.
         let trap_frame =
@@ -1009,7 +1009,11 @@ impl Procs {
 
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
-    pub fn wait(&self, addr: UVAddr, ctx: &mut KernelCtx<'_, '_>) -> Result<Pid, ()> {
+    pub fn wait<'id>(
+        self: ProcsRef<'id, '_>,
+        addr: UVAddr,
+        ctx: &mut KernelCtx<'id, '_>,
+    ) -> Result<Pid, ()> {
         // Assumes that the process_pool has at least 1 element.
         let some_proc = self.process_pool().next().unwrap();
         let mut parent_guard = some_proc.parent().lock();
@@ -1073,7 +1077,11 @@ impl Procs {
     /// Exit the current process.  Does not return.
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
-    pub fn exit_current(&self, status: i32, ctx: &mut KernelCtx<'_, '_>) -> ! {
+    pub fn exit_current<'id>(
+        self: &ProcsRef<'id, '_>,
+        status: i32,
+        ctx: &mut KernelCtx<'id, '_>,
+    ) -> ! {
         assert_ne!(
             ctx.proc.deref() as *const _,
             self.initial_proc() as _,
