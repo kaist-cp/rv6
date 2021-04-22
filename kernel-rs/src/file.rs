@@ -101,7 +101,7 @@ impl File {
 
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
-    pub fn stat(&self, addr: UVAddr, ctx: &mut KernelCtx<'_>) -> Result<(), ()> {
+    pub fn stat(&self, addr: UVAddr, ctx: &mut KernelCtx<'_, '_>) -> Result<(), ()> {
         match &self.typ {
             FileType::Inode {
                 inner: InodeFileType { ip, .. },
@@ -116,7 +116,7 @@ impl File {
 
     /// Read from file self.
     /// addr is a user virtual address.
-    pub fn read(&self, addr: UVAddr, n: i32, ctx: &mut KernelCtx<'_>) -> Result<usize, ()> {
+    pub fn read(&self, addr: UVAddr, n: i32, ctx: &mut KernelCtx<'_, '_>) -> Result<usize, ()> {
         if !self.readable {
             return Err(());
         }
@@ -141,7 +141,7 @@ impl File {
 
     /// Write to file self.
     /// addr is a user virtual address.
-    pub fn write(&self, addr: UVAddr, n: i32, ctx: &mut KernelCtx<'_>) -> Result<usize, ()> {
+    pub fn write(&self, addr: UVAddr, n: i32, ctx: &mut KernelCtx<'_, '_>) -> Result<usize, ()> {
         if !self.writable {
             return Err(());
         }
@@ -162,7 +162,7 @@ impl File {
                 let mut bytes_written: usize = 0;
                 while bytes_written < n {
                     let bytes_to_write = cmp::min(n - bytes_written, max);
-                    let tx = ctx.kernel().file_system.begin_transaction();
+                    let tx = ctx.kernel().fs().begin_transaction();
                     let mut ip = inner.lock();
                     let curr_off = *ip.off;
                     let r = ip

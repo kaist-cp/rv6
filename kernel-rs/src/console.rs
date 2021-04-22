@@ -48,12 +48,14 @@ impl Console {
         for i in 0..n {
             let mut c = [0u8];
             // TODO: remove kernel_ctx()
-            if unsafe { kernel_ctx() }
-                .proc_mut()
-                .memory_mut()
-                .copy_in_bytes(&mut c, src + i as usize)
-                .is_err()
-            {
+            if unsafe {
+                kernel_ctx(|mut ctx| {
+                    ctx.proc_mut()
+                        .memory_mut()
+                        .copy_in_bytes(&mut c, src + i as usize)
+                        .is_err()
+                })
+            } {
                 return i;
             }
             // TODO(https://github.com/kaist-cp/rv6/issues/298): Temporarily using global function kernel().
@@ -70,7 +72,7 @@ impl Console {
             // input into CONS.buffer.
             while this.r == this.w {
                 // TODO: remove kernel_ctx()
-                if unsafe { kernel_ctx() }.proc().killed() {
+                if unsafe { kernel_ctx(|ctx| ctx.proc().killed()) } {
                     return -1;
                 }
                 this.sleep();
@@ -91,12 +93,14 @@ impl Console {
                 // Copy the input byte to the user-space buffer.
                 let cbuf = [cin as u8];
                 // TODO: remove kernel_ctx()
-                if unsafe { kernel_ctx() }
-                    .proc_mut()
-                    .memory_mut()
-                    .copy_out_bytes(dst, &cbuf)
-                    .is_err()
-                {
+                if unsafe {
+                    kernel_ctx(|mut ctx| {
+                        ctx.proc_mut()
+                            .memory_mut()
+                            .copy_out_bytes(dst, &cbuf)
+                            .is_err()
+                    })
+                } {
                     break;
                 }
                 dst = dst + 1;

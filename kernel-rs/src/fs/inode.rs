@@ -442,7 +442,7 @@ impl InodeGuard<'_> {
         dst: UVAddr,
         off: u32,
         n: u32,
-        ctx: &mut KernelCtx<'_>,
+        ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<usize, ()> {
         self.read_internal(off, n, |off, src| {
             ctx.proc_mut()
@@ -537,7 +537,7 @@ impl InodeGuard<'_> {
         src: UVAddr,
         off: u32,
         n: u32,
-        ctx: &mut KernelCtx<'_>,
+        ctx: &mut KernelCtx<'_, '_>,
         tx: &FsTransaction<'_>,
     ) -> Result<usize, ()> {
         self.write_internal(
@@ -890,14 +890,14 @@ impl Itable {
         self.get_inode(ROOTDEV, ROOTINO)
     }
 
-    pub fn namei(&self, path: &Path, proc: &KernelCtx<'_>) -> Result<RcInode, ()> {
+    pub fn namei(&self, path: &Path, proc: &KernelCtx<'_, '_>) -> Result<RcInode, ()> {
         Ok(self.namex(path, false, proc)?.0)
     }
 
     pub fn nameiparent<'s>(
         &self,
         path: &'s Path,
-        ctx: &KernelCtx<'_>,
+        ctx: &KernelCtx<'_, '_>,
     ) -> Result<(RcInode, &'s FileName), ()> {
         let (ip, name_in_path) = self.namex(path, true, ctx)?;
         let name_in_path = name_in_path.ok_or(())?;
@@ -908,7 +908,7 @@ impl Itable {
         &self,
         mut path: &'s Path,
         parent: bool,
-        ctx: &KernelCtx<'_>,
+        ctx: &KernelCtx<'_, '_>,
     ) -> Result<(RcInode, Option<&'s FileName>), ()> {
         let mut ptr = if path.is_absolute() {
             self.root()

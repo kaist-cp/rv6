@@ -34,7 +34,7 @@ bitflags! {
 impl RcFile {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
-    fn fdalloc(self, ctx: &mut KernelCtx<'_>) -> Result<i32, Self> {
+    fn fdalloc(self, ctx: &mut KernelCtx<'_, '_>) -> Result<i32, Self> {
         let proc_data = ctx.proc_mut().deref_mut_data();
         for (fd, f) in proc_data.open_files.iter_mut().enumerate() {
             if f.is_none() {
@@ -46,7 +46,7 @@ impl RcFile {
     }
 }
 
-impl KernelCtx<'_> {
+impl KernelCtx<'_, '_> {
     /// Create an inode with given type.
     /// Returns Ok(created inode, result of given function f) on success, Err(()) on error.
     fn create<F, T>(
@@ -114,7 +114,7 @@ impl KernelCtx<'_> {
     /// Create another name(newname) for the file oldname.
     /// Returns Ok(()) on success, Err(()) on error.
     fn link(&self, oldname: &CStr, newname: &CStr) -> Result<(), ()> {
-        let tx = self.kernel().file_system.begin_transaction();
+        let tx = self.kernel().fs().begin_transaction();
         let ptr = self.kernel().itable.namei(Path::new(oldname), self)?;
         let mut ip = ptr.lock();
         if ip.deref_inner().typ == InodeType::Dir {
@@ -146,7 +146,7 @@ impl KernelCtx<'_> {
     /// Returns Ok(()) on success, Err(()) on error.
     fn unlink(&self, filename: &CStr) -> Result<(), ()> {
         let de: Dirent = Default::default();
-        let tx = self.kernel().file_system.begin_transaction();
+        let tx = self.kernel().fs().begin_transaction();
         let (ptr, name) = self
             .kernel()
             .itable
@@ -180,7 +180,7 @@ impl KernelCtx<'_> {
     /// Open a file; omode indicate read/write.
     /// Returns Ok(file descriptor) on success, Err(()) on error.
     fn open(&mut self, name: &Path, omode: FcntlFlags) -> Result<usize, ()> {
-        let tx = self.kernel().file_system.begin_transaction();
+        let tx = self.kernel().fs().begin_transaction();
 
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
             self.create(name, InodeType::File, &tx, |ip| ip.deref_inner().typ)?
@@ -198,7 +198,7 @@ impl KernelCtx<'_> {
 
         let filetype = match typ {
             InodeType::Device { major, .. } => {
-                let major = self.kernel().devsw.get(major as usize).ok_or(())?;
+                let major = self.kernel().devsw().get(major as usize).ok_or(())?;
                 FileType::Device { ip, major }
             }
             _ => {
@@ -234,7 +234,7 @@ impl KernelCtx<'_> {
     /// Create a new directory.
     /// Returns Ok(()) on success, Err(()) on error.
     fn mkdir(&self, dirname: &CStr) -> Result<(), ()> {
-        let tx = self.kernel().file_system.begin_transaction();
+        let tx = self.kernel().fs().begin_transaction();
         self.create(Path::new(dirname), InodeType::Dir, &tx, |_| ())?;
         Ok(())
     }
@@ -242,7 +242,7 @@ impl KernelCtx<'_> {
     /// Create a device file.
     /// Returns Ok(()) on success, Err(()) on error.
     fn mknod(&self, filename: &CStr, major: u16, minor: u16) -> Result<(), ()> {
-        let tx = self.kernel().file_system.begin_transaction();
+        let tx = self.kernel().fs().begin_transaction();
         self.create(
             Path::new(filename),
             InodeType::Device { major, minor },
@@ -260,7 +260,7 @@ impl KernelCtx<'_> {
         // value, ptr, will be dropped when this method returns. Deallocation
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
-        let _tx = self.kernel().file_system.begin_transaction();
+        let _tx = self.kernel().fs().begin_transaction();
         let ptr = self.kernel().itable.namei(Path::new(dirname), self)?;
         let ip = ptr.lock();
         if ip.deref_inner().typ != InodeType::Dir {
@@ -301,7 +301,7 @@ impl KernelCtx<'_> {
     }
 }
 
-impl KernelCtx<'_> {
+impl KernelCtx<'_, '_> {
     /// Return a new file descriptor referring to the same file as given fd.
     /// Returns Ok(new file descriptor) on success, Err(()) on error.
     pub fn sys_dup(&mut self) -> Result<usize, ()> {
@@ -466,7 +466,7 @@ impl KernelCtx<'_> {
     }
 }
 
-impl CurrentProc<'_> {
+impl CurrentProc<'_, '_> {
     /// Fetch the nth word-sized system call argument as a file descriptor
     /// and return both the descriptor and the corresponding struct file.
     fn argfd(&self, n: usize) -> Result<(i32, &'_ RcFile), ()> {

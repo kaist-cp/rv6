@@ -20,11 +20,12 @@ use crate::{
     file::RcFile,
     fs::RcInode,
     kalloc::Kmem,
-    kernel::{kernel, kernel_builder, Kernel},
+    kernel::{kernel, kernel_builder, kernel_ref, KernelRef},
     lock::{pop_off, push_off, Guard, RawLock, RawSpinlock, RemoteLock, Spinlock, SpinlockGuard},
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
     println,
+    util::branded::Branded,
     vm::UserMemory,
 };
 
@@ -220,7 +221,7 @@ impl WaitChannel {
 
     /// Atomically release lock and sleep on waitchannel.
     /// Reacquires lock when awakened.
-    pub fn sleep<R: RawLock, T>(&self, lock_guard: &mut Guard<'_, R, T>, ctx: &KernelCtx<'_>) {
+    pub fn sleep<R: RawLock, T>(&self, lock_guard: &mut Guard<'_, R, T>, ctx: &KernelCtx<'_, '_>) {
         // Must acquire p->lock in order to
         // change p->state and then call sched.
         // Once we hold p->lock, we can be
@@ -328,55 +329,53 @@ pub struct ProcBuilder {
     killed: AtomicBool,
 }
 
-/// It is the context of the current thread. It consists of `&Kernel`, which denotes the current
-/// kernel, and `CurrentProc`, which denotes the current process.
+/// Type that stores the context of the current thread. Consists of
+/// * `KernelRef<'id, 'p>`, which points to the current kernel, and
+/// * `CurrentProc<'id, 'p>`, which points to the current process.
 ///
-/// We do not put `&Kernel` inside `CurrentProc` because we often need to access `&Kernel` while
-/// mutably borrowing `CurrentProc`. Since `&Kernel` and `CurrentProc` are separate fields of
-/// `KernelCtx`, we can separately borrow `&Kernel` and `CurrentProc` when we use `KernelCtx`.
+/// # Note
+///
+/// We do not put `KernelRef` inside `CurrentProc` because we often need to access `KernelRef` while
+/// mutably borrowing `CurrentProc`. Since `KernelRef` and `CurrentProc` are separate fields of
+/// `KernelCtx`, we can separately borrow `Kernel` and `CurrentProc` when we use `KernelCtx`.
 ///
 /// `KernelCtx` has `CurrentProc` instead of `Proc` because `CurrentProc` has more abilities than
 /// `Proc`. `CurrentProc` allows accessing `ProcData` and the `MaybeUninit` fields, and `KernelCtx`
-/// requires these abilities.
+/// needs these abilities.
 ///
-/// Methods that (possibly) need to access both `&Kernel` and `CurrentProc` take `KernelCtx` as
+/// Methods that (possibly) need to access both `KernelRef` and `CurrentProc` take `KernelCtx` as
 /// arguments. Otherwise, methods can take only one of `&Kernel` and `CurrentProc` as arguments.
-pub struct KernelCtx<'p> {
-    kernel: &'p Kernel,
-    proc: CurrentProc<'p>,
+pub struct KernelCtx<'id, 'p> {
+    kernel: KernelRef<'id, 'p>,
+    proc: CurrentProc<'id, 'p>,
 }
 
-impl<'p> KernelCtx<'p> {
-    pub fn kernel(&self) -> &'p Kernel {
-        &self.kernel
+impl<'id, 'p> KernelCtx<'id, 'p> {
+    pub fn kernel(&self) -> KernelRef<'id, 'p> {
+        self.kernel
     }
 
-    pub fn proc(&self) -> &CurrentProc<'p> {
+    pub fn proc(&self) -> &CurrentProc<'id, 'p> {
         &self.proc
     }
 
-    pub fn proc_mut(&mut self) -> &mut CurrentProc<'p> {
+    pub fn proc_mut(&mut self) -> &mut CurrentProc<'id, 'p> {
         &mut self.proc
     }
 }
 
-/// CurrentProc wraps mutable pointer of current CPU's proc.
+/// A branded reference to the current Cpu's `Proc`.
+/// For a `ProcsRef<'id, '_>` that has the same `'id` tag, the `Proc` is owned by
+/// the `Procs` that the `ProcsRef` points to.
 ///
 /// # Safety
 ///
-/// `inner` is current Cpu's proc, this means it's state is `RUNNING`.
-pub struct CurrentProc<'p> {
-    inner: &'p Proc,
+/// `inner` is the current Cpu's proc, whose state should be `RUNNING`.
+pub struct CurrentProc<'id, 'p> {
+    inner: Branded<'id, &'p Proc>,
 }
 
-impl<'p> CurrentProc<'p> {
-    /// # Safety
-    ///
-    /// `proc` should be current `Cpu`'s `proc`.
-    unsafe fn new(proc: &'p Proc) -> Self {
-        CurrentProc { inner: proc }
-    }
-
+impl<'id, 'p> CurrentProc<'id, 'p> {
     pub fn deref_data(&self) -> &ProcData {
         // SAFETY: Only `CurrentProc` can use `ProcData` without lock.
         unsafe { &*self.data.get() }
@@ -437,11 +436,11 @@ impl<'p> CurrentProc<'p> {
     }
 }
 
-impl Deref for CurrentProc<'_> {
+impl Deref for CurrentProc<'_, '_> {
     type Target = Proc;
 
     fn deref(&self) -> &Self::Target {
-        self.inner
+        &self.inner
     }
 }
 
@@ -693,6 +692,19 @@ pub struct Procs {
     inner: ProcsBuilder,
 }
 
+/// A branded reference to a `Procs`.
+/// For a `KernelRef<'id, '_>` that has the same `'id` tag, the `Procs` is owned
+/// by the `Kernel` that the `KernelRef` points to.
+pub struct ProcsRef<'id, 's>(Branded<'id, &'s Procs>);
+
+impl Deref for ProcsRef<'_, '_> {
+    type Target = Procs;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 struct ProcIter<'a> {
     iter: core::slice::Iter<'a, ProcBuilder>,
 }
@@ -860,9 +872,10 @@ impl Procs {
     pub fn wakeup_pool(&self, target: &WaitChannel) {
         // This method can be reached from the kernel mode because `Kernel::clock_intr` calls
         // `wakeup`, which calls this method. Thus, it does not call `kernel_ctx`.
-        // TODO: remove kernel()
-        let current_proc =
-            unsafe { kernel().current_proc() }.map_or(ptr::null(), |proc| proc.deref());
+        // TODO: remove kernel_ref()
+        let current_proc = unsafe {
+            kernel_ref(|kref| kref.current_proc().map_or(ptr::null(), |proc| proc.deref()))
+        };
         for p in self.process_pool() {
             if p as *const _ != current_proc {
                 let mut guard = p.lock();
@@ -938,7 +951,7 @@ impl Procs {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
-    pub fn fork(&self, ctx: &mut KernelCtx<'_>) -> Result<Pid, ()> {
+    pub fn fork(&self, ctx: &mut KernelCtx<'_, '_>) -> Result<Pid, ()> {
         let allocator = &ctx.kernel.kmem;
         // Allocate trap frame.
         let trap_frame =
@@ -996,7 +1009,7 @@ impl Procs {
 
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
-    pub fn wait(&self, addr: UVAddr, ctx: &mut KernelCtx<'_>) -> Result<Pid, ()> {
+    pub fn wait(&self, addr: UVAddr, ctx: &mut KernelCtx<'_, '_>) -> Result<Pid, ()> {
         // Assumes that the process_pool has at least 1 element.
         let some_proc = self.process_pool().next().unwrap();
         let mut parent_guard = some_proc.parent().lock();
@@ -1060,7 +1073,7 @@ impl Procs {
     /// Exit the current process.  Does not return.
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
-    pub fn exit_current(&self, status: i32, ctx: &mut KernelCtx<'_>) -> ! {
+    pub fn exit_current(&self, status: i32, ctx: &mut KernelCtx<'_, '_>) -> ! {
         assert_ne!(
             ctx.proc.deref() as *const _,
             self.initial_proc() as _,
@@ -1188,43 +1201,62 @@ pub unsafe fn scheduler() -> ! {
 
 /// A fork child's very first scheduling by scheduler() will swtch to forkret.
 unsafe fn forkret() {
-    let ctx = unsafe { kernel_ctx() };
-    // Still holding p->lock from scheduler.
-    unsafe { ctx.proc.info.unlock() };
-
-    // File system initialization must be run in the context of a
-    // regular process (e.g., because it calls sleep), and thus cannot
-    // be run from main().
-    ctx.kernel.file_system.init(ROOTDEV);
-
-    unsafe { ctx.user_trap_ret() };
+    unsafe {
+        kernel_ctx(|ctx| {
+            // Still holding p->lock from scheduler.
+            ctx.proc.info.unlock();
+            // File system initialization must be run in the context of a
+            // regular process (e.g., because it calls sleep), and thus cannot
+            // be run from main().
+            ctx.kernel.file_system.init(ROOTDEV);
+            ctx.user_trap_ret();
+        })
+    }
 }
 
-impl Kernel {
-    /// Returns `Some<CurrentProc<'_>>` if current proc exists (i.e. When (*cpu).proc is non-null).
+impl<'id, 's> KernelRef<'id, 's> {
+    /// Returns `Some<CurrentProc<'id, '_>>` if current proc exists (i.e. When (*cpu).proc is non-null).
+    /// Note that `'id` is same with the given `KernelRef`'s `'id`.
     /// Otherwise, returns `None` (when current proc is null).
     ///
     /// # Safety
     ///
     /// At most one `CurrentProc` or `KernelCtx` object can exist at a single time in each thread.
     /// Therefore, it must not be called if the result of `current_proc` or `kernel_ctx` is alive.
-    pub unsafe fn current_proc(&self) -> Option<CurrentProc<'_>> {
+    pub unsafe fn current_proc(&self) -> Option<CurrentProc<'id, 's>> {
         unsafe { push_off() };
         let cpu = self.current_cpu();
         let proc = unsafe { (*cpu).proc };
         unsafe { pop_off() };
         // This is safe because p is non-null and current Cpu's proc.
-        unsafe { proc.as_ref() }.map(|proc| unsafe { CurrentProc::new(proc) })
+        unsafe { proc.as_ref() }.map(|proc| {
+            CurrentProc {
+                inner: self.get_inner().brand(proc),
+            }
+        })
     }
 }
 
+/// Creates the `KernelCtx` of the current Cpu.
+/// The `KernelCtx` can be used only inside the given closure.
+///
 /// # Safety
 ///
 /// * It must be called only after the initialization of the kernel.
 /// * At most one `CurrentProc` or `KernelCtx` object can exist at a single time in each thread.
 ///   Therefore, it must not be called if the result of `current_proc` or `kernel_ctx` is alive.
-pub unsafe fn kernel_ctx() -> KernelCtx<'static> {
-    let kernel = unsafe { kernel() };
-    let proc = unsafe { kernel.current_proc() }.expect("No current proc");
-    KernelCtx { kernel, proc }
+pub unsafe fn kernel_ctx<'s, F: for<'new_id> FnOnce(KernelCtx<'new_id, 's>) -> R, R>(f: F) -> R {
+    unsafe {
+        kernel_ref(|kref| {
+            let proc = kref.current_proc().expect("No current proc");
+            f(KernelCtx { kernel: kref, proc })
+        })
+    }
+}
+
+impl<'id, 's> KernelRef<'id, 's> {
+    /// Returns a `ProcsRef` that points to the kernel's `Procs`.
+    pub fn procs(&self) -> ProcsRef<'id, 's> {
+        ProcsRef(self.get_inner().brand(self.get_inner().procs()))
+    }
 }

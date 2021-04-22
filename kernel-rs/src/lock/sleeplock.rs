@@ -34,7 +34,7 @@ impl RawLock for RawSleeplock {
             guard.sleep();
         }
         // TODO: remove kernel_ctx()
-        *guard = unsafe { kernel_ctx() }.proc().pid();
+        *guard = unsafe { kernel_ctx(|ctx| ctx.proc().pid()) };
     }
 
     fn release(&self) {
@@ -46,7 +46,7 @@ impl RawLock for RawSleeplock {
     fn holding(&self) -> bool {
         let guard = self.locked.lock();
         // TODO: remove kernel_ctx()
-        *guard == unsafe { kernel_ctx() }.proc().pid()
+        *guard == unsafe { kernel_ctx(|ctx| ctx.proc().pid()) }
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::{arch::poweroff, proc::KernelCtx};
 
-impl KernelCtx<'_> {
+impl KernelCtx<'_, '_> {
     /// Terminate the current process; status reported to wait(). No return.
     pub fn sys_exit(&mut self) -> Result<usize, ()> {
         let n = self.proc().argint(0)?;
@@ -37,7 +37,7 @@ impl KernelCtx<'_> {
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_sleep(&self) -> Result<usize, ()> {
         let n = self.proc().argint(0)?;
-        let mut ticks = self.kernel().ticks.lock();
+        let mut ticks = self.kernel().ticks().lock();
         let ticks0 = *ticks;
         while ticks.wrapping_sub(ticks0) < n as u32 {
             if self.proc().killed() {
@@ -59,7 +59,7 @@ impl KernelCtx<'_> {
     /// Return how many clock tick interrupts have occurred
     /// since start.
     pub fn sys_uptime(&self) -> Result<usize, ()> {
-        Ok(*self.kernel().ticks.lock() as usize)
+        Ok(*self.kernel().ticks().lock() as usize)
     }
 
     /// Shutdowns this machine, discarding all unsaved data. No return.
