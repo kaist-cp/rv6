@@ -235,7 +235,7 @@ impl KernelRef<'_, '_> {
             if irq as usize == UART0_IRQ {
                 self.uart.intr();
             } else if irq as usize == VIRTIO0_IRQ {
-                self.file_system.log.disk.lock().intr();
+                self.fs().log.disk.lock().intr();
             } else if irq != 0 {
                 // Use `panic!` instead of `println` to prevent stack overflow.
                 // https://github.com/kaist-cp/rv6/issues/311
