@@ -29,13 +29,12 @@
 //! * A `Node` can drop at any time if it is not inside a `List`.
 //! (i.e. A `Node` does not need to statically outlive the `List`, and conversely, the `List` does not need to statically outlive the `Node`s.)
 
-use core::marker::PhantomData;
+use core::marker::{PhantomData, PhantomPinned};
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
+use core::ptr;
 
 use pin_project::{pin_project, pinned_drop};
-
-use super::list::ListEntry;
 
 /// A doubly linked list that does not own the `Node`s.
 /// See the module documentation for details.
@@ -66,7 +65,19 @@ pub struct Node<T> {
     data: T,
 }
 
-// TODO: Add `ListEntry`? (We don't actually need interior mutablility here)
+/// A low level primitive for doubly, intrusive linked lists and nodes.
+///
+/// # Safety
+///
+/// * All `ListEntry` types must be used only after initializing it with `ListEntry::init`.
+/// After this, `ListEntry::{prev, next}` always refer to a valid, initialized `ListEntry`.
+#[pin_project]
+pub struct ListEntry {
+    prev: *mut Self,
+    next: *mut Self,
+    #[pin]
+    _marker: PhantomPinned, //`ListEntry` is `!Unpin`.
+}
 
 /// An immutable reference to a `Node` that is inserted inside a `List`.
 // SAFETY: The `Node` is already inserted inside a `List`.
@@ -98,13 +109,13 @@ impl<T> List<T> {
     }
 
     /// Returns a `ListRef` of this `List`.
-    pub fn as_ref(&self) -> ListRef<'_, T> {
+    pub fn as_list_ref(&self) -> ListRef<'_, T> {
         ListRef(self)
     }
 
     /// Returns a `ListMut` of this `List`.
     #[allow(clippy::wrong_self_convention)]
-    pub fn as_mut(self: Pin<&mut Self>) -> ListMut<'_, T> {
+    pub fn as_list_mut(self: Pin<&mut Self>) -> ListMut<'_, T> {
         ListMut(self)
     }
 }
@@ -198,16 +209,30 @@ impl<'s, T> ListMut<'s, T> {
     // SAFETY: `NodeMut` does not actually borrow the `Node` here.
     // However, this is safe since only one `NodeMut` exists for each `List` anyway.
     // Also, the `Node` does not drop while a `NodeMut` exists.
-    pub fn push_back<'t>(&'t mut self, node: Pin<&'t mut Node<T>>) -> NodeMut<'t, T> {
-        self.0.head.push_back(&node.list_entry);
+    pub fn push_back<'t>(
+        mut self: Pin<&'t mut Self>,
+        mut node: Pin<&'t mut Node<T>>,
+    ) -> NodeMut<'t, T> {
+        self.0
+            .as_mut()
+            .project()
+            .head
+            .push_back(node.as_mut().project().list_entry);
         NodeMut(node)
     }
 
     // SAFETY: `NodeMut` does not actually borrow the `Node` here.
     // However, this is safe since only one `NodeMut` exists for each `List` anyway.
     // Also, the `Node` does not drop while a `NodeMut` exists.
-    pub fn push_front<'t>(&'t mut self, node: Pin<&'t mut Node<T>>) -> NodeMut<'t, T> {
-        self.0.head.push_front(&node.list_entry);
+    pub fn push_front<'t>(
+        mut self: Pin<&'t mut Self>,
+        mut node: Pin<&'t mut Node<T>>,
+    ) -> NodeMut<'t, T> {
+        self.0
+            .as_mut()
+            .project()
+            .head
+            .push_front(node.as_mut().project().list_entry);
         NodeMut(node)
     }
 
@@ -312,7 +337,7 @@ impl<T> Deref for NodeRef<'_, T> {
 
 impl<'s, T> NodeMut<'s, T> {
     pub fn remove(self) {
-        self.0.list_entry.remove();
+        self.0.project().list_entry.remove();
     }
 }
 
@@ -327,5 +352,92 @@ impl<T> Deref for NodeMut<'_, T> {
 impl<T> DerefMut for NodeMut<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0.as_mut().project().data
+    }
+}
+
+impl ListEntry {
+    /// Returns an uninitialized `ListEntry`,
+    ///
+    /// # Safety
+    ///
+    /// All `ListEntry` types must be used only after initializing it with `ListEntry::init`.
+    const unsafe fn new() -> Self {
+        Self {
+            prev: ptr::null_mut(),
+            next: ptr::null_mut(),
+            _marker: PhantomPinned,
+        }
+    }
+
+    /// Initializes this `ListEntry` if it was not initialized.
+    /// Otherwise, does nothing.
+    fn init(mut self: Pin<&mut Self>) {
+        if self.next().is_null() {
+            let ptr = unsafe { self.as_mut().get_unchecked_mut() } as *mut Self;
+            *self.as_mut().project().prev = ptr;
+            *self.as_mut().project().next = ptr;
+        }
+    }
+
+    /// Returns a raw pointer pointing to the previous `ListEntry`.
+    ///
+    /// # Note
+    ///
+    /// Do not use `ListNode::from_list_entry` on the returned pointer if `self` is the front node of a list.
+    fn prev(&self) -> *mut Self {
+        self.prev
+    }
+
+    /// Returns a raw pointer pointing to the next `ListEntry`.
+    ///
+    /// # Note
+    ///
+    /// Do not use `ListNode::from_list_entry` on the returned pointer if `self` is the back node of a list.
+    fn next(&self) -> *mut Self {
+        self.next
+    }
+
+    /// Returns `true` if this `ListEntry` is not linked to any other `ListEntry`.
+    /// Otherwise, returns `false`.
+    fn is_unlinked(&self) -> bool {
+        ptr::eq(self.next(), self)
+    }
+
+    /// Inserts `elt` at the back of this `ListEntry` after unlinking `elt`.
+    fn push_back(mut self: Pin<&mut Self>, mut elt: Pin<&mut Self>) {
+        let s = unsafe { self.as_mut().get_unchecked_mut() };
+        let e = unsafe { elt.as_mut().get_unchecked_mut() };
+
+        e.prev = s.prev();
+        e.next = s;
+        unsafe {
+            (*e.next()).prev = e;
+            (*e.prev()).next = e;
+        }
+    }
+
+    /// Inserts `elt` in front of this `ListEntry` after unlinking `elt`.
+    fn push_front(mut self: Pin<&mut Self>, mut elt: Pin<&mut Self>) {
+        let s = unsafe { self.as_mut().get_unchecked_mut() };
+        let e = unsafe { elt.as_mut().get_unchecked_mut() };
+
+        e.prev = s;
+        e.next = self.next();
+        unsafe {
+            (*e.next()).prev = e;
+            (*e.prev()).next = e;
+        }
+    }
+
+    /// Unlinks this `ListEntry` from other `ListEntry`s.
+    fn remove(mut self: Pin<&mut Self>) {
+        let s = unsafe { self.as_mut().get_unchecked_mut() };
+
+        unsafe {
+            (*s.prev()).next = s.next();
+            (*s.next()).prev = s.prev();
+        }
+        s.prev = s;
+        s.next = s;
     }
 }
