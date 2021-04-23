@@ -35,7 +35,7 @@ impl RcFile {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
     fn fdalloc(self, ctx: &mut KernelCtx<'_>) -> Result<i32, Self> {
-        let proc_data = ctx.proc.deref_mut_data();
+        let proc_data = ctx.proc_mut().deref_mut_data();
         for (fd, f) in proc_data.open_files.iter_mut().enumerate() {
             if f.is_none() {
                 *f = Some(self);
@@ -267,7 +267,7 @@ impl KernelCtx<'_> {
             return Err(());
         }
         drop(ip);
-        let _ = mem::replace(self.proc.cwd_mut(), ptr);
+        let _ = mem::replace(self.proc_mut().cwd_mut(), ptr);
         Ok(())
     }
 
@@ -279,16 +279,20 @@ impl KernelCtx<'_> {
         let fd0 = pipereader.fdalloc(self).map_err(|_| ())?;
         let fd1 = pipewriter
             .fdalloc(self)
-            .map_err(|_| self.proc.deref_mut_data().open_files[fd0 as usize] = None)?;
+            .map_err(|_| self.proc_mut().deref_mut_data().open_files[fd0 as usize] = None)?;
 
-        if self.proc.memory_mut().copy_out(fdarray, &fd0).is_err()
+        if self
+            .proc_mut()
+            .memory_mut()
+            .copy_out(fdarray, &fd0)
+            .is_err()
             || self
-                .proc
+                .proc_mut()
                 .memory_mut()
                 .copy_out(fdarray + mem::size_of::<i32>(), &fd1)
                 .is_err()
         {
-            let proc_data = self.proc.deref_mut_data();
+            let proc_data = self.proc_mut().deref_mut_data();
             proc_data.open_files[fd0 as usize] = None;
             proc_data.open_files[fd1 as usize] = None;
             return Err(());
@@ -301,7 +305,7 @@ impl KernelCtx<'_> {
     /// Return a new file descriptor referring to the same file as given fd.
     /// Returns Ok(new file descriptor) on success, Err(()) on error.
     pub fn sys_dup(&mut self) -> Result<usize, ()> {
-        let (_, f) = self.proc.argfd(0)?;
+        let (_, f) = self.proc().argfd(0)?;
         let newfile = f.clone();
         let fd = newfile.fdalloc(self).map_err(|_| ())?;
         Ok(fd as usize)
@@ -310,9 +314,9 @@ impl KernelCtx<'_> {
     /// Read n bytes into buf.
     /// Returns Ok(number read) on success, Err(()) on error.
     pub fn sys_read(&mut self) -> Result<usize, ()> {
-        let (_, f) = self.proc.argfd(0)?;
-        let n = self.proc.argint(2)?;
-        let p = self.proc.argaddr(1)?;
+        let (_, f) = self.proc().argfd(0)?;
+        let n = self.proc().argint(2)?;
+        let p = self.proc().argaddr(1)?;
         // SAFETY: read will not access proc's open_files.
         unsafe { (*(f as *const RcFile)).read(p.into(), n, self) }
     }
@@ -320,9 +324,9 @@ impl KernelCtx<'_> {
     /// Write n bytes from buf to given file descriptor fd.
     /// Returns Ok(n) on success, Err(()) on error.
     pub fn sys_write(&mut self) -> Result<usize, ()> {
-        let (_, f) = self.proc.argfd(0)?;
-        let n = self.proc.argint(2)?;
-        let p = self.proc.argaddr(1)?;
+        let (_, f) = self.proc().argfd(0)?;
+        let n = self.proc().argint(2)?;
+        let p = self.proc().argaddr(1)?;
         // SAFETY: write will not access proc's open_files.
         unsafe { (*(f as *const RcFile)).write(p.into(), n, self) }
     }
@@ -330,17 +334,17 @@ impl KernelCtx<'_> {
     /// Release open file fd.
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_close(&mut self) -> Result<usize, ()> {
-        let (fd, _) = self.proc.argfd(0)?;
-        self.proc.deref_mut_data().open_files[fd as usize] = None;
+        let (fd, _) = self.proc().argfd(0)?;
+        self.proc_mut().deref_mut_data().open_files[fd as usize] = None;
         Ok(0)
     }
 
     /// Place info about an open file into struct stat.
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_fstat(&mut self) -> Result<usize, ()> {
-        let (_, f) = self.proc.argfd(0)?;
+        let (_, f) = self.proc().argfd(0)?;
         // user pointer to struct stat
-        let st = self.proc.argaddr(1)?;
+        let st = self.proc().argaddr(1)?;
         // SAFETY: stat will not access proc's open_files.
         unsafe { (*(f as *const RcFile)).stat(st.into(), self) }?;
         Ok(0)
@@ -351,8 +355,8 @@ impl KernelCtx<'_> {
     pub fn sys_link(&mut self) -> Result<usize, ()> {
         let mut new: [u8; MAXPATH] = [0; MAXPATH];
         let mut old: [u8; MAXPATH] = [0; MAXPATH];
-        let old = self.proc.argstr(0, &mut old)?;
-        let new = self.proc.argstr(1, &mut new)?;
+        let old = self.proc_mut().argstr(0, &mut old)?;
+        let new = self.proc_mut().argstr(1, &mut new)?;
         self.link(old, new)?;
         Ok(0)
     }
@@ -361,7 +365,7 @@ impl KernelCtx<'_> {
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_unlink(&mut self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = self.proc.argstr(0, &mut path)?;
+        let path = self.proc_mut().argstr(0, &mut path)?;
         self.unlink(path)?;
         Ok(0)
     }
@@ -370,9 +374,9 @@ impl KernelCtx<'_> {
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_open(&mut self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = self.proc.argstr(0, &mut path)?;
+        let path = self.proc_mut().argstr(0, &mut path)?;
         let path = Path::new(path);
-        let omode = self.proc.argint(1)?;
+        let omode = self.proc().argint(1)?;
         let omode = FcntlFlags::from_bits_truncate(omode);
         self.open(path, omode)
     }
@@ -381,7 +385,7 @@ impl KernelCtx<'_> {
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_mkdir(&mut self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = self.proc.argstr(0, &mut path)?;
+        let path = self.proc_mut().argstr(0, &mut path)?;
         self.mkdir(path)?;
         Ok(0)
     }
@@ -390,9 +394,9 @@ impl KernelCtx<'_> {
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_mknod(&mut self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = self.proc.argstr(0, &mut path)?;
-        let major = self.proc.argint(1)? as u16;
-        let minor = self.proc.argint(2)? as u16;
+        let path = self.proc_mut().argstr(0, &mut path)?;
+        let major = self.proc().argint(1)? as u16;
+        let minor = self.proc().argint(2)? as u16;
         self.mknod(path, major, minor)?;
         Ok(0)
     }
@@ -401,7 +405,7 @@ impl KernelCtx<'_> {
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_chdir(&mut self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = self.proc.argstr(0, &mut path)?;
+        let path = self.proc_mut().argstr(0, &mut path)?;
         self.chdir(path)?;
         Ok(0)
     }
@@ -411,13 +415,13 @@ impl KernelCtx<'_> {
     pub fn sys_exec(&mut self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let mut args = ArrayVec::<Page, MAXARG>::new();
-        let path = self.proc.argstr(0, &mut path)?;
-        let uargv = self.proc.argaddr(1)?;
+        let path = self.proc_mut().argstr(0, &mut path)?;
+        let uargv = self.proc().argaddr(1)?;
 
         let mut success = false;
         for i in 0..MAXARG {
             let uarg = ok_or!(
-                self.proc
+                self.proc_mut()
                     .fetchaddr((uargv + mem::size_of::<usize>() * i).into()),
                 break
             );
@@ -428,7 +432,11 @@ impl KernelCtx<'_> {
             }
 
             let mut page = some_or!(self.kernel().kmem.alloc(), break);
-            if self.proc.fetchstr(uarg.into(), &mut page[..]).is_err() {
+            if self
+                .proc_mut()
+                .fetchstr(uarg.into(), &mut page[..])
+                .is_err()
+            {
                 self.kernel().kmem.free(page);
                 break;
             }
@@ -452,7 +460,7 @@ impl KernelCtx<'_> {
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_pipe(&mut self) -> Result<usize, ()> {
         // user pointer to array of two integers
-        let fdarray = self.proc.argaddr(0)?.into();
+        let fdarray = self.proc().argaddr(0)?.into();
         self.pipe(fdarray)?;
         Ok(0)
     }

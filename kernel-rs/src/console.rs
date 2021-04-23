@@ -49,7 +49,7 @@ impl Console {
             let mut c = [0u8];
             // TODO: remove kernel_ctx()
             if unsafe { kernel_ctx() }
-                .proc
+                .proc_mut()
                 .memory_mut()
                 .copy_in_bytes(&mut c, src + i as usize)
                 .is_err()
@@ -70,7 +70,7 @@ impl Console {
             // input into CONS.buffer.
             while this.r == this.w {
                 // TODO: remove kernel_ctx()
-                if unsafe { kernel_ctx() }.proc.killed() {
+                if unsafe { kernel_ctx() }.proc().killed() {
                     return -1;
                 }
                 this.sleep();
@@ -92,7 +92,7 @@ impl Console {
                 let cbuf = [cin as u8];
                 // TODO: remove kernel_ctx()
                 if unsafe { kernel_ctx() }
-                    .proc
+                    .proc_mut()
                     .memory_mut()
                     .copy_out_bytes(dst, &cbuf)
                     .is_err()

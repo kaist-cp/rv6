@@ -114,7 +114,7 @@ impl KernelCtx<'_> {
             return Err(());
         }
 
-        let trap_frame: PAddr = (self.proc.trap_frame() as *const _ as usize).into();
+        let trap_frame: PAddr = (self.proc().trap_frame() as *const _ as usize).into();
         let mem = UserMemory::new(trap_frame, None, &self.kernel().kmem).ok_or(())?;
         let kmem = &self.kernel().kmem;
         let mut mem = scopeguard::guard(mem, |mem| mem.free(kmem));
@@ -189,7 +189,7 @@ impl KernelCtx<'_> {
             .rposition(|c| *c == b'/')
             .map(|i| &path_str[(i + 1)..])
             .unwrap_or(path_str);
-        let proc_name = &mut self.proc.deref_mut_data().name;
+        let proc_name = &mut self.proc_mut().deref_mut_data().name;
         let len = cmp::min(proc_name.len(), name.len());
         proc_name[..len].copy_from_slice(&name[..len]);
         if len < proc_name.len() {
@@ -198,7 +198,7 @@ impl KernelCtx<'_> {
 
         // Commit to the user image.
         mem::replace(
-            self.proc.memory_mut(),
+            self.proc_mut().memory_mut(),
             scopeguard::ScopeGuard::into_inner(mem),
         )
         .free(&self.kernel().kmem);
@@ -206,13 +206,13 @@ impl KernelCtx<'_> {
         // arguments to user main(argc, argv)
         // argc is returned via the system call return
         // value, which goes in a0.
-        self.proc.trap_frame_mut().a1 = sp;
+        self.proc_mut().trap_frame_mut().a1 = sp;
 
         // initial program counter = main
-        self.proc.trap_frame_mut().epc = elf.entry;
+        self.proc_mut().trap_frame_mut().epc = elf.entry;
 
         // initial stack pointer
-        self.proc.trap_frame_mut().sp = sp;
+        self.proc_mut().trap_frame_mut().sp = sp;
 
         // this ends up in a0, the first argument to main(argc, argv)
         Ok(argc)

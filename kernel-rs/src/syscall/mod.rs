@@ -39,8 +39,8 @@ impl KernelCtx<'_> {
             _ => {
                 println!(
                     "{} {}: unknown sys call {}",
-                    self.proc.pid(),
-                    str::from_utf8(&self.proc.deref_data().name).unwrap_or("???"),
+                    self.proc().pid(),
+                    str::from_utf8(&self.proc().deref_data().name).unwrap_or("???"),
                     num
                 );
                 Err(())

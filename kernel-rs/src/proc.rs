@@ -229,7 +229,7 @@ impl WaitChannel {
         // so it's okay to release lk.
 
         //DOC: sleeplock1
-        let mut guard = ctx.proc.lock();
+        let mut guard = ctx.proc().lock();
         // Release the lock while we sleep on the waitchannel, and reacquire after the process wakes up.
         lock_guard.reacquire_after(move || {
             // Go to sleep.
@@ -343,12 +343,20 @@ pub struct ProcBuilder {
 /// arguments. Otherwise, methods can take only one of `&Kernel` and `CurrentProc` as arguments.
 pub struct KernelCtx<'p> {
     kernel: &'p Kernel,
-    pub proc: CurrentProc<'p>,
+    proc: CurrentProc<'p>,
 }
 
 impl<'p> KernelCtx<'p> {
     pub fn kernel(&self) -> &'p Kernel {
         &self.kernel
+    }
+
+    pub fn proc(&self) -> &CurrentProc<'p> {
+        &self.proc
+    }
+
+    pub fn proc_mut(&mut self) -> &mut CurrentProc<'p> {
+        &mut self.proc
     }
 }
 
@@ -950,7 +958,7 @@ impl Procs {
 
         // Copy saved user registers.
         // SAFETY: trap_frame has been initialized by alloc.
-        unsafe { *npdata.trap_frame = *ctx.proc.trap_frame() };
+        unsafe { *npdata.trap_frame = *ctx.proc().trap_frame() };
 
         // Cause fork to return 0 in the child.
         // SAFETY: trap_frame has been initialized by alloc.
@@ -959,15 +967,15 @@ impl Procs {
         // Increment reference counts on open file descriptors.
         for (nf, f) in izip!(
             npdata.open_files.iter_mut(),
-            ctx.proc.deref_data().open_files.iter()
+            ctx.proc().deref_data().open_files.iter()
         ) {
             if let Some(file) = f {
                 *nf = Some(file.clone());
             }
         }
-        let _ = npdata.cwd.write(ctx.proc.cwd_mut().clone());
+        let _ = npdata.cwd.write(ctx.proc_mut().cwd_mut().clone());
 
-        npdata.name.copy_from_slice(&ctx.proc.deref_data().name);
+        npdata.name.copy_from_slice(&ctx.proc().deref_data().name);
 
         let pid = np.deref_mut_info().pid;
 
@@ -976,7 +984,7 @@ impl Procs {
         np.reacquire_after(|np| {
             // Acquire the `wait_lock`, and write the parent field.
             let mut parent_guard = np.parent().lock();
-            *np.parent().get_mut(&mut parent_guard) = ctx.proc.deref();
+            *np.parent().get_mut(&mut parent_guard) = &**ctx.proc();
         });
 
         // Set the process's state to RUNNABLE.
@@ -997,7 +1005,7 @@ impl Procs {
             // Scan through pool looking for exited children.
             let mut havekids = false;
             for np in self.process_pool() {
-                if *np.parent().get_mut(&mut parent_guard) == ctx.proc.deref() {
+                if *np.parent().get_mut(&mut parent_guard) == &**ctx.proc() {
                     // Found a child.
                     // Make sure the child isn't still in exit() or swtch().
                     let mut np = np.lock();
@@ -1023,13 +1031,13 @@ impl Procs {
             }
 
             // No point waiting if we don't have any children.
-            if !havekids || ctx.proc.killed() {
+            if !havekids || ctx.proc().killed() {
                 return Err(());
             }
 
             // Wait for a child to exit.
             //DOC: wait-sleep
-            ctx.proc.child_waitchannel.sleep(&mut parent_guard, ctx);
+            ctx.proc().child_waitchannel.sleep(&mut parent_guard, ctx);
         }
     }
 
@@ -1054,12 +1062,12 @@ impl Procs {
     /// until its parent calls wait().
     pub fn exit_current(&self, status: i32, ctx: &mut KernelCtx<'_>) -> ! {
         assert_ne!(
-            ctx.proc.deref() as *const _,
+            &**ctx.proc() as *const _,
             self.initial_proc() as _,
             "init exiting"
         );
 
-        for file in &mut ctx.proc.deref_mut_data().open_files {
+        for file in &mut ctx.proc_mut().deref_mut_data().open_files {
             *file = None;
         }
 
@@ -1071,15 +1079,15 @@ impl Procs {
         let tx = kernel_builder().file_system.begin_transaction();
         // SAFETY: CurrentProc's cwd has been initialized.
         // It's ok to drop cwd as proc will not be used any longer.
-        unsafe { ctx.proc.deref_mut_data().cwd.assume_init_drop() };
+        unsafe { ctx.proc_mut().deref_mut_data().cwd.assume_init_drop() };
         drop(tx);
 
         // Give all children to init.
-        let mut parent_guard = ctx.proc.parent().lock();
-        self.reparent(ctx.proc.deref(), &mut parent_guard);
+        let mut parent_guard = ctx.proc().parent().lock();
+        self.reparent(&**ctx.proc(), &mut parent_guard);
 
         // Parent might be sleeping in wait().
-        let parent = *ctx.proc.parent().get_mut(&mut parent_guard);
+        let parent = *ctx.proc().parent().get_mut(&mut parent_guard);
         // TODO: this assertion is actually unneccessary because parent is null
         // only when proc is the initial process, which cannot be the case.
         assert!(!parent.is_null());
@@ -1087,7 +1095,7 @@ impl Procs {
         // ProcBuilder and CurrentProc.
         unsafe { (*parent).child_waitchannel.wakeup() };
 
-        let mut guard = ctx.proc.lock();
+        let mut guard = ctx.proc().lock();
 
         guard.deref_mut_info().xstate = status;
         guard.deref_mut_info().state = Procstate::ZOMBIE;
@@ -1182,7 +1190,7 @@ pub unsafe fn scheduler() -> ! {
 unsafe fn forkret() {
     let ctx = unsafe { kernel_ctx() };
     // Still holding p->lock from scheduler.
-    unsafe { ctx.proc.info.unlock() };
+    unsafe { ctx.proc().info.unlock() };
 
     // File system initialization must be run in the context of a
     // regular process (e.g., because it calls sleep), and thus cannot
