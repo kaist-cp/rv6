@@ -6,6 +6,7 @@
 pub mod branded;
 pub mod etrace;
 pub mod list;
+pub mod list2;
 pub mod pinned_array;
 pub mod rc_cell;
 
