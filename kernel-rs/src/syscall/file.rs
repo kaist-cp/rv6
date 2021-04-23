@@ -59,9 +59,9 @@ impl KernelCtx<'_> {
     where
         F: FnOnce(&mut InodeGuard<'_>) -> T,
     {
-        let (ptr, name) = self.kernel.itable.nameiparent(path, self)?;
+        let (ptr, name) = self.kernel().itable.nameiparent(path, self)?;
         let mut dp = ptr.lock();
-        if let Ok((ptr2, _)) = dp.dirlookup(&name, &self.kernel.itable) {
+        if let Ok((ptr2, _)) = dp.dirlookup(&name, &self.kernel().itable) {
             drop(dp);
             if typ != InodeType::File {
                 return Err(());
@@ -74,7 +74,7 @@ impl KernelCtx<'_> {
             drop(ip);
             return Ok((ptr2, ret));
         }
-        let ptr2 = self.kernel.itable.alloc_inode(dp.dev, typ, tx);
+        let ptr2 = self.kernel().itable.alloc_inode(dp.dev, typ, tx);
         let mut ip = ptr2.lock();
         ip.deref_inner_mut().nlink = 1;
         ip.update(tx);
@@ -91,7 +91,7 @@ impl KernelCtx<'_> {
                 unsafe { FileName::from_bytes(b".") },
                 ip.inum,
                 tx,
-                &self.kernel.itable,
+                &self.kernel().itable,
             )
             // SAFETY: b".." does not contain any NUL characters.
             .and_then(|_| {
@@ -99,12 +99,12 @@ impl KernelCtx<'_> {
                     unsafe { FileName::from_bytes(b"..") },
                     dp.inum,
                     tx,
-                    &self.kernel.itable,
+                    &self.kernel().itable,
                 )
             })
             .expect("create dots");
         }
-        dp.dirlink(&name, ip.inum, tx, &self.kernel.itable)
+        dp.dirlink(&name, ip.inum, tx, &self.kernel().itable)
             .expect("create: dirlink");
         let ret = f(&mut ip);
         drop(ip);
@@ -114,8 +114,8 @@ impl KernelCtx<'_> {
     /// Create another name(newname) for the file oldname.
     /// Returns Ok(()) on success, Err(()) on error.
     fn link(&self, oldname: &CStr, newname: &CStr) -> Result<(), ()> {
-        let tx = self.kernel.file_system.begin_transaction();
-        let ptr = self.kernel.itable.namei(Path::new(oldname), self)?;
+        let tx = self.kernel().file_system.begin_transaction();
+        let ptr = self.kernel().itable.namei(Path::new(oldname), self)?;
         let mut ip = ptr.lock();
         if ip.deref_inner().typ == InodeType::Dir {
             return Err(());
@@ -124,11 +124,11 @@ impl KernelCtx<'_> {
         ip.update(&tx);
         drop(ip);
 
-        if let Ok((ptr2, name)) = self.kernel.itable.nameiparent(Path::new(newname), self) {
+        if let Ok((ptr2, name)) = self.kernel().itable.nameiparent(Path::new(newname), self) {
             let mut dp = ptr2.lock();
             if dp.dev != ptr.dev
                 || dp
-                    .dirlink(name, ptr.inum, &tx, &self.kernel.itable)
+                    .dirlink(name, ptr.inum, &tx, &self.kernel().itable)
                     .is_err()
             {
             } else {
@@ -146,13 +146,16 @@ impl KernelCtx<'_> {
     /// Returns Ok(()) on success, Err(()) on error.
     fn unlink(&self, filename: &CStr) -> Result<(), ()> {
         let de: Dirent = Default::default();
-        let tx = self.kernel.file_system.begin_transaction();
-        let (ptr, name) = self.kernel.itable.nameiparent(Path::new(filename), self)?;
+        let tx = self.kernel().file_system.begin_transaction();
+        let (ptr, name) = self
+            .kernel()
+            .itable
+            .nameiparent(Path::new(filename), self)?;
         let mut dp = ptr.lock();
 
         // Cannot unlink "." or "..".
         if !(name.as_bytes() == b"." || name.as_bytes() == b"..") {
-            if let Ok((ptr2, off)) = dp.dirlookup(&name, &self.kernel.itable) {
+            if let Ok((ptr2, off)) = dp.dirlookup(&name, &self.kernel().itable) {
                 let mut ip = ptr2.lock();
                 assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
 
@@ -177,12 +180,12 @@ impl KernelCtx<'_> {
     /// Open a file; omode indicate read/write.
     /// Returns Ok(file descriptor) on success, Err(()) on error.
     fn open(&mut self, name: &Path, omode: FcntlFlags) -> Result<usize, ()> {
-        let tx = self.kernel.file_system.begin_transaction();
+        let tx = self.kernel().file_system.begin_transaction();
 
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
             self.create(name, InodeType::File, &tx, |ip| ip.deref_inner().typ)?
         } else {
-            let ptr = self.kernel.itable.namei(name, self)?;
+            let ptr = self.kernel().itable.namei(name, self)?;
             let ip = ptr.lock();
             let typ = ip.deref_inner().typ;
 
@@ -195,7 +198,7 @@ impl KernelCtx<'_> {
 
         let filetype = match typ {
             InodeType::Device { major, .. } => {
-                let major = self.kernel.devsw.get(major as usize).ok_or(())?;
+                let major = self.kernel().devsw.get(major as usize).ok_or(())?;
                 FileType::Device { ip, major }
             }
             _ => {
@@ -208,7 +211,7 @@ impl KernelCtx<'_> {
             }
         };
 
-        let f = self.kernel.ftable.alloc_file(
+        let f = self.kernel().ftable.alloc_file(
             filetype,
             !omode.intersects(FcntlFlags::O_WRONLY),
             omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR),
@@ -231,7 +234,7 @@ impl KernelCtx<'_> {
     /// Create a new directory.
     /// Returns Ok(()) on success, Err(()) on error.
     fn mkdir(&self, dirname: &CStr) -> Result<(), ()> {
-        let tx = self.kernel.file_system.begin_transaction();
+        let tx = self.kernel().file_system.begin_transaction();
         self.create(Path::new(dirname), InodeType::Dir, &tx, |_| ())?;
         Ok(())
     }
@@ -239,7 +242,7 @@ impl KernelCtx<'_> {
     /// Create a device file.
     /// Returns Ok(()) on success, Err(()) on error.
     fn mknod(&self, filename: &CStr, major: u16, minor: u16) -> Result<(), ()> {
-        let tx = self.kernel.file_system.begin_transaction();
+        let tx = self.kernel().file_system.begin_transaction();
         self.create(
             Path::new(filename),
             InodeType::Device { major, minor },
@@ -257,8 +260,8 @@ impl KernelCtx<'_> {
         // value, ptr, will be dropped when this method returns. Deallocation
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
-        let _tx = self.kernel.file_system.begin_transaction();
-        let ptr = self.kernel.itable.namei(Path::new(dirname), self)?;
+        let _tx = self.kernel().file_system.begin_transaction();
+        let ptr = self.kernel().itable.namei(Path::new(dirname), self)?;
         let ip = ptr.lock();
         if ip.deref_inner().typ != InodeType::Dir {
             return Err(());
@@ -271,7 +274,7 @@ impl KernelCtx<'_> {
     /// Create a pipe, put read/write file descriptors in fd0 and fd1.
     /// Returns Ok(()) on success, Err(()) on error.
     fn pipe(&mut self, fdarray: UVAddr) -> Result<(), ()> {
-        let (pipereader, pipewriter) = self.kernel.allocate_pipe()?;
+        let (pipereader, pipewriter) = self.kernel().allocate_pipe()?;
 
         let fd0 = pipereader.fdalloc(self).map_err(|_| ())?;
         let fd1 = pipewriter
@@ -424,9 +427,9 @@ impl KernelCtx<'_> {
                 break;
             }
 
-            let mut page = some_or!(self.kernel.kmem.alloc(), break);
+            let mut page = some_or!(self.kernel().kmem.alloc(), break);
             if self.proc.fetchstr(uarg.into(), &mut page[..]).is_err() {
-                self.kernel.kmem.free(page);
+                self.kernel().kmem.free(page);
                 break;
             }
             args.push(page);
@@ -439,7 +442,7 @@ impl KernelCtx<'_> {
         };
 
         for page in args.drain(..) {
-            self.kernel.kmem.free(page);
+            self.kernel().kmem.free(page);
         }
 
         ret

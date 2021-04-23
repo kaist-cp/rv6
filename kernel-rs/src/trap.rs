@@ -72,7 +72,7 @@ impl KernelCtx<'_> {
             // system call
 
             if self.proc.killed() {
-                self.kernel.procs().exit_current(-1, &mut self);
+                self.kernel().procs().exit_current(-1, &mut self);
             }
 
             // sepc points to the ecall instruction,
@@ -85,7 +85,7 @@ impl KernelCtx<'_> {
             let syscall_no = self.proc.trap_frame_mut().a7 as i32;
             self.proc.trap_frame_mut().a0 = ok_or!(self.syscall(syscall_no), usize::MAX);
         } else {
-            which_dev = unsafe { self.kernel.dev_intr() };
+            which_dev = unsafe { self.kernel().dev_intr() };
             if which_dev == 0 {
                 println!(
                     "usertrap(): unexpected scause {:018p} pid={}",
@@ -102,7 +102,7 @@ impl KernelCtx<'_> {
         }
 
         if self.proc.killed() {
-            self.kernel.procs().exit_current(-1, &mut self);
+            self.kernel().procs().exit_current(-1, &mut self);
         }
 
         // Give up the CPU if this is a timer interrupt.

@@ -162,7 +162,7 @@ impl File {
                 let mut bytes_written: usize = 0;
                 while bytes_written < n {
                     let bytes_to_write = cmp::min(n - bytes_written, max);
-                    let tx = ctx.kernel.file_system.begin_transaction();
+                    let tx = ctx.kernel().file_system.begin_transaction();
                     let mut ip = inner.lock();
                     let curr_off = *ip.off;
                     let r = ip

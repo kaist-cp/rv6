@@ -101,8 +101,8 @@ impl KernelCtx<'_> {
         // value, ptr, will be dropped when this method returns. Deallocation
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
-        let tx = self.kernel.file_system.begin_transaction();
-        let ptr = self.kernel.itable.namei(path, self)?;
+        let tx = self.kernel().file_system.begin_transaction();
+        let ptr = self.kernel().itable.namei(path, self)?;
         let mut ip = ptr.lock();
 
         // Check ELF header
@@ -115,8 +115,8 @@ impl KernelCtx<'_> {
         }
 
         let trap_frame: PAddr = (self.proc.trap_frame() as *const _ as usize).into();
-        let mem = UserMemory::new(trap_frame, None, &self.kernel.kmem).ok_or(())?;
-        let kmem = &self.kernel.kmem;
+        let mem = UserMemory::new(trap_frame, None, &self.kernel().kmem).ok_or(())?;
+        let kmem = &self.kernel().kmem;
         let mut mem = scopeguard::guard(mem, |mem| mem.free(kmem));
         // Load program into memory.
         // TODO(rv6): use iterator
@@ -131,7 +131,10 @@ impl KernelCtx<'_> {
                 if ph.memsz < ph.filesz || ph.vaddr % PGSIZE != 0 {
                     return Err(());
                 }
-                let _ = mem.alloc(ph.vaddr.checked_add(ph.memsz).ok_or(())?, &self.kernel.kmem)?;
+                let _ = mem.alloc(
+                    ph.vaddr.checked_add(ph.memsz).ok_or(())?,
+                    &self.kernel().kmem,
+                )?;
                 mem.load_file(ph.vaddr.into(), &mut ip, ph.off as _, ph.filesz as _)?;
             }
         }
@@ -141,7 +144,7 @@ impl KernelCtx<'_> {
         // Allocate two pages at the next page boundary.
         // Use the second as the user stack.
         let mut sz = pgroundup(mem.size());
-        sz = mem.alloc(sz + 2 * PGSIZE, &self.kernel.kmem)?;
+        sz = mem.alloc(sz + 2 * PGSIZE, &self.kernel().kmem)?;
         mem.clear((sz - 2 * PGSIZE).into());
         let mut sp: usize = sz;
         let stackbase: usize = sp - PGSIZE;
@@ -198,7 +201,7 @@ impl KernelCtx<'_> {
             self.proc.memory_mut(),
             scopeguard::ScopeGuard::into_inner(mem),
         )
-        .free(&self.kernel.kmem);
+        .free(&self.kernel().kmem);
 
         // arguments to user main(argc, argv)
         // argc is returned via the system call return
