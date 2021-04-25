@@ -29,6 +29,9 @@
 //! * A `Node` can drop at any time if it is not inside a `List`.
 //! (i.e. A `Node` does not need to statically outlive the `List`, and conversely, the `List` does not need to statically outlive the `Node`s.)
 
+// TODO: Check if `T` is `Unpin`. (Assumed `Unpin` in the following)
+// TODO: Add cursor? (std::collections::linked_list::Cursor, CursorMut)
+
 use core::marker::{PhantomData, PhantomPinned};
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
@@ -52,6 +55,18 @@ pub struct ListRef<'s, T>(&'s List<T>);
 /// A mutable reference to a `List`.
 /// Grants unique mutable access to the `List` and any of its `Node`s.
 pub struct ListMut<'s, T>(Pin<&'s mut List<T>>);
+
+pub struct Iter<'s, T> {
+    head: *mut ListEntry, // Use *const or &'s instead?
+    tail: *mut ListEntry,
+    _marker: PhantomData<&'s List<T>>,
+}
+
+pub struct IterMut<'s, T> {
+    head: *mut ListEntry,
+    tail: *mut ListEntry,
+    _marker: PhantomData<&'s mut List<T>>,
+}
 
 /// A node that can be inserted into a `List`.
 /// * To actually read the inner data, you need a `NodeRef` (which needs a `ListRef`).
@@ -155,9 +170,15 @@ impl<'s, T> ListRef<'s, T> {
             Some(NodeRef(unsafe { &*ptr }))
         }
     }
-}
 
-// TODO: Add iterator
+    pub fn iter(&self) -> Iter<'_, T> {
+        Iter {
+            head: self.0.head.next(),
+            tail: &self.0.head as *const _ as *mut _,
+            _marker: PhantomData,
+        }
+    }
+}
 
 impl<'s, T> ListMut<'s, T> {
     pub fn is_empty(&self) -> bool {
@@ -247,9 +268,77 @@ impl<'s, T> ListMut<'s, T> {
             node_mut.remove();
         }
     }
+
+    pub fn iter(&self) -> Iter<'_, T> {
+        Iter {
+            head: self.0.head.next(),
+            tail: &self.0.head as *const _ as *mut _,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
+        IterMut {
+            head: self.0.head.next(),
+            tail: &self.0.head as *const _ as *mut _,
+            _marker: PhantomData,
+        }
+    }
 }
 
-// TODO: Add iterator
+impl<'s, T> Iterator for Iter<'s, T> {
+    type Item = &'s T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if ptr::eq(self.head, self.tail) {
+            None
+        } else {
+            // Safe since `self.head` is a `ListEntry` contained inside a `T`.
+            let node = unsafe { &*Node::from_list_entry(self.head) };
+            self.head = node.list_entry.next();
+            Some(node.data)
+        }
+    }
+}
+
+impl<'s, T> DoubleEndedIterator for Iter<'s, T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if ptr::eq(self.head, self.tail) {
+            None
+        } else {
+            self.tail = unsafe { &*self.tail }.prev();
+            // Safe since `self.last` is a `ListEntry` contained inside a `T`.
+            Some(unsafe { &*Node::from_list_entry(self.tail) }.data)
+        }
+    }
+}
+
+impl<'s, T> Iterator for IterMut<'s, T> {
+    type Item = &'s mut T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if ptr::eq(self.head, self.tail) {
+            None
+        } else {
+            // Safe since `self.head` is a `ListEntry` contained inside a `T`.
+            let node = unsafe { &mut *Node::from_list_entry(self.head) };
+            self.head = node.list_entry.next();
+            Some(&mut node.data)
+        }
+    }
+}
+
+impl<'s, T> DoubleEndedIterator for IterMut<'s, T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if ptr::eq(self.head, self.tail) {
+            None
+        } else {
+            self.tail = unsafe { &*self.tail }.prev();
+            // Safe since `self.last` is a `ListEntry` contained inside a `T`.
+            Some(&mut unsafe { &mut *Node::from_list_entry(self.tail) }.data)
+        }
+    }
+}
 
 impl<T> Node<T> {
     const LIST_ENTRY_OFFSET: usize = 0;
