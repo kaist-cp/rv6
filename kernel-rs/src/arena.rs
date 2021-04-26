@@ -32,7 +32,7 @@ pub trait Arena: Sized {
         self: ArenaRef<'id, &Self>,
         c: C,
         n: N,
-    ) -> Option<ArenaHandle<'id, Self::Data>>;
+    ) -> Option<Handle<'id, Self::Data>>;
 
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,
@@ -49,7 +49,7 @@ pub trait Arena: Sized {
     fn alloc_handle<'id, F: FnOnce(&mut Self::Data)>(
         self: ArenaRef<'id, &Self>,
         f: F,
-    ) -> Option<ArenaHandle<'id, Self::Data>>;
+    ) -> Option<Handle<'id, Self::Data>>;
 
     fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Rc<Self>> {
         self.map_arena(|arena| {
@@ -62,13 +62,13 @@ pub trait Arena: Sized {
     // TODO: If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `clone` instead.
     fn dup<'id>(
         self: ArenaRef<'id, &Self>,
-        handle: ArenaHandleRef<'id, '_, Self::Data>,
-    ) -> ArenaHandle<'id, Self::Data>;
+        handle: HandleRef<'id, '_, Self::Data>,
+    ) -> Handle<'id, Self::Data>;
 
     /// Deallocate a given handle, and finalize the referred object if there are
     /// no more handles.
     // TODO: If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `drop` instead.
-    fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: ArenaHandle<'id, Self::Data>);
+    fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: Handle<'id, Self::Data>);
 
     /// Temporarily releases the lock while calling `f`, and re-acquires the lock after `f` returned.
     ///
@@ -108,11 +108,11 @@ impl<'id, P: Deref> Deref for ArenaRef<'id, P> {
 
 /// An arena handle with an `'id` tag attached.
 /// The handle was allocated from an `ArenaRef<'id, &Arena>` that has the same `'id` tag.
-pub struct ArenaHandle<'id, T>(Branded<'id, Ref<T>>);
+pub struct Handle<'id, T>(Branded<'id, Ref<T>>);
 
 /// A branded reference to an arena handle.
 /// The handle was allocated from an `ArenaRef<'id, &Arena>` that has the same `'id` tag.
-pub struct ArenaHandleRef<'id, 's, T>(Branded<'id, &'s Ref<T>>);
+pub struct HandleRef<'id, 's, T>(Branded<'id, &'s Ref<T>>);
 
 /// A homogeneous memory allocator equipped with reference counts.
 #[pin_project]
@@ -186,7 +186,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         self: ArenaRef<'id, &Self>,
         c: C,
         n: N,
-    ) -> Option<ArenaHandle<'id, Self::Data>> {
+    ) -> Option<Handle<'id, Self::Data>> {
         let mut guard = self.lock();
         let this = guard.get_pin_mut().project();
 
@@ -202,7 +202,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
             } else if let Some(r) = entry.try_borrow() {
                 // The entry is not under finalization. Check its data.
                 if c(&r) {
-                    return Some(ArenaHandle(self.0.brand(r)));
+                    return Some(Handle(self.0.brand(r)));
                 }
             }
         }
@@ -211,21 +211,21 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
             // SAFETY: `cell` is not referenced or borrowed. Also, it is already pinned.
             let mut cell = unsafe { Pin::new_unchecked(&mut *cell_raw) };
             n(cell.as_mut().get_pin_mut().unwrap().get_mut());
-            ArenaHandle(self.0.brand(cell.borrow()))
+            Handle(self.0.brand(cell.borrow()))
         })
     }
 
     fn alloc_handle<'id, F: FnOnce(&mut Self::Data)>(
         self: ArenaRef<'id, &Self>,
         f: F,
-    ) -> Option<ArenaHandle<'id, Self::Data>> {
+    ) -> Option<Handle<'id, Self::Data>> {
         let mut guard = self.lock();
         let this = guard.get_pin_mut().project();
 
         for mut entry in IterPinMut::from(this.entries) {
             if !entry.is_borrowed() {
                 f(entry.as_mut().get_pin_mut().unwrap().get_mut());
-                return Some(ArenaHandle(self.0.brand(entry.borrow())));
+                return Some(Handle(self.0.brand(entry.borrow())));
             }
         }
         None
@@ -233,13 +233,13 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
 
     fn dup<'id>(
         self: ArenaRef<'id, &Self>,
-        handle: ArenaHandleRef<'id, '_, Self::Data>,
-    ) -> ArenaHandle<'id, Self::Data> {
+        handle: HandleRef<'id, '_, Self::Data>,
+    ) -> Handle<'id, Self::Data> {
         let mut _this = self.lock();
-        ArenaHandle(self.0.brand(handle.0.into_inner().clone()))
+        Handle(self.0.brand(handle.0.into_inner().clone()))
     }
 
-    fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: ArenaHandle<'id, Self::Data>) {
+    fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: Handle<'id, Self::Data>) {
         let mut this = self.lock();
 
         if let Ok(mut rm) = RefMut::<T>::try_from(handle.0.into_inner()) {
@@ -324,7 +324,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         self: ArenaRef<'id, &Self>,
         c: C,
         n: N,
-    ) -> Option<ArenaHandle<'id, Self::Data>> {
+    ) -> Option<Handle<'id, Self::Data>> {
         let mut guard = self.lock();
         let this = guard.get_pin_mut().project();
 
@@ -336,7 +336,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
             }
             if let Some(r) = entry.data.try_borrow() {
                 if c(&r) {
-                    return Some(ArenaHandle(self.0.brand(r)));
+                    return Some(Handle(self.0.brand(r)));
                 }
             }
         }
@@ -345,14 +345,14 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
             // SAFETY: `cell` is not referenced or borrowed. Also, it is already pinned.
             let mut cell = unsafe { Pin::new_unchecked(&mut *cell_raw) };
             n(cell.as_mut().get_pin_mut().unwrap().get_mut());
-            ArenaHandle(self.0.brand(cell.borrow()))
+            Handle(self.0.brand(cell.borrow()))
         })
     }
 
     fn alloc_handle<'id, F: FnOnce(&mut Self::Data)>(
         self: ArenaRef<'id, &Self>,
         f: F,
-    ) -> Option<ArenaHandle<'id, Self::Data>> {
+    ) -> Option<Handle<'id, Self::Data>> {
         let mut guard = self.lock();
         let this = guard.get_pin_mut().project();
 
@@ -366,7 +366,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
                     .get_pin_mut()
                     .unwrap()
                     .get_mut());
-                return Some(ArenaHandle(self.0.brand(entry.data.borrow())));
+                return Some(Handle(self.0.brand(entry.data.borrow())));
             }
         }
 
@@ -375,13 +375,13 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
 
     fn dup<'id>(
         self: ArenaRef<'id, &Self>,
-        handle: ArenaHandleRef<'id, '_, Self::Data>,
-    ) -> ArenaHandle<'id, Self::Data> {
+        handle: HandleRef<'id, '_, Self::Data>,
+    ) -> Handle<'id, Self::Data> {
         let mut _this = self.lock();
-        ArenaHandle(self.0.brand(handle.0.into_inner().clone()))
+        Handle(self.0.brand(handle.0.into_inner().clone()))
     }
 
-    fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: ArenaHandle<'id, Self::Data>) {
+    fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: Handle<'id, Self::Data>) {
         let mut this = self.lock();
 
         if let Ok(mut rm) = RefMut::<T>::try_from(handle.0.into_inner()) {
@@ -405,7 +405,7 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
 }
 
 impl<T, A: Arena<Data = T>> Rc<A> {
-    pub fn new<'id>(arena: ArenaRef<'id, &A>, inner: ArenaHandle<'id, T>) -> Self {
+    pub fn new<'id>(arena: ArenaRef<'id, &A>, inner: Handle<'id, T>) -> Self {
         Self {
             arena: arena.0.into_inner(),
             inner: ManuallyDrop::new(inner.0.into_inner()),
@@ -430,7 +430,7 @@ impl<A: Arena> Drop for Rc<A> {
     fn drop(&mut self) {
         let inner = unsafe { ManuallyDrop::take(&mut self.inner) };
         self.map_arena(|arena| {
-            let inner = ArenaHandle(arena.0.brand(inner));
+            let inner = Handle(arena.0.brand(inner));
             arena.dealloc(inner);
         });
     }
@@ -439,7 +439,7 @@ impl<A: Arena> Drop for Rc<A> {
 impl<A: Arena> Clone for Rc<A> {
     fn clone(&self) -> Self {
         self.map_arena(|arena| {
-            let inner = ArenaHandleRef(arena.0.brand(self.inner.deref()));
+            let inner = HandleRef(arena.0.brand(self.inner.deref()));
             Rc::new(arena, arena.dup(inner))
         })
     }
