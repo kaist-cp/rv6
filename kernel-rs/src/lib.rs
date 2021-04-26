@@ -41,6 +41,7 @@
 // #![deny(rustdoc)]
 #![allow(incomplete_features)]
 #![allow(clippy::upper_case_acronyms)]
+#![feature(arbitrary_self_types)]
 #![feature(asm)]
 #![feature(arbitrary_self_types)]
 #![feature(const_fn)]
