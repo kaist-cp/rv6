@@ -342,8 +342,22 @@ pub struct ProcBuilder {
 /// Methods that (possibly) need to access both `&Kernel` and `CurrentProc` take `KernelCtx` as
 /// arguments. Otherwise, methods can take only one of `&Kernel` and `CurrentProc` as arguments.
 pub struct KernelCtx<'p> {
-    pub kernel: &'p Kernel,
-    pub proc: CurrentProc<'p>,
+    kernel: &'p Kernel,
+    proc: CurrentProc<'p>,
+}
+
+impl<'p> KernelCtx<'p> {
+    pub fn kernel(&self) -> &'p Kernel {
+        &self.kernel
+    }
+
+    pub fn proc(&self) -> &CurrentProc<'p> {
+        &self.proc
+    }
+
+    pub fn proc_mut(&mut self) -> &mut CurrentProc<'p> {
+        &mut self.proc
+    }
 }
 
 /// CurrentProc wraps mutable pointer of current CPU's proc.

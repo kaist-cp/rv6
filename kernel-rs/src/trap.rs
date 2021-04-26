@@ -67,47 +67,47 @@ impl KernelCtx<'_> {
         let mut which_dev: i32 = 0;
 
         // Save user program counter.
-        self.proc.trap_frame_mut().epc = r_sepc();
+        self.proc_mut().trap_frame_mut().epc = r_sepc();
         if r_scause() == 8 {
             // system call
 
-            if self.proc.killed() {
-                self.kernel.procs().exit_current(-1, &mut self);
+            if self.proc().killed() {
+                self.kernel().procs().exit_current(-1, &mut self);
             }
 
             // sepc points to the ecall instruction,
             // but we want to return to the next instruction.
-            self.proc.trap_frame_mut().epc = (self.proc.trap_frame().epc).wrapping_add(4);
+            self.proc_mut().trap_frame_mut().epc = (self.proc().trap_frame().epc).wrapping_add(4);
 
             // An interrupt will change sstatus &c registers,
             // so don't enable until done with those registers.
             unsafe { intr_on() };
-            let syscall_no = self.proc.trap_frame_mut().a7 as i32;
-            self.proc.trap_frame_mut().a0 = ok_or!(self.syscall(syscall_no), usize::MAX);
+            let syscall_no = self.proc_mut().trap_frame_mut().a7 as i32;
+            self.proc_mut().trap_frame_mut().a0 = ok_or!(self.syscall(syscall_no), usize::MAX);
         } else {
-            which_dev = unsafe { self.kernel.dev_intr() };
+            which_dev = unsafe { self.kernel().dev_intr() };
             if which_dev == 0 {
                 println!(
                     "usertrap(): unexpected scause {:018p} pid={}",
                     r_scause() as *const u8,
-                    self.proc.pid()
+                    self.proc().pid()
                 );
                 println!(
                     "            sepc={:018p} stval={:018p}",
                     r_sepc() as *const u8,
                     r_stval() as *const u8
                 );
-                self.proc.kill();
+                self.proc().kill();
             }
         }
 
-        if self.proc.killed() {
-            self.kernel.procs().exit_current(-1, &mut self);
+        if self.proc().killed() {
+            self.kernel().procs().exit_current(-1, &mut self);
         }
 
         // Give up the CPU if this is a timer interrupt.
         if which_dev == 2 {
-            unsafe { self.proc.yield_cpu() };
+            unsafe { self.proc().yield_cpu() };
         }
 
         unsafe { self.user_trap_ret() };
@@ -133,14 +133,15 @@ impl KernelCtx<'_> {
         // the process next re-enters the kernel.
 
         // kernel page table
-        self.proc.trap_frame_mut().kernel_satp = r_satp();
+        self.proc_mut().trap_frame_mut().kernel_satp = r_satp();
 
         // process's kernel stack
-        self.proc.trap_frame_mut().kernel_sp = self.proc.deref_mut_data().kstack + PGSIZE;
-        self.proc.trap_frame_mut().kernel_trap = usertrap as usize;
+        self.proc_mut().trap_frame_mut().kernel_sp =
+            self.proc_mut().deref_mut_data().kstack + PGSIZE;
+        self.proc_mut().trap_frame_mut().kernel_trap = usertrap as usize;
 
         // hartid for cpuid()
-        self.proc.trap_frame_mut().kernel_hartid = r_tp();
+        self.proc_mut().trap_frame_mut().kernel_hartid = r_tp();
 
         // Set up the registers that trampoline.S's sret will use
         // to get to user space.
@@ -156,10 +157,10 @@ impl KernelCtx<'_> {
         unsafe { x.write() };
 
         // Set S Exception Program Counter to the saved user pc.
-        unsafe { w_sepc(self.proc.trap_frame().epc) };
+        unsafe { w_sepc(self.proc().trap_frame().epc) };
 
         // Tell trampoline.S the user page table to switch to.
-        let satp: usize = self.proc.memory().satp();
+        let satp: usize = self.proc().memory().satp();
 
         // Jump to trampoline.S at the top of memory, which
         // switches to the user page table, restores user registers,

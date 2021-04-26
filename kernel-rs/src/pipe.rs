@@ -204,7 +204,7 @@ impl PipeInner {
         ctx: &mut KernelCtx<'_>,
     ) -> Result<usize, PipeError> {
         let mut ch = [0u8];
-        if !self.readopen || ctx.proc.killed() {
+        if !self.readopen || ctx.proc().killed() {
             return Err(PipeError::InvalidStatus);
         }
         for i in 0..n {
@@ -213,7 +213,7 @@ impl PipeInner {
                 return Ok(i);
             }
             if ctx
-                .proc
+                .proc_mut()
                 .memory_mut()
                 .copy_in_bytes(&mut ch, addr + i)
                 .is_err()
@@ -238,7 +238,7 @@ impl PipeInner {
     ) -> Result<usize, PipeError> {
         //DOC: pipe-empty
         if self.nread == self.nwrite && self.writeopen {
-            if ctx.proc.killed() {
+            if ctx.proc().killed() {
                 return Err(PipeError::InvalidStatus);
             }
             return Err(PipeError::WaitForIO);
@@ -251,7 +251,12 @@ impl PipeInner {
             }
             let ch = [self.data[self.nread as usize % PIPESIZE]];
             self.nread = self.nread.wrapping_add(1);
-            if ctx.proc.memory_mut().copy_out_bytes(addr + i, &ch).is_err() {
+            if ctx
+                .proc_mut()
+                .memory_mut()
+                .copy_out_bytes(addr + i, &ch)
+                .is_err()
+            {
                 return Ok(i);
             }
         }

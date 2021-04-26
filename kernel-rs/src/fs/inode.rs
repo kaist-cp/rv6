@@ -445,7 +445,7 @@ impl InodeGuard<'_> {
         ctx: &mut KernelCtx<'_>,
     ) -> Result<usize, ()> {
         self.read_internal(off, n, |off, src| {
-            ctx.proc
+            ctx.proc_mut()
                 .memory_mut()
                 .copy_out_bytes(dst + off as usize, src)
         })
@@ -543,7 +543,11 @@ impl InodeGuard<'_> {
         self.write_internal(
             off,
             n,
-            |off, dst| ctx.proc.memory_mut().copy_in_bytes(dst, src + off as usize),
+            |off, dst| {
+                ctx.proc_mut()
+                    .memory_mut()
+                    .copy_in_bytes(dst, src + off as usize)
+            },
             tx,
         )
     }
@@ -909,7 +913,7 @@ impl Itable {
         let mut ptr = if path.is_absolute() {
             self.root()
         } else {
-            ctx.proc.cwd().clone()
+            ctx.proc().cwd().clone()
         };
 
         while let Some((new_path, name)) = path.skipelem() {
