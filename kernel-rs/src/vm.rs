@@ -15,6 +15,7 @@ use crate::{
     lock::Spinlock,
     page::Page,
     param::NPROC,
+    proc::KernelCtx,
 };
 
 extern "C" {
@@ -433,6 +434,7 @@ impl UserMemory {
         ip: &mut InodeGuard<'_>,
         offset: u32,
         sz: u32,
+        ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
         assert!(va.is_page_aligned(), "load_file: va must be page aligned");
         for i in num_iter::range_step(0, sz, PGSIZE as _) {
@@ -440,7 +442,7 @@ impl UserMemory {
                 .get_slice(va + i as usize)
                 .expect("load_file: address should exist");
             let n = cmp::min((sz - i) as usize, PGSIZE);
-            let bytes_read = ip.read_bytes_kernel(&mut dst[..n], offset + i);
+            let bytes_read = ip.read_bytes_kernel(&mut dst[..n], offset + i, ctx);
             if bytes_read != n {
                 return Err(());
             }
