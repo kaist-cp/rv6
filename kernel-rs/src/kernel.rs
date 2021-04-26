@@ -36,6 +36,11 @@ pub fn kernel_builder<'s>() -> &'s KernelBuilder {
     unsafe { &KERNEL }
 }
 
+/// Returns an immutable reference to the `Kernel`.
+///
+/// # Safety
+///
+/// Use this only after the `Kernel` is initialized.
 #[inline]
 pub unsafe fn kernel<'s>() -> &'s Kernel {
     // SAFETY: Safe to cast &KernelBuilder into &Kernel
@@ -43,11 +48,15 @@ pub unsafe fn kernel<'s>() -> &'s Kernel {
     unsafe { &*(kernel_builder() as *const _ as *const _) }
 }
 
-/// Creates a `KernelRef` that has a fresh `'id` and points to the `Kernel`.
+/// Creates a `KernelRef` that has a unique, invariant `'id` and points to the `Kernel`.
 /// The `KernelRef` can be used only inside the given closure.
+///
+/// # Safety
+///
+/// Use this only after the `Kernel` is initialized.
 pub unsafe fn kernel_ref<'s, F: for<'new_id> FnOnce(KernelRef<'new_id, 's>) -> R, R>(f: F) -> R {
     let kernel = unsafe { kernel() };
-    Branded::new(kernel, |bkernel| f(KernelRef(bkernel)))
+    Branded::new(kernel, |k| f(KernelRef(k)))
 }
 
 /// Returns a pinned mutable reference to the `KERNEL`.
@@ -136,6 +145,9 @@ impl Deref for Kernel {
 }
 
 /// A branded reference to a `Kernel`.
+///
+/// # Safety
+///
 /// The `'id` is always different between different `Kernel` instances.
 #[derive(Clone, Copy)]
 pub struct KernelRef<'id, 's>(Branded<'id, &'s Kernel>);

@@ -70,7 +70,7 @@ impl KernelCtx<'_, '_> {
             // system call
 
             if self.proc().killed() {
-                self.kernel().procs_ref().exit_current(-1, &mut self);
+                self.kernel().procs().exit_current(-1, &mut self);
             }
 
             // sepc points to the ecall instruction,
@@ -100,7 +100,7 @@ impl KernelCtx<'_, '_> {
         }
 
         if self.proc().killed() {
-            self.kernel().procs_ref().exit_current(-1, &mut self);
+            self.kernel().procs().exit_current(-1, &mut self);
         }
 
         // Give up the CPU if this is a timer interrupt.

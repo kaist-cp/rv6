@@ -951,6 +951,12 @@ impl Procs {
     /// Create a new process, copying the parent.
     /// Sets up child kernel stack to return as if from fork() system call.
     /// Returns Ok(new process id) on success, Err(()) on error.
+    ///
+    /// # Note
+    ///
+    /// `self` and `ctx` must have the same `'id` tag attached.
+    /// Otherwise, UB may happen if the new `Proc` tries to read its `parent` field
+    /// that points to a `Proc` that already dropped.
     pub fn fork<'id>(self: &ProcsRef<'id, '_>, ctx: &mut KernelCtx<'id, '_>) -> Result<Pid, ()> {
         let allocator = &ctx.kernel.kmem;
         // Allocate trap frame.
@@ -1243,9 +1249,11 @@ impl Kernel {
             }
         })
     }
+}
 
+impl<'id, 's> KernelRef<'id, 's> {
     /// Returns a `ProcsRef` that points to the kernel's `Procs`.
-    pub fn procs_ref<'id, 's>(self: &KernelRef<'id, 's>) -> ProcsRef<'id, 's> {
+    pub fn procs(&self) -> ProcsRef<'id, 's> {
         ProcsRef(self.get_inner().brand(self.get_inner().procs()))
     }
 }
