@@ -89,7 +89,7 @@
 //! To prevent this, we would need to use a runtime check in `Library::return_book` to check that the `book` was truely
 //! from `self`, or we would need to mark `Library::return_book` as unsafe.
 //!
-//! Or, if we use `Branded`, we don't need to use a runtime check or mark `Library::return_book` as unsafe,
+//! Or, if we use branded types here, we don't need to use a runtime check or mark `Library::return_book` as unsafe,
 //! but still express that the argument `book` must have originated from `self`. The following is an example,
 //! where we just changed the signature of `Library::borrow_book` and `Library::return_book`.
 //! ```rust,no_run
@@ -117,33 +117,51 @@
 //!     books: [Book; 3],
 //! }
 //!
+//! # #[derive(Clone, Copy)]
+//! pub struct LibraryRef<'id, 's> {
+//!    /* Omitted */
+//! #  inner: Branded<'id, &'s Library>,
+//! }
+//! # impl<'id, 's> Deref for LibraryRef<'id, 's> {
+//! #   type Target = Library;
+//! #
+//! #   fn deref(&self) -> &Self::Target {
+//! #       &self.inner
+//! #   }
+//! # }
+//!
 //! impl Library {
 //!     pub fn new() -> Self {
-//!         /* Omitted */
-//! #       Self {
-//! #           books: [Book::new(), Book::new(), Book::new()],
-//! #       }
+//!        /* Omitted */
+//! #      Self {
+//! #          books: [Book::new(), Book::new(), Book::new()],
+//! #      }
 //!     }
 //!
-//!     pub fn borrow_book<'id>(self: Branded<'id, &Self>) -> BorrowedBook<'id, '_> {
-//!         /* Omitted */
-//! #       // Note: In the following, you can avoid using runtime check if you use more complex code.
-//! #       for index in 0..self.books.len() {
-//! #           if !self.books[index].borrowed.get() {
-//! #               self.books[index].borrowed.set(true);
-//! #               return BorrowedBook {
-//! #                   index: self.brand(index),
-//! #                   _marker: PhantomData,
-//! #               };
-//! #           }
-//! #       }
-//! #       panic!("no unborrowed books left");
+//!     pub fn map_ref<F: for<'new_id> FnOnce(LibraryRef<'new_id, '_>) -> R, R>(&self, f: F) -> R {
+//!        /* Omitted */
+//! #      Branded::new(self, |inner| f(LibraryRef { inner }))
 //!     }
 //!
-//!     pub fn return_book<'id>(self: Branded<'id, &Self>, book: BorrowedBook<'id, '_>) {
-//!         /* Omitted */
-//! #       // Note: In the following, you can avoid using runtime check if you use more complex code.
-//! #       self.books[book.index.into_inner()].borrowed.set(false);
+//!     pub fn borrow_book<'id, 's>(self: LibraryRef<'id, 's>) -> BorrowedBook<'id, 's> {
+//!        /* Omitted */
+//! #      // Note: In the following, you can avoid using runtime check if you use more complex code.
+//! #      for index in 0..self.books.len() {
+//! #          if !self.books[index].borrowed.get() {
+//! #              self.books[index].borrowed.set(true);
+//! #              return BorrowedBook {
+//! #                  index: self.inner.brand(index),
+//! #                  _marker: PhantomData,
+//! #              };
+//! #          }
+//! #      }
+//! #      panic!("no unborrowed books left");
+//!     }
+//!
+//!     pub fn return_book<'id>(self: LibraryRef<'id, '_>, book: BorrowedBook<'id, '_>) {
+//!        /* Omitted */
+//! #      // Note: In the following, you can avoid using runtime check if you use more complex code.
+//! #      self.books[book.index.into_inner()].borrowed.set(false);
 //!     }
 //! }
 //! ```
@@ -151,23 +169,23 @@
 //! ```rust,no_run
 //! let library_a = Library::new();
 //! let library_b = Library::new();
-//! Branded::new(&library_a, |branded_library_a| {
-//!     Branded::new(&library_b, |branded_library_b| {
-//!         let book_from_a = branded_library_a.borrow_book();
-//!         branded_library_b.return_book(book_from_a); // Compile error because the `'id` tag is different!
+//! library_a.map_ref(|library_a_ref| {
+//!     library_b.map_ref(|library_b_ref| {
+//!         let book_from_a = library_a_ref.borrow_book();
+//!         library_b_ref.return_book(book_from_a); // Compile error because the `'id` tag is different!
 //!     });
 //! });
 //! ```
 //! This code causes a compile error because `Branded::new` tags an invariant lifetime to the provided pointer.
 //! This lifetime is more like a unique identifier that cannot be subtyped by any other lifetime, not even `'static`.
-//! This means that the lifetime `'id` attached to `branded_library_a` are `branded_library_b` are incompatible,
+//! This means that the lifetime `'id` attached to `library_a_ref` are `library_b_ref` are incompatible,
 //! Also, note that
-//! * `Library::borrow_book` returns a `Branded` that has the same `'id` tag with `self`, and
-//! * `Library::return_book` only accepts `Branded`s that has the same `'id` tag with `self`.
+//! * `Library::borrow_book` returns a `BorrowedBook` that has the same `'id` tag with `self`, and
+//! * `Library::return_book` only accepts `BorrowedBook`s that has the same `'id` tag with `self`.
 //!
-//! Therefore, if we try to do `branded_library_b.return_book(book_from_a);`, a compile error happens because
-//! the lifetime `'id` attached to `branded_library_b` and `book_from_a` are incompatible.
-//! Note that a compile error does not happen if we do `branded_library_a.return_book(book_from_a);` instead.
+//! Therefore, if we try to do `library_b_ref.return_book(book_from_a);`, a compile error happens because
+//! the lifetime `'id` attached to `library_b_ref` and `book_from_a` are incompatible.
+//! Note that a compile error does not happen if we do `library_a_ref.return_book(book_from_a);` instead.
 //!
 //! # Using `Branded<'id, T>` after wrapping it
 //!
