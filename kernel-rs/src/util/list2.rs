@@ -87,7 +87,7 @@ pub struct Node<T> {
 /// * All `ListEntry` types must be used only after initializing it with `ListEntry::init`.
 /// After this, `ListEntry::{prev, next}` always refer to a valid, initialized `ListEntry`.
 #[pin_project]
-pub struct ListEntry {
+struct ListEntry {
     prev: *mut Self,
     next: *mut Self,
     #[pin]
@@ -494,6 +494,10 @@ impl ListEntry {
 
     /// Inserts `elt` at the back of this `ListEntry` after unlinking `elt`.
     fn push_back(mut self: Pin<&mut Self>, mut elt: Pin<&mut Self>) {
+        if !elt.is_unlinked() {
+            elt.as_mut().remove();
+        }
+
         let s = unsafe { self.as_mut().get_unchecked_mut() };
         let e = unsafe { elt.as_mut().get_unchecked_mut() };
 
@@ -507,6 +511,10 @@ impl ListEntry {
 
     /// Inserts `elt` in front of this `ListEntry` after unlinking `elt`.
     fn push_front(mut self: Pin<&mut Self>, mut elt: Pin<&mut Self>) {
+        if !elt.is_unlinked() {
+            elt.as_mut().remove();
+        }
+
         let s = unsafe { self.as_mut().get_unchecked_mut() };
         let e = unsafe { elt.as_mut().get_unchecked_mut() };
 
