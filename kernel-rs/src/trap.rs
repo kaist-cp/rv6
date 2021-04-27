@@ -8,7 +8,7 @@ use crate::{
         intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp, w_sepc, w_sip,
         w_stvec, Sstatus,
     },
-    kernel::{kernel, Kernel},
+    kernel::{kernel_ref, KernelRef},
     ok_or, println,
     proc::{cpuid, kernel_ctx, KernelCtx, Procstate},
 };
@@ -39,8 +39,7 @@ pub unsafe extern "C" fn usertrap() {
     // SAFETY
     // * usertrap can be reached only after the initialization of the kernel.
     // * It's the beginning of this thread, so there's no exsiting `KernelCtx` or `CurrentProc`.
-    let ctx = unsafe { kernel_ctx() };
-    unsafe { ctx.user_trap() };
+    unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
 }
 
 /// Interrupts and exceptions from kernel code go here via kernelvec,
@@ -48,11 +47,10 @@ pub unsafe extern "C" fn usertrap() {
 #[no_mangle]
 pub unsafe fn kerneltrap() {
     // SAFETY: kerneltrap can be reached only after the initialization of the kernel.
-    let kernel = unsafe { kernel() };
-    unsafe { kernel.kernel_trap() };
+    unsafe { kernel_ref(|kref| kref.kernel_trap()) };
 }
 
-impl KernelCtx<'_> {
+impl KernelCtx<'_, '_> {
     /// `user_trap` can be reached only from the user mode, so it is a method of `KernelCtx`.
     unsafe fn user_trap(mut self) {
         assert!(
@@ -172,7 +170,7 @@ impl KernelCtx<'_> {
     }
 }
 
-impl Kernel {
+impl KernelRef<'_, '_> {
     /// `kernel_trap` can be reached from the kernel mode, so it is a method of `Kernel`.
     unsafe fn kernel_trap(&self) {
         let sepc = r_sepc();
@@ -215,7 +213,7 @@ impl Kernel {
     }
 
     fn clock_intr(&self) {
-        let mut ticks = self.ticks.lock();
+        let mut ticks = self.ticks().lock();
         *ticks = ticks.wrapping_add(1);
         ticks.wakeup();
     }

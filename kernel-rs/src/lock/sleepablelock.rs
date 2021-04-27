@@ -52,11 +52,8 @@ impl<T> Sleepablelock<T> {
 
 impl<T> SleepablelockGuard<'_, T> {
     pub fn sleep(&mut self) {
-        self.lock.lock.waitchannel.sleep(
-            self,
-            // TODO: remove kernel_ctx()
-            &unsafe { kernel_ctx() },
-        );
+        // TODO: remove kernel_ctx()
+        unsafe { kernel_ctx(|ctx| self.lock.lock.waitchannel.sleep(self, &ctx)) };
     }
 
     pub fn wakeup(&self) {

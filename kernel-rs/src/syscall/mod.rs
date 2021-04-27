@@ -11,7 +11,7 @@ use crate::{
 mod file;
 mod proc;
 
-impl KernelCtx<'_> {
+impl KernelCtx<'_, '_> {
     pub fn syscall(&mut self, num: i32) -> Result<usize, ()> {
         match num {
             1 => self.sys_fork(),
@@ -49,7 +49,7 @@ impl KernelCtx<'_> {
     }
 }
 
-impl CurrentProc<'_> {
+impl CurrentProc<'_, '_> {
     /// Fetch the usize at addr from the current process.
     /// Returns Ok(fetched integer) on success, Err(()) on error.
     pub fn fetchaddr(&mut self, addr: UVAddr) -> Result<usize, ()> {

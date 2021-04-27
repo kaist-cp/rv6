@@ -90,7 +90,7 @@ impl ProgHdr {
     }
 }
 
-impl KernelCtx<'_> {
+impl KernelCtx<'_, '_> {
     pub fn exec(&mut self, path: &Path, args: &[Page]) -> Result<usize, ()> {
         if args.len() > MAXARG {
             return Err(());
@@ -101,7 +101,7 @@ impl KernelCtx<'_> {
         // value, ptr, will be dropped when this method returns. Deallocation
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
-        let tx = self.kernel().file_system.begin_transaction();
+        let tx = self.kernel().fs().begin_transaction();
         let ptr = self.kernel().itable.namei(path, self)?;
         let mut ip = ptr.lock();
 

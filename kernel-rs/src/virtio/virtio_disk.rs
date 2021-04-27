@@ -322,11 +322,8 @@ impl Disk {
 
         // Wait for virtio_disk_intr() to say request has finished.
         while b.deref_inner().disk {
-            (*b).vdisk_request_waitchannel.sleep(
-                this,
-                // TODO: remove kernel_ctx()
-                &unsafe { kernel_ctx() },
-            );
+            // TODO: remove kernel_ctx()
+            unsafe { kernel_ctx(|ctx| (*b).vdisk_request_waitchannel.sleep(this, &ctx)) };
         }
         // As it assigns null, the invariant of inflight is maintained even if
         // b: &mut Buf becomes invalid after this method returns.

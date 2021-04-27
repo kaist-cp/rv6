@@ -22,6 +22,7 @@ use crate::{
     proc::{cpuid, scheduler, Cpu, Procs, ProcsBuilder},
     trap::{trapinit, trapinithart},
     uart::Uart,
+    util::branded::Branded,
     vm::KernelMemory,
 };
 
@@ -31,15 +32,31 @@ static mut KERNEL: KernelBuilder = KernelBuilder::zero();
 /// After intialized, the kernel is safe to immutably access.
 // TODO: make it unsafe
 #[inline]
-pub fn kernel_builder() -> &'static KernelBuilder {
+pub fn kernel_builder<'s>() -> &'s KernelBuilder {
     unsafe { &KERNEL }
 }
 
+/// Returns an immutable reference to the `Kernel`.
+///
+/// # Safety
+///
+/// Use this only after the `Kernel` is initialized.
 #[inline]
-pub unsafe fn kernel() -> &'static Kernel {
+pub unsafe fn kernel<'s>() -> &'s Kernel {
     // SAFETY: Safe to cast &KernelBuilder into &Kernel
     // since Kernel has a transparent memory layout.
     unsafe { &*(kernel_builder() as *const _ as *const _) }
+}
+
+/// Creates a `KernelRef` that has a unique, invariant `'id` and points to the `Kernel`.
+/// The `KernelRef` can be used only inside the given closure.
+///
+/// # Safety
+///
+/// Use this only after the `Kernel` is initialized.
+pub unsafe fn kernel_ref<'s, F: for<'new_id> FnOnce(KernelRef<'new_id, 's>) -> R, R>(f: F) -> R {
+    let kernel = unsafe { kernel() };
+    Branded::new(kernel, |k| f(KernelRef(k)))
 }
 
 /// Returns a pinned mutable reference to the `KERNEL`.
@@ -80,7 +97,7 @@ pub struct KernelBuilder {
     /// The kernel's memory manager.
     memory: MaybeUninit<KernelMemory>,
 
-    pub ticks: Sleepablelock<u32>,
+    ticks: Sleepablelock<u32>,
 
     /// Current process system.
     #[pin]
@@ -94,12 +111,13 @@ pub struct KernelBuilder {
     #[pin]
     bcache: Bcache,
 
-    pub devsw: [Devsw; NDEV],
+    devsw: [Devsw; NDEV],
 
     pub ftable: FileTable,
 
     pub itable: Itable,
 
+    // TODO: Make this private and always use `KernelRef::fs` instead.
     pub file_system: FileSystem,
 }
 
@@ -123,6 +141,45 @@ impl Deref for Kernel {
 
     fn deref(&self) -> &Self::Target {
         &self.inner
+    }
+}
+
+/// A branded reference to a `Kernel`.
+///
+/// # Safety
+///
+/// The `'id` is always different between different `Kernel` instances.
+#[derive(Clone, Copy)]
+pub struct KernelRef<'id, 's>(Branded<'id, &'s Kernel>);
+
+impl<'id, 's> KernelRef<'id, 's> {
+    /// Returns a `Branded` that wraps `data` and has the same `'id` tag with `self`.
+    pub fn brand<T>(&self, data: T) -> Branded<'id, T> {
+        self.0.brand(data)
+    }
+
+    /// Returns a reference to the kernel's ticks.
+    pub fn ticks(&self) -> &'s Sleepablelock<u32> {
+        &self.0.ticks
+    }
+
+    /// Returns a reference to the kernel's `Devsw` array.
+    pub fn devsw(&self) -> &'s [Devsw; NDEV] {
+        &self.0.devsw
+    }
+
+    /// Returns a reference to the kernel's `FileSystem`.
+    // Need this to prevent lifetime confusions.
+    pub fn fs(&self) -> &'s FileSystem {
+        &self.0.file_system
+    }
+}
+
+impl<'id, 's> Deref for KernelRef<'id, 's> {
+    type Target = Kernel;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
