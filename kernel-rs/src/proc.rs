@@ -1245,7 +1245,7 @@ impl Kernel {
         // This is safe because p is non-null and current Cpu's proc.
         unsafe { proc.as_ref() }.map(|proc| {
             CurrentProc {
-                inner: self.get_inner().brand(proc),
+                inner: self.brand(proc),
             }
         })
     }
@@ -1253,8 +1253,8 @@ impl Kernel {
 
 impl<'id, 's> KernelRef<'id, 's> {
     /// Returns a `ProcsRef` that points to the kernel's `Procs`.
-    pub fn procs(&self) -> ProcsRef<'id, 's> {
-        ProcsRef(self.get_inner().brand(self.get_inner().procs()))
+    pub fn procs(&self) -> ProcsRef<'id, '_> {
+        ProcsRef(self.brand(self.deref().procs()))
     }
 }
 

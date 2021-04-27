@@ -153,8 +153,9 @@ impl Deref for Kernel {
 pub struct KernelRef<'id, 's>(Branded<'id, &'s Kernel>);
 
 impl<'id, 's> KernelRef<'id, 's> {
-    pub fn get_inner(&self) -> &Branded<'id, &'s Kernel> {
-        &self.0
+    /// Returns a `Branded` that wraps `data` and has the same `'id` tag with `self`.
+    pub fn brand<T>(&self, data: T) -> Branded<'id, T> {
+        self.0.brand(data)
     }
 
     /// Returns a reference to the kernel's ticks.
