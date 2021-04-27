@@ -437,33 +437,19 @@ impl InodeGuard<'_> {
     pub fn read_bytes_kernel(
         &mut self,
         dst: &mut [u8],
-        mut off: u32,
+        off: u32,
         ctx: &KernelCtx<'_, '_>,
     ) -> usize {
-        let inner = self.deref_inner();
-        let mut n = dst.len() as u32;
-        if off > inner.size || off.wrapping_add(n) < off {
-            return 0;
-        }
-        if off + n > inner.size {
-            n = inner.size - off;
-        }
-        let mut tot: u32 = 0;
-        while tot < n {
-            let bp = ctx.kernel().file_system.log.disk.read(
-                self.dev,
-                self.bmap(off as usize / BSIZE, ctx),
-                ctx,
-            );
-            let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
-            let begin = (off % BSIZE as u32) as usize;
-            let end = begin + m as usize;
-            let src = &bp.deref_inner().data[begin..end];
-            dst[tot as usize..tot as usize + src.len()].clone_from_slice(src);
-            tot += m;
-            off += m;
-        }
-        tot as usize
+        self.read_internal(
+            off,
+            dst.len() as u32,
+            |off, src, ctx| {
+                dst[off as usize..off as usize + src.len()].clone_from_slice(src);
+                Ok(ctx)
+            },
+            ctx,
+        )
+        .expect("read: should never fail")
     }
 
     /// Copy data into virtual address `dst` of the current process by `n` bytes
@@ -473,9 +459,45 @@ impl InodeGuard<'_> {
     pub fn read_user(
         &mut self,
         dst: UVAddr,
+        off: u32,
+        n: u32,
+        ctx: &mut KernelCtx<'_, '_>,
+    ) -> Result<usize, ()> {
+        self.read_internal(
+            off,
+            n,
+            |off, src, ctx| {
+                ctx.proc_mut()
+                    .memory_mut()
+                    .copy_out_bytes(dst + off as usize, src)?;
+                Ok(ctx)
+            },
+            ctx,
+        )
+    }
+
+    /// Read data from inode.
+    ///
+    /// `f` takes an offset and a slice as arguments. `f(off, src, ctx)` should copy
+    /// the content of `src` to the interval beginning at `off`th byte of the
+    /// destination, which the caller of this method knows.
+    // This method takes a function as an argument, because writing to kernel
+    // memory and user memory are very different from each other. Writing to a
+    // consecutive region in kernel memory can be done at once by simple memcpy.
+    // However, writing to user memory needs page table accesses since a single
+    // consecutive region in user memory may split into several pages in
+    // physical memory.
+    fn read_internal<
+        'id,
+        's,
+        K: Deref<Target = KernelCtx<'id, 's>>,
+        F: FnMut(u32, &[u8], K) -> Result<K, ()>,
+    >(
+        &mut self,
         mut off: u32,
         mut n: u32,
-        ctx: &mut KernelCtx<'_, '_>,
+        mut f: F,
+        mut k: K,
     ) -> Result<usize, ()> {
         let inner = self.deref_inner();
         if off > inner.size || off.wrapping_add(n) < off {
@@ -486,17 +508,15 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let bp = ctx.kernel().file_system.log.disk.read(
+            let bp = k.kernel().file_system.log.disk.read(
                 self.dev,
-                self.bmap(off as usize / BSIZE, ctx),
-                ctx,
+                self.bmap(off as usize / BSIZE, &k),
+                &k,
             );
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
-            ctx.proc_mut()
-                .memory_mut()
-                .copy_out_bytes(dst + tot as usize, &bp.deref_inner().data[begin..end])?;
+            k = f(tot, &bp.deref_inner().data[begin..end], k)?;
             tot += m;
             off += m;
         }
@@ -532,43 +552,20 @@ impl InodeGuard<'_> {
     pub fn write_bytes_kernel(
         &mut self,
         src: &[u8],
-        mut off: u32,
+        off: u32,
         tx: &FsTransaction<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<usize, ()> {
-        if off > self.deref_inner().size {
-            return Err(());
-        }
-        let n = src.len() as u32;
-        if off.checked_add(n).ok_or(())? as usize > MAXFILE * BSIZE {
-            return Err(());
-        }
-        let mut tot: u32 = 0;
-        while tot < n {
-            let mut bp = ctx.kernel().file_system.log.disk.read(
-                self.dev,
-                self.bmap_or_alloc(off as usize / BSIZE, tx, ctx),
-                ctx,
-            );
-            let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
-            let begin = (off % BSIZE as u32) as usize;
-            let end = begin + m as usize;
-            let dst = &mut bp.deref_inner_mut().data[begin..end];
-            dst.clone_from_slice(&src[tot as usize..tot as usize + src.len()]);
-            tx.write(bp);
-            tot += m;
-            off += m;
-        }
-
-        if off > self.deref_inner().size {
-            self.deref_inner_mut().size = off;
-        }
-
-        // Write the i-node back to disk even if the size didn't change
-        // because the loop above might have called bmap() and added a new
-        // block to self->addrs[].
-        self.update(tx, ctx);
-        Ok(tot as usize)
+        self.write_internal(
+            off,
+            src.len() as u32,
+            |off, dst, ctx| {
+                dst.clone_from_slice(&src[off as usize..off as usize + src.len()]);
+                Ok(ctx)
+            },
+            tx,
+            ctx,
+        )
     }
 
     /// Copy data from virtual address `src` of the current process by `n` bytes
@@ -577,10 +574,54 @@ impl InodeGuard<'_> {
     pub fn write_user(
         &mut self,
         src: UVAddr,
-        mut off: u32,
+        off: u32,
         n: u32,
         ctx: &mut KernelCtx<'_, '_>,
         tx: &FsTransaction<'_>,
+    ) -> Result<usize, ()> {
+        self.write_internal(
+            off,
+            n,
+            |off, dst, ctx| {
+                match ctx
+                    .proc_mut()
+                    .memory_mut()
+                    .copy_in_bytes(dst, src + off as usize)
+                {
+                    Ok(_) => Ok(ctx),
+                    Err(_) => Err(ctx),
+                }
+            },
+            tx,
+            ctx,
+        )
+    }
+
+    /// Write data to inode. Returns the number of bytes successfully written.
+    /// If the return value is less than the requested n, there was an error of
+    /// some kind.
+    ///
+    /// `f` takes an offset and a slice as arguments. `f(off, dst)` should copy
+    /// the content beginning at the `off`th byte of the source, which the
+    /// caller of this method knows, to `dst`.
+    // This method takes a function as an argument, because reading kernel
+    // memory and user memory are very different from each other. Reading a
+    // consecutive region in kernel memory can be done at once by simple memcpy.
+    // However, reading user memory needs page table accesses since a single
+    // consecutive region in user memory may split into several pages in
+    // physical memory.
+    fn write_internal<
+        'id,
+        's,
+        K: Deref<Target = KernelCtx<'id, 's>>,
+        F: FnMut(u32, &mut [u8], K) -> Result<K, K>,
+    >(
+        &mut self,
+        mut off: u32,
+        n: u32,
+        mut f: F,
+        tx: &FsTransaction<'_>,
+        mut k: K,
     ) -> Result<usize, ()> {
         if off > self.deref_inner().size {
             return Err(());
@@ -590,24 +631,20 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = ctx.kernel().file_system.log.disk.read(
+            let mut bp = k.kernel().file_system.log.disk.read(
                 self.dev,
-                self.bmap_or_alloc(off as usize / BSIZE, tx, ctx),
-                ctx,
+                self.bmap_or_alloc(off as usize / BSIZE, tx, &k),
+                &k,
             );
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
-            if ctx
-                .proc_mut()
-                .memory_mut()
-                .copy_in_bytes(
-                    &mut bp.deref_inner_mut().data[begin..end],
-                    src + tot as usize,
-                )
-                .is_err()
-            {
-                break;
+            match f(tot, &mut bp.deref_inner_mut().data[begin..end], k) {
+                Ok(rk) => k = rk,
+                Err(rk) => {
+                    k = rk;
+                    break;
+                }
             }
             tx.write(bp);
             tot += m;
@@ -621,7 +658,7 @@ impl InodeGuard<'_> {
         // Write the i-node back to disk even if the size didn't change
         // because the loop above might have called bmap() and added a new
         // block to self->addrs[].
-        self.update(tx, ctx);
+        self.update(tx, &k);
         Ok(tot as usize)
     }
 
