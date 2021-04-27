@@ -60,13 +60,13 @@ impl KernelCtx<'_, '_> {
         F: FnOnce(&mut InodeGuard<'_>) -> T,
     {
         let (ptr, name) = self.kernel().itable.nameiparent(path, self)?;
-        let mut dp = ptr.lock();
-        if let Ok((ptr2, _)) = dp.dirlookup(&name, &self.kernel().itable) {
+        let mut dp = ptr.lock(self);
+        if let Ok((ptr2, _)) = dp.dirlookup(&name, self) {
             drop(dp);
             if typ != InodeType::File {
                 return Err(());
             }
-            let mut ip = ptr2.lock();
+            let mut ip = ptr2.lock(self);
             if let InodeType::None | InodeType::Dir = ip.deref_inner().typ {
                 return Err(());
             }
@@ -74,37 +74,25 @@ impl KernelCtx<'_, '_> {
             drop(ip);
             return Ok((ptr2, ret));
         }
-        let ptr2 = self.kernel().itable.alloc_inode(dp.dev, typ, tx);
-        let mut ip = ptr2.lock();
+        let ptr2 = self.kernel().itable.alloc_inode(dp.dev, typ, tx, self);
+        let mut ip = ptr2.lock(self);
         ip.deref_inner_mut().nlink = 1;
-        ip.update(tx);
+        ip.update(tx, self);
 
         // Create . and .. entries.
         if typ == InodeType::Dir {
             // for ".."
             dp.deref_inner_mut().nlink += 1;
-            dp.update(tx);
+            dp.update(tx, self);
 
             // No ip->nlink++ for ".": avoid cyclic ref count.
             // SAFETY: b"." does not contain any NUL characters.
-            ip.dirlink(
-                unsafe { FileName::from_bytes(b".") },
-                ip.inum,
-                tx,
-                &self.kernel().itable,
-            )
-            // SAFETY: b".." does not contain any NUL characters.
-            .and_then(|_| {
-                ip.dirlink(
-                    unsafe { FileName::from_bytes(b"..") },
-                    dp.inum,
-                    tx,
-                    &self.kernel().itable,
-                )
-            })
-            .expect("create dots");
+            ip.dirlink(unsafe { FileName::from_bytes(b".") }, ip.inum, tx, self)
+                // SAFETY: b".." does not contain any NUL characters.
+                .and_then(|_| ip.dirlink(unsafe { FileName::from_bytes(b"..") }, dp.inum, tx, self))
+                .expect("create dots");
         }
-        dp.dirlink(&name, ip.inum, tx, &self.kernel().itable)
+        dp.dirlink(&name, ip.inum, tx, self)
             .expect("create: dirlink");
         let ret = f(&mut ip);
         drop(ip);
@@ -116,29 +104,25 @@ impl KernelCtx<'_, '_> {
     fn link(&self, oldname: &CStr, newname: &CStr) -> Result<(), ()> {
         let tx = self.kernel().fs().begin_transaction();
         let ptr = self.kernel().itable.namei(Path::new(oldname), self)?;
-        let mut ip = ptr.lock();
+        let mut ip = ptr.lock(self);
         if ip.deref_inner().typ == InodeType::Dir {
             return Err(());
         }
         ip.deref_inner_mut().nlink += 1;
-        ip.update(&tx);
+        ip.update(&tx, self);
         drop(ip);
 
         if let Ok((ptr2, name)) = self.kernel().itable.nameiparent(Path::new(newname), self) {
-            let mut dp = ptr2.lock();
-            if dp.dev != ptr.dev
-                || dp
-                    .dirlink(name, ptr.inum, &tx, &self.kernel().itable)
-                    .is_err()
-            {
+            let mut dp = ptr2.lock(self);
+            if dp.dev != ptr.dev || dp.dirlink(name, ptr.inum, &tx, self).is_err() {
             } else {
                 return Ok(());
             }
         }
 
-        let mut ip = ptr.lock();
+        let mut ip = ptr.lock(self);
         ip.deref_inner_mut().nlink -= 1;
-        ip.update(&tx);
+        ip.update(&tx, self);
         Err(())
     }
 
@@ -151,24 +135,25 @@ impl KernelCtx<'_, '_> {
             .kernel()
             .itable
             .nameiparent(Path::new(filename), self)?;
-        let mut dp = ptr.lock();
+        let mut dp = ptr.lock(self);
 
         // Cannot unlink "." or "..".
         if !(name.as_bytes() == b"." || name.as_bytes() == b"..") {
-            if let Ok((ptr2, off)) = dp.dirlookup(&name, &self.kernel().itable) {
-                let mut ip = ptr2.lock();
+            if let Ok((ptr2, off)) = dp.dirlookup(&name, self) {
+                let mut ip = ptr2.lock(self);
                 assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
 
-                if ip.deref_inner().typ != InodeType::Dir || ip.is_dir_empty() {
-                    dp.write_kernel(&de, off, &tx).expect("unlink: writei");
+                if ip.deref_inner().typ != InodeType::Dir || ip.is_dir_empty(self) {
+                    dp.write_kernel(&de, off, &tx, self)
+                        .expect("unlink: writei");
                     if ip.deref_inner().typ == InodeType::Dir {
                         dp.deref_inner_mut().nlink -= 1;
-                        dp.update(&tx);
+                        dp.update(&tx, self);
                     }
                     drop(dp);
                     drop(ptr);
                     ip.deref_inner_mut().nlink -= 1;
-                    ip.update(&tx);
+                    ip.update(&tx, self);
                     return Ok(());
                 }
             }
@@ -186,7 +171,7 @@ impl KernelCtx<'_, '_> {
             self.create(name, InodeType::File, &tx, |ip| ip.deref_inner().typ)?
         } else {
             let ptr = self.kernel().itable.namei(name, self)?;
-            let ip = ptr.lock();
+            let ip = ptr.lock(self);
             let typ = ip.deref_inner().typ;
 
             if typ == InodeType::Dir && omode != FcntlFlags::O_RDONLY {
@@ -223,7 +208,7 @@ impl KernelCtx<'_, '_> {
                 FileType::Device { ip, .. }
                 | FileType::Inode {
                     inner: InodeFileType { ip, .. },
-                } => ip.lock().itrunc(&tx),
+                } => ip.lock(self).itrunc(&tx, self),
                 _ => panic!("sys_open : Not reach"),
             };
         }
@@ -262,7 +247,7 @@ impl KernelCtx<'_, '_> {
         // transaction here.
         let _tx = self.kernel().fs().begin_transaction();
         let ptr = self.kernel().itable.namei(Path::new(dirname), self)?;
-        let ip = ptr.lock();
+        let ip = ptr.lock(self);
         if ip.deref_inner().typ != InodeType::Dir {
             return Err(());
         }

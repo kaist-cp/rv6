@@ -103,13 +103,13 @@ impl KernelCtx<'_, '_> {
         // transaction here.
         let tx = self.kernel().fs().begin_transaction();
         let ptr = self.kernel().itable.namei(path, self)?;
-        let mut ip = ptr.lock();
+        let mut ip = ptr.lock(self);
 
         // Check ELF header
         let mut elf: ElfHdr = Default::default();
         // SAFETY: ElfHdr can be safely transmuted to [u8; _], as it
         // contains only integers, which do not have internal structures.
-        unsafe { ip.read_kernel(&mut elf, 0) }?;
+        unsafe { ip.read_kernel(&mut elf, 0, self) }?;
         if !elf.is_valid() {
             return Err(());
         }
@@ -126,7 +126,7 @@ impl KernelCtx<'_, '_> {
             let mut ph: ProgHdr = Default::default();
             // SAFETY: ProgHdr can be safely transmuted to [u8; _], as it
             // contains only integers, which do not have internal structures.
-            unsafe { ip.read_kernel(&mut ph, off as _) }?;
+            unsafe { ip.read_kernel(&mut ph, off as _, self) }?;
             if ph.is_prog_load() {
                 if ph.memsz < ph.filesz || ph.vaddr % PGSIZE != 0 {
                     return Err(());
@@ -135,7 +135,7 @@ impl KernelCtx<'_, '_> {
                     ph.vaddr.checked_add(ph.memsz).ok_or(())?,
                     &self.kernel().kmem,
                 )?;
-                mem.load_file(ph.vaddr.into(), &mut ip, ph.off as _, ph.filesz as _)?;
+                mem.load_file(ph.vaddr.into(), &mut ip, ph.off as _, ph.filesz as _, self)?;
             }
         }
         drop(ip);

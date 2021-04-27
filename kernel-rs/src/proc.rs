@@ -1222,7 +1222,7 @@ unsafe fn forkret() {
             // File system initialization must be run in the context of a
             // regular process (e.g., because it calls sleep), and thus cannot
             // be run from main().
-            ctx.kernel.file_system.init(ROOTDEV);
+            ctx.kernel.file_system.init(ROOTDEV, &ctx);
             ctx.user_trap_ret();
         })
     }
