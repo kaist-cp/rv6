@@ -1,6 +1,5 @@
 //! Spin locks
 use core::cell::UnsafeCell;
-use core::hint::spin_loop;
 use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
@@ -81,7 +80,7 @@ impl RawLock for RawSpinlock {
             )
             .is_err()
         {
-            spin_loop();
+            ::core::hint::spin_loop();
         }
     }
 

@@ -4,7 +4,7 @@ use crate::{
         r_mhartid, w_medeleg, w_mepc, w_mideleg, w_mscratch, w_mtvec, w_satp, w_tp, Mstatus, MIE,
         SIE,
     },
-    kernel::kernel_main,
+    kernel::main,
     param::NCPU,
 };
 
@@ -39,7 +39,7 @@ pub unsafe fn start() {
     unsafe { x.write() };
 
     // set M Exception Program Counter to main, for mret.  requires gcc -mcmodel=medany
-    unsafe { w_mepc(kernel_main as usize) };
+    unsafe { w_mepc(main as usize) };
 
     // disable paging for now.
     unsafe { w_satp(0) };
