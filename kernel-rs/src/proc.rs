@@ -695,6 +695,10 @@ pub struct Procs {
 /// A branded reference to a `Procs`.
 /// For a `KernelRef<'id, '_>` that has the same `'id` tag, the `Procs` is owned
 /// by the `Kernel` that the `KernelRef` points to.
+///
+/// # Safety
+///
+/// A `ProcsRef<'id, 's>` can be created only from a `KernelRef<'id, 's>` that has the same `'id` tag.
 pub struct ProcsRef<'id, 's>(Branded<'id, &'s Procs>);
 
 impl Deref for ProcsRef<'_, '_> {
