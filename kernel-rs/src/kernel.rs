@@ -9,9 +9,12 @@ use array_macro::array;
 use pin_project::pin_project;
 
 use crate::{
-    arch::plic::{plicinit, plicinithart},
+    arch::{
+        memlayout::UART0,
+        plic::{plicinit, plicinithart},
+    },
     bio::Bcache,
-    console::{consoleinit, Console, Printer},
+    console::{Console, Printer},
     file::{Devsw, FileTable},
     fs::{FileSystem, Itable},
     kalloc::Kmem,
@@ -20,7 +23,6 @@ use crate::{
     println,
     proc::{cpuid, Cpu, Procs, ProcsBuilder},
     trap::{trapinit, trapinithart},
-    uart::Uart,
     util::{branded::Branded, spin_loop},
     vm::KernelMemory,
 };
@@ -73,11 +75,7 @@ pub struct KernelBuilder {
     panicked: AtomicBool,
 
     /// Sleeps waiting for there are some input in console buffer.
-    pub console: Sleepablelock<Console>,
-
-    /// TODO(https://github.com/kaist-cp/rv6/issues/298): Kernel owns uart temporarily.
-    /// This might be changed after refactoring relationship between Console-Uart-Printer.
-    pub uart: Uart,
+    pub console: Console,
 
     pub printer: Spinlock<Printer>,
 
@@ -187,8 +185,7 @@ impl KernelBuilder {
     const fn new() -> Self {
         Self {
             panicked: AtomicBool::new(false),
-            console: Sleepablelock::new("CONS", Console::new()),
-            uart: Uart::new(),
+            console: unsafe { Console::new(UART0) },
             printer: Spinlock::new("PRINTLN", Printer::new()),
             kmem: Spinlock::new("KMEM", unsafe { Kmem::new() }),
             memory: MaybeUninit::uninit(),
@@ -216,8 +213,7 @@ impl KernelBuilder {
         let mut this = self.project();
 
         // Console.
-        Uart::init();
-        unsafe { consoleinit(&mut this.devsw) };
+        this.console.init(&mut this.devsw);
 
         println!();
         println!("rv6 kernel is booting");

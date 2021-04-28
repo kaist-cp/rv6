@@ -234,7 +234,8 @@ impl KernelRef<'_, '_> {
             let irq = unsafe { plic_claim() };
 
             if irq as usize == UART0_IRQ {
-                self.uart.intr(self);
+                // SAFETY: it's unsafe only when ctrl+p is pressed.
+                unsafe { self.console.intr(self) };
             } else if irq as usize == VIRTIO0_IRQ {
                 self.file_system.log.disk.lock().intr(self);
             } else if irq != 0 {

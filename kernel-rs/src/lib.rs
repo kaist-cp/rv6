@@ -52,6 +52,7 @@
 #![feature(maybe_uninit_extra)]
 #![feature(maybe_uninit_ref)]
 #![feature(variant_count)]
+#![feature(const_mut_refs)]
 
 mod arch;
 mod arena;
