@@ -105,7 +105,7 @@ impl KernelCtx<'_, '_> {
 
         // Give up the CPU if this is a timer interrupt.
         if which_dev == 2 {
-            unsafe { self.proc().yield_cpu() };
+            self.yield_cpu();
         }
 
         unsafe { self.user_trap_ret() };
@@ -172,7 +172,7 @@ impl KernelCtx<'_, '_> {
 
 impl KernelRef<'_, '_> {
     /// `kernel_trap` can be reached from the kernel mode, so it is a method of `Kernel`.
-    unsafe fn kernel_trap(&self) {
+    unsafe fn kernel_trap(self) {
         let sepc = r_sepc();
         let sstatus = Sstatus::read();
         let scause = r_scause();
@@ -196,12 +196,13 @@ impl KernelRef<'_, '_> {
 
         // Give up the CPU if this is a timer interrupt.
         if which_dev == 2 {
-            if let Some(proc) = unsafe { self.current_proc() } {
+            // TODO: safety?
+            if let Some(ctx) = unsafe { self.get_ctx() } {
                 // SAFETY:
                 // Reading state without lock is safe because `proc_yield` and `sched`
                 // is called after we check if current process is `RUNNING`.
-                if unsafe { (*proc.info.get_mut_raw()).state } == Procstate::RUNNING {
-                    unsafe { proc.yield_cpu() };
+                if unsafe { (*ctx.proc().info.get_mut_raw()).state } == Procstate::RUNNING {
+                    ctx.yield_cpu();
                 }
             }
         }
@@ -212,10 +213,10 @@ impl KernelRef<'_, '_> {
         unsafe { sstatus.write() };
     }
 
-    fn clock_intr(&self) {
+    fn clock_intr(self) {
         let mut ticks = self.ticks().lock();
         *ticks = ticks.wrapping_add(1);
-        ticks.wakeup();
+        ticks.wakeup(self);
     }
 
     /// Check if it's an external interrupt or software interrupt,
@@ -223,7 +224,7 @@ impl KernelRef<'_, '_> {
     /// Returns 2 if timer interrupt,
     /// 1 if other device,
     /// 0 if not recognized.
-    unsafe fn dev_intr(&self) -> i32 {
+    unsafe fn dev_intr(self) -> i32 {
         let scause: usize = r_scause();
 
         if scause & 0x8000000000000000 != 0 && scause & 0xff == 9 {
@@ -233,9 +234,9 @@ impl KernelRef<'_, '_> {
             let irq = unsafe { plic_claim() };
 
             if irq as usize == UART0_IRQ {
-                self.uart.intr();
+                self.uart.intr(self);
             } else if irq as usize == VIRTIO0_IRQ {
-                self.file_system.log.disk.lock().intr();
+                self.file_system.log.disk.lock().intr(self);
             } else if irq != 0 {
                 // Use `panic!` instead of `println` to prevent stack overflow.
                 // https://github.com/kaist-cp/rv6/issues/311

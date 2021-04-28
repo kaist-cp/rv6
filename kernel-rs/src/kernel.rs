@@ -19,7 +19,7 @@ use crate::{
     lock::{Sleepablelock, Spinlock},
     param::{NCPU, NDEV},
     println,
-    proc::{cpuid, scheduler, Cpu, Procs, ProcsBuilder},
+    proc::{cpuid, Cpu, Procs, ProcsBuilder},
     trap::{trapinit, trapinithart},
     uart::Uart,
     util::branded::Branded,
@@ -27,25 +27,13 @@ use crate::{
 };
 
 /// The kernel.
-static mut KERNEL: KernelBuilder = KernelBuilder::zero();
+static mut KERNEL: KernelBuilder = KernelBuilder::new();
 
 /// After intialized, the kernel is safe to immutably access.
 // TODO: make it unsafe
 #[inline]
 pub fn kernel_builder<'s>() -> &'s KernelBuilder {
     unsafe { &KERNEL }
-}
-
-/// Returns an immutable reference to the `Kernel`.
-///
-/// # Safety
-///
-/// Use this only after the `Kernel` is initialized.
-#[inline]
-pub unsafe fn kernel<'s>() -> &'s Kernel {
-    // SAFETY: Safe to cast &KernelBuilder into &Kernel
-    // since Kernel has a transparent memory layout.
-    unsafe { &*(kernel_builder() as *const _ as *const _) }
 }
 
 /// Creates a `KernelRef` that has a unique, invariant `'id` and points to the `Kernel`.
@@ -55,7 +43,10 @@ pub unsafe fn kernel<'s>() -> &'s Kernel {
 ///
 /// Use this only after the `Kernel` is initialized.
 pub unsafe fn kernel_ref<'s, F: for<'new_id> FnOnce(KernelRef<'new_id, 's>) -> R, R>(f: F) -> R {
-    let kernel = unsafe { kernel() };
+    // SAFETY: Safe to cast &KernelBuilder into &Kernel
+    // since Kernel has a transparent memory layout.
+    let kernel = unsafe { &*(kernel_builder() as *const _ as *const _) };
+
     Branded::new(kernel, |k| f(KernelRef(k)))
 }
 
@@ -194,7 +185,7 @@ impl<'id, 's> Deref for KernelRef<'id, 's> {
 }
 
 impl KernelBuilder {
-    const fn zero() -> Self {
+    const fn new() -> Self {
         Self {
             panicked: AtomicBool::new(false),
             console: Sleepablelock::new("CONS", Console::new()),
@@ -215,6 +206,75 @@ impl KernelBuilder {
             itable: Itable::zero(),
             file_system: FileSystem::zero(),
         }
+    }
+
+    /// Initializes the kernel.
+    ///
+    /// # Safety
+    ///
+    /// This method should be called only once by the hart 0.
+    unsafe fn init(self: Pin<&mut Self>) {
+        let mut this = self.project();
+
+        // Console.
+        Uart::init();
+        unsafe { consoleinit(&mut this.devsw) };
+
+        println!();
+        println!("rv6 kernel is booting");
+        println!();
+
+        // Physical page allocator.
+        unsafe { this.kmem.as_mut().get_pin_mut().init() };
+
+        // Create kernel memory manager.
+        let memory =
+            KernelMemory::new(this.kmem.as_ref().get_ref()).expect("PageTable::new failed");
+
+        // Turn on paging.
+        unsafe { this.memory.write(memory).init_hart() };
+
+        // Process system.
+        let procs = this.procs.init();
+
+        // Trap vectors.
+        trapinit();
+
+        // Install kernel trap vector.
+        unsafe { trapinithart() };
+
+        // Set up interrupt controller.
+        unsafe { plicinit() };
+
+        // Ask PLIC for device interrupts.
+        unsafe { plicinithart() };
+
+        // Buffer cache.
+        this.bcache.get_pin_mut().init();
+
+        // Emulated hard disk.
+        this.file_system.log.disk.get_mut().init();
+
+        // First user process.
+        procs.user_proc_init(this.kmem.as_ref().get_ref());
+    }
+
+    /// Initializes the kernel for a hart.
+    ///
+    /// # Safety
+    ///
+    /// This method should be called only once by each hart.
+    unsafe fn inithart(&self) {
+        println!("hart {} starting", cpuid());
+
+        // Turn on paging.
+        unsafe { self.memory.assume_init_ref().init_hart() };
+
+        // Install kernel trap vector.
+        unsafe { trapinithart() };
+
+        // Ask PLIC for device interrupts.
+        unsafe { plicinithart() };
     }
 
     fn panic(&self) {
@@ -285,69 +345,18 @@ pub unsafe fn kernel_main() -> ! {
     static STARTED: AtomicBool = AtomicBool::new(false);
 
     if cpuid() == 0 {
-        let mut kernel = unsafe { kernel_builder_unchecked_pin().project() };
-
-        // Initialize the kernel.
-
-        // Console.
-        Uart::init();
-        unsafe { consoleinit(kernel.devsw) };
-
-        println!();
-        println!("rv6 kernel is booting");
-        println!();
-
-        // Physical page allocator.
-        unsafe { kernel.kmem.as_mut().get_pin_mut().init() };
-
-        // Create kernel memory manager.
-        let memory =
-            KernelMemory::new(kernel.kmem.as_ref().get_ref()).expect("PageTable::new failed");
-
-        // Turn on paging.
-        unsafe { kernel.memory.write(memory).init_hart() };
-
-        // Process system.
-        let procs = kernel.procs.init();
-
-        // Trap vectors.
-        trapinit();
-
-        // Install kernel trap vector.
-        unsafe { trapinithart() };
-
-        // Set up interrupt controller.
-        unsafe { plicinit() };
-
-        // Ask PLIC for device interrupts.
-        unsafe { plicinithart() };
-
-        // Buffer cache.
-        kernel.bcache.get_pin_mut().init();
-
-        // Emulated hard disk.
-        kernel.file_system.log.disk.get_mut().init();
-
-        // First user process.
-        procs.user_proc_init(kernel.kmem.as_ref().get_ref());
-
+        unsafe {
+            kernel_builder_unchecked_pin().init();
+        }
         STARTED.store(true, Ordering::Release);
     } else {
         while !STARTED.load(Ordering::Acquire) {
             spin_loop();
         }
-
-        println!("hart {} starting", cpuid());
-
-        // Turn on paging.
-        unsafe { kernel().memory.assume_init_ref().init_hart() };
-
-        // Install kernel trap vector.
-        unsafe { trapinithart() };
-
-        // Ask PLIC for device interrupts.
-        unsafe { plicinithart() };
+        unsafe {
+            kernel_ref(|kctx| kctx.inithart());
+        }
     }
 
-    unsafe { scheduler() }
+    unsafe { kernel_ref(|kctx| kctx.scheduler()) }
 }

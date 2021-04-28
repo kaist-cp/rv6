@@ -98,7 +98,7 @@ impl Drop for FsTransaction<'_> {
     fn drop(&mut self) {
         // Called at the end of each FS system call.
         // Commits if this was the last outstanding operation.
-        // TODO: remove kernel_ctx
+        // TODO: remove kernel_ctx()
         unsafe {
             kernel_ctx(|ctx| self.fs.log.end_op(&ctx));
         }
@@ -111,7 +111,7 @@ impl FsTransaction<'_> {
     /// commit()/write_log() will do the disk write.
     ///
     /// write() replaces write(); a typical use is:
-    ///   bp = kernel().file_system.disk.read(...)
+    ///   bp = kernel.file_system.disk.read(...)
     ///   modify bp->data[]
     ///   write(bp)
     fn write(&self, b: Buf) {

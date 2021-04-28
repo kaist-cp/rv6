@@ -6,7 +6,7 @@
 //! list of blocks holding the file's content.
 //!
 //! The inodes are laid out sequentially on disk at
-//! kernel().file_system.superblock.startinode. Each inode has a number, indicating its
+//! kernel.file_system.superblock.startinode. Each inode has a number, indicating its
 //! position on the disk.
 //!
 //! The kernel keeps a table of in-use inodes in memory
@@ -58,10 +58,10 @@
 //! have locked the inodes involved; this lets callers create
 //! multi-step atomic operations.
 //!
-//! The kernel().itable.lock spin-lock protects the allocation of itable
+//! The kernel.itable.lock spin-lock protects the allocation of itable
 //! entries. Since ip->ref indicates whether an entry is free,
 //! and ip->dev and ip->inum indicate which i-node an entry
-//! holds, one must hold kernel().itable.lock while using any of those fields.
+//! holds, one must hold kernel.itable.lock while using any of those fields.
 //!
 //! An ip->lock sleep-lock protects all ip-> fields other than ref,
 //! dev, and inum.  One must hold ip->lock in order to

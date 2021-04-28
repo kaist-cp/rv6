@@ -20,7 +20,7 @@ use crate::{
     file::RcFile,
     fs::RcInode,
     kalloc::Kmem,
-    kernel::{kernel, kernel_builder, kernel_ref, Kernel, KernelRef},
+    kernel::{kernel_builder, kernel_ref, KernelRef},
     lock::{pop_off, push_off, Guard, RawLock, RawSpinlock, RemoteLock, Spinlock, SpinlockGuard},
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
@@ -239,7 +239,7 @@ impl WaitChannel {
             // SAFETY: we hold `p.lock()`, changed the process's state,
             // and device interrupts are disabled by `push_off()` in `p.lock()`.
             unsafe {
-                guard.sched();
+                guard.sched(ctx.kernel());
             }
 
             // Tidy up.
@@ -254,9 +254,8 @@ impl WaitChannel {
 
     /// Wake up all processes sleeping on waitchannel.
     /// Must be called without any p->lock.
-    pub fn wakeup(&self) {
-        // TODO: remove kernel()
-        unsafe { kernel() }.procs().wakeup_pool(self)
+    pub fn wakeup(&self, kernel: KernelRef<'_, '_>) {
+        kernel.procs().wakeup_pool(self, kernel);
     }
 }
 
@@ -362,6 +361,31 @@ impl<'id, 'p> KernelCtx<'id, 'p> {
     pub fn proc_mut(&mut self) -> &mut CurrentProc<'id, 'p> {
         &mut self.proc
     }
+
+    /// Give up the CPU for one scheduling round.
+    // Its name cannot be `yield` because `yield` is a reserved keyword.
+    pub fn yield_cpu(&self) {
+        let mut guard = self.proc.lock();
+        guard.deref_mut_info().state = Procstate::RUNNABLE;
+        unsafe { guard.sched(self.kernel) };
+    }
+}
+
+/// Creates the `KernelCtx` of the current Cpu.
+/// The `KernelCtx` can be used only inside the given closure.
+///
+/// # Safety
+///
+/// * It must be called only after the initialization of the kernel.
+/// * At most one `CurrentProc` or `KernelCtx` object can exist at a single time in each thread.
+///   Therefore, it must not be called if the result of `current_proc` or `kernel_ctx` is alive.
+pub unsafe fn kernel_ctx<'s, F: for<'new_id> FnOnce(KernelCtx<'new_id, 's>) -> R, R>(f: F) -> R {
+    unsafe {
+        kernel_ref(|kref| {
+            let ctx = kref.get_ctx().expect("No current proc");
+            f(ctx)
+        })
+    }
 }
 
 /// A branded reference to the current Cpu's `Proc`.
@@ -426,14 +450,6 @@ impl<'id, 'p> CurrentProc<'id, 'p> {
         // of ProcBuilder and CurrentProc.
         unsafe { self.deref_mut_data().cwd.assume_init_mut() }
     }
-
-    /// Give up the CPU for one scheduling round.
-    // Its name cannot be `yield` because `yield` is a reserved keyword.
-    pub unsafe fn yield_cpu(&self) {
-        let mut guard = self.lock();
-        guard.deref_mut_info().state = Procstate::RUNNABLE;
-        unsafe { guard.sched() };
-    }
 }
 
 impl Deref for CurrentProc<'_, '_> {
@@ -483,23 +499,19 @@ impl ProcGuard<'_> {
     /// be proc->interrupt_enabled and proc->noff, but that would
     /// break in the few places where a lock is held but
     /// there's no process.
-    unsafe fn sched(&mut self) {
-        // TODO: remove kernel_builder()
-        assert_eq!((*kernel_builder().current_cpu()).noff, 1, "sched locks");
+    unsafe fn sched(&mut self, kernel: KernelRef<'_, '_>) {
+        assert_eq!((*(kernel.current_cpu())).noff, 1, "sched locks");
         assert_ne!(self.state(), Procstate::RUNNING, "sched running");
         assert!(!intr_get(), "sched interruptible");
 
-        // TODO: remove kernel_builder()
-        let interrupt_enabled = unsafe { (*kernel_builder().current_cpu()).interrupt_enabled };
+        let interrupt_enabled = unsafe { (*kernel.current_cpu()).interrupt_enabled };
         unsafe {
             swtch(
                 &mut self.deref_mut_data().context,
-                // TODO: remove kernel_builder()
-                &mut (*kernel_builder().current_cpu()).context,
+                &mut (*kernel.current_cpu()).context,
             )
         };
-        // TODO: remove kernel_builder()
-        unsafe { (*kernel_builder().current_cpu()).interrupt_enabled = interrupt_enabled };
+        unsafe { (*kernel.current_cpu()).interrupt_enabled = interrupt_enabled };
     }
 
     /// Frees a `ProcBuilder` structure and the data hanging from it, including user pages.
@@ -780,7 +792,7 @@ impl ProcsBuilder {
     }
 
     /// Initialize the proc table at boot time.
-    pub fn init(self: Pin<&'static mut Self>) -> Pin<&'static mut Procs> {
+    pub fn init(self: Pin<&mut Self>) -> Pin<&mut Procs> {
         // SAFETY: we don't move the `Procs`.
         let this = unsafe { self.get_unchecked_mut() };
         // SAFETY: we cast `wait_lock` to a raw pointer and cast again the raw pointer to a reference
@@ -873,13 +885,8 @@ impl Procs {
 
     /// Wake up all processes in the pool sleeping on waitchannel.
     /// Must be called without any p->lock.
-    pub fn wakeup_pool(&self, target: &WaitChannel) {
-        // This method can be reached from the kernel mode because `Kernel::clock_intr` calls
-        // `wakeup`, which calls this method. Thus, it does not call `kernel_ctx`.
-        // TODO: remove kernel_ref()
-        let current_proc = unsafe {
-            kernel_ref(|kref| kref.current_proc().map_or(ptr::null(), |proc| proc.deref()))
-        };
+    pub fn wakeup_pool(&self, target: &WaitChannel, kernel: KernelRef<'_, '_>) {
+        let current_proc = kernel.current_proc();
         for p in self.process_pool() {
             if p as *const _ != current_proc {
                 let mut guard = p.lock();
@@ -893,10 +900,10 @@ impl Procs {
     /// Set up first user process.
     pub fn user_proc_init(self: Pin<&mut Self>, allocator: &Spinlock<Kmem>) {
         // Allocate trap frame.
-        let trap_frame = scopeguard::guard(
-            allocator.alloc().expect("user_proc_init: kernel().alloc"),
-            |page| allocator.free(page),
-        );
+        let trap_frame =
+            scopeguard::guard(allocator.alloc().expect("user_proc_init: alloc"), |page| {
+                allocator.free(page)
+            });
 
         // Allocate one user page and copy init's instructions
         // and data into it.
@@ -942,12 +949,13 @@ impl Procs {
         &'a self,
         proc: *const Proc,
         parent_guard: &'b mut SpinlockGuard<'_, ()>,
+        kernel: KernelRef<'_, '_>,
     ) {
         for pp in self.process_pool() {
             let parent = pp.parent().get_mut(parent_guard);
             if *parent == proc {
                 *parent = self.initial_proc();
-                self.initial_proc().child_waitchannel.wakeup();
+                self.initial_proc().child_waitchannel.wakeup(kernel);
             }
         }
     }
@@ -1106,8 +1114,8 @@ impl Procs {
         // If self.cwd is not None, the inode inside self.cwd will be dropped
         // by assigning None to self.cwd. Deallocation of an inode may cause
         // disk write operations, so we must begin a transaction here.
-        // TODO: remove kernel_builder()
-        let tx = kernel_builder().file_system.begin_transaction();
+        let kernel = ctx.kernel();
+        let tx = kernel.file_system.begin_transaction();
         // SAFETY: CurrentProc's cwd has been initialized.
         // It's ok to drop cwd as proc will not be used any longer.
         unsafe { ctx.proc.deref_mut_data().cwd.assume_init_drop() };
@@ -1115,7 +1123,7 @@ impl Procs {
 
         // Give all children to init.
         let mut parent_guard = ctx.proc.parent().lock();
-        self.reparent(ctx.proc.deref(), &mut parent_guard);
+        self.reparent(ctx.proc.deref(), &mut parent_guard, ctx.kernel());
 
         // Parent might be sleeping in wait().
         let parent = *ctx.proc.parent().get_mut(&mut parent_guard);
@@ -1124,7 +1132,7 @@ impl Procs {
         assert!(!parent.is_null());
         // SAFETY: parent is a valid pointer according to the invariants of
         // ProcBuilder and CurrentProc.
-        unsafe { (*parent).child_waitchannel.wakeup() };
+        unsafe { (*parent).child_waitchannel.wakeup(ctx.kernel()) };
 
         let mut guard = ctx.proc.lock();
 
@@ -1135,7 +1143,7 @@ impl Procs {
         drop(parent_guard);
 
         // Jump into the scheduler, and never return.
-        unsafe { guard.sched() };
+        unsafe { guard.sched(ctx.kernel()) };
 
         unreachable!("zombie exit")
     }
@@ -1184,36 +1192,71 @@ const INITCODE: [u8; 52] = [
     0x6e, 0x69, 0x74, 0, 0, 0x24, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-/// Per-CPU process scheduler.
-/// Each CPU calls scheduler() after setting itself up.
-/// Scheduler never returns.  It loops, doing:
-///  - choose a process to run.
-///  - swtch to start running that process.
-///  - eventually that process transfers control
-///    via swtch back to the scheduler.
-pub unsafe fn scheduler() -> ! {
-    let kernel = unsafe { kernel() };
-    let mut cpu = kernel.current_cpu();
-    unsafe { (*cpu).proc = ptr::null_mut() };
-    loop {
-        // Avoid deadlock by ensuring that devices can interrupt.
-        unsafe { intr_on() };
+impl<'id, 's> KernelRef<'id, 's> {
+    /// Per-CPU process scheduler.
+    /// Each CPU calls scheduler() after setting itself up.
+    /// Scheduler never returns.  It loops, doing:
+    ///  - choose a process to run.
+    ///  - swtch to start running that process.
+    ///  - eventually that process transfers control
+    ///    via swtch back to the scheduler.
+    pub unsafe fn scheduler(self) -> ! {
+        let mut cpu = self.current_cpu();
+        unsafe { (*cpu).proc = ptr::null_mut() };
+        loop {
+            // Avoid deadlock by ensuring that devices can interrupt.
+            unsafe { intr_on() };
 
-        for p in kernel.procs().process_pool() {
-            let mut guard = p.lock();
-            if guard.state() == Procstate::RUNNABLE {
-                // Switch to chosen process.  It is the process's job
-                // to release its lock and then reacquire it
-                // before jumping back to us.
-                guard.deref_mut_info().state = Procstate::RUNNING;
-                unsafe { (*cpu).proc = p as *const _ };
-                unsafe { swtch(&mut (*cpu).context, &mut guard.deref_mut_data().context) };
+            for p in self.procs().process_pool() {
+                let mut guard = p.lock();
+                if guard.state() == Procstate::RUNNABLE {
+                    // Switch to chosen process.  It is the process's job
+                    // to release its lock and then reacquire it
+                    // before jumping back to us.
+                    guard.deref_mut_info().state = Procstate::RUNNING;
+                    unsafe { (*cpu).proc = p as *const _ };
+                    unsafe { swtch(&mut (*cpu).context, &mut guard.deref_mut_data().context) };
 
-                // Process is done running for now.
-                // It should have changed its p->state before coming back.
-                unsafe { (*cpu).proc = ptr::null_mut() }
+                    // Process is done running for now.
+                    // It should have changed its p->state before coming back.
+                    unsafe { (*cpu).proc = ptr::null_mut() }
+                }
             }
         }
+    }
+
+    /// Returns pointer to the current proc.
+    fn current_proc(&self) -> *const Proc {
+        unsafe { push_off() };
+        let cpu = self.current_cpu();
+        let proc = unsafe { (*cpu).proc };
+        unsafe { pop_off() };
+        proc
+    }
+
+    /// Returns `Some<KernelCtx<'id, '_>>` if current proc exists (i.e., when (*cpu).proc is non-null).
+    /// Note that `'id` is same with the given `KernelRef`'s `'id`.
+    /// Otherwise, returns `None` (when current proc is null).
+    ///
+    /// # Safety
+    ///
+    /// At most one `KernelCtx` object can exist at a single time in each thread.
+    /// Therefore, it must not be called if the result of `kernel_ctx` is alive.
+    pub unsafe fn get_ctx(self) -> Option<KernelCtx<'id, 's>> {
+        let proc = self.current_proc();
+        // This is safe because p is current Cpu's proc.
+        let proc = unsafe { proc.as_ref() }?;
+        Some(KernelCtx {
+            kernel: self,
+            proc: CurrentProc {
+                inner: self.brand(proc),
+            },
+        })
+    }
+
+    /// Returns a `ProcsRef` that points to the kernel's `Procs`.
+    pub fn procs(&self) -> ProcsRef<'id, '_> {
+        ProcsRef(self.brand(self.deref().procs()))
     }
 }
 
@@ -1228,53 +1271,6 @@ unsafe fn forkret() {
             // be run from main().
             ctx.kernel.file_system.init(ROOTDEV, &ctx);
             ctx.user_trap_ret();
-        })
-    }
-}
-
-impl Kernel {
-    /// Returns `Some<CurrentProc<'id, '_>>` if current proc exists (i.e. When (*cpu).proc is non-null).
-    /// Note that `'id` is same with the given `KernelRef`'s `'id`.
-    /// Otherwise, returns `None` (when current proc is null).
-    ///
-    /// # Safety
-    ///
-    /// At most one `CurrentProc` or `KernelCtx` object can exist at a single time in each thread.
-    /// Therefore, it must not be called if the result of `current_proc` or `kernel_ctx` is alive.
-    pub unsafe fn current_proc<'id, 's>(self: &KernelRef<'id, 's>) -> Option<CurrentProc<'id, 's>> {
-        unsafe { push_off() };
-        let cpu = self.current_cpu();
-        let proc = unsafe { (*cpu).proc };
-        unsafe { pop_off() };
-        // This is safe because p is non-null and current Cpu's proc.
-        unsafe { proc.as_ref() }.map(|proc| {
-            CurrentProc {
-                inner: self.brand(proc),
-            }
-        })
-    }
-}
-
-impl<'id, 's> KernelRef<'id, 's> {
-    /// Returns a `ProcsRef` that points to the kernel's `Procs`.
-    pub fn procs(&self) -> ProcsRef<'id, '_> {
-        ProcsRef(self.brand(self.deref().procs()))
-    }
-}
-
-/// Creates the `KernelCtx` of the current Cpu.
-/// The `KernelCtx` can be used only inside the given closure.
-///
-/// # Safety
-///
-/// * It must be called only after the initialization of the kernel.
-/// * At most one `CurrentProc` or `KernelCtx` object can exist at a single time in each thread.
-///   Therefore, it must not be called if the result of `current_proc` or `kernel_ctx` is alive.
-pub unsafe fn kernel_ctx<'s, F: for<'new_id> FnOnce(KernelCtx<'new_id, 's>) -> R, R>(f: F) -> R {
-    unsafe {
-        kernel_ref(|kref| {
-            let proc = kref.current_proc().expect("No current proc");
-            f(KernelCtx { kernel: kref, proc })
         })
     }
 }
