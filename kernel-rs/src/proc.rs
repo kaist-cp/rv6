@@ -346,7 +346,7 @@ pub struct ProcBuilder {
 /// arguments. Otherwise, methods can take only one of `&Kernel` and `CurrentProc` as arguments.
 pub struct KernelCtx<'id, 'p> {
     kernel: KernelRef<'id, 'p>,
-    pub proc: CurrentProc<'id, 'p>,
+    proc: CurrentProc<'id, 'p>,
 }
 
 impl<'id, 'p> KernelCtx<'id, 'p> {
