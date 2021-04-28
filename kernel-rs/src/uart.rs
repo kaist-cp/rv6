@@ -235,7 +235,7 @@ impl Uart {
     /// Handle a uart interrupt, raised because input has
     /// arrived, or the uart is ready for more output, or
     /// both. Called from trap.c.
-    pub fn intr(&self, kernel: &KernelRef<'_, '_>) {
+    pub fn intr(&self, kernel: KernelRef<'_, '_>) {
         // Read and process incoming characters.
         loop {
             let c = Uart::getc();

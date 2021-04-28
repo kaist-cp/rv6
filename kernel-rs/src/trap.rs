@@ -83,7 +83,7 @@ impl KernelCtx<'_, '_> {
             let syscall_no = self.proc_mut().trap_frame_mut().a7 as i32;
             self.proc_mut().trap_frame_mut().a0 = ok_or!(self.syscall(syscall_no), usize::MAX);
         } else {
-            which_dev = unsafe { self.kernel().dev_intr(&self.kernel()) };
+            which_dev = unsafe { self.kernel().dev_intr(self.kernel()) };
             if which_dev == 0 {
                 println!(
                     "usertrap(): unexpected scause {:018p} pid={}",
@@ -172,7 +172,7 @@ impl KernelCtx<'_, '_> {
 
 impl KernelRef<'_, '_> {
     /// `kernel_trap` can be reached from the kernel mode, so it is a method of `Kernel`.
-    unsafe fn kernel_trap(&self) {
+    unsafe fn kernel_trap(self) {
         let sepc = r_sepc();
         let sstatus = Sstatus::read();
         let scause = r_scause();
@@ -223,7 +223,7 @@ impl KernelRef<'_, '_> {
     /// Returns 2 if timer interrupt,
     /// 1 if other device,
     /// 0 if not recognized.
-    unsafe fn dev_intr(&self, kernel: &KernelRef<'_, '_>) -> i32 {
+    unsafe fn dev_intr(&self, kernel: KernelRef<'_, '_>) -> i32 {
         let scause: usize = r_scause();
 
         if scause & 0x8000000000000000 != 0 && scause & 0xff == 9 {

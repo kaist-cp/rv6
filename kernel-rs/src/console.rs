@@ -118,7 +118,7 @@ impl Console {
     unsafe fn intr(
         this: &mut SleepablelockGuard<'_, Self>,
         mut cin: i32,
-        kernel: &KernelRef<'_, '_>,
+        kernel: KernelRef<'_, '_>,
     ) {
         match cin {
             // Print process list.
@@ -255,7 +255,7 @@ fn consoleread(dst: UVAddr, n: i32) -> i32 {
 /// uartintr() calls this for input character.
 /// Do erase/kill processing, append to CONS.buf,
 /// wake up consoleread() if a whole line has arrived.
-pub unsafe fn consoleintr(cin: i32, kernel: &KernelRef<'_, '_>) {
+pub unsafe fn consoleintr(cin: i32, kernel: KernelRef<'_, '_>) {
     let mut console = kernel.console.lock();
     unsafe { Console::intr(&mut console, cin, kernel) };
 }

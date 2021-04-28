@@ -98,7 +98,7 @@ impl Drop for FsTransaction<'_> {
     fn drop(&mut self) {
         // Called at the end of each FS system call.
         // Commits if this was the last outstanding operation.
-        // TODO: remove kernel_ctx
+        // TODO: remove kernel_ctx()
         unsafe {
             kernel_ctx(|ctx| self.fs.log.end_op(&ctx));
         }
