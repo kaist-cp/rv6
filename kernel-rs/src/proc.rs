@@ -20,7 +20,7 @@ use crate::{
     file::RcFile,
     fs::RcInode,
     kalloc::Kmem,
-    kernel::{kernel, kernel_builder, kernel_ref, Kernel, KernelRef},
+    kernel::{kernel_builder, kernel_ref, Kernel, KernelRef},
     lock::{pop_off, push_off, Guard, RawLock, RawSpinlock, RemoteLock, Spinlock, SpinlockGuard},
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
@@ -255,8 +255,8 @@ impl WaitChannel {
     /// Wake up all processes sleeping on waitchannel.
     /// Must be called without any p->lock.
     pub fn wakeup(&self) {
-        // TODO: remove kernel()
-        unsafe { kernel() }.procs().wakeup_pool(self)
+        // TODO: remove kernel_ref()
+        unsafe { kernel_ref(|kref| kref.procs().wakeup_pool(self)) }
     }
 }
 
@@ -893,10 +893,10 @@ impl Procs {
     /// Set up first user process.
     pub fn user_proc_init(self: Pin<&mut Self>, allocator: &Spinlock<Kmem>) {
         // Allocate trap frame.
-        let trap_frame = scopeguard::guard(
-            allocator.alloc().expect("user_proc_init: kernel().alloc"),
-            |page| allocator.free(page),
-        );
+        let trap_frame =
+            scopeguard::guard(allocator.alloc().expect("user_proc_init: alloc"), |page| {
+                allocator.free(page)
+            });
 
         // Allocate one user page and copy init's instructions
         // and data into it.
@@ -1193,14 +1193,13 @@ impl Kernel {
     ///  - eventually that process transfers control
     ///    via swtch back to the scheduler.
     pub unsafe fn scheduler(&self) -> ! {
-        let kernel = unsafe { kernel() };
-        let mut cpu = kernel.current_cpu();
+        let mut cpu = self.current_cpu();
         unsafe { (*cpu).proc = ptr::null_mut() };
         loop {
             // Avoid deadlock by ensuring that devices can interrupt.
             unsafe { intr_on() };
 
-            for p in kernel.procs().process_pool() {
+            for p in self.procs().process_pool() {
                 let mut guard = p.lock();
                 if guard.state() == Procstate::RUNNABLE {
                     // Switch to chosen process.  It is the process's job

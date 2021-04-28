@@ -83,7 +83,7 @@ impl KernelCtx<'_, '_> {
             let syscall_no = self.proc_mut().trap_frame_mut().a7 as i32;
             self.proc_mut().trap_frame_mut().a0 = ok_or!(self.syscall(syscall_no), usize::MAX);
         } else {
-            which_dev = unsafe { self.kernel().dev_intr() };
+            which_dev = unsafe { self.kernel().dev_intr(&self.kernel()) };
             if which_dev == 0 {
                 println!(
                     "usertrap(): unexpected scause {:018p} pid={}",
@@ -183,7 +183,7 @@ impl KernelRef<'_, '_> {
         );
         assert!(!intr_get(), "kerneltrap: interrupts enabled");
 
-        let which_dev = unsafe { self.dev_intr() };
+        let which_dev = unsafe { self.dev_intr(self) };
         if which_dev == 0 {
             println!("scause {:018p}", scause as *const u8);
             println!(
@@ -223,7 +223,7 @@ impl KernelRef<'_, '_> {
     /// Returns 2 if timer interrupt,
     /// 1 if other device,
     /// 0 if not recognized.
-    unsafe fn dev_intr(&self) -> i32 {
+    unsafe fn dev_intr(&self, kernel: &KernelRef<'_, '_>) -> i32 {
         let scause: usize = r_scause();
 
         if scause & 0x8000000000000000 != 0 && scause & 0xff == 9 {
@@ -233,7 +233,7 @@ impl KernelRef<'_, '_> {
             let irq = unsafe { plic_claim() };
 
             if irq as usize == UART0_IRQ {
-                self.uart.intr();
+                self.uart.intr(kernel);
             } else if irq as usize == VIRTIO0_IRQ {
                 self.file_system.log.disk.lock().intr();
             } else if irq != 0 {

@@ -3,7 +3,7 @@ use core::fmt;
 use crate::{
     arch::addr::UVAddr,
     file::Devsw,
-    kernel::{kernel, kernel_builder},
+    kernel::{kernel_builder, KernelRef},
     lock::SleepablelockGuard,
     param::NDEV,
     proc::kernel_ctx,
@@ -58,7 +58,7 @@ impl Console {
             } {
                 return i;
             }
-            // TODO(https://github.com/kaist-cp/rv6/issues/298): Temporarily using global function kernel().
+            // TODO(https://github.com/kaist-cp/rv6/issues/298): Temporarily using global function kernel_builder().
             // This implementation should be changed after refactoring Console-Uart-Printer relationship.
             kernel_builder().uart.putc(c[0] as i32);
         }
@@ -115,12 +115,15 @@ impl Console {
         target.wrapping_sub(n as u32) as i32
     }
 
-    unsafe fn intr(this: &mut SleepablelockGuard<'_, Self>, mut cin: i32) {
+    unsafe fn intr(
+        this: &mut SleepablelockGuard<'_, Self>,
+        mut cin: i32,
+        kernel: &KernelRef<'_, '_>,
+    ) {
         match cin {
             // Print process list.
             m if m == ctrl('P') => {
-                // TODO: remove kernel()
-                unsafe { kernel().procs().dump() };
+                unsafe { kernel.procs().dump() };
             }
 
             // Kill line.
@@ -252,8 +255,7 @@ fn consoleread(dst: UVAddr, n: i32) -> i32 {
 /// uartintr() calls this for input character.
 /// Do erase/kill processing, append to CONS.buf,
 /// wake up consoleread() if a whole line has arrived.
-pub unsafe fn consoleintr(cin: i32) {
-    // TODO: remove kernel_builder()
-    let mut console = kernel_builder().console.lock();
-    unsafe { Console::intr(&mut console, cin) };
+pub unsafe fn consoleintr(cin: i32, kernel: &KernelRef<'_, '_>) {
+    let mut console = kernel.console.lock();
+    unsafe { Console::intr(&mut console, cin, kernel) };
 }

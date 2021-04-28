@@ -36,18 +36,6 @@ pub fn kernel_builder<'s>() -> &'s KernelBuilder {
     unsafe { &KERNEL }
 }
 
-/// Returns an immutable reference to the `Kernel`.
-///
-/// # Safety
-///
-/// Use this only after the `Kernel` is initialized.
-#[inline]
-pub unsafe fn kernel<'s>() -> &'s Kernel {
-    // SAFETY: Safe to cast &KernelBuilder into &Kernel
-    // since Kernel has a transparent memory layout.
-    unsafe { &*(kernel_builder() as *const _ as *const _) }
-}
-
 /// Creates a `KernelRef` that has a unique, invariant `'id` and points to the `Kernel`.
 /// The `KernelRef` can be used only inside the given closure.
 ///
@@ -55,7 +43,10 @@ pub unsafe fn kernel<'s>() -> &'s Kernel {
 ///
 /// Use this only after the `Kernel` is initialized.
 pub unsafe fn kernel_ref<'s, F: for<'new_id> FnOnce(KernelRef<'new_id, 's>) -> R, R>(f: F) -> R {
-    let kernel = unsafe { kernel() };
+    // SAFETY: Safe to cast &KernelBuilder into &Kernel
+    // since Kernel has a transparent memory layout.
+    let kernel = unsafe { &*(kernel_builder() as *const _ as *const _) };
+
     Branded::new(kernel, |k| f(KernelRef(k)))
 }
 
@@ -217,7 +208,11 @@ impl KernelBuilder {
         }
     }
 
-    /// TODO
+    /// Initializes the kernel.
+    ///
+    /// # Safety
+    ///
+    /// This method should be called only once by the hart 0.
     unsafe fn init(self: Pin<&mut Self>) {
         let mut this = self.project();
 
@@ -264,7 +259,11 @@ impl KernelBuilder {
         procs.user_proc_init(this.kmem.as_ref().get_ref());
     }
 
-    /// TODO
+    /// Initializes the kernel for a hart.
+    ///
+    /// # Safety
+    ///
+    /// This method should be called only once by each hart.
     unsafe fn inithart(&self) {
         println!("hart {} starting", cpuid());
 
@@ -355,9 +354,9 @@ pub unsafe fn kernel_main() -> ! {
             spin_loop();
         }
         unsafe {
-            kernel().inithart();
+            kernel_ref(|kctx| kctx.inithart());
         }
     }
 
-    unsafe { kernel().scheduler() }
+    unsafe { kernel_ref(|kctx| kctx.scheduler()) }
 }

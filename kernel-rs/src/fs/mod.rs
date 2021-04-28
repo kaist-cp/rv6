@@ -111,7 +111,7 @@ impl FsTransaction<'_> {
     /// commit()/write_log() will do the disk write.
     ///
     /// write() replaces write(); a typical use is:
-    ///   bp = kernel().file_system.disk.read(...)
+    ///   bp = kernel.file_system.disk.read(...)
     ///   modify bp->data[]
     ///   write(bp)
     fn write(&self, b: Buf) {

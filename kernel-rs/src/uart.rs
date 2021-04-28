@@ -8,7 +8,7 @@ use self::UartCtrlRegs::{FCR, IER, ISR, LCR, LSR, RBR, THR};
 use crate::arch::memlayout::UART0;
 use crate::{
     console::consoleintr,
-    kernel::kernel_builder,
+    kernel::{kernel_builder, KernelRef},
     lock::{pop_off, push_off, Sleepablelock, SleepablelockGuard},
     util::spin_loop,
 };
@@ -235,7 +235,7 @@ impl Uart {
     /// Handle a uart interrupt, raised because input has
     /// arrived, or the uart is ready for more output, or
     /// both. Called from trap.c.
-    pub fn intr(&self) {
+    pub fn intr(&self, kernel: &KernelRef<'_, '_>) {
         // Read and process incoming characters.
         loop {
             let c = Uart::getc();
@@ -243,7 +243,7 @@ impl Uart {
                 break;
             }
             unsafe {
-                consoleintr(c);
+                consoleintr(c, kernel);
             }
         }
 
