@@ -160,7 +160,7 @@ impl Log {
 
         // begin_op() may be waiting for LOG space, and decrementing log.outstanding has decreased
         // the amount of reserved space.
-        guard.wakeup();
+        guard.wakeup(ctx.kernel());
     }
 }
 

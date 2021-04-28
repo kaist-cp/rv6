@@ -105,7 +105,7 @@ impl KernelCtx<'_, '_> {
 
         // Give up the CPU if this is a timer interrupt.
         if which_dev == 2 {
-            unsafe { self.proc().yield_cpu() };
+            self.yield_cpu();
         }
 
         unsafe { self.user_trap_ret() };
@@ -196,12 +196,13 @@ impl KernelRef<'_, '_> {
 
         // Give up the CPU if this is a timer interrupt.
         if which_dev == 2 {
-            if let Some(ctx) = unsafe { self.get_ctx() } {
+            // TODO: safety?
+            if let Some(mut ctx) = unsafe { self.get_ctx() } {
                 // SAFETY:
                 // Reading state without lock is safe because `proc_yield` and `sched`
                 // is called after we check if current process is `RUNNING`.
                 if unsafe { (*ctx.proc.info.get_mut_raw()).state } == Procstate::RUNNING {
-                    unsafe { ctx.proc.yield_cpu() };
+                    ctx.yield_cpu();
                 }
             }
         }
@@ -212,10 +213,10 @@ impl KernelRef<'_, '_> {
         unsafe { sstatus.write() };
     }
 
-    fn clock_intr(&self) {
+    fn clock_intr(self) {
         let mut ticks = self.ticks().lock();
         *ticks = ticks.wrapping_add(1);
-        ticks.wakeup();
+        ticks.wakeup(self);
     }
 
     /// Check if it's an external interrupt or software interrupt,
@@ -235,7 +236,7 @@ impl KernelRef<'_, '_> {
             if irq as usize == UART0_IRQ {
                 self.uart.intr(kernel);
             } else if irq as usize == VIRTIO0_IRQ {
-                self.file_system.log.disk.lock().intr();
+                self.file_system.log.disk.lock().intr(kernel);
             } else if irq != 0 {
                 // Use `panic!` instead of `println` to prevent stack overflow.
                 // https://github.com/kaist-cp/rv6/issues/311

@@ -163,7 +163,7 @@ impl Console {
                         // Wake up consoleread() if a whole line (or end-of-file)
                         // has arrived.
                         this.w = this.e;
-                        this.wakeup();
+                        this.wakeup(kernel);
                     }
                 }
             }

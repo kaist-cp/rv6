@@ -2,7 +2,7 @@
 use core::cell::UnsafeCell;
 
 use super::{Guard, Lock, RawLock, Sleepablelock};
-use crate::proc::kernel_ctx;
+use crate::{kernel::kernel_ref, proc::kernel_ctx};
 
 /// Long-term locks for processes
 pub struct RawSleeplock {
@@ -40,7 +40,7 @@ impl RawLock for RawSleeplock {
     fn release(&self) {
         let mut guard = self.locked.lock();
         *guard = -1;
-        guard.wakeup();
+        unsafe { kernel_ref(|kref| guard.wakeup(kref)) };
     }
 
     fn holding(&self) -> bool {

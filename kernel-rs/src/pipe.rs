@@ -3,7 +3,7 @@ use core::{mem, ops::Deref, ptr::NonNull};
 use crate::{
     arch::addr::UVAddr,
     file::{FileType, RcFile},
-    kernel::Kernel,
+    kernel::{Kernel, KernelRef},
     lock::Spinlock,
     page::Page,
     proc::{KernelCtx, WaitChannel},
@@ -48,7 +48,7 @@ impl Pipe {
             match inner.try_read(addr, n, ctx) {
                 Ok(r) => {
                     //DOC: piperead-wakeup
-                    self.write_waitchannel.wakeup();
+                    self.write_waitchannel.wakeup(ctx.kernel());
                     return Ok(r);
                 }
                 Err(PipeError::WaitForIO) => {
@@ -73,7 +73,7 @@ impl Pipe {
             match inner.try_write(addr + written, n - written, ctx) {
                 Ok(r) => {
                     written += r;
-                    self.read_waitchannel.wakeup();
+                    self.read_waitchannel.wakeup(ctx.kernel());
                     if written < n {
                         self.write_waitchannel.sleep(&mut inner, ctx);
                     } else {
@@ -81,7 +81,7 @@ impl Pipe {
                     }
                 }
                 Err(PipeError::InvalidCopyin(i)) => {
-                    self.read_waitchannel.wakeup();
+                    self.read_waitchannel.wakeup(ctx.kernel());
                     return Ok(written + i);
                 }
                 _ => return Err(()),
@@ -89,15 +89,15 @@ impl Pipe {
         }
     }
 
-    fn close(&self, writable: bool) -> bool {
+    fn close(&self, writable: bool, kernel: KernelRef<'_, '_>) -> bool {
         let mut inner = self.inner.lock();
 
         if writable {
             inner.writeopen = false;
-            self.read_waitchannel.wakeup();
+            self.read_waitchannel.wakeup(kernel);
         } else {
             inner.readopen = false;
-            self.write_waitchannel.wakeup();
+            self.write_waitchannel.wakeup(kernel);
         }
 
         // Return whether pipe should be freed or not.
@@ -173,8 +173,8 @@ impl Kernel {
 }
 
 impl AllocatedPipe {
-    pub fn close(self, writable: bool) -> Option<Page> {
-        if self.deref().close(writable) {
+    pub fn close(self, writable: bool, kernel: KernelRef<'_, '_>) -> Option<Page> {
+        if self.deref().close(writable, kernel) {
             // SAFETY:
             // If `Pipe::close()` returned true, this means all `AllocatedPipe`s were closed.
             // Hence, we can free the `Pipe`.

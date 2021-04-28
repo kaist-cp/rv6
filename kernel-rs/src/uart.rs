@@ -8,7 +8,7 @@ use self::UartCtrlRegs::{FCR, IER, ISR, LCR, LSR, RBR, THR};
 use crate::arch::memlayout::UART0;
 use crate::{
     console::consoleintr,
-    kernel::{kernel_builder, KernelRef},
+    kernel::{kernel_builder, kernel_ref, KernelRef},
     lock::{pop_off, push_off, Sleepablelock, SleepablelockGuard},
     util::spin_loop,
 };
@@ -213,7 +213,11 @@ impl Uart {
             guard.r += 1;
 
             // Maybe uartputc() is waiting for space in the buffer.
-            guard.wakeup();
+            unsafe {
+                kernel_ref(|kref| {
+                    guard.wakeup(kref);
+                })
+            };
 
             THR.write(c);
         }

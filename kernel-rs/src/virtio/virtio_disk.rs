@@ -17,6 +17,7 @@ use super::{
 use crate::{
     arch::addr::{PGSHIFT, PGSIZE},
     bio::Buf,
+    kernel::KernelRef,
     lock::{Sleepablelock, SleepablelockGuard},
     param::BSIZE,
     proc::KernelCtx,
@@ -331,10 +332,10 @@ impl Disk {
         // b: &mut Buf becomes invalid after this method returns.
         this.info.inflight[desc[0].idx].b = ptr::null_mut();
         IntoIter::new(desc).for_each(|desc| this.free(desc));
-        this.wakeup();
+        this.wakeup(ctx.kernel());
     }
 
-    pub fn intr(&mut self) {
+    pub fn intr(&mut self, kernel: KernelRef<'_, '_>) {
         // The device won't raise another interrupt until we tell it
         // we've seen this interrupt, which the following line does.
         // This may race with the device writing new entries to
@@ -360,7 +361,7 @@ impl Disk {
 
             // disk is done with buf
             buf.deref_inner_mut().disk = false;
-            buf.vdisk_request_waitchannel.wakeup();
+            buf.vdisk_request_waitchannel.wakeup(kernel);
 
             self.info.used_idx += 1;
         }
