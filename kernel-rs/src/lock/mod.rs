@@ -12,7 +12,7 @@
 //! you should obtain a [`Pin<&mut T>`] from the guard and use it instead.
 //!
 //! # RemoteLock
-//! A `RemoteLock`, such as [`RemoteSpinlock`], [`RemoteSleepablelock`], or [`RemoteSleeplock`], owns its data but does not have its own raw lock.
+//! A `RemoteLock` owns its data but does not have its own raw lock.
 //! Instead, it borrows another [`Lock`] (such as [`Spinlock`], [`Sleepablelock`], or [`Sleeplock`]) and protects its data using it.
 //! That is, a [`Lock`] protects its own data *and* all other connected `RemoteLock`s' data.
 //!
@@ -22,12 +22,12 @@
 //!     you can make multiple data be protected by a single [`Spinlock`], and hence,
 //!     implement global locks. In this case, you may want to use an [`Spinlock<()>`]
 //!     if the [`Spinlock`] doesn't need to hold data.
-//! * When you want a lifetime-less smart pointer (such as [`Ref`](crate::rc_cell::Ref) or [`Rc`](std::rc::Rc))
+//! * When you want a lifetime-less smart pointer (such as [`Ref`](crate::util::rc_cell::Ref) or `std::rc::Rc`)
 //!   that points to the *inside* of a lock protected data.
-//!   * e.g. Suppose a [`Lock`] holds a [`RcCell`](crate::rc_cell::RcCell). Suppose you want to provide a
-//!     [`Ref`](crate::rc_cell::Ref) that borrows this [`RcCell`](crate::rc_cell::RcCell) to the outside, but still want
-//!     accesses to the [`RcCell`](crate::rc_cell::RcCell)'s inner data to be synchronized.
-//!     Then, instead of providing a [`Ref`](crate::rc_cell::Ref), you should provide a [`Ref`](crate::rc_cell::Ref) wrapped by a `RemoteLock`.
+//!   * e.g. Suppose a [`Lock`] holds a [`RcCell`](crate::util::rc_cell::RcCell). Suppose you want to provide a
+//!     [`Ref`](crate::util::rc_cell::Ref) that borrows this [`RcCell`](crate::util::rc_cell::RcCell) to the outside, but still want
+//!     accesses to the [`RcCell`](crate::util::rc_cell::RcCell)'s inner data to be synchronized.
+//!     Then, instead of providing a [`Ref`](crate::util::rc_cell::Ref), you should provide a [`Ref`](crate::util::rc_cell::Ref) wrapped by a `RemoteLock`.
 //!     to the outside.
 
 // TODO(https://github.com/kaist-cp/rv6/issues/120)

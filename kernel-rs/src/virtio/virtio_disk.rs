@@ -17,9 +17,9 @@ use super::{
 use crate::{
     arch::addr::{PGSHIFT, PGSIZE},
     bio::Buf,
-    kernel::kernel_builder,
     lock::{Sleepablelock, SleepablelockGuard},
     param::BSIZE,
+    proc::KernelCtx,
 };
 
 // It must be page-aligned.
@@ -164,20 +164,19 @@ impl Drop for Descriptor {
 impl Sleepablelock<Disk> {
     /// Return a locked Buf with the `latest` contents of the indicated block.
     /// If buf.valid is true, we don't need to access Disk.
-    pub fn read(&self, dev: u32, blockno: u32) -> Buf {
-        // TODO: remove kernel_builder()
-        let mut buf = unsafe { kernel_builder().get_bcache() }
+    pub fn read(&self, dev: u32, blockno: u32, ctx: &KernelCtx<'_, '_>) -> Buf {
+        let mut buf = unsafe { ctx.kernel().get_bcache() }
             .get_buf(dev, blockno)
             .lock();
         if !buf.deref_inner().valid {
-            Disk::rw(&mut self.lock(), &mut buf, false);
+            Disk::rw(&mut self.lock(), &mut buf, false, ctx);
             buf.deref_inner_mut().valid = true;
         }
         buf
     }
 
-    pub fn write(&self, b: &mut Buf) {
-        Disk::rw(&mut self.lock(), b, true)
+    pub fn write(&self, b: &mut Buf, ctx: &KernelCtx<'_, '_>) {
+        Disk::rw(&mut self.lock(), b, true, ctx)
     }
 }
 
@@ -233,7 +232,12 @@ impl Disk {
     // By the construction of the kernel page table in KernelMemory::new, the
     // virtual addresses of the MMIO registers are mapped to the proper physical
     // addresses. Therefore, this method is safe.
-    fn rw(this: &mut SleepablelockGuard<'_, Self>, b: &mut Buf, write: bool) {
+    fn rw(
+        this: &mut SleepablelockGuard<'_, Self>,
+        b: &mut Buf,
+        write: bool,
+        ctx: &KernelCtx<'_, '_>,
+    ) {
         let sector: usize = (*b).blockno as usize * (BSIZE / 512);
 
         // The spec's Section 5.2 says that legacy block operations use
@@ -321,11 +325,7 @@ impl Disk {
 
         // Wait for virtio_disk_intr() to say request has finished.
         while b.deref_inner().disk {
-            (*b).vdisk_request_waitchannel.sleep(
-                this,
-                // TODO: remove kernel_builder()
-                &kernel_builder().current_proc().expect("No current proc"),
-            );
+            (*b).vdisk_request_waitchannel.sleep(this, ctx);
         }
         // As it assigns null, the invariant of inflight is maintained even if
         // b: &mut Buf becomes invalid after this method returns.

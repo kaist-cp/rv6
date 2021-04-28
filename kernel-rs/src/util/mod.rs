@@ -3,6 +3,7 @@
 // TODO(https://github.com/kaist-cp/rv6/issues/120)
 #![allow(dead_code)]
 
+pub mod branded;
 pub mod etrace;
 pub mod list;
 pub mod pinned_array;

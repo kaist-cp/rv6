@@ -6,6 +6,7 @@ use crate::{
     kernel::{kernel, kernel_builder},
     lock::SleepablelockGuard,
     param::NDEV,
+    proc::kernel_ctx,
     uart::Uart,
 };
 
@@ -46,14 +47,15 @@ impl Console {
     unsafe fn write(&mut self, src: UVAddr, n: i32) -> i32 {
         for i in 0..n {
             let mut c = [0u8];
-            // TODO: remove kernel_builder()
-            if kernel_builder()
-                .current_proc()
-                .expect("No current proc")
-                .memory_mut()
-                .copy_in_bytes(&mut c, src + i as usize)
-                .is_err()
-            {
+            // TODO: remove kernel_ctx()
+            if unsafe {
+                kernel_ctx(|mut ctx| {
+                    ctx.proc_mut()
+                        .memory_mut()
+                        .copy_in_bytes(&mut c, src + i as usize)
+                        .is_err()
+                })
+            } {
                 return i;
             }
             // TODO(https://github.com/kaist-cp/rv6/issues/298): Temporarily using global function kernel().
@@ -69,12 +71,8 @@ impl Console {
             // Wait until interrupt handler has put some
             // input into CONS.buffer.
             while this.r == this.w {
-                // TODO: remove kernel_builder()
-                if kernel_builder()
-                    .current_proc()
-                    .expect("No current proc")
-                    .killed()
-                {
+                // TODO: remove kernel_ctx()
+                if unsafe { kernel_ctx(|ctx| ctx.proc().killed()) } {
                     return -1;
                 }
                 this.sleep();
@@ -94,14 +92,15 @@ impl Console {
             } else {
                 // Copy the input byte to the user-space buffer.
                 let cbuf = [cin as u8];
-                // TODO: remove kernel_builder()
-                if kernel_builder()
-                    .current_proc()
-                    .expect("No current proc")
-                    .memory_mut()
-                    .copy_out_bytes(dst, &cbuf)
-                    .is_err()
-                {
+                // TODO: remove kernel_ctx()
+                if unsafe {
+                    kernel_ctx(|mut ctx| {
+                        ctx.proc_mut()
+                            .memory_mut()
+                            .copy_out_bytes(dst, &cbuf)
+                            .is_err()
+                    })
+                } {
                     break;
                 }
                 dst = dst + 1;

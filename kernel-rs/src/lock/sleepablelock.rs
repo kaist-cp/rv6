@@ -2,7 +2,7 @@
 use core::cell::UnsafeCell;
 
 use super::{spinlock::RawSpinlock, Guard, Lock, RawLock};
-use crate::{kernel::kernel_builder, proc::WaitChannel};
+use crate::proc::{kernel_ctx, WaitChannel};
 
 /// Mutual exclusion spin locks that can sleep.
 pub struct RawSleepablelock {
@@ -52,11 +52,8 @@ impl<T> Sleepablelock<T> {
 
 impl<T> SleepablelockGuard<'_, T> {
     pub fn sleep(&mut self) {
-        self.lock.lock.waitchannel.sleep(
-            self,
-            // TODO: remove kernel_builder()
-            &kernel_builder().current_proc().expect("No current proc"),
-        );
+        // TODO: remove kernel_ctx()
+        unsafe { kernel_ctx(|ctx| self.lock.lock.waitchannel.sleep(self, &ctx)) };
     }
 
     pub fn wakeup(&self) {
