@@ -364,7 +364,7 @@ impl<'id, 'p> KernelCtx<'id, 'p> {
 
     /// Give up the CPU for one scheduling round.
     // Its name cannot be `yield` because `yield` is a reserved keyword.
-    pub fn yield_cpu(&mut self) {
+    pub fn yield_cpu(&self) {
         let mut guard = self.proc.lock();
         guard.deref_mut_info().state = Procstate::RUNNABLE;
         unsafe { guard.sched(self.kernel) };
@@ -1225,6 +1225,7 @@ impl<'id, 's> KernelRef<'id, 's> {
         }
     }
 
+    /// Returns pointer to the current proc.
     fn current_proc(&self) -> *const Proc {
         unsafe { push_off() };
         let cpu = self.current_cpu();
@@ -1233,16 +1234,14 @@ impl<'id, 's> KernelRef<'id, 's> {
         proc
     }
 
-    /// TODO: rewrite
-    ///
-    /// Returns `Some<CurrentProc<'id, '_>>` if current proc exists (i.e. When (*cpu).proc is non-null).
+    /// Returns `Some<KernelCtx<'id, '_>>` if current proc exists (i.e., when (*cpu).proc is non-null).
     /// Note that `'id` is same with the given `KernelRef`'s `'id`.
     /// Otherwise, returns `None` (when current proc is null).
     ///
     /// # Safety
     ///
-    /// At most one `CurrentProc` or `KernelCtx` object can exist at a single time in each thread.
-    /// Therefore, it must not be called if the result of `current_proc` or `kernel_ctx` is alive.
+    /// At most one `KernelCtx` object can exist at a single time in each thread.
+    /// Therefore, it must not be called if the result of `kernel_ctx` is alive.
     pub unsafe fn get_ctx(self) -> Option<KernelCtx<'id, 's>> {
         let proc = self.current_proc();
         // This is safe because p is current Cpu's proc.

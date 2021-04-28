@@ -197,7 +197,7 @@ impl KernelRef<'_, '_> {
         // Give up the CPU if this is a timer interrupt.
         if which_dev == 2 {
             // TODO: safety?
-            if let Some(mut ctx) = unsafe { self.get_ctx() } {
+            if let Some(ctx) = unsafe { self.get_ctx() } {
                 // SAFETY:
                 // Reading state without lock is safe because `proc_yield` and `sched`
                 // is called after we check if current process is `RUNNING`.

@@ -214,6 +214,7 @@ impl Uart {
 
             // Maybe uartputc() is waiting for space in the buffer.
             unsafe {
+                // TODO: remove kernel_ref()
                 kernel_ref(|kref| {
                     guard.wakeup(kref);
                 })
