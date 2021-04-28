@@ -187,15 +187,26 @@
 //! the lifetime `'id` attached to `library_b_ref` and `book_from_a` are incompatible.
 //! Note that a compile error does not happen if we do `library_a_ref.return_book(book_from_a);` instead.
 //!
-//! # Using `Branded<'id, T>` after wrapping it
+//! # Adding invariants to branded types by using wrappers
 //!
 //! Note that `Branded::brand` is a safe function.
-//! Nevertheless, if you wrap the result of `Branded::brand` with your own wrapper and make your own API only return/accept that type,
-//! you can still make sure that the `'id` tag is propagated to other types only in a controlled way.
+//! That is, for any data, you can safely obtain a `Branded` that adds the `'id` tag to it.
+//! This is because a `Branded<'id, T>` is just a product of the `'id` tag and the data `T`.
+//! **It does not have any invariants to it**.
 //!
-//! For example, in the previous example, note that `Library::borrow_book` or `Library::return_book` returns/accepts `BorrowedBook<'id, 's>`
-//! instead of `Branded<'id, BorrowedBook<'s>>`. In the former case, the user can obtain a `BorrowedBook` only through the `Library`'s API,
-//! but in the latter case, this may not be true.
+//! However, you may want to add invariants to branded types. For example, in the previous `Library` example,
+//! we need to make sure
+//! * If two or more `LibraryRef`s have the same `'id` tag, **they always point to the same `Library` instance**.
+//! * A `BorrowedBook<'id, '_>` can only be obtained from a `LibraryRef<'id, '_>` that has the **same `'id` tag**.
+//!
+//! To do this, you should always wrap the `Branded` with your own wrapper (e.g. `LibraryRef` or `BorrowedBook`).
+//! Then, you should make sure that wrapper can be obtained only through a controlled way.
+//! That is,
+//! * One can obtain a `Branded<'id, T>` for any data, but
+//! * One can obtain the wrapper only through a restricted way.
+//!
+//! That is, you should wrap the `Branded` with your own wrapper,
+//! and add invariants to the wrapper instead of the `Branded` itself.
 
 use core::{
     cell::Cell,

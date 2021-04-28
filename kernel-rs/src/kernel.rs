@@ -154,6 +154,16 @@ pub struct KernelRef<'id, 's>(Branded<'id, &'s Kernel>);
 
 impl<'id, 's> KernelRef<'id, 's> {
     /// Returns a `Branded` that wraps `data` and has the same `'id` tag with `self`.
+    ///
+    /// # Note
+    ///
+    /// This lets you add the `'id` tag to any kind of data `T`.
+    /// Therefore, you should always wrap the returned `Branded` with your own wrapper (e.g. `ProcsRef`),
+    /// and make sure that wrapper can be obtained only through a controlled way (e.g. Using `KernelRef::procs` method,
+    /// you can get a `ProcsRef<'id, 's>` only from a `KernelRef<'id, 's>` that has the same `'id` tag).
+    /// That is,
+    /// * One can obtain a `Branded<'id, T>` for any data, but
+    /// * One can obtain the wrapper type only through a restricted way.
     pub fn brand<T>(&self, data: T) -> Branded<'id, T> {
         self.0.brand(data)
     }
