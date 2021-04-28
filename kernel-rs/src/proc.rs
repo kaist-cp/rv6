@@ -20,7 +20,7 @@ use crate::{
     file::RcFile,
     fs::RcInode,
     kalloc::Kmem,
-    kernel::{kernel_builder, kernel_ref, Kernel, KernelRef},
+    kernel::{kernel_builder, kernel_ref, KernelRef},
     lock::{pop_off, push_off, Guard, RawLock, RawSpinlock, RemoteLock, Spinlock, SpinlockGuard},
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
@@ -347,7 +347,7 @@ pub struct ProcBuilder {
 /// arguments. Otherwise, methods can take only one of `&Kernel` and `CurrentProc` as arguments.
 pub struct KernelCtx<'id, 'p> {
     kernel: KernelRef<'id, 'p>,
-    proc: CurrentProc<'id, 'p>,
+    pub proc: CurrentProc<'id, 'p>,
 }
 
 impl<'id, 'p> KernelCtx<'id, 'p> {
@@ -361,6 +361,23 @@ impl<'id, 'p> KernelCtx<'id, 'p> {
 
     pub fn proc_mut(&mut self) -> &mut CurrentProc<'id, 'p> {
         &mut self.proc
+    }
+}
+
+/// Creates the `KernelCtx` of the current Cpu.
+/// The `KernelCtx` can be used only inside the given closure.
+///
+/// # Safety
+///
+/// * It must be called only after the initialization of the kernel.
+/// * At most one `CurrentProc` or `KernelCtx` object can exist at a single time in each thread.
+///   Therefore, it must not be called if the result of `current_proc` or `kernel_ctx` is alive.
+pub unsafe fn kernel_ctx<'s, F: for<'new_id> FnOnce(KernelCtx<'new_id, 's>) -> R, R>(f: F) -> R {
+    unsafe {
+        kernel_ref(|kref| {
+            let ctx = kref.get_ctx().expect("No current proc");
+            f(ctx)
+        })
     }
 }
 
@@ -877,16 +894,19 @@ impl Procs {
         // This method can be reached from the kernel mode because `Kernel::clock_intr` calls
         // `wakeup`, which calls this method. Thus, it does not call `kernel_ctx`.
         // TODO: remove kernel_ref()
-        let current_proc = unsafe {
-            kernel_ref(|kref| kref.current_proc().map_or(ptr::null(), |proc| proc.deref()))
-        };
-        for p in self.process_pool() {
-            if p as *const _ != current_proc {
-                let mut guard = p.lock();
-                if guard.deref_info().waitchannel == target as _ {
-                    guard.wakeup()
+        unsafe {
+            kernel_ref(|kref| {
+                // SAFETY: TODO
+                let current_proc = kref.get_ctx().map_or(ptr::null(), |ctx| ctx.proc.deref());
+                for p in self.process_pool() {
+                    if p as *const _ != current_proc {
+                        let mut guard = p.lock();
+                        if guard.deref_info().waitchannel == target as _ {
+                            guard.wakeup()
+                        }
+                    }
                 }
-            }
+            });
         }
     }
 
@@ -1184,7 +1204,7 @@ const INITCODE: [u8; 52] = [
     0x6e, 0x69, 0x74, 0, 0, 0x24, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-impl Kernel {
+impl<'id, 's> KernelRef<'id, 's> {
     /// Per-CPU process scheduler.
     /// Each CPU calls scheduler() after setting itself up.
     /// Scheduler never returns.  It loops, doing:
@@ -1192,7 +1212,7 @@ impl Kernel {
     ///  - swtch to start running that process.
     ///  - eventually that process transfers control
     ///    via swtch back to the scheduler.
-    pub unsafe fn scheduler(&self) -> ! {
+    pub unsafe fn scheduler(self) -> ! {
         let mut cpu = self.current_cpu();
         unsafe { (*cpu).proc = ptr::null_mut() };
         loop {
@@ -1216,6 +1236,37 @@ impl Kernel {
             }
         }
     }
+
+    /// TODO: rewrite
+    ///
+    /// Returns `Some<CurrentProc<'id, '_>>` if current proc exists (i.e. When (*cpu).proc is non-null).
+    /// Note that `'id` is same with the given `KernelRef`'s `'id`.
+    /// Otherwise, returns `None` (when current proc is null).
+    ///
+    /// # Safety
+    ///
+    /// At most one `CurrentProc` or `KernelCtx` object can exist at a single time in each thread.
+    /// Therefore, it must not be called if the result of `current_proc` or `kernel_ctx` is alive.
+    pub unsafe fn get_ctx(self) -> Option<KernelCtx<'id, 's>> {
+        unsafe { push_off() };
+        let cpu = self.current_cpu();
+        let proc = unsafe { (*cpu).proc };
+        unsafe { pop_off() };
+
+        // This is safe because p is non-null and current Cpu's proc.
+        let proc = unsafe { proc.as_ref() }?;
+        Some(KernelCtx {
+            kernel: self,
+            proc: CurrentProc {
+                inner: self.brand(proc),
+            },
+        })
+    }
+
+    /// Returns a `ProcsRef` that points to the kernel's `Procs`.
+    pub fn procs(&self) -> ProcsRef<'id, '_> {
+        ProcsRef(self.brand(self.deref().procs()))
+    }
 }
 
 /// A fork child's very first scheduling by scheduler() will swtch to forkret.
@@ -1229,53 +1280,6 @@ unsafe fn forkret() {
             // be run from main().
             ctx.kernel.file_system.init(ROOTDEV, &ctx);
             ctx.user_trap_ret();
-        })
-    }
-}
-
-impl Kernel {
-    /// Returns `Some<CurrentProc<'id, '_>>` if current proc exists (i.e. When (*cpu).proc is non-null).
-    /// Note that `'id` is same with the given `KernelRef`'s `'id`.
-    /// Otherwise, returns `None` (when current proc is null).
-    ///
-    /// # Safety
-    ///
-    /// At most one `CurrentProc` or `KernelCtx` object can exist at a single time in each thread.
-    /// Therefore, it must not be called if the result of `current_proc` or `kernel_ctx` is alive.
-    pub unsafe fn current_proc<'id, 's>(self: &KernelRef<'id, 's>) -> Option<CurrentProc<'id, 's>> {
-        unsafe { push_off() };
-        let cpu = self.current_cpu();
-        let proc = unsafe { (*cpu).proc };
-        unsafe { pop_off() };
-        // This is safe because p is non-null and current Cpu's proc.
-        unsafe { proc.as_ref() }.map(|proc| {
-            CurrentProc {
-                inner: self.brand(proc),
-            }
-        })
-    }
-}
-
-impl<'id, 's> KernelRef<'id, 's> {
-    /// Returns a `ProcsRef` that points to the kernel's `Procs`.
-    pub fn procs(&self) -> ProcsRef<'id, '_> {
-        ProcsRef(self.brand(self.deref().procs()))
-    }
-}
-
-/// Creates the `KernelCtx` of the current Cpu.
-/// The `KernelCtx` can be used only inside the given closure.
-///
-/// # Safety
-///
-/// * It must be called only after the initialization of the kernel.
-/// * At most one `CurrentProc` or `KernelCtx` object can exist at a single time in each thread.
-///   Therefore, it must not be called if the result of `current_proc` or `kernel_ctx` is alive.
-pub unsafe fn kernel_ctx<'s, F: for<'new_id> FnOnce(KernelCtx<'new_id, 's>) -> R, R>(f: F) -> R {
-    unsafe {
-        kernel_ref(|kref| {
-            let proc = kref.current_proc().expect("No current proc");
-            f(KernelCtx { kernel: kref, proc })
         })
     }
 }
