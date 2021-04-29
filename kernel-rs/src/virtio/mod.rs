@@ -20,7 +20,7 @@ use crate::arch::memlayout::VIRTIO0;
 
 mod virtio_disk;
 
-pub use virtio_disk::Disk;
+pub use virtio_disk::VirtioDisk;
 
 /// Memory mapped IO registers.
 /// The kernel and virtio driver communicates to each other using these registers.

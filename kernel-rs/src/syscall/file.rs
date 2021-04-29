@@ -261,28 +261,21 @@ impl KernelCtx<'_, '_> {
     fn pipe(&mut self, fdarray: UVAddr) -> Result<(), ()> {
         let (pipereader, pipewriter) = self.kernel().allocate_pipe()?;
 
-        let fd0 = pipereader.fdalloc(self).map_err(|_| ())?;
-        let fd1 = pipewriter
-            .fdalloc(self)
-            .map_err(|_| self.proc_mut().deref_mut_data().open_files[fd0 as usize] = None)?;
+        let mut this = scopeguard::guard((self, -1, -1), |(this, fd1, fd2)| {
+            if fd1 != -1 {
+                this.proc_mut().deref_mut_data().open_files[fd1 as usize] = None;
+            }
 
-        if self
-            .proc_mut()
-            .memory_mut()
-            .copy_out(fdarray, &fd0)
-            .is_err()
-            || self
-                .proc_mut()
-                .memory_mut()
-                .copy_out(fdarray + mem::size_of::<i32>(), &fd1)
-                .is_err()
-        {
-            let proc_data = self.proc_mut().deref_mut_data();
-            proc_data.open_files[fd0 as usize] = None;
-            proc_data.open_files[fd1 as usize] = None;
-            return Err(());
-        }
-        Ok(())
+            if fd2 != -1 {
+                this.proc_mut().deref_mut_data().open_files[fd2 as usize] = None;
+            }
+        });
+
+        this.1 = pipereader.fdalloc(this.0).map_err(|_| ())?;
+        this.2 = pipewriter.fdalloc(this.0).map_err(|_| ())?;
+
+        let (this, fd1, fd2) = scopeguard::ScopeGuard::into_inner(this);
+        this.proc_mut().memory_mut().copy_out(fdarray, &[fd1, fd2])
     }
 }
 
