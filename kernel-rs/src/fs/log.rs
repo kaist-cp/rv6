@@ -33,19 +33,19 @@ use crate::{
     lock::{Sleepablelock, SleepablelockGuard},
     param::{BSIZE, LOGSIZE, MAXOPBLOCKS},
     proc::KernelCtx,
-    virtio::Disk,
+    virtio::VirtioDisk,
 };
 
 pub struct Log {
     inner: Once<Sleepablelock<LogInner>>,
-    pub disk: Sleepablelock<Disk>,
+    pub disk: Sleepablelock<VirtioDisk>,
 }
 
 /// A `LogLocked` is a `Log` whose `inner` can be accessed safely.
 /// Its `inner`, whose type is `LogLockedInner<'a>`, provides a reference to a `LogInner`.
 pub struct LogLocked<'a> {
     inner: LogLockedInner<'a>,
-    disk: &'a Sleepablelock<Disk>,
+    disk: &'a Sleepablelock<VirtioDisk>,
 }
 
 /// A `LogLockedInner` provides a reference to a `LogInner`.
@@ -86,7 +86,7 @@ impl Log {
     pub const fn zero() -> Self {
         Self {
             inner: Once::new(),
-            disk: Sleepablelock::new("DISK", Disk::zero()),
+            disk: Sleepablelock::new("DISK", VirtioDisk::zero()),
         }
     }
 
@@ -165,7 +165,7 @@ impl Log {
 }
 
 impl<'a> LogLocked<'a> {
-    fn new(inner: LogLockedInner<'a>, disk: &'a Sleepablelock<Disk>) -> Self {
+    fn new(inner: LogLockedInner<'a>, disk: &'a Sleepablelock<VirtioDisk>) -> Self {
         Self { inner, disk }
     }
 }
