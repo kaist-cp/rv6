@@ -56,15 +56,36 @@ pub struct ListRef<'s, T>(&'s List<T>);
 /// Grants unique mutable access to the `List` and any of its `Node`s.
 pub struct ListMut<'s, T>(Pin<&'s mut List<T>>);
 
+/// An iterator over the elements of a `List`.
 pub struct Iter<'s, T> {
     head: *mut ListEntry, // Use *const or &'s instead?
     tail: *mut ListEntry,
     _marker: PhantomData<&'s List<T>>,
 }
 
+/// A mutable iterator over the elements of a `List`.
 pub struct IterMut<'s, T> {
     head: *mut ListEntry,
     tail: *mut ListEntry,
+    _marker: PhantomData<&'s mut List<T>>,
+}
+
+/// A cursor over a `List`.
+/// A `Cursor` is like an iterator, except that it can freely seek back-and-forth.
+pub struct Cursor<'s, T> {
+    head: *mut ListEntry,
+    current: *mut ListEntry,
+    _marker: PhantomData<&'s List<T>>,
+}
+
+/// A cursor over a `List` with editing operations.
+/// A `CursorMut` is like an iterator, except that it can freely seek back-and-forth, and can safely mutate the list during iteration.
+///
+/// Note that unlike `Cursor`, this provides references that borrow the `CursorMut` itself, instead of the `List`.
+/// In this way, we can ensure only one mutable reference exists for each `List`.
+pub struct CursorMut<'s, T> {
+    head: *mut ListEntry,
+    current: *mut ListEntry,
     _marker: PhantomData<&'s mut List<T>>,
 }
 
@@ -190,6 +211,26 @@ impl<'s, T> ListRef<'s, T> {
             _marker: PhantomData,
         }
     }
+
+    /// Provides a cursor at the back element.
+    /// The cursor is pointing to the "ghost" non-element if the list is empty.
+    pub fn cursor_back(&self) -> Cursor<'_, T> {
+        Cursor {
+            head: &self.0.head as *const _ as *mut _,
+            current: self.0.head.prev(),
+            _marker: PhantomData,
+        }
+    }
+
+    /// Provides a cursor at the front element.
+    /// The cursor is pointing to the "ghost" non-element if the list is empty.
+    pub fn cursor_front(&self) -> Cursor<'_, T> {
+        Cursor {
+            head: &self.0.head as *const _ as *mut _,
+            current: self.0.head.next(),
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<'s, T> ListMut<'s, T> {
@@ -301,6 +342,26 @@ impl<'s, T> ListMut<'s, T> {
             _marker: PhantomData,
         }
     }
+
+    /// Provides a cursor with editing operations at the back element.
+    /// The cursor is pointing to the "ghost" non-element if the list is empty.
+    pub fn cursor_back_mut(&mut self) -> CursorMut<'_, T> {
+        CursorMut {
+            head: &self.0.head as *const _ as *mut _,
+            current: self.0.head.prev(),
+            _marker: PhantomData,
+        }
+    }
+
+    /// Provides a cursor with editing operations at the front element.
+    /// The cursor is pointing to the "ghost" non-element if the list is empty.
+    pub fn cursor_front_mut(&mut self) -> CursorMut<'_, T> {
+        CursorMut {
+            head: &self.0.head as *const _ as *mut _,
+            current: self.0.head.next(),
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<'s, T> Iterator for Iter<'s, T> {
@@ -353,6 +414,103 @@ impl<'s, T> DoubleEndedIterator for IterMut<'s, T> {
             self.tail = unsafe { &*self.tail }.prev();
             // Safe since `self.last` is a `ListEntry` contained inside a `T`.
             Some(&mut unsafe { &mut *Node::from_list_entry(self.tail) }.data)
+        }
+    }
+}
+
+impl<'s, T> Cursor<'s, T> {
+    pub fn current(&self) -> Option<&'s T> {
+        if ptr::eq(self.head, self.current) {
+            None
+        } else {
+            Some(unsafe { &*Node::from_list_entry(self.current) }.data)
+        }
+    }
+
+    pub fn move_prev(&mut self) {
+        self.current = unsafe { &*self.current }.prev();
+    }
+
+    pub fn move_next(&mut self) {
+        self.current = unsafe { &*self.current }.next();
+    }
+
+    pub fn peek_prev(&self) -> Option<&'s T> {
+        let ptr = unsafe { &*self.current }.prev();
+        if ptr::eq(self.head, ptr) {
+            None
+        } else {
+            Some(unsafe { &*Node::from_list_entry(ptr) }.data)
+        }
+    }
+
+    pub fn peek_next(&self) -> Option<&'s T> {
+        let ptr = unsafe { &*self.current }.next();
+        if ptr::eq(self.head, ptr) {
+            None
+        } else {
+            Some(unsafe { &*Node::from_list_entry(ptr) }.data)
+        }
+    }
+}
+
+impl<'s, T> CursorMut<'s, T> {
+    fn current_entry(&mut self) -> Pin<&mut ListEntry> {
+        unsafe { Pin::new_unchecked(&mut *self.current) }
+    }
+
+    pub fn current(&mut self) -> Option<&mut T> {
+        if ptr::eq(self.head, self.current) {
+            None
+        } else {
+            Some(&mut unsafe { &mut *Node::from_list_entry(self.current) }.data)
+        }
+    }
+
+    pub fn move_prev(&mut self) {
+        self.current = unsafe { &*self.current }.prev();
+    }
+
+    pub fn move_next(&mut self) {
+        self.current = unsafe { &*self.current }.next();
+    }
+
+    pub fn peek_prev(&mut self) -> Option<&mut T> {
+        let ptr = unsafe { &*self.current }.prev();
+        if ptr::eq(self.head, ptr) {
+            None
+        } else {
+            Some(&mut unsafe { &mut *Node::from_list_entry(ptr) }.data)
+        }
+    }
+
+    pub fn peek_next(&mut self) -> Option<&mut T> {
+        let ptr = unsafe { &*self.current }.next();
+        if ptr::eq(self.head, ptr) {
+            None
+        } else {
+            Some(&mut unsafe { &mut *Node::from_list_entry(ptr) }.data)
+        }
+    }
+
+    pub fn insert_before<'t>(&'t mut self, mut node: Pin<&'t mut Node<T>>) -> &'t mut T {
+        self.current_entry()
+            .push_back(node.as_mut().project().list_entry);
+        node.project().data
+    }
+
+    pub fn insert_after<'t>(&'t mut self, mut node: Pin<&'t mut Node<T>>) -> &'t mut T {
+        self.current_entry()
+            .push_front(node.as_mut().project().list_entry);
+        node.project().data
+    }
+
+    pub fn remove_current(&mut self) {
+        if !ptr::eq(self.head, self.current) {
+            let entry = self.current_entry();
+            let ptr = entry.next();
+            entry.remove();
+            self.current = ptr;
         }
     }
 }
