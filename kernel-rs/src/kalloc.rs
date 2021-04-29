@@ -10,7 +10,7 @@ use crate::{
     arch::memlayout::PHYSTOP,
     lock::Spinlock,
     page::Page,
-    util::list::{List, ListEntry, ListNode},
+    util::intrusive_list::{List, ListEntry, ListNode},
 };
 
 extern "C" {
