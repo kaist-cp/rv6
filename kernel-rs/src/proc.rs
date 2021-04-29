@@ -396,7 +396,7 @@ pub unsafe fn kernel_ctx<'s, F: for<'new_id> FnOnce(KernelCtx<'new_id, 's>) -> R
 ///
 /// `inner` is the current Cpu's proc, whose state should be `RUNNING`.
 pub struct CurrentProc<'id, 'p> {
-    inner: Branded<'id, &'p Proc>,
+    inner: ProcRef<'id, 'p>,
 }
 
 impl<'id, 'p> CurrentProc<'id, 'p> {
@@ -452,8 +452,8 @@ impl<'id, 'p> CurrentProc<'id, 'p> {
     }
 }
 
-impl Deref for CurrentProc<'_, '_> {
-    type Target = Proc;
+impl<'id, 's> Deref for CurrentProc<'id, 's> {
+    type Target = ProcRef<'id, 's>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
@@ -463,11 +463,11 @@ impl Deref for CurrentProc<'_, '_> {
 /// # Safety
 ///
 /// * `proc.info` is locked.
-pub struct ProcGuard<'s> {
-    proc: &'s Proc,
+pub struct ProcGuard<'id, 's> {
+    proc: ProcRef<'id, 's>,
 }
 
-impl ProcGuard<'_> {
+impl<'id> ProcGuard<'id, '_> {
     fn deref_info(&self) -> &ProcInfo {
         // SAFETY: self.info is locked.
         unsafe { &*self.info.get_mut_raw() }
@@ -521,7 +521,7 @@ impl ProcGuard<'_> {
     /// # Safety
     ///
     /// `self.info.state` ≠ `UNUSED`
-    unsafe fn clear(&mut self, mut parent_guard: SpinlockGuard<'_, ()>) {
+    unsafe fn clear(&mut self, mut parent_guard: WaitGuard<'id, '_>) {
         // SAFETY: this process cannot be the current process any longer.
         let data = unsafe { self.deref_mut_data() };
         let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
@@ -542,7 +542,7 @@ impl ProcGuard<'_> {
         data.name[0] = 0;
 
         // Clear the process's parent field.
-        *self.parent().get_mut(&mut parent_guard) = ptr::null_mut();
+        *self.get_mut_parent(&mut parent_guard) = ptr::null_mut();
         drop(parent_guard);
 
         // Clear the `ProcInfo`.
@@ -568,28 +568,28 @@ impl ProcGuard<'_> {
 
     fn reacquire_after<F, U>(&mut self, f: F) -> U
     where
-        F: FnOnce(&Proc) -> U,
+        F: FnOnce(ProcRef<'id, '_>) -> U,
     {
         // SAFETY: releasing is temporal, and `self` as `ProcGuard` cannot be used in `f`.
         unsafe { self.info.unlock() };
-        let result = f(&self);
+        let result = f(**self);
         mem::forget(self.info.lock());
         result
     }
 }
 
-impl Drop for ProcGuard<'_> {
+impl Drop for ProcGuard<'_, '_> {
     fn drop(&mut self) {
         // SAFETY: self will be dropped.
         unsafe { self.info.unlock() };
     }
 }
 
-impl Deref for ProcGuard<'_> {
-    type Target = Proc;
+impl<'id, 's> Deref for ProcGuard<'id, 's> {
+    type Target = ProcRef<'id, 's>;
 
     fn deref(&self) -> &Self::Target {
-        self.proc
+        &self.proc
     }
 }
 
@@ -705,7 +705,7 @@ pub struct Procs {
 }
 
 /// A branded reference to a `Procs`.
-/// For a `KernelRef<'id, '_>` that has the same `'id` tag, the `Procs` is owned
+/// For a `KernelRef<'id, '_>` that has the same `'id` tag with this, the `Procs` is owned
 /// by the `Kernel` that the `KernelRef` points to.
 ///
 /// # Safety
@@ -721,28 +721,65 @@ impl Deref for ProcsRef<'_, '_> {
     }
 }
 
-struct ProcIter<'a> {
-    iter: core::slice::Iter<'a, ProcBuilder>,
+/// A branded mutable reference to a `Procs`.
+pub struct ProcsMut<'id, 's>(Branded<'id, Pin<&'s mut Procs>>);
+
+impl<'id, 's> ProcsMut<'id, 's> {
+    /// Converts it into a `ProcsRef`.
+    fn as_ref(&mut self) -> ProcsRef<'id, '_> {
+        ProcsRef(self.0.brand(&self.0))
+    }
+
+    /// Returns a pinned mutable reference to `Procs`.
+    fn get_pin_mut(&mut self) -> Pin<&mut Procs> {
+        self.0.as_mut()
+    }
 }
 
-impl<'a> ProcIter<'a> {
+impl Deref for ProcsMut<'_, '_> {
+    type Target = Procs;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+struct ProcIter<'id, 'a> {
+    iter: Branded<'id, core::slice::Iter<'a, ProcBuilder>>,
+}
+
+impl<'id, 's> ProcIter<'id, 's> {
     /// # Safety
     ///
     /// `parent` of every `ProcBuilder` in `iter` has been initialized.
-    unsafe fn new(iter: core::slice::Iter<'a, ProcBuilder>) -> Self {
-        Self { iter }
+    unsafe fn new(procs: &ProcsRef<'id, 's>) -> Self {
+        Self {
+            iter: procs.0.brand(procs.0.inner.process_pool.iter()),
+        }
     }
 }
 
-impl<'a> Iterator for ProcIter<'a> {
-    type Item = &'a Proc;
+impl<'id, 'a> Iterator for ProcIter<'id, 'a> {
+    type Item = ProcRef<'id, 'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter
-            .next()
-            .map(|inner: &'a ProcBuilder| unsafe { &*(inner as *const _ as *const _) })
+        self.iter.next().map(|inner: &'a ProcBuilder| {
+            ProcRef(
+                self.iter
+                    .brand(unsafe { &*(inner as *const _ as *const _) }),
+            )
+        })
     }
 }
+
+/// A branded type that holds the guard of a `ProcsBuilder::wait_lock`.
+///
+/// For a `ProcsRef<'id, '_>` that has the same `'id` tag with this, this `WaitGuard` acquires
+/// the wait lock of the `Procs` that the `ProcsRef` points to.
+///
+/// To access the `parent` field of a `ProcRef<'id, '_>`, you need a `WaitGuard<'id, '_>`
+/// with the same `'id` tag.
+struct WaitGuard<'id, 's>(Branded<'id, SpinlockGuard<'s, ()>>);
 
 /// # Safety
 ///
@@ -766,11 +803,6 @@ impl Proc {
     pub fn killed(&self) -> bool {
         self.killed.load(Ordering::Acquire)
     }
-
-    pub fn lock(&self) -> ProcGuard<'_> {
-        mem::forget(self.info.lock());
-        ProcGuard { proc: self }
-    }
 }
 
 impl Deref for Proc {
@@ -778,6 +810,36 @@ impl Deref for Proc {
 
     fn deref(&self) -> &Self::Target {
         &self.inner
+    }
+}
+
+/// A branded reference to a `Proc`.
+/// For a `ProcsRef<'id, '_>` that has the same `'id` tag with this, the `Proc` is owned
+/// by the `Procs` that the `ProcsRef` points to.
+#[derive(Clone, Copy)]
+pub struct ProcRef<'id, 's>(Branded<'id, &'s Proc>);
+
+impl<'id, 's> ProcRef<'id, 's> {
+    /// Returns a mutable reference to this `Proc`'s parent field, which is a raw pointer.
+    /// You need a `WaitGuard` that has the same `'id`.
+    fn get_mut_parent<'a: 'b, 'b>(
+        &'a self,
+        guard: &'b mut WaitGuard<'id, '_>,
+    ) -> &'b mut *const Proc {
+        unsafe { self.parent().get_mut_unchecked(&mut guard.0) }
+    }
+
+    pub fn lock(&self) -> ProcGuard<'id, 's> {
+        mem::forget(self.info.lock());
+        ProcGuard { proc: *self }
+    }
+}
+
+impl<'s> Deref for ProcRef<'_, 's> {
+    type Target = Proc;
+
+    fn deref(&self) -> &'s Self::Target {
+        &self.0
     }
 }
 
@@ -831,9 +893,62 @@ impl ProcsBuilder {
 }
 
 impl Procs {
-    fn process_pool(&self) -> ProcIter<'_> {
+    /// Set up first user process.
+    pub fn user_proc_init(self: Pin<&mut Self>, allocator: &Spinlock<Kmem>) {
+        Branded::new(self, |procs| {
+            let mut procs = ProcsMut(procs);
+
+            // Allocate trap frame.
+            let trap_frame =
+                scopeguard::guard(allocator.alloc().expect("user_proc_init: alloc"), |page| {
+                    allocator.free(page)
+                });
+
+            // Allocate one user page and copy init's instructions
+            // and data into it.
+            let memory = UserMemory::new(trap_frame.addr(), Some(&INITCODE), allocator)
+                .expect("user_proc_init: UserMemory::new");
+
+            let procs_ref = procs.as_ref();
+            let mut guard = procs_ref
+                .alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory)
+                .expect("user_proc_init: Procs::alloc");
+
+            // SAFETY: this process cannot be the current process yet.
+            let data = unsafe { guard.deref_mut_data() };
+
+            // Prepare for the very first "return" from kernel to user.
+
+            // User program counter.
+            // SAFETY: trap_frame has been initialized by alloc.
+            unsafe { (*data.trap_frame).epc = 0 };
+
+            // User stack pointer.
+            // SAFETY: trap_frame has been initialized by alloc.
+            unsafe { (*data.trap_frame).sp = PGSIZE };
+
+            let name = b"initcode\x00";
+            (&mut data.name[..name.len()]).copy_from_slice(name);
+            // TODO: remove kernel_builder()
+            let _ = data.cwd.write(kernel_builder().itable.root());
+            // It's safe because cwd now has been initialized.
+            guard.deref_mut_info().state = Procstate::RUNNABLE;
+
+            let initial_proc = guard.deref().deref() as *const _;
+            drop(guard);
+
+            // It does not break the invariant since
+            // * initial_proc is a pointer to a `Proc` inside self.
+            // * self is pinned.
+            *procs.get_pin_mut().project().inner.project().initial_proc = initial_proc;
+        })
+    }
+}
+
+impl<'id, 's> ProcsRef<'id, 's> {
+    fn process_pool(&self) -> ProcIter<'id, 's> {
         // SAFETY: invariant
-        unsafe { ProcIter::new(self.inner.process_pool.iter()) }
+        unsafe { ProcIter::new(self) }
     }
 
     fn initial_proc(&self) -> &Proc {
@@ -842,11 +957,17 @@ impl Procs {
         unsafe { &*(self.inner.initial_proc as *const _) }
     }
 
+    /// Acquires the wait_lock of this `Procs` and returns the `WaitGuard`.
+    /// You can access any of this `Procs`'s `Proc::parent` field only after acquiring the `WaitGuard`.
+    fn wait_guard(&self) -> WaitGuard<'id, 's> {
+        WaitGuard(self.0.brand(self.0.inner.wait_lock.lock()))
+    }
+
     /// Look into process system for an UNUSED proc.
     /// If found, initialize state required to run in the kernel,
     /// and return with p->lock held.
     /// If there are no free procs, or a memory allocation fails, return Err.
-    fn alloc(&self, trap_frame: Page, memory: UserMemory) -> Result<ProcGuard<'_>, ()> {
+    fn alloc(&self, trap_frame: Page, memory: UserMemory) -> Result<ProcGuard<'id, '_>, ()> {
         for p in self.process_pool() {
             let mut guard = p.lock();
             if guard.deref_info().state == Procstate::UNUSED {
@@ -888,7 +1009,7 @@ impl Procs {
     pub fn wakeup_pool(&self, target: &WaitChannel, kernel: KernelRef<'_, '_>) {
         let current_proc = kernel.current_proc();
         for p in self.process_pool() {
-            if p as *const _ != current_proc {
+            if p.deref() as *const _ != current_proc {
                 let mut guard = p.lock();
                 if guard.deref_info().waitchannel == target as _ {
                     guard.wakeup()
@@ -897,62 +1018,16 @@ impl Procs {
         }
     }
 
-    /// Set up first user process.
-    pub fn user_proc_init(self: Pin<&mut Self>, allocator: &Spinlock<Kmem>) {
-        // Allocate trap frame.
-        let trap_frame =
-            scopeguard::guard(allocator.alloc().expect("user_proc_init: alloc"), |page| {
-                allocator.free(page)
-            });
-
-        // Allocate one user page and copy init's instructions
-        // and data into it.
-        let memory = UserMemory::new(trap_frame.addr(), Some(&INITCODE), allocator)
-            .expect("user_proc_init: UserMemory::new");
-
-        let mut guard = self
-            .alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory)
-            .expect("user_proc_init: Procs::alloc");
-
-        // SAFETY: this process cannot be the current process yet.
-        let data = unsafe { guard.deref_mut_data() };
-
-        // Prepare for the very first "return" from kernel to user.
-
-        // User program counter.
-        // SAFETY: trap_frame has been initialized by alloc.
-        unsafe { (*data.trap_frame).epc = 0 };
-
-        // User stack pointer.
-        // SAFETY: trap_frame has been initialized by alloc.
-        unsafe { (*data.trap_frame).sp = PGSIZE };
-
-        let name = b"initcode\x00";
-        (&mut data.name[..name.len()]).copy_from_slice(name);
-        // TODO: remove kernel_builder()
-        let _ = data.cwd.write(kernel_builder().itable.root());
-        // It's safe because cwd now has been initialized.
-        guard.deref_mut_info().state = Procstate::RUNNABLE;
-
-        let initial_proc = guard.deref() as *const _;
-        drop(guard);
-
-        // It does not break the invariant since
-        // * initial_proc is a pointer to a `Proc` inside self.
-        // * self is pinned.
-        *self.project().inner.project().initial_proc = initial_proc;
-    }
-
     /// Pass p's abandoned children to init.
     /// Caller must provide a `SpinlockGuard`.
     fn reparent<'a: 'b, 'b>(
         &'a self,
         proc: *const Proc,
-        parent_guard: &'b mut SpinlockGuard<'_, ()>,
+        parent_guard: &'b mut WaitGuard<'id, '_>,
         kernel: KernelRef<'_, '_>,
     ) {
         for pp in self.process_pool() {
-            let parent = pp.parent().get_mut(parent_guard);
+            let parent = pp.get_mut_parent(parent_guard);
             if *parent == proc {
                 *parent = self.initial_proc();
                 self.initial_proc().child_waitchannel.wakeup(kernel);
@@ -969,7 +1044,7 @@ impl Procs {
     /// `self` and `ctx` must have the same `'id` tag attached.
     /// Otherwise, UB may happen if the new `Proc` tries to read its `parent` field
     /// that points to a `Proc` that already dropped.
-    pub fn fork<'id>(self: &ProcsRef<'id, '_>, ctx: &mut KernelCtx<'id, '_>) -> Result<Pid, ()> {
+    pub fn fork(&self, ctx: &mut KernelCtx<'id, '_>) -> Result<Pid, ()> {
         let allocator = &ctx.kernel.kmem;
         // Allocate trap frame.
         let trap_frame =
@@ -1014,8 +1089,8 @@ impl Procs {
         // This is because the lock order must be `wait_lock` -> `Proc::info`.
         np.reacquire_after(|np| {
             // Acquire the `wait_lock`, and write the parent field.
-            let mut parent_guard = np.parent().lock();
-            *np.parent().get_mut(&mut parent_guard) = ctx.proc.deref();
+            let mut parent_guard = self.wait_guard();
+            *np.get_mut_parent(&mut parent_guard) = ctx.proc.deref().deref();
         });
 
         // Set the process's state to RUNNABLE.
@@ -1027,20 +1102,14 @@ impl Procs {
 
     /// Wait for a child process to exit and return its pid.
     /// Return Err(()) if this process has no children.
-    pub fn wait<'id>(
-        self: ProcsRef<'id, '_>,
-        addr: UVAddr,
-        ctx: &mut KernelCtx<'id, '_>,
-    ) -> Result<Pid, ()> {
-        // Assumes that the process_pool has at least 1 element.
-        let some_proc = self.process_pool().next().unwrap();
-        let mut parent_guard = some_proc.parent().lock();
+    pub fn wait(&self, addr: UVAddr, ctx: &mut KernelCtx<'id, '_>) -> Result<Pid, ()> {
+        let mut parent_guard = self.wait_guard();
 
         loop {
             // Scan through pool looking for exited children.
             let mut havekids = false;
             for np in self.process_pool() {
-                if *np.parent().get_mut(&mut parent_guard) == ctx.proc.deref() {
+                if *np.get_mut_parent(&mut parent_guard) == ctx.proc.deref().deref() {
                     // Found a child.
                     // Make sure the child isn't still in exit() or swtch().
                     let mut np = np.lock();
@@ -1072,7 +1141,7 @@ impl Procs {
 
             // Wait for a child to exit.
             //DOC: wait-sleep
-            ctx.proc.child_waitchannel.sleep(&mut parent_guard, ctx);
+            ctx.proc.child_waitchannel.sleep(&mut parent_guard.0, ctx);
         }
     }
 
@@ -1095,13 +1164,9 @@ impl Procs {
     /// Exit the current process.  Does not return.
     /// An exited process remains in the zombie state
     /// until its parent calls wait().
-    pub fn exit_current<'id>(
-        self: &ProcsRef<'id, '_>,
-        status: i32,
-        ctx: &mut KernelCtx<'id, '_>,
-    ) -> ! {
+    pub fn exit_current(&self, status: i32, ctx: &mut KernelCtx<'id, '_>) -> ! {
         assert_ne!(
-            ctx.proc.deref() as *const _,
+            ctx.proc.deref().deref() as *const _,
             self.initial_proc() as _,
             "init exiting"
         );
@@ -1122,11 +1187,11 @@ impl Procs {
         drop(tx);
 
         // Give all children to init.
-        let mut parent_guard = ctx.proc.parent().lock();
-        self.reparent(ctx.proc.deref(), &mut parent_guard, ctx.kernel());
+        let mut parent_guard = self.wait_guard();
+        self.reparent(ctx.proc.deref().deref(), &mut parent_guard, ctx.kernel());
 
         // Parent might be sleeping in wait().
-        let parent = *ctx.proc.parent().get_mut(&mut parent_guard);
+        let parent = *ctx.proc.get_mut_parent(&mut parent_guard);
         // TODO: this assertion is actually unneccessary because parent is null
         // only when proc is the initial process, which cannot be the case.
         assert!(!parent.is_null());
@@ -1214,7 +1279,7 @@ impl<'id, 's> KernelRef<'id, 's> {
                     // to release its lock and then reacquire it
                     // before jumping back to us.
                     guard.deref_mut_info().state = Procstate::RUNNING;
-                    unsafe { (*cpu).proc = p as *const _ };
+                    unsafe { (*cpu).proc = p.deref() as *const _ };
                     unsafe { swtch(&mut (*cpu).context, &mut guard.deref_mut_data().context) };
 
                     // Process is done running for now.
@@ -1249,7 +1314,7 @@ impl<'id, 's> KernelRef<'id, 's> {
         Some(KernelCtx {
             kernel: self,
             proc: CurrentProc {
-                inner: self.brand(proc),
+                inner: ProcRef(self.brand(proc)),
             },
         })
     }
