@@ -46,7 +46,7 @@ mod spinlock;
 pub use remotelock::RemoteLock;
 pub use sleepablelock::{Sleepablelock, SleepablelockGuard};
 pub use sleeplock::{Sleeplock, SleeplockGuard};
-pub use spinlock::{pop_off, push_off, RawSpinlock, Spinlock, SpinlockGuard};
+pub use spinlock::{RawSpinlock, Spinlock, SpinlockGuard};
 
 pub trait RawLock {
     /// Acquires the lock.

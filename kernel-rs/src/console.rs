@@ -11,9 +11,10 @@ use core::fmt;
 
 use crate::{
     arch::addr::UVAddr,
+    cpu::CPUS,
     file::Devsw,
     kernel::{kernel_builder, KernelBuilder, KernelRef},
-    lock::{pop_off, push_off, Sleepablelock, SleepablelockGuard},
+    lock::{Sleepablelock, SleepablelockGuard},
     param::NDEV,
     proc::KernelCtx,
     uart::Uart,
@@ -96,7 +97,7 @@ impl Console {
     /// It spins waiting for the uart's output register to be empty.
     fn putc_spin(&self, c: u8, kernel: &KernelBuilder) {
         unsafe {
-            push_off();
+            CPUS.push_off();
         }
         if kernel.is_panicked() {
             spin_loop();
@@ -108,7 +109,7 @@ impl Console {
         self.uart.putc(c);
 
         unsafe {
-            pop_off();
+            CPUS.pop_off();
         }
     }
 
