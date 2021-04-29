@@ -1,4 +1,4 @@
-// TODO(https://github.com/kaist-cp/rv6/issues/120)
+// Dead code is allowed in this file because not all components are used in the kernel.
 #![allow(dead_code)]
 
 //! virtio device definitions.

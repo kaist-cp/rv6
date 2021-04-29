@@ -1,6 +1,3 @@
-// TODO(https://github.com/kaist-cp/rv6/issues/120)
-#![allow(dead_code)]
-
 /// Maximum number of processes.
 pub const NPROC: usize = 64;
 
@@ -38,6 +35,8 @@ pub const LOGSIZE: usize = MAXOPBLOCKS * 3;
 /// Size of disk block cache.
 pub const NBUF: usize = MAXOPBLOCKS * 3;
 
+// TODO(https://github.com/kaist-cp/rv6/issues/120): `FSSIZE` seems no longer used.
+#[allow(dead_code)]
 /// Size of file system in blocks.
 pub const FSSIZE: usize = 2000;
 

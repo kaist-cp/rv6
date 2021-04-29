@@ -76,12 +76,12 @@ impl Page {
     }
 
     pub fn as_uninit_mut<T>(&mut self) -> &mut MaybeUninit<T> {
-        // TODO(https://github.com/kaist-cp/rv6/issues/471):
-        // Use const_assert! (or equivalent) instead. Currently, use of T inside const_assert!
-        // incurs a compile error: "can't use generic parameters from outer function".
-        // Also, there's a workaround using feature(const_generics) and
-        // feature(const_evaluatable_checked). However, using them makes the compiler panic.
-        // When the compiler becomes updated, we will fix the following lines to use static checks.
+        // TODO(https://github.com/kaist-cp/rv6/issues/471): Use const_assert! (or equivalent)
+        // instead. Currently, use of T inside const_assert! incurs a compile error: "can't use
+        // generic parameters from outer function". Also, there's a workaround using
+        // feature(const_generics) and feature(const_evaluatable_checked). However, using them makes
+        // the compiler panic. When the compiler becomes updated, we will fix the following lines to
+        // use static checks.
         assert!(mem::size_of::<T>() <= PGSIZE);
         assert_eq!(PGSIZE % mem::align_of::<T>(), 0);
 

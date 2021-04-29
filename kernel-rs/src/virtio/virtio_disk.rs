@@ -9,6 +9,8 @@ use core::ptr;
 use core::sync::atomic::{fence, Ordering};
 
 use arrayvec::ArrayVec;
+use bitmaps::Bitmap;
+use const_zero::const_zero;
 
 use super::{
     MmioRegs, VirtIOFeatures, VirtIOStatus, VirtqAvail, VirtqDesc, VirtqDescFlags, VirtqUsed, NUM,
@@ -51,9 +53,8 @@ pub struct Disk {
 // two or more physically-contiguous pages.
 #[repr(align(4096))]
 struct DiskInfo {
-    /// is a descriptor free?
-    /// TODO(https://github.com/kaist-cp/rv6/issues/368): can be implemented with bitmap
-    free: [bool; NUM],
+    /// is a descriptor allocated?
+    allocated: Bitmap<NUM>,
 
     /// we've looked this far in used.
     used_idx: u16,
@@ -101,7 +102,8 @@ impl Disk {
 impl DiskInfo {
     const fn zero() -> Self {
         Self {
-            free: [true; NUM],
+            // SAFETY: bitmap is safe to be zero-initialized.
+            allocated: unsafe { const_zero!(Bitmap::<NUM>) },
             used_idx: 0,
             inflight: [InflightInfo::zero(); NUM],
             ops: [VirtIOBlockOutHeader::zero(); NUM],
@@ -369,14 +371,9 @@ impl Disk {
 
     /// Find a free descriptor, mark it non-free, return its index.
     fn alloc(&mut self) -> Option<Descriptor> {
-        for (idx, free) in self.info.free.iter_mut().enumerate() {
-            if *free {
-                *free = false;
-                return Some(Descriptor::new(idx));
-            }
-        }
-
-        None
+        let idx = self.info.allocated.first_false_index()?;
+        let _ = self.info.allocated.set(idx, true);
+        Some(Descriptor::new(idx))
     }
 
     /// Allocate three descriptors (they need not be contiguous).
@@ -400,12 +397,11 @@ impl Disk {
 
     fn free(&mut self, desc: Descriptor) {
         let idx = desc.idx;
-        assert!(!self.info.free[idx], "Disk::free");
         self.desc[idx].addr = 0;
         self.desc[idx].len = 0;
         self.desc[idx].flags = VirtqDescFlags::FREED;
         self.desc[idx].next = 0;
-        self.info.free[idx] = true;
+        assert_eq!(self.info.allocated.set(idx, false), true, "Disk::free");
         mem::forget(desc);
     }
 }

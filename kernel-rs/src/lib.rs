@@ -26,19 +26,16 @@
 #![deny(variant_size_differences)]
 #![deny(warnings)]
 //
-// # TODO: deny them one day.
-//
-// #![deny(single_use_lifetimes)]
-// #![deny(unreachable_pub)]
-// #![deny(unstable_features)]
-// #![deny(unused_lifetimes)]
-//
 // # The following lints should not be denied.
 //
 // #![deny(invalid_html_tags)]
 // #![deny(missing_doc_code_examples)]
 // #![deny(missing_docs)]
 // #![deny(rustdoc)]
+// #![deny(single_use_lifetimes)]
+// #![deny(unreachable_pub)]
+// #![deny(unstable_features)]
+// #![deny(unused_lifetimes)]
 #![allow(incomplete_features)]
 #![allow(clippy::upper_case_acronyms)]
 #![feature(arbitrary_self_types)]
