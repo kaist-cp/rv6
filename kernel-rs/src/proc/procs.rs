@@ -21,7 +21,6 @@ use crate::{
     lock::{RemoteLock, Spinlock, SpinlockGuard},
     page::Page,
     param::{NPROC, ROOTDEV},
-    println,
     util::branded::Branded,
     vm::UserMemory,
 };
@@ -460,33 +459,6 @@ impl<'id, 's> ProcsRef<'id, 's> {
 
         unreachable!("zombie exit")
     }
-
-    /// Print a process listing to the console for debugging.
-    /// Runs when user types ^P on console.
-    /// Doesn't acquire locks in order to avoid wedging a stuck machine further.
-    ///
-    /// # Note
-    ///
-    /// This method is unsafe and should be used only for debugging.
-    pub unsafe fn dump(&self) {
-        println!();
-        for p in self.process_pool() {
-            let info = p.info.get_mut_raw();
-            let state = unsafe { &(*info).state };
-            if *state != Procstate::UNUSED {
-                let name = unsafe { &(*p.data.get()).name };
-                // For null character recognization.
-                // Required since str::from_utf8 cannot recognize interior null characters.
-                let length = name.iter().position(|&c| c == 0).unwrap_or(name.len());
-                println!(
-                    "{} {} {}",
-                    unsafe { (*info).pid },
-                    Procstate::as_str(state),
-                    str::from_utf8(&name[0..length]).unwrap_or("???")
-                );
-            }
-        }
-    }
 }
 
 impl Deref for ProcsRef<'_, '_> {
@@ -596,6 +568,33 @@ impl<'id, 's> KernelRef<'id, 's> {
                     // It should have changed its p->state before coming back.
                     unsafe { (*cpu).proc = ptr::null_mut() }
                 }
+            }
+        }
+    }
+
+    /// Print a process listing to the console for debugging.
+    /// Runs when user types ^P on console.
+    /// Doesn't acquire locks in order to avoid wedging a stuck machine further.
+    ///
+    /// # Note
+    ///
+    /// This method is unsafe and should be used only for debugging.
+    pub unsafe fn dump(&self) {
+        self.write_str("\n");
+        for p in self.procs().process_pool() {
+            let info = p.info.get_mut_raw();
+            let state = unsafe { &(*info).state };
+            if *state != Procstate::UNUSED {
+                let name = unsafe { &(*p.data.get()).name };
+                // For null character recognization.
+                // Required since str::from_utf8 cannot recognize interior null characters.
+                let length = name.iter().position(|&c| c == 0).unwrap_or(name.len());
+                self.write_fmt(format_args!(
+                    "{} {} {}",
+                    unsafe { (*info).pid },
+                    Procstate::as_str(state),
+                    str::from_utf8(&name[0..length]).unwrap_or("???")
+                ));
             }
         }
     }

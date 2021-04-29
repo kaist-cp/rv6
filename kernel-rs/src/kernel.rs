@@ -17,7 +17,6 @@ use crate::{
     kalloc::Kmem,
     lock::{Sleepablelock, Spinlock},
     param::NDEV,
-    println,
     proc::{Procs, ProcsBuilder},
     trap::{trapinit, trapinithart},
     util::{branded::Branded, spin_loop},
@@ -79,7 +78,7 @@ pub struct KernelBuilder {
 
     /// Current process system.
     #[pin]
-    pub procs: ProcsBuilder,
+    procs: ProcsBuilder,
 
     #[pin]
     bcache: Bcache,
@@ -187,6 +186,10 @@ impl KernelBuilder {
     ///
     /// This method should be called only once by the hart 0.
     unsafe fn init(self: Pin<&mut Self>, allocator: &Spinlock<Kmem>) {
+        self.as_ref()
+            .get_ref()
+            .write_str("\nrv6 kernel is booting\n\n");
+
         let this = self.project();
 
         // Connect read and write system calls to consoleread and consolewrite.
@@ -232,7 +235,7 @@ impl KernelBuilder {
     ///
     /// This method should be called only once by each hart.
     unsafe fn inithart(&self) {
-        println!("hart {} starting", cpuid());
+        self.write_fmt(format_args!("hart {} starting\n", cpuid()));
 
         // Turn on paging.
         unsafe { self.memory.assume_init_ref().init_hart() };
@@ -253,14 +256,17 @@ impl KernelBuilder {
     }
 
     /// Prints the given formatted string with the Printer.
-    pub fn printer_write_fmt(&self, args: fmt::Arguments<'_>) -> fmt::Result {
-        let hal = hal();
-        if self.is_panicked() {
-            unsafe { (*hal.printer.get_mut_raw()).write_fmt(args) }
+    pub fn write_fmt(&self, args: fmt::Arguments<'_>) {
+        let mut guard = if self.is_panicked() {
+            hal().printer.without_lock(self)
         } else {
-            let mut lock = hal.printer.lock();
-            lock.write_fmt(args)
-        }
+            hal().printer.lock(self)
+        };
+        let _ = guard.write_fmt(args);
+    }
+
+    pub fn write_str(&self, s: &str) {
+        self.write_fmt(format_args!("{}", s));
     }
 
     /// Returns an immutable reference to the kernel's bcache.
@@ -273,29 +279,14 @@ impl KernelBuilder {
     }
 }
 
-/// print! macro prints to the console using printer.
-#[macro_export]
-macro_rules! print {
-    ($($arg:tt)*) => {
-        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_builder()
-        unsafe { $crate::kernel::kernel_builder() }.printer_write_fmt(format_args!($($arg)*)).unwrap();
-    };
-}
-
-/// println! macro prints to the console using printer.
-#[macro_export]
-macro_rules! println {
-    () => ($crate::print!("\n"));
-    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
-}
-
 /// Handles panic by freezing other CPUs.
 #[cfg(not(test))]
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
     // SAFETY: it is called only after the kernel is initialized.
-    unsafe { kernel_builder() }.panic();
-    println!("{}", info);
+    let kernel = unsafe { kernel_builder() };
+    kernel.panic();
+    kernel.write_fmt(format_args!("{}\n", info));
 
     spin_loop()
 }

@@ -12,7 +12,7 @@ use crate::{
     fs::FileSystem,
     hal::hal,
     kernel::{kernel_ref, KernelRef},
-    ok_or, println,
+    ok_or,
     proc::{kernel_ctx, KernelCtx, Procstate},
 };
 
@@ -88,16 +88,16 @@ impl KernelCtx<'_, '_> {
         } else {
             which_dev = unsafe { self.kernel().dev_intr() };
             if which_dev == 0 {
-                println!(
-                    "usertrap(): unexpected scause {:018p} pid={}",
+                self.kernel().write_fmt(format_args!(
+                    "usertrap(): unexpected scause {:018p} pid={}\n",
                     r_scause() as *const u8,
                     self.proc().pid()
-                );
-                println!(
-                    "            sepc={:018p} stval={:018p}",
+                ));
+                self.kernel().write_fmt(format_args!(
+                    "            sepc={:018p} stval={:018p}\n",
                     r_sepc() as *const u8,
                     r_stval() as *const u8
-                );
+                ));
                 self.proc().kill();
             }
         }
@@ -188,12 +188,12 @@ impl KernelRef<'_, '_> {
 
         let which_dev = unsafe { self.dev_intr() };
         if which_dev == 0 {
-            println!("scause {:018p}", scause as *const u8);
-            println!(
-                "sepc={:018p} stval={:018p}",
+            self.write_fmt(format_args!("scause {:018p}\n", scause as *const u8));
+            self.write_fmt(format_args!(
+                "sepc={:018p} stval={:018p}\n",
                 r_sepc() as *const u8,
                 r_stval() as *const u8
-            );
+            ));
             panic!("kerneltrap");
         }
 
