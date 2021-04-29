@@ -756,41 +756,47 @@ impl ArenaObject for Inode {
         if self.inner.get_mut().valid && self.inner.get_mut().nlink == 0 {
             // inode has no links and no other references: truncate and free.
 
+            let finalize_inner = |ctx: KernelCtx<'_, '_>| {
+                let kernel = ctx.kernel();
+
+                // TODO(https://github.com/kaist-cp/rv6/issues/290)
+                // Disk write operations must happen inside a transaction. However,
+                // we cannot begin a new transaction here because beginning of a
+                // transaction acquires a sleep lock while the spin lock of this
+                // arena has been acquired before the invocation of this method.
+                // To mitigate this problem, we make a fake transaction and pass
+                // it as an argument for each disk write operation below. As a
+                // transaction does not start here, any operation that can drop an
+                // inode must begin a transaction even in the case that the
+                // resulting FsTransaction value is never used. Such transactions
+                // can be found in finalize in file.rs, sys_chdir in sysfile.rs,
+                // close_files in proc.rs, and exec in exec.rs.
+                let tx = mem::ManuallyDrop::new(FsTransaction {
+                    fs: &kernel.file_system,
+                });
+
+                // self->ref == 1 means no other process can have self locked,
+                // so this acquiresleep() won't block (or deadlock).
+                let mut ip = self.lock(&ctx);
+
+                let cleanup = move || {
+                    ip.itrunc(&tx, &ctx);
+                    ip.deref_inner_mut().typ = InodeType::None;
+                    ip.update(&tx, &ctx);
+                    ip.deref_inner_mut().valid = false;
+                    drop(ip);
+                };
+
+                // SAFETY: `nlink` is 0. That is, there is no way to reach to inode,
+                // so the `Itable` never tries to obtain an `Rc` referring this `Inode`.
+                unsafe {
+                    A::reacquire_after(guard, cleanup);
+                }
+            };
+
             // TODO: remove kernel_ctx()
             unsafe {
-                kernel_ctx(|ctx| {
-                    let kernel = ctx.kernel();
-
-                    // TODO(https://github.com/kaist-cp/rv6/issues/290)
-                    // Disk write operations must happen inside a transaction. However,
-                    // we cannot begin a new transaction here because beginning of a
-                    // transaction acquires a sleep lock while the spin lock of this
-                    // arena has been acquired before the invocation of this method.
-                    // To mitigate this problem, we make a fake transaction and pass
-                    // it as an argument for each disk write operation below. As a
-                    // transaction does not start here, any operation that can drop an
-                    // inode must begin a transaction even in the case that the
-                    // resulting FsTransaction value is never used. Such transactions
-                    // can be found in finalize in file.rs, sys_chdir in sysfile.rs,
-                    // close_files in proc.rs, and exec in exec.rs.
-                    let tx = mem::ManuallyDrop::new(FsTransaction {
-                        fs: &kernel.file_system,
-                    });
-
-                    // self->ref == 1 means no other process can have self locked,
-                    // so this acquiresleep() won't block (or deadlock).
-                    let mut ip = self.lock(&ctx);
-
-                    // SAFETY: `nlink` is 0. That is, there is no way to reach to inode,
-                    // so the `Itable` never tries to obtain an `Rc` referring this `Inode`.
-                    A::reacquire_after(guard, move || {
-                        ip.itrunc(&tx, &ctx);
-                        ip.deref_inner_mut().typ = InodeType::None;
-                        ip.update(&tx, &ctx);
-                        ip.deref_inner_mut().valid = false;
-                        drop(ip);
-                    });
-                });
+                kernel_ctx(finalize_inner);
             }
         }
     }

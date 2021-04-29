@@ -223,9 +223,7 @@ impl WaitChannel {
             guard.deref_mut_info().state = Procstate::SLEEPING;
             // SAFETY: we hold `p.lock()`, changed the process's state,
             // and device interrupts are disabled by `push_off()` in `p.lock()`.
-            unsafe {
-                guard.sched();
-            }
+            unsafe { guard.sched() };
 
             // Tidy up.
             guard.deref_mut_info().waitchannel = ptr::null();
@@ -488,14 +486,15 @@ impl<'id> ProcGuard<'id, '_> {
         assert!(!intr_get(), "sched interruptible");
         assert_ne!(self.state(), Procstate::RUNNING, "sched running");
 
-        let cpu = CPUS.current();
-        assert_eq!(unsafe { (*cpu).noff() }, 1, "sched locks");
+        let cpu = unsafe { &mut *CPUS.current() };
+        assert_eq!(cpu.noff(), 1, "sched locks");
 
-        let interrupt_enabled = unsafe { (*cpu).get_interrupt() };
-        unsafe { swtch(&mut self.deref_mut_data().context, &mut (*cpu).context) };
+        let interrupt_enabled = cpu.get_interrupt();
+        unsafe { swtch(&mut self.deref_mut_data().context, &mut cpu.context) };
 
         // We cannot use `cpu` again because `swtch` may move this thread to another cpu.
-        unsafe { (*CPUS.current()).set_interrupt(interrupt_enabled) };
+        let cpu = unsafe { &mut *CPUS.current() };
+        cpu.set_interrupt(interrupt_enabled);
     }
 
     /// Frees a `ProcBuilder` structure and the data hanging from it, including user pages.
@@ -1292,15 +1291,15 @@ impl<'id, 's> KernelRef<'id, 's> {
 
 /// A fork child's very first scheduling by scheduler() will swtch to forkret.
 unsafe fn forkret() -> ! {
-    unsafe {
-        kernel_ctx(|ctx| {
-            // Still holding p->lock from scheduler.
-            ctx.proc.info.unlock();
-            // File system initialization must be run in the context of a
-            // regular process (e.g., because it calls sleep), and thus cannot
-            // be run from main().
-            ctx.kernel.file_system.init(ROOTDEV, &ctx);
-            ctx.user_trap_ret()
-        })
-    }
+    let forkret_inner = |ctx: KernelCtx<'_, '_>| {
+        // Still holding p->lock from scheduler.
+        unsafe { ctx.proc.info.unlock() };
+        // File system initialization must be run in the context of a
+        // regular process (e.g., because it calls sleep), and thus cannot
+        // be run from main().
+        ctx.kernel.file_system.init(ROOTDEV, &ctx);
+        unsafe { ctx.user_trap_ret() }
+    };
+
+    unsafe { kernel_ctx(forkret_inner) }
 }

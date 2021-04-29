@@ -6,7 +6,7 @@ use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena, Rc},
     fs::{InodeGuard, RcInode},
-    kernel::kernel_ref,
+    kernel::{kernel_ref, KernelRef},
     lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
@@ -204,32 +204,34 @@ impl const Default for File {
 
 impl ArenaObject for File {
     fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>) {
-        // SAFETY: `FileTable` does not use `Arena::find_or_alloc`.
-        unsafe {
-            kernel_ref(|kref| {
-                A::reacquire_after(guard, || {
-                    let typ = mem::replace(&mut self.typ, FileType::None);
-                    match typ {
-                        FileType::Pipe { pipe } => {
-                            if let Some(page) = pipe.close(self.writable, kref) {
-                                kref.kmem.free(page);
-                            }
+        let finalize_inner = |kref: KernelRef<'_, '_>| {
+            let cleanup = || {
+                let typ = mem::replace(&mut self.typ, FileType::None);
+                match typ {
+                    FileType::Pipe { pipe } => {
+                        if let Some(page) = pipe.close(self.writable, kref) {
+                            kref.kmem.free(page);
                         }
-                        FileType::Inode {
-                            inner: InodeFileType { ip, .. },
-                        }
-                        | FileType::Device { ip, .. } => {
-                            // TODO(https://github.com/kaist-cp/rv6/issues/290): The inode ip will
-                            // be dropped by drop(ip). Deallocation of an inode may cause disk write
-                            // operations, so we must begin a transaction here.
-                            let _tx = kref.file_system.begin_transaction();
-                            drop(ip);
-                        }
-                        _ => (),
                     }
-                });
-            });
-        }
+                    FileType::Inode {
+                        inner: InodeFileType { ip, .. },
+                    }
+                    | FileType::Device { ip, .. } => {
+                        // TODO(https://github.com/kaist-cp/rv6/issues/290): The inode ip will
+                        // be dropped by drop(ip). Deallocation of an inode may cause disk write
+                        // operations, so we must begin a transaction here.
+                        let _tx = kref.file_system.begin_transaction();
+                        drop(ip);
+                    }
+                    _ => (),
+                }
+            };
+
+            unsafe { A::reacquire_after(guard, cleanup) };
+        };
+
+        // SAFETY: `FileTable` does not use `Arena::find_or_alloc`.
+        unsafe { kernel_ref(finalize_inner) };
     }
 }
 
