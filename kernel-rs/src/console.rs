@@ -1,106 +1,223 @@
+//! Console input and output, to the uart. Reads are line at a time.
+//!
+//! Implements special input characters:
+//! * newline -- end of line
+//! * control-h -- backspace
+//! * control-u -- kill line
+//! * control-d -- end of file
+//! * control-p -- print process list
+
 use core::fmt;
 
 use crate::{
     arch::addr::UVAddr,
     file::Devsw,
-    kernel::{kernel_builder, KernelRef},
-    lock::SleepablelockGuard,
+    kernel::{kernel_builder, KernelBuilder, KernelRef},
+    lock::{pop_off, push_off, Sleepablelock, SleepablelockGuard},
     param::NDEV,
-    proc::kernel_ctx,
+    proc::KernelCtx,
     uart::Uart,
+    util::spin_loop,
 };
 
 const CONSOLE_IN_DEVSW: usize = 1;
 /// Size of console input buffer.
 const INPUT_BUF: usize = 128;
+/// Size of console output buffer.
+const OUTPUT_BUF: usize = 32;
 
-pub struct Console {
-    buf: [u8; INPUT_BUF],
-
+struct OutputBuffer {
+    buf: [u8; OUTPUT_BUF],
     /// Read index.
-    r: u32,
-
+    w: usize,
     /// Write index.
-    w: u32,
-
-    /// Edit index.
-    e: u32,
+    r: usize,
 }
 
-impl Console {
+impl OutputBuffer {
+    pub const fn new() -> Self {
+        Self {
+            buf: [0; OUTPUT_BUF],
+            w: 0,
+            r: 0,
+        }
+    }
+}
+
+struct InputBuffer {
+    buf: [u8; INPUT_BUF],
+    /// Read index.
+    r: usize,
+    /// Write index.
+    w: usize,
+    /// Edit index.
+    e: usize,
+}
+
+impl InputBuffer {
     pub const fn new() -> Self {
         Self {
             buf: [0; INPUT_BUF],
-            r: 0,
             w: 0,
+            r: 0,
             e: 0,
         }
     }
+}
 
-    /// putc for Console.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/298)
-    /// This function should be changed after refactoring Console-Uart-Printer relationship.
-    pub fn putc(&mut self, c: i32) {
-        putc(c);
+pub struct Console {
+    uart: Uart,
+    input_buffer: Sleepablelock<InputBuffer>,
+    output_buffer: Sleepablelock<OutputBuffer>,
+}
+
+impl Console {
+    /// # Safety
+    ///
+    /// uart..(uart + 5) are owned addresses.
+    pub const unsafe fn new(uart: usize) -> Self {
+        Self {
+            uart: unsafe { Uart::new(uart) },
+            input_buffer: Sleepablelock::new("console_input", InputBuffer::new()),
+            output_buffer: Sleepablelock::new("console_output", OutputBuffer::new()),
+        }
     }
 
-    unsafe fn write(&mut self, src: UVAddr, n: i32) -> i32 {
+    pub fn init(&self, devsw: &mut [Devsw; NDEV]) {
+        self.uart.init();
+        // Connect read and write system calls to consoleread and consolewrite.
+        devsw[CONSOLE_IN_DEVSW] = Devsw {
+            read: Some(console_read),
+            write: Some(console_write),
+        };
+    }
+
+    /// Doesn't use interrupts, for use by kernel println() and to echo characters.
+    /// It spins waiting for the uart's output register to be empty.
+    fn putc_spin(&self, c: u8, kernel: &KernelBuilder) {
+        unsafe {
+            push_off();
+        }
+        if kernel.is_panicked() {
+            spin_loop();
+        }
+
+        // Wait for Transmit Holding Empty to be set in LSR.
+        while self.uart.is_full() {}
+
+        self.uart.putc(c);
+
+        unsafe {
+            pop_off();
+        }
+    }
+
+    fn put_backspace_spin(&self, kernel: &KernelBuilder) {
+        // Overwrite with a space.
+        self.putc_spin(8, &kernel);
+        self.putc_spin(b' ', &kernel);
+        self.putc_spin(8, &kernel);
+    }
+
+    /// Add a character to the output buffer and tell the UART to start sending if it isn't
+    /// already. Blocks if the output buffer is full. Since it may block, it can't be called
+    /// from interrupts; it's only suitable for use by write().
+    fn putc_sleep(&self, c: u8, ctx: &KernelCtx<'_, '_>) {
+        if ctx.kernel().is_panicked() {
+            spin_loop();
+        }
+
+        let mut guard = self.output_buffer.lock();
+
+        while guard.w == guard.r.wrapping_add(OUTPUT_BUF) {
+            // Buffer is full.
+            // Wait for flush_output_buffer() to open up space in the buffer.
+            guard.sleep();
+        }
+
+        let ind = guard.w % OUTPUT_BUF;
+        guard.buf[ind] = c;
+        guard.w += 1;
+        self.flush_output_buffer(guard, ctx.kernel());
+    }
+
+    /// If the UART is idle, and a character is waiting in the transmit buffer, send it.
+    /// Called from both the top- and bottom-half.
+    fn flush_output_buffer(
+        &self,
+        mut guard: SleepablelockGuard<'_, OutputBuffer>,
+        kernel: KernelRef<'_, '_>,
+    ) {
+        loop {
+            if guard.w == guard.r {
+                // Transmit buffer is empty.
+                return;
+            }
+
+            if self.uart.is_full() {
+                // The UART transmit holding register is full, so we cannot give it another byte.
+                // It will interrupt when it's ready for a new byte.
+                return;
+            }
+
+            let c = guard.buf[guard.r % OUTPUT_BUF];
+            guard.r += 1;
+
+            // Maybe uart.putc() is waiting for space in the buffer.
+            guard.wakeup(kernel);
+
+            self.uart.putc(c);
+        }
+    }
+
+    fn write(&self, src: UVAddr, n: i32, ctx: &mut KernelCtx<'_, '_>) -> i32 {
         for i in 0..n {
             let mut c = [0u8];
-            // TODO: remove kernel_ctx()
-            if unsafe {
-                kernel_ctx(|mut ctx| {
-                    ctx.proc_mut()
-                        .memory_mut()
-                        .copy_in_bytes(&mut c, src + i as usize)
-                        .is_err()
-                })
-            } {
+            if ctx
+                .proc_mut()
+                .memory_mut()
+                .copy_in_bytes(&mut c, src + i as usize)
+                .is_err()
+            {
                 return i;
             }
-            // TODO(https://github.com/kaist-cp/rv6/issues/298): Temporarily using global function kernel_builder().
-            // This implementation should be changed after refactoring Console-Uart-Printer relationship.
-            kernel_builder().uart.putc(c[0] as i32);
+            self.putc_sleep(c[0], ctx);
         }
         n
     }
 
-    unsafe fn read(this: &mut SleepablelockGuard<'_, Self>, mut dst: UVAddr, mut n: i32) -> i32 {
-        let target = n as u32;
+    fn read(&self, mut dst: UVAddr, mut n: i32, ctx: &mut KernelCtx<'_, '_>) -> i32 {
+        let mut guard = self.input_buffer.lock();
+        let target = n;
         while n > 0 {
             // Wait until interrupt handler has put some
             // input into CONS.buffer.
-            while this.r == this.w {
-                // TODO: remove kernel_ctx()
-                if unsafe { kernel_ctx(|ctx| ctx.proc().killed()) } {
+            while guard.r == guard.w {
+                if ctx.proc().killed() {
                     return -1;
                 }
-                this.sleep();
+                guard.sleep();
             }
-            let fresh0 = this.r;
-            this.r = this.r.wrapping_add(1);
-            let cin = this.buf[fresh0.wrapping_rem(INPUT_BUF as u32) as usize] as i32;
+            let cin = guard.buf[guard.r % INPUT_BUF] as i32;
+            guard.r = guard.r.wrapping_add(1);
 
             // end-of-file
             if cin == ctrl('D') {
-                if (n as u32) < target {
+                if n < target {
                     // Save ^D for next time, to make sure
                     // caller gets a 0-byte result.
-                    this.r = this.r.wrapping_sub(1)
+                    guard.r = guard.r.wrapping_sub(1)
                 }
                 break;
             } else {
                 // Copy the input byte to the user-space buffer.
                 let cbuf = [cin as u8];
-                // TODO: remove kernel_ctx()
-                if unsafe {
-                    kernel_ctx(|mut ctx| {
-                        ctx.proc_mut()
-                            .memory_mut()
-                            .copy_out_bytes(dst, &cbuf)
-                            .is_err()
-                    })
-                } {
+                if ctx
+                    .proc_mut()
+                    .memory_mut()
+                    .copy_out_bytes(dst, &cbuf)
+                    .is_err()
+                {
                     break;
                 }
                 dst = dst + 1;
@@ -112,150 +229,105 @@ impl Console {
                 }
             }
         }
-        target.wrapping_sub(n as u32) as i32
+        target - n
     }
 
-    unsafe fn intr(
-        this: &mut SleepablelockGuard<'_, Self>,
-        mut cin: i32,
-        kernel: KernelRef<'_, '_>,
-    ) {
-        match cin {
-            // Print process list.
-            m if m == ctrl('P') => {
-                unsafe { kernel.procs().dump() };
-            }
-
-            // Kill line.
-            m if m == ctrl('U') => {
-                while this.e != this.w
-                    && this.buf[this.e.wrapping_sub(1).wrapping_rem(INPUT_BUF as u32) as usize]
-                        as i32
-                        != '\n' as i32
-                {
-                    this.e = this.e.wrapping_sub(1);
-                    this.putc(BACKSPACE);
+    /// Handle a uart interrupt, raised because input has arrived, or the uart is ready for more
+    /// output, or both. Called from trap.c. Do erase/kill processing, append to the input buffer,
+    /// and wake up read() if a whole line has arrived.
+    ///
+    /// # Note
+    ///
+    /// When `self.uart.getc()` is `Ok(ctrl('P'))`, this method is unsafe.
+    pub unsafe fn intr(&self, kernel: KernelRef<'_, '_>) {
+        // Read and process incoming characters.
+        while let Ok(c) = self.uart.getc() {
+            let mut guard = self.input_buffer.lock();
+            match c {
+                // Print process list.
+                m if m == ctrl('P') => {
+                    unsafe { kernel.procs().dump() };
                 }
-            }
 
-            // Backspace
-            m if m == ctrl('H') | '\x7f' as i32 => {
-                if this.e != this.w {
-                    this.e = this.e.wrapping_sub(1);
-                    this.putc(BACKSPACE);
-                }
-            }
-            _ => {
-                if cin != 0 && this.e.wrapping_sub(this.r) < INPUT_BUF as u32 {
-                    cin = if cin == '\r' as i32 { '\n' as i32 } else { cin };
-
-                    // Echo back to the user.
-                    this.putc(cin);
-
-                    // Store for consumption by consoleread().
-                    let fresh1 = this.e;
-                    this.e = this.e.wrapping_add(1);
-                    this.buf[fresh1.wrapping_rem(INPUT_BUF as u32) as usize] = cin as u8;
-                    if cin == '\n' as i32
-                        || cin == ctrl('D')
-                        || this.e == this.r.wrapping_add(INPUT_BUF as u32)
+                // Kill line.
+                m if m == ctrl('U') => {
+                    while guard.e != guard.w
+                        && guard.buf[guard.e.wrapping_sub(1) % INPUT_BUF] != b'\n'
                     {
-                        // Wake up consoleread() if a whole line (or end-of-file)
-                        // has arrived.
-                        this.w = this.e;
-                        this.wakeup(kernel);
+                        guard.e = guard.e.wrapping_sub(1);
+                        self.put_backspace_spin(&kernel);
+                    }
+                }
+
+                // Backspace
+                m if m == ctrl('H') | '\x7f' as i32 => {
+                    if guard.e != guard.w {
+                        guard.e = guard.e.wrapping_sub(1);
+                        self.put_backspace_spin(&kernel);
+                    }
+                }
+
+                _ => {
+                    if c != 0 && guard.e.wrapping_sub(guard.r) < INPUT_BUF {
+                        let c = if c == '\r' as i32 { '\n' as i32 } else { c };
+
+                        // Echo back to the user.
+                        self.putc_spin(c as u8, &kernel);
+
+                        // Store for consumption by read().
+                        let ind = guard.e % INPUT_BUF;
+                        guard.buf[ind] = c as u8;
+                        guard.e = guard.e.wrapping_add(1);
+                        if c == '\n' as i32
+                            || c == ctrl('D')
+                            || guard.e == guard.r.wrapping_add(INPUT_BUF)
+                        {
+                            // Wake up read() if a whole line (or end-of-file) has arrived.
+                            guard.w = guard.e;
+                            guard.wakeup(kernel);
+                        }
                     }
                 }
             }
         }
+
+        // Write buffered characters.
+        self.flush_output_buffer(self.output_buffer.lock(), kernel);
     }
 }
 
-pub struct Printer {}
+pub struct Printer;
 
 impl Printer {
     pub const fn new() -> Self {
-        Self {}
-    }
-
-    /// putc for Printer.
-    /// TODO(https://github.com/kaist-cp/rv6/issues/298)
-    /// This function should be changed after refactoring Console-Uart-Printer relationship.
-    pub fn putc(&mut self, c: i32) {
-        putc(c);
+        Self
     }
 }
 
 impl fmt::Write for Printer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for c in s.bytes() {
-            self.putc(c as _);
+            // TODO: remove kernel_builder()
+            let kernel = kernel_builder();
+            kernel.console.putc_spin(c, &kernel);
         }
         Ok(())
     }
 }
-
-/// Send one character to the uart.
-/// TODO(https://github.com/kaist-cp/rv6/issues/298): This global function is temporary.
-/// After refactoring Console-Uart-Printer relationship, this function need to be removed.
-pub fn putc(c: i32) {
-    if c == BACKSPACE {
-        // If the user typed backspace, overwrite with a space.
-        Uart::putc_sync('\u{8}' as i32);
-        Uart::putc_sync(' ' as i32);
-        Uart::putc_sync('\u{8}' as i32);
-    } else {
-        Uart::putc_sync(c);
-    };
-}
-
-/// Console input and output, to the uart.
-/// Reads are line at a time.
-/// Implements special input characters:
-///   newline -- end of line
-///   control-h -- backspace
-///   control-u -- kill line
-///   control-d -- end of file
-///   control-p -- print process list
-const BACKSPACE: i32 = 0x100;
 
 /// Control-x
 const fn ctrl(x: char) -> i32 {
     x as i32 - '@' as i32
 }
 
-pub unsafe fn consoleinit(devsw: &mut [Devsw; NDEV]) {
-    // Connect read and write system calls
-    // to consoleread and consolewrite.
-    devsw[CONSOLE_IN_DEVSW] = Devsw {
-        read: Some(consoleread),
-        write: Some(consolewrite),
-    };
-}
-
 /// User write()s to the console go here.
-fn consolewrite(src: UVAddr, n: i32) -> i32 {
-    // TODO(https://github.com/kaist-cp/rv6/issues/298) Remove below comment.
-    // consolewrite() does not need console.lock() -- can lead to sleep() with lock held.
-    // TODO: remove kernel_builder()
-    unsafe { (*kernel_builder().console.get_mut_raw()).write(src, n) }
+fn console_write(src: UVAddr, n: i32, ctx: &mut KernelCtx<'_, '_>) -> i32 {
+    ctx.kernel().console.write(src, n, ctx)
 }
 
 /// User read()s from the console go here.
 /// Copy (up to) a whole input line to dst.
-/// User_dist indicates whether dst is a user
-/// or kernel address.
-fn consoleread(dst: UVAddr, n: i32) -> i32 {
-    // TODO: remove kernel_builder()
-    let mut console = kernel_builder().console.lock();
-    unsafe { Console::read(&mut console, dst, n) }
-}
-
-/// The console input interrupt handler.
-/// uartintr() calls this for input character.
-/// Do erase/kill processing, append to CONS.buf,
-/// wake up consoleread() if a whole line has arrived.
-pub unsafe fn consoleintr(cin: i32, kernel: KernelRef<'_, '_>) {
-    let mut console = kernel.console.lock();
-    unsafe { Console::intr(&mut console, cin, kernel) };
+/// User_dist indicates whether dst is a user or kernel address.
+fn console_read(dst: UVAddr, n: i32, ctx: &mut KernelCtx<'_, '_>) -> i32 {
+    ctx.kernel().console.read(dst, n, ctx)
 }

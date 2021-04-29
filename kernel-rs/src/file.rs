@@ -50,8 +50,8 @@ pub type FileTable = Spinlock<ArrayArena<File, NFILE>>;
 /// map major device number to device functions.
 #[derive(Copy, Clone)]
 pub struct Devsw {
-    pub read: Option<fn(_: UVAddr, _: i32) -> i32>,
-    pub write: Option<fn(_: UVAddr, _: i32) -> i32>,
+    pub read: Option<fn(UVAddr, i32, &mut KernelCtx<'_, '_>) -> i32>,
+    pub write: Option<fn(UVAddr, i32, &mut KernelCtx<'_, '_>) -> i32>,
 }
 
 /// A reference counted smart pointer to a `File`.
@@ -133,7 +133,7 @@ impl File {
                 ret
             }
             FileType::Device { major, .. } => unsafe {
-                (**major).read.ok_or(()).map(|f| f(addr, n) as usize)
+                (**major).read.ok_or(()).map(|f| f(addr, n, ctx) as usize)
             },
             FileType::None => panic!("File::read"),
         }
@@ -189,7 +189,7 @@ impl File {
                 Ok(n)
             }
             FileType::Device { major, .. } => unsafe {
-                (**major).write.ok_or(()).map(|f| f(addr, n) as usize)
+                (**major).write.ok_or(()).map(|f| f(addr, n, ctx) as usize)
             },
             FileType::None => panic!("File::read"),
         }
