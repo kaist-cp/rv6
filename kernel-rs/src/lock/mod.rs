@@ -30,7 +30,7 @@
 //!     Then, instead of providing a [`Ref`](crate::util::rc_cell::Ref), you should provide a [`Ref`](crate::util::rc_cell::Ref) wrapped by a `RemoteLock`.
 //!     to the outside.
 
-// TODO(https://github.com/kaist-cp/rv6/issues/120)
+// Dead code is allowed in this file because not all components are used in the kernel.
 #![allow(dead_code)]
 
 use core::cell::UnsafeCell;

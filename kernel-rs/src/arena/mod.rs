@@ -39,7 +39,7 @@ pub trait Arena: Sized {
     /// * Uses `f` to initialze a new `Rc`.
     ///
     /// Otherwise, returns `None`.
-    fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Rc<Self>>;
+    fn alloc<F: FnOnce() -> Self::Data>(&self, f: F) -> Option<Rc<Self>>;
 
     /// Duplicates a given handle, increasing the reference count.
     ///

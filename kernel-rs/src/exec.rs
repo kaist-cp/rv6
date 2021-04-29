@@ -96,10 +96,9 @@ impl KernelCtx<'_, '_> {
             return Err(());
         }
 
-        // TODO(https://github.com/kaist-cp/rv6/issues/290)
-        // The method namei can drop inodes. If namei succeeds, its return
-        // value, ptr, will be dropped when this method returns. Deallocation
-        // of an inode may cause disk write operations, so we must begin a
+        // TODO(https://github.com/kaist-cp/rv6/issues/290): The method namei can drop inodes. If
+        // namei succeeds, its return value, ptr, will be dropped when this method
+        // returns. Deallocation of an inode may cause disk write operations, so we must begin a
         // transaction here.
         let tx = self.kernel().fs().begin_transaction();
         let ptr = self.kernel().itable.namei(path, self)?;
@@ -118,8 +117,8 @@ impl KernelCtx<'_, '_> {
         let mem = UserMemory::new(trap_frame, None, &self.kernel().kmem).ok_or(())?;
         let kmem = &self.kernel().kmem;
         let mut mem = scopeguard::guard(mem, |mem| mem.free(kmem));
+
         // Load program into memory.
-        // TODO(rv6): use iterator
         for i in 0..elf.phnum as usize {
             let off = elf.phoff + i * mem::size_of::<ProgHdr>();
 

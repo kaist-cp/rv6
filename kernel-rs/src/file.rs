@@ -219,10 +219,9 @@ impl ArenaObject for File {
                             inner: InodeFileType { ip, .. },
                         }
                         | FileType::Device { ip, .. } => {
-                            // TODO(https://github.com/kaist-cp/rv6/issues/290)
-                            // The inode ip will be dropped by drop(ip). Deallocation
-                            // of an inode may cause disk write operations, so we must
-                            // begin a transaction here.
+                            // TODO(https://github.com/kaist-cp/rv6/issues/290): The inode ip will
+                            // be dropped by drop(ip). Deallocation of an inode may cause disk write
+                            // operations, so we must begin a transaction here.
                             let _tx = kref.file_system.begin_transaction();
                             drop(ip);
                         }
@@ -241,8 +240,6 @@ impl FileTable {
 
     /// Allocate a file structure.
     pub fn alloc_file(&self, typ: FileType, readable: bool, writable: bool) -> Result<RcFile, ()> {
-        // TODO(https://github.com/kaist-cp/rv6/issues/372): idiomatic initialization.
-        self.alloc(|p| *p = File::new(typ, readable, writable))
-            .ok_or(())
+        self.alloc(|| File::new(typ, readable, writable)).ok_or(())
     }
 }

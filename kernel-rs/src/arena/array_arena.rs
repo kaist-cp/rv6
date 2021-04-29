@@ -81,14 +81,14 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
         })
     }
 
-    fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Rc<Self>> {
+    fn alloc<F: FnOnce() -> Self::Data>(&self, f: F) -> Option<Rc<Self>> {
         ArenaRef::new(self, |arena| {
             let mut guard = arena.lock();
             let this = guard.get_pin_mut().project();
 
             for mut entry in IterPinMut::from(this.entries) {
                 if !entry.is_borrowed() {
-                    f(entry.as_mut().get_pin_mut().unwrap().get_mut());
+                    *(entry.as_mut().get_pin_mut().unwrap().get_mut()) = f();
                     let handle = Handle(arena.0.brand(entry.borrow()));
                     return Some(Rc::new(arena, handle));
                 }
