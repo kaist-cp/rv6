@@ -626,7 +626,7 @@ impl Context {
 }
 
 impl Procstate {
-    fn to_str(&self) -> &'static str {
+    fn as_str(&self) -> &'static str {
         match self {
             Procstate::USED => "used",
             Procstate::UNUSED => "unused",
@@ -1168,7 +1168,7 @@ impl Procs {
                 println!(
                     "{} {} {}",
                     unsafe { (*info).pid },
-                    Procstate::to_str(state),
+                    Procstate::as_str(state),
                     str::from_utf8(&name[0..length]).unwrap_or("???")
                 );
             }
@@ -1261,7 +1261,7 @@ impl<'id, 's> KernelRef<'id, 's> {
 }
 
 /// A fork child's very first scheduling by scheduler() will swtch to forkret.
-unsafe fn forkret() {
+unsafe fn forkret() -> ! {
     unsafe {
         kernel_ctx(|ctx| {
             // Still holding p->lock from scheduler.
@@ -1270,7 +1270,7 @@ unsafe fn forkret() {
             // regular process (e.g., because it calls sleep), and thus cannot
             // be run from main().
             ctx.kernel.file_system.init(ROOTDEV, &ctx);
-            ctx.user_trap_ret();
+            ctx.user_trap_ret()
         })
     }
 }

@@ -52,7 +52,7 @@ pub unsafe fn kerneltrap() {
 
 impl KernelCtx<'_, '_> {
     /// `user_trap` can be reached only from the user mode, so it is a method of `KernelCtx`.
-    unsafe fn user_trap(mut self) {
+    unsafe fn user_trap(mut self) -> ! {
         assert!(
             !Sstatus::read().contains(Sstatus::SPP),
             "usertrap: not from user mode"
@@ -108,11 +108,11 @@ impl KernelCtx<'_, '_> {
             self.yield_cpu();
         }
 
-        unsafe { self.user_trap_ret() };
+        unsafe { self.user_trap_ret() }
     }
 
     /// Return to user space.
-    pub unsafe fn user_trap_ret(mut self) {
+    pub unsafe fn user_trap_ret(mut self) -> ! {
         // We're about to switch the destination of traps from
         // kerneltrap() to usertrap(), so turn off interrupts until
         // we're back in user space, where usertrap() is correct.
@@ -165,8 +165,8 @@ impl KernelCtx<'_, '_> {
         // and switches to user mode with sret.
         let fn_0: usize =
             TRAMPOLINE + unsafe { userret.as_ptr().offset_from(trampoline.as_ptr()) } as usize;
-        let fn_0 = unsafe { mem::transmute::<_, unsafe extern "C" fn(usize, usize) -> ()>(fn_0) };
-        unsafe { fn_0(TRAPFRAME, satp) };
+        let fn_0 = unsafe { mem::transmute::<_, unsafe extern "C" fn(usize, usize) -> !>(fn_0) };
+        unsafe { fn_0(TRAPFRAME, satp) }
     }
 }
 
@@ -207,7 +207,7 @@ impl KernelRef<'_, '_> {
             }
         }
 
-        // The yield() may have caused some traps to occur,
+        // The yield may have caused some traps to occur,
         // so restore trap registers for use by kernelvec.S's sepc instruction.
         unsafe { w_sepc(sepc) };
         unsafe { sstatus.write() };

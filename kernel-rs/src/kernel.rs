@@ -1,6 +1,5 @@
 use core::cell::UnsafeCell;
 use core::fmt::{self, Write};
-use core::hint::spin_loop;
 use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::pin::Pin;
@@ -22,7 +21,7 @@ use crate::{
     proc::{cpuid, Cpu, Procs, ProcsBuilder},
     trap::{trapinit, trapinithart},
     uart::Uart,
-    util::branded::Branded,
+    util::{branded::Branded, spin_loop},
     vm::KernelMemory,
 };
 
@@ -337,21 +336,21 @@ fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
     kernel_builder().panic();
     println!("{}", info);
 
-    crate::util::spin_loop()
+    spin_loop()
 }
 
 /// start() jumps here in supervisor mode on all CPUs.
-pub unsafe fn kernel_main() -> ! {
-    static STARTED: AtomicBool = AtomicBool::new(false);
+pub unsafe fn main() -> ! {
+    static INITED: AtomicBool = AtomicBool::new(false);
 
     if cpuid() == 0 {
         unsafe {
             kernel_builder_unchecked_pin().init();
         }
-        STARTED.store(true, Ordering::Release);
+        INITED.store(true, Ordering::Release);
     } else {
-        while !STARTED.load(Ordering::Acquire) {
-            spin_loop();
+        while !INITED.load(Ordering::Acquire) {
+            ::core::hint::spin_loop();
         }
         unsafe {
             kernel_ref(|kctx| kctx.inithart());
