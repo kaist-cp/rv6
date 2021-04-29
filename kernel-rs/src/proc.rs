@@ -16,12 +16,13 @@ use pin_project::pin_project;
 use crate::{
     arch::addr::{Addr, UVAddr, PGSIZE},
     arch::memlayout::kstack,
-    arch::riscv::{intr_get, intr_on, r_tp},
+    arch::riscv::{intr_get, intr_on},
+    cpu::CPUS,
     file::RcFile,
     fs::RcInode,
     kalloc::Kmem,
     kernel::{kernel_builder, kernel_ref, KernelRef},
-    lock::{pop_off, push_off, Guard, RawLock, RawSpinlock, RemoteLock, Spinlock, SpinlockGuard},
+    lock::{Guard, RawLock, RawSpinlock, RemoteLock, Spinlock, SpinlockGuard},
     page::Page,
     param::{MAXPROCNAME, NOFILE, NPROC, ROOTDEV},
     println,
@@ -54,22 +55,6 @@ pub struct Context {
     pub s9: usize,
     pub s10: usize,
     pub s11: usize,
-}
-
-/// Per-CPU-state.
-#[derive(Copy, Clone)]
-pub struct Cpu {
-    /// The process running on this cpu, or null.
-    proc: *const Proc,
-
-    /// swtch() here to enter scheduler().
-    context: Context,
-
-    /// Depth of push_off() nesting.
-    pub noff: i32,
-
-    /// Were interrupts enabled before push_off()?
-    pub interrupt_enabled: bool,
 }
 
 /// Per-process data for the trap handling code in trampoline.S.
@@ -239,7 +224,7 @@ impl WaitChannel {
             // SAFETY: we hold `p.lock()`, changed the process's state,
             // and device interrupts are disabled by `push_off()` in `p.lock()`.
             unsafe {
-                guard.sched(ctx.kernel());
+                guard.sched();
             }
 
             // Tidy up.
@@ -367,7 +352,7 @@ impl<'id, 'p> KernelCtx<'id, 'p> {
     pub fn yield_cpu(&self) {
         let mut guard = self.proc.lock();
         guard.deref_mut_info().state = Procstate::RUNNABLE;
-        unsafe { guard.sched(self.kernel) };
+        unsafe { guard.sched() };
     }
 }
 
@@ -499,19 +484,18 @@ impl<'id> ProcGuard<'id, '_> {
     /// be proc->interrupt_enabled and proc->noff, but that would
     /// break in the few places where a lock is held but
     /// there's no process.
-    unsafe fn sched(&mut self, kernel: KernelRef<'_, '_>) {
-        assert_eq!((*(kernel.current_cpu())).noff, 1, "sched locks");
-        assert_ne!(self.state(), Procstate::RUNNING, "sched running");
+    unsafe fn sched(&mut self) {
         assert!(!intr_get(), "sched interruptible");
+        assert_ne!(self.state(), Procstate::RUNNING, "sched running");
 
-        let interrupt_enabled = unsafe { (*kernel.current_cpu()).interrupt_enabled };
-        unsafe {
-            swtch(
-                &mut self.deref_mut_data().context,
-                &mut (*kernel.current_cpu()).context,
-            )
-        };
-        unsafe { (*kernel.current_cpu()).interrupt_enabled = interrupt_enabled };
+        let cpu = CPUS.current();
+        assert_eq!(unsafe { (*cpu).noff() }, 1, "sched locks");
+
+        let interrupt_enabled = unsafe { (*cpu).get_interrupt() };
+        unsafe { swtch(&mut self.deref_mut_data().context, &mut (*cpu).context) };
+
+        // We cannot use `cpu` again because `swtch` may move this thread to another cpu.
+        unsafe { (*CPUS.current()).set_interrupt(interrupt_enabled) };
     }
 
     /// Frees a `ProcBuilder` structure and the data hanging from it, including user pages.
@@ -593,19 +577,8 @@ impl<'id, 's> Deref for ProcGuard<'id, 's> {
     }
 }
 
-impl Cpu {
-    pub const fn new() -> Self {
-        Self {
-            proc: ptr::null_mut(),
-            context: Context::new(),
-            noff: 0,
-            interrupt_enabled: false,
-        }
-    }
-}
-
 impl Context {
-    const fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             ra: 0,
             sp: 0,
@@ -1208,7 +1181,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
         drop(parent_guard);
 
         // Jump into the scheduler, and never return.
-        unsafe { guard.sched(ctx.kernel()) };
+        unsafe { guard.sched() };
 
         unreachable!("zombie exit")
     }
@@ -1241,14 +1214,6 @@ impl<'id, 's> ProcsRef<'id, 's> {
     }
 }
 
-/// Return this CPU's ID.
-///
-/// It is safe to call this function with interrupts enabled, but the returned id may not be the
-/// current CPU since the scheduler can move the process to another CPU on time interrupt.
-pub fn cpuid() -> usize {
-    r_tp()
-}
-
 /// A user program that calls exec("/init").
 /// od -t xC initcode
 const INITCODE: [u8; 52] = [
@@ -1266,7 +1231,7 @@ impl<'id, 's> KernelRef<'id, 's> {
     ///  - eventually that process transfers control
     ///    via swtch back to the scheduler.
     pub unsafe fn scheduler(self) -> ! {
-        let mut cpu = self.current_cpu();
+        let mut cpu = CPUS.current();
         unsafe { (*cpu).proc = ptr::null_mut() };
         loop {
             // Avoid deadlock by ensuring that devices can interrupt.
@@ -1292,10 +1257,10 @@ impl<'id, 's> KernelRef<'id, 's> {
 
     /// Returns pointer to the current proc.
     fn current_proc(&self) -> *const Proc {
-        unsafe { push_off() };
-        let cpu = self.current_cpu();
+        unsafe { CPUS.push_off() };
+        let cpu = CPUS.current();
         let proc = unsafe { (*cpu).proc };
-        unsafe { pop_off() };
+        unsafe { CPUS.pop_off() };
         proc
     }
 
