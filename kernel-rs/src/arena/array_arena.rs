@@ -6,7 +6,7 @@ use core::pin::Pin;
 use array_macro::array;
 use pin_project::pin_project;
 
-use super::{Arena, ArenaObject, ArenaRef, Handle, HandleRef};
+use super::{Arena, ArenaObject, ArenaRef, Handle, HandleRef, Rc};
 use crate::{
     lock::{Spinlock, SpinlockGuard},
     util::pinned_array::IterPinMut,
@@ -45,54 +45,56 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     type Data = T;
     type Guard<'s> = SpinlockGuard<'s, ArrayArena<T, CAPACITY>>;
 
-    fn find_or_alloc_handle<'id, C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
-        self: ArenaRef<'id, &Self>,
+    fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
+        &self,
         c: C,
         n: N,
-    ) -> Option<Handle<'id, Self::Data>> {
-        let mut guard = self.lock();
-        let this = guard.get_pin_mut().project();
+    ) -> Option<Rc<Self>> {
+        ArenaRef::new(self, |arena| {
+            let mut guard = arena.lock();
+            let this = guard.get_pin_mut().project();
 
-        let mut empty: Option<*mut RcCell<T>> = None;
-        for entry in IterPinMut::from(this.entries) {
-            if !entry.is_borrowed() {
-                if empty.is_none() {
-                    empty = Some(entry.as_ref().get_ref() as *const _ as *mut _)
-                }
-                // Note: Do not use `break` here.
-                // We must first search through all entries, and then alloc at empty
-                // only if the entry we're finding for doesn't exist.
-            } else if let Some(r) = entry.try_borrow() {
-                // The entry is not under finalization. Check its data.
-                if c(&r) {
-                    // SAFETY: `r` is owned by `self`.
-                    return Some(Handle(self.0.brand(r)));
+            let mut empty: Option<*mut RcCell<T>> = None;
+            for entry in IterPinMut::from(this.entries) {
+                if !entry.is_borrowed() {
+                    if empty.is_none() {
+                        empty = Some(entry.as_ref().get_ref() as *const _ as *mut _)
+                    }
+                    // Note: Do not use `break` here.
+                    // We must first search through all entries, and then alloc at empty
+                    // only if the entry we're finding for doesn't exist.
+                } else if let Some(r) = entry.try_borrow() {
+                    // The entry is not under finalization. Check its data.
+                    if c(&r) {
+                        return Some(Rc::new(arena, Handle(arena.0.brand(r))));
+                    }
                 }
             }
-        }
 
-        empty.map(|cell_raw| {
-            // SAFETY: `cell` is not referenced or borrowed. Also, it is already pinned.
-            let mut cell = unsafe { Pin::new_unchecked(&mut *cell_raw) };
-            n(cell.as_mut().get_pin_mut().unwrap().get_mut());
-            Handle(self.0.brand(cell.borrow()))
+            empty.map(|cell_raw| {
+                // SAFETY: `cell` is not referenced or borrowed. Also, it is already pinned.
+                let mut cell = unsafe { Pin::new_unchecked(&mut *cell_raw) };
+                n(cell.as_mut().get_pin_mut().unwrap().get_mut());
+                let handle = Handle(arena.0.brand(cell.borrow()));
+                Rc::new(arena, handle)
+            })
         })
     }
 
-    fn alloc_handle<'id, F: FnOnce(&mut Self::Data)>(
-        self: ArenaRef<'id, &Self>,
-        f: F,
-    ) -> Option<Handle<'id, Self::Data>> {
-        let mut guard = self.lock();
-        let this = guard.get_pin_mut().project();
+    fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Rc<Self>> {
+        ArenaRef::new(self, |arena| {
+            let mut guard = arena.lock();
+            let this = guard.get_pin_mut().project();
 
-        for mut entry in IterPinMut::from(this.entries) {
-            if !entry.is_borrowed() {
-                f(entry.as_mut().get_pin_mut().unwrap().get_mut());
-                return Some(Handle(self.0.brand(entry.borrow())));
+            for mut entry in IterPinMut::from(this.entries) {
+                if !entry.is_borrowed() {
+                    f(entry.as_mut().get_pin_mut().unwrap().get_mut());
+                    let handle = Handle(arena.0.brand(entry.borrow()));
+                    return Some(Rc::new(arena, handle));
+                }
             }
-        }
-        None
+            None
+        })
     }
 
     fn dup<'id>(

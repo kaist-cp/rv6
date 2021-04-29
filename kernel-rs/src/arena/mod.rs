@@ -4,7 +4,7 @@
 //! For types that `impl Arena`, you can allocate a thread safe `Rc` (reference counted pointer) from it.
 //!
 //! This module also includes pre-built arenas, such as `ArrayArena`(array based arena) or `MruArena`(list based arena).
-// Note: To let the users implement their own arena types, we need to provide the `Handle::unwrap` method.
+// Note: To let the users implement their own arena types, we may want to add `Rc::new_unchecked` and `Handle::unwrap` method.
 
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
@@ -17,53 +17,49 @@ mod mru_arena;
 pub use array_arena::ArrayArena;
 pub use mru_arena::MruArena;
 
-/// A homogeneous memory allocator, equipped with the box type representing an allocation.
+/// A homogeneous memory allocator. Provides `Rc<Arena>` to the outside.
 pub trait Arena: Sized {
     /// The value type of the allocator.
     type Data: ArenaObject;
     /// The guard type for arena.
     type Guard<'s>;
 
-    /// Find or alloc.
-    fn find_or_alloc_handle<'id, C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
-        self: ArenaRef<'id, &Self>,
-        c: C,
-        n: N,
-    ) -> Option<Handle<'id, Self::Data>>;
-
+    /// Looks for an `Rc` that already contains the data, and clone it if exists. Otherwise, we allocate a new `Rc`.
+    /// * Uses `c` to check if the data is the one we are looking for.
+    /// * Uses `n` to initialize a new `Rc`.
+    ///
+    /// If an empty entry does not exist, returns `None`.
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         &self,
         c: C,
         n: N,
-    ) -> Option<Rc<Self>> {
-        ArenaRef::new(self, |arena| {
-            let inner = arena.find_or_alloc_handle(c, n)?;
-            Some(Rc::new(arena, inner))
-        })
-    }
+    ) -> Option<Rc<Self>>;
 
-    /// Failable allocation.
-    fn alloc_handle<'id, F: FnOnce(&mut Self::Data)>(
-        self: ArenaRef<'id, &Self>,
-        f: F,
-    ) -> Option<Handle<'id, Self::Data>>;
+    /// Allocates an `Rc` using the first empty entry.
+    /// * Uses `f` to initialze a new `Rc`.
+    ///
+    /// Otherwise, returns `None`.
+    fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Rc<Self>>;
 
-    fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Rc<Self>> {
-        ArenaRef::new(self, |arena| {
-            let inner = arena.alloc_handle(f)?;
-            Some(Rc::new(arena, inner))
-        })
-    }
-
-    /// Duplicate a given handle, and increase the reference count.
+    /// Duplicates a given handle, increasing the reference count.
+    ///
+    /// # Note
+    ///
+    /// This method is automatically used by the `Rc`.
+    /// Usually, you don't need to manually call this method.
     // TODO: If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `clone` instead.
     fn dup<'id>(
         self: ArenaRef<'id, &Self>,
         handle: HandleRef<'id, '_, Self::Data>,
     ) -> Handle<'id, Self::Data>;
 
-    /// Deallocate a given handle, and finalize the referred object if there are
-    /// no more handles.
+    /// Deallocate a given handle, decreasing the reference count
+    /// Finalizes the referred object if there are no more handles.
+    ///
+    /// # Note
+    ///
+    /// This method is automatically used by the `Rc`.
+    /// Usually, you don't need to manually call this method.
     // TODO: If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `drop` instead.
     fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: Handle<'id, Self::Data>);
 
@@ -147,6 +143,7 @@ pub struct Rc<A: Arena> {
 unsafe impl<T: Sync, A: Arena<Data = T>> Send for Rc<A> {}
 
 impl<T, A: Arena<Data = T>> Rc<A> {
+    /// Creates a new `Rc`, allocated from the arena.
     pub fn new<'id>(arena: ArenaRef<'id, &A>, inner: Handle<'id, T>) -> Self {
         Self {
             arena: arena.0.into_inner(),

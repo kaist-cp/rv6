@@ -7,7 +7,7 @@ use core::pin::Pin;
 use array_macro::array;
 use pin_project::pin_project;
 
-use super::{Arena, ArenaObject, ArenaRef, Handle, HandleRef};
+use super::{Arena, ArenaObject, ArenaRef, Handle, HandleRef, Rc};
 use crate::{
     lock::{Spinlock, SpinlockGuard},
     util::list::{List, ListEntry, ListNode},
@@ -98,57 +98,59 @@ impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
     type Data = T;
     type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
 
-    fn find_or_alloc_handle<'id, C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
-        self: ArenaRef<'id, &Self>,
+    fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
+        &self,
         c: C,
         n: N,
-    ) -> Option<Handle<'id, Self::Data>> {
-        let mut guard = self.lock();
-        let this = guard.get_pin_mut().project();
+    ) -> Option<Rc<Self>> {
+        ArenaRef::new(self, |arena| {
+            let mut guard = arena.lock();
+            let this = guard.get_pin_mut().project();
 
-        let mut empty: Option<*mut RcCell<T>> = None;
-        // SAFETY: the whole `MruArena` is protected by a lock.
-        for entry in unsafe { this.list.iter_pin_mut_unchecked() } {
-            if !entry.data.is_borrowed() {
-                empty = Some(&entry.data as *const _ as *mut _);
-            }
-            if let Some(r) = entry.data.try_borrow() {
-                if c(&r) {
-                    return Some(Handle(self.0.brand(r)));
+            let mut empty: Option<*mut RcCell<T>> = None;
+            // SAFETY: the whole `MruArena` is protected by a lock.
+            for entry in unsafe { this.list.iter_pin_mut_unchecked() } {
+                if !entry.data.is_borrowed() {
+                    empty = Some(&entry.data as *const _ as *mut _);
+                }
+                if let Some(r) = entry.data.try_borrow() {
+                    if c(&r) {
+                        return Some(Rc::new(arena, Handle(arena.0.brand(r))));
+                    }
                 }
             }
-        }
 
-        empty.map(|cell_raw| {
-            // SAFETY: `cell` is not referenced or borrowed. Also, it is already pinned.
-            let mut cell = unsafe { Pin::new_unchecked(&mut *cell_raw) };
-            n(cell.as_mut().get_pin_mut().unwrap().get_mut());
-            Handle(self.0.brand(cell.borrow()))
+            empty.map(|cell_raw| {
+                // SAFETY: `cell` is not referenced or borrowed. Also, it is already pinned.
+                let mut cell = unsafe { Pin::new_unchecked(&mut *cell_raw) };
+                n(cell.as_mut().get_pin_mut().unwrap().get_mut());
+                let handle = Handle(arena.0.brand(cell.borrow()));
+                Rc::new(arena, handle)
+            })
         })
     }
 
-    fn alloc_handle<'id, F: FnOnce(&mut Self::Data)>(
-        self: ArenaRef<'id, &Self>,
-        f: F,
-    ) -> Option<Handle<'id, Self::Data>> {
-        let mut guard = self.lock();
-        let this = guard.get_pin_mut().project();
+    fn alloc<F: FnOnce(&mut Self::Data)>(&self, f: F) -> Option<Rc<Self>> {
+        ArenaRef::new(self, |arena| {
+            let mut guard = arena.lock();
+            let this = guard.get_pin_mut().project();
 
-        // SAFETY: the whole `MruArena` is protected by a lock.
-        for mut entry in unsafe { this.list.iter_pin_mut_unchecked().rev() } {
-            if !entry.data.is_borrowed() {
-                f(entry
-                    .as_mut()
-                    .project()
-                    .data
-                    .get_pin_mut()
-                    .unwrap()
-                    .get_mut());
-                return Some(Handle(self.0.brand(entry.data.borrow())));
+            // SAFETY: the whole `MruArena` is protected by a lock.
+            for mut entry in unsafe { this.list.iter_pin_mut_unchecked().rev() } {
+                if !entry.data.is_borrowed() {
+                    f(entry
+                        .as_mut()
+                        .project()
+                        .data
+                        .get_pin_mut()
+                        .unwrap()
+                        .get_mut());
+                    let handle = Handle(arena.0.brand(entry.data.borrow()));
+                    return Some(Rc::new(arena, handle));
+                }
             }
-        }
-
-        None
+            None
+        })
     }
 
     fn dup<'id>(
