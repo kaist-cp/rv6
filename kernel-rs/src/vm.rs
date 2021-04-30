@@ -1,6 +1,7 @@
 use core::{cmp, marker::PhantomData, mem, slice};
 
 use bitflags::bitflags;
+use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
     arch::addr::{
@@ -540,11 +541,11 @@ impl UserMemory {
     /// Copy from kernel to user.
     /// Copy from src to virtual address dstva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    pub fn copy_out<T>(&mut self, dstva: UVAddr, src: &T) -> Result<(), ()> {
+    pub fn copy_out<T: AsBytes>(&mut self, dstva: UVAddr, src: &T) -> Result<(), ()> {
         self.copy_out_bytes(
             dstva,
-            // SAFETY: src is a valid reference to T and
-            // u8 does not have any internal structure.
+            // SAFETY: `T` implements `AsBytes` and thus we can read `dst` as if it's an `u8`
+            // buffer.
             unsafe { core::slice::from_raw_parts_mut(src as *const _ as _, mem::size_of::<T>()) },
         )
     }
@@ -572,12 +573,10 @@ impl UserMemory {
     /// Copy from user to kernel.
     /// Copy to dst from virtual address srcva in a given page table.
     /// Return Ok(()) on success, Err(()) on error.
-    ///
-    /// # Safety
-    ///
-    /// `T` can be safely `transmute`d to `[u8; size_of::<T>()]`.
-    pub unsafe fn copy_in<T>(&mut self, dst: &mut T, srcva: UVAddr) -> Result<(), ()> {
+    pub unsafe fn copy_in<T: FromBytes>(&mut self, dst: &mut T, srcva: UVAddr) -> Result<(), ()> {
         self.copy_in_bytes(
+            // SAFETY: `T` implements `FromBytes` and thus we can write to `dst` as if it's an `u8`
+            // buffer.
             unsafe { core::slice::from_raw_parts_mut(dst as *mut _ as _, mem::size_of::<T>()) },
             srcva,
         )

@@ -1,4 +1,6 @@
-#[derive(Copy, Clone)]
+use zerocopy::AsBytes;
+
+#[derive(Copy, Clone, AsBytes)]
 #[repr(C)]
 pub struct Stat {
     /// File system's disk device
@@ -12,6 +14,9 @@ pub struct Stat {
 
     /// Number of links to file
     pub nlink: i16,
+
+    /// Padding for safetly serializing the struct
+    pub _padding: u32,
 
     /// Size of file in bytes
     pub size: usize,

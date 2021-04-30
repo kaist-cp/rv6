@@ -75,6 +75,7 @@ use core::{
 };
 
 use static_assertions::const_assert;
+use zerocopy::{AsBytes, FromBytes};
 
 use super::{FileName, Stat, IPB, MAXFILE, NDIRECT, NINDIRECT};
 use crate::{
@@ -183,7 +184,8 @@ pub struct InodeGuard<'a> {
     pub inode: &'a Inode,
 }
 
-#[derive(Default)]
+#[repr(C)]
+#[derive(Default, AsBytes, FromBytes)]
 pub struct Dirent {
     pub inum: u16,
     name: [u8; DIRSIZ],
@@ -192,9 +194,7 @@ pub struct Dirent {
 impl Dirent {
     fn new(ip: &mut InodeGuard<'_>, off: u32, ctx: &KernelCtx<'_, '_>) -> Result<Dirent, ()> {
         let mut dirent = Dirent::default();
-        // SAFETY: Dirent can be safely transmuted to [u8; _], as it
-        // contains only u16 and u8's, which do not have internal structures.
-        unsafe { ip.read_kernel(&mut dirent, off, ctx) }?;
+        ip.read_kernel(&mut dirent, off, ctx)?;
         Ok(dirent)
     }
 
@@ -409,18 +409,15 @@ impl InodeGuard<'_> {
 
     /// Copy data into `dst` from the content of inode at offset `off`.
     /// Return Ok(()) on success, Err(()) on failure.
-    ///
-    /// # Safety
-    ///
-    /// `T` can be safely `transmute`d to `[u8; size_of::<T>()]`.
-    pub unsafe fn read_kernel<T>(
+    pub fn read_kernel<T: FromBytes>(
         &mut self,
         dst: &mut T,
         off: u32,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
         let bytes = self.read_bytes_kernel(
-            // SAFETY: the safety assumption of this method.
+            // SAFETY: `T` implements `FromBytes` and thus we can write to `dst` as if it's an `u8`
+            // buffer.
             unsafe { core::slice::from_raw_parts_mut(dst as *mut _ as _, mem::size_of::<T>()) },
             off,
             ctx,
@@ -526,7 +523,7 @@ impl InodeGuard<'_> {
 
     /// Copy data from `src` into the inode at offset `off`.
     /// Return Ok(()) on success, Err(()) on failure.
-    pub fn write_kernel<T>(
+    pub fn write_kernel<T: AsBytes>(
         &mut self,
         src: &T,
         off: u32,
@@ -534,8 +531,8 @@ impl InodeGuard<'_> {
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
         let bytes = self.write_bytes_kernel(
-            // SAFETY: src is a valid reference to T and
-            // u8 does not have any internal structure.
+            // SAFETY: `T` implements `AsBytes` and thus we can read `src` as if it's an `u8`
+            // buffer.
             unsafe { core::slice::from_raw_parts(src as *const _ as _, mem::size_of::<T>()) },
             off,
             tx,
@@ -722,9 +719,8 @@ impl InodeGuard<'_> {
     pub fn is_dir_empty(&mut self, ctx: &KernelCtx<'_, '_>) -> bool {
         let mut de: Dirent = Default::default();
         for off in (2 * DIRENT_SIZE as u32..self.deref_inner().size).step_by(DIRENT_SIZE) {
-            // SAFETY: Dirent can be safely transmuted to [u8; _], as it
-            // contains only u16 and u8's, which do not have internal structures.
-            unsafe { self.read_kernel(&mut de, off, ctx) }.expect("is_dir_empty: read_kernel");
+            self.read_kernel(&mut de, off, ctx)
+                .expect("is_dir_empty: read_kernel");
             if de.inum != 0 {
                 return false;
             }
@@ -874,6 +870,7 @@ impl Inode {
                 InodeType::Device { .. } => 3,
             },
             nlink: inner.nlink,
+            _padding: 0,
             size: inner.size as usize,
         }
     }
