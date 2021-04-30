@@ -29,7 +29,6 @@
 //! (i.e. A `Node` does not need to statically outlive the `List`, and conversely, the `List` does not need to statically outlive the `Node`s.)
 
 // TODO: This is not an intrusive linked list. We need a safe `List`/`Node` type, where a `Node` can be inserted to multiple `List`s.
-// TODO: Check if `T` is `Unpin`. (Assumed `Unpin` in the following)
 
 use core::marker::{PhantomData, PhantomPinned};
 use core::pin::Pin;
@@ -91,6 +90,7 @@ pub struct CursorMut<'s, T> {
 pub struct Node<T> {
     #[pin]
     list_entry: ListEntry,
+    #[pin]
     data: T,
 }
 
@@ -151,11 +151,11 @@ impl<T> List<T> {
         }
     }
 
-    /// Provides a mutable reference to the back element, or `None` if the list is empty.
+    /// Provides a pinned mutable reference to the back element, or `None` if the list is empty.
     // SAFETY: We do not actually borrow the `Node` here.
     // However, this is safe since only one `&mut T` exists for each `List` anyway.
     // Also, the `Node` does not drop while the `&mut T` exists.
-    pub fn back_mut(self: Pin<&mut Self>) -> Option<&mut T> {
+    pub fn back_pin_mut(self: Pin<&mut Self>) -> Option<Pin<&mut T>> {
         if self.is_empty() {
             None
         } else {
@@ -164,11 +164,11 @@ impl<T> List<T> {
         }
     }
 
-    /// Provides a mutable reference to the front element, or `None` if the list is empty.
+    /// Provides a pinned mutable reference to the front element, or `None` if the list is empty.
     // SAFETY: We do not actually borrow the `Node` here.
     // However, this is safe since only one `&mut T` exists for each `List` anyway.
     // Also, the `Node` does not drop while the `&mut T` exists.
-    pub fn front_mut(self: Pin<&mut Self>) -> Option<&mut T> {
+    pub fn front_pin_mut(self: Pin<&mut Self>) -> Option<Pin<&mut T>> {
         if self.is_empty() {
             None
         } else {
@@ -177,8 +177,12 @@ impl<T> List<T> {
         }
     }
 
-    /// Appends a `Node` to the back of a list, and returns a mutable reference to its data.
-    pub fn push_back<'s>(mut self: Pin<&'s mut Self>, mut node: Pin<&'s mut Node<T>>) -> &'s mut T {
+    /// Appends a `Node` to the back of a list, and returns a pinned mutable reference to its data.
+    /// If `T: Unpin`, use `get_mut` on the returned `Pin` to obtain an `&mut T`.
+    pub fn push_back<'s>(
+        mut self: Pin<&'s mut Self>,
+        mut node: Pin<&'s mut Node<T>>,
+    ) -> Pin<&'s mut T> {
         self.as_mut()
             .project()
             .head
@@ -186,11 +190,12 @@ impl<T> List<T> {
         node.project().data
     }
 
-    /// Appends a `Node` to the front of a list, and returns a mutable reference to its data.
+    /// Appends a `Node` to the front of a list, and returns a pinned mutable reference to its data.
+    /// If `T: Unpin`, use `get_mut` on the returned `Pin` to obtain an `&mut T`.
     pub fn push_front<'s>(
         mut self: Pin<&'s mut Self>,
         mut node: Pin<&'s mut Node<T>>,
-    ) -> &'s mut T {
+    ) -> Pin<&'s mut T> {
         self.as_mut()
             .project()
             .head
@@ -270,6 +275,18 @@ impl<T> List<T> {
             current: self.head.next(),
             _marker: PhantomData,
         }
+    }
+}
+
+impl<T: Unpin> List<T> {
+    /// Provides a mutable reference to the back element, or `None` if the list is empty.
+    pub fn back_mut(self: Pin<&mut Self>) -> Option<&mut T> {
+        self.back_pin_mut().map(|pin| pin.get_mut())
+    }
+
+    /// Provides a mutable reference to the front element, or `None` if the list is empty.
+    pub fn front_mut(self: Pin<&mut Self>) -> Option<&mut T> {
+        self.front_pin_mut().map(|pin| pin.get_mut())
     }
 }
 
@@ -431,15 +448,19 @@ impl<'s, T> CursorMut<'s, T> {
         }
     }
 
-    /// Inserts a new `Node` into the `List` after the current one.
-    pub fn insert_before<'t>(&'t mut self, mut node: Pin<&'t mut Node<T>>) -> &'t mut T {
+    /// Inserts a new `Node` into the `List` after the current one,
+    /// and returns a pinned mutable reference to its data.
+    /// If `T: Unpin`, use `get_mut` on the returned `Pin` to obtain an `&mut T`.
+    pub fn insert_before<'t>(&'t mut self, mut node: Pin<&'t mut Node<T>>) -> Pin<&'t mut T> {
         self.current_entry()
             .push_back(node.as_mut().project().list_entry);
         node.project().data
     }
 
-    /// Inserts a new `Node` into the `List` before the current one.
-    pub fn insert_after<'t>(&'t mut self, mut node: Pin<&'t mut Node<T>>) -> &'t mut T {
+    /// Inserts a new `Node` into the `List` before the current one,
+    /// and returns a pinned mutable reference to its data.
+    /// If `T: Unpin`, use `get_mut` on the returned `Pin` to obtain an `&mut T`.
+    pub fn insert_after<'t>(&'t mut self, mut node: Pin<&'t mut Node<T>>) -> Pin<&'t mut T> {
         self.current_entry()
             .push_front(node.as_mut().project().list_entry);
         node.project().data
@@ -488,11 +509,11 @@ impl<T> Node<T> {
         }
     }
 
-    /// Returns a mutable reference to the inner data if the `Node` is not inside a `List`.
+    /// Returns a pinned mutable reference to the inner data if the `Node` is not inside a `List`.
     /// Otherwise, returns `None`.
-    pub fn try_get_mut(self: Pin<&mut Self>) -> Option<&mut T> {
+    pub fn try_get_pin_mut(self: Pin<&mut Self>) -> Option<Pin<&mut T>> {
         if self.list_entry.is_unlinked() {
-            Some(&mut unsafe { self.get_unchecked_mut() }.data)
+            Some(self.project().data)
         } else {
             None
         }
@@ -508,6 +529,32 @@ impl<T> Node<T> {
         &self.data
     }
 
+    /// Returns a pinned mutable reference to the inner data.
+    /// The reference borrows the `Node` **and the `List`** for its lifetime.
+    ///
+    /// # Safety
+    ///
+    /// The `Node` must already be inserted inside the given list.
+    pub unsafe fn get_pin_mut_unchecked<'s>(
+        self: Pin<&'s mut Self>,
+        _list_mut: Pin<&'s mut List<T>>,
+    ) -> Pin<&'s mut T> {
+        self.project().data
+    }
+
+    /// Converts a raw pointer of a `ListEntry` into a raw pointer of the `Node` that owns the `ListEntry`.
+    fn from_list_entry(list_entry: *mut ListEntry) -> *mut Self {
+        (list_entry as usize - Self::LIST_ENTRY_OFFSET) as *mut Self
+    }
+}
+
+impl<T: Unpin> Node<T> {
+    // Returns a mutable reference to the inner data if the `Node` is not inside a `List`.
+    /// Otherwise, returns `None`.
+    pub fn try_get_mut(self: Pin<&mut Self>) -> Option<&mut T> {
+        self.try_get_pin_mut().map(|pin| pin.get_mut())
+    }
+
     /// Returns a mutable reference to the inner data.
     /// The reference borrows the `Node` **and the `List`** for its lifetime.
     ///
@@ -518,12 +565,7 @@ impl<T> Node<T> {
         self: Pin<&'s mut Self>,
         _list_mut: Pin<&'s mut List<T>>,
     ) -> &'s mut T {
-        self.project().data
-    }
-
-    /// Converts a raw pointer of a `ListEntry` into a raw pointer of the `Node` that owns the `ListEntry`.
-    fn from_list_entry(list_entry: *mut ListEntry) -> *mut Self {
-        (list_entry as usize - Self::LIST_ENTRY_OFFSET) as *mut Self
+        self.project().data.get_mut()
     }
 }
 
