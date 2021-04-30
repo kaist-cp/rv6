@@ -197,7 +197,7 @@ impl KernelRef<'_, '_> {
 
         // Give up the CPU if this is a timer interrupt.
         if which_dev == 2 {
-            // TODO: safety?
+            // TODO(https://github.com/kaist-cp/rv6/issues/517): safety?
             if let Some(ctx) = unsafe { self.get_ctx() } {
                 // SAFETY:
                 // Reading state without lock is safe because `proc_yield` and `sched`

@@ -508,7 +508,7 @@ impl<'id> ProcGuard<'id, '_> {
         // SAFETY: this process cannot be the current process any longer.
         let data = unsafe { self.deref_mut_data() };
         let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
-        // TODO: remove kernel_builder()
+        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_builder()
         let allocator = &kernel_builder().kmem;
         // SAFETY: trap_frame uniquely refers to a valid page.
         allocator.free(unsafe { Page::from_usize(trap_frame as _) });
@@ -901,7 +901,7 @@ impl Procs {
 
             let name = b"initcode\x00";
             (&mut data.name[..name.len()]).copy_from_slice(name);
-            // TODO: remove kernel_builder()
+            // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_builder()
             let _ = data.cwd.write(kernel_builder().itable.root());
             // It's safe because cwd now has been initialized.
             guard.deref_mut_info().state = Procstate::RUNNABLE;
@@ -965,7 +965,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
             }
         }
 
-        // TODO: remove kernel_builder()
+        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_builder()
         let allocator = &kernel_builder().kmem;
         allocator.free(trap_frame);
         memory.free(allocator);
@@ -1164,7 +1164,8 @@ impl<'id, 's> ProcsRef<'id, 's> {
 
         // Parent might be sleeping in wait().
         let parent = *ctx.proc.get_mut_parent(&mut parent_guard);
-        // TODO: this assertion is actually unneccessary because parent is null
+        // TODO(https://github.com/kaist-cp/rv6/issues/519):
+        // This assertion is actually unneccessary because parent is null
         // only when proc is the initial process, which cannot be the case.
         assert!(!parent.is_null());
         // SAFETY: parent is a valid pointer according to the invariants of
