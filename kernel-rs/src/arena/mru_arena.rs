@@ -10,7 +10,7 @@ use pin_project::pin_project;
 use super::{Arena, ArenaObject, ArenaRef, Handle, HandleRef, Rc};
 use crate::{
     lock::{Spinlock, SpinlockGuard},
-    util::list::{List, ListEntry, ListNode},
+    util::intrusive_list::{List, ListEntry, ListNode},
     util::pinned_array::IterPinMut,
     util::rc_cell::{RcCell, RefMut},
 };
