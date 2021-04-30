@@ -114,7 +114,7 @@ impl<T> List<T> {
     /// # Safety
     ///
     /// Use after initialization.
-    pub unsafe fn new() -> Self {
+    pub const unsafe fn new() -> Self {
         Self {
             head: unsafe { ListEntry::new() },
             _marker: PhantomData,
@@ -178,7 +178,7 @@ impl<T> List<T> {
     }
 
     /// Appends a `Node` to the back of a list, and returns a mutable reference to its data.
-    pub fn push_back<'t>(mut self: Pin<&'t mut Self>, mut node: Pin<&'t mut Node<T>>) -> &'t mut T {
+    pub fn push_back<'s>(mut self: Pin<&'s mut Self>, mut node: Pin<&'s mut Node<T>>) -> &'s mut T {
         self.as_mut()
             .project()
             .head
@@ -187,10 +187,10 @@ impl<T> List<T> {
     }
 
     /// Appends a `Node` to the front of a list, and returns a mutable reference to its data.
-    pub fn push_front<'t>(
-        mut self: Pin<&'t mut Self>,
-        mut node: Pin<&'t mut Node<T>>,
-    ) -> &'t mut T {
+    pub fn push_front<'s>(
+        mut self: Pin<&'s mut Self>,
+        mut node: Pin<&'s mut Node<T>>,
+    ) -> &'s mut T {
         self.as_mut()
             .project()
             .head
@@ -466,7 +466,7 @@ impl<T> Node<T> {
     /// # Safety
     ///
     /// Use after initialization.
-    pub unsafe fn new(data: T) -> Self {
+    pub const unsafe fn new(data: T) -> Self {
         Self {
             list_entry: unsafe { ListEntry::new() },
             data,
