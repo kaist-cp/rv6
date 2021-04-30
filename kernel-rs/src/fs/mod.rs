@@ -43,15 +43,9 @@ const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
 const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
 
 pub struct FileSystem {
-    /// TODO(https://github.com/kaist-cp/rv6/issues/358)
-    /// Initializing superblock should be run only once because forkret() calls fsinit()
-    /// There should be one superblock per disk device, but we run with
-    /// only one device.
+    /// Initializing superblock should run only once because forkret() calls FileSystem::init().
+    /// There should be one superblock per disk device, but we run with only one device.
     superblock: Once<Superblock>,
-
-    /// TODO(https://github.com/kaist-cp/rv6/issues/358)
-    /// document it / initializing log should be run
-    /// only once because forkret() calls fsinit()
     pub log: Log,
 }
 
@@ -77,14 +71,8 @@ impl FileSystem {
         }
     }
 
-    /// TODO(https://github.com/kaist-cp/rv6/issues/358)
-    /// Calling superblock() after initialize is safe
     fn superblock(&self) -> &Superblock {
-        if let Some(sb) = self.superblock.get() {
-            sb
-        } else {
-            unreachable!()
-        }
+        self.superblock.get().expect("superblock")
     }
 
     /// Called for each FS system call.
