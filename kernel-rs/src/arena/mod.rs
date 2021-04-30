@@ -47,7 +47,8 @@ pub trait Arena: Sized {
     ///
     /// This method is automatically used by the `Rc`.
     /// Usually, you don't need to manually call this method.
-    // TODO: If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `clone` instead.
+    // TODO(https://github.com/kaist-cp/rv6/issues/400)
+    // If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `clone` instead.
     fn dup<'id>(
         self: ArenaRef<'id, &Self>,
         handle: HandleRef<'id, '_, Self::Data>,
@@ -60,7 +61,8 @@ pub trait Arena: Sized {
     ///
     /// This method is automatically used by the `Rc`.
     /// Usually, you don't need to manually call this method.
-    // TODO: If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `drop` instead.
+    // TODO(https://github.com/kaist-cp/rv6/issues/400)
+    // If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `drop` instead.
     fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: Handle<'id, Self::Data>);
 
     /// Temporarily releases the lock while calling `f`, and re-acquires the lock after `f` returned.

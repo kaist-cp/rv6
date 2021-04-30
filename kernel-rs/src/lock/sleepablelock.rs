@@ -55,7 +55,7 @@ impl<T> Sleepablelock<T> {
 
 impl<T> SleepablelockGuard<'_, T> {
     pub fn sleep(&mut self) {
-        // TODO: remove kernel_ctx()
+        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_ctx()
         unsafe { kernel_ctx(|ctx| self.lock.lock.waitchannel.sleep(self, &ctx)) };
     }
 

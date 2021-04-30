@@ -28,8 +28,8 @@
 //! * A `Node` can drop at any time if it is not inside a `List`.
 //! (i.e. A `Node` does not need to statically outlive the `List`, and conversely, the `List` does not need to statically outlive the `Node`s.)
 
-// TODO: This is not an intrusive linked list. We need a safe `List`/`Node` type, where a `Node` can be inserted to multiple `List`s.
-// TODO: Check if `T` is `Unpin`. (Assumed `Unpin` in the following)
+// TODO(https://github.com/kaist-cp/rv6/issues/518)
+// Check if `T` is `Unpin`. (Assumed `Unpin` in the following)
 
 use core::marker::{PhantomData, PhantomPinned};
 use core::pin::Pin;
@@ -457,9 +457,8 @@ impl<'s, T> CursorMut<'s, T> {
 }
 
 impl<T> Node<T> {
+    // TODO(https://github.com/kaist-cp/rv6/issues/370): use `offset_of!` instead.
     const LIST_ENTRY_OFFSET: usize = 0;
-
-    // TODO: use `offset_of!` instead.
 
     /// Returns a new `Node`.
     ///

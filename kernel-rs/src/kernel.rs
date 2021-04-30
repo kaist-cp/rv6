@@ -30,7 +30,7 @@ use crate::{
 static mut KERNEL: KernelBuilder = KernelBuilder::new();
 
 /// After intialized, the kernel is safe to immutably access.
-// TODO: make it unsafe
+// TODO(https://github.com/kaist-cp/rv6/issues/515): make it unsafe
 #[inline]
 pub fn kernel_builder<'s>() -> &'s KernelBuilder {
     unsafe { &KERNEL }
@@ -99,7 +99,8 @@ pub struct KernelBuilder {
 
     pub itable: Itable,
 
-    // TODO: Make this private and always use `KernelRef::fs` instead.
+    // TODO(https://github.com/kaist-cp/rv6/issues/516)
+    // Make this private and always use `KernelRef::fs` instead.
     pub file_system: FileSystem,
 }
 

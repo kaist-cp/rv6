@@ -308,7 +308,7 @@ impl Printer {
 impl fmt::Write for Printer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for c in s.bytes() {
-            // TODO: remove kernel_builder()
+            // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_builder()
             let kernel = kernel_builder();
             kernel.console.putc_spin(c, &kernel);
         }

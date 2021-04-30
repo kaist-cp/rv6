@@ -172,7 +172,7 @@ impl<T> Drop for Ref<T> {
 impl<T> RefMut<T> {
     /// Returns a pinned mutable reference to the inner data.
     pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
-        // TODO: Add safety reasoning after fixing issue #439
+        // TODO(https://github.com/kaist-cp/rv6/issues/439): add safety reasoning
         unsafe { Pin::new_unchecked(&mut *(*self.ptr).data.get()) }
     }
 
