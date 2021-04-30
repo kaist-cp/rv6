@@ -509,7 +509,7 @@ impl<'id> ProcGuard<'id, '_> {
         let data = unsafe { self.deref_mut_data() };
         let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
         // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_builder()
-        let allocator = &kernel_builder().kmem;
+        let allocator = &unsafe { kernel_builder() }.kmem;
         // SAFETY: trap_frame uniquely refers to a valid page.
         allocator.free(unsafe { Page::from_usize(trap_frame as _) });
         // SAFETY:
@@ -902,7 +902,7 @@ impl Procs {
             let name = b"initcode\x00";
             (&mut data.name[..name.len()]).copy_from_slice(name);
             // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_builder()
-            let _ = data.cwd.write(kernel_builder().itable.root());
+            let _ = data.cwd.write(unsafe { kernel_builder() }.itable.root());
             // It's safe because cwd now has been initialized.
             guard.deref_mut_info().state = Procstate::RUNNABLE;
 
@@ -966,7 +966,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
         }
 
         // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_builder()
-        let allocator = &kernel_builder().kmem;
+        let allocator = &unsafe { kernel_builder() }.kmem;
         allocator.free(trap_frame);
         memory.free(allocator);
         Err(())

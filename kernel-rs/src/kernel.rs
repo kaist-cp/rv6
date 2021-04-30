@@ -30,9 +30,8 @@ use crate::{
 static mut KERNEL: KernelBuilder = KernelBuilder::new();
 
 /// After intialized, the kernel is safe to immutably access.
-// TODO(https://github.com/kaist-cp/rv6/issues/515): make it unsafe
 #[inline]
-pub fn kernel_builder<'s>() -> &'s KernelBuilder {
+pub unsafe fn kernel_builder<'s>() -> &'s KernelBuilder {
     unsafe { &KERNEL }
 }
 
@@ -296,7 +295,8 @@ impl KernelBuilder {
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {
-        $crate::kernel::kernel_builder().printer_write_fmt(format_args!($($arg)*)).unwrap();
+        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_builder()
+        unsafe { $crate::kernel::kernel_builder() }.printer_write_fmt(format_args!($($arg)*)).unwrap();
     };
 }
 
@@ -307,12 +307,12 @@ macro_rules! println {
     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
 
-/// Handles panic.
+/// Handles panic by freezing other CPUs.
 #[cfg(not(test))]
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
-    // Freeze other CPUs.
-    kernel_builder().panic();
+    // SAFETY: it is called only after the kernel is initialized.
+    unsafe { kernel_builder() }.panic();
     println!("{}", info);
 
     spin_loop()
