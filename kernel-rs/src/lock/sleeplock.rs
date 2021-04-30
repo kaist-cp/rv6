@@ -29,7 +29,7 @@ impl RawLock for RawSleeplock {
         while *guard != -1 {
             guard.sleep();
         }
-        // TODO: remove kernel_ctx()
+        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_ctx()
         *guard = unsafe { kernel_ctx(|ctx| ctx.proc().pid()) };
     }
 
@@ -41,7 +41,7 @@ impl RawLock for RawSleeplock {
 
     fn holding(&self) -> bool {
         let guard = self.inner.lock();
-        // TODO: remove kernel_ctx()
+        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_ctx()
         *guard == unsafe { kernel_ctx(|ctx| ctx.proc().pid()) }
     }
 }

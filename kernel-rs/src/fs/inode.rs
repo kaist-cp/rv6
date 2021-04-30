@@ -794,7 +794,7 @@ impl ArenaObject for Inode {
                 }
             };
 
-            // TODO: remove kernel_ctx()
+            // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_ctx()
             unsafe {
                 kernel_ctx(finalize_inner);
             }
