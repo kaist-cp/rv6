@@ -1152,7 +1152,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
         // by assigning None to self.cwd. Deallocation of an inode may cause
         // disk write operations, so we must begin a transaction here.
         let kernel = ctx.kernel();
-        let tx = kernel.file_system.begin_transaction();
+        let tx = kernel.fs().begin_transaction();
         // SAFETY: CurrentProc's cwd has been initialized.
         // It's ok to drop cwd as proc will not be used any longer.
         unsafe { ctx.proc.deref_mut_data().cwd.assume_init_drop() };
@@ -1298,7 +1298,7 @@ unsafe fn forkret() -> ! {
         // File system initialization must be run in the context of a
         // regular process (e.g., because it calls sleep), and thus cannot
         // be run from main().
-        ctx.kernel.file_system.init(ROOTDEV, &ctx);
+        ctx.kernel.fs().init(ROOTDEV, &ctx);
         unsafe { ctx.user_trap_ret() }
     };
 

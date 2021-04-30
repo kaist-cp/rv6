@@ -220,7 +220,7 @@ impl ArenaObject for File {
                         // TODO(https://github.com/kaist-cp/rv6/issues/290): The inode ip will
                         // be dropped by drop(ip). Deallocation of an inode may cause disk write
                         // operations, so we must begin a transaction here.
-                        let _tx = kref.file_system.begin_transaction();
+                        let _tx = kref.fs().begin_transaction();
                         drop(ip);
                     }
                     _ => (),

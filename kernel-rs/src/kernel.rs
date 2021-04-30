@@ -99,9 +99,7 @@ pub struct KernelBuilder {
 
     pub itable: Itable,
 
-    // TODO(https://github.com/kaist-cp/rv6/issues/516)
-    // Make this private and always use `KernelRef::fs` instead.
-    pub file_system: FileSystem,
+    file_system: FileSystem,
 }
 
 #[repr(transparent)]
