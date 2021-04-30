@@ -37,6 +37,7 @@ use crate::{
 };
 
 pub struct Log {
+    /// Initializing inner should run only once because forkret() calls FileSystem::init().
     inner: Once<Sleepablelock<LogInner>>,
     pub disk: Sleepablelock<VirtioDisk>,
 }
