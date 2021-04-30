@@ -15,6 +15,10 @@
 //! 80000000 -- entry.S, then kernel text and data
 //! end -- start of kernel page allocation area
 //! PHYSTOP -- end RAM used by the kernel
+
+// Dead code is allowed in this file because not all components are used in the kernel.
+#![allow(dead_code)]
+
 use crate::arch::addr::{MAXVA, PGSIZE};
 
 /// SiFive Test Finisher. (virt device only)

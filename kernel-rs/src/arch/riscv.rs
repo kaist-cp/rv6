@@ -1,3 +1,8 @@
+//! RISC-V instructions.
+
+// Dead code is allowed in this file because not all components are used in the kernel.
+#![allow(dead_code)]
+
 use bitflags::bitflags;
 
 /// Which hart (core) is this?

@@ -35,11 +35,6 @@ pub const LOGSIZE: usize = MAXOPBLOCKS * 3;
 /// Size of disk block cache.
 pub const NBUF: usize = MAXOPBLOCKS * 3;
 
-// TODO(https://github.com/kaist-cp/rv6/issues/120): `FSSIZE` seems no longer used.
-#[allow(dead_code)]
-/// Size of file system in blocks.
-pub const FSSIZE: usize = 2000;
-
 /// Maximum file path name.
 pub const MAXPATH: usize = 128;
 
