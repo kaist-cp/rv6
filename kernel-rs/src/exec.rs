@@ -4,7 +4,7 @@ use core::{cmp, mem};
 
 use bitflags::bitflags;
 use itertools::*;
-use zerocopy::FromBytes;
+use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
     arch::addr::{pgroundup, PAddr, PGSIZE},
@@ -27,7 +27,7 @@ const ELF_PROG_LOAD: u32 = 1;
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
-#[derive(FromBytes)]
+#[derive(AsBytes, FromBytes)]
 struct ElfHdr {
     /// must equal ELF_MAGIC
     magic: u32,
@@ -50,7 +50,7 @@ struct ElfHdr {
 bitflags! {
     /// Flag bits for ProgHdr flags
     #[repr(C)]
-    #[derive(FromBytes)]
+    #[derive(AsBytes, FromBytes)]
     struct ProgFlags: u32 {
         const EXEC = 1;
         const WRITE = 2;
@@ -70,7 +70,7 @@ impl Default for ProgFlags {
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
-#[derive(FromBytes)]
+#[derive(AsBytes, FromBytes)]
 struct ProgHdr {
     typ: u32,
     flags: ProgFlags,

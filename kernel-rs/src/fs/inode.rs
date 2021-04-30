@@ -409,19 +409,13 @@ impl InodeGuard<'_> {
 
     /// Copy data into `dst` from the content of inode at offset `off`.
     /// Return Ok(()) on success, Err(()) on failure.
-    pub fn read_kernel<T: FromBytes>(
+    pub fn read_kernel<T: AsBytes + FromBytes>(
         &mut self,
         dst: &mut T,
         off: u32,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
-        let bytes = self.read_bytes_kernel(
-            // SAFETY: `T` implements `FromBytes` and thus we can write to `dst` as if it's an `u8`
-            // buffer.
-            unsafe { core::slice::from_raw_parts_mut(dst as *mut _ as _, mem::size_of::<T>()) },
-            off,
-            ctx,
-        );
+        let bytes = self.read_bytes_kernel(dst.as_bytes_mut(), off, ctx);
         if bytes == mem::size_of::<T>() {
             Ok(())
         } else {
@@ -530,14 +524,7 @@ impl InodeGuard<'_> {
         tx: &FsTransaction<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
-        let bytes = self.write_bytes_kernel(
-            // SAFETY: `T` implements `AsBytes` and thus we can read `src` as if it's an `u8`
-            // buffer.
-            unsafe { core::slice::from_raw_parts(src as *const _ as _, mem::size_of::<T>()) },
-            off,
-            tx,
-            ctx,
-        )?;
+        let bytes = self.write_bytes_kernel(src.as_bytes(), off, tx, ctx)?;
         if bytes == mem::size_of::<T>() {
             Ok(())
         } else {
