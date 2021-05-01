@@ -6,7 +6,7 @@
 //! list of blocks holding the file's content.
 //!
 //! The inodes are laid out sequentially on disk at
-//! kernel.file_system.superblock.startinode. Each inode has a number, indicating its
+//! kernel.fs().superblock.startinode. Each inode has a number, indicating its
 //! position on the disk.
 //!
 //! The kernel keeps a table of in-use inodes in memory
@@ -75,6 +75,7 @@ use core::{
 };
 
 use static_assertions::const_assert;
+use zerocopy::{AsBytes, FromBytes};
 
 use super::{FileName, Stat, IPB, MAXFILE, NDIRECT, NINDIRECT};
 use crate::{
@@ -183,7 +184,8 @@ pub struct InodeGuard<'a> {
     pub inode: &'a Inode,
 }
 
-#[derive(Default)]
+#[repr(C)]
+#[derive(Default, AsBytes, FromBytes)]
 pub struct Dirent {
     pub inum: u16,
     name: [u8; DIRSIZ],
@@ -192,9 +194,7 @@ pub struct Dirent {
 impl Dirent {
     fn new(ip: &mut InodeGuard<'_>, off: u32, ctx: &KernelCtx<'_, '_>) -> Result<Dirent, ()> {
         let mut dirent = Dirent::default();
-        // SAFETY: Dirent can be safely transmuted to [u8; _], as it
-        // contains only u16 and u8's, which do not have internal structures.
-        unsafe { ip.read_kernel(&mut dirent, off, ctx) }?;
+        ip.read_kernel(&mut dirent, off, ctx)?;
         Ok(dirent)
     }
 
@@ -324,9 +324,9 @@ impl InodeGuard<'_> {
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk.
     pub fn update(&self, tx: &FsTransaction<'_>, ctx: &KernelCtx<'_, '_>) {
-        let mut bp = ctx.kernel().file_system.log.disk.read(
+        let mut bp = ctx.kernel().fs().log.disk.read(
             self.dev,
-            ctx.kernel().file_system.superblock().iblock(self.inum),
+            ctx.kernel().fs().superblock().iblock(self.inum),
             ctx,
         );
 
@@ -386,7 +386,7 @@ impl InodeGuard<'_> {
         if self.deref_inner().addr_indirect != 0 {
             let mut bp =
                 ctx.kernel()
-                    .file_system
+                    .fs()
                     .log
                     .disk
                     .read(dev, self.deref_inner().addr_indirect, ctx);
@@ -409,22 +409,13 @@ impl InodeGuard<'_> {
 
     /// Copy data into `dst` from the content of inode at offset `off`.
     /// Return Ok(()) on success, Err(()) on failure.
-    ///
-    /// # Safety
-    ///
-    /// `T` can be safely `transmute`d to `[u8; size_of::<T>()]`.
-    pub unsafe fn read_kernel<T>(
+    pub fn read_kernel<T: AsBytes + FromBytes>(
         &mut self,
         dst: &mut T,
         off: u32,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
-        let bytes = self.read_bytes_kernel(
-            // SAFETY: the safety assumption of this method.
-            unsafe { core::slice::from_raw_parts_mut(dst as *mut _ as _, mem::size_of::<T>()) },
-            off,
-            ctx,
-        );
+        let bytes = self.read_bytes_kernel(dst.as_bytes_mut(), off, ctx);
         if bytes == mem::size_of::<T>() {
             Ok(())
         } else {
@@ -508,11 +499,12 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let bp = k.kernel().file_system.log.disk.read(
-                self.dev,
-                self.bmap(off as usize / BSIZE, &k),
-                &k,
-            );
+            let bp =
+                k.kernel()
+                    .fs()
+                    .log
+                    .disk
+                    .read(self.dev, self.bmap(off as usize / BSIZE, &k), &k);
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
@@ -525,21 +517,14 @@ impl InodeGuard<'_> {
 
     /// Copy data from `src` into the inode at offset `off`.
     /// Return Ok(()) on success, Err(()) on failure.
-    pub fn write_kernel<T>(
+    pub fn write_kernel<T: AsBytes>(
         &mut self,
         src: &T,
         off: u32,
         tx: &FsTransaction<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
-        let bytes = self.write_bytes_kernel(
-            // SAFETY: src is a valid reference to T and
-            // u8 does not have any internal structure.
-            unsafe { core::slice::from_raw_parts(src as *const _ as _, mem::size_of::<T>()) },
-            off,
-            tx,
-            ctx,
-        )?;
+        let bytes = self.write_bytes_kernel(src.as_bytes(), off, tx, ctx)?;
         if bytes == mem::size_of::<T>() {
             Ok(())
         } else {
@@ -631,7 +616,7 @@ impl InodeGuard<'_> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = k.kernel().file_system.log.disk.read(
+            let mut bp = k.kernel().fs().log.disk.read(
                 self.dev,
                 self.bmap_or_alloc(off as usize / BSIZE, tx, &k),
                 &k,
@@ -703,12 +688,7 @@ impl InodeGuard<'_> {
                 self.deref_inner_mut().addr_indirect = indirect;
             }
 
-            let mut bp = ctx
-                .kernel()
-                .file_system
-                .log
-                .disk
-                .read(self.dev, indirect, ctx);
+            let mut bp = ctx.kernel().fs().log.disk.read(self.dev, indirect, ctx);
             let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
             let mut addr = data[bn];
@@ -726,9 +706,8 @@ impl InodeGuard<'_> {
     pub fn is_dir_empty(&mut self, ctx: &KernelCtx<'_, '_>) -> bool {
         let mut de: Dirent = Default::default();
         for off in (2 * DIRENT_SIZE as u32..self.deref_inner().size).step_by(DIRENT_SIZE) {
-            // SAFETY: Dirent can be safely transmuted to [u8; _], as it
-            // contains only u16 and u8's, which do not have internal structures.
-            unsafe { self.read_kernel(&mut de, off, ctx) }.expect("is_dir_empty: read_kernel");
+            self.read_kernel(&mut de, off, ctx)
+                .expect("is_dir_empty: read_kernel");
             if de.inum != 0 {
                 return false;
             }
@@ -771,9 +750,7 @@ impl ArenaObject for Inode {
                 // resulting FsTransaction value is never used. Such transactions
                 // can be found in finalize in file.rs, sys_chdir in sysfile.rs,
                 // close_files in proc.rs, and exec in exec.rs.
-                let tx = mem::ManuallyDrop::new(FsTransaction {
-                    fs: &kernel.file_system,
-                });
+                let tx = mem::ManuallyDrop::new(FsTransaction { fs: &kernel.fs() });
 
                 // self->ref == 1 means no other process can have self locked,
                 // so this acquiresleep() won't block (or deadlock).
@@ -808,9 +785,9 @@ impl Inode {
     pub fn lock(&self, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'_> {
         let mut guard = self.inner.lock();
         if !guard.valid {
-            let mut bp = ctx.kernel().file_system.log.disk.read(
+            let mut bp = ctx.kernel().fs().log.disk.read(
                 self.dev,
-                ctx.kernel().file_system.superblock().iblock(self.inum),
+                ctx.kernel().fs().superblock().iblock(self.inum),
                 ctx,
             );
 
@@ -880,6 +857,7 @@ impl Inode {
                 InodeType::Device { .. } => 3,
             },
             nlink: inner.nlink,
+            _padding: 0,
             size: inner.size as usize,
         }
     }
@@ -915,10 +893,10 @@ impl Itable {
         tx: &FsTransaction<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> RcInode {
-        for inum in 1..ctx.kernel().file_system.superblock().ninodes {
-            let mut bp = ctx.kernel().file_system.log.disk.read(
+        for inum in 1..ctx.kernel().fs().superblock().ninodes {
+            let mut bp = ctx.kernel().fs().log.disk.read(
                 dev,
-                ctx.kernel().file_system.superblock().iblock(inum),
+                ctx.kernel().fs().superblock().iblock(inum),
                 ctx,
             );
 

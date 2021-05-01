@@ -4,6 +4,7 @@ use core::{cmp, mem};
 
 use bitflags::bitflags;
 use itertools::*;
+use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
     arch::addr::{pgroundup, PAddr, PGSIZE},
@@ -26,6 +27,7 @@ const ELF_PROG_LOAD: u32 = 1;
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
+#[derive(AsBytes, FromBytes)]
 struct ElfHdr {
     /// must equal ELF_MAGIC
     magic: u32,
@@ -48,6 +50,7 @@ struct ElfHdr {
 bitflags! {
     /// Flag bits for ProgHdr flags
     #[repr(C)]
+    #[derive(AsBytes, FromBytes)]
     struct ProgFlags: u32 {
         const EXEC = 1;
         const WRITE = 2;
@@ -67,6 +70,7 @@ impl Default for ProgFlags {
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C)]
+#[derive(AsBytes, FromBytes)]
 struct ProgHdr {
     typ: u32,
     flags: ProgFlags,
@@ -106,9 +110,7 @@ impl KernelCtx<'_, '_> {
 
         // Check ELF header
         let mut elf: ElfHdr = Default::default();
-        // SAFETY: ElfHdr can be safely transmuted to [u8; _], as it
-        // contains only integers, which do not have internal structures.
-        unsafe { ip.read_kernel(&mut elf, 0, self) }?;
+        ip.read_kernel(&mut elf, 0, self)?;
         if !elf.is_valid() {
             return Err(());
         }
@@ -123,9 +125,7 @@ impl KernelCtx<'_, '_> {
             let off = elf.phoff + i * mem::size_of::<ProgHdr>();
 
             let mut ph: ProgHdr = Default::default();
-            // SAFETY: ProgHdr can be safely transmuted to [u8; _], as it
-            // contains only integers, which do not have internal structures.
-            unsafe { ip.read_kernel(&mut ph, off as _, self) }?;
+            ip.read_kernel(&mut ph, off as _, self)?;
             if ph.is_prog_load() {
                 if ph.memsz < ph.filesz || ph.vaddr % PGSIZE != 0 {
                     return Err(());

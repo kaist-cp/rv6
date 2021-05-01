@@ -238,7 +238,7 @@ impl KernelRef<'_, '_> {
                 // SAFETY: it's unsafe only when ctrl+p is pressed.
                 unsafe { self.console.intr(self) };
             } else if irq as usize == VIRTIO0_IRQ {
-                self.file_system.log.disk.lock().intr(self);
+                self.fs().log.disk.lock().intr(self);
             } else if irq != 0 {
                 // Use `panic!` instead of `println` to prevent stack overflow.
                 // https://github.com/kaist-cp/rv6/issues/311

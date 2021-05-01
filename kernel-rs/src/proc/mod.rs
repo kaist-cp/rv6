@@ -458,7 +458,7 @@ impl<'id> ProcGuard<'id, '_> {
         let data = unsafe { self.deref_mut_data() };
         let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
         // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_builder()
-        let allocator = &kernel_builder().kmem;
+        let allocator = &unsafe { kernel_builder() }.kmem;
         // SAFETY: trap_frame uniquely refers to a valid page.
         allocator.free(unsafe { Page::from_usize(trap_frame as _) });
         // SAFETY:

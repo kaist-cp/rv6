@@ -175,7 +175,7 @@ impl Procs {
             let name = b"initcode\x00";
             (&mut data.name[..name.len()]).copy_from_slice(name);
             // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_builder()
-            let _ = data.cwd.write(kernel_builder().itable.root());
+            let _ = data.cwd.write(unsafe { kernel_builder() }.itable.root());
             // It's safe because cwd now has been initialized.
             guard.deref_mut_info().state = Procstate::RUNNABLE;
 
@@ -239,7 +239,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
         }
 
         // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_builder()
-        let allocator = &kernel_builder().kmem;
+        let allocator = &unsafe { kernel_builder() }.kmem;
         allocator.free(trap_frame);
         memory.free(allocator);
         Err(())
@@ -425,7 +425,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
         // by assigning None to self.cwd. Deallocation of an inode may cause
         // disk write operations, so we must begin a transaction here.
         let kernel = ctx.kernel();
-        let tx = kernel.file_system.begin_transaction();
+        let tx = kernel.fs().begin_transaction();
         // SAFETY: CurrentProc's cwd has been initialized.
         // It's ok to drop cwd as proc will not be used any longer.
         unsafe { ctx.proc_mut().deref_mut_data().cwd.assume_init_drop() };
@@ -503,7 +503,7 @@ unsafe fn forkret() -> ! {
         // File system initialization must be run in the context of a
         // regular process (e.g., because it calls sleep), and thus cannot
         // be run from main().
-        ctx.kernel().file_system.init(ROOTDEV, &ctx);
+        ctx.kernel().fs().init(ROOTDEV, &ctx);
         unsafe { ctx.user_trap_ret() }
     };
 

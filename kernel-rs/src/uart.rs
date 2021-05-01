@@ -1,4 +1,8 @@
 //! Low-level driver routines for 16550a UART.
+
+// Dead code is allowed in this file because not all components are used in the kernel.
+#![allow(dead_code)]
+
 use core::ptr;
 
 use self::UartCtrlRegs::{FCR, IER, ISR, LCR, LSR, RBR, THR};
@@ -10,7 +14,6 @@ enum UartRegBits {
     FCRFifoClear,
     LCREightBits,
     LCRBaudLatch,
-    #[allow(dead_code)]
     LSRRxRead,
     LSRTxIdle,
 }
@@ -48,7 +51,6 @@ enum UartCtrlRegs {
     /// FIFO Control Register.
     FCR,
     /// Interrupt Status Register.
-    #[allow(dead_code)]
     ISR,
     /// Line Control Register.
     LCR,
