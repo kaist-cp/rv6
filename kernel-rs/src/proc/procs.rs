@@ -175,7 +175,9 @@ impl Procs {
             let name = b"initcode\x00";
             (&mut data.name[..name.len()]).copy_from_slice(name);
             // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_builder()
-            let _ = data.cwd.write(unsafe { kernel_builder() }.itable.root());
+            let _ = data
+                .cwd
+                .write(unsafe { kernel_builder() }.file_system.itable.root());
             // It's safe because cwd now has been initialized.
             guard.deref_mut_info().state = Procstate::RUNNABLE;
 

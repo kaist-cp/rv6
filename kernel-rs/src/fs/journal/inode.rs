@@ -314,7 +314,12 @@ impl InodeGuard<'_> {
 
         self.iter_dirents(ctx)
             .find(|(de, _)| de.inum != 0 && de.get_name() == name)
-            .map(|(de, off)| (ctx.kernel().itable.get_inode(self.dev, de.inum as u32), off))
+            .map(|(de, off)| {
+                (
+                    ctx.kernel().fs().itable.get_inode(self.dev, de.inum as u32),
+                    off,
+                )
+            })
             .ok_or(())
     }
 }
@@ -864,7 +869,7 @@ impl Inode {
 }
 
 impl Itable {
-    pub const fn zero() -> Self {
+    pub const fn new_itable() -> Self {
         Spinlock::new("ITABLE", ArrayArena::<Inode, NINODE>::new())
     }
 

@@ -105,7 +105,7 @@ impl KernelCtx<'_, '_> {
         // returns. Deallocation of an inode may cause disk write operations, so we must begin a
         // transaction here.
         let tx = self.kernel().fs().begin_transaction();
-        let ptr = self.kernel().itable.namei(path, self)?;
+        let ptr = self.kernel().fs().itable.namei(path, self)?;
         let mut ip = ptr.lock(self);
 
         // Check ELF header

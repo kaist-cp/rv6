@@ -48,6 +48,7 @@ pub struct FileSystem {
     /// There should be one superblock per disk device, but we run with only one device.
     superblock: Once<Superblock>,
     pub log: Log,
+    pub itable: Itable,
 }
 
 pub struct FsTransaction<'s> {
@@ -59,6 +60,7 @@ impl FileSystem {
         Self {
             superblock: Once::new(),
             log: Log::zero(),
+            itable: Itable::new_itable(),
         }
     }
 

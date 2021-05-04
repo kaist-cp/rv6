@@ -15,7 +15,7 @@ use crate::{
     console::{Console, Printer},
     cpu::cpuid,
     file::{Devsw, FileTable},
-    fs::journal::{FileSystem, Itable},
+    fs::journal::FileSystem,
     kalloc::Kmem,
     lock::{Sleepablelock, Spinlock},
     param::NDEV,
@@ -96,9 +96,7 @@ pub struct KernelBuilder {
 
     pub ftable: FileTable,
 
-    pub itable: Itable,
-
-    file_system: FileSystem,
+    pub file_system: FileSystem,
 }
 
 #[repr(transparent)]
@@ -190,7 +188,6 @@ impl KernelBuilder {
                 write: None,
             }; NDEV],
             ftable: FileTable::zero(),
-            itable: Itable::zero(),
             file_system: FileSystem::zero(),
         }
     }
