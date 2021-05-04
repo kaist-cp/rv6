@@ -13,7 +13,7 @@ use cstr_core::CStr;
 use crate::{
     arch::addr::UVAddr,
     file::{FileType, InodeFileType, RcFile},
-    fs::{Dirent, FileName, FsTransaction, InodeGuard, InodeType, Path, RcInode},
+    fs::journal::{Dirent, FileName, FsTransaction, InodeGuard, InodeType, Path, RcInode},
     ok_or,
     page::Page,
     param::{MAXARG, MAXPATH},

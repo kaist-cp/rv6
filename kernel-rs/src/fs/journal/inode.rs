@@ -82,7 +82,7 @@ use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena, Rc},
     bio::BufData,
-    fs::{FsTransaction, Path, ROOTINO},
+    fs::journal::{FsTransaction, Path, ROOTINO},
     lock::{Sleeplock, Spinlock},
     param::ROOTDEV,
     param::{BSIZE, NINODE},
@@ -202,7 +202,7 @@ impl Dirent {
     /// terminator.
     ///
     /// `name` must not contain NUL characters, but this is not a safety invariant.
-    fn set_name(&mut self, name: &FileName) {
+    fn set_name(&mut self, name: &FileName<{ DIRSIZ }>) {
         let name = name.as_bytes();
         if name.len() == DIRSIZ {
             self.name.copy_from_slice(&name);
@@ -215,7 +215,7 @@ impl Dirent {
     /// Returns slice which exactly contains `name`.
     ///
     /// It contains no NUL characters.
-    fn get_name(&self) -> &FileName {
+    fn get_name(&self) -> &FileName<{ DIRSIZ }> {
         let len = self.name.iter().position(|ch| *ch == 0).unwrap_or(DIRSIZ);
         // SAFETY: self.name[..len] doesn't contain '\0', and len must be <= DIRSIZ.
         unsafe { FileName::from_bytes(&self.name[..len]) }
@@ -282,7 +282,7 @@ impl InodeGuard<'_> {
     /// Write a new directory entry (name, inum) into the directory dp.
     pub fn dirlink(
         &mut self,
-        name: &FileName,
+        name: &FileName<{ DIRSIZ }>,
         inum: u32,
         tx: &FsTransaction<'_>,
         ctx: &KernelCtx<'_, '_>,
@@ -307,7 +307,7 @@ impl InodeGuard<'_> {
     /// If found, return the entry and byte offset of entry.
     pub fn dirlookup(
         &mut self,
-        name: &FileName,
+        name: &FileName<{ DIRSIZ }>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(RcInode, u32), ()> {
         assert_eq!(self.deref_inner().typ, InodeType::Dir, "dirlookup not DIR");
@@ -947,7 +947,7 @@ impl Itable {
         &self,
         path: &'s Path,
         ctx: &KernelCtx<'_, '_>,
-    ) -> Result<(RcInode, &'s FileName), ()> {
+    ) -> Result<(RcInode, &'s FileName<{ DIRSIZ }>), ()> {
         let (ip, name_in_path) = self.namex(path, true, ctx)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
@@ -958,7 +958,7 @@ impl Itable {
         mut path: &'s Path,
         parent: bool,
         ctx: &KernelCtx<'_, '_>,
-    ) -> Result<(RcInode, Option<&'s FileName>), ()> {
+    ) -> Result<(RcInode, Option<&'s FileName<{ DIRSIZ }>>), ()> {
         let mut ptr = if path.is_absolute() {
             self.root()
         } else {

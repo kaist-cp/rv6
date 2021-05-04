@@ -2,18 +2,16 @@ use core::cmp;
 
 use cstr_core::CStr;
 
-use super::DIRSIZ;
-
 #[derive(PartialEq)]
 #[repr(transparent)]
-pub struct FileName {
+pub struct FileName<const MAXSIZE: usize> {
     // Invariant:
     // - The slice contains no NUL characters.
     // - The slice is not longer than DIRSIZ.
     inner: [u8],
 }
 
-impl FileName {
+impl<const MAXSIZE: usize> FileName<{ MAXSIZE }> {
     /// Truncate bytes followed by the first DIRSIZ bytes.
     ///
     /// # Safety
@@ -25,7 +23,7 @@ impl FileName {
         // attribute `#[repr(transparent)]`. Also, the slice satisfies the
         // invariant of FileName because of the safety condition of this method
         // and the fact that its length is at most DIRSIZ.
-        unsafe { &*(&bytes[..cmp::min(DIRSIZ, bytes.len())] as *const [u8] as *const Self) }
+        unsafe { &*(&bytes[..cmp::min(MAXSIZE, bytes.len())] as *const [u8] as *const Self) }
     }
 
     pub fn as_bytes(&self) -> &[u8] {
@@ -90,7 +88,7 @@ impl Path {
     /// # }
     /// ```
     // TODO(https://github.com/kaist-cp/rv6/issues/359): Fix doctests work.
-    pub fn skipelem(&self) -> Option<(&Self, &FileName)> {
+    pub fn skipelem<const MAXSIZE: usize>(&self) -> Option<(&Self, &FileName<{ MAXSIZE }>)> {
         let mut bytes = &self.inner;
 
         let name_start = bytes.iter().position(|ch| *ch != b'/')?;

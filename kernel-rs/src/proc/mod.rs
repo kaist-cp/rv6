@@ -12,7 +12,7 @@ use crate::{
     arch::riscv::intr_get,
     cpu::CPUS,
     file::RcFile,
-    fs::RcInode,
+    fs::journal::RcInode,
     kernel::kernel_builder,
     lock::{RawSpinlock, RemoteLock, Spinlock},
     page::Page,

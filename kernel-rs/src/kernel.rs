@@ -15,7 +15,7 @@ use crate::{
     console::{Console, Printer},
     cpu::cpuid,
     file::{Devsw, FileTable},
-    fs::{FileSystem, Itable},
+    fs::journal::{FileSystem, Itable},
     kalloc::Kmem,
     lock::{Sleepablelock, Spinlock},
     param::NDEV,
