@@ -13,8 +13,7 @@ use cstr_core::CStr;
 use crate::{
     arch::addr::UVAddr,
     file::{FileType, InodeFileType, RcFile},
-    fs::ufs::{Dirent, InodeGuard, RcInode, UfsTx},
-    fs::{FileName, FileSystem, InodeType, Path},
+    fs::{FileName, FileSystem, InodeType, Path, Ufs, UfsInodeGuard},
     ok_or,
     page::Page,
     param::{MAXARG, MAXPATH},
@@ -54,11 +53,11 @@ impl KernelCtx<'_, '_> {
         &self,
         path: &Path,
         typ: InodeType,
-        tx: &UfsTx<'_>,
+        tx: &<Ufs as FileSystem>::Tx<'_>,
         f: F,
-    ) -> Result<(RcInode, T), ()>
+    ) -> Result<(<Ufs as FileSystem>::Inode, T), ()>
     where
-        F: FnOnce(&mut InodeGuard<'_>) -> T,
+        F: FnOnce(&mut UfsInodeGuard<'_>) -> T,
     {
         let (ptr, name) = self.kernel().fs().itable.nameiparent(path, self)?;
         let mut dp = ptr.lock(self);
@@ -98,75 +97,6 @@ impl KernelCtx<'_, '_> {
         let ret = f(&mut ip);
         drop(ip);
         Ok((ptr2, ret))
-    }
-
-    /// Create another name(newname) for the file oldname.
-    /// Returns Ok(()) on success, Err(()) on error.
-    fn link(&self, oldname: &CStr, newname: &CStr) -> Result<(), ()> {
-        let tx = self.kernel().fs().begin_tx();
-        let ptr = self.kernel().fs().itable.namei(Path::new(oldname), self)?;
-        let mut ip = ptr.lock(self);
-        if ip.deref_inner().typ == InodeType::Dir {
-            return Err(());
-        }
-        ip.deref_inner_mut().nlink += 1;
-        ip.update(&tx, self);
-        drop(ip);
-
-        if let Ok((ptr2, name)) = self
-            .kernel()
-            .fs()
-            .itable
-            .nameiparent(Path::new(newname), self)
-        {
-            let mut dp = ptr2.lock(self);
-            if dp.dev != ptr.dev || dp.dirlink(name, ptr.inum, &tx, self).is_err() {
-            } else {
-                return Ok(());
-            }
-        }
-
-        let mut ip = ptr.lock(self);
-        ip.deref_inner_mut().nlink -= 1;
-        ip.update(&tx, self);
-        Err(())
-    }
-
-    /// Remove a file(filename).
-    /// Returns Ok(()) on success, Err(()) on error.
-    fn unlink(&self, filename: &CStr) -> Result<(), ()> {
-        let tx = self.kernel().fs().begin_tx();
-        let (ptr, name) = self
-            .kernel()
-            .fs()
-            .itable
-            .nameiparent(Path::new(filename), self)?;
-        let mut dp = ptr.lock(self);
-
-        // Cannot unlink "." or "..".
-        if name.as_bytes() == b"." || name.as_bytes() == b".." {
-            return Err(());
-        }
-
-        let (ptr2, off) = dp.dirlookup(&name, self)?;
-        let mut ip = ptr2.lock(self);
-        assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
-
-        if ip.deref_inner().typ == InodeType::Dir && !ip.is_dir_empty(self) {
-            return Err(());
-        }
-
-        dp.write_kernel(&Dirent::default(), off, &tx, self)
-            .expect("unlink: writei");
-        if ip.deref_inner().typ == InodeType::Dir {
-            dp.deref_inner_mut().nlink -= 1;
-            dp.update(&tx, self);
-        }
-        drop(dp);
-        drop(ptr);
-        ip.deref_inner_mut().nlink -= 1;
-        ip.update(&tx, self);
-        Ok(())
     }
 
     /// Open a file; omode indicate read/write.
@@ -342,7 +272,8 @@ impl KernelCtx<'_, '_> {
         let mut old: [u8; MAXPATH] = [0; MAXPATH];
         let old = self.proc_mut().argstr(0, &mut old)?;
         let new = self.proc_mut().argstr(1, &mut new)?;
-        self.link(old, new)?;
+        let tx = self.kernel().fs().begin_tx();
+        self.kernel().fs().link(old, new, &tx, self)?;
         Ok(0)
     }
 
@@ -351,7 +282,8 @@ impl KernelCtx<'_, '_> {
     pub fn sys_unlink(&mut self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = self.proc_mut().argstr(0, &mut path)?;
-        self.unlink(path)?;
+        let tx = self.kernel().fs().begin_tx();
+        self.kernel().fs().unlink(path, &tx, self)?;
         Ok(0)
     }
 

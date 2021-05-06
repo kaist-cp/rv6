@@ -12,7 +12,7 @@ use crate::{
     arch::riscv::intr_get,
     cpu::CPUS,
     file::RcFile,
-    fs::ufs::RcInode,
+    fs::{FileSystem, Ufs},
     kernel::kernel_builder,
     lock::{RawSpinlock, RemoteLock, Spinlock},
     page::Page,
@@ -225,7 +225,7 @@ pub struct ProcData {
     pub open_files: [Option<RcFile>; NOFILE],
 
     /// Current directory.
-    cwd: MaybeUninit<RcInode>,
+    cwd: MaybeUninit<<Ufs as FileSystem>::Inode>,
 
     /// Process name (debugging).
     pub name: [u8; MAXPROCNAME],

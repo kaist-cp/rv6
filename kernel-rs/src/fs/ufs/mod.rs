@@ -13,12 +13,13 @@
 
 use core::{cmp, mem};
 
+use cstr_core::CStr;
 use spin::Once;
 
 use super::{
     path::{FileName, Path},
     stat::Stat,
-    FileSystem, Tx,
+    FileSystem, InodeType,
 };
 use crate::{
     bio::Buf,
@@ -71,13 +72,81 @@ impl FileSystem for Ufs {
         self.log.begin_op();
         UfsTx { fs: self }
     }
+
+    fn link(
+        &self,
+        oldname: &CStr,
+        newname: &CStr,
+        tx: &Self::Tx<'_>,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Result<(), ()> {
+        let ptr = self.itable.namei(Path::new(oldname), ctx)?;
+        let mut ip = ptr.lock(ctx);
+        if ip.deref_inner().typ == InodeType::Dir {
+            return Err(());
+        }
+        ip.deref_inner_mut().nlink += 1;
+        ip.update(&tx, ctx);
+        drop(ip);
+
+        if let Ok((ptr2, name)) = ctx
+            .kernel()
+            .fs()
+            .itable
+            .nameiparent(Path::new(newname), ctx)
+        {
+            let mut dp = ptr2.lock(ctx);
+            if dp.dev != ptr.dev || dp.dirlink(name, ptr.inum, &tx, ctx).is_err() {
+            } else {
+                return Ok(());
+            }
+        }
+
+        let mut ip = ptr.lock(ctx);
+        ip.deref_inner_mut().nlink -= 1;
+        ip.update(&tx, ctx);
+        Err(())
+    }
+
+    fn unlink(
+        &self,
+        filename: &CStr,
+        tx: &Self::Tx<'_>,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Result<(), ()> {
+        let (ptr, name) = self.itable.nameiparent(Path::new(filename), ctx)?;
+        let mut dp = ptr.lock(ctx);
+
+        // Cannot unlink "." or "..".
+        if name.as_bytes() == b"." || name.as_bytes() == b".." {
+            return Err(());
+        }
+
+        let (ptr2, off) = dp.dirlookup(&name, ctx)?;
+        let mut ip = ptr2.lock(ctx);
+        assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
+
+        if ip.deref_inner().typ == InodeType::Dir && !ip.is_dir_empty(ctx) {
+            return Err(());
+        }
+
+        dp.write_kernel(&Dirent::default(), off, &tx, ctx)
+            .expect("unlink: writei");
+        if ip.deref_inner().typ == InodeType::Dir {
+            dp.deref_inner_mut().nlink -= 1;
+            dp.update(&tx, ctx);
+        }
+        drop(dp);
+        drop(ptr);
+        ip.deref_inner_mut().nlink -= 1;
+        ip.update(&tx, ctx);
+        Ok(())
+    }
 }
 
 pub struct UfsTx<'s> {
     fs: &'s Ufs,
 }
-
-impl<'s> Tx<'s> for UfsTx<'s> {}
 
 impl Ufs {
     pub const fn zero() -> Self {

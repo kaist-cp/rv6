@@ -5,8 +5,7 @@ use core::{cell::UnsafeCell, cmp, mem, ops::Deref, ops::DerefMut};
 use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena, Rc},
-    fs::ufs::{InodeGuard, RcInode},
-    fs::FileSystem,
+    fs::{FileSystem, Ufs, UfsInodeGuard},
     kernel::{kernel_ref, KernelRef},
     lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
@@ -16,9 +15,16 @@ use crate::{
 
 pub enum FileType {
     None,
-    Pipe { pipe: AllocatedPipe },
-    Inode { inner: InodeFileType },
-    Device { ip: RcInode, major: *const Devsw },
+    Pipe {
+        pipe: AllocatedPipe,
+    },
+    Inode {
+        inner: InodeFileType,
+    },
+    Device {
+        ip: <Ufs as FileSystem>::Inode,
+        major: *const Devsw,
+    },
 }
 
 /// It has an inode and an offset.
@@ -27,7 +33,7 @@ pub enum FileType {
 ///
 /// The offset should be accessed only when the inode is locked.
 pub struct InodeFileType {
-    pub ip: RcInode,
+    pub ip: <Ufs as FileSystem>::Inode,
     // It should be accessed only when `ip` is locked.
     pub off: UnsafeCell<u32>,
 }
@@ -36,7 +42,7 @@ pub struct InodeFileType {
 /// inode. `off` is a mutable reference to the offset. Accessing `off` is guaranteed to be safe
 /// since the inode is locked.
 struct InodeFileTypeGuard<'a> {
-    ip: InodeGuard<'a>,
+    ip: UfsInodeGuard<'a>,
     off: &'a mut u32,
 }
 
@@ -74,7 +80,7 @@ impl InodeFileType {
 }
 
 impl<'a> Deref for InodeFileTypeGuard<'a> {
-    type Target = InodeGuard<'a>;
+    type Target = UfsInodeGuard<'a>;
 
     fn deref(&self) -> &Self::Target {
         &self.ip
