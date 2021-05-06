@@ -17,7 +17,7 @@ use core::{cmp, mem};
 use cstr_core::CStr;
 use spin::Once;
 
-use super::{FcntlFlags, FileName, FileSystem, InodeType, Itable, Path, Stat};
+use super::{FcntlFlags, FileName, FileSystem, InodeGuard, InodeType, Itable, Path, RcInode, Stat};
 use crate::{
     bio::Buf,
     file::{FileType, InodeFileType},
@@ -138,6 +138,57 @@ impl FileSystem for Ufs {
         Ok(())
     }
 
+    fn create<F, T>(
+        &self,
+        path: &Path,
+        typ: InodeType,
+        tx: &<Ufs as FileSystem>::Tx<'_>,
+        ctx: &KernelCtx<'_, '_>,
+        f: F,
+    ) -> Result<(RcInode<<Ufs as FileSystem>::InodeInner>, T), ()>
+    where
+        F: FnOnce(&mut InodeGuard<'_, InodeInner>) -> T,
+    {
+        let (ptr, name) = self.itable.nameiparent(path, ctx)?;
+        let mut dp = ptr.lock(ctx);
+        if let Ok((ptr2, _)) = dp.dirlookup(&name, ctx) {
+            drop(dp);
+            if typ != InodeType::File {
+                return Err(());
+            }
+            let mut ip = ptr2.lock(ctx);
+            if let InodeType::None | InodeType::Dir = ip.deref_inner().typ {
+                return Err(());
+            }
+            let ret = f(&mut ip);
+            drop(ip);
+            return Ok((ptr2, ret));
+        }
+        let ptr2 = ctx.kernel().fs().itable.alloc_inode(dp.dev, typ, tx, ctx);
+        let mut ip = ptr2.lock(ctx);
+        ip.deref_inner_mut().nlink = 1;
+        ip.update(tx, ctx);
+
+        // Create . and .. entries.
+        if typ == InodeType::Dir {
+            // for ".."
+            dp.deref_inner_mut().nlink += 1;
+            dp.update(tx, ctx);
+
+            // No ip->nlink++ for ".": avoid cyclic ref count.
+            // SAFETY: b"." does not contain any NUL characters.
+            ip.dirlink(unsafe { FileName::from_bytes(b".") }, ip.inum, tx, ctx)
+                // SAFETY: b".." does not contain any NUL characters.
+                .and_then(|_| ip.dirlink(unsafe { FileName::from_bytes(b"..") }, dp.inum, tx, ctx))
+                .expect("create dots");
+        }
+        dp.dirlink(&name, ip.inum, tx, ctx)
+            .expect("create: dirlink");
+        let ret = f(&mut ip);
+        drop(ip);
+        Ok((ptr2, ret))
+    }
+
     fn open(
         &self,
         name: &Path,
@@ -146,7 +197,7 @@ impl FileSystem for Ufs {
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<usize, ()> {
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
-            ctx.create(name, InodeType::File, &tx, |ip| ip.deref_inner().typ)?
+            self.create(name, InodeType::File, tx, ctx, |ip| ip.deref_inner().typ)?
         } else {
             let ptr = self.itable.namei(name, ctx)?;
             let ip = ptr.lock(ctx);

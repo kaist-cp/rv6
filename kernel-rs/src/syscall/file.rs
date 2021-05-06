@@ -10,70 +10,13 @@ use arrayvec::ArrayVec;
 
 use crate::{
     file::RcFile,
-    fs::{
-        FcntlFlags, FileName, FileSystem, InodeGuard, InodeType, Path, RcInode, Ufs, UfsInodeInner,
-    },
+    fs::{FcntlFlags, FileSystem, InodeType, Path},
     ok_or,
     page::Page,
     param::{MAXARG, MAXPATH},
     proc::{CurrentProc, KernelCtx},
     some_or,
 };
-
-impl KernelCtx<'_, '_> {
-    // TODO: move to Ufs
-    /// Create an inode with given type.
-    /// Returns Ok(created inode, result of given function f) on success, Err(()) on error.
-    pub fn create<F, T>(
-        &self,
-        path: &Path,
-        typ: InodeType,
-        tx: &<Ufs as FileSystem>::Tx<'_>,
-        f: F,
-    ) -> Result<(RcInode<<Ufs as FileSystem>::InodeInner>, T), ()>
-    where
-        F: FnOnce(&mut InodeGuard<'_, UfsInodeInner>) -> T,
-    {
-        let (ptr, name) = self.kernel().fs().itable.nameiparent(path, self)?;
-        let mut dp = ptr.lock(self);
-        if let Ok((ptr2, _)) = dp.dirlookup(&name, self) {
-            drop(dp);
-            if typ != InodeType::File {
-                return Err(());
-            }
-            let mut ip = ptr2.lock(self);
-            if let InodeType::None | InodeType::Dir = ip.deref_inner().typ {
-                return Err(());
-            }
-            let ret = f(&mut ip);
-            drop(ip);
-            return Ok((ptr2, ret));
-        }
-        let ptr2 = self.kernel().fs().itable.alloc_inode(dp.dev, typ, tx, self);
-        let mut ip = ptr2.lock(self);
-        ip.deref_inner_mut().nlink = 1;
-        ip.update(tx, self);
-
-        // Create . and .. entries.
-        if typ == InodeType::Dir {
-            // for ".."
-            dp.deref_inner_mut().nlink += 1;
-            dp.update(tx, self);
-
-            // No ip->nlink++ for ".": avoid cyclic ref count.
-            // SAFETY: b"." does not contain any NUL characters.
-            ip.dirlink(unsafe { FileName::from_bytes(b".") }, ip.inum, tx, self)
-                // SAFETY: b".." does not contain any NUL characters.
-                .and_then(|_| ip.dirlink(unsafe { FileName::from_bytes(b"..") }, dp.inum, tx, self))
-                .expect("create dots");
-        }
-        dp.dirlink(&name, ip.inum, tx, self)
-            .expect("create: dirlink");
-        let ret = f(&mut ip);
-        drop(ip);
-        Ok((ptr2, ret))
-    }
-}
 
 impl KernelCtx<'_, '_> {
     /// Return a new file descriptor referring to the same file as given fd.
@@ -164,7 +107,9 @@ impl KernelCtx<'_, '_> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = self.proc_mut().argstr(0, &mut path)?;
         let tx = self.kernel().fs().begin_tx();
-        self.create(Path::new(path), InodeType::Dir, &tx, |_| ())?;
+        self.kernel()
+            .fs()
+            .create(Path::new(path), InodeType::Dir, &tx, self, |_| ())?;
         Ok(0)
     }
 
@@ -176,10 +121,11 @@ impl KernelCtx<'_, '_> {
         let major = self.proc().argint(1)? as u16;
         let minor = self.proc().argint(2)? as u16;
         let tx = self.kernel().fs().begin_tx();
-        self.create(
+        self.kernel().fs().create(
             Path::new(path),
             InodeType::Device { major, minor },
             &tx,
+            self,
             |_| (),
         )?;
         Ok(0)

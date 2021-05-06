@@ -122,6 +122,19 @@ pub trait FileSystem {
     fn unlink(&self, filename: &CStr, tx: &Self::Tx<'_>, ctx: &KernelCtx<'_, '_>)
         -> Result<(), ()>;
 
+    /// Create an inode with given type.
+    /// Returns Ok(created inode, result of given function f) on success, Err(()) on error.
+    fn create<F, T>(
+        &self,
+        path: &Path,
+        typ: InodeType,
+        tx: &<Ufs as FileSystem>::Tx<'_>,
+        ctx: &KernelCtx<'_, '_>,
+        f: F,
+    ) -> Result<(RcInode<<Ufs as FileSystem>::InodeInner>, T), ()>
+    where
+        F: FnOnce(&mut InodeGuard<'_, UfsInodeInner>) -> T;
+
     /// Open a file; omode indicate read/write.
     /// Returns Ok(file descriptor) on success, Err(()) on error.
     fn open(
