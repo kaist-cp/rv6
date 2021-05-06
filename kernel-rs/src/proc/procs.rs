@@ -14,6 +14,7 @@ use crate::{
     arch::addr::{Addr, UVAddr, PGSIZE},
     arch::memlayout::kstack,
     arch::riscv::intr_on,
+    fs::FileSystem,
     kalloc::Kmem,
     kernel::{kernel_builder, KernelRef},
     lock::{RemoteLock, Spinlock, SpinlockGuard},
@@ -427,7 +428,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
         // by assigning None to self.cwd. Deallocation of an inode may cause
         // disk write operations, so we must begin a transaction here.
         let kernel = ctx.kernel();
-        let tx = kernel.fs().begin_transaction();
+        let tx = kernel.fs().begin_tx();
         // SAFETY: CurrentProc's cwd has been initialized.
         // It's ok to drop cwd as proc will not be used any longer.
         unsafe { ctx.proc_mut().deref_mut_data().cwd.assume_init_drop() };

@@ -15,6 +15,11 @@ use core::{cmp, mem};
 
 use spin::Once;
 
+use super::{
+    path::{FileName, Path},
+    stat::Stat,
+    FileSystem, Tx,
+};
 use crate::{
     bio::Buf,
     param::BSIZE,
@@ -26,15 +31,10 @@ mod log;
 mod superblock;
 
 pub use inode::{
-    Dinode, Dirent, Inode, InodeGuard, InodeInner, InodeType, Itable, RcInode, DIRENT_SIZE, DIRSIZ,
+    Dinode, Dirent, Inode, InodeGuard, InodeInner, Itable, RcInode, DIRENT_SIZE, DIRSIZ,
 };
 pub use log::{Log, LogLocked};
 pub use superblock::{Superblock, BPB, IPB};
-
-pub use super::{
-    path::{FileName, Path},
-    stat::Stat,
-};
 
 /// root i-number
 const ROOTINO: u32 = 1;
@@ -43,7 +43,7 @@ const NDIRECT: usize = 12;
 const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
 const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
 
-pub struct FileSystem {
+pub struct Ufs {
     /// Initializing superblock should run only once because forkret() calls FileSystem::init().
     /// There should be one superblock per disk device, but we run with only one device.
     superblock: Once<Superblock>,
@@ -51,20 +51,13 @@ pub struct FileSystem {
     pub itable: Itable,
 }
 
-pub struct FsTransaction<'s> {
-    fs: &'s FileSystem,
-}
+impl FileSystem for Ufs {
+    type Dirent = Dirent;
+    type Inode = RcInode;
+    type InodeGuard<'s> = InodeGuard<'s>;
+    type Tx<'s> = UfsTx<'s>;
 
-impl FileSystem {
-    pub const fn zero() -> Self {
-        Self {
-            superblock: Once::new(),
-            log: Log::zero(),
-            itable: Itable::new_itable(),
-        }
-    }
-
-    pub fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
+    fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
         if !self.superblock.is_completed() {
             let superblock = self
                 .superblock
@@ -74,18 +67,33 @@ impl FileSystem {
         }
     }
 
-    fn superblock(&self) -> &Superblock {
-        self.superblock.get().expect("superblock")
-    }
-
-    /// Called for each FS system call.
-    pub fn begin_transaction(&self) -> FsTransaction<'_> {
+    fn begin_tx(&self) -> Self::Tx<'_> {
         self.log.begin_op();
-        FsTransaction { fs: self }
+        UfsTx { fs: self }
     }
 }
 
-impl Drop for FsTransaction<'_> {
+pub struct UfsTx<'s> {
+    fs: &'s Ufs,
+}
+
+impl<'s> Tx<'s> for UfsTx<'s> {}
+
+impl Ufs {
+    pub const fn zero() -> Self {
+        Self {
+            superblock: Once::new(),
+            log: Log::zero(),
+            itable: Itable::new_itable(),
+        }
+    }
+
+    fn superblock(&self) -> &Superblock {
+        self.superblock.get().expect("superblock")
+    }
+}
+
+impl Drop for UfsTx<'_> {
     fn drop(&mut self) {
         // Called at the end of each FS system call.
         // Commits if this was the last outstanding operation.
@@ -96,7 +104,7 @@ impl Drop for FsTransaction<'_> {
     }
 }
 
-impl FsTransaction<'_> {
+impl UfsTx<'_> {
     /// Caller has modified b->data and is done with the buffer.
     /// Record the block number and pin in the cache by increasing refcnt.
     /// commit()/write_log() will do the disk write.

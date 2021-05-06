@@ -13,7 +13,8 @@ use cstr_core::CStr;
 use crate::{
     arch::addr::UVAddr,
     file::{FileType, InodeFileType, RcFile},
-    fs::journal::{Dirent, FileName, FsTransaction, InodeGuard, InodeType, Path, RcInode},
+    fs::ufs::{Dirent, InodeGuard, RcInode, UfsTx},
+    fs::{FileName, FileSystem, InodeType, Path},
     ok_or,
     page::Page,
     param::{MAXARG, MAXPATH},
@@ -53,7 +54,7 @@ impl KernelCtx<'_, '_> {
         &self,
         path: &Path,
         typ: InodeType,
-        tx: &FsTransaction<'_>,
+        tx: &UfsTx<'_>,
         f: F,
     ) -> Result<(RcInode, T), ()>
     where
@@ -102,7 +103,7 @@ impl KernelCtx<'_, '_> {
     /// Create another name(newname) for the file oldname.
     /// Returns Ok(()) on success, Err(()) on error.
     fn link(&self, oldname: &CStr, newname: &CStr) -> Result<(), ()> {
-        let tx = self.kernel().fs().begin_transaction();
+        let tx = self.kernel().fs().begin_tx();
         let ptr = self.kernel().fs().itable.namei(Path::new(oldname), self)?;
         let mut ip = ptr.lock(self);
         if ip.deref_inner().typ == InodeType::Dir {
@@ -134,7 +135,7 @@ impl KernelCtx<'_, '_> {
     /// Remove a file(filename).
     /// Returns Ok(()) on success, Err(()) on error.
     fn unlink(&self, filename: &CStr) -> Result<(), ()> {
-        let tx = self.kernel().fs().begin_transaction();
+        let tx = self.kernel().fs().begin_tx();
         let (ptr, name) = self
             .kernel()
             .fs()
@@ -171,7 +172,7 @@ impl KernelCtx<'_, '_> {
     /// Open a file; omode indicate read/write.
     /// Returns Ok(file descriptor) on success, Err(()) on error.
     fn open(&mut self, name: &Path, omode: FcntlFlags) -> Result<usize, ()> {
-        let tx = self.kernel().fs().begin_transaction();
+        let tx = self.kernel().fs().begin_tx();
 
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
             self.create(name, InodeType::File, &tx, |ip| ip.deref_inner().typ)?
@@ -225,7 +226,7 @@ impl KernelCtx<'_, '_> {
     /// Create a new directory.
     /// Returns Ok(()) on success, Err(()) on error.
     fn mkdir(&self, dirname: &CStr) -> Result<(), ()> {
-        let tx = self.kernel().fs().begin_transaction();
+        let tx = self.kernel().fs().begin_tx();
         self.create(Path::new(dirname), InodeType::Dir, &tx, |_| ())?;
         Ok(())
     }
@@ -233,7 +234,7 @@ impl KernelCtx<'_, '_> {
     /// Create a device file.
     /// Returns Ok(()) on success, Err(()) on error.
     fn mknod(&self, filename: &CStr, major: u16, minor: u16) -> Result<(), ()> {
-        let tx = self.kernel().fs().begin_transaction();
+        let tx = self.kernel().fs().begin_tx();
         self.create(
             Path::new(filename),
             InodeType::Device { major, minor },
@@ -251,7 +252,7 @@ impl KernelCtx<'_, '_> {
         // value, ptr, will be dropped when this method returns. Deallocation
         // of an inode may cause disk write operations, so we must begin a
         // transaction here.
-        let _tx = self.kernel().fs().begin_transaction();
+        let _tx = self.kernel().fs().begin_tx();
         let ptr = self.kernel().fs().itable.namei(Path::new(dirname), self)?;
         let ip = ptr.lock(self);
         if ip.deref_inner().typ != InodeType::Dir {

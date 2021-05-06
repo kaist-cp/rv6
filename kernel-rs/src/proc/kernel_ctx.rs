@@ -3,7 +3,7 @@ use core::ops::Deref;
 use super::*;
 use crate::{
     cpu::CPUS,
-    fs::journal::RcInode,
+    fs::ufs::RcInode,
     kernel::{kernel_ref, KernelRef},
     vm::UserMemory,
 };

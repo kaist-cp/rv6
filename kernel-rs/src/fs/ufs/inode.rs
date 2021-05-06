@@ -77,12 +77,12 @@ use core::{
 use static_assertions::const_assert;
 use zerocopy::{AsBytes, FromBytes};
 
-use super::{FileName, Stat, IPB, MAXFILE, NDIRECT, NINDIRECT};
+use super::{FileName, Path, Stat, UfsTx, IPB, MAXFILE, NDIRECT, NINDIRECT, ROOTINO};
 use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena, Rc},
     bio::BufData,
-    fs::journal::{FsTransaction, Path, ROOTINO},
+    fs::InodeType,
     lock::{Sleeplock, Spinlock},
     param::ROOTDEV,
     param::{BSIZE, NINODE},
@@ -95,14 +95,6 @@ pub const DIRSIZ: usize = 14;
 /// dirent size
 pub const DIRENT_SIZE: usize = mem::size_of::<Dirent>();
 
-#[derive(Copy, Clone, PartialEq, Debug)]
-#[repr(i16)]
-pub enum InodeType {
-    None,
-    Dir,
-    File,
-    Device { major: u16, minor: u16 },
-}
 #[derive(Copy, Clone, PartialEq, Debug)]
 #[repr(i16)]
 pub enum DInodeType {
@@ -284,7 +276,7 @@ impl InodeGuard<'_> {
         &mut self,
         name: &FileName<{ DIRSIZ }>,
         inum: u32,
-        tx: &FsTransaction<'_>,
+        tx: &UfsTx<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
         // Check that name is not present.
@@ -328,7 +320,7 @@ impl InodeGuard<'_> {
     /// Copy a modified in-memory inode to disk.
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk.
-    pub fn update(&self, tx: &FsTransaction<'_>, ctx: &KernelCtx<'_, '_>) {
+    pub fn update(&self, tx: &UfsTx<'_>, ctx: &KernelCtx<'_, '_>) {
         let mut bp = ctx.kernel().fs().log.disk.read(
             self.dev,
             ctx.kernel().fs().superblock().iblock(self.inum),
@@ -379,7 +371,7 @@ impl InodeGuard<'_> {
 
     /// Truncate inode (discard contents).
     /// This function is called with Inode's lock is held.
-    pub fn itrunc(&mut self, tx: &FsTransaction<'_>, ctx: &KernelCtx<'_, '_>) {
+    pub fn itrunc(&mut self, tx: &UfsTx<'_>, ctx: &KernelCtx<'_, '_>) {
         let dev = self.dev;
         for addr in &mut self.deref_inner_mut().addr_direct {
             if *addr != 0 {
@@ -526,7 +518,7 @@ impl InodeGuard<'_> {
         &mut self,
         src: &T,
         off: u32,
-        tx: &FsTransaction<'_>,
+        tx: &UfsTx<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
         let bytes = self.write_bytes_kernel(src.as_bytes(), off, tx, ctx)?;
@@ -543,7 +535,7 @@ impl InodeGuard<'_> {
         &mut self,
         src: &[u8],
         off: u32,
-        tx: &FsTransaction<'_>,
+        tx: &UfsTx<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<usize, ()> {
         self.write_internal(
@@ -567,7 +559,7 @@ impl InodeGuard<'_> {
         off: u32,
         n: u32,
         ctx: &mut KernelCtx<'_, '_>,
-        tx: &FsTransaction<'_>,
+        tx: &UfsTx<'_>,
     ) -> Result<usize, ()> {
         self.write_internal(
             off,
@@ -610,7 +602,7 @@ impl InodeGuard<'_> {
         mut off: u32,
         n: u32,
         mut f: F,
-        tx: &FsTransaction<'_>,
+        tx: &UfsTx<'_>,
         mut k: K,
     ) -> Result<usize, ()> {
         if off > self.deref_inner().size {
@@ -660,7 +652,7 @@ impl InodeGuard<'_> {
     /// listed in block self->addr_indirect.
     /// Return the disk block address of the nth block in inode self.
     /// If there is no such block, bmap allocates one.
-    fn bmap_or_alloc(&mut self, bn: usize, tx: &FsTransaction<'_>, ctx: &KernelCtx<'_, '_>) -> u32 {
+    fn bmap_or_alloc(&mut self, bn: usize, tx: &UfsTx<'_>, ctx: &KernelCtx<'_, '_>) -> u32 {
         self.bmap_internal(bn, Some(tx), ctx)
     }
 
@@ -671,7 +663,7 @@ impl InodeGuard<'_> {
     fn bmap_internal(
         &mut self,
         bn: usize,
-        tx_opt: Option<&FsTransaction<'_>>,
+        tx_opt: Option<&UfsTx<'_>>,
         ctx: &KernelCtx<'_, '_>,
     ) -> u32 {
         let inner = self.deref_inner();
@@ -752,10 +744,10 @@ impl ArenaObject for Inode {
                 // it as an argument for each disk write operation below. As a
                 // transaction does not start here, any operation that can drop an
                 // inode must begin a transaction even in the case that the
-                // resulting FsTransaction value is never used. Such transactions
+                // resulting Tx value is never used. Such transactions
                 // can be found in finalize in file.rs, sys_chdir in sysfile.rs,
                 // close_files in proc.rs, and exec in exec.rs.
-                let tx = mem::ManuallyDrop::new(FsTransaction { fs: &kernel.fs() });
+                let tx = mem::ManuallyDrop::new(UfsTx { fs: &kernel.fs() });
 
                 // self->ref == 1 means no other process can have self locked,
                 // so this acquiresleep() won't block (or deadlock).
@@ -895,7 +887,7 @@ impl Itable {
         &self,
         dev: u32,
         typ: InodeType,
-        tx: &FsTransaction<'_>,
+        tx: &UfsTx<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> RcInode {
         for inum in 1..ctx.kernel().fs().superblock().ninodes {

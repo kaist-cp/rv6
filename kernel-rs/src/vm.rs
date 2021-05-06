@@ -11,7 +11,7 @@ use crate::{
         kstack, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0,
     },
     arch::riscv::{make_satp, sfence_vma, w_satp},
-    fs::journal::InodeGuard,
+    fs::ufs::InodeGuard,
     kalloc::Kmem,
     lock::Spinlock,
     page::Page,

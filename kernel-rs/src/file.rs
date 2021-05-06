@@ -5,7 +5,8 @@ use core::{cell::UnsafeCell, cmp, mem, ops::Deref, ops::DerefMut};
 use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena, Rc},
-    fs::journal::{InodeGuard, RcInode},
+    fs::ufs::{InodeGuard, RcInode},
+    fs::FileSystem,
     kernel::{kernel_ref, KernelRef},
     lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
@@ -162,7 +163,7 @@ impl File {
                 let mut bytes_written: usize = 0;
                 while bytes_written < n {
                     let bytes_to_write = cmp::min(n - bytes_written, max);
-                    let tx = ctx.kernel().fs().begin_transaction();
+                    let tx = ctx.kernel().fs().begin_tx();
                     let mut ip = inner.lock(ctx);
                     let curr_off = *ip.off;
                     let r = ip
@@ -220,7 +221,7 @@ impl ArenaObject for File {
                         // TODO(https://github.com/kaist-cp/rv6/issues/290): The inode ip will
                         // be dropped by drop(ip). Deallocation of an inode may cause disk write
                         // operations, so we must begin a transaction here.
-                        let _tx = kref.fs().begin_transaction();
+                        let _tx = kref.fs().begin_tx();
                         drop(ip);
                     }
                     _ => (),
