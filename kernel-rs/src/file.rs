@@ -5,7 +5,7 @@ use core::{cell::UnsafeCell, cmp, mem, ops::Deref, ops::DerefMut};
 use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena, Rc},
-    fs::{FileSystem, InodeGuard, Ufs, UfsInodeInner},
+    fs::{FileSystem, InodeGuard, RcInode, Ufs, UfsInodeInner},
     kernel::{kernel_ref, KernelRef},
     lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
@@ -22,7 +22,7 @@ pub enum FileType {
         inner: InodeFileType,
     },
     Device {
-        ip: <Ufs as FileSystem>::Inode,
+        ip: RcInode<<Ufs as FileSystem>::InodeInner>,
         major: *const Devsw,
     },
 }
@@ -33,7 +33,7 @@ pub enum FileType {
 ///
 /// The offset should be accessed only when the inode is locked.
 pub struct InodeFileType {
-    pub ip: <Ufs as FileSystem>::Inode,
+    pub ip: RcInode<<Ufs as FileSystem>::InodeInner>,
     // It should be accessed only when `ip` is locked.
     pub off: UnsafeCell<u32>,
 }

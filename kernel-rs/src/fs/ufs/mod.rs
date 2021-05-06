@@ -17,7 +17,7 @@ use core::{cmp, mem};
 use cstr_core::CStr;
 use spin::Once;
 
-use super::{FcntlFlags, FileName, FileSystem, InodeType, Itable, Path, RcInode, Stat};
+use super::{FcntlFlags, FileName, FileSystem, InodeType, Itable, Path, Stat};
 use crate::{
     bio::Buf,
     file::{FileType, InodeFileType},
@@ -50,7 +50,7 @@ pub struct Ufs {
 
 impl FileSystem for Ufs {
     type Dirent = Dirent;
-    type Inode = RcInode<InodeInner>;
+    type InodeInner = InodeInner;
     type Tx<'s> = UfsTx<'s>;
 
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {

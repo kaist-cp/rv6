@@ -98,7 +98,7 @@ pub type RcInode<I> = Rc<Itable<I>>;
 
 pub trait FileSystem {
     type Dirent;
-    type Inode;
+    type InodeInner;
     type Tx<'s>;
 
     /// Initializes the file system (loading from the disk).
