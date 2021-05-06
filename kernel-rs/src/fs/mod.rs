@@ -6,7 +6,12 @@ pub use path::{FileName, Path};
 pub use stat::Stat;
 pub use ufs::{InodeInner as UfsInodeInner, Ufs};
 
-use crate::{lock::Sleeplock, proc::KernelCtx};
+use crate::{
+    arena::{ArrayArena, Rc},
+    lock::{Sleeplock, Spinlock},
+    param::NINODE,
+    proc::KernelCtx,
+};
 
 mod path;
 mod stat;
@@ -85,6 +90,11 @@ pub struct Inode<I> {
 
     pub inner: Sleeplock<I>,
 }
+
+pub type Itable<I> = Spinlock<ArrayArena<Inode<I>, NINODE>>;
+
+/// A reference counted smart pointer to an `Inode`.
+pub type RcInode<I> = Rc<Itable<I>>;
 
 pub trait FileSystem {
     type Dirent;

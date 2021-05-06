@@ -80,9 +80,9 @@ use zerocopy::{AsBytes, FromBytes};
 use super::{FileName, Path, Stat, UfsTx, IPB, MAXFILE, NDIRECT, NINDIRECT, ROOTINO};
 use crate::{
     arch::addr::UVAddr,
-    arena::{Arena, ArenaObject, ArrayArena, Rc},
+    arena::{Arena, ArenaObject, ArrayArena},
     bio::BufData,
-    fs::{Inode, InodeGuard, InodeType},
+    fs::{Inode, InodeGuard, InodeType, Itable, RcInode},
     lock::{Sleeplock, Spinlock},
     param::ROOTDEV,
     param::{BSIZE, NINODE},
@@ -143,11 +143,6 @@ pub struct Dinode {
     /// Indirect data block address
     addr_indirect: u32,
 }
-
-pub type Itable = Spinlock<ArrayArena<Inode<InodeInner>, NINODE>>;
-
-/// A reference counted smart pointer to an `Inode`.
-pub type RcInode = Rc<Itable>;
 
 #[repr(C)]
 #[derive(Default, AsBytes, FromBytes)]
@@ -250,7 +245,7 @@ impl InodeGuard<'_, InodeInner> {
         &mut self,
         name: &FileName<{ DIRSIZ }>,
         ctx: &KernelCtx<'_, '_>,
-    ) -> Result<(RcInode, u32), ()> {
+    ) -> Result<(RcInode<InodeInner>, u32), ()> {
         assert_eq!(self.deref_inner().typ, InodeType::Dir, "dirlookup not DIR");
 
         self.iter_dirents(ctx)
@@ -809,7 +804,7 @@ impl Inode<InodeInner> {
     }
 }
 
-impl Itable {
+impl Itable<InodeInner> {
     pub const fn new_itable() -> Self {
         Spinlock::new("ITABLE", ArrayArena::<Inode<InodeInner>, NINODE>::new())
     }
@@ -817,7 +812,7 @@ impl Itable {
     /// Find the inode with number inum on device dev
     /// and return the in-memory copy. Does not lock
     /// the inode and does not read it from disk.
-    pub fn get_inode(&self, dev: u32, inum: u32) -> RcInode {
+    pub fn get_inode(&self, dev: u32, inum: u32) -> RcInode<InodeInner> {
         self.find_or_alloc(
             |inode| inode.dev == dev && inode.inum == inum,
             |inode| {
@@ -838,7 +833,7 @@ impl Itable {
         typ: InodeType,
         tx: &UfsTx<'_>,
         ctx: &KernelCtx<'_, '_>,
-    ) -> RcInode {
+    ) -> RcInode<InodeInner> {
         for inum in 1..ctx.kernel().fs().superblock().ninodes {
             let mut bp = ctx.kernel().fs().log.disk.read(
                 dev,
@@ -881,11 +876,11 @@ impl Itable {
         panic!("[Itable::alloc_inode] no inodes");
     }
 
-    pub fn root(&self) -> RcInode {
+    pub fn root(&self) -> RcInode<InodeInner> {
         self.get_inode(ROOTDEV, ROOTINO)
     }
 
-    pub fn namei(&self, path: &Path, proc: &KernelCtx<'_, '_>) -> Result<RcInode, ()> {
+    pub fn namei(&self, path: &Path, proc: &KernelCtx<'_, '_>) -> Result<RcInode<InodeInner>, ()> {
         Ok(self.namex(path, false, proc)?.0)
     }
 
@@ -893,7 +888,7 @@ impl Itable {
         &self,
         path: &'s Path,
         ctx: &KernelCtx<'_, '_>,
-    ) -> Result<(RcInode, &'s FileName<{ DIRSIZ }>), ()> {
+    ) -> Result<(RcInode<InodeInner>, &'s FileName<{ DIRSIZ }>), ()> {
         let (ip, name_in_path) = self.namex(path, true, ctx)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
@@ -904,7 +899,7 @@ impl Itable {
         mut path: &'s Path,
         parent: bool,
         ctx: &KernelCtx<'_, '_>,
-    ) -> Result<(RcInode, Option<&'s FileName<{ DIRSIZ }>>), ()> {
+    ) -> Result<(RcInode<InodeInner>, Option<&'s FileName<{ DIRSIZ }>>), ()> {
         let mut ptr = if path.is_absolute() {
             self.root()
         } else {
