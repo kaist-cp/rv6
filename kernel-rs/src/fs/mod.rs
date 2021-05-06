@@ -5,15 +5,18 @@ use cstr_core::CStr;
 
 use crate::{
     arena::{ArenaObject, ArrayArena, Rc},
+    kernel::KernelRef,
     lock::{Sleeplock, Spinlock},
     param::NINODE,
     proc::KernelCtx,
 };
 
+mod lfs;
 mod path;
 mod stat;
 mod ufs;
 
+pub use lfs::Lfs;
 pub use path::{FileName, Path};
 pub use stat::Stat;
 pub use ufs::Ufs;
@@ -133,7 +136,7 @@ where
         &self,
         path: &Path,
         typ: InodeType,
-        tx: &<Ufs as FileSystem>::Tx<'_>,
+        tx: &Self::Tx<'_>,
         ctx: &KernelCtx<'_, '_>,
         f: F,
     ) -> Result<(RcInode<Self::InodeInner>, T), ()>
@@ -158,4 +161,8 @@ where
         tx: &Self::Tx<'_>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<(), ()>;
+
+    fn init_disk(&mut self);
+
+    fn intr(&self, kernel: KernelRef<'_, '_>);
 }

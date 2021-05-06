@@ -15,7 +15,7 @@ use crate::{
     console::{Console, Printer},
     cpu::cpuid,
     file::{Devsw, FileTable},
-    fs::Ufs,
+    fs::{FileSystem, Ufs},
     kalloc::Kmem,
     lock::{Sleepablelock, Spinlock},
     param::NDEV,
@@ -236,7 +236,7 @@ impl KernelBuilder {
         this.bcache.get_pin_mut().init();
 
         // Emulated hard disk.
-        this.file_system.log.disk.get_mut().init();
+        this.file_system.init_disk();
 
         // First user process.
         procs.user_proc_init(this.kmem.as_ref().get_ref());

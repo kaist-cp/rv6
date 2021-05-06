@@ -21,6 +21,7 @@ use super::{FcntlFlags, FileName, FileSystem, InodeGuard, InodeType, Itable, Pat
 use crate::{
     bio::Buf,
     file::{FileType, InodeFileType},
+    kernel::KernelRef,
     param::BSIZE,
     proc::{kernel_ctx, KernelCtx},
 };
@@ -53,6 +54,10 @@ impl FileSystem for Ufs {
     type InodeInner = InodeInner;
     type Tx<'s> = UfsTx<'s>;
 
+    fn init_disk(&mut self) {
+        self.log.disk.get_mut().init();
+    }
+
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
         if !self.superblock.is_completed() {
             let superblock = self
@@ -61,6 +66,10 @@ impl FileSystem for Ufs {
             self.log
                 .init(dev, superblock.logstart as i32, superblock.nlog as i32, ctx);
         }
+    }
+
+    fn intr(&self, kernel: KernelRef<'_, '_>) {
+        self.log.disk.lock().intr(kernel);
     }
 
     fn begin_tx(&self) -> Self::Tx<'_> {
@@ -142,12 +151,12 @@ impl FileSystem for Ufs {
         &self,
         path: &Path,
         typ: InodeType,
-        tx: &<Ufs as FileSystem>::Tx<'_>,
+        tx: &Self::Tx<'_>,
         ctx: &KernelCtx<'_, '_>,
         f: F,
-    ) -> Result<(RcInode<<Ufs as FileSystem>::InodeInner>, T), ()>
+    ) -> Result<(RcInode<Self::InodeInner>, T), ()>
     where
-        F: FnOnce(&mut InodeGuard<'_, InodeInner>) -> T,
+        F: FnOnce(&mut InodeGuard<'_, Self::InodeInner>) -> T,
     {
         let (ptr, name) = self.itable.nameiparent(path, ctx)?;
         let mut dp = ptr.lock(ctx);
