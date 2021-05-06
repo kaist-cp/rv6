@@ -29,9 +29,7 @@ mod inode;
 mod log;
 mod superblock;
 
-pub use inode::{
-    Dinode, Dirent, Inode, InodeGuard, InodeInner, Itable, RcInode, DIRENT_SIZE, DIRSIZ,
-};
+pub use inode::{Dinode, Dirent, InodeInner, Itable, RcInode, DIRENT_SIZE, DIRSIZ};
 pub use log::{Log, LogLocked};
 pub use superblock::{Superblock, BPB, IPB};
 
@@ -53,7 +51,6 @@ pub struct Ufs {
 impl FileSystem for Ufs {
     type Dirent = Dirent;
     type Inode = RcInode;
-    type InodeGuard<'s> = InodeGuard<'s, InodeInner>;
     type Tx<'s> = UfsTx<'s>;
 
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {

@@ -10,7 +10,7 @@ use arrayvec::ArrayVec;
 
 use crate::{
     file::RcFile,
-    fs::{FcntlFlags, FileName, FileSystem, InodeType, Path, Ufs, UfsInodeGuard, UfsInodeInner},
+    fs::{FcntlFlags, FileName, FileSystem, InodeGuard, InodeType, Path, Ufs, UfsInodeInner},
     ok_or,
     page::Page,
     param::{MAXARG, MAXPATH},
@@ -30,7 +30,7 @@ impl KernelCtx<'_, '_> {
         f: F,
     ) -> Result<(<Ufs as FileSystem>::Inode, T), ()>
     where
-        F: FnOnce(&mut UfsInodeGuard<'_, UfsInodeInner>) -> T,
+        F: FnOnce(&mut InodeGuard<'_, UfsInodeInner>) -> T,
     {
         let (ptr, name) = self.kernel().fs().itable.nameiparent(path, self)?;
         let mut dp = ptr.lock(self);

@@ -5,7 +5,7 @@ use core::{cell::UnsafeCell, cmp, mem, ops::Deref, ops::DerefMut};
 use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena, Rc},
-    fs::{FileSystem, Ufs, UfsInodeGuard, UfsInodeInner},
+    fs::{FileSystem, InodeGuard, Ufs, UfsInodeInner},
     kernel::{kernel_ref, KernelRef},
     lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
@@ -42,7 +42,7 @@ pub struct InodeFileType {
 /// inode. `off` is a mutable reference to the offset. Accessing `off` is guaranteed to be safe
 /// since the inode is locked.
 struct InodeFileTypeGuard<'a> {
-    ip: UfsInodeGuard<'a, UfsInodeInner>,
+    ip: InodeGuard<'a, UfsInodeInner>,
     off: &'a mut u32,
 }
 
@@ -80,7 +80,7 @@ impl InodeFileType {
 }
 
 impl<'a> Deref for InodeFileTypeGuard<'a> {
-    type Target = UfsInodeGuard<'a, UfsInodeInner>;
+    type Target = InodeGuard<'a, UfsInodeInner>;
 
     fn deref(&self) -> &Self::Target {
         &self.ip

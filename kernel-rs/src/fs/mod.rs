@@ -1,25 +1,16 @@
-mod path;
-mod stat;
-
-mod ufs;
+use core::ops::Deref;
 
 use bitflags::bitflags;
 use cstr_core::CStr;
 pub use path::{FileName, Path};
 pub use stat::Stat;
-// TODO: UfsInodeGuard must be hidden.
-pub use ufs::{InodeGuard as UfsInodeGuard, InodeInner as UfsInodeInner, Ufs};
+pub use ufs::{InodeInner as UfsInodeInner, Ufs};
 
-use crate::proc::KernelCtx;
+use crate::{lock::Sleeplock, proc::KernelCtx};
 
-#[derive(Copy, Clone, PartialEq, Debug)]
-#[repr(i16)]
-pub enum InodeType {
-    None,
-    Dir,
-    File,
-    Device { major: u16, minor: u16 },
-}
+mod path;
+mod stat;
+mod ufs;
 
 bitflags! {
     pub struct FcntlFlags: i32 {
@@ -31,10 +22,73 @@ bitflags! {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Debug)]
+#[repr(i16)]
+pub enum InodeType {
+    None,
+    Dir,
+    File,
+    Device { major: u16, minor: u16 },
+}
+
+/// InodeGuard implies that `Sleeplock<InodeInner>` is held by current thread.
+///
+/// # Safety
+///
+/// `inode.inner` is locked.
+// Every disk write operation must happen inside a transaction. Reading an
+// opened file does not write anything on disk in any matter and thus does
+// not need to happen inside a transaction. At the same time, it requires
+// an InodeGuard. Therefore, InodeGuard does not have a FsTransaction field.
+// Instead, every method that needs to be inside a transaction explicitly
+// takes a FsTransaction value as an argument.
+// https://github.com/kaist-cp/rv6/issues/328
+pub struct InodeGuard<'a, I> {
+    pub inode: &'a Inode<I>,
+}
+
+impl<I> Deref for InodeGuard<'_, I> {
+    type Target = Inode<I>;
+
+    fn deref(&self) -> &Self::Target {
+        self.inode
+    }
+}
+
+impl<I> InodeGuard<'_, I> {
+    pub fn deref_inner(&self) -> &I {
+        // SAFETY: self.inner is locked.
+        unsafe { &*self.inner.get_mut_raw() }
+    }
+
+    pub fn deref_inner_mut(&mut self) -> &mut I {
+        // SAFETY: self.inner is locked and &mut self is exclusive.
+        unsafe { &mut *self.inner.get_mut_raw() }
+    }
+}
+
+/// Unlock and put the given inode.
+impl<I> Drop for InodeGuard<'_, I> {
+    fn drop(&mut self) {
+        // SAFETY: self will be dropped.
+        unsafe { self.inner.unlock() };
+    }
+}
+
+/// in-memory copy of an inode
+pub struct Inode<I> {
+    /// Device number
+    pub dev: u32,
+
+    /// Inode number
+    pub inum: u32,
+
+    pub inner: Sleeplock<I>,
+}
+
 pub trait FileSystem {
     type Dirent;
     type Inode;
-    type InodeGuard<'s>;
     type Tx<'s>;
 
     /// Initializes the file system (loading from the disk).

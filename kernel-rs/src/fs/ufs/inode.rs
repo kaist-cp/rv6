@@ -82,7 +82,7 @@ use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena, Rc},
     bio::BufData,
-    fs::InodeType,
+    fs::{Inode, InodeGuard, InodeType},
     lock::{Sleeplock, Spinlock},
     param::ROOTDEV,
     param::{BSIZE, NINODE},
@@ -113,17 +113,6 @@ pub struct InodeInner {
     pub size: u32,
     pub addr_direct: [u32; NDIRECT],
     pub addr_indirect: u32,
-}
-
-/// in-memory copy of an inode
-pub struct Inode<I> {
-    /// Device number
-    pub dev: u32,
-
-    /// Inode number
-    pub inum: u32,
-
-    pub inner: Sleeplock<I>,
 }
 
 /// On-disk inode structure
@@ -159,22 +148,6 @@ pub type Itable = Spinlock<ArrayArena<Inode<InodeInner>, NINODE>>;
 
 /// A reference counted smart pointer to an `Inode`.
 pub type RcInode = Rc<Itable>;
-
-/// InodeGuard implies that `Sleeplock<InodeInner>` is held by current thread.
-///
-/// # Safety
-///
-/// `inode.inner` is locked.
-// Every disk write operation must happen inside a transaction. Reading an
-// opened file does not write anything on disk in any matter and thus does
-// not need to happen inside a transaction. At the same time, it requires
-// an InodeGuard. Therefore, InodeGuard does not have a FsTransaction field.
-// Instead, every method that needs to be inside a transaction explicitly
-// takes a FsTransaction value as an argument.
-// https://github.com/kaist-cp/rv6/issues/328
-pub struct InodeGuard<'a, I> {
-    pub inode: &'a Inode<I>,
-}
 
 #[repr(C)]
 #[derive(Default, AsBytes, FromBytes)]
@@ -242,34 +215,6 @@ impl<'t> InodeGuard<'t, InodeInner> {
             iter,
             ctx,
         }
-    }
-}
-
-impl<I> Deref for InodeGuard<'_, I> {
-    type Target = Inode<I>;
-
-    fn deref(&self) -> &Self::Target {
-        self.inode
-    }
-}
-
-impl<I> InodeGuard<'_, I> {
-    pub fn deref_inner(&self) -> &I {
-        // SAFETY: self.inner is locked.
-        unsafe { &*self.inner.get_mut_raw() }
-    }
-
-    pub fn deref_inner_mut(&mut self) -> &mut I {
-        // SAFETY: self.inner is locked and &mut self is exclusive.
-        unsafe { &mut *self.inner.get_mut_raw() }
-    }
-}
-
-/// Unlock and put the given inode.
-impl<I> Drop for InodeGuard<'_, I> {
-    fn drop(&mut self) {
-        // SAFETY: self will be dropped.
-        unsafe { self.inner.unlock() };
     }
 }
 
