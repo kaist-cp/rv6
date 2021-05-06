@@ -4,16 +4,15 @@
 
 #![allow(clippy::unit_arg)]
 
-use core::{cell::UnsafeCell, mem};
+use core::mem;
 
 use arrayvec::ArrayVec;
-use bitflags::bitflags;
 use cstr_core::CStr;
 
 use crate::{
     arch::addr::UVAddr,
-    file::{FileType, InodeFileType, RcFile},
-    fs::{FileName, FileSystem, InodeType, Path, Ufs, UfsInodeGuard},
+    file::RcFile,
+    fs::{FcntlFlags, FileName, FileSystem, InodeType, Path, Ufs, UfsInodeGuard},
     ok_or,
     page::Page,
     param::{MAXARG, MAXPATH},
@@ -21,20 +20,10 @@ use crate::{
     some_or,
 };
 
-bitflags! {
-    struct FcntlFlags: i32 {
-        const O_RDONLY = 0;
-        const O_WRONLY = 0x1;
-        const O_RDWR = 0x2;
-        const O_CREATE = 0x200;
-        const O_TRUNC = 0x400;
-    }
-}
-
 impl RcFile {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
-    fn fdalloc(self, ctx: &mut KernelCtx<'_, '_>) -> Result<i32, Self> {
+    pub fn fdalloc(self, ctx: &mut KernelCtx<'_, '_>) -> Result<i32, Self> {
         let proc_data = ctx.proc_mut().deref_mut_data();
         for (fd, f) in proc_data.open_files.iter_mut().enumerate() {
             if f.is_none() {
@@ -47,9 +36,10 @@ impl RcFile {
 }
 
 impl KernelCtx<'_, '_> {
+    // TODO: move to Ufs
     /// Create an inode with given type.
     /// Returns Ok(created inode, result of given function f) on success, Err(()) on error.
-    fn create<F, T>(
+    pub fn create<F, T>(
         &self,
         path: &Path,
         typ: InodeType,
@@ -99,60 +89,7 @@ impl KernelCtx<'_, '_> {
         Ok((ptr2, ret))
     }
 
-    /// Open a file; omode indicate read/write.
-    /// Returns Ok(file descriptor) on success, Err(()) on error.
-    fn open(&mut self, name: &Path, omode: FcntlFlags) -> Result<usize, ()> {
-        let tx = self.kernel().fs().begin_tx();
-
-        let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
-            self.create(name, InodeType::File, &tx, |ip| ip.deref_inner().typ)?
-        } else {
-            let ptr = self.kernel().fs().itable.namei(name, self)?;
-            let ip = ptr.lock(self);
-            let typ = ip.deref_inner().typ;
-
-            if typ == InodeType::Dir && omode != FcntlFlags::O_RDONLY {
-                return Err(());
-            }
-            drop(ip);
-            (ptr, typ)
-        };
-
-        let filetype = match typ {
-            InodeType::Device { major, .. } => {
-                let major = self.kernel().devsw().get(major as usize).ok_or(())?;
-                FileType::Device { ip, major }
-            }
-            _ => {
-                FileType::Inode {
-                    inner: InodeFileType {
-                        ip,
-                        off: UnsafeCell::new(0),
-                    },
-                }
-            }
-        };
-
-        let f = self.kernel().ftable.alloc_file(
-            filetype,
-            !omode.intersects(FcntlFlags::O_WRONLY),
-            omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR),
-        )?;
-
-        if omode.contains(FcntlFlags::O_TRUNC) && typ == InodeType::File {
-            match &f.typ {
-                // It is safe to call itrunc because ip.lock() is held
-                FileType::Device { ip, .. }
-                | FileType::Inode {
-                    inner: InodeFileType { ip, .. },
-                } => ip.lock(self).itrunc(&tx, self),
-                _ => panic!("sys_open : Not reach"),
-            };
-        }
-        let fd = f.fdalloc(self).map_err(|_| ())?;
-        Ok(fd as usize)
-    }
-
+    // TODO: move to Ufs
     /// Create a new directory.
     /// Returns Ok(()) on success, Err(()) on error.
     fn mkdir(&self, dirname: &CStr) -> Result<(), ()> {
@@ -161,6 +98,7 @@ impl KernelCtx<'_, '_> {
         Ok(())
     }
 
+    // TODO: move to Ufs
     /// Create a device file.
     /// Returns Ok(()) on success, Err(()) on error.
     fn mknod(&self, filename: &CStr, major: u16, minor: u16) -> Result<(), ()> {
@@ -174,6 +112,7 @@ impl KernelCtx<'_, '_> {
         Ok(())
     }
 
+    // TODO: move to Ufs
     /// Change the current directory.
     /// Returns Ok(()) on success, Err(()) on error.
     fn chdir(&mut self, dirname: &CStr) -> Result<(), ()> {
@@ -295,7 +234,8 @@ impl KernelCtx<'_, '_> {
         let path = Path::new(path);
         let omode = self.proc().argint(1)?;
         let omode = FcntlFlags::from_bits_truncate(omode);
-        self.open(path, omode)
+        let tx = self.kernel().fs().begin_tx();
+        self.kernel().fs().open(path, omode, &tx, self)
     }
 
     /// Create a new directory.

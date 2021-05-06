@@ -11,18 +11,16 @@
 //!
 //! On-disk file system format used for both kernel and user programs are also included here.
 
+use core::cell::UnsafeCell;
 use core::{cmp, mem};
 
 use cstr_core::CStr;
 use spin::Once;
 
-use super::{
-    path::{FileName, Path},
-    stat::Stat,
-    FileSystem, InodeType,
-};
+use super::{FcntlFlags, FileName, FileSystem, InodeType, Path, Stat};
 use crate::{
     bio::Buf,
+    file::{FileType, InodeFileType},
     param::BSIZE,
     proc::{kernel_ctx, KernelCtx},
 };
@@ -141,6 +139,62 @@ impl FileSystem for Ufs {
         ip.deref_inner_mut().nlink -= 1;
         ip.update(&tx, ctx);
         Ok(())
+    }
+
+    fn open(
+        &self,
+        name: &Path,
+        omode: FcntlFlags,
+        tx: &Self::Tx<'_>,
+        ctx: &mut KernelCtx<'_, '_>,
+    ) -> Result<usize, ()> {
+        let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
+            ctx.create(name, InodeType::File, &tx, |ip| ip.deref_inner().typ)?
+        } else {
+            let ptr = self.itable.namei(name, ctx)?;
+            let ip = ptr.lock(ctx);
+            let typ = ip.deref_inner().typ;
+
+            if typ == InodeType::Dir && omode != FcntlFlags::O_RDONLY {
+                return Err(());
+            }
+            drop(ip);
+            (ptr, typ)
+        };
+
+        let filetype = match typ {
+            InodeType::Device { major, .. } => {
+                let major = ctx.kernel().devsw().get(major as usize).ok_or(())?;
+                FileType::Device { ip, major }
+            }
+            _ => {
+                FileType::Inode {
+                    inner: InodeFileType {
+                        ip,
+                        off: UnsafeCell::new(0),
+                    },
+                }
+            }
+        };
+
+        let f = ctx.kernel().ftable.alloc_file(
+            filetype,
+            !omode.intersects(FcntlFlags::O_WRONLY),
+            omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR),
+        )?;
+
+        if omode.contains(FcntlFlags::O_TRUNC) && typ == InodeType::File {
+            match &f.typ {
+                // It is safe to call itrunc because ip.lock() is held
+                FileType::Device { ip, .. }
+                | FileType::Inode {
+                    inner: InodeFileType { ip, .. },
+                } => ip.lock(ctx).itrunc(&tx, ctx),
+                _ => panic!("sys_open : Not reach"),
+            };
+        }
+        let fd = f.fdalloc(ctx).map_err(|_| ())?;
+        Ok(fd as usize)
     }
 }
 

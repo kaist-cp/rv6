@@ -3,6 +3,7 @@ mod stat;
 
 mod ufs;
 
+use bitflags::bitflags;
 use cstr_core::CStr;
 pub use path::{FileName, Path};
 pub use stat::Stat;
@@ -18,6 +19,16 @@ pub enum InodeType {
     Dir,
     File,
     Device { major: u16, minor: u16 },
+}
+
+bitflags! {
+    pub struct FcntlFlags: i32 {
+        const O_RDONLY = 0;
+        const O_WRONLY = 0x1;
+        const O_RDWR = 0x2;
+        const O_CREATE = 0x200;
+        const O_TRUNC = 0x400;
+    }
 }
 
 pub trait FileSystem {
@@ -46,4 +57,14 @@ pub trait FileSystem {
     /// Returns Ok(()) on success, Err(()) on error.
     fn unlink(&self, filename: &CStr, tx: &Self::Tx<'_>, ctx: &KernelCtx<'_, '_>)
         -> Result<(), ()>;
+
+    /// Open a file; omode indicate read/write.
+    /// Returns Ok(file descriptor) on success, Err(()) on error.
+    fn open(
+        &self,
+        name: &Path,
+        omode: FcntlFlags,
+        tx: &Self::Tx<'_>,
+        ctx: &mut KernelCtx<'_, '_>,
+    ) -> Result<usize, ()>;
 }
