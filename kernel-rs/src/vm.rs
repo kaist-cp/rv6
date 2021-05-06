@@ -11,7 +11,7 @@ use crate::{
         kstack, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0,
     },
     arch::riscv::{make_satp, sfence_vma, w_satp},
-    fs::UfsInodeGuard,
+    fs::{UfsInodeGuard, UfsInodeInner},
     kalloc::Kmem,
     lock::Spinlock,
     page::Page,
@@ -432,7 +432,7 @@ impl UserMemory {
     pub fn load_file(
         &mut self,
         va: UVAddr,
-        ip: &mut UfsInodeGuard<'_>,
+        ip: &mut UfsInodeGuard<'_, UfsInodeInner>,
         offset: u32,
         sz: u32,
         ctx: &KernelCtx<'_, '_>,

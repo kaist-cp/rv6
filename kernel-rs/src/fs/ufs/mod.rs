@@ -53,7 +53,7 @@ pub struct Ufs {
 impl FileSystem for Ufs {
     type Dirent = Dirent;
     type Inode = RcInode;
-    type InodeGuard<'s> = InodeGuard<'s>;
+    type InodeGuard<'s> = InodeGuard<'s, InodeInner>;
     type Tx<'s> = UfsTx<'s>;
 
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {

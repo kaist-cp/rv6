@@ -116,14 +116,14 @@ pub struct InodeInner {
 }
 
 /// in-memory copy of an inode
-pub struct Inode {
+pub struct Inode<I> {
     /// Device number
     pub dev: u32,
 
     /// Inode number
     pub inum: u32,
 
-    pub inner: Sleeplock<InodeInner>,
+    pub inner: Sleeplock<I>,
 }
 
 /// On-disk inode structure
@@ -155,7 +155,7 @@ pub struct Dinode {
     addr_indirect: u32,
 }
 
-pub type Itable = Spinlock<ArrayArena<Inode, NINODE>>;
+pub type Itable = Spinlock<ArrayArena<Inode<InodeInner>, NINODE>>;
 
 /// A reference counted smart pointer to an `Inode`.
 pub type RcInode = Rc<Itable>;
@@ -172,8 +172,8 @@ pub type RcInode = Rc<Itable>;
 // Instead, every method that needs to be inside a transaction explicitly
 // takes a FsTransaction value as an argument.
 // https://github.com/kaist-cp/rv6/issues/328
-pub struct InodeGuard<'a> {
-    pub inode: &'a Inode,
+pub struct InodeGuard<'a, I> {
+    pub inode: &'a Inode<I>,
 }
 
 #[repr(C)]
@@ -184,7 +184,11 @@ pub struct Dirent {
 }
 
 impl Dirent {
-    fn new(ip: &mut InodeGuard<'_>, off: u32, ctx: &KernelCtx<'_, '_>) -> Result<Dirent, ()> {
+    fn new(
+        ip: &mut InodeGuard<'_, InodeInner>,
+        off: u32,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Result<Dirent, ()> {
         let mut dirent = Dirent::default();
         ip.read_kernel(&mut dirent, off, ctx)?;
         Ok(dirent)
@@ -215,7 +219,7 @@ impl Dirent {
 }
 
 struct DirentIter<'id, 's, 't> {
-    guard: &'s mut InodeGuard<'t>,
+    guard: &'s mut InodeGuard<'t, InodeInner>,
     iter: StepBy<Range<u32>>,
     ctx: &'s KernelCtx<'id, 's>,
 }
@@ -230,7 +234,7 @@ impl Iterator for DirentIter<'_, '_, '_> {
     }
 }
 
-impl<'t> InodeGuard<'t> {
+impl<'t> InodeGuard<'t, InodeInner> {
     fn iter_dirents<'id, 's>(&'s mut self, ctx: &'s KernelCtx<'id, 's>) -> DirentIter<'id, 's, 't> {
         let iter = (0..self.deref_inner().size).step_by(DIRENT_SIZE);
         DirentIter {
@@ -241,28 +245,28 @@ impl<'t> InodeGuard<'t> {
     }
 }
 
-impl Deref for InodeGuard<'_> {
-    type Target = Inode;
+impl<I> Deref for InodeGuard<'_, I> {
+    type Target = Inode<I>;
 
     fn deref(&self) -> &Self::Target {
         self.inode
     }
 }
 
-impl InodeGuard<'_> {
-    pub fn deref_inner(&self) -> &InodeInner {
+impl<I> InodeGuard<'_, I> {
+    pub fn deref_inner(&self) -> &I {
         // SAFETY: self.inner is locked.
         unsafe { &*self.inner.get_mut_raw() }
     }
 
-    pub fn deref_inner_mut(&mut self) -> &mut InodeInner {
+    pub fn deref_inner_mut(&mut self) -> &mut I {
         // SAFETY: self.inner is locked and &mut self is exclusive.
         unsafe { &mut *self.inner.get_mut_raw() }
     }
 }
 
 /// Unlock and put the given inode.
-impl Drop for InodeGuard<'_> {
+impl<I> Drop for InodeGuard<'_, I> {
     fn drop(&mut self) {
         // SAFETY: self will be dropped.
         unsafe { self.inner.unlock() };
@@ -270,7 +274,7 @@ impl Drop for InodeGuard<'_> {
 }
 
 // Directories
-impl InodeGuard<'_> {
+impl InodeGuard<'_, InodeInner> {
     /// Write a new directory entry (name, inum) into the directory dp.
     pub fn dirlink(
         &mut self,
@@ -316,7 +320,7 @@ impl InodeGuard<'_> {
     }
 }
 
-impl InodeGuard<'_> {
+impl InodeGuard<'_, InodeInner> {
     /// Copy a modified in-memory inode to disk.
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk.
@@ -713,13 +717,13 @@ impl InodeGuard<'_> {
     }
 }
 
-impl const Default for Inode {
+impl const Default for Inode<InodeInner> {
     fn default() -> Self {
         Self::zero()
     }
 }
 
-impl ArenaObject for Inode {
+impl ArenaObject for Inode<InodeInner> {
     /// Drop a reference to an in-memory inode.
     /// If that was the last reference, the inode table entry can
     /// be recycled.
@@ -776,10 +780,10 @@ impl ArenaObject for Inode {
     }
 }
 
-impl Inode {
+impl Inode<InodeInner> {
     /// Lock the given inode.
     /// Reads the inode from disk if necessary.
-    pub fn lock(&self, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'_> {
+    pub fn lock(&self, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'_, InodeInner> {
         let mut guard = self.inner.lock();
         if !guard.valid {
             let mut bp = ctx.kernel().fs().log.disk.read(
@@ -862,7 +866,7 @@ impl Inode {
 
 impl Itable {
     pub const fn new_itable() -> Self {
-        Spinlock::new("ITABLE", ArrayArena::<Inode, NINODE>::new())
+        Spinlock::new("ITABLE", ArrayArena::<Inode<InodeInner>, NINODE>::new())
     }
 
     /// Find the inode with number inum on device dev

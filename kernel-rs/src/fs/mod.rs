@@ -8,7 +8,7 @@ use cstr_core::CStr;
 pub use path::{FileName, Path};
 pub use stat::Stat;
 // TODO: UfsInodeGuard must be hidden.
-pub use ufs::{InodeGuard as UfsInodeGuard, Ufs};
+pub use ufs::{InodeGuard as UfsInodeGuard, InodeInner as UfsInodeInner, Ufs};
 
 use crate::proc::KernelCtx;
 
