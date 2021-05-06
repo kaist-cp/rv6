@@ -2,12 +2,9 @@ use core::ops::Deref;
 
 use bitflags::bitflags;
 use cstr_core::CStr;
-pub use path::{FileName, Path};
-pub use stat::Stat;
-pub use ufs::{InodeInner as UfsInodeInner, Ufs};
 
 use crate::{
-    arena::{ArrayArena, Rc},
+    arena::{ArenaObject, ArrayArena, Rc},
     lock::{Sleeplock, Spinlock},
     param::NINODE,
     proc::KernelCtx,
@@ -16,6 +13,10 @@ use crate::{
 mod path;
 mod stat;
 mod ufs;
+
+pub use path::{FileName, Path};
+pub use stat::Stat;
+pub use ufs::Ufs;
 
 bitflags! {
     pub struct FcntlFlags: i32 {
@@ -96,7 +97,11 @@ pub type Itable<I> = Spinlock<ArrayArena<Inode<I>, NINODE>>;
 /// A reference counted smart pointer to an `Inode`.
 pub type RcInode<I> = Rc<Itable<I>>;
 
-pub trait FileSystem {
+pub trait FileSystem
+where
+    Self::InodeInner: 'static + Unpin,
+    Inode<Self::InodeInner>: ArenaObject,
+{
     type Dirent;
     type InodeInner;
     type Tx<'s>;
@@ -131,9 +136,9 @@ pub trait FileSystem {
         tx: &<Ufs as FileSystem>::Tx<'_>,
         ctx: &KernelCtx<'_, '_>,
         f: F,
-    ) -> Result<(RcInode<<Ufs as FileSystem>::InodeInner>, T), ()>
+    ) -> Result<(RcInode<Self::InodeInner>, T), ()>
     where
-        F: FnOnce(&mut InodeGuard<'_, UfsInodeInner>) -> T;
+        F: FnOnce(&mut InodeGuard<'_, Self::InodeInner>) -> T;
 
     /// Open a file; omode indicate read/write.
     /// Returns Ok(file descriptor) on success, Err(()) on error.

@@ -5,7 +5,7 @@ use core::{cell::UnsafeCell, cmp, mem, ops::Deref, ops::DerefMut};
 use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena, Rc},
-    fs::{FileSystem, InodeGuard, RcInode, Ufs, UfsInodeInner},
+    fs::{FileSystem, InodeGuard, RcInode, Ufs},
     kernel::{kernel_ref, KernelRef},
     lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
@@ -41,8 +41,8 @@ pub struct InodeFileType {
 /// It can be acquired when the inode of `InodeFileType` is locked. `ip` is the guard of the locked
 /// inode. `off` is a mutable reference to the offset. Accessing `off` is guaranteed to be safe
 /// since the inode is locked.
-struct InodeFileTypeGuard<'a> {
-    ip: InodeGuard<'a, UfsInodeInner>,
+struct InodeFileTypeGuard<'a, I> {
+    ip: InodeGuard<'a, I>,
     off: &'a mut u32,
 }
 
@@ -71,7 +71,10 @@ impl Default for FileType {
 }
 
 impl InodeFileType {
-    fn lock(&self, ctx: &KernelCtx<'_, '_>) -> InodeFileTypeGuard<'_> {
+    fn lock(
+        &self,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> InodeFileTypeGuard<'_, <Ufs as FileSystem>::InodeInner> {
         let ip = self.ip.lock(ctx);
         // SAFETY: `ip` is locked and `off` can be exclusively accessed.
         let off = unsafe { &mut *self.off.get() };
@@ -79,15 +82,15 @@ impl InodeFileType {
     }
 }
 
-impl<'a> Deref for InodeFileTypeGuard<'a> {
-    type Target = InodeGuard<'a, UfsInodeInner>;
+impl<'a, I> Deref for InodeFileTypeGuard<'a, I> {
+    type Target = InodeGuard<'a, I>;
 
     fn deref(&self) -> &Self::Target {
         &self.ip
     }
 }
 
-impl<'a> DerefMut for InodeFileTypeGuard<'a> {
+impl<'a, I> DerefMut for InodeFileTypeGuard<'a, I> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.ip
     }
