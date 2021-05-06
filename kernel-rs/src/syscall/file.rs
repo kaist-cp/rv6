@@ -7,10 +7,8 @@
 use core::mem;
 
 use arrayvec::ArrayVec;
-use cstr_core::CStr;
 
 use crate::{
-    arch::addr::UVAddr,
     file::RcFile,
     fs::{FcntlFlags, FileName, FileSystem, InodeType, Path, Ufs, UfsInodeGuard},
     ok_or,
@@ -87,51 +85,6 @@ impl KernelCtx<'_, '_> {
         let ret = f(&mut ip);
         drop(ip);
         Ok((ptr2, ret))
-    }
-
-    // TODO: move to Ufs
-    /// Create a new directory.
-    /// Returns Ok(()) on success, Err(()) on error.
-    fn mkdir(&self, dirname: &CStr) -> Result<(), ()> {
-        let tx = self.kernel().fs().begin_tx();
-        self.create(Path::new(dirname), InodeType::Dir, &tx, |_| ())?;
-        Ok(())
-    }
-
-    // TODO: move to Ufs
-    /// Create a device file.
-    /// Returns Ok(()) on success, Err(()) on error.
-    fn mknod(&self, filename: &CStr, major: u16, minor: u16) -> Result<(), ()> {
-        let tx = self.kernel().fs().begin_tx();
-        self.create(
-            Path::new(filename),
-            InodeType::Device { major, minor },
-            &tx,
-            |_| (),
-        )?;
-        Ok(())
-    }
-
-    /// Create a pipe, put read/write file descriptors in fd0 and fd1.
-    /// Returns Ok(()) on success, Err(()) on error.
-    fn pipe(&mut self, fdarray: UVAddr) -> Result<(), ()> {
-        let (pipereader, pipewriter) = self.kernel().allocate_pipe()?;
-
-        let mut this = scopeguard::guard((self, -1, -1), |(this, fd1, fd2)| {
-            if fd1 != -1 {
-                this.proc_mut().deref_mut_data().open_files[fd1 as usize] = None;
-            }
-
-            if fd2 != -1 {
-                this.proc_mut().deref_mut_data().open_files[fd2 as usize] = None;
-            }
-        });
-
-        this.1 = pipereader.fdalloc(this.0).map_err(|_| ())?;
-        this.2 = pipewriter.fdalloc(this.0).map_err(|_| ())?;
-
-        let (this, fd1, fd2) = scopeguard::ScopeGuard::into_inner(this);
-        this.proc_mut().memory_mut().copy_out(fdarray, &[fd1, fd2])
     }
 }
 
@@ -223,18 +176,25 @@ impl KernelCtx<'_, '_> {
     pub fn sys_mkdir(&mut self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = self.proc_mut().argstr(0, &mut path)?;
-        self.mkdir(path)?;
+        let tx = self.kernel().fs().begin_tx();
+        self.create(Path::new(path), InodeType::Dir, &tx, |_| ())?;
         Ok(0)
     }
 
-    /// Create a new directory.
+    /// Create a new device file.
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_mknod(&mut self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = self.proc_mut().argstr(0, &mut path)?;
         let major = self.proc().argint(1)? as u16;
         let minor = self.proc().argint(2)? as u16;
-        self.mknod(path, major, minor)?;
+        let tx = self.kernel().fs().begin_tx();
+        self.create(
+            Path::new(path),
+            InodeType::Device { major, minor },
+            &tx,
+            |_| (),
+        )?;
         Ok(0)
     }
 

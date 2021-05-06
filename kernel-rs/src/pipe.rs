@@ -263,3 +263,27 @@ impl PipeInner {
         Ok(n)
     }
 }
+
+impl KernelCtx<'_, '_> {
+    /// Create a pipe, put read/write file descriptors in fd0 and fd1.
+    /// Returns Ok(()) on success, Err(()) on error.
+    pub fn pipe(&mut self, fdarray: UVAddr) -> Result<(), ()> {
+        let (pipereader, pipewriter) = self.kernel().allocate_pipe()?;
+
+        let mut this = scopeguard::guard((self, -1, -1), |(this, fd1, fd2)| {
+            if fd1 != -1 {
+                this.proc_mut().deref_mut_data().open_files[fd1 as usize] = None;
+            }
+
+            if fd2 != -1 {
+                this.proc_mut().deref_mut_data().open_files[fd2 as usize] = None;
+            }
+        });
+
+        this.1 = pipereader.fdalloc(this.0).map_err(|_| ())?;
+        this.2 = pipewriter.fdalloc(this.0).map_err(|_| ())?;
+
+        let (this, fd1, fd2) = scopeguard::ScopeGuard::into_inner(this);
+        this.proc_mut().memory_mut().copy_out(fdarray, &[fd1, fd2])
+    }
+}
