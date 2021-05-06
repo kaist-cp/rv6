@@ -112,26 +112,6 @@ impl KernelCtx<'_, '_> {
         Ok(())
     }
 
-    // TODO: move to Ufs
-    /// Change the current directory.
-    /// Returns Ok(()) on success, Err(()) on error.
-    fn chdir(&mut self, dirname: &CStr) -> Result<(), ()> {
-        // TODO(https://github.com/kaist-cp/rv6/issues/290)
-        // The method namei can drop inodes. If namei succeeds, its return
-        // value, ptr, will be dropped when this method returns. Deallocation
-        // of an inode may cause disk write operations, so we must begin a
-        // transaction here.
-        let _tx = self.kernel().fs().begin_tx();
-        let ptr = self.kernel().fs().itable.namei(Path::new(dirname), self)?;
-        let ip = ptr.lock(self);
-        if ip.deref_inner().typ != InodeType::Dir {
-            return Err(());
-        }
-        drop(ip);
-        let _ = mem::replace(self.proc_mut().cwd_mut(), ptr);
-        Ok(())
-    }
-
     /// Create a pipe, put read/write file descriptors in fd0 and fd1.
     /// Returns Ok(()) on success, Err(()) on error.
     fn pipe(&mut self, fdarray: UVAddr) -> Result<(), ()> {
@@ -263,7 +243,8 @@ impl KernelCtx<'_, '_> {
     pub fn sys_chdir(&mut self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = self.proc_mut().argstr(0, &mut path)?;
-        self.chdir(path)?;
+        let tx = self.kernel().fs().begin_tx();
+        self.kernel().fs().chdir(path, &tx, self)?;
         Ok(0)
     }
 

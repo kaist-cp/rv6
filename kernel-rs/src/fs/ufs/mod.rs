@@ -196,6 +196,27 @@ impl FileSystem for Ufs {
         let fd = f.fdalloc(ctx).map_err(|_| ())?;
         Ok(fd as usize)
     }
+
+    fn chdir(
+        &self,
+        dirname: &CStr,
+        _tx: &Self::Tx<'_>,
+        ctx: &mut KernelCtx<'_, '_>,
+    ) -> Result<(), ()> {
+        // TODO(https://github.com/kaist-cp/rv6/issues/290)
+        // The method namei can drop inodes. If namei succeeds, its return
+        // value, ptr, will be dropped when this method returns. Deallocation
+        // of an inode may cause disk write operations, so we must begin a
+        // transaction here.
+        let ptr = self.itable.namei(Path::new(dirname), ctx)?;
+        let ip = ptr.lock(ctx);
+        if ip.deref_inner().typ != InodeType::Dir {
+            return Err(());
+        }
+        drop(ip);
+        let _ = mem::replace(ctx.proc_mut().cwd_mut(), ptr);
+        Ok(())
+    }
 }
 
 pub struct UfsTx<'s> {

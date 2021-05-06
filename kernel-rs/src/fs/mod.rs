@@ -67,4 +67,13 @@ pub trait FileSystem {
         tx: &Self::Tx<'_>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<usize, ()>;
+
+    /// Change the current directory.
+    /// Returns Ok(()) on success, Err(()) on error.
+    fn chdir(
+        &self,
+        dirname: &CStr,
+        tx: &Self::Tx<'_>,
+        ctx: &mut KernelCtx<'_, '_>,
+    ) -> Result<(), ()>;
 }
