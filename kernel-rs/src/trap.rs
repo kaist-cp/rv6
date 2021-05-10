@@ -9,6 +9,7 @@ use crate::{
         w_stvec, Sstatus,
     },
     cpu::cpuid,
+    fs::FileSystem,
     kernel::{kernel_ref, KernelRef},
     ok_or, println,
     proc::{kernel_ctx, KernelCtx, Procstate},
@@ -238,7 +239,7 @@ impl KernelRef<'_, '_> {
                 // SAFETY: it's unsafe only when ctrl+p is pressed.
                 unsafe { self.console.intr(self) };
             } else if irq as usize == VIRTIO0_IRQ {
-                self.fs().log.disk.lock().intr(self);
+                self.fs().intr(self);
             } else if irq != 0 {
                 // Use `panic!` instead of `println` to prevent stack overflow.
                 // https://github.com/kaist-cp/rv6/issues/311

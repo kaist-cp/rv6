@@ -15,7 +15,7 @@ use crate::{
     console::{Console, Printer},
     cpu::cpuid,
     file::{Devsw, FileTable},
-    fs::journal::FileSystem,
+    fs::{FileSystem, Ufs},
     kalloc::Kmem,
     lock::{Sleepablelock, Spinlock},
     param::NDEV,
@@ -96,7 +96,7 @@ pub struct KernelBuilder {
 
     pub ftable: FileTable,
 
-    pub file_system: FileSystem,
+    pub file_system: Ufs,
 }
 
 #[repr(transparent)]
@@ -158,7 +158,7 @@ impl<'id, 's> KernelRef<'id, 's> {
 
     /// Returns a reference to the kernel's `FileSystem`.
     // Need this to prevent lifetime confusions.
-    pub fn fs(&self) -> &'s FileSystem {
+    pub fn fs(&self) -> &'s Ufs {
         &self.0.file_system
     }
 }
@@ -188,7 +188,7 @@ impl KernelBuilder {
                 write: None,
             }; NDEV],
             ftable: FileTable::zero(),
-            file_system: FileSystem::zero(),
+            file_system: Ufs::zero(),
         }
     }
 
@@ -236,7 +236,7 @@ impl KernelBuilder {
         this.bcache.get_pin_mut().init();
 
         // Emulated hard disk.
-        this.file_system.log.disk.get_mut().init();
+        this.file_system.init_disk();
 
         // First user process.
         procs.user_proc_init(this.kmem.as_ref().get_ref());

@@ -3,7 +3,7 @@ use core::ops::Deref;
 use super::*;
 use crate::{
     cpu::CPUS,
-    fs::journal::RcInode,
+    fs::{FileSystem, Ufs},
     kernel::{kernel_ref, KernelRef},
     vm::UserMemory,
 };
@@ -119,13 +119,13 @@ impl<'id, 'p> CurrentProc<'id, 'p> {
         unsafe { self.deref_mut_data().memory.assume_init_mut() }
     }
 
-    pub fn cwd(&self) -> &RcInode {
+    pub fn cwd(&self) -> &RcInode<<Ufs as FileSystem>::InodeInner> {
         // SAFETY: cwd has been initialized according to the invariants
         // of ProcBuilder and CurrentProc.
         unsafe { self.deref_data().cwd.assume_init_ref() }
     }
 
-    pub fn cwd_mut(&mut self) -> &mut RcInode {
+    pub fn cwd_mut(&mut self) -> &mut RcInode<<Ufs as FileSystem>::InodeInner> {
         // SAFETY: cwd has been initialized according to the invariants
         // of ProcBuilder and CurrentProc.
         unsafe { self.deref_mut_data().cwd.assume_init_mut() }
