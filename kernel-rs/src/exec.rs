@@ -105,6 +105,7 @@ impl KernelCtx<'_, '_> {
         // returns. Deallocation of an inode may cause disk write operations, so we must begin a
         // transaction here.
         let tx = self.kernel().fs().begin_tx();
+        let tx = scopeguard::guard(tx, |t| t.end(&self));
         let ptr = self.kernel().fs().itable.namei(path, self)?;
         let mut ip = ptr.lock(self);
 
@@ -138,7 +139,7 @@ impl KernelCtx<'_, '_> {
             }
         }
         drop(ip);
-        drop(tx);
+        scopeguard::ScopeGuard::into_inner(tx).end(self);
 
         // Allocate two pages at the next page boundary.
         // Use the second as the user stack.
