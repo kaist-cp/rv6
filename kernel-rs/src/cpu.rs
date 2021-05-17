@@ -9,8 +9,6 @@ use crate::{
     proc::{Context, Proc},
 };
 
-pub static CPUS: Cpus = Cpus::new();
-
 // The `Cpu` struct of the current cpu can be mutated. To do so, we need to
 // obtain mutable pointers to `Cpu`s from a shared reference of a `Cpus`.
 // It requires interior mutability, so we use `UnsafeCell`.
@@ -20,7 +18,7 @@ pub struct Cpus([UnsafeCell<Cpu>; NCPU]);
 unsafe impl Sync for Cpus {}
 
 impl Cpus {
-    const fn new() -> Self {
+    pub const fn new() -> Self {
         Self(array![_ => UnsafeCell::new(Cpu::new()); NCPU])
     }
 }

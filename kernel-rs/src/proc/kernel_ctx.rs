@@ -2,7 +2,6 @@ use core::ops::Deref;
 
 use super::*;
 use crate::{
-    cpu::CPUS,
     fs::{FileSystem, Ufs},
     kernel::{kernel_ref, KernelRef},
     vm::UserMemory,
@@ -143,10 +142,12 @@ impl<'id, 's> Deref for CurrentProc<'id, 's> {
 impl<'id, 's> KernelRef<'id, 's> {
     /// Returns pointer to the current proc.
     pub fn current_proc(&self) -> *const Proc {
-        unsafe { CPUS.push_off() };
-        let cpu = CPUS.current();
+        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
+        let cpus = &unsafe { hal() }.cpus;
+        unsafe { cpus.push_off() };
+        let cpu = cpus.current();
         let proc = unsafe { (*cpu).proc };
-        unsafe { CPUS.pop_off() };
+        unsafe { cpus.pop_off() };
         proc
     }
 

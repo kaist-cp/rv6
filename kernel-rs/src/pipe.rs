@@ -3,6 +3,7 @@ use core::{mem, ops::Deref, ptr::NonNull};
 use crate::{
     arch::addr::UVAddr,
     file::{FileType, RcFile},
+    hal::hal,
     kernel::{Kernel, KernelRef},
     lock::Spinlock,
     page::Page,
@@ -131,8 +132,10 @@ impl Deref for AllocatedPipe {
 
 impl Kernel {
     pub fn allocate_pipe(&self) -> Result<(RcFile, RcFile), ()> {
-        let page = self.kmem.alloc().ok_or(())?;
-        let mut page = scopeguard::guard(page, |page| self.kmem.free(page));
+        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
+        let allocator = &unsafe { hal() }.kmem;
+        let page = allocator.alloc().ok_or(())?;
+        let mut page = scopeguard::guard(page, |page| allocator.free(page));
         let ptr = page.as_uninit_mut();
 
         // TODO(https://github.com/kaist-cp/rv6/issues/367):

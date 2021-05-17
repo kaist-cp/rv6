@@ -10,6 +10,7 @@ use crate::{
     },
     cpu::cpuid,
     fs::FileSystem,
+    hal::hal,
     kernel::{kernel_ref, KernelRef},
     ok_or, println,
     proc::{kernel_ctx, KernelCtx, Procstate},
@@ -237,7 +238,8 @@ impl KernelRef<'_, '_> {
 
             if irq as usize == UART0_IRQ {
                 // SAFETY: it's unsafe only when ctrl+p is pressed.
-                unsafe { self.console.intr(self) };
+                // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
+                unsafe { hal().console.intr(self) };
             } else if irq as usize == VIRTIO0_IRQ {
                 self.fs().intr(self);
             } else if irq != 0 {

@@ -7,15 +7,13 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use pin_project::pin_project;
 
 use crate::{
-    arch::{
-        memlayout::UART0,
-        plic::{plicinit, plicinithart},
-    },
+    arch::plic::{plicinit, plicinithart},
     bio::Bcache,
-    console::{Console, Printer},
+    console::{console_read, console_write},
     cpu::cpuid,
     file::{Devsw, FileTable},
     fs::{FileSystem, Ufs},
+    hal::{hal, hal_unchecked_pin},
     kalloc::Kmem,
     lock::{Sleepablelock, Spinlock},
     param::NDEV,
@@ -25,6 +23,8 @@ use crate::{
     util::{branded::Branded, spin_loop},
     vm::KernelMemory,
 };
+
+const CONSOLE_IN_DEVSW: usize = 1;
 
 /// The kernel.
 static mut KERNEL: KernelBuilder = KernelBuilder::new();
@@ -71,14 +71,6 @@ unsafe fn kernel_builder_unchecked_pin() -> Pin<&'static mut KernelBuilder> {
 #[pin_project]
 pub struct KernelBuilder {
     panicked: AtomicBool,
-
-    /// Sleeps waiting for there are some input in console buffer.
-    pub console: Console,
-
-    pub printer: Spinlock<Printer>,
-
-    #[pin]
-    pub kmem: Spinlock<Kmem>,
 
     /// The kernel's memory manager.
     memory: MaybeUninit<KernelMemory>,
@@ -175,9 +167,6 @@ impl KernelBuilder {
     const fn new() -> Self {
         Self {
             panicked: AtomicBool::new(false),
-            console: unsafe { Console::new(UART0) },
-            printer: Spinlock::new("PRINTLN", Printer::new()),
-            kmem: Spinlock::new("KMEM", unsafe { Kmem::new() }),
             memory: MaybeUninit::uninit(),
             ticks: Sleepablelock::new("time", 0),
             procs: ProcsBuilder::zero(),
@@ -197,22 +186,17 @@ impl KernelBuilder {
     /// # Safety
     ///
     /// This method should be called only once by the hart 0.
-    unsafe fn init(self: Pin<&mut Self>) {
-        let mut this = self.project();
+    unsafe fn init(self: Pin<&mut Self>, allocator: &Spinlock<Kmem>) {
+        let this = self.project();
 
-        // Console.
-        this.console.init(&mut this.devsw);
-
-        println!();
-        println!("rv6 kernel is booting");
-        println!();
-
-        // Physical page allocator.
-        unsafe { this.kmem.as_mut().get_pin_mut().init() };
+        // Connect read and write system calls to consoleread and consolewrite.
+        this.devsw[CONSOLE_IN_DEVSW] = Devsw {
+            read: Some(console_read),
+            write: Some(console_write),
+        };
 
         // Create kernel memory manager.
-        let memory =
-            KernelMemory::new(this.kmem.as_ref().get_ref()).expect("PageTable::new failed");
+        let memory = KernelMemory::new(allocator).expect("PageTable::new failed");
 
         // Turn on paging.
         unsafe { this.memory.write(memory).init_hart() };
@@ -239,7 +223,7 @@ impl KernelBuilder {
         this.file_system.init_disk();
 
         // First user process.
-        procs.user_proc_init(this.kmem.as_ref().get_ref());
+        procs.user_proc_init(allocator);
     }
 
     /// Initializes the kernel for a hart.
@@ -270,10 +254,12 @@ impl KernelBuilder {
 
     /// Prints the given formatted string with the Printer.
     pub fn printer_write_fmt(&self, args: fmt::Arguments<'_>) -> fmt::Result {
+        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
+        let hal = unsafe { hal() };
         if self.is_panicked() {
-            unsafe { (*self.printer.get_mut_raw()).write_fmt(args) }
+            unsafe { (*hal.printer.get_mut_raw()).write_fmt(args) }
         } else {
-            let mut lock = self.printer.lock();
+            let mut lock = hal.printer.lock();
             lock.write_fmt(args)
         }
     }
@@ -320,8 +306,13 @@ pub unsafe fn main() -> ! {
     static INITED: AtomicBool = AtomicBool::new(false);
 
     if cpuid() == 0 {
+        let mut hal = unsafe { hal_unchecked_pin() };
+        unsafe { hal.as_mut().init() };
+
+        let hal = hal.project();
+        let allocator = hal.kmem.as_ref().get_ref();
         unsafe {
-            kernel_builder_unchecked_pin().init();
+            kernel_builder_unchecked_pin().init(allocator);
         }
         INITED.store(true, Ordering::Release);
     } else {

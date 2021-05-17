@@ -6,6 +6,7 @@ use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena, Rc},
     fs::{FileSystem, InodeGuard, RcInode, Ufs},
+    hal::hal,
     lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
@@ -217,7 +218,8 @@ impl ArenaObject for File {
                 match typ {
                     FileType::Pipe { pipe } => {
                         if let Some(page) = pipe.close(self.writable, ctx.kernel()) {
-                            ctx.kernel().kmem.free(page);
+                            // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
+                            unsafe { hal() }.kmem.free(page);
                         }
                     }
                     FileType::Inode {

@@ -59,6 +59,7 @@ mod cpu;
 mod exec;
 mod file;
 mod fs;
+mod hal;
 mod kalloc;
 mod kernel;
 mod lock;
