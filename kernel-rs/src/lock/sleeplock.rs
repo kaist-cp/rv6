@@ -36,6 +36,7 @@ impl RawLock for RawSleeplock {
     fn release(&self) {
         let mut guard = self.inner.lock();
         *guard = -1;
+        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_ref()
         unsafe { kernel_ref(|kref| guard.wakeup(kref)) };
     }
 

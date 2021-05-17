@@ -256,8 +256,9 @@ impl KernelCtx<'_, '_> {
         let old = self.proc_mut().argstr(0, &mut old)?;
         let new = self.proc_mut().argstr(1, &mut new)?;
         let tx = self.kernel().fs().begin_tx();
-        self.kernel().fs().link(old, new, &tx, self)?;
-        Ok(0)
+        let res = self.kernel().fs().link(old, new, &tx, self).map(|_| 0);
+        tx.end(self);
+        res
     }
 
     /// Remove a file.
@@ -266,8 +267,9 @@ impl KernelCtx<'_, '_> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = self.proc_mut().argstr(0, &mut path)?;
         let tx = self.kernel().fs().begin_tx();
-        self.kernel().fs().unlink(path, &tx, self)?;
-        Ok(0)
+        let res = self.kernel().fs().unlink(path, &tx, self).map(|_| 0);
+        tx.end(self);
+        res
     }
 
     /// Open a file.
@@ -279,7 +281,9 @@ impl KernelCtx<'_, '_> {
         let omode = self.proc().argint(1)?;
         let omode = FcntlFlags::from_bits_truncate(omode);
         let tx = self.kernel().fs().begin_tx();
-        self.kernel().fs().open(path, omode, &tx, self)
+        let res = self.kernel().fs().open(path, omode, &tx, self);
+        tx.end(self);
+        res
     }
 
     /// Create a new directory.
@@ -288,10 +292,13 @@ impl KernelCtx<'_, '_> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = self.proc_mut().argstr(0, &mut path)?;
         let tx = self.kernel().fs().begin_tx();
-        self.kernel()
+        let res = self
+            .kernel()
             .fs()
-            .create(Path::new(path), InodeType::Dir, &tx, self, |_| ())?;
-        Ok(0)
+            .create(Path::new(path), InodeType::Dir, &tx, self, |_| ())
+            .map(|_| 0);
+        tx.end(self);
+        res
     }
 
     /// Create a new device file.
@@ -302,14 +309,19 @@ impl KernelCtx<'_, '_> {
         let major = self.proc().argint(1)? as u16;
         let minor = self.proc().argint(2)? as u16;
         let tx = self.kernel().fs().begin_tx();
-        self.kernel().fs().create(
-            Path::new(path),
-            InodeType::Device { major, minor },
-            &tx,
-            self,
-            |_| (),
-        )?;
-        Ok(0)
+        let res = self
+            .kernel()
+            .fs()
+            .create(
+                Path::new(path),
+                InodeType::Device { major, minor },
+                &tx,
+                self,
+                |_| (),
+            )
+            .map(|_| 0);
+        tx.end(self);
+        res
     }
 
     /// Change the current directory.
@@ -318,8 +330,9 @@ impl KernelCtx<'_, '_> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let path = self.proc_mut().argstr(0, &mut path)?;
         let tx = self.kernel().fs().begin_tx();
-        self.kernel().fs().chdir(path, &tx, self)?;
-        Ok(0)
+        let res = self.kernel().fs().chdir(path, &tx, self).map(|_| 0);
+        tx.end(self);
+        res
     }
 
     /// Load a file and execute it with arguments.

@@ -6,11 +6,10 @@ use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena, Rc},
     fs::{FileSystem, InodeGuard, RcInode, Ufs},
-    kernel::{kernel_ref, KernelRef},
     lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
-    proc::KernelCtx,
+    proc::{kernel_ctx, KernelCtx},
 };
 
 pub enum FileType {
@@ -175,18 +174,16 @@ impl File {
                     let tx = ctx.kernel().fs().begin_tx();
                     let mut ip = inner.lock(ctx);
                     let curr_off = *ip.off;
-                    let r = ip
-                        .write_user(
-                            addr + bytes_written,
-                            curr_off,
-                            bytes_to_write as u32,
-                            ctx,
-                            &tx,
-                        )
-                        .map(|v| {
-                            *ip.off += v as u32;
-                            v
-                        })?;
+                    let r = ip.write_user(
+                        addr + bytes_written,
+                        curr_off,
+                        bytes_to_write as u32,
+                        ctx,
+                        &tx,
+                    );
+                    tx.end(ctx);
+                    let r = r?;
+                    *ip.off += r as u32;
                     if r != bytes_to_write {
                         // error from write_user
                         break;
@@ -214,13 +211,13 @@ impl const Default for File {
 
 impl ArenaObject for File {
     fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>) {
-        let finalize_inner = |kref: KernelRef<'_, '_>| {
+        let finalize_inner = |ctx: KernelCtx<'_, '_>| {
             let cleanup = || {
                 let typ = mem::replace(&mut self.typ, FileType::None);
                 match typ {
                     FileType::Pipe { pipe } => {
-                        if let Some(page) = pipe.close(self.writable, kref) {
-                            kref.kmem.free(page);
+                        if let Some(page) = pipe.close(self.writable, ctx.kernel()) {
+                            ctx.kernel().kmem.free(page);
                         }
                     }
                     FileType::Inode {
@@ -230,8 +227,9 @@ impl ArenaObject for File {
                         // TODO(https://github.com/kaist-cp/rv6/issues/290): The inode ip will
                         // be dropped by drop(ip). Deallocation of an inode may cause disk write
                         // operations, so we must begin a transaction here.
-                        let _tx = kref.fs().begin_tx();
+                        let tx = ctx.kernel().fs().begin_tx();
                         drop(ip);
+                        tx.end(&ctx);
                     }
                     _ => (),
                 }
@@ -241,7 +239,8 @@ impl ArenaObject for File {
         };
 
         // SAFETY: `FileTable` does not use `Arena::find_or_alloc`.
-        unsafe { kernel_ref(finalize_inner) };
+        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_ctx()
+        unsafe { kernel_ctx(finalize_inner) };
     }
 }
 

@@ -23,7 +23,7 @@ use crate::{
     file::{FileType, InodeFileType},
     kernel::KernelRef,
     param::BSIZE,
-    proc::{kernel_ctx, KernelCtx},
+    proc::KernelCtx,
 };
 
 mod inode;
@@ -296,12 +296,9 @@ impl Ufs {
 
 impl Drop for UfsTx<'_> {
     fn drop(&mut self) {
-        // Called at the end of each FS system call.
-        // Commits if this was the last outstanding operation.
-        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_ctx()
-        unsafe {
-            kernel_ctx(|ctx| self.fs.log.end_op(&ctx));
-        }
+        // HACK(@efenniht): we really need linear type here:
+        // https://github.com/rust-lang/rfcs/issues/814
+        panic!("UfsTx must never drop.");
     }
 }
 
@@ -368,5 +365,12 @@ impl UfsTx<'_> {
         );
         bp.deref_inner_mut().data[bi / 8] &= !m;
         self.write(bp);
+    }
+
+    /// Called at the end of each FS system call.
+    /// Commits if this was the last outstanding operation.
+    pub fn end(self, ctx: &KernelCtx<'_, '_>) {
+        self.fs.log.end_op(ctx);
+        mem::forget(self);
     }
 }
