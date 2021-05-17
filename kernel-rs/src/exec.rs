@@ -9,6 +9,7 @@ use zerocopy::{AsBytes, FromBytes};
 use crate::{
     arch::addr::{pgroundup, PAddr, PGSIZE},
     fs::{FileSystem, Path},
+    hal::hal,
     page::Page,
     param::MAXARG,
     proc::KernelCtx,
@@ -100,6 +101,9 @@ impl KernelCtx<'_, '_> {
             return Err(());
         }
 
+        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
+        let allocator = &unsafe { hal() }.kmem;
+
         // TODO(https://github.com/kaist-cp/rv6/issues/290): The method namei can drop inodes. If
         // namei succeeds, its return value, ptr, will be dropped when this method
         // returns. Deallocation of an inode may cause disk write operations, so we must begin a
@@ -117,9 +121,8 @@ impl KernelCtx<'_, '_> {
         }
 
         let trap_frame: PAddr = (self.proc().trap_frame() as *const _ as usize).into();
-        let mem = UserMemory::new(trap_frame, None, &self.kernel().kmem).ok_or(())?;
-        let kmem = &self.kernel().kmem;
-        let mut mem = scopeguard::guard(mem, |mem| mem.free(kmem));
+        let mem = UserMemory::new(trap_frame, None, allocator).ok_or(())?;
+        let mut mem = scopeguard::guard(mem, |mem| mem.free(allocator));
 
         // Load program into memory.
         for i in 0..elf.phnum as usize {
@@ -131,10 +134,7 @@ impl KernelCtx<'_, '_> {
                 if ph.memsz < ph.filesz || ph.vaddr % PGSIZE != 0 {
                     return Err(());
                 }
-                let _ = mem.alloc(
-                    ph.vaddr.checked_add(ph.memsz).ok_or(())?,
-                    &self.kernel().kmem,
-                )?;
+                let _ = mem.alloc(ph.vaddr.checked_add(ph.memsz).ok_or(())?, allocator)?;
                 mem.load_file(ph.vaddr.into(), &mut ip, ph.off as _, ph.filesz as _, self)?;
             }
         }
@@ -144,7 +144,7 @@ impl KernelCtx<'_, '_> {
         // Allocate two pages at the next page boundary.
         // Use the second as the user stack.
         let mut sz = pgroundup(mem.size());
-        sz = mem.alloc(sz + 2 * PGSIZE, &self.kernel().kmem)?;
+        sz = mem.alloc(sz + 2 * PGSIZE, allocator)?;
         mem.clear((sz - 2 * PGSIZE).into());
         let mut sp: usize = sz;
         let stackbase: usize = sp - PGSIZE;
@@ -201,7 +201,7 @@ impl KernelCtx<'_, '_> {
             self.proc_mut().memory_mut(),
             scopeguard::ScopeGuard::into_inner(mem),
         )
-        .free(&self.kernel().kmem);
+        .free(allocator);
 
         // arguments to user main(argc, argv)
         // argc is returned via the system call return

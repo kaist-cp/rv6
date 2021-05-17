@@ -4,7 +4,7 @@ use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
 use super::{Guard, Lock, RawLock};
-use crate::cpu::{Cpu, CPUS};
+use crate::{cpu::Cpu, hal::hal};
 
 /// Mutual exclusion lock that busy waits (spin).
 pub struct RawSpinlock {
@@ -51,7 +51,8 @@ impl RawLock for RawSpinlock {
     fn acquire(&self) {
         // Disable interrupts to avoid deadlock.
         unsafe {
-            CPUS.push_off();
+            // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
+            hal().cpus.push_off();
         }
         assert!(!self.holding(), "acquire {}", self.name);
 
@@ -67,7 +68,8 @@ impl RawLock for RawSpinlock {
             .locked
             .compare_exchange(
                 ptr::null_mut(),
-                CPUS.current(),
+                // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
+                unsafe { hal() }.cpus.current(),
                 Ordering::Acquire,
                 // Okay to use `Relaxed` ordering since we don't enter the critical section anyway
                 // if the exchange fails.
@@ -92,14 +94,16 @@ impl RawLock for RawSpinlock {
         // 0x80000f5c | fence   rw,w            (Enforces `Release` memory ordering)
         self.locked.store(ptr::null_mut(), Ordering::Release);
         unsafe {
-            CPUS.pop_off();
+            // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
+            hal().cpus.pop_off();
         }
     }
 
     /// Check whether this cpu is holding the lock.
     /// Interrupts must be off.
     fn holding(&self) -> bool {
-        self.locked.load(Ordering::Relaxed) == CPUS.current()
+        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
+        self.locked.load(Ordering::Relaxed) == unsafe { hal() }.cpus.current()
     }
 }
 

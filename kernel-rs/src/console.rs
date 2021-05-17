@@ -11,17 +11,14 @@ use core::fmt;
 
 use crate::{
     arch::addr::UVAddr,
-    cpu::CPUS,
-    file::Devsw,
+    hal::hal,
     kernel::{kernel_builder, KernelBuilder, KernelRef},
     lock::{Sleepablelock, SleepablelockGuard},
-    param::NDEV,
     proc::KernelCtx,
     uart::Uart,
     util::spin_loop,
 };
 
-const CONSOLE_IN_DEVSW: usize = 1;
 /// Size of console input buffer.
 const INPUT_BUF: usize = 128;
 /// Size of console output buffer.
@@ -84,20 +81,16 @@ impl Console {
         }
     }
 
-    pub fn init(&self, devsw: &mut [Devsw; NDEV]) {
+    pub fn init(&self) {
         self.uart.init();
-        // Connect read and write system calls to consoleread and consolewrite.
-        devsw[CONSOLE_IN_DEVSW] = Devsw {
-            read: Some(console_read),
-            write: Some(console_write),
-        };
     }
 
     /// Doesn't use interrupts, for use by kernel println() and to echo characters.
     /// It spins waiting for the uart's output register to be empty.
     fn putc_spin(&self, c: u8, kernel: &KernelBuilder) {
         unsafe {
-            CPUS.push_off();
+            // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
+            hal().cpus.push_off();
         }
         if kernel.is_panicked() {
             spin_loop();
@@ -109,7 +102,8 @@ impl Console {
         self.uart.putc(c);
 
         unsafe {
-            CPUS.pop_off();
+            // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
+            hal().cpus.pop_off();
         }
     }
 
@@ -308,9 +302,11 @@ impl Printer {
 impl fmt::Write for Printer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for c in s.bytes() {
+            // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
+            let hal = unsafe { hal() };
             // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_builder()
             let kernel = unsafe { kernel_builder() };
-            kernel.console.putc_spin(c, &kernel);
+            hal.console.putc_spin(c, &kernel);
         }
         Ok(())
     }
@@ -322,13 +318,15 @@ const fn ctrl(x: char) -> i32 {
 }
 
 /// User write()s to the console go here.
-fn console_write(src: UVAddr, n: i32, ctx: &mut KernelCtx<'_, '_>) -> i32 {
-    ctx.kernel().console.write(src, n, ctx)
+pub fn console_write(src: UVAddr, n: i32, ctx: &mut KernelCtx<'_, '_>) -> i32 {
+    // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
+    unsafe { hal() }.console.write(src, n, ctx)
 }
 
 /// User read()s from the console go here.
 /// Copy (up to) a whole input line to dst.
 /// User_dist indicates whether dst is a user or kernel address.
-fn console_read(dst: UVAddr, n: i32, ctx: &mut KernelCtx<'_, '_>) -> i32 {
-    ctx.kernel().console.read(dst, n, ctx)
+pub fn console_read(dst: UVAddr, n: i32, ctx: &mut KernelCtx<'_, '_>) -> i32 {
+    // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
+    unsafe { hal() }.console.read(dst, n, ctx)
 }

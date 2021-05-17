@@ -16,6 +16,7 @@ use crate::{
     },
     file::RcFile,
     fs::{FcntlFlags, FileSystem, InodeType, Path},
+    hal::hal,
     ok_or,
     page::Page,
     param::{MAXARG, MAXPATH},
@@ -161,8 +162,10 @@ impl KernelCtx<'_, '_> {
     /// Returns Ok(start of new memory) on success, Err(()) on error.
     pub fn sys_sbrk(&mut self) -> Result<usize, ()> {
         let n = self.proc().argint(0)?;
-        let kmem = &self.kernel().kmem;
-        self.proc_mut().memory_mut().resize(n, kmem)
+        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
+        self.proc_mut()
+            .memory_mut()
+            .resize(n, &unsafe { hal() }.kmem)
     }
 
     /// Pause for n clock ticks.
@@ -342,6 +345,8 @@ impl KernelCtx<'_, '_> {
         let mut args = ArrayVec::<Page, MAXARG>::new();
         let path = self.proc_mut().argstr(0, &mut path)?;
         let uargv = self.proc().argaddr(1)?;
+        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
+        let allocator = &unsafe { hal() }.kmem;
 
         let mut success = false;
         for i in 0..MAXARG {
@@ -356,13 +361,13 @@ impl KernelCtx<'_, '_> {
                 break;
             }
 
-            let mut page = some_or!(self.kernel().kmem.alloc(), break);
+            let mut page = some_or!(allocator.alloc(), break);
             if self
                 .proc_mut()
                 .fetchstr(uarg.into(), &mut page[..])
                 .is_err()
             {
-                self.kernel().kmem.free(page);
+                allocator.free(page);
                 break;
             }
             args.push(page);
@@ -375,7 +380,7 @@ impl KernelCtx<'_, '_> {
         };
 
         for page in args.drain(..) {
-            self.kernel().kmem.free(page);
+            allocator.free(page);
         }
 
         ret
