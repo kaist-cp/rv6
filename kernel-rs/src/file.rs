@@ -172,7 +172,7 @@ impl File {
                 let mut bytes_written: usize = 0;
                 while bytes_written < n {
                     let bytes_to_write = cmp::min(n - bytes_written, max);
-                    let tx = ctx.kernel().fs().begin_tx();
+                    let tx = ctx.kernel().fs().begin_tx(ctx);
                     let mut ip = inner.lock(ctx);
                     let curr_off = *ip.off;
                     let r = ip.write_user(
@@ -228,7 +228,7 @@ impl ArenaObject for File {
                         // TODO(https://github.com/kaist-cp/rv6/issues/290): The inode ip will
                         // be dropped by drop(ip). Deallocation of an inode may cause disk write
                         // operations, so we must begin a transaction here.
-                        let tx = ctx.kernel().fs().begin_tx();
+                        let tx = ctx.kernel().fs().begin_tx(&ctx);
                         drop(ip);
                         tx.end(&ctx);
                     }

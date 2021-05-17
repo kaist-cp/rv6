@@ -260,7 +260,7 @@ impl VirtioDisk {
                 //   number of free descriptors. Therefore, sleeping threads
                 //   do not need to wake up, as alloc_three_descriptors will
                 //   still fail.
-                None => this.sleep(),
+                None => this.sleep(ctx),
             }
         };
 

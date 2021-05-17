@@ -123,14 +123,14 @@ impl Log {
     }
 
     /// Called at the start of each FS system call.
-    pub fn begin_op(&self) {
+    pub fn begin_op(&self, ctx: &KernelCtx<'_, '_>) {
         let mut guard = self.inner().lock();
         loop {
             if guard.committing ||
             // This op might exhaust log space; wait for commit.
             guard.bufs.len() as i32 + (guard.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
             {
-                guard.sleep();
+                guard.sleep(ctx);
             } else {
                 guard.outstanding += 1;
                 break;

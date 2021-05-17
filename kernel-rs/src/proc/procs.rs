@@ -426,7 +426,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
         // If self.cwd is not None, the inode inside self.cwd will be dropped
         // by assigning None to self.cwd. Deallocation of an inode may cause
         // disk write operations, so we must begin a transaction here.
-        let tx = ctx.kernel().fs().begin_tx();
+        let tx = ctx.kernel().fs().begin_tx(ctx);
         // SAFETY: CurrentProc's cwd has been initialized.
         // It's ok to drop cwd as proc will not be used any longer.
         unsafe { ctx.proc_mut().deref_mut_data().cwd.assume_init_drop() };

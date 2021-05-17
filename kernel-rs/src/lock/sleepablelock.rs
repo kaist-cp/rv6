@@ -4,7 +4,7 @@ use core::cell::UnsafeCell;
 use super::{spinlock::RawSpinlock, Guard, Lock, RawLock};
 use crate::{
     kernel::KernelRef,
-    proc::{kernel_ctx, WaitChannel},
+    proc::{KernelCtx, WaitChannel},
 };
 
 /// Mutual exclusion spin locks that can sleep.
@@ -37,10 +37,6 @@ impl RawLock for RawSleepablelock {
     fn release(&self) {
         self.lock.release();
     }
-
-    fn holding(&self) -> bool {
-        self.lock.holding()
-    }
 }
 
 impl<T> Sleepablelock<T> {
@@ -54,9 +50,8 @@ impl<T> Sleepablelock<T> {
 }
 
 impl<T> SleepablelockGuard<'_, T> {
-    pub fn sleep(&mut self) {
-        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_ctx()
-        unsafe { kernel_ctx(|ctx| self.lock.lock.waitchannel.sleep(self, &ctx)) };
+    pub fn sleep(&mut self, ctx: &KernelCtx<'_, '_>) {
+        self.lock.lock.waitchannel.sleep(self, ctx);
     }
 
     pub fn wakeup(&self, kernel: KernelRef<'_, '_>) {

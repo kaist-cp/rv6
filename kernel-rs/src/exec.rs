@@ -107,7 +107,7 @@ impl KernelCtx<'_, '_> {
         // namei succeeds, its return value, ptr, will be dropped when this method
         // returns. Deallocation of an inode may cause disk write operations, so we must begin a
         // transaction here.
-        let tx = self.kernel().fs().begin_tx();
+        let tx = self.kernel().fs().begin_tx(self);
         let tx = scopeguard::guard(tx, |t| t.end(&self));
         let ptr = self.kernel().fs().itable.namei(path, self)?;
         let mut ip = ptr.lock(self);
