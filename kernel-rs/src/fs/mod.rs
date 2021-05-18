@@ -106,7 +106,7 @@ where
     Inode<Self::InodeInner>: ArenaObject,
 {
     type Dirent;
-    type InodeInner;
+    type InodeInner: Send;
     type Tx<'s>;
 
     /// Initializes the file system (loading from the disk).

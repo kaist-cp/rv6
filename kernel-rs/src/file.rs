@@ -23,7 +23,7 @@ pub enum FileType {
     },
     Device {
         ip: RcInode<<Ufs as FileSystem>::InodeInner>,
-        major: *const Devsw,
+        major: u16,
     },
 }
 
@@ -142,9 +142,11 @@ impl File {
                 }
                 ret
             }
-            FileType::Device { major, .. } => unsafe {
-                (**major).read.ok_or(()).map(|f| f(addr, n, ctx) as usize)
-            },
+            FileType::Device { major, .. } => {
+                let major = ctx.kernel().devsw().get(*major as usize).ok_or(())?;
+                let read = major.read.ok_or(())?;
+                Ok(read(addr, n, ctx) as usize)
+            }
             FileType::None => panic!("File::read"),
         }
     }
@@ -196,9 +198,11 @@ impl File {
                 }
                 Ok(n)
             }
-            FileType::Device { major, .. } => unsafe {
-                (**major).write.ok_or(()).map(|f| f(addr, n, ctx) as usize)
-            },
+            FileType::Device { major, .. } => {
+                let major = ctx.kernel().devsw().get(*major as usize).ok_or(())?;
+                let write = major.write.ok_or(())?;
+                Ok(write(addr, n, ctx) as usize)
+            }
             FileType::None => panic!("File::read"),
         }
     }

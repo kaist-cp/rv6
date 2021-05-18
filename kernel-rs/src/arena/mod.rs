@@ -18,7 +18,7 @@ pub use array_arena::ArrayArena;
 pub use mru_arena::MruArena;
 
 /// A homogeneous memory allocator. Provides `Rc<Arena>` to the outside.
-pub trait Arena: Sized {
+pub trait Arena: Sized + Sync {
     /// The value type of the allocator.
     type Data: ArenaObject;
     /// The guard type for arena.
