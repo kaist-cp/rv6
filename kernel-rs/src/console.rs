@@ -12,8 +12,8 @@ use core::fmt;
 use crate::{
     arch::addr::UVAddr,
     hal::hal,
-    kernel::{kernel_builder, KernelBuilder, KernelRef},
-    lock::{Sleepablelock, SleepablelockGuard},
+    kernel::{KernelBuilder, KernelRef},
+    lock::{Sleepablelock, SleepablelockGuard, Spinlock, SpinlockGuard},
     proc::KernelCtx,
     uart::Uart,
     util::spin_loop,
@@ -239,7 +239,7 @@ impl Console {
             match c {
                 // Print process list.
                 m if m == ctrl('P') => {
-                    unsafe { kernel.procs().dump() };
+                    unsafe { kernel.dump() };
                 }
 
                 // Kill line.
@@ -289,20 +289,37 @@ impl Console {
     }
 }
 
-pub struct Printer;
+pub struct Printer(Spinlock<()>);
+
+pub struct PrinterGuard<'a> {
+    kernel: &'a KernelBuilder,
+    _guard: Option<SpinlockGuard<'a, ()>>,
+}
 
 impl Printer {
     pub const fn new() -> Self {
-        Self
+        Self(Spinlock::new("Printer", ()))
+    }
+
+    pub fn lock<'a>(&'a self, kernel: &'a KernelBuilder) -> PrinterGuard<'a> {
+        PrinterGuard {
+            kernel,
+            _guard: Some(self.0.lock()),
+        }
+    }
+
+    pub fn without_lock<'a>(&'a self, kernel: &'a KernelBuilder) -> PrinterGuard<'a> {
+        PrinterGuard {
+            kernel,
+            _guard: None,
+        }
     }
 }
 
-impl fmt::Write for Printer {
+impl fmt::Write for PrinterGuard<'_> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for c in s.bytes() {
-            // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_builder()
-            let kernel = unsafe { kernel_builder() };
-            hal().console.putc_spin(c, &kernel);
+            hal().console.putc_spin(c, self.kernel);
         }
         Ok(())
     }

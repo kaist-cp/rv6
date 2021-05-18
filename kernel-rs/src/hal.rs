@@ -8,7 +8,6 @@ use crate::{
     cpu::Cpus,
     kalloc::Kmem,
     lock::Spinlock,
-    println,
 };
 
 static mut HAL: Hal = Hal::new();
@@ -40,7 +39,7 @@ pub struct Hal {
     /// Sleeps waiting for there are some input in console buffer.
     pub console: Console,
 
-    pub printer: Spinlock<Printer>,
+    pub printer: Printer,
 
     #[pin]
     pub kmem: Spinlock<Kmem>,
@@ -52,7 +51,7 @@ impl Hal {
     const fn new() -> Self {
         Self {
             console: unsafe { Console::new(UART0) },
-            printer: Spinlock::new("PRINTLN", Printer::new()),
+            printer: Printer::new(),
             kmem: Spinlock::new("KMEM", unsafe { Kmem::new() }),
             cpus: Cpus::new(),
         }
@@ -68,10 +67,6 @@ impl Hal {
 
         // Console.
         this.console.init();
-
-        println!();
-        println!("rv6 kernel is booting");
-        println!();
 
         // Physical page allocator.
         unsafe { this.kmem.as_mut().get_pin_mut().init() };
