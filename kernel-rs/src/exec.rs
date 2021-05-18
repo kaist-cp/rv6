@@ -103,13 +103,11 @@ impl KernelCtx<'_, '_> {
 
         let allocator = &hal().kmem;
 
-        // TODO(https://github.com/kaist-cp/rv6/issues/290): The method namei can drop inodes. If
-        // namei succeeds, its return value, ptr, will be dropped when this method
-        // returns. Deallocation of an inode may cause disk write operations, so we must begin a
-        // transaction here.
+        // TODO(https://github.com/kaist-cp/rv6/issues/290):
+        // Dropping an RcInode requires a transaction.
         let tx = self.kernel().fs().begin_tx(self);
         let tx = scopeguard::guard(tx, |t| t.end(&self));
-        let ptr = self.kernel().fs().itable.namei(path, self)?;
+        let ptr = self.kernel().fs().itable.namei(path, &tx, self)?;
         let mut ip = ptr.lock(self);
 
         // Check ELF header
@@ -138,6 +136,7 @@ impl KernelCtx<'_, '_> {
             }
         }
         drop(ip);
+        drop(ptr);
         scopeguard::ScopeGuard::into_inner(tx).end(self);
 
         // Allocate two pages at the next page boundary.

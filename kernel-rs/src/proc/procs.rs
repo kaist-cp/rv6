@@ -417,10 +417,8 @@ impl<'id, 's> ProcsRef<'id, 's> {
             *file = None;
         }
 
-        // TODO(https://github.com/kaist-cp/rv6/issues/290)
-        // If self.cwd is not None, the inode inside self.cwd will be dropped
-        // by assigning None to self.cwd. Deallocation of an inode may cause
-        // disk write operations, so we must begin a transaction here.
+        // TODO(https://github.com/kaist-cp/rv6/issues/290):
+        // Dropping an RcInode requires a transaction.
         let tx = ctx.kernel().fs().begin_tx(ctx);
         // SAFETY: CurrentProc's cwd has been initialized.
         // It's ok to drop cwd as proc will not be used any longer.

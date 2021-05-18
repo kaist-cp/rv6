@@ -880,16 +880,22 @@ impl Itable<InodeInner> {
         self.get_inode(ROOTDEV, ROOTINO)
     }
 
-    pub fn namei(&self, path: &Path, proc: &KernelCtx<'_, '_>) -> Result<RcInode<InodeInner>, ()> {
-        Ok(self.namex(path, false, proc)?.0)
+    pub fn namei(
+        &self,
+        path: &Path,
+        tx: &UfsTx<'_>,
+        proc: &KernelCtx<'_, '_>,
+    ) -> Result<RcInode<InodeInner>, ()> {
+        Ok(self.namex(path, false, tx, proc)?.0)
     }
 
     pub fn nameiparent<'s>(
         &self,
         path: &'s Path,
+        tx: &UfsTx<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(RcInode<InodeInner>, &'s FileName<{ DIRSIZ }>), ()> {
-        let (ip, name_in_path) = self.namex(path, true, ctx)?;
+        let (ip, name_in_path) = self.namex(path, true, tx, ctx)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
     }
@@ -898,6 +904,9 @@ impl Itable<InodeInner> {
         &self,
         mut path: &'s Path,
         parent: bool,
+        // TODO(https://github.com/kaist-cp/rv6/issues/290):
+        // Dropping an RcInode requires a transaction.
+        _tx: &UfsTx<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(RcInode<InodeInner>, Option<&'s FileName<{ DIRSIZ }>>), ()> {
         let mut ptr = if path.is_absolute() {
