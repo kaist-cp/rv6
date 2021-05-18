@@ -142,8 +142,7 @@ impl<'id, 's> Deref for CurrentProc<'id, 's> {
 impl<'id, 's> KernelRef<'id, 's> {
     /// Returns pointer to the current proc.
     pub fn current_proc(&self) -> *const Proc {
-        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
-        let cpus = &unsafe { hal() }.cpus;
+        let cpus = &hal().cpus;
         unsafe { cpus.push_off() };
         let cpu = cpus.current();
         let proc = unsafe { (*cpu).proc };

@@ -238,7 +238,6 @@ impl KernelRef<'_, '_> {
 
             if irq as usize == UART0_IRQ {
                 // SAFETY: it's unsafe only when ctrl+p is pressed.
-                // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
                 unsafe { hal().console.intr(self) };
             } else if irq as usize == VIRTIO0_IRQ {
                 self.fs().intr(self);

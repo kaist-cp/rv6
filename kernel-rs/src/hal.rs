@@ -13,20 +13,25 @@ use crate::{
 
 static mut HAL: Hal = Hal::new();
 
-pub unsafe fn hal<'s>() -> &'s Hal {
+pub fn hal<'s>() -> &'s Hal {
+    // SAFETY: there is no way to make a mutable reference to `HAL` except calling `hal_init`,
+    // which is unsafe.
     unsafe { &HAL }
 }
 
-/// Returns a pinned mutable reference to the `HAL`.
+/// Initializes `HAL`.
 ///
 /// # Safety
 ///
-/// The caller should make sure not to call this function multiple times.
-/// All mutable accesses to the `HAL` must be done through this.
-#[inline]
-pub unsafe fn hal_unchecked_pin() -> Pin<&'static mut Hal> {
-    // SAFETY: safe if all mutable accesses to the `Hal` are done through this.
-    unsafe { Pin::new_unchecked(&mut HAL) }
+/// * There must be no reference to `HAL` while this function is running.
+/// * This function must be called only once.
+pub unsafe fn hal_init() {
+    // SAFETY: there is no reference to `HAL`.
+    let hal = unsafe { &mut HAL };
+    // SAFETY: we do not move `hal`.
+    let hal = unsafe { Pin::new_unchecked(hal) };
+    // SAFETY: this function is called only once.
+    unsafe { hal.init() };
 }
 
 /// Hardware Abstraction Layer
@@ -53,12 +58,12 @@ impl Hal {
         }
     }
 
-    /// Initializes the HAL.
+    /// Initializes `HAL`.
     ///
     /// # Safety
     ///
-    /// This method should be called only once by the hart 0.
-    pub unsafe fn init(self: Pin<&mut Self>) {
+    /// This method must be called only once.
+    unsafe fn init(self: Pin<&mut Self>) {
         let mut this = self.project();
 
         // Console.

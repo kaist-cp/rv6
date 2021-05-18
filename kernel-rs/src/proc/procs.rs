@@ -242,8 +242,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
             }
         }
 
-        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
-        let allocator = &unsafe { hal() }.kmem;
+        let allocator = &hal().kmem;
         allocator.free(trap_frame);
         memory.free(allocator);
         Err(())
@@ -294,8 +293,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
     /// Otherwise, UB may happen if the new `Proc` tries to read its `parent` field
     /// that points to a `Proc` that already dropped.
     pub fn fork(&self, ctx: &mut KernelCtx<'id, '_>) -> Result<Pid, ()> {
-        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
-        let allocator = &unsafe { hal() }.kmem;
+        let allocator = &hal().kmem;
         // Allocate trap frame.
         let trap_frame =
             scopeguard::guard(allocator.alloc().ok_or(())?, |page| allocator.free(page));
@@ -578,8 +576,7 @@ impl<'id, 's> KernelRef<'id, 's> {
     ///  - eventually that process transfers control
     ///    via swtch back to the scheduler.
     pub unsafe fn scheduler(self) -> ! {
-        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
-        let mut cpu = unsafe { hal() }.cpus.current();
+        let mut cpu = hal().cpus.current();
         unsafe { (*cpu).proc = ptr::null_mut() };
         loop {
             // Avoid deadlock by ensuring that devices can interrupt.
