@@ -243,7 +243,7 @@ impl ArenaObject for File {
         };
 
         // SAFETY: `FileTable` does not use `Arena::find_or_alloc`.
-        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_ctx()
+        // TODO(https://github.com/kaist-cp/rv6/issues/290): remove kernel_ctx()
         unsafe { kernel_ctx(finalize_inner) };
     }
 }
