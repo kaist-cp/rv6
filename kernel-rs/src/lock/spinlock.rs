@@ -51,7 +51,6 @@ impl RawLock for RawSpinlock {
     fn acquire(&self) {
         // Disable interrupts to avoid deadlock.
         unsafe {
-            // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
             hal().cpus.push_off();
         }
         assert!(!self.holding(), "acquire {}", self.name);
@@ -68,8 +67,7 @@ impl RawLock for RawSpinlock {
             .locked
             .compare_exchange(
                 ptr::null_mut(),
-                // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
-                unsafe { hal() }.cpus.current(),
+                hal().cpus.current(),
                 Ordering::Acquire,
                 // Okay to use `Relaxed` ordering since we don't enter the critical section anyway
                 // if the exchange fails.
@@ -94,7 +92,6 @@ impl RawLock for RawSpinlock {
         // 0x80000f5c | fence   rw,w            (Enforces `Release` memory ordering)
         self.locked.store(ptr::null_mut(), Ordering::Release);
         unsafe {
-            // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
             hal().cpus.pop_off();
         }
     }
@@ -102,8 +99,7 @@ impl RawLock for RawSpinlock {
     /// Check whether this cpu is holding the lock.
     /// Interrupts must be off.
     fn holding(&self) -> bool {
-        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
-        self.locked.load(Ordering::Relaxed) == unsafe { hal() }.cpus.current()
+        self.locked.load(Ordering::Relaxed) == hal().cpus.current()
     }
 }
 

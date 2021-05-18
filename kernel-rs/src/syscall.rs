@@ -162,10 +162,7 @@ impl KernelCtx<'_, '_> {
     /// Returns Ok(start of new memory) on success, Err(()) on error.
     pub fn sys_sbrk(&mut self) -> Result<usize, ()> {
         let n = self.proc().argint(0)?;
-        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
-        self.proc_mut()
-            .memory_mut()
-            .resize(n, &unsafe { hal() }.kmem)
+        self.proc_mut().memory_mut().resize(n, &hal().kmem)
     }
 
     /// Pause for n clock ticks.
@@ -345,8 +342,7 @@ impl KernelCtx<'_, '_> {
         let mut args = ArrayVec::<Page, MAXARG>::new();
         let path = self.proc_mut().argstr(0, &mut path)?;
         let uargv = self.proc().argaddr(1)?;
-        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
-        let allocator = &unsafe { hal() }.kmem;
+        let allocator = &hal().kmem;
 
         let mut success = false;
         for i in 0..MAXARG {

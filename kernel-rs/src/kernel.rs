@@ -13,7 +13,7 @@ use crate::{
     cpu::cpuid,
     file::{Devsw, FileTable},
     fs::{FileSystem, Ufs},
-    hal::{hal, hal_unchecked_pin},
+    hal::{hal, hal_init},
     kalloc::Kmem,
     lock::{Sleepablelock, Spinlock},
     param::NDEV,
@@ -254,8 +254,7 @@ impl KernelBuilder {
 
     /// Prints the given formatted string with the Printer.
     pub fn printer_write_fmt(&self, args: fmt::Arguments<'_>) -> fmt::Result {
-        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
-        let hal = unsafe { hal() };
+        let hal = hal();
         if self.is_panicked() {
             unsafe { (*hal.printer.get_mut_raw()).write_fmt(args) }
         } else {
@@ -306,13 +305,11 @@ pub unsafe fn main() -> ! {
     static INITED: AtomicBool = AtomicBool::new(false);
 
     if cpuid() == 0 {
-        let mut hal = unsafe { hal_unchecked_pin() };
-        unsafe { hal.as_mut().init() };
-
-        let hal = hal.project();
-        let allocator = hal.kmem.as_ref().get_ref();
         unsafe {
-            kernel_builder_unchecked_pin().init(allocator);
+            hal_init();
+        }
+        unsafe {
+            kernel_builder_unchecked_pin().init(&hal().kmem);
         }
         INITED.store(true, Ordering::Release);
     } else {

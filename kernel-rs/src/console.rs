@@ -89,7 +89,6 @@ impl Console {
     /// It spins waiting for the uart's output register to be empty.
     fn putc_spin(&self, c: u8, kernel: &KernelBuilder) {
         unsafe {
-            // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
             hal().cpus.push_off();
         }
         if kernel.is_panicked() {
@@ -102,7 +101,6 @@ impl Console {
         self.uart.putc(c);
 
         unsafe {
-            // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
             hal().cpus.pop_off();
         }
     }
@@ -302,11 +300,9 @@ impl Printer {
 impl fmt::Write for Printer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for c in s.bytes() {
-            // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
-            let hal = unsafe { hal() };
             // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_builder()
             let kernel = unsafe { kernel_builder() };
-            hal.console.putc_spin(c, &kernel);
+            hal().console.putc_spin(c, &kernel);
         }
         Ok(())
     }
@@ -319,14 +315,12 @@ const fn ctrl(x: char) -> i32 {
 
 /// User write()s to the console go here.
 pub fn console_write(src: UVAddr, n: i32, ctx: &mut KernelCtx<'_, '_>) -> i32 {
-    // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
-    unsafe { hal() }.console.write(src, n, ctx)
+    hal().console.write(src, n, ctx)
 }
 
 /// User read()s from the console go here.
 /// Copy (up to) a whole input line to dst.
 /// User_dist indicates whether dst is a user or kernel address.
 pub fn console_read(dst: UVAddr, n: i32, ctx: &mut KernelCtx<'_, '_>) -> i32 {
-    // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
-    unsafe { hal() }.console.read(dst, n, ctx)
+    hal().console.read(dst, n, ctx)
 }

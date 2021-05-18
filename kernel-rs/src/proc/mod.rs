@@ -434,7 +434,6 @@ impl<'id> ProcGuard<'id, '_> {
         assert!(!intr_get(), "sched interruptible");
         assert_ne!(self.state(), Procstate::RUNNING, "sched running");
 
-        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
         let cpu = unsafe { &mut *hal().cpus.current() };
         assert_eq!(cpu.noff(), 1, "sched locks");
 
@@ -442,7 +441,6 @@ impl<'id> ProcGuard<'id, '_> {
         unsafe { swtch(&mut self.deref_mut_data().context, &mut cpu.context) };
 
         // We cannot use `cpu` again because `swtch` may move this thread to another cpu.
-        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
         let cpu = unsafe { &mut *hal().cpus.current() };
         cpu.set_interrupt(interrupt_enabled);
     }
@@ -458,8 +456,7 @@ impl<'id> ProcGuard<'id, '_> {
         // SAFETY: this process cannot be the current process any longer.
         let data = unsafe { self.deref_mut_data() };
         let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
-        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
-        let allocator = &unsafe { hal() }.kmem;
+        let allocator = &hal().kmem;
         // SAFETY: trap_frame uniquely refers to a valid page.
         allocator.free(unsafe { Page::from_usize(trap_frame as _) });
         // SAFETY:

@@ -101,8 +101,7 @@ impl KernelCtx<'_, '_> {
             return Err(());
         }
 
-        // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
-        let allocator = &unsafe { hal() }.kmem;
+        let allocator = &hal().kmem;
 
         // TODO(https://github.com/kaist-cp/rv6/issues/290): The method namei can drop inodes. If
         // namei succeeds, its return value, ptr, will be dropped when this method

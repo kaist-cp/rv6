@@ -218,8 +218,7 @@ impl ArenaObject for File {
                 match typ {
                     FileType::Pipe { pipe } => {
                         if let Some(page) = pipe.close(self.writable, ctx.kernel()) {
-                            // TODO(https://github.com/kaist-cp/rv6/issues/267): remove hal()
-                            unsafe { hal() }.kmem.free(page);
+                            hal().kmem.free(page);
                         }
                     }
                     FileType::Inode {
