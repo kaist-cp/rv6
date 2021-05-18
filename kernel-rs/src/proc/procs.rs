@@ -17,7 +17,7 @@ use crate::{
     fs::FileSystem,
     hal::hal,
     kalloc::Kmem,
-    kernel::{kernel_builder, KernelRef},
+    kernel::KernelRef,
     lock::{RemoteLock, Spinlock, SpinlockGuard},
     page::Page,
     param::{NPROC, ROOTDEV},
@@ -135,7 +135,11 @@ impl ProcsBuilder {
 
 impl Procs {
     /// Set up first user process.
-    pub fn user_proc_init(self: Pin<&mut Self>, allocator: &Spinlock<Kmem>) {
+    pub fn user_proc_init(
+        self: Pin<&mut Self>,
+        cwd: RcInode<<Ufs as FileSystem>::InodeInner>,
+        allocator: &Spinlock<Kmem>,
+    ) {
         Branded::new(self, |procs| {
             let mut procs = ProcsMut(procs);
 
@@ -170,10 +174,7 @@ impl Procs {
 
             let name = b"initcode\x00";
             (&mut data.name[..name.len()]).copy_from_slice(name);
-            // TODO(https://github.com/kaist-cp/rv6/issues/267): remove kernel_builder()
-            let _ = data
-                .cwd
-                .write(unsafe { kernel_builder() }.file_system.itable.root());
+            let _ = data.cwd.write(cwd);
             // It's safe because cwd now has been initialized.
             guard.deref_mut_info().state = Procstate::RUNNABLE;
 

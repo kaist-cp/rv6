@@ -226,7 +226,7 @@ impl KernelBuilder {
         this.file_system.init_disk();
 
         // First user process.
-        procs.user_proc_init(allocator);
+        procs.user_proc_init(this.file_system.itable.root(), allocator);
     }
 
     /// Initializes the kernel for a hart.
