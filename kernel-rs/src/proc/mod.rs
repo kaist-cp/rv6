@@ -248,7 +248,7 @@ pub struct ProcBuilder {
     /// this field in ProcBuilder::zero(), which is a const fn.
     /// Hence, this field gets initialized later in procinit() as
     /// `RemoteSpinlock::new(&procs.wait_lock, ptr::null_mut())`.
-    parent: MaybeUninit<RemoteLock<'static, RawSpinlock, (), *const Proc>>,
+    parent: MaybeUninit<RemoteLock<RawSpinlock, (), *const Proc>>,
 
     pub info: Spinlock<ProcInfo>,
 
@@ -352,7 +352,7 @@ impl ProcBuilder {
 }
 
 impl Proc {
-    fn parent(&self) -> &RemoteLock<'static, RawSpinlock, (), *const Proc> {
+    fn parent(&self) -> &RemoteLock<RawSpinlock, (), *const Proc> {
         // SAFETY: invariant
         unsafe { self.parent.assume_init_ref() }
     }

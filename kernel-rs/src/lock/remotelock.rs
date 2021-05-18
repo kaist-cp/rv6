@@ -2,37 +2,26 @@ use core::{cell::UnsafeCell, marker::PhantomData, pin::Pin};
 
 use super::{Guard, Lock, RawLock};
 
-/// `RemoteLock<'s, R, U, T>`, such as `RemoteLock<'s, RawSpinlock, U, T>`.
-///
-/// Similar to `Lock<R, T>`, but uses a shared raw lock.
-/// * At creation, a `RemoteLock` borrows a raw lock from a `Lock`.
-/// * To access its inner data, you must use that `Lock`'s guard.
-///
-/// In this way, we can make a single raw lock be shared by a `Lock` and multiple `RemoteLock`s.
-/// * See the [lock](`super`) module documentation for details.
+/// `RemoteLock<R, U, T>` is similar to `Lock<R, T>`, but uses a shared lock.
+/// To access its inner data, the shared lock's guard is required.
+/// We can make a single raw lock be shared by a `Lock` and multiple `RemoteLock`s.
+/// See the [lock](`super`) module documentation for details.
 ///
 /// # Note
 ///
-/// To dereference the inner data, you must use `RemoteLock::get_pin_mut_unchecked`
+/// To dereference the inner data, use `RemoteLock::get_pin_mut_unchecked`
 /// or `RemoteLock::get_mut_unchecked`.
-pub struct RemoteLock<'s, R: RawLock, U, T> {
+#[repr(transparent)]
+pub struct RemoteLock<R: RawLock, U, T> {
     data: UnsafeCell<T>,
-    _marker: PhantomData<&'s Lock<R, U>>,
+    _marker: PhantomData<*const Lock<R, U>>,
 }
 
-unsafe impl<'s, R: RawLock, U: Send, T: Send> Sync for RemoteLock<'s, R, U, T> {}
+unsafe impl<'s, R: RawLock, U: Send, T: Send> Sync for RemoteLock<R, U, T> {}
 
-impl<'s, R: RawLock, U, T> RemoteLock<'s, R, U, T> {
-    /// Returns a `RemoteLock` that protects `data` using the given `lock`.
-    /// `lock` could be any [`Lock`], such as [Spinlock](super::Spinlock), [Sleepablelock](super::Sleepablelock), or [Sleeplock](super::Sleeplock).
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// let spinlock: Spinlock<usize> = Spinlock::new("spinlock", 10);
-    /// let spinlock_remote: RemoteLock<'_, RawSpinlock, usize, isize> = RemoteLock::new(&spinlock, -20);
-    /// ```
-    pub const fn new(_lock: &'s Lock<R, U>, data: T) -> Self {
+impl<R: RawLock, U, T> RemoteLock<R, U, T> {
+    /// Returns a `RemoteLock` that protects `data`.
+    pub const fn new(data: T) -> Self {
         Self {
             data: UnsafeCell::new(data),
             _marker: PhantomData,
@@ -61,7 +50,7 @@ impl<'s, R: RawLock, U, T> RemoteLock<'s, R, U, T> {
     }
 }
 
-impl<'s, R: RawLock, U, T: Unpin> RemoteLock<'s, R, U, T> {
+impl<'s, R: RawLock, U, T: Unpin> RemoteLock<R, U, T> {
     /// Returns a mutable reference to the inner data.
     ///
     /// # Safety

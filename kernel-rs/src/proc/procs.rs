@@ -104,14 +104,8 @@ impl ProcsBuilder {
     pub fn init(self: Pin<&mut Self>) -> Pin<&mut Procs> {
         // SAFETY: we don't move the `Procs`.
         let this = unsafe { self.get_unchecked_mut() };
-        // SAFETY: we cast `wait_lock` to a raw pointer and cast again the raw pointer to a reference
-        // because we want to return `self` from this method. The returned `self` is `Procs`, not
-        // `ProcsBuilder`, and `Procs` disallows accessing `wait_lock` by its invariant. Therefore,
-        // it's okay that both `&self` (for `wait_lock`) and `&mut self` (for the return value) are
-        // alive at the same time.
-        let wait_lock = unsafe { &*(&this.wait_lock as *const _) };
         for (i, p) in this.process_pool.iter_mut().enumerate() {
-            let _ = p.parent.write(RemoteLock::new(wait_lock, ptr::null_mut()));
+            let _ = p.parent.write(RemoteLock::new(ptr::null_mut()));
             p.data.get_mut().kstack = kstack(i);
         }
         // SAFETY: `parent` of every process in `self` has been initialized.
