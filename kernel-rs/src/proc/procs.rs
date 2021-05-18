@@ -37,7 +37,8 @@ const INITCODE: [u8; 52] = [
 ///
 /// # Safety
 ///
-/// `initial_proc` is null or valid.
+/// `initial_proc` is null or valid. `initial_proc` is not modified after its initialization in
+/// `user_proc_init`.
 #[pin_project]
 pub struct ProcsBuilder {
     nextpid: AtomicI32,
@@ -438,12 +439,10 @@ impl<'id, 's> ProcsRef<'id, 's> {
 
         // Parent might be sleeping in wait().
         let parent = *ctx.proc().get_mut_parent(&mut parent_guard);
-        // TODO(https://github.com/kaist-cp/rv6/issues/519):
-        // This assertion is actually unneccessary because parent is null
-        // only when proc is the initial process, which cannot be the case.
-        assert!(!parent.is_null());
-        // SAFETY: parent is a valid pointer according to the invariants of
-        // ProcBuilder and CurrentProc.
+        // SAFETY:
+        // * `parent` cannot be null because it is not the initial process.
+        // * `parent` is a valid pointer according to the invariants of
+        //   `ProcBuilder` and `CurrentProc`.
         unsafe { (*parent).child_waitchannel.wakeup(ctx.kernel()) };
 
         let mut guard = ctx.proc().lock();
