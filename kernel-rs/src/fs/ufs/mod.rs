@@ -84,7 +84,7 @@ impl FileSystem for Ufs {
         tx: &Self::Tx<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
-        let ptr = self.itable.namei(Path::new(oldname), ctx)?;
+        let ptr = self.itable.namei(Path::new(oldname), tx, ctx)?;
         let mut ip = ptr.lock(ctx);
         if ip.deref_inner().typ == InodeType::Dir {
             return Err(());
@@ -97,7 +97,7 @@ impl FileSystem for Ufs {
             .kernel()
             .fs()
             .itable
-            .nameiparent(Path::new(newname), ctx)
+            .nameiparent(Path::new(newname), tx, ctx)
         {
             let mut dp = ptr2.lock(ctx);
             if dp.dev != ptr.dev || dp.dirlink(name, ptr.inum, &tx, ctx).is_err() {
@@ -118,7 +118,7 @@ impl FileSystem for Ufs {
         tx: &Self::Tx<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
-        let (ptr, name) = self.itable.nameiparent(Path::new(filename), ctx)?;
+        let (ptr, name) = self.itable.nameiparent(Path::new(filename), tx, ctx)?;
         let mut dp = ptr.lock(ctx);
 
         // Cannot unlink "." or "..".
@@ -158,7 +158,7 @@ impl FileSystem for Ufs {
     where
         F: FnOnce(&mut InodeGuard<'_, Self::InodeInner>) -> T,
     {
-        let (ptr, name) = self.itable.nameiparent(path, ctx)?;
+        let (ptr, name) = self.itable.nameiparent(path, tx, ctx)?;
         let mut dp = ptr.lock(ctx);
         if let Ok((ptr2, _)) = dp.dirlookup(&name, ctx) {
             drop(dp);
@@ -208,7 +208,7 @@ impl FileSystem for Ufs {
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
             self.create(name, InodeType::File, tx, ctx, |ip| ip.deref_inner().typ)?
         } else {
-            let ptr = self.itable.namei(name, ctx)?;
+            let ptr = self.itable.namei(name, tx, ctx)?;
             let ip = ptr.lock(ctx);
             let typ = ip.deref_inner().typ;
 
@@ -254,21 +254,18 @@ impl FileSystem for Ufs {
     fn chdir(
         &self,
         dirname: &CStr,
-        _tx: &Self::Tx<'_>,
+        tx: &Self::Tx<'_>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
-        // TODO(https://github.com/kaist-cp/rv6/issues/290)
-        // The method namei can drop inodes. If namei succeeds, its return
-        // value, ptr, will be dropped when this method returns. Deallocation
-        // of an inode may cause disk write operations, so we must begin a
-        // transaction here.
-        let ptr = self.itable.namei(Path::new(dirname), ctx)?;
+        // TODO(https://github.com/kaist-cp/rv6/issues/290):
+        // Dropping an RcInode requires a transaction.
+        let ptr = self.itable.namei(Path::new(dirname), tx, ctx)?;
         let ip = ptr.lock(ctx);
         if ip.deref_inner().typ != InodeType::Dir {
             return Err(());
         }
         drop(ip);
-        let _ = mem::replace(ctx.proc_mut().cwd_mut(), ptr);
+        drop(mem::replace(ctx.proc_mut().cwd_mut(), ptr));
         Ok(())
     }
 }

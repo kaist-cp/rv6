@@ -229,9 +229,8 @@ impl ArenaObject for File {
                         inner: InodeFileType { ip, .. },
                     }
                     | FileType::Device { ip, .. } => {
-                        // TODO(https://github.com/kaist-cp/rv6/issues/290): The inode ip will
-                        // be dropped by drop(ip). Deallocation of an inode may cause disk write
-                        // operations, so we must begin a transaction here.
+                        // TODO(https://github.com/kaist-cp/rv6/issues/290):
+                        // Dropping an RcInode requires a transaction.
                         let tx = ctx.kernel().fs().begin_tx(&ctx);
                         drop(ip);
                         tx.end(&ctx);
