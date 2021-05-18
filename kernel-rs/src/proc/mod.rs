@@ -239,7 +239,8 @@ pub struct ProcData {
 ///   - `data.memory` has been initialized.
 /// * If `info.state` ∉ { `UNUSED`, `USED` }, then
 ///   - `data.cwd` has been initialized.
-///   - `parent` contains null or a valid pointer if it has been initialized.
+///   - `parent` contains null or a valid pointer if it has been initialized. `parent` can be null
+///   only when `self` is the same as `initial_proc` of `ProcsBuilder` that contains `self`.
 pub struct ProcBuilder {
     /// Parent process.
     ///
