@@ -35,7 +35,7 @@ impl FileSystem for Lfs {
         todo!()
     }
 
-    fn begin_tx(&self) -> Self::Tx<'_> {
+    fn begin_tx(&self, ctx: &KernelCtx<'_, '_>) -> Self::Tx<'_> {
         todo!()
     }
 

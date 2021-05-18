@@ -31,6 +31,12 @@ impl RawSpinlock {
             name,
         }
     }
+
+    /// Check whether this cpu is holding the lock.
+    /// Interrupts must be off.
+    fn holding(&self) -> bool {
+        self.locked.load(Ordering::Relaxed) == hal().cpus.current()
+    }
 }
 
 impl RawLock for RawSpinlock {
@@ -94,12 +100,6 @@ impl RawLock for RawSpinlock {
         unsafe {
             hal().cpus.pop_off();
         }
-    }
-
-    /// Check whether this cpu is holding the lock.
-    /// Interrupts must be off.
-    fn holding(&self) -> bool {
-        self.locked.load(Ordering::Relaxed) == hal().cpus.current()
     }
 }
 

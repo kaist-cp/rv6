@@ -72,8 +72,8 @@ impl FileSystem for Ufs {
         self.log.disk.lock().intr(kernel);
     }
 
-    fn begin_tx(&self) -> Self::Tx<'_> {
-        self.log.begin_op();
+    fn begin_tx(&self, ctx: &KernelCtx<'_, '_>) -> Self::Tx<'_> {
+        self.log.begin_op(ctx);
         UfsTx { fs: self }
     }
 

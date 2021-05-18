@@ -113,7 +113,7 @@ where
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>);
 
     /// Called for each FS system call.
-    fn begin_tx(&self) -> Self::Tx<'_>;
+    fn begin_tx(&self, ctx: &KernelCtx<'_, '_>) -> Self::Tx<'_>;
 
     /// Create another name(newname) for the file oldname.
     /// Returns Ok(()) on success, Err(()) on error.

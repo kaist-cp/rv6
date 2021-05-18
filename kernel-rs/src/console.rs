@@ -125,7 +125,7 @@ impl Console {
         while guard.w == guard.r.wrapping_add(OUTPUT_BUF) {
             // Buffer is full.
             // Wait for flush_output_buffer() to open up space in the buffer.
-            guard.sleep();
+            guard.sleep(ctx);
         }
 
         let ind = guard.w % OUTPUT_BUF;
@@ -189,7 +189,7 @@ impl Console {
                 if ctx.proc().killed() {
                     return -1;
                 }
-                guard.sleep();
+                guard.sleep(ctx);
             }
             let cin = guard.buf[guard.r % INPUT_BUF] as i32;
             guard.r = guard.r.wrapping_add(1);

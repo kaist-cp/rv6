@@ -53,8 +53,6 @@ pub trait RawLock {
     fn acquire(&self);
     /// Releases the lock.
     fn release(&self);
-    /// Check whether this cpu is holding the lock.
-    fn holding(&self) -> bool;
 }
 
 /// Locks that provide mutual exclusion and has its own `RawLock`.
