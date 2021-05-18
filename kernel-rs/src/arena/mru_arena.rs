@@ -33,6 +33,9 @@ pub struct MruArena<T, const CAPACITY: usize> {
     list: List<MruEntry<T>>,
 }
 
+// SAFETY: `MruArena` never exposes its internal lists and entries.
+unsafe impl<T: Send, const CAPACITY: usize> Send for MruArena<T, CAPACITY> {}
+
 impl<T> MruEntry<T> {
     // TODO(https://github.com/kaist-cp/rv6/issues/369)
     // A workarond for https://github.com/Gilnaa/memoffset/issues/49.
@@ -92,7 +95,7 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
     }
 }
 
-impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
+impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
     for Spinlock<MruArena<T, CAPACITY>>
 {
     type Data = T;

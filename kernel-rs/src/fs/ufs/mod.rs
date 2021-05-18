@@ -220,10 +220,7 @@ impl FileSystem for Ufs {
         };
 
         let filetype = match typ {
-            InodeType::Device { major, .. } => {
-                let major = ctx.kernel().devsw().get(major as usize).ok_or(())?;
-                FileType::Device { ip, major }
-            }
+            InodeType::Device { major, .. } => FileType::Device { ip, major },
             _ => {
                 FileType::Inode {
                     inner: InodeFileType {

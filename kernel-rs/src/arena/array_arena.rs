@@ -39,7 +39,7 @@ impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
     }
 }
 
-impl<T: 'static + ArenaObject + Unpin, const CAPACITY: usize> Arena
+impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
     for Spinlock<ArrayArena<T, CAPACITY>>
 {
     type Data = T;
