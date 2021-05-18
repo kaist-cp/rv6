@@ -28,9 +28,11 @@ const CONSOLE_IN_DEVSW: usize = 1;
 /// The kernel.
 static mut KERNEL: KernelBuilder = KernelBuilder::new();
 
-/// After intialized, the kernel is safe to immutably access.
+/// Returns a shared reference to the `KERNEL`.
 #[inline]
-pub unsafe fn kernel_builder<'s>() -> &'s KernelBuilder {
+fn kernel_builder<'s>() -> &'s KernelBuilder {
+    // SAFETY: there is no way to make a mutable reference to `KERNEL` except calling
+    // `kernel_builder_unchecked_pin`, which is unsafe.
     unsafe { &KERNEL }
 }
 
@@ -44,7 +46,6 @@ pub unsafe fn kernel_ref<'s, F: for<'new_id> FnOnce(KernelRef<'new_id, 's>) -> R
     // SAFETY: Safe to cast &KernelBuilder into &Kernel
     // since Kernel has a transparent memory layout.
     let kernel = unsafe { &*(kernel_builder() as *const _ as *const _) };
-
     Branded::new(kernel, |k| f(KernelRef(k)))
 }
 
@@ -52,11 +53,10 @@ pub unsafe fn kernel_ref<'s, F: for<'new_id> FnOnce(KernelRef<'new_id, 's>) -> R
 ///
 /// # Safety
 ///
-/// The caller should make sure not to call this function multiple times.
-/// All mutable accesses to the `KERNEL` must be done through this.
+/// There must be no other references to `KERNEL` while the returned reference is alive.
 #[inline]
 unsafe fn kernel_builder_unchecked_pin<'s>() -> Pin<&'s mut KernelBuilder> {
-    // SAFETY: safe if all mutable accesses to the `KERNEL` are done through this.
+    // SAFETY: there are no other references to `KERNEL` while the returned reference is alive.
     unsafe { Pin::new_unchecked(&mut KERNEL) }
 }
 
@@ -283,8 +283,7 @@ impl KernelBuilder {
 #[cfg(not(test))]
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
-    // SAFETY: it is called only after the kernel is initialized.
-    let kernel = unsafe { kernel_builder() };
+    let kernel = kernel_builder();
     kernel.panic();
     kernel.write_fmt(format_args!("{}\n", info));
 
