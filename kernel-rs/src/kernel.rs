@@ -55,7 +55,7 @@ pub unsafe fn kernel_ref<'s, F: for<'new_id> FnOnce(KernelRef<'new_id, 's>) -> R
 /// The caller should make sure not to call this function multiple times.
 /// All mutable accesses to the `KERNEL` must be done through this.
 #[inline]
-unsafe fn kernel_builder_unchecked_pin() -> Pin<&'static mut KernelBuilder> {
+unsafe fn kernel_builder_unchecked_pin<'s>() -> Pin<&'s mut KernelBuilder> {
     // SAFETY: safe if all mutable accesses to the `KERNEL` are done through this.
     unsafe { Pin::new_unchecked(&mut KERNEL) }
 }
