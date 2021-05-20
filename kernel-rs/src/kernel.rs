@@ -17,7 +17,7 @@ use crate::{
     kalloc::Kmem,
     lock::{Sleepablelock, Spinlock},
     param::NDEV,
-    proc::{Procs, ProcsBuilder},
+    proc::Procs,
     trap::{trapinit, trapinithart},
     util::{branded::Branded, spin_loop},
     vm::KernelMemory,
@@ -78,7 +78,7 @@ pub struct KernelBuilder {
 
     /// Current process system.
     #[pin]
-    procs: ProcsBuilder,
+    pub procs: Procs,
 
     #[pin]
     bcache: Bcache,
@@ -87,7 +87,7 @@ pub struct KernelBuilder {
 
     pub ftable: FileTable,
 
-    pub file_system: Ufs,
+    file_system: Ufs,
 }
 
 #[repr(transparent)]
@@ -96,13 +96,6 @@ pub struct KernelBuilder {
 /// `inner.procs` is initialized.
 pub struct Kernel {
     inner: KernelBuilder,
-}
-
-impl Kernel {
-    pub fn procs(&self) -> &Procs {
-        // SAFETY: `self.inner.procs` is initialized according to the invariant.
-        unsafe { self.inner.procs.as_procs_unchecked() }
-    }
 }
 
 impl Deref for Kernel {
@@ -168,7 +161,7 @@ impl KernelBuilder {
             panicked: AtomicBool::new(false),
             memory: MaybeUninit::uninit(),
             ticks: Sleepablelock::new("time", 0),
-            procs: ProcsBuilder::zero(),
+            procs: Procs::new(),
             // SAFETY: the only way to access `bcache` is through `kernel()`, which is an immutable reference.
             bcache: unsafe { Bcache::zero() },
             devsw: [Devsw {
@@ -190,7 +183,7 @@ impl KernelBuilder {
             .get_ref()
             .write_str("\nrv6 kernel is booting\n\n");
 
-        let this = self.project();
+        let mut this = self.project();
 
         // Connect read and write system calls to consoleread and consolewrite.
         this.devsw[CONSOLE_IN_DEVSW] = Devsw {
@@ -205,7 +198,7 @@ impl KernelBuilder {
         unsafe { this.memory.write(memory).init_hart() };
 
         // Process system.
-        let procs = this.procs.init();
+        this.procs.as_mut().init();
 
         // Trap vectors.
         trapinit();
@@ -226,7 +219,8 @@ impl KernelBuilder {
         this.file_system.init_disk();
 
         // First user process.
-        procs.user_proc_init(this.file_system.itable.root(), allocator);
+        this.procs
+            .user_proc_init(this.file_system.itable.root(), allocator);
     }
 
     /// Initializes the kernel for a hart.

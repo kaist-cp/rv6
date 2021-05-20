@@ -18,7 +18,7 @@ use crate::{
     hal::hal,
     kalloc::Kmem,
     kernel::KernelRef,
-    lock::{RemoteLock, Spinlock, SpinlockGuard},
+    lock::{Spinlock, SpinlockGuard},
     page::Page,
     param::{NPROC, ROOTDEV},
     util::branded::Branded,
@@ -40,10 +40,10 @@ const INITCODE: [u8; 52] = [
 /// `initial_proc` is null or valid. `initial_proc` is not modified after its initialization in
 /// `user_proc_init`.
 #[pin_project]
-pub struct ProcsBuilder {
+pub struct Procs {
     nextpid: AtomicI32,
     #[pin]
-    process_pool: [ProcBuilder; NPROC],
+    process_pool: [Proc; NPROC],
     initial_proc: *const Proc,
 
     // Helps ensure that wakeups of wait()ing
@@ -51,18 +51,6 @@ pub struct ProcsBuilder {
     // memory model when using p->parent.
     // Must be acquired before any p->lock.
     wait_lock: Spinlock<()>,
-}
-
-/// # Safety
-///
-/// `inner` has been initialized:
-/// * `parent` of every `ProcBuilder` in `inner.process_pool` has been initialized.
-/// * 'inner.wait_lock` must not be accessed.
-#[repr(transparent)]
-#[pin_project]
-pub struct Procs {
-    #[pin]
-    inner: ProcsBuilder,
 }
 
 /// A branded reference to a `Procs`.
@@ -74,14 +62,9 @@ pub struct Procs {
 /// A `ProcsRef<'id, 's>` can be created only from a `KernelRef<'id, 's>` that has the same `'id` tag.
 pub struct ProcsRef<'id, 's>(Branded<'id, &'s Procs>);
 
-/// A branded mutable reference to a `Procs`.
-pub struct ProcsMut<'id, 's>(Branded<'id, Pin<&'s mut Procs>>);
+struct ProcIter<'id, 'a>(Branded<'id, core::slice::Iter<'a, Proc>>);
 
-struct ProcIter<'id, 'a> {
-    iter: Branded<'id, core::slice::Iter<'a, ProcBuilder>>,
-}
-
-/// A branded type that holds the guard of a `ProcsBuilder::wait_lock`.
+/// A branded type that holds the guard of a `Procs::wait_lock`.
 ///
 /// For a `ProcsRef<'id, '_>` that has the same `'id` tag with this, this `WaitGuard` acquires
 /// the wait lock of the `Procs` that the `ProcsRef` points to.
@@ -90,58 +73,33 @@ struct ProcIter<'id, 'a> {
 /// with the same `'id` tag.
 pub struct WaitGuard<'id, 's>(Branded<'id, SpinlockGuard<'s, ()>>);
 
-impl ProcsBuilder {
-    pub const fn zero() -> Self {
+impl Procs {
+    pub const fn new() -> Self {
         Self {
             nextpid: AtomicI32::new(1),
-            process_pool: array![_ => ProcBuilder::zero(); NPROC],
+            process_pool: array![_ => Proc::new(); NPROC],
             initial_proc: ptr::null(),
             wait_lock: Spinlock::new("wait_lock", ()),
         }
     }
 
     /// Initialize the proc table at boot time.
-    pub fn init(self: Pin<&mut Self>) -> Pin<&mut Procs> {
+    pub fn init(self: Pin<&mut Self>) {
         // SAFETY: we don't move the `Procs`.
         let this = unsafe { self.get_unchecked_mut() };
         for (i, p) in this.process_pool.iter_mut().enumerate() {
-            let _ = p.parent.write(RemoteLock::new(ptr::null_mut()));
             p.data.get_mut().kstack = kstack(i);
         }
-        // SAFETY: `parent` of every process in `self` has been initialized.
-        let this = unsafe { this.as_procs_mut_unchecked() };
-        // SAFETY: `this` has been pinned already.
-        unsafe { Pin::new_unchecked(this) }
     }
 
-    /// # Safety
-    ///
-    /// `parent` of every process in `self` must have been initialized.
-    pub unsafe fn as_procs_unchecked(&self) -> &Procs {
-        // SAFETY: `Procs` has a transparent memory layout, and `parent` of every process in `self`
-        // has been initialized according to the safety condition of this method.
-        unsafe { &*(self as *const _ as *const Procs) }
-    }
-
-    /// # Safety
-    ///
-    /// `parent` of every process in `self` must have been initialized.
-    pub unsafe fn as_procs_mut_unchecked(&mut self) -> &mut Procs {
-        // SAFETY: `Procs` has a transparent memory layout, and `parent` of every process in `self`
-        // has been initialized according to the safety condition of this method.
-        unsafe { &mut *(self as *mut _ as *mut Procs) }
-    }
-}
-
-impl Procs {
     /// Set up first user process.
     pub fn user_proc_init(
         self: Pin<&mut Self>,
         cwd: RcInode<<Ufs as FileSystem>::InodeInner>,
         allocator: Pin<&Spinlock<Kmem>>,
     ) {
-        Branded::new(self, |procs| {
-            let mut procs = ProcsMut(procs);
+        let initial_proc = Branded::new(self.as_ref().get_ref(), |procs| {
+            let procs = ProcsRef(procs);
 
             // Allocate trap frame.
             let trap_frame =
@@ -154,8 +112,7 @@ impl Procs {
             let memory = UserMemory::new(trap_frame.addr(), Some(&INITCODE), allocator)
                 .expect("user_proc_init: UserMemory::new");
 
-            let procs_ref = procs.as_ref();
-            let mut guard = procs_ref
+            let mut guard = procs
                 .alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory)
                 .expect("user_proc_init: Procs::alloc");
 
@@ -178,33 +135,35 @@ impl Procs {
             // It's safe because cwd now has been initialized.
             guard.deref_mut_info().state = Procstate::RUNNABLE;
 
-            let initial_proc = guard.deref().deref() as *const _;
-            drop(guard);
+            guard.deref().deref() as *const _
+        });
 
-            // It does not break the invariant since
-            // * initial_proc is a pointer to a `Proc` inside self.
-            // * self is pinned.
-            *procs.get_pin_mut().project().inner.project().initial_proc = initial_proc;
-        })
+        // It does not break the invariant since
+        // * initial_proc is a pointer to a `Proc` inside self.
+        // * self is pinned.
+        *self.project().initial_proc = initial_proc;
+    }
+
+    fn initial_proc(&self) -> &Proc {
+        assert!(!self.initial_proc.is_null());
+        // SAFETY: invariant
+        unsafe { &*(self.initial_proc as *const _) }
+    }
+
+    fn allocpid(&self) -> Pid {
+        self.nextpid.fetch_add(1, Ordering::Relaxed)
     }
 }
 
 impl<'id, 's> ProcsRef<'id, 's> {
     fn process_pool(&self) -> ProcIter<'id, 's> {
-        // SAFETY: invariant
-        unsafe { ProcIter::new(self) }
-    }
-
-    fn initial_proc(&self) -> &Proc {
-        assert!(!self.inner.initial_proc.is_null());
-        // SAFETY: invariant
-        unsafe { &*(self.inner.initial_proc as *const _) }
+        ProcIter::new(self)
     }
 
     /// Acquires the wait_lock of this `Procs` and returns the `WaitGuard`.
     /// You can access any of this `Procs`'s `Proc::parent` field only after acquiring the `WaitGuard`.
     fn wait_guard(&self) -> WaitGuard<'id, 's> {
-        WaitGuard(self.0.brand(self.0.inner.wait_lock.lock()))
+        WaitGuard(self.0.brand(self.0.wait_lock.lock()))
     }
 
     /// Look into process system for an UNUSED proc.
@@ -241,10 +200,6 @@ impl<'id, 's> ProcsRef<'id, 's> {
         allocator.free(trap_frame);
         memory.free(allocator);
         Err(())
-    }
-
-    fn allocpid(&self) -> Pid {
-        self.inner.nextpid.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Wake up all processes in the pool sleeping on waitchannel.
@@ -435,7 +390,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
         // SAFETY:
         // * `parent` cannot be null because it is not the initial process.
         // * `parent` is a valid pointer according to the invariants of
-        //   `ProcBuilder` and `CurrentProc`.
+        //   `Proc` and `CurrentProc`.
         unsafe { (*parent).child_waitchannel.wakeup(ctx.kernel()) };
 
         let mut guard = ctx.proc().lock();
@@ -476,34 +431,9 @@ unsafe fn forkret() -> ! {
     unsafe { kernel_ctx(forkret_inner) }
 }
 
-impl<'id, 's> ProcsMut<'id, 's> {
-    /// Converts it into a `ProcsRef`.
-    fn as_ref(&mut self) -> ProcsRef<'id, '_> {
-        ProcsRef(self.0.brand(&self.0))
-    }
-
-    /// Returns a pinned mutable reference to `Procs`.
-    fn get_pin_mut(&mut self) -> Pin<&mut Procs> {
-        self.0.as_mut()
-    }
-}
-
-impl Deref for ProcsMut<'_, '_> {
-    type Target = Procs;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
 impl<'id, 's> ProcIter<'id, 's> {
-    /// # Safety
-    ///
-    /// `parent` of every `ProcBuilder` in `iter` has been initialized.
-    unsafe fn new(procs: &ProcsRef<'id, 's>) -> Self {
-        Self {
-            iter: procs.0.brand(procs.0.inner.process_pool.iter()),
-        }
+    fn new(procs: &ProcsRef<'id, 's>) -> Self {
+        Self(procs.0.brand(procs.0.process_pool.iter()))
     }
 }
 
@@ -511,12 +441,7 @@ impl<'id, 'a> Iterator for ProcIter<'id, 'a> {
     type Item = ProcRef<'id, 'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|inner: &'a ProcBuilder| {
-            ProcRef(
-                self.iter
-                    .brand(unsafe { &*(inner as *const _ as *const _) }),
-            )
-        })
+        self.0.next().map(|inner| ProcRef(self.0.brand(inner)))
     }
 }
 
@@ -529,7 +454,7 @@ impl<'id, 's> WaitGuard<'id, 's> {
 impl<'id, 's> KernelRef<'id, 's> {
     /// Returns a `ProcsRef` that points to the kernel's `Procs`.
     pub fn procs(&self) -> ProcsRef<'id, '_> {
-        ProcsRef(self.brand(self.deref().procs()))
+        ProcsRef(self.brand(&self.procs))
     }
 
     /// Per-CPU process scheduler.
