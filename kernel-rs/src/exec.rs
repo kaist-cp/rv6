@@ -9,7 +9,7 @@ use zerocopy::{AsBytes, FromBytes};
 use crate::{
     arch::addr::{pgroundup, PAddr, PGSIZE},
     fs::{FileSystem, Path},
-    hal::hal,
+    hal::allocator,
     page::Page,
     param::MAXARG,
     proc::KernelCtx,
@@ -101,7 +101,7 @@ impl KernelCtx<'_, '_> {
             return Err(());
         }
 
-        let allocator = &hal().kmem;
+        let allocator = allocator();
 
         // TODO(https://github.com/kaist-cp/rv6/issues/290):
         // Dropping an RcInode requires a transaction.

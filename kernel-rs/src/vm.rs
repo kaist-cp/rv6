@@ -1,4 +1,4 @@
-use core::{cmp, marker::PhantomData, mem, slice};
+use core::{cmp, marker::PhantomData, mem, pin::Pin, slice};
 
 use bitflags::bitflags;
 use zerocopy::{AsBytes, FromBytes};
@@ -131,7 +131,7 @@ impl RawPageTable {
     /// Make a new emtpy raw page table by allocating a new page.
     /// Return `Ok(..)` if the allocation has succeeded.
     /// Return `None` if the allocation has failed.
-    fn new(allocator: &Spinlock<Kmem>) -> Option<*mut RawPageTable> {
+    fn new(allocator: Pin<&Spinlock<Kmem>>) -> Option<*mut RawPageTable> {
         let mut page = allocator.alloc()?;
         page.write_bytes(0);
         // This line guarantees the invariant.
@@ -147,7 +147,7 @@ impl RawPageTable {
     fn get_table_mut(
         &mut self,
         index: usize,
-        allocator: Option<&Spinlock<Kmem>>,
+        allocator: Option<Pin<&Spinlock<Kmem>>>,
     ) -> Option<&mut RawPageTable> {
         let pte = &mut self.inner[index];
         if !pte.is_valid() {
@@ -173,7 +173,7 @@ impl RawPageTable {
     ///
     /// This method frees the page table itself, so this page table must
     /// not be used after an invocation of this method.
-    unsafe fn free_walk(&mut self, allocator: &Spinlock<Kmem>) {
+    unsafe fn free_walk(&mut self, allocator: Pin<&Spinlock<Kmem>>) {
         // There are 2^9 = 512 PTEs in a page table.
         for pte in &mut self.inner {
             if let Some(ptable) = pte.as_table_mut() {
@@ -200,7 +200,7 @@ impl<A: VAddr> PageTable<A> {
     /// Make a new empty page table by allocating a new page.
     /// Return `Ok(..)` if the allocation has succeeded.
     /// Return `None` if the allocation has failed.
-    fn new(allocator: &Spinlock<Kmem>) -> Option<Self> {
+    fn new(allocator: Pin<&Spinlock<Kmem>>) -> Option<Self> {
         Some(Self {
             ptr: RawPageTable::new(allocator)?,
             _marker: PhantomData,
@@ -226,7 +226,7 @@ impl<A: VAddr> PageTable<A> {
     fn get_mut(
         &mut self,
         va: A,
-        allocator: Option<&Spinlock<Kmem>>,
+        allocator: Option<Pin<&Spinlock<Kmem>>>,
     ) -> Option<&mut PageTableEntry> {
         assert!(va.into_usize() < MAXVA, "PageTable::get_mut");
         // SAFETY: self.ptr uniquely refers to a valid RawPageTable
@@ -243,7 +243,7 @@ impl<A: VAddr> PageTable<A> {
         va: A,
         pa: PAddr,
         perm: PteFlags,
-        allocator: &Spinlock<Kmem>,
+        allocator: Pin<&Spinlock<Kmem>>,
     ) -> Result<(), ()> {
         let a = pgrounddown(va.into_usize());
         let pte = self.get_mut(A::from(a), Some(allocator)).ok_or(())?;
@@ -262,7 +262,7 @@ impl<A: VAddr> PageTable<A> {
         size: usize,
         pa: PAddr,
         perm: PteFlags,
-        allocator: &Spinlock<Kmem>,
+        allocator: Pin<&Spinlock<Kmem>>,
     ) -> Result<(), ()> {
         let start = pgrounddown(va.into_usize());
         let end = pgrounddown(va.into_usize() + size - 1usize);
@@ -283,7 +283,7 @@ impl<A: VAddr> PageTable<A> {
     // # Safety
     //
     // This page table must not be used after invoking this method.
-    unsafe fn free(&mut self, allocator: &Spinlock<Kmem>) {
+    unsafe fn free(&mut self, allocator: Pin<&Spinlock<Kmem>>) {
         // SAFETY:
         // * self.ptr is a valid pointer.
         // * this page table is being dropped, and its ptr will not be used anymore.
@@ -334,7 +334,7 @@ impl UserMemory {
     pub fn new(
         trap_frame: PAddr,
         src_opt: Option<&[u8]>,
-        allocator: &Spinlock<Kmem>,
+        allocator: Pin<&Spinlock<Kmem>>,
     ) -> Option<Self> {
         let page_table = PageTable::new(allocator)?;
         let mut page_table = scopeguard::guard(page_table, |mut page_table| {
@@ -392,7 +392,7 @@ impl UserMemory {
     /// Makes a new memory by copying a given memory. Copies both the page
     /// table and the physical memory. Returns Some(memory) on success, None on
     /// failure. Frees any allocated pages on failure.
-    pub fn clone(&mut self, trap_frame: PAddr, allocator: &Spinlock<Kmem>) -> Option<Self> {
+    pub fn clone(&mut self, trap_frame: PAddr, allocator: Pin<&Spinlock<Kmem>>) -> Option<Self> {
         let new = Self::new(trap_frame, None, allocator)?;
         let mut new = scopeguard::guard(new, |mut new| {
             let _ = new.dealloc(0, allocator);
@@ -453,7 +453,7 @@ impl UserMemory {
 
     /// Allocate PTEs and physical memory to grow process to newsz, which need
     /// not be page aligned. Returns Ok(new size) or Err(()) on error.
-    pub fn alloc(&mut self, newsz: usize, allocator: &Spinlock<Kmem>) -> Result<usize, ()> {
+    pub fn alloc(&mut self, newsz: usize, allocator: Pin<&Spinlock<Kmem>>) -> Result<usize, ()> {
         if newsz <= self.size {
             return Ok(self.size);
         }
@@ -479,7 +479,7 @@ impl UserMemory {
 
     /// Deallocate user pages to bring the process size to newsz, which need
     /// not be page-aligned. Returns the new process size.
-    pub fn dealloc(&mut self, newsz: usize, allocator: &Spinlock<Kmem>) -> usize {
+    pub fn dealloc(&mut self, newsz: usize, allocator: Pin<&Spinlock<Kmem>>) -> usize {
         if self.size <= newsz {
             return self.size;
         }
@@ -495,7 +495,7 @@ impl UserMemory {
 
     /// Grow or shrink process size by n bytes.
     /// Return Ok(old size) on success, Err(()) on failure.
-    pub fn resize(&mut self, n: i32, allocator: &Spinlock<Kmem>) -> Result<usize, ()> {
+    pub fn resize(&mut self, n: i32, allocator: Pin<&Spinlock<Kmem>>) -> Result<usize, ()> {
         let size = self.size;
         match n.cmp(&0) {
             cmp::Ordering::Equal => (),
@@ -632,7 +632,7 @@ impl UserMemory {
         &mut self,
         page: Page,
         perm: PteFlags,
-        allocator: &Spinlock<Kmem>,
+        allocator: Pin<&Spinlock<Kmem>>,
     ) -> Result<(), Page> {
         let pa = page.into_usize();
         // The invariant is maintained because page.addr() is the address of a page.
@@ -662,7 +662,7 @@ impl UserMemory {
         Some(unsafe { Page::from_usize(pa) })
     }
 
-    pub fn free(mut self, allocator: &Spinlock<Kmem>) {
+    pub fn free(mut self, allocator: Pin<&Spinlock<Kmem>>) {
         let _ = self.dealloc(0, allocator);
         // SAFETY: self will be dropped.
         unsafe { self.page_table.free(allocator) };
@@ -693,7 +693,7 @@ pub struct KernelMemory {
 
 impl KernelMemory {
     /// Make a direct-map page table for the kernel.
-    pub fn new(allocator: &Spinlock<Kmem>) -> Option<Self> {
+    pub fn new(allocator: Pin<&Spinlock<Kmem>>) -> Option<Self> {
         let page_table = PageTable::new(allocator)?;
         let mut page_table = scopeguard::guard(page_table, |mut page_table| {
             unsafe { page_table.free(allocator) };
