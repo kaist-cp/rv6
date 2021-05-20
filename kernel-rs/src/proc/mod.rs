@@ -191,7 +191,7 @@ pub enum Procstate {
 
 type Pid = i32;
 
-/// ProcBuilder::info's spinlock must be held when using these.
+/// Proc::info's spinlock must be held when using these.
 pub struct ProcInfo {
     /// Process state.
     pub state: Procstate,
@@ -206,7 +206,7 @@ pub struct ProcInfo {
     pid: Pid,
 }
 
-/// ProcBuilder::data are private to the process, so lock need not be held.
+/// Proc::data are private to the process, so lock need not be held.
 pub struct ProcData {
     /// Virtual address of kernel stack.
     pub kstack: usize,
@@ -239,16 +239,11 @@ pub struct ProcData {
 ///   - `data.memory` has been initialized.
 /// * If `info.state` ∉ { `UNUSED`, `USED` }, then
 ///   - `data.cwd` has been initialized.
-///   - `parent` contains null or a valid pointer if it has been initialized. `parent` can be null
-///   only when `self` is the same as `initial_proc` of `ProcsBuilder` that contains `self`.
-pub struct ProcBuilder {
+///   - `parent` contains null or a valid pointer. `parent` can be null only when `self` is the same
+///     as `initial_proc` of `Procs` that contains `self`.
+pub struct Proc {
     /// Parent process.
-    ///
-    /// We have to use a `MaybeUninit` type here, since we can't initialize
-    /// this field in ProcBuilder::zero(), which is a const fn.
-    /// Hence, this field gets initialized later in procinit() as
-    /// `RemoteSpinlock::new(&procs.wait_lock, ptr::null_mut())`.
-    parent: MaybeUninit<RemoteLock<RawSpinlock, (), *const Proc>>,
+    parent: RemoteLock<RawSpinlock, (), *const Proc>,
 
     pub info: Spinlock<ProcInfo>,
 
@@ -259,14 +254,6 @@ pub struct ProcBuilder {
 
     /// If true, the process have been killed.
     killed: AtomicBool,
-}
-
-/// # Safety
-///
-/// `inner.parent` has been initialized.
-#[repr(transparent)]
-pub struct Proc {
-    inner: ProcBuilder,
 }
 
 /// A branded reference to a `Proc`.
@@ -330,11 +317,10 @@ impl ProcData {
     }
 }
 
-/// TODO(https://github.com/kaist-cp/rv6/issues/363): pid, state, should be methods of ProcGuard.
-impl ProcBuilder {
-    const fn zero() -> Self {
+impl Proc {
+    const fn new() -> Self {
         Self {
-            parent: MaybeUninit::uninit(),
+            parent: RemoteLock::new(ptr::null()),
             info: Spinlock::new(
                 "proc",
                 ProcInfo {
@@ -352,11 +338,6 @@ impl ProcBuilder {
 }
 
 impl Proc {
-    fn parent(&self) -> &RemoteLock<RawSpinlock, (), *const Proc> {
-        // SAFETY: invariant
-        unsafe { self.parent.assume_init_ref() }
-    }
-
     /// Kill and wake the process up.
     pub fn kill(&self) {
         self.killed.store(true, Ordering::Release);
@@ -367,14 +348,6 @@ impl Proc {
     }
 }
 
-impl Deref for Proc {
-    type Target = ProcBuilder;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
 impl<'id, 's> ProcRef<'id, 's> {
     /// Returns a mutable reference to this `Proc`'s parent field, which is a raw pointer.
     /// You need a `WaitGuard` that has the same `'id`.
@@ -382,7 +355,7 @@ impl<'id, 's> ProcRef<'id, 's> {
         &'a self,
         guard: &'b mut WaitGuard<'id, '_>,
     ) -> &'b mut *const Proc {
-        unsafe { self.parent().get_mut_unchecked(guard.get_mut_inner()) }
+        unsafe { self.parent.get_mut_unchecked(guard.get_mut_inner()) }
     }
 
     pub fn lock(&self) -> ProcGuard<'id, 's> {
@@ -419,7 +392,7 @@ impl<'id> ProcGuard<'id, '_> {
     /// # Safety
     ///
     /// This method must be called only when there is no `CurrentProc` referring
-    /// to the same `ProcBuilder`.
+    /// to the same `Proc`.
     unsafe fn deref_mut_data(&mut self) -> &mut ProcData {
         unsafe { &mut *self.data.get() }
     }
@@ -448,7 +421,7 @@ impl<'id> ProcGuard<'id, '_> {
         cpu.set_interrupt(interrupt_enabled);
     }
 
-    /// Frees a `ProcBuilder` structure and the data hanging from it, including user pages.
+    /// Frees a `Proc` structure and the data hanging from it, including user pages.
     /// Also, clears `p`'s parent field into `ptr::null_mut()`.
     /// The caller must provide a `ProcGuard`.
     ///
