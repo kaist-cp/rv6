@@ -12,7 +12,7 @@ use crate::{
     arch::riscv::intr_get,
     file::RcFile,
     fs::{FileSystem, RcInode, Ufs},
-    hal::hal,
+    hal::{allocator, hal},
     lock::{RawSpinlock, RemoteLock, Spinlock},
     page::Page,
     param::{MAXPROCNAME, NOFILE},
@@ -459,7 +459,7 @@ impl<'id> ProcGuard<'id, '_> {
         // SAFETY: this process cannot be the current process any longer.
         let data = unsafe { self.deref_mut_data() };
         let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
-        let allocator = &hal().kmem;
+        let allocator = allocator();
         // SAFETY: trap_frame uniquely refers to a valid page.
         allocator.free(unsafe { Page::from_usize(trap_frame as _) });
         // SAFETY:

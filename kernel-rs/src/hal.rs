@@ -18,6 +18,11 @@ pub fn hal<'s>() -> &'s Hal {
     unsafe { &HAL }
 }
 
+pub fn allocator<'s>() -> Pin<&'s Spinlock<Kmem>> {
+    // SAFETY: `HAL` is never moved inside this module, and only shared references are exposed.
+    unsafe { Pin::new_unchecked(&hal().kmem) }
+}
+
 /// Initializes `HAL`.
 ///
 /// # Safety

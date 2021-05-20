@@ -13,7 +13,7 @@ use crate::{
     cpu::cpuid,
     file::{Devsw, FileTable},
     fs::{FileSystem, Ufs},
-    hal::{hal, hal_init},
+    hal::{allocator, hal, hal_init},
     kalloc::Kmem,
     lock::{Sleepablelock, Spinlock},
     param::NDEV,
@@ -185,7 +185,7 @@ impl KernelBuilder {
     /// # Safety
     ///
     /// This method should be called only once by the hart 0.
-    unsafe fn init(self: Pin<&mut Self>, allocator: &Spinlock<Kmem>) {
+    unsafe fn init(self: Pin<&mut Self>, allocator: Pin<&Spinlock<Kmem>>) {
         self.as_ref()
             .get_ref()
             .write_str("\nrv6 kernel is booting\n\n");
@@ -299,7 +299,7 @@ pub unsafe fn main() -> ! {
             hal_init();
         }
         unsafe {
-            kernel_builder_unchecked_pin().init(&hal().kmem);
+            kernel_builder_unchecked_pin().init(allocator());
         }
         INITED.store(true, Ordering::Release);
     } else {

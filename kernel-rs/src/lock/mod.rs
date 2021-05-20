@@ -72,9 +72,31 @@ pub struct Guard<'s, R: RawLock, T> {
 // Do not implement Send; lock must be unlocked by the CPU that acquired it.
 unsafe impl<'s, R: RawLock, T: Sync> Sync for Guard<'s, R, T> {}
 
-impl<R: RawLock, T> Lock<R, T> {
+impl<R: RawLock, T: Unpin> Lock<R, T> {
     /// Acquires the lock and returns the lock guard.
     pub fn lock(&self) -> Guard<'_, R, T> {
+        self.lock.acquire();
+
+        Guard {
+            lock: self,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<R: RawLock, T> Lock<R, T> {
+    /// Acquires the lock and returns the lock guard.
+    pub fn pinned_lock(self: Pin<&Self>) -> Guard<'_, R, T> {
+        self.lock.acquire();
+
+        Guard {
+            lock: self.get_ref(),
+            _marker: PhantomData,
+        }
+    }
+
+    // Will be removed.
+    pub fn pinned_lock_unchecked(&self) -> Guard<'_, R, T> {
         self.lock.acquire();
 
         Guard {

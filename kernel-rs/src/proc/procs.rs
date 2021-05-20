@@ -138,7 +138,7 @@ impl Procs {
     pub fn user_proc_init(
         self: Pin<&mut Self>,
         cwd: RcInode<<Ufs as FileSystem>::InodeInner>,
-        allocator: &Spinlock<Kmem>,
+        allocator: Pin<&Spinlock<Kmem>>,
     ) {
         Branded::new(self, |procs| {
             let mut procs = ProcsMut(procs);
@@ -237,7 +237,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
             }
         }
 
-        let allocator = &hal().kmem;
+        let allocator = allocator();
         allocator.free(trap_frame);
         memory.free(allocator);
         Err(())
@@ -288,7 +288,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
     /// Otherwise, UB may happen if the new `Proc` tries to read its `parent` field
     /// that points to a `Proc` that already dropped.
     pub fn fork(&self, ctx: &mut KernelCtx<'id, '_>) -> Result<Pid, ()> {
-        let allocator = &hal().kmem;
+        let allocator = allocator();
         // Allocate trap frame.
         let trap_frame =
             scopeguard::guard(allocator.alloc().ok_or(())?, |page| allocator.free(page));

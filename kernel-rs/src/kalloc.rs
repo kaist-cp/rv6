@@ -127,11 +127,11 @@ impl Kmem {
 }
 
 impl Spinlock<Kmem> {
-    pub fn free(&self, page: Page) {
-        self.lock().free(page);
+    pub fn free(self: Pin<&Self>, page: Page) {
+        self.pinned_lock().free(page);
     }
 
-    pub fn alloc(&self) -> Option<Page> {
-        self.lock().alloc()
+    pub fn alloc(self: Pin<&Self>) -> Option<Page> {
+        self.pinned_lock().alloc()
     }
 }

@@ -51,7 +51,7 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
         n: N,
     ) -> Option<Rc<Self>> {
         ArenaRef::new(self, |arena| {
-            let mut guard = arena.lock();
+            let mut guard = arena.pinned_lock_unchecked();
             let this = guard.get_pin_mut().project();
 
             let mut empty: Option<*mut RcCell<T>> = None;
@@ -83,7 +83,7 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
 
     fn alloc<F: FnOnce() -> Self::Data>(&self, f: F) -> Option<Rc<Self>> {
         ArenaRef::new(self, |arena| {
-            let mut guard = arena.lock();
+            let mut guard = arena.pinned_lock_unchecked();
             let this = guard.get_pin_mut().project();
 
             for mut entry in IterPinMut::from(this.entries) {
@@ -101,12 +101,12 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
         self: ArenaRef<'id, &Self>,
         handle: HandleRef<'id, '_, Self::Data>,
     ) -> Handle<'id, Self::Data> {
-        let mut _this = self.lock();
+        let mut _this = self.pinned_lock_unchecked();
         Handle(self.0.brand(handle.0.into_inner().clone()))
     }
 
     fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: Handle<'id, Self::Data>) {
-        let mut this = self.lock();
+        let mut this = self.pinned_lock_unchecked();
 
         if let Ok(mut rm) = RefMut::<T>::try_from(handle.0.into_inner()) {
             rm.finalize::<Self>(&mut this);
