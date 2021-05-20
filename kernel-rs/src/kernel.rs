@@ -213,7 +213,7 @@ impl KernelBuilder {
         unsafe { plicinithart() };
 
         // Buffer cache.
-        this.bcache.get_pin_mut().init();
+        this.bcache.init();
 
         // First user process.
         this.procs

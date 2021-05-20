@@ -95,16 +95,6 @@ impl<R: RawLock, T> Lock<R, T> {
         }
     }
 
-    // Will be removed.
-    pub fn pinned_lock_unchecked(&self) -> Guard<'_, R, T> {
-        self.lock.acquire();
-
-        Guard {
-            lock: self,
-            _marker: PhantomData,
-        }
-    }
-
     /// Returns a raw pointer to the inner data.
     /// The returned pointer is valid until this lock is moved or dropped.
     /// The caller must ensure that accessing the pointer does not incur race.

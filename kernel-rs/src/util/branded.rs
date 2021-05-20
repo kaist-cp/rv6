@@ -222,6 +222,7 @@ type Id<'id> = PhantomData<Cell<&'id mut ()>>;
 /// * `Branded::brand` returns a `Branded` that has the same `'id` with the provided `Branded`.
 ///   This is the only way to make a new `Branded` that has the same `'id` with another `Branded`.
 #[derive(Clone, Copy)]
+#[repr(transparent)]
 pub struct Branded<'id, T> {
     _id: Id<'id>,
     inner: T,

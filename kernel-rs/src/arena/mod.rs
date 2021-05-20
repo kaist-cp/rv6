@@ -4,18 +4,83 @@
 //! For types that `impl Arena`, you can allocate a thread safe `Rc` (reference counted pointer) from it.
 //!
 //! This module also includes pre-built arenas, such as `ArrayArena`(array based arena) or `MruArena`(list based arena).
-// Note: To let the users implement their own arena types, we may want to add `Rc::new_unchecked` and `Handle::unwrap` method.
 
-use core::mem::ManuallyDrop;
 use core::ops::Deref;
+use core::{cell::UnsafeCell, mem::ManuallyDrop};
 
-use crate::util::{branded::Branded, rc_cell::Ref};
+use crate::{
+    lock::{RawSpinlock, RemoteLock, SpinlockGuard},
+    util::branded::Branded,
+};
 
 mod array_arena;
 mod mru_arena;
 
 pub use array_arena::ArrayArena;
 pub use mru_arena::MruArena;
+
+pub struct Entry<T> {
+    data: UnsafeCell<T>,
+    rc: RemoteLock<RawSpinlock, (), usize>,
+}
+
+impl<T> Entry<T> {
+    const fn new(data: T) -> Self {
+        Self {
+            data: UnsafeCell::new(data),
+            rc: RemoteLock::new(0),
+        }
+    }
+}
+
+impl<T> Entry<T> {
+    fn data_raw(&self) -> *mut T {
+        self.data.get()
+    }
+}
+
+impl<T> Deref for Entry<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.data.get() }
+    }
+}
+
+#[repr(transparent)]
+pub struct EntryRef<'id, 's, T>(Branded<'id, &'s Entry<T>>);
+
+impl<'id, 's, T> EntryRef<'id, 's, T> {
+    fn into_handle(self) -> Handle<T> {
+        Handle(self.0.into_inner())
+    }
+
+    #[inline]
+    fn get_mut_rc<'a: 'b, 'b>(&'a self, guard: &'b mut ArenaGuard<'id, '_>) -> &'b mut usize {
+        unsafe { self.0.rc.get_mut_unchecked(&mut guard.0) }
+    }
+}
+
+impl<T> Deref for EntryRef<'_, '_, T> {
+    type Target = Entry<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub struct Handle<T>(*const Entry<T>);
+
+impl<T> Deref for Handle<T> {
+    type Target = Entry<T>;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.0 }
+    }
+}
+
+#[repr(transparent)]
+struct ArenaGuard<'id, 's>(Branded<'id, SpinlockGuard<'s, ()>>);
 
 /// A homogeneous memory allocator. Provides `Rc<Arena>` to the outside.
 pub trait Arena: Sized + Sync {
@@ -47,12 +112,7 @@ pub trait Arena: Sized + Sync {
     ///
     /// This method is automatically used by the `Rc`.
     /// Usually, you don't need to manually call this method.
-    // TODO(https://github.com/kaist-cp/rv6/issues/400)
-    // If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `clone` instead.
-    fn dup<'id>(
-        self: ArenaRef<'id, &Self>,
-        handle: HandleRef<'id, '_, Self::Data>,
-    ) -> Handle<'id, Self::Data>;
+    fn dup<'id>(self: ArenaRef<'id, &Self>, handle: &EntryRef<'id, '_, Self::Data>);
 
     /// Deallocate a given handle, decreasing the reference count
     /// Finalizes the referred object if there are no more handles.
@@ -61,9 +121,7 @@ pub trait Arena: Sized + Sync {
     ///
     /// This method is automatically used by the `Rc`.
     /// Usually, you don't need to manually call this method.
-    // TODO(https://github.com/kaist-cp/rv6/issues/400)
-    // If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `drop` instead.
-    fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: Handle<'id, Self::Data>);
+    fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: EntryRef<'id, '_, Self::Data>);
 
     /// Temporarily releases the lock while calling `f`, and re-acquires the lock after `f` returned.
     ///
@@ -77,12 +135,6 @@ pub trait Arena: Sized + Sync {
     unsafe fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
     where
         F: FnOnce() -> R;
-}
-
-pub trait ArenaObject {
-    /// Finalizes the `ArenaObject`.
-    /// This function is automatically called when the last `Rc` refereing to this `ArenaObject` gets dropped.
-    fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>);
 }
 
 /// A branded reference to an arena.
@@ -110,22 +162,6 @@ impl<'id, P: Deref> Deref for ArenaRef<'id, P> {
     }
 }
 
-/// An arena handle with an `'id` tag attached.
-/// The handle was allocated from an `ArenaRef<'id, &Arena>` that has the same `'id` tag.
-pub struct Handle<'id, T>(Branded<'id, Ref<T>>);
-
-/// A branded reference to an arena handle.
-/// The handle was allocated from an `ArenaRef<'id, &Arena>` that has the same `'id` tag.
-pub struct HandleRef<'id, 's, T>(Branded<'id, &'s Ref<T>>);
-
-impl<'s, T> Deref for HandleRef<'_, 's, T> {
-    type Target = Ref<T>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
 /// A thread-safe reference counted pointer, allocated from `A: Arena`.
 /// The data type is same as `A::Data`.
 ///
@@ -136,7 +172,7 @@ impl<'s, T> Deref for HandleRef<'_, 's, T> {
 /// because we panic if the arena drops earlier than `inner`.
 pub struct Rc<A: Arena> {
     arena: *const A,
-    inner: ManuallyDrop<Ref<A::Data>>,
+    inner: ManuallyDrop<Handle<A::Data>>,
 }
 
 // `Rc` is `Send` because it does not impl `DerefMut`,
@@ -146,16 +182,16 @@ unsafe impl<T: Sync, A: Arena<Data = T>> Send for Rc<A> {}
 
 impl<T, A: Arena<Data = T>> Rc<A> {
     /// Creates a new `Rc`, allocated from the arena.
-    pub fn new<'id>(arena: ArenaRef<'id, &A>, inner: Handle<'id, T>) -> Self {
+    pub fn new(arena: *const A, inner: Handle<T>) -> Self {
         Self {
-            arena: arena.0.into_inner(),
-            inner: ManuallyDrop::new(inner.0.into_inner()),
+            arena,
+            inner: ManuallyDrop::new(inner),
         }
     }
 
-    fn map_arena<F: for<'new_id> FnOnce(ArenaRef<'new_id, &A>) -> R, R>(&self, f: F) -> R {
+    fn arena(&self) -> &A {
         // SAFETY: Safe because of `Rc`'s invariant.
-        Branded::new(unsafe { &*self.arena }, |arena| f(ArenaRef(arena)))
+        unsafe { &*self.arena }
     }
 }
 
@@ -163,25 +199,31 @@ impl<T, A: Arena<Data = T>> Deref for Rc<A> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        self.inner.deref()
+        &self.inner
     }
 }
 
 impl<A: Arena> Drop for Rc<A> {
     fn drop(&mut self) {
-        let inner = unsafe { ManuallyDrop::take(&mut self.inner) };
-        self.map_arena(|arena| {
-            let inner = Handle(arena.0.brand(inner));
-            arena.dealloc(inner);
+        ArenaRef::new(self.arena(), |arena| {
+            let entry = EntryRef(arena.0.brand(&self.inner));
+            arena.dealloc(entry)
         });
     }
 }
 
 impl<A: Arena> Clone for Rc<A> {
     fn clone(&self) -> Self {
-        self.map_arena(|arena| {
-            let inner = HandleRef(arena.0.brand(self.inner.deref()));
-            Rc::new(arena, arena.dup(inner))
+        ArenaRef::new(self.arena(), |arena| {
+            let entry = EntryRef(arena.0.brand(&self.inner));
+            arena.dup(&entry);
+            Rc::new(arena.deref(), entry.into_handle())
         })
     }
+}
+
+pub trait ArenaObject {
+    /// Finalizes the `ArenaObject`.
+    /// This function is automatically called when the last `Rc` refereing to this `ArenaObject` gets dropped.
+    fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>);
 }

@@ -42,6 +42,7 @@ impl<R: RawLock, U, T> RemoteLock<R, U, T> {
     ///
     /// The provided `guard` must be from the `Lock` that this `RemoteLock` borrowed from.
     /// You may want to wrap this function with a safe function that uses branded types.
+    #[inline]
     pub unsafe fn get_pin_mut_unchecked<'t>(
         &'t self,
         _guard: &'t mut Guard<'_, R, U>,
@@ -57,6 +58,7 @@ impl<'s, R: RawLock, U, T: Unpin> RemoteLock<R, U, T> {
     ///
     /// The provided `guard` must be from the `Lock` that this `RemoteLock` borrowed from.
     /// You may want to wrap this function with a safe function that uses branded types.
+    #[inline]
     pub unsafe fn get_mut_unchecked<'t>(&'t self, guard: &'t mut Guard<'_, R, U>) -> &'t mut T {
         unsafe { self.get_pin_mut_unchecked(guard) }.get_mut()
     }

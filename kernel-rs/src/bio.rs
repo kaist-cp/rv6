@@ -16,7 +16,7 @@ use core::ops::{Deref, DerefMut};
 
 use crate::{
     arena::{Arena, ArenaObject, MruArena, Rc},
-    lock::{Sleeplock, Spinlock},
+    lock::Sleeplock,
     param::{BSIZE, NBUF},
     proc::WaitChannel,
 };
@@ -95,7 +95,7 @@ impl BufInner {
     }
 }
 
-pub type Bcache = Spinlock<MruArena<BufEntry, NBUF>>;
+pub type Bcache = MruArena<BufEntry, NBUF>;
 
 /// A reference counted smart pointer to a `BufEntry`.
 pub type BufUnlocked = Rc<Bcache>;
@@ -153,7 +153,7 @@ impl Bcache {
     ///
     /// The caller should make sure that `Bcache` never gets moved.
     pub const unsafe fn zero() -> Self {
-        Spinlock::new("BCACHE", MruArena::<BufEntry, NBUF>::new())
+        MruArena::<BufEntry, NBUF>::new()
     }
 
     /// Return a unlocked buf with the contents of the indicated block.
