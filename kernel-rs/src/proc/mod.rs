@@ -435,14 +435,16 @@ impl<'id> ProcGuard<'id, '_> {
         assert!(!intr_get(), "sched interruptible");
         assert_ne!(self.state(), Procstate::RUNNING, "sched running");
 
-        let cpu = unsafe { &mut *hal().cpus.current() };
-        assert_eq!(cpu.noff(), 1, "sched locks");
+        // SAFETY: interrupts are disabled.
+        let cpu = unsafe { hal().cpus.current_unchecked() };
+        assert_eq!(cpu.get_noff(), 1, "sched locks");
 
         let interrupt_enabled = cpu.get_interrupt();
-        unsafe { swtch(&mut self.deref_mut_data().context, &mut cpu.context) };
+        unsafe { swtch(&mut self.deref_mut_data().context, cpu.context_raw_mut()) };
 
         // We cannot use `cpu` again because `swtch` may move this thread to another cpu.
-        let cpu = unsafe { &mut *hal().cpus.current() };
+        // SAFETY: interrupts are disabled.
+        let cpu = unsafe { hal().cpus.current_unchecked() };
         cpu.set_interrupt(interrupt_enabled);
     }
 

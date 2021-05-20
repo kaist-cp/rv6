@@ -88,9 +88,7 @@ impl Console {
     /// Doesn't use interrupts, for use by kernel println() and to echo characters.
     /// It spins waiting for the uart's output register to be empty.
     fn putc_spin(&self, c: u8, kernel: &KernelBuilder) {
-        unsafe {
-            hal().cpus.push_off();
-        }
+        let intr = hal().cpus.push_off();
         if kernel.is_panicked() {
             spin_loop();
         }
@@ -100,9 +98,7 @@ impl Console {
 
         self.uart.putc(c);
 
-        unsafe {
-            hal().cpus.pop_off();
-        }
+        unsafe { hal().cpus.pop_off(intr) };
     }
 
     fn put_backspace_spin(&self, kernel: &KernelBuilder) {

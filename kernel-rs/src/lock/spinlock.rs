@@ -1,10 +1,14 @@
 //! Spin locks
-use core::cell::UnsafeCell;
+use core::cell::{Cell, UnsafeCell};
+use core::mem::MaybeUninit;
 use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
 use super::{Guard, Lock, RawLock};
-use crate::{cpu::Cpu, hal::hal};
+use crate::{
+    cpu::{Cpu, HeldInterrupts},
+    hal::hal,
+};
 
 /// Mutual exclusion lock that busy waits (spin).
 pub struct RawSpinlock {
@@ -16,6 +20,7 @@ pub struct RawSpinlock {
     ///
     /// Records info about lock acquisition for holding() and debugging.
     locked: AtomicPtr<Cpu>,
+    intr: Cell<MaybeUninit<HeldInterrupts>>,
 }
 
 /// Locks that busy wait (spin).
@@ -29,13 +34,14 @@ impl RawSpinlock {
         Self {
             locked: AtomicPtr::new(ptr::null_mut()),
             name,
+            intr: Cell::new(MaybeUninit::uninit()),
         }
     }
 
     /// Check whether this cpu is holding the lock.
     /// Interrupts must be off.
     fn holding(&self) -> bool {
-        self.locked.load(Ordering::Relaxed) == hal().cpus.current()
+        self.locked.load(Ordering::Relaxed) == hal().cpus.current_raw()
     }
 }
 
@@ -56,9 +62,7 @@ impl RawLock for RawSpinlock {
     /// Additionally, note that an additional fence is unneccessary due to the pair of `Acquire`/`Release` orderings.
     fn acquire(&self) {
         // Disable interrupts to avoid deadlock.
-        unsafe {
-            hal().cpus.push_off();
-        }
+        let intr = hal().cpus.push_off();
         assert!(!self.holding(), "acquire {}", self.name);
 
         // RISC-V supports two forms of atomic instructions, 1) load-reserved/store-conditional and 2) atomic fetch-and-op,
@@ -73,7 +77,7 @@ impl RawLock for RawSpinlock {
             .locked
             .compare_exchange(
                 ptr::null_mut(),
-                hal().cpus.current(),
+                hal().cpus.current_raw(),
                 Ordering::Acquire,
                 // Okay to use `Relaxed` ordering since we don't enter the critical section anyway
                 // if the exchange fails.
@@ -83,6 +87,8 @@ impl RawLock for RawSpinlock {
         {
             ::core::hint::spin_loop();
         }
+
+        self.intr.set(MaybeUninit::new(intr));
     }
 
     /// Releases the lock.
@@ -97,9 +103,8 @@ impl RawLock for RawSpinlock {
         //
         // 0x80000f5c | fence   rw,w            (Enforces `Release` memory ordering)
         self.locked.store(ptr::null_mut(), Ordering::Release);
-        unsafe {
-            hal().cpus.pop_off();
-        }
+        let intr = unsafe { self.intr.replace(MaybeUninit::uninit()).assume_init_read() };
+        unsafe { hal().cpus.pop_off(intr) };
     }
 }
 
