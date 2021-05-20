@@ -143,10 +143,10 @@ impl<'id, 's> KernelRef<'id, 's> {
     /// Returns pointer to the current proc.
     pub fn current_proc(&self) -> *const Proc {
         let cpus = &hal().cpus;
-        unsafe { cpus.push_off() };
-        let cpu = cpus.current();
-        let proc = unsafe { (*cpu).proc };
-        unsafe { cpus.pop_off() };
+        let intr = cpus.push_off();
+        let cpu = cpus.current(&intr);
+        let proc = cpu.get_proc();
+        unsafe { cpus.pop_off(intr) };
         proc
     }
 

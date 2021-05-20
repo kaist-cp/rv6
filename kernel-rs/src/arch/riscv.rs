@@ -354,9 +354,10 @@ pub unsafe fn intr_on() {
 
 /// Disable device interrupts.
 #[inline]
-pub unsafe fn intr_off() {
+pub fn intr_off() {
     let mut x = Sstatus::read();
     x.remove(Sstatus::SIE);
+    // SAFETY: turning interrupt off is safe.
     unsafe { x.write() };
 }
 

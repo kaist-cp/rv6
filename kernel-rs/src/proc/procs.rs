@@ -540,8 +540,9 @@ impl<'id, 's> KernelRef<'id, 's> {
     ///  - eventually that process transfers control
     ///    via swtch back to the scheduler.
     pub unsafe fn scheduler(self) -> ! {
-        let mut cpu = hal().cpus.current();
-        unsafe { (*cpu).proc = ptr::null_mut() };
+        // SAFETY: this function never moves to another CPU.
+        let cpu = unsafe { hal().cpus.current_unchecked() };
+        cpu.set_proc(ptr::null_mut());
         loop {
             // Avoid deadlock by ensuring that devices can interrupt.
             unsafe { intr_on() };
@@ -553,12 +554,12 @@ impl<'id, 's> KernelRef<'id, 's> {
                     // to release its lock and then reacquire it
                     // before jumping back to us.
                     guard.deref_mut_info().state = Procstate::RUNNING;
-                    unsafe { (*cpu).proc = p.deref() as *const _ };
-                    unsafe { swtch(&mut (*cpu).context, &mut guard.deref_mut_data().context) };
+                    cpu.set_proc(p.deref());
+                    unsafe { swtch(cpu.context_raw_mut(), &mut guard.deref_mut_data().context) };
 
                     // Process is done running for now.
                     // It should have changed its p->state before coming back.
-                    unsafe { (*cpu).proc = ptr::null_mut() }
+                    cpu.set_proc(ptr::null_mut());
                 }
             }
         }

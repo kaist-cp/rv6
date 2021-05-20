@@ -119,7 +119,7 @@ impl KernelCtx<'_, '_> {
         // We're about to switch the destination of traps from
         // kerneltrap() to usertrap(), so turn off interrupts until
         // we're back in user space, where usertrap() is correct.
-        unsafe { intr_off() };
+        intr_off();
 
         // Send syscalls, interrupts, and exceptions to trampoline.S.
         unsafe {
