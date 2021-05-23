@@ -107,7 +107,7 @@ impl KernelCtx<'_, '_> {
         // Dropping an RcInode requires a transaction.
         let tx = self.kernel().fs().begin_tx(self);
         let tx = scopeguard::guard(tx, |t| t.end(&self));
-        let ptr = self.kernel().fs().itable.namei(path, &tx, self)?;
+        let ptr = self.kernel().fs().namei(path, &tx, self)?;
         let mut ip = ptr.lock(self);
 
         // Check ELF header

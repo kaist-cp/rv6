@@ -252,10 +252,14 @@ impl KernelCtx<'_, '_> {
     pub fn sys_link(&mut self) -> Result<usize, ()> {
         let mut new: [u8; MAXPATH] = [0; MAXPATH];
         let mut old: [u8; MAXPATH] = [0; MAXPATH];
-        let old = self.proc_mut().argstr(0, &mut old)?;
-        let new = self.proc_mut().argstr(1, &mut new)?;
+        let old = Path::new(self.proc_mut().argstr(0, &mut old)?);
+        let new = Path::new(self.proc_mut().argstr(1, &mut new)?);
         let tx = self.kernel().fs().begin_tx(self);
-        let res = self.kernel().fs().link(old, new, &tx, self).map(|_| 0);
+        let res = try {
+            let inode = self.kernel().fs().namei(old, &tx, self)?;
+            let _ = self.kernel().fs().link(inode, new, &tx, self)?;
+            0
+        };
         tx.end(self);
         res
     }
@@ -264,7 +268,7 @@ impl KernelCtx<'_, '_> {
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_unlink(&mut self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = self.proc_mut().argstr(0, &mut path)?;
+        let path = Path::new(self.proc_mut().argstr(0, &mut path)?);
         let tx = self.kernel().fs().begin_tx(self);
         let res = self.kernel().fs().unlink(path, &tx, self).map(|_| 0);
         tx.end(self);
@@ -275,8 +279,7 @@ impl KernelCtx<'_, '_> {
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_open(&mut self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = self.proc_mut().argstr(0, &mut path)?;
-        let path = Path::new(path);
+        let path = Path::new(self.proc_mut().argstr(0, &mut path)?);
         let omode = self.proc().argint(1)?;
         let omode = FcntlFlags::from_bits_truncate(omode);
         let tx = self.kernel().fs().begin_tx(self);
@@ -289,12 +292,12 @@ impl KernelCtx<'_, '_> {
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_mkdir(&mut self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = self.proc_mut().argstr(0, &mut path)?;
+        let path = Path::new(self.proc_mut().argstr(0, &mut path)?);
         let tx = self.kernel().fs().begin_tx(self);
         let res = self
             .kernel()
             .fs()
-            .create(Path::new(path), InodeType::Dir, &tx, self, |_| ())
+            .create(path, InodeType::Dir, &tx, self, |_| ())
             .map(|_| 0);
         tx.end(self);
         res
@@ -304,20 +307,14 @@ impl KernelCtx<'_, '_> {
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_mknod(&mut self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = self.proc_mut().argstr(0, &mut path)?;
+        let path = Path::new(self.proc_mut().argstr(0, &mut path)?);
         let major = self.proc().argint(1)? as u16;
         let minor = self.proc().argint(2)? as u16;
         let tx = self.kernel().fs().begin_tx(self);
         let res = self
             .kernel()
             .fs()
-            .create(
-                Path::new(path),
-                InodeType::Device { major, minor },
-                &tx,
-                self,
-                |_| (),
-            )
+            .create(path, InodeType::Device { major, minor }, &tx, self, |_| ())
             .map(|_| 0);
         tx.end(self);
         res
@@ -327,9 +324,13 @@ impl KernelCtx<'_, '_> {
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_chdir(&mut self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
-        let path = self.proc_mut().argstr(0, &mut path)?;
+        let path = Path::new(self.proc_mut().argstr(0, &mut path)?);
         let tx = self.kernel().fs().begin_tx(self);
-        let res = self.kernel().fs().chdir(path, &tx, self).map(|_| 0);
+        let res = try {
+            let inode = self.kernel().fs().namei(path, &tx, self)?;
+            let _ = self.kernel().fs().chdir(inode, &tx, self)?;
+            0
+        };
         tx.end(self);
         res
     }
@@ -339,7 +340,7 @@ impl KernelCtx<'_, '_> {
     pub fn sys_exec(&mut self) -> Result<usize, ()> {
         let mut path: [u8; MAXPATH] = [0; MAXPATH];
         let mut args = ArrayVec::<Page, MAXARG>::new();
-        let path = self.proc_mut().argstr(0, &mut path)?;
+        let path = Path::new(self.proc_mut().argstr(0, &mut path)?);
         let uargv = self.proc().argaddr(1)?;
         let allocator = allocator();
 
@@ -369,7 +370,7 @@ impl KernelCtx<'_, '_> {
         }
 
         let ret = if success {
-            self.exec(Path::new(path), &args)
+            self.exec(path, &args)
         } else {
             Err(())
         };

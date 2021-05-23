@@ -220,7 +220,7 @@ impl KernelBuilder {
 
         // First user process.
         this.procs
-            .user_proc_init(this.file_system.itable.root(), allocator);
+            .user_proc_init(this.file_system.root(), allocator);
     }
 
     /// Initializes the kernel for a hart.

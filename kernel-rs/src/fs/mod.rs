@@ -1,7 +1,6 @@
 use core::ops::Deref;
 
 use bitflags::bitflags;
-use cstr_core::CStr;
 
 use crate::{
     arena::{ArenaObject, ArrayArena, Rc},
@@ -115,20 +114,30 @@ where
     /// Called for each FS system call.
     fn begin_tx(&self, ctx: &KernelCtx<'_, '_>) -> Self::Tx<'_>;
 
+    /// Finds the root inode.
+    fn root(&self) -> RcInode<Self::InodeInner>;
+
+    /// Finds inode from the given path.
+    fn namei(
+        &self,
+        path: &Path,
+        tx: &Self::Tx<'_>,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Result<RcInode<Self::InodeInner>, ()>;
+
     /// Create another name(newname) for the file oldname.
     /// Returns Ok(()) on success, Err(()) on error.
     fn link(
         &self,
-        oldname: &CStr,
-        newname: &CStr,
+        inode: RcInode<Self::InodeInner>,
+        path: &Path,
         tx: &Self::Tx<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()>;
 
     /// Remove a file(filename).
     /// Returns Ok(()) on success, Err(()) on error.
-    fn unlink(&self, filename: &CStr, tx: &Self::Tx<'_>, ctx: &KernelCtx<'_, '_>)
-        -> Result<(), ()>;
+    fn unlink(&self, path: &Path, tx: &Self::Tx<'_>, ctx: &KernelCtx<'_, '_>) -> Result<(), ()>;
 
     /// Create an inode with given type.
     /// Returns Ok(created inode, result of given function f) on success, Err(()) on error.
@@ -147,7 +156,7 @@ where
     /// Returns Ok(file descriptor) on success, Err(()) on error.
     fn open(
         &self,
-        name: &Path,
+        path: &Path,
         omode: FcntlFlags,
         tx: &Self::Tx<'_>,
         ctx: &mut KernelCtx<'_, '_>,
@@ -157,7 +166,7 @@ where
     /// Returns Ok(()) on success, Err(()) on error.
     fn chdir(
         &self,
-        dirname: &CStr,
+        inode: RcInode<Self::InodeInner>,
         tx: &Self::Tx<'_>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<(), ()>;

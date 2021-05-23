@@ -14,7 +14,6 @@
 use core::cell::UnsafeCell;
 use core::{cmp, mem};
 
-use cstr_core::CStr;
 use spin::Once;
 
 use super::{FcntlFlags, FileName, FileSystem, InodeGuard, InodeType, Itable, Path, RcInode, Stat};
@@ -45,8 +44,8 @@ pub struct Ufs {
     /// Initializing superblock should run only once because forkret() calls FileSystem::init().
     /// There should be one superblock per disk device, but we run with only one device.
     superblock: Once<Superblock>,
-    pub log: Log,
-    pub itable: Itable<InodeInner>,
+    log: Log,
+    itable: Itable<InodeInner>,
 }
 
 impl FileSystem for Ufs {
@@ -77,15 +76,27 @@ impl FileSystem for Ufs {
         UfsTx { fs: self }
     }
 
+    fn root(&self) -> RcInode<Self::InodeInner> {
+        self.itable.root()
+    }
+
+    fn namei(
+        &self,
+        path: &Path,
+        tx: &Self::Tx<'_>,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Result<RcInode<Self::InodeInner>, ()> {
+        self.itable.namei(path, tx, ctx)
+    }
+
     fn link(
         &self,
-        oldname: &CStr,
-        newname: &CStr,
+        inode: RcInode<Self::InodeInner>,
+        path: &Path,
         tx: &Self::Tx<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
-        let ptr = self.itable.namei(Path::new(oldname), tx, ctx)?;
-        let mut ip = ptr.lock(ctx);
+        let mut ip = inode.lock(ctx);
         if ip.deref_inner().typ == InodeType::Dir {
             return Err(());
         }
@@ -93,32 +104,22 @@ impl FileSystem for Ufs {
         ip.update(&tx, ctx);
         drop(ip);
 
-        if let Ok((ptr2, name)) = ctx
-            .kernel()
-            .fs()
-            .itable
-            .nameiparent(Path::new(newname), tx, ctx)
-        {
+        if let Ok((ptr2, name)) = ctx.kernel().fs().itable.nameiparent(path, tx, ctx) {
             let mut dp = ptr2.lock(ctx);
-            if dp.dev != ptr.dev || dp.dirlink(name, ptr.inum, &tx, ctx).is_err() {
+            if dp.dev != inode.dev || dp.dirlink(name, inode.inum, &tx, ctx).is_err() {
             } else {
                 return Ok(());
             }
         }
 
-        let mut ip = ptr.lock(ctx);
+        let mut ip = inode.lock(ctx);
         ip.deref_inner_mut().nlink -= 1;
         ip.update(&tx, ctx);
         Err(())
     }
 
-    fn unlink(
-        &self,
-        filename: &CStr,
-        tx: &Self::Tx<'_>,
-        ctx: &KernelCtx<'_, '_>,
-    ) -> Result<(), ()> {
-        let (ptr, name) = self.itable.nameiparent(Path::new(filename), tx, ctx)?;
+    fn unlink(&self, path: &Path, tx: &Self::Tx<'_>, ctx: &KernelCtx<'_, '_>) -> Result<(), ()> {
+        let (ptr, name) = self.itable.nameiparent(path, tx, ctx)?;
         let mut dp = ptr.lock(ctx);
 
         // Cannot unlink "." or "..".
@@ -200,15 +201,15 @@ impl FileSystem for Ufs {
 
     fn open(
         &self,
-        name: &Path,
+        path: &Path,
         omode: FcntlFlags,
         tx: &Self::Tx<'_>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<usize, ()> {
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
-            self.create(name, InodeType::File, tx, ctx, |ip| ip.deref_inner().typ)?
+            self.create(path, InodeType::File, tx, ctx, |ip| ip.deref_inner().typ)?
         } else {
-            let ptr = self.itable.namei(name, tx, ctx)?;
+            let ptr = self.itable.namei(path, tx, ctx)?;
             let ip = ptr.lock(ctx);
             let typ = ip.deref_inner().typ;
 
@@ -253,19 +254,16 @@ impl FileSystem for Ufs {
 
     fn chdir(
         &self,
-        dirname: &CStr,
-        tx: &Self::Tx<'_>,
+        inode: RcInode<InodeInner>,
+        _tx: &Self::Tx<'_>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
         // TODO(https://github.com/kaist-cp/rv6/issues/290):
         // Dropping an RcInode requires a transaction.
-        let ptr = self.itable.namei(Path::new(dirname), tx, ctx)?;
-        let ip = ptr.lock(ctx);
-        if ip.deref_inner().typ != InodeType::Dir {
+        if inode.lock(ctx).deref_inner().typ != InodeType::Dir {
             return Err(());
         }
-        drop(ip);
-        drop(mem::replace(ctx.proc_mut().cwd_mut(), ptr));
+        drop(mem::replace(ctx.proc_mut().cwd_mut(), inode));
         Ok(())
     }
 }

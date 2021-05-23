@@ -1,8 +1,6 @@
 // TODO: remove it
 #![allow(unused_variables)]
 
-use cstr_core::CStr;
-
 use super::{FcntlFlags, FileSystem, Inode, InodeGuard, InodeType, Path, RcInode};
 use crate::{
     arena::{Arena, ArenaObject},
@@ -39,22 +37,30 @@ impl FileSystem for Lfs {
         todo!()
     }
 
+    fn root(&self) -> RcInode<Self::InodeInner> {
+        todo!()
+    }
+
+    fn namei(
+        &self,
+        path: &Path,
+        tx: &Self::Tx<'_>,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Result<RcInode<Self::InodeInner>, ()> {
+        todo!()
+    }
+
     fn link(
         &self,
-        oldname: &CStr,
-        newname: &CStr,
+        inode: RcInode<Self::InodeInner>,
+        path: &Path,
         tx: &Self::Tx<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
         todo!()
     }
 
-    fn unlink(
-        &self,
-        filename: &CStr,
-        tx: &Self::Tx<'_>,
-        ctx: &KernelCtx<'_, '_>,
-    ) -> Result<(), ()> {
+    fn unlink(&self, path: &Path, tx: &Self::Tx<'_>, ctx: &KernelCtx<'_, '_>) -> Result<(), ()> {
         todo!()
     }
 
@@ -74,7 +80,7 @@ impl FileSystem for Lfs {
 
     fn open(
         &self,
-        name: &Path,
+        path: &Path,
         omode: FcntlFlags,
         tx: &Self::Tx<'_>,
         ctx: &mut KernelCtx<'_, '_>,
@@ -84,7 +90,7 @@ impl FileSystem for Lfs {
 
     fn chdir(
         &self,
-        dirname: &CStr,
+        inode: RcInode<Self::InodeInner>,
         tx: &Self::Tx<'_>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<(), ()> {

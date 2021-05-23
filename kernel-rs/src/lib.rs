@@ -43,14 +43,15 @@
 #![feature(const_fn)]
 #![feature(const_fn_fn_ptr_basics)]
 #![feature(const_fn_union)]
+#![feature(const_mut_refs)]
 #![feature(const_precise_live_drops)]
 #![feature(const_trait_impl)]
 #![feature(generic_associated_types)]
 #![feature(maybe_uninit_extra)]
 #![feature(maybe_uninit_ref)]
-#![feature(variant_count)]
-#![feature(const_mut_refs)]
 #![feature(raw_ref_op)]
+#![feature(try_blocks)]
+#![feature(variant_count)]
 
 mod arch;
 mod arena;
