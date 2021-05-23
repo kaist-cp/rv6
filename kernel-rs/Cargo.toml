@@ -3,6 +3,7 @@ name = "rv6-kernel"
 version = "0.1.0"
 authors = ["Jeehoon Kang <jeehoon.kang@kaist.ac.kr>"]
 edition = "2018"
+autobins = false
 
 [lib]
 crate-type = ["staticlib"]
