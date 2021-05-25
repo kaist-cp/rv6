@@ -5,12 +5,14 @@
 /// qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 use core::array::IntoIter;
 use core::mem;
+use core::pin::Pin;
 use core::ptr;
 use core::sync::atomic::{fence, Ordering};
 
 use arrayvec::ArrayVec;
 use bitmaps::Bitmap;
 use const_zero::const_zero;
+use pin_project::pin_project;
 
 use super::{
     MmioRegs, VirtIOFeatures, VirtIOStatus, VirtqAvail, VirtqDesc, VirtqDescFlags, VirtqUsed, NUM,
@@ -29,29 +31,35 @@ use crate::{
 // It needs repr(C) because it is read by device.
 // https://github.com/kaist-cp/rv6/issues/52
 #[repr(C, align(4096))]
+#[pin_project]
 pub struct VirtioDisk {
     /// The first region is a set (not a ring) of DMA descriptors, with which
     /// the driver tells the device where to read and write individual disk
     /// operations. There are NUM descriptors. Most commands consist of a
     /// "chain" (a linked list) of a couple of these descriptors.
+    #[pin]
     desc: [VirtqDesc; NUM],
 
     /// The next is a ring in which the driver writes descriptor numbers that
     /// the driver would like the device to process. It only includes the head
     /// descriptor of each chain. The ring has NUM elements.
+    #[pin]
     avail: VirtqAvail,
 
     /// Finally a ring in which the device writes descriptor numbers that the
     /// device has finished processing (just the head of each chain). There are
     /// NUM used ring entries.
+    #[pin]
     used: VirtqUsed,
 
+    #[pin]
     info: DiskInfo,
 }
 
 // It must be page-aligned because a virtqueue (desc + avail + used) occupies
 // two or more physically-contiguous pages.
 #[repr(align(4096))]
+#[pin_project]
 struct DiskInfo {
     /// is a descriptor allocated?
     allocated: Bitmap<NUM>,
@@ -63,6 +71,7 @@ struct DiskInfo {
     /// interrupt arrives. Indexed by first descriptor index of chain.
     inflight: [InflightInfo; NUM],
 
+    #[pin]
     /// Disk command headers. One-for-one with descriptors, for convenience.
     ops: [VirtIOBlockOutHeader; NUM],
 }
@@ -184,7 +193,7 @@ impl Sleepablelock<VirtioDisk> {
 }
 
 impl VirtioDisk {
-    pub fn init(&self) {
+    pub fn init(self: Pin<&Self>) {
         let mut status: VirtIOStatus = VirtIOStatus::empty();
 
         // MMIO registers are located below KERNBASE, while kernel text and data
