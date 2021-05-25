@@ -21,48 +21,20 @@
 //!   ...
 //! Log appends are synchronous.
 use core::mem;
-use core::ops::{Deref, DerefMut};
 
 use arrayvec::ArrayVec;
 use itertools::*;
-use spin::Once;
 use static_assertions::const_assert;
 
 use crate::{
     bio::{Buf, BufData, BufUnlocked},
-    lock::{Sleepablelock, SleepablelockGuard},
+    hal::hal,
+    lock::Sleepablelock,
     param::{BSIZE, LOGSIZE, MAXOPBLOCKS},
     proc::KernelCtx,
-    virtio::VirtioDisk,
 };
 
 pub struct Log {
-    /// Initializing inner should run only once because forkret() calls FileSystem::init().
-    inner: Once<Sleepablelock<LogInner>>,
-    pub disk: Sleepablelock<VirtioDisk>,
-}
-
-/// A `LogGuard` is a `Log` whose `inner` can be accessed safely.
-/// Its `inner`, whose type is `LogInnerGuard<'a>`, provides a reference to a `LogInner`.
-pub struct LogGuard<'a> {
-    inner: LogInnerGuard<'a>,
-    disk: &'a Sleepablelock<VirtioDisk>,
-}
-
-/// A `LogInnerGuard` provides a reference to a `LogInner`.
-///
-/// * A `Guard` has a guard of a `Sleepablelock` holding a `LogInner`.
-/// * A `Ref` has a mutable reference to a `LogInner`.
-///
-/// We need both variants. To access a `LogInner` by acquiring a lock, we make a `Guard`.
-/// In `Log::init` and `Log::end_op`, we need to access a `LogInner` without acquiring a lock. (To
-/// check their safety, see their implementations.) For this purpose, we make a `Ref`.
-pub enum LogInnerGuard<'a> {
-    Guard(SleepablelockGuard<'a, LogInner>),
-    Ref(&'a mut LogInner),
-}
-
-pub struct LogInner {
     dev: u32,
     start: i32,
     size: i32,
@@ -84,15 +56,8 @@ struct LogHeader {
 }
 
 impl Log {
-    pub const fn zero() -> Self {
-        Self {
-            inner: Once::new(),
-            disk: Sleepablelock::new("DISK", VirtioDisk::zero()),
-        }
-    }
-
-    pub fn init(&self, dev: u32, start: i32, size: i32, ctx: &KernelCtx<'_, '_>) {
-        let mut inner = LogInner {
+    pub fn new(dev: u32, start: i32, size: i32, ctx: &KernelCtx<'_, '_>) -> Self {
+        let mut log = Self {
             dev,
             start,
             size,
@@ -100,86 +65,18 @@ impl Log {
             committing: false,
             bufs: ArrayVec::new(),
         };
-        LogGuard::new(LogInnerGuard::Ref(&mut inner), &self.disk).recover_from_log(ctx);
-        let _ = self.inner.call_once(|| Sleepablelock::new("LOG", inner));
+        log.recover_from_log(ctx);
+        log
     }
 
-    fn inner(&self) -> &Sleepablelock<LogInner> {
-        self.inner.get().expect("LogInner")
-    }
-
-    pub fn lock(&self) -> LogGuard<'_> {
-        LogGuard::new(LogInnerGuard::Guard(self.inner().lock()), &self.disk)
-    }
-
-    /// # Safety
-    ///
-    /// Other threads must not read nor write this log while the returned `LogGuard` is alive.
-    unsafe fn lock_unchecked(&self) -> LogGuard<'_> {
-        LogGuard::new(
-            LogInnerGuard::Ref(unsafe { &mut *self.inner().get_mut_raw() }),
-            &self.disk,
-        )
-    }
-
-    /// Called at the start of each FS system call.
-    pub fn begin_op(&self, ctx: &KernelCtx<'_, '_>) {
-        let mut guard = self.inner().lock();
-        loop {
-            if guard.committing ||
-            // This op might exhaust log space; wait for commit.
-            guard.bufs.len() as i32 + (guard.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
-            {
-                guard.sleep(ctx);
-            } else {
-                guard.outstanding += 1;
-                break;
-            }
-        }
-    }
-
-    /// Called at the end of each FS system call.
-    /// Commits if this was the last outstanding operation.
-    pub fn end_op(&self, ctx: &KernelCtx<'_, '_>) {
-        let mut guard = self.inner().lock();
-        guard.outstanding -= 1;
-        assert!(!guard.committing, "guard.committing");
-
-        if guard.outstanding == 0 {
-            // Since outstanding is 0, no ongoing transaction exists.
-            // The lock is still held, so new transactions cannot start.
-            guard.committing = true;
-            // Committing is true, so new transactions cannot start even after releasing the lock.
-
-            // Call commit w/o holding locks, since not allowed to sleep with locks.
-            guard.reacquire_after(||
-                // SAFETY: there is no another transaction, so `inner` cannot be read or written.
-                unsafe { self.lock_unchecked() }.commit(ctx));
-
-            guard.committing = false;
-        }
-
-        // begin_op() may be waiting for LOG space, and decrementing log.outstanding has decreased
-        // the amount of reserved space.
-        guard.wakeup(ctx.kernel());
-    }
-}
-
-impl<'a> LogGuard<'a> {
-    fn new(inner: LogInnerGuard<'a>, disk: &'a Sleepablelock<VirtioDisk>) -> Self {
-        Self { inner, disk }
-    }
-}
-
-impl LogGuard<'_> {
     /// Copy committed blocks from log to their home location.
     fn install_trans(&mut self, ctx: &KernelCtx<'_, '_>) {
-        let dev = self.inner.dev;
-        let start = self.inner.start;
+        let dev = self.dev;
+        let start = self.start;
 
-        for (tail, dbuf) in self.inner.bufs.drain(..).enumerate() {
+        for (tail, dbuf) in self.bufs.drain(..).enumerate() {
             // Read log block.
-            let lbuf = self.disk.read(dev, (start + tail as i32 + 1) as u32, ctx);
+            let lbuf = hal().disk.read(dev, (start + tail as i32 + 1) as u32, ctx);
 
             // Read dst.
             let mut dbuf = dbuf.lock();
@@ -190,13 +87,13 @@ impl LogGuard<'_> {
                 .copy_from_slice(&lbuf.deref_inner().data[..]);
 
             // Write dst to disk.
-            self.disk.write(&mut dbuf, ctx);
+            hal().disk.write(&mut dbuf, ctx);
         }
     }
 
     /// Read the log header from disk into the in-memory log header.
     fn read_head(&mut self, ctx: &KernelCtx<'_, '_>) {
-        let mut buf = self.disk.read(self.dev, self.start as u32, ctx);
+        let mut buf = hal().disk.read(self.dev, self.start as u32, ctx);
 
         const_assert!(mem::size_of::<LogHeader>() <= BSIZE);
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<LogHeader>() == 0);
@@ -208,7 +105,7 @@ impl LogGuard<'_> {
         let lh = unsafe { &mut *(buf.deref_inner_mut().data.as_mut_ptr() as *mut LogHeader) };
 
         for b in &lh.block[0..lh.n as usize] {
-            let buf = self.disk.read(self.dev, *b, ctx).unlock();
+            let buf = hal().disk.read(self.dev, *b, ctx).unlock();
             self.bufs.push(buf);
         }
     }
@@ -217,7 +114,7 @@ impl LogGuard<'_> {
     /// This is the true point at which the
     /// current transaction commits.
     fn write_head(&mut self, ctx: &KernelCtx<'_, '_>) {
-        let mut buf = self.disk.read(self.dev, self.start as u32, ctx);
+        let mut buf = hal().disk.read(self.dev, self.start as u32, ctx);
 
         const_assert!(mem::size_of::<LogHeader>() <= BSIZE);
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<LogHeader>() == 0);
@@ -232,7 +129,7 @@ impl LogGuard<'_> {
         for (db, b) in izip!(&mut lh.block, &self.bufs) {
             *db = b.blockno;
         }
-        self.disk.write(&mut buf, ctx)
+        hal().disk.write(&mut buf, ctx)
     }
 
     fn recover_from_log(&mut self, ctx: &KernelCtx<'_, '_>) {
@@ -249,19 +146,19 @@ impl LogGuard<'_> {
     fn write_log(&mut self, ctx: &KernelCtx<'_, '_>) {
         for (tail, from) in self.bufs.iter().enumerate() {
             // Log block.
-            let mut to = self
+            let mut to = hal()
                 .disk
                 .read(self.dev, (self.start + tail as i32 + 1) as u32, ctx);
 
             // Cache block.
-            let from = self.disk.read(self.dev, from.blockno, ctx);
+            let from = hal().disk.read(self.dev, from.blockno, ctx);
 
             to.deref_inner_mut()
                 .data
                 .copy_from_slice(&from.deref_inner().data[..]);
 
             // Write the log.
-            self.disk.write(&mut to, ctx);
+            hal().disk.write(&mut to, ctx);
         }
     }
 
@@ -303,36 +200,46 @@ impl LogGuard<'_> {
     }
 }
 
-impl<'a> Deref for LogGuard<'a> {
-    type Target = LogInnerGuard<'a>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<'a> DerefMut for LogGuard<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-
-impl Deref for LogInnerGuard<'_> {
-    type Target = LogInner;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            LogInnerGuard::Guard(guard) => &guard,
-            LogInnerGuard::Ref(r) => &r,
+impl Sleepablelock<Log> {
+    /// Called at the start of each FS system call.
+    pub fn begin_op(&self, ctx: &KernelCtx<'_, '_>) {
+        let mut guard = self.lock();
+        loop {
+            if guard.committing ||
+            // This op might exhaust log space; wait for commit.
+            guard.bufs.len() as i32 + (guard.outstanding + 1) * MAXOPBLOCKS as i32 > LOGSIZE as i32
+            {
+                guard.sleep(ctx);
+            } else {
+                guard.outstanding += 1;
+                break;
+            }
         }
     }
-}
 
-impl DerefMut for LogInnerGuard<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match self {
-            LogInnerGuard::Guard(ref mut guard) => guard,
-            LogInnerGuard::Ref(ref mut r) => r,
+    /// Called at the end of each FS system call.
+    /// Commits if this was the last outstanding operation.
+    pub fn end_op(&self, ctx: &KernelCtx<'_, '_>) {
+        let mut guard = self.lock();
+        guard.outstanding -= 1;
+        assert!(!guard.committing, "guard.committing");
+
+        if guard.outstanding == 0 {
+            // Since outstanding is 0, no ongoing transaction exists.
+            // The lock is still held, so new transactions cannot start.
+            guard.committing = true;
+            // Committing is true, so new transactions cannot start even after releasing the lock.
+
+            // Call commit w/o holding locks, since not allowed to sleep with locks.
+            guard.reacquire_after(||
+                // SAFETY: there is no another transaction, so `inner` cannot be read or written.
+                unsafe { &mut *self.get_mut_raw() }.commit(ctx));
+
+            guard.committing = false;
         }
+
+        // begin_op() may be waiting for LOG space, and decrementing log.outstanding has decreased
+        // the amount of reserved space.
+        guard.wakeup(ctx.kernel());
     }
 }

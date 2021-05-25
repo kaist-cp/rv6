@@ -4,7 +4,6 @@
 use super::{FcntlFlags, FileSystem, Inode, InodeGuard, InodeType, Path, RcInode};
 use crate::{
     arena::{Arena, ArenaObject},
-    kernel::KernelRef,
     proc::KernelCtx,
 };
 
@@ -21,15 +20,7 @@ impl FileSystem for Lfs {
     type InodeInner = InodeInner;
     type Tx<'s> = &'s ();
 
-    fn init_disk(&mut self) {
-        todo!()
-    }
-
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
-        todo!()
-    }
-
-    fn intr(&self, kernel: KernelRef<'_, '_>) {
         todo!()
     }
 
