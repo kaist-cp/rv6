@@ -215,9 +215,6 @@ impl KernelBuilder {
         // Buffer cache.
         this.bcache.get_pin_mut().init();
 
-        // Emulated hard disk.
-        this.file_system.init_disk();
-
         // First user process.
         this.procs
             .user_proc_init(this.file_system.root(), allocator);

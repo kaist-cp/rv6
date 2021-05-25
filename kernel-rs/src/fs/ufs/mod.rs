@@ -16,11 +16,13 @@ use core::{cmp, mem};
 
 use spin::Once;
 
+use self::log::Log;
 use super::{FcntlFlags, FileName, FileSystem, InodeGuard, InodeType, Itable, Path, RcInode, Stat};
 use crate::{
     bio::Buf,
     file::{FileType, InodeFileType},
-    kernel::KernelRef,
+    hal::hal,
+    lock::Sleepablelock,
     param::BSIZE,
     proc::KernelCtx,
 };
@@ -30,7 +32,6 @@ mod log;
 mod superblock;
 
 pub use inode::{Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
-pub use log::{Log, LogGuard};
 pub use superblock::{Superblock, BPB, IPB};
 
 /// root i-number
@@ -44,7 +45,7 @@ pub struct Ufs {
     /// Initializing superblock should run only once because forkret() calls FileSystem::init().
     /// There should be one superblock per disk device, but we run with only one device.
     superblock: Once<Superblock>,
-    log: Log,
+    log: Once<Sleepablelock<Log>>,
     itable: Itable<InodeInner>,
 }
 
@@ -53,26 +54,22 @@ impl FileSystem for Ufs {
     type InodeInner = InodeInner;
     type Tx<'s> = UfsTx<'s>;
 
-    fn init_disk(&mut self) {
-        self.log.disk.get_mut().init();
-    }
-
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
         if !self.superblock.is_completed() {
             let superblock = self
                 .superblock
-                .call_once(|| Superblock::new(&self.log.disk.read(dev, 1, ctx)));
-            self.log
-                .init(dev, superblock.logstart as i32, superblock.nlog as i32, ctx);
+                .call_once(|| Superblock::new(&hal().disk.read(dev, 1, ctx)));
+            let _ = self.log.call_once(|| {
+                Sleepablelock::new(
+                    "LOG",
+                    Log::new(dev, superblock.logstart as i32, superblock.nlog as i32, ctx),
+                )
+            });
         }
     }
 
-    fn intr(&self, kernel: KernelRef<'_, '_>) {
-        self.log.disk.lock().intr(kernel);
-    }
-
     fn begin_tx(&self, ctx: &KernelCtx<'_, '_>) -> Self::Tx<'_> {
-        self.log.begin_op(ctx);
+        self.log().begin_op(ctx);
         UfsTx { fs: self }
     }
 
@@ -276,9 +273,13 @@ impl Ufs {
     pub const fn zero() -> Self {
         Self {
             superblock: Once::new(),
-            log: Log::zero(),
+            log: Once::new(),
             itable: Itable::new_itable(),
         }
+    }
+
+    fn log(&self) -> &Sleepablelock<Log> {
+        self.log.get().expect("log")
     }
 
     fn superblock(&self) -> &Superblock {
@@ -304,7 +305,7 @@ impl UfsTx<'_> {
     ///   modify bp->data[]
     ///   write(bp)
     fn write(&self, b: Buf) {
-        self.fs.log.lock().write(b);
+        self.fs.log().lock().write(b);
     }
 
     /// Zero a block.
@@ -321,11 +322,7 @@ impl UfsTx<'_> {
     /// Allocate a zeroed disk block.
     fn balloc(&self, dev: u32, ctx: &KernelCtx<'_, '_>) -> u32 {
         for b in num_iter::range_step(0, self.fs.superblock().size, BPB as u32) {
-            let mut bp = self
-                .fs
-                .log
-                .disk
-                .read(dev, self.fs.superblock().bblock(b), ctx);
+            let mut bp = hal().disk.read(dev, self.fs.superblock().bblock(b), ctx);
             for bi in 0..cmp::min(BPB as u32, self.fs.superblock().size - b) {
                 let m = 1 << (bi % 8);
                 if bp.deref_inner_mut().data[(bi / 8) as usize] & m == 0 {
@@ -343,11 +340,7 @@ impl UfsTx<'_> {
 
     /// Free a disk block.
     fn bfree(&self, dev: u32, b: u32, ctx: &KernelCtx<'_, '_>) {
-        let mut bp = self
-            .fs
-            .log
-            .disk
-            .read(dev, self.fs.superblock().bblock(b), ctx);
+        let mut bp = hal().disk.read(dev, self.fs.superblock().bblock(b), ctx);
         let bi = b as usize % BPB;
         let m = 1u8 << (bi % 8);
         assert_ne!(
@@ -362,7 +355,7 @@ impl UfsTx<'_> {
     /// Called at the end of each FS system call.
     /// Commits if this was the last outstanding operation.
     pub fn end(self, ctx: &KernelCtx<'_, '_>) {
-        self.fs.log.end_op(ctx);
+        self.fs.log().end_op(ctx);
         mem::forget(self);
     }
 }

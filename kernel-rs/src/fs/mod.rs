@@ -4,7 +4,6 @@ use bitflags::bitflags;
 
 use crate::{
     arena::{ArenaObject, ArrayArena, Rc},
-    kernel::KernelRef,
     lock::{Sleeplock, Spinlock},
     param::NINODE,
     proc::KernelCtx,
@@ -170,8 +169,4 @@ where
         tx: &Self::Tx<'_>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<(), ()>;
-
-    fn init_disk(&mut self);
-
-    fn intr(&self, kernel: KernelRef<'_, '_>);
 }

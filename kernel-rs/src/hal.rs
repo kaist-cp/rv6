@@ -7,7 +7,8 @@ use crate::{
     console::{Console, Printer},
     cpu::Cpus,
     kalloc::Kmem,
-    lock::Spinlock,
+    lock::{Sleepablelock, Spinlock},
+    virtio::VirtioDisk,
 };
 
 static mut HAL: Hal = Hal::new();
@@ -50,6 +51,8 @@ pub struct Hal {
     pub kmem: Spinlock<Kmem>,
 
     pub cpus: Cpus,
+
+    pub disk: Sleepablelock<VirtioDisk>,
 }
 
 impl Hal {
@@ -59,6 +62,7 @@ impl Hal {
             printer: Printer::new(),
             kmem: Spinlock::new("KMEM", unsafe { Kmem::new() }),
             cpus: Cpus::new(),
+            disk: Sleepablelock::new("DISK", VirtioDisk::zero()),
         }
     }
 
@@ -75,5 +79,7 @@ impl Hal {
 
         // Physical page allocator.
         unsafe { this.kmem.as_mut().get_pin_mut().init() };
+
+        this.disk.get_mut().init();
     }
 }
