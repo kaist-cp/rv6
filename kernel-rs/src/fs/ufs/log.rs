@@ -42,14 +42,14 @@ pub struct Log {
     pub disk: Sleepablelock<VirtioDisk>,
 }
 
-/// A `LogLocked` is a `Log` whose `inner` can be accessed safely.
-/// Its `inner`, whose type is `LogLockedInner<'a>`, provides a reference to a `LogInner`.
-pub struct LogLocked<'a> {
-    inner: LogLockedInner<'a>,
+/// A `LogGuard` is a `Log` whose `inner` can be accessed safely.
+/// Its `inner`, whose type is `LogInnerGuard<'a>`, provides a reference to a `LogInner`.
+pub struct LogGuard<'a> {
+    inner: LogInnerGuard<'a>,
     disk: &'a Sleepablelock<VirtioDisk>,
 }
 
-/// A `LogLockedInner` provides a reference to a `LogInner`.
+/// A `LogInnerGuard` provides a reference to a `LogInner`.
 ///
 /// * A `Guard` has a guard of a `Sleepablelock` holding a `LogInner`.
 /// * A `Ref` has a mutable reference to a `LogInner`.
@@ -57,7 +57,7 @@ pub struct LogLocked<'a> {
 /// We need both variants. To access a `LogInner` by acquiring a lock, we make a `Guard`.
 /// In `Log::init` and `Log::end_op`, we need to access a `LogInner` without acquiring a lock. (To
 /// check their safety, see their implementations.) For this purpose, we make a `Ref`.
-pub enum LogLockedInner<'a> {
+pub enum LogInnerGuard<'a> {
     Guard(SleepablelockGuard<'a, LogInner>),
     Ref(&'a mut LogInner),
 }
@@ -100,7 +100,7 @@ impl Log {
             committing: false,
             bufs: ArrayVec::new(),
         };
-        LogLocked::new(LogLockedInner::Ref(&mut inner), &self.disk).recover_from_log(ctx);
+        LogGuard::new(LogInnerGuard::Ref(&mut inner), &self.disk).recover_from_log(ctx);
         let _ = self.inner.call_once(|| Sleepablelock::new("LOG", inner));
     }
 
@@ -108,16 +108,16 @@ impl Log {
         self.inner.get().expect("LogInner")
     }
 
-    pub fn lock(&self) -> LogLocked<'_> {
-        LogLocked::new(LogLockedInner::Guard(self.inner().lock()), &self.disk)
+    pub fn lock(&self) -> LogGuard<'_> {
+        LogGuard::new(LogInnerGuard::Guard(self.inner().lock()), &self.disk)
     }
 
     /// # Safety
     ///
-    /// Other threads must not read nor write this log while the returned `LogLocked` is alive.
-    unsafe fn lock_unchecked(&self) -> LogLocked<'_> {
-        LogLocked::new(
-            LogLockedInner::Ref(unsafe { &mut *self.inner().get_mut_raw() }),
+    /// Other threads must not read nor write this log while the returned `LogGuard` is alive.
+    unsafe fn lock_unchecked(&self) -> LogGuard<'_> {
+        LogGuard::new(
+            LogInnerGuard::Ref(unsafe { &mut *self.inner().get_mut_raw() }),
             &self.disk,
         )
     }
@@ -165,13 +165,13 @@ impl Log {
     }
 }
 
-impl<'a> LogLocked<'a> {
-    fn new(inner: LogLockedInner<'a>, disk: &'a Sleepablelock<VirtioDisk>) -> Self {
+impl<'a> LogGuard<'a> {
+    fn new(inner: LogInnerGuard<'a>, disk: &'a Sleepablelock<VirtioDisk>) -> Self {
         Self { inner, disk }
     }
 }
 
-impl LogLocked<'_> {
+impl LogGuard<'_> {
     /// Copy committed blocks from log to their home location.
     fn install_trans(&mut self, ctx: &KernelCtx<'_, '_>) {
         let dev = self.inner.dev;
@@ -303,36 +303,36 @@ impl LogLocked<'_> {
     }
 }
 
-impl<'a> Deref for LogLocked<'a> {
-    type Target = LogLockedInner<'a>;
+impl<'a> Deref for LogGuard<'a> {
+    type Target = LogInnerGuard<'a>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-impl<'a> DerefMut for LogLocked<'a> {
+impl<'a> DerefMut for LogGuard<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl Deref for LogLockedInner<'_> {
+impl Deref for LogInnerGuard<'_> {
     type Target = LogInner;
 
     fn deref(&self) -> &Self::Target {
         match self {
-            LogLockedInner::Guard(guard) => &guard,
-            LogLockedInner::Ref(r) => &r,
+            LogInnerGuard::Guard(guard) => &guard,
+            LogInnerGuard::Ref(r) => &r,
         }
     }
 }
 
-impl DerefMut for LogLockedInner<'_> {
+impl DerefMut for LogInnerGuard<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
-            LogLockedInner::Guard(ref mut guard) => guard,
-            LogLockedInner::Ref(ref mut r) => r,
+            LogInnerGuard::Guard(ref mut guard) => guard,
+            LogInnerGuard::Ref(ref mut r) => r,
         }
     }
 }

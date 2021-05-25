@@ -30,7 +30,7 @@ mod log;
 mod superblock;
 
 pub use inode::{Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
-pub use log::{Log, LogLocked};
+pub use log::{Log, LogGuard};
 pub use superblock::{Superblock, BPB, IPB};
 
 /// root i-number
