@@ -9,6 +9,7 @@ pub mod intrusive_list;
 pub mod list;
 pub mod pinned_array;
 pub mod rc_cell;
+pub mod shared_rc_cell;
 
 pub fn spin_loop() -> ! {
     loop {

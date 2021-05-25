@@ -1,17 +1,20 @@
 //! List based arena.
 use core::pin::Pin;
+use core::ptr::NonNull;
 use core::{mem, ops::Deref};
 
 use array_macro::array;
 use pin_project::pin_project;
 
-use super::{Arena, ArenaGuard, ArenaObject, ArenaRef, Entry, EntryRef, Handle, Rc};
+use super::{Arena, ArenaObject, ArenaRef, Rc};
+use crate::util::shared_rc_cell::BrandedRcCell;
 use crate::{
     lock::{Spinlock, SpinlockGuard},
     util::pinned_array::IterPinMut,
     util::{
         branded::Branded,
         intrusive_list::{Iter, List, ListEntry, ListNode},
+        shared_rc_cell::{BrandedRef, RcCell, SharedGuard},
     },
 };
 
@@ -22,7 +25,7 @@ unsafe impl<T: Send, const CAPACITY: usize> Sync for MruArena<T, CAPACITY> {}
 pub struct MruEntry<T> {
     #[pin]
     list_entry: ListEntry,
-    data: Entry<T>,
+    data: RcCell<T>,
 }
 
 /// A homogeneous memory allocator equipped with reference counts.
@@ -49,14 +52,14 @@ impl<T> MruEntry<T> {
     pub const fn new(data: T) -> Self {
         Self {
             list_entry: unsafe { ListEntry::new() },
-            data: Entry::new(data),
+            data: RcCell::new(data),
         }
     }
 }
 
 impl<'id, T, const CAPACITY: usize> ArenaRef<'id, &MruArena<T, CAPACITY>> {
-    fn lock(&self) -> ArenaGuard<'id, '_> {
-        ArenaGuard(self.0.brand(self.lock.lock()))
+    fn lock(&self) -> SharedGuard<'id, '_> {
+        unsafe { SharedGuard::new_unchecked(self.0.brand(self.lock.lock())) }
     }
 
     /// # Safety
@@ -70,21 +73,21 @@ impl<'id, T, const CAPACITY: usize> ArenaRef<'id, &MruArena<T, CAPACITY>> {
 #[repr(transparent)]
 struct EntryIter<'id, 's, T>(Branded<'id, Iter<'s, MruEntry<T>>>);
 
-impl<'id, 's, T: 's> Iterator for EntryIter<'id, 's, T> {
-    type Item = EntryRef<'id, 's, T>;
+impl<'id: 's, 's, T: 's> Iterator for EntryIter<'id, 's, T> {
+    type Item = &'s BrandedRcCell<'id, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.0
             .next()
-            .map(|inner| EntryRef(self.0.brand(&inner.data)))
+            .map(|inner| unsafe { &*(&inner.data as *const _ as *const _) })
     }
 }
 
-impl<'id, 's, T: 's> DoubleEndedIterator for EntryIter<'id, 's, T> {
+impl<'id: 's, 's, T: 's> DoubleEndedIterator for EntryIter<'id, 's, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.0
             .next_back()
-            .map(|inner| EntryRef(self.0.brand(&inner.data)))
+            .map(|inner| unsafe { &*(&inner.data as *const _ as *const _) })
     }
 }
 
@@ -142,25 +145,23 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
     ) -> Option<Rc<Self>> {
         ArenaRef::new(self, |arena: ArenaRef<'_, &MruArena<T, CAPACITY>>| {
             let mut guard = arena.lock();
-            // If empty is Some(v), v.rc is 0.
-            let mut empty: Option<Handle<T>> = None;
+            let mut empty = None;
             // SAFETY: `self.list` is not modified during iteration.
-            for entry in unsafe { arena.entries() } {
-                let rc = entry.get_mut_rc(&mut guard);
-                if c(&entry) {
-                    *rc += 1;
-                    return Some(Rc::new(self, entry.into_handle()));
+            for cell in unsafe { arena.entries() } {
+                if let Some(data) = cell.get_data(&mut guard) {
+                    if c(data) {
+                        return Some(Rc::new(self, cell.make_ref(&mut guard).into_ref()));
+                    }
                 }
+                let rc = cell.get_rc_mut(&mut guard);
                 if *rc == 0 {
-                    empty = Some(entry.into_handle());
+                    let _ = empty.get_or_insert(NonNull::from(cell));
                 }
             }
-            empty.map(|handle| {
-                // SAFETY: handle.rc is 0.
-                n(unsafe { &mut *handle.data_raw() });
-                let entry = EntryRef(arena.0.brand(&handle));
-                *entry.get_mut_rc(&mut guard) += 1;
-                Rc::new(self, handle)
+            empty.map(|cell| {
+                let cell = unsafe { cell.as_ref() };
+                n(unsafe { cell.get_data_mut_unchecked(&mut guard) });
+                Rc::new(self, cell.make_ref(&mut guard).into_ref())
             })
         })
     }
@@ -169,43 +170,41 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
         ArenaRef::new(self, |arena: ArenaRef<'_, &MruArena<T, CAPACITY>>| {
             let mut guard = arena.lock();
             // SAFETY: `self.list` is not modified during iteration.
-            for entry in unsafe { arena.entries() }.rev() {
-                let rc = entry.get_mut_rc(&mut guard);
-                if *rc == 0 {
-                    // SAFETY: entry.rc is 0.
-                    unsafe { *entry.data_raw() = f() };
-                    *rc += 1;
-                    return Some(Rc::new(self, entry.into_handle()));
+            for cell in unsafe { arena.entries() }.rev() {
+                if let Some(data) = cell.get_data_mut(&mut guard) {
+                    *data = f();
+                    return Some(Rc::new(self, cell.make_ref(&mut guard).into_ref()));
                 }
             }
             None
         })
     }
 
-    fn dup<'id>(self: ArenaRef<'id, &Self>, handle: &EntryRef<'id, '_, Self::Data>) {
+    fn dup<'id>(self: ArenaRef<'id, &Self>, handle: &BrandedRef<'id, Self::Data>) -> Rc<Self> {
         let mut guard = self.lock();
-        let rc = handle.get_mut_rc(&mut guard);
-        *rc += 1;
+        Rc::new(self.deref(), handle.clone(&mut guard).into_ref())
     }
 
-    fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: EntryRef<'id, '_, Self::Data>) {
+    fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: BrandedRef<'id, Self::Data>) {
         let mut guard = self.lock();
-        let rc = handle.get_mut_rc(&mut guard);
-        if *rc == 1 {
-            // SAFETY: handle.rc will become 0.
-            unsafe { (*handle.data_raw()).finalize::<Self>(&mut guard.0) };
+        let handle = match handle.into_mut(&mut guard) {
+            Ok(mut data) => {
+                data.get_data_mut().finalize::<Self>(guard.inner_mut());
 
-            // Move this entry to the back of the list.
-            let ptr = (handle.deref() as *const Entry<T> as usize - MruEntry::<T>::DATA_OFFSET)
-                as *mut MruEntry<T>;
-            // SAFETY: `handle` is an `Entry` inside an `MruEntry`.
-            let entry = unsafe { &*ptr };
-            self.list.push_back(entry);
-        }
+                let handle = data.into_ref(&mut guard);
+                // Move this entry to the back of the list.
+                let ptr = (handle.get_cell() as *const _ as usize - MruEntry::<T>::DATA_OFFSET)
+                    as *mut MruEntry<T>;
+                // SAFETY: `handle` is an `Entry` inside an `MruEntry`.
+                let entry = unsafe { &*ptr };
+                self.list.push_back(entry);
+                handle
+            }
+            Err(handle) => handle,
+        };
         // To prevent `find_or_alloc` and `alloc` from mutating `handle` while finalizing `handle`,
         // `rc` should be decreased after the finalization.
-        let rc = handle.get_mut_rc(&mut guard);
-        *rc -= 1;
+        handle.free(&mut guard);
     }
 
     unsafe fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
