@@ -52,6 +52,7 @@ pub struct Hal {
 
     pub cpus: Cpus,
 
+    #[pin]
     pub disk: Sleepablelock<VirtioDisk>,
 }
 
@@ -72,14 +73,14 @@ impl Hal {
     ///
     /// This method must be called only once.
     unsafe fn init(self: Pin<&mut Self>) {
-        let mut this = self.project();
+        let this = self.project();
 
         // Console.
         this.console.init();
 
         // Physical page allocator.
-        unsafe { this.kmem.as_mut().get_pin_mut().init() };
+        unsafe { this.kmem.get_pin_mut().init() };
 
-        this.disk.get_mut().init();
+        this.disk.get_pin_mut().as_ref().init();
     }
 }
