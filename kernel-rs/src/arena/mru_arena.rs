@@ -1,8 +1,8 @@
 //! List based arena.
 
-use core::convert::TryFrom;
 use core::mem;
 use core::pin::Pin;
+use core::ptr::NonNull;
 
 use array_macro::array;
 use pin_project::pin_project;
@@ -12,7 +12,7 @@ use crate::{
     lock::{Spinlock, SpinlockGuard},
     util::intrusive_list::{List, ListEntry, ListNode},
     util::pinned_array::IterPinMut,
-    util::rc_cell::{RcCell, RefMut},
+    util::{rc_cell::RcCell, shared_mut::SharedMut},
 };
 
 #[pin_project]
@@ -52,6 +52,11 @@ impl<T> MruEntry<T> {
             list_entry: unsafe { ListEntry::new() },
             data: RcCell::new(data),
         }
+    }
+
+    fn data(this: SharedMut<'_, Self>) -> SharedMut<'_, RcCell<T>> {
+        // SAFETY: the pointer is valid, and it creates a unique `SharedMut`.
+        unsafe { SharedMut::new_unchecked(&raw mut (*this.ptr().as_ptr()).data) }
     }
 }
 
@@ -93,6 +98,11 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
             this.list.push_front(&entry);
         }
     }
+
+    fn list(this: SharedMut<'_, Self>) -> SharedMut<'_, List<MruEntry<T>>> {
+        // SAFETY: the pointer is valid, and it creates a unique `SharedMut`.
+        unsafe { SharedMut::new_unchecked(&raw mut (*this.ptr().as_ptr()).list) }
+    }
 }
 
 impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
@@ -106,83 +116,79 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
         c: C,
         n: N,
     ) -> Option<Rc<Self>> {
-        ArenaRef::new(self, |arena| {
-            let mut guard = arena.pinned_lock_unchecked();
-            let this = guard.get_pin_mut().project();
+        ArenaRef::new(
+            self,
+            |arena: ArenaRef<'_, &Spinlock<MruArena<T, CAPACITY>>>| {
+                let mut guard = arena.pinned_lock_unchecked();
+                let this = guard.get_shared_mut();
 
-            let mut empty: Option<*mut RcCell<T>> = None;
-            // SAFETY: the whole `MruArena` is protected by a lock.
-            for entry in unsafe { this.list.iter_pin_mut_unchecked() } {
-                if !entry.data.is_borrowed() {
-                    empty = Some(&entry.data as *const _ as *mut _);
-                }
-                if let Some(r) = entry.data.try_borrow() {
-                    if c(&r) {
-                        return Some(Rc::new(arena, Handle(arena.0.brand(r))));
+                let mut empty: Option<NonNull<RcCell<T>>> = None;
+                for entry in List::iter_shared_mut(MruArena::list(this)) {
+                    let mut entry = MruEntry::data(entry);
+
+                    if let Some(entry) = RcCell::try_borrow(entry.as_shared_mut()) {
+                        // The entry is not under finalization. Check its data.
+                        if c(&entry) {
+                            let handle = Handle(arena.0.brand(entry));
+                            return Some(Rc::new(arena, handle));
+                        }
+                    }
+
+                    if !RcCell::is_borrowed(entry.as_shared_mut()) {
+                        let _ = empty.get_or_insert(entry.ptr());
                     }
                 }
-            }
 
-            empty.map(|cell_raw| {
-                // SAFETY: `cell` is not referenced or borrowed. Also, it is already pinned.
-                let mut cell = unsafe { Pin::new_unchecked(&mut *cell_raw) };
-                n(cell.as_mut().get_pin_mut().unwrap().get_mut());
-                let handle = Handle(arena.0.brand(cell.borrow()));
-                Rc::new(arena, handle)
-            })
-        })
+                empty.map(|ptr| {
+                    // SAFETY: `ptr` is valid, and there's no `SharedMut`.
+                    let mut entry = unsafe { SharedMut::new_unchecked(ptr.as_ptr()) };
+                    n(RcCell::get_mut(entry.as_shared_mut()).unwrap());
+                    let handle = Handle(arena.0.brand(RcCell::borrow(entry)));
+                    Rc::new(arena, handle)
+                })
+            },
+        )
     }
 
     fn alloc<F: FnOnce() -> Self::Data>(&self, f: F) -> Option<Rc<Self>> {
-        ArenaRef::new(self, |arena| {
-            let mut guard = arena.pinned_lock_unchecked();
-            let this = guard.get_pin_mut().project();
+        ArenaRef::new(
+            self,
+            |arena: ArenaRef<'_, &Spinlock<MruArena<T, CAPACITY>>>| {
+                let mut guard = arena.pinned_lock_unchecked();
+                let this = guard.get_shared_mut();
 
-            // SAFETY: the whole `MruArena` is protected by a lock.
-            for mut entry in unsafe { this.list.iter_pin_mut_unchecked().rev() } {
-                if !entry.data.is_borrowed() {
-                    *(entry
-                        .as_mut()
-                        .project()
-                        .data
-                        .get_pin_mut()
-                        .unwrap()
-                        .get_mut()) = f();
-                    let handle = Handle(arena.0.brand(entry.data.borrow()));
-                    return Some(Rc::new(arena, handle));
+                for entry in List::iter_shared_mut(MruArena::list(this)).rev() {
+                    let mut entry = MruEntry::data(entry);
+                    if let Some(data) = RcCell::get_mut(entry.as_shared_mut()) {
+                        *data = f();
+                        let handle = Handle(arena.0.brand(RcCell::borrow(entry)));
+                        return Some(Rc::new(arena, handle));
+                    }
                 }
-            }
-            None
-        })
+                None
+            },
+        )
     }
 
     fn dup<'id>(
         self: ArenaRef<'id, &Self>,
         handle: HandleRef<'id, '_, Self::Data>,
     ) -> Handle<'id, Self::Data> {
-        let mut _this = self.pinned_lock_unchecked();
-        Handle(self.0.brand(handle.0.into_inner().clone()))
+        Handle(self.0.brand(handle.clone()))
     }
 
     fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: Handle<'id, Self::Data>) {
-        let mut this = self.pinned_lock_unchecked();
-
-        if let Ok(mut rm) = RefMut::<T>::try_from(handle.0.into_inner()) {
+        if let Ok(mut rm) = handle.0.into_inner().into_mut() {
             // Finalize the arena object.
-            rm.finalize::<Self>(&mut this);
+            rm.finalize::<Self>();
 
             // Move this entry to the back of the list.
-            let ptr = (rm.get_cell() as *const _ as usize - MruEntry::<T>::DATA_OFFSET)
-                as *mut MruEntry<T>;
-            let entry = unsafe { &*ptr };
-            this.list.push_back(entry);
+            let this = self.pinned_lock_unchecked();
+            let ptr = (rm.cell() as usize - MruEntry::<T>::DATA_OFFSET) as *mut _;
+            // SAFETY:
+            // * `rm.cell()` is an `RcCell` inside an `MruEntry`.
+            // * The value of `DATA_OFFSET` is proper.
+            this.list.push_back(unsafe { &*ptr });
         }
-    }
-
-    unsafe fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
-    where
-        F: FnOnce() -> R,
-    {
-        guard.reacquire_after(f)
     }
 }

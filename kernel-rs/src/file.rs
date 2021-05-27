@@ -215,31 +215,27 @@ impl const Default for File {
 }
 
 impl ArenaObject for File {
-    fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>) {
+    fn finalize<A: Arena>(&mut self) {
         let finalize_inner = |ctx: KernelCtx<'_, '_>| {
-            let cleanup = || {
-                let typ = mem::replace(&mut self.typ, FileType::None);
-                match typ {
-                    FileType::Pipe { pipe } => {
-                        if let Some(page) = pipe.close(self.writable, ctx.kernel()) {
-                            allocator().free(page);
-                        }
+            let typ = mem::replace(&mut self.typ, FileType::None);
+            match typ {
+                FileType::Pipe { pipe } => {
+                    if let Some(page) = pipe.close(self.writable, ctx.kernel()) {
+                        allocator().free(page);
                     }
-                    FileType::Inode {
-                        inner: InodeFileType { ip, .. },
-                    }
-                    | FileType::Device { ip, .. } => {
-                        // TODO(https://github.com/kaist-cp/rv6/issues/290):
-                        // Dropping an RcInode requires a transaction.
-                        let tx = ctx.kernel().fs().begin_tx(&ctx);
-                        drop(ip);
-                        tx.end(&ctx);
-                    }
-                    _ => (),
                 }
-            };
-
-            unsafe { A::reacquire_after(guard, cleanup) };
+                FileType::Inode {
+                    inner: InodeFileType { ip, .. },
+                }
+                | FileType::Device { ip, .. } => {
+                    // TODO(https://github.com/kaist-cp/rv6/issues/290):
+                    // Dropping an RcInode requires a transaction.
+                    let tx = ctx.kernel().fs().begin_tx(&ctx);
+                    drop(ip);
+                    tx.end(&ctx);
+                }
+                _ => (),
+            }
         };
 
         // SAFETY: `FileTable` does not use `Arena::find_or_alloc`.

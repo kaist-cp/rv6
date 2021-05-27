@@ -10,7 +10,7 @@ use crate::{
 pub struct InodeInner {}
 
 impl ArenaObject for Inode<InodeInner> {
-    fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>) {}
+    fn finalize<A: Arena>(&mut self) {}
 }
 
 pub struct Lfs {}

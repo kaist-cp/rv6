@@ -49,7 +49,7 @@ impl const Default for BufEntry {
 }
 
 impl ArenaObject for BufEntry {
-    fn finalize<'s, A: Arena>(&'s mut self, _guard: &'s mut A::Guard<'_>) {
+    fn finalize<A: Arena>(&mut self) {
         // The buffer contents should have been written. Does nothing.
     }
 }

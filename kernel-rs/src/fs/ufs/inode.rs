@@ -665,7 +665,7 @@ impl ArenaObject for Inode<InodeInner> {
     /// All calls to Inode::put() must be inside a transaction in
     /// case it has to free the inode.
     #[allow(clippy::cast_ref_to_mut)]
-    fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>) {
+    fn finalize<A: Arena>(&mut self) {
         if self.inner.get_mut().valid && self.inner.get_mut().nlink == 0 {
             // inode has no links and no other references: truncate and free.
 
@@ -690,19 +690,11 @@ impl ArenaObject for Inode<InodeInner> {
                 // so this acquiresleep() won't block (or deadlock).
                 let mut ip = self.lock(&ctx);
 
-                let cleanup = move || {
-                    ip.itrunc(&tx, &ctx);
-                    ip.deref_inner_mut().typ = InodeType::None;
-                    ip.update(&tx, &ctx);
-                    ip.deref_inner_mut().valid = false;
-                    drop(ip);
-                };
-
-                // SAFETY: `nlink` is 0. That is, there is no way to reach to inode,
-                // so the `Itable` never tries to obtain an `Rc` referring this `Inode`.
-                unsafe {
-                    A::reacquire_after(guard, cleanup);
-                }
+                ip.itrunc(&tx, &ctx);
+                ip.deref_inner_mut().typ = InodeType::None;
+                ip.update(&tx, &ctx);
+                ip.deref_inner_mut().valid = false;
+                drop(ip);
             };
 
             // TODO(https://github.com/kaist-cp/rv6/issues/290): remove kernel_ctx()
