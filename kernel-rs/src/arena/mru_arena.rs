@@ -7,7 +7,7 @@ use core::ptr::NonNull;
 use array_macro::array;
 use pin_project::pin_project;
 
-use super::{Arena, ArenaObject, ArenaRef, Handle, HandleRef, Rc};
+use super::{Arena, ArenaObject, ArenaRef, Handle, Rc};
 use crate::{
     lock::{Spinlock, SpinlockGuard},
     util::intrusive_list::{List, ListEntry, ListNode},
@@ -168,13 +168,6 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
                 None
             },
         )
-    }
-
-    fn dup<'id>(
-        self: ArenaRef<'id, &Self>,
-        handle: HandleRef<'id, '_, Self::Data>,
-    ) -> Handle<'id, Self::Data> {
-        Handle(self.0.brand(handle.clone()))
     }
 
     fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: Handle<'id, Self::Data>) {

@@ -694,7 +694,6 @@ impl ArenaObject for Inode<InodeInner> {
                 ip.deref_inner_mut().typ = InodeType::None;
                 ip.update(&tx, &ctx);
                 ip.deref_inner_mut().valid = false;
-                drop(ip);
             };
 
             // TODO(https://github.com/kaist-cp/rv6/issues/290): remove kernel_ctx()

@@ -41,19 +41,6 @@ pub trait Arena: Sized + Sync {
     /// Otherwise, returns `None`.
     fn alloc<F: FnOnce() -> Self::Data>(&self, f: F) -> Option<Rc<Self>>;
 
-    /// Duplicates a given handle, increasing the reference count.
-    ///
-    /// # Note
-    ///
-    /// This method is automatically used by the `Rc`.
-    /// Usually, you don't need to manually call this method.
-    // TODO(https://github.com/kaist-cp/rv6/issues/400)
-    // If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `clone` instead.
-    fn dup<'id>(
-        self: ArenaRef<'id, &Self>,
-        handle: HandleRef<'id, '_, Self::Data>,
-    ) -> Handle<'id, Self::Data>;
-
     /// Deallocate a given handle, decreasing the reference count
     /// Finalizes the referred object if there are no more handles.
     ///
@@ -61,14 +48,16 @@ pub trait Arena: Sized + Sync {
     ///
     /// This method is automatically used by the `Rc`.
     /// Usually, you don't need to manually call this method.
-    // TODO(https://github.com/kaist-cp/rv6/issues/400)
-    // If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `drop` instead.
-    fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: Handle<'id, Self::Data>);
+    fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: Handle<'id, Self::Data>) {
+        if let Ok(mut rm) = handle.0.into_inner().into_mut() {
+            rm.finalize::<Self>();
+        }
+    }
 }
 
 pub trait ArenaObject {
     /// Finalizes the `ArenaObject`.
-    /// This function is automatically called when the last `Rc` refereing to this `ArenaObject` gets dropped.
+    /// This function is automatically called when the last `Rc` referring to this `ArenaObject` gets dropped.
     fn finalize<A: Arena>(&mut self);
 }
 
@@ -154,6 +143,15 @@ impl<T, A: Arena<Data = T>> Deref for Rc<A> {
     }
 }
 
+impl<A: Arena> Clone for Rc<A> {
+    fn clone(&self) -> Self {
+        Rc {
+            arena: self.arena,
+            inner: ManuallyDrop::new(self.inner.deref().clone()),
+        }
+    }
+}
+
 impl<A: Arena> Drop for Rc<A> {
     fn drop(&mut self) {
         let inner = unsafe { ManuallyDrop::take(&mut self.inner) };
@@ -161,14 +159,5 @@ impl<A: Arena> Drop for Rc<A> {
             let inner = Handle(arena.0.brand(inner));
             arena.dealloc(inner);
         });
-    }
-}
-
-impl<A: Arena> Clone for Rc<A> {
-    fn clone(&self) -> Self {
-        self.map_arena(|arena| {
-            let inner = HandleRef(arena.0.brand(self.inner.deref()));
-            Rc::new(arena, arena.dup(inner))
-        })
     }
 }

@@ -1,9 +1,10 @@
+//! Similar to `Arc<T>`, but is not allocated on heap.
+//! This type panics if it gets dropped before all `Ref<T>`/`RefMut<T>` drops.
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use super::shared_mut::SharedMut;
-use crate::ok_or;
 
 const BORROWED_MUT: usize = usize::MAX;
 
@@ -44,7 +45,7 @@ impl<T> RcCell<T> {
     }
 
     pub fn is_borrowed(this: SharedMut<'_, Self>) -> bool {
-        Self::rc(this).load(Ordering::SeqCst) > 0
+        Self::rc(this).load(Ordering::Acquire) > 0
     }
 
     pub fn get_mut(mut this: SharedMut<'_, Self>) -> Option<&mut T> {
@@ -57,34 +58,24 @@ impl<T> RcCell<T> {
     }
 
     pub fn try_borrow(mut this: SharedMut<'_, Self>) -> Option<Ref<T>> {
-        let refcnt = Self::rc(this.as_shared_mut());
         loop {
-            let r = refcnt.load(Ordering::SeqCst);
-            if r < BORROWED_MUT - 1 {
-                let _ = ok_or!(
-                    refcnt.compare_exchange(r, r + 1, Ordering::SeqCst, Ordering::SeqCst),
-                    continue
-                );
-                return Some(Ref(this.ptr()));
-            } else {
+            let r = Self::rc(this.as_shared_mut()).load(Ordering::Acquire);
+
+            if r >= BORROWED_MUT - 1 {
                 return None;
+            }
+
+            if Self::rc(this.as_shared_mut())
+                .compare_exchange(r, r + 1, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                return Some(Ref(this.ptr()));
             }
         }
     }
 
-    pub fn try_borrow_mut(mut this: SharedMut<'_, Self>) -> Option<RefMut<T>> {
-        let _ = Self::rc(this.as_shared_mut())
-            .compare_exchange(0, BORROWED_MUT, Ordering::SeqCst, Ordering::SeqCst)
-            .ok()?;
-        Some(RefMut(this.ptr()))
-    }
-
     pub fn borrow(this: SharedMut<'_, Self>) -> Ref<T> {
         Self::try_borrow(this).expect("already mutably borrowed")
-    }
-
-    pub fn borrow_mut(this: SharedMut<'_, Self>) -> RefMut<T> {
-        Self::try_borrow_mut(this).expect("already borrowed")
     }
 }
 
@@ -104,11 +95,14 @@ impl<T> Ref<T> {
     }
 
     pub fn into_mut(self) -> Result<RefMut<T>, Self> {
-        let _ = ok_or!(
-            self.rc()
-                .compare_exchange(1, BORROWED_MUT, Ordering::SeqCst, Ordering::SeqCst),
-            return Err(self)
-        );
+        if self
+            .rc()
+            .compare_exchange(1, BORROWED_MUT, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+        {
+            return Err(self);
+        }
+
         let ptr = self.0;
         core::mem::forget(self);
         Ok(RefMut(ptr))
@@ -126,14 +120,14 @@ impl<T> Deref for Ref<T> {
 
 impl<T> Clone for Ref<T> {
     fn clone(&self) -> Self {
-        let _ = self.rc().fetch_add(1, Ordering::SeqCst);
+        let _ = self.rc().fetch_add(1, Ordering::Relaxed);
         Self(self.0)
     }
 }
 
 impl<T> Drop for Ref<T> {
     fn drop(&mut self) {
-        let _ = self.rc().fetch_sub(1, Ordering::SeqCst);
+        let _ = self.rc().fetch_sub(1, Ordering::Release);
     }
 }
 
@@ -166,6 +160,6 @@ impl<T> DerefMut for RefMut<T> {
 
 impl<T> Drop for RefMut<T> {
     fn drop(&mut self) {
-        self.rc().store(0, Ordering::SeqCst);
+        self.rc().store(0, Ordering::Release);
     }
 }
