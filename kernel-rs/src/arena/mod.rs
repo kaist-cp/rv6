@@ -9,7 +9,7 @@
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
 
-use crate::util::{branded::Branded, rc_cell::Ref};
+use crate::util::{branded::Branded, static_arc::Ref};
 
 mod array_arena;
 mod mru_arena;
@@ -33,26 +33,13 @@ pub trait Arena: Sized + Sync {
         &self,
         c: C,
         n: N,
-    ) -> Option<Rc<Self>>;
+    ) -> Option<ArenaRc<Self>>;
 
     /// Allocates an `Rc` using the first empty entry.
     /// * Uses `f` to initialze a new `Rc`.
     ///
     /// Otherwise, returns `None`.
-    fn alloc<F: FnOnce() -> Self::Data>(&self, f: F) -> Option<Rc<Self>>;
-
-    /// Duplicates a given handle, increasing the reference count.
-    ///
-    /// # Note
-    ///
-    /// This method is automatically used by the `Rc`.
-    /// Usually, you don't need to manually call this method.
-    // TODO(https://github.com/kaist-cp/rv6/issues/400)
-    // If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `clone` instead.
-    fn dup<'id>(
-        self: ArenaRef<'id, &Self>,
-        handle: HandleRef<'id, '_, Self::Data>,
-    ) -> Handle<'id, Self::Data>;
+    fn alloc<F: FnOnce() -> Self::Data>(&self, f: F) -> Option<ArenaRc<Self>>;
 
     /// Deallocate a given handle, decreasing the reference count
     /// Finalizes the referred object if there are no more handles.
@@ -61,28 +48,17 @@ pub trait Arena: Sized + Sync {
     ///
     /// This method is automatically used by the `Rc`.
     /// Usually, you don't need to manually call this method.
-    // TODO(https://github.com/kaist-cp/rv6/issues/400)
-    // If we wrap `ArrayPtr::r` with `RemoteSpinlock`, then we can just use `drop` instead.
-    fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: Handle<'id, Self::Data>);
-
-    /// Temporarily releases the lock while calling `f`, and re-acquires the lock after `f` returned.
-    ///
-    /// # Safety
-    ///
-    /// The caller must be careful when calling this inside `ArenaObject::finalize`.
-    /// If you use this while finalizing an `ArenaObject`, the `Arena`'s lock will be temporarily released,
-    /// and hence, another thread may use `Arena::find_or_alloc` to obtain an `Rc` referring to the `ArenaObject`
-    /// we are **currently finalizing**. Therefore, in this case, make sure no thread tries to `find_or_alloc`
-    /// for an `ArenaObject` that may be under finalization.
-    unsafe fn reacquire_after<'s, 'g: 's, F, R: 's>(guard: &'s mut Self::Guard<'g>, f: F) -> R
-    where
-        F: FnOnce() -> R;
+    fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: Handle<'id, Self::Data>) {
+        if let Ok(mut rm) = handle.0.into_inner().into_mut() {
+            rm.finalize::<Self>();
+        }
+    }
 }
 
 pub trait ArenaObject {
     /// Finalizes the `ArenaObject`.
-    /// This function is automatically called when the last `Rc` refereing to this `ArenaObject` gets dropped.
-    fn finalize<'s, A: Arena>(&'s mut self, guard: &'s mut A::Guard<'_>);
+    /// This function is automatically called when the last `Rc` referring to this `ArenaObject` gets dropped.
+    fn finalize<A: Arena>(&mut self);
 }
 
 /// A branded reference to an arena.
@@ -134,7 +110,7 @@ impl<'s, T> Deref for HandleRef<'_, 's, T> {
 /// `inner` is allocated from `arena`.
 /// We can safely dereference `arena` until `inner` gets dropped,
 /// because we panic if the arena drops earlier than `inner`.
-pub struct Rc<A: Arena> {
+pub struct ArenaRc<A: Arena> {
     arena: *const A,
     inner: ManuallyDrop<Ref<A::Data>>,
 }
@@ -142,9 +118,9 @@ pub struct Rc<A: Arena> {
 // `Rc` is `Send` because it does not impl `DerefMut`,
 // and when we access the inner `Arena`, we do it after acquiring `Arena`'s lock.
 // Also, `Rc` does not point to thread-local data.
-unsafe impl<T: Sync, A: Arena<Data = T>> Send for Rc<A> {}
+unsafe impl<T: Sync, A: Arena<Data = T>> Send for ArenaRc<A> {}
 
-impl<T, A: Arena<Data = T>> Rc<A> {
+impl<T, A: Arena<Data = T>> ArenaRc<A> {
     /// Creates a new `Rc`, allocated from the arena.
     pub fn new<'id>(arena: ArenaRef<'id, &A>, inner: Handle<'id, T>) -> Self {
         Self {
@@ -159,7 +135,7 @@ impl<T, A: Arena<Data = T>> Rc<A> {
     }
 }
 
-impl<T, A: Arena<Data = T>> Deref for Rc<A> {
+impl<T, A: Arena<Data = T>> Deref for ArenaRc<A> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -167,21 +143,21 @@ impl<T, A: Arena<Data = T>> Deref for Rc<A> {
     }
 }
 
-impl<A: Arena> Drop for Rc<A> {
+impl<A: Arena> Clone for ArenaRc<A> {
+    fn clone(&self) -> Self {
+        ArenaRc {
+            arena: self.arena,
+            inner: ManuallyDrop::new(self.inner.deref().clone()),
+        }
+    }
+}
+
+impl<A: Arena> Drop for ArenaRc<A> {
     fn drop(&mut self) {
         let inner = unsafe { ManuallyDrop::take(&mut self.inner) };
         self.map_arena(|arena| {
             let inner = Handle(arena.0.brand(inner));
             arena.dealloc(inner);
         });
-    }
-}
-
-impl<A: Arena> Clone for Rc<A> {
-    fn clone(&self) -> Self {
-        self.map_arena(|arena| {
-            let inner = HandleRef(arena.0.brand(self.inner.deref()));
-            Rc::new(arena, arena.dup(inner))
-        })
     }
 }

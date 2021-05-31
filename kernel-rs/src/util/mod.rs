@@ -8,7 +8,8 @@ pub mod etrace;
 pub mod intrusive_list;
 pub mod list;
 pub mod pinned_array;
-pub mod rc_cell;
+pub mod shared_mut;
+pub mod static_arc;
 
 pub fn spin_loop() -> ! {
     loop {

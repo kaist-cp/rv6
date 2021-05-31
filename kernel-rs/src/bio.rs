@@ -15,7 +15,7 @@ use core::mem::{self, ManuallyDrop};
 use core::ops::{Deref, DerefMut};
 
 use crate::{
-    arena::{Arena, ArenaObject, MruArena, Rc},
+    arena::{Arena, ArenaObject, ArenaRc, MruArena},
     lock::{Sleeplock, Spinlock},
     param::{BSIZE, NBUF},
     proc::WaitChannel,
@@ -49,7 +49,7 @@ impl const Default for BufEntry {
 }
 
 impl ArenaObject for BufEntry {
-    fn finalize<'s, A: Arena>(&'s mut self, _guard: &'s mut A::Guard<'_>) {
+    fn finalize<A: Arena>(&mut self) {
         // The buffer contents should have been written. Does nothing.
     }
 }
@@ -98,7 +98,7 @@ impl BufInner {
 pub type Bcache = Spinlock<MruArena<BufEntry, NBUF>>;
 
 /// A reference counted smart pointer to a `BufEntry`.
-pub type BufUnlocked = Rc<Bcache>;
+pub type BufUnlocked = ArenaRc<Bcache>;
 
 /// A locked `BufEntry`.
 ///

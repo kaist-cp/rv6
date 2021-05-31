@@ -48,6 +48,8 @@ pub use sleepablelock::{Sleepablelock, SleepablelockGuard};
 pub use sleeplock::{Sleeplock, SleeplockGuard};
 pub use spinlock::{RawSpinlock, Spinlock, SpinlockGuard};
 
+use crate::util::shared_mut::SharedMut;
+
 pub trait RawLock {
     /// Acquires the lock.
     fn acquire(&self);
@@ -163,6 +165,11 @@ impl<R: RawLock, T> Guard<'_, R, T> {
     pub fn get_pin_mut(&mut self) -> Pin<&mut T> {
         // SAFETY: for `T: !Unpin`, we only provide pinned references and don't move `T`.
         unsafe { Pin::new_unchecked(&mut *self.lock.data.get()) }
+    }
+
+    pub fn get_shared_mut(&mut self) -> SharedMut<'_, T> {
+        // SAFETY: the pointer is valid, and it creates a unique `SharedMut`.
+        unsafe { SharedMut::new_unchecked(self.lock.data.get()) }
     }
 }
 
