@@ -14,7 +14,7 @@ const BORROWED_MUT: usize = usize::MAX;
 /// * If `refcnt` equals n where n < `BORROWED_MUT`, n `Ref`s refer to `self`.
 /// * `RefMut` can mutate both `data` and `refcnt`.
 /// * `Ref` can mutate `refcnt` and read `data`.
-pub struct RcCell<T> {
+pub struct StaticArc<T> {
     data: T,
     refcnt: AtomicUsize,
 }
@@ -23,15 +23,16 @@ pub struct RcCell<T> {
 ///
 /// * It holds a valid pointer.
 #[repr(transparent)]
-pub struct Ref<T>(NonNull<RcCell<T>>);
+pub struct Ref<T>(NonNull<StaticArc<T>>);
 
 /// # Safety
 ///
 /// * It holds a valid pointer.
 #[repr(transparent)]
-pub struct RefMut<T>(NonNull<RcCell<T>>);
+pub struct RefMut<T>(NonNull<StaticArc<T>>);
 
-impl<T> RcCell<T> {
+// TODO(https://github.com/kaist-cp/rv6/issues/553): `Pin2`
+impl<T> StaticArc<T> {
     pub const fn new(data: T) -> Self {
         Self {
             data,
@@ -79,7 +80,7 @@ impl<T> RcCell<T> {
     }
 }
 
-impl<T> Drop for RcCell<T> {
+impl<T> Drop for StaticArc<T> {
     fn drop(&mut self) {
         assert!(
             !Self::is_borrowed(SharedMut::new(self)),
@@ -137,7 +138,7 @@ impl<T> RefMut<T> {
         unsafe { &(*self.0.as_ptr()).refcnt }
     }
 
-    pub fn cell(&self) -> *mut RcCell<T> {
+    pub fn cell(&self) -> *mut StaticArc<T> {
         self.0.as_ptr()
     }
 }

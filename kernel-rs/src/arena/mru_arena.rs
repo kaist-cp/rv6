@@ -7,12 +7,12 @@ use core::ptr::NonNull;
 use array_macro::array;
 use pin_project::pin_project;
 
-use super::{Arena, ArenaObject, ArenaRef, Handle, Rc};
+use super::{Arena, ArenaObject, ArenaRc, ArenaRef, Handle};
 use crate::{
     lock::{Spinlock, SpinlockGuard},
     util::intrusive_list::{List, ListEntry, ListNode},
     util::pinned_array::IterPinMut,
-    util::{rc_cell::RcCell, shared_mut::SharedMut},
+    util::{shared_mut::SharedMut, static_arc::StaticArc},
 };
 
 #[pin_project]
@@ -21,7 +21,7 @@ pub struct MruEntry<T> {
     #[pin]
     list_entry: ListEntry,
     #[pin]
-    data: RcCell<T>,
+    data: StaticArc<T>,
 }
 
 /// A homogeneous memory allocator equipped with reference counts.
@@ -50,11 +50,11 @@ impl<T> MruEntry<T> {
     pub const fn new(data: T) -> Self {
         Self {
             list_entry: unsafe { ListEntry::new() },
-            data: RcCell::new(data),
+            data: StaticArc::new(data),
         }
     }
 
-    fn data(this: SharedMut<'_, Self>) -> SharedMut<'_, RcCell<T>> {
+    fn data(this: SharedMut<'_, Self>) -> SharedMut<'_, StaticArc<T>> {
         // SAFETY: the pointer is valid, and it creates a unique `SharedMut`.
         unsafe { SharedMut::new_unchecked(&raw mut (*this.ptr().as_ptr()).data) }
     }
@@ -115,26 +115,26 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
         &self,
         c: C,
         n: N,
-    ) -> Option<Rc<Self>> {
+    ) -> Option<ArenaRc<Self>> {
         ArenaRef::new(
             self,
             |arena: ArenaRef<'_, &Spinlock<MruArena<T, CAPACITY>>>| {
                 let mut guard = arena.pinned_lock_unchecked();
                 let this = guard.get_shared_mut();
 
-                let mut empty: Option<NonNull<RcCell<T>>> = None;
+                let mut empty: Option<NonNull<StaticArc<T>>> = None;
                 for entry in List::iter_shared_mut(MruArena::list(this)) {
                     let mut entry = MruEntry::data(entry);
 
-                    if let Some(entry) = RcCell::try_borrow(entry.as_shared_mut()) {
+                    if let Some(entry) = StaticArc::try_borrow(entry.as_shared_mut()) {
                         // The entry is not under finalization. Check its data.
                         if c(&entry) {
                             let handle = Handle(arena.0.brand(entry));
-                            return Some(Rc::new(arena, handle));
+                            return Some(ArenaRc::new(arena, handle));
                         }
                     }
 
-                    if !RcCell::is_borrowed(entry.as_shared_mut()) {
+                    if !StaticArc::is_borrowed(entry.as_shared_mut()) {
                         let _ = empty.get_or_insert(entry.ptr());
                     }
                 }
@@ -142,15 +142,15 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
                 empty.map(|ptr| {
                     // SAFETY: `ptr` is valid, and there's no `SharedMut`.
                     let mut entry = unsafe { SharedMut::new_unchecked(ptr.as_ptr()) };
-                    n(RcCell::get_mut(entry.as_shared_mut()).unwrap());
-                    let handle = Handle(arena.0.brand(RcCell::borrow(entry)));
-                    Rc::new(arena, handle)
+                    n(StaticArc::get_mut(entry.as_shared_mut()).unwrap());
+                    let handle = Handle(arena.0.brand(StaticArc::borrow(entry)));
+                    ArenaRc::new(arena, handle)
                 })
             },
         )
     }
 
-    fn alloc<F: FnOnce() -> Self::Data>(&self, f: F) -> Option<Rc<Self>> {
+    fn alloc<F: FnOnce() -> Self::Data>(&self, f: F) -> Option<ArenaRc<Self>> {
         ArenaRef::new(
             self,
             |arena: ArenaRef<'_, &Spinlock<MruArena<T, CAPACITY>>>| {
@@ -159,10 +159,10 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
 
                 for entry in List::iter_shared_mut(MruArena::list(this)).rev() {
                     let mut entry = MruEntry::data(entry);
-                    if let Some(data) = RcCell::get_mut(entry.as_shared_mut()) {
+                    if let Some(data) = StaticArc::get_mut(entry.as_shared_mut()) {
                         *data = f();
-                        let handle = Handle(arena.0.brand(RcCell::borrow(entry)));
-                        return Some(Rc::new(arena, handle));
+                        let handle = Handle(arena.0.brand(StaticArc::borrow(entry)));
+                        return Some(ArenaRc::new(arena, handle));
                     }
                 }
                 None

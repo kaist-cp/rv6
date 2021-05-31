@@ -4,7 +4,7 @@ use core::{cell::UnsafeCell, cmp, mem, ops::Deref, ops::DerefMut};
 
 use crate::{
     arch::addr::UVAddr,
-    arena::{Arena, ArenaObject, ArrayArena, Rc},
+    arena::{Arena, ArenaObject, ArenaRc, ArrayArena},
     fs::{FileSystem, InodeGuard, RcInode, Ufs},
     hal::allocator,
     lock::Spinlock,
@@ -62,7 +62,7 @@ pub struct Devsw {
 }
 
 /// A reference counted smart pointer to a `File`.
-pub type RcFile = Rc<FileTable>;
+pub type RcFile = ArenaRc<FileTable>;
 
 impl Default for FileType {
     fn default() -> Self {

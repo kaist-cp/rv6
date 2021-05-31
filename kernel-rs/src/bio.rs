@@ -15,7 +15,7 @@ use core::mem::{self, ManuallyDrop};
 use core::ops::{Deref, DerefMut};
 
 use crate::{
-    arena::{Arena, ArenaObject, MruArena, Rc},
+    arena::{Arena, ArenaObject, ArenaRc, MruArena},
     lock::{Sleeplock, Spinlock},
     param::{BSIZE, NBUF},
     proc::WaitChannel,
@@ -98,7 +98,7 @@ impl BufInner {
 pub type Bcache = Spinlock<MruArena<BufEntry, NBUF>>;
 
 /// A reference counted smart pointer to a `BufEntry`.
-pub type BufUnlocked = Rc<Bcache>;
+pub type BufUnlocked = ArenaRc<Bcache>;
 
 /// A locked `BufEntry`.
 ///

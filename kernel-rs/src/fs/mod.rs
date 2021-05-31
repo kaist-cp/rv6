@@ -3,7 +3,7 @@ use core::ops::Deref;
 use bitflags::bitflags;
 
 use crate::{
-    arena::{ArenaObject, ArrayArena, Rc},
+    arena::{ArenaObject, ArenaRc, ArrayArena},
     lock::{Sleeplock, Spinlock},
     param::NINODE,
     proc::KernelCtx,
@@ -96,7 +96,7 @@ pub struct Inode<I> {
 pub type Itable<I> = Spinlock<ArrayArena<Inode<I>, NINODE>>;
 
 /// A reference counted smart pointer to an `Inode`.
-pub type RcInode<I> = Rc<Itable<I>>;
+pub type RcInode<I> = ArenaRc<Itable<I>>;
 
 pub trait FileSystem
 where
