@@ -311,7 +311,7 @@ impl InodeGuard<'_, InodeInner> {
         (*dip).size = inner.size;
         (*dip).addr_direct.copy_from_slice(&inner.addr_direct);
         (*dip).addr_indirect = inner.addr_indirect;
-        tx.write(bp);
+        tx.write(bp, ctx);
     }
 
     /// Truncate inode (discard contents).
@@ -335,7 +335,7 @@ impl InodeGuard<'_, InodeInner> {
                     tx.bfree(dev, *a, ctx);
                 }
             }
-            drop(bp);
+            bp.free(ctx);
             tx.bfree(dev, self.deref_inner().addr_indirect, ctx);
             self.deref_inner_mut().addr_indirect = 0
         }
@@ -371,9 +371,9 @@ impl InodeGuard<'_, InodeInner> {
         self.read_internal(
             off,
             dst.len() as u32,
-            |off, src, ctx| {
+            |off, src, _| {
                 dst[off as usize..off as usize + src.len()].clone_from_slice(src);
-                Ok(ctx)
+                Ok(())
             },
             ctx,
         )
@@ -397,8 +397,7 @@ impl InodeGuard<'_, InodeInner> {
             |off, src, ctx| {
                 ctx.proc_mut()
                     .memory_mut()
-                    .copy_out_bytes(dst + off as usize, src)?;
-                Ok(ctx)
+                    .copy_out_bytes(dst + off as usize, src)
             },
             ctx,
         )
@@ -415,11 +414,12 @@ impl InodeGuard<'_, InodeInner> {
     // However, writing to user memory needs page table accesses since a single
     // consecutive region in user memory may split into several pages in
     // physical memory.
+    #[inline]
     fn read_internal<
         'id,
         's,
         K: Deref<Target = KernelCtx<'id, 's>>,
-        F: FnMut(u32, &[u8], K) -> Result<K, ()>,
+        F: FnMut(u32, &[u8], &mut K) -> Result<(), ()>,
     >(
         &mut self,
         mut off: u32,
@@ -442,7 +442,9 @@ impl InodeGuard<'_, InodeInner> {
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
-            k = f(tot, &bp.deref_inner().data[begin..end], k)?;
+            let res = f(tot, &bp.deref_inner().data[begin..end], &mut k);
+            bp.free(&k);
+            res?;
             tot += m;
             off += m;
         }
@@ -478,9 +480,9 @@ impl InodeGuard<'_, InodeInner> {
         self.write_internal(
             off,
             src.len() as u32,
-            |off, dst, ctx| {
+            |off, dst, _| {
                 dst.clone_from_slice(&src[off as usize..off as usize + src.len()]);
-                Ok(ctx)
+                Ok(())
             },
             tx,
             ctx,
@@ -502,14 +504,9 @@ impl InodeGuard<'_, InodeInner> {
             off,
             n,
             |off, dst, ctx| {
-                match ctx
-                    .proc_mut()
+                ctx.proc_mut()
                     .memory_mut()
                     .copy_in_bytes(dst, src + off as usize)
-                {
-                    Ok(_) => Ok(ctx),
-                    Err(_) => Err(ctx),
-                }
             },
             tx,
             ctx,
@@ -529,11 +526,12 @@ impl InodeGuard<'_, InodeInner> {
     // However, reading user memory needs page table accesses since a single
     // consecutive region in user memory may split into several pages in
     // physical memory.
+    #[inline]
     fn write_internal<
         'id,
         's,
         K: Deref<Target = KernelCtx<'id, 's>>,
-        F: FnMut(u32, &mut [u8], K) -> Result<K, K>,
+        F: FnMut(u32, &mut [u8], &mut K) -> Result<(), ()>,
     >(
         &mut self,
         mut off: u32,
@@ -558,14 +556,12 @@ impl InodeGuard<'_, InodeInner> {
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
-            match f(tot, &mut bp.deref_inner_mut().data[begin..end], k) {
-                Ok(rk) => k = rk,
-                Err(rk) => {
-                    k = rk;
-                    break;
-                }
+            if f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k).is_ok() {
+                tx.write(bp, &k);
+            } else {
+                bp.free(&k);
+                break;
             }
-            tx.write(bp);
             tot += m;
             off += m;
         }
@@ -630,7 +626,9 @@ impl InodeGuard<'_, InodeInner> {
                 let tx = tx_opt.expect("bmap: out of range");
                 addr = tx.balloc(self.dev, ctx);
                 data[bn] = addr;
-                tx.write(bp);
+                tx.write(bp, ctx);
+            } else {
+                bp.free(ctx);
             }
             addr
         }
@@ -694,6 +692,8 @@ impl ArenaObject for Inode<InodeInner> {
                 ip.deref_inner_mut().typ = InodeType::None;
                 ip.update(&tx, &ctx);
                 ip.deref_inner_mut().valid = false;
+
+                ip.free(&ctx);
             };
 
             // TODO(https://github.com/kaist-cp/rv6/issues/290): remove kernel_ctx()
@@ -708,7 +708,7 @@ impl Inode<InodeInner> {
     /// Lock the given inode.
     /// Reads the inode from disk if necessary.
     pub fn lock(&self, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'_, InodeInner> {
-        let mut guard = self.inner.lock();
+        let mut guard = self.inner.lock(ctx);
         if !guard.valid {
             let mut bp = hal().disk.read(
                 self.dev,
@@ -743,7 +743,7 @@ impl Inode<InodeInner> {
             guard.size = dip.size;
             guard.addr_direct.copy_from_slice(&dip.addr_direct);
             guard.addr_indirect = dip.addr_indirect;
-            drop(bp);
+            bp.free(ctx);
             guard.valid = true;
             assert_ne!(guard.typ, InodeType::None, "Inode::lock: no type");
         };
@@ -770,8 +770,8 @@ impl Inode<InodeInner> {
     }
 
     /// Copy stat information from inode.
-    pub fn stat(&self) -> Stat {
-        let inner = self.inner.lock();
+    pub fn stat(&self, ctx: &KernelCtx<'_, '_>) -> Stat {
+        let inner = self.inner.lock(ctx);
         Stat {
             dev: self.dev as i32,
             ino: self.inum,
@@ -851,8 +851,10 @@ impl Itable<InodeInner> {
                 }
 
                 // mark it allocated on the disk
-                tx.write(bp);
+                tx.write(bp, ctx);
                 return self.get_inode(dev, inum);
+            } else {
+                bp.free(ctx);
             }
         }
         panic!("[Itable::alloc_inode] no inodes");
@@ -900,7 +902,8 @@ impl Itable<InodeInner> {
         while let Some((new_path, name)) = path.skipelem() {
             path = new_path;
 
-            let mut ip = ptr.lock(ctx);
+            let ip = ptr.lock(ctx);
+            let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
             if ip.deref_inner().typ != InodeType::Dir {
                 return Err(());
             }

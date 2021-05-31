@@ -106,9 +106,10 @@ impl KernelCtx<'_, '_> {
         // TODO(https://github.com/kaist-cp/rv6/issues/290):
         // Dropping an RcInode requires a transaction.
         let tx = self.kernel().fs().begin_tx(self);
-        let tx = scopeguard::guard(tx, |t| t.end(&self));
+        let tx = scopeguard::guard(tx, |t| t.end(self));
         let ptr = self.kernel().fs().namei(path, &tx, self)?;
-        let mut ip = ptr.lock(self);
+        let ip = ptr.lock(self);
+        let mut ip = scopeguard::guard(ip, |ip| ip.free(self));
 
         // Check ELF header
         let mut elf: ElfHdr = Default::default();
@@ -137,7 +138,7 @@ impl KernelCtx<'_, '_> {
         }
         drop(ip);
         drop(ptr);
-        scopeguard::ScopeGuard::into_inner(tx).end(self);
+        drop(tx);
 
         // Allocate two pages at the next page boundary.
         // Use the second as the user stack.

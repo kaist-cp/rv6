@@ -1,6 +1,12 @@
 //! Support functions for system calls that involve file descriptors.
 
-use core::{cell::UnsafeCell, cmp, mem, ops::Deref, ops::DerefMut};
+use core::{
+    cell::UnsafeCell,
+    cmp,
+    mem::{self, ManuallyDrop},
+    ops::Deref,
+    ops::DerefMut,
+};
 
 use crate::{
     arch::addr::UVAddr,
@@ -42,7 +48,7 @@ pub struct InodeFileType {
 /// inode. `off` is a mutable reference to the offset. Accessing `off` is guaranteed to be safe
 /// since the inode is locked.
 struct InodeFileTypeGuard<'a, I> {
-    ip: InodeGuard<'a, I>,
+    ip: ManuallyDrop<InodeGuard<'a, I>>,
     off: &'a mut u32,
 }
 
@@ -78,7 +84,18 @@ impl InodeFileType {
         let ip = self.ip.lock(ctx);
         // SAFETY: `ip` is locked and `off` can be exclusively accessed.
         let off = unsafe { &mut *self.off.get() };
-        InodeFileTypeGuard { ip, off }
+        InodeFileTypeGuard {
+            ip: ManuallyDrop::new(ip),
+            off,
+        }
+    }
+}
+
+impl<I> InodeFileTypeGuard<'_, I> {
+    fn free(mut self, ctx: &KernelCtx<'_, '_>) {
+        let ip = unsafe { ManuallyDrop::take(&mut self.ip) };
+        ip.free(ctx);
+        core::mem::forget(self);
     }
 }
 
@@ -93,6 +110,14 @@ impl<'a, I> Deref for InodeFileTypeGuard<'a, I> {
 impl<'a, I> DerefMut for InodeFileTypeGuard<'a, I> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.ip
+    }
+}
+
+impl<I> Drop for InodeFileTypeGuard<'_, I> {
+    fn drop(&mut self) {
+        // HACK(@efenniht): we really need linear type here:
+        // https://github.com/rust-lang/rfcs/issues/814
+        panic!("InodeFileTypeGuard must never drop.");
     }
 }
 
@@ -117,7 +142,7 @@ impl File {
                 inner: InodeFileType { ip, .. },
             }
             | FileType::Device { ip, .. } => {
-                let st = ip.stat();
+                let st = ip.stat(ctx);
                 ctx.proc_mut().memory_mut().copy_out(addr, &st)
             }
             _ => Err(()),
@@ -140,6 +165,7 @@ impl File {
                 if let Ok(v) = ret {
                     *ip.off += v as u32;
                 }
+                ip.free(ctx);
                 ret
             }
             FileType::Device { major, .. } => {
@@ -184,9 +210,12 @@ impl File {
                         ctx,
                         &tx,
                     );
+                    if let Ok(r) = r {
+                        *ip.off += r as u32;
+                    }
                     tx.end(ctx);
+                    ip.free(ctx);
                     let r = r?;
-                    *ip.off += r as u32;
                     if r != bytes_to_write {
                         // error from write_user
                         break;

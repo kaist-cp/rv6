@@ -72,13 +72,20 @@ impl<I> InodeGuard<'_, I> {
         // SAFETY: self.inner is locked and &mut self is exclusive.
         unsafe { &mut *self.inner.get_mut_raw() }
     }
+
+    pub fn free(self, ctx: &KernelCtx<'_, '_>) {
+        // SAFETY: self will be dropped.
+        unsafe { self.inner.unlock(ctx) };
+        core::mem::forget(self);
+    }
 }
 
 /// Unlock and put the given inode.
 impl<I> Drop for InodeGuard<'_, I> {
     fn drop(&mut self) {
-        // SAFETY: self will be dropped.
-        unsafe { self.inner.unlock() };
+        // HACK(@efenniht): we really need linear type here:
+        // https://github.com/rust-lang/rfcs/issues/814
+        panic!("InodeGuard must never drop.");
     }
 }
 
