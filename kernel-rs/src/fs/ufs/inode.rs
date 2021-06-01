@@ -87,7 +87,7 @@ use crate::{
     lock::{Sleeplock, Spinlock},
     param::ROOTDEV,
     param::{BSIZE, NINODE},
-    proc::{kernel_ctx, KernelCtx},
+    proc::KernelCtx,
 };
 
 /// Directory is a file containing a sequence of Dirent structures.
@@ -225,7 +225,8 @@ impl InodeGuard<'_, InodeInner> {
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
         // Check that name is not present.
-        if let Ok((_ip, _)) = self.dirlookup(name, ctx) {
+        if let Ok((ip, _)) = self.dirlookup(name, ctx) {
+            ip.free((tx, ctx));
             return Err(());
         };
 
@@ -655,6 +656,8 @@ impl const Default for Inode<InodeInner> {
 }
 
 impl ArenaObject for Inode<InodeInner> {
+    type Ctx<'a, 'id: 'a> = (&'a UfsTx<'a>, &'a KernelCtx<'id, 'a>);
+
     /// Drop a reference to an in-memory inode.
     /// If that was the last reference, the inode table entry can
     /// be recycled.
@@ -662,44 +665,21 @@ impl ArenaObject for Inode<InodeInner> {
     /// to it, free the inode (and its content) on disk.
     /// All calls to Inode::put() must be inside a transaction in
     /// case it has to free the inode.
-    #[allow(clippy::cast_ref_to_mut)]
-    fn finalize<A: Arena>(&mut self) {
+    fn finalize<'a, 'id: 'a, A: Arena>(&mut self, ctx: Self::Ctx<'a, 'id>) {
+        let (tx, ctx) = ctx;
         if self.inner.get_mut().valid && self.inner.get_mut().nlink == 0 {
             // inode has no links and no other references: truncate and free.
 
-            let finalize_inner = |ctx: KernelCtx<'_, '_>| {
-                let kernel = ctx.kernel();
+            // self->ref == 1 means no other process can have self locked,
+            // so this acquiresleep() won't block (or deadlock).
+            let mut ip = self.lock(ctx);
 
-                // TODO(https://github.com/kaist-cp/rv6/issues/290)
-                // Disk write operations must happen inside a transaction. However,
-                // we cannot begin a new transaction here because beginning of a
-                // transaction acquires a sleep lock while the spin lock of this
-                // arena has been acquired before the invocation of this method.
-                // To mitigate this problem, we make a fake transaction and pass
-                // it as an argument for each disk write operation below. As a
-                // transaction does not start here, any operation that can drop an
-                // inode must begin a transaction even in the case that the
-                // resulting Tx value is never used. Such transactions
-                // can be found in finalize in file.rs, sys_chdir in sysfile.rs,
-                // close_files in proc.rs, and exec in exec.rs.
-                let tx = mem::ManuallyDrop::new(UfsTx { fs: &kernel.fs() });
+            ip.itrunc(tx, ctx);
+            ip.deref_inner_mut().typ = InodeType::None;
+            ip.update(tx, ctx);
+            ip.deref_inner_mut().valid = false;
 
-                // self->ref == 1 means no other process can have self locked,
-                // so this acquiresleep() won't block (or deadlock).
-                let mut ip = self.lock(&ctx);
-
-                ip.itrunc(&tx, &ctx);
-                ip.deref_inner_mut().typ = InodeType::None;
-                ip.update(&tx, &ctx);
-                ip.deref_inner_mut().valid = false;
-
-                ip.free(&ctx);
-            };
-
-            // TODO(https://github.com/kaist-cp/rv6/issues/290): remove kernel_ctx()
-            unsafe {
-                kernel_ctx(finalize_inner);
-            }
+            ip.free(ctx);
         }
     }
 }
@@ -888,9 +868,7 @@ impl Itable<InodeInner> {
         &self,
         mut path: &'s Path,
         parent: bool,
-        // TODO(https://github.com/kaist-cp/rv6/issues/290):
-        // Dropping an RcInode requires a transaction.
-        _tx: &UfsTx<'_>,
+        tx: &UfsTx<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(RcInode<InodeInner>, Option<&'s FileName<{ DIRSIZ }>>), ()> {
         let mut ptr = if path.is_absolute() {
@@ -902,21 +880,24 @@ impl Itable<InodeInner> {
         while let Some((new_path, name)) = path.skipelem() {
             path = new_path;
 
-            let ip = ptr.lock(ctx);
-            let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
+            let mut ip = ptr.lock(ctx);
             if ip.deref_inner().typ != InodeType::Dir {
+                ip.free(ctx);
+                ptr.free((tx, ctx));
                 return Err(());
             }
             if parent && path.is_empty_string() {
                 // Stop one level early.
-                drop(ip);
+                ip.free(ctx);
                 return Ok((ptr, Some(name)));
             }
             let next = ip.dirlookup(name, ctx);
-            drop(ip);
+            ip.free(ctx);
+            ptr.free((tx, ctx));
             ptr = next?.0
         }
         if parent {
+            ptr.free((tx, ctx));
             return Err(());
         }
         Ok((ptr, None))

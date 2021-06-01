@@ -93,6 +93,7 @@ impl FileSystem for Ufs {
         tx: &Self::Tx<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
+        let inode = scopeguard::guard(inode, |ptr| ptr.free((tx, ctx)));
         let ip = inode.lock(ctx);
         let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
         if ip.deref_inner().typ == InodeType::Dir {
@@ -103,6 +104,7 @@ impl FileSystem for Ufs {
         drop(ip);
 
         if let Ok((ptr2, name)) = ctx.kernel().fs().itable.nameiparent(path, tx, ctx) {
+            let ptr2 = scopeguard::guard(ptr2, |ptr| ptr.free((tx, ctx)));
             let dp = ptr2.lock(ctx);
             let mut dp = scopeguard::guard(dp, |ip| ip.free(ctx));
             if dp.dev == inode.dev && dp.dirlink(name, inode.inum, &tx, ctx).is_ok() {
@@ -119,6 +121,7 @@ impl FileSystem for Ufs {
 
     fn unlink(&self, path: &Path, tx: &Self::Tx<'_>, ctx: &KernelCtx<'_, '_>) -> Result<(), ()> {
         let (ptr, name) = self.itable.nameiparent(path, tx, ctx)?;
+        let ptr = scopeguard::guard(ptr, |ptr| ptr.free((tx, ctx)));
         let dp = ptr.lock(ctx);
         let mut dp = scopeguard::guard(dp, |ip| ip.free(ctx));
 
@@ -128,6 +131,7 @@ impl FileSystem for Ufs {
         }
 
         let (ptr2, off) = dp.dirlookup(&name, ctx)?;
+        let ptr2 = scopeguard::guard(ptr2, |ptr| ptr.free((tx, ctx)));
         let ip = ptr2.lock(ctx);
         let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
         assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
@@ -161,9 +165,11 @@ impl FileSystem for Ufs {
         F: FnOnce(&mut InodeGuard<'_, Self::InodeInner>) -> T,
     {
         let (ptr, name) = self.itable.nameiparent(path, tx, ctx)?;
+        let ptr = scopeguard::guard(ptr, |ptr| ptr.free((tx, ctx)));
         let dp = ptr.lock(ctx);
         let mut dp = scopeguard::guard(dp, |ip| ip.free(ctx));
         if let Ok((ptr2, _)) = dp.dirlookup(&name, ctx) {
+            let ptr2 = scopeguard::guard(ptr2, |ptr| ptr.free((tx, ctx)));
             drop(dp);
             if typ != InodeType::File {
                 return Err(());
@@ -175,7 +181,7 @@ impl FileSystem for Ufs {
             }
             let ret = f(&mut ip);
             drop(ip);
-            return Ok((ptr2, ret));
+            return Ok((scopeguard::ScopeGuard::into_inner(ptr2), ret));
         }
         let ptr2 = ctx.kernel().fs().itable.alloc_inode(dp.dev, typ, tx, ctx);
         let ip = ptr2.lock(ctx);
@@ -215,6 +221,7 @@ impl FileSystem for Ufs {
             self.create(path, InodeType::File, tx, ctx, |ip| ip.deref_inner().typ)?
         } else {
             let ptr = self.itable.namei(path, tx, ctx)?;
+            let ptr = scopeguard::guard(ptr, |ptr| ptr.free((tx, ctx)));
             let ip = ptr.lock(ctx);
             let ip = scopeguard::guard(ip, |ip| ip.free(ctx));
             let typ = ip.deref_inner().typ;
@@ -223,7 +230,7 @@ impl FileSystem for Ufs {
                 return Err(());
             }
             drop(ip);
-            (ptr, typ)
+            (scopeguard::ScopeGuard::into_inner(ptr), typ)
         };
 
         let filetype = match typ {
@@ -258,25 +265,24 @@ impl FileSystem for Ufs {
                 _ => panic!("sys_open : Not reach"),
             };
         }
-        let fd = f.fdalloc(ctx).map_err(|_| ())?;
+        let fd = f.fdalloc(ctx)?;
         Ok(fd as usize)
     }
 
     fn chdir(
         &self,
         inode: RcInode<InodeInner>,
-        _tx: &Self::Tx<'_>,
+        tx: &Self::Tx<'_>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
-        // TODO(https://github.com/kaist-cp/rv6/issues/290):
-        // Dropping an RcInode requires a transaction.
         let ip = inode.lock(ctx);
         let typ = ip.deref_inner().typ;
         ip.free(ctx);
         if typ != InodeType::Dir {
+            inode.free((tx, ctx));
             return Err(());
         }
-        drop(mem::replace(ctx.proc_mut().cwd_mut(), inode));
+        mem::replace(ctx.proc_mut().cwd_mut(), inode).free((tx, ctx));
         Ok(())
     }
 }

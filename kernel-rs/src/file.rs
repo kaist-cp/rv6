@@ -16,7 +16,7 @@ use crate::{
     lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
-    proc::{kernel_ctx, KernelCtx},
+    proc::KernelCtx,
 };
 
 pub enum FileType {
@@ -244,32 +244,26 @@ impl const Default for File {
 }
 
 impl ArenaObject for File {
-    fn finalize<A: Arena>(&mut self) {
-        let finalize_inner = |ctx: KernelCtx<'_, '_>| {
-            let typ = mem::replace(&mut self.typ, FileType::None);
-            match typ {
-                FileType::Pipe { pipe } => {
-                    if let Some(page) = pipe.close(self.writable, ctx.kernel()) {
-                        allocator().free(page);
-                    }
-                }
-                FileType::Inode {
-                    inner: InodeFileType { ip, .. },
-                }
-                | FileType::Device { ip, .. } => {
-                    // TODO(https://github.com/kaist-cp/rv6/issues/290):
-                    // Dropping an RcInode requires a transaction.
-                    let tx = ctx.kernel().fs().begin_tx(&ctx);
-                    drop(ip);
-                    tx.end(&ctx);
-                }
-                _ => (),
-            }
-        };
+    type Ctx<'a, 'id: 'a> = &'a KernelCtx<'id, 'a>;
 
-        // SAFETY: `FileTable` does not use `Arena::find_or_alloc`.
-        // TODO(https://github.com/kaist-cp/rv6/issues/290): remove kernel_ctx()
-        unsafe { kernel_ctx(finalize_inner) };
+    fn finalize<'a, 'id: 'a, A: Arena>(&mut self, ctx: Self::Ctx<'a, 'id>) {
+        let typ = mem::replace(&mut self.typ, FileType::None);
+        match typ {
+            FileType::Pipe { pipe } => {
+                if let Some(page) = pipe.close(self.writable, ctx) {
+                    allocator().free(page);
+                }
+            }
+            FileType::Inode {
+                inner: InodeFileType { ip, .. },
+            }
+            | FileType::Device { ip, .. } => {
+                let tx = ctx.kernel().fs().begin_tx(ctx);
+                ip.free((&tx, ctx));
+                tx.end(ctx);
+            }
+            _ => (),
+        }
     }
 }
 
@@ -287,7 +281,7 @@ impl FileTable {
 impl RcFile {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
-    pub fn fdalloc(self, ctx: &mut KernelCtx<'_, '_>) -> Result<i32, Self> {
+    pub fn fdalloc(self, ctx: &mut KernelCtx<'_, '_>) -> Result<i32, ()> {
         let proc_data = ctx.proc_mut().deref_mut_data();
         for (fd, f) in proc_data.open_files.iter_mut().enumerate() {
             if f.is_none() {
@@ -295,6 +289,7 @@ impl RcFile {
                 return Ok(fd as i32);
             }
         }
-        Err(self)
+        self.free(ctx);
+        Err(())
     }
 }

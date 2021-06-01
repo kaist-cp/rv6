@@ -4,7 +4,6 @@ use crate::{
     arch::addr::UVAddr,
     file::{FileType, RcFile},
     hal::allocator,
-    kernel::{Kernel, KernelRef},
     lock::Spinlock,
     page::Page,
     proc::{KernelCtx, WaitChannel},
@@ -90,15 +89,15 @@ impl Pipe {
         }
     }
 
-    fn close(&self, writable: bool, kernel: KernelRef<'_, '_>) -> bool {
+    fn close(&self, writable: bool, ctx: &KernelCtx<'_, '_>) -> bool {
         let mut inner = self.inner.lock();
 
         if writable {
             inner.writeopen = false;
-            self.read_waitchannel.wakeup(kernel);
+            self.read_waitchannel.wakeup(ctx.kernel());
         } else {
             inner.readopen = false;
-            self.write_waitchannel.wakeup(kernel);
+            self.write_waitchannel.wakeup(ctx.kernel());
         }
 
         // Return whether pipe should be freed or not.
@@ -130,7 +129,7 @@ impl Deref for AllocatedPipe {
     }
 }
 
-impl Kernel {
+impl KernelCtx<'_, '_> {
     pub fn allocate_pipe(&self) -> Result<(RcFile, RcFile), ()> {
         let allocator = allocator();
         let page = allocator.alloc().ok_or(())?;
@@ -153,14 +152,15 @@ impl Kernel {
             read_waitchannel: WaitChannel::new(),
             write_waitchannel: WaitChannel::new(),
         }));
-        let f0 = self.ftable.alloc_file(
+        let f0 = self.kernel().ftable.alloc_file(
             FileType::Pipe {
                 pipe: AllocatedPipe { ptr },
             },
             true,
             false,
         )?;
-        let f1 = self.ftable.alloc_file(
+        let f0 = scopeguard::guard(f0, |f0| f0.free(self));
+        let f1 = self.kernel().ftable.alloc_file(
             FileType::Pipe {
                 pipe: AllocatedPipe { ptr },
             },
@@ -170,13 +170,13 @@ impl Kernel {
 
         // Since files have been created successfully, prevent the page from being deallocated.
         mem::forget(scopeguard::ScopeGuard::into_inner(page));
-        Ok((f0, f1))
+        Ok((scopeguard::ScopeGuard::into_inner(f0), f1))
     }
 }
 
 impl AllocatedPipe {
-    pub fn close(self, writable: bool, kernel: KernelRef<'_, '_>) -> Option<Page> {
-        if self.deref().close(writable, kernel) {
+    pub fn close(self, writable: bool, ctx: &KernelCtx<'_, '_>) -> Option<Page> {
+        if self.deref().close(writable, ctx) {
             // SAFETY:
             // If `Pipe::close()` returned true, this means all `AllocatedPipe`s were closed.
             // Hence, we can free the `Pipe`.
@@ -270,22 +270,25 @@ impl KernelCtx<'_, '_> {
     /// Create a pipe, put read/write file descriptors in fd0 and fd1.
     /// Returns Ok(()) on success, Err(()) on error.
     pub fn pipe(&mut self, fdarray: UVAddr) -> Result<(), ()> {
-        let (pipereader, pipewriter) = self.kernel().allocate_pipe()?;
+        let (pipereader, pipewriter) = self.allocate_pipe()?;
 
-        let mut this = scopeguard::guard((self, -1, -1), |(this, fd1, fd2)| {
-            if fd1 != -1 {
-                this.proc_mut().deref_mut_data().open_files[fd1 as usize] = None;
-            }
+        let fd1 = if let Ok(fd) = pipereader.fdalloc(self) {
+            fd
+        } else {
+            pipewriter.free(self);
+            return Err(());
+        };
 
-            if fd2 != -1 {
-                this.proc_mut().deref_mut_data().open_files[fd2 as usize] = None;
-            }
-        });
+        let fd2 = if let Ok(fd) = pipewriter.fdalloc(self) {
+            fd
+        } else {
+            self.proc_mut().deref_mut_data().open_files[fd1 as usize]
+                .take()
+                .unwrap()
+                .free(self);
+            return Err(());
+        };
 
-        this.1 = pipereader.fdalloc(this.0).map_err(|_| ())?;
-        this.2 = pipewriter.fdalloc(this.0).map_err(|_| ())?;
-
-        let (this, fd1, fd2) = scopeguard::ScopeGuard::into_inner(this);
-        this.proc_mut().memory_mut().copy_out(fdarray, &[fd1, fd2])
+        self.proc_mut().memory_mut().copy_out(fdarray, &[fd1, fd2])
     }
 }

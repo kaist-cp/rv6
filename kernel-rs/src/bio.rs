@@ -15,7 +15,7 @@ use core::mem::{self, ManuallyDrop};
 use core::ops::{Deref, DerefMut};
 
 use crate::{
-    arena::{Arena, ArenaObject, ArenaRc, MruArena},
+    arena::{Arena, ArenaObject, DroppableRc, MruArena},
     lock::{Sleeplock, Spinlock},
     param::{BSIZE, NBUF},
     proc::{KernelCtx, WaitChannel},
@@ -49,7 +49,10 @@ impl const Default for BufEntry {
 }
 
 impl ArenaObject for BufEntry {
-    fn finalize<A: Arena>(&mut self) {
+    type Ctx<'a, 'id: 'a> = ();
+
+    #[allow(clippy::needless_lifetimes)]
+    fn finalize<'a, 'id: 'a, A: Arena>(&mut self, _: ()) {
         // The buffer contents should have been written. Does nothing.
     }
 }
@@ -98,7 +101,7 @@ impl BufInner {
 pub type Bcache = Spinlock<MruArena<BufEntry, NBUF>>;
 
 /// A reference counted smart pointer to a `BufEntry`.
-pub type BufUnlocked = ArenaRc<Bcache>;
+pub type BufUnlocked = DroppableRc<BufEntry, Bcache>;
 
 /// A locked `BufEntry`.
 ///
@@ -162,15 +165,17 @@ impl Bcache {
 
     /// Return a unlocked buf with the contents of the indicated block.
     pub fn get_buf(&self, dev: u32, blockno: u32) -> BufUnlocked {
-        self.find_or_alloc(
-            |buf| buf.dev == dev && buf.blockno == blockno,
-            |buf| {
-                buf.dev = dev;
-                buf.blockno = blockno;
-                buf.inner.get_mut().valid = false;
-            },
+        DroppableRc::new(
+            self.find_or_alloc(
+                |buf| buf.dev == dev && buf.blockno == blockno,
+                |buf| {
+                    buf.dev = dev;
+                    buf.blockno = blockno;
+                    buf.inner.get_mut().valid = false;
+                },
+            )
+            .expect("[BufGuard::new] no buffers"),
         )
-        .expect("[BufGuard::new] no buffers")
     }
 }
 

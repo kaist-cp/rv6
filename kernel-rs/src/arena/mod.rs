@@ -48,17 +48,23 @@ pub trait Arena: Sized + Sync {
     ///
     /// This method is automatically used by the `Rc`.
     /// Usually, you don't need to manually call this method.
-    fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: Handle<'id, Self::Data>) {
+    fn dealloc<'id, 'a, 'b>(
+        self: ArenaRef<'id, &Self>,
+        handle: Handle<'id, Self::Data>,
+        ctx: <Self::Data as ArenaObject>::Ctx<'a, 'b>,
+    ) {
         if let Ok(mut rm) = handle.0.into_inner().into_mut() {
-            rm.finalize::<Self>();
+            rm.finalize::<Self>(ctx);
         }
     }
 }
 
 pub trait ArenaObject {
+    type Ctx<'a, 'b: 'a>;
+
     /// Finalizes the `ArenaObject`.
     /// This function is automatically called when the last `Rc` referring to this `ArenaObject` gets dropped.
-    fn finalize<A: Arena>(&mut self);
+    fn finalize<'a, 'b: 'a, A: Arena>(&mut self, ctx: Self::Ctx<'a, 'b>);
 }
 
 /// A branded reference to an arena.
@@ -152,12 +158,58 @@ impl<A: Arena> Clone for ArenaRc<A> {
     }
 }
 
-impl<A: Arena> Drop for ArenaRc<A> {
-    fn drop(&mut self) {
+impl<A: Arena> ArenaRc<A> {
+    pub fn free(mut self, ctx: <A::Data as ArenaObject>::Ctx<'_, '_>) {
         let inner = unsafe { ManuallyDrop::take(&mut self.inner) };
         self.map_arena(|arena| {
             let inner = Handle(arena.0.brand(inner));
-            arena.dealloc(inner);
+            arena.dealloc(inner, ctx);
         });
+        core::mem::forget(self);
+    }
+}
+
+impl<A: Arena> Drop for ArenaRc<A> {
+    fn drop(&mut self) {
+        panic!();
+    }
+}
+
+#[rustfmt::skip]
+pub struct DroppableRc<T: ArenaObject<Ctx<'static, 'static> = ()>, A: Arena<Data = T>> {
+    rc: ManuallyDrop<ArenaRc<A>>,
+}
+
+#[rustfmt::skip]
+impl<T: ArenaObject<Ctx<'static, 'static> = ()>, A: Arena<Data = T>> DroppableRc<T, A> {
+    pub fn new(rc: ArenaRc<A>) -> Self {
+        Self {
+            rc: ManuallyDrop::new(rc),
+        }
+    }
+}
+
+#[rustfmt::skip]
+impl<T: ArenaObject<Ctx<'static, 'static> = ()>, A: Arena<Data = T>> Deref for DroppableRc<T, A> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        self.rc.deref()
+    }
+}
+
+#[rustfmt::skip]
+impl<T: ArenaObject<Ctx<'static, 'static> = ()>, A: Arena<Data = T>> Clone for DroppableRc<T, A> {
+    fn clone(&self) -> Self {
+        DroppableRc {
+            rc: self.rc.clone(),
+        }
+    }
+}
+
+#[rustfmt::skip]
+impl<T: ArenaObject<Ctx<'static, 'static> = ()>, A: Arena<Data = T>> Drop for DroppableRc<T, A> {
+    fn drop(&mut self) {
+        unsafe { ManuallyDrop::take(&mut self.rc) }.free(());
     }
 }
