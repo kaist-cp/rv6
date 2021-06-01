@@ -79,7 +79,7 @@ impl Log {
             let lbuf = hal().disk.read(dev, (start + tail as i32 + 1) as u32, ctx);
 
             // Read dst.
-            let mut dbuf = dbuf.lock();
+            let mut dbuf = dbuf.lock(ctx);
 
             // Copy block to dst.
             dbuf.deref_inner_mut()
@@ -88,6 +88,9 @@ impl Log {
 
             // Write dst to disk.
             hal().disk.write(&mut dbuf, ctx);
+
+            lbuf.free(ctx);
+            dbuf.free(ctx);
         }
     }
 
@@ -103,9 +106,10 @@ impl Log {
         // * LogHeader contains only u32's, so does not have any requirements.
         // * buf is locked, so we can access it exclusively.
         let lh = unsafe { &mut *(buf.deref_inner_mut().data.as_mut_ptr() as *mut LogHeader) };
+        buf.free(ctx);
 
         for b in &lh.block[0..lh.n as usize] {
-            let buf = hal().disk.read(self.dev, *b, ctx).unlock();
+            let buf = hal().disk.read(self.dev, *b, ctx).unlock(ctx);
             self.bufs.push(buf);
         }
     }
@@ -129,7 +133,8 @@ impl Log {
         for (db, b) in izip!(&mut lh.block, &self.bufs) {
             *db = b.blockno;
         }
-        hal().disk.write(&mut buf, ctx)
+        hal().disk.write(&mut buf, ctx);
+        buf.free(ctx);
     }
 
     fn recover_from_log(&mut self, ctx: &KernelCtx<'_, '_>) {
@@ -159,6 +164,9 @@ impl Log {
 
             // Write the log.
             hal().disk.write(&mut to, ctx);
+
+            to.free(ctx);
+            from.free(ctx);
         }
     }
 
@@ -186,7 +194,7 @@ impl Log {
     ///   bp = Disk::read(...)
     ///   modify bp->data[]
     ///   write(bp)
-    pub fn write(&mut self, b: Buf) {
+    pub fn write(&mut self, b: Buf, ctx: &KernelCtx<'_, '_>) {
         assert!(
             !(self.bufs.len() >= LOGSIZE || self.bufs.len() as i32 >= self.size - 1),
             "too big a transaction"
@@ -195,7 +203,9 @@ impl Log {
 
         if self.bufs.iter().all(|buf| buf.blockno != b.blockno) {
             // Add new block to log
-            self.bufs.push(b.unlock());
+            self.bufs.push(b.unlock(ctx));
+        } else {
+            b.free(ctx);
         }
     }
 }

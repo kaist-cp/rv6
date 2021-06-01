@@ -56,9 +56,9 @@ impl FileSystem for Ufs {
 
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
         if !self.superblock.is_completed() {
-            let superblock = self
-                .superblock
-                .call_once(|| Superblock::new(&hal().disk.read(dev, 1, ctx)));
+            let buf = hal().disk.read(dev, 1, ctx);
+            let superblock = self.superblock.call_once(|| Superblock::new(&buf));
+            buf.free(ctx);
             let _ = self.log.call_once(|| {
                 Sleepablelock::new(
                     "LOG",
@@ -93,7 +93,8 @@ impl FileSystem for Ufs {
         tx: &Self::Tx<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
-        let mut ip = inode.lock(ctx);
+        let ip = inode.lock(ctx);
+        let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
         if ip.deref_inner().typ == InodeType::Dir {
             return Err(());
         }
@@ -102,14 +103,15 @@ impl FileSystem for Ufs {
         drop(ip);
 
         if let Ok((ptr2, name)) = ctx.kernel().fs().itable.nameiparent(path, tx, ctx) {
-            let mut dp = ptr2.lock(ctx);
-            if dp.dev != inode.dev || dp.dirlink(name, inode.inum, &tx, ctx).is_err() {
-            } else {
+            let dp = ptr2.lock(ctx);
+            let mut dp = scopeguard::guard(dp, |ip| ip.free(ctx));
+            if dp.dev == inode.dev && dp.dirlink(name, inode.inum, &tx, ctx).is_ok() {
                 return Ok(());
             }
         }
 
-        let mut ip = inode.lock(ctx);
+        let ip = inode.lock(ctx);
+        let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
         ip.deref_inner_mut().nlink -= 1;
         ip.update(&tx, ctx);
         Err(())
@@ -117,7 +119,8 @@ impl FileSystem for Ufs {
 
     fn unlink(&self, path: &Path, tx: &Self::Tx<'_>, ctx: &KernelCtx<'_, '_>) -> Result<(), ()> {
         let (ptr, name) = self.itable.nameiparent(path, tx, ctx)?;
-        let mut dp = ptr.lock(ctx);
+        let dp = ptr.lock(ctx);
+        let mut dp = scopeguard::guard(dp, |ip| ip.free(ctx));
 
         // Cannot unlink "." or "..".
         if name.as_bytes() == b"." || name.as_bytes() == b".." {
@@ -125,7 +128,8 @@ impl FileSystem for Ufs {
         }
 
         let (ptr2, off) = dp.dirlookup(&name, ctx)?;
-        let mut ip = ptr2.lock(ctx);
+        let ip = ptr2.lock(ctx);
+        let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
         assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
 
         if ip.deref_inner().typ == InodeType::Dir && !ip.is_dir_empty(ctx) {
@@ -157,13 +161,15 @@ impl FileSystem for Ufs {
         F: FnOnce(&mut InodeGuard<'_, Self::InodeInner>) -> T,
     {
         let (ptr, name) = self.itable.nameiparent(path, tx, ctx)?;
-        let mut dp = ptr.lock(ctx);
+        let dp = ptr.lock(ctx);
+        let mut dp = scopeguard::guard(dp, |ip| ip.free(ctx));
         if let Ok((ptr2, _)) = dp.dirlookup(&name, ctx) {
             drop(dp);
             if typ != InodeType::File {
                 return Err(());
             }
-            let mut ip = ptr2.lock(ctx);
+            let ip = ptr2.lock(ctx);
+            let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
             if let InodeType::None | InodeType::Dir = ip.deref_inner().typ {
                 return Err(());
             }
@@ -172,7 +178,8 @@ impl FileSystem for Ufs {
             return Ok((ptr2, ret));
         }
         let ptr2 = ctx.kernel().fs().itable.alloc_inode(dp.dev, typ, tx, ctx);
-        let mut ip = ptr2.lock(ctx);
+        let ip = ptr2.lock(ctx);
+        let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
         ip.deref_inner_mut().nlink = 1;
         ip.update(tx, ctx);
 
@@ -182,9 +189,10 @@ impl FileSystem for Ufs {
             dp.deref_inner_mut().nlink += 1;
             dp.update(tx, ctx);
 
+            let inum = ip.inum;
             // No ip->nlink++ for ".": avoid cyclic ref count.
             // SAFETY: b"." does not contain any NUL characters.
-            ip.dirlink(unsafe { FileName::from_bytes(b".") }, ip.inum, tx, ctx)
+            ip.dirlink(unsafe { FileName::from_bytes(b".") }, inum, tx, ctx)
                 // SAFETY: b".." does not contain any NUL characters.
                 .and_then(|_| ip.dirlink(unsafe { FileName::from_bytes(b"..") }, dp.inum, tx, ctx))
                 .expect("create dots");
@@ -208,6 +216,7 @@ impl FileSystem for Ufs {
         } else {
             let ptr = self.itable.namei(path, tx, ctx)?;
             let ip = ptr.lock(ctx);
+            let ip = scopeguard::guard(ip, |ip| ip.free(ctx));
             let typ = ip.deref_inner().typ;
 
             if typ == InodeType::Dir && omode != FcntlFlags::O_RDONLY {
@@ -241,7 +250,11 @@ impl FileSystem for Ufs {
                 FileType::Device { ip, .. }
                 | FileType::Inode {
                     inner: InodeFileType { ip, .. },
-                } => ip.lock(ctx).itrunc(&tx, ctx),
+                } => {
+                    let mut ip = ip.lock(ctx);
+                    ip.itrunc(&tx, ctx);
+                    ip.free(ctx);
+                }
                 _ => panic!("sys_open : Not reach"),
             };
         }
@@ -257,7 +270,10 @@ impl FileSystem for Ufs {
     ) -> Result<(), ()> {
         // TODO(https://github.com/kaist-cp/rv6/issues/290):
         // Dropping an RcInode requires a transaction.
-        if inode.lock(ctx).deref_inner().typ != InodeType::Dir {
+        let ip = inode.lock(ctx);
+        let typ = ip.deref_inner().typ;
+        ip.free(ctx);
+        if typ != InodeType::Dir {
             return Err(());
         }
         drop(mem::replace(ctx.proc_mut().cwd_mut(), inode));
@@ -304,18 +320,18 @@ impl UfsTx<'_> {
     ///   bp = kernel.fs().disk.read(...)
     ///   modify bp->data[]
     ///   write(bp)
-    fn write(&self, b: Buf) {
-        self.fs.log().lock().write(b);
+    fn write(&self, b: Buf, ctx: &KernelCtx<'_, '_>) {
+        self.fs.log().lock().write(b, ctx);
     }
 
     /// Zero a block.
     fn bzero(&self, dev: u32, bno: u32, ctx: &KernelCtx<'_, '_>) {
         let mut buf = unsafe { ctx.kernel().get_bcache() }
             .get_buf(dev, bno)
-            .lock();
+            .lock(ctx);
         buf.deref_inner_mut().data.fill(0);
         buf.deref_inner_mut().valid = true;
-        self.write(buf);
+        self.write(buf, ctx);
     }
 
     /// Blocks.
@@ -328,11 +344,12 @@ impl UfsTx<'_> {
                 if bp.deref_inner_mut().data[(bi / 8) as usize] & m == 0 {
                     // Is block free?
                     bp.deref_inner_mut().data[(bi / 8) as usize] |= m; // Mark block in use.
-                    self.write(bp);
+                    self.write(bp, ctx);
                     self.bzero(dev, b + bi, ctx);
                     return b + bi;
                 }
             }
+            bp.free(ctx);
         }
 
         panic!("balloc: out of blocks");
@@ -349,7 +366,7 @@ impl UfsTx<'_> {
             "freeing free block"
         );
         bp.deref_inner_mut().data[bi / 8] &= !m;
-        self.write(bp);
+        self.write(bp, ctx);
     }
 
     /// Called at the end of each FS system call.

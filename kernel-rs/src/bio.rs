@@ -18,7 +18,7 @@ use crate::{
     arena::{Arena, ArenaObject, ArenaRc, MruArena},
     lock::{Sleeplock, Spinlock},
     param::{BSIZE, NBUF},
-    proc::WaitChannel,
+    proc::{KernelCtx, WaitChannel},
 };
 
 pub struct BufEntry {
@@ -122,13 +122,17 @@ impl Buf {
         unsafe { &mut *entry.inner.get_mut_raw() }
     }
 
-    pub fn unlock(mut self) -> BufUnlocked {
+    pub fn unlock(mut self, ctx: &KernelCtx<'_, '_>) -> BufUnlocked {
         // SAFETY: this method consumes self and self.inner will not be used again.
         let inner = unsafe { ManuallyDrop::take(&mut self.inner) };
         // SAFETY: this method consumes self.
-        unsafe { inner.inner.unlock() };
+        unsafe { inner.inner.unlock(ctx) };
         mem::forget(self);
         inner
+    }
+
+    pub fn free(self, ctx: &KernelCtx<'_, '_>) {
+        let _ = self.unlock(ctx);
     }
 }
 
@@ -142,9 +146,9 @@ impl Deref for Buf {
 
 impl Drop for Buf {
     fn drop(&mut self) {
-        // SAFETY: self will be dropped and self.inner will not be
-        // used again.
-        unsafe { ManuallyDrop::take(&mut self.inner).inner.unlock() };
+        // HACK(@efenniht): we really need linear type here:
+        // https://github.com/rust-lang/rfcs/issues/814
+        panic!("Buf must never drop.");
     }
 }
 
@@ -171,8 +175,8 @@ impl Bcache {
 }
 
 impl BufUnlocked {
-    pub fn lock(self) -> Buf {
-        mem::forget(self.inner.lock());
+    pub fn lock(self, ctx: &KernelCtx<'_, '_>) -> Buf {
+        mem::forget(self.inner.lock(ctx));
         Buf {
             inner: ManuallyDrop::new(self),
         }
