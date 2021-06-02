@@ -14,8 +14,9 @@
 use core::mem::{self, ManuallyDrop};
 use core::ops::{Deref, DerefMut};
 
+use crate::arena::ArenaRc;
 use crate::{
-    arena::{Arena, ArenaObject, DroppableRc, MruArena},
+    arena::{Arena, ArenaObject, MruArena},
     lock::{Sleeplock, Spinlock},
     param::{BSIZE, NBUF},
     proc::{KernelCtx, WaitChannel},
@@ -101,7 +102,7 @@ impl BufInner {
 pub type Bcache = Spinlock<MruArena<BufEntry, NBUF>>;
 
 /// A reference counted smart pointer to a `BufEntry`.
-pub type BufUnlocked = DroppableRc<BufEntry, Bcache>;
+pub struct BufUnlocked(ManuallyDrop<ArenaRc<Bcache>>);
 
 /// A locked `BufEntry`.
 ///
@@ -110,6 +111,30 @@ pub type BufUnlocked = DroppableRc<BufEntry, Bcache>;
 /// (inner: BufEntry).inner is locked.
 pub struct Buf {
     inner: ManuallyDrop<BufUnlocked>,
+}
+
+impl BufUnlocked {
+    pub fn lock(self, ctx: &KernelCtx<'_, '_>) -> Buf {
+        mem::forget(self.inner.lock(ctx));
+        Buf {
+            inner: ManuallyDrop::new(self),
+        }
+    }
+}
+
+impl Deref for BufUnlocked {
+    type Target = BufEntry;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Drop for BufUnlocked {
+    fn drop(&mut self) {
+        // SAFETY: `self` is being dropped.
+        unsafe { ManuallyDrop::take(&mut self.0) }.free(());
+    }
 }
 
 impl Buf {
@@ -165,7 +190,7 @@ impl Bcache {
 
     /// Return a unlocked buf with the contents of the indicated block.
     pub fn get_buf(&self, dev: u32, blockno: u32) -> BufUnlocked {
-        DroppableRc::new(
+        BufUnlocked(ManuallyDrop::new(
             self.find_or_alloc(
                 |buf| buf.dev == dev && buf.blockno == blockno,
                 |buf| {
@@ -175,15 +200,6 @@ impl Bcache {
                 },
             )
             .expect("[BufGuard::new] no buffers"),
-        )
-    }
-}
-
-impl BufUnlocked {
-    pub fn lock(self, ctx: &KernelCtx<'_, '_>) -> Buf {
-        mem::forget(self.inner.lock(ctx));
-        Buf {
-            inner: ManuallyDrop::new(self),
-        }
+        ))
     }
 }
