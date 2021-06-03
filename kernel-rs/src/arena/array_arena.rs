@@ -1,6 +1,6 @@
 //! Array based arena.
 
-use core::ptr::NonNull;
+use core::{marker::PhantomPinned, pin::Pin, ptr::NonNull};
 
 use array_macro::array;
 use pin_project::pin_project;
@@ -16,6 +16,8 @@ use crate::{
 pub struct ArrayArena<T, const CAPACITY: usize> {
     #[pin]
     entries: [StaticArc<T>; CAPACITY],
+    #[pin]
+    _marker: PhantomPinned,
 }
 
 impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
@@ -33,6 +35,7 @@ impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
     pub const fn new<D: Default>() -> ArrayArena<D, CAPACITY> {
         ArrayArena {
             entries: array![_ => StaticArc::new(Default::default()); CAPACITY],
+            _marker: PhantomPinned,
         }
     }
 
@@ -49,14 +52,14 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
     type Guard<'s> = SpinlockGuard<'s, ArrayArena<T, CAPACITY>>;
 
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
-        &self,
+        self: Pin<&Self>,
         c: C,
         n: N,
     ) -> Option<ArenaRc<Self>> {
         ArenaRef::new(
             self,
-            |arena: ArenaRef<'_, &Spinlock<ArrayArena<T, CAPACITY>>>| {
-                let mut guard = arena.lock();
+            |arena: ArenaRef<'_, '_, Spinlock<ArrayArena<T, CAPACITY>>>| {
+                let mut guard = arena.pinned_lock();
                 let this = guard.get_shared_mut();
 
                 let mut empty: Option<NonNull<StaticArc<T>>> = None;
@@ -86,11 +89,11 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
         )
     }
 
-    fn alloc<F: FnOnce() -> Self::Data>(&self, f: F) -> Option<ArenaRc<Self>> {
+    fn alloc<F: FnOnce() -> Self::Data>(self: Pin<&Self>, f: F) -> Option<ArenaRc<Self>> {
         ArenaRef::new(
             self,
-            |arena: ArenaRef<'_, &Spinlock<ArrayArena<T, CAPACITY>>>| {
-                let mut guard = arena.lock();
+            |arena: ArenaRef<'_, '_, Spinlock<ArrayArena<T, CAPACITY>>>| {
+                let mut guard = arena.pinned_lock();
                 let this = guard.get_shared_mut();
 
                 for mut entry in ArrayArena::entries(this).iter() {

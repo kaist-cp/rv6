@@ -1,6 +1,8 @@
 // TODO: remove it
 #![allow(unused_variables)]
 
+use core::pin::Pin;
+
 use super::{FcntlFlags, FileSystem, Inode, InodeGuard, InodeType, Path, RcInode};
 use crate::{
     arena::{Arena, ArenaObject},
@@ -31,12 +33,12 @@ impl FileSystem for Lfs {
         todo!()
     }
 
-    fn root(&self) -> RcInode<Self::InodeInner> {
+    fn root(self: Pin<&Self>) -> RcInode<Self::InodeInner> {
         todo!()
     }
 
     fn namei(
-        &self,
+        self: Pin<&Self>,
         path: &Path,
         tx: &Self::Tx<'_>,
         ctx: &KernelCtx<'_, '_>,
@@ -45,7 +47,7 @@ impl FileSystem for Lfs {
     }
 
     fn link(
-        &self,
+        self: Pin<&Self>,
         inode: RcInode<Self::InodeInner>,
         path: &Path,
         tx: &Self::Tx<'_>,
@@ -54,12 +56,17 @@ impl FileSystem for Lfs {
         todo!()
     }
 
-    fn unlink(&self, path: &Path, tx: &Self::Tx<'_>, ctx: &KernelCtx<'_, '_>) -> Result<(), ()> {
+    fn unlink(
+        self: Pin<&Self>,
+        path: &Path,
+        tx: &Self::Tx<'_>,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Result<(), ()> {
         todo!()
     }
 
     fn create<F, T>(
-        &self,
+        self: Pin<&Self>,
         path: &Path,
         typ: InodeType,
         tx: &Self::Tx<'_>,
@@ -73,7 +80,7 @@ impl FileSystem for Lfs {
     }
 
     fn open(
-        &self,
+        self: Pin<&Self>,
         path: &Path,
         omode: FcntlFlags,
         tx: &Self::Tx<'_>,
@@ -83,7 +90,7 @@ impl FileSystem for Lfs {
     }
 
     fn chdir(
-        &self,
+        self: Pin<&Self>,
         inode: RcInode<Self::InodeInner>,
         tx: &Self::Tx<'_>,
         ctx: &mut KernelCtx<'_, '_>,

@@ -112,14 +112,14 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
     type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
 
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
-        &self,
+        self: Pin<&Self>,
         c: C,
         n: N,
     ) -> Option<ArenaRc<Self>> {
         ArenaRef::new(
             self,
-            |arena: ArenaRef<'_, &Spinlock<MruArena<T, CAPACITY>>>| {
-                let mut guard = arena.pinned_lock_unchecked();
+            |arena: ArenaRef<'_, '_, Spinlock<MruArena<T, CAPACITY>>>| {
+                let mut guard = arena.pinned_lock();
                 let this = guard.get_shared_mut();
 
                 let mut empty: Option<NonNull<StaticArc<T>>> = None;
@@ -150,11 +150,11 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
         )
     }
 
-    fn alloc<F: FnOnce() -> Self::Data>(&self, f: F) -> Option<ArenaRc<Self>> {
+    fn alloc<F: FnOnce() -> Self::Data>(self: Pin<&Self>, f: F) -> Option<ArenaRc<Self>> {
         ArenaRef::new(
             self,
-            |arena: ArenaRef<'_, &Spinlock<MruArena<T, CAPACITY>>>| {
-                let mut guard = arena.pinned_lock_unchecked();
+            |arena: ArenaRef<'_, '_, Spinlock<MruArena<T, CAPACITY>>>| {
+                let mut guard = arena.pinned_lock();
                 let this = guard.get_shared_mut();
 
                 for entry in List::iter_shared_mut(MruArena::list(this)).rev() {
@@ -171,7 +171,7 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
     }
 
     fn dealloc<'id, 'a, 'b>(
-        self: ArenaRef<'id, &Self>,
+        self: ArenaRef<'id, '_, Self>,
         handle: Handle<'id, Self::Data>,
         ctx: <Self::Data as ArenaObject>::Ctx<'a, 'b>,
     ) {
@@ -180,7 +180,7 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
             rm.finalize::<Self>(ctx);
 
             // Move this entry to the back of the list.
-            let this = self.pinned_lock_unchecked();
+            let this = self.pinned_lock();
             let ptr = (rm.cell() as usize - MruEntry::<T>::DATA_OFFSET) as *mut _;
             // SAFETY:
             // * `rm.cell()` is an `RcCell` inside an `MruEntry`.

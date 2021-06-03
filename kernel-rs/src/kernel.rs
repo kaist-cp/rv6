@@ -85,8 +85,10 @@ pub struct KernelBuilder {
 
     devsw: [Devsw; NDEV],
 
-    pub ftable: FileTable,
+    #[pin]
+    ftable: FileTable,
 
+    #[pin]
     file_system: Ufs,
 }
 
@@ -141,9 +143,16 @@ impl<'id, 's> KernelRef<'id, 's> {
     }
 
     /// Returns a reference to the kernel's `FileSystem`.
-    // Need this to prevent lifetime confusions.
-    pub fn fs(&self) -> &'s Ufs {
-        &self.0.file_system
+    pub fn fs(&self) -> Pin<&'s Ufs> {
+        unsafe { Pin::new_unchecked(&self.0.file_system) }
+    }
+
+    pub fn ftable(&self) -> Pin<&'s FileTable> {
+        unsafe { Pin::new_unchecked(&self.0.ftable) }
+    }
+
+    pub fn bcache(&self) -> Pin<&'s Bcache> {
+        unsafe { Pin::new_unchecked(&self.0.bcache) }
     }
 }
 
@@ -217,7 +226,7 @@ impl KernelBuilder {
 
         // First user process.
         this.procs
-            .user_proc_init(this.file_system.root(), allocator);
+            .user_proc_init(this.file_system.as_ref().root(), allocator);
     }
 
     /// Initializes the kernel for a hart.
@@ -258,15 +267,6 @@ impl KernelBuilder {
 
     pub fn write_str(&self, s: &str) {
         self.write_fmt(format_args!("{}", s));
-    }
-
-    /// Returns an immutable reference to the kernel's bcache.
-    ///
-    /// # Safety
-    ///
-    /// Access it only after initializing the kernel using `kernel_main()`.
-    pub unsafe fn get_bcache(&self) -> &Bcache {
-        &self.bcache
     }
 }
 

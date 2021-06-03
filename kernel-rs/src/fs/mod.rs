@@ -1,4 +1,4 @@
-use core::ops::Deref;
+use core::{ops::Deref, pin::Pin};
 
 use bitflags::bitflags;
 
@@ -121,11 +121,11 @@ where
     fn begin_tx(&self, ctx: &KernelCtx<'_, '_>) -> Self::Tx<'_>;
 
     /// Finds the root inode.
-    fn root(&self) -> RcInode<Self::InodeInner>;
+    fn root(self: Pin<&Self>) -> RcInode<Self::InodeInner>;
 
     /// Finds inode from the given path.
     fn namei(
-        &self,
+        self: Pin<&Self>,
         path: &Path,
         tx: &Self::Tx<'_>,
         ctx: &KernelCtx<'_, '_>,
@@ -134,7 +134,7 @@ where
     /// Create another name(newname) for the file oldname.
     /// Returns Ok(()) on success, Err(()) on error.
     fn link(
-        &self,
+        self: Pin<&Self>,
         inode: RcInode<Self::InodeInner>,
         path: &Path,
         tx: &Self::Tx<'_>,
@@ -143,12 +143,17 @@ where
 
     /// Remove a file(filename).
     /// Returns Ok(()) on success, Err(()) on error.
-    fn unlink(&self, path: &Path, tx: &Self::Tx<'_>, ctx: &KernelCtx<'_, '_>) -> Result<(), ()>;
+    fn unlink(
+        self: Pin<&Self>,
+        path: &Path,
+        tx: &Self::Tx<'_>,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Result<(), ()>;
 
     /// Create an inode with given type.
     /// Returns Ok(created inode, result of given function f) on success, Err(()) on error.
     fn create<F, T>(
-        &self,
+        self: Pin<&Self>,
         path: &Path,
         typ: InodeType,
         tx: &Self::Tx<'_>,
@@ -161,7 +166,7 @@ where
     /// Open a file; omode indicate read/write.
     /// Returns Ok(file descriptor) on success, Err(()) on error.
     fn open(
-        &self,
+        self: Pin<&Self>,
         path: &Path,
         omode: FcntlFlags,
         tx: &Self::Tx<'_>,
@@ -171,7 +176,7 @@ where
     /// Change the current directory.
     /// Returns Ok(()) on success, Err(()) on error.
     fn chdir(
-        &self,
+        self: Pin<&Self>,
         inode: RcInode<Self::InodeInner>,
         tx: &Self::Tx<'_>,
         ctx: &mut KernelCtx<'_, '_>,

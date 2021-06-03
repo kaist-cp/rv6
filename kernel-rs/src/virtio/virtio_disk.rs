@@ -177,9 +177,7 @@ impl Sleepablelock<VirtioDisk> {
     /// Return a locked Buf with the `latest` contents of the indicated block.
     /// If buf.valid is true, we don't need to access Disk.
     pub fn read(&self, dev: u32, blockno: u32, ctx: &KernelCtx<'_, '_>) -> Buf {
-        let mut buf = unsafe { ctx.kernel().get_bcache() }
-            .get_buf(dev, blockno)
-            .lock(ctx);
+        let mut buf = ctx.kernel().bcache().get_buf(dev, blockno).lock(ctx);
         if !buf.deref_inner().valid {
             VirtioDisk::rw(&mut self.lock(), &mut buf, false, ctx);
             buf.deref_inner_mut().valid = true;
