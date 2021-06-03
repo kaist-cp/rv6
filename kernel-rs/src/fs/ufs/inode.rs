@@ -271,7 +271,7 @@ impl InodeGuard<'_, InodeInner> {
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk.
     pub fn update(&self, tx: &UfsTx<'_>, ctx: &KernelCtx<'_, '_>) {
-        let mut bp = hal().disk.read(
+        let mut bp = hal().disk().read(
             self.dev,
             ctx.kernel().fs().superblock().iblock(self.inum),
             ctx,
@@ -331,7 +331,9 @@ impl InodeGuard<'_, InodeInner> {
         }
 
         if self.deref_inner().addr_indirect != 0 {
-            let mut bp = hal().disk.read(dev, self.deref_inner().addr_indirect, ctx);
+            let mut bp = hal()
+                .disk()
+                .read(dev, self.deref_inner().addr_indirect, ctx);
             // SAFETY: u32 does not have internal structure.
             let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "itrunc: Buf data unaligned");
@@ -442,7 +444,7 @@ impl InodeGuard<'_, InodeInner> {
         let mut tot: u32 = 0;
         while tot < n {
             let bp = hal()
-                .disk
+                .disk()
                 .read(self.dev, self.bmap(off as usize / BSIZE, &k), &k);
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
@@ -553,7 +555,7 @@ impl InodeGuard<'_, InodeInner> {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = hal().disk.read(
+            let mut bp = hal().disk().read(
                 self.dev,
                 self.bmap_or_alloc(off as usize / BSIZE, tx, &k),
                 &k,
@@ -623,7 +625,7 @@ impl InodeGuard<'_, InodeInner> {
                 self.deref_inner_mut().addr_indirect = indirect;
             }
 
-            let mut bp = hal().disk.read(self.dev, indirect, ctx);
+            let mut bp = hal().disk().read(self.dev, indirect, ctx);
             let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
             let mut addr = data[bn];
@@ -694,7 +696,7 @@ impl Inode<InodeInner> {
     pub fn lock(&self, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'_, InodeInner> {
         let mut guard = self.inner.lock(ctx);
         if !guard.valid {
-            let mut bp = hal().disk.read(
+            let mut bp = hal().disk().read(
                 self.dev,
                 ctx.kernel().fs().superblock().iblock(self.inum),
                 ctx,
@@ -804,7 +806,7 @@ impl Itable<InodeInner> {
     ) -> RcInode<InodeInner> {
         for inum in 1..ctx.kernel().fs().superblock().ninodes {
             let mut bp = hal()
-                .disk
+                .disk()
                 .read(dev, ctx.kernel().fs().superblock().iblock(inum), ctx);
 
             const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());

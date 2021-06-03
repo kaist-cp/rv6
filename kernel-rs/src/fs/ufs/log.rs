@@ -76,7 +76,9 @@ impl Log {
 
         for (tail, dbuf) in self.bufs.drain(..).enumerate() {
             // Read log block.
-            let lbuf = hal().disk.read(dev, (start + tail as i32 + 1) as u32, ctx);
+            let lbuf = hal()
+                .disk()
+                .read(dev, (start + tail as i32 + 1) as u32, ctx);
 
             // Read dst.
             let mut dbuf = dbuf.lock(ctx);
@@ -87,7 +89,7 @@ impl Log {
                 .copy_from_slice(&lbuf.deref_inner().data[..]);
 
             // Write dst to disk.
-            hal().disk.write(&mut dbuf, ctx);
+            hal().disk().write(&mut dbuf, ctx);
 
             lbuf.free(ctx);
             dbuf.free(ctx);
@@ -96,7 +98,7 @@ impl Log {
 
     /// Read the log header from disk into the in-memory log header.
     fn read_head(&mut self, ctx: &KernelCtx<'_, '_>) {
-        let mut buf = hal().disk.read(self.dev, self.start as u32, ctx);
+        let mut buf = hal().disk().read(self.dev, self.start as u32, ctx);
 
         const_assert!(mem::size_of::<LogHeader>() <= BSIZE);
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<LogHeader>() == 0);
@@ -109,7 +111,7 @@ impl Log {
         buf.free(ctx);
 
         for b in &lh.block[0..lh.n as usize] {
-            let buf = hal().disk.read(self.dev, *b, ctx).unlock(ctx);
+            let buf = hal().disk().read(self.dev, *b, ctx).unlock(ctx);
             self.bufs.push(buf);
         }
     }
@@ -118,7 +120,7 @@ impl Log {
     /// This is the true point at which the
     /// current transaction commits.
     fn write_head(&mut self, ctx: &KernelCtx<'_, '_>) {
-        let mut buf = hal().disk.read(self.dev, self.start as u32, ctx);
+        let mut buf = hal().disk().read(self.dev, self.start as u32, ctx);
 
         const_assert!(mem::size_of::<LogHeader>() <= BSIZE);
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<LogHeader>() == 0);
@@ -133,7 +135,7 @@ impl Log {
         for (db, b) in izip!(&mut lh.block, &self.bufs) {
             *db = b.blockno;
         }
-        hal().disk.write(&mut buf, ctx);
+        hal().disk().write(&mut buf, ctx);
         buf.free(ctx);
     }
 
@@ -152,18 +154,18 @@ impl Log {
         for (tail, from) in self.bufs.iter().enumerate() {
             // Log block.
             let mut to = hal()
-                .disk
+                .disk()
                 .read(self.dev, (self.start + tail as i32 + 1) as u32, ctx);
 
             // Cache block.
-            let from = hal().disk.read(self.dev, from.blockno, ctx);
+            let from = hal().disk().read(self.dev, from.blockno, ctx);
 
             to.deref_inner_mut()
                 .data
                 .copy_from_slice(&from.deref_inner().data[..]);
 
             // Write the log.
-            hal().disk.write(&mut to, ctx);
+            hal().disk().write(&mut to, ctx);
 
             to.free(ctx);
             from.free(ctx);

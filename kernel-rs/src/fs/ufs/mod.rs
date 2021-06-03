@@ -60,7 +60,7 @@ impl FileSystem for Ufs {
 
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
         if !self.superblock.is_completed() {
-            let buf = hal().disk.read(dev, 1, ctx);
+            let buf = hal().disk().read(dev, 1, ctx);
             let superblock = self.superblock.call_once(|| Superblock::new(&buf));
             buf.free(ctx);
             let _ = self.log.call_once(|| {
@@ -355,7 +355,7 @@ impl UfsTx<'_> {
     /// Allocate a zeroed disk block.
     fn balloc(&self, dev: u32, ctx: &KernelCtx<'_, '_>) -> u32 {
         for b in num_iter::range_step(0, self.fs.superblock().size, BPB as u32) {
-            let mut bp = hal().disk.read(dev, self.fs.superblock().bblock(b), ctx);
+            let mut bp = hal().disk().read(dev, self.fs.superblock().bblock(b), ctx);
             for bi in 0..cmp::min(BPB as u32, self.fs.superblock().size - b) {
                 let m = 1 << (bi % 8);
                 if bp.deref_inner_mut().data[(bi / 8) as usize] & m == 0 {
@@ -374,7 +374,7 @@ impl UfsTx<'_> {
 
     /// Free a disk block.
     fn bfree(&self, dev: u32, b: u32, ctx: &KernelCtx<'_, '_>) {
-        let mut bp = hal().disk.read(dev, self.fs.superblock().bblock(b), ctx);
+        let mut bp = hal().disk().read(dev, self.fs.superblock().bblock(b), ctx);
         let bi = b as usize % BPB;
         let m = 1u8 << (bi % 8);
         assert_ne!(

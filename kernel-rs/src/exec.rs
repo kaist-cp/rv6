@@ -9,7 +9,7 @@ use zerocopy::{AsBytes, FromBytes};
 use crate::{
     arch::addr::{pgroundup, PAddr, PGSIZE},
     fs::{FileSystem, Path},
-    hal::allocator,
+    hal::hal,
     page::Page,
     param::MAXARG,
     proc::KernelCtx,
@@ -101,7 +101,7 @@ impl KernelCtx<'_, '_> {
             return Err(());
         }
 
-        let allocator = allocator();
+        let allocator = hal().kmem();
 
         let tx = self.kernel().fs().get_ref().begin_tx(self);
         let tx = scopeguard::guard(tx, |t| t.end(self));

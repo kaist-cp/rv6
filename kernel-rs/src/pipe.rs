@@ -3,7 +3,7 @@ use core::{mem, ops::Deref, ptr::NonNull};
 use crate::{
     arch::addr::UVAddr,
     file::{FileType, RcFile},
-    hal::allocator,
+    hal::hal,
     lock::Spinlock,
     page::Page,
     proc::{KernelCtx, WaitChannel},
@@ -131,7 +131,7 @@ impl Deref for AllocatedPipe {
 
 impl KernelCtx<'_, '_> {
     pub fn allocate_pipe(&self) -> Result<(RcFile, RcFile), ()> {
-        let allocator = allocator();
+        let allocator = hal().kmem();
         let page = allocator.alloc().ok_or(())?;
         let mut page = scopeguard::guard(page, |page| allocator.free(page));
         let ptr = page.as_uninit_mut();

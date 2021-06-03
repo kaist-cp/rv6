@@ -88,7 +88,7 @@ impl Console {
     /// Doesn't use interrupts, for use by kernel println() and to echo characters.
     /// It spins waiting for the uart's output register to be empty.
     fn putc_spin(&self, c: u8, kernel: &KernelBuilder) {
-        let intr = hal().cpus.push_off();
+        let intr = hal().cpus().push_off();
         if kernel.is_panicked() {
             spin_loop();
         }
@@ -98,7 +98,7 @@ impl Console {
 
         self.uart.putc(c);
 
-        unsafe { hal().cpus.pop_off(intr) };
+        unsafe { hal().cpus().pop_off(intr) };
     }
 
     fn put_backspace_spin(&self, kernel: &KernelBuilder) {
@@ -315,7 +315,7 @@ impl Printer {
 impl fmt::Write for PrinterGuard<'_> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for c in s.bytes() {
-            hal().console.putc_spin(c, self.kernel);
+            hal().console().putc_spin(c, self.kernel);
         }
         Ok(())
     }
@@ -328,12 +328,12 @@ const fn ctrl(x: char) -> i32 {
 
 /// User write()s to the console go here.
 pub fn console_write(src: UVAddr, n: i32, ctx: &mut KernelCtx<'_, '_>) -> i32 {
-    hal().console.write(src, n, ctx)
+    hal().console().write(src, n, ctx)
 }
 
 /// User read()s from the console go here.
 /// Copy (up to) a whole input line to dst.
 /// User_dist indicates whether dst is a user or kernel address.
 pub fn console_read(dst: UVAddr, n: i32, ctx: &mut KernelCtx<'_, '_>) -> i32 {
-    hal().console.read(dst, n, ctx)
+    hal().console().read(dst, n, ctx)
 }

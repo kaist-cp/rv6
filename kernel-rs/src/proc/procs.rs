@@ -196,7 +196,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
             }
         }
 
-        let allocator = allocator();
+        let allocator = hal().kmem();
         allocator.free(trap_frame);
         memory.free(allocator);
         Err(())
@@ -243,7 +243,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
     /// Otherwise, UB may happen if the new `Proc` tries to read its `parent` field
     /// that points to a `Proc` that already dropped.
     pub fn fork(&self, ctx: &mut KernelCtx<'id, '_>) -> Result<Pid, ()> {
-        let allocator = allocator();
+        let allocator = hal().kmem();
         // Allocate trap frame.
         let trap_frame =
             scopeguard::guard(allocator.alloc().ok_or(())?, |page| allocator.free(page));
@@ -469,7 +469,7 @@ impl<'id, 's> KernelRef<'id, 's> {
     ///    via swtch back to the scheduler.
     pub unsafe fn scheduler(self) -> ! {
         // SAFETY: this function never moves to another CPU.
-        let cpu = unsafe { hal().cpus.current_unchecked() };
+        let cpu = unsafe { hal().get_ref().cpus().current_unchecked() };
         cpu.set_proc(ptr::null_mut());
         loop {
             // Avoid deadlock by ensuring that devices can interrupt.

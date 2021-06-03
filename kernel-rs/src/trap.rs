@@ -237,9 +237,9 @@ impl KernelRef<'_, '_> {
 
             if irq as usize == UART0_IRQ {
                 // SAFETY: it's unsafe only when ctrl+p is pressed.
-                unsafe { hal().console.intr(self) };
+                unsafe { hal().console().intr(self) };
             } else if irq as usize == VIRTIO0_IRQ {
-                hal().disk.lock().intr(self);
+                hal().disk().pinned_lock().get_pin_mut().intr(self);
             } else if irq != 0 {
                 // Use `panic!` instead of `println` to prevent stack overflow.
                 // https://github.com/kaist-cp/rv6/issues/311
