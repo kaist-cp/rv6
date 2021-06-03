@@ -13,7 +13,7 @@ use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArenaRc, ArrayArena},
     fs::{FileSystem, InodeGuard, RcInode, Ufs},
-    hal::allocator,
+    hal::hal,
     lock::Spinlock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
@@ -252,7 +252,7 @@ impl ArenaObject for File {
         match typ {
             FileType::Pipe { pipe } => {
                 if let Some(page) = pipe.close(self.writable, ctx) {
-                    allocator().free(page);
+                    hal().kmem().free(page);
                 }
             }
             FileType::Inode {

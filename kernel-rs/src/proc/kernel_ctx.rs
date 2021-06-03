@@ -142,7 +142,7 @@ impl<'id, 's> Deref for CurrentProc<'id, 's> {
 impl<'id, 's> KernelRef<'id, 's> {
     /// Returns pointer to the current proc.
     pub fn current_proc(&self) -> *const Proc {
-        let cpus = &hal().cpus;
+        let cpus = hal().get_ref().cpus();
         let intr = cpus.push_off();
         let cpu = cpus.current(&intr);
         let proc = cpu.get_proc();

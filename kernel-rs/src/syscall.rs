@@ -16,7 +16,7 @@ use crate::{
     },
     file::RcFile,
     fs::{FcntlFlags, FileSystem, InodeType, Path},
-    hal::allocator,
+    hal::hal,
     ok_or,
     page::Page,
     param::{MAXARG, MAXPATH},
@@ -161,7 +161,7 @@ impl KernelCtx<'_, '_> {
     /// Returns Ok(start of new memory) on success, Err(()) on error.
     pub fn sys_sbrk(&mut self) -> Result<usize, ()> {
         let n = self.proc().argint(0)?;
-        self.proc_mut().memory_mut().resize(n, allocator())
+        self.proc_mut().memory_mut().resize(n, hal().kmem())
     }
 
     /// Pause for n clock ticks.
@@ -350,7 +350,7 @@ impl KernelCtx<'_, '_> {
         let mut args = ArrayVec::<Page, MAXARG>::new();
         let path = Path::new(self.proc_mut().argstr(0, &mut path)?);
         let uargv = self.proc().argaddr(1)?;
-        let allocator = allocator();
+        let allocator = hal().kmem();
 
         let mut success = false;
         for i in 0..MAXARG {

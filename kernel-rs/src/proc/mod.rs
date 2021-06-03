@@ -12,7 +12,7 @@ use crate::{
     arch::riscv::intr_get,
     file::RcFile,
     fs::{FileSystem, RcInode, Ufs},
-    hal::{allocator, hal},
+    hal::hal,
     lock::{RawSpinlock, RemoteLock, Spinlock},
     page::Page,
     param::{MAXPROCNAME, NOFILE},
@@ -409,7 +409,7 @@ impl<'id> ProcGuard<'id, '_> {
         assert_ne!(self.state(), Procstate::RUNNING, "sched running");
 
         // SAFETY: interrupts are disabled.
-        let cpu = unsafe { hal().cpus.current_unchecked() };
+        let cpu = unsafe { hal().get_ref().cpus().current_unchecked() };
         assert_eq!(cpu.get_noff(), 1, "sched locks");
 
         let interrupt_enabled = cpu.get_interrupt();
@@ -417,7 +417,7 @@ impl<'id> ProcGuard<'id, '_> {
 
         // We cannot use `cpu` again because `swtch` may move this thread to another cpu.
         // SAFETY: interrupts are disabled.
-        let cpu = unsafe { hal().cpus.current_unchecked() };
+        let cpu = unsafe { hal().get_ref().cpus().current_unchecked() };
         cpu.set_interrupt(interrupt_enabled);
     }
 
@@ -432,7 +432,7 @@ impl<'id> ProcGuard<'id, '_> {
         // SAFETY: this process cannot be the current process any longer.
         let data = unsafe { self.deref_mut_data() };
         let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
-        let allocator = allocator();
+        let allocator = hal().kmem();
         // SAFETY: trap_frame uniquely refers to a valid page.
         allocator.free(unsafe { Page::from_usize(trap_frame as _) });
         // SAFETY:

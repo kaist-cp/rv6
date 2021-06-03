@@ -13,15 +13,10 @@ use crate::{
 
 static mut HAL: Hal = Hal::new();
 
-pub fn hal<'s>() -> &'s Hal {
+pub fn hal<'s>() -> Pin<&'s Hal> {
     // SAFETY: there is no way to make a mutable reference to `HAL` except calling `hal_init`,
     // which is unsafe.
-    unsafe { &HAL }
-}
-
-pub fn allocator<'s>() -> Pin<&'s Spinlock<Kmem>> {
-    // SAFETY: `HAL` is never moved inside this module, and only shared references are exposed.
-    unsafe { Pin::new_unchecked(&hal().kmem) }
+    unsafe { Pin::new_unchecked(&HAL) }
 }
 
 /// Initializes `HAL`.
@@ -43,17 +38,17 @@ pub unsafe fn hal_init() {
 #[pin_project]
 pub struct Hal {
     /// Sleeps waiting for there are some input in console buffer.
-    pub console: Console,
+    console: Console,
 
-    pub printer: Printer,
-
-    #[pin]
-    pub kmem: Spinlock<Kmem>,
-
-    pub cpus: Cpus,
+    printer: Printer,
 
     #[pin]
-    pub disk: Sleepablelock<VirtioDisk>,
+    kmem: Spinlock<Kmem>,
+
+    cpus: Cpus,
+
+    #[pin]
+    disk: Sleepablelock<VirtioDisk>,
 }
 
 impl Hal {
@@ -82,5 +77,27 @@ impl Hal {
         unsafe { this.kmem.get_pin_mut().init() };
 
         this.disk.get_pin_mut().as_ref().init();
+    }
+
+    pub fn console(&self) -> &Console {
+        &self.console
+    }
+
+    pub fn printer(&self) -> &Printer {
+        &self.printer
+    }
+
+    pub fn kmem(self: Pin<&Self>) -> Pin<&Spinlock<Kmem>> {
+        // SAFETY: `HAL` is never moved inside this module, and only shared references are exposed.
+        unsafe { Pin::new_unchecked(&self.get_ref().kmem) }
+    }
+
+    pub fn cpus(&self) -> &Cpus {
+        &self.cpus
+    }
+
+    pub fn disk(self: Pin<&Self>) -> Pin<&Sleepablelock<VirtioDisk>> {
+        // SAFETY: `HAL` is never moved inside this module, and only shared references are exposed.
+        unsafe { Pin::new_unchecked(&self.get_ref().disk) }
     }
 }

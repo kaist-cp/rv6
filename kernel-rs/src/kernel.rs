@@ -13,7 +13,7 @@ use crate::{
     cpu::cpuid,
     file::{Devsw, FileTable},
     fs::{FileSystem, Ufs},
-    hal::{allocator, hal, hal_init},
+    hal::{hal, hal_init},
     kalloc::Kmem,
     lock::{Sleepablelock, Spinlock},
     param::NDEV,
@@ -258,9 +258,9 @@ impl KernelBuilder {
     /// Prints the given formatted string with the Printer.
     pub fn write_fmt(&self, args: fmt::Arguments<'_>) {
         let mut guard = if self.is_panicked() {
-            hal().printer.without_lock(self)
+            hal().get_ref().printer().without_lock(self)
         } else {
-            hal().printer.lock(self)
+            hal().get_ref().printer().lock(self)
         };
         let _ = guard.write_fmt(args);
     }
@@ -290,7 +290,7 @@ pub unsafe fn main() -> ! {
             hal_init();
         }
         unsafe {
-            kernel_builder_unchecked_pin().init(allocator());
+            kernel_builder_unchecked_pin().init(hal().kmem());
         }
         INITED.store(true, Ordering::Release);
     } else {

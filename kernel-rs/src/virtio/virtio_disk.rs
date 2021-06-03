@@ -4,6 +4,7 @@
 ///
 /// qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 use core::array::IntoIter;
+use core::marker::PhantomPinned;
 use core::mem;
 use core::pin::Pin;
 use core::ptr;
@@ -37,19 +38,16 @@ pub struct VirtioDisk {
     /// the driver tells the device where to read and write individual disk
     /// operations. There are NUM descriptors. Most commands consist of a
     /// "chain" (a linked list) of a couple of these descriptors.
-    #[pin]
     desc: [VirtqDesc; NUM],
 
     /// The next is a ring in which the driver writes descriptor numbers that
     /// the driver would like the device to process. It only includes the head
     /// descriptor of each chain. The ring has NUM elements.
-    #[pin]
     avail: VirtqAvail,
 
     /// Finally a ring in which the device writes descriptor numbers that the
     /// device has finished processing (just the head of each chain). There are
     /// NUM used ring entries.
-    #[pin]
     used: VirtqUsed,
 
     #[pin]
@@ -71,9 +69,11 @@ struct DiskInfo {
     /// interrupt arrives. Indexed by first descriptor index of chain.
     inflight: [InflightInfo; NUM],
 
-    #[pin]
     /// Disk command headers. One-for-one with descriptors, for convenience.
     ops: [VirtIOBlockOutHeader; NUM],
+
+    #[pin]
+    _marker: PhantomPinned,
 }
 
 /// # Safety
@@ -116,6 +116,7 @@ impl DiskInfo {
             used_idx: 0,
             inflight: [InflightInfo::zero(); NUM],
             ops: [VirtIOBlockOutHeader::zero(); NUM],
+            _marker: PhantomPinned,
         }
     }
 }
@@ -176,17 +177,17 @@ impl Drop for Descriptor {
 impl Sleepablelock<VirtioDisk> {
     /// Return a locked Buf with the `latest` contents of the indicated block.
     /// If buf.valid is true, we don't need to access Disk.
-    pub fn read(&self, dev: u32, blockno: u32, ctx: &KernelCtx<'_, '_>) -> Buf {
+    pub fn read(self: Pin<&Self>, dev: u32, blockno: u32, ctx: &KernelCtx<'_, '_>) -> Buf {
         let mut buf = ctx.kernel().bcache().get_buf(dev, blockno).lock(ctx);
         if !buf.deref_inner().valid {
-            VirtioDisk::rw(&mut self.lock(), &mut buf, false, ctx);
+            VirtioDisk::rw(&mut self.pinned_lock(), &mut buf, false, ctx);
             buf.deref_inner_mut().valid = true;
         }
         buf
     }
 
-    pub fn write(&self, b: &mut Buf, ctx: &KernelCtx<'_, '_>) {
-        VirtioDisk::rw(&mut self.lock(), b, true, ctx)
+    pub fn write(self: Pin<&Self>, b: &mut Buf, ctx: &KernelCtx<'_, '_>) {
+        VirtioDisk::rw(&mut self.pinned_lock(), b, true, ctx)
     }
 }
 
@@ -243,7 +244,7 @@ impl VirtioDisk {
     // virtual addresses of the MMIO registers are mapped to the proper physical
     // addresses. Therefore, this method is safe.
     fn rw(
-        this: &mut SleepablelockGuard<'_, Self>,
+        guard: &mut SleepablelockGuard<'_, Self>,
         b: &mut Buf,
         write: bool,
         ctx: &KernelCtx<'_, '_>,
@@ -256,7 +257,7 @@ impl VirtioDisk {
 
         // Allocate the three descriptors.
         let desc = loop {
-            match this.alloc_three_descriptors() {
+            match guard.get_pin_mut().alloc_three_descriptors() {
                 Some(idx) => break idx,
                 // We do not need wakeup for the None case:
                 // * alloc_three_descriptors can be executed by one thread at
@@ -267,15 +268,18 @@ impl VirtioDisk {
                 //   number of free descriptors. Therefore, sleeping threads
                 //   do not need to wake up, as alloc_three_descriptors will
                 //   still fail.
-                None => this.sleep(ctx),
+                None => guard.sleep(ctx),
             }
         };
+
+        let mut this = guard.get_pin_mut().project();
+        let mut info = this.info.project();
 
         // Format the three descriptors.
         // qemu's virtio-blk.c reads them.
 
         // 1. Set the first descriptor.
-        let buf0 = &mut this.info.ops[desc[0].idx];
+        let buf0 = &mut info.ops[desc[0].idx];
         *buf0 = VirtIOBlockOutHeader::new(write, sector);
 
         this.desc[desc[0].idx] = VirtqDesc {
@@ -300,11 +304,11 @@ impl VirtioDisk {
 
         // 3. Set the third descriptor.
         // device writes 0 on success
-        this.info.inflight[desc[0].idx].status = true;
+        info.inflight[desc[0].idx].status = true;
 
         // Device writes the status
         this.desc[desc[2].idx] = VirtqDesc {
-            addr: &this.info.inflight[desc[0].idx].status as *const _ as _,
+            addr: &info.inflight[desc[0].idx].status as *const _ as _,
             len: 1,
             flags: VirtqDescFlags::WRITE,
             next: 0,
@@ -314,7 +318,7 @@ impl VirtioDisk {
         b.deref_inner_mut().disk = true;
         // It does not break the invariant because b is &mut Buf, which refers
         // to a valid Buf.
-        this.info.inflight[desc[0].idx].b = b;
+        info.inflight[desc[0].idx].b = b;
 
         // Tell the device the first index in our chain of descriptors.
         let ring_idx = this.avail.idx as usize % NUM;
@@ -335,16 +339,16 @@ impl VirtioDisk {
 
         // Wait for virtio_disk_intr() to say request has finished.
         while b.deref_inner().disk {
-            (*b).vdisk_request_waitchannel.sleep(this, ctx);
+            (*b).vdisk_request_waitchannel.sleep(guard, ctx);
         }
         // As it assigns null, the invariant of inflight is maintained even if
         // b: &mut Buf becomes invalid after this method returns.
-        this.info.inflight[desc[0].idx].b = ptr::null_mut();
-        IntoIter::new(desc).for_each(|desc| this.free(desc));
-        this.wakeup(ctx.kernel());
+        guard.get_pin_mut().project().info.project().inflight[desc[0].idx].b = ptr::null_mut();
+        IntoIter::new(desc).for_each(|desc| guard.get_pin_mut().free(desc));
+        guard.wakeup(ctx.kernel());
     }
 
-    pub fn intr(&mut self, kernel: KernelRef<'_, '_>) {
+    pub fn intr(self: Pin<&mut Self>, kernel: KernelRef<'_, '_>) {
         // The device won't raise another interrupt until we tell it
         // we've seen this interrupt, which the following line does.
         // This may race with the device writing new entries to
@@ -358,42 +362,46 @@ impl VirtioDisk {
         // The device increments disk.used->idx when it
         // adds an entry to the used ring.
 
-        while self.info.used_idx != self.used.id {
-            fence(Ordering::SeqCst);
-            let id = self.used.ring[(self.info.used_idx as usize) % NUM].id as usize;
+        let this = self.project();
+        let info = this.info.project();
 
-            assert!(!self.info.inflight[id].status, "Disk::intr status");
+        while *info.used_idx != this.used.id {
+            fence(Ordering::SeqCst);
+            let id = this.used.ring[(*info.used_idx as usize) % NUM].id as usize;
+
+            assert!(!info.inflight[id].status, "Disk::intr status");
 
             // SAFETY: from the invariant, b refers to a valid
             // buffer unless it is null.
-            let buf = unsafe { self.info.inflight[id].b.as_mut() }.expect("Disk::intr");
+            let buf = unsafe { info.inflight[id].b.as_mut() }.expect("Disk::intr");
 
             // disk is done with buf
             buf.deref_inner_mut().disk = false;
             buf.vdisk_request_waitchannel.wakeup(kernel);
 
-            self.info.used_idx += 1;
+            *info.used_idx += 1;
         }
     }
 
     /// Find a free descriptor, mark it non-free, return its index.
-    fn alloc(&mut self) -> Option<Descriptor> {
-        let idx = self.info.allocated.first_false_index()?;
-        let _ = self.info.allocated.set(idx, true);
+    fn alloc(self: Pin<&mut Self>) -> Option<Descriptor> {
+        let info = self.project().info.project();
+        let idx = info.allocated.first_false_index()?;
+        let _ = info.allocated.set(idx, true);
         Some(Descriptor::new(idx))
     }
 
     /// Allocate three descriptors (they need not be contiguous).
     /// Disk transfers always use three descriptors.
-    fn alloc_three_descriptors(&mut self) -> Option<[Descriptor; 3]> {
+    fn alloc_three_descriptors(mut self: Pin<&mut Self>) -> Option<[Descriptor; 3]> {
         let mut descs = ArrayVec::<_, 3>::new();
 
         for _ in 0..3 {
-            if let Some(desc) = self.alloc() {
+            if let Some(desc) = self.as_mut().alloc() {
                 descs.push(desc);
             } else {
                 for desc in descs {
-                    self.free(desc);
+                    self.as_mut().free(desc);
                 }
                 return None;
             }
@@ -402,13 +410,18 @@ impl VirtioDisk {
         descs.into_inner().ok()
     }
 
-    fn free(&mut self, desc: Descriptor) {
+    fn free(self: Pin<&mut Self>, desc: Descriptor) {
+        let this = self.project();
         let idx = desc.idx;
-        self.desc[idx].addr = 0;
-        self.desc[idx].len = 0;
-        self.desc[idx].flags = VirtqDescFlags::FREED;
-        self.desc[idx].next = 0;
-        assert_eq!(self.info.allocated.set(idx, false), true, "Disk::free");
+        this.desc[idx].addr = 0;
+        this.desc[idx].len = 0;
+        this.desc[idx].flags = VirtqDescFlags::FREED;
+        this.desc[idx].next = 0;
+        assert_eq!(
+            this.info.project().allocated.set(idx, false),
+            true,
+            "Disk::free"
+        );
         mem::forget(desc);
     }
 }
