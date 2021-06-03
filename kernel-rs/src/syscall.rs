@@ -83,7 +83,7 @@ impl CurrentProc<'_, '_> {
 
     /// Fetch the nth word-sized system call argument as a file descriptor
     /// and return both the descriptor and the corresponding struct file.
-    fn argfd(&self, n: usize) -> Result<(i32, &'_ RcFile), ()> {
+    fn argfd(&self, n: usize) -> Result<(i32, &RcFile), ()> {
         let fd = self.argint(n)?;
         let f = self
             .deref_data()
@@ -204,7 +204,7 @@ impl KernelCtx<'_, '_> {
     pub fn sys_dup(&mut self) -> Result<usize, ()> {
         let (_, f) = self.proc().argfd(0)?;
         let newfile = f.clone();
-        let fd = newfile.fdalloc(self).map_err(|_| ())?;
+        let fd = newfile.fdalloc(self)?;
         Ok(fd as usize)
     }
 
@@ -232,7 +232,9 @@ impl KernelCtx<'_, '_> {
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_close(&mut self) -> Result<usize, ()> {
         let (fd, _) = self.proc().argfd(0)?;
-        self.proc_mut().deref_mut_data().open_files[fd as usize] = None;
+        if let Some(f) = self.proc_mut().deref_mut_data().open_files[fd as usize].take() {
+            f.free(self);
+        }
         Ok(0)
     }
 
@@ -298,7 +300,10 @@ impl KernelCtx<'_, '_> {
             .kernel()
             .fs()
             .create(path, InodeType::Dir, &tx, self, |_| ())
-            .map(|_| 0);
+            .map(|(ptr, _)| {
+                ptr.free((&tx, self));
+                0
+            });
         tx.end(self);
         res
     }
@@ -315,7 +320,10 @@ impl KernelCtx<'_, '_> {
             .kernel()
             .fs()
             .create(path, InodeType::Device { major, minor }, &tx, self, |_| ())
-            .map(|_| 0);
+            .map(|(ptr, _)| {
+                ptr.free((&tx, self));
+                0
+            });
         tx.end(self);
         res
     }

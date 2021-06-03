@@ -10,7 +10,10 @@ use crate::{
 pub struct InodeInner {}
 
 impl ArenaObject for Inode<InodeInner> {
-    fn finalize<A: Arena>(&mut self) {}
+    type Ctx<'a, 'id: 'a> = ();
+
+    #[allow(clippy::needless_lifetimes)]
+    fn finalize<'a, 'id: 'a, A: Arena>(&mut self, _: ()) {}
 }
 
 pub struct Lfs {}

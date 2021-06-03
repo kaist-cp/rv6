@@ -170,10 +170,14 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
         )
     }
 
-    fn dealloc<'id>(self: ArenaRef<'id, &Self>, handle: Handle<'id, Self::Data>) {
+    fn dealloc<'id, 'a, 'b>(
+        self: ArenaRef<'id, &Self>,
+        handle: Handle<'id, Self::Data>,
+        ctx: <Self::Data as ArenaObject>::Ctx<'a, 'b>,
+    ) {
         if let Ok(mut rm) = handle.0.into_inner().into_mut() {
             // Finalize the arena object.
-            rm.finalize::<Self>();
+            rm.finalize::<Self>(ctx);
 
             // Move this entry to the back of the list.
             let this = self.pinned_lock_unchecked();

@@ -277,7 +277,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
                 *nf = Some(file.clone());
             }
         }
-        let _ = npdata.cwd.write(ctx.proc_mut().cwd_mut().clone());
+        let _ = npdata.cwd.write(ctx.proc().cwd().clone());
 
         npdata.name.copy_from_slice(&ctx.proc().deref_data().name);
 
@@ -369,16 +369,19 @@ impl<'id, 's> ProcsRef<'id, 's> {
             "init exiting"
         );
 
-        for file in &mut ctx.proc_mut().deref_mut_data().open_files {
-            *file = None;
+        for i in 0..NOFILE {
+            let files = &mut ctx.proc_mut().deref_mut_data().open_files;
+            if let Some(f) = unsafe { files.get_unchecked_mut(i) }.take() {
+                f.free(ctx);
+            }
         }
 
-        // TODO(https://github.com/kaist-cp/rv6/issues/290):
-        // Dropping an RcInode requires a transaction.
         let tx = ctx.kernel().fs().begin_tx(ctx);
-        // SAFETY: CurrentProc's cwd has been initialized.
-        // It's ok to drop cwd as proc will not be used any longer.
-        unsafe { ctx.proc_mut().deref_mut_data().cwd.assume_init_drop() };
+        // SAFETY:
+        // * CurrentProc's cwd has been initialized.
+        // * It's ok to take cwd because proc will not be used any longer.
+        let cwd = unsafe { ctx.proc_mut().deref_mut_data().cwd.assume_init_read() };
+        cwd.free((&tx, ctx));
         tx.end(ctx);
 
         // Give all children to init.
