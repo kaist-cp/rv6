@@ -4,10 +4,10 @@
 //! For types that `impl Arena`, you can allocate a thread safe `Rc` (reference counted pointer) from it.
 //!
 //! This module also includes pre-built arenas, such as `ArrayArena`(array based arena) or `MruArena`(list based arena).
-// Note: To let the users implement their own arena types, we may want to add `Rc::new_unchecked` and `Handle::unwrap` method.
 
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
+use core::pin::Pin;
 
 use crate::util::{branded::Branded, static_arc::Ref};
 
@@ -30,7 +30,7 @@ pub trait Arena: Sized + Sync {
     ///
     /// If an empty entry does not exist, returns `None`.
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
-        &self,
+        self: Pin<&Self>,
         c: C,
         n: N,
     ) -> Option<ArenaRc<Self>>;
@@ -39,7 +39,7 @@ pub trait Arena: Sized + Sync {
     /// * Uses `f` to initialze a new `Rc`.
     ///
     /// Otherwise, returns `None`.
-    fn alloc<F: FnOnce() -> Self::Data>(&self, f: F) -> Option<ArenaRc<Self>>;
+    fn alloc<F: FnOnce() -> Self::Data>(self: Pin<&Self>, f: F) -> Option<ArenaRc<Self>>;
 
     /// Deallocate a given handle, decreasing the reference count
     /// Finalizes the referred object if there are no more handles.
@@ -49,7 +49,7 @@ pub trait Arena: Sized + Sync {
     /// This method is automatically used by the `Rc`.
     /// Usually, you don't need to manually call this method.
     fn dealloc<'id, 'a, 'b>(
-        self: ArenaRef<'id, &Self>,
+        self: ArenaRef<'id, '_, Self>,
         handle: Handle<'id, Self::Data>,
         ctx: <Self::Data as ArenaObject>::Ctx<'a, 'b>,
     ) {
@@ -73,19 +73,22 @@ pub trait ArenaObject {
 ///
 /// The `'id` is always different between different `Arena` instances.
 #[derive(Clone, Copy)]
-pub struct ArenaRef<'id, P: Deref>(Branded<'id, P>);
+pub struct ArenaRef<'id, 's, A: Arena>(Branded<'id, Pin<&'s A>>);
 
-impl<'id, A: Arena> ArenaRef<'id, &A> {
+impl<'id, A: Arena> ArenaRef<'id, '_, A> {
     /// Creates a new `ArenaRef` that has a unique, invariant `'id` tag.
     /// The `ArenaRef` can be used only inside the given closure.
     #[allow(clippy::new_ret_no_self)]
-    pub fn new<F: for<'new_id> FnOnce(ArenaRef<'new_id, &A>) -> R, R>(arena: &A, f: F) -> R {
+    pub fn new<'s, F: for<'new_id> FnOnce(ArenaRef<'new_id, 's, A>) -> R, R>(
+        arena: Pin<&'s A>,
+        f: F,
+    ) -> R {
         Branded::new(arena, |a| f(ArenaRef(a)))
     }
 }
 
-impl<'id, P: Deref> Deref for ArenaRef<'id, P> {
-    type Target = P::Target;
+impl<'id, 's, A: Arena> Deref for ArenaRef<'id, 's, A> {
+    type Target = Pin<&'s A>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -113,9 +116,10 @@ impl<'s, T> Deref for HandleRef<'_, 's, T> {
 ///
 /// # Safety
 ///
-/// `inner` is allocated from `arena`.
-/// We can safely dereference `arena` until `inner` gets dropped,
-/// because we panic if the arena drops earlier than `inner`.
+/// * `arena` is pinned.
+/// * `inner` is allocated from `arena`.
+/// * We can safely dereference `arena` until `inner` gets dropped,
+///   because we panic if the arena drops earlier than `inner`.
 pub struct ArenaRc<A: Arena> {
     arena: *const A,
     inner: ManuallyDrop<Ref<A::Data>>,
@@ -128,16 +132,19 @@ unsafe impl<T: Sync, A: Arena<Data = T>> Send for ArenaRc<A> {}
 
 impl<T, A: Arena<Data = T>> ArenaRc<A> {
     /// Creates a new `Rc`, allocated from the arena.
-    pub fn new<'id>(arena: ArenaRef<'id, &A>, inner: Handle<'id, T>) -> Self {
+    pub fn new<'id>(arena: ArenaRef<'id, '_, A>, inner: Handle<'id, T>) -> Self {
         Self {
-            arena: arena.0.into_inner(),
+            arena: arena.0.into_inner().get_ref(),
             inner: ManuallyDrop::new(inner.0.into_inner()),
         }
     }
 
-    fn map_arena<F: for<'new_id> FnOnce(ArenaRef<'new_id, &A>) -> R, R>(&self, f: F) -> R {
+    fn map_arena<F: for<'new_id> FnOnce(ArenaRef<'new_id, '_, A>) -> R, R>(&self, f: F) -> R {
         // SAFETY: Safe because of `Rc`'s invariant.
-        Branded::new(unsafe { &*self.arena }, |arena| f(ArenaRef(arena)))
+        let arena = unsafe { &*self.arena };
+        // SAFETY: `Pin` has a trasparent representation.
+        let arena: Pin<&A> = unsafe { core::mem::transmute(arena) };
+        Branded::new(arena, |arena| f(ArenaRef(arena)))
     }
 }
 

@@ -152,7 +152,7 @@ impl KernelCtx<'_, '_> {
             read_waitchannel: WaitChannel::new(),
             write_waitchannel: WaitChannel::new(),
         }));
-        let f0 = self.kernel().ftable.alloc_file(
+        let f0 = self.kernel().ftable().alloc_file(
             FileType::Pipe {
                 pipe: AllocatedPipe { ptr },
             },
@@ -160,7 +160,7 @@ impl KernelCtx<'_, '_> {
             false,
         )?;
         let f0 = scopeguard::guard(f0, |f0| f0.free(self));
-        let f1 = self.kernel().ftable.alloc_file(
+        let f1 = self.kernel().ftable().alloc_file(
             FileType::Pipe {
                 pipe: AllocatedPipe { ptr },
             },

@@ -103,7 +103,7 @@ impl KernelCtx<'_, '_> {
 
         let allocator = allocator();
 
-        let tx = self.kernel().fs().begin_tx(self);
+        let tx = self.kernel().fs().get_ref().begin_tx(self);
         let tx = scopeguard::guard(tx, |t| t.end(self));
         let ptr = self.kernel().fs().namei(path, &tx, self)?;
         let ptr = scopeguard::guard(ptr, |ptr| ptr.free((&tx, self)));

@@ -12,8 +12,10 @@
 //! On-disk file system format used for both kernel and user programs are also included here.
 
 use core::cell::UnsafeCell;
+use core::pin::Pin;
 use core::{cmp, mem};
 
+use pin_project::pin_project;
 use spin::Once;
 
 use self::log::Log;
@@ -41,11 +43,13 @@ const NDIRECT: usize = 12;
 const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
 const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
 
+#[pin_project]
 pub struct Ufs {
     /// Initializing superblock should run only once because forkret() calls FileSystem::init().
     /// There should be one superblock per disk device, but we run with only one device.
     superblock: Once<Superblock>,
     log: Once<Sleepablelock<Log>>,
+    #[pin]
     itable: Itable<InodeInner>,
 }
 
@@ -73,21 +77,21 @@ impl FileSystem for Ufs {
         UfsTx { fs: self }
     }
 
-    fn root(&self) -> RcInode<Self::InodeInner> {
-        self.itable.root()
+    fn root(self: Pin<&Self>) -> RcInode<Self::InodeInner> {
+        self.itable().root()
     }
 
     fn namei(
-        &self,
+        self: Pin<&Self>,
         path: &Path,
         tx: &Self::Tx<'_>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<RcInode<Self::InodeInner>, ()> {
-        self.itable.namei(path, tx, ctx)
+        self.itable().namei(path, tx, ctx)
     }
 
     fn link(
-        &self,
+        self: Pin<&Self>,
         inode: RcInode<Self::InodeInner>,
         path: &Path,
         tx: &Self::Tx<'_>,
@@ -103,7 +107,7 @@ impl FileSystem for Ufs {
         ip.update(&tx, ctx);
         drop(ip);
 
-        if let Ok((ptr2, name)) = ctx.kernel().fs().itable.nameiparent(path, tx, ctx) {
+        if let Ok((ptr2, name)) = self.itable().nameiparent(path, tx, ctx) {
             let ptr2 = scopeguard::guard(ptr2, |ptr| ptr.free((tx, ctx)));
             let dp = ptr2.lock(ctx);
             let mut dp = scopeguard::guard(dp, |ip| ip.free(ctx));
@@ -119,8 +123,13 @@ impl FileSystem for Ufs {
         Err(())
     }
 
-    fn unlink(&self, path: &Path, tx: &Self::Tx<'_>, ctx: &KernelCtx<'_, '_>) -> Result<(), ()> {
-        let (ptr, name) = self.itable.nameiparent(path, tx, ctx)?;
+    fn unlink(
+        self: Pin<&Self>,
+        path: &Path,
+        tx: &Self::Tx<'_>,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Result<(), ()> {
+        let (ptr, name) = self.itable().nameiparent(path, tx, ctx)?;
         let ptr = scopeguard::guard(ptr, |ptr| ptr.free((tx, ctx)));
         let dp = ptr.lock(ctx);
         let mut dp = scopeguard::guard(dp, |ip| ip.free(ctx));
@@ -154,7 +163,7 @@ impl FileSystem for Ufs {
     }
 
     fn create<F, T>(
-        &self,
+        self: Pin<&Self>,
         path: &Path,
         typ: InodeType,
         tx: &Self::Tx<'_>,
@@ -164,7 +173,7 @@ impl FileSystem for Ufs {
     where
         F: FnOnce(&mut InodeGuard<'_, Self::InodeInner>) -> T,
     {
-        let (ptr, name) = self.itable.nameiparent(path, tx, ctx)?;
+        let (ptr, name) = self.itable().nameiparent(path, tx, ctx)?;
         let ptr = scopeguard::guard(ptr, |ptr| ptr.free((tx, ctx)));
         let dp = ptr.lock(ctx);
         let mut dp = scopeguard::guard(dp, |ip| ip.free(ctx));
@@ -183,7 +192,7 @@ impl FileSystem for Ufs {
             drop(ip);
             return Ok((scopeguard::ScopeGuard::into_inner(ptr2), ret));
         }
-        let ptr2 = ctx.kernel().fs().itable.alloc_inode(dp.dev, typ, tx, ctx);
+        let ptr2 = self.itable().alloc_inode(dp.dev, typ, tx, ctx);
         let ip = ptr2.lock(ctx);
         let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
         ip.deref_inner_mut().nlink = 1;
@@ -211,7 +220,7 @@ impl FileSystem for Ufs {
     }
 
     fn open(
-        &self,
+        self: Pin<&Self>,
         path: &Path,
         omode: FcntlFlags,
         tx: &Self::Tx<'_>,
@@ -220,7 +229,7 @@ impl FileSystem for Ufs {
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
             self.create(path, InodeType::File, tx, ctx, |ip| ip.deref_inner().typ)?
         } else {
-            let ptr = self.itable.namei(path, tx, ctx)?;
+            let ptr = self.itable().namei(path, tx, ctx)?;
             let ptr = scopeguard::guard(ptr, |ptr| ptr.free((tx, ctx)));
             let ip = ptr.lock(ctx);
             let ip = scopeguard::guard(ip, |ip| ip.free(ctx));
@@ -245,7 +254,7 @@ impl FileSystem for Ufs {
             }
         };
 
-        let f = ctx.kernel().ftable.alloc_file(
+        let f = ctx.kernel().ftable().alloc_file(
             filetype,
             !omode.intersects(FcntlFlags::O_WRONLY),
             omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR),
@@ -270,7 +279,7 @@ impl FileSystem for Ufs {
     }
 
     fn chdir(
-        &self,
+        self: Pin<&Self>,
         inode: RcInode<InodeInner>,
         tx: &Self::Tx<'_>,
         ctx: &mut KernelCtx<'_, '_>,
@@ -307,6 +316,10 @@ impl Ufs {
     fn superblock(&self) -> &Superblock {
         self.superblock.get().expect("superblock")
     }
+
+    fn itable(self: Pin<&Self>) -> Pin<&Itable<InodeInner>> {
+        unsafe { Pin::new_unchecked(&self.get_ref().itable) }
+    }
 }
 
 impl Drop for UfsTx<'_> {
@@ -332,9 +345,7 @@ impl UfsTx<'_> {
 
     /// Zero a block.
     fn bzero(&self, dev: u32, bno: u32, ctx: &KernelCtx<'_, '_>) {
-        let mut buf = unsafe { ctx.kernel().get_bcache() }
-            .get_buf(dev, bno)
-            .lock(ctx);
+        let mut buf = ctx.kernel().bcache().get_buf(dev, bno).lock(ctx);
         buf.deref_inner_mut().data.fill(0);
         buf.deref_inner_mut().valid = true;
         self.write(buf, ctx);
