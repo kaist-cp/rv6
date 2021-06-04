@@ -501,7 +501,7 @@ impl<'id, 's> KernelRef<'id, 's> {
     ///
     /// This method is unsafe and should be used only for debugging.
     pub unsafe fn dump(&self) {
-        self.write_str("\n");
+        self.as_ref().write_str("\n");
         for p in self.procs().process_pool() {
             let info = p.info.get_mut_raw();
             let state = unsafe { &(*info).state };
@@ -510,7 +510,7 @@ impl<'id, 's> KernelRef<'id, 's> {
                 // For null character recognization.
                 // Required since str::from_utf8 cannot recognize interior null characters.
                 let length = name.iter().position(|&c| c == 0).unwrap_or(name.len());
-                self.write_fmt(format_args!(
+                self.as_ref().write_fmt(format_args!(
                     "{} {} {}",
                     unsafe { (*info).pid },
                     Procstate::as_str(state),

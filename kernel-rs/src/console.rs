@@ -7,7 +7,7 @@
 //! * control-d -- end of file
 //! * control-p -- print process list
 
-use core::fmt;
+use core::{fmt, pin::Pin};
 
 use crate::{
     arch::addr::UVAddr,
@@ -87,7 +87,7 @@ impl Console {
 
     /// Doesn't use interrupts, for use by kernel println() and to echo characters.
     /// It spins waiting for the uart's output register to be empty.
-    fn putc_spin(&self, c: u8, kernel: &Kernel) {
+    fn putc_spin(&self, c: u8, kernel: Pin<&Kernel>) {
         let intr = hal().cpus().push_off();
         if kernel.is_panicked() {
             spin_loop();
@@ -101,18 +101,18 @@ impl Console {
         unsafe { hal().cpus().pop_off(intr) };
     }
 
-    fn put_backspace_spin(&self, kernel: &Kernel) {
+    fn put_backspace_spin(&self, kernel: Pin<&Kernel>) {
         // Overwrite with a space.
-        self.putc_spin(8, &kernel);
-        self.putc_spin(b' ', &kernel);
-        self.putc_spin(8, &kernel);
+        self.putc_spin(8, kernel);
+        self.putc_spin(b' ', kernel);
+        self.putc_spin(8, kernel);
     }
 
     /// Add a character to the output buffer and tell the UART to start sending if it isn't
     /// already. Blocks if the output buffer is full. Since it may block, it can't be called
     /// from interrupts; it's only suitable for use by write().
     fn putc_sleep(&self, c: u8, ctx: &KernelCtx<'_, '_>) {
-        if ctx.kernel().is_panicked() {
+        if ctx.kernel().as_ref().is_panicked() {
             spin_loop();
         }
 
@@ -244,7 +244,7 @@ impl Console {
                         && guard.buf[guard.e.wrapping_sub(1) % INPUT_BUF] != b'\n'
                     {
                         guard.e = guard.e.wrapping_sub(1);
-                        self.put_backspace_spin(&kernel);
+                        self.put_backspace_spin(kernel.as_ref());
                     }
                 }
 
@@ -252,7 +252,7 @@ impl Console {
                 m if m == ctrl('H') | '\x7f' as i32 => {
                     if guard.e != guard.w {
                         guard.e = guard.e.wrapping_sub(1);
-                        self.put_backspace_spin(&kernel);
+                        self.put_backspace_spin(kernel.as_ref());
                     }
                 }
 
@@ -261,7 +261,7 @@ impl Console {
                         let c = if c == '\r' as i32 { '\n' as i32 } else { c };
 
                         // Echo back to the user.
-                        self.putc_spin(c as u8, &kernel);
+                        self.putc_spin(c as u8, kernel.as_ref());
 
                         // Store for consumption by read().
                         let ind = guard.e % INPUT_BUF;
@@ -288,7 +288,7 @@ impl Console {
 pub struct Printer(Spinlock<()>);
 
 pub struct PrinterGuard<'a> {
-    kernel: &'a Kernel,
+    kernel: Pin<&'a Kernel>,
     _guard: Option<SpinlockGuard<'a, ()>>,
 }
 
@@ -297,14 +297,14 @@ impl Printer {
         Self(Spinlock::new("Printer", ()))
     }
 
-    pub fn lock<'a>(&'a self, kernel: &'a Kernel) -> PrinterGuard<'a> {
+    pub fn lock<'a>(&'a self, kernel: Pin<&'a Kernel>) -> PrinterGuard<'a> {
         PrinterGuard {
             kernel,
             _guard: Some(self.0.lock()),
         }
     }
 
-    pub fn without_lock<'a>(&'a self, kernel: &'a Kernel) -> PrinterGuard<'a> {
+    pub fn without_lock<'a>(&'a self, kernel: Pin<&'a Kernel>) -> PrinterGuard<'a> {
         PrinterGuard {
             kernel,
             _guard: None,

@@ -52,7 +52,7 @@ pub unsafe fn kernel_ref<'s, F: for<'new_id> FnOnce(KernelRef<'new_id, 's>) -> R
 ///
 /// There must be no other references to `KERNEL` while the returned reference is alive.
 #[inline]
-unsafe fn kernel_builder_unchecked_pin<'s>() -> Pin<&'s mut Kernel> {
+unsafe fn kernel_mut_unchecked<'s>() -> Pin<&'s mut Kernel> {
     // SAFETY: there are no other references to `KERNEL` while the returned reference is alive.
     unsafe { Pin::new_unchecked(&mut KERNEL) }
 }
@@ -111,6 +111,10 @@ impl<'id, 's> KernelRef<'id, 's> {
     /// * One can obtain the wrapper type only through a restricted way.
     pub fn brand<T>(&self, data: T) -> Branded<'id, T> {
         self.0.brand(data)
+    }
+
+    pub fn as_ref(&self) -> Pin<&Kernel> {
+        self.0.as_ref()
     }
 
     /// Returns a reference to the kernel's ticks.
@@ -175,9 +179,7 @@ impl Kernel {
     ///
     /// This method should be called only once by the hart 0.
     unsafe fn init(self: Pin<&mut Self>, allocator: Pin<&Spinlock<Kmem>>) {
-        self.as_ref()
-            .get_ref()
-            .write_str("\nrv6 kernel is booting\n\n");
+        self.as_ref().write_str("\nrv6 kernel is booting\n\n");
 
         let mut this = self.project();
 
@@ -221,7 +223,7 @@ impl Kernel {
     /// # Safety
     ///
     /// This method should be called only once by each hart.
-    unsafe fn inithart(&self) {
+    unsafe fn inithart(self: Pin<&Self>) {
         self.write_fmt(format_args!("hart {} starting\n", cpuid()));
 
         // Turn on paging.
@@ -234,16 +236,16 @@ impl Kernel {
         unsafe { plicinithart() };
     }
 
-    fn panic(&self) {
+    fn panic(self: Pin<&Self>) {
         self.panicked.store(true, Ordering::Release);
     }
 
-    pub fn is_panicked(&self) -> bool {
+    pub fn is_panicked(self: Pin<&Self>) -> bool {
         self.panicked.load(Ordering::Acquire)
     }
 
     /// Prints the given formatted string with the Printer.
-    pub fn write_fmt(&self, args: fmt::Arguments<'_>) {
+    pub fn write_fmt(self: Pin<&Self>, args: fmt::Arguments<'_>) {
         let mut guard = if self.is_panicked() {
             hal().get_ref().printer().without_lock(self)
         } else {
@@ -252,7 +254,7 @@ impl Kernel {
         let _ = guard.write_fmt(args);
     }
 
-    pub fn write_str(&self, s: &str) {
+    pub fn write_str(self: Pin<&Self>, s: &str) {
         self.write_fmt(format_args!("{}", s));
     }
 }
@@ -277,7 +279,7 @@ pub unsafe fn main() -> ! {
             hal_init();
         }
         unsafe {
-            kernel_builder_unchecked_pin().init(hal().kmem());
+            kernel_mut_unchecked().init(hal().kmem());
         }
         INITED.store(true, Ordering::Release);
     } else {
@@ -285,7 +287,7 @@ pub unsafe fn main() -> ! {
             ::core::hint::spin_loop();
         }
         unsafe {
-            kernel_ref(|kctx| kctx.inithart());
+            kernel().inithart();
         }
     }
 

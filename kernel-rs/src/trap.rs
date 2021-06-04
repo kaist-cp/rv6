@@ -87,12 +87,12 @@ impl KernelCtx<'_, '_> {
         } else {
             which_dev = unsafe { self.kernel().dev_intr() };
             if which_dev == 0 {
-                self.kernel().write_fmt(format_args!(
+                self.kernel().as_ref().write_fmt(format_args!(
                     "usertrap(): unexpected scause {:018p} pid={}\n",
                     r_scause() as *const u8,
                     self.proc().pid()
                 ));
-                self.kernel().write_fmt(format_args!(
+                self.kernel().as_ref().write_fmt(format_args!(
                     "            sepc={:018p} stval={:018p}\n",
                     r_sepc() as *const u8,
                     r_stval() as *const u8
@@ -187,8 +187,9 @@ impl KernelRef<'_, '_> {
 
         let which_dev = unsafe { self.dev_intr() };
         if which_dev == 0 {
-            self.write_fmt(format_args!("scause {:018p}\n", scause as *const u8));
-            self.write_fmt(format_args!(
+            self.as_ref()
+                .write_fmt(format_args!("scause {:018p}\n", scause as *const u8));
+            self.as_ref().write_fmt(format_args!(
                 "sepc={:018p} stval={:018p}\n",
                 r_sepc() as *const u8,
                 r_stval() as *const u8
