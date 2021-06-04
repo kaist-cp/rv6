@@ -141,9 +141,7 @@ impl<T, A: Arena<Data = T>> ArenaRc<A> {
 
     fn map_arena<F: for<'new_id> FnOnce(ArenaRef<'new_id, '_, A>) -> R, R>(&self, f: F) -> R {
         // SAFETY: Safe because of `Rc`'s invariant.
-        let arena = unsafe { &*self.arena };
-        // SAFETY: `Pin` has a trasparent representation.
-        let arena: Pin<&A> = unsafe { core::mem::transmute(arena) };
+        let arena = unsafe { Pin::new_unchecked(&*self.arena) };
         Branded::new(arena, |arena| f(ArenaRef(arena)))
     }
 }

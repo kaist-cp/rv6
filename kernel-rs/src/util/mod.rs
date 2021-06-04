@@ -6,7 +6,6 @@
 pub mod branded;
 pub mod etrace;
 pub mod intrusive_list;
-pub mod list;
 pub mod pinned_array;
 pub mod shared_mut;
 pub mod static_arc;

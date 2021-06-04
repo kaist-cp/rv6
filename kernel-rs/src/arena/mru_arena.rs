@@ -62,8 +62,8 @@ impl<T> MruEntry<T> {
 
 // SAFETY: `MruEntry` owns a `ListEntry`.
 unsafe impl<T> ListNode for MruEntry<T> {
-    fn get_list_entry(&self) -> &ListEntry {
-        &self.list_entry
+    fn get_list_entry(self: Pin<&Self>) -> Pin<&ListEntry> {
+        unsafe { Pin::new_unchecked(&self.get_ref().list_entry) }
     }
 
     fn from_list_entry(list_entry: *const ListEntry) -> *const Self {
@@ -95,7 +95,7 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
         this.list.as_mut().init();
         for mut entry in IterPinMut::from(this.entries) {
             entry.as_mut().project().list_entry.init();
-            this.list.push_front(&entry);
+            this.list.as_ref().push_front(entry.as_ref());
         }
     }
 
@@ -180,12 +180,14 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
             rm.finalize::<Self>(ctx);
 
             // Move this entry to the back of the list.
-            let this = self.pinned_lock();
-            let ptr = (rm.cell() as usize - MruEntry::<T>::DATA_OFFSET) as *mut _;
+            let mut this = self.pinned_lock();
+            let ptr: *const MruEntry<Self::Data> =
+                (rm.cell() as usize - MruEntry::<T>::DATA_OFFSET) as _;
             // SAFETY:
             // * `rm.cell()` is an `RcCell` inside an `MruEntry`.
             // * The value of `DATA_OFFSET` is proper.
-            this.list.push_back(unsafe { &*ptr });
+            let ptr = unsafe { Pin::new_unchecked(&*ptr) };
+            this.get_pin_mut().project().list.as_ref().push_back(ptr);
         }
     }
 }
