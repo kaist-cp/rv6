@@ -131,10 +131,6 @@ impl File {
         }
     }
 
-    pub const fn zero() -> Self {
-        Self::new(FileType::None, false, false)
-    }
-
     /// Get metadata about file self.
     /// addr is a user virtual address, pointing to a struct stat.
     pub fn stat(&self, addr: UVAddr, ctx: &mut KernelCtx<'_, '_>) -> Result<(), ()> {
@@ -240,7 +236,7 @@ impl File {
 
 impl const Default for File {
     fn default() -> Self {
-        Self::zero()
+        Self::new(FileType::None, false, false)
     }
 }
 
@@ -269,7 +265,7 @@ impl ArenaObject for File {
 }
 
 impl FileTable {
-    pub const fn zero() -> Self {
+    pub const fn new_ftable() -> Self {
         Spinlock::new("FTABLE", ArrayArena::<File, NFILE>::new())
     }
 

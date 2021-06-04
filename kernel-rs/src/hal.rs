@@ -11,7 +11,7 @@ use crate::{
     virtio::VirtioDisk,
 };
 
-static mut HAL: Hal = Hal::new();
+static mut HAL: Hal = unsafe { Hal::new() };
 
 pub fn hal<'s>() -> Pin<&'s Hal> {
     // SAFETY: there is no way to make a mutable reference to `HAL` except calling `hal_init`,
@@ -52,13 +52,16 @@ pub struct Hal {
 }
 
 impl Hal {
-    const fn new() -> Self {
+    /// # Safety
+    ///
+    /// Must be used only after initializing it with `Hal::init`.
+    const unsafe fn new() -> Self {
         Self {
             console: unsafe { Console::new(UART0) },
             printer: Printer::new(),
             kmem: Spinlock::new("KMEM", unsafe { Kmem::new() }),
             cpus: Cpus::new(),
-            disk: Sleepablelock::new("DISK", VirtioDisk::zero()),
+            disk: Sleepablelock::new("DISK", unsafe { VirtioDisk::new() }),
         }
     }
 

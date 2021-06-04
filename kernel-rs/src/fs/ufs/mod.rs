@@ -301,7 +301,7 @@ pub struct UfsTx<'s> {
 }
 
 impl Ufs {
-    pub const fn zero() -> Self {
+    pub const fn new() -> Self {
         Self {
             superblock: Once::new(),
             log: Once::new(),

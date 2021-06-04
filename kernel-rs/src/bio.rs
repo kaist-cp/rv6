@@ -34,19 +34,19 @@ pub struct BufEntry {
 }
 
 impl BufEntry {
-    pub const fn zero() -> Self {
+    pub const fn new() -> Self {
         Self {
             dev: 0,
             blockno: 0,
             vdisk_request_waitchannel: WaitChannel::new(),
-            inner: Sleeplock::new("buffer", BufInner::zero()),
+            inner: Sleeplock::new("buffer", BufInner::new()),
         }
     }
 }
 
 impl const Default for BufEntry {
     fn default() -> Self {
-        Self::zero()
+        Self::new()
     }
 }
 
@@ -91,7 +91,7 @@ impl DerefMut for BufData {
 }
 
 impl BufInner {
-    const fn zero() -> Self {
+    const fn new() -> Self {
         Self {
             valid: false,
             disk: false,
@@ -184,9 +184,9 @@ impl Drop for Buf {
 impl Bcache {
     /// # Safety
     ///
-    /// The caller should make sure that `Bcache` never gets moved.
-    pub const unsafe fn zero() -> Self {
-        Spinlock::new("BCACHE", MruArena::<BufEntry, NBUF>::new())
+    /// Must be used only after initializing it with `MruArena::init`.
+    pub const unsafe fn new_bcache() -> Self {
+        Spinlock::new("BCACHE", unsafe { MruArena::<BufEntry, NBUF>::new() })
     }
 
     /// Return a unlocked buf with the contents of the indicated block.

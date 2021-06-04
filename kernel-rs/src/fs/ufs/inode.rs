@@ -657,7 +657,7 @@ impl InodeGuard<'_, InodeInner> {
 
 impl const Default for Inode<InodeInner> {
     fn default() -> Self {
-        Self::zero()
+        Self::new()
     }
 }
 
@@ -737,7 +737,7 @@ impl Inode<InodeInner> {
         InodeGuard { inode: self }
     }
 
-    pub const fn zero() -> Self {
+    pub const fn new() -> Self {
         Self {
             dev: 0,
             inum: 0,

@@ -301,7 +301,7 @@ const VIRTIO_BLK_T_IN: u32 = 0;
 const VIRTIO_BLK_T_OUT: u32 = 1;
 
 impl VirtqDesc {
-    const fn zero() -> Self {
+    const fn new() -> Self {
         Self {
             addr: 0,
             len: 0,
@@ -312,7 +312,7 @@ impl VirtqDesc {
 }
 
 impl VirtqAvail {
-    const fn zero() -> Self {
+    const fn new() -> Self {
         Self {
             flags: 0,
             idx: 0,
@@ -322,17 +322,17 @@ impl VirtqAvail {
 }
 
 impl VirtqUsed {
-    const fn zero() -> Self {
+    const fn new() -> Self {
         Self {
             flags: 0,
             id: 0,
-            ring: [VirtqUsedElem::zero(); NUM],
+            ring: [VirtqUsedElem::new(); NUM],
         }
     }
 }
 
 impl VirtqUsedElem {
-    const fn zero() -> Self {
+    const fn new() -> Self {
         Self { id: 0, len: 0 }
     }
 }
