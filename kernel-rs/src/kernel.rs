@@ -26,11 +26,11 @@ use crate::{
 const CONSOLE_IN_DEVSW: usize = 1;
 
 /// The kernel.
-static mut KERNEL: KernelBuilder = KernelBuilder::new();
+static mut KERNEL: Kernel = unsafe { Kernel::new() };
 
 /// Returns a shared reference to the `KERNEL`.
 #[inline]
-fn kernel_builder<'s>() -> Pin<&'s KernelBuilder> {
+fn kernel<'s>() -> Pin<&'s Kernel> {
     // SAFETY: there is no way to make a mutable reference to `KERNEL` except calling
     // `kernel_builder_unchecked_pin`, which is unsafe.
     unsafe { Pin::new_unchecked(&KERNEL) }
@@ -43,11 +43,7 @@ fn kernel_builder<'s>() -> Pin<&'s KernelBuilder> {
 ///
 /// Use this only after the `Kernel` is initialized.
 pub unsafe fn kernel_ref<'s, F: for<'new_id> FnOnce(KernelRef<'new_id, 's>) -> R, R>(f: F) -> R {
-    // SAFETY: Safe to cast &KernelBuilder into &Kernel
-    // since Kernel has a transparent memory layout.
-    let kernel = unsafe { &*(kernel_builder().get_ref() as *const _ as *const _) };
-    let kernel = unsafe { Pin::new_unchecked(kernel) };
-    Branded::new(kernel, |k| f(KernelRef(k)))
+    Branded::new(kernel(), |k| f(KernelRef(k)))
 }
 
 /// Returns a pinned mutable reference to the `KERNEL`.
@@ -56,7 +52,7 @@ pub unsafe fn kernel_ref<'s, F: for<'new_id> FnOnce(KernelRef<'new_id, 's>) -> R
 ///
 /// There must be no other references to `KERNEL` while the returned reference is alive.
 #[inline]
-unsafe fn kernel_builder_unchecked_pin<'s>() -> Pin<&'s mut KernelBuilder> {
+unsafe fn kernel_builder_unchecked_pin<'s>() -> Pin<&'s mut Kernel> {
     // SAFETY: there are no other references to `KERNEL` while the returned reference is alive.
     unsafe { Pin::new_unchecked(&mut KERNEL) }
 }
@@ -69,7 +65,7 @@ unsafe fn kernel_builder_unchecked_pin<'s>() -> Pin<&'s mut KernelBuilder> {
 /// If the `Cpu` executing the code has a non-null `Proc` pointer,
 /// the `Proc` in `CurrentProc` is always valid while the `Kernel` is alive.
 #[pin_project]
-pub struct KernelBuilder {
+pub struct Kernel {
     panicked: AtomicBool,
 
     /// The kernel's memory manager.
@@ -91,22 +87,6 @@ pub struct KernelBuilder {
 
     #[pin]
     file_system: Ufs,
-}
-
-/// # Safety
-///
-/// `inner.procs` is initialized.
-#[repr(transparent)]
-pub struct Kernel {
-    inner: KernelBuilder,
-}
-
-impl Deref for Kernel {
-    type Target = KernelBuilder;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
 }
 
 /// A branded reference to a `Kernel`.
@@ -169,21 +149,23 @@ impl<'id, 's> Deref for KernelRef<'id, 's> {
     }
 }
 
-impl KernelBuilder {
-    const fn new() -> Self {
+impl Kernel {
+    /// # Safety
+    ///
+    /// Must be used only after initializing it with `Kernel::init`.
+    const unsafe fn new() -> Self {
         Self {
             panicked: AtomicBool::new(false),
             memory: MaybeUninit::uninit(),
             ticks: Sleepablelock::new("time", 0),
             procs: Procs::new(),
-            // SAFETY: the only way to access `bcache` is through `kernel()`, which is an immutable reference.
-            bcache: unsafe { Bcache::zero() },
+            bcache: unsafe { Bcache::new_bcache() },
             devsw: [Devsw {
                 read: None,
                 write: None,
             }; NDEV],
-            ftable: FileTable::zero(),
-            file_system: Ufs::zero(),
+            ftable: FileTable::new_ftable(),
+            file_system: Ufs::new(),
         }
     }
 
@@ -279,7 +261,7 @@ impl KernelBuilder {
 #[cfg(not(test))]
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
-    let kernel = kernel_builder();
+    let kernel = kernel();
     kernel.panic();
     kernel.write_fmt(format_args!("{}\n", info));
 

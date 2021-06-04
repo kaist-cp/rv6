@@ -80,10 +80,14 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
     /// ```rust,no_run
     /// let mru_arena = MruArena::<D, 100>::new();
     /// ```
+    ///
+    /// # Safety
+    ///
+    /// Must be used only after initializing it with `MruArena::init`.
     // Note: We cannot use the generic `T` in the following function, since we need to only allow
     // types that `impl const Default`, not just `impl Default`.
     #[allow(clippy::new_ret_no_self)]
-    pub const fn new<D: Default>() -> MruArena<D, CAPACITY> {
+    pub const unsafe fn new<D: Default>() -> MruArena<D, CAPACITY> {
         MruArena {
             entries: array![_ => MruEntry::new(Default::default()); CAPACITY],
             list: unsafe { List::new() },

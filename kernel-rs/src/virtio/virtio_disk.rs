@@ -98,31 +98,34 @@ struct VirtIOBlockOutHeader {
 }
 
 impl VirtioDisk {
-    pub const fn zero() -> Self {
+    /// # Safety
+    ///
+    /// It must be used only after initializing it with `VirtioDisk::init`.
+    pub const unsafe fn new() -> Self {
         Self {
-            desc: [VirtqDesc::zero(); NUM],
-            avail: VirtqAvail::zero(),
-            used: VirtqUsed::zero(),
-            info: DiskInfo::zero(),
+            desc: [VirtqDesc::new(); NUM],
+            avail: VirtqAvail::new(),
+            used: VirtqUsed::new(),
+            info: DiskInfo::new(),
         }
     }
 }
 
 impl DiskInfo {
-    const fn zero() -> Self {
+    const fn new() -> Self {
         Self {
             // SAFETY: bitmap is safe to be zero-initialized.
             allocated: unsafe { const_zero!(Bitmap::<NUM>) },
             used_idx: 0,
-            inflight: [InflightInfo::zero(); NUM],
-            ops: [VirtIOBlockOutHeader::zero(); NUM],
+            inflight: [InflightInfo::new(); NUM],
+            ops: [VirtIOBlockOutHeader::default(); NUM],
             _marker: PhantomPinned,
         }
     }
 }
 
 impl InflightInfo {
-    const fn zero() -> Self {
+    const fn new() -> Self {
         Self {
             b: ptr::null_mut(),
             status: false,
@@ -131,14 +134,6 @@ impl InflightInfo {
 }
 
 impl VirtIOBlockOutHeader {
-    const fn zero() -> Self {
-        Self {
-            typ: 0,
-            reserved: 0,
-            sector: 0,
-        }
-    }
-
     fn new(write: bool, sector: usize) -> Self {
         let typ = if write {
             VIRTIO_BLK_T_OUT
@@ -150,6 +145,16 @@ impl VirtIOBlockOutHeader {
             typ,
             reserved: 0,
             sector,
+        }
+    }
+}
+
+impl const Default for VirtIOBlockOutHeader {
+    fn default() -> Self {
+        Self {
+            typ: 0,
+            reserved: 0,
+            sector: 0,
         }
     }
 }
