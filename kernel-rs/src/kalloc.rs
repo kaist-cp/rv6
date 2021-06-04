@@ -43,8 +43,8 @@ impl Run {
 
 // SAFETY: `Run` owns a `ListEntry`.
 unsafe impl ListNode for Run {
-    fn get_list_entry(&self) -> &ListEntry {
-        &self.entry
+    fn get_list_entry(self: Pin<&Self>) -> Pin<&ListEntry> {
+        unsafe { Pin::new_unchecked(&self.get_ref().entry) }
     }
 
     fn from_list_entry(list_entry: *const ListEntry) -> *const Self {
@@ -95,13 +95,11 @@ impl Kmem {
             // * end <= pa < PHYSTOP
             // * the safety condition of this method guarantees that the
             //   created page does not overlap with existing pages
-            self.as_ref()
-                .get_ref()
-                .free(unsafe { Page::from_usize(pa) });
+            self.as_ref().free(unsafe { Page::from_usize(pa) });
         }
     }
 
-    pub fn free(&self, mut page: Page) {
+    pub fn free(self: Pin<&Self>, mut page: Page) {
         // Fill with junk to catch dangling refs.
         page.write_bytes(1);
 
@@ -110,28 +108,32 @@ impl Kmem {
         let run = run.write(unsafe { Run::new() });
         let mut run = unsafe { Pin::new_unchecked(run) };
         run.as_mut().init();
-        self.runs.push_front(run.as_ref().get_ref());
+        self.runs().push_front(run.as_ref());
 
         // Since the page has returned to the list, forget the page.
         mem::forget(page);
     }
 
-    pub fn alloc(&self) -> Option<Page> {
-        let run = self.runs.pop_front()?;
+    pub fn alloc(self: Pin<&Self>) -> Option<Page> {
+        let run = self.runs().pop_front()?;
         // SAFETY: the invariant of `Kmem`.
         let mut page = unsafe { Page::from_usize(run as _) };
         // fill with junk
         page.write_bytes(5);
         Some(page)
     }
+
+    fn runs(self: Pin<&Self>) -> Pin<&List<Run>> {
+        unsafe { Pin::new_unchecked(&self.get_ref().runs) }
+    }
 }
 
 impl Spinlock<Kmem> {
     pub fn free(self: Pin<&Self>, page: Page) {
-        self.pinned_lock().free(page);
+        self.pinned_lock().get_pin_mut().as_ref().free(page);
     }
 
     pub fn alloc(self: Pin<&Self>) -> Option<Page> {
-        self.pinned_lock().alloc()
+        self.pinned_lock().get_pin_mut().as_ref().alloc()
     }
 }
