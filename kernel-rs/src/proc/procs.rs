@@ -60,7 +60,7 @@ pub struct Procs {
 /// # Safety
 ///
 /// A `ProcsRef<'id, 's>` can be created only from a `KernelRef<'id, 's>` that has the same `'id` tag.
-pub struct ProcsRef<'id, 's>(Branded<'id, &'s Procs>);
+pub struct ProcsRef<'id, 's>(Branded<'id, Pin<&'s Procs>>);
 
 struct ProcIter<'id, 'a>(Branded<'id, core::slice::Iter<'a, Proc>>);
 
@@ -98,7 +98,7 @@ impl Procs {
         cwd: RcInode<<Ufs as FileSystem>::InodeInner>,
         allocator: Pin<&Spinlock<Kmem>>,
     ) {
-        let initial_proc = Branded::new(self.as_ref().get_ref(), |procs| {
+        let initial_proc = Branded::new(self.as_ref(), |procs| {
             let procs = ProcsRef(procs);
 
             // Allocate trap frame.
@@ -144,13 +144,13 @@ impl Procs {
         *self.project().initial_proc = initial_proc;
     }
 
-    fn initial_proc(&self) -> &Proc {
+    fn initial_proc(self: Pin<&Self>) -> &Proc {
         assert!(!self.initial_proc.is_null());
         // SAFETY: invariant
         unsafe { &*(self.initial_proc as *const _) }
     }
 
-    fn allocpid(&self) -> Pid {
+    fn allocpid(self: Pin<&Self>) -> Pid {
         self.nextpid.fetch_add(1, Ordering::Relaxed)
     }
 }
@@ -163,7 +163,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
     /// Acquires the wait_lock of this `Procs` and returns the `WaitGuard`.
     /// You can access any of this `Procs`'s `Proc::parent` field only after acquiring the `WaitGuard`.
     fn wait_guard(&self) -> WaitGuard<'id, 's> {
-        WaitGuard(self.0.brand(self.0.wait_lock.lock()))
+        WaitGuard(self.0.brand(self.0.get_ref().wait_lock.lock()))
     }
 
     /// Look into process system for an UNUSED proc.
@@ -188,7 +188,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
                 data.context.sp = data.kstack + PGSIZE;
 
                 let info = guard.deref_mut_info();
-                info.pid = self.allocpid();
+                info.pid = self.0.allocpid();
                 // It's safe because trap_frame and memory now have been initialized.
                 info.state = Procstate::USED;
 
@@ -227,8 +227,8 @@ impl<'id, 's> ProcsRef<'id, 's> {
         for pp in self.process_pool() {
             let parent = pp.get_mut_parent(parent_guard);
             if *parent == proc {
-                *parent = self.initial_proc();
-                self.initial_proc().child_waitchannel.wakeup(kernel);
+                *parent = self.0.initial_proc();
+                self.0.initial_proc().child_waitchannel.wakeup(kernel);
             }
         }
     }
@@ -365,7 +365,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
     pub fn exit_current(&self, status: i32, ctx: &mut KernelCtx<'id, '_>) -> ! {
         assert_ne!(
             ctx.proc().deref().deref() as *const _,
-            self.initial_proc() as _,
+            self.0.initial_proc() as _,
             "init exiting"
         );
 
@@ -436,7 +436,7 @@ unsafe fn forkret() -> ! {
 
 impl<'id, 's> ProcIter<'id, 's> {
     fn new(procs: &ProcsRef<'id, 's>) -> Self {
-        Self(procs.0.brand(procs.0.process_pool.iter()))
+        Self(procs.0.brand(procs.0.get_ref().process_pool.iter()))
     }
 }
 
@@ -457,7 +457,7 @@ impl<'id, 's> WaitGuard<'id, 's> {
 impl<'id, 's> KernelRef<'id, 's> {
     /// Returns a `ProcsRef` that points to the kernel's `Procs`.
     pub fn procs(&self) -> ProcsRef<'id, '_> {
-        ProcsRef(self.brand(&self.procs))
+        ProcsRef(self.brand(self.ps()))
     }
 
     /// Per-CPU process scheduler.
