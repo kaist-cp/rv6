@@ -30,10 +30,10 @@ static mut KERNEL: KernelBuilder = KernelBuilder::new();
 
 /// Returns a shared reference to the `KERNEL`.
 #[inline]
-fn kernel_builder<'s>() -> &'s KernelBuilder {
+fn kernel_builder<'s>() -> Pin<&'s KernelBuilder> {
     // SAFETY: there is no way to make a mutable reference to `KERNEL` except calling
     // `kernel_builder_unchecked_pin`, which is unsafe.
-    unsafe { &KERNEL }
+    unsafe { Pin::new_unchecked(&KERNEL) }
 }
 
 /// Creates a `KernelRef` that has a unique, invariant `'id` and points to the `Kernel`.
@@ -45,7 +45,8 @@ fn kernel_builder<'s>() -> &'s KernelBuilder {
 pub unsafe fn kernel_ref<'s, F: for<'new_id> FnOnce(KernelRef<'new_id, 's>) -> R, R>(f: F) -> R {
     // SAFETY: Safe to cast &KernelBuilder into &Kernel
     // since Kernel has a transparent memory layout.
-    let kernel = unsafe { &*(kernel_builder() as *const _ as *const _) };
+    let kernel = unsafe { &*(kernel_builder().get_ref() as *const _ as *const _) };
+    let kernel = unsafe { Pin::new_unchecked(kernel) };
     Branded::new(kernel, |k| f(KernelRef(k)))
 }
 
@@ -78,7 +79,7 @@ pub struct KernelBuilder {
 
     /// Current process system.
     #[pin]
-    pub procs: Procs,
+    procs: Procs,
 
     #[pin]
     bcache: Bcache,
@@ -92,10 +93,10 @@ pub struct KernelBuilder {
     file_system: Ufs,
 }
 
-#[repr(transparent)]
 /// # Safety
 ///
 /// `inner.procs` is initialized.
+#[repr(transparent)]
 pub struct Kernel {
     inner: KernelBuilder,
 }
@@ -114,7 +115,7 @@ impl Deref for Kernel {
 ///
 /// The `'id` is always different between different `Kernel` instances.
 #[derive(Clone, Copy)]
-pub struct KernelRef<'id, 's>(Branded<'id, &'s Kernel>);
+pub struct KernelRef<'id, 's>(Branded<'id, Pin<&'s Kernel>>);
 
 impl<'id, 's> KernelRef<'id, 's> {
     /// Returns a `Branded` that wraps `data` and has the same `'id` tag with `self`.
@@ -134,25 +135,29 @@ impl<'id, 's> KernelRef<'id, 's> {
 
     /// Returns a reference to the kernel's ticks.
     pub fn ticks(&self) -> &'s Sleepablelock<u32> {
-        &self.0.ticks
+        &self.0.get_ref().ticks
+    }
+
+    pub fn ps(&self) -> Pin<&'s Procs> {
+        unsafe { Pin::new_unchecked(&self.0.get_ref().procs) }
+    }
+
+    pub fn bcache(&self) -> Pin<&'s Bcache> {
+        unsafe { Pin::new_unchecked(&self.0.get_ref().bcache) }
     }
 
     /// Returns a reference to the kernel's `Devsw` array.
     pub fn devsw(&self) -> &'s [Devsw; NDEV] {
-        &self.0.devsw
+        &self.0.get_ref().devsw
     }
 
     /// Returns a reference to the kernel's `FileSystem`.
     pub fn fs(&self) -> Pin<&'s Ufs> {
-        unsafe { Pin::new_unchecked(&self.0.file_system) }
+        unsafe { Pin::new_unchecked(&self.0.get_ref().file_system) }
     }
 
     pub fn ftable(&self) -> Pin<&'s FileTable> {
-        unsafe { Pin::new_unchecked(&self.0.ftable) }
-    }
-
-    pub fn bcache(&self) -> Pin<&'s Bcache> {
-        unsafe { Pin::new_unchecked(&self.0.bcache) }
+        unsafe { Pin::new_unchecked(&self.0.get_ref().ftable) }
     }
 }
 
