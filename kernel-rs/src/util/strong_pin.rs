@@ -87,6 +87,14 @@ impl<'a, T> StrongPinMut<'a, T> {
     }
 }
 
+impl<T> Deref for StrongPinMut<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_ref().as_pin().get_ref()
+    }
+}
+
 impl<'a, T, const L: usize> StrongPinMut<'a, [T; L]> {
     pub fn iter_mut(self) -> IterMut<'a, T> {
         let ptr = self.ptr.as_ptr() as *mut T;

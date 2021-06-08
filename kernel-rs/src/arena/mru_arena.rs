@@ -55,9 +55,10 @@ impl<T> MruEntry<T> {
         }
     }
 
-    fn data(this: StrongPinMut<'_, Self>) -> StrongPinMut<'_, StaticArc<T>> {
+    #[allow(clippy::needless_lifetimes)]
+    fn data<'s>(self: StrongPinMut<'s, Self>) -> StrongPinMut<'s, StaticArc<T>> {
         // SAFETY: the pointer is valid, and it creates a unique `StrongPinMut`.
-        unsafe { StrongPinMut::new_unchecked(&raw mut (*this.ptr().as_ptr()).data) }
+        unsafe { StrongPinMut::new_unchecked(&raw mut (*self.ptr().as_ptr()).data) }
     }
 }
 
@@ -104,9 +105,10 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
         }
     }
 
-    fn list(this: StrongPinMut<'_, Self>) -> StrongPinMut<'_, List<MruEntry<T>>> {
+    #[allow(clippy::needless_lifetimes)]
+    fn list<'s>(self: StrongPinMut<'s, Self>) -> StrongPinMut<'s, List<MruEntry<T>>> {
         // SAFETY: the pointer is valid, and it creates a unique `StrongPinMut`.
-        unsafe { StrongPinMut::new_unchecked(&raw mut (*this.ptr().as_ptr()).list) }
+        unsafe { StrongPinMut::new_unchecked(&raw mut (*self.ptr().as_ptr()).list) }
     }
 }
 
@@ -128,10 +130,10 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
                 let this = guard.get_strong_pinned_mut();
 
                 let mut empty: Option<NonNull<StaticArc<T>>> = None;
-                for entry in List::iter_shared_mut(MruArena::list(this)) {
-                    let mut entry = MruEntry::data(entry);
+                for entry in this.list().iter_shared_mut() {
+                    let mut entry = entry.data();
 
-                    if let Some(entry) = StaticArc::try_borrow(entry.as_mut()) {
+                    if let Some(entry) = entry.as_mut().try_borrow() {
                         // The entry is not under finalization. Check its data.
                         if c(&entry) {
                             let handle = Handle(arena.0.brand(entry));
@@ -139,7 +141,7 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
                         }
                     }
 
-                    if !StaticArc::is_borrowed(entry.as_mut()) {
+                    if !entry.as_mut().is_borrowed() {
                         let _ = empty.get_or_insert(entry.ptr());
                     }
                 }
@@ -147,8 +149,8 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
                 empty.map(|ptr| {
                     // SAFETY: `ptr` is valid, and there's no `StrongPinMut`.
                     let mut entry = unsafe { StrongPinMut::new_unchecked(ptr.as_ptr()) };
-                    n(StaticArc::get_mut(entry.as_mut()).unwrap());
-                    let handle = Handle(arena.0.brand(StaticArc::borrow(entry)));
+                    n(entry.as_mut().get_mut().unwrap());
+                    let handle = Handle(arena.0.brand(entry.borrow()));
                     ArenaRc::new(arena, handle)
                 })
             },
@@ -162,11 +164,11 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
                 let mut guard = arena.strong_pinned_lock();
                 let this = guard.get_strong_pinned_mut();
 
-                for entry in List::iter_shared_mut(MruArena::list(this)).rev() {
-                    let mut entry = MruEntry::data(entry);
-                    if let Some(data) = StaticArc::get_mut(entry.as_mut()) {
+                for entry in this.list().iter_shared_mut().rev() {
+                    let mut entry = entry.data();
+                    if let Some(data) = entry.as_mut().get_mut() {
                         *data = f();
-                        let handle = Handle(arena.0.brand(StaticArc::borrow(entry)));
+                        let handle = Handle(arena.0.brand(entry.borrow()));
                         return Some(ArenaRc::new(arena, handle));
                     }
                 }

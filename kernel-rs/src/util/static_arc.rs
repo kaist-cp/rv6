@@ -39,43 +39,47 @@ impl<T> StaticArc<T> {
         }
     }
 
-    fn rc(this: StrongPinMut<'_, Self>) -> &AtomicUsize {
+    #[allow(clippy::needless_lifetimes)]
+    fn rc<'s>(self: StrongPinMut<'s, Self>) -> &'s AtomicUsize {
         // SAFETY: invariant of StrongPinMut
-        unsafe { &(*this.ptr().as_ptr()).refcnt }
+        unsafe { &(*self.ptr().as_ptr()).refcnt }
     }
 
-    pub fn is_borrowed(this: StrongPinMut<'_, Self>) -> bool {
-        Self::rc(this).load(Ordering::Acquire) > 0
+    pub fn is_borrowed(self: StrongPinMut<'_, Self>) -> bool {
+        self.rc().load(Ordering::Acquire) > 0
     }
 
-    pub fn get_mut(mut this: StrongPinMut<'_, Self>) -> Option<&mut T> {
-        if Self::is_borrowed(this.as_mut()) {
+    #[allow(clippy::needless_lifetimes)]
+    pub fn get_mut<'s>(mut self: StrongPinMut<'s, Self>) -> Option<&'s mut T> {
+        if self.as_mut().is_borrowed() {
             None
         } else {
-            // SAFETY: no `Ref` nor `RefMut` points to `this`.
-            Some(unsafe { &mut (*this.ptr().as_ptr()).data })
+            // SAFETY: no `Ref` nor `RefMut` points to `self`.
+            Some(unsafe { &mut (*self.ptr().as_ptr()).data })
         }
     }
 
-    pub fn try_borrow(mut this: StrongPinMut<'_, Self>) -> Option<Ref<T>> {
+    pub fn try_borrow(mut self: StrongPinMut<'_, Self>) -> Option<Ref<T>> {
         loop {
-            let r = Self::rc(this.as_mut()).load(Ordering::Acquire);
+            let r = self.as_mut().rc().load(Ordering::Acquire);
 
             if r >= BORROWED_MUT - 1 {
                 return None;
             }
 
-            if Self::rc(this.as_mut())
+            if self
+                .as_mut()
+                .rc()
                 .compare_exchange(r, r + 1, Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()
             {
-                return Some(Ref(this.ptr()));
+                return Some(Ref(self.ptr()));
             }
         }
     }
 
-    pub fn borrow(this: StrongPinMut<'_, Self>) -> Ref<T> {
-        Self::try_borrow(this).expect("already mutably borrowed")
+    pub fn borrow(self: StrongPinMut<'_, Self>) -> Ref<T> {
+        self.try_borrow().expect("already mutably borrowed")
     }
 }
 
