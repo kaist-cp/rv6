@@ -1,4 +1,4 @@
-use core::{ops::Deref, pin::Pin};
+use core::ops::Deref;
 
 use bitflags::bitflags;
 
@@ -7,6 +7,7 @@ use crate::{
     lock::{Sleeplock, Spinlock},
     param::NINODE,
     proc::KernelCtx,
+    util::strong_pin::StrongPin,
 };
 
 mod lfs;
@@ -121,11 +122,11 @@ where
     fn begin_tx(&self, ctx: &KernelCtx<'_, '_>) -> Self::Tx<'_>;
 
     /// Finds the root inode.
-    fn root(self: Pin<&Self>) -> RcInode<Self::InodeInner>;
+    fn root(self: StrongPin<'_, Self>) -> RcInode<Self::InodeInner>;
 
     /// Finds inode from the given path.
     fn namei(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         path: &Path,
         tx: &Self::Tx<'_>,
         ctx: &KernelCtx<'_, '_>,
@@ -134,7 +135,7 @@ where
     /// Create another name(newname) for the file oldname.
     /// Returns Ok(()) on success, Err(()) on error.
     fn link(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         inode: RcInode<Self::InodeInner>,
         path: &Path,
         tx: &Self::Tx<'_>,
@@ -144,7 +145,7 @@ where
     /// Remove a file(filename).
     /// Returns Ok(()) on success, Err(()) on error.
     fn unlink(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         path: &Path,
         tx: &Self::Tx<'_>,
         ctx: &KernelCtx<'_, '_>,
@@ -153,7 +154,7 @@ where
     /// Create an inode with given type.
     /// Returns Ok(created inode, result of given function f) on success, Err(()) on error.
     fn create<F, T>(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         path: &Path,
         typ: InodeType,
         tx: &Self::Tx<'_>,
@@ -166,7 +167,7 @@ where
     /// Open a file; omode indicate read/write.
     /// Returns Ok(file descriptor) on success, Err(()) on error.
     fn open(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         path: &Path,
         omode: FcntlFlags,
         tx: &Self::Tx<'_>,
@@ -176,7 +177,7 @@ where
     /// Change the current directory.
     /// Returns Ok(()) on success, Err(()) on error.
     fn chdir(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         inode: RcInode<Self::InodeInner>,
         tx: &Self::Tx<'_>,
         ctx: &mut KernelCtx<'_, '_>,

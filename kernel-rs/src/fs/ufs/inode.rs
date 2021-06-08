@@ -71,7 +71,6 @@ use core::{
     iter::StepBy,
     mem,
     ops::{Deref, Range},
-    pin::Pin,
     ptr,
 };
 
@@ -89,6 +88,7 @@ use crate::{
     param::ROOTDEV,
     param::{BSIZE, NINODE},
     proc::KernelCtx,
+    util::strong_pin::StrongPin,
 };
 
 /// Directory is a file containing a sequence of Dirent structures.
@@ -782,7 +782,7 @@ impl Itable<InodeInner> {
     /// Find the inode with number inum on device dev
     /// and return the in-memory copy. Does not lock
     /// the inode and does not read it from disk.
-    pub fn get_inode(self: Pin<&Self>, dev: u32, inum: u32) -> RcInode<InodeInner> {
+    pub fn get_inode(self: StrongPin<'_, Self>, dev: u32, inum: u32) -> RcInode<InodeInner> {
         self.find_or_alloc(
             |inode| inode.dev == dev && inode.inum == inum,
             |inode| {
@@ -798,7 +798,7 @@ impl Itable<InodeInner> {
     /// Mark it as allocated by giving it type.
     /// Returns an unlocked but allocated and referenced inode.
     pub fn alloc_inode(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         dev: u32,
         typ: InodeType,
         tx: &UfsTx<'_>,
@@ -846,12 +846,12 @@ impl Itable<InodeInner> {
         panic!("[Itable::alloc_inode] no inodes");
     }
 
-    pub fn root(self: Pin<&Self>) -> RcInode<InodeInner> {
+    pub fn root(self: StrongPin<'_, Self>) -> RcInode<InodeInner> {
         self.get_inode(ROOTDEV, ROOTINO)
     }
 
     pub fn namei(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         path: &Path,
         tx: &UfsTx<'_>,
         proc: &KernelCtx<'_, '_>,
@@ -860,7 +860,7 @@ impl Itable<InodeInner> {
     }
 
     pub fn nameiparent<'s>(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         path: &'s Path,
         tx: &UfsTx<'_>,
         ctx: &KernelCtx<'_, '_>,
@@ -871,7 +871,7 @@ impl Itable<InodeInner> {
     }
 
     fn namex<'s>(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         mut path: &'s Path,
         parent: bool,
         tx: &UfsTx<'_>,

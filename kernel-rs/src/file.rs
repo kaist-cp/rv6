@@ -6,7 +6,6 @@ use core::{
     mem::{self, ManuallyDrop},
     ops::Deref,
     ops::DerefMut,
-    pin::Pin,
 };
 
 use crate::{
@@ -18,6 +17,7 @@ use crate::{
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
     proc::KernelCtx,
+    util::strong_pin::StrongPin,
 };
 
 pub enum FileType {
@@ -197,7 +197,7 @@ impl File {
                 let mut bytes_written: usize = 0;
                 while bytes_written < n {
                     let bytes_to_write = cmp::min(n - bytes_written, max);
-                    let tx = ctx.kernel().fs().get_ref().begin_tx(ctx);
+                    let tx = ctx.kernel().fs().as_pin().get_ref().begin_tx(ctx);
                     let mut ip = inner.lock(ctx);
                     let curr_off = *ip.off;
                     let r = ip.write_user(
@@ -255,7 +255,7 @@ impl ArenaObject for File {
                 inner: InodeFileType { ip, .. },
             }
             | FileType::Device { ip, .. } => {
-                let tx = ctx.kernel().fs().get_ref().begin_tx(ctx);
+                let tx = ctx.kernel().fs().as_pin().get_ref().begin_tx(ctx);
                 ip.free((&tx, ctx));
                 tx.end(ctx);
             }
@@ -271,7 +271,7 @@ impl FileTable {
 
     /// Allocate a file structure.
     pub fn alloc_file(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         typ: FileType,
         readable: bool,
         writable: bool,

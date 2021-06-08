@@ -7,8 +7,8 @@
 
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
-use core::pin::Pin;
 
+use crate::util::strong_pin::StrongPin;
 use crate::util::{branded::Branded, static_arc::Ref};
 
 mod array_arena;
@@ -30,7 +30,7 @@ pub trait Arena: Sized + Sync {
     ///
     /// If an empty entry does not exist, returns `None`.
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         c: C,
         n: N,
     ) -> Option<ArenaRc<Self>>;
@@ -39,7 +39,7 @@ pub trait Arena: Sized + Sync {
     /// * Uses `f` to initialze a new `Rc`.
     ///
     /// Otherwise, returns `None`.
-    fn alloc<F: FnOnce() -> Self::Data>(self: Pin<&Self>, f: F) -> Option<ArenaRc<Self>>;
+    fn alloc<F: FnOnce() -> Self::Data>(self: StrongPin<'_, Self>, f: F) -> Option<ArenaRc<Self>>;
 
     /// Deallocate a given handle, decreasing the reference count
     /// Finalizes the referred object if there are no more handles.
@@ -73,14 +73,14 @@ pub trait ArenaObject {
 ///
 /// The `'id` is always different between different `Arena` instances.
 #[derive(Clone, Copy)]
-pub struct ArenaRef<'id, 's, A: Arena>(Branded<'id, Pin<&'s A>>);
+pub struct ArenaRef<'id, 's, A: Arena>(Branded<'id, StrongPin<'s, A>>);
 
 impl<'id, A: Arena> ArenaRef<'id, '_, A> {
     /// Creates a new `ArenaRef` that has a unique, invariant `'id` tag.
     /// The `ArenaRef` can be used only inside the given closure.
     #[allow(clippy::new_ret_no_self)]
     pub fn new<'s, F: for<'new_id> FnOnce(ArenaRef<'new_id, 's, A>) -> R, R>(
-        arena: Pin<&'s A>,
+        arena: StrongPin<'s, A>,
         f: F,
     ) -> R {
         Branded::new(arena, |a| f(ArenaRef(a)))
@@ -88,7 +88,7 @@ impl<'id, A: Arena> ArenaRef<'id, '_, A> {
 }
 
 impl<'id, 's, A: Arena> Deref for ArenaRef<'id, 's, A> {
-    type Target = Pin<&'s A>;
+    type Target = StrongPin<'s, A>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -134,14 +134,14 @@ impl<T, A: Arena<Data = T>> ArenaRc<A> {
     /// Creates a new `Rc`, allocated from the arena.
     pub fn new<'id>(arena: ArenaRef<'id, '_, A>, inner: Handle<'id, T>) -> Self {
         Self {
-            arena: arena.0.into_inner().get_ref(),
+            arena: arena.0.into_inner().as_pin().get_ref(),
             inner: ManuallyDrop::new(inner.0.into_inner()),
         }
     }
 
     fn map_arena<F: for<'new_id> FnOnce(ArenaRef<'new_id, '_, A>) -> R, R>(&self, f: F) -> R {
         // SAFETY: Safe because of `Rc`'s invariant.
-        let arena = unsafe { Pin::new_unchecked(&*self.arena) };
+        let arena = unsafe { StrongPin::new_unchecked(&*self.arena) };
         Branded::new(arena, |arena| f(ArenaRef(arena)))
     }
 }

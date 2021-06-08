@@ -4,7 +4,7 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use super::shared_mut::SharedMut;
+use super::strong_pin::StrongPinMut;
 
 const BORROWED_MUT: usize = usize::MAX;
 
@@ -31,7 +31,6 @@ pub struct Ref<T>(NonNull<StaticArc<T>>);
 #[repr(transparent)]
 pub struct RefMut<T>(NonNull<StaticArc<T>>);
 
-// TODO(https://github.com/kaist-cp/rv6/issues/553): `Pin2`
 impl<T> StaticArc<T> {
     pub const fn new(data: T) -> Self {
         Self {
@@ -40,17 +39,17 @@ impl<T> StaticArc<T> {
         }
     }
 
-    fn rc(this: SharedMut<'_, Self>) -> &AtomicUsize {
-        // SAFETY: invariant of SharedMut
+    fn rc(this: StrongPinMut<'_, Self>) -> &AtomicUsize {
+        // SAFETY: invariant of StrongPinMut
         unsafe { &(*this.ptr().as_ptr()).refcnt }
     }
 
-    pub fn is_borrowed(this: SharedMut<'_, Self>) -> bool {
+    pub fn is_borrowed(this: StrongPinMut<'_, Self>) -> bool {
         Self::rc(this).load(Ordering::Acquire) > 0
     }
 
-    pub fn get_mut(mut this: SharedMut<'_, Self>) -> Option<&mut T> {
-        if Self::is_borrowed(this.as_shared_mut()) {
+    pub fn get_mut(mut this: StrongPinMut<'_, Self>) -> Option<&mut T> {
+        if Self::is_borrowed(this.as_mut()) {
             None
         } else {
             // SAFETY: no `Ref` nor `RefMut` points to `this`.
@@ -58,15 +57,15 @@ impl<T> StaticArc<T> {
         }
     }
 
-    pub fn try_borrow(mut this: SharedMut<'_, Self>) -> Option<Ref<T>> {
+    pub fn try_borrow(mut this: StrongPinMut<'_, Self>) -> Option<Ref<T>> {
         loop {
-            let r = Self::rc(this.as_shared_mut()).load(Ordering::Acquire);
+            let r = Self::rc(this.as_mut()).load(Ordering::Acquire);
 
             if r >= BORROWED_MUT - 1 {
                 return None;
             }
 
-            if Self::rc(this.as_shared_mut())
+            if Self::rc(this.as_mut())
                 .compare_exchange(r, r + 1, Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()
             {
@@ -75,15 +74,16 @@ impl<T> StaticArc<T> {
         }
     }
 
-    pub fn borrow(this: SharedMut<'_, Self>) -> Ref<T> {
+    pub fn borrow(this: StrongPinMut<'_, Self>) -> Ref<T> {
         Self::try_borrow(this).expect("already mutably borrowed")
     }
 }
 
 impl<T> Drop for StaticArc<T> {
     fn drop(&mut self) {
-        assert!(
-            !Self::is_borrowed(SharedMut::new(self)),
+        assert_eq!(
+            self.refcnt.load(Ordering::Acquire),
+            0,
             "dropped while borrowed"
         );
     }

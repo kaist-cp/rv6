@@ -48,7 +48,8 @@ pub use sleepablelock::{Sleepablelock, SleepablelockGuard};
 pub use sleeplock::{Sleeplock, SleeplockGuard};
 pub use spinlock::{RawSpinlock, Spinlock, SpinlockGuard};
 
-use crate::util::shared_mut::SharedMut;
+use crate::util::strong_pin::StrongPin;
+use crate::util::strong_pin::StrongPinMut;
 
 pub trait RawLock {
     /// Acquires the lock.
@@ -67,6 +68,12 @@ unsafe impl<R: RawLock, T: Send> Sync for Lock<R, T> {}
 
 /// Guards that guarantee exclusive mutable access to the lock's inner data.
 pub struct Guard<'s, R: RawLock, T> {
+    lock: &'s Lock<R, T>,
+    _marker: PhantomData<*const ()>,
+}
+
+/// Guards that guarantee exclusive mutable access to the lock's inner data.
+pub struct StrongPinnedGuard<'s, R: RawLock, T> {
     lock: &'s Lock<R, T>,
     _marker: PhantomData<*const ()>,
 }
@@ -93,6 +100,17 @@ impl<R: RawLock, T> Lock<R, T> {
 
         Guard {
             lock: self.get_ref(),
+            _marker: PhantomData,
+        }
+    }
+
+    /// Acquires the lock and returns the lock guard.
+    #[allow(clippy::needless_lifetimes)]
+    pub fn strong_pinned_lock<'a>(self: StrongPin<'a, Self>) -> StrongPinnedGuard<'a, R, T> {
+        self.lock.acquire();
+
+        StrongPinnedGuard {
+            lock: self.as_pin().get_ref(),
             _marker: PhantomData,
         }
     }
@@ -156,11 +174,6 @@ impl<R: RawLock, T> Guard<'_, R, T> {
         // SAFETY: for `T: !Unpin`, we only provide pinned references and don't move `T`.
         unsafe { Pin::new_unchecked(&mut *self.lock.data.get()) }
     }
-
-    pub fn get_shared_mut(&mut self) -> SharedMut<'_, T> {
-        // SAFETY: the pointer is valid, and it creates a unique `SharedMut`.
-        unsafe { SharedMut::new_unchecked(self.lock.data.get()) }
-    }
 }
 
 impl<R: RawLock, T> Drop for Guard<'_, R, T> {
@@ -182,5 +195,18 @@ impl<R: RawLock, T> Deref for Guard<'_, R, T> {
 impl<R: RawLock, T: Unpin> DerefMut for Guard<'_, R, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.get_pin_mut().get_mut()
+    }
+}
+
+impl<R: RawLock, T> StrongPinnedGuard<'_, R, T> {
+    pub fn get_strong_pinned_mut(&mut self) -> StrongPinMut<'_, T> {
+        // SAFETY: the pointer is valid, and it creates a unique `StrongPinMut`.
+        unsafe { StrongPinMut::new_unchecked(self.lock.data.get()) }
+    }
+}
+
+impl<R: RawLock, T> Drop for StrongPinnedGuard<'_, R, T> {
+    fn drop(&mut self) {
+        self.lock.lock.release();
     }
 }

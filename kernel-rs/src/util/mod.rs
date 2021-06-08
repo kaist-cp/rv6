@@ -7,8 +7,8 @@ pub mod branded;
 pub mod etrace;
 pub mod intrusive_list;
 pub mod pinned_array;
-pub mod shared_mut;
 pub mod static_arc;
+pub mod strong_pin;
 
 pub fn spin_loop() -> ! {
     loop {

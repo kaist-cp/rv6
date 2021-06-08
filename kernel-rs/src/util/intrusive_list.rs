@@ -23,7 +23,7 @@ use core::ptr;
 
 use pin_project::{pin_project, pinned_drop};
 
-use super::shared_mut::SharedMut;
+use super::strong_pin::StrongPinMut;
 
 /// A doubly linked list.
 /// Can only contain types that implement the `ListNode` trait.
@@ -48,7 +48,7 @@ pub struct Iter<'s, T: ListNode> {
     _marker: PhantomData<T>,
 }
 
-pub struct IterSharedMut<'s, T> {
+pub struct IterStrongPinMut<'s, T> {
     last: *const ListEntry,
     curr: *const ListEntry,
     _marker: PhantomData<&'s mut T>,
@@ -243,10 +243,10 @@ impl<T: ListNode> List<T> {
         }
     }
 
-    pub fn iter_shared_mut(this: SharedMut<'_, Self>) -> IterSharedMut<'_, T> {
+    pub fn iter_shared_mut(this: StrongPinMut<'_, Self>) -> IterStrongPinMut<'_, T> {
         let last = unsafe { &(*this.ptr().as_ptr()).head };
         let curr = unsafe { &*Pin::new_unchecked(last).next() };
-        IterSharedMut {
+        IterStrongPinMut {
             last,
             curr,
             _marker: PhantomData,
@@ -300,8 +300,8 @@ impl<'s, T: 's + ListNode> DoubleEndedIterator for Iter<'s, T> {
     }
 }
 
-impl<'s, T: 's + ListNode> Iterator for IterSharedMut<'s, T> {
-    type Item = SharedMut<'s, T>;
+impl<'s, T: 's + ListNode> Iterator for IterStrongPinMut<'s, T> {
+    type Item = StrongPinMut<'s, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if ptr::eq(self.last, self.curr) {
@@ -309,7 +309,7 @@ impl<'s, T: 's + ListNode> Iterator for IterSharedMut<'s, T> {
         } else {
             // Safe since `self.curr` is a `ListEntry` contained inside a `T`.
             let ptr = T::from_list_entry(self.curr) as *mut T;
-            let res = Some(unsafe { SharedMut::new_unchecked(ptr) });
+            let res = Some(unsafe { StrongPinMut::new_unchecked(ptr) });
             let curr = unsafe { Pin::new_unchecked(&*self.curr) };
             debug_assert_ne!(self.curr, curr.next(), "loops forever");
             self.curr = curr.next();
@@ -318,7 +318,7 @@ impl<'s, T: 's + ListNode> Iterator for IterSharedMut<'s, T> {
     }
 }
 
-impl<'s, T: 's + ListNode> DoubleEndedIterator for IterSharedMut<'s, T> {
+impl<'s, T: 's + ListNode> DoubleEndedIterator for IterStrongPinMut<'s, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if ptr::eq(self.last, self.curr) {
             None
@@ -328,7 +328,7 @@ impl<'s, T: 's + ListNode> DoubleEndedIterator for IterSharedMut<'s, T> {
             self.last = last.prev();
             // Safe since `self.last` is a `ListEntry` contained inside a `T`.
             let ptr = T::from_list_entry(self.last) as *mut T;
-            Some(unsafe { SharedMut::new_unchecked(ptr) })
+            Some(unsafe { StrongPinMut::new_unchecked(ptr) })
         }
     }
 }
