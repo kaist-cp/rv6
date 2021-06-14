@@ -7,7 +7,7 @@ use crate::{
     console::{Console, Printer},
     cpu::Cpus,
     kalloc::Kmem,
-    lock::{Sleepablelock, Spinlock},
+    lock::{SleepableLock, SpinLock},
     virtio::VirtioDisk,
 };
 
@@ -43,12 +43,12 @@ pub struct Hal {
     printer: Printer,
 
     #[pin]
-    kmem: Spinlock<Kmem>,
+    kmem: SpinLock<Kmem>,
 
     cpus: Cpus,
 
     #[pin]
-    disk: Sleepablelock<VirtioDisk>,
+    disk: SleepableLock<VirtioDisk>,
 }
 
 impl Hal {
@@ -59,9 +59,9 @@ impl Hal {
         Self {
             console: unsafe { Console::new(UART0) },
             printer: Printer::new(),
-            kmem: Spinlock::new("KMEM", unsafe { Kmem::new() }),
+            kmem: SpinLock::new("KMEM", unsafe { Kmem::new() }),
             cpus: Cpus::new(),
-            disk: Sleepablelock::new("DISK", unsafe { VirtioDisk::new() }),
+            disk: SleepableLock::new("DISK", unsafe { VirtioDisk::new() }),
         }
     }
 
@@ -90,7 +90,7 @@ impl Hal {
         &self.printer
     }
 
-    pub fn kmem(self: Pin<&Self>) -> Pin<&Spinlock<Kmem>> {
+    pub fn kmem(self: Pin<&Self>) -> Pin<&SpinLock<Kmem>> {
         // SAFETY: `HAL` is never moved inside this module, and only shared references are exposed.
         unsafe { Pin::new_unchecked(&self.get_ref().kmem) }
     }
@@ -99,7 +99,7 @@ impl Hal {
         &self.cpus
     }
 
-    pub fn disk(self: Pin<&Self>) -> Pin<&Sleepablelock<VirtioDisk>> {
+    pub fn disk(self: Pin<&Self>) -> Pin<&SleepableLock<VirtioDisk>> {
         // SAFETY: `HAL` is never moved inside this module, and only shared references are exposed.
         unsafe { Pin::new_unchecked(&self.get_ref().disk) }
     }

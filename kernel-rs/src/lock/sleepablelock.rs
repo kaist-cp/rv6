@@ -1,35 +1,35 @@
 //! Sleepable locks
 use core::cell::UnsafeCell;
 
-use super::{spinlock::RawSpinlock, Guard, Lock, RawLock};
+use super::{spinlock::RawSpinLock, Guard, Lock, RawLock};
 use crate::{
     kernel::KernelRef,
     proc::{KernelCtx, WaitChannel},
 };
 
 /// Mutual exclusion spin locks that can sleep.
-pub struct RawSleepablelock {
-    lock: RawSpinlock,
+pub struct RawSleepableLock {
+    lock: RawSpinLock,
     /// WaitChannel used to sleep/wakeup the lock's guard.
     waitchannel: WaitChannel,
 }
 
-/// Similar to `Spinlock`, but guards of this lock can sleep.
-pub type Sleepablelock<T> = Lock<RawSleepablelock, T>;
-/// Guards of `Sleepablelock<T>`. These guards can `sleep()`/`wakeup()`.
-pub type SleepablelockGuard<'s, T> = Guard<'s, RawSleepablelock, T>;
+/// Similar to `SpinLock`, but guards of this lock can sleep.
+pub type SleepableLock<T> = Lock<RawSleepableLock, T>;
+/// Guards of `SleepableLock<T>`. These guards can `sleep()`/`wakeup()`.
+pub type SleepableLockGuard<'s, T> = Guard<'s, RawSleepableLock, T>;
 
-impl RawSleepablelock {
+impl RawSleepableLock {
     /// Mutual exclusion sleepable locks.
     const fn new(name: &'static str) -> Self {
         Self {
-            lock: RawSpinlock::new(name),
+            lock: RawSpinLock::new(name),
             waitchannel: WaitChannel::new(),
         }
     }
 }
 
-impl RawLock for RawSleepablelock {
+impl RawLock for RawSleepableLock {
     fn acquire(&self) {
         self.lock.acquire();
     }
@@ -39,17 +39,17 @@ impl RawLock for RawSleepablelock {
     }
 }
 
-impl<T> Sleepablelock<T> {
-    /// Returns a new `Sleepablelock` with name `name` and data `data`.
+impl<T> SleepableLock<T> {
+    /// Returns a new `SleepableLock` with name `name` and data `data`.
     pub const fn new(name: &'static str, data: T) -> Self {
         Self {
-            lock: RawSleepablelock::new(name),
+            lock: RawSleepableLock::new(name),
             data: UnsafeCell::new(data),
         }
     }
 }
 
-impl<T> SleepablelockGuard<'_, T> {
+impl<T> SleepableLockGuard<'_, T> {
     pub fn sleep(&mut self, ctx: &KernelCtx<'_, '_>) {
         self.lock.lock.waitchannel.sleep(self, ctx);
     }

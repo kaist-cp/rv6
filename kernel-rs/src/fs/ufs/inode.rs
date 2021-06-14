@@ -84,7 +84,7 @@ use crate::{
     bio::BufData,
     fs::{Inode, InodeGuard, InodeType, Itable, RcInode},
     hal::hal,
-    lock::{Sleeplock, Spinlock},
+    lock::{SleepLock, SpinLock},
     param::ROOTDEV,
     param::{BSIZE, NINODE},
     proc::KernelCtx,
@@ -741,7 +741,7 @@ impl Inode<InodeInner> {
         Self {
             dev: 0,
             inum: 0,
-            inner: Sleeplock::new(
+            inner: SleepLock::new(
                 "inode",
                 InodeInner {
                     valid: false,
@@ -776,7 +776,7 @@ impl Inode<InodeInner> {
 
 impl Itable<InodeInner> {
     pub const fn new_itable() -> Self {
-        Spinlock::new("ITABLE", ArrayArena::<Inode<InodeInner>, NINODE>::new())
+        SpinLock::new("ITABLE", ArrayArena::<Inode<InodeInner>, NINODE>::new())
     }
 
     /// Find the inode with number inum on device dev

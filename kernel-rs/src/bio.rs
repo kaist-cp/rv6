@@ -18,7 +18,7 @@ use crate::arena::ArenaRc;
 use crate::util::strong_pin::StrongPin;
 use crate::{
     arena::{Arena, ArenaObject, MruArena},
-    lock::{Sleeplock, Spinlock},
+    lock::{SleepLock, SpinLock},
     param::{BSIZE, NBUF},
     proc::{KernelCtx, WaitChannel},
 };
@@ -30,7 +30,7 @@ pub struct BufEntry {
     /// WaitChannel saying virtio_disk request is done.
     pub vdisk_request_waitchannel: WaitChannel,
 
-    pub inner: Sleeplock<BufInner>,
+    pub inner: SleepLock<BufInner>,
 }
 
 impl BufEntry {
@@ -39,7 +39,7 @@ impl BufEntry {
             dev: 0,
             blockno: 0,
             vdisk_request_waitchannel: WaitChannel::new(),
-            inner: Sleeplock::new("buffer", BufInner::new()),
+            inner: SleepLock::new("buffer", BufInner::new()),
         }
     }
 }
@@ -100,7 +100,7 @@ impl BufInner {
     }
 }
 
-pub type Bcache = Spinlock<MruArena<BufEntry, NBUF>>;
+pub type Bcache = SpinLock<MruArena<BufEntry, NBUF>>;
 
 /// A reference counted smart pointer to a `BufEntry`.
 pub struct BufUnlocked(ManuallyDrop<ArenaRc<Bcache>>);
@@ -186,7 +186,7 @@ impl Bcache {
     ///
     /// Must be used only after initializing it with `MruArena::init`.
     pub const unsafe fn new_bcache() -> Self {
-        Spinlock::new("BCACHE", unsafe { MruArena::<BufEntry, NBUF>::new() })
+        SpinLock::new("BCACHE", unsafe { MruArena::<BufEntry, NBUF>::new() })
     }
 
     /// Return a unlocked buf with the contents of the indicated block.

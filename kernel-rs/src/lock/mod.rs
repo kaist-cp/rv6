@@ -13,15 +13,15 @@
 //!
 //! # RemoteLock
 //! A `RemoteLock` owns its data but does not have its own raw lock.
-//! Instead, it borrows another [`Lock`] (such as [`Spinlock`], [`Sleepablelock`], or [`Sleeplock`]) and protects its data using it.
+//! Instead, it borrows another [`Lock`] (such as [`SpinLock`], [`SleepableLock`], or [`SleepLock`]) and protects its data using it.
 //! That is, a [`Lock`] protects its own data *and* all other connected `RemoteLock`s' data.
 //!
 //! This is useful in several cases.
 //! * When multiple fragmented data must be protected by a single lock.
-//!   * e.g. By making multiple `RemoteLock`s borrow a single [`Spinlock`],
-//!     you can make multiple data be protected by a single [`Spinlock`], and hence,
-//!     implement global locks. In this case, you may want to use an [`Spinlock<()>`]
-//!     if the [`Spinlock`] doesn't need to hold data.
+//!   * e.g. By making multiple `RemoteLock`s borrow a single [`SpinLock`],
+//!     you can make multiple data be protected by a single [`SpinLock`], and hence,
+//!     implement global locks. In this case, you may want to use an [`SpinLock<()>`]
+//!     if the [`SpinLock`] doesn't need to hold data.
 //! * When you want a lifetime-less smart pointer (such as [`Ref`](crate::util::rc_cell::Ref) or `std::rc::Rc`)
 //!   that points to the *inside* of a lock protected data.
 //!   * e.g. Suppose a [`Lock`] holds a [`RcCell`](crate::util::rc_cell::RcCell). Suppose you want to provide a
@@ -44,9 +44,9 @@ mod sleeplock;
 mod spinlock;
 
 pub use remotelock::RemoteLock;
-pub use sleepablelock::{Sleepablelock, SleepablelockGuard};
-pub use sleeplock::{Sleeplock, SleeplockGuard};
-pub use spinlock::{RawSpinlock, Spinlock, SpinlockGuard};
+pub use sleepablelock::{SleepableLock, SleepableLockGuard};
+pub use sleeplock::{SleepLock, SleepLockGuard};
+pub use spinlock::{RawSpinLock, SpinLock, SpinLockGuard};
 
 use crate::util::strong_pin::StrongPin;
 use crate::util::strong_pin::StrongPinMut;

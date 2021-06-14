@@ -4,7 +4,7 @@ use bitflags::bitflags;
 
 use crate::{
     arena::{ArenaObject, ArenaRc, ArrayArena},
-    lock::{Sleeplock, Spinlock},
+    lock::{SleepLock, SpinLock},
     param::NINODE,
     proc::KernelCtx,
     util::strong_pin::StrongPin,
@@ -39,7 +39,7 @@ pub enum InodeType {
     Device { major: u16, minor: u16 },
 }
 
-/// InodeGuard implies that `Sleeplock<InodeInner>` is held by current thread.
+/// InodeGuard implies that `SleepLock<InodeInner>` is held by current thread.
 ///
 /// # Safety
 ///
@@ -98,10 +98,10 @@ pub struct Inode<I> {
     /// Inode number
     pub inum: u32,
 
-    pub inner: Sleeplock<I>,
+    pub inner: SleepLock<I>,
 }
 
-pub type Itable<I> = Spinlock<ArrayArena<Inode<I>, NINODE>>;
+pub type Itable<I> = SpinLock<ArrayArena<Inode<I>, NINODE>>;
 
 /// A reference counted smart pointer to an `Inode`.
 pub type RcInode<I> = ArenaRc<Itable<I>>;

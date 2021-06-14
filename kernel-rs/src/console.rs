@@ -13,7 +13,7 @@ use crate::{
     arch::addr::UVAddr,
     hal::hal,
     kernel::{Kernel, KernelRef},
-    lock::{Sleepablelock, SleepablelockGuard, Spinlock, SpinlockGuard},
+    lock::{SleepableLock, SleepableLockGuard, SpinLock, SpinLockGuard},
     proc::KernelCtx,
     uart::Uart,
     util::spin_loop,
@@ -65,8 +65,8 @@ impl InputBuffer {
 
 pub struct Console {
     uart: Uart,
-    input_buffer: Sleepablelock<InputBuffer>,
-    output_buffer: Sleepablelock<OutputBuffer>,
+    input_buffer: SleepableLock<InputBuffer>,
+    output_buffer: SleepableLock<OutputBuffer>,
 }
 
 impl Console {
@@ -76,8 +76,8 @@ impl Console {
     pub const unsafe fn new(uart: usize) -> Self {
         Self {
             uart: unsafe { Uart::new(uart) },
-            input_buffer: Sleepablelock::new("console_input", InputBuffer::new()),
-            output_buffer: Sleepablelock::new("console_output", OutputBuffer::new()),
+            input_buffer: SleepableLock::new("console_input", InputBuffer::new()),
+            output_buffer: SleepableLock::new("console_output", OutputBuffer::new()),
         }
     }
 
@@ -134,7 +134,7 @@ impl Console {
     /// Called from both the top- and bottom-half.
     fn flush_output_buffer(
         &self,
-        mut guard: SleepablelockGuard<'_, OutputBuffer>,
+        mut guard: SleepableLockGuard<'_, OutputBuffer>,
         kernel: KernelRef<'_, '_>,
     ) {
         loop {
@@ -285,16 +285,16 @@ impl Console {
     }
 }
 
-pub struct Printer(Spinlock<()>);
+pub struct Printer(SpinLock<()>);
 
 pub struct PrinterGuard<'a> {
     kernel: Pin<&'a Kernel>,
-    _guard: Option<SpinlockGuard<'a, ()>>,
+    _guard: Option<SpinLockGuard<'a, ()>>,
 }
 
 impl Printer {
     pub const fn new() -> Self {
-        Self(Spinlock::new("Printer", ()))
+        Self(SpinLock::new("Printer", ()))
     }
 
     pub fn lock<'a>(&'a self, kernel: Pin<&'a Kernel>) -> PrinterGuard<'a> {

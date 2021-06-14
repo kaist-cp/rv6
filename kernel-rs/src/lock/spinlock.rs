@@ -11,7 +11,7 @@ use crate::{
 };
 
 /// Mutual exclusion lock that busy waits (spin).
-pub struct RawSpinlock {
+pub struct RawSpinLock {
     /// Name of lock.
     name: &'static str,
 
@@ -24,11 +24,11 @@ pub struct RawSpinlock {
 }
 
 /// Locks that busy wait (spin).
-pub type Spinlock<T> = Lock<RawSpinlock, T>;
-/// Guards of `Spinlock<T>`.
-pub type SpinlockGuard<'s, T> = Guard<'s, RawSpinlock, T>;
+pub type SpinLock<T> = Lock<RawSpinLock, T>;
+/// Guards of `SpinLock<T>`.
+pub type SpinLockGuard<'s, T> = Guard<'s, RawSpinLock, T>;
 
-impl RawSpinlock {
+impl RawSpinLock {
     /// Mutual exclusion spin locks.
     pub const fn new(name: &'static str) -> Self {
         Self {
@@ -45,15 +45,15 @@ impl RawSpinlock {
     }
 }
 
-impl RawLock for RawSpinlock {
+impl RawLock for RawSpinLock {
     /// Acquires the lock.
     /// Loops (spins) until the lock is acquired.
     ///
     /// # Safety
     ///
     /// To ensure that all stores done in one critical section are visible in the next critical section's loads,
-    /// we use an atomic exchange with `Acquire` ordering in `RawSpinlock::acquire()`,
-    /// and pair it with an atomic store with `Release` ordering in `RawSpinlock::release()`.
+    /// we use an atomic exchange with `Acquire` ordering in `RawSpinLock::acquire()`,
+    /// and pair it with an atomic store with `Release` ordering in `RawSpinLock::release()`.
     ///
     /// In this way, we tell the compiler/processor not to move loads (stores) that should
     /// originally happen after acquiring (before releasing) the lock to actually happen
@@ -94,7 +94,7 @@ impl RawLock for RawSpinlock {
     /// Releases the lock.
     ///
     /// # Safety
-    /// We use an atomic store with `Release` ordering here. See `RawSpinlock::acquire()` for more details.
+    /// We use an atomic store with `Release` ordering here. See `RawSpinLock::acquire()` for more details.
     fn release(&self) {
         assert!(self.holding(), "release {}", self.name);
 
@@ -108,11 +108,11 @@ impl RawLock for RawSpinlock {
     }
 }
 
-impl<T> Spinlock<T> {
-    /// Returns a new `Spinlock` with name `name` and data `data`.
+impl<T> SpinLock<T> {
+    /// Returns a new `SpinLock` with name `name` and data `data`.
     pub const fn new(name: &'static str, data: T) -> Self {
         Self {
-            lock: RawSpinlock::new(name),
+            lock: RawSpinLock::new(name),
             data: UnsafeCell::new(data),
         }
     }

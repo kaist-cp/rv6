@@ -29,7 +29,7 @@ use static_assertions::const_assert;
 use crate::{
     bio::{Buf, BufData, BufUnlocked},
     hal::hal,
-    lock::Sleepablelock,
+    lock::SleepableLock,
     param::{BSIZE, LOGSIZE, MAXOPBLOCKS},
     proc::KernelCtx,
 };
@@ -212,7 +212,7 @@ impl Log {
     }
 }
 
-impl Sleepablelock<Log> {
+impl SleepableLock<Log> {
     /// Called at the start of each FS system call.
     pub fn begin_op(&self, ctx: &KernelCtx<'_, '_>) {
         let mut guard = self.lock();

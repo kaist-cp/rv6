@@ -10,7 +10,7 @@ use pin_project::pin_project;
 use super::{Arena, ArenaObject, ArenaRc, ArenaRef, Handle};
 use crate::util::strong_pin::StrongPin;
 use crate::{
-    lock::{Spinlock, SpinlockGuard},
+    lock::{SpinLock, SpinLockGuard},
     util::intrusive_list::{List, ListEntry, ListNode},
     util::pinned_array::IterPinMut,
     util::{static_arc::StaticArc, strong_pin::StrongPinMut},
@@ -113,10 +113,10 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
 }
 
 impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
-    for Spinlock<MruArena<T, CAPACITY>>
+    for SpinLock<MruArena<T, CAPACITY>>
 {
     type Data = T;
-    type Guard<'s> = SpinlockGuard<'s, MruArena<T, CAPACITY>>;
+    type Guard<'s> = SpinLockGuard<'s, MruArena<T, CAPACITY>>;
 
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         self: StrongPin<'_, Self>,
@@ -125,7 +125,7 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
     ) -> Option<ArenaRc<Self>> {
         ArenaRef::new(
             self,
-            |arena: ArenaRef<'_, '_, Spinlock<MruArena<T, CAPACITY>>>| {
+            |arena: ArenaRef<'_, '_, SpinLock<MruArena<T, CAPACITY>>>| {
                 let mut guard = arena.strong_pinned_lock();
                 let this = guard.get_strong_pinned_mut();
 
@@ -160,7 +160,7 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
     fn alloc<F: FnOnce() -> Self::Data>(self: StrongPin<'_, Self>, f: F) -> Option<ArenaRc<Self>> {
         ArenaRef::new(
             self,
-            |arena: ArenaRef<'_, '_, Spinlock<MruArena<T, CAPACITY>>>| {
+            |arena: ArenaRef<'_, '_, SpinLock<MruArena<T, CAPACITY>>>| {
                 let mut guard = arena.strong_pinned_lock();
                 let this = guard.get_strong_pinned_mut();
 

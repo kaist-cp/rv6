@@ -13,7 +13,7 @@ use crate::{
     file::RcFile,
     fs::{FileSystem, RcInode, Ufs},
     hal::hal,
-    lock::{RawSpinlock, RemoteLock, Spinlock},
+    lock::{RawSpinLock, RemoteLock, SpinLock},
     page::Page,
     param::{MAXPROCNAME, NOFILE},
     util::branded::Branded,
@@ -243,9 +243,9 @@ pub struct ProcData {
 ///     as `initial_proc` of `Procs` that contains `self`.
 pub struct Proc {
     /// Parent process.
-    parent: RemoteLock<RawSpinlock, (), *const Proc>,
+    parent: RemoteLock<RawSpinLock, (), *const Proc>,
 
-    pub info: Spinlock<ProcInfo>,
+    pub info: SpinLock<ProcInfo>,
 
     data: UnsafeCell<ProcData>,
 
@@ -321,7 +321,7 @@ impl Proc {
     const fn new() -> Self {
         Self {
             parent: RemoteLock::new(ptr::null()),
-            info: Spinlock::new(
+            info: SpinLock::new(
                 "proc",
                 ProcInfo {
                     state: Procstate::UNUSED,

@@ -23,7 +23,7 @@ use crate::{
     arch::addr::{PGSHIFT, PGSIZE},
     bio::Buf,
     kernel::KernelRef,
-    lock::{Sleepablelock, SleepablelockGuard},
+    lock::{SleepableLock, SleepableLockGuard},
     param::BSIZE,
     proc::KernelCtx,
 };
@@ -179,7 +179,7 @@ impl Drop for Descriptor {
     }
 }
 
-impl Sleepablelock<VirtioDisk> {
+impl SleepableLock<VirtioDisk> {
     /// Return a locked Buf with the `latest` contents of the indicated block.
     /// If buf.valid is true, we don't need to access Disk.
     pub fn read(self: Pin<&Self>, dev: u32, blockno: u32, ctx: &KernelCtx<'_, '_>) -> Buf {
@@ -249,7 +249,7 @@ impl VirtioDisk {
     // virtual addresses of the MMIO registers are mapped to the proper physical
     // addresses. Therefore, this method is safe.
     fn rw(
-        guard: &mut SleepablelockGuard<'_, Self>,
+        guard: &mut SleepableLockGuard<'_, Self>,
         b: &mut Buf,
         write: bool,
         ctx: &KernelCtx<'_, '_>,
