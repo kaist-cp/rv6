@@ -5,35 +5,35 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
-use super::Sleepablelock;
+use super::SleepableLock;
 use crate::proc::KernelCtx;
 
 /// Long-term locks for processes
-pub struct RawSleeplock {
+pub struct RawSleepLock {
     /// Process holding lock. `-1` means unlocked.
-    inner: Sleepablelock<i32>,
+    inner: SleepableLock<i32>,
 }
 
 /// Locks that sleep instead of busy wait.
-pub struct Sleeplock<T> {
-    lock: RawSleeplock,
+pub struct SleepLock<T> {
+    lock: RawSleepLock,
     data: UnsafeCell<T>,
 }
 
-unsafe impl<T: Send> Sync for Sleeplock<T> {}
+unsafe impl<T: Send> Sync for SleepLock<T> {}
 
-/// Guards of `Sleeplock<T>`.
-pub struct SleeplockGuard<'s, T> {
-    lock: &'s Sleeplock<T>,
+/// Guards of `SleepLock<T>`.
+pub struct SleepLockGuard<'s, T> {
+    lock: &'s SleepLock<T>,
     _marker: PhantomData<*const ()>,
 }
 
-unsafe impl<'s, T: Sync> Sync for SleeplockGuard<'s, T> {}
+unsafe impl<'s, T: Sync> Sync for SleepLockGuard<'s, T> {}
 
-impl RawSleeplock {
+impl RawSleepLock {
     const fn new(name: &'static str) -> Self {
         Self {
-            inner: Sleepablelock::new(name, -1),
+            inner: SleepableLock::new(name, -1),
         }
     }
 
@@ -52,20 +52,20 @@ impl RawSleeplock {
     }
 }
 
-impl<T> Sleeplock<T> {
-    /// Returns a new `Sleeplock` with name `name` and data `data`.
+impl<T> SleepLock<T> {
+    /// Returns a new `SleepLock` with name `name` and data `data`.
     pub const fn new(name: &'static str, data: T) -> Self {
         Self {
-            lock: RawSleeplock::new(name),
+            lock: RawSleepLock::new(name),
             data: UnsafeCell::new(data),
         }
     }
 
     /// Acquires the lock and returns the lock guard.
-    pub fn lock(&self, ctx: &KernelCtx<'_, '_>) -> SleeplockGuard<'_, T> {
+    pub fn lock(&self, ctx: &KernelCtx<'_, '_>) -> SleepLockGuard<'_, T> {
         self.lock.acquire(ctx);
 
-        SleeplockGuard {
+        SleepLockGuard {
             lock: self,
             _marker: PhantomData,
         }
@@ -95,22 +95,22 @@ impl<T> Sleeplock<T> {
     }
 }
 
-impl<T> SleeplockGuard<'_, T> {
+impl<T> SleepLockGuard<'_, T> {
     pub fn free(self, ctx: &KernelCtx<'_, '_>) {
         self.lock.lock.release(ctx);
         core::mem::forget(self);
     }
 }
 
-impl<T> Drop for SleeplockGuard<'_, T> {
+impl<T> Drop for SleepLockGuard<'_, T> {
     fn drop(&mut self) {
         // HACK(@efenniht): we really need linear type here:
         // https://github.com/rust-lang/rfcs/issues/814
-        panic!("SleeplockGuard must never drop.");
+        panic!("SleepLockGuard must never drop.");
     }
 }
 
-impl<T> Deref for SleeplockGuard<'_, T> {
+impl<T> Deref for SleepLockGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -120,7 +120,7 @@ impl<T> Deref for SleeplockGuard<'_, T> {
 
 // We can mutably dereference the guard only when `T: Unpin`.
 // If `T: !Unpin`, use `Guard::get_pin_mut()` instead.
-impl<T: Unpin> DerefMut for SleeplockGuard<'_, T> {
+impl<T: Unpin> DerefMut for SleepLockGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.lock.data.get() }
     }

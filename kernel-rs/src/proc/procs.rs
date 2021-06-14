@@ -18,7 +18,7 @@ use crate::{
     hal::hal,
     kalloc::Kmem,
     kernel::KernelRef,
-    lock::{Spinlock, SpinlockGuard},
+    lock::{SpinLock, SpinLockGuard},
     page::Page,
     param::{NPROC, ROOTDEV},
     util::branded::Branded,
@@ -50,7 +50,7 @@ pub struct Procs {
     // parents are not lost. Helps obey the
     // memory model when using p->parent.
     // Must be acquired before any p->lock.
-    wait_lock: Spinlock<()>,
+    wait_lock: SpinLock<()>,
 }
 
 /// A branded reference to a `Procs`.
@@ -71,7 +71,7 @@ struct ProcIter<'id, 'a>(Branded<'id, core::slice::Iter<'a, Proc>>);
 ///
 /// To access the `parent` field of a `ProcRef<'id, '_>`, you need a `WaitGuard<'id, '_>`
 /// with the same `'id` tag.
-pub struct WaitGuard<'id, 's>(Branded<'id, SpinlockGuard<'s, ()>>);
+pub struct WaitGuard<'id, 's>(Branded<'id, SpinLockGuard<'s, ()>>);
 
 impl Procs {
     pub const fn new() -> Self {
@@ -79,7 +79,7 @@ impl Procs {
             nextpid: AtomicI32::new(1),
             process_pool: array![_ => Proc::new(); NPROC],
             initial_proc: ptr::null(),
-            wait_lock: Spinlock::new("wait_lock", ()),
+            wait_lock: SpinLock::new("wait_lock", ()),
         }
     }
 
@@ -96,7 +96,7 @@ impl Procs {
     pub fn user_proc_init(
         self: Pin<&mut Self>,
         cwd: RcInode<<Ufs as FileSystem>::InodeInner>,
-        allocator: Pin<&Spinlock<Kmem>>,
+        allocator: Pin<&SpinLock<Kmem>>,
     ) {
         let initial_proc = Branded::new(self.as_ref(), |procs| {
             let procs = ProcsRef(procs);
@@ -217,7 +217,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
     }
 
     /// Pass p's abandoned children to init.
-    /// Caller must provide a `SpinlockGuard`.
+    /// Caller must provide a `SpinLockGuard`.
     fn reparent<'a: 'b, 'b>(
         &'a self,
         proc: *const Proc,
@@ -449,7 +449,7 @@ impl<'id, 'a> Iterator for ProcIter<'id, 'a> {
 }
 
 impl<'id, 's> WaitGuard<'id, 's> {
-    pub fn get_mut_inner(&mut self) -> &mut SpinlockGuard<'s, ()> {
+    pub fn get_mut_inner(&mut self) -> &mut SpinLockGuard<'s, ()> {
         &mut self.0
     }
 }

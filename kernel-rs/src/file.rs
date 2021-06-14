@@ -13,7 +13,7 @@ use crate::{
     arena::{Arena, ArenaObject, ArenaRc, ArrayArena},
     fs::{FileSystem, InodeGuard, RcInode, Ufs},
     hal::hal,
-    lock::Spinlock,
+    lock::SpinLock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
     proc::KernelCtx,
@@ -59,7 +59,7 @@ pub struct File {
     writable: bool,
 }
 
-pub type FileTable = Spinlock<ArrayArena<File, NFILE>>;
+pub type FileTable = SpinLock<ArrayArena<File, NFILE>>;
 
 /// map major device number to device functions.
 #[derive(Copy, Clone)]
@@ -266,7 +266,7 @@ impl ArenaObject for File {
 
 impl FileTable {
     pub const fn new_ftable() -> Self {
-        Spinlock::new("FTABLE", ArrayArena::<File, NFILE>::new())
+        SpinLock::new("FTABLE", ArrayArena::<File, NFILE>::new())
     }
 
     /// Allocate a file structure.

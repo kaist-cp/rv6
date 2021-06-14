@@ -24,7 +24,7 @@ use crate::{
     bio::Buf,
     file::{FileType, InodeFileType},
     hal::hal,
-    lock::Sleepablelock,
+    lock::SleepableLock,
     param::BSIZE,
     proc::KernelCtx,
 };
@@ -48,7 +48,7 @@ pub struct Ufs {
     /// Initializing superblock should run only once because forkret() calls FileSystem::init().
     /// There should be one superblock per disk device, but we run with only one device.
     superblock: Once<Superblock>,
-    log: Once<Sleepablelock<Log>>,
+    log: Once<SleepableLock<Log>>,
     #[pin]
     itable: Itable<InodeInner>,
 }
@@ -64,7 +64,7 @@ impl FileSystem for Ufs {
             let superblock = self.superblock.call_once(|| Superblock::new(&buf));
             buf.free(ctx);
             let _ = self.log.call_once(|| {
-                Sleepablelock::new(
+                SleepableLock::new(
                     "LOG",
                     Log::new(dev, superblock.logstart as i32, superblock.nlog as i32, ctx),
                 )
@@ -309,7 +309,7 @@ impl Ufs {
         }
     }
 
-    fn log(&self) -> &Sleepablelock<Log> {
+    fn log(&self) -> &SleepableLock<Log> {
         self.log.get().expect("log")
     }
 

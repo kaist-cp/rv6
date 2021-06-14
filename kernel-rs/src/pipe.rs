@@ -4,7 +4,7 @@ use crate::{
     arch::addr::UVAddr,
     file::{FileType, RcFile},
     hal::hal,
-    lock::Spinlock,
+    lock::SpinLock,
     page::Page,
     proc::{KernelCtx, WaitChannel},
 };
@@ -28,7 +28,7 @@ struct PipeInner {
 }
 
 pub struct Pipe {
-    inner: Spinlock<PipeInner>,
+    inner: SpinLock<PipeInner>,
 
     /// WaitChannel for saying there are unread bytes in Pipe.data.
     read_waitchannel: WaitChannel,
@@ -139,7 +139,7 @@ impl KernelCtx<'_, '_> {
         // TODO(https://github.com/kaist-cp/rv6/issues/367):
         // Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`.
         let ptr = NonNull::from(ptr.write(Pipe {
-            inner: Spinlock::new(
+            inner: SpinLock::new(
                 "pipe",
                 PipeInner {
                     data: [0; PIPESIZE],

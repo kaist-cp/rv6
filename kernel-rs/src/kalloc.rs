@@ -8,7 +8,7 @@ use pin_project::pin_project;
 use crate::{
     arch::addr::{pgrounddown, pgroundup, PGSIZE},
     arch::memlayout::PHYSTOP,
-    lock::Spinlock,
+    lock::SpinLock,
     page::Page,
     util::intrusive_list::{List, ListEntry, ListNode},
 };
@@ -128,7 +128,7 @@ impl Kmem {
     }
 }
 
-impl Spinlock<Kmem> {
+impl SpinLock<Kmem> {
     pub fn free(self: Pin<&Self>, page: Page) {
         self.pinned_lock().get_pin_mut().as_ref().free(page);
     }

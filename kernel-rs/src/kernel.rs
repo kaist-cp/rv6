@@ -16,7 +16,7 @@ use crate::{
     fs::{FileSystem, Ufs},
     hal::{hal, hal_init},
     kalloc::Kmem,
-    lock::{Sleepablelock, Spinlock},
+    lock::{SleepableLock, SpinLock},
     param::NDEV,
     proc::Procs,
     trap::{trapinit, trapinithart},
@@ -72,7 +72,7 @@ pub struct Kernel {
     /// The kernel's memory manager.
     memory: MaybeUninit<KernelMemory>,
 
-    ticks: Sleepablelock<u32>,
+    ticks: SleepableLock<u32>,
 
     /// Current process system.
     #[pin]
@@ -119,7 +119,7 @@ impl<'id, 's> KernelRef<'id, 's> {
     }
 
     /// Returns a reference to the kernel's ticks.
-    pub fn ticks(&self) -> &'s Sleepablelock<u32> {
+    pub fn ticks(&self) -> &'s SleepableLock<u32> {
         &self.0.as_pin().get_ref().ticks
     }
 
@@ -162,7 +162,7 @@ impl Kernel {
         Self {
             panicked: AtomicBool::new(false),
             memory: MaybeUninit::uninit(),
-            ticks: Sleepablelock::new("time", 0),
+            ticks: SleepableLock::new("time", 0),
             procs: Procs::new(),
             bcache: unsafe { Bcache::new_bcache() },
             devsw: [Devsw {
@@ -179,7 +179,7 @@ impl Kernel {
     /// # Safety
     ///
     /// This method should be called only once by the hart 0.
-    unsafe fn init(self: Pin<&mut Self>, allocator: Pin<&Spinlock<Kmem>>) {
+    unsafe fn init(self: Pin<&mut Self>, allocator: Pin<&SpinLock<Kmem>>) {
         self.as_ref().write_str("\nrv6 kernel is booting\n\n");
 
         let mut this = self.project();
