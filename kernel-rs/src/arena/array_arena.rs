@@ -1,6 +1,6 @@
 //! Array based arena.
 
-use core::{marker::PhantomPinned, pin::Pin, ptr::NonNull};
+use core::{marker::PhantomPinned, ptr::NonNull};
 
 use array_macro::array;
 use pin_project::pin_project;
@@ -8,7 +8,10 @@ use pin_project::pin_project;
 use super::{Arena, ArenaObject, ArenaRc, ArenaRef, Handle};
 use crate::{
     lock::{Spinlock, SpinlockGuard},
-    util::{shared_mut::SharedMut, static_arc::StaticArc},
+    util::{
+        static_arc::StaticArc,
+        strong_pin::{StrongPin, StrongPinMut},
+    },
 };
 
 /// A homogeneous memory allocator equipped with reference counts.
@@ -39,9 +42,10 @@ impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
         }
     }
 
-    fn entries(this: SharedMut<'_, Self>) -> SharedMut<'_, [StaticArc<T>; CAPACITY]> {
-        // SAFETY: the pointer is valid, and it creates a unique `SharedMut`.
-        unsafe { SharedMut::new_unchecked(&raw mut (*this.ptr().as_ptr()).entries) }
+    #[allow(clippy::needless_lifetimes)]
+    fn entries<'s>(self: StrongPinMut<'s, Self>) -> StrongPinMut<'s, [StaticArc<T>; CAPACITY]> {
+        // SAFETY: the pointer is valid, and it creates a unique `StrongPinMut`.
+        unsafe { StrongPinMut::new_unchecked(&raw mut (*self.ptr().as_ptr()).entries) }
     }
 }
 
@@ -52,24 +56,24 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
     type Guard<'s> = SpinlockGuard<'s, ArrayArena<T, CAPACITY>>;
 
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         c: C,
         n: N,
     ) -> Option<ArenaRc<Self>> {
         ArenaRef::new(
             self,
             |arena: ArenaRef<'_, '_, Spinlock<ArrayArena<T, CAPACITY>>>| {
-                let mut guard = arena.pinned_lock();
-                let this = guard.get_shared_mut();
+                let mut guard = arena.strong_pinned_lock();
+                let this = guard.get_strong_pinned_mut();
 
                 let mut empty: Option<NonNull<StaticArc<T>>> = None;
-                for mut entry in ArrayArena::entries(this).iter() {
-                    if !StaticArc::is_borrowed(entry.as_shared_mut()) {
+                for mut entry in this.entries().iter_mut() {
+                    if !entry.as_mut().is_borrowed() {
                         let _ = empty.get_or_insert(entry.ptr());
                         // Note: Do not use `break` here.
                         // We must first search through all entries, and then alloc at empty
                         // only if the entry we're finding for doesn't exist.
-                    } else if let Some(entry) = StaticArc::try_borrow(entry.as_shared_mut()) {
+                    } else if let Some(entry) = entry.as_mut().try_borrow() {
                         // The entry is not under finalization. Check its data.
                         if c(&entry) {
                             let handle = Handle(arena.0.brand(entry));
@@ -79,27 +83,27 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
                 }
 
                 empty.map(|ptr| {
-                    // SAFETY: `ptr` is valid, and there's no `SharedMut`.
-                    let mut entry = unsafe { SharedMut::new_unchecked(ptr.as_ptr()) };
-                    n(StaticArc::get_mut(entry.as_shared_mut()).unwrap());
-                    let handle = Handle(arena.0.brand(StaticArc::borrow(entry)));
+                    // SAFETY: `ptr` is valid, and there's no `StrongPinMut`.
+                    let mut entry = unsafe { StrongPinMut::new_unchecked(ptr.as_ptr()) };
+                    n(entry.as_mut().get_mut().unwrap());
+                    let handle = Handle(arena.0.brand(entry.borrow()));
                     ArenaRc::new(arena, handle)
                 })
             },
         )
     }
 
-    fn alloc<F: FnOnce() -> Self::Data>(self: Pin<&Self>, f: F) -> Option<ArenaRc<Self>> {
+    fn alloc<F: FnOnce() -> Self::Data>(self: StrongPin<'_, Self>, f: F) -> Option<ArenaRc<Self>> {
         ArenaRef::new(
             self,
             |arena: ArenaRef<'_, '_, Spinlock<ArrayArena<T, CAPACITY>>>| {
-                let mut guard = arena.pinned_lock();
-                let this = guard.get_shared_mut();
+                let mut guard = arena.strong_pinned_lock();
+                let this = guard.get_strong_pinned_mut();
 
-                for mut entry in ArrayArena::entries(this).iter() {
-                    if let Some(data) = StaticArc::get_mut(entry.as_shared_mut()) {
+                for mut entry in this.entries().iter_mut() {
+                    if let Some(data) = entry.as_mut().get_mut() {
                         *data = f();
-                        let handle = Handle(arena.0.brand(StaticArc::borrow(entry)));
+                        let handle = Handle(arena.0.brand(entry.borrow()));
                         return Some(ArenaRc::new(arena, handle));
                     }
                 }

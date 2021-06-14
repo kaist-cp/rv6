@@ -13,9 +13,9 @@
 
 use core::mem::{self, ManuallyDrop};
 use core::ops::{Deref, DerefMut};
-use core::pin::Pin;
 
 use crate::arena::ArenaRc;
+use crate::util::strong_pin::StrongPin;
 use crate::{
     arena::{Arena, ArenaObject, MruArena},
     lock::{Sleeplock, Spinlock},
@@ -190,7 +190,7 @@ impl Bcache {
     }
 
     /// Return a unlocked buf with the contents of the indicated block.
-    pub fn get_buf(self: Pin<&Self>, dev: u32, blockno: u32) -> BufUnlocked {
+    pub fn get_buf(self: StrongPin<'_, Self>, dev: u32, blockno: u32) -> BufUnlocked {
         BufUnlocked(ManuallyDrop::new(
             self.find_or_alloc(
                 |buf| buf.dev == dev && buf.blockno == blockno,

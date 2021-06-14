@@ -6,6 +6,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use pin_project::pin_project;
 
+use crate::util::strong_pin::StrongPin;
 use crate::{
     arch::plic::{plicinit, plicinithart},
     bio::Bcache,
@@ -30,10 +31,10 @@ static mut KERNEL: Kernel = unsafe { Kernel::new() };
 
 /// Returns a shared reference to the `KERNEL`.
 #[inline]
-fn kernel<'s>() -> Pin<&'s Kernel> {
+fn kernel<'s>() -> StrongPin<'s, Kernel> {
     // SAFETY: there is no way to make a mutable reference to `KERNEL` except calling
     // `kernel_builder_unchecked_pin`, which is unsafe.
-    unsafe { Pin::new_unchecked(&KERNEL) }
+    unsafe { StrongPin::new_unchecked(&KERNEL) }
 }
 
 /// Creates a `KernelRef` that has a unique, invariant `'id` and points to the `Kernel`.
@@ -95,7 +96,7 @@ pub struct Kernel {
 ///
 /// The `'id` is always different between different `Kernel` instances.
 #[derive(Clone, Copy)]
-pub struct KernelRef<'id, 's>(Branded<'id, Pin<&'s Kernel>>);
+pub struct KernelRef<'id, 's>(Branded<'id, StrongPin<'s, Kernel>>);
 
 impl<'id, 's> KernelRef<'id, 's> {
     /// Returns a `Branded` that wraps `data` and has the same `'id` tag with `self`.
@@ -114,34 +115,34 @@ impl<'id, 's> KernelRef<'id, 's> {
     }
 
     pub fn as_ref(&self) -> Pin<&Kernel> {
-        self.0.as_ref()
+        self.0.into_inner().as_pin()
     }
 
     /// Returns a reference to the kernel's ticks.
     pub fn ticks(&self) -> &'s Sleepablelock<u32> {
-        &self.0.get_ref().ticks
+        &self.0.as_pin().get_ref().ticks
     }
 
     pub fn ps(&self) -> Pin<&'s Procs> {
-        unsafe { Pin::new_unchecked(&self.0.get_ref().procs) }
+        unsafe { Pin::new_unchecked(&self.0.as_pin().get_ref().procs) }
     }
 
-    pub fn bcache(&self) -> Pin<&'s Bcache> {
-        unsafe { Pin::new_unchecked(&self.0.get_ref().bcache) }
+    pub fn bcache(&self) -> StrongPin<'s, Bcache> {
+        unsafe { StrongPin::new_unchecked(&self.0.as_pin().get_ref().bcache) }
     }
 
     /// Returns a reference to the kernel's `Devsw` array.
     pub fn devsw(&self) -> &'s [Devsw; NDEV] {
-        &self.0.get_ref().devsw
+        &self.0.as_pin().get_ref().devsw
     }
 
     /// Returns a reference to the kernel's `FileSystem`.
-    pub fn fs(&self) -> Pin<&'s Ufs> {
-        unsafe { Pin::new_unchecked(&self.0.get_ref().file_system) }
+    pub fn fs(&self) -> StrongPin<'s, Ufs> {
+        unsafe { StrongPin::new_unchecked(&self.0.as_pin().get_ref().file_system) }
     }
 
-    pub fn ftable(&self) -> Pin<&'s FileTable> {
-        unsafe { Pin::new_unchecked(&self.0.get_ref().ftable) }
+    pub fn ftable(&self) -> StrongPin<'s, FileTable> {
+        unsafe { StrongPin::new_unchecked(&self.0.as_pin().get_ref().ftable) }
     }
 }
 
@@ -214,8 +215,8 @@ impl Kernel {
         this.bcache.get_pin_mut().init();
 
         // First user process.
-        this.procs
-            .user_proc_init(this.file_system.as_ref().root(), allocator);
+        let fs = unsafe { StrongPin::new_unchecked(this.file_system.as_ref().get_ref()) };
+        this.procs.user_proc_init(fs.root(), allocator);
     }
 
     /// Initializes the kernel for a hart.
@@ -263,7 +264,7 @@ impl Kernel {
 #[cfg(not(test))]
 #[panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo<'_>) -> ! {
-    let kernel = kernel();
+    let kernel = kernel().as_pin();
     kernel.panic();
     kernel.write_fmt(format_args!("{}\n", info));
 
@@ -287,7 +288,7 @@ pub unsafe fn main() -> ! {
             ::core::hint::spin_loop();
         }
         unsafe {
-            kernel().inithart();
+            kernel().as_pin().inithart();
         }
     }
 

@@ -376,7 +376,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
             }
         }
 
-        let tx = ctx.kernel().fs().get_ref().begin_tx(ctx);
+        let tx = ctx.kernel().fs().as_pin().get_ref().begin_tx(ctx);
         // SAFETY:
         // * CurrentProc's cwd has been initialized.
         // * It's ok to take cwd because proc will not be used any longer.

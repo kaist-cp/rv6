@@ -12,7 +12,6 @@
 //! On-disk file system format used for both kernel and user programs are also included here.
 
 use core::cell::UnsafeCell;
-use core::pin::Pin;
 use core::{cmp, mem};
 
 use pin_project::pin_project;
@@ -20,6 +19,7 @@ use spin::Once;
 
 use self::log::Log;
 use super::{FcntlFlags, FileName, FileSystem, InodeGuard, InodeType, Itable, Path, RcInode, Stat};
+use crate::util::strong_pin::StrongPin;
 use crate::{
     bio::Buf,
     file::{FileType, InodeFileType},
@@ -77,12 +77,12 @@ impl FileSystem for Ufs {
         UfsTx { fs: self }
     }
 
-    fn root(self: Pin<&Self>) -> RcInode<Self::InodeInner> {
+    fn root(self: StrongPin<'_, Self>) -> RcInode<Self::InodeInner> {
         self.itable().root()
     }
 
     fn namei(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         path: &Path,
         tx: &Self::Tx<'_>,
         ctx: &KernelCtx<'_, '_>,
@@ -91,7 +91,7 @@ impl FileSystem for Ufs {
     }
 
     fn link(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         inode: RcInode<Self::InodeInner>,
         path: &Path,
         tx: &Self::Tx<'_>,
@@ -124,7 +124,7 @@ impl FileSystem for Ufs {
     }
 
     fn unlink(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         path: &Path,
         tx: &Self::Tx<'_>,
         ctx: &KernelCtx<'_, '_>,
@@ -163,7 +163,7 @@ impl FileSystem for Ufs {
     }
 
     fn create<F, T>(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         path: &Path,
         typ: InodeType,
         tx: &Self::Tx<'_>,
@@ -220,7 +220,7 @@ impl FileSystem for Ufs {
     }
 
     fn open(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         path: &Path,
         omode: FcntlFlags,
         tx: &Self::Tx<'_>,
@@ -279,7 +279,7 @@ impl FileSystem for Ufs {
     }
 
     fn chdir(
-        self: Pin<&Self>,
+        self: StrongPin<'_, Self>,
         inode: RcInode<InodeInner>,
         tx: &Self::Tx<'_>,
         ctx: &mut KernelCtx<'_, '_>,
@@ -317,8 +317,9 @@ impl Ufs {
         self.superblock.get().expect("superblock")
     }
 
-    fn itable(self: Pin<&Self>) -> Pin<&Itable<InodeInner>> {
-        unsafe { Pin::new_unchecked(&self.get_ref().itable) }
+    #[allow(clippy::needless_lifetimes)]
+    fn itable<'s>(self: StrongPin<'s, Self>) -> StrongPin<'s, Itable<InodeInner>> {
+        unsafe { StrongPin::new_unchecked(&self.as_pin().get_ref().itable) }
     }
 }
 
