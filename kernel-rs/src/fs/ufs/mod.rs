@@ -104,14 +104,14 @@ impl FileSystem for Ufs {
             return Err(());
         }
         ip.deref_inner_mut().nlink += 1;
-        ip.update(&tx, ctx);
+        ip.update(tx, ctx);
         drop(ip);
 
         if let Ok((ptr2, name)) = self.itable().nameiparent(path, tx, ctx) {
             let ptr2 = scopeguard::guard(ptr2, |ptr| ptr.free((tx, ctx)));
             let dp = ptr2.lock(ctx);
             let mut dp = scopeguard::guard(dp, |ip| ip.free(ctx));
-            if dp.dev == inode.dev && dp.dirlink(name, inode.inum, &tx, ctx).is_ok() {
+            if dp.dev == inode.dev && dp.dirlink(name, inode.inum, tx, ctx).is_ok() {
                 return Ok(());
             }
         }
@@ -119,7 +119,7 @@ impl FileSystem for Ufs {
         let ip = inode.lock(ctx);
         let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
         ip.deref_inner_mut().nlink -= 1;
-        ip.update(&tx, ctx);
+        ip.update(tx, ctx);
         Err(())
     }
 
@@ -139,7 +139,7 @@ impl FileSystem for Ufs {
             return Err(());
         }
 
-        let (ptr2, off) = dp.dirlookup(&name, ctx)?;
+        let (ptr2, off) = dp.dirlookup(name, ctx)?;
         let ptr2 = scopeguard::guard(ptr2, |ptr| ptr.free((tx, ctx)));
         let ip = ptr2.lock(ctx);
         let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
@@ -149,16 +149,16 @@ impl FileSystem for Ufs {
             return Err(());
         }
 
-        dp.write_kernel(&Dirent::default(), off, &tx, ctx)
+        dp.write_kernel(&Dirent::default(), off, tx, ctx)
             .expect("unlink: writei");
         if ip.deref_inner().typ == InodeType::Dir {
             dp.deref_inner_mut().nlink -= 1;
-            dp.update(&tx, ctx);
+            dp.update(tx, ctx);
         }
         drop(dp);
         drop(ptr);
         ip.deref_inner_mut().nlink -= 1;
-        ip.update(&tx, ctx);
+        ip.update(tx, ctx);
         Ok(())
     }
 
@@ -177,7 +177,7 @@ impl FileSystem for Ufs {
         let ptr = scopeguard::guard(ptr, |ptr| ptr.free((tx, ctx)));
         let dp = ptr.lock(ctx);
         let mut dp = scopeguard::guard(dp, |ip| ip.free(ctx));
-        if let Ok((ptr2, _)) = dp.dirlookup(&name, ctx) {
+        if let Ok((ptr2, _)) = dp.dirlookup(name, ctx) {
             let ptr2 = scopeguard::guard(ptr2, |ptr| ptr.free((tx, ctx)));
             drop(dp);
             if typ != InodeType::File {
@@ -212,8 +212,7 @@ impl FileSystem for Ufs {
                 .and_then(|_| ip.dirlink(unsafe { FileName::from_bytes(b"..") }, dp.inum, tx, ctx))
                 .expect("create dots");
         }
-        dp.dirlink(&name, ip.inum, tx, ctx)
-            .expect("create: dirlink");
+        dp.dirlink(name, ip.inum, tx, ctx).expect("create: dirlink");
         let ret = f(&mut ip);
         drop(ip);
         Ok((ptr2, ret))
@@ -268,7 +267,7 @@ impl FileSystem for Ufs {
                     inner: InodeFileType { ip, .. },
                 } => {
                     let mut ip = ip.lock(ctx);
-                    ip.itrunc(&tx, ctx);
+                    ip.itrunc(tx, ctx);
                     ip.free(ctx);
                 }
                 _ => panic!("sys_open : Not reach"),

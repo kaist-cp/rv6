@@ -422,11 +422,7 @@ impl VirtioDisk {
         this.desc[idx].len = 0;
         this.desc[idx].flags = VirtqDescFlags::FREED;
         this.desc[idx].next = 0;
-        assert_eq!(
-            this.info.project().allocated.set(idx, false),
-            true,
-            "Disk::free"
-        );
+        assert!(this.info.project().allocated.set(idx, false), "Disk::free");
         mem::forget(desc);
     }
 }

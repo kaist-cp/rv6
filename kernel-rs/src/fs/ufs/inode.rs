@@ -171,9 +171,9 @@ impl Dirent {
     fn set_name(&mut self, name: &FileName<{ DIRSIZ }>) {
         let name = name.as_bytes();
         if name.len() == DIRSIZ {
-            self.name.copy_from_slice(&name);
+            self.name.copy_from_slice(name);
         } else {
-            self.name[..name.len()].copy_from_slice(&name);
+            self.name[..name.len()].copy_from_slice(name);
             self.name[name.len()] = 0;
         }
     }
