@@ -13,7 +13,7 @@ use crate::{
     file::RcFile,
     fs::{FileSystem, RcInode, Ufs},
     hal::hal,
-    lock::{RawSpinLock, RemoteLock, SpinLock},
+    lock::SpinLock,
     page::Page,
     param::{MAXPROCNAME, NOFILE},
     util::branded::Branded,
@@ -243,7 +243,7 @@ pub struct ProcData {
 ///     as `initial_proc` of `Procs` that contains `self`.
 pub struct Proc {
     /// Parent process.
-    parent: RemoteLock<RawSpinLock, (), *const Proc>,
+    parent: UnsafeCell<*const Proc>,
 
     pub info: SpinLock<ProcInfo>,
 
@@ -320,7 +320,7 @@ impl ProcData {
 impl Proc {
     const fn new() -> Self {
         Self {
-            parent: RemoteLock::new(ptr::null()),
+            parent: UnsafeCell::new(ptr::null()),
             info: SpinLock::new(
                 "proc",
                 ProcInfo {
@@ -353,9 +353,9 @@ impl<'id, 's> ProcRef<'id, 's> {
     /// You need a `WaitGuard` that has the same `'id`.
     fn get_mut_parent<'a: 'b, 'b>(
         &'a self,
-        guard: &'b mut WaitGuard<'id, '_>,
+        _guard: &'b mut WaitGuard<'id, '_>,
     ) -> &'b mut *const Proc {
-        unsafe { self.parent.get_mut_unchecked(guard.get_mut_inner()) }
+        unsafe { &mut *self.parent.get() }
     }
 
     pub fn lock(&self) -> ProcGuard<'id, 's> {

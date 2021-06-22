@@ -1,4 +1,5 @@
 use core::{
+    marker::PhantomPinned,
     ops::Deref,
     pin::Pin,
     ptr, str,
@@ -45,12 +46,13 @@ pub struct Procs {
     #[pin]
     process_pool: [Proc; NPROC],
     initial_proc: *const Proc,
-
     // Helps ensure that wakeups of wait()ing
     // parents are not lost. Helps obey the
     // memory model when using p->parent.
     // Must be acquired before any p->lock.
     wait_lock: SpinLock<()>,
+    #[pin]
+    _marker: PhantomPinned,
 }
 
 /// A branded reference to a `Procs`.
@@ -80,6 +82,7 @@ impl Procs {
             process_pool: array![_ => Proc::new(); NPROC],
             initial_proc: ptr::null(),
             wait_lock: SpinLock::new("wait_lock", ()),
+            _marker: PhantomPinned,
         }
     }
 
@@ -445,12 +448,6 @@ impl<'id, 'a> Iterator for ProcIter<'id, 'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next().map(|inner| ProcRef(self.0.brand(inner)))
-    }
-}
-
-impl<'id, 's> WaitGuard<'id, 's> {
-    pub fn get_mut_inner(&mut self) -> &mut SpinLockGuard<'s, ()> {
-        &mut self.0
     }
 }
 
