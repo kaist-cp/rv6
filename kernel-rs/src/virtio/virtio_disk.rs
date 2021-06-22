@@ -344,7 +344,7 @@ impl VirtioDisk {
 
         // Wait for virtio_disk_intr() to say request has finished.
         while b.deref_inner().disk {
-            (*b).vdisk_request_waitchannel.sleep(guard, ctx);
+            b.vdisk_request_waitchannel.sleep(guard, ctx);
         }
         // As it assigns null, the invariant of inflight is maintained even if
         // b: &mut Buf becomes invalid after this method returns.
@@ -378,7 +378,7 @@ impl VirtioDisk {
 
             // SAFETY: from the invariant, b refers to a valid
             // buffer unless it is null.
-            let buf = unsafe { info.inflight[id].b.as_mut() }.expect("Disk::intr");
+            let buf = unsafe { &mut *info.inflight[id].b };
 
             // disk is done with buf
             buf.deref_inner_mut().disk = false;
