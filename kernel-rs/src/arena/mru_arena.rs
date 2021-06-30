@@ -1,13 +1,14 @@
 //! List based arena.
 
 use core::mem;
+use core::mem::ManuallyDrop;
 use core::pin::Pin;
 use core::ptr::NonNull;
 
 use array_macro::array;
 use pin_project::pin_project;
 
-use super::{Arena, ArenaObject, ArenaRc, ArenaRef, Handle};
+use super::{Arena, ArenaObject, ArenaRc};
 use crate::util::strong_pin::StrongPin;
 use crate::{
     lock::{SpinLock, SpinLockGuard},
@@ -15,6 +16,10 @@ use crate::{
     util::pinned_array::IterPinMut,
     util::{static_arc::StaticArc, strong_pin::StrongPinMut},
 };
+
+pub struct MruArena<T, const CAPACITY: usize> {
+    inner: SpinLock<MruArenaInner<T, CAPACITY>>,
+}
 
 #[pin_project]
 #[repr(C)]
@@ -27,7 +32,7 @@ pub struct MruEntry<T> {
 
 /// A homogeneous memory allocator equipped with reference counts.
 #[pin_project]
-pub struct MruArena<T, const CAPACITY: usize> {
+pub struct MruArenaInner<T, const CAPACITY: usize> {
     #[pin]
     entries: [MruEntry<T>; CAPACITY],
     #[pin]
@@ -35,7 +40,7 @@ pub struct MruArena<T, const CAPACITY: usize> {
 }
 
 // SAFETY: `MruArena` never exposes its internal lists and entries.
-unsafe impl<T: Send, const CAPACITY: usize> Send for MruArena<T, CAPACITY> {}
+unsafe impl<T: Send, const CAPACITY: usize> Send for MruArenaInner<T, CAPACITY> {}
 
 impl<T> MruEntry<T> {
     // TODO(https://github.com/kaist-cp/rv6/issues/369)
@@ -74,29 +79,31 @@ unsafe impl<T> ListNode for MruEntry<T> {
 }
 
 impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
-    /// Returns an `MruArena` of size `CAPACITY` that is filled with `D`'s const default value.
-    /// Note that `D` must `impl const Default`.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// let mru_arena = MruArena::<D, 100>::new();
-    /// ```
-    ///
-    /// # Safety
-    ///
-    /// Must be used only after initializing it with `MruArena::init`.
-    // Note: We cannot use the generic `T` in the following function, since we need to only allow
-    // types that `impl const Default`, not just `impl Default`.
     #[allow(clippy::new_ret_no_self)]
-    pub const unsafe fn new<D: Default>() -> MruArena<D, CAPACITY> {
-        MruArena {
+    pub const unsafe fn new<D: Default>(name: &'static str) -> MruArena<D, CAPACITY> {
+        let inner: MruArenaInner<D, CAPACITY> = MruArenaInner {
             entries: array![_ => MruEntry::new(Default::default()); CAPACITY],
             list: unsafe { List::new() },
+        };
+        MruArena {
+            inner: SpinLock::new(name, inner),
         }
     }
 
     pub fn init(self: Pin<&mut Self>) {
+        unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().inner) }
+            .get_pin_mut()
+            .init();
+    }
+
+    #[allow(clippy::needless_lifetimes)]
+    fn inner<'s>(self: StrongPin<'s, Self>) -> StrongPin<'s, SpinLock<MruArenaInner<T, CAPACITY>>> {
+        unsafe { StrongPin::new_unchecked(&(*self.ptr()).inner) }
+    }
+}
+
+impl<T, const CAPACITY: usize> MruArenaInner<T, CAPACITY> {
+    fn init(self: Pin<&mut Self>) {
         let mut this = self.project();
         this.list.as_mut().init();
         for mut entry in IterPinMut::from(this.entries) {
@@ -113,78 +120,62 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
 }
 
 impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
-    for SpinLock<MruArena<T, CAPACITY>>
+    for MruArena<T, CAPACITY>
 {
     type Data = T;
-    type Guard<'s> = SpinLockGuard<'s, MruArena<T, CAPACITY>>;
+    type Guard<'s> = SpinLockGuard<'s, MruArenaInner<T, CAPACITY>>;
 
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         self: StrongPin<'_, Self>,
         c: C,
         n: N,
     ) -> Option<ArenaRc<Self>> {
-        ArenaRef::new(
-            self,
-            |arena: ArenaRef<'_, '_, SpinLock<MruArena<T, CAPACITY>>>| {
-                let mut guard = arena.strong_pinned_lock();
-                let this = guard.get_strong_pinned_mut();
+        let mut guard = self.inner().strong_pinned_lock();
+        let this = guard.get_strong_pinned_mut();
 
-                let mut empty: Option<NonNull<StaticArc<T>>> = None;
-                for entry in this.list().iter_shared_mut() {
-                    let mut entry = entry.data();
+        let mut empty: Option<NonNull<StaticArc<T>>> = None;
+        for entry in this.list().iter_shared_mut() {
+            let mut entry = entry.data();
 
-                    if let Some(entry) = entry.as_mut().try_borrow() {
-                        // The entry is not under finalization. Check its data.
-                        if c(&entry) {
-                            let handle = Handle(arena.0.brand(entry));
-                            return Some(ArenaRc::new(arena, handle));
-                        }
-                    }
-
-                    if !entry.as_mut().is_borrowed() {
-                        let _ = empty.get_or_insert(entry.ptr());
-                    }
+            if let Some(entry) = entry.as_mut().try_borrow() {
+                // The entry is not under finalization. Check its data.
+                if c(&entry) {
+                    return Some(ArenaRc::new(self, entry));
                 }
+            }
 
-                empty.map(|ptr| {
-                    // SAFETY: `ptr` is valid, and there's no `StrongPinMut`.
-                    let mut entry = unsafe { StrongPinMut::new_unchecked(ptr.as_ptr()) };
-                    n(entry.as_mut().get_mut().unwrap());
-                    let handle = Handle(arena.0.brand(entry.borrow()));
-                    ArenaRc::new(arena, handle)
-                })
-            },
-        )
+            if !entry.as_mut().is_borrowed() {
+                empty = Some(entry.ptr());
+            }
+        }
+
+        empty.map(|ptr| {
+            // SAFETY: `ptr` is valid, and there's no `StrongPinMut`.
+            let mut entry = unsafe { StrongPinMut::new_unchecked(ptr.as_ptr()) };
+            n(entry.as_mut().get_mut().unwrap());
+            ArenaRc::new(self, entry.borrow())
+        })
     }
 
     fn alloc<F: FnOnce() -> Self::Data>(self: StrongPin<'_, Self>, f: F) -> Option<ArenaRc<Self>> {
-        ArenaRef::new(
-            self,
-            |arena: ArenaRef<'_, '_, SpinLock<MruArena<T, CAPACITY>>>| {
-                let mut guard = arena.strong_pinned_lock();
-                let this = guard.get_strong_pinned_mut();
+        let mut guard = self.inner().strong_pinned_lock();
+        let this = guard.get_strong_pinned_mut();
 
-                for entry in this.list().iter_shared_mut().rev() {
-                    let mut entry = entry.data();
-                    if let Some(data) = entry.as_mut().get_mut() {
-                        *data = f();
-                        let handle = Handle(arena.0.brand(entry.borrow()));
-                        return Some(ArenaRc::new(arena, handle));
-                    }
-                }
-                None
-            },
-        )
+        for entry in this.list().iter_shared_mut().rev() {
+            let mut entry = entry.data();
+            if let Some(data) = entry.as_mut().get_mut() {
+                *data = f();
+                return Some(ArenaRc::new(self, entry.borrow()));
+            }
+        }
+        None
     }
 
-    fn dealloc<'id, 'a, 'b>(
-        self: ArenaRef<'id, '_, Self>,
-        handle: Handle<'id, Self::Data>,
-        ctx: <Self::Data as ArenaObject>::Ctx<'a, 'b>,
-    ) {
-        if let Ok(mut rm) = handle.0.into_inner().into_mut() {
+    fn dealloc(mut rc: ArenaRc<Self>, ctx: <Self::Data as ArenaObject>::Ctx<'_, '_>) {
+        let inner = unsafe { ManuallyDrop::take(&mut rc.inner) };
+        if let Ok(mut rm) = inner.into_mut() {
             // Finalize the arena object.
-            rm.finalize::<Self>(ctx);
+            rm.finalize(ctx);
 
             // Move this entry to the back of the list.
             let ptr: *const MruEntry<Self::Data> =
@@ -194,9 +185,11 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
             // * The value of `DATA_OFFSET` is proper.
             let ptr = unsafe { Pin::new_unchecked(&*ptr) };
 
-            let mut this = self.strong_pinned_lock();
+            let arena = unsafe { StrongPin::new_unchecked(&*rc.arena) };
+            let mut this = arena.inner().strong_pinned_lock();
             let this = this.get_strong_pinned_mut().as_ref().as_pin().get_ref();
             unsafe { Pin::new_unchecked(&this.list) }.push_back(ptr);
         }
+        core::mem::forget(rc);
     }
 }

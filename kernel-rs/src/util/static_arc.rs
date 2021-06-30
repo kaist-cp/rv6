@@ -59,6 +59,12 @@ impl<T> StaticArc<T> {
         }
     }
 
+    #[allow(clippy::needless_lifetimes)]
+    pub unsafe fn get_mut_unchecked<'s>(self: StrongPinMut<'s, Self>) -> &'s mut T {
+        // SAFETY: no `Ref` nor `RefMut` points to `self`.
+        unsafe { &mut (*self.ptr().as_ptr()).data }
+    }
+
     pub fn try_borrow(mut self: StrongPinMut<'_, Self>) -> Option<Ref<T>> {
         loop {
             let r = self.as_mut().rc().load(Ordering::Acquire);
@@ -80,6 +86,11 @@ impl<T> StaticArc<T> {
 
     pub fn borrow(self: StrongPinMut<'_, Self>) -> Ref<T> {
         self.try_borrow().expect("already mutably borrowed")
+    }
+
+    pub unsafe fn borrow_unchecked(mut self: StrongPinMut<'_, Self>) -> Ref<T> {
+        let _ = self.as_mut().rc().fetch_add(1, Ordering::Relaxed);
+        Ref(self.ptr())
     }
 }
 

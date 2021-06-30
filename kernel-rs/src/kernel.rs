@@ -212,7 +212,7 @@ impl Kernel {
         unsafe { plicinithart() };
 
         // Buffer cache.
-        this.bcache.get_pin_mut().init();
+        this.bcache.init();
 
         // First user process.
         let fs = unsafe { StrongPin::new_unchecked(this.file_system.as_ref().get_ref()) };

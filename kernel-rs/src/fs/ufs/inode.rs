@@ -84,7 +84,7 @@ use crate::{
     bio::BufData,
     fs::{Inode, InodeGuard, InodeType, Itable, RcInode},
     hal::hal,
-    lock::{SleepLock, SpinLock},
+    lock::SleepLock,
     param::ROOTDEV,
     param::{BSIZE, NINODE},
     proc::KernelCtx,
@@ -220,7 +220,7 @@ impl InodeGuard<'_, InodeInner> {
     /// Write a new directory entry (name, inum) into the directory dp.
     pub fn dirlink(
         &mut self,
-        name: &FileName<{ DIRSIZ }>,
+        name: &FileName<DIRSIZ>,
         inum: u32,
         tx: &UfsTx<'_>,
         ctx: &KernelCtx<'_, '_>,
@@ -246,7 +246,7 @@ impl InodeGuard<'_, InodeInner> {
     /// If found, return the entry and byte offset of entry.
     pub fn dirlookup(
         &mut self,
-        name: &FileName<{ DIRSIZ }>,
+        name: &FileName<DIRSIZ>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(RcInode<InodeInner>, u32), ()> {
         assert_eq!(self.deref_inner().typ, InodeType::Dir, "dirlookup not DIR");
@@ -671,7 +671,7 @@ impl ArenaObject for Inode<InodeInner> {
     /// to it, free the inode (and its content) on disk.
     /// All calls to Inode::put() must be inside a transaction in
     /// case it has to free the inode.
-    fn finalize<'a, 'id: 'a, A: Arena>(&mut self, ctx: Self::Ctx<'a, 'id>) {
+    fn finalize<'a, 'id: 'a>(&mut self, ctx: Self::Ctx<'a, 'id>) {
         let (tx, ctx) = ctx;
         if self.inner.get_mut().valid && self.inner.get_mut().nlink == 0 {
             // inode has no links and no other references: truncate and free.
@@ -778,7 +778,7 @@ impl Inode<InodeInner> {
 
 impl Itable<InodeInner> {
     pub const fn new_itable() -> Self {
-        SpinLock::new("ITABLE", ArrayArena::<Inode<InodeInner>, NINODE>::new())
+        ArrayArena::<Inode<InodeInner>, NINODE>::new("ITABLE")
     }
 
     /// Find the inode with number inum on device dev
