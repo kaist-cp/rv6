@@ -758,7 +758,7 @@ impl Inode<InodeInner> {
     /// Copy stat information from inode.
     pub fn stat(&self, ctx: &KernelCtx<'_, '_>) -> Stat {
         let inner = self.inner.lock(ctx);
-        Stat {
+        let st = Stat {
             dev: self.dev as i32,
             ino: self.inum,
             typ: match inner.typ {
@@ -770,7 +770,9 @@ impl Inode<InodeInner> {
             nlink: inner.nlink,
             _padding: 0,
             size: inner.size as usize,
-        }
+        };
+        inner.free(ctx);
+        st
     }
 }
 
