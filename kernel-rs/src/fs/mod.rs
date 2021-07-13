@@ -4,7 +4,7 @@ use bitflags::bitflags;
 
 use crate::{
     arena::{ArenaObject, ArenaRc, ArrayArena},
-    lock::{SleepLock, SpinLock},
+    lock::SleepLock,
     param::NINODE,
     proc::KernelCtx,
     util::strong_pin::StrongPin,
@@ -101,7 +101,7 @@ pub struct Inode<I> {
     pub inner: SleepLock<I>,
 }
 
-pub type Itable<I> = SpinLock<ArrayArena<Inode<I>, NINODE>>;
+pub type Itable<I> = ArrayArena<Inode<I>, NINODE>;
 
 /// A reference counted smart pointer to an `Inode`.
 pub type RcInode<I> = ArenaRc<Itable<I>>;

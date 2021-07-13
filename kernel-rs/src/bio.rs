@@ -18,7 +18,7 @@ use crate::arena::ArenaRc;
 use crate::util::strong_pin::StrongPin;
 use crate::{
     arena::{Arena, ArenaObject, MruArena},
-    lock::{SleepLock, SpinLock},
+    lock::SleepLock,
     param::{BSIZE, NBUF},
     proc::{KernelCtx, WaitChannel},
 };
@@ -54,7 +54,7 @@ impl ArenaObject for BufEntry {
     type Ctx<'a, 'id: 'a> = ();
 
     #[allow(clippy::needless_lifetimes)]
-    fn finalize<'a, 'id: 'a, A: Arena>(&mut self, _: ()) {
+    fn finalize<'a, 'id: 'a>(&mut self, _: ()) {
         // The buffer contents should have been written. Does nothing.
     }
 }
@@ -100,7 +100,7 @@ impl BufInner {
     }
 }
 
-pub type Bcache = SpinLock<MruArena<BufEntry, NBUF>>;
+pub type Bcache = MruArena<BufEntry, NBUF>;
 
 /// A reference counted smart pointer to a `BufEntry`.
 pub struct BufUnlocked(ManuallyDrop<ArenaRc<Bcache>>);
@@ -186,7 +186,7 @@ impl Bcache {
     ///
     /// Must be used only after initializing it with `MruArena::init`.
     pub const unsafe fn new_bcache() -> Self {
-        SpinLock::new("BCACHE", unsafe { MruArena::<BufEntry, NBUF>::new() })
+        unsafe { MruArena::<BufEntry, NBUF>::new("BCACHE") }
     }
 
     /// Return a unlocked buf with the contents of the indicated block.

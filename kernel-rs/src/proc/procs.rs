@@ -150,7 +150,7 @@ impl Procs {
     fn initial_proc(self: Pin<&Self>) -> &Proc {
         assert!(!self.initial_proc.is_null());
         // SAFETY: invariant
-        unsafe { &*(self.initial_proc as *const _) }
+        unsafe { &*self.initial_proc }
     }
 
     fn allocpid(self: Pin<&Self>) -> Pid {

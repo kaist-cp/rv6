@@ -2,11 +2,7 @@
 #![allow(unused_variables)]
 
 use super::{FcntlFlags, FileSystem, Inode, InodeGuard, InodeType, Path, RcInode};
-use crate::{
-    arena::{Arena, ArenaObject},
-    proc::KernelCtx,
-    util::strong_pin::StrongPin,
-};
+use crate::{arena::ArenaObject, proc::KernelCtx, util::strong_pin::StrongPin};
 
 pub struct InodeInner {}
 
@@ -14,7 +10,7 @@ impl ArenaObject for Inode<InodeInner> {
     type Ctx<'a, 'id: 'a> = ();
 
     #[allow(clippy::needless_lifetimes)]
-    fn finalize<'a, 'id: 'a, A: Arena>(&mut self, _: ()) {}
+    fn finalize<'a, 'id: 'a>(&mut self, _: ()) {}
 }
 
 pub struct Lfs {}
