@@ -1,8 +1,4 @@
-use core::{
-    cell::{Cell, UnsafeCell},
-    marker::PhantomData,
-    ptr::{self, NonNull},
-};
+use core::{cell::Cell, ptr};
 
 use array_macro::array;
 
@@ -16,7 +12,7 @@ use crate::{
 // The `Cpu` struct of the current cpu can be mutated. To do so, we need to
 // obtain mutable pointers to `Cpu`s from a shared reference of a `Cpus`.
 // It requires interior mutability, so we use `UnsafeCell`.
-pub struct Cpus([UnsafeCell<Cpu>; NCPU]);
+pub struct Cpus([Cell<Cpu>; NCPU]);
 
 /// # Safety
 ///
@@ -37,7 +33,7 @@ unsafe impl Sync for Cpus {}
 
 impl Cpus {
     pub const fn new() -> Self {
-        Self(array![_ => UnsafeCell::new(Cpu::new()); NCPU])
+        Self(array![_ => Cell::new(Cpu::new()); NCPU])
     }
 }
 
@@ -48,7 +44,7 @@ impl Cpus {
     /// current CPU since the scheduler can move the process to another CPU on time interrupt.
     pub fn current_raw(&self) -> *mut Cpu {
         let id: usize = cpuid();
-        self.0[id].get()
+        self.0[id].as_ptr()
     }
 
     /// Returns a `CpuMut` to the current CPU.
@@ -57,12 +53,11 @@ impl Cpus {
     ///
     /// The returned `CpuMut` must live while interrupts are disabled.
     pub unsafe fn current_unchecked(&self) -> CpuMut<'_> {
-        // SAFETY: `self.current_raw()` is always nonnull.
-        let ptr = unsafe { NonNull::new_unchecked(self.current_raw()) };
+        let id: usize = cpuid();
         // SAFETY:
         // * safety condition of this method.
         // * `ptr` refers to the current CPU.
-        unsafe { CpuMut::new_unchecked(ptr) }
+        unsafe { CpuMut::new_unchecked(&self.0[id]) }
     }
 
     /// Returns a `CpuMut` to the current CPU. Since the returned `CpuMut` cannot outlive a given
@@ -103,6 +98,7 @@ impl Cpus {
 }
 
 /// Per-CPU-state.
+#[derive(Copy, Clone)]
 pub struct Cpu {
     /// The process running on this cpu, or null.
     proc: *const Proc,
@@ -134,65 +130,51 @@ impl Cpu {
 ///
 /// `ptr` refers to the current CPU.
 pub struct CpuMut<'s> {
-    ptr: NonNull<Cpu>,
-    _marker: PhantomData<&'s Cell<Cpu>>,
+    ptr: &'s Cell<Cpu>,
 }
 
-impl CpuMut<'_> {
+impl<'s> CpuMut<'s> {
     /// # Safety
     ///
     /// * `ptr` must refer to the current CPU.
     /// * The returned `CpuMut` must live while interrupts are disabled.
-    unsafe fn new_unchecked(ptr: NonNull<Cpu>) -> Self {
-        Self {
-            ptr,
-            _marker: PhantomData,
-        }
-    }
-
-    fn ptr(&self) -> *mut Cpu {
-        self.ptr.as_ptr()
+    unsafe fn new_unchecked(ptr: &'s Cell<Cpu>) -> Self {
+        Self { ptr }
     }
 
     pub fn context_raw_mut(&self) -> *mut Context {
         // SAFETY: invariant of `CpuMut`
-        unsafe { &raw mut (*self.ptr()).context }
+        unsafe { &raw mut (*self.ptr.as_ptr()).context }
     }
 
     pub fn get_proc(&self) -> *const Proc {
-        // SAFETY: invariant of `CpuMut`
-        unsafe { (*self.ptr.as_ptr()).proc }
+        self.ptr.get().proc
     }
 
     pub fn set_proc(&self, proc: *const Proc) {
-        // SAFETY: invariant of `CpuMut`
-        unsafe {
-            (*self.ptr.as_ptr()).proc = proc;
-        }
+        let mut cpu = self.ptr.get();
+        cpu.proc = proc;
+        self.ptr.set(cpu);
     }
 
     pub fn get_noff(&self) -> u32 {
-        // SAFETY: invariant of `CpuMut`
-        unsafe { (*self.ptr()).noff }
+        self.ptr.get().noff
     }
 
     fn set_noff(&self, noff: u32) {
-        // SAFETY: invariant of `CpuMut`
-        unsafe {
-            (*self.ptr()).noff = noff;
-        }
+        let mut cpu = self.ptr.get();
+        cpu.noff = noff;
+        self.ptr.set(cpu);
     }
 
     pub fn get_interrupt(&self) -> bool {
-        // SAFETY: invariant of `CpuMut`
-        unsafe { (*self.ptr()).interrupt_enabled }
+        self.ptr.get().interrupt_enabled
     }
 
     pub fn set_interrupt(&self, interrupt: bool) {
-        // SAFETY: invariant of `CpuMut`
-        unsafe {
-            (*self.ptr()).interrupt_enabled = interrupt;
-        }
+        let mut cpu = self.ptr.get();
+        cpu.interrupt_enabled = interrupt;
+        self.ptr.set(cpu);
     }
 
     fn push_off(&self, old: bool) {

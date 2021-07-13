@@ -343,9 +343,8 @@ impl VirtioDisk {
         }
 
         // Wait for virtio_disk_intr() to say request has finished.
-        while b.deref_inner().disk {
-            b.vdisk_request_waitchannel.sleep(guard, ctx);
-        }
+        b.vdisk_request_waitchannel.sleep(guard, ctx);
+
         // As it assigns null, the invariant of inflight is maintained even if
         // b: &mut Buf becomes invalid after this method returns.
         guard.get_pin_mut().project().info.project().inflight[desc[0].idx].b = ptr::null_mut();
