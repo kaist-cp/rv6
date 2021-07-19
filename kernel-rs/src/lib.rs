@@ -25,6 +25,10 @@
 #![deny(unused_results)]
 #![deny(variant_size_differences)]
 #![deny(warnings)]
+
+// TODO: remove this
+#![cfg_attr(target_arch = "aarch64", allow(dead_code))]
+
 //
 // # The following lints should not be denied.
 //
@@ -55,22 +59,56 @@ mod arch;
 mod arena;
 mod bio;
 mod console;
+#[cfg(target_arch = "riscv64")]
+#[path = "arch/riscv/cpu.rs"]
 mod cpu;
+
+#[cfg(target_arch = "aarch64")]
+#[path = "arch/arm/cpu.rs"]
+mod cpu;
+
 mod exec;
 mod file;
 mod fs;
 mod hal;
 mod kalloc;
+#[cfg(target_arch = "riscv64")]
+#[path = "arch/riscv/kernel.rs"]
 mod kernel;
+
+#[cfg(target_arch = "aarch64")]
+#[path = "arch/arm/kernel.rs"]
+mod kernel;
+
 mod lock;
 mod page;
 mod param;
 mod pipe;
 mod proc;
+#[cfg(target_arch = "riscv64")]
+#[path = "arch/riscv/start.rs"]
 mod start;
+
+#[cfg(target_arch = "aarch64")]
+#[path = "arch/arm/start.rs"]
+mod start;
+
 mod syscall;
+#[cfg(target_arch = "riscv64")]
+#[path = "arch/riscv/trap.rs"]
 mod trap;
+
+#[cfg(target_arch = "aarch64")]
+#[path = "arch/arm/trap.rs"]
+mod trap;
+
 mod uart;
 mod util;
 mod virtio;
+#[cfg(target_arch = "riscv64")]
+#[path = "arch/riscv/vm.rs"]
+mod vm;
+
+#[cfg(target_arch = "aarch64")]
+#[path = "arch/arm/vm.rs"]
 mod vm;

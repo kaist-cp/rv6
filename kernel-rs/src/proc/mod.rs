@@ -8,8 +8,13 @@ use core::{
 
 use array_macro::array;
 
+#[cfg(target_arch = "riscv64")]
+use crate::arch::riscv::intr_get;
+
+#[cfg(target_arch = "aarch64")]
+use crate::arch::arm::intr_get;
+
 use crate::{
-    arch::riscv::intr_get,
     file::RcFile,
     fs::{DefaultFs, RcInode},
     hal::hal,
@@ -21,7 +26,14 @@ use crate::{
 };
 
 mod kernel_ctx;
+#[cfg(target_arch = "riscv64")]
+#[path = "../arch/riscv/procs.rs"]
 mod procs;
+
+#[cfg(target_arch = "aarch64")]
+#[path = "../arch/arm/procs.rs"]
+mod procs;
+
 mod wait_channel;
 
 pub use kernel_ctx::*;

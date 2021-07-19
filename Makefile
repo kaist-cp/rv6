@@ -52,12 +52,14 @@ endif
 #   $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a
 
 OBJS = \
-  $K/entry.o \
-  $K/swtch.o \
-  $K/trampoline.o \
-  $K/kernelvec.o \
+  $K/$(TARGET)/entry.o \
+  $K/$(TARGET)/swtch.o \
   $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a
 
+ifeq ($(TARGET),riscv)
+  OBJS += $K/$(TARGET)/trampoline.o \
+  	$K/$(TARGET)/kernelvec.o
+endif
 # riscv64-unknown-elf- or riscv64-linux-gnu-
 # perhaps in /opt/riscv/bin
 #TOOLPREFIX = 
@@ -190,7 +192,7 @@ fs.img: mkfs/mkfs README $(UPROGS)
 
 clean: 
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
-	*/*.o */*.d */*.asm */*.sym \
+	*/*.o */*/*.o */*.d */*.asm */*.sym \
 	$(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a \
 	$U/initcode $U/initcode.out $K/kernel fs.img \
 	mkfs/mkfs .gdbinit \
@@ -208,11 +210,16 @@ ifndef CPUS
 CPUS := 3
 endif
 
-QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS) -nographic
+QEMUOPTS = -machine virt -kernel $K/kernel -m 128M -smp $(CPUS) -nographic
 QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0
 QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+
 ifeq ($(ARCH),aarch64)
 QEMUOPTS += -cpu cortex-a72
+endif
+
+ifeq ($(ARCH),riscv64)
+QEMUOPTS += -bios none
 endif
 
 qemu: $K/kernel fs.img
