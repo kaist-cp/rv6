@@ -3,17 +3,17 @@ use crate::{
     proc::{kernel_ctx, KernelCtx},
 };
 
-extern "C" {
-    // trampoline.S
-    static mut trampoline: [u8; 0];
+// extern "C" {
+//     // trampoline.S
+//     static mut trampoline: [u8; 0];
 
-    static mut uservec: [u8; 0];
+//     static mut uservec: [u8; 0];
 
-    static mut userret: [u8; 0];
+//     static mut userret: [u8; 0];
 
-    // In kernelvec.S, calls kerneltrap().
-    fn kernelvec();
-}
+//     // In kernelvec.S, calls kerneltrap().
+//     fn kernelvec();
+// }
 
 pub fn trapinit() {}
 
@@ -30,6 +30,117 @@ pub unsafe extern "C" fn usertrap() {
     // SAFETY
     // * usertrap can be reached only after the initialization of the kernel.
     // * It's the beginning of this thread, so there's no exsiting `KernelCtx` or `CurrentProc`.
+    unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn swi_handler() {
+    // SAFETY
+    // TODO
+    unsafe {
+        asm!("nop");
+    }
+    // unsafe { kernel_ctx(|ctx| ctx.swi_handler())};
+    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn irq_handler() {
+    // SAFETY
+    // TODO
+    unsafe {
+        asm!("nop");
+    }
+    // unsafe { kernel_ctx(|ctx| ctx.swi_handler())};
+    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn dabort_handler() {
+    // SAFETY
+    // TODO
+    unsafe {
+        asm!("nop");
+    }
+    // unsafe { kernel_ctx(|ctx| ctx.swi_handler())};
+    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn iabort_handler() {
+    // SAFETY
+    // TODO
+    unsafe {
+        asm!("nop");
+    }
+    // unsafe { kernel_ctx(|ctx| ctx.swi_handler())};
+    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn reset_handler() {
+    // SAFETY
+    // TODO
+    unsafe {
+        asm!("nop");
+    }
+    // unsafe { kernel_ctx(|ctx| ctx.swi_handler())};
+    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn und_handler() {
+    // SAFETY
+    // TODO
+    unsafe {
+        asm!("nop");
+    }
+    // unsafe { kernel_ctx(|ctx| ctx.swi_handler())};
+    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn na_handler() {
+    // SAFETY
+    // TODO
+    unsafe {
+        asm!("nop");
+    }
+    // unsafe { kernel_ctx(|ctx| ctx.swi_handler())};
+    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn fiq_handler() {
+    // SAFETY
+    // TODO
+    unsafe {
+        asm!("nop");
+    }
+    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn bad_handler() {
+    // SAFETY
+    // TODO
+    unsafe {
+        asm!("nop");
+    }
+    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn error_handler() {
+    // SAFETY
+    // TODO
+    unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn default_handler() {
+    // SAFETY
+    // TODO
     unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
 }
 

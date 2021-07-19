@@ -5,6 +5,7 @@
         # and causes each CPU to jump there.
         # kernel.ld causes the following code to
         # be placed at 0x40010000.
+.global _entry
 .section .text
 _entry:
         # initialize stack pointers for svc modes

@@ -102,7 +102,14 @@ mod trap;
 #[path = "arch/arm/trap.rs"]
 mod trap;
 
+#[cfg(target_arch = "riscv64")]
+#[path = "arch/riscv/uart.rs"]
 mod uart;
+
+#[cfg(target_arch = "aarch64")]
+#[path = "arch/arm/uart.rs"]
+mod uart;
+
 mod util;
 mod virtio;
 #[cfg(target_arch = "riscv64")]

@@ -43,6 +43,15 @@ version = "0.1.0"
 source = "git+https://github.com/maxbla/const-zero.git#55f78ce19130598af8d17a43b8e0f7447d4e5b34"
 
 [[package]]
+name = "cortex-a"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d25a057b35117d030453cd322f7adbdd331e886bc5bde46cdae656952c4feba6"
+dependencies = [
+ "tock-registers",
+]
+
+[[package]]
 name = "cstr_core"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -165,6 +174,7 @@ dependencies = [
  "bitflags",
  "bitmaps",
  "const-zero",
+ "cortex-a",
  "cstr_core",
  "itertools",
  "num-iter",
@@ -172,6 +182,7 @@ dependencies = [
  "scopeguard",
  "spin",
  "static_assertions",
+ "tock-registers",
  "zerocopy",
 ]
 
@@ -218,6 +229,12 @@ dependencies = [
  "syn",
  "unicode-xid",
 ]
+
+[[package]]
+name = "tock-registers"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ee8fba06c1f4d0b396ef61a54530bb6b28f0dc61c38bc8bc5a5a48161e6282e"
 
 [[package]]
 name = "unicode-xid"

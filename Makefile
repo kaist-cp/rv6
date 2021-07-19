@@ -5,6 +5,7 @@ KR = kernel-rs
 ifeq ($(TARGET),arm)
 RUST_TARGET = aarch64-unknown-none
 ARCH = aarch64
+TOOLPREFIX = aarch64-none-elf-
 else
 RUST_TARGET = riscv64gc-unknown-none-elfhf
 ARCH = riscv64
@@ -59,6 +60,10 @@ OBJS = \
 ifeq ($(TARGET),riscv)
   OBJS += $K/$(TARGET)/trampoline.o \
   	$K/$(TARGET)/kernelvec.o
+endif
+
+ifeq ($(TARGET),arm)
+  OBJS += $K/$(TARGET)/trap_asm.o
 endif
 # riscv64-unknown-elf- or riscv64-linux-gnu-
 # perhaps in /opt/riscv/bin
@@ -116,8 +121,8 @@ endif
 LDFLAGS = -z max-page-size=4096
 KERNELLD = $K/$(TARGET)/kernel.ld
 
-$K/kernel: $(OBJS) $(KERNELLD) $U/initcode
-	$(LD) $(LDFLAGS) -T $(KERNELLD) -o $K/kernel $(OBJS) 
+$K/kernel: $(OBJS) $(KERNELLD) $U/$(TARGET)/initcode fs.img
+	$(LD) $(LDFLAGS) -T $(KERNELLD) -o $K/kernel $(OBJS)
 	$(OBJDUMP) -S $K/kernel > $K/kernel.asm
 	$(OBJDUMP) -t $K/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $K/kernel.sym
 
@@ -127,11 +132,13 @@ else
 MARCH=rv64g
 endif
 
-$U/initcode: $U/initcode.S
-	$(CC) $(CFLAGS) -march=$(MARCH) -nostdinc -I. -Ikernel -c $U/initcode.S -o $U/initcode.o
-	$(LD) $(LDFLAGS) -N -e start -Ttext 0 -o $U/initcode.out $U/initcode.o
-	$(OBJCOPY) -S -O binary $U/initcode.out $U/initcode
-	$(OBJDUMP) -S $U/initcode.o > $U/initcode.asm
+UT=$U/$(TARGET)
+
+$(UT)/initcode: $(UT)/initcode.S
+	$(CC) $(CFLAGS) -march=$(MARCH) -nostdinc -I. -Ikernel -c $(UT)/initcode.S -o $(UT)/initcode.o
+	$(LD) $(LDFLAGS) -N -e start -Ttext 0 -o $(UT)/initcode.out $(UT)/initcode.o
+	$(OBJCOPY) -S -O binary $(UT)/initcode.out $(UT)/initcode
+	$(OBJDUMP) -S $(UT)/initcode.o > $(UT)/initcode.asm
 
 $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a: $(shell find $(KR) -type f)
 	cargo build --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json $(CARGOFLAGS)
@@ -147,7 +154,7 @@ _%: %.o $(ULIB)
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
 
 $U/usys.S : $U/usys.pl
-	perl $U/usys.pl > $U/usys.S
+	TARGET=$(TARGET) perl $U/usys.pl > $U/usys.S
 
 $U/usys.o : $U/usys.S
 	$(CC) $(CFLAGS) -c -o $U/usys.o $U/usys.S
