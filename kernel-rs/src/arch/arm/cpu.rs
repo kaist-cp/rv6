@@ -7,7 +7,7 @@ use core::{
 use array_macro::array;
 
 use crate::{
-    arch::arm::{intr_get, intr_off, intr_on},
+    arch::arm::{intr_get, intr_off, intr_on, r_mpidr_el1},
     param::NCPU,
     proc::{Context, Proc},
 };
@@ -222,5 +222,5 @@ impl CpuMut<'_> {
 /// It is safe to call this function with interrupts enabled, but the returned id may not be the
 /// current CPU since the scheduler can move the process to another CPU on time interrupt.
 pub fn cpuid() -> usize {
-    unimplemented!()
+    r_mpidr_el1()
 }

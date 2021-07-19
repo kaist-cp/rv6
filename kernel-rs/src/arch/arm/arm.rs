@@ -3,22 +3,32 @@
 // Dead code is allowed in this file because not all components are used in the kernel.
 #![allow(dead_code)]
 
-/// Enable device interrupts.
+const DIS_INT:usize = 0x80;
+
+/// Enable device interrupts (IRQ). 
 #[inline]
 pub unsafe fn intr_on() {
-    unimplemented!()
+    unsafe {
+        asm!("msr daifclr, #2")
+    }
 }
 
-/// Disable device interrupts.
+/// Disable device interrupts (IRQ).
 #[inline]
 pub fn intr_off() {
-    unimplemented!()
+    unsafe {
+        asm!("msr daifset, #2")
+    }
 }
 
-/// Are device interrupts enabled?
+/// Are device interrupts (IRQ) enabled?
 #[inline]
 pub fn intr_get() -> bool {
-    unimplemented!()
+    let mut x:usize;
+    unsafe {
+        asm!("mrs {}, daif", out(reg) x);
+    }
+    x & DIS_INT == 0
 }
 
 /// Which hart (core) is this?
@@ -41,7 +51,7 @@ pub fn r_currentel() -> usize {
 }
 
 /// read the main id register
-pub fn r_midr_el1() -> usize {
+pub unsafe fn r_midr_el1() -> usize {
     let mut x: usize;
     unsafe {
         asm!("mrs {}, midr_el1", out(reg) x);
@@ -52,7 +62,7 @@ pub fn r_midr_el1() -> usize {
 /// flush instruction cache
 pub fn ic_ialluis() {
     unsafe {
-        asm!("ic ialluis");
+        asm!("ic ialluis")
     }
 }
 
@@ -64,7 +74,7 @@ pub fn tlbi_vmalle1() {
 }
 
 /// Instruction Synchronization Barrier.
-pub fn isb() {
+pub unsafe fn isb() {
     unsafe {
         asm!("isb")
     }

@@ -2,6 +2,7 @@ use core::{cmp, marker::PhantomData, mem, pin::Pin, slice};
 
 use bitflags::bitflags;
 use zerocopy::{AsBytes, FromBytes};
+use cortex_a::registers::TTBR1_EL1;
 
 use crate::{
     arch::addr::{
@@ -10,6 +11,7 @@ use crate::{
     arch::memlayout::{
         kstack, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0,
     },
+    arch::arm::tlbi_vmalle1,
     fs::{FileSystem, InodeGuard, Ufs},
     kalloc::Kmem,
     lock::SpinLock,
@@ -17,6 +19,7 @@ use crate::{
     param::NPROC,
     proc::KernelCtx,
 };
+
 
 extern "C" {
     // kernel.ld sets this to end of kernel code.
@@ -805,10 +808,7 @@ impl KernelMemory {
 
     /// Switch h/w page table register to the kernel's page table, and enable paging.
     pub unsafe fn init_hart(&self) {
-        unimplemented!()
-        // unsafe {
-        //     w_satp(make_satp(self.page_table.as_usize()));
-        //     sfence_vma();
-        // }
+        TTBR1_EL1.set_baddr(self.page_table.as_usize() as u64);
+        tlbi_vmalle1();
     }
 }
