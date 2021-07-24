@@ -1,16 +1,16 @@
 //! the riscv Platform Level Interrupt Controller (PLIC).
 use crate::arch::{
+    asm::r_tp,
     memlayout::{plic_sclaim, plic_senable, plic_spriority, PLIC, UART0_IRQ, VIRTIO0_IRQ},
-    riscv::r_tp,
 };
 
-pub unsafe fn plicinit() {
+pub unsafe fn intr_init() {
     // set desired IRQ priorities non-zero (otherwise disabled).
     unsafe { *((PLIC.wrapping_add(UART0_IRQ.wrapping_mul(4))) as *mut u32) = 1 };
     unsafe { *((PLIC + VIRTIO0_IRQ * 4) as *mut u32) = 1 };
 }
 
-pub unsafe fn plicinithart() {
+pub unsafe fn intr_init_hart() {
     let hart: usize = r_tp();
 
     // set uart's enable bit for this hart's S-mode.

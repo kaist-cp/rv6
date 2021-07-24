@@ -8,14 +8,14 @@ use core::ptr;
 use self::UartCtrlRegs::*;
 
 enum UartRegBits {
-    FRTxFifoFull, // tramit FIFO full
+    FRTxFifoFull,  // tramit FIFO full
     FRRxFifoEmpty, // receive FIFO empty
-    CRRxEnable, // enable receive
-    CRTxEnable, // enable transmit
-    CREnable, // enable UART
+    CRRxEnable,    // enable receive
+    CRTxEnable,    // enable transmit
+    CREnable,      // enable UART
     LCRFifoEnable, // enable FIFO
-    IERTxEnable, // transmit interrupt
-    IERRxEnable, // receive interrupt
+    IERTxEnable,   // transmit interrupt
+    IERRxEnable,   // receive interrupt
 }
 
 pub const UART_CLK: usize = 24000000;
@@ -25,8 +25,9 @@ impl UartRegBits {
     fn bits(self) -> u16 {
         match self {
             UartRegBits::FRTxFifoFull | UartRegBits::IERTxEnable => 1 << 5,
-            UartRegBits::FRRxFifoEmpty | UartRegBits::IERRxEnable 
-            | UartRegBits::LCRFifoEnable => 1 << 4,
+            UartRegBits::FRRxFifoEmpty | UartRegBits::IERRxEnable | UartRegBits::LCRFifoEnable => {
+                1 << 4
+            }
             UartRegBits::CRRxEnable => 1 << 9,
             UartRegBits::CRTxEnable => 1 << 8,
             UartRegBits::CREnable => 1 << 0,
@@ -70,14 +71,14 @@ impl UartCtrlRegs {
         match self {
             DR => uart as *mut u16,
             RSR => (uart + 1) as *mut u16,
-            FR => (uart + 6) as  *mut u16,
-            IBRD => (uart + 9) as  *mut u16,
-            FBRD => (uart + 10) as  *mut u16,
-            LCR => (uart + 11) as  *mut u16,
-            CR => (uart + 12) as  *mut u16,
-            IMSC => (uart + 14) as  *mut u16,
-            MIS => (uart + 16) as  *mut u16,
-            ICR => (uart + 17) as  *mut u16,
+            FR => (uart + 6) as *mut u16,
+            IBRD => (uart + 9) as *mut u16,
+            FBRD => (uart + 10) as *mut u16,
+            LCR => (uart + 11) as *mut u16,
+            CR => (uart + 12) as *mut u16,
+            IMSC => (uart + 14) as *mut u16,
+            MIS => (uart + 16) as *mut u16,
+            ICR => (uart + 17) as *mut u16,
         }
     }
 }
@@ -104,8 +105,13 @@ impl Uart {
         let left = UART_CLK % (16 * UART_BITRATE);
         self.write(FBRD, ((left * 4 + UART_BITRATE / 2) / UART_BITRATE) as u16);
 
-        // enable trasmit and receive
-        self.write(CR, UartRegBits::CREnable.bits() | UartRegBits::CRRxEnable.bits() | UartRegBits::CRTxEnable.bits());
+        // enable trasmit and receive interrupts
+        self.write(
+            CR,
+            UartRegBits::CREnable.bits()
+                | UartRegBits::CRRxEnable.bits()
+                | UartRegBits::CRTxEnable.bits(),
+        );
 
         // enable FIFO
         self.write(LCR, UartRegBits::LCRFifoEnable.bits());

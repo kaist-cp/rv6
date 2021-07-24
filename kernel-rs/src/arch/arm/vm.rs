@@ -1,17 +1,16 @@
 use core::{cmp, marker::PhantomData, mem, pin::Pin, slice};
 
 use bitflags::bitflags;
+use cortex_a::{asm::barrier, registers::*};
+use tock_registers::interfaces::ReadWriteable;
 use zerocopy::{AsBytes, FromBytes};
-use cortex_a::registers::TTBR1_EL1;
 
 use crate::{
     arch::addr::{
         pa2pte, pgrounddown, pgroundup, pte2pa, Addr, KVAddr, PAddr, UVAddr, VAddr, MAXVA, PGSIZE,
     },
-    arch::memlayout::{
-        kstack, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0,
-    },
-    arch::arm::tlbi_vmalle1,
+    arch::arch::tlbi_vmalle1,
+    arch::memlayout::{kstack, GIC, KERNBASE, PHYSTOP, TRAPFRAME, UART0, VIRTIO0},
     fs::{FileSystem, InodeGuard, Ufs},
     kalloc::Kmem,
     lock::SpinLock,
@@ -33,14 +32,24 @@ bitflags! {
     pub struct PteFlags: usize {
         /// valid
         const V = 1 << 0;
-        /// readable
-        const R = 1 << 1;
-        /// writable
-        const W = 1 << 2;
-        /// executable
-        const X = 1 << 3;
-        /// user-accessible
-        const U = 1 << 4;
+        const TABLE = 1 << 1; // !table = block
+        /// Non-Secure Bit: always non-secure now
+        const NON_SECURE_PA = 1 << 5;
+        /// AP flags
+        const RW_P = 0 << 6;
+        const RW_U = 1 << 6; // EL0, 1 both can access
+        const RO_P = 2 << 6;
+        const RO_U = 3 << 6;
+        const U = 1 << 6;
+        /// Access Flag
+        const ACCESS_FLAG = 1 << 10;
+        /// Unprivileged execute-never, stage 1 only
+        const UXN = 1 << 53;
+        /// Privileged execute-never, stage 1 only
+        const PXN = 1 << 52;
+        const ESSENTIAL = Self::V.bits() | Self::NON_SECURE_PA.bits() | Self::ACCESS_FLAG.bits();
+        const MEM_ATTR_IDX_0 = (0 << 2);
+        const MEM_ATTR_IDX_1 = (1 << 2);
     }
 }
 
@@ -76,24 +85,25 @@ impl PageTableEntry {
     }
 
     fn is_table(&self) -> bool {
-        self.is_valid() && !self.flag_intersects(PteFlags::R | PteFlags::W | PteFlags::X)
+        self.is_valid() && self.flag_intersects(PteFlags::TABLE)
     }
 
     fn is_data(&self) -> bool {
-        self.is_valid() && self.flag_intersects(PteFlags::R | PteFlags::W | PteFlags::X)
+        self.is_valid() && !self.flag_intersects(PteFlags::TABLE)
     }
 
     /// Make the entry refer to a given page-table page.
     fn set_table(&mut self, page: *mut RawPageTable) {
-        self.inner = pa2pte((page as usize).into()) | PteFlags::V.bits();
+        self.inner =
+            pa2pte((page as usize).into()) | PteFlags::ESSENTIAL.bits() | PteFlags::TABLE.bits();
     }
 
     /// Make the entry refer to a given address with a given permission.
     /// The permission should include at lease one of R, W, and X not to be
     /// considered as an entry referring a page-table page.
     fn set_entry(&mut self, pa: PAddr, perm: PteFlags) {
-        assert!(perm.intersects(PteFlags::R | PteFlags::W | PteFlags::X));
-        self.inner = pa2pte(pa) | (perm | PteFlags::V).bits();
+        // assert!(perm.intersects(PteFlags::R | PteFlags::W | PteFlags::X));
+        self.inner = pa2pte(pa) | (perm | PteFlags::ESSENTIAL).bits();
     }
 
     /// Make the entry inaccessible by user processes by clearing PteFlags::U.
@@ -221,6 +231,7 @@ impl<A: VAddr> PageTable<A> {
     /// pages. A page-table page contains 512 64-bit PTEs.
     /// A 64-bit virtual address is split into five fields:
     ///   39..63 -- must be zero.
+    ///   TODO: add description
     ///   30..38 -- 9 bits of level-2 index.
     ///   21..29 -- 9 bits of level-1 index.
     ///   12..20 -- 9 bits of level-0 index.
@@ -234,7 +245,7 @@ impl<A: VAddr> PageTable<A> {
         // SAFETY: self.ptr uniquely refers to a valid RawPageTable
         // according to the invariant.
         let mut page_table = unsafe { &mut *self.ptr };
-        for level in (1..3).rev() {
+        for level in (1..4).rev() {
             page_table = page_table.get_table_mut(va.page_table_index(level), allocator)?;
         }
         Some(page_table.get_entry_mut(va.page_table_index(0)))
@@ -334,39 +345,39 @@ impl UserMemory {
     /// Return Some(..) if every allocation has succeeded.
     /// Return None otherwise.
     pub fn new(
-        trap_frame: PAddr,
+        _trap_frame: PAddr,
         src_opt: Option<&[u8]>,
         allocator: Pin<&SpinLock<Kmem>>,
     ) -> Option<Self> {
         let page_table = PageTable::new(allocator)?;
-        let mut page_table = scopeguard::guard(page_table, |mut page_table| {
+        let page_table = scopeguard::guard(page_table, |mut page_table| {
             unsafe { page_table.free(allocator) };
             mem::forget(page_table);
         });
-
+        // TODO
         // Map the trampoline code (for system call return)
         // at the highest user virtual address.
         // Only the supervisor uses it, on the way
         // to/from user space, so not PTE_U.
-        page_table
-            .insert(
-                TRAMPOLINE.into(),
-                // SAFETY: we assume that reading the address of trampoline is safe.
-                (unsafe { trampoline.as_mut_ptr() as usize }).into(),
-                PteFlags::R | PteFlags::X,
-                allocator,
-            )
-            .ok()?;
+        // page_table
+        //     .insert(
+        //         TRAMPOLINE.into(),
+        //         // SAFETY: we assume that reading the address of trampoline is safe.
+        //         (unsafe { trampoline.as_mut_ptr() as usize }).into(),
+        //         PteFlags::R | PteFlags::X,
+        //         allocator,
+        //     )
+        //     .ok()?;
 
         // Map the trapframe just below TRAMPOLINE, for trampoline.S.
-        page_table
-            .insert(
-                TRAPFRAME.into(),
-                trap_frame,
-                PteFlags::R | PteFlags::W,
-                allocator,
-            )
-            .ok()?;
+        // page_table
+        //     .insert(
+        //         TRAPFRAME.into(),
+        //         trap_frame,
+        //         PteFlags::R | PteFlags::W,
+        //         allocator,
+        //     )
+        //     .ok()?;
 
         let mut memory = Self {
             page_table: scopeguard::ScopeGuard::into_inner(page_table),
@@ -379,11 +390,7 @@ impl UserMemory {
             page.write_bytes(0);
             (&mut page[..src.len()]).copy_from_slice(src);
             memory
-                .push_page(
-                    page,
-                    PteFlags::R | PteFlags::W | PteFlags::X | PteFlags::U,
-                    allocator,
-                )
+                .push_page(page, PteFlags::RW_U, allocator)
                 .map_err(|page| allocator.free(page))
                 .ok()?;
         }
@@ -467,12 +474,8 @@ impl UserMemory {
         while pgroundup(this.size) < pgroundup(newsz) {
             let mut page = allocator.alloc().ok_or(())?;
             page.write_bytes(0);
-            this.push_page(
-                page,
-                PteFlags::R | PteFlags::W | PteFlags::X | PteFlags::U,
-                allocator,
-            )
-            .map_err(|page| allocator.free(page))?;
+            this.push_page(page, PteFlags::RW_U, allocator)
+                .map_err(|page| allocator.free(page))?;
         }
         let this = scopeguard::ScopeGuard::into_inner(this);
         this.size = newsz;
@@ -612,7 +615,7 @@ impl UserMemory {
     /// Return the address of the page table for this memory in the riscv's sv39
     /// page table scheme.
     pub fn satp(&self) -> usize {
-        unimplemented!()
+        todo!()
         // make_satp(self.page_table.as_usize())
     }
 
@@ -704,15 +707,15 @@ impl KernelMemory {
         });
 
         // SiFive Test Finisher MMIO
-        page_table
-            .insert_range(
-                FINISHER.into(),
-                PGSIZE,
-                FINISHER.into(),
-                PteFlags::R | PteFlags::W,
-                allocator,
-            )
-            .ok()?;
+        // page_table
+        //     .insert_range(
+        //         FINISHER.into(),
+        //         PGSIZE,
+        //         FINISHER.into(),
+        //         PteFlags::R | PteFlags::W,
+        //         allocator,
+        //     )
+        //     .ok()?;
 
         // Uart registers
         page_table
@@ -720,7 +723,7 @@ impl KernelMemory {
                 UART0.into(),
                 PGSIZE,
                 UART0.into(),
-                PteFlags::R | PteFlags::W,
+                PteFlags::RW_P | PteFlags::PXN,
                 allocator,
             )
             .ok()?;
@@ -731,18 +734,29 @@ impl KernelMemory {
                 VIRTIO0.into(),
                 PGSIZE,
                 VIRTIO0.into(),
-                PteFlags::R | PteFlags::W,
+                PteFlags::RW_P | PteFlags::PXN,
                 allocator,
             )
             .ok()?;
 
         // PLIC
+        // page_table
+        //     .insert_range(
+        //         PLIC.into(),
+        //         0x400000,
+        //         PLIC.into(),
+        //         PteFlags::R | PteFlags::W,
+        //         allocator,
+        //     )
+        //     .ok()?;
+
+        // GIC
         page_table
             .insert_range(
-                PLIC.into(),
-                0x400000,
-                PLIC.into(),
-                PteFlags::R | PteFlags::W,
+                GIC.into(),
+                UART0 - GIC,
+                GIC.into(),
+                PteFlags::RW_P | PteFlags::PXN,
                 allocator,
             )
             .ok()?;
@@ -755,7 +769,7 @@ impl KernelMemory {
                 KERNBASE.into(),
                 et - KERNBASE,
                 KERNBASE.into(),
-                PteFlags::R | PteFlags::X,
+                PteFlags::RW_U,
                 allocator,
             )
             .ok()?;
@@ -766,23 +780,23 @@ impl KernelMemory {
                 et.into(),
                 PHYSTOP - et,
                 et.into(),
-                PteFlags::R | PteFlags::W,
+                PteFlags::RW_P | PteFlags::PXN,
                 allocator,
             )
             .ok()?;
 
         // Map the trampoline for trap entry/exit to
         // the highest virtual address in the kernel.
-        page_table
-            .insert_range(
-                TRAMPOLINE.into(),
-                PGSIZE,
-                // SAFETY: we assume that reading the address of trampoline is safe.
-                unsafe { trampoline.as_mut_ptr() as usize }.into(),
-                PteFlags::R | PteFlags::X,
-                allocator,
-            )
-            .ok()?;
+        // page_table
+        //     .insert_range(
+        //         TRAMPOLINE.into(),
+        //         PGSIZE,
+        //         // SAFETY: we assume that reading the address of trampoline is safe.
+        //         unsafe { trampoline.as_mut_ptr() as usize }.into(),
+        //         PteFlags::R | PteFlags::X,
+        //         allocator,
+        //     )
+        //     .ok()?;
 
         // Allocate a page for the process's kernel stack.
         // Map it high in memory, followed by an invalid
@@ -795,7 +809,7 @@ impl KernelMemory {
                     va.into(),
                     PGSIZE,
                     pa.into(),
-                    PteFlags::R | PteFlags::W,
+                    PteFlags::RW_P | PteFlags::PXN,
                     allocator,
                 )
                 .ok()?;
@@ -809,6 +823,27 @@ impl KernelMemory {
     /// Switch h/w page table register to the kernel's page table, and enable paging.
     pub unsafe fn init_hart(&self) {
         TTBR1_EL1.set_baddr(self.page_table.as_usize() as u64);
+        TTBR0_EL1.set_baddr(self.page_table.as_usize() as u64);
+        unsafe {
+            barrier::isb(barrier::SY);
+        }
+        // let mut tmp:usize = 0x40061000;
+        // unsafe {
+        //     asm!("AT S1E1R, {}", out(reg) tmp);
+        // }
+
+        // if tmp > 0xffffffffff {
+        //     return;
+        // }
+
+        // TODO: enable this
+        // Enable MMU.
+        SCTLR_EL1.modify(SCTLR_EL1::M::Enable);
+
+        // Force MMU init to complete before next instruction.
+        unsafe {
+            barrier::isb(barrier::SY);
+        }
         tlbi_vmalle1();
     }
 }

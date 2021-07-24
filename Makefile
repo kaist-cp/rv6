@@ -6,10 +6,24 @@ ifeq ($(TARGET),arm)
 RUST_TARGET = aarch64-unknown-none
 ARCH = aarch64
 TOOLPREFIX = aarch64-none-elf-
+MARCH = armv8-a
+ADD_OBJS = $K/$(TARGET)/trap_asm.o
+
+# Note that the default is cortex-a15, 
+# so for an AArch64 guest you must specify a CPU type.
+# https://qemu.readthedocs.io/en/latest/system/arm/virt.html#supported-devices
+ADD_QEMUOPTS = -cpu cortex-a72
 else
 RUST_TARGET = riscv64gc-unknown-none-elfhf
 ARCH = riscv64
 TARGET = riscv
+MARCH = rv64g
+ADD_OBJS = $K/$(TARGET)/trampoline.o $K/$(TARGET)/kernelvec.o
+ADD_CFLAGS = -mcmodel=medany -mno-relax
+
+# No bios option is supported only in some environment including riscv virt machine.
+# https://qemu.readthedocs.io/en/latest/system/target-riscv.html#risc-v-cpu-firmware
+ADD_QEMUOPTS = -bios none
 endif
 
 ifndef RUST_MODE
@@ -55,16 +69,9 @@ endif
 OBJS = \
   $K/$(TARGET)/entry.o \
   $K/$(TARGET)/swtch.o \
-  $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a
+  $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a \
+  $(ADD_OBJS)
 
-ifeq ($(TARGET),riscv)
-  OBJS += $K/$(TARGET)/trampoline.o \
-  	$K/$(TARGET)/kernelvec.o
-endif
-
-ifeq ($(TARGET),arm)
-  OBJS += $K/$(TARGET)/trap_asm.o
-endif
 # riscv64-unknown-elf- or riscv64-linux-gnu-
 # perhaps in /opt/riscv/bin
 #TOOLPREFIX = 
@@ -99,9 +106,7 @@ endif
 
 CFLAGS = -Wall -Werror $(OPTFLAGS) -fno-omit-frame-pointer -ggdb
 CFLAGS += -MD
-ifeq ($(ARCH),riscv64)
-CFLAGS += -mcmodel=medany -mno-relax
-endif
+CFLAGS += $(ADD_CFLAGS)
 CFLAGS += -ffreestanding -fno-common -nostdlib
 CFLAGS += -I.
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
@@ -119,18 +124,11 @@ CFLAGS += -fno-pie -nopie
 endif
 
 LDFLAGS = -z max-page-size=4096
-KERNELLD = $K/$(TARGET)/kernel.ld
 
-$K/kernel: $(OBJS) $(KERNELLD) $U/$(TARGET)/initcode fs.img
-	$(LD) $(LDFLAGS) -T $(KERNELLD) -o $K/kernel $(OBJS)
+$K/kernel: $(OBJS) $K/$(TARGET)/kernel.ld $U/$(TARGET)/initcode fs.img
+	$(LD) $(LDFLAGS) -T $K/$(TARGET)/kernel.ld -o $K/kernel $(OBJS)
 	$(OBJDUMP) -S $K/kernel > $K/kernel.asm
 	$(OBJDUMP) -t $K/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $K/kernel.sym
-
-ifeq ($(ARCH),aarch64)
-MARCH=armv8-a
-else
-MARCH=rv64g
-endif
 
 UT=$U/$(TARGET)
 
@@ -220,14 +218,7 @@ endif
 QEMUOPTS = -machine virt -kernel $K/kernel -m 128M -smp $(CPUS) -nographic
 QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0
 QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
-
-ifeq ($(ARCH),aarch64)
-QEMUOPTS += -cpu cortex-a72
-endif
-
-ifeq ($(ARCH),riscv64)
-QEMUOPTS += -bios none
-endif
+QEMUOPTS += $(ADD_QEMUOPTS)
 
 qemu: $K/kernel fs.img
 	$(QEMU) $(QEMUOPTS)

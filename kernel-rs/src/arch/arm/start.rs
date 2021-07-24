@@ -1,6 +1,6 @@
 use crate::{
     param::NCPU,
-    arch::arm::*,
+    arch::asm::*,
     kernel::main,
     uart::Uart,
     arch::memlayout::UART0,
@@ -34,7 +34,7 @@ static mut TIMER_SCRATCH: [[usize; NCPU]; 5] = [[0; NCPU]; 5];
 #[no_mangle]
 pub unsafe fn start() {
     let cur_el = r_currentel();
-    
+
     match cur_el {
         0 => _puts("current el: 0\n"),
         1 => _puts("current el: 1\n"),
@@ -51,14 +51,14 @@ pub unsafe fn start() {
 
     // flush TLB
     tlbi_vmalle1();
-    unsafe { barrier::dsb(barrier::SY) } ;
-    
+    unsafe { barrier::dsb(barrier::SY) };
+
     // no trapping on FP/SIMD instructions
     unsafe { w_cpacr_el1(0x03 << 20) };
-    
+
     // monitor debug: all disabled
     unsafe { w_mdscr_el1(0) };
-    
+
     // set_up_mair
     // TODO: This setting might be problematic.
     MAIR_EL1.write(
@@ -68,12 +68,13 @@ pub unsafe fn start() {
         // Attribute 0 - Device.
         MAIR_EL1::Attr0_Device::nonGathering_nonReordering_EarlyWriteAck,
     );
-    
+
     // set translation control register
     TCR_EL1.write(
         TCR_EL1::TBI1::Used
         + TCR_EL1::IPS::Bits_44 // intermediate physical address = 44bits
         + TCR_EL1::TG1::KiB_4 // transaltion granule = 4KB
+        + TCR_EL1::TG0::KiB_4
         + TCR_EL1::SH0::Inner
         + TCR_EL1::SH1::Inner // Inner Shareable
         + TCR_EL1::IRGN0::WriteBack_ReadAlloc_WriteAlloc_Cacheable
@@ -88,7 +89,7 @@ pub unsafe fn start() {
         + TCR_EL1::AS::ASID16Bits // the upper 16 bits of TTBR0_EL1 and TTBR1_EL1 are used for allocation and matching in the TLB.
         + TCR_EL1::TBI0::Ignored // this may not be needed
     );
-    
+
     // set vector base address register
     _puts("Setting Vector Base Addcress Register (VBAR_EL1)\n");
     VBAR_EL1.set(vectors as _);
@@ -107,15 +108,13 @@ pub unsafe fn start() {
     }
 }
 
-fn _puts(s: &str)
-{
+fn _puts(s: &str) {
     for c in s.chars() {
         uart_putc(c as u8);
     }
 }
 
-fn uart_putc(c: u8)
-{
-    let u_art = unsafe { Uart::new(UART0) } ;
+fn uart_putc(c: u8) {
+    let u_art = unsafe { Uart::new(UART0) };
     u_art.putc(c);
 }

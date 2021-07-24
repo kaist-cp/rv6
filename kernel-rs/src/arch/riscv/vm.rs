@@ -12,6 +12,8 @@ use crate::{
     },
     arch::riscv::{make_satp, sfence_vma, w_satp},
     fs::{DefaultFs, InodeGuard},
+    arch::asm::{make_satp, sfence_vma, w_satp},
+    fs::{FileSystem, InodeGuard, Ufs},
     kalloc::Kmem,
     lock::SpinLock,
     page::Page,

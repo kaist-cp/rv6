@@ -8,15 +8,18 @@ use pin_project::pin_project;
 
 use crate::util::strong_pin::StrongPin;
 use crate::{
+    arch::intr::{intr_init, intr_init_hart},
     bio::Bcache,
+    console::{console_read, console_write},
     cpu::cpuid,
     file::{Devsw, FileTable},
-    fs::Ufs,
+    fs::{DefaultFs, FileSystem},
     hal::{hal, hal_init},
     kalloc::Kmem,
     lock::{SleepableLock, SpinLock},
     param::NDEV,
     proc::Procs,
+    trap::{trapinit, trapinithart},
     util::{branded::Branded, spin_loop},
     vm::KernelMemory,
 };
@@ -84,7 +87,7 @@ pub struct Kernel {
     ftable: FileTable,
 
     #[pin]
-    file_system: Ufs,
+    file_system: DefaultFs,
 }
 
 /// A branded reference to a `Kernel`.
@@ -134,7 +137,7 @@ impl<'id, 's> KernelRef<'id, 's> {
     }
 
     /// Returns a reference to the kernel's `FileSystem`.
-    pub fn fs(&self) -> StrongPin<'s, Ufs> {
+    pub fn fs(&self) -> StrongPin<'s, DefaultFs> {
         unsafe { StrongPin::new_unchecked(&self.0.as_pin().get_ref().file_system) }
     }
 
@@ -167,7 +170,7 @@ impl Kernel {
                 write: None,
             }; NDEV],
             ftable: FileTable::new_ftable(),
-            file_system: Ufs::new(),
+            file_system: DefaultFs::new(),
         }
     }
 
@@ -176,9 +179,44 @@ impl Kernel {
     /// # Safety
     ///
     /// This method should be called only once by the hart 0.
-    unsafe fn init(self: Pin<&mut Self>, _allocator: Pin<&SpinLock<Kmem>>) {
+    unsafe fn init(self: Pin<&mut Self>, allocator: Pin<&SpinLock<Kmem>>) {
         self.as_ref().write_str("\nrv6 kernel is booting\n\n");
-        unimplemented!()
+
+        let mut this = self.project();
+
+        // Connect read and write system calls to consoleread and consolewrite.
+        this.devsw[CONSOLE_IN_DEVSW] = Devsw {
+            read: Some(console_read),
+            write: Some(console_write),
+        };
+
+        // Create kernel memory manager.
+        let memory = KernelMemory::new(allocator).expect("PageTable::new failed");
+
+        // Turn on paging.
+        unsafe { this.memory.write(memory).init_hart() };
+
+        // Process system.
+        this.procs.as_mut().init();
+
+        // Trap vectors.
+        trapinit();
+
+        // Install kernel trap vector.
+        unsafe { trapinithart() };
+
+        // Set up interrupt controller.
+        unsafe { intr_init() };
+
+        // Ask PLIC for device interrupts.
+        unsafe { intr_init_hart() };
+
+        // Buffer cache.
+        this.bcache.init();
+
+        // First user process.
+        let fs = unsafe { StrongPin::new_unchecked(this.file_system.as_ref().get_ref()) };
+        this.procs.user_proc_init(fs.root(), allocator);
     }
 
     /// Initializes the kernel for a hart.
@@ -192,12 +230,11 @@ impl Kernel {
         // Turn on paging.
         unsafe { self.memory.assume_init_ref().init_hart() };
 
-        // TODO
         // Install kernel trap vector.
-        // unsafe { trapinithart() };
+        unsafe { trapinithart() };
 
         // Ask PLIC for device interrupts.
-        // unsafe { plicinithart() };
+        unsafe { intr_init_hart() };
     }
 
     fn panic(self: Pin<&Self>) {

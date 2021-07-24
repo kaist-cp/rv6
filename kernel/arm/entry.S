@@ -1,4 +1,4 @@
-.equ _EL2, 0x8
+
 .equ _core_id_mask, 0b11
 
         # qemu -kernel loads the kernel at 0x40010000

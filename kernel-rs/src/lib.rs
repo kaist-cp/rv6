@@ -25,10 +25,8 @@
 #![deny(unused_results)]
 #![deny(variant_size_differences)]
 #![deny(warnings)]
-
 // TODO: remove this
 #![cfg_attr(target_arch = "aarch64", allow(dead_code))]
-
 //
 // # The following lints should not be denied.
 //
@@ -55,31 +53,24 @@
 #![feature(try_blocks)]
 #![feature(variant_count)]
 
+#[cfg(target_arch = "riscv64")]
+#[path = "arch/riscv/mod.rs"]
 mod arch;
+
+#[cfg(target_arch = "aarch64")]
+#[path = "arch/arm/mod.rs"]
+mod arch;
+
 mod arena;
 mod bio;
 mod console;
-#[cfg(target_arch = "riscv64")]
-#[path = "arch/riscv/cpu.rs"]
 mod cpu;
-
-#[cfg(target_arch = "aarch64")]
-#[path = "arch/arm/cpu.rs"]
-mod cpu;
-
 mod exec;
 mod file;
 mod fs;
 mod hal;
 mod kalloc;
-#[cfg(target_arch = "riscv64")]
-#[path = "arch/riscv/kernel.rs"]
 mod kernel;
-
-#[cfg(target_arch = "aarch64")]
-#[path = "arch/arm/kernel.rs"]
-mod kernel;
-
 mod lock;
 mod page;
 mod param;

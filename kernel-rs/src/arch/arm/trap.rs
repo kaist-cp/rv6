@@ -3,6 +3,7 @@ use crate::{
     proc::{kernel_ctx, KernelCtx},
 };
 
+// TODO: replace these
 // extern "C" {
 //     // trampoline.S
 //     static mut trampoline: [u8; 0];
@@ -15,11 +16,16 @@ use crate::{
 //     fn kernelvec();
 // }
 
+extern "C" {
+    // trap_asm.S
+    fn trapret() -> !;
+}
+
 pub fn trapinit() {}
 
 /// Set up to take exceptions and traps while in the kernel.
 pub unsafe fn trapinithart() {
-    unimplemented!()
+    // nothing to do
     // unsafe { w_stvec(kernelvec as _) };
 }
 
@@ -132,16 +138,12 @@ pub unsafe extern "C" fn bad_handler() {
 
 #[no_mangle]
 pub unsafe extern "C" fn error_handler() {
-    // SAFETY
-    // TODO
-    unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
+    todo!()
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn default_handler() {
-    // SAFETY
-    // TODO
-    unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
+    todo!()
 }
 
 /// Interrupts and exceptions from kernel code go here via kernelvec,
@@ -155,19 +157,19 @@ pub unsafe fn kerneltrap() {
 impl KernelCtx<'_, '_> {
     /// `user_trap` can be reached only from the user mode, so it is a method of `KernelCtx`.
     unsafe fn user_trap(self) -> ! {
-        unimplemented!()
+        todo!()
     }
 
     /// Return to user space.
     pub unsafe fn user_trap_ret(self) -> ! {
-        unimplemented!()
+        todo!()
     }
 }
 
 impl KernelRef<'_, '_> {
     /// `kernel_trap` can be reached from the kernel mode, so it is a method of `Kernel`.
     unsafe fn kernel_trap(self) {
-        unimplemented!()
+        todo!()
     }
 
     fn clock_intr(self) {
@@ -182,6 +184,6 @@ impl KernelRef<'_, '_> {
     /// 1 if other device,
     /// 0 if not recognized.
     unsafe fn dev_intr(self) -> i32 {
-        unimplemented!()
+        todo!()
     }
 }

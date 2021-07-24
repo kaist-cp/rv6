@@ -49,6 +49,7 @@ impl CurrentProc<'_, '_> {
         Ok(unsafe { CStr::from_ptr(buf.as_ptr()) })
     }
 
+    #[cfg(target_arch = "riscv64")]
     fn argraw(&self, n: usize) -> usize {
         match n {
             0 => self.trap_frame().a0,
@@ -57,6 +58,19 @@ impl CurrentProc<'_, '_> {
             3 => self.trap_frame().a3,
             4 => self.trap_frame().a4,
             5 => self.trap_frame().a5,
+            _ => panic!("argraw"),
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    fn argraw(&self, n: usize) -> usize {
+        match n {
+            0 => self.trap_frame().r0,
+            1 => self.trap_frame().r1,
+            2 => self.trap_frame().r2,
+            3 => self.trap_frame().r3,
+            4 => self.trap_frame().r4,
+            5 => self.trap_frame().r5,
             _ => panic!("argraw"),
         }
     }

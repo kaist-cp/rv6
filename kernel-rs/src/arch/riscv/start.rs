@@ -1,6 +1,6 @@
 use crate::{
     arch::memlayout::{clint_mtimecmp, CLINT_MTIME},
-    arch::riscv::{
+    arch::asm::{
         r_mhartid, w_medeleg, w_mepc, w_mideleg, w_mscratch, w_mtvec, w_satp, w_tp, Mstatus, MIE,
         SIE,
     },

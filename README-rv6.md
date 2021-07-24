@@ -15,14 +15,14 @@
   make
   ```
 
-- Run rv6 on qemu (riscv).
+- Run rv6 on qemu (RISC-V).
 
   ```
   make qemu
   [to exit, C-A X]
   ```
 
-- Run rv6 on qemu (ARM).
+- Run rv6 on qemu (Armv8).
 
   ```
   TARGET=arm make qemu

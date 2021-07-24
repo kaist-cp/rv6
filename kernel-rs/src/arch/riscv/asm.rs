@@ -15,6 +15,10 @@ pub fn r_mhartid() -> usize {
     x
 }
 
+pub fn cpu_id() -> usize {
+    r_tp()
+}
+
 bitflags! {
     /// Machine Status Register, mstatus.
     pub struct Mstatus: usize {

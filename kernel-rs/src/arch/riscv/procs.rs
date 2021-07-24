@@ -16,6 +16,8 @@ use crate::{
     arch::memlayout::kstack,
     arch::riscv::intr_on,
     fs::{DefaultFs, FileSystem, FileSystemExt},
+    arch::asm::intr_on,
+    fs::FileSystem,
     hal::hal,
     kalloc::Kmem,
     kernel::KernelRef,

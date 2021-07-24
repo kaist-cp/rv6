@@ -201,18 +201,37 @@ impl KernelCtx<'_, '_> {
         )
         .free(allocator);
 
+        self.set_trap_frame(sp, elf.entry);
+
+        // this ends up in a0, the first argument to main(argc, argv)
+        Ok(argc)
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    fn set_trap_frame(&mut self, sp: usize, pc: usize) {
         // arguments to user main(argc, argv)
         // argc is returned via the system call return
         // value, which goes in a0.
         self.proc_mut().trap_frame_mut().a1 = sp;
 
         // initial program counter = main
-        self.proc_mut().trap_frame_mut().epc = elf.entry;
+        self.proc_mut().trap_frame_mut().epc = pc;
 
         // initial stack pointer
         self.proc_mut().trap_frame_mut().sp = sp;
+    }
 
-        // this ends up in a0, the first argument to main(argc, argv)
-        Ok(argc)
+    #[cfg(target_arch = "aarch64")]
+    fn set_trap_frame(&mut self, sp: usize, pc: usize) {
+        // arguments to user main(argc, argv)
+        // argc is returned via the system call return
+        // value, which goes in a0.
+        self.proc_mut().trap_frame_mut().r1 = sp;
+
+        // initial program counter = main
+        self.proc_mut().trap_frame_mut().pc = pc;
+
+        // initial stack pointer
+        self.proc_mut().trap_frame_mut().sp = sp;
     }
 }

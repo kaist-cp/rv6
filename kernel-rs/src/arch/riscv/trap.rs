@@ -3,8 +3,8 @@ use core::mem;
 use crate::{
     arch::addr::PGSIZE,
     arch::memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
-    arch::plic::{plic_claim, plic_complete},
-    arch::riscv::{
+    arch::intr::{plic_claim, plic_complete},
+    arch::asm::{
         intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp, w_sepc, w_sip,
         w_stvec, Sstatus,
     },
