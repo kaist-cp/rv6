@@ -9,7 +9,7 @@ use crate::{
     arch::addr::{
         pa2pte, pgrounddown, pgroundup, pte2pa, Addr, KVAddr, PAddr, UVAddr, VAddr, MAXVA, PGSIZE,
     },
-    arch::arch::tlbi_vmalle1,
+    arch::asm::tlbi_vmalle1,
     arch::memlayout::{kstack, GIC, KERNBASE, PHYSTOP, TRAPFRAME, UART0, VIRTIO0},
     fs::{FileSystem, InodeGuard, Ufs},
     kalloc::Kmem,

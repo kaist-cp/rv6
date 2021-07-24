@@ -203,6 +203,9 @@ impl KernelCtx<'_, '_> {
 
         self.set_trap_frame(sp, elf.entry);
 
+        // initial stack pointer
+        self.proc_mut().trap_frame_mut().sp = sp;
+
         // this ends up in a0, the first argument to main(argc, argv)
         Ok(argc)
     }
@@ -217,8 +220,7 @@ impl KernelCtx<'_, '_> {
         // initial program counter = main
         self.proc_mut().trap_frame_mut().epc = pc;
 
-        // initial stack pointer
-        self.proc_mut().trap_frame_mut().sp = sp;
+
     }
 
     #[cfg(target_arch = "aarch64")]
@@ -230,8 +232,5 @@ impl KernelCtx<'_, '_> {
 
         // initial program counter = main
         self.proc_mut().trap_frame_mut().pc = pc;
-
-        // initial stack pointer
-        self.proc_mut().trap_frame_mut().sp = sp;
     }
 }

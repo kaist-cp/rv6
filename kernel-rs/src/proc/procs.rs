@@ -17,6 +17,7 @@ use crate::{
     arch::riscv::intr_on,
     fs::{DefaultFs, FileSystem, FileSystemExt},
     arch::asm::intr_on,
+    arch::proc::INITCODE,
     fs::FileSystem,
     hal::hal,
     kalloc::Kmem,
@@ -27,14 +28,6 @@ use crate::{
     util::branded::Branded,
     vm::UserMemory,
 };
-
-/// A user program that calls exec("/init").
-/// od -t xC initcode
-const INITCODE: [u8; 52] = [
-    0x17, 0x05, 0, 0, 0x13, 0x05, 0x45, 0x02, 0x97, 0x05, 0, 0, 0x93, 0x85, 0x35, 0x02, 0x93, 0x08,
-    0x70, 0, 0x73, 0, 0, 0, 0x93, 0x08, 0x20, 0, 0x73, 0, 0, 0, 0xef, 0xf0, 0x9f, 0xff, 0x2f, 0x69,
-    0x6e, 0x69, 0x74, 0, 0, 0x24, 0, 0, 0, 0, 0, 0, 0, 0,
-];
 
 /// Process system type containing & managing whole processes.
 ///
@@ -128,7 +121,7 @@ impl Procs {
 
             // User program counter.
             // SAFETY: trap_frame has been initialized by alloc.
-            unsafe { (*data.trap_frame).epc = 0 };
+            unsafe { (*data.trap_frame).set_pc(0) };
 
             // User stack pointer.
             // SAFETY: trap_frame has been initialized by alloc.
@@ -189,7 +182,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
                 // Set up new context to start executing at forkret,
                 // which returns to user space.
                 data.context = Default::default();
-                data.context.ra = forkret as usize;
+                data.context.set_ret_addr(forkret as usize);
                 data.context.sp = data.kstack + PGSIZE;
 
                 let info = guard.deref_mut_info();
@@ -271,7 +264,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
 
         // Cause fork to return 0 in the child.
         // SAFETY: trap_frame has been initialized by alloc.
-        unsafe { (*npdata.trap_frame).a0 = 0 };
+        unsafe { (*npdata.trap_frame).set_ret_val(0) };
 
         // Increment reference counts on open file descriptors.
         for (nf, f) in izip!(

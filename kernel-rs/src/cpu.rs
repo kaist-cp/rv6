@@ -9,7 +9,8 @@ use array_macro::array;
 use crate::{
     arch::asm::{cpu_id, intr_get, intr_off, intr_on},
     param::NCPU,
-    proc::{Context, Proc},
+    arch::proc::Context,
+    proc::Proc,
 };
 
 // The `Cpu` struct of the current cpu can be mutated. To do so, we need to
