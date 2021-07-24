@@ -19,7 +19,6 @@ use crate::{
     proc::KernelCtx,
 };
 
-
 extern "C" {
     // kernel.ld sets this to end of kernel code.
     static mut etext: [u8; 0];

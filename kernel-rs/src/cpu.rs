@@ -8,8 +8,8 @@ use array_macro::array;
 
 use crate::{
     arch::asm::{cpu_id, intr_get, intr_off, intr_on},
-    param::NCPU,
     arch::proc::Context,
+    param::NCPU,
     proc::Proc,
 };
 

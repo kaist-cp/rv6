@@ -16,17 +16,9 @@ pub const PLSIZE: usize = 1 << PLSHIFT;
 pub const PLMASK: usize = PLSIZE - 1;
 
 /// The number of page table levels.
-#[cfg(target_arch = "riscv64")]
-pub const PLNUM: usize = 3;
-
-#[cfg(target_arch = "aarch64")]
 pub const PLNUM: usize = 4;
 
 /// Bit position of the page number in PTE.
-#[cfg(target_arch = "riscv64")]
-pub const PTESHIFT: usize = 10;
-
-#[cfg(target_arch = "aarch64")]
 pub const PTESHIFT: usize = 12;
 
 /// One beyond the highest possible virtual address.
@@ -35,7 +27,6 @@ pub const PTESHIFT: usize = 12;
 /// that have the high bit set.
 pub const MAXVA: usize = 1 << (PLSHIFT * PLNUM + PGSHIFT - 1);
 
-#[cfg(target_arch = "aarch64")]
 pub const PG_ADDR: usize = 0xFFFFFFFFF000; // bit 47 - bit 12
 
 #[inline]
@@ -54,13 +45,6 @@ pub fn pa2pte(pa: PAddr) -> usize {
     (pa.into_usize() >> PGSHIFT) << PTESHIFT
 }
 
-#[cfg(target_arch = "riscv64")]
-#[inline]
-pub fn pte2pa(pte: usize) -> PAddr {
-    ((pte >> PTESHIFT) << PGSHIFT).into()
-}
-
-#[cfg(target_arch = "aarch64")]
 #[inline]
 pub fn pte2pa(pte: usize) -> PAddr {
     (pte & PG_ADDR).into()

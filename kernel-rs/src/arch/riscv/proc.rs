@@ -152,7 +152,6 @@ pub struct TrapFrame {
     pub t6: usize,
 }
 
-
 impl TrapFrame {
     pub fn set_pc(&mut self, val: usize) {
         self.epc = val;
@@ -161,6 +160,37 @@ impl TrapFrame {
     /// Set the value of return value register
     pub fn set_ret_val(&mut self, val: usize) {
         self.a0 = val;
+    }
+
+    /// Set the value of function argument register
+    pub fn set_param_reg(&mut self, index: usize, val: usize) {
+        let reg = match index {
+            0 => &mut self.a0,
+            1 => &mut self.a1,
+            2 => &mut self.a2,
+            3 => &mut self.a3,
+            4 => &mut self.a4,
+            5 => &mut self.a5,
+            6 => &mut self.a6,
+            7 => &mut self.a7,
+            _ => panic!("Invalid Index!"),
+        };
+        *reg = val;
+    }
+
+    /// Get the value of function argument register
+    pub fn get_param_reg(&self, index: usize) -> usize {
+        match index {
+            0 => self.a0,
+            1 => self.a1,
+            2 => self.a2,
+            3 => self.a3,
+            4 => self.a4,
+            5 => self.a5,
+            6 => self.a6,
+            7 => self.a7,
+            _ => panic!("Invalid Index!"),
+        }
     }
 }
 

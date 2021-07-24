@@ -1,13 +1,7 @@
-use crate::{
-    param::NCPU,
-    arch::asm::*,
-    kernel::main,
-    uart::Uart,
-    arch::memlayout::UART0,
-};
-
 use cortex_a::{asm::barrier, registers::*};
 use tock_registers::interfaces::Writeable;
+
+use crate::{arch::asm::*, arch::memlayout::UART0, kernel::main, param::NCPU, uart::Uart};
 
 extern "C" {
     // assembly code in trap_asm.S for exception handling.
@@ -87,7 +81,7 @@ pub unsafe fn start() {
         + TCR_EL1::T0SZ.val(32) // this can be changed, possible up to 44
         + TCR_EL1::T1SZ.val(32) // this can be changed, possible up to 44
         + TCR_EL1::AS::ASID16Bits // the upper 16 bits of TTBR0_EL1 and TTBR1_EL1 are used for allocation and matching in the TLB.
-        + TCR_EL1::TBI0::Ignored // this may not be needed
+        + TCR_EL1::TBI0::Ignored, // this may not be needed
     );
 
     // set vector base address register

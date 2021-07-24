@@ -57,5 +57,3 @@ swtch:
 
 	# return to the caller
 	br	x30
-
-

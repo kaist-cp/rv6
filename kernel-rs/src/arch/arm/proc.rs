@@ -89,6 +89,37 @@ impl TrapFrame {
     pub fn set_ret_val(&mut self, val: usize) {
         self.r0 = val;
     }
+
+    /// Set the value of function argument register
+    pub fn set_param_reg(&mut self, index: usize, val: usize) {
+        let reg = match index {
+            0 => &mut self.r0,
+            1 => &mut self.r1,
+            2 => &mut self.r2,
+            3 => &mut self.r3,
+            4 => &mut self.r4,
+            5 => &mut self.r5,
+            6 => &mut self.r6,
+            7 => &mut self.r7,
+            _ => panic!("Invalid Index!"),
+        };
+        *reg = val;
+    }
+
+    /// Get the value of function argument register
+    pub fn get_param_reg(&self, index: usize) -> usize {
+        match index {
+            0 => self.r0,
+            1 => self.r1,
+            2 => self.r2,
+            3 => self.r3,
+            4 => self.r4,
+            5 => self.r5,
+            6 => self.r6,
+            7 => self.r7,
+            _ => panic!("Invalid Index!"),
+        }
+    }
 }
 
 impl Context {

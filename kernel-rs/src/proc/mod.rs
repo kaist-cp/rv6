@@ -10,6 +10,7 @@ use array_macro::array;
 
 use crate::{
     arch::asm::intr_get,
+    arch::proc::{Context, TrapFrame},
     file::RcFile,
     fs::{DefaultFs, RcInode},
     hal::hal,
@@ -18,7 +19,6 @@ use crate::{
     param::{MAXPROCNAME, NOFILE},
     util::branded::Branded,
     vm::UserMemory,
-    arch::proc::{Context, TrapFrame},
 };
 
 mod kernel_ctx;
