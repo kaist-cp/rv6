@@ -16,7 +16,7 @@ pub const PLSIZE: usize = 1 << PLSHIFT;
 pub const PLMASK: usize = PLSIZE - 1;
 
 /// The number of page table levels.
-pub const PLNUM: usize = 4;
+pub const PLNUM: usize = 3;
 
 /// Bit position of the page number in PTE.
 pub const PTESHIFT: usize = 12;
@@ -42,6 +42,7 @@ pub const fn pgrounddown(a: usize) -> usize {
 /// Shift a physical address to the right place for a PTE.
 #[inline]
 pub fn pa2pte(pa: PAddr) -> usize {
+    assert!(pa.into_usize() < (1 << 39));
     (pa.into_usize() >> PGSHIFT) << PTESHIFT
 }
 

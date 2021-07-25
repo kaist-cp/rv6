@@ -78,8 +78,8 @@ pub unsafe fn start() {
         + TCR_EL1::EPD0::EnableTTBR0Walks
         + TCR_EL1::EPD1::EnableTTBR1Walks
         + TCR_EL1::A1::TTBR0 // use TTBR0_EL1's ASID as an ASID
-        + TCR_EL1::T0SZ.val(32) // this can be changed, possible up to 44
-        + TCR_EL1::T1SZ.val(32) // this can be changed, possible up to 44
+        + TCR_EL1::T0SZ.val(25) // this can be changed, possible up to 44
+        + TCR_EL1::T1SZ.val(25) // this can be changed, possible up to 44
         + TCR_EL1::AS::ASID16Bits // the upper 16 bits of TTBR0_EL1 and TTBR1_EL1 are used for allocation and matching in the TLB.
         + TCR_EL1::TBI0::Ignored, // this may not be needed
     );

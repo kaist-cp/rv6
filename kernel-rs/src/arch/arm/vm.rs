@@ -8,6 +8,7 @@ use zerocopy::{AsBytes, FromBytes};
 use crate::{
     arch::addr::{
         pa2pte, pgrounddown, pgroundup, pte2pa, Addr, KVAddr, PAddr, UVAddr, VAddr, MAXVA, PGSIZE,
+        PLNUM,
     },
     arch::asm::tlbi_vmalle1,
     arch::memlayout::{kstack, GIC, KERNBASE, PHYSTOP, TRAPFRAME, UART0, VIRTIO0},
@@ -27,11 +28,14 @@ extern "C" {
     static mut trampoline: [u8; 0];
 }
 
+// A table descriptor and a level 3 page descriptor as per
+// ARMv8-A Architecture Reference Manual Figure D5-15, and Figure D5-17 respectively.
 bitflags! {
     pub struct PteFlags: usize {
         /// valid
         const V = 1 << 0;
         const TABLE = 1 << 1; // !table = block
+        const PAGE = 1 << 1;
         /// Non-Secure Bit: always non-secure now
         const NON_SECURE_PA = 1 << 5;
         /// AP flags
@@ -43,12 +47,20 @@ bitflags! {
         /// Access Flag
         const ACCESS_FLAG = 1 << 10;
         /// Unprivileged execute-never, stage 1 only
-        const UXN = 1 << 53;
+        const UXN = 1 << 54;
         /// Privileged execute-never, stage 1 only
-        const PXN = 1 << 52;
+        const PXN = 1 << 53;
         const ESSENTIAL = Self::V.bits() | Self::NON_SECURE_PA.bits() | Self::ACCESS_FLAG.bits();
+
+        // TODO: are these necessary?
         const MEM_ATTR_IDX_0 = (0 << 2);
         const MEM_ATTR_IDX_1 = (1 << 2);
+        const MEM_ATTR_IDX_2 = (2 << 2);
+        const MEM_ATTR_IDX_3 = (3 << 2);
+        const MEM_ATTR_IDX_4 = (4 << 2);
+        const MEM_ATTR_IDX_5 = (5 << 2);
+        const MEM_ATTR_IDX_6 = (6 << 2);
+        const MEM_ATTR_IDX_7 = (7 << 2);
     }
 }
 
@@ -102,7 +114,7 @@ impl PageTableEntry {
     /// considered as an entry referring a page-table page.
     fn set_entry(&mut self, pa: PAddr, perm: PteFlags) {
         // assert!(perm.intersects(PteFlags::R | PteFlags::W | PteFlags::X));
-        self.inner = pa2pte(pa) | (perm | PteFlags::ESSENTIAL).bits();
+        self.inner = pa2pte(pa) | (perm | PteFlags::ESSENTIAL).bits() | PteFlags::PAGE.bits();
     }
 
     /// Make the entry inaccessible by user processes by clearing PteFlags::U.
@@ -244,7 +256,7 @@ impl<A: VAddr> PageTable<A> {
         // SAFETY: self.ptr uniquely refers to a valid RawPageTable
         // according to the invariant.
         let mut page_table = unsafe { &mut *self.ptr };
-        for level in (1..4).rev() {
+        for level in (1..PLNUM).rev() {
             page_table = page_table.get_table_mut(va.page_table_index(level), allocator)?;
         }
         Some(page_table.get_entry_mut(va.page_table_index(0)))
@@ -768,7 +780,7 @@ impl KernelMemory {
                 KERNBASE.into(),
                 et - KERNBASE,
                 KERNBASE.into(),
-                PteFlags::RW_U,
+                PteFlags::RW_P,
                 allocator,
             )
             .ok()?;
