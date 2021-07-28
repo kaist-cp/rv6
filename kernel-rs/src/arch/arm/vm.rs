@@ -833,23 +833,17 @@ impl KernelMemory {
 
     /// Switch h/w page table register to the kernel's page table, and enable paging.
     pub unsafe fn init_hart(&self) {
-        TTBR1_EL1.set_baddr(self.page_table.as_usize() as u64);
+        // We don't use upper VA space
+        // TTBR1_EL1.set_baddr(self.page_table.as_usize() as u64);
+
+        // register page table
         TTBR0_EL1.set_baddr(self.page_table.as_usize() as u64);
         unsafe {
             barrier::isb(barrier::SY);
         }
-        // let mut tmp:usize = 0x40061000;
-        // unsafe {
-        //     asm!("AT S1E1R, {}", out(reg) tmp);
-        // }
 
-        // if tmp > 0xffffffffff {
-        //     return;
-        // }
-
-        // TODO: enable this
         // Enable MMU.
-        SCTLR_EL1.modify(SCTLR_EL1::M::Enable);
+        SCTLR_EL1.modify(SCTLR_EL1::M::Enable + SCTLR_EL1::C::Cacheable + SCTLR_EL1::I::Cacheable);
 
         // Force MMU init to complete before next instruction.
         unsafe {

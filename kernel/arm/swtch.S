@@ -10,22 +10,21 @@
 
 .globl swtch
 swtch:
-        mov     x2, sp
-        str     x2, [x0, #-8]!
-	stp	x29, x30, [x0, #-16]!
-	stp	x27, x28, [x0, #-16]!
-	stp	x25, x26, [x0, #-16]!
-	stp	x23, x24, [x0, #-16]!
-	stp	x21, x22, [x0, #-16]!
-	stp	x19, x20, [x0, #-16]!
-	stp	x17, x18, [x0, #-16]!
-	stp	x15, x16, [x0, #-16]!
-	stp	x13, x14, [x0, #-16]!
-	stp	x11, x12, [x0, #-16]!
-	stp	x9, x10, [x0, #-16]!
-	stp	x7, x8, [x0, #-16]!
-	stp	x5, x6, [x0, #-16]!
-	str	x4, [x0, #-8]!
+    stp     x4, x5, [x0]
+	stp	x6, x7, [x0, #16]!
+	stp	x8, x9, [x0, #16]!
+	stp	x10, x11, [x0, #16]!
+	stp	x12, x13, [x0, #16]!
+	stp	x14, x15, [x0, #16]!
+	stp	x16, x17, [x0, #16]!
+	stp	x18, x19, [x0, #16]!
+	stp	x20, x21, [x0, #16]!
+	stp	x22, x23, [x0, #16]!
+	stp	x24, x25, [x0, #16]!
+	stp	x26, x27, [x0, #16]!
+	stp	x28, x29, [x0, #16]!
+    mov     x2, sp
+	stp	lr, x2, [x0, #16]!
 
 	# switch the stack
 	//mrs	x20, sp_el0
@@ -38,22 +37,21 @@ swtch:
 	# pop it out as pc_usr is saved on the stack, and will be loaded
 	# when we return from kernel to user space (swi or interrupt return)
         
-	ldr	x4, [x1], #8
-	ldp	x5, x6, [x1], #16
-	ldp	x7, x8, [x1], #16
-	ldp	x9, x10, [x1], #16
-	ldp	x11, x12, [x1], #16
-	ldp	x13, x14, [x1], #16
-	ldp	x15, x16, [x1], #16
-	ldp	x17, x18, [x1], #16
-	ldp	x19, x20, [x1], #16
-	ldp	x21, x22, [x1], #16
-	ldp	x23, x24, [x1], #16
-	ldp	x25, x26, [x1], #16
-	ldp	x27, x28, [x1], #16
-	ldp	x29, x30, [x1], #16
-        ldr     x2, [x1], #8
-        mov     sp, x2
+	ldp	x4, x5, [x1]
+	ldp	x6, x7, [x1, #16]!
+	ldp	x8, x9, [x1, #16]!
+	ldp	x10, x11, [x1, #16]!
+	ldp	x12, x13, [x1, #16]!
+	ldp	x14, x15, [x1, #16]!
+	ldp	x16, x17, [x1, #16]!
+	ldp	x18, x19, [x1, #16]!
+	ldp	x20, x21, [x1, #16]!
+	ldp	x22, x23, [x1, #16]!
+	ldp	x24, x25, [x1, #16]!
+	ldp	x26, x27, [x1, #16]!
+	ldp	x28, x29, [x1, #16]!
+	ldp	lr, x2, [x1, #16]!
+    mov     sp, x2
 
 	# return to the caller
 	br	x30
