@@ -6,7 +6,7 @@ use core::{mem, pin::Pin};
 use pin_project::pin_project;
 
 use crate::{
-    arch::addr::{pgrounddown, pgroundup, PGSIZE},
+    addr::{pgrounddown, pgroundup, PGSIZE},
     arch::memlayout::PHYSTOP,
     lock::SpinLock,
     page::Page,

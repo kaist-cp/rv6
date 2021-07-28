@@ -9,7 +9,7 @@ use core::{
 };
 
 use crate::{
-    arch::addr::UVAddr,
+    addr::UVAddr,
     arena::{Arena, ArenaObject, ArenaRc, ArrayArena},
     fs::{DefaultFs, FileSystem, FileSystemExt, InodeGuard, RcInode},
     hal::hal,

@@ -6,7 +6,7 @@ use tock_registers::interfaces::ReadWriteable;
 use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
-    arch::addr::{
+    addr::{
         pa2pte, pgrounddown, pgroundup, pte2pa, Addr, KVAddr, PAddr, UVAddr, VAddr, MAXVA, PGSIZE,
         PLNUM,
     },

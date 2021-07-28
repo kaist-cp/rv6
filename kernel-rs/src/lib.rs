@@ -53,13 +53,33 @@
 #![feature(try_blocks)]
 #![feature(variant_count)]
 
-#[cfg(target_arch = "riscv64")]
-#[path = "arch/riscv/mod.rs"]
-mod arch;
+use cfg_if::cfg_if;
 
-#[cfg(target_arch = "aarch64")]
-#[path = "arch/arm/mod.rs"]
-mod arch;
+cfg_if! {
+    if  #[cfg(target_arch = "riscv64")] {
+        #[path = "arch/riscv/mod.rs"]
+        mod arch;
+        #[path = "arch/riscv/start.rs"]
+        mod start;
+        #[path = "arch/riscv/trap.rs"]
+        mod trap;
+        #[path = "arch/riscv/uart.rs"]
+        mod uart;
+        #[path = "arch/riscv/vm.rs"]
+        mod vm;
+    } else if #[cfg(target_arch = "aarch64")] {
+        #[path = "arch/arm/mod.rs"]
+        mod arch;
+        #[path = "arch/arm/start.rs"]
+        mod start;
+        #[path = "arch/arm/trap.rs"]
+        mod trap;
+        #[path = "arch/arm/uart.rs"]
+        mod uart;
+        #[path = "arch/arm/vm.rs"]
+        mod vm;
+    }
+}
 
 mod arena;
 mod bio;
@@ -76,37 +96,7 @@ mod page;
 mod param;
 mod pipe;
 mod proc;
-#[cfg(target_arch = "riscv64")]
-#[path = "arch/riscv/start.rs"]
-mod start;
-
-#[cfg(target_arch = "aarch64")]
-#[path = "arch/arm/start.rs"]
-mod start;
-
 mod syscall;
-#[cfg(target_arch = "riscv64")]
-#[path = "arch/riscv/trap.rs"]
-mod trap;
-
-#[cfg(target_arch = "aarch64")]
-#[path = "arch/arm/trap.rs"]
-mod trap;
-
-#[cfg(target_arch = "riscv64")]
-#[path = "arch/riscv/uart.rs"]
-mod uart;
-
-#[cfg(target_arch = "aarch64")]
-#[path = "arch/arm/uart.rs"]
-mod uart;
-
 mod util;
 mod virtio;
-#[cfg(target_arch = "riscv64")]
-#[path = "arch/riscv/vm.rs"]
-mod vm;
-
-#[cfg(target_arch = "aarch64")]
-#[path = "arch/arm/vm.rs"]
-mod vm;
+mod addr;

@@ -4,7 +4,7 @@ use bitflags::bitflags;
 use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
-    arch::addr::{
+    addr::{
         pa2pte, pgrounddown, pgroundup, pte2pa, Addr, KVAddr, PAddr, UVAddr, VAddr, MAXVA, PGSIZE,
     },
     arch::asm::{make_satp, sfence_vma, w_satp},

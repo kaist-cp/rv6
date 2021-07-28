@@ -10,7 +10,7 @@
 use core::{fmt, pin::Pin};
 
 use crate::{
-    arch::addr::UVAddr,
+    addr::UVAddr,
     hal::hal,
     kernel::{Kernel, KernelRef},
     lock::{SleepableLock, SleepableLockGuard, SpinLock, SpinLockGuard},

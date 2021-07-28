@@ -16,6 +16,7 @@ use crate::{
     arch::memlayout::kstack,
     arch::riscv::intr_on,
     fs::{DefaultFs, FileSystem, FileSystemExt},
+    addr::{Addr, UVAddr, PGSIZE},
     arch::asm::intr_on,
     arch::memlayout::kstack,
     arch::proc::INITCODE,

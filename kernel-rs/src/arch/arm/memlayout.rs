@@ -18,7 +18,7 @@
 // Dead code is allowed in this file because not all components are used in the kernel.
 #![allow(dead_code)]
 
-use crate::arch::addr::{MAXVA, PGSIZE};
+use crate::addr::{MAXVA, PGSIZE};
 
 // TODO: Find counterpart of this in ARM, seems that it doesn't exist.
 /// SiFive Test Finisher. (virt device only)

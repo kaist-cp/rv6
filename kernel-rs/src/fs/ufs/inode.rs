@@ -74,7 +74,12 @@ use zerocopy::{AsBytes, FromBytes};
 
 use super::{FileName, Path, Ufs, IPB, NDIRECT, NINDIRECT, ROOTINO};
 use crate::{
+<<<<<<< HEAD
     arena::{Arena, ArrayArena},
+=======
+    addr::UVAddr,
+    arena::{Arena, ArenaObject, ArrayArena},
+>>>>>>> refactoring
     bio::BufData,
     fs::{Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
     hal::hal,

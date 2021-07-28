@@ -1,7 +1,7 @@
 use core::{mem, ops::Deref, ptr::NonNull};
 
 use crate::{
-    arch::addr::UVAddr,
+    addr::UVAddr,
     file::{FileType, RcFile},
     hal::hal,
     lock::SpinLock,
