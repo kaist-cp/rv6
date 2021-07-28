@@ -1,3 +1,5 @@
+#if defined __riscv
+
 // which hart (core) is this?
 static inline uint64
 r_mhartid()
@@ -319,6 +321,17 @@ sfence_vma()
   asm volatile("sfence.vma zero, zero");
 }
 
+#elif defined __aarch64__ || __arm__
+
+static inline uint64
+r_sp()
+{
+  uint64 x;
+  asm volatile("mov %0, sp" : "=r" (x) );
+  return x;
+}
+
+#endif
 
 #define PGSIZE 4096 // bytes per page
 #define PGSHIFT 12  // bits of offset within a page
@@ -352,3 +365,4 @@ sfence_vma()
 
 typedef uint64 pte_t;
 typedef uint64 *pagetable_t; // 512 PTEs
+
