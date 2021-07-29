@@ -1,16 +1,12 @@
 use core::{cmp, marker::PhantomData, mem, pin::Pin, slice};
 
 use bitflags::bitflags;
-// use zerocopy::{AsBytes, FromBytes};
+use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
-    addr::{
-        pgrounddown, pgroundup, Addr, KVAddr, PAddr, UVAddr, VAddr, MAXVA, PGSIZE,
-    },
-    arch::memlayout::{
-        kstack, KERNBASE, PHYSTOP, TRAPFRAME,
-    },
-    arch::vm::{PageTableEntryImpl, PteFlagsImpl, PageInitImpl},
+    addr::{pgrounddown, pgroundup, Addr, KVAddr, PAddr, UVAddr, VAddr, MAXVA, PGSIZE},
+    arch::memlayout::{kstack, KERNBASE, PHYSTOP, TRAPFRAME},
+    arch::vm::{PageInitImpl, PageTableEntryImpl, PteFlagsImpl},
     fs::{FileSystem, InodeGuard, Ufs},
     kalloc::Kmem,
     lock::SpinLock,
@@ -22,9 +18,6 @@ use crate::{
 extern "C" {
     // kernel.ld sets this to end of kernel code.
     static mut etext: [u8; 0];
-
-    // trampoline.S
-    static mut trampoline: [u8; 0];
 }
 
 bitflags! {
@@ -90,11 +83,18 @@ pub trait PageTableEntry: Default {
 }
 
 pub trait PageInit {
-    fn user_page_init<A>(page_table: &mut PageTable<A>, trap_frame: PAddr, allocator: Pin<&SpinLock<Kmem>>);
+    fn user_page_init<A: VAddr>(
+        page_table: &mut PageTable<A>,
+        trap_frame: PAddr,
+        allocator: Pin<&SpinLock<Kmem>>,
+    ) -> Result<(), ()>;
 
-    fn kernel_page_init<A>(page_table: &mut PageTable<A>, allocator: Pin<&SpinLock<Kmem>>);
+    fn kernel_page_init<A: VAddr>(
+        page_table: &mut PageTable<A>,
+        allocator: Pin<&SpinLock<Kmem>>,
+    ) -> Result<(), ()>;
 
-    fn switch_page_table_and_enable_mmu(page_table_base: usize);
+    unsafe fn switch_page_table_and_enable_mmu(page_table_base: usize);
 }
 
 pub trait PteFlags {
@@ -222,7 +222,7 @@ impl<A: VAddr> PageTable<A> {
         Some(page_table.get_entry_mut(va.page_table_index(0)))
     }
 
-    fn insert(
+    pub fn insert(
         &mut self,
         va: A,
         pa: PAddr,
@@ -240,7 +240,7 @@ impl<A: VAddr> PageTable<A> {
     /// physical addresses starting at pa. va and size might not
     /// be page-aligned. Returns Ok(()) on success, Err(()) if walk() couldn't
     /// allocate a needed page-table page.
-    fn insert_range(
+    pub fn insert_range(
         &mut self,
         va: A,
         size: usize,
@@ -326,7 +326,7 @@ impl UserMemory {
             mem::forget(page_table);
         });
 
-        PageInitImpl::user_page_init();
+        PageInitImpl::user_page_init(&mut page_table, trap_frame, allocator).ok()?;
 
         let mut memory = Self {
             page_table: scopeguard::ScopeGuard::into_inner(page_table),
@@ -341,7 +341,9 @@ impl UserMemory {
             memory
                 .push_page(
                     page,
-                    PteFlagsImpl::from_access_flags(PteFlags::R | PteFlags::W | PteFlags::X | PteFlags::U),
+                    PteFlagsImpl::from_access_flags(
+                        AccessFlags::R | AccessFlags::W | AccessFlags::X | AccessFlags::U,
+                    ),
                     allocator,
                 )
                 .map_err(|page| allocator.free(page))
@@ -429,7 +431,9 @@ impl UserMemory {
             page.write_bytes(0);
             this.push_page(
                 page,
-                PteFlagsImpl::from_access_flags(AccessFlags::R | AccessFlags::W | AccessFlags::X | AccessFlags::U),
+                PteFlagsImpl::from_access_flags(
+                    AccessFlags::R | AccessFlags::W | AccessFlags::X | AccessFlags::U,
+                ),
                 allocator,
             )
             .map_err(|page| allocator.free(page))?;
@@ -661,7 +665,7 @@ impl KernelMemory {
             mem::forget(page_table);
         });
 
-        PageInitImpl::kernel_page_init(&mut page_table, allocator);
+        PageInitImpl::kernel_page_init(&mut page_table, allocator).ok()?;
 
         // Map kernel text executable and read-only.
         // SAFETY: we assume that reading the address of etext is safe.
@@ -671,7 +675,7 @@ impl KernelMemory {
                 KERNBASE.into(),
                 et - KERNBASE,
                 KERNBASE.into(),
-                PteFlags::R | PteFlags::X,
+                PteFlagsImpl::from_access_flags(AccessFlags::R | AccessFlags::X),
                 allocator,
             )
             .ok()?;
@@ -682,7 +686,7 @@ impl KernelMemory {
                 et.into(),
                 PHYSTOP - et,
                 et.into(),
-                PteFlags::R | PteFlags::W,
+                PteFlagsImpl::from_access_flags(AccessFlags::R | AccessFlags::W),
                 allocator,
             )
             .ok()?;
@@ -698,7 +702,7 @@ impl KernelMemory {
                     va.into(),
                     PGSIZE,
                     pa.into(),
-                    PteFlags::R | PteFlags::W,
+                    PteFlagsImpl::from_access_flags(AccessFlags::R | AccessFlags::W),
                     allocator,
                 )
                 .ok()?;

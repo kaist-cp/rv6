@@ -1,24 +1,16 @@
-use core::{cmp, marker::PhantomData, mem, pin::Pin, slice};
+use core::pin::Pin;
 
 use bitflags::bitflags;
 use cortex_a::{asm::barrier, registers::*};
 use tock_registers::interfaces::ReadWriteable;
-use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
-    addr::{
-        pa2pte, pgrounddown, pgroundup, pte2pa, Addr, KVAddr, PAddr, UVAddr, VAddr, MAXVA, PGSIZE,
-        PLNUM,
-    },
+    addr::{pa2pte, pte2pa, PAddr, VAddr, PGSIZE},
     arch::asm::tlbi_vmalle1,
-    arch::memlayout::{kstack, GIC, KERNBASE, PHYSTOP, TRAPFRAME, UART0, VIRTIO0},
-    fs::{FileSystem, InodeGuard, Ufs},
+    arch::memlayout::{GIC, UART0, VIRTIO0},
     kalloc::Kmem,
     lock::SpinLock,
-    page::Page,
-    param::NPROC,
-    proc::KernelCtx,
-    vm::{PageTableEntry, PageInit, PteFlags, AccessFlags, RawPageTable, PageTable}
+    vm::{AccessFlags, PageInit, PageTable, PageTableEntry, PteFlags, RawPageTable},
 };
 
 extern "C" {
@@ -71,9 +63,8 @@ impl PteFlags for PteFlagsImpl {
         if f.intersects(AccessFlags::R) {
             ret |= Self::ACCESS_FLAG;
             if f.intersects(AccessFlags::W) {
-                ret |= Self::RW_P; 
-            }
-            else {
+                ret |= Self::RW_P;
+            } else {
                 ret |= Self::RO_P;
             }
         }
@@ -81,8 +72,7 @@ impl PteFlags for PteFlagsImpl {
             if !f.intersects(AccessFlags::U) {
                 ret |= Self::PXN;
             }
-        }
-        else {
+        } else {
             ret |= Self::UXN | Self::PXN;
         }
         if f.intersects(AccessFlags::U) {
@@ -135,8 +125,9 @@ impl PageTableEntry for PageTableEntryImpl {
 
     /// Make the entry refer to a given page-table page.
     fn set_table(&mut self, page: *mut RawPageTable) {
-        self.inner =
-            pa2pte((page as usize).into()) | Self::EntryFlags::ESSENTIAL.bits() | Self::EntryFlags::TABLE.bits();
+        self.inner = pa2pte((page as usize).into())
+            | Self::EntryFlags::ESSENTIAL.bits()
+            | Self::EntryFlags::TABLE.bits();
     }
 
     /// Make the entry refer to a given address with a given permission.
@@ -144,12 +135,14 @@ impl PageTableEntry for PageTableEntryImpl {
     /// considered as an entry referring a page-table page.
     fn set_entry(&mut self, pa: PAddr, perm: Self::EntryFlags) {
         // assert!(perm.intersects(Self::EntryFlags::R | Self::EntryFlags::W | Self::EntryFlags::X));
-        self.inner = pa2pte(pa) | (perm | Self::EntryFlags::ESSENTIAL).bits() | Self::EntryFlags::PAGE.bits();
+        self.inner = pa2pte(pa)
+            | (perm | Self::EntryFlags::ESSENTIAL).bits()
+            | Self::EntryFlags::PAGE.bits();
     }
 
     /// Make the entry inaccessible by user processes by clearing Self::EntryFlags::U.
     fn clear_user(&mut self) {
-        self.inner &= !(PteFlags::U.bits());
+        self.inner &= !(Self::EntryFlags::U.bits());
     }
 
     /// Invalidate the entry by making every bit 0.
@@ -161,7 +154,11 @@ impl PageTableEntry for PageTableEntryImpl {
 pub struct PageInitImpl {}
 
 impl PageInit for PageInitImpl {
-    fn user_page_init(page_table: &mut PageTable, trap_frame: PAddr, allocator: Pin<&SpinLock<Kmem>>) {
+    fn user_page_init<A: VAddr>(
+        _page_table: &mut PageTable<A>,
+        _trap_frame: PAddr,
+        _allocator: Pin<&SpinLock<Kmem>>,
+    ) -> Result<(), ()> {
         // TODO
         // Map the trampoline code (for system call return)
         // at the highest user virtual address.
@@ -186,10 +183,14 @@ impl PageInit for PageInitImpl {
         //         allocator,
         //     )
         //     .ok()?;
+        Ok(())
     }
 
-    fn kernel_page_init(page_table: &mut impl PageTable, allocator: Pin<&SpinLock<Kmem>>) {
-// SiFive Test Finisher MMIO
+    fn kernel_page_init<A: VAddr>(
+        page_table: &mut PageTable<A>,
+        allocator: Pin<&SpinLock<Kmem>>,
+    ) -> Result<(), ()> {
+        // SiFive Test Finisher MMIO
         // page_table
         //     .insert_range(
         //         FINISHER.into(),
@@ -201,26 +202,22 @@ impl PageInit for PageInitImpl {
         //     .ok()?;
 
         // Uart registers
-        page_table
-            .insert_range(
-                UART0.into(),
-                PGSIZE,
-                UART0.into(),
-                PteFlags::RW_P | PteFlags::PXN,
-                allocator,
-            )
-            .ok()?;
+        page_table.insert_range(
+            UART0.into(),
+            PGSIZE,
+            UART0.into(),
+            PteFlagsImpl::RW_P | PteFlagsImpl::PXN,
+            allocator,
+        )?;
 
         // Virtio mmio disk interface
-        page_table
-            .insert_range(
-                VIRTIO0.into(),
-                PGSIZE,
-                VIRTIO0.into(),
-                PteFlags::RW_P | PteFlags::PXN,
-                allocator,
-            )
-            .ok()?;
+        page_table.insert_range(
+            VIRTIO0.into(),
+            PGSIZE,
+            VIRTIO0.into(),
+            PteFlagsImpl::RW_P | PteFlagsImpl::PXN,
+            allocator,
+        )?;
 
         // PLIC
         // page_table
@@ -234,15 +231,13 @@ impl PageInit for PageInitImpl {
         //     .ok()?;
 
         // GIC
-        page_table
-            .insert_range(
-                GIC.into(),
-                UART0 - GIC,
-                GIC.into(),
-                PteFlags::RW_P | PteFlags::PXN,
-                allocator,
-            )
-            .ok()?;
+        page_table.insert_range(
+            GIC.into(),
+            UART0 - GIC,
+            GIC.into(),
+            PteFlagsImpl::RW_P | PteFlagsImpl::PXN,
+            allocator,
+        )?;
 
         // Map the trampoline for trap entry/exit to
         // the highest virtual address in the kernel.
@@ -256,10 +251,12 @@ impl PageInit for PageInitImpl {
         //         allocator,
         //     )
         //     .ok()?;
+
+        Ok(())
     }
 
-unsafe fn switch_page_table_and_enable_mmu(page_table_base: usize) {
-            // We don't use upper VA space
+    unsafe fn switch_page_table_and_enable_mmu(page_table_base: usize) {
+        // We don't use upper VA space
         // TTBR1_EL1.set_baddr(self.page_table.as_usize() as u64);
 
         // register page table

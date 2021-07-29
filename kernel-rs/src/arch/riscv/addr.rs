@@ -1,9 +1,7 @@
-use crate::addr::{PGSHIFT, PAddr, Addr};
+use crate::addr::{Addr, PAddr, PGSHIFT};
 
 /// Bit position of the page number in PTE.
 pub const PTESHIFT: usize = 10;
-
-
 
 /// Shift a physical address to the right place for a PTE.
 #[inline]
