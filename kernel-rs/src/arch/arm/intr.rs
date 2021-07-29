@@ -93,7 +93,7 @@ pub unsafe fn intr_init() {
     }
 }
 
-pub unsafe fn intr_init_hart() {
+pub unsafe fn intr_init_core() {
     todo!()
 }
 

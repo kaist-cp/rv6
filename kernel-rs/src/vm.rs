@@ -5,11 +5,12 @@ use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
     addr::{pgrounddown, pgroundup, Addr, KVAddr, PAddr, UVAddr, VAddr, MAXVA, PGSIZE},
-    arch::memlayout::{kstack, KERNBASE, PHYSTOP, TRAPFRAME},
+    arch::memlayout::MemLayoutImpl,
     arch::vm::{PageInitImpl, PageTableEntryImpl, PteFlagsImpl},
     fs::{FileSystem, InodeGuard, Ufs},
     kalloc::Kmem,
     lock::SpinLock,
+    memlayout::MemLayout,
     page::Page,
     param::NPROC,
     proc::KernelCtx,
@@ -580,7 +581,7 @@ impl UserMemory {
 
     /// Return a page at va as a slice. Some(page) on success, None on failure.
     fn get_slice(&mut self, va: UVAddr) -> Option<&mut [u8]> {
-        if va.into_usize() >= TRAPFRAME {
+        if va.into_usize() >= MemLayoutImpl::TRAPFRAME {
             return None;
         }
         let pte = self.page_table.get_mut(va, None)?;
@@ -672,9 +673,9 @@ impl KernelMemory {
         let et = unsafe { etext.as_mut_ptr() as usize };
         page_table
             .insert_range(
-                KERNBASE.into(),
-                et - KERNBASE,
-                KERNBASE.into(),
+                MemLayoutImpl::KERNBASE.into(),
+                et - MemLayoutImpl::KERNBASE,
+                MemLayoutImpl::KERNBASE.into(),
                 PteFlagsImpl::from_access_flags(AccessFlags::R | AccessFlags::X),
                 allocator,
             )
@@ -684,7 +685,7 @@ impl KernelMemory {
         page_table
             .insert_range(
                 et.into(),
-                PHYSTOP - et,
+                MemLayoutImpl::PHYSTOP - et,
                 et.into(),
                 PteFlagsImpl::from_access_flags(AccessFlags::R | AccessFlags::W),
                 allocator,
@@ -696,7 +697,7 @@ impl KernelMemory {
         // guard page.
         for i in 0..NPROC {
             let pa = allocator.alloc()?.into_usize();
-            let va: usize = kstack(i);
+            let va: usize = MemLayoutImpl::kstack(i);
             page_table
                 .insert_range(
                     va.into(),
@@ -714,7 +715,7 @@ impl KernelMemory {
     }
 
     /// Switch h/w page table register to the kernel's page table, and enable paging.
-    pub unsafe fn init_hart(&self) {
+    pub unsafe fn init_register(&self) {
         unsafe {
             PageInitImpl::switch_page_table_and_enable_mmu(self.page_table.as_usize());
         }

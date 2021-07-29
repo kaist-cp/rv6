@@ -7,8 +7,9 @@ use pin_project::pin_project;
 
 use crate::{
     addr::{pgrounddown, pgroundup, PGSIZE},
-    arch::memlayout::PHYSTOP,
+    arch::memlayout::MemLayoutImpl,
     lock::SpinLock,
+    memlayout::MemLayout,
     page::Page,
     util::intrusive_list::{List, ListEntry, ListNode},
 };
@@ -88,7 +89,7 @@ impl Kmem {
 
         // SAFETY: safe to acquire only the address of a static variable.
         let pa_start = pgroundup(unsafe { end.as_ptr() as usize });
-        let pa_end = pgrounddown(PHYSTOP);
+        let pa_end = pgrounddown(MemLayoutImpl::PHYSTOP);
         for pa in num_iter::range_step(pa_start, pa_end, PGSIZE) {
             // SAFETY:
             // * pa_start is a multiple of PGSIZE, and pa is so

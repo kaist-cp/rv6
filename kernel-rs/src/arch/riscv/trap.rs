@@ -7,10 +7,12 @@ use crate::{
         w_sepc, w_sip, w_stvec, Sstatus,
     },
     arch::intr::{plic_claim, plic_complete},
-    arch::memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
+    arch::memlayout::MemLayoutImpl,
+    arch::memlayout::{TRAMPOLINE, UART0_IRQ, VIRTIO0_IRQ},
     cpu::cpuid,
     hal::hal,
     kernel::{kernel_ref, KernelRef},
+    memlayout::MemLayout,
     ok_or,
     proc::{kernel_ctx, KernelCtx, Procstate},
 };
@@ -30,7 +32,7 @@ extern "C" {
 pub fn trapinit() {}
 
 /// Set up to take exceptions and traps while in the kernel.
-pub unsafe fn trapinithart() {
+pub unsafe fn trapinitcore() {
     unsafe { w_stvec(kernelvec as _) };
 }
 
@@ -168,7 +170,7 @@ impl KernelCtx<'_, '_> {
         let fn_0: usize =
             TRAMPOLINE + unsafe { userret.as_ptr().offset_from(trampoline.as_ptr()) } as usize;
         let fn_0 = unsafe { mem::transmute::<_, unsafe extern "C" fn(usize, usize) -> !>(fn_0) };
-        unsafe { fn_0(TRAPFRAME, satp) }
+        unsafe { fn_0(MemLayoutImpl::TRAPFRAME, satp) }
     }
 }
 

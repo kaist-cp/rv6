@@ -8,7 +8,7 @@ use pin_project::pin_project;
 
 use crate::util::strong_pin::StrongPin;
 use crate::{
-    arch::intr::{intr_init, intr_init_hart},
+    arch::intr::{intr_init, intr_init_core},
     bio::Bcache,
     console::{console_read, console_write},
     cpu::cpuid,
@@ -19,7 +19,7 @@ use crate::{
     lock::{SleepableLock, SpinLock},
     param::NDEV,
     proc::Procs,
-    trap::{trapinit, trapinithart},
+    trap::{trapinit, trapinitcore},
     util::{branded::Branded, spin_loop},
     vm::KernelMemory,
 };
@@ -178,7 +178,7 @@ impl Kernel {
     ///
     /// # Safety
     ///
-    /// This method should be called only once by the hart 0.
+    /// This method should be called only once by the core 0.
     unsafe fn init(self: Pin<&mut Self>, allocator: Pin<&SpinLock<Kmem>>) {
         self.as_ref().write_str("\nrv6 kernel is booting\n\n");
 
@@ -194,7 +194,7 @@ impl Kernel {
         let memory = KernelMemory::new(allocator).expect("PageTable::new failed");
 
         // Turn on paging.
-        unsafe { this.memory.write(memory).init_hart() };
+        unsafe { this.memory.write(memory).init_register() };
 
         // Process system.
         this.procs.as_mut().init();
@@ -203,13 +203,13 @@ impl Kernel {
         trapinit();
 
         // Install kernel trap vector.
-        unsafe { trapinithart() };
+        unsafe { trapinitcore() };
 
         // Set up interrupt controller.
         unsafe { intr_init() };
 
         // Ask PLIC for device interrupts.
-        unsafe { intr_init_hart() };
+        unsafe { intr_init_core() };
 
         // Buffer cache.
         this.bcache.init();
@@ -219,22 +219,22 @@ impl Kernel {
         this.procs.user_proc_init(fs.root(), allocator);
     }
 
-    /// Initializes the kernel for a hart.
+    /// Initializes the kernel for a core.
     ///
     /// # Safety
     ///
-    /// This method should be called only once by each hart.
-    unsafe fn inithart(self: Pin<&Self>) {
-        self.write_fmt(format_args!("hart {} starting\n", cpuid()));
+    /// This method should be called only once by each core.
+    unsafe fn initcore(self: Pin<&Self>) {
+        self.write_fmt(format_args!("core {} starting\n", cpuid()));
 
         // Turn on paging.
-        unsafe { self.memory.assume_init_ref().init_hart() };
+        unsafe { self.memory.assume_init_ref().init_register() };
 
         // Install kernel trap vector.
-        unsafe { trapinithart() };
+        unsafe { trapinitcore() };
 
         // Ask PLIC for device interrupts.
-        unsafe { intr_init_hart() };
+        unsafe { intr_init_core() };
     }
 
     fn panic(self: Pin<&Self>) {
@@ -288,7 +288,7 @@ pub unsafe fn main() -> ! {
             ::core::hint::spin_loop();
         }
         unsafe {
-            kernel().as_pin().inithart();
+            kernel().as_pin().initcore();
         }
     }
 

@@ -24,7 +24,7 @@ extern "C" {
 pub fn trapinit() {}
 
 /// Set up to take exceptions and traps while in the kernel.
-pub unsafe fn trapinithart() {
+pub unsafe fn trapinitcore() {
     // nothing to do
     // unsafe { w_stvec(kernelvec as _) };
 }

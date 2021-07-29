@@ -18,13 +18,14 @@ use crate::{
     fs::{DefaultFs, FileSystem, FileSystemExt},
     addr::{Addr, UVAddr, PGSIZE},
     arch::asm::intr_on,
-    arch::memlayout::kstack,
+    arch::memlayout::MemLayoutImpl,
     arch::proc::INITCODE,
     fs::FileSystem,
     hal::hal,
     kalloc::Kmem,
     kernel::KernelRef,
     lock::{SpinLock, SpinLockGuard},
+    memlayout::MemLayout,
     page::Page,
     param::{NPROC, ROOTDEV},
     util::branded::Branded,
@@ -88,7 +89,7 @@ impl Procs {
         // SAFETY: we don't move the `Procs`.
         let this = unsafe { self.get_unchecked_mut() };
         for (i, p) in this.process_pool.iter_mut().enumerate() {
-            p.data.get_mut().kstack = kstack(i);
+            p.data.get_mut().kstack = MemLayoutImpl::kstack(i);
         }
     }
 

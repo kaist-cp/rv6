@@ -7,9 +7,10 @@ use tock_registers::interfaces::ReadWriteable;
 use crate::{
     addr::{pa2pte, pte2pa, PAddr, VAddr, PGSIZE},
     arch::asm::tlbi_vmalle1,
-    arch::memlayout::{GIC, UART0, VIRTIO0},
+    arch::memlayout::{MemLayoutImpl, GIC},
     kalloc::Kmem,
     lock::SpinLock,
+    memlayout::MemLayout,
     vm::{AccessFlags, PageInit, PageTable, PageTableEntry, PteFlags, RawPageTable},
 };
 
@@ -203,18 +204,18 @@ impl PageInit for PageInitImpl {
 
         // Uart registers
         page_table.insert_range(
-            UART0.into(),
+            MemLayoutImpl::UART0.into(),
             PGSIZE,
-            UART0.into(),
+            MemLayoutImpl::UART0.into(),
             PteFlagsImpl::RW_P | PteFlagsImpl::PXN,
             allocator,
         )?;
 
         // Virtio mmio disk interface
         page_table.insert_range(
-            VIRTIO0.into(),
+            MemLayoutImpl::VIRTIO0.into(),
             PGSIZE,
-            VIRTIO0.into(),
+            MemLayoutImpl::VIRTIO0.into(),
             PteFlagsImpl::RW_P | PteFlagsImpl::PXN,
             allocator,
         )?;
@@ -233,7 +234,7 @@ impl PageInit for PageInitImpl {
         // GIC
         page_table.insert_range(
             GIC.into(),
-            UART0 - GIC,
+            MemLayoutImpl::UART0 - GIC,
             GIC.into(),
             PteFlagsImpl::RW_P | PteFlagsImpl::PXN,
             allocator,

@@ -10,7 +10,7 @@ pub unsafe fn intr_init() {
     unsafe { *((PLIC + VIRTIO0_IRQ * 4) as *mut u32) = 1 };
 }
 
-pub unsafe fn intr_init_hart() {
+pub unsafe fn intr_init_core() {
     let hart: usize = r_tp();
 
     // set uart's enable bit for this hart's S-mode.

@@ -1,7 +1,10 @@
 use cortex_a::{asm::barrier, registers::*};
 use tock_registers::interfaces::Writeable;
 
-use crate::{arch::asm::*, arch::memlayout::UART0, kernel::main, param::NCPU, uart::Uart};
+use crate::{
+    arch::asm::*, arch::memlayout::MemLayoutImpl, kernel::main, memlayout::MemLayout, param::NCPU,
+    uart::Uart,
+};
 
 extern "C" {
     // assembly code in trap_asm.S for exception handling.
@@ -109,6 +112,6 @@ fn _puts(s: &str) {
 }
 
 fn uart_putc(c: u8) {
-    let u_art = unsafe { Uart::new(UART0) };
+    let u_art = unsafe { Uart::new(MemLayoutImpl::UART0) };
     u_art.putc(c);
 }
