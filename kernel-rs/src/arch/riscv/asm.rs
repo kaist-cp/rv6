@@ -1,4 +1,5 @@
 //! RISC-V instructions.
+// TODO(https://github.com/kaist-cp/rv6/issues/569): replace this
 
 // Dead code is allowed in this file because not all components are used in the kernel.
 #![allow(dead_code)]

@@ -4,7 +4,7 @@ use crate::{
     addr::PGSIZE,
     arch::asm::{
         intr_get, intr_off, intr_on, r_satp, r_scause, r_sepc, r_sip, r_stval, r_tp, w_sepc, w_sip,
-        w_stvec, Sstatus,
+        w_stvec, Sstatus, make_satp,
     },
     arch::intr::{plic_claim, plic_complete},
     arch::memlayout::{TRAMPOLINE, TRAPFRAME, UART0_IRQ, VIRTIO0_IRQ},
@@ -160,7 +160,7 @@ impl KernelCtx<'_, '_> {
         unsafe { w_sepc(self.proc().trap_frame().epc) };
 
         // Tell trampoline.S the user page table to switch to.
-        let satp: usize = self.proc().memory().satp();
+        let satp: usize = make_satp(self.proc().memory().page_table_addr());
 
         // Jump to trampoline.S at the top of memory, which
         // switches to the user page table, restores user registers,
