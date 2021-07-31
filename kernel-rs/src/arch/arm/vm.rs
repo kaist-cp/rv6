@@ -71,7 +71,7 @@ impl PteFlags for PteFlagsImpl {
         }
         if f.intersects(AccessFlags::X) {
             if !f.intersects(AccessFlags::U) {
-                ret |= Self::PXN;
+                ret |= Self::UXN;
             }
         } else {
             ret |= Self::UXN | Self::PXN;
