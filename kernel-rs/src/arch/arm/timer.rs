@@ -3,7 +3,7 @@ use core::time::Duration;
 use cortex_a::{asm::barrier, registers::*};
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 
-use crate::{kernel::KernelRef, timer::TimeManager};
+use crate::{kernel::KernelRef, timer::TimeManager, proc::KernelCtx};
 
 const NS_PER_S: u64 = 1_000_000_000;
 
@@ -21,7 +21,7 @@ impl TimeManager for Timer {
     }
 
     /// Spin for a given duration.
-    fn spin_for<'id, 's>(kernel: &KernelCtx<'id, 's>, duration: usize) -> Result<(), ()> {
+    fn spin_for<'id, 's>(kernel_ctx: &KernelCtx<'id, 's>, duration: usize) -> Result<(), ()> {
         // Instantly return on zero.
         if duration == 0 {
             return Ok(());
@@ -31,7 +31,7 @@ impl TimeManager for Timer {
         let frq = CNTFRQ_EL0.get();
         let x = match frq.checked_mul(duration as u64) {
             None => {
-                kernel
+                kernel_ctx.kernel()
                     .as_ref()
                     .write_str("Spin duration too long, skipping");
                 return Err(());
@@ -51,7 +51,7 @@ impl TimeManager for Timer {
         };
 
         if let Some(w) = warn {
-            kernel.as_ref().write_fmt(format_args!(
+            kernel_ctx.kernel().as_ref().write_fmt(format_args!(
                 "Spin duration {} than architecturally supported, skipping",
                 w
             ));

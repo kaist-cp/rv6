@@ -100,6 +100,41 @@ trampoline:
         msr     ttbr0_el1, x24
 .endm
 
+/* Exception vectors */
+
+	.align	12
+	.globl	vectors
+vectors:
+	/* Current EL with SP0 */
+	.align	7
+	b	cur_el_sp0_sync
+	.align	7
+	b	cur_el_sp0_irq
+	.align	7
+	b	cur_el_sp0_fiq
+	.align	7
+	b	cur_el_sp0_error
+
+	/* Current EL with SPx */
+	.align	7
+	b	cur_el_spx_sync
+	.align	7
+	b	cur_el_spx_irq
+	.align	7
+	b	cur_el_spx_fiq
+	.align	7
+	b	cur_el_spx_error
+
+	/* Lower EL using AArch64 */
+	.align	7
+	b	lower_el_aarch64_sync
+	.align	7
+	b	lower_el_aarch64_irq
+	.align	7
+	b	lower_el_aarch64_fiq
+	.align	7
+	b	lower_el_aarch64_error
+
 .align 4
 .globl userret
 userret:
@@ -140,40 +175,7 @@ userret:
         ldr     x0, [x0, #32]
 	eret
 
-/* Exception vectors */
 
-	.align	12
-	.globl	vectors
-vectors:
-	/* Current EL with SP0 */
-	.align	7
-	b	cur_el_sp0_sync
-	.align	7
-	b	cur_el_sp0_irq
-	.align	7
-	b	cur_el_sp0_fiq
-	.align	7
-	b	cur_el_sp0_error
-
-	/* Current EL with SPx */
-	.align	7
-	b	cur_el_spx_sync
-	.align	7
-	b	cur_el_spx_irq
-	.align	7
-	b	cur_el_spx_fiq
-	.align	7
-	b	cur_el_spx_error
-
-	/* Lower EL using AArch64 */
-	.align	7
-	b	lower_el_aarch64_sync
-	.align	7
-	b	lower_el_aarch64_irq
-	.align	7
-	b	lower_el_aarch64_fiq
-	.align	7
-	b	lower_el_aarch64_error
 
 	.align	6
 cur_el_sp0_sync:
