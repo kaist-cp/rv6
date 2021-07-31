@@ -7,7 +7,7 @@ RUST_TARGET = aarch64-unknown-none
 ARCH = aarch64
 TOOLPREFIX = aarch64-none-elf-
 MARCH = armv8-a
-ADD_OBJS = $K/$(TARGET)/trap_asm.o
+ADD_OBJS = $K/$(TARGET)/trampoline.o
 
 # Note that the default is cortex-a15, 
 # so for an AArch64 guest you must specify a CPU type.

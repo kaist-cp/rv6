@@ -10,6 +10,12 @@ pub const INITCODE: [u8; 80] = [
 // TODO: add indexes, sholud we add kernel info here?
 #[derive(Copy, Clone)]
 pub struct TrapFrame {
+    /// kernel page table (satp: Supervisor Address Translation and Protection)
+    pub kernel_satp: usize,
+    pub spsr: usize,
+    pub sp: usize, // user mode sp
+    pub pc: usize, // user mode pc (elr_el1)
+
     pub r0: usize,
     pub r1: usize,
     pub r2: usize,
@@ -41,9 +47,6 @@ pub struct TrapFrame {
     pub r28: usize,
     pub r29: usize,
     pub r30: usize, // user mode lr
-    pub sp: usize,  // user mode sp
-    pub pc: usize,  // user mode pc (elr)
-    pub spsr: usize,
 }
 
 #[derive(Copy, Clone, Default)]

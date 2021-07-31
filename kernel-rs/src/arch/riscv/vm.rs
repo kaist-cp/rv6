@@ -14,7 +14,7 @@ use crate::{
     fs::{FileSystem, InodeGuard, Ufs},
     arch::memlayout::{FINISHER, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0},
     arch::memlayout::MemLayoutImpl,
-    arch::memlayout::{FINISHER, PLIC, TRAMPOLINE},
+    arch::memlayout::{FINISHER, PLIC},
     kalloc::Kmem,
     lock::SpinLock,
     memlayout::MemLayout,
@@ -141,7 +141,7 @@ impl PageInit for PageInitImpl {
         // Only the supervisor uses it, on the way
         // to/from user space, so not PTE_U.
         page_table.insert(
-            TRAMPOLINE.into(),
+            MemLayoutImpl::TRAMPOLINE.into(),
             // SAFETY: we assume that reading the address of trampoline is safe.
             (unsafe { trampoline.as_mut_ptr() as usize }).into(),
             PteFlagsImpl::R | PteFlagsImpl::X,
@@ -201,7 +201,7 @@ impl PageInit for PageInitImpl {
         // Map the trampoline for trap entry/exit to
         // the highest virtual address in the kernel.
         page_table.insert_range(
-            TRAMPOLINE.into(),
+            MemLayoutImpl::TRAMPOLINE.into(),
             PGSIZE,
             // SAFETY: we assume that reading the address of trampoline is safe.
             unsafe { trampoline.as_mut_ptr() as usize }.into(),

@@ -32,6 +32,7 @@ pub trait MemLayout {
     const KERNBASE: usize;
     const PHYSTOP: usize = Self::KERNBASE.wrapping_add(128 * 1024 * 1024);
 
+    const TRAMPOLINE: usize;
     const TRAPFRAME: usize;
 
     /// map kernel stacks beneath the trampoline,

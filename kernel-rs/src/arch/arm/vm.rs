@@ -156,34 +156,31 @@ pub struct PageInitImpl {}
 
 impl PageInit for PageInitImpl {
     fn user_page_init<A: VAddr>(
-        _page_table: &mut PageTable<A>,
-        _trap_frame: PAddr,
-        _allocator: Pin<&SpinLock<Kmem>>,
+        page_table: &mut PageTable<A>,
+        trap_frame: PAddr,
+        allocator: Pin<&SpinLock<Kmem>>,
     ) -> Result<(), ()> {
         // TODO
         // Map the trampoline code (for system call return)
         // at the highest user virtual address.
         // Only the supervisor uses it, on the way
         // to/from user space, so not PTE_U.
-        // page_table
-        //     .insert(
-        //         TRAMPOLINE.into(),
-        //         // SAFETY: we assume that reading the address of trampoline is safe.
-        //         (unsafe { trampoline.as_mut_ptr() as usize }).into(),
-        //         PteFlags::R | PteFlags::X,
-        //         allocator,
-        //     )
-        //     .ok()?;
+        page_table.insert(
+            MemLayoutImpl::TRAMPOLINE.into(),
+            // SAFETY: we assume that reading the address of trampoline is safe.
+            (unsafe { trampoline.as_mut_ptr() as usize }).into(),
+            PteFlagsImpl::RO_P | PteFlagsImpl::UXN,
+            allocator,
+        )?;
 
         // Map the trapframe just below TRAMPOLINE, for trampoline.S.
-        // page_table
-        //     .insert(
-        //         TRAPFRAME.into(),
-        //         trap_frame,
-        //         PteFlags::R | PteFlags::W,
-        //         allocator,
-        //     )
-        //     .ok()?;
+        page_table.insert(
+            MemLayoutImpl::TRAPFRAME.into(),
+            trap_frame,
+            PteFlagsImpl::RW_P | PteFlagsImpl::PXN | PteFlagsImpl::UXN,
+            allocator,
+        )?;
+
         Ok(())
     }
 
@@ -220,17 +217,6 @@ impl PageInit for PageInitImpl {
             allocator,
         )?;
 
-        // PLIC
-        // page_table
-        //     .insert_range(
-        //         PLIC.into(),
-        //         0x400000,
-        //         PLIC.into(),
-        //         PteFlags::R | PteFlags::W,
-        //         allocator,
-        //     )
-        //     .ok()?;
-
         // GIC
         page_table.insert_range(
             GIC.into(),
@@ -242,16 +228,14 @@ impl PageInit for PageInitImpl {
 
         // Map the trampoline for trap entry/exit to
         // the highest virtual address in the kernel.
-        // page_table
-        //     .insert_range(
-        //         TRAMPOLINE.into(),
-        //         PGSIZE,
-        //         // SAFETY: we assume that reading the address of trampoline is safe.
-        //         unsafe { trampoline.as_mut_ptr() as usize }.into(),
-        //         PteFlags::R | PteFlags::X,
-        //         allocator,
-        //     )
-        //     .ok()?;
+        page_table.insert_range(
+            MemLayoutImpl::TRAMPOLINE.into(),
+            PGSIZE,
+            // SAFETY: we assume that reading the address of trampoline is safe.
+            unsafe { trampoline.as_mut_ptr() as usize }.into(),
+            PteFlagsImpl::RO_P | PteFlagsImpl::UXN,
+            allocator,
+        )?;
 
         Ok(())
     }

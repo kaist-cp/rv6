@@ -6,10 +6,10 @@ use crate::{
     uart::Uart,
 };
 
-extern "C" {
-    // assembly code in trap_asm.S for exception handling.
-    fn vectors();
-}
+// extern "C" {
+//     // assembly code in trap_asm.S for exception handling.
+//     fn vectors();
+// }
 
 /// entry.S needs one stack per CPU.
 #[repr(C, align(16))]
@@ -88,8 +88,8 @@ pub unsafe fn start() {
     );
 
     // set vector base address register
-    _puts("Setting Vector Base Addcress Register (VBAR_EL1)\n");
-    VBAR_EL1.set(vectors as _);
+    // _puts("Setting Vector Base Addcress Register (VBAR_EL1)\n");
+    // VBAR_EL1.set(vectors as _);
 
     // TODO: do this after registering kernel page table
     // set system contol register

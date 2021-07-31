@@ -1,20 +1,50 @@
+use core::mem;
+
+use cortex_a::registers::*;
+use tock_registers::interfaces::{Readable, Writeable};
+
 use crate::{
+    arch::asm::intr_get,
+    arch::memlayout::MemLayoutImpl,
     kernel::{kernel_ref, KernelRef},
+    memlayout::MemLayout,
     proc::{kernel_ctx, KernelCtx},
 };
 
+/// In ARM.v8 architecture, interrupts are part
+/// of a more general term: exceptions.
+enum ExceptionTypes {
+    SyncException,
+    IRQ,
+    FIQ,
+    SError,
+}
+
+impl ExceptionTypes {
+    pub fn from_usize(n: usize) -> Self {
+        match n {
+            0 => Self::SyncException,
+            1 => Self::IRQ,
+            2 => Self::FIQ,
+            3 => Self::SError,
+            _ => panic!("invalud exception code"),
+        }
+    }
+}
+
 // TODO: replace these
-// extern "C" {
-//     // trampoline.S
-//     static mut trampoline: [u8; 0];
+extern "C" {
+    // trampoline.S
+    static mut trampoline: [u8; 0];
 
-//     static mut uservec: [u8; 0];
+    // static mut uservec: [u8; 0];
 
-//     static mut userret: [u8; 0];
+    static mut userret: [u8; 0];
+    fn vectors();
 
-//     // In kernelvec.S, calls kerneltrap().
-//     fn kernelvec();
-// }
+    // In kernelvec.S, calls kerneltrap().
+    // fn kernelvec();
+}
 
 extern "C" {
     // trap_asm.S
@@ -25,165 +55,156 @@ pub fn trapinit() {}
 
 /// Set up to take exceptions and traps while in the kernel.
 pub unsafe fn trapinitcore() {
-    // nothing to do
-    // unsafe { w_stvec(kernelvec as _) };
+    VBAR_EL1.set(vectors as _);
 }
 
 /// Handle an interrupt, exception, or system call from user space.
 /// Called from trampoline.S.
 #[no_mangle]
-pub unsafe extern "C" fn usertrap() {
+pub unsafe extern "C" fn usertrap(etype: usize) {
+    let etype = ExceptionTypes::from_usize(etype);
+
     // SAFETY
     // * usertrap can be reached only after the initialization of the kernel.
     // * It's the beginning of this thread, so there's no exsiting `KernelCtx` or `CurrentProc`.
-    unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
+    unsafe { kernel_ctx(|ctx| ctx.user_trap(etype)) };
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn swi_handler() {
+pub unsafe extern "C" fn cur_el_sp0_handler(etype: usize) {
     // SAFETY
-    // TODO
-    unsafe {
-        asm!("nop");
-    }
-    // unsafe { kernel_ctx(|ctx| ctx.swi_handler())};
-    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
+    let etype = ExceptionTypes::from_usize(etype);
+    unsafe { kernel_ref(|kref| kref.kernel_trap_el1t(etype)) };
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn irq_handler() {
+pub unsafe extern "C" fn cur_el_sp1_handler(etype: usize) {
     // SAFETY
-    // TODO
-    unsafe {
-        asm!("nop");
-    }
-    // unsafe { kernel_ctx(|ctx| ctx.swi_handler())};
-    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn dabort_handler() {
-    // SAFETY
-    // TODO
-    unsafe {
-        asm!("nop");
-    }
-    // unsafe { kernel_ctx(|ctx| ctx.swi_handler())};
-    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn iabort_handler() {
-    // SAFETY
-    // TODO
-    unsafe {
-        asm!("nop");
-    }
-    // unsafe { kernel_ctx(|ctx| ctx.swi_handler())};
-    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn reset_handler() {
-    // SAFETY
-    // TODO
-    unsafe {
-        asm!("nop");
-    }
-    // unsafe { kernel_ctx(|ctx| ctx.swi_handler())};
-    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn und_handler() {
-    // SAFETY
-    // TODO
-    unsafe {
-        asm!("nop");
-    }
-    // unsafe { kernel_ctx(|ctx| ctx.swi_handler())};
-    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn na_handler() {
-    // SAFETY
-    // TODO
-    unsafe {
-        asm!("nop");
-    }
-    // unsafe { kernel_ctx(|ctx| ctx.swi_handler())};
-    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn fiq_handler() {
-    // SAFETY
-    // TODO
-    unsafe {
-        asm!("nop");
-    }
-    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn bad_handler() {
-    // SAFETY
-    // TODO
-    unsafe {
-        asm!("nop");
-    }
-    // unsafe { kernel_ctx(|ctx| ctx.user_trap()) };
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn error_handler() {
-    todo!()
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn default_handler() {
-    todo!()
+    let etype = ExceptionTypes::from_usize(etype);
+    unsafe { kernel_ref(|kref| kref.kernel_trap_el1h(etype)) };
 }
 
 /// Interrupts and exceptions from kernel code go here via kernelvec,
 /// on whatever the current kernel stack is.
-#[no_mangle]
-pub unsafe fn kerneltrap() {
-    // SAFETY: kerneltrap can be reached only after the initialization of the kernel.
-    unsafe { kernel_ref(|kref| kref.kernel_trap()) };
-}
+// #[no_mangle]
+// pub unsafe fn kerneltrap(etype: usize, stack_mode: usize) {
+//     let etype = ExceptionTypes::from_usize(etype);
+//     let stack_mode = StackModes::from_usize(stack_mode);
+//     // SAFETY: kerneltrap can be reached only after the initialization of the kernel.
+//     unsafe { kernel_ref(|kref| kref.kernel_trap(etype, stack_mode)) };
+// }
 
 impl KernelCtx<'_, '_> {
     /// `user_trap` can be reached only from the user mode, so it is a method of `KernelCtx`.
-    unsafe fn user_trap(self) -> ! {
-        todo!()
+    unsafe fn user_trap(self, etype: ExceptionTypes) -> ! {
+        assert!(
+            SPSR_EL1.matches_all(SPSR_EL1::M::EL0t),
+            "usertrap: not from user mode(EL0)"
+        );
+        match etype {
+            ExceptionTypes::SyncException => {
+                if ESR_EL1.matches_all(ESR_EL1::EC::SVC64) {
+                    // system call
+                    todo!()
+                } else if ESR_EL1
+                    .matches_any(ESR_EL1::EC::DataAbortLowerEL + ESR_EL1::EC::InstrAbortLowerEL)
+                {
+                    // MMU faults generated by data accesses or instruction access
+                    // When the process accesses virtual address
+                    // that has not been mapped yet.
+                    todo!()
+                } else {
+                    self.handle_bad_error();
+                }
+            }
+            ExceptionTypes::IRQ => unsafe {
+                self.kernel().handle_irq();
+            },
+            ExceptionTypes::FIQ | ExceptionTypes::SError => {
+                // TODO: add error message
+                self.handle_bad_error();
+            }
+        }
+        unsafe { self.user_trap_ret() }
+    }
+
+    fn handle_bad_error(mut self) -> ! {
+        self.proc().kill();
+        self.kernel().procs().exit_current(-1, &mut self);
     }
 
     /// Return to user space.
-    pub unsafe fn user_trap_ret(self) -> ! {
-        todo!()
+    pub unsafe fn user_trap_ret(mut self) -> ! {
+        // We're about to switch the destination of traps from
+        // kerneltrap() to usertrap(), so turn off interrupts until
+        // we're back in user space, where usertrap() is correct.
+        // intr_off();
+
+        // kernel page table
+        self.proc_mut().trap_frame_mut().kernel_satp = VBAR_EL1.get() as usize;
+
+        // Tell trampoline.S the user page table to switch to.
+        let user_table = self.proc().memory().page_table_addr();
+
+        // Jump to trampoline.S at the top of memory, which
+        // switches to the user page table, restores user registers,
+        // and switches to user mode with sret.
+        let fn_0: usize = MemLayoutImpl::TRAMPOLINE
+            + unsafe { userret.as_ptr().offset_from(trampoline.as_ptr()) } as usize;
+        let fn_0 = unsafe { mem::transmute::<_, unsafe extern "C" fn(usize, usize) -> !>(fn_0) };
+        unsafe { fn_0(MemLayoutImpl::TRAPFRAME, user_table) }
     }
 }
 
 impl KernelRef<'_, '_> {
-    /// `kernel_trap` can be reached from the kernel mode, so it is a method of `Kernel`.
-    unsafe fn kernel_trap(self) {
+    /// `cur_el_sp0_handler` can be reached from the kernel mode, so it is a method of `Kernel`
+    /// current el with SP0: this case is not allowed here
+    unsafe fn kernel_trap_el1t(self, _etype: ExceptionTypes) {
+        assert!(
+            SPSR_EL1.matches_all(SPSR_EL1::M::EL1t),
+            "kerneltrap: not from supervisor mode"
+        );
+        assert!(!intr_get(), "kerneltrap: interrupts enabled");
+
+        self.print_state();
+        panic!("kerneltrap")
+    }
+
+    /// `cur_el_sp1_handler` can be reached from the kernel mode, so it is a method of `Kernel`
+    /// current el with SP1
+    unsafe fn kernel_trap_el1h(self, etype: ExceptionTypes) {
+        assert!(
+            !SPSR_EL1.matches_all(SPSR_EL1::M::EL1h),
+            "kerneltrap: not from supervisor mode"
+        );
+        assert!(!intr_get(), "kerneltrap: interrupts enabled");
+
+        match etype {
+            ExceptionTypes::SyncException | ExceptionTypes::FIQ | ExceptionTypes::SError => {
+                self.print_state();
+                panic!("kerneltrap")
+            }
+            ExceptionTypes::IRQ => unsafe {
+                self.handle_irq();
+            },
+        }
+    }
+
+    fn print_state(self) {
+        // TODO: print error log
+        // lr, elr_el1, spsr_el1, far_el1, esr_el1
         todo!()
     }
 
-    fn clock_intr(self) {
-        let mut ticks = self.ticks().lock();
-        *ticks = ticks.wrapping_add(1);
-        ticks.wakeup(self);
-    }
-
-    /// Check if it's an external interrupt or software interrupt,
-    /// and handle it.
-    /// Returns 2 if timer interrupt,
-    /// 1 if other device,
-    /// 0 if not recognized.
-    unsafe fn dev_intr(self) -> i32 {
+    unsafe fn handle_irq(self) {
+        // TODO
         todo!()
     }
+
+    // TODO: remove this: this is not needed
+    // fn clock_intr(self) {
+    //     let mut ticks = self.ticks().lock();
+    //     *ticks = ticks.wrapping_add(1);
+    //     ticks.wakeup(self);
+    // }
 }

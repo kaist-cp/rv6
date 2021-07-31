@@ -8,7 +8,7 @@ use crate::{
     },
     arch::intr::{plic_claim, plic_complete},
     arch::memlayout::MemLayoutImpl,
-    arch::memlayout::{TRAMPOLINE, UART0_IRQ, VIRTIO0_IRQ},
+    arch::memlayout::{UART0_IRQ, VIRTIO0_IRQ},
     cpu::cpuid,
     hal::hal,
     kernel::{kernel_ref, KernelRef},
@@ -125,8 +125,8 @@ impl KernelCtx<'_, '_> {
         // Send syscalls, interrupts, and exceptions to trampoline.S.
         unsafe {
             w_stvec(
-                TRAMPOLINE.wrapping_add(
-                    uservec.as_mut_ptr().offset_from(trampoline.as_mut_ptr()) as usize
+                MemLayoutImpl::TRAMPOLINE.wrapping_add(
+                    uservec.as_mut_ptr().offset_from(trampoline.as_mut_ptr()) as usize,
                 ),
             )
         };
@@ -167,8 +167,8 @@ impl KernelCtx<'_, '_> {
         // Jump to trampoline.S at the top of memory, which
         // switches to the user page table, restores user registers,
         // and switches to user mode with sret.
-        let fn_0: usize =
-            TRAMPOLINE + unsafe { userret.as_ptr().offset_from(trampoline.as_ptr()) } as usize;
+        let fn_0: usize = MemLayoutImpl::TRAMPOLINE
+            + unsafe { userret.as_ptr().offset_from(trampoline.as_ptr()) } as usize;
         let fn_0 = unsafe { mem::transmute::<_, unsafe extern "C" fn(usize, usize) -> !>(fn_0) };
         unsafe { fn_0(MemLayoutImpl::TRAPFRAME, satp) }
     }

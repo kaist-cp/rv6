@@ -12,6 +12,7 @@ use cstr_core::CStr;
 use crate::{
     addr::{Addr, UVAddr},
     arch::poweroff,
+    arch::timer::Timer,
     file::RcFile,
     fs::{FcntlFlags, FileSystem, FileSystemExt, InodeType, Path},
     hal::hal,
@@ -20,6 +21,7 @@ use crate::{
     param::{MAXARG, MAXPATH},
     proc::{CurrentProc, KernelCtx},
     some_or,
+    timer::TimeManager,
 };
 
 impl CurrentProc<'_, '_> {
@@ -158,14 +160,8 @@ impl KernelCtx<'_, '_> {
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_sleep(&self) -> Result<usize, ()> {
         let n = self.proc().argint(0)?;
-        let mut ticks = self.kernel().ticks().lock();
-        let ticks0 = *ticks;
-        while ticks.wrapping_sub(ticks0) < n as u32 {
-            if self.proc().killed() {
-                return Err(());
-            }
-            ticks.sleep(self);
-        }
+        assert!(n >= 0);
+        Timer::spin_for(&self, n as usize)?;
         Ok(0)
     }
 
@@ -180,7 +176,7 @@ impl KernelCtx<'_, '_> {
     /// Return how many clock tick interrupts have occurred
     /// since start.
     pub fn sys_uptime(&self) -> Result<usize, ()> {
-        Ok(*self.kernel().ticks().lock() as usize)
+        Timer::uptime(self.kernel())
     }
 
     /// Shutdowns this machine, discarding all unsaved data. No return.

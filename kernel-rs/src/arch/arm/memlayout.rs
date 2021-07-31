@@ -28,8 +28,10 @@ impl MemLayout for MemLayoutImpl {
     /// for use by the kernel and user pages
     /// from physical address 0x80000000 to PHYSTOP.
     const KERNBASE: usize = 0x40000000;
-    // TODO
-    const TRAPFRAME: usize = MAXVA.wrapping_sub(PGSIZE);
+    /// map the trampoline page to the highest address,
+    /// in both user and kernel space.
+    const TRAMPOLINE: usize = MAXVA.wrapping_sub(PGSIZE);
+    const TRAPFRAME: usize = Self::TRAMPOLINE.wrapping_sub(PGSIZE);
     /// qemu puts UART registers here in physical memory.
     const UART0: usize = 0x09000000;
     /// virtio mmio interface
@@ -39,7 +41,7 @@ impl MemLayout for MemLayoutImpl {
     /// each surrounded by invalid guard pages.
     /// TODO: change this?
     fn kstack(p: usize) -> usize {
-        MAXVA - ((p + 1) * 2 * PGSIZE)
+        Self::TRAMPOLINE - ((p + 1) * 2 * PGSIZE)
     }
 }
 
@@ -66,6 +68,3 @@ pub const VIRTIO0_IRQ: usize = 1;
 // pub const CLINT_MTIME: usize = CLINT.wrapping_add(0xbff8);
 
 // TODO: implement trampoline in ARM
-// map the trampoline page to the highest address,
-// in both user and kernel space.
-// pub const TRAMPOLINE: usize = MAXVA.wrapping_sub(PGSIZE);

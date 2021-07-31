@@ -95,6 +95,7 @@ mod param;
 mod pipe;
 mod proc;
 mod syscall;
+mod timer;
 mod util;
 mod virtio;
 mod vm;
