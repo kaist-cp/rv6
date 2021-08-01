@@ -4,13 +4,14 @@ use cortex_a::registers::*;
 use tock_registers::interfaces::{Readable, Writeable};
 
 use crate::{
-    arch::asm::{intr_get, intr_off},
+    arch::asm::{intr_get, intr_off, cpu_id},
     arch::memlayout::{MemLayoutImpl, UART0_IRQ, VIRTIO0_IRQ, TIMER0_IRQ},
     kernel::{kernel_ref, KernelRef},
     memlayout::MemLayout,
     proc::{kernel_ctx, KernelCtx, Procstate},
     arch::intr::INTERRUPT_CONTROLLER,
     arch::timer::Timer,
+    hal::hal,
 };
 
 /// In ARM.v8 architecture, interrupts are part
@@ -207,6 +208,9 @@ impl KernelRef<'_, '_> {
             Some(i) => {
                 match i {
                     TIMER0_IRQ => {
+                        if cpu_id() == 0 {
+                            self.clock_intr();
+                        }
                         // Give up the CPU if this is a timer interrupt
                         if let Some(ctx) = unsafe { self.get_ctx() } {
                             // SAFETY:
@@ -219,10 +223,12 @@ impl KernelRef<'_, '_> {
                         Timer::set_next_timer();
                     }
                     UART0_IRQ => {
+                        // SAFETY: it's unsafe only when ctrl+p is pressed.
+                        // unsafe { hal().console().intr(self) };
                         todo!()
                     }
                     VIRTIO0_IRQ => {
-                        todo!()
+                        hal().disk().pinned_lock().get_pin_mut().intr(self);
                     }
                     _ => panic!("unexpected interrupt irq={}\n", i)
                 }
@@ -235,9 +241,9 @@ impl KernelRef<'_, '_> {
     }
 
     // TODO: remove this: this is not needed
-    // fn clock_intr(self) {
-    //     let mut ticks = self.ticks().lock();
-    //     *ticks = ticks.wrapping_add(1);
-    //     ticks.wakeup(self);
-    // }
+    fn clock_intr(self) {
+        let mut ticks = self.ticks().lock();
+        *ticks = ticks.wrapping_add(1);
+        ticks.wakeup(self);
+    }
 }
