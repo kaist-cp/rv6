@@ -54,7 +54,7 @@ trampoline:
 	ldp	x24, x25, [sp, #16 * 12]
 	ldp	x26, x27, [sp, #16 * 13]
 	ldp	x28, x29, [sp, #16 * 14]
-	add	sp, sp, #S_FRAME_SIZE		
+	add	sp, sp, #272		
 	eret
 .endm
 
@@ -210,13 +210,14 @@ cur_el_spx_sync:
 	exception_1_entry
         mov	x0, #0
         bl cur_el_sp1_handler
+        exception_1_exit
 
 	.align	6
 cur_el_spx_irq:
 	exception_1_entry
 	mov	x0, #1
         bl cur_el_sp1_handler
-	# exception_1_exit
+	exception_1_exit
 
 	.align	6
 cur_el_spx_fiq:

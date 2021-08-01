@@ -6,6 +6,8 @@ use crate::{kernel::KernelRef, proc::KernelCtx};
 // }
 
 pub trait TimeManager {
+    fn init();
+
     /// The uptime since power-on of the device.
     ///
     /// This includes time consumed by firmware and bootloaders.

@@ -7,9 +7,15 @@ use crate::{kernel::KernelRef, timer::TimeManager, proc::KernelCtx};
 
 const NS_PER_S: u64 = 1_000_000_000;
 
+const TIMER_TICK_MS: u64 = 100;
+
 pub struct Timer;
 
 impl TimeManager for Timer {
+    fn init() {
+        Self::set_next_timer();
+    }
+
     /// The uptime since power-on of the device.
     ///
     /// This includes time consumed by firmware and bootloaders.
@@ -83,5 +89,13 @@ impl Timer {
         // Prevent that the counter is read ahead of time due to out-of-order execution.
         unsafe { barrier::isb(barrier::SY) };
         CNTPCT_EL0.get()
+    }
+    
+    pub fn set_next_timer() {
+        let freq = CNTFRQ_EL0.get();
+        let count = TIMER_TICK_MS * freq / 1000;
+
+        CNTV_TVAL_EL0.set(count);
+        CNTV_CTL_EL0.write(CNTV_CTL_EL0::ENABLE.val(1) + CNTV_CTL_EL0::IMASK.val(0));
     }
 }

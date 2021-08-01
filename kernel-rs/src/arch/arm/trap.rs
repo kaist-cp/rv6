@@ -9,6 +9,8 @@ use crate::{
     kernel::{kernel_ref, KernelRef},
     memlayout::MemLayout,
     proc::{kernel_ctx, KernelCtx},
+    arch::intr::INTERRUPT_CONTROLLER,
+    arch::timer::Timer,
 };
 
 /// In ARM.v8 architecture, interrupts are part
@@ -174,7 +176,7 @@ impl KernelRef<'_, '_> {
     /// current el with SP1
     unsafe fn kernel_trap_el1h(self, etype: ExceptionTypes) {
         assert!(
-            !SPSR_EL1.matches_all(SPSR_EL1::M::EL1h),
+            SPSR_EL1.matches_all(SPSR_EL1::M::EL1h),
             "kerneltrap: not from supervisor mode"
         );
         assert!(!intr_get(), "kerneltrap: interrupts enabled");
@@ -185,6 +187,7 @@ impl KernelRef<'_, '_> {
                 panic!("kerneltrap")
             }
             ExceptionTypes::IRQ => unsafe {
+
                 self.handle_irq();
             },
         }
@@ -198,7 +201,18 @@ impl KernelRef<'_, '_> {
 
     unsafe fn handle_irq(self) {
         // TODO
-        todo!()
+        let irq = INTERRUPT_CONTROLLER.fetch();
+
+        match irq {
+            Some(27) => {
+                Timer::set_next_timer();
+            }
+            Some(i) => panic!("{}", i),
+            _ => todo!()
+        }
+        if irq.is_some() {
+            INTERRUPT_CONTROLLER.finish(irq.unwrap());
+        }
     }
 
     // TODO: remove this: this is not needed

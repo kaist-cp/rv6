@@ -1,158 +1,256 @@
-//! the ARM Generic Interrupt Controller v3 (GIC v3).
-// TODO: check correctness
-use core::ptr;
+// //! the ARM Generic Interrupt Controller v3 (GIC v3).
+// This code is from https://github.com/tonnylyz/rustpie/blob/master/src/driver/aarch64_virt/gic.rs
 
-use crate::arch::memlayout::GIC;
+use tock_registers::{register_structs, registers::{ReadOnly, ReadWrite, WriteOnly}};
+use tock_registers::interfaces::{Readable, Writeable};
 
-// pub const SGI_TYPE: usize = 		1;
-// pub const PPI_TYPE: usize = 		2;
-// pub const SPI_TYPE: usize = 		3;
-// pub const GICD_CTLR: usize = 		0x000;
-// pub const GICD_TYPER: usize = 		0x004;
-// pub const GICD_IIDR: usize = 		0x008;
-// pub const GICD_IGROUP: usize = 		0x080;
-// pub const GICD_ISENABLE: usize = 		0x100;
-// pub const GICD_ICENABLE: usize = 		0x180;
-// pub const GICD_ISPEND: usize = 		0x200;
-// pub const GICD_ICPEND: usize = 		0x280;
-// pub const GICD_ISACTIVE: usize = 		0x300;
-// pub const GICD_ICACTIVE: usize = 		0x380;
-// pub const GICD_IPRIORITY: usize = 		0x400;
-// pub const GICD_ITARGET: usize = 		0x800;
-// pub const GICD_ICFG: usize = 		0xC00;
+use crate::arch::asm::cpu_id;
+use crate::arch::timer::Timer;
+use crate::timer::TimeManager;
 
-// pub const GICC_CTLR: usize = 		0x000;
-// pub const GICC_PMR: usize = 		0x004;
-// pub const GICC_BPR: usize = 		0x008;
-// pub const GICC_IAR: usize = 		0x00C;
-// pub const GICC_EOIR: usize = 		0x010;
-// pub const GICC_RPR: usize = 		0x014;
-// pub const GICC_HPPIR: usize = 		0x018;
-// pub const GICC_ABPR: usize = 		0x01C;
-// pub const GICC_AIAR: usize = 		0x020;
-// pub const GICC_AEOIR: usize = 		0x024;
-// pub const GICC_AHPPIR: usize = 		0x028;
-// pub const GICC_APR: usize = 		0x0D0;
-// pub const GICC_NSAPR: usize = 		0x0E0;
-// pub const GICC_IIDR: usize = 		0x0FC;
-// pub const GICC_DIR: usize = 		0x1000; /* v2 only */
-// #[inline]
-// fn gicd_reg(offset: usize) -> usize {
-//     GIC.wrapping_add(offset)
-// }
+const GIC_INTERRUPT_NUM: usize = 1024;
+const GIC_SGI_NUM: usize = 16;
+const GIC_1_BIT_NUM: usize = GIC_INTERRUPT_NUM / 32;
+const GIC_8_BIT_NUM: usize = GIC_INTERRUPT_NUM * 8 / 32;
+const GIC_2_BIT_NUM: usize = GIC_INTERRUPT_NUM * 2 / 32;
 
-// #[inline]
-// fn gicc_reg(offset: usize) -> usize {
-//     GIC.wrapping_add(0x10000).wrapping_add(offset)
-// }
+const GICD_BASE: usize = 0x08000000;
+const GICC_BASE: usize = 0x08010000;
 
-// Distributor
-const GICD_BASE: u64 = GIC as u64; // TODO: board-dependent value
-const GICD_CTLR: *mut u32 = GICD_BASE as *mut u32;
-const GICD_ISENABLER: *mut u32 = (GICD_BASE + 0x0100) as *mut u32;
-// const GICD_ICENABLER: *mut u32 = (GICD_BASE + 0x0180) as *mut u32;
-const GICD_ICPENDR: *mut u32 = (GICD_BASE + 0x0280) as *mut u32;
-const GICD_ITARGETSR: *mut u32 = (GICD_BASE + 0x0800) as *mut u32;
-const GICD_IPRIORITYR: *mut u32 = (GICD_BASE + 0x0400) as *mut u32;
-const GICD_ICFGR: *mut u32 = (GICD_BASE + 0x0c00) as *mut u32;
+register_structs! {
+  #[allow(non_snake_case)]
+  GicDistributorBlock {
+    (0x0000 => CTLR: ReadWrite<u32>),
+    (0x0004 => TYPER: ReadOnly<u32>),
+    (0x0008 => IIDR: ReadOnly<u32>),
+    (0x000c => _reserved_0),
+    (0x0080 => IGROUPR: [ReadWrite<u32>; GIC_1_BIT_NUM]),
+    (0x0100 => ISENABLER: [ReadWrite<u32>; GIC_1_BIT_NUM]),
+    (0x0180 => ICENABLER: [ReadWrite<u32>; GIC_1_BIT_NUM]),
+    (0x0200 => ISPENDR: [ReadWrite<u32>; GIC_1_BIT_NUM]),
+    (0x0280 => ICPENDR: [ReadWrite<u32>; GIC_1_BIT_NUM]),
+    (0x0300 => ISACTIVER: [ReadWrite<u32>; GIC_1_BIT_NUM]),
+    (0x0380 => ICACTIVER: [ReadWrite<u32>; GIC_1_BIT_NUM]),
+    (0x0400 => IPRIORITYR: [ReadWrite<u32>; GIC_8_BIT_NUM]),
+    (0x0800 => ITARGETSR: [ReadWrite<u32>; GIC_8_BIT_NUM]),
+    (0x0c00 => ICFGR: [ReadWrite<u32>; GIC_2_BIT_NUM]),
+    (0x0d00 => _reserved_1),
+    (0x0e00 => NSACR: [ReadWrite<u32>; GIC_2_BIT_NUM]),
+    (0x0f00 => SGIR: WriteOnly<u32>),
+    (0x0f04 => _reserved_2),
+    (0x0f10 => CPENDSGIR: [ReadWrite<u32>; GIC_SGI_NUM * 8 / 32]),
+    (0x0f20 => SPENDSGIR: [ReadWrite<u32>; GIC_SGI_NUM * 8 / 32]),
+    (0x0f30 => _reserved_3),
+    (0x1000 => @END),
+  }
+}
 
-const GICD_CTLR_ENABLE: u32 = 1;
-// const GICD_CTLR_DISABLE: u32 = 0;
-// const GICD_ICENABLER_SIZE: u32 = 32;
-const GICD_ISENABLER_SIZE: u32 = 32;
-const GICD_ICPENDR_SIZE: u32 = 32;
-const GICD_ITARGETSR_SIZE: u32 = 4; // number of interrupts controlled by the register
-const GICD_ITARGETSR_BITS: u32 = 8; // number of bits per interrupt
+struct GicDistributor {
+  base_addr: usize,
+}
 
-const GICD_IPRIORITY_SIZE: u32 = 4;
-const GICD_IPRIORITY_BITS: u32 = 8;
-const GICD_ICFGR_SIZE: u32 = 16;
-const GICD_ICFGR_BITS: u32 = 2;
+impl core::ops::Deref for GicDistributor {
+  type Target = GicDistributorBlock;
 
-// CPU
-const GICC_BASE: u64 = GICD_BASE + 0x10000; // TODO: board-dependent value
-const GICC_CTLR: *mut u32 = GICC_BASE as *mut u32;
-const GICC_PMR: *mut u32 = (GICC_BASE + 0x0004) as *mut u32;
-const GICC_BPR: *mut u32 = (GICC_BASE + 0x0008) as *mut u32;
-const GICC_CTLR_ENABLE: u32 = 1;
-// const GICC_CTLR_DISABLE: u32 = 0;
+  fn deref(&self) -> &Self::Target {
+    unsafe { &*self.ptr() }
+  }
+}
 
-const GICC_PMR_PRIO_LOW: u32 = 0xff;
-// const GICC_PMR_PRIO_HIGH: u32 = 0x00;
+register_structs! {
+  #[allow(non_snake_case)]
+  GicCpuInterfaceBlock {
+    (0x0000 => CTLR: ReadWrite<u32>),   // CPU Interface Control Register
+    (0x0004 => PMR: ReadWrite<u32>),    // Interrupt Priority Mask Register
+    (0x0008 => BPR: ReadWrite<u32>),    // Binary Point Register
+    (0x000c => IAR: ReadOnly<u32>),     // Interrupt Acknowledge Register
+    (0x0010 => EOIR: WriteOnly<u32>),   // End of Interrupt Register
+    (0x0014 => RPR: ReadOnly<u32>),     // Running Priority Register
+    (0x0018 => HPPIR: ReadOnly<u32>),   // Highest Priority Pending Interrupt Register
+    (0x001c => ABPR: ReadWrite<u32>),   // Aliased Binary Point Register
+    (0x0020 => AIAR: ReadOnly<u32>),    // Aliased Interrupt Acknowledge Register
+    (0x0024 => AEOIR: WriteOnly<u32>),  // Aliased End of Interrupt Register
+    (0x0028 => AHPPIR: ReadOnly<u32>),  // Aliased Highest Priority Pending Interrupt Register
+    (0x002c => _reserved_0),
+    (0x00d0 => APR: [ReadWrite<u32>; 4]),    // Active Priorities Register
+    (0x00e0 => NSAPR: [ReadWrite<u32>; 4]),  // Non-secure Active Priorities Register
+    (0x00f0 => _reserved_1),
+    (0x00fc => IIDR: ReadOnly<u32>),    // CPU Interface Identification Register
+    (0x0100 => _reserved_2),
+    (0x1000 => DIR: WriteOnly<u32>),    // Deactivate Interrupt Register
+    (0x1004 => _reserved_3),
+    (0x2000 => @END),
+  }
+}
 
-const GICC_BPR_NO_GROUP: u32 = 0x00;
+struct GicCpuInterface {
+  base_addr: usize,
+}
 
-pub const ICFGR_EDGE: u32 = 2;
+impl core::ops::Deref for GicCpuInterface {
+  type Target = GicCpuInterfaceBlock;
+
+  fn deref(&self) -> &Self::Target {
+    unsafe { &*self.ptr() }
+  }
+}
+
+impl GicCpuInterface {
+  const fn new(base_addr: usize) -> Self {
+    GicCpuInterface { base_addr }
+  }
+
+  fn ptr(&self) -> *const GicCpuInterfaceBlock {
+    self.base_addr as *const _
+  }
+
+  fn init(&self) {
+    self.PMR.set(u32::MAX);
+    self.CTLR.set(1);
+  }
+}
+
+impl GicDistributor {
+  const fn new(base_addr: usize) -> Self {
+    GicDistributor { base_addr }
+  }
+
+  fn ptr(&self) -> *const GicDistributorBlock {
+    self.base_addr as *const _
+  }
+
+  fn init(&self) {
+    let max_spi = (self.TYPER.get() & 0b11111) * 32 + 1;
+    for i in 1usize..(max_spi as usize / 32) {
+      self.ICENABLER[i].set(u32::MAX);
+      self.ICPENDR[i].set(u32::MAX);
+      self.ICACTIVER[i].set(u32::MAX);
+    }
+    for i in 8usize..(max_spi as usize * 8 / 32) {
+      self.IPRIORITYR[i].set(u32::MAX);
+      self.ITARGETSR[i].set(u32::MAX);
+    }
+    self.CTLR.set(1);
+  }
+
+  fn init_per_core(&self) {
+    self.ICENABLER[0].set(u32::MAX);
+    self.ICPENDR[0].set(u32::MAX);
+    self.ICACTIVER[0].set(u32::MAX);
+    for i in 0..4 {
+      self.CPENDSGIR[i].set(u32::MAX);
+    }
+    for i in 0..8 {
+      self.IPRIORITYR[i].set(u32::MAX);
+    }
+  }
+
+  fn set_enable(&self, int: usize) {
+    let idx = int / 32;
+    let bit = 1u32 << (int % 32);
+    self.ISENABLER[idx].set(bit);
+  }
+
+  fn clear_enable(&self, int: usize) {
+    let idx = int / 32;
+    let bit = 1u32 << (int % 32);
+    self.ICENABLER[idx].set(bit);
+  }
+
+  fn set_target(&self, int: usize, target: u8) {
+    let idx = (int * 8) / 32;
+    let offset = (int * 8) % 32;
+    let mask: u32 = 0b11111111 << offset;
+    let prev = self.ITARGETSR[idx].get();
+    self.ITARGETSR[idx].set((prev & (!mask)) | (((target as u32) << offset) & mask));
+  }
+
+  fn set_priority(&self, int: usize, priority: u8) {
+    let idx = (int * 8) / 32;
+    let offset = (int * 8) % 32;
+    let mask: u32 = 0b11111111 << offset;
+    let prev = self.IPRIORITYR[idx].get();
+    self.IPRIORITYR[idx].set((prev & (!mask)) | (((priority as u32) << offset) & mask));
+  }
+
+  fn set_config(&self, int: usize, edge: bool) {
+    let idx = (int * 2) / 32;
+    let offset = (int * 2) % 32;
+    let mask: u32 = 0b11 << offset;
+    let prev = self.ICFGR[idx].get();
+    self.ICFGR[idx].set((prev & (!mask)) | ((if edge {0b10} else {0b00} << offset) & mask));
+  }
+}
+
+static GICD: GicDistributor = GicDistributor::new(GICD_BASE);
+static GICC: GicCpuInterface = GicCpuInterface::new(GICC_BASE);
+
+pub struct Gic;
+
+impl Gic {
+  pub fn init(&self) {
+    let core_id = cpu_id();
+    let gicd = &GICD;
+    if core_id == 0 {
+      gicd.init();
+    }
+    let gicc = &GICC;
+    gicd.init_per_core();
+    gicc.init();
+  }
+
+  pub fn enable(&self, int: Interrupt) {
+    let core_id = cpu_id();
+    let gicd = &GICD;
+    gicd.set_enable(int);
+    gicd.set_priority(int, 0x7f);
+    if int >= 32 {
+      gicd.set_config(int, true);
+    }
+    gicd.set_target(int, (1 << core_id) as u8);
+  }
+
+  pub fn disable(&self, int: Interrupt) {
+    let gicd = &GICD;
+    gicd.clear_enable(int);
+  }
+
+  pub fn fetch(&self) -> Option<Interrupt> {
+    let gicc = &GICC;
+    let i = gicc.IAR.get();
+    if i >= 1022 {
+      None
+    } else {
+      Some(i as Interrupt)
+    }
+  }
+
+  pub fn finish(&self, int: Interrupt) {
+    let gicc = &GICC;
+    gicc.EOIR.set(int as u32);
+  }
+}
+
+pub const INT_TIMER: Interrupt = 27; // virtual timer
+
+pub static INTERRUPT_CONTROLLER: Gic = Gic {};
+
+pub type Interrupt = usize;
 
 pub unsafe fn intr_init() {
-    unsafe {
-        ptr::write_volatile(GICD_CTLR, GICD_CTLR_ENABLE);
-        ptr::write_volatile(GICC_CTLR, GICC_CTLR_ENABLE);
-        ptr::write_volatile(GICC_PMR, GICC_PMR_PRIO_LOW);
-        ptr::write_volatile(GICC_BPR, GICC_BPR_NO_GROUP);
-    }
+    // INTERRUPT_CONTROLLER.init();
+    
+    // virtio_blk
+    INTERRUPT_CONTROLLER.enable(0x10 + 32);
+
+    // pl011 uart
+    INTERRUPT_CONTROLLER.enable(0x1 + 32);
 }
 
 pub unsafe fn intr_init_core() {
-    todo!()
-}
-
-pub unsafe fn enable(interrupt: u32) {
-    unsafe {
-        ptr::write_volatile(
-            GICD_ISENABLER.add((interrupt / GICD_ISENABLER_SIZE) as usize),
-            1 << (interrupt % GICD_ISENABLER_SIZE),
-        );
-    }
-}
-
-// pub fn disable(interrupt: u32) {
-//     unsafe {
-//         ptr::write_volatile(
-//             GICD_ICENABLER.add((interrupt / GICD_ICENABLER_SIZE) as usize),
-//             1 << (interrupt % GICD_ICENABLER_SIZE)
-//         );
-//     }
-// }
-
-pub fn clear(interrupt: u32) {
-    unsafe {
-        ptr::write_volatile(
-            GICD_ICPENDR.add((interrupt / GICD_ICPENDR_SIZE) as usize),
-            1 << (interrupt % GICD_ICPENDR_SIZE),
-        );
-    }
-}
-
-pub fn set_core(interrupt: u32, core: u32) {
-    let shift: u32 = (interrupt % GICD_ITARGETSR_SIZE) * GICD_ITARGETSR_BITS;
-    unsafe {
-        let addr: *mut u32 = GICD_ITARGETSR.add((interrupt / GICD_ITARGETSR_SIZE) as usize);
-        let mut value: u32 = ptr::read_volatile(addr);
-        value &= !(0xff << shift);
-        value |= core << shift;
-        ptr::write_volatile(addr, value);
-    }
-}
-
-pub fn set_priority(interrupt: u32, priority: u32) {
-    let shift = (interrupt % GICD_IPRIORITY_SIZE) * GICD_IPRIORITY_BITS;
-    unsafe {
-        let addr: *mut u32 = GICD_IPRIORITYR.add((interrupt / GICD_IPRIORITY_SIZE) as usize);
-        let mut value: u32 = ptr::read_volatile(addr);
-        value &= !(0xff << shift);
-        value |= priority << shift;
-        ptr::write_volatile(addr, value);
-    }
-}
-
-pub fn set_config(interrupt: u32, config: u32) {
-    let shift = (interrupt % GICD_ICFGR_SIZE) * GICD_ICFGR_BITS;
-    unsafe {
-        let addr: *mut u32 = GICD_ICFGR.add((interrupt / GICD_ICFGR_SIZE) as usize);
-        let mut value: u32 = ptr::read_volatile(addr);
-        value &= !(0x03 << shift);
-        value |= config << shift;
-        ptr::write_volatile(addr, value);
-    }
+    use cortex_a::registers::*;
+    DAIF.set(DAIF::I::Masked.into());
+    INTERRUPT_CONTROLLER.init();
+    INTERRUPT_CONTROLLER.enable(27);
+    Timer::init();
 }
