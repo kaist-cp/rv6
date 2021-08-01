@@ -52,9 +52,9 @@ impl MemLayout for MemLayoutImpl {
 /// qemu puts Arm generic Interrupt controller (GIC) here.
 pub const GIC: usize = 0x08000000;
 
-// TODO: need these in ARM?
-pub const UART0_IRQ: usize = 10;
-pub const VIRTIO0_IRQ: usize = 1;
+pub const TIMER0_IRQ: usize = 27;
+pub const UART0_IRQ: usize = 33;
+pub const VIRTIO0_IRQ: usize = 48;
 
 // TODO: change this to its counterpart in ARM
 // core local interruptor (CLINT), which contains the timer.

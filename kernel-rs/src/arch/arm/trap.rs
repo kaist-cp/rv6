@@ -4,11 +4,11 @@ use cortex_a::registers::*;
 use tock_registers::interfaces::{Readable, Writeable};
 
 use crate::{
-    arch::asm::intr_get,
-    arch::memlayout::MemLayoutImpl,
+    arch::asm::{intr_get, intr_off},
+    arch::memlayout::{MemLayoutImpl, UART0_IRQ, VIRTIO0_IRQ, TIMER0_IRQ},
     kernel::{kernel_ref, KernelRef},
     memlayout::MemLayout,
-    proc::{kernel_ctx, KernelCtx},
+    proc::{kernel_ctx, KernelCtx, Procstate},
     arch::intr::INTERRUPT_CONTROLLER,
     arch::timer::Timer,
 };
@@ -140,7 +140,7 @@ impl KernelCtx<'_, '_> {
         // We're about to switch the destination of traps from
         // kerneltrap() to usertrap(), so turn off interrupts until
         // we're back in user space, where usertrap() is correct.
-        // intr_off();
+        intr_off();
 
         // kernel page table
         self.proc_mut().trap_frame_mut().kernel_satp = VBAR_EL1.get() as usize;
@@ -204,11 +204,30 @@ impl KernelRef<'_, '_> {
         let irq = INTERRUPT_CONTROLLER.fetch();
 
         match irq {
-            Some(27) => {
-                Timer::set_next_timer();
+            Some(i) => {
+                match i {
+                    TIMER0_IRQ => {
+                        // Give up the CPU if this is a timer interrupt
+                        if let Some(ctx) = unsafe { self.get_ctx() } {
+                            // SAFETY:
+                            // Reading state without lock is safe because `proc_yield` and `sched`
+                            // is called after we check if current process is `RUNNING`.
+                            if unsafe { (*ctx.proc().info.get_mut_raw()).state } == Procstate::RUNNING {
+                                ctx.yield_cpu();
+                            }
+                        }
+                        Timer::set_next_timer();
+                    }
+                    UART0_IRQ => {
+                        todo!()
+                    }
+                    VIRTIO0_IRQ => {
+                        todo!()
+                    }
+                    _ => panic!("unexpected interrupt irq={}\n", i)
+                }
             }
-            Some(i) => panic!("{}", i),
-            _ => todo!()
+            _ => panic!("unknown irq")
         }
         if irq.is_some() {
             INTERRUPT_CONTROLLER.finish(irq.unwrap());
