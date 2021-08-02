@@ -144,7 +144,7 @@ impl KernelCtx<'_, '_> {
         intr_off();
 
         // kernel page table
-        self.proc_mut().trap_frame_mut().kernel_satp = VBAR_EL1.get() as usize;
+        self.proc_mut().trap_frame_mut().kernel_satp = TTBR0_EL1.get() as usize;
 
         // Tell trampoline.S the user page table to switch to.
         let user_table = self.proc().memory().page_table_addr();
@@ -224,8 +224,7 @@ impl KernelRef<'_, '_> {
                     }
                     UART0_IRQ => {
                         // SAFETY: it's unsafe only when ctrl+p is pressed.
-                        // unsafe { hal().console().intr(self) };
-                        todo!()
+                        unsafe { hal().console().intr(self) };
                     }
                     VIRTIO0_IRQ => {
                         hal().disk().pinned_lock().get_pin_mut().intr(self);

@@ -3,10 +3,12 @@
 
 use tock_registers::{register_structs, registers::{ReadOnly, ReadWrite, WriteOnly}};
 use tock_registers::interfaces::{Readable, Writeable};
+use cortex_a::registers::*;
 
 use crate::arch::asm::cpu_id;
 use crate::arch::timer::Timer;
 use crate::timer::TimeManager;
+use crate::arch::memlayout::{TIMER0_IRQ, UART0_IRQ, VIRTIO0_IRQ};
 
 const GIC_INTERRUPT_NUM: usize = 1024;
 const GIC_SGI_NUM: usize = 16;
@@ -238,19 +240,19 @@ pub static INTERRUPT_CONTROLLER: Gic = Gic {};
 pub type Interrupt = usize;
 
 pub unsafe fn intr_init() {
-    // INTERRUPT_CONTROLLER.init();
-    
+    DAIF.set(DAIF::I::Masked.into());
+    INTERRUPT_CONTROLLER.init();
+
     // virtio_blk
-    INTERRUPT_CONTROLLER.enable(0x10 + 32);
+    INTERRUPT_CONTROLLER.enable(VIRTIO0_IRQ);
 
     // pl011 uart
-    INTERRUPT_CONTROLLER.enable(0x1 + 32);
+    INTERRUPT_CONTROLLER.enable(UART0_IRQ);
 }
 
 pub unsafe fn intr_init_core() {
-    use cortex_a::registers::*;
     DAIF.set(DAIF::I::Masked.into());
     INTERRUPT_CONTROLLER.init();
-    INTERRUPT_CONTROLLER.enable(27);
+    INTERRUPT_CONTROLLER.enable(TIMER0_IRQ);
     Timer::init();
 }
