@@ -20,6 +20,7 @@ use crate::{
     arch::asm::intr_on,
     arch::memlayout::MemLayoutImpl,
     arch::proc::INITCODE,
+    arch::proc::UserProcInitImpl,
     fs::FileSystem,
     hal::hal,
     kalloc::Kmem,
@@ -51,6 +52,11 @@ pub struct Procs {
     wait_lock: SpinLock<()>,
     #[pin]
     _marker: PhantomPinned,
+}
+
+pub trait UserProcInit {
+    /// Initialize regiters for running first user process.
+    fn init_reg(trap_frame: &mut TrapFrame);
 }
 
 /// A branded reference to a `Procs`.
@@ -129,6 +135,10 @@ impl Procs {
             // User stack pointer.
             // SAFETY: trap_frame has been initialized by alloc.
             unsafe { (*data.trap_frame).sp = PGSIZE };
+
+            unsafe {
+                UserProcInitImpl::init_reg(&mut *data.trap_frame);
+            }
 
             let name = b"initcode\x00";
             (&mut data.name[..name.len()]).copy_from_slice(name);

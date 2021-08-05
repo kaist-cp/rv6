@@ -1,21 +1,28 @@
+use crate::proc::UserProcInit;
+
 /// A user program that calls exec("/init").
 /// od -t xC initcode
 pub const INITCODE: [u8; 80] = [
-    0x01, 0x02, 0, 0x58, 0x22, 0x02, 0, 0x58, 0xe0, 0, 0x80, 0xd2, 0x01, 0, 0, 0xd4, 0x40, 0, 0x80,
+    0, 0x02, 0, 0x58, 0x21, 0x02, 0, 0x58, 0xe7, 0, 0x80, 0xd2, 0x01, 0, 0, 0xd4, 0x47, 0, 0x80,
     0xd2, 0x01, 0, 0, 0xd4, 0xfe, 0xff, 0xff, 0x17, 0x2f, 0x69, 0x6e, 0x69, 0x74, 0, 0, 0, 0x1f,
     0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1c, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0x1c, 0, 0, 0, 0, 0, 0, 0, 0x30, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-// TODO: add indexes, sholud we add kernel info here?
+// TODO: add indexes
 #[derive(Copy, Clone)]
 pub struct TrapFrame {
     /// kernel page table (satp: Supervisor Address Translation and Protection)
     pub kernel_satp: usize,
+    pub kernel_sp: usize,
     pub spsr: usize,
-    pub sp: usize, // user mode sp
-    pub pc: usize, // user mode pc (elr_el1)
 
+    /// 24 - usertrap()
+    pub kernel_trap: usize,
+    pub pc: usize, // user mode pc (elr_el1)
+    pub sp: usize, // user mode sp
+    
+    /// 48
     pub r0: usize,
     pub r1: usize,
     pub r2: usize,
@@ -162,5 +169,13 @@ impl Context {
     /// Set return register (lr)
     pub fn set_ret_addr(&mut self, val: usize) {
         self.lr = val
+    }
+}
+
+pub struct UserProcInitImpl;
+
+impl UserProcInit for UserProcInitImpl {
+    fn init_reg(trap_frame: &mut TrapFrame) {
+        trap_frame.spsr = 0;
     }
 }

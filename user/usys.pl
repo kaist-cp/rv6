@@ -23,14 +23,10 @@ elsif($target eq "arm") {
         my $name = shift;
         print ".global $name\n";
         print "${name}:\n";
-    	print " STR x4, [sp, #-0x08]!\n";
-        print " MOV x4, x3\n";
-        print " MOV x3, x2\n";
-        print " MOV x2, x1\n";
-        print " MOV x1, x0\n";
-        print " MOV x0, #SYS_${name}\n";
+    	print " STR x7, [sp, #-0x08]!\n";
+        print " MOV x7, #SYS_${name}\n";
         print " SVC 0x00\n";
-        print " LDR x4, [sp], #0x08\n";
+        print " LDR x7, [sp], #0x08\n";
         print " br x30;	//lr = x30\n";
     }
 }

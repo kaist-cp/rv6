@@ -60,18 +60,20 @@ trampoline:
 
 .macro	exception_0_entry
 
+        // use TTBR1_EL1 as a scratch register, since
+        // we don't use it.
+        msr     ttbr1_el1, x0
+
         /* assign TRAPFRAME address (fixed) to x0
-        TODO: replace this with macro? */
-        str     x0, [sp], #-8
+        TODO: make this macro */
         movz    x0, #0xe000
         movk    x0, #0xffff, lsl #16
         movk    x0, #0x3f, lsl #32
 
         // save the user registers in TRAPFRAME
-        stp     x1, x2, [x0, #40]
-        stp     x3, x4,  [x0, #56]
-        stp     x5, x6,  [x0, #72]
-        stp     x7, x8,  [x0, #88]
+        stp     x1, x2, [x0, #56]
+        stp     x3, x4,  [x0, #72]
+        stp     x5, x6,  [x0, #88]
         stp     x7, x8,  [x0, #104]
         stp     x9, x10,  [x0, #120]
         stp     x11, x12,  [x0, #136]
@@ -85,19 +87,36 @@ trampoline:
         stp     x27, x28,  [x0, #264]
         stp     x29, x30,  [x0, #280]
 	
-        mrs     x21, sp_el0             /* SP: user stack */
-	mrs	x22, elr_el1            /* ELR (user mode pc) */
+	mrs	x21, elr_el1            /* ELR (user mode pc) */
+        mrs     x22, sp_el0             /* SP: user stack */
 	mrs	x23, spsr_el1           /* SPSR */
 
-	stp	x21, x22, [x0, #16]     /* SP, ELR */
-	str	x23, [x0, #8]           /* SPSR */
+	stp	x21, x22, [x0, #32]     /* ELR(pc), SP */
+	str	x23, [x0, #16]          /* SPSR */
 
-        ldr     x24, [sp], #-8
-        str     x24, [x0, #32]               /* store x0 */
+        mrs     x24, ttbr1_el1 
+        str     x24, [x0, #48]               /* store x0 */
+        msr     ttbr1_el1, xzr
         
+        # restore kernel stack pointer from p->trapframe->kernel_sp
+        ldr     x24, [x0, #8]
+        mov     sp, x24
+
+        # load the address of usertrap(), p->trapframe->kernel_trap
+        ldr     x1, [x0, #24]
+
         # restore kernel page table from p->trapframe->kernel_satp
         ldr     x24, [x0]
         msr     ttbr0_el1, x24
+
+        # flush all the caches
+        # TODO: make this macro
+        isb     sy
+        dsb     sy
+        dsb     ishst
+        tlbi    vmalle1is
+        dsb     ish
+        isb
 .endm
 
 /* Exception vectors */
@@ -146,33 +165,40 @@ userret:
 
         # switch to the user page table.
         msr ttbr0_el1, x1
+        # TODO: replace this with macro
+        isb     sy
+        dsb     sy
+        dsb     ishst
+        tlbi    vmalle1is
+        dsb     ish
         isb
 
         # restore ELR, SPSR, LR, SP
-	ldp	x21, x22, [x0, #8]       /* SPSR, SP */ 
-	ldr	x23, [x0, #24]           /* ELR */
+	ldp	x21, x22, [x0, #32]      /* ELR, SP */ 
+	ldr	x23, [x0, #16]           /* SPSR */
 
-	msr	spsr_el1, x21            /* SPSR */
+	msr	elr_el1, x21             /* ELR */
 	msr     sp_el0, x22              /* SP */
-	msr	elr_el1, x23             /* ELR */
+	msr	spsr_el1, x23            /* SPSR */
 
         # restore all but a0 from TRAPFRAME
-	ldp	x1, x2, [x0, #40]
-	ldp	x3, x4, [x0, #56]
-	ldp	x5, x6, [x0, #72]
-	ldp	x7, x8, [x0, #88]
-	ldp	x9, x10, [x0, #104]
-	ldp	x11, x12, [x0, #120]
-	ldp	x13, x14, [x0, #136]
-	ldp	x15, x16, [x0, #152]
-	ldp	x17, x18, [x0, #168]
-	ldp	x19, x20, [x0, #184]
-	ldp	x21, x22, [x0, #200]
-	ldp	x23, x24, [x0, #216]
-	ldp	x25, x26, [x0, #232]
-	ldp	x27, x28, [x0, #248]
-	ldp	x29, x30, [x0, #264]
-        ldr     x0, [x0, #32]
+	ldp	x1, x2, [x0, #56]
+	ldp	x3, x4, [x0, #72]
+	ldp	x5, x6, [x0, #88]
+	ldp	x7, x8, [x0, #104]
+	ldp	x9, x10, [x0, #120]
+	ldp	x11, x12, [x0, #136]
+	ldp	x13, x14, [x0, #152]
+	ldp	x15, x16, [x0, #168]
+	ldp	x17, x18, [x0, #184]
+	ldp	x19, x20, [x0, #200]
+	ldp	x21, x22, [x0, #216]
+	ldp	x23, x24, [x0, #232]
+	ldp	x25, x26, [x0, #248]
+	ldp	x27, x28, [x0, #264]
+	ldp	x29, x30, [x0, #280]
+        ldr     x0, [x0, #48]
+
 	eret
 
 
@@ -237,25 +263,31 @@ cur_el_spx_error:
 lower_el_aarch64_sync:
 	exception_0_entry
         mov	x0, #0
-	bl	usertrap
+        # jump to usertrap(), which does not return
+	br	x1
+        b       .
 
 	.align	6
 lower_el_aarch64_irq:
         exception_0_entry
         mov	x0, #1
-	bl	usertrap
+        # jump to usertrap(), which does not return
+	br	x1
+        b       .
 
 	.align	6
 lower_el_aarch64_fiq:
         exception_0_entry
         mov	x0, #2
-	bl	usertrap
+        # jump to usertrap(), which does not return
+	br	x1
         b       .
 
 	.align	6
 lower_el_aarch64_error:
         exception_0_entry
         mov	x0, #3
-	bl	usertrap
+        # jump to usertrap(), which does not return
+	br	x1
 	b	.
 

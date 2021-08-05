@@ -44,7 +44,6 @@ bitflags! {
         const UXN = 1 << 54;
         /// Privileged execute-never, stage 1 only
         const PXN = 1 << 53;
-        const ESSENTIAL = Self::V.bits() | Self::NON_SECURE_PA.bits() | Self::ACCESS_FLAG.bits();
 
         // TODO: are these necessary?
         const MEM_ATTR_IDX_0 = (0 << 2);
@@ -117,17 +116,18 @@ impl PageTableEntry for PageTableEntryImpl {
     }
 
     fn is_table(&self) -> bool {
-        self.is_valid() && self.flag_intersects(Self::EntryFlags::TABLE)
+        self.is_valid() && self.flag_intersects(Self::EntryFlags::TABLE) && !self.flag_intersects(Self::EntryFlags::ACCESS_FLAG)
     }
 
     fn is_data(&self) -> bool {
-        self.is_valid() && !self.flag_intersects(Self::EntryFlags::TABLE)
+        self.is_valid() && self.flag_intersects(Self::EntryFlags::PAGE 
+            | Self::EntryFlags::ACCESS_FLAG)
     }
 
     /// Make the entry refer to a given page-table page.
     fn set_table(&mut self, page: *mut RawPageTable) {
         self.inner = pa2pte((page as usize).into())
-            | Self::EntryFlags::ESSENTIAL.bits()
+            | Self::EntryFlags::V.bits()
             | Self::EntryFlags::TABLE.bits();
     }
 
@@ -137,8 +137,10 @@ impl PageTableEntry for PageTableEntryImpl {
     fn set_entry(&mut self, pa: PAddr, perm: Self::EntryFlags) {
         // assert!(perm.intersects(Self::EntryFlags::R | Self::EntryFlags::W | Self::EntryFlags::X));
         self.inner = pa2pte(pa)
-            | (perm | Self::EntryFlags::ESSENTIAL).bits()
-            | Self::EntryFlags::PAGE.bits();
+            | (perm | Self::EntryFlags::V
+            | Self::EntryFlags::NON_SECURE_PA
+            | Self::EntryFlags::ACCESS_FLAG
+            | Self::EntryFlags::PAGE).bits();
     }
 
     /// Make the entry inaccessible by user processes by clearing Self::EntryFlags::U.
@@ -242,7 +244,7 @@ impl PageInit for PageInitImpl {
 
     unsafe fn switch_page_table_and_enable_mmu(page_table_base: usize) {
         // We don't use upper VA space
-        // TTBR1_EL1.set_baddr(self.page_table.as_usize() as u64);
+        // TTBR1_EL1.set_baddr(page_table_base as u64);
 
         // register page table
         TTBR0_EL1.set_baddr(page_table_base as u64);

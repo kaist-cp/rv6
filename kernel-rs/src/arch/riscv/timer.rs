@@ -3,6 +3,10 @@ use crate::{kernel::KernelRef, proc::KernelCtx, timer::TimeManager};
 pub struct Timer;
 
 impl TimeManager for Timer {
+    fn init() {
+        // nothing to do
+    }
+
     /// The uptime since power-on of the device.
     ///
     /// This includes time consumed by firmware and bootloaders.

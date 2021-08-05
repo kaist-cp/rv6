@@ -4,14 +4,16 @@ use cortex_a::registers::*;
 use tock_registers::interfaces::{Readable, Writeable};
 
 use crate::{
-    arch::asm::{intr_get, intr_off, cpu_id},
+    arch::asm::{intr_get, intr_off, intr_on, cpu_id},
     arch::memlayout::{MemLayoutImpl, UART0_IRQ, VIRTIO0_IRQ, TIMER0_IRQ},
     kernel::{kernel_ref, KernelRef},
+    addr::PGSIZE,
     memlayout::MemLayout,
     proc::{kernel_ctx, KernelCtx, Procstate},
     arch::intr::INTERRUPT_CONTROLLER,
     arch::timer::Timer,
     hal::hal,
+    ok_or,
 };
 
 /// In ARM.v8 architecture, interrupts are part
@@ -99,16 +101,30 @@ pub unsafe extern "C" fn cur_el_sp1_handler(etype: usize) {
 
 impl KernelCtx<'_, '_> {
     /// `user_trap` can be reached only from the user mode, so it is a method of `KernelCtx`.
-    unsafe fn user_trap(self, etype: ExceptionTypes) -> ! {
+    unsafe fn user_trap(mut self, etype: ExceptionTypes) -> ! {
         assert!(
             SPSR_EL1.matches_all(SPSR_EL1::M::EL0t),
             "usertrap: not from user mode(EL0)"
         );
+
+        VBAR_EL1.set(vectors as _);
+
+
+        self.proc_mut().trap_frame_mut().pc = ELR_EL1.get() as _;
+
         match etype {
             ExceptionTypes::SyncException => {
                 if ESR_EL1.matches_all(ESR_EL1::EC::SVC64) {
                     // system call
-                    todo!()
+
+                    if self.proc().killed() {
+                        self.kernel().procs().exit_current(-1, &mut self);
+                    }
+
+                    unsafe { intr_on() };
+
+                    let syscall_no = self.proc_mut().trap_frame_mut().r7 as i32;
+                    self.proc_mut().trap_frame_mut().r0 = ok_or!(self.syscall(syscall_no), usize::MAX);
                 } else if ESR_EL1
                     .matches_any(ESR_EL1::EC::DataAbortLowerEL + ESR_EL1::EC::InstrAbortLowerEL)
                 {
@@ -143,8 +159,15 @@ impl KernelCtx<'_, '_> {
         // we're back in user space, where usertrap() is correct.
         intr_off();
 
+        // Send syscalls, interrupts, and exceptions to trampoline.S.
+        VBAR_EL1.set(MemLayoutImpl::TRAMPOLINE as u64);
+
         // kernel page table
         self.proc_mut().trap_frame_mut().kernel_satp = TTBR0_EL1.get() as usize;
+
+        self.proc_mut().trap_frame_mut().kernel_trap = usertrap as usize;
+
+        self.proc_mut().trap_frame_mut().kernel_sp = self.proc_mut().deref_mut_data().kstack + PGSIZE;
 
         // Tell trampoline.S the user page table to switch to.
         let user_table = self.proc().memory().page_table_addr();

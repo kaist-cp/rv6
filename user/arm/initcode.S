@@ -6,13 +6,13 @@
 
 # exec(init, argv)
 start:
-    LDR     x1, =init
-    LDR     x2, =argv
-    MOV     x0, #SYS_exec
+    LDR     x0, =init
+    LDR     x1, =argv
+    MOV     x7, #SYS_exec
     SVC     0x00
 
 exit:
-    MOV     x0, #SYS_exit
+    MOV     x7, #SYS_exit
     SVC     0x00
     B       exit
 

@@ -8,7 +8,7 @@ use cortex_a::registers::*;
 use crate::arch::asm::cpu_id;
 use crate::arch::timer::Timer;
 use crate::timer::TimeManager;
-use crate::arch::memlayout::{TIMER0_IRQ, UART0_IRQ, VIRTIO0_IRQ};
+use crate::arch::memlayout::{UART0_IRQ, VIRTIO0_IRQ};
 
 const GIC_INTERRUPT_NUM: usize = 1024;
 const GIC_SGI_NUM: usize = 16;
@@ -239,20 +239,22 @@ pub static INTERRUPT_CONTROLLER: Gic = Gic {};
 
 pub type Interrupt = usize;
 
-pub unsafe fn intr_init() {
-    DAIF.set(DAIF::I::Masked.into());
-    INTERRUPT_CONTROLLER.init();
-
-    // virtio_blk
-    INTERRUPT_CONTROLLER.enable(VIRTIO0_IRQ);
-
-    // pl011 uart
-    INTERRUPT_CONTROLLER.enable(UART0_IRQ);
-}
+pub unsafe fn intr_init() {}
 
 pub unsafe fn intr_init_core() {
     DAIF.set(DAIF::I::Masked.into());
     INTERRUPT_CONTROLLER.init();
-    INTERRUPT_CONTROLLER.enable(TIMER0_IRQ);
+
+    // INTERRUPT_CONTROLLER.enable(TIMER0_IRQ);
     Timer::init();
+
+    if cpu_id() == 0 {
+        // only boot core do this initialization
+
+        // virtio_blk
+        INTERRUPT_CONTROLLER.enable(VIRTIO0_IRQ);
+
+        // pl011 uart
+        INTERRUPT_CONTROLLER.enable(UART0_IRQ);        
+    }
 }

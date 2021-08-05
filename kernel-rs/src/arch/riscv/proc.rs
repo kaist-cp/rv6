@@ -1,3 +1,5 @@
+use crate::proc::UserProcInit;
+
 /// A user program that calls exec("/init").
 /// od -t xC initcode
 pub const INITCODE: [u8; 52] = [
@@ -217,5 +219,13 @@ impl Context {
     /// Set return register (ra)
     pub fn set_ret_addr(&mut self, val: usize) {
         self.ra = val
+    }
+}
+
+pub struct UserProcInitImpl;
+
+impl UserProcInit for UserProcInitImpl {
+    fn init_reg(_trap_frame: &mut TrapFrame) {
+        // nothing to do
     }
 }
