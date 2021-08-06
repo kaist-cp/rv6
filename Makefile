@@ -125,18 +125,18 @@ endif
 
 LDFLAGS = -z max-page-size=4096
 
-$K/kernel: $(OBJS) $K/$(TARGET)/kernel.ld $U/$(TARGET)/initcode fs.img
+$K/kernel: $(OBJS) $K/$(TARGET)/kernel.ld $U/initcode fs.img
 	$(LD) $(LDFLAGS) -T $K/$(TARGET)/kernel.ld -o $K/kernel $(OBJS)
 	$(OBJDUMP) -S $K/kernel > $K/kernel.asm
 	$(OBJDUMP) -t $K/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $K/kernel.sym
 
 UT=$U/$(TARGET)
 
-$(UT)/initcode: $(UT)/initcode.S
-	$(CC) $(CFLAGS) -march=$(MARCH) -nostdinc -I. -Ikernel -c $(UT)/initcode.S -o $(UT)/initcode.o
-	$(LD) $(LDFLAGS) -N -e start -Ttext 0 -o $(UT)/initcode.out $(UT)/initcode.o
-	$(OBJCOPY) -S -O binary $(UT)/initcode.out $(UT)/initcode
-	$(OBJDUMP) -S $(UT)/initcode.o > $(UT)/initcode.asm
+$U/initcode: $(UT)/initcode.S
+	$(CC) $(CFLAGS) -march=$(MARCH) -nostdinc -I. -Ikernel -c $(UT)/initcode.S -o $U/initcode.o
+	$(LD) $(LDFLAGS) -N -e start -Ttext 0 -o $U/initcode.out $U/initcode.o
+	$(OBJCOPY) -S -O binary $U/initcode.out $U/initcode
+	$(OBJDUMP) -S $U/initcode.o > $U/initcode.asm
 
 $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a: $(shell find $(KR) -type f)
 	cargo build --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json $(CARGOFLAGS)

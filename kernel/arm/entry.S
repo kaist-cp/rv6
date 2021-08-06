@@ -20,7 +20,7 @@ _entry:
         adrp x0, stack0
         mov sp, x0
         mov x0, #4096
-        mrs x1, MPIDR_EL1
+        mrs x1, MPIDR_EL1 
         and x1, x1, _core_id_mask
         add x1, x1, #1
         mul x0, x0, x1

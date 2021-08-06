@@ -82,3 +82,25 @@ pub unsafe fn w_mdscr_el1(x: usize) {
     }
     unsafe { asm!("msr mdscr_el1, {}", in(reg) x) }
 }
+
+pub enum SmcFunctions {
+    _Version = 0x84000000,
+    _SuspendAarch64 = 0xc4000001,
+    _CpuOff = 0x84000002,
+    CpuOn = 0xc4000003,
+    _AffinityInfoAarch64 = 0xc4000004,
+    _Features = 0x8400000A,
+    _MigInfoType = 0x84000006,
+    _SystemOff = 0x84000008,
+    _SystemReset = 0x84000009,
+}
+
+#[no_mangle]
+pub fn smc_call(x0: u64, x1: u64, x2: u64, x3: u64) -> u64 {
+    let r;
+    unsafe {
+        // NOTE: here use hvc for qemu without `virtualization=on`
+        asm!("hvc #0", inlateout("x0") x0 => r, in("x1") x1, in("x2") x2, in("x3") x3);
+    }
+    r
+}
