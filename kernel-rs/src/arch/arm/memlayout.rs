@@ -39,7 +39,6 @@ impl MemLayout for MemLayoutImpl {
 
     /// map kernel stacks beneath the MAXVA,
     /// each surrounded by invalid guard pages.
-    /// TODO: change this?
     fn kstack(p: usize) -> usize {
         Self::TRAMPOLINE - ((p + 1) * 2 * PGSIZE)
     }
@@ -55,16 +54,3 @@ pub const GIC: usize = 0x08000000;
 pub const TIMER0_IRQ: usize = 27;
 pub const UART0_IRQ: usize = 33;
 pub const VIRTIO0_IRQ: usize = 48;
-
-// TODO: change this to its counterpart in ARM
-// core local interruptor (CLINT), which contains the timer.
-// pub const CLINT: usize = 0x2000000;
-// pub const fn clint_mtimecmp(coreid: usize) -> usize {
-//     CLINT
-//         .wrapping_add(0x4000)
-//         .wrapping_add(coreid.wrapping_mul(8))
-// }
-// cycles since boot.
-// pub const CLINT_MTIME: usize = CLINT.wrapping_add(0xbff8);
-
-// TODO: implement trampoline in ARM

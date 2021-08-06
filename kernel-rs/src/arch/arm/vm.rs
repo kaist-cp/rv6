@@ -116,12 +116,14 @@ impl PageTableEntry for PageTableEntryImpl {
     }
 
     fn is_table(&self) -> bool {
-        self.is_valid() && self.flag_intersects(Self::EntryFlags::TABLE) && !self.flag_intersects(Self::EntryFlags::ACCESS_FLAG)
+        self.is_valid()
+            && self.flag_intersects(Self::EntryFlags::TABLE)
+            && !self.flag_intersects(Self::EntryFlags::ACCESS_FLAG)
     }
 
     fn is_data(&self) -> bool {
-        self.is_valid() && self.flag_intersects(Self::EntryFlags::PAGE 
-            | Self::EntryFlags::ACCESS_FLAG)
+        self.is_valid()
+            && self.flag_intersects(Self::EntryFlags::PAGE | Self::EntryFlags::ACCESS_FLAG)
     }
 
     /// Make the entry refer to a given page-table page.
@@ -137,10 +139,12 @@ impl PageTableEntry for PageTableEntryImpl {
     fn set_entry(&mut self, pa: PAddr, perm: Self::EntryFlags) {
         // assert!(perm.intersects(Self::EntryFlags::R | Self::EntryFlags::W | Self::EntryFlags::X));
         self.inner = pa2pte(pa)
-            | (perm | Self::EntryFlags::V
-            | Self::EntryFlags::NON_SECURE_PA
-            | Self::EntryFlags::ACCESS_FLAG
-            | Self::EntryFlags::PAGE).bits();
+            | (perm
+                | Self::EntryFlags::V
+                | Self::EntryFlags::NON_SECURE_PA
+                | Self::EntryFlags::ACCESS_FLAG
+                | Self::EntryFlags::PAGE)
+                .bits();
     }
 
     /// Make the entry inaccessible by user processes by clearing Self::EntryFlags::U.
@@ -162,7 +166,6 @@ impl PageInit for PageInitImpl {
         trap_frame: PAddr,
         allocator: Pin<&SpinLock<Kmem>>,
     ) -> Result<(), ()> {
-        // TODO
         // Map the trampoline code (for system call return)
         // at the highest user virtual address.
         // Only the supervisor uses it, on the way

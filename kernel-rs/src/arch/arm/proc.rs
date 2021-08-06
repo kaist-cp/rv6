@@ -9,7 +9,6 @@ pub const INITCODE: [u8; 80] = [
     0, 0, 0, 0, 0, 0, 0, 0x1c, 0, 0, 0, 0, 0, 0, 0, 0x30, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-// TODO: add indexes
 #[derive(Copy, Clone)]
 pub struct TrapFrame {
     /// kernel page table (satp: Supervisor Address Translation and Protection)
@@ -21,7 +20,7 @@ pub struct TrapFrame {
     pub kernel_trap: usize,
     pub pc: usize, // user mode pc (elr_el1)
     pub sp: usize, // user mode sp
-    
+
     /// 48
     pub r0: usize,
     pub r1: usize,
