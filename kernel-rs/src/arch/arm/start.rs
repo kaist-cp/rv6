@@ -30,6 +30,10 @@ static mut TIMER_SCRATCH: [[usize; NCPU]; 5] = [[0; NCPU]; 5];
 /// entry.S jumps here in machine mode on stack0.
 #[no_mangle]
 pub unsafe fn start() {
+    if cpu_id() == 0 {
+        launch_other_cores(0x40010000);
+    }
+
     let cur_el = r_currentel();
 
     match cur_el {
@@ -40,36 +44,35 @@ pub unsafe fn start() {
         _ => _puts("current el: unknown\n"),
     }
 
-    if cpu_id() == 0 {
-        // flush TLB and cache
-        _puts("Flushing TLB and instr cache\n");
+    // flush TLB and cache
+    _puts("Flushing TLB and instr cache\n");
 
-        // flush Instr Cache
-        ic_ialluis();
+    // flush Instr Cache
+    ic_ialluis();
 
-        // flush TLB
-        tlbi_vmalle1();
-        unsafe { barrier::dsb(barrier::SY) };
+    // flush TLB
+    tlbi_vmalle1();
+    unsafe { barrier::dsb(barrier::SY) };
 
-        // no trapping on FP/SIMD instructions
-        unsafe { w_cpacr_el1(0x03 << 20) };
+    // no trapping on FP/SIMD instructions
+    unsafe { w_cpacr_el1(0x03 << 20) };
 
-        // monitor debug: all disabled
-        unsafe { w_mdscr_el1(0) };
+    // monitor debug: all disabled
+    unsafe { w_mdscr_el1(0) };
 
-        // set_up_mair
-        // TODO: This setting might be problematic.
-        MAIR_EL1.write(
-            // Attribute 1 - Cacheable normal DRAM.
-            MAIR_EL1::Attr1_Normal_Outer::WriteBack_NonTransient_ReadWriteAlloc +
+    // set_up_mair
+    // TODO: This setting might be problematic.
+    MAIR_EL1.write(
+        // Attribute 1 - Cacheable normal DRAM.
+        MAIR_EL1::Attr1_Normal_Outer::WriteBack_NonTransient_ReadWriteAlloc +
             MAIR_EL1::Attr1_Normal_Inner::WriteBack_NonTransient_ReadWriteAlloc +
             // Attribute 0 - Device.
             MAIR_EL1::Attr0_Device::nonGathering_nonReordering_EarlyWriteAck,
-        );
+    );
 
-        // set translation control register
-        TCR_EL1.write(
-            TCR_EL1::TBI1::Used
+    // set translation control register
+    TCR_EL1.write(
+        TCR_EL1::TBI1::Used
             + TCR_EL1::IPS::Bits_44 // intermediate physical address = 44bits
             + TCR_EL1::TG1::KiB_4 // transaltion granule = 4KB
             + TCR_EL1::TG0::KiB_4
@@ -86,12 +89,7 @@ pub unsafe fn start() {
             + TCR_EL1::T1SZ.val(25) // this can be changed, possible up to 44
             + TCR_EL1::AS::ASID16Bits // the upper 16 bits of TTBR0_EL1 and TTBR1_EL1 are used for allocation and matching in the TLB.
             + TCR_EL1::TBI0::Ignored, // this may not be needed
-        );
-
-        unsafe {
-            launch_other_cores(_entry.as_mut_ptr() as usize);
-        }
-    }
+    );
 
     unsafe {
         main();
