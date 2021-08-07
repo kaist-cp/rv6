@@ -7,7 +7,7 @@ use tock_registers::interfaces::{Readable, Writeable};
 
 use crate::{
     addr::PGSIZE,
-    arch::asm::{cpu_id, intr_get, intr_off, intr_on},
+    arch::asm::{cpu_id, intr_get, intr_off, intr_on, r_fpsr, w_fpsr},
     arch::intr::INTERRUPT_CONTROLLER,
     arch::memlayout::{MemLayoutImpl, TIMER0_IRQ, UART0_IRQ, VIRTIO0_IRQ},
     arch::timer::Timer,
@@ -204,6 +204,7 @@ impl KernelRef<'_, '_> {
     unsafe fn kernel_trap_el1h(self, etype: ExceptionTypes) {
         let elr_el1 = ELR_EL1.get();
         let spsr_el1 = SPSR_EL1.get();
+        let fpsr = r_fpsr();
 
         assert!(
             SPSR_EL1.matches_all(SPSR_EL1::M::EL1h),
@@ -235,6 +236,7 @@ impl KernelRef<'_, '_> {
         // so restore trap registers
         ELR_EL1.set(elr_el1);
         SPSR_EL1.set(spsr_el1);
+        unsafe { w_fpsr(fpsr) };
     }
 
     fn print_state(self) {

@@ -83,6 +83,16 @@ pub unsafe fn w_mdscr_el1(x: usize) {
     unsafe { asm!("msr mdscr_el1, {}", in(reg) x) }
 }
 
+pub fn r_fpsr() -> usize {
+    let mut x;
+    unsafe { asm! ("mrs {}, fpsr", out(reg) x) };
+    x
+}
+
+pub unsafe fn w_fpsr(x: usize) {
+    unsafe { asm!("msr fpsr, {}", in(reg) x) }
+}
+
 pub enum SmcFunctions {
     _Version = 0x84000000,
     _SuspendAarch64 = 0xc4000001,

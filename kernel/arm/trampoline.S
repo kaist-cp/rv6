@@ -71,31 +71,51 @@ trampoline:
         movk    x0, #0x3f, lsl #32
 
         // save the user registers in TRAPFRAME
-        stp     x1, x2, [x0, #56]
-        stp     x3, x4,  [x0, #72]
-        stp     x5, x6,  [x0, #88]
-        stp     x7, x8,  [x0, #104]
-        stp     x9, x10,  [x0, #120]
-        stp     x11, x12,  [x0, #136]
-        stp     x13, x14,  [x0, #152]
-        stp     x15, x16,  [x0, #168]
-        stp     x17, x18,  [x0, #184]
-        stp     x19, x20,  [x0, #200]
-        stp     x21, x22,  [x0, #216]
-        stp     x23, x24,  [x0, #232]
-        stp     x25, x26,  [x0, #248]
-        stp     x27, x28,  [x0, #264]
-        stp     x29, x30,  [x0, #280]
+        stp     x1, x2, [x0, #64]!
+        stp     x3, x4,  [x0, #16]!
+        stp     x5, x6,  [x0, #16]!
+        stp     x7, x8,  [x0, #16]!
+        stp     x9, x10,  [x0, #16]!
+        stp     x11, x12,  [x0, #16]!
+        stp     x13, x14,  [x0, #16]!
+        stp     x15, x16,  [x0, #16]!
+        stp     x17, x18,  [x0, #16]!
+        stp     x19, x20,  [x0, #16]!
+        stp     x21, x22,  [x0, #16]!
+        stp     x23, x24,  [x0, #16]!
+        stp     x25, x26,  [x0, #16]!
+        stp     x27, x28,  [x0, #16]!
+        stp     x29, x30,  [x0, #16]! // 288
+
+        stnp     d0, d1, [x0, #16 * 1]
+        stnp     d2, d3,  [x0, #16 * 2]
+        stnp     d4, d5,  [x0, #16 * 3]
+        stnp     d6, d7,  [x0, #16 * 4]
+        stnp     d8, d9,  [x0, #16 * 5]
+        stnp     d10, d11,  [x0, #16 * 6]
+        stnp     d12, d13,  [x0, #16 * 7]
+        stnp     d14, d15,  [x0, #16 * 8]
+        stnp     d16, d17,  [x0, #16 * 9]
+        stnp     d18, d19,  [x0, #16 * 10]
+        stnp     d20, d21,  [x0, #16 * 11]
+        stnp     d22, d23,  [x0, #16 * 12]
+        stnp     d24, d25,  [x0, #16 * 13]
+        stnp     d26, d27,  [x0, #16 * 14]
+        stnp     d28, d29,  [x0, #16 * 15]
+        stnp     d30, d31, [x0, #16 * 16]
+        
+        sub     x0, x0, #288    // restore x0 to trapframe
 	
-	mrs	x21, elr_el1            /* ELR (user mode pc) */
-        mrs     x22, sp_el0             /* SP: user stack */
-	mrs	x23, spsr_el1           /* SPSR */
+	mrs	x21, spsr_el1           /* SPSR */
+        mrs     x22, fpsr           /* FPSR */
+	mrs	x23, elr_el1            /* ELR (user mode pc) */
+        mrs     x24, sp_el0             /* SP: user stack */
 
-	stp	x21, x22, [x0, #32]     /* ELR(pc), SP */
-	str	x23, [x0, #16]          /* SPSR */
+	stp	x21, x22, [x0, #16]     /* SPSR, FPSR */
+	stp	x23, x24, [x0, #40]     /* ELR(pc), SP */
 
-        mrs     x24, ttbr1_el1 
-        str     x24, [x0, #48]               /* store x0 */
+        mrs     x25, ttbr1_el1 
+        str     x25, [x0, #56]               /* store x0 */
         msr     ttbr1_el1, xzr
         
         # restore kernel stack pointer from p->trapframe->kernel_sp
@@ -103,7 +123,7 @@ trampoline:
         mov     sp, x24
 
         # load the address of usertrap(), p->trapframe->kernel_trap
-        ldr     x1, [x0, #24]
+        ldr     x1, [x0, #32]
 
         # restore kernel page table from p->trapframe->kernel_satp
         ldr     x24, [x0]
@@ -174,32 +194,53 @@ userret:
         isb
 
         # restore ELR, SPSR, LR, SP
-	ldp	x21, x22, [x0, #32]      /* ELR, SP */ 
-	ldr	x23, [x0, #16]           /* SPSR */
+	ldp	x21, x22, [x0, #16]      /* SPSR, FPSR */
+	ldp	x23, x24, [x0, #40]      /* ELR, SP */ 
 
-	msr	elr_el1, x21             /* ELR */
-	msr     sp_el0, x22              /* SP */
-	msr	spsr_el1, x23            /* SPSR */
+	msr	spsr_el1, x21            /* SPSR */
+        msr     fpsr, x22            /* FPSR */
+	msr	elr_el1, x23             /* ELR */
+	msr     sp_el0, x24              /* SP */
 
         # restore all but a0 from TRAPFRAME
-	ldp	x1, x2, [x0, #56]
-	ldp	x3, x4, [x0, #72]
-	ldp	x5, x6, [x0, #88]
-	ldp	x7, x8, [x0, #104]
-	ldp	x9, x10, [x0, #120]
-	ldp	x11, x12, [x0, #136]
-	ldp	x13, x14, [x0, #152]
-	ldp	x15, x16, [x0, #168]
-	ldp	x17, x18, [x0, #184]
-	ldp	x19, x20, [x0, #200]
-	ldp	x21, x22, [x0, #216]
-	ldp	x23, x24, [x0, #232]
-	ldp	x25, x26, [x0, #248]
-	ldp	x27, x28, [x0, #264]
-	ldp	x29, x30, [x0, #280]
-        ldr     x0, [x0, #48]
+	ldp	x1, x2, [x0, #64]!
+	ldp	x3, x4, [x0, #16]!
+	ldp	x5, x6, [x0, #16]!
+	ldp	x7, x8, [x0, #16]!
+	ldp	x9, x10, [x0, #16]!
+	ldp	x11, x12, [x0, #16]!
+	ldp	x13, x14, [x0, #16]!
+	ldp	x15, x16, [x0, #16]!
+	ldp	x17, x18, [x0, #16]!
+	ldp	x19, x20, [x0, #16]!
+	ldp	x21, x22, [x0, #16]!
+	ldp	x23, x24, [x0, #16]!
+	ldp	x25, x26, [x0, #16]!
+	ldp	x27, x28, [x0, #16]!
+	ldp	x29, x30, [x0, #16]! // 288
 
-	eret
+        ldnp    d0, d1, [x0, #16 * 1] // 304
+        ldnp     d2, d3,  [x0, #16 * 2]
+        ldnp     d4, d5,  [x0, #16 * 3]
+        ldnp     d6, d7,  [x0, #16 * 4]
+        ldnp     d8, d9,  [x0, #16 * 5]
+        ldnp     d10, d11,  [x0, #16 * 6]
+        ldnp     d12, d13,  [x0, #16 * 7]
+        ldnp     d14, d15,  [x0, #16 * 8]
+        ldnp     d16, d17,  [x0, #16 * 9]
+        ldnp     d18, d19,  [x0, #16 * 10]
+        ldnp     d20, d21,  [x0, #16 * 11]
+        ldnp     d22, d23,  [x0, #16 * 12]
+        ldnp     d24, d25,  [x0, #16 * 13]
+        ldnp     d26, d27,  [x0, #16 * 14]
+        ldnp     d28, d29,  [x0, #16 * 15]
+        ldnp     d30, d31, [x0, #16 * 16]
+
+        sub x0, x0, #288
+
+        ldr     x0, [x0, #56]
+	
+        eret
 
 
 

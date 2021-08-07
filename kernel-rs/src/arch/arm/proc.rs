@@ -15,13 +15,14 @@ pub struct TrapFrame {
     pub kernel_satp: usize,
     pub kernel_sp: usize,
     pub spsr: usize,
+    pub fpsr: usize,
 
-    /// 24 - usertrap()
+    /// 32 - usertrap()
     pub kernel_trap: usize,
     pub pc: usize, // user mode pc (elr_el1)
     pub sp: usize, // user mode sp
 
-    /// 48
+    /// 56
     pub r0: usize,
     pub r1: usize,
     pub r2: usize,
@@ -53,8 +54,41 @@ pub struct TrapFrame {
     pub r28: usize,
     pub r29: usize,
     pub r30: usize, // user mode lr
-}
 
+    // 304 - floating point registers
+    pub s0: usize,
+    pub s1: usize,
+    pub s2: usize,
+    pub s3: usize,
+    pub s4: usize,
+    pub s5: usize,
+    pub s6: usize,
+    pub s7: usize,
+    pub s8: usize,
+    pub s9: usize,
+    pub s10: usize,
+    pub s11: usize,
+    pub s12: usize,
+    pub s13: usize,
+    pub s14: usize,
+    pub s15: usize,
+    pub s16: usize,
+    pub s17: usize,
+    pub s18: usize,
+    pub s19: usize,
+    pub s20: usize,
+    pub s21: usize,
+    pub s22: usize,
+    pub s23: usize,
+    pub s24: usize,
+    pub s25: usize,
+    pub s26: usize,
+    pub s27: usize,
+    pub s28: usize,
+    pub s29: usize,
+    pub s30: usize,
+    pub s31: usize,
+}
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub struct Context {
@@ -176,5 +210,6 @@ pub struct UserProcInitImpl;
 impl UserProcInit for UserProcInitImpl {
     fn init_reg(trap_frame: &mut TrapFrame) {
         trap_frame.spsr = 0;
+        trap_frame.fpsr = 0;
     }
 }
