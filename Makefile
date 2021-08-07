@@ -238,14 +238,14 @@ UPROGS=\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
-	$U/_lat_syscall\
+	# $U/_lat_syscall\
 	$U/_lat_proc\
 	$U/_lat_pipe\
 	$U/_lat_ctx\
 	$U/_lat_fs\
 	$U/_bw_pipe\
 	$U/_bw_file_rd\
-	# $U/_lat_pagefault\
+	$U/_lat_pagefault\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
