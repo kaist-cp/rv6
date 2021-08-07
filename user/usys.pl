@@ -57,3 +57,8 @@ entry("sbrk");
 entry("sleep");
 entry("uptime");
 entry("poweroff");
+entry("select");
+entry("getpagesize");
+entry("waitpid");
+entry("getppid");
+entry("lseek");

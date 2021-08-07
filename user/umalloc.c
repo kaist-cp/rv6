@@ -88,3 +88,40 @@ malloc(uint nbytes)
         return 0;
   }
 }
+
+// TODO: make this more efficient
+void*
+realloc(void *ptr, size_t size)
+{
+  free(ptr);
+  return malloc(size);
+}
+
+// allocate page size aligned heap memory
+void*
+valloc(size_t size)
+{
+  int pgsize = getpagesize();
+  size_t aligned_size = (size / pgsize + 1) * pgsize; 
+  return malloc(aligned_size);
+}
+
+void*
+calloc(size_t nmemb, size_t size)
+{
+	char *p;
+
+	// If either is zero just return NULL.
+	if (nmemb == 0 || size == 0)
+	{
+		return NULL;
+	}
+
+	// Malloc the area and zero it out.
+	else
+	{
+		p = malloc(nmemb * size);
+		memset(p, 0, nmemb * size);
+		return p;
+	}
+}

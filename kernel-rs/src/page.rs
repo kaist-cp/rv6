@@ -114,3 +114,7 @@ impl Drop for Page {
         panic!("Page must never drop.");
     }
 }
+
+pub fn getpagesize() -> usize {
+    PGSIZE
+}

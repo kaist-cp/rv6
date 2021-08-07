@@ -63,6 +63,19 @@ pub struct Devsw {
 /// A reference counted smart pointer to a `File`.
 pub type RcFile = ArenaRc<FileTable>;
 
+// Events for `select`
+pub enum SelectEvent {
+    Read,
+    _Write,
+    _Error,
+}
+
+pub enum SeekWhence {
+    Set,
+    Cur,
+    End,
+}
+
 impl Default for FileType {
     fn default() -> Self {
         Self::None
@@ -219,6 +232,30 @@ impl File {
                 Ok(write(addr, n, ctx) as usize)
             }
             FileType::None => panic!("File::read"),
+        }
+    }
+
+    pub fn lseek(&self, n: i32, option: SeekWhence,ctx: &mut KernelCtx<'_, '_>) -> Result<usize, ()> {
+        if !self.readable {
+            return Err(());
+        }
+
+        if let FileType::Inode { inner } = &self.typ {
+            let ip = inner.lock(ctx);
+            let off = match option {
+                SeekWhence::Set => n as u32,
+                SeekWhence::Cur => *ip.off + n as u32,
+                SeekWhence::End => {
+                    let ip_inner = ip.deref_inner();
+                    ip_inner.size + n as u32
+                }
+            };
+            *ip.off = off;
+            ip.free(ctx);
+            Ok(off as usize)
+        }
+        else {
+            Err(())
         }
     }
 }

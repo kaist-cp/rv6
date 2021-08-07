@@ -354,6 +354,55 @@ impl<'id, 's> ProcsRef<'id, 's> {
         }
     }
 
+    // Wait for a child process with `pid` to exit.
+    pub fn waitpid(&self, pid: Pid, addr: UVAddr, ctx: &mut KernelCtx<'id, '_>) -> Result<Pid, ()> {
+        let mut parent_guard = self.wait_guard();
+
+        loop {
+            // Scan through pool looking for exited children.
+            let mut havekids = false;
+            for np in self.process_pool() {
+                let mut np = np.lock();
+                if np.deref_mut_info().pid == pid {
+                    if *np.get_mut_parent(&mut parent_guard) != ctx.proc().deref().deref() {
+                        // Found a process, but not a child
+                        return Err(());
+                    }
+
+                    // Make sure the child isn't still in exit() or swtch().
+                    // let mut np = np.lock();
+
+                    havekids = true;
+                    if np.state() == Procstate::ZOMBIE {
+                        let pid = np.deref_mut_info().pid;
+                        if !addr.is_null()
+                            && ctx
+                                .proc_mut()
+                                .memory_mut()
+                                .copy_out(addr, &np.deref_info().xstate)
+                                .is_err()
+                        {
+                            return Err(());
+                        }
+                        // Reap the zombie child process.
+                        // SAFETY: np.state() equals ZOMBIE.
+                        unsafe { np.clear(parent_guard) };
+                        return Ok(pid);
+                    }
+                }
+            }
+
+            // No point waiting if we don't have any children.
+            if !havekids || ctx.proc().killed() {
+                return Err(());
+            }
+
+            // Wait for a child to exit.
+            //DOC: wait-sleep
+            ctx.proc().child_waitchannel.sleep(&mut parent_guard.0, ctx);
+        }
+    }
+
     /// Kill the process with the given pid.
     /// The victim won't exit until it tries to return
     /// to user space (see usertrap() in trap.c).
@@ -419,6 +468,15 @@ impl<'id, 's> ProcsRef<'id, 's> {
         unsafe { guard.sched() };
 
         unreachable!("zombie exit")
+    }
+
+    // get the pid of current process's parent
+    pub fn getppid(&mut self, ctx: &mut KernelCtx<'id, '_>) -> Pid {
+        let mut parent_guard = self.wait_guard();        
+        let parent = *ctx.proc().get_mut_parent(&mut parent_guard);
+        
+        let lock = unsafe { (*parent).info.lock() };
+        lock.pid
     }
 }
 

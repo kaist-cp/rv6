@@ -8,6 +8,8 @@
 #include "kernel/memlayout.h"
 #include "kernel/arch.h"
 
+#define RAND_DEFINED
+
 //
 // Tests xv6 system calls.  usertests without arguments runs them all
 // and usertests <name> runs <name> test. The test runner creates for

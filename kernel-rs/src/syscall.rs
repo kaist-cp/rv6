@@ -15,9 +15,11 @@ use crate::{
     arch::timer::Timer,
     file::RcFile,
     fs::{FcntlFlags, FileSystem, FileSystemExt, InodeType, Path},
+    file::{FileType, RcFile, SelectEvent, SeekWhence},
+    fs::{FcntlFlags, FileSystem, InodeType, Path},
     hal::hal,
     ok_or,
-    page::Page,
+    page::{Page, getpagesize},
     param::{MAXARG, MAXPATH},
     proc::{CurrentProc, KernelCtx},
     some_or,
@@ -113,6 +115,11 @@ impl KernelCtx<'_, '_> {
             20 => self.sys_mkdir(),
             21 => self.sys_close(),
             22 => self.sys_poweroff(),
+            23 => self.sys_select(),
+            24 => self.sys_getpagesize(),
+            25 => self.sys_waitpid(),
+            26 => self.sys_getppid(),
+            27 => self.sys_lseek(),
             _ => {
                 self.kernel().as_ref().write_fmt(format_args!(
                     "{} {}: unknown sys call {}",
@@ -383,5 +390,152 @@ impl KernelCtx<'_, '_> {
         let fdarray = self.proc().argaddr(0)?.into();
         self.pipe(fdarray)?;
         Ok(0)
+    }
+
+    /* Check the first NFDS descriptors each in READFDS (if not NULL) for read
+    readiness, in WRITEFDS (if not NULL) for write readiness, and in EXCEPTFDS
+    (if not NULL) for exceptional conditions.  If TIMEOUT is not NULL, time out
+    after waiting the interval specified therein.  Returns the number of ready
+    descriptors, or -1 for errors.
+    Returns Ok(number of ready descriptors) on success, Err(()) on error.  */
+    pub fn sys_select(&mut self) -> Result<usize, ()> {
+        let nfds = self.proc().argint(0)?;
+        let read_fds = self.proc().argaddr(1)?;
+        let write_fds = self.proc().argaddr(2)?;
+        let err_fds = self.proc().argaddr(3)?;
+
+        let n_ticks = self.proc().argint(4)?;
+
+        let ticks = self.kernel().ticks().lock();
+        let ticks0 = *ticks;
+        drop(ticks);
+
+        let mut rfds = [0u8; 1024 / 8];
+        // let mut rfds_clone = [0u8; 1024 / 8];
+        // let mut wfds = [0u8; 1024 / 8];
+        // let mut efds = [0u8; 1024 / 8];
+
+        if read_fds != 0 {
+            unsafe {
+                self.proc_mut()
+                    .memory_mut()
+                    .copy_in(&mut rfds, read_fds.into())
+            }?;
+        }
+        
+        if write_fds != 0 {
+            unimplemented!("Handling for write fd set has not been implemented yet");
+        }
+
+        if err_fds != 0 {
+            unimplemented!("Handling for exceptional fd set has not been implemented yet");
+        }
+
+        let mut ready_cnt = 0;
+
+        loop {
+            // check fds
+            for fd in 0..nfds + 1 {
+                let idx = (fd / 8) as usize;
+                let mask = 1 << (fd % 8);
+
+                // TODO: support other kind of fd sets
+                if rfds[idx] & mask != 0 {
+                    if self.check(fd as usize, SelectEvent::Read)? {
+                        ready_cnt += 1;
+                    } else {
+                        rfds[idx] &= !mask;
+                    }
+                }
+            }
+
+            if ready_cnt > 0 {
+                for fd in 0..nfds + 1 {
+                    let idx = (fd / 8) as usize;
+                    let mask = 1 << (fd % 8);
+    
+                    // TODO: support other kind of fd sets
+                    if rfds[idx] & mask != 0 {
+                        if !self.check(fd as usize, SelectEvent::Read)? {
+                            rfds[idx] &= !mask;
+                        }
+                    }
+                }
+                break;
+            }
+
+            // check timeout
+            let ticks = self.kernel().ticks().lock();
+            if ticks.wrapping_sub(ticks0) >= n_ticks as u32 {
+                for idx in 0..(nfds + 1) / 8 + 1 {
+                    rfds[idx as usize] = 0;
+                }
+                break;
+            }
+            drop(ticks);
+        }
+
+        self.proc_mut()
+            .memory_mut()
+            .copy_out(read_fds.into(), &rfds)?;
+
+        Ok(ready_cnt)
+    }
+
+    fn check(&mut self, fd: usize, event: SelectEvent) -> Result<bool, ()> {
+        let f = self
+            .proc()
+            .deref_data()
+            .open_files
+            .get(fd)
+            .ok_or(())?
+            .as_ref()
+            .ok_or(())?;
+
+        let f = unsafe { &*(f as *const RcFile) };
+
+        match &f.typ {
+            FileType::Pipe { pipe } => {
+                // pipe-empty
+                if pipe.is_ready(event) {
+                    return Ok(true);
+                }
+            }
+            FileType::Inode { .. } => {
+                unimplemented!()
+            }
+            FileType::Device { .. } => unimplemented!(""),
+            FileType::None => panic!("Syscall::sys_select"),
+        }
+
+        Ok(false)
+    }
+
+    pub fn sys_getpagesize(&mut self) -> Result<usize, ()> {
+        Ok(getpagesize())
+    }
+
+    pub fn sys_waitpid(&mut self) -> Result<usize, ()> {
+        let pid = self.proc().argint(0)?;
+        let stat = self.proc().argaddr(1)?;
+        Ok(self.kernel().procs().waitpid(pid.into(), stat.into(), self)? as _)
+    }
+
+    pub fn sys_getppid(&mut self) -> Result<usize, ()> {
+        Ok(self.kernel().procs().getppid(self) as _)
+    }
+
+    pub fn sys_lseek(&mut self) -> Result<usize, ()> {
+        let (_, f) = self.proc().argfd(0)?;
+        let offset = self.proc().argint(1)?;
+        let whence = self.proc().argint(2)?;
+
+        let whence = match whence {
+            0 => SeekWhence::Set,
+            1 => SeekWhence::Cur,
+            2 => SeekWhence::End,
+            _ => return Err(())
+        };
+        unsafe { (*(f as *const RcFile)).lseek(offset, whence, self) }
     }
 }
