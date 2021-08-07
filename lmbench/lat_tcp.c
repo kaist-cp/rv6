@@ -177,7 +177,7 @@ doserver(int sock)
 		 * A connection with no data means shut down.
 		 */
 		tcp_done(TCP_XACT);
-		kill(getppid(), SIGTERM);
+		posix_kill(getppid(), SIGTERM);
 		exit(0);
 	}
 }

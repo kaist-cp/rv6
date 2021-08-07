@@ -232,7 +232,7 @@ source(int data)
 	 */
      	if (m == 0) {
 		tcp_done(TCP_DATA);
-		kill(getppid(), SIGTERM);
+		posix_kill(getppid(), SIGTERM);
 		exit(0);
 	}
 

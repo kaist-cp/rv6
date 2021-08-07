@@ -12,7 +12,9 @@
  * Support for this development by Sun Microsystems is gratefully acknowledged.
  */
 
+#define NDEF_RAND
 #include "bench.h"
+#include "user/rand.h"
 
 #define	FIVE(m)		m m m m m
 #define	TEN(m)		FIVE(m) FIVE(m)
@@ -560,7 +562,7 @@ line_find(size_t len, int warmup, int repetitions, struct mem_state* state)
 
 	/*
 	fprintf(stderr, "line_find(%lu, ...): entering\n", (unsigned long)len);
-	/**/
+	*/
 
 	state->width = 1;
 	state->line = sizeof(char*);
@@ -589,7 +591,7 @@ line_find(size_t len, int warmup, int repetitions, struct mem_state* state)
 	mem_cleanup(0, state);
 	/*
 	fprintf(stderr, "line_find(%lu, ...): returning %lu\n", (unsigned long)len, (unsigned long)line);
-	/**/
+	*/
 	return line;
 }
 
@@ -630,7 +632,7 @@ line_test(size_t line, int warmup, int repetitions, struct mem_state* state)
 		BENCH1(HUNDRED(p = *(char**)p;),0);
 		/*
 		fprintf(stderr, "%d\t%d\t%d\n", line, (int)gettime(), (int)get_n()); 
-		/**/
+		*/
 		insertsort(gettime(), get_n(), r);
 	}
 	use_pointer(p);
@@ -641,7 +643,7 @@ line_test(size_t line, int warmup, int repetitions, struct mem_state* state)
 	
 	/*
 	fprintf(stderr, "%d\t%.5f\t%d\n", line, t, state->len); 
-	/**/
+	*/
 
 	/* fixup full path again */
 	if (nlines < state->nlines) {
@@ -696,7 +698,7 @@ par_mem(size_t len, int warmup, int repetitions, struct mem_state* state)
 			if (state->len == 32768 && i == 7) {
 				fprintf(stderr, "\tj=%d, line=%d, word=%d, page=%d, _line=%d, _word=%d\n", j, line, word, line / lines_per_page, line % lines_per_page, word % state->nwords);
 			}
-			/**/
+			*/
 			state->p[j] = state->base + 
 				state->pages[line / lines_per_page] + 
 				state->lines[line % lines_per_page] + 
@@ -712,7 +714,7 @@ par_mem(size_t len, int warmup, int repetitions, struct mem_state* state)
 			par /= (double)gettime() / (double)((i + 1) * get_n());
 			/*
 			fprintf(stderr, "par_mem(%d): i=%d, p=%5.2f, l=%d, lpp=%d, lpc=%d, nl=%d, wpc=%d\n", len, i, par, state->line, state->pagesize / state->line, (len / state->line) / (i + 1), len / state->line, state->nwords / (i + 1));
-			/**/
+			*/
 			if (par > max_par) {
 				max_par = par;
 			}

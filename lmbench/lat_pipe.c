@@ -83,7 +83,8 @@ initialize(iter_t iterations, void* cookie)
 	switch (state->pid = fork()) {
 	    case 0:
 		handle_scheduler(benchmp_childid(), 1, 1);
-		signal(SIGTERM, exit);
+    // TODO: this will not make any difference
+		// signal(SIGTERM, exit);
 		close(state->p1[1]);
 		close(state->p2[0]);
 		writer(state->p2[1], state->p1[0]);
@@ -116,7 +117,7 @@ cleanup(iter_t iterations, void* cookie)
 	if (iterations) return;
 
 	if (state->pid) {
-		kill(state->pid, SIGKILL);
+		posix_kill(state->pid, SIGKILL);
 		waitpid(state->pid, NULL, 0);
 		state->pid = 0;
 	}

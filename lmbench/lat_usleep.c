@@ -79,7 +79,7 @@ bench_select(iter_t iterations, void *cookie)
     while (iterations-- > 0) {
 	tv.tv_sec = 0;
 	tv.tv_usec = state->usecs;
-	select(0, NULL, NULL, NULL, &tv);
+	posix_select(0, NULL, NULL, NULL, &tv);
     }
 }
 

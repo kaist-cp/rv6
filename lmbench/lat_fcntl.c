@@ -174,7 +174,7 @@ cleanup(iter_t iterations, void* cookie)
 	state->fd2 = -1;
 
 	if (state->pid) {
-		kill(state->pid, SIGKILL);
+		posix_kill(state->pid, SIGKILL);
 		waitpid(state->pid, NULL, 0);
 	}
 	state->pid = 0;

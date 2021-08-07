@@ -77,7 +77,7 @@ main(int ac, char **av)
 		benchmp(initialize, doit, cleanup, 0, parallel, 
 			warmup, repetitions, &state);
 		sprintf(buf, "Select on %d tcp fd's", state.num);
-		kill(state.pid, SIGKILL);
+		posix_kill(state.pid, SIGKILL);
 		waitpid(state.pid, NULL, 0);
 		micro(buf, get_n());
 	} else if (streq("file", av[optind])) {
@@ -170,7 +170,7 @@ doit(iter_t iterations, void * cookie)
 
 	while (iterations-- > 0) {
 		nosave = state->set;
-		select(state->num, 0, &nosave, 0, &tv);
+		posix_select(state->num, 0, &nosave, 0, &tv);
 	}
 }
 

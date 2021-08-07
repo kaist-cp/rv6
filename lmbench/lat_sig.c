@@ -29,7 +29,7 @@ do_send(iter_t iterations, void* cookie)
 	int	me = getpid();
 
 	while (--iterations > 0) {
-		kill(me, 0);
+		posix_kill(me, 0);
 	}
 }
 
@@ -58,7 +58,7 @@ do_catch(iter_t iterations, void* cookie)
 	sigaction(SIGUSR1, &sa, &old);
 
 	while (--iterations > 0) {
-		kill(me, SIGUSR1);
+		posix_kill(me, SIGUSR1);
 	}
 }
 

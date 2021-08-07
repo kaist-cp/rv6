@@ -34,7 +34,7 @@ void	start(struct timeval *tv);
 uint64	stop(struct timeval *begin, struct timeval *end);
 uint64	t_overhead(void);
 double	timespent(void);
-void	timing(FILE *out);
+void	timing(int out);
 uint64	tvdelta(struct timeval *, struct timeval *);
 void	tvsub(struct timeval *tdiff, struct timeval *t1, struct timeval *t0);
 void	use_int(int result);

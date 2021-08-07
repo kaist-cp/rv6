@@ -190,7 +190,7 @@ loads(benchmp_f initialize, int len, int warmup, int repetitions, void* cookie)
 	result = (1000. * (double)gettime()) / (double)(count * get_n());
 	/*
 	fprintf(stderr, "%.5f %.3f\n", len / (1024. * 1024.), result);
-	/**/
+	*/
 
 	return result;
 }

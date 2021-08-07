@@ -138,7 +138,7 @@ setup_names_recurse(iter_t* foff, iter_t* doff, int depth, struct _state* state)
 		for (i = 0; i < state->max && i < ndirs && *foff < state->n; ++i) {
 			sprintf(name, "%s/%ld", basename, i);
 			state->dirs[++(*doff)] = strdup(name);
-			mkdir(name, 0777);
+			posix_mkdir(name, 0777);
 			setup_names_recurse(foff, doff, depth-1, state);
 		}
 	} else {
@@ -191,7 +191,7 @@ setup_names(iter_t iterations, void* cookie)
 		perror("tempnam failed");
 		exit(1);
 	}
-	if (mkdir(dirname, S_IRUSR|S_IWUSR|S_IXUSR)) {
+	if (posix_mkdir(dirname, S_IRUSR|S_IWUSR|S_IXUSR)) {
 		perror("mkdir failed");
 		exit(1);
 	}

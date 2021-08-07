@@ -533,11 +533,12 @@ execve(const char *pathname, char *const argv[], char *const envp[])
   return exec((char*)pathname, (char**)argv);
 }
 
+// TODO
 // int
 // execlp(const char *file, const char *arg, .../*, (char *) NULL */)
 // {
-
-//   return exec((char*)file, arg);
+//   return 0;
+//   // return exec((char*)file, arg);
 // }
 
 // nothing to do
@@ -579,4 +580,29 @@ execvp(const char * file, char * const argv[])
 {
   return exec((char*)file, (char**)argv);
   // return execlp(file, argv);
+}
+
+int
+posix_kill(pid_t pid, int sig)
+{
+  return kill(pid);
+}
+
+int
+posix_open3(const char *pathname, int flags, mode_t mode)
+{
+  // Note: mode is ignored
+  return open(pathname, flags);
+}
+
+int
+posix_exit(int i)
+{
+  return exit(i);  
+}
+
+int
+posix_mkdir(const char *pathname, mode_t mode)
+{
+  return mkdir(pathname);
 }

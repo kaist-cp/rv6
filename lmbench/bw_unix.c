@@ -83,7 +83,7 @@ cleanup(iter_t iterations, void*  cookie)
 	close(state->control[1]);
 	close(state->pipes[0]);
 	if (state->pid > 0) {
-		kill(state->pid, SIGKILL);
+		posix_kill(state->pid, SIGKILL);
 		waitpid(state->pid, NULL, 0);
 	}
 	state->pid = 0;

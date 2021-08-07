@@ -327,7 +327,7 @@ collect_data(size_t start, size_t line, size_t maxlen,
 			p[idx].slope,
 			(unsigned long)p[idx].line);
 	}
-	/**/
+	*/
 	mem_cleanup(0, &state);
 
 	return samples;
@@ -346,7 +346,7 @@ search(int left, int right, int repetitions,
 		(unsigned long)p[left].len, p[left].latency, 
 		(unsigned long)p[middle].len, 
 		(unsigned long)p[right].len, p[right].latency);
-	/**/
+	*/
 
 	if (p[left].latency > 0.0) {
 		p[left].ratio = p[right].latency / p[left].latency;
@@ -393,7 +393,7 @@ collect_sample(int repetitions, struct mem_state* state,
 	/*
 	fprintf(stderr, "collect_sample: len=%lu, latency=%G\n", 
 		(unsigned long)p->len, p->latency);
-	/**/
+	*/
 
 	return (p->latency > 0);
 }
@@ -440,7 +440,7 @@ measure(size_t size, int repetitions,
 
 	/*
 	check_memory(size, state);
-	/**/
+	*/
 
 	addr_save = NULL;
 	state->p[0] = p + pages[0] + state->lines[0] + state->words[0];
@@ -473,7 +473,7 @@ measure(size_t size, int repetitions,
 	}
 	/*
 	fprintf(stderr, "%.6f %.2f\n", size / (1000. * 1000.), median);
-	/**/
+	*/
 
 	return median;
 }
@@ -530,7 +530,7 @@ test_chunk(size_t i, size_t chunk, size_t npages, size_t* pages,
 
 		/*
 		fprintf(stderr, "test_chunk(...): baseline=%G, t=%G, len=%d, chunk=%d, i=%d\n", *baseline, t, len, subchunk, j);
-		/**/
+		*/
 
 		if (t >= 0.99 * *baseline) continue;
 		if (t >= 0.999 * nodiff_chunk_baseline) continue;
@@ -627,7 +627,7 @@ fixup_chunk(size_t i, size_t chunk, size_t npages, size_t* pages,
 
 	/*
 	fprintf(stderr, "fixup_chunk: len=%d, chunk=%d, j=%d, baseline=%G, lat[%d]=%G..%G\n", len, chunk, j, *baseline, j, (j < chunk ? latencies[j] : -1.0), latencies[chunk - 1]);
-	/**/
+	*/
 
 	if (chunk >= npages && j < chunk / 2) {
 		j = chunk / 2;
@@ -674,7 +674,7 @@ fixup_chunk(size_t i, size_t chunk, size_t npages, size_t* pages,
 
 		/*
 		fprintf(stderr, "fixup_chunk: len=%d, swapped=%d, k=%d, baseline=%G, newbase=%G\n", len, swapped, k, *baseline, new_baseline);
-		/**/
+		*/
 
 		if (new_baseline >= 0.999 * *baseline) {
 			/* no benefit to these changes; back them out */
@@ -696,7 +696,7 @@ fixup_chunk(size_t i, size_t chunk, size_t npages, size_t* pages,
 	/*
 	} else {
 		fprintf(stderr, "fixup_chunk: len=%d, swapped=%d, k=%d\n", len, swapped, k);
-	/**/
+	*/
 	}
 	free(saved_pages);
 
@@ -718,7 +718,7 @@ check_memory(size_t size, struct mem_state* state)
 
 	/*
 	fprintf(stderr, "check_memory(%d, ...): entering, %d words\n", size, nwords);
-	/**/
+	*/
 	word_count = 1;
 	first_page = 0;
 	start = (char**)(state->base + state->pages[0] + state->lines[0] + state->words[0]);
@@ -752,7 +752,7 @@ check_memory(size_t size, struct mem_state* state)
 	}
 	/*
 	fprintf(stderr, "check_memory(%lu, ...): exiting\n", (unsigned long)size);
-	/**/
+	*/
 }
 
 void

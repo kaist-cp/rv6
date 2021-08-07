@@ -22,6 +22,8 @@
  * to the option letter and can not be blank.
  */
 #include "bench.h"
+
+#define UNUSED(x) (void)(x)
 static char *id = "%@%";
 
 int	optopt;		/* option that is in error, if we return an error */
@@ -32,6 +34,7 @@ static int n;
 int
 getopt(int ac, char **av, char *opts)
 {
+  UNUSED(id);
 	char	*t;
 
 	if (!optind) {

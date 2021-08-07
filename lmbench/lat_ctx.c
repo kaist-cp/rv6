@@ -234,7 +234,7 @@ cleanup(iter_t iterations, void* cookie)
 	cleanup_overhead(iterations, cookie);
      	for (i = 1; pState->pids && i < pState->procs; ++i) {
 		if (pState->pids[i] > 0) {
-			kill(pState->pids[i], SIGKILL);
+			posix_kill(pState->pids[i], SIGKILL);
 			waitpid(pState->pids[i], NULL, 0);
 		}
 	}

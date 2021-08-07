@@ -87,7 +87,7 @@ main(int ac, char **av)
 	for (i = tlb<<1; i <= maxpages; i<<=1) {
 		compute_times(i, warmup, repetitions, &tlb_time, &cache_time, &state);
 	}
-	/**/
+	*/
 
 	return(0);
 }
@@ -173,6 +173,6 @@ compute_times(int pages, int warmup, int repetitions,
 
 	/*
 	fprintf(stderr, "%d %.5f %.5f\n", pages, *tlb_time, *cache_time);
-	/**/
+	*/
 }
 

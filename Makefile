@@ -1,11 +1,12 @@
 K = kernel
 U = user
 KR = kernel-rs
+LM = lmbench
 
 ifeq ($(TARGET),arm)
 RUST_TARGET = aarch64-unknown-none
 ARCH = aarch64
-TOOLPREFIX = aarch64-none-elf-
+TOOLPREFIX = aarch64-linux-gnu-
 MARCH = armv8-a
 ADD_OBJS = $K/$(TARGET)/trampoline.o
 
@@ -99,6 +100,8 @@ AS = $(TOOLPREFIX)gas
 LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
+AR=ar
+ARCREATE=cr
 
 ifndef OPTFLAGS
 OPTFALGS := -O
@@ -144,7 +147,7 @@ $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a: $(shell find $(KR) -ty
 tags: $(OBJS) _init
 	etags *.S *.c
 
-ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
+ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o $U/string.o
 
 _%: %.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
@@ -162,6 +165,52 @@ $U/_forktest: $U/forktest.o $(ULIB)
 	# in order to be able to max out the proc table.
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $U/_forktest $U/forktest.o $U/ulib.o $U/usys.o
 	$(OBJDUMP) -S $U/_forktest > $U/forktest.asm
+
+## LMbench
+$(LM)/%.o: $(LM)/%.c
+	$(CC) $(CFLAGS) -c -o $@ $^
+
+$U/_%: $(LM)/%.o $(ULIB) $(LM)/lmbench.a $U/rand.o
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^ $(LM)/lmbench.a
+	$(OBJDUMP) -S $@ > $*.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
+
+AR=ar
+ARCREATE=cr
+LIBOBJS= $(LM)/lib_timing.o 	\
+	$(LM)/lib_mem.o $(LM)/lib_stats.o $(LM)/lib_debug.o $(LM)/getopt.o		\
+	$(LM)/lib_sched.o
+INCS = $(LM)/bench.h $(LM)/lib_mem.h $(LM)/lib_tcp.h $(LM)/lib_udp.h $(LM)/stats.h $(LM)/timing.h
+
+$(LM)/lmbench : ../scripts/lmbench version.h
+	rm -f $(LM)/lmbench
+	VERSION=`../scripts/version`; \
+	sed -e "s/<version>/$${VERSION}/g" < ../scripts/lmbench > $(LM)/lmbench
+	chmod +x $(LM)/lmbench
+
+$(LM)/lmbench.a: $(LIBOBJS)
+	/bin/rm -f $(LM)/lmbench.a
+	$(AR) $(ARCREATE) $(LM)/lmbench.a $(LIBOBJS)
+	-ranlib $(LM)/lmbench.a
+
+$(LM)/lib_timing.o : $(LM)/lib_timing.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/lib_timing.c -o $(LM)/lib_timing.o
+$(LM)/lib_mem.o : $(LM)/lib_mem.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/lib_mem.c -o $(LM)/lib_mem.o
+$(LM)/lib_tcp.o : $(LM)/lib_tcp.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/lib_tcp.c -o $(LM)/lib_tcp.o
+$(LM)/lib_udp.o : $(LM)/lib_udp.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/lib_udp.c -o $(LM)/lib_udp.o
+$(LM)/lib_unix.o : $(LM)/lib_unix.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/lib_unix.c -o $(LM)/lib_unix.o
+$(LM)/lib_debug.o : $(LM)/lib_debug.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/lib_debug.c -o $(LM)/lib_debug.o
+$(LM)/lib_stats.o : $(LM)/lib_stats.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/lib_stats.c -o $(LM)/lib_stats.o
+$(LM)/lib_sched.o : $(LM)/lib_sched.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/lib_sched.c -o $(LM)/lib_sched.o
+$(LM)/getopt.o : $(LM)/getopt.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/getopt.c -o $(LM)/getopt.o
 
 mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 	gcc -Werror -Wall -I. -o mkfs/mkfs mkfs/mkfs.c
@@ -189,6 +238,14 @@ UPROGS=\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
+	$U/_lat_syscall\
+	$U/_lat_proc\
+	$U/_lat_pipe\
+	$U/_lat_ctx\
+	$U/_lat_fs\
+	$U/_bw_pipe\
+	$U/_bw_file_rd\
+	# $U/_lat_pagefault\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
@@ -197,7 +254,7 @@ fs.img: mkfs/mkfs README $(UPROGS)
 
 clean: 
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
-	*/*.o */*/*.o */*.d */*.asm */*.sym \
+	*/*.o */*/*.o */*.d */*.asm */*.sym */*.a \
 	$(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a \
 	$U/initcode $U/initcode.out $K/kernel fs.img \
 	mkfs/mkfs .gdbinit \

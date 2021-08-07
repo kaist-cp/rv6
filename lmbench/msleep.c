@@ -15,7 +15,7 @@ main(int ac, char **av)
 	tv.tv_usec = atoi(av[1]) * 1000;
 	FD_ZERO(&set);
 	FD_SET(0, &set);
-	select(1, &set, 0, 0, &tv);
+	posix_select(1, &set, 0, 0, &tv);
 	return (0);
 #endif
 }

@@ -4,47 +4,53 @@
 #ifndef _BENCH_H
 #define _BENCH_H
 
-#ifdef WIN32
-#include <windows.h>
-typedef unsigned char bool_t;
-#endif
+#include "kernel/types.h"
+#include "kernel/stat.h"
+#include "user/user.h"
+#include "kernel/fcntl.h"
+// #include "rand.h"
 
-#include	<assert.h>
-#include        <ctype.h>
-#include        <stdio.h>
+// #ifdef WIN32
+// #include <windows.h>
+// typedef unsigned char bool_t;
+// #endif
+
+// #include	<assert.h>
+// #include        <ctype.h>
+// #include        <stdio.h>
 #include	<math.h>
-#ifndef WIN32
-#include        <unistd.h>
-#endif
-#include        <stdlib.h>
-#include        <fcntl.h>
-#include        <signal.h>
+// #ifndef WIN32
+// #include        <unistd.h>
+// #endif
+// #include        <stdlib.h>
+// #include        <fcntl.h>
+// #include        <signal.h>
 #include        <errno.h>
 #ifndef WIN32
 #include        <strings.h>
 #endif
-#include        <sys/types.h>
+// #include        <sys/types.h>
 #ifndef WIN32
-#include        <sys/mman.h>
+// #include        <sys/mman.h>
 #endif
-#include        <sys/stat.h>
+// #include        <sys/stat.h>
 #ifndef WIN32
-#include        <sys/wait.h>
-#include	<time.h>
-#include        <sys/time.h>
-#include        <sys/socket.h>
-#include        <sys/un.h>
-#include        <sys/resource.h>
+// #include        <sys/wait.h>
+// #include	<time.h>
+// #include        <sys/time.h>
+// #include        <sys/socket.h>
+// #include        <sys/un.h>
+// #include        <sys/resource.h>
 #define PORTMAP
-#include	<rpc/rpc.h>
+// #include	<rpc/rpc.h>
 #endif
-#ifdef HAVE_pmap_clnt_h
-#include	<rpc/pmap_clnt.h>
-#endif
-#include	<rpc/types.h>
-#ifdef HAVE_pmap_clnt_h
-#include	<rpc/pmap_clnt.h>
-#endif
+// #ifdef HAVE_pmap_clnt_h
+// // #include	<rpc/pmap_clnt.h>
+// #endif
+// #include	<rpc/types.h>
+// #ifdef HAVE_pmap_clnt_h
+// #include	<rpc/pmap_clnt.h>
+// #endif
 
 #include 	<stdarg.h>
 #ifndef HAVE_uint
@@ -61,11 +67,15 @@ typedef unsigned int uint;
 #define S_IEXEC S_IXUSR
 #endif
 
+#ifndef O_CREAT
+#define O_CREAT O_CREATE
+#endif
+
 #ifndef HAVE_uint64
 #ifdef HAVE_uint64_t
 typedef uint64_t uint64;
 #else /* HAVE_uint64_t */
-typedef unsigned long long uint64;
+// typedef unsigned long long uint64;
 #endif /* HAVE_uint64_t */
 #endif /* HAVE_uint64 */
 
@@ -90,9 +100,9 @@ typedef int64 off64_t;
 #include	"stats.h"
 #include	"timing.h"
 #include	"lib_debug.h"
-#include	"lib_tcp.h"
-#include	"lib_udp.h"
-#include	"lib_unix.h"
+// #include	"lib_tcp.h"
+// #include	"lib_udp.h"
+// #include	"lib_unix.h"
 
 
 #ifdef	DEBUG

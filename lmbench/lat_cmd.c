@@ -76,7 +76,7 @@ cleanup(iter_t iterations, void* cookie)
 	if (iterations) return;
 
 	if (state->pid) {
-		kill(state->pid, SIGKILL);
+		posix_kill(state->pid, SIGKILL);
 		waitpid(state->pid, NULL, 0);
 		state->pid = 0;
 	}

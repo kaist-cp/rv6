@@ -1,7 +1,6 @@
 #include <bits/types/struct_timeval.h>
 #include <bits/types.h>
 #include <bits/types/sigset_t.h>
-#include <netinet/in.h>
 
 #ifndef TYPES_H_
 #define TYPES_H_

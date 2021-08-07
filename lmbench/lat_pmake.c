@@ -145,7 +145,7 @@ cleanup(register iter_t iterations, void *cookie)
 
 	for (i = 0; i < state->jobs; ++i) {
 		if (state->pids[i] > 0) {
-			kill(state->pids[i], SIGKILL);
+			posix_kill(state->pids[i], SIGKILL);
 			waitpid(state->pids[i], NULL, 0);
 			state->pids[i] = -1;
 		}

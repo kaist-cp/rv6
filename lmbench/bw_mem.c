@@ -441,7 +441,7 @@ loop_bcopy(iter_t iterations, void *cookie)
 void adjusted_bandwidth(uint64 time, uint64 bytes, uint64 iter, double overhd)
 {
 #define MB	(1000. * 1000.)
-	extern FILE *ftiming;
+	extern int ftiming;
 	double secs = ((double)time / (double)iter - overhd) / 1000000.0;
 	double mb;
 	

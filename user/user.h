@@ -59,7 +59,11 @@ void *memcpy(void *, const void *, uint);
 int posix_select(int nfds, fd_set *restrict readfds,
             fd_set *restrict writefds, fd_set *restrict exceptfds,
             struct timeval* timeout);
+int posix_kill(pid_t pid, int sig);
+int posix_open3(const char *pathname, int flags, mode_t mode);
 void usleep(unsigned long useconds);
+int posix_exit(int);
+int posix_mkdir(const char *pathname, mode_t mode);
 
 // <signal.h>
 typedef void (*sighandler_t)(int);
