@@ -317,7 +317,14 @@ int posix_select(int nfds, fd_set *restrict readfds,
             fd_set *restrict writefds, fd_set *restrict exceptfds,
             struct timeval* timeout)
 {
+  // doesn't support writefds and exceptfds now.
   long ticks = (timeout->tv_sec * 1000000 + timeout->tv_usec) / MICROSECS_PER_TICK;
+  if(writefds) {
+    FD_ZERO(writefds);
+  }
+  if(exceptfds) {
+    FD_ZERO(exceptfds);
+  }
   return select(nfds, readfds, writefds, 0, ticks);
 }
 
