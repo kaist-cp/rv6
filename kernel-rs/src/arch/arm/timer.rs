@@ -19,11 +19,12 @@ impl TimeManager for Timer {
     /// The uptime since power-on of the device.
     ///
     /// This includes time consumed by firmware and bootloaders.
-    fn uptime<'id, 's>(_kernel: KernelRef<'id, 's>) -> Result<usize, ()> {
-        let current_count: u64 = Self::read_cntpct() * NS_PER_S;
-        let frq: u64 = CNTFRQ_EL0.get();
+    fn uptime<'id, 's>(kernel: KernelRef<'id, 's>) -> Result<usize, ()> {
+        // let current_count: u64 = Self::read_cntpct() * NS_PER_S;
+        // let frq: u64 = CNTFRQ_EL0.get();
 
-        Ok((current_count / frq) as usize)
+        // Ok((current_count / frq) as usize)
+        Ok(*kernel.ticks().lock() as usize)
     }
 
     /// Spin for a given duration.
