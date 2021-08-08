@@ -195,7 +195,7 @@ printf(const char* fmt, ...)
 
   va_start(va, fmt);
   char buffer[1];
-  const int ret = _vsnprintf(_out_char, buffer, (size_t)-1, fmt, va, 0);
+  _vsnprintf(_out_char, buffer, (size_t)-1, fmt, va, 0);
   va_end(va);
   return;
 }
