@@ -187,5 +187,5 @@ main(int ac, char **av)
 			0, parallel, warmup, repetitions, &state);
 	} else lmbench_usage(ac, av, usage);
 	bandwidth(count, get_n() * parallel, 0);
-	return (0);
+	exit(0);
 }

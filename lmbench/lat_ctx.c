@@ -101,7 +101,7 @@ main(int ac, char **av)
 	state.procs = maxprocs;
 	benchmp(initialize_overhead, benchmark_overhead, cleanup_overhead, 
 		0, 1, warmup, repetitions, &state);
-	if (gettime() == 0) return(0);
+	if (gettime() == 0) exit(0);
 	state.overhead = gettime();
 	state.overhead /= get_n();
 	fprintf(stderr, "\n\"size=%dk ovr=%.2f\n", 
@@ -122,7 +122,7 @@ main(int ac, char **av)
 			fprintf(stderr, "%d %.2f\n", state.procs, time);
 	}
 
-	return (0);
+	exit(0);
 }
 
 void

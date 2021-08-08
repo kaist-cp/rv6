@@ -177,5 +177,5 @@ main(int ac, char *av[])
 		fprintf(stderr, "Pipe bandwidth: ");
 		mb(get_n() * parallel * state.bytes);
 	}
-	return(0);
+	exit(0);
 }

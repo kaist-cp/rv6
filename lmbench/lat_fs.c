@@ -81,7 +81,7 @@ main(int ac, char **av)
 				parallel, warmup, repetitions, &state);
 		}
 	}
-	return(0);
+	exit(0);
 }
 
 void

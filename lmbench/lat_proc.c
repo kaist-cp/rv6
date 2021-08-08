@@ -94,7 +94,7 @@ main(int ac, char **av)
 	} else {
 		lmbench_usage(ac, av, usage);
 	}
-	return(0);
+	exit(0);
 }
 
 void 

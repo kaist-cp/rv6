@@ -60,7 +60,7 @@ main(int ac, char **av)
 	benchmp(initialize, doit, cleanup, SHORT, parallel, 
 		warmup, repetitions, &state);
 	micro("Pipe latency", get_n());
-	return (0);
+	exit(0);
 }
 
 void 
