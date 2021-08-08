@@ -9,7 +9,8 @@
 char	*id = "$Id: s.lat_syscall.c 1.11 97/06/15 22:38:58-07:00 lm $\n";
 
 #include "bench.h"
-#define	FNAME "/usr/include/sys/types.h"
+#include "kernel/fcntl.h"
+#define	FNAME "./sh"
 
 struct _state {
 	int fd;
@@ -46,8 +47,11 @@ do_read(iter_t iterations, void *cookie)
 
 	while (iterations-- > 0) {
 		if (read(pState->fd, &c, 1) != 1) {
-			perror("/dev/zero");
-			return;
+      // TODO: find better way to replace /dev/zero.
+      lseek(pState->fd, 0, SEEK_SET);
+      continue;
+			// perror("/dev/zero");
+			// return;
 		}
 	}
 }
@@ -136,13 +140,23 @@ main(int ac, char **av)
 			warmup, repetitions, &state);
 		micro("Simple syscall", get_n());
 	} else if (!strcmp("write", av[optind])) {
-		state.fd = open("/dev/null", 1);
+    // TODO: find better way to replace /dev/null.
+		// state.fd = open("/dev/null", 1);
+    state.fd = 1;
 		benchmp(NULL, do_write, NULL, 0, parallel, 
 			warmup, repetitions, &state);
 		micro("Simple write", get_n());
 		close(state.fd);
 	} else if (!strcmp("read", av[optind])) {
-		state.fd = open("/dev/zero", 0);
+
+    // TODO: find better way to replace /dev/zero.
+    state.fd = open("./dev_zero", O_CREATE|O_RDWR);
+    for (int i=0; i<10000; i++) {
+      write(state.fd, "0" ,1);
+    }
+    lseek(state.fd, 0, SEEK_SET);
+
+		// state.fd = open("/dev/zero", 0);
 		if (state.fd == -1) {
 			fprintf(stderr, "Simple read: -1\n");
 			return(1);
