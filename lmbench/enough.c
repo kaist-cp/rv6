@@ -1,5 +1,6 @@
-#include <stdio.h>
-#include <stdlib.h>
+// #include <stdio.h>
+// #include <stdlib.h>
+#include "user/user.h"
 
 extern	int	get_enough(int);
 

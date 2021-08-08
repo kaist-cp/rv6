@@ -255,18 +255,18 @@ char *tempnam(const char *dir, const char *pfx) {
   return strdup(buf);
 }
 
-// TODO
+// TODO: fill this with measured values
 char*
 getenv(const char *varname)
 {
-  if(strcmp(varname, "ENOUGH")) {
-    return strdup("1000000");
-  }
-  if (strcmp(varname, "TIMING_O")) {
-    return strdup("0");
-  }
-  if (strcmp(varname, "LOOP_O")) {
-    return strdup("0");
-  }
+  // if(strcmp(varname, "ENOUGH")) {
+  //   return strdup("1000000");
+  // }
+  // if (strcmp(varname, "TIMING_O")) {
+  //   return strdup("0");
+  // }
+  // if (strcmp(varname, "LOOP_O")) {
+  //   return strdup("0");
+  // }
   return 0;
 }

@@ -73,8 +73,10 @@
 #endif
 
 // output function type
-typedef void (*out_fct_type)(char character, void* buffer, size_t idx, size_t maxlen);
-
+typedef void (*out_fct_type)(char character, void* buffer, size_t idx, size_t maxlen, int fd);
+static inline void _out_char(char character, void* buffer, size_t idx, size_t maxlen, int fd);
+static inline void _out_fd(char character, void* buffer, size_t idx, size_t maxlen, int fd);
+static int _vsnprintf(out_fct_type out, char* buffer, const size_t maxlen, const char* format, va_list va, int fd);
 
 static char digits[] = "0123456789ABCDEF";
 
@@ -172,18 +174,31 @@ fprintf(int fd, const char *fmt, ...)
   va_list ap;
 
   va_start(ap, fmt);
-  vprintf(fd, fmt, ap);
+  char buffer[1];
+  _vsnprintf(_out_fd, buffer, (size_t)-1, fmt, ap, fd);
+  va_end(ap);
 }
+
+// void
+// printf(const char *fmt, ...)
+// {
+//   va_list ap;
+
+//   va_start(ap, fmt);
+//   vprintf(1, fmt, ap);
+// }
 
 void
-printf(const char *fmt, ...)
+printf(const char* fmt, ...)
 {
-  va_list ap;
+  va_list va;
 
-  va_start(ap, fmt);
-  vprintf(1, fmt, ap);
+  va_start(va, fmt);
+  char buffer[1];
+  const int ret = _vsnprintf(_out_char, buffer, (size_t)-1, fmt, va, 0);
+  va_end(va);
+  return;
 }
-
 
 // newly added
 void _putchar(char c){
@@ -198,7 +213,7 @@ typedef struct {
 
 
 // internal buffer output
-static inline void _out_buffer(char character, void* buffer, size_t idx, size_t maxlen)
+static inline void _out_buffer(char character, void* buffer, size_t idx, size_t maxlen, int fd)
 {
   if (idx < maxlen) {
     ((char*)buffer)[idx] = character;
@@ -207,14 +222,14 @@ static inline void _out_buffer(char character, void* buffer, size_t idx, size_t 
 
 
 // internal null output
-static inline void _out_null(char character, void* buffer, size_t idx, size_t maxlen)
+static inline void _out_null(char character, void* buffer, size_t idx, size_t maxlen, int fd)
 {
   (void)character; (void)buffer; (void)idx; (void)maxlen;
 }
 
 
 // internal _putchar wrapper
-static inline void _out_char(char character, void* buffer, size_t idx, size_t maxlen)
+static inline void _out_char(char character, void* buffer, size_t idx, size_t maxlen, int fd)
 {
   (void)buffer; (void)idx; (void)maxlen;
   if (character) {
@@ -222,9 +237,17 @@ static inline void _out_char(char character, void* buffer, size_t idx, size_t ma
   }
 }
 
+// internal putc wrapper
+static inline void _out_fd(char character, void* buffer, size_t idx, size_t maxlen, int fd)
+{
+  (void)buffer; (void)idx; (void)maxlen;
+  if (character) {
+    write(fd, &character, 1);
+  }
+}
 
 // internal output function wrapper
-static inline void _out_fct(char character, void* buffer, size_t idx, size_t maxlen)
+static inline void _out_fct(char character, void* buffer, size_t idx, size_t maxlen, int fd)
 {
   (void)idx; (void)maxlen;
   if (character) {
@@ -234,26 +257,26 @@ static inline void _out_fct(char character, void* buffer, size_t idx, size_t max
 }
 
 // output the specified string in reverse, taking care of any zero-padding
-static size_t _out_rev(out_fct_type out, char* buffer, size_t idx, size_t maxlen, const char* buf, size_t len, unsigned int width, unsigned int flags)
+static size_t _out_rev(out_fct_type out, char* buffer, size_t idx, size_t maxlen, const char* buf, size_t len, unsigned int width, unsigned int flags, int fd)
 {
   const size_t start_idx = idx;
 
   // pad spaces up to given width
   if (!(flags & FLAGS_LEFT) && !(flags & FLAGS_ZEROPAD)) {
     for (size_t i = len; i < width; i++) {
-      out(' ', buffer, idx++, maxlen);
+      out(' ', buffer, idx++, maxlen, fd);
     }
   }
 
   // reverse string
   while (len) {
-    out(buf[--len], buffer, idx++, maxlen);
+    out(buf[--len], buffer, idx++, maxlen, fd);
   }
 
   // append pad spaces up to given width
   if (flags & FLAGS_LEFT) {
     while (idx - start_idx < width) {
-      out(' ', buffer, idx++, maxlen);
+      out(' ', buffer, idx++, maxlen, fd);
     }
   }
 
@@ -310,7 +333,7 @@ static size_t _ntoa_format(out_fct_type out, char* buffer, size_t idx, size_t ma
     }
   }
 
-  return _out_rev(out, buffer, idx, maxlen, buf, len, width, flags);
+  return _out_rev(out, buffer, idx, maxlen, buf, len, width, flags, 0);
 }
 
 // internal secure strlen
@@ -407,11 +430,11 @@ static size_t _ftoa(out_fct_type out, char* buffer, size_t idx, size_t maxlen, d
 
   // test for special values
   if (value != value)
-    return _out_rev(out, buffer, idx, maxlen, "nan", 3, width, flags);
+    return _out_rev(out, buffer, idx, maxlen, "nan", 3, width, flags, 0);
   if (value < -DBL_MAX)
-    return _out_rev(out, buffer, idx, maxlen, "fni-", 4, width, flags);
+    return _out_rev(out, buffer, idx, maxlen, "fni-", 4, width, flags, 0);
   if (value > DBL_MAX)
-    return _out_rev(out, buffer, idx, maxlen, (flags & FLAGS_PLUS) ? "fni+" : "fni", (flags & FLAGS_PLUS) ? 4U : 3U, width, flags);
+    return _out_rev(out, buffer, idx, maxlen, (flags & FLAGS_PLUS) ? "fni+" : "fni", (flags & FLAGS_PLUS) ? 4U : 3U, width, flags, 0);
 
   // test for very large values
   // standard printf behavior is to print EVERY whole number digit -- which could be 100s of characters overflowing your buffers == bad
@@ -518,7 +541,7 @@ static size_t _ftoa(out_fct_type out, char* buffer, size_t idx, size_t maxlen, d
     }
   }
 
-  return _out_rev(out, buffer, idx, maxlen, buf, len, width, flags);
+  return _out_rev(out, buffer, idx, maxlen, buf, len, width, flags, 0);
 }
 
 static size_t _etoa(out_fct_type out, char* buffer, size_t idx, size_t maxlen, double value, unsigned int prec, unsigned int width, unsigned int flags)
@@ -616,18 +639,18 @@ static size_t _etoa(out_fct_type out, char* buffer, size_t idx, size_t maxlen, d
   // output the exponent part
   if (minwidth) {
     // output the exponential symbol
-    out((flags & FLAGS_UPPERCASE) ? 'E' : 'e', buffer, idx++, maxlen);
+    out((flags & FLAGS_UPPERCASE) ? 'E' : 'e', buffer, idx++, maxlen, 0);
     // output the exponent value
     idx = _ntoa_long(out, buffer, idx, maxlen, (expval < 0) ? -expval : expval, expval < 0, 10, 0, minwidth-1, FLAGS_ZEROPAD | FLAGS_PLUS);
     // might need to right-pad spaces
     if (flags & FLAGS_LEFT) {
-      while (idx - start_idx < width) out(' ', buffer, idx++, maxlen);
+      while (idx - start_idx < width) out(' ', buffer, idx++, maxlen, 0);
     }
   }
   return idx;
 }
 
-static int _vsnprintf(out_fct_type out, char* buffer, const size_t maxlen, const char* format, va_list va)
+static int _vsnprintf(out_fct_type out, char* buffer, const size_t maxlen, const char* format, va_list va, int fd)
 {
   unsigned int flags, width, precision, n;
   size_t idx = 0U;
@@ -642,7 +665,7 @@ static int _vsnprintf(out_fct_type out, char* buffer, const size_t maxlen, const
     // format specifier?  %[flags][width][.precision][length]
     if (*format != '%') {
       // no
-      out(*format, buffer, idx++, maxlen);
+      out(*format, buffer, idx++, maxlen, fd);
       format++;
       continue;
     }
@@ -831,15 +854,15 @@ static int _vsnprintf(out_fct_type out, char* buffer, const size_t maxlen, const
         // pre padding
         if (!(flags & FLAGS_LEFT)) {
           while (l++ < width) {
-            out(' ', buffer, idx++, maxlen);
+            out(' ', buffer, idx++, maxlen, fd);
           }
         }
         // char output
-        out((char)va_arg(va, int), buffer, idx++, maxlen);
+        out((char)va_arg(va, int), buffer, idx++, maxlen, fd);
         // post padding
         if (flags & FLAGS_LEFT) {
           while (l++ < width) {
-            out(' ', buffer, idx++, maxlen);
+            out(' ', buffer, idx++, maxlen, fd);
           }
         }
         format++;
@@ -855,17 +878,17 @@ static int _vsnprintf(out_fct_type out, char* buffer, const size_t maxlen, const
         }
         if (!(flags & FLAGS_LEFT)) {
           while (l++ < width) {
-            out(' ', buffer, idx++, maxlen);
+            out(' ', buffer, idx++, maxlen, fd);
           }
         }
         // string output
         while ((*p != 0) && (!(flags & FLAGS_PRECISION) || precision--)) {
-          out(*(p++), buffer, idx++, maxlen);
+          out(*(p++), buffer, idx++, maxlen, fd);
         }
         // post padding
         if (flags & FLAGS_LEFT) {
           while (l++ < width) {
-            out(' ', buffer, idx++, maxlen);
+            out(' ', buffer, idx++, maxlen, fd);
           }
         }
         format++;
@@ -891,19 +914,19 @@ static int _vsnprintf(out_fct_type out, char* buffer, const size_t maxlen, const
       }
 
       case '%' :
-        out('%', buffer, idx++, maxlen);
+        out('%', buffer, idx++, maxlen, fd);
         format++;
         break;
 
       default :
-        out(*format, buffer, idx++, maxlen);
+        out(*format, buffer, idx++, maxlen,fd);
         format++;
         break;
     }
   }
 
   // termination
-  out((char)0, buffer, idx < maxlen ? idx : maxlen - 1U, maxlen);
+  out((char)0, buffer, idx < maxlen ? idx : maxlen - 1U, maxlen, fd);
 
   // return written chars without terminating \0
   return (int)idx;
@@ -913,7 +936,7 @@ int sprintf(char* buffer, const char* format, ...)
 {
   va_list va;
   va_start(va, format);
-  const int ret = _vsnprintf(_out_buffer, buffer, (size_t)-1, format, va);
+  const int ret = _vsnprintf(_out_buffer, buffer, (size_t)-1, format, va, 0);
   va_end(va);
   return ret;
 }

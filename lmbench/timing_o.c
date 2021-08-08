@@ -1,5 +1,6 @@
-#include <stdio.h>
-#include "bench.h"
+// #include <stdio.h>
+// #include "bench.h"
+#include "user/user.h"
 
 int
 main()
