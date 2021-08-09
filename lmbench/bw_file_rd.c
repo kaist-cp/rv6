@@ -167,7 +167,8 @@ main(int ac, char **av)
 	}
 
 	strcpy(state.filename,av[optind+2]);
-	count = bytes(av[optind]);
+	// count = bytes(av[optind]);
+  count = atoi(av[optind]);
 	if (count < MINSZ) {
 		exit(1);	/* I want this to be quiet */
 	}
