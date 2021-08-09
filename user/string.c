@@ -255,18 +255,51 @@ char *tempnam(const char *dir, const char *pfx) {
   return strdup(buf);
 }
 
+int
+strncmp(const char *p, const char *q, uint n)
+{
+  while(n > 0 && *p && *p == *q)
+    n--, p++, q++;
+  if(n == 0)
+    return 0;
+  return (uchar)*p - (uchar)*q;
+}
+
+static char* env[3] = {0, 0, 0};
+// static char* env[3] = {"1000000", "0", "0.00177336"};
+
 // TODO: fill this with measured values
+// Note: These functions are only made for LMBench.
 char*
 getenv(const char *varname)
 {
-  // if(strcmp(varname, "ENOUGH")) {
-  //   return strdup("1000000");
-  // }
-  // if (strcmp(varname, "TIMING_O")) {
-  //   return strdup("0");
-  // }
-  // if (strcmp(varname, "LOOP_O")) {
-  //   return strdup("0");
-  // }
+  if(strcmp(varname, "ENOUGH") == 0) {
+    return env[0];
+  }
+  if (strcmp(varname, "TIMING_O") == 0) {
+    return env[1];
+}
+  if (strcmp(varname, "LOOP_O") == 0) {
+    return env[2];
+  }
   return 0;
+}
+
+// Note: These functions are only made for LMBench.
+int
+putenv(char *varname)
+{
+  if(strncmp(varname, "ENOUGH", 6) == 0) {
+    env[0] = strdup(&varname[7]);
+    return 0;
+  }
+  if (strncmp(varname, "TIMING_O", 8) == 0) {
+    env[1] = strdup(&varname[9]);
+    return 0;
+  }
+  if (strncmp(varname, "LOOP_O", 6) == 0) {
+    env[2] = strdup(&varname[7]);
+    return 0;
+  }
+  return -1;
 }

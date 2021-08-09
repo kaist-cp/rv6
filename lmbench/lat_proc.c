@@ -20,7 +20,8 @@ char	*id = "$Id$\n";
 #define	PROG "/tmp/hello-s"
 #define STATIC_PREFIX "Static "
 #else
-#define	PROG "/tmp/hello"
+// #define	PROG "/tmp/hello"
+#define PROG "hello"
 #define STATIC_PREFIX ""
 #endif
 
@@ -111,7 +112,10 @@ do_shell(iter_t iterations, void* cookie)
 		case 0:	/* child */
 			handle_scheduler(benchmp_childid(), 1, 1);
 			close(1);
-			execlp("/bin/sh", "sh", "-c", PROG, 0);
+
+      char **values = (char *[]){"/bin/sh", "sh", "-c", PROG, 0};
+      exec(values[0], (char**)values[1]);
+			// execlp("/bin/sh", "sh", "-c", PROG, 0);
 			exit(1);
 
 		default:

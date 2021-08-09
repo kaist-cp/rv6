@@ -110,6 +110,9 @@ main(int ac, char **av)
 	/* compute the context switch cost for N processes */
 	for (i = optind; i < ac; ++i) {
 		state.procs = atoi(av[i]);
+    if(state.procs == 0) {
+      continue;
+    }
 		benchmp(initialize, benchmark, cleanup, 0, parallel, 
 			warmup, repetitions, &state);
 

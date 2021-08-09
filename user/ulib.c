@@ -204,12 +204,12 @@ strncasecmp(const char *string1, const char *string2, size_t n)
 }
 
 
-// TODO
-int
-putenv(char *varname)
-{
-  return 0;
-}
+// // TODO
+// int
+// putenv(char *varname)
+// {
+//   return 0;
+// }
 
 double atof(const char *s)
 {
@@ -534,7 +534,7 @@ int fflush(int stream) {
   return 0;
 }
 
-// TODO
+// TODO: ignore environment(envp) now
 int
 execve(const char *pathname, char *const argv[], char *const envp[])
 {
