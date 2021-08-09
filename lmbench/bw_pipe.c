@@ -29,6 +29,22 @@ struct _state {
 	int	readfd;
 };
 
+
+void
+cleanup(iter_t iterations, void * cookie)
+{
+	struct _state* state = (struct _state*)cookie;
+
+	if (iterations) return;
+
+	close(state->readfd);
+	if (state->pid > 0) {
+		posix_kill(state->pid, SIGKILL);
+		waitpid(state->pid, NULL, 0);
+	}
+	state->pid = 0;
+}
+
 void
 initialize(iter_t iterations, void *cookie)
 {
@@ -73,21 +89,6 @@ initialize(iter_t iterations, void *cookie)
 	}
 	touch(state->buf, state->xfer + getpagesize());
 	state->buf += 128; /* destroy page alignment */
-}
-
-void
-cleanup(iter_t iterations, void * cookie)
-{
-	struct _state* state = (struct _state*)cookie;
-
-	if (iterations) return;
-
-	close(state->readfd);
-	if (state->pid > 0) {
-		posix_kill(state->pid, SIGKILL);
-		waitpid(state->pid, NULL, 0);
-	}
-	state->pid = 0;
 }
 
 void
