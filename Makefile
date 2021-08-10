@@ -238,6 +238,7 @@ UPROGS=\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
+	$U/_script\
 	# $U/_lat_syscall\
 	$U/_lat_proc\
 	$U/_hello\
