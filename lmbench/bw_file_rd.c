@@ -128,7 +128,6 @@ cleanup(iter_t iterations, void * cookie)
 int
 main(int ac, char **av)
 {
-	int	fd;
 	state_t state;
 	int	parallel = 1;
 	int	warmup = 0;
