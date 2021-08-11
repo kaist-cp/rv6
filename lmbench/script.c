@@ -12,9 +12,9 @@ void LMBench(char *bm, char *arg1)
 int main(int ac, char **av)
 {
 
-    char benchmarks[][20] = {"lat_ctx","lat_proc", /* "lat_proc",*/ "lat_proc", "lat_pipe", "lat_syscall", "lat_syscall", "lat_syscall", "lat_syscall", "lat_syscall", "lat_syscall", "bw_pipe", "bw_file_rd"};
-    char args[][30] = {"2 4", "fork", /* "exec",*/ "shell", "", "null", "read", "stat", "fstat", "open", "write", "", "512 open2close README"};
-    int NUM_OF_BENCHMARKS = 12;
+    char benchmarks[][20] = {"lat_ctx","lat_proc", /* "lat_proc",*/ "lat_proc", "lat_pipe", "lat_syscall", "lat_syscall", "lat_syscall", "lat_syscall", "lat_syscall", "lat_syscall", "bw_pipe"/*, "bw_file_rd", "bw_file_rd"*/};
+    char args[][30] = {"2 4", "fork", /* "exec",*/ "shell", "", "null", "read", "stat", "fstat", "open", "write", ""/*, "512 open2close README", "512 io_only README"*/};
+    int NUM_OF_BENCHMARKS = 11;
     for (int i = 0; i < NUM_OF_BENCHMARKS; i++)
     {
         int pid, xstatus;
