@@ -1,33 +1,37 @@
 #include "bench.h"
 
-void LMBench(char *bm, char *arg1)
-{
-    char *args[1024];
-    args[0] = bm;
-    args[1] = arg1;
-
-    execve(args[0], args, NULL);
-}
-
 int main(int ac, char **av)
 {
-
-    char benchmarks[][20] = {"lat_ctx","lat_proc", /* "lat_proc",*/ "lat_proc", "lat_pipe", "lat_syscall", "lat_syscall", "lat_syscall", "lat_syscall", "lat_syscall", "lat_syscall", "bw_pipe"/*, "bw_file_rd", "bw_file_rd"*/};
-    char args[][30] = {"2 4", "fork", /* "exec",*/ "shell", "", "null", "read", "stat", "fstat", "open", "write", ""/*, "512 open2close README", "512 io_only README"*/};
-    int NUM_OF_BENCHMARKS = 11;
-    for (int i = 0; i < NUM_OF_BENCHMARKS; i++)
+    char *benchmarks[13][4] = {{"lat_syscall", "null", "", ""}, {"lat_syscall", "read", "", ""}, {"lat_syscall", "stat", "", ""}, {"lat_syscall", "fstat", "", ""}, {"lat_syscall", "open", "", ""}, {"lat_syscall", "write", "", ""}, {"lat_proc", "fork", "", ""}, {"lat_proc", "shell", "", ""}, {"lat_pipe", "", "", ""}, {"lat_ctx", "2", "", ""}, {"bw_pipe", "", "", ""}, {"bw_file_rd", "512", "open2close", "./README"}, {"bw_file_rd", "512", "io_only", "./README"}};
+    for (int i = 0; i < 13; i++)
     {
         int pid, xstatus;
         pid = fork();
         if (pid == 0)
         {
-            if (strlen(args[i]) == 0) // To handle benchmarks without additional arguments
+            if (strlen(benchmarks[i][1]) == 0) // To handle benchmarks without additional arguments
             {
-                LMBench(benchmarks[i], NULL);
+                char *temp[] = {benchmarks[i][0]};
+                fprintf(stderr, "Start %s\n", benchmarks[i][0]);
+                exec(benchmarks[i][0], temp);
+            }
+            else if (strlen(benchmarks[i][2]) == 0) // To handle benchmarks without additional arguments
+            {
+                char *temp[] = {benchmarks[i][0], benchmarks[i][1]};
+                fprintf(stderr, "Start %s %s\n", benchmarks[i][0], benchmarks[i][1]);
+                exec(benchmarks[i][0], temp);
+            }
+            else if (strlen(benchmarks[i][3]) == 0) // To handle benchmarks without additional arguments
+            {
+                char *temp[] = {benchmarks[i][0], benchmarks[i][1], benchmarks[i][2]};
+                fprintf(stderr, "Start %s %s %s\n", benchmarks[i][0], benchmarks[i][1], benchmarks[i][2]);
+                exec(benchmarks[i][0], temp);
             }
             else
             {
-                LMBench(benchmarks[i], args[i]);
+                char *temp[] = {benchmarks[i][0], benchmarks[i][1], benchmarks[i][2], benchmarks[i][3]};
+                fprintf(stderr, "Start %s %s %s %s\n", benchmarks[i][0], benchmarks[i][1], benchmarks[i][2], benchmarks[i][3]);
+                exec(benchmarks[i][0], temp);
             }
 
             exit(0);
