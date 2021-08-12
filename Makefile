@@ -13,7 +13,9 @@ ADD_OBJS = $K/$(TARGET)/trampoline.o
 # Note that the default is cortex-a15, 
 # so for an AArch64 guest you must specify a CPU type.
 # https://qemu.readthedocs.io/en/latest/system/arm/virt.html#supported-devices
-ADD_QEMUOPTS = -cpu cortex-a72
+# ADD_QEMUOPTS = -cpu cortex-a72
+ADD_QEMUOPTS = -cpu host -enable-kvm
+ADD_QEMUOPTS += -machine gic-version=3
 else
 RUST_TARGET = riscv64gc-unknown-none-elfhf
 ARCH = riscv64

@@ -8,13 +8,21 @@ const DIS_INT: usize = 0x80;
 /// Enable device interrupts (IRQ).
 #[inline]
 pub unsafe fn intr_on() {
-    unsafe { asm!("msr daifclr, #2") }
+    unsafe {
+        barrier();
+        asm!("msr daifclr, #2");
+        barrier();
+    }
 }
 
 /// Disable device interrupts (IRQ).
 #[inline]
 pub fn intr_off() {
-    unsafe { asm!("msr daifset, #2") }
+    unsafe {
+        barrier();
+        asm!("msr daifset, #2");
+        barrier();
+    }
 }
 
 /// Are device interrupts (IRQ) enabled?
@@ -66,7 +74,7 @@ pub fn tlbi_vmalle1() {
 }
 
 /// Instruction Synchronization Barrier.
-pub unsafe fn isb() {
+pub fn isb() {
     unsafe { asm!("isb") }
 }
 
@@ -113,4 +121,33 @@ pub fn smc_call(x0: u64, x1: u64, x2: u64, x3: u64) -> u64 {
         asm!("hvc #0", inlateout("x0") x0 => r, in("x1") x1, in("x2") x2, in("x3") x3);
     }
     r
+}
+
+pub fn cpu_relax() {
+    barrier();
+}
+
+pub fn r_mpidr() -> usize {
+    let mut x: usize;
+    unsafe {
+        asm!("mrs {}, mpidr_el1", out(reg) x);
+    }
+    x
+}
+
+pub fn r_icc_ctlr_el1() -> u32 {
+    let mut x: usize;
+    unsafe { asm!("mrs {}, icc_ctlr_el1", out(reg) x) };
+    x as u32
+}
+
+pub fn barrier() {
+    unsafe {
+        asm!("isb sy");
+        asm!("dsb sy");
+        asm!("dsb ishst");
+        asm!("tlbi vmalle1is");
+        asm!("dsb ish");
+        asm!("isb");
+    }
 }

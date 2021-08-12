@@ -1,12 +1,12 @@
 use core::pin::Pin;
 
 use bitflags::bitflags;
-use cortex_a::{asm::barrier, registers::*};
+use cortex_a::registers::*;
 use tock_registers::interfaces::ReadWriteable;
 
 use crate::{
     addr::{pa2pte, pte2pa, PAddr, VAddr, PGSIZE},
-    arch::asm::tlbi_vmalle1,
+    arch::asm::{isb, tlbi_vmalle1},
     arch::memlayout::{MemLayoutImpl, GIC},
     kalloc::Kmem,
     lock::SpinLock,
@@ -249,19 +249,15 @@ impl PageInit for PageInitImpl {
         // We don't use upper VA space
         // TTBR1_EL1.set_baddr(page_table_base as u64);
 
+        isb();
         // register page table
         TTBR0_EL1.set_baddr(page_table_base as u64);
-        unsafe {
-            barrier::isb(barrier::SY);
-        }
 
         // Enable MMU.
         SCTLR_EL1.modify(SCTLR_EL1::M::Enable + SCTLR_EL1::C::Cacheable + SCTLR_EL1::I::Cacheable);
 
         // Force MMU init to complete before next instruction.
-        unsafe {
-            barrier::isb(barrier::SY);
-        }
+        isb();
         tlbi_vmalle1();
     }
 }

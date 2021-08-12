@@ -1,5 +1,5 @@
 use cortex_a::{asm::barrier, registers::*};
-use tock_registers::interfaces::Writeable;
+use tock_registers::interfaces::{ReadWriteable, Writeable};
 
 use crate::{
     arch::asm::*, arch::memlayout::MemLayoutImpl, kernel::main, memlayout::MemLayout, param::NCPU,
@@ -90,6 +90,9 @@ pub unsafe fn start() {
             + TCR_EL1::AS::ASID16Bits // the upper 16 bits of TTBR0_EL1 and TTBR1_EL1 are used for allocation and matching in the TLB.
             + TCR_EL1::TBI0::Ignored, // this may not be needed
     );
+
+    SCTLR_EL1.modify(SCTLR_EL1::SA0::CLEAR);
+    barrier();
 
     unsafe {
         main();

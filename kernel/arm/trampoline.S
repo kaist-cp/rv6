@@ -127,6 +127,13 @@ trampoline:
 
         # restore kernel page table from p->trapframe->kernel_satp
         ldr     x24, [x0]
+
+		isb     sy
+        dsb     sy
+        dsb     ishst
+        tlbi    vmalle1is
+        dsb     ish
+        isb
         msr     ttbr0_el1, x24
 
         # flush all the caches
@@ -183,6 +190,12 @@ userret:
         # a0: TRAPFRAME, in user page table.
         # a1: user page table, for satp.
 
+        isb     sy
+        dsb     sy
+        dsb     ishst
+        tlbi    vmalle1is
+        dsb     ish
+        isb
         # switch to the user page table.
         msr ttbr0_el1, x1
         # TODO: replace this with macro

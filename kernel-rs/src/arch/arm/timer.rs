@@ -110,13 +110,28 @@ impl Timer {
         CNTPCT_EL0.get()
     }
 
+    fn read_freq() -> u64 {
+        unsafe { barrier::isb(barrier::SY) };
+        CNTFRQ_EL0.get()
+    }
+
     pub fn set_next_timer() {
+        unsafe { barrier::isb(barrier::SY) };
         let freq = CNTFRQ_EL0.get();
-        let count = TIMER_TICK_MS * freq / 1000;
+        let count = TIMER_TICK_MS * freq / 1;
 
         unsafe { barrier::isb(barrier::SY) };
         CNTV_TVAL_EL0.set(count);
         CNTV_CTL_EL0.write(CNTV_CTL_EL0::ENABLE.val(1) + CNTV_CTL_EL0::IMASK.val(0));
         unsafe { barrier::isb(barrier::SY) };
+    }
+
+    pub fn udelay(us: u32) {
+        let mut current = Self::read_cntpct();
+        let condition = current + Self::read_freq() * us as u64 / 1000000;
+
+        while condition > current {
+            current = Self::read_cntpct();
+        }
     }
 }

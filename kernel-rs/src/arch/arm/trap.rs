@@ -7,8 +7,8 @@ use tock_registers::interfaces::{Readable, Writeable};
 
 use crate::{
     addr::PGSIZE,
-    arch::asm::{cpu_id, intr_get, intr_off, intr_on, r_fpsr, w_fpsr},
-    arch::intr::INTERRUPT_CONTROLLER,
+    arch::asm::{barrier, cpu_id, intr_get, intr_off, r_fpsr, w_fpsr},
+    arch::intr::get_intr_controller,
     arch::memlayout::{MemLayoutImpl, TIMER0_IRQ, UART0_IRQ, VIRTIO0_IRQ},
     arch::timer::Timer,
     hal::hal,
@@ -102,6 +102,7 @@ impl KernelCtx<'_, '_> {
         VBAR_EL1.set(vectors as _);
 
         self.proc_mut().trap_frame_mut().pc = ELR_EL1.get() as _;
+        self.proc_mut().trap_frame_mut().spsr = SPSR_EL1.get() as _;
 
         let irq = match etype {
             ExceptionTypes::SyncException => {
@@ -112,7 +113,7 @@ impl KernelCtx<'_, '_> {
                         self.kernel().procs().exit_current(-1, &mut self);
                     }
 
-                    unsafe { intr_on() };
+                    unsafe { crate::arch::asm::intr_on() };
 
                     let syscall_no = self.proc_mut().trap_frame_mut().r7 as i32;
                     self.proc_mut().trap_frame_mut().r0 =
@@ -141,6 +142,7 @@ impl KernelCtx<'_, '_> {
             self.kernel().procs().exit_current(-1, &mut self);
         }
 
+        barrier();
         // Give up the CPU if this is a timer interrupt.
         if irq == 2 {
             self.yield_cpu();
@@ -162,7 +164,9 @@ impl KernelCtx<'_, '_> {
         intr_off();
 
         // Send syscalls, interrupts, and exceptions to trampoline.S.
+        barrier();
         VBAR_EL1.set(MemLayoutImpl::TRAMPOLINE as u64);
+        barrier();
 
         // kernel page table
         self.proc_mut().trap_frame_mut().kernel_satp = TTBR0_EL1.get() as usize;
@@ -220,6 +224,7 @@ impl KernelRef<'_, '_> {
             ExceptionTypes::IRQ => unsafe { self.handle_irq() },
         };
 
+        barrier();
         if irq == 2 {
             // TODO(https://github.com/kaist-cp/rv6/issues/517): safety?
             if let Some(ctx) = unsafe { self.get_ctx() } {
@@ -231,6 +236,7 @@ impl KernelRef<'_, '_> {
                 }
             }
         }
+        barrier();
 
         // The yield may have caused some traps to occur,
         // so restore trap registers
@@ -255,45 +261,29 @@ impl KernelRef<'_, '_> {
 
     unsafe fn handle_irq(self) -> usize {
         // TODO
-        let irq = INTERRUPT_CONTROLLER.fetch();
+        let intr_controller = get_intr_controller();
+        let irq = intr_controller.fetch();
 
         match irq {
-            Some(i) => {
-                match i {
-                    TIMER0_IRQ => {
-                        if cpu_id() == 0 {
-                            self.clock_intr();
-                        }
-                        // Give up the CPU if this is a timer interrupt
-                        // if let Some(ctx) = unsafe { self.get_ctx() } {
-                        //     // SAFETY:
-                        //     // Reading state without lock is safe because `proc_yield` and `sched`
-                        //     // is called after we check if current process is `RUNNING`.
-                        //     if unsafe { (*ctx.proc().info.get_mut_raw()).state } == Procstate::RUNNING {
-                        //         ctx.yield_cpu();
-                        //     }
-                        // }
-                        Timer::set_next_timer();
-                    }
-                    UART0_IRQ => {
-                        // SAFETY: it's unsafe only when ctrl+p is pressed.
-                        unsafe { hal().console().intr(self) };
-                    }
-                    VIRTIO0_IRQ => {
-                        hal().disk().pinned_lock().get_pin_mut().intr(self);
-                    }
-                    _ => {
-                        return 0;
-                    } // _ => panic!("unexpected interrupt irq={}\n", i)
+            TIMER0_IRQ => {
+                Timer::set_next_timer();
+                if cpu_id() == 0 {
+                    self.clock_intr();
                 }
             }
+            UART0_IRQ => {
+                // SAFETY: it's unsafe only when ctrl+p is pressed.
+                unsafe { hal().console().intr(self) };
+            }
+            VIRTIO0_IRQ => {
+                hal().disk().pinned_lock().get_pin_mut().intr(self);
+            }
             _ => {
-                return 0;
-            } // panic!("unknown irq")
+                panic!("unexpected interrupt irq={}\n", irq);
+                // return 0;
+            } // _ => panic!("unexpected interrupt irq={}\n", i)
         }
-        if irq.is_some() {
-            INTERRUPT_CONTROLLER.finish(irq.unwrap());
-        }
+        intr_controller.finish(irq);
         // irq.unwrap()
         2
     }
