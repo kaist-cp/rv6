@@ -3,7 +3,6 @@ use core::pin::Pin;
 use pin_project::pin_project;
 
 use crate::{
-    arch::asm::barrier,
     arch::memlayout::MemLayoutImpl,
     console::{Console, Printer},
     cpu::Cpus,
@@ -82,7 +81,6 @@ impl Hal {
         unsafe { this.kmem.get_pin_mut().init() };
 
         this.disk.get_pin_mut().as_ref().init();
-        barrier();
     }
 
     pub fn console(&self) -> &Console {

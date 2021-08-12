@@ -7,7 +7,7 @@ use tock_registers::interfaces::{Readable, Writeable};
 
 use crate::{
     addr::PGSIZE,
-    arch::asm::{barrier, cpu_id, intr_get, intr_off, r_fpsr, w_fpsr},
+    arch::asm::{cpu_id, intr_get, intr_off, r_fpsr, w_fpsr},
     arch::intr::get_intr_controller,
     arch::memlayout::{MemLayoutImpl, TIMER0_IRQ, UART0_IRQ, VIRTIO0_IRQ},
     arch::timer::Timer,
@@ -142,7 +142,7 @@ impl KernelCtx<'_, '_> {
             self.kernel().procs().exit_current(-1, &mut self);
         }
 
-        barrier();
+        // barrier();
         // Give up the CPU if this is a timer interrupt.
         if irq == 2 {
             self.yield_cpu();
@@ -164,9 +164,7 @@ impl KernelCtx<'_, '_> {
         intr_off();
 
         // Send syscalls, interrupts, and exceptions to trampoline.S.
-        barrier();
         VBAR_EL1.set(MemLayoutImpl::TRAMPOLINE as u64);
-        barrier();
 
         // kernel page table
         self.proc_mut().trap_frame_mut().kernel_satp = TTBR0_EL1.get() as usize;
@@ -224,7 +222,7 @@ impl KernelRef<'_, '_> {
             ExceptionTypes::IRQ => unsafe { self.handle_irq() },
         };
 
-        barrier();
+        // barrier();
         if irq == 2 {
             // TODO(https://github.com/kaist-cp/rv6/issues/517): safety?
             if let Some(ctx) = unsafe { self.get_ctx() } {
@@ -236,7 +234,7 @@ impl KernelRef<'_, '_> {
                 }
             }
         }
-        barrier();
+        // barrier();
 
         // The yield may have caused some traps to occur,
         // so restore trap registers

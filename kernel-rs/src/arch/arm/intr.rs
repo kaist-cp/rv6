@@ -9,7 +9,7 @@ use tock_registers::interfaces::Writeable;
 //     register_structs,
 //     registers::{ReadOnly, ReadWrite, WriteOnly},
 // };
-use crate::arch::asm::{barrier, cpu_id, cpu_relax, isb, r_icc_ctlr_el1, r_mpidr};
+use crate::arch::asm::{cpu_id, cpu_relax, isb, r_icc_ctlr_el1, r_mpidr};
 use crate::arch::memlayout::TIMER0_IRQ;
 use crate::arch::memlayout::{UART0_IRQ, VIRTIO0_IRQ};
 use crate::arch::timer::Timer;
@@ -1335,9 +1335,6 @@ impl Gic {
             let x = int;
             asm!("msr icc_eoir1_el1, {}", in(reg) x);
         }
-        barrier();
-        // let gicc = &GICC;
-        // gicc.EOIR.set(int as u32);
     }
 }
 
@@ -1371,8 +1368,6 @@ pub unsafe fn intr_init_core() {
 
         // pl011 uart
         intr_controller.enable(UART0_IRQ);
-
-        barrier();
     }
 }
 

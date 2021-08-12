@@ -118,7 +118,7 @@ impl Timer {
     pub fn set_next_timer() {
         unsafe { barrier::isb(barrier::SY) };
         let freq = CNTFRQ_EL0.get();
-        let count = TIMER_TICK_MS * freq / 1;
+        let count = TIMER_TICK_MS * freq / 1000;
 
         unsafe { barrier::isb(barrier::SY) };
         CNTV_TVAL_EL0.set(count);

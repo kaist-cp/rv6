@@ -9,9 +9,7 @@ const DIS_INT: usize = 0x80;
 #[inline]
 pub unsafe fn intr_on() {
     unsafe {
-        barrier();
         asm!("msr daifclr, #2");
-        barrier();
     }
 }
 
@@ -19,9 +17,7 @@ pub unsafe fn intr_on() {
 #[inline]
 pub fn intr_off() {
     unsafe {
-        barrier();
         asm!("msr daifset, #2");
-        barrier();
     }
 }
 

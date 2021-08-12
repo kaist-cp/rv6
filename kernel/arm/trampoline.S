@@ -60,9 +60,9 @@ trampoline:
 
 .macro	exception_0_entry
 
-        // use TTBR1_EL1 as a scratch register, since
+        // use tpidr_el1 as a scratch register, since
         // we don't use it.
-        msr     ttbr1_el1, x0
+        msr     tpidr_el1, x0
 
         /* assign TRAPFRAME address (fixed) to x0
         TODO: make this macro */
@@ -114,9 +114,9 @@ trampoline:
 	stp	x21, x22, [x0, #16]     /* SPSR, FPSR */
 	stp	x23, x24, [x0, #40]     /* ELR(pc), SP */
 
-        mrs     x25, ttbr1_el1 
+        mrs     x25, tpidr_el1 
         str     x25, [x0, #56]               /* store x0 */
-        msr     ttbr1_el1, xzr
+        msr     tpidr_el1, xzr
         
         # restore kernel stack pointer from p->trapframe->kernel_sp
         ldr     x24, [x0, #8]

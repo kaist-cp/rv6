@@ -5,7 +5,6 @@ use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
     addr::{pgrounddown, pgroundup, Addr, KVAddr, PAddr, UVAddr, VAddr, MAXVA, PGSIZE},
-    arch::asm::barrier,
     arch::memlayout::MemLayoutImpl,
     arch::vm::{PageInitImpl, PageTableEntryImpl, PteFlagsImpl},
     fs::{FileSystem, InodeGuard, Ufs},
@@ -236,7 +235,6 @@ impl<A: VAddr> PageTable<A> {
         let pte = self.get_mut(A::from(a), Some(allocator)).ok_or(())?;
         assert!(!pte.is_valid(), "PageTable::insert");
         pte.set_entry(pa, perm);
-        barrier();
         Ok(())
     }
 
@@ -353,8 +351,6 @@ impl UserMemory {
                 .map_err(|page| allocator.free(page))
                 .ok()?;
         }
-        barrier();
-
         Some(memory)
     }
 
@@ -612,7 +608,6 @@ impl UserMemory {
             // SAFETY: pa is the address of a given page.
             .map_err(|_| unsafe { Page::from_usize(pa) })?;
         self.size = size + PGSIZE;
-        barrier();
         Ok(())
     }
 
@@ -630,7 +625,6 @@ impl UserMemory {
             .into_usize();
         // SAFETY: pa is an address in page_table,
         // and, thus, it is the address of a page by the invariant.
-        barrier();
         Some(unsafe { Page::from_usize(pa) })
     }
 
