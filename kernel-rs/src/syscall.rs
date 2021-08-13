@@ -120,6 +120,7 @@ impl KernelCtx<'_, '_> {
             25 => self.sys_waitpid(),
             26 => self.sys_getppid(),
             27 => self.sys_lseek(),
+            28 => self.sys_uptime_as_micro(),
             _ => {
                 self.kernel().as_ref().write_fmt(format_args!(
                     "{} {}: unknown sys call {}",
@@ -184,6 +185,10 @@ impl KernelCtx<'_, '_> {
     /// since start.
     pub fn sys_uptime(&self) -> Result<usize, ()> {
         Timer::uptime(self.kernel())
+    }
+
+    pub fn sys_uptime_as_micro(&self) -> Result<usize, ()> {
+        Ok((Timer::read_cntpct() * 1000000 / Timer::read_freq()) as usize)
     }
 
     /// Shutdowns this machine, discarding all unsaved data. No return.

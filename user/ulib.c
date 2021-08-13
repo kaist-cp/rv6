@@ -279,11 +279,9 @@ int fsync(int fildes)
 int gettimeofday(struct timeval *__restrict__ tp, 
                 struct timezone *__restrict__ tzp)
 {
-  int cur = uptime();
-  // assume 1tick = 100000 microsecs
-  tp->tv_sec = (cur * MICROSECS_PER_TICK) / 1000000;
-  tp->tv_usec = (cur * MICROSECS_PER_TICK) % 1000000;
-  // fprintf(1, "now: %d sec, %d us\n", tp->tv_sec, tp->tv_usec);
+  int cur = uptime_as_micro();
+  tp->tv_sec = cur / 1000000;
+  tp->tv_usec = cur % 1000000;
   return 0;
 }
 

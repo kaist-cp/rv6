@@ -104,13 +104,13 @@ impl Timer {
         Duration::from_nanos(NS_PER_S / CNTFRQ_EL0.get())
     }
 
-    fn read_cntpct() -> u64 {
+    pub fn read_cntpct() -> u64 {
         // Prevent that the counter is read ahead of time due to out-of-order execution.
         unsafe { barrier::isb(barrier::SY) };
         CNTPCT_EL0.get()
     }
 
-    fn read_freq() -> u64 {
+    pub fn read_freq() -> u64 {
         unsafe { barrier::isb(barrier::SY) };
         CNTFRQ_EL0.get()
     }

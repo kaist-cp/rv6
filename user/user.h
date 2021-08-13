@@ -35,6 +35,7 @@ int getpagesize(void);
 int waitpid(int pid, int *stat_loc, int options);
 int getppid(void);
 off_t lseek(int fildes, off_t offset, int whence);
+int uptime_as_micro();
 int gettimeofday(struct timeval *__restrict__ tp,
                 struct timezone *__restrict__ tzp);
 

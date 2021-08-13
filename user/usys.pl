@@ -62,3 +62,4 @@ entry("getpagesize");
 entry("waitpid");
 entry("getppid");
 entry("lseek");
+entry("uptime_as_micro")

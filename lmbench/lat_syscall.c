@@ -145,6 +145,7 @@ main(int ac, char **av)
     state.fd = 1;
 		benchmp(NULL, do_write, NULL, 0, parallel, 
 			warmup, repetitions, &state);
+		printf("\n");
 		micro("Simple write", get_n());
 		close(state.fd);
 	} else if (!strcmp("read", av[optind])) {
