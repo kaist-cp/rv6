@@ -181,11 +181,11 @@ impl PageTableEntryDesc for ArmV8PageTableEntry {
     }
 }
 
-pub struct RiscVPageInit;
+pub struct ArmV8PageInit;
 
-pub type PageInit = RiscVPageInit;
+pub type PageInit = ArmV8PageInit;
 
-impl PageInitiator for RiscVPageInit {
+impl PageInitiator for ArmV8PageInit {
     fn user_page_init<A: VAddr>(
         page_table: &mut PageTable<A>,
         trap_frame: PAddr,

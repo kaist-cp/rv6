@@ -5,6 +5,9 @@ pub const PTESHIFT: usize = 12;
 
 pub const PG_ADDR: usize = 0xFFFFFFFFF000; // bit 47 - bit 12
 
+/// The number of page table levels.
+pub const PLNUM: usize = 3;
+
 /// Shift a physical address to the right place for a PTE.
 #[inline]
 pub fn pa2pte(pa: PAddr) -> usize {

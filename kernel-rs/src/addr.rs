@@ -1,5 +1,7 @@
 use core::ops::Add;
 
+use crate::arch::addr::PLNUM;
+
 /// Bits of offset within a page.
 pub const PGSHIFT: usize = 12;
 
@@ -14,9 +16,6 @@ pub const PLSIZE: usize = 1 << PLSHIFT;
 
 /// Bit mask for page table index.
 pub const PLMASK: usize = PLSIZE - 1;
-
-/// The number of page table levels.
-pub const PLNUM: usize = 3;
 
 /// One beyond the highest possible virtual address.
 /// MAXVA is actually one bit less than the max allowed by
