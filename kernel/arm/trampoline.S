@@ -5,6 +5,15 @@
 .globl trampoline
 trampoline:
 
+.macro flush_cache
+	isb     sy
+        dsb     sy
+        dsb     ishst
+        tlbi    vmalle1is
+        dsb     ish
+        isb
+.endm
+
 .macro	exception_1_entry
 	sub	sp, sp, #272
 	stp	x0, x1, [sp, #16 * 0]
@@ -64,8 +73,7 @@ trampoline:
         // we don't use it.
         msr     tpidr_el1, x0
 
-        /* assign TRAPFRAME address (fixed) to x0
-        TODO: make this macro */
+        // assign TRAPFRAME address (fixed) to x0
         movz    x0, #0xe000
         movk    x0, #0xffff, lsl #16
         movk    x0, #0x3f, lsl #32
@@ -128,22 +136,10 @@ trampoline:
         # restore kernel page table from p->trapframe->kernel_satp
         ldr     x24, [x0]
 
-		isb     sy
-        dsb     sy
-        dsb     ishst
-        tlbi    vmalle1is
-        dsb     ish
-        isb
         msr     ttbr0_el1, x24
 
         # flush all the caches
-        # TODO: make this macro
-        isb     sy
-        dsb     sy
-        dsb     ishst
-        tlbi    vmalle1is
-        dsb     ish
-        isb
+        flush_cache
 .endm
 
 /* Exception vectors */
@@ -190,21 +186,10 @@ userret:
         # a0: TRAPFRAME, in user page table.
         # a1: user page table, for satp.
 
-        isb     sy
-        dsb     sy
-        dsb     ishst
-        tlbi    vmalle1is
-        dsb     ish
-        isb
         # switch to the user page table.
         msr ttbr0_el1, x1
-        # TODO: replace this with macro
-        isb     sy
-        dsb     sy
-        dsb     ishst
-        tlbi    vmalle1is
-        dsb     ish
-        isb
+        
+        flush_cache
 
         # restore ELR, SPSR, LR, SP
 	ldp	x21, x22, [x0, #16]      /* SPSR, FPSR */

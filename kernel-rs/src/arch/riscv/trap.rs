@@ -7,11 +7,11 @@ use crate::{
         w_sepc, w_sip, w_stvec, Sstatus,
     },
     arch::intr::{plic_claim, plic_complete},
-    arch::memlayout::MemLayoutImpl,
+    arch::memlayout::MemLayout,
     cpu::cpuid,
     hal::hal,
     kernel::{kernel_ref, KernelRef},
-    memlayout::MemLayout,
+    memlayout::{IrqNumbers, TRAMPOLINE, TRAPFRAME},
     ok_or,
     proc::{kernel_ctx, KernelCtx, Procstate},
 };
@@ -124,8 +124,8 @@ impl KernelCtx<'_, '_> {
         // Send syscalls, interrupts, and exceptions to trampoline.S.
         unsafe {
             w_stvec(
-                MemLayoutImpl::TRAMPOLINE.wrapping_add(
-                    uservec.as_mut_ptr().offset_from(trampoline.as_mut_ptr()) as usize,
+                TRAMPOLINE.wrapping_add(
+                    uservec.as_mut_ptr().offset_from(trampoline.as_mut_ptr()) as usize
                 ),
             )
         };
@@ -166,10 +166,10 @@ impl KernelCtx<'_, '_> {
         // Jump to trampoline.S at the top of memory, which
         // switches to the user page table, restores user registers,
         // and switches to user mode with sret.
-        let fn_0: usize = MemLayoutImpl::TRAMPOLINE
-            + unsafe { userret.as_ptr().offset_from(trampoline.as_ptr()) } as usize;
+        let fn_0: usize =
+            TRAMPOLINE + unsafe { userret.as_ptr().offset_from(trampoline.as_ptr()) } as usize;
         let fn_0 = unsafe { mem::transmute::<_, unsafe extern "C" fn(usize, usize) -> !>(fn_0) };
-        unsafe { fn_0(MemLayoutImpl::TRAPFRAME, satp) }
+        unsafe { fn_0(TRAPFRAME, satp) }
     }
 }
 
@@ -237,10 +237,10 @@ impl KernelRef<'_, '_> {
             // irq indicates which device interrupted.
             let irq = unsafe { plic_claim() };
 
-            if irq as usize == MemLayoutImpl::UART0_IRQ {
+            if irq as usize == MemLayout::UART0_IRQ {
                 // SAFETY: it's unsafe only when ctrl+p is pressed.
                 unsafe { hal().console().intr(self) };
-            } else if irq as usize == MemLayoutImpl::VIRTIO0_IRQ {
+            } else if irq as usize == MemLayout::VIRTIO0_IRQ {
                 hal().disk().pinned_lock().get_pin_mut().intr(self);
             } else if irq != 0 {
                 // Use `panic!` instead of `println` to prevent stack overflow.

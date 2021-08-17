@@ -9,6 +9,7 @@ use pin_project::pin_project;
 use crate::util::strong_pin::StrongPin;
 use crate::{
     arch::intr::{intr_init, intr_init_core},
+    arch::trap::{trapinit, trapinitcore},
     bio::Bcache,
     console::{console_read, console_write},
     cpu::cpuid,
@@ -19,7 +20,6 @@ use crate::{
     lock::{SleepableLock, SpinLock},
     param::NDEV,
     proc::Procs,
-    trap::{trapinit, trapinitcore},
     util::{branded::Branded, spin_loop},
     vm::KernelMemory,
 };

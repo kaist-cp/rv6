@@ -11,11 +11,11 @@ use core::{fmt, pin::Pin};
 
 use crate::{
     addr::UVAddr,
+    arch::uart::Uart,
     hal::hal,
     kernel::{Kernel, KernelRef},
     lock::{SleepableLock, SleepableLockGuard, SpinLock, SpinLockGuard},
     proc::KernelCtx,
-    uart::Uart,
     util::spin_loop,
 };
 

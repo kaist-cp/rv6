@@ -6,13 +6,13 @@ use zerocopy::{AsBytes, FromBytes};
 use crate::{
     addr::{pgrounddown, pgroundup, Addr, KVAddr, PAddr, UVAddr, VAddr, MAXVA, PGSIZE},
     arch::{
-        memlayout::MemLayoutImpl,
+        memlayout::MemLayout,
         vm::{PageInit, PageTableEntry, PteFlags},
     },
     fs::{FileSystem, InodeGuard, Ufs},
     kalloc::Kmem,
     lock::SpinLock,
-    memlayout::MemLayout,
+    memlayout::{kstack, DeviceMappingInfo, PHYSTOP, TRAPFRAME},
     page::Page,
     param::NPROC,
     proc::KernelCtx,
@@ -574,7 +574,7 @@ impl UserMemory {
 
     /// Return a page at va as a slice. Some(page) on success, None on failure.
     fn get_slice(&mut self, va: UVAddr) -> Option<&mut [u8]> {
-        if va.into_usize() >= MemLayoutImpl::TRAPFRAME {
+        if va.into_usize() >= TRAPFRAME {
             return None;
         }
         let pte = self.page_table.get_mut(va, None)?;
@@ -666,9 +666,9 @@ impl KernelMemory {
         let et = unsafe { etext.as_mut_ptr() as usize };
         page_table
             .insert_range(
-                MemLayoutImpl::KERNBASE.into(),
-                et - MemLayoutImpl::KERNBASE,
-                MemLayoutImpl::KERNBASE.into(),
+                MemLayout::KERNBASE.into(),
+                et - MemLayout::KERNBASE,
+                MemLayout::KERNBASE.into(),
                 (AccessFlags::R | AccessFlags::X).into(),
                 allocator,
             )
@@ -678,7 +678,7 @@ impl KernelMemory {
         page_table
             .insert_range(
                 et.into(),
-                MemLayoutImpl::PHYSTOP - et,
+                PHYSTOP - et,
                 et.into(),
                 (AccessFlags::R | AccessFlags::W).into(),
                 allocator,
@@ -690,7 +690,7 @@ impl KernelMemory {
         // guard page.
         for i in 0..NPROC {
             let pa = allocator.alloc()?.into_usize();
-            let va: usize = MemLayoutImpl::kstack(i);
+            let va: usize = kstack(i);
             page_table
                 .insert_range(
                     va.into(),

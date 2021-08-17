@@ -2,8 +2,8 @@ use cortex_a::{asm::barrier, registers::*};
 use tock_registers::interfaces::{ReadWriteable, Writeable};
 
 use crate::{
-    arch::asm::*, arch::memlayout::MemLayoutImpl, kernel::main, memlayout::MemLayout, param::NCPU,
-    uart::Uart,
+    arch::asm::*, arch::memlayout::MemLayout, arch::uart::Uart, kernel::main,
+    memlayout::DeviceMappingInfo, param::NCPU,
 };
 
 extern "C" {
@@ -107,7 +107,7 @@ fn _puts(s: &str) {
 }
 
 fn uart_putc(c: u8) {
-    let u_art = unsafe { Uart::new(MemLayoutImpl::UART0) };
+    let u_art = unsafe { Uart::new(MemLayout::UART0) };
     u_art.putc(c);
 }
 

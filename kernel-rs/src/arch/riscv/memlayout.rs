@@ -19,41 +19,26 @@
 // Dead code is allowed in this file because not all components are used in the kernel.
 #![allow(dead_code)]
 
-use crate::addr::{MAXVA, PGSIZE};
-use crate::memlayout::MemLayout;
+use crate::memlayout::{DeviceMappingInfo, IrqNumbers};
 
-pub struct MemLayoutImpl;
+pub type MemLayout = RiscVVirtMemLayout;
 
-impl MemLayout for MemLayoutImpl {
+pub struct RiscVVirtMemLayout;
+
+impl DeviceMappingInfo for RiscVVirtMemLayout {
     /// the kernel expects there to be RAM
     /// for use by the kernel and user pages
     /// from physical address 0x80000000 to PHYSTOP.
     const KERNBASE: usize = 0x80000000;
-    /// map the trampoline page to the highest address,
-    /// in both user and kernel space.
-    const TRAMPOLINE: usize = MAXVA.wrapping_sub(PGSIZE);
-    /// User memory layout.
-    /// Address zero first:
-    ///   text
-    ///   original data and bss
-    ///   fixed-size stack
-    ///   expandable heap
-    ///   ...
-    ///   TRAPFRAME (p->trapframe, used by the trampoline)
-    ///   TRAMPOLINE (the same page as in the kernel)
-    const TRAPFRAME: usize = Self::TRAMPOLINE.wrapping_sub(PGSIZE);
     /// qemu puts UART registers here in physical memory.
     const UART0: usize = 0x10000000;
-    const UART0_IRQ: usize = 10;
     /// virtio mmio interface
     const VIRTIO0: usize = 0x10001000;
-    const VIRTIO0_IRQ: usize = 1;
+}
 
-    /// map kernel stacks beneath the trampoline,
-    /// each surrounded by invalid guard pages.
-    fn kstack(p: usize) -> usize {
-        Self::TRAMPOLINE - ((p + 1) * 2 * PGSIZE)
-    }
+impl IrqNumbers for RiscVVirtMemLayout {
+    const UART0_IRQ: usize = 10;
+    const VIRTIO0_IRQ: usize = 1;
 }
 
 /// SiFive Test Finisher. (virt device only)

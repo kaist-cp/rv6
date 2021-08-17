@@ -53,16 +53,8 @@
 #![feature(try_blocks)]
 #![feature(variant_count)]
 
-#[cfg(target_arch = "riscv64")]
-#[path = "arch/riscv/mod.rs"]
-mod arch;
-#[cfg(target_arch = "aarch64")]
-#[path = "arch/arm/mod.rs"]
-mod arch;
-
-pub use arch::*;
-
 mod addr;
+mod arch;
 mod arena;
 mod bio;
 mod console;

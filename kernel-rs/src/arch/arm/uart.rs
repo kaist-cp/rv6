@@ -123,7 +123,7 @@ impl Uart {
         self.FBRD
             .set(((left * 4 + UART_BITRATE / 2) / UART_BITRATE) as u32);
 
-        // // enable trasmit and receive interrupts
+        // enable trasmit and receive interrupts
         self.CR.set(
             UartRegBits::CREnable.bits()
                 | UartRegBits::CRRxEnable.bits()
@@ -137,7 +137,6 @@ impl Uart {
 
     pub fn enable_rx(&self) {
         self.IMSC.set(UartRegBits::IERRxEnable.bits());
-        // self.write(IMSC, UartRegBits::IERRxEnable.bits());
     }
 
     /// Read one input character from the UART. Return Err(()) if none is waiting.

@@ -9,11 +9,11 @@ use crate::{
     arch::{
         addr::{pa2pte, pte2pa},
         asm::{isb, tlbi_vmalle1},
-        memlayout::{MemLayoutImpl, GIC},
+        memlayout::{MemLayout, GIC},
     },
     kalloc::Kmem,
     lock::SpinLock,
-    memlayout::MemLayout,
+    memlayout::{DeviceMappingInfo, TRAMPOLINE, TRAPFRAME},
     vm::{AccessFlags, PageInitiator, PageTable, PageTableEntryDesc, RawPageTable},
 };
 
@@ -180,7 +180,7 @@ impl PageInitiator for RiscVPageInit {
         // Only the supervisor uses it, on the way
         // to/from user space, so not PTE_U.
         page_table.insert(
-            MemLayoutImpl::TRAMPOLINE.into(),
+            TRAMPOLINE.into(),
             // SAFETY: we assume that reading the address of trampoline is safe.
             (unsafe { trampoline.as_mut_ptr() as usize }).into(),
             ArmV8PteFlags::RO_P | ArmV8PteFlags::UXN,
@@ -189,7 +189,7 @@ impl PageInitiator for RiscVPageInit {
 
         // Map the trapframe just below TRAMPOLINE, for trampoline.S.
         page_table.insert(
-            MemLayoutImpl::TRAPFRAME.into(),
+            TRAPFRAME.into(),
             trap_frame,
             ArmV8PteFlags::RW_P | ArmV8PteFlags::PXN | ArmV8PteFlags::UXN,
             allocator,
@@ -202,6 +202,7 @@ impl PageInitiator for RiscVPageInit {
         page_table: &mut PageTable<A>,
         allocator: Pin<&SpinLock<Kmem>>,
     ) -> Result<(), ()> {
+        // TODO: put ARM's counterpart of SiFive Test Finisher here
         // SiFive Test Finisher MMIO
         // page_table
         //     .insert_range(
@@ -215,18 +216,18 @@ impl PageInitiator for RiscVPageInit {
 
         // Uart registers
         page_table.insert_range(
-            MemLayoutImpl::UART0.into(),
+            MemLayout::UART0.into(),
             PGSIZE,
-            MemLayoutImpl::UART0.into(),
+            MemLayout::UART0.into(),
             ArmV8PteFlags::RW_P | ArmV8PteFlags::PXN,
             allocator,
         )?;
 
         // Virtio mmio disk interface
         page_table.insert_range(
-            MemLayoutImpl::VIRTIO0.into(),
+            MemLayout::VIRTIO0.into(),
             PGSIZE,
-            MemLayoutImpl::VIRTIO0.into(),
+            MemLayout::VIRTIO0.into(),
             ArmV8PteFlags::RW_P | ArmV8PteFlags::PXN,
             allocator,
         )?;
@@ -234,7 +235,7 @@ impl PageInitiator for RiscVPageInit {
         // GIC
         page_table.insert_range(
             GIC.into(),
-            MemLayoutImpl::UART0 - GIC,
+            MemLayout::UART0 - GIC,
             GIC.into(),
             ArmV8PteFlags::RW_P | ArmV8PteFlags::PXN,
             allocator,
@@ -243,7 +244,7 @@ impl PageInitiator for RiscVPageInit {
         // Map the trampoline for trap entry/exit to
         // the highest virtual address in the kernel.
         page_table.insert_range(
-            MemLayoutImpl::TRAMPOLINE.into(),
+            TRAMPOLINE.into(),
             PGSIZE,
             // SAFETY: we assume that reading the address of trampoline is safe.
             unsafe { trampoline.as_mut_ptr() as usize }.into(),

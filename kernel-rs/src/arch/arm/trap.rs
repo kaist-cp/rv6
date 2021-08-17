@@ -7,13 +7,16 @@ use tock_registers::interfaces::{Readable, Writeable};
 
 use crate::{
     addr::PGSIZE,
-    arch::asm::{cpu_id, intr_get, intr_off, r_fpsr, w_fpsr},
-    arch::intr::INTERRUPT_CONTROLLER,
-    arch::memlayout::{MemLayoutImpl, TIMER0_IRQ},
-    arch::timer::Timer,
+    arch::{
+        asm::{cpu_id, intr_get, intr_off, r_fpsr, w_fpsr},
+        intr::INTERRUPT_CONTROLLER,
+        memlayout::{MemLayout, TIMER0_IRQ},
+        timer::Timer,
+    },
     hal::hal,
     kernel::{kernel_ref, KernelRef},
-    memlayout::MemLayout,
+    memlayout::IrqNumbers,
+    memlayout::{TRAMPOLINE, TRAPFRAME},
     ok_or,
     proc::{kernel_ctx, KernelCtx, Procstate},
 };
@@ -39,18 +42,12 @@ impl ExceptionTypes {
     }
 }
 
-// TODO: replace these
 extern "C" {
     // trampoline.S
     static mut trampoline: [u8; 0];
 
-    // static mut uservec: [u8; 0];
-
     static mut userret: [u8; 0];
     fn vectors();
-
-    // In kernelvec.S, calls kerneltrap().
-    // fn kernelvec();
 }
 
 extern "C" {
@@ -164,7 +161,7 @@ impl KernelCtx<'_, '_> {
         intr_off();
 
         // Send syscalls, interrupts, and exceptions to trampoline.S.
-        VBAR_EL1.set(MemLayoutImpl::TRAMPOLINE as u64);
+        VBAR_EL1.set(TRAMPOLINE as u64);
 
         // kernel page table
         self.proc_mut().trap_frame_mut().kernel_satp = TTBR0_EL1.get() as usize;
@@ -180,10 +177,10 @@ impl KernelCtx<'_, '_> {
         // Jump to trampoline.S at the top of memory, which
         // switches to the user page table, restores user registers,
         // and switches to user mode with sret.
-        let fn_0: usize = MemLayoutImpl::TRAMPOLINE
-            + unsafe { userret.as_ptr().offset_from(trampoline.as_ptr()) } as usize;
+        let fn_0: usize =
+            TRAMPOLINE + unsafe { userret.as_ptr().offset_from(trampoline.as_ptr()) } as usize;
         let fn_0 = unsafe { mem::transmute::<_, unsafe extern "C" fn(usize, usize) -> !>(fn_0) };
-        unsafe { fn_0(MemLayoutImpl::TRAPFRAME, user_table) }
+        unsafe { fn_0(TRAPFRAME, user_table) }
     }
 }
 
@@ -257,6 +254,7 @@ impl KernelRef<'_, '_> {
         ));
     }
 
+    // TODO: refactor this function
     unsafe fn handle_irq(self) -> usize {
         // TODO
         let irq = INTERRUPT_CONTROLLER.fetch();
@@ -270,11 +268,11 @@ impl KernelRef<'_, '_> {
                         }
                         Timer::set_next_timer();
                     }
-                    MemLayoutImpl::UART0_IRQ => {
+                    MemLayout::UART0_IRQ => {
                         // SAFETY: it's unsafe only when ctrl+p is pressed.
                         unsafe { hal().console().intr(self) };
                     }
-                    MemLayoutImpl::VIRTIO0_IRQ => {
+                    MemLayout::VIRTIO0_IRQ => {
                         hal().disk().pinned_lock().get_pin_mut().intr(self);
                     }
                     _ => {
@@ -288,7 +286,6 @@ impl KernelRef<'_, '_> {
         if irq.is_some() {
             INTERRUPT_CONTROLLER.finish(irq.unwrap());
         }
-        // irq.unwrap()
         2
     }
 

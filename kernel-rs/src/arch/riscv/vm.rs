@@ -21,12 +21,12 @@ use crate::{
     arch::{
         addr::{pa2pte, pte2pa},
         asm::{make_satp, sfence_vma, w_satp},
-        memlayout::{MemLayoutImpl, FINISHER, PLIC},
+        memlayout::{MemLayout, FINISHER, PLIC},
     },
 >>>>>>> refactoring
     kalloc::Kmem,
     lock::SpinLock,
-    memlayout::MemLayout,
+    memlayout::{DeviceMappingInfo, TRAMPOLINE, TRAPFRAME},
     vm::{AccessFlags, PageInitiator, PageTable, PageTableEntryDesc, RawPageTable},
 };
 
@@ -156,7 +156,7 @@ impl PageInitiator for ArmV8PageInit {
         // Only the supervisor uses it, on the way
         // to/from user space, so not PTE_U.
         page_table.insert(
-            MemLayoutImpl::TRAMPOLINE.into(),
+            TRAMPOLINE.into(),
             // SAFETY: we assume that reading the address of trampoline is safe.
             (unsafe { trampoline.as_mut_ptr() as usize }).into(),
             RiscVPteFlags::R | RiscVPteFlags::X,
@@ -165,7 +165,7 @@ impl PageInitiator for ArmV8PageInit {
 
         // Map the trapframe just below TRAMPOLINE, for trampoline.S.
         page_table.insert(
-            MemLayoutImpl::TRAPFRAME.into(),
+            TRAPFRAME.into(),
             trap_frame,
             RiscVPteFlags::R | RiscVPteFlags::W,
             allocator,
@@ -189,18 +189,18 @@ impl PageInitiator for ArmV8PageInit {
 
         // Uart registers
         page_table.insert_range(
-            MemLayoutImpl::UART0.into(),
+            MemLayout::UART0.into(),
             PGSIZE,
-            MemLayoutImpl::UART0.into(),
+            MemLayout::UART0.into(),
             RiscVPteFlags::R | RiscVPteFlags::W,
             allocator,
         )?;
 
         // Virtio mmio disk interface
         page_table.insert_range(
-            MemLayoutImpl::VIRTIO0.into(),
+            MemLayout::VIRTIO0.into(),
             PGSIZE,
-            MemLayoutImpl::VIRTIO0.into(),
+            MemLayout::VIRTIO0.into(),
             RiscVPteFlags::R | RiscVPteFlags::W,
             allocator,
         )?;
@@ -216,7 +216,7 @@ impl PageInitiator for ArmV8PageInit {
         // Map the trampoline for trap entry/exit to
         // the highest virtual address in the kernel.
         page_table.insert_range(
-            MemLayoutImpl::TRAMPOLINE.into(),
+            TRAMPOLINE.into(),
             PGSIZE,
             // SAFETY: we assume that reading the address of trampoline is safe.
             unsafe { trampoline.as_mut_ptr() as usize }.into(),

@@ -1,5 +1,4 @@
 // //! the ARM Generic Interrupt Controller v3 (GIC v3).
-// This code is from https://github.com/tonnylyz/rustpie/blob/master/src/driver/aarch64_virt/gic.rs
 use core::ptr;
 
 use cortex_a::registers::*;
@@ -7,13 +6,15 @@ use tock_registers::interfaces::Writeable;
 
 use crate::arch::{
     asm::{cpu_id, cpu_relax, isb, r_icc_ctlr_el1, r_mpidr},
-    memlayout::{MemLayoutImpl, TIMER0_IRQ},
+    memlayout::{MemLayout, TIMER0_IRQ},
     timer::Timer,
 };
-use crate::memlayout::MemLayout;
+use crate::memlayout::IrqNumbers;
 use crate::param::NCPU;
 use crate::timer::TimeManager;
 
+// TODO: group all the constants properly as did in `gicv2.rs`,
+// using `regiter_structs` macro.
 pub const GICD_BASE: usize = 0x08000000;
 pub const GICC_BASE: usize = 0x08010000;
 pub const GICR_BASE: usize = 0x080a0000;
@@ -1067,7 +1068,6 @@ impl Gic {
     }
 
     pub fn init(&mut self) {
-
         // check gic version is matched: should be v3 or 4
         self.gicd.validate_gic_version();
 
@@ -1161,10 +1161,10 @@ pub unsafe fn intr_init_core() {
         // only boot core do this initialization
 
         // virtio_blk
-        intr_controller.enable(MemLayoutImpl::VIRTIO0_IRQ);
+        intr_controller.enable(MemLayout::VIRTIO0_IRQ);
 
         // pl011 uart
-        intr_controller.enable(MemLayoutImpl::UART0_IRQ);
+        intr_controller.enable(MemLayout::UART0_IRQ);
     }
 }
 
