@@ -272,7 +272,7 @@ impl PipeInner {
 
     fn is_ready(&self, event: SelectEvent) -> bool {
         match event {
-            SelectEvent::Read => !(self.nread == self.nwrite),
+            SelectEvent::Read => self.nread != self.nwrite,
             _ => unimplemented!(),
         }
     }

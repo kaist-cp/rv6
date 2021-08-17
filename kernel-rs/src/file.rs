@@ -262,6 +262,37 @@ impl File {
             Err(())
         }
     }
+
+    /// Check file is ready for specified select event.
+    /// It only supports pipe now.
+    /// TODO: support other type of files
+    pub fn is_ready(&self, event: SelectEvent) -> Result<bool, ()> {
+        match event {
+            SelectEvent::Read => {
+                if !self.readable {
+                    return Err(());
+                }
+
+                match &self.typ {
+                    FileType::Pipe { pipe } => {
+                        // pipe-empty
+                        if pipe.is_ready(event) {
+                            return Ok(true);
+                        }
+                    }
+                    FileType::Inode { .. } => {
+                        unimplemented!()
+                    }
+                    FileType::Device { .. } => unimplemented!(""),
+                    FileType::None => panic!("Syscall::sys_select"),
+                }
+                Ok(false)
+            }
+            _ => {
+                todo!("Select for write and error is not implemented yet")
+            }
+        }
+    }
 }
 
 impl const Default for File {

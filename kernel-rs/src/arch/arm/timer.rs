@@ -6,6 +6,7 @@ use tock_registers::interfaces::{Readable, Writeable};
 use crate::{kernel::KernelRef, proc::KernelCtx, timer::TimeManager};
 
 const NS_PER_S: u64 = 1_000_000_000;
+const US_PER_S: u64 = 1_000_000;
 
 const TIMER_TICK_MS: u64 = 100;
 
@@ -33,6 +34,10 @@ impl TimeManager for Timer {
             ticks.sleep(kernel_ctx);
         }
         Ok(())
+    }
+
+    fn uptime_as_micro() -> Result<usize, ()> {
+        Ok((Timer::read_cntpct() * US_PER_S / Timer::read_freq()) as usize)
     }
 }
 

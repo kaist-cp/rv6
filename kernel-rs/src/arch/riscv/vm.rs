@@ -40,7 +40,7 @@ bitflags! {
         /// valid
         const V = 1 << 0;
         /// readable
-        const R = 1 << 1;
+    const R = 1 << 1;
         /// writable
         const W = 1 << 2;
         /// executable

@@ -12,8 +12,10 @@ pub trait TimeManager {
     ///
     /// This includes time consumed by firmware and bootloaders.
     /// time scale can be different depending on architecture
-    fn uptime<'id, 's>(kernel: KernelRef<'id, 's>) -> Result<usize, ()>;
+    fn uptime(kernel: KernelRef<'_, '_>) -> Result<usize, ()>;
 
     /// Spin for a given duration.
-    fn spin_for<'id, 's>(kernel: &KernelCtx<'id, 's>, duration: usize) -> Result<(), ()>;
+    fn spin_for(kernel: &KernelCtx<'_, '_>, duration: usize) -> Result<(), ()>;
+
+    fn uptime_as_micro() -> Result<usize, ()>;
 }
