@@ -5,14 +5,12 @@ use core::ptr;
 use cortex_a::registers::*;
 use tock_registers::interfaces::Writeable;
 
-// use tock_registers::{
-//     register_structs,
-//     registers::{ReadOnly, ReadWrite, WriteOnly},
-// };
-use crate::arch::asm::{cpu_id, cpu_relax, isb, r_icc_ctlr_el1, r_mpidr};
-use crate::arch::memlayout::TIMER0_IRQ;
-use crate::arch::memlayout::{UART0_IRQ, VIRTIO0_IRQ};
-use crate::arch::timer::Timer;
+use crate::arch::{
+    asm::{cpu_id, cpu_relax, isb, r_icc_ctlr_el1, r_mpidr},
+    memlayout::{MemLayoutImpl, TIMER0_IRQ},
+    timer::Timer,
+};
+use crate::memlayout::MemLayout;
 use crate::param::NCPU;
 use crate::timer::TimeManager;
 
@@ -403,9 +401,9 @@ const GICR_VPENDBASER: u32 = 0x0078;
 
 // const GITS_LVL1_ENTRY_SIZE:usize =           (8UL);
 
-// /*
-//  * ITS commands
-//  */
+/*
+ * ITS commands
+ */
 // const GITS_CMD_MAPD:usize =			0x08;
 // const GITS_CMD_MAPC:usize =			0x09;
 // const GITS_CMD_MAPTI:usize =			0x0a;
@@ -431,9 +429,9 @@ const GICR_VPENDBASER: u32 = 0x0078;
 // /* VMOVP is the odd one, as it doesn't have a physical counterpart */
 // const GITS_CMD_VMOVP:usize =			GITS_CMD_GICv4(2);
 
-// /*
-//  * ITS error numbers
-//  */
+/*
+ * ITS error numbers
+ */
 // const E_ITS_MOVI_UNMAPPED_INTERRUPT:usize =		0x010107;
 // const E_ITS_MOVI_UNMAPPED_COLLECTION:usize =		0x010109;
 // const E_ITS_INT_UNMAPPED_INTERRUPT:usize =		0x010307;
@@ -708,6 +706,7 @@ const MPIDR_HWID_BITMASK: u64 = 0xff00ffffff;
 //   }
 // }
 
+#[derive(Debug)]
 struct GicDistributor {
     base_addr: usize,
     gic_irqs: u32,
@@ -739,36 +738,12 @@ struct GicDistributor {
 //   }
 // }
 
+#[derive(Debug)]
 struct GicCpuInterface {
     base_addr: usize,
     gic_irqs: u32,
     redists: [usize; NCPU],
 }
-
-// register_structs! {
-//     #[allow(non_snake_case)]
-//     GicRedistInterfaceBlock {
-//       (0x0000 => CTLR: ReadWrite<u32>),   // CPU Interface Control Register
-//       (0x0004 => IIDR: ReadOnly<u32>),    // Interrupt Priority Mask Register
-//       (0x0008 => TYPER: ReadOnly<u64>),    // Binary Point Register
-//       (0x0010 => STATUSR: ReadWrite<u32>),     // Interrupt Acknowledge Register
-//       (0x0014 => WAKER: ReadWrite<u32>),   // End of Interrupt Register
-//       (0x0040 => SETLPIR: WriteOnly<u32>),   // Highest Priority Pending Interrupt Register
-//       (0x0048 => CLRLPIR: WriteOnly<u32>),   // Aliased Binary Point Register
-//       (0x0070 => PROPBASER: ReadWrite<u32>),    // Aliased Interrupt Acknowledge Register
-//       (0x0078 => PENDBASER: ReadWrite<u32>),  // Aliased End of Interrupt Register
-//       (0x0080 => IGROUP0: ReadWrite<u32>),  // Aliased Highest Priority Pending Interrupt Register
-//       (0x0100 => ISENABLER0: ReadWrite<u32>),    // Active Priorities Register
-//       (0x0180 => ICENABLER0: ReadWrite<u32>),  // Non-secure Active Priorities Register
-//       (0x00fc => ISPENDR0: ReadWrite<u32>),    // CPU Interface Identification Register
-//       (0x0200 => ICPENDR0: ReadWrite<u32>),
-//       (0x0300 => ISACTIVER0: ReadWrite<u32>),    // Deactivate Interrupt Register
-//       (0x0380 => ICACTIVER0: ReadWrite<u32>),
-//       (0x0400 => IPRIORITYR: [ReadWrite<u32>; GIC_8_BIT_NUM]),
-//       (0x0c04 => ICFGR0: [ReadWrite<u32>; GIC_1_BIT_NUM]),
-//       (0x2000 => @END),
-//     }
-// }
 
 const MPIDR_LEVEL_BITS_SHIFT: u32 = 3;
 const MPIDR_LEVEL_BITS: u32 = 1 << MPIDR_LEVEL_BITS_SHIFT;
@@ -798,41 +773,6 @@ impl GicRedistributor {
     pub fn set_base_addr(&mut self, addr: usize) {
         self.base_addr = addr;
     }
-
-    // fn init(&self) {
-    //     let waker = ptr::read_volatile(self.base_addr + )
-
-    //     self.WAKER.set(self.WAKER.get() & !(1u32 << 1));
-    //     while self.WAKER.get() & (1u32 << 2) != 0 {
-    //         // wating for children to awake
-    //     }
-
-    //     self.IGROUP0.set(u32::MAX);
-    //     self.CTLR.set(7);
-    // }
-
-    // pub fn validate_gic_version(&self) -> Result<(), ()> {
-    //     let version = self.PIDR2.get() & GIC_PIDR2_ARCH_MASK;
-
-    //     if version != GIC_PIDR2_ARCH_GICv3 && version != GIC_PIDR2_ARCH_GICv4 {
-    //         return Err(())
-    //     }
-    //     Ok(())
-    // }
-
-    // pub fn wait_for_rwp(&self) {
-    //     let mut count:u32 = 10000;
-
-    //     while self.CTLR.get() & GICD_CTLR_RWP != 0 {
-    //         count-=1;
-    //         if count == 0 {
-    //             panic!("RWP timeout, gone fishing");
-    //         }
-
-    //         cpu_relax();
-    //         Timer::udelay(1);
-    //     }
-    // }
 }
 
 impl GicCpuInterface {
@@ -845,15 +785,11 @@ impl GicCpuInterface {
     }
 
     fn init(&self) {
-        // self.PMR.set(u32::MAX);
-        // self.CTLR.set(1);
-
         self.enable_redist();
 
         let rbase = self.rdist_sgi_base();
 
         /* Configure SGIs/PPIs as non-secure Group-1 */
-        // let redist = GicRedistributor::from_addr(redist);
         unsafe {
             ptr::write_volatile((rbase + GICR_IGROUPR0) as *mut u32, u32::MAX);
             isb();
@@ -1056,32 +992,6 @@ impl GicDistributor {
         wait_for_rwp(self.base_addr);
     }
 
-    // fn dist_config(&self) {
-    //     for i in (32usize..self.gic_irqs).step_by(16) {
-    //         unsafe {write_w(self.base + )}
-    //     }
-    //         for (i = 32; i < gic_irqs; i += 16)
-    //         writel_relaxed(GICD_INT_ACTLOW_LVLTRIG,
-    //                     base + GIC_DIST_CONFIG + i / 4);
-
-    //     /*
-    //     * Set priority on all global interrupts.
-    //     */
-    //     for (i = 32; i < gic_irqs; i += 4)
-    //         writel_relaxed(GICD_INT_DEF_PRI_X4, base + GIC_DIST_PRI + i);
-
-    //     /*
-    //     * Deactivate and disable all SPIs. Leave the PPI and SGIs
-    //     * alone as they are in the redistributor registers on GICv3.
-    //     */
-    //     for (i = 32; i < gic_irqs; i += 32) {
-    //         writel_relaxed(GICD_INT_EN_CLR_X32,
-    //                 base + GIC_DIST_ACTIVE_CLEAR + i / 8);
-    //         writel_relaxed(GICD_INT_EN_CLR_X32,
-    //                 base + GIC_DIST_ENABLE_CLEAR + i / 8);
-    //     }
-    // }
-
     fn init(&self) {
         // Disable the distributor
         unsafe { write_w(self.base_addr + GICD_CTLR, 0) };
@@ -1124,15 +1034,7 @@ impl GicDistributor {
     }
 
     fn init_per_core(&self) {
-        // self.ICENABLER[0].set(u32::MAX);
-        // self.ICPENDR[0].set(u32::MAX);
-        // self.ICACTIVER[0].set(u32::MAX);
-        // for i in 0..4 {
-        //     self.CPENDSGIR[i].set(u32::MAX);
-        // }
-        // for i in 0..8 {
-        //     self.IPRIORITYR[i].set(u32::MAX);
-        // }
+        // TODO: nothing to do
     }
 
     #[no_mangle]
@@ -1145,59 +1047,19 @@ impl GicDistributor {
             panic!("unsupported gic version")
         }
     }
-
-    // fn set_enable(&self, int: usize) {
-    //     let idx = int / 32;
-    //     let bit = 1u32 << (int % 32);
-    //     self.ISENABLER[idx].set(bit);
-    // }
-
-    // fn clear_enable(&self, int: usize) {
-    //     let idx = int / 32;
-    //     let bit = 1u32 << (int % 32);
-    //     self.ICENABLER[idx].set(bit);
-    // }
-
-    // fn set_target(&self, int: usize, target: u8) {
-    //     let idx = (int * 8) / 32;
-    //     let offset = (int * 8) % 32;
-    //     let mask: u32 = 0b11111111 << offset;
-    //     let prev = self.ITARGETSR[idx].get();
-    //     self.ITARGETSR[idx].set((prev & (!mask)) | (((target as u32) << offset) & mask));
-    // }
-
-    // fn set_priority(&self, int: usize, priority: u8) {
-    //     let idx = (int * 8) / 32;
-    //     let offset = (int * 8) % 32;
-    //     let mask: u32 = 0b11111111 << offset;
-    //     let prev = self.IPRIORITYR[idx].get();
-    //     self.IPRIORITYR[idx].set((prev & (!mask)) | (((priority as u32) << offset) & mask));
-    // }
-
-    // fn set_config(&self, int: usize, edge: bool) {
-    //     // let idx = (int * 2) / 32;
-    //     // let offset = (int * 2) % 32;
-    //     // let mask: u32 = 0b11 << offset;
-    //     // let prev = self.ICFGR[idx].get();
-    //     // self.ICFGR[idx].set((prev & (!mask)) | ((if edge { 0b10 } else { 0b00 } << offset) & mask));
-
-    //     let max_spi = self.get_irq_max();
-
-    //     // Set all global interrupts to be level triggered, active low.
-    //     for i in 1..
-    // }
 }
 
 static GICD: GicDistributor = GicDistributor::new(GICD_BASE);
 static GICC: GicCpuInterface = GicCpuInterface::new(GICC_BASE);
 
+#[derive(Debug)]
 pub struct Gic {
     gicc: GicCpuInterface,
     gicd: GicDistributor,
 }
 
 impl Gic {
-    pub fn new(gicd_base: usize, gicc_base: usize) -> Self {
+    pub const fn new(gicd_base: usize, gicc_base: usize) -> Self {
         Self {
             gicc: GicCpuInterface::new(gicc_base),
             gicd: GicDistributor::new(gicd_base),
@@ -1205,38 +1067,11 @@ impl Gic {
     }
 
     pub fn init(&mut self) {
-        // let core_id = cpu_id();
 
-        // // unsafe {
-        // //     asm!("msr icc_ctlr_el1, xzr");
-        // // }
-
-        // let gicd = &GICD;
-        // if core_id == 0 {
-        //     gicd.init();
-        // }
-
-        // let mut gicc = GicCpuInterface::new(GICC_BASE);
-        // let mut gicd = GicDistributor::new(GICD_BASE);
-
-        // let gicd = &GICD;
-        // // let gicr = &GICR;
-        // let gicc = &GICC;
-        // gicd.init_per_core();
-        // // gicc.init();
-        // gicr.init();
-        // let x:usize = 0x00000001;
-        // unsafe {
-        //     asm!("msr icc_igrpen1_el1, {}", in(reg) x);
-        //     let x:usize = 1;
-        //     asm!("msr icc_igrpen0_el1, {}", in(reg) x);
-        //     asm!("isb");
-        //     asm!("dsb sy");
-        // }
-
+        // check gic version is matched: should be v3 or 4
         self.gicd.validate_gic_version();
-        let mut rdist_base = GICR_BASE;
 
+        let mut rdist_base = GICR_BASE;
         for i in 0..NCPU {
             self.gicc.redists[i] = rdist_base;
             rdist_base += 0x20000;
@@ -1250,9 +1085,6 @@ impl Gic {
 
         self.gicd.gic_irqs = gic_irqs;
         self.gicc.gic_irqs = gic_irqs;
-
-        // let typer = gicd.TYPER.get();
-        // let gic_irqs =
 
         if cpu_id() == 0 {
             self.gicd.init();
@@ -1281,29 +1113,7 @@ impl Gic {
     }
 
     pub fn enable(&self, int: Interrupt) {
-        // TODO
         self.poke_irq(int as u32, 0x0100);
-        // let gicd = &GICD;
-        // let gicr = &GICR;
-
-        // // let index = int / 32;
-        // let bit = 1 << (int % 32);
-
-        // gicd.set_enable(int);
-        // if int < 32 {
-        //     gicr.ISENABLER0.set(bit);
-        // }
-
-        // let core_id = cpu_id();
-        // gicd.set_enable(int);
-        // gicd.set_priority(int, 0x7f);
-        // if int >= 32 {
-        //     gicd.set_config(int, true);
-        // }
-        // gicd.set_target(int, (1 << core_id) as u8);
-
-        // gicr.ISENABLER0.set(u32::MAX);
-        // gicr.ISENABLER0.set(1 << (int % 32));
     }
 
     // pub fn disable(&self, _int: Interrupt) {
@@ -1312,22 +1122,13 @@ impl Gic {
     //     // gicd.clear_enable(int);
     // }
 
-    pub fn fetch(&self) -> Interrupt {
-        // let gicc = &GICC;
-        // let i = gicc.IAR.get();
-        // if i >= 1022 {
-        //     None
-        // } else {
-        //     Some(i as Interrupt)
-        // }
-
-        isb();
+    pub fn fetch(&self) -> Option<Interrupt> {
         let mut x;
         unsafe {
             asm!("mrs {}, icc_iar1_el1", out(reg) x);
             asm!("dsb sy");
         }
-        x
+        Some(x)
     }
 
     pub fn finish(&self, int: Interrupt) {
@@ -1340,15 +1141,11 @@ impl Gic {
 
 pub const INT_TIMER: Interrupt = 27; // virtual timer
 
-// pub static INTERRUPT_CONTROLLER: Gic = Gic::new(GICD_BASE, GICC_BASE);
+pub static INTERRUPT_CONTROLLER: Gic = Gic::new(GICD_BASE, GICC_BASE);
 
 pub type Interrupt = usize;
 
 pub unsafe fn intr_init() {}
-
-pub fn get_intr_controller() -> Gic {
-    Gic::new(GICD_BASE, GICC_BASE)
-}
 
 pub unsafe fn intr_init_core() {
     DAIF.set(DAIF::I::Masked.into());
@@ -1364,10 +1161,10 @@ pub unsafe fn intr_init_core() {
         // only boot core do this initialization
 
         // virtio_blk
-        intr_controller.enable(VIRTIO0_IRQ);
+        intr_controller.enable(MemLayoutImpl::VIRTIO0_IRQ);
 
         // pl011 uart
-        intr_controller.enable(UART0_IRQ);
+        intr_controller.enable(MemLayoutImpl::UART0_IRQ);
     }
 }
 

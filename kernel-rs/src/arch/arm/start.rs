@@ -12,6 +12,7 @@ extern "C" {
 }
 
 /// entry.S needs one stack per CPU.
+#[derive(Debug)]
 #[repr(C, align(16))]
 pub struct Stack([[u8; 4096]; NCPU]);
 

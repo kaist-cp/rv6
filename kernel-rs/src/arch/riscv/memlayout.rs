@@ -44,8 +44,10 @@ impl MemLayout for MemLayoutImpl {
     const TRAPFRAME: usize = Self::TRAMPOLINE.wrapping_sub(PGSIZE);
     /// qemu puts UART registers here in physical memory.
     const UART0: usize = 0x10000000;
+    const UART0_IRQ: usize = 10;
     /// virtio mmio interface
     const VIRTIO0: usize = 0x10001000;
+    const VIRTIO0_IRQ: usize = 1;
 
     /// map kernel stacks beneath the trampoline,
     /// each surrounded by invalid guard pages.
@@ -56,12 +58,6 @@ impl MemLayout for MemLayoutImpl {
 
 /// SiFive Test Finisher. (virt device only)
 pub const FINISHER: usize = 0x100000;
-
-/// qemu puts UART registers here in physical memory.
-pub const UART0_IRQ: usize = 10;
-
-/// virtio mmio interface
-pub const VIRTIO0_IRQ: usize = 1;
 
 /// core local interruptor (CLINT), which contains the timer.
 pub const CLINT: usize = 0x2000000;

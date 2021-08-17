@@ -8,7 +8,6 @@ use crate::{
     },
     arch::intr::{plic_claim, plic_complete},
     arch::memlayout::MemLayoutImpl,
-    arch::memlayout::{UART0_IRQ, VIRTIO0_IRQ},
     cpu::cpuid,
     hal::hal,
     kernel::{kernel_ref, KernelRef},
@@ -238,10 +237,10 @@ impl KernelRef<'_, '_> {
             // irq indicates which device interrupted.
             let irq = unsafe { plic_claim() };
 
-            if irq as usize == UART0_IRQ {
+            if irq as usize == MemLayoutImpl::UART0_IRQ {
                 // SAFETY: it's unsafe only when ctrl+p is pressed.
                 unsafe { hal().console().intr(self) };
-            } else if irq as usize == VIRTIO0_IRQ {
+            } else if irq as usize == MemLayoutImpl::VIRTIO0_IRQ {
                 hal().disk().pinned_lock().get_pin_mut().intr(self);
             } else if irq != 0 {
                 // Use `panic!` instead of `println` to prevent stack overflow.

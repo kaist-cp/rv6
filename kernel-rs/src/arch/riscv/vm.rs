@@ -3,6 +3,7 @@ use core::pin::Pin;
 use bitflags::bitflags;
 
 use crate::{
+<<<<<<< HEAD
     addr::{pa2pte, pte2pa, PAddr, VAddr, PGSIZE},
     arch::asm::{make_satp, sfence_vma, w_satp},
     arch::memlayout::{
@@ -15,10 +16,18 @@ use crate::{
     arch::memlayout::{FINISHER, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0},
     arch::memlayout::MemLayoutImpl,
     arch::memlayout::{FINISHER, PLIC},
+=======
+    addr::{PAddr, VAddr, PGSIZE},
+    arch::{
+        addr::{pa2pte, pte2pa},
+        asm::{make_satp, sfence_vma, w_satp},
+        memlayout::{MemLayoutImpl, FINISHER, PLIC},
+    },
+>>>>>>> refactoring
     kalloc::Kmem,
     lock::SpinLock,
     memlayout::MemLayout,
-    vm::{AccessFlags, PageInit, PageTable, PageTableEntry, PteFlags, RawPageTable},
+    vm::{AccessFlags, PageInitiator, PageTable, PageTableEntryDesc, RawPageTable},
 };
 
 extern "C" {
@@ -27,7 +36,7 @@ extern "C" {
 }
 
 bitflags! {
-    pub struct PteFlagsImpl: usize {
+    pub struct RiscVPteFlags: usize {
         /// valid
         const V = 1 << 0;
         /// readable
@@ -41,19 +50,21 @@ bitflags! {
     }
 }
 
-impl PteFlags for PteFlagsImpl {
-    fn from_access_flags(f: AccessFlags) -> Self {
+pub type PteFlags = RiscVPteFlags;
+
+impl From<AccessFlags> for RiscVPteFlags {
+    fn from(item: AccessFlags) -> Self {
         let mut ret = Self::empty();
-        if f.intersects(AccessFlags::R) {
+        if item.intersects(AccessFlags::R) {
             ret |= Self::R;
         }
-        if f.intersects(AccessFlags::W) {
+        if item.intersects(AccessFlags::W) {
             ret |= Self::W;
         }
-        if f.intersects(AccessFlags::X) {
+        if item.intersects(AccessFlags::X) {
             ret |= Self::X;
         }
-        if f.intersects(AccessFlags::U) {
+        if item.intersects(AccessFlags::U) {
             ret |= Self::U;
         }
         ret
@@ -66,12 +77,14 @@ impl PteFlags for PteFlagsImpl {
 ///
 /// Because of #[derive(Default)], inner is initially 0, which satisfies the invariant.
 #[derive(Default)]
-pub struct PageTableEntryImpl {
+pub struct RiscVPageTableEntry {
     inner: usize,
 }
 
-impl PageTableEntry for PageTableEntryImpl {
-    type EntryFlags = PteFlagsImpl;
+pub type PageTableEntry = RiscVPageTableEntry;
+
+impl PageTableEntryDesc for RiscVPageTableEntry {
+    type EntryFlags = RiscVPteFlags;
 
     fn get_flags(&self) -> Self::EntryFlags {
         Self::EntryFlags::from_bits_truncate(self.inner)
@@ -117,7 +130,7 @@ impl PageTableEntry for PageTableEntryImpl {
         self.inner = pa2pte(pa) | (perm | Self::EntryFlags::V).bits();
     }
 
-    /// Make the entry inaccessible by user processes by clearing PteFlagsImpl::U.
+    /// Make the entry inaccessible by user processes by clearing RiscVPteFlags::U.
     fn clear_user(&mut self) {
         self.inner &= !(Self::EntryFlags::U.bits());
     }
@@ -128,9 +141,11 @@ impl PageTableEntry for PageTableEntryImpl {
     }
 }
 
-pub struct PageInitImpl {}
+pub struct ArmV8PageInit;
 
-impl PageInit for PageInitImpl {
+pub type PageInit = ArmV8PageInit;
+
+impl PageInitiator for ArmV8PageInit {
     fn user_page_init<A: VAddr>(
         page_table: &mut PageTable<A>,
         trap_frame: PAddr,
@@ -144,7 +159,7 @@ impl PageInit for PageInitImpl {
             MemLayoutImpl::TRAMPOLINE.into(),
             // SAFETY: we assume that reading the address of trampoline is safe.
             (unsafe { trampoline.as_mut_ptr() as usize }).into(),
-            PteFlagsImpl::R | PteFlagsImpl::X,
+            RiscVPteFlags::R | RiscVPteFlags::X,
             allocator,
         )?;
 
@@ -152,7 +167,7 @@ impl PageInit for PageInitImpl {
         page_table.insert(
             MemLayoutImpl::TRAPFRAME.into(),
             trap_frame,
-            PteFlagsImpl::R | PteFlagsImpl::W,
+            RiscVPteFlags::R | RiscVPteFlags::W,
             allocator,
         )?;
 
@@ -168,7 +183,7 @@ impl PageInit for PageInitImpl {
             FINISHER.into(),
             PGSIZE,
             FINISHER.into(),
-            PteFlagsImpl::R | PteFlagsImpl::W,
+            RiscVPteFlags::R | RiscVPteFlags::W,
             allocator,
         )?;
 
@@ -177,7 +192,7 @@ impl PageInit for PageInitImpl {
             MemLayoutImpl::UART0.into(),
             PGSIZE,
             MemLayoutImpl::UART0.into(),
-            PteFlagsImpl::R | PteFlagsImpl::W,
+            RiscVPteFlags::R | RiscVPteFlags::W,
             allocator,
         )?;
 
@@ -186,7 +201,7 @@ impl PageInit for PageInitImpl {
             MemLayoutImpl::VIRTIO0.into(),
             PGSIZE,
             MemLayoutImpl::VIRTIO0.into(),
-            PteFlagsImpl::R | PteFlagsImpl::W,
+            RiscVPteFlags::R | RiscVPteFlags::W,
             allocator,
         )?;
 
@@ -195,7 +210,7 @@ impl PageInit for PageInitImpl {
             PLIC.into(),
             0x400000,
             PLIC.into(),
-            PteFlagsImpl::R | PteFlagsImpl::W,
+            RiscVPteFlags::R | RiscVPteFlags::W,
             allocator,
         )?;
         // Map the trampoline for trap entry/exit to
@@ -205,7 +220,7 @@ impl PageInit for PageInitImpl {
             PGSIZE,
             // SAFETY: we assume that reading the address of trampoline is safe.
             unsafe { trampoline.as_mut_ptr() as usize }.into(),
-            PteFlagsImpl::R | PteFlagsImpl::X,
+            RiscVPteFlags::R | RiscVPteFlags::X,
             allocator,
         )?;
 

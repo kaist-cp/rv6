@@ -1,4 +1,4 @@
-use crate::proc::UserProcInit;
+use crate::proc::UserProcInitiator;
 
 /// A user program that calls exec("/init").
 /// od -t xC initcode
@@ -222,9 +222,11 @@ impl Context {
     }
 }
 
-pub struct UserProcInitImpl;
+pub type UserProcInit = RiscVUserProcInit;
 
-impl UserProcInit for UserProcInitImpl {
+pub struct RiscVUserProcInit;
+
+impl UserProcInitiator for RiscVUserProcInit {
     fn init_reg(_trap_frame: &mut TrapFrame) {
         // nothing to do
     }

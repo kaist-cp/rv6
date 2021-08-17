@@ -97,6 +97,7 @@ pub unsafe fn w_fpsr(x: usize) {
     unsafe { asm!("msr fpsr, {}", in(reg) x) }
 }
 
+#[derive(Debug)]
 pub enum SmcFunctions {
     _Version = 0x84000000,
     _SuspendAarch64 = 0xc4000001,

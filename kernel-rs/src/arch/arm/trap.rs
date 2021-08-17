@@ -8,8 +8,8 @@ use tock_registers::interfaces::{Readable, Writeable};
 use crate::{
     addr::PGSIZE,
     arch::asm::{cpu_id, intr_get, intr_off, r_fpsr, w_fpsr},
-    arch::intr::get_intr_controller,
-    arch::memlayout::{MemLayoutImpl, TIMER0_IRQ, UART0_IRQ, VIRTIO0_IRQ},
+    arch::intr::INTERRUPT_CONTROLLER,
+    arch::memlayout::{MemLayoutImpl, TIMER0_IRQ},
     arch::timer::Timer,
     hal::hal,
     kernel::{kernel_ref, KernelRef},
@@ -259,29 +259,35 @@ impl KernelRef<'_, '_> {
 
     unsafe fn handle_irq(self) -> usize {
         // TODO
-        let intr_controller = get_intr_controller();
-        let irq = intr_controller.fetch();
+        let irq = INTERRUPT_CONTROLLER.fetch();
 
         match irq {
-            TIMER0_IRQ => {
-                Timer::set_next_timer();
-                if cpu_id() == 0 {
-                    self.clock_intr();
+            Some(i) => {
+                match i {
+                    TIMER0_IRQ => {
+                        if cpu_id() == 0 {
+                            self.clock_intr();
+                        }
+                        Timer::set_next_timer();
+                    }
+                    MemLayoutImpl::UART0_IRQ => {
+                        // SAFETY: it's unsafe only when ctrl+p is pressed.
+                        unsafe { hal().console().intr(self) };
+                    }
+                    MemLayoutImpl::VIRTIO0_IRQ => {
+                        hal().disk().pinned_lock().get_pin_mut().intr(self);
+                    }
+                    _ => {
+                        // panic!("unexpected interrupt irq={}\n", irq);
+                        return 0;
+                    } // _ => panic!("unexpected interrupt irq={}\n", i)
                 }
             }
-            UART0_IRQ => {
-                // SAFETY: it's unsafe only when ctrl+p is pressed.
-                unsafe { hal().console().intr(self) };
-            }
-            VIRTIO0_IRQ => {
-                hal().disk().pinned_lock().get_pin_mut().intr(self);
-            }
-            _ => {
-                panic!("unexpected interrupt irq={}\n", irq);
-                // return 0;
-            } // _ => panic!("unexpected interrupt irq={}\n", i)
+            None => return 0,
         }
-        intr_controller.finish(irq);
+        if irq.is_some() {
+            INTERRUPT_CONTROLLER.finish(irq.unwrap());
+        }
         // irq.unwrap()
         2
     }

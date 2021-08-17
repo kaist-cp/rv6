@@ -34,8 +34,10 @@ impl MemLayout for MemLayoutImpl {
     const TRAPFRAME: usize = Self::TRAMPOLINE.wrapping_sub(PGSIZE);
     /// qemu puts UART registers here in physical memory.
     const UART0: usize = 0x09000000;
+    const UART0_IRQ: usize = 33;
     /// virtio mmio interface
     const VIRTIO0: usize = 0x0a000000;
+    const VIRTIO0_IRQ: usize = 48;
 
     /// map kernel stacks beneath the MAXVA,
     /// each surrounded by invalid guard pages.
@@ -52,5 +54,3 @@ impl MemLayout for MemLayoutImpl {
 pub const GIC: usize = 0x08000000;
 
 pub const TIMER0_IRQ: usize = 27;
-pub const UART0_IRQ: usize = 33;
-pub const VIRTIO0_IRQ: usize = 48;

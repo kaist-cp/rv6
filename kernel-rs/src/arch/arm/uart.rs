@@ -90,6 +90,7 @@ enum UartCtrlRegs {
 /// # Safety
 ///
 /// uart..(uart + 5) are owned addresses.
+#[derive(Debug)]
 pub struct Uart {
     uart: usize,
 }

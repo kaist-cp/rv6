@@ -26,6 +26,13 @@
 
   ```
   TARGET=arm make qemu
+  [to exit, C-A X]
+  ```
+
+- Run with specified version of GIC (ARM Generic Interrupt Controller) (only on ARM)
+  ```
+  TARGET=arm GIC_VERSION=2 make qemu // default
+  TARGET=arm GIC_VERSION=3 make qemu
   ```
 
 - Debug rv6 on qemu.

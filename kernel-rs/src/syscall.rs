@@ -16,10 +16,11 @@ use crate::{
     file::RcFile,
     fs::{FcntlFlags, FileSystem, FileSystemExt, InodeType, Path},
     file::{FileType, RcFile, SelectEvent, SeekWhence},
+    file::{FileType, RcFile, SeekWhence, SelectEvent},
     fs::{FcntlFlags, FileSystem, InodeType, Path},
     hal::hal,
     ok_or,
-    page::{Page, getpagesize},
+    page::{getpagesize, Page},
     param::{MAXARG, MAXPATH},
     proc::{CurrentProc, KernelCtx},
     some_or,
@@ -427,7 +428,7 @@ impl KernelCtx<'_, '_> {
                     .copy_in(&mut rfds, read_fds.into())
             }?;
         }
-        
+
         if write_fds != 0 {
             unimplemented!("Handling for write fd set has not been implemented yet");
         }
@@ -458,7 +459,7 @@ impl KernelCtx<'_, '_> {
                 for fd in 0..nfds + 1 {
                     let idx = (fd / 8) as usize;
                     let mask = 1 << (fd % 8);
-    
+
                     // TODO: support other kind of fd sets
                     if rfds[idx] & mask != 0 {
                         if !self.check(fd as usize, SelectEvent::Read)? {
@@ -523,7 +524,10 @@ impl KernelCtx<'_, '_> {
     pub fn sys_waitpid(&mut self) -> Result<usize, ()> {
         let pid = self.proc().argint(0)?;
         let stat = self.proc().argaddr(1)?;
-        Ok(self.kernel().procs().waitpid(pid.into(), stat.into(), self)? as _)
+        Ok(self
+            .kernel()
+            .procs()
+            .waitpid(pid.into(), stat.into(), self)? as _)
     }
 
     pub fn sys_getppid(&mut self) -> Result<usize, ()> {
@@ -539,7 +543,7 @@ impl KernelCtx<'_, '_> {
             0 => SeekWhence::Set,
             1 => SeekWhence::Cur,
             2 => SeekWhence::End,
-            _ => return Err(())
+            _ => return Err(()),
         };
         unsafe { (*(f as *const RcFile)).lseek(offset, whence, self) }
     }

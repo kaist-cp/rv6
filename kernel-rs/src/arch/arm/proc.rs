@@ -1,4 +1,4 @@
-use crate::proc::UserProcInit;
+use crate::proc::UserProcInitiator;
 
 /// A user program that calls exec("/init").
 /// od -t xC initcode
@@ -205,9 +205,11 @@ impl Context {
     }
 }
 
-pub struct UserProcInitImpl;
+pub type UserProcInit = ArmV8UserProcInit;
 
-impl UserProcInit for UserProcInitImpl {
+pub struct ArmV8UserProcInit;
+
+impl UserProcInitiator for ArmV8UserProcInit {
     fn init_reg(trap_frame: &mut TrapFrame) {
         trap_frame.spsr = 0;
         trap_frame.fpsr = 0;

@@ -53,29 +53,14 @@
 #![feature(try_blocks)]
 #![feature(variant_count)]
 
-use cfg_if::cfg_if;
+#[cfg(target_arch = "riscv64")]
+#[path = "arch/riscv/mod.rs"]
+mod arch;
+#[cfg(target_arch = "aarch64")]
+#[path = "arch/arm/mod.rs"]
+mod arch;
 
-cfg_if! {
-    if  #[cfg(target_arch = "riscv64")] {
-        #[path = "arch/riscv/mod.rs"]
-        mod arch;
-        #[path = "arch/riscv/start.rs"]
-        mod start;
-        #[path = "arch/riscv/trap.rs"]
-        mod trap;
-        #[path = "arch/riscv/uart.rs"]
-        mod uart;
-    } else if #[cfg(target_arch = "aarch64")] {
-        #[path = "arch/arm/mod.rs"]
-        mod arch;
-        #[path = "arch/arm/start.rs"]
-        mod start;
-        #[path = "arch/arm/trap.rs"]
-        mod trap;
-        #[path = "arch/arm/uart.rs"]
-        mod uart;
-    }
-}
+pub use arch::*;
 
 mod addr;
 mod arena;

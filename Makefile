@@ -10,12 +10,17 @@ TOOLPREFIX = aarch64-linux-gnu-
 MARCH = armv8-a
 ADD_OBJS = $K/$(TARGET)/trampoline.o
 
+ifndef GIC_VERSION
+GIC_VERSION = 2
+endif
+CARGOFLAGS = --features 'gicv$(GIC_VERSION)' 
+
 # Note that the default is cortex-a15, 
 # so for an AArch64 guest you must specify a CPU type.
 # https://qemu.readthedocs.io/en/latest/system/arm/virt.html#supported-devices
-# ADD_QEMUOPTS = -cpu cortex-a72
-ADD_QEMUOPTS = -cpu host -enable-kvm
-ADD_QEMUOPTS += -machine gic-version=3
+ADD_QEMUOPTS = -cpu cortex-a72
+#ADD_QEMUOPTS = -cpu host -enable-kvm
+ADD_QEMUOPTS += -machine gic-version=$(GIC_VERSION)
 else
 RUST_TARGET = riscv64gc-unknown-none-elfhf
 ARCH = riscv64
@@ -23,6 +28,7 @@ TARGET = riscv
 MARCH = rv64g
 ADD_OBJS = $K/$(TARGET)/trampoline.o $K/$(TARGET)/kernelvec.o
 ADD_CFLAGS = -mcmodel=medany -mno-relax
+CARGOFLAGS = 
 
 # No bios option is supported only in some environment including riscv virt machine.
 # https://qemu.readthedocs.io/en/latest/system/target-riscv.html#risc-v-cpu-firmware
@@ -34,9 +40,7 @@ RUST_MODE = debug
 endif
 
 ifeq ($(RUST_MODE),release)
-CARGOFLAGS = --release
-else
-CARGOFLAGS =
+CARGOFLAGS += --release
 endif
 
 # OBJS = \

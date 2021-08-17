@@ -1,7 +1,5 @@
 use core::ops::Add;
 
-pub use crate::arch::addr::*;
-
 /// Bits of offset within a page.
 pub const PGSHIFT: usize = 12;
 

@@ -235,7 +235,12 @@ impl File {
         }
     }
 
-    pub fn lseek(&self, n: i32, option: SeekWhence,ctx: &mut KernelCtx<'_, '_>) -> Result<usize, ()> {
+    pub fn lseek(
+        &self,
+        n: i32,
+        option: SeekWhence,
+        ctx: &mut KernelCtx<'_, '_>,
+    ) -> Result<usize, ()> {
         if !self.readable {
             return Err(());
         }
@@ -253,8 +258,7 @@ impl File {
             *ip.off = off;
             ip.free(ctx);
             Ok(off as usize)
-        }
-        else {
+        } else {
             Err(())
         }
     }

@@ -22,9 +22,11 @@
 pub trait MemLayout {
     /// qemu puts UART registers here in physical memory.
     const UART0: usize;
+    const UART0_IRQ: usize;
 
     /// virtio mmio interface
     const VIRTIO0: usize;
+    const VIRTIO0_IRQ: usize;
 
     /// the kernel expects there to be RAM
     /// for use by the kernel and user pages
