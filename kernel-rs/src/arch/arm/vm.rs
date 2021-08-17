@@ -64,26 +64,42 @@ pub type PteFlags = ArmV8PteFlags;
 
 impl From<AccessFlags> for ArmV8PteFlags {
     fn from(item: AccessFlags) -> Self {
-        let mut ret = Self::empty();
-        if item.intersects(AccessFlags::R) {
-            ret |= Self::ACCESS_FLAG;
-            if item.intersects(AccessFlags::W) {
-                ret |= Self::RW_P;
-            } else {
-                ret |= Self::RO_P;
+        Self::ACCESS_FLAG
+            | match item {
+                AccessFlags::R => {
+                    // Privileged Read-Only
+                    Self::RO_P | Self::UXN | Self::PXN
+                }
+                AccessFlags::RW => {
+                    // Privileged Read-Write
+                    Self::RW_P | Self::UXN | Self::PXN
+                }
+                AccessFlags::RU => {
+                    // User Read-Only
+                    Self::RO_U | Self::UXN | Self::PXN
+                }
+                AccessFlags::RWU => {
+                    // User Read-Write
+                    Self::RW_U | Self::UXN | Self::PXN
+                }
+                AccessFlags::RX => {
+                    // Privileged Read-Execute
+                    Self::RO_P | Self::UXN
+                }
+                AccessFlags::RWX => {
+                    // Privileged Read-Write-Execute
+                    Self::RW_P | Self::UXN
+                }
+                AccessFlags::RXU => {
+                    // User Read-Execute
+                    Self::RO_U | Self::PXN
+                }
+                AccessFlags::RWXU => {
+                    // User Read-Write-Execute
+                    Self::RW_U | Self::PXN
+                }
+                _ => panic!("invalid access flag!"),
             }
-        }
-        if item.intersects(AccessFlags::X) {
-            if !item.intersects(AccessFlags::U) {
-                ret |= Self::UXN;
-            }
-        } else {
-            ret |= Self::UXN | Self::PXN;
-        }
-        if item.intersects(AccessFlags::U) {
-            ret |= Self::U;
-        }
-        ret
     }
 }
 

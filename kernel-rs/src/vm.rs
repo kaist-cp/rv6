@@ -34,6 +34,14 @@ bitflags! {
         const X = 1 << 2;
         /// user-accessible
         const U = 1 << 3;
+
+        const RW = Self::R.bits | Self::W.bits;
+        const RU = Self::R.bits | Self::U.bits;
+        const RX = Self::R.bits | Self::X.bits;
+        const RWX = Self::RW.bits | Self::X.bits;
+        const RWU = Self::RW.bits | Self::U.bits;
+        const RXU = Self::RX.bits | Self::U.bits;
+        const RWXU = Self::RWX.bits | Self::U.bits;
     }
 }
 

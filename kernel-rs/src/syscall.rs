@@ -508,10 +508,7 @@ impl KernelCtx<'_, '_> {
     pub fn sys_waitpid(&mut self) -> Result<usize, ()> {
         let pid = self.proc().argint(0)?;
         let stat = self.proc().argaddr(1)?;
-        Ok(self
-            .kernel()
-            .procs()
-            .waitpid(pid, stat.into(), self)? as _)
+        Ok(self.kernel().procs().waitpid(pid, stat.into(), self)? as _)
     }
 
     pub fn sys_getppid(&mut self) -> Result<usize, ()> {
