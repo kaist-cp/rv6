@@ -77,12 +77,12 @@ use core::{
 use static_assertions::const_assert;
 use zerocopy::{AsBytes, FromBytes};
 
-use super::{FileName, Path, Stat, UfsTx, IPB, MAXFILE, NDIRECT, NINDIRECT, ROOTINO};
+use super::{FileName, Path, Stat, Ufs, IPB, MAXFILE, NDIRECT, NINDIRECT, ROOTINO};
 use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena},
     bio::BufData,
-    fs::{Inode, InodeGuard, InodeType, Itable, RcInode},
+    fs::{Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
     hal::hal,
     lock::SleepLock,
     param::ROOTDEV,
@@ -222,7 +222,7 @@ impl InodeGuard<'_, InodeInner> {
         &mut self,
         name: &FileName<DIRSIZ>,
         inum: u32,
-        tx: &UfsTx<'_>,
+        tx: &Tx<'_, Ufs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
         // Check that name is not present.
@@ -270,7 +270,7 @@ impl InodeGuard<'_, InodeInner> {
     /// Copy a modified in-memory inode to disk.
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk.
-    pub fn update(&self, tx: &UfsTx<'_>, ctx: &KernelCtx<'_, '_>) {
+    pub fn update(&self, tx: &Tx<'_, Ufs>, ctx: &KernelCtx<'_, '_>) {
         let mut bp = hal().disk().read(
             self.dev,
             ctx.kernel().fs().superblock().iblock(self.inum),
@@ -321,7 +321,7 @@ impl InodeGuard<'_, InodeInner> {
 
     /// Truncate inode (discard contents).
     /// This function is called with Inode's lock is held.
-    pub fn itrunc(&mut self, tx: &UfsTx<'_>, ctx: &KernelCtx<'_, '_>) {
+    pub fn itrunc(&mut self, tx: &Tx<'_, Ufs>, ctx: &KernelCtx<'_, '_>) {
         let dev = self.dev;
         for addr in &mut self.deref_inner_mut().addr_direct {
             if *addr != 0 {
@@ -464,7 +464,7 @@ impl InodeGuard<'_, InodeInner> {
         &mut self,
         src: &T,
         off: u32,
-        tx: &UfsTx<'_>,
+        tx: &Tx<'_, Ufs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
         let bytes = self.write_bytes_kernel(src.as_bytes(), off, tx, ctx)?;
@@ -481,7 +481,7 @@ impl InodeGuard<'_, InodeInner> {
         &mut self,
         src: &[u8],
         off: u32,
-        tx: &UfsTx<'_>,
+        tx: &Tx<'_, Ufs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<usize, ()> {
         self.write_internal(
@@ -505,7 +505,7 @@ impl InodeGuard<'_, InodeInner> {
         off: u32,
         n: u32,
         ctx: &mut KernelCtx<'_, '_>,
-        tx: &UfsTx<'_>,
+        tx: &Tx<'_, Ufs>,
     ) -> Result<usize, ()> {
         self.write_internal(
             off,
@@ -544,7 +544,7 @@ impl InodeGuard<'_, InodeInner> {
         mut off: u32,
         n: u32,
         mut f: F,
-        tx: &UfsTx<'_>,
+        tx: &Tx<'_, Ufs>,
         mut k: K,
     ) -> Result<usize, ()> {
         if off > self.deref_inner().size {
@@ -592,7 +592,7 @@ impl InodeGuard<'_, InodeInner> {
     /// listed in block self->addr_indirect.
     /// Return the disk block address of the nth block in inode self.
     /// If there is no such block, bmap allocates one.
-    fn bmap_or_alloc(&mut self, bn: usize, tx: &UfsTx<'_>, ctx: &KernelCtx<'_, '_>) -> u32 {
+    fn bmap_or_alloc(&mut self, bn: usize, tx: &Tx<'_, Ufs>, ctx: &KernelCtx<'_, '_>) -> u32 {
         self.bmap_internal(bn, Some(tx), ctx)
     }
 
@@ -603,7 +603,7 @@ impl InodeGuard<'_, InodeInner> {
     fn bmap_internal(
         &mut self,
         bn: usize,
-        tx_opt: Option<&UfsTx<'_>>,
+        tx_opt: Option<&Tx<'_, Ufs>>,
         ctx: &KernelCtx<'_, '_>,
     ) -> u32 {
         let inner = self.deref_inner();
@@ -662,7 +662,7 @@ impl const Default for Inode<InodeInner> {
 }
 
 impl ArenaObject for Inode<InodeInner> {
-    type Ctx<'a, 'id: 'a> = (&'a UfsTx<'a>, &'a KernelCtx<'id, 'a>);
+    type Ctx<'a, 'id: 'a> = (&'a Tx<'a, Ufs>, &'a KernelCtx<'id, 'a>);
 
     /// Drop a reference to an in-memory inode.
     /// If that was the last reference, the inode table entry can
@@ -803,7 +803,7 @@ impl Itable<InodeInner> {
         self: StrongPin<'_, Self>,
         dev: u32,
         typ: InodeType,
-        tx: &UfsTx<'_>,
+        tx: &Tx<'_, Ufs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> RcInode<InodeInner> {
         for inum in 1..ctx.kernel().fs().superblock().ninodes {
@@ -855,7 +855,7 @@ impl Itable<InodeInner> {
     pub fn namei(
         self: StrongPin<'_, Self>,
         path: &Path,
-        tx: &UfsTx<'_>,
+        tx: &Tx<'_, Ufs>,
         proc: &KernelCtx<'_, '_>,
     ) -> Result<RcInode<InodeInner>, ()> {
         Ok(self.namex(path, false, tx, proc)?.0)
@@ -864,7 +864,7 @@ impl Itable<InodeInner> {
     pub fn nameiparent<'s>(
         self: StrongPin<'_, Self>,
         path: &'s Path,
-        tx: &UfsTx<'_>,
+        tx: &Tx<'_, Ufs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(RcInode<InodeInner>, &'s FileName<{ DIRSIZ }>), ()> {
         let (ip, name_in_path) = self.namex(path, true, tx, ctx)?;
@@ -876,7 +876,7 @@ impl Itable<InodeInner> {
         self: StrongPin<'_, Self>,
         mut path: &'s Path,
         parent: bool,
-        tx: &UfsTx<'_>,
+        tx: &Tx<'_, Ufs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(RcInode<InodeInner>, Option<&'s FileName<{ DIRSIZ }>>), ()> {
         let mut ptr = if path.is_absolute() {

@@ -106,20 +106,51 @@ pub type Itable<I> = ArrayArena<Inode<I>, NINODE>;
 /// A reference counted smart pointer to an `Inode`.
 pub type RcInode<I> = ArenaRc<Itable<I>>;
 
-pub trait FileSystem
+pub struct Tx<'s, FS: FileSystem>
+where
+    FS::InodeInner: 'static + Unpin,
+    Inode<FS::InodeInner>: ArenaObject,
+{
+    fs: &'s FS,
+}
+
+impl<FS: FileSystem> Drop for Tx<'_, FS>
+where
+    FS::InodeInner: 'static + Unpin,
+    Inode<FS::InodeInner>: ArenaObject,
+{
+    fn drop(&mut self) {
+        // HACK(@efenniht): we really need linear type here:
+        // https://github.com/rust-lang/rfcs/issues/814
+        panic!("Tx must never drop.");
+    }
+}
+
+impl<FS: FileSystem> Tx<'_, FS>
+where
+    FS::InodeInner: 'static + Unpin,
+    Inode<FS::InodeInner>: ArenaObject,
+{
+    /// Called at the end of each FS system call.
+    /// Commits if this was the last outstanding operation.
+    pub fn end(self, ctx: &KernelCtx<'_, '_>) {
+        unsafe {
+            self.fs.tx_end(ctx);
+        }
+        core::mem::forget(self);
+    }
+}
+
+pub trait FileSystem: Sized
 where
     Self::InodeInner: 'static + Unpin,
     Inode<Self::InodeInner>: ArenaObject,
 {
     type Dirent;
     type InodeInner: Send;
-    type Tx<'s>;
 
     /// Initializes the file system (loading from the disk).
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>);
-
-    /// Called for each FS system call.
-    fn begin_tx(&self, ctx: &KernelCtx<'_, '_>) -> Self::Tx<'_>;
 
     /// Finds the root inode.
     fn root(self: StrongPin<'_, Self>) -> RcInode<Self::InodeInner>;
@@ -128,7 +159,7 @@ where
     fn namei(
         self: StrongPin<'_, Self>,
         path: &Path,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<RcInode<Self::InodeInner>, ()>;
 
@@ -138,7 +169,7 @@ where
         self: StrongPin<'_, Self>,
         inode: RcInode<Self::InodeInner>,
         path: &Path,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()>;
 
@@ -147,7 +178,7 @@ where
     fn unlink(
         self: StrongPin<'_, Self>,
         path: &Path,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()>;
 
@@ -157,7 +188,7 @@ where
         self: StrongPin<'_, Self>,
         path: &Path,
         typ: InodeType,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
         f: F,
     ) -> Result<(RcInode<Self::InodeInner>, T), ()>
@@ -170,7 +201,7 @@ where
         self: StrongPin<'_, Self>,
         path: &Path,
         omode: FcntlFlags,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<usize, ()>;
 
@@ -179,7 +210,42 @@ where
     fn chdir(
         self: StrongPin<'_, Self>,
         inode: RcInode<Self::InodeInner>,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<(), ()>;
+
+    /// Begins a transaction.
+    ///
+    /// Called for each FS system call.
+    fn tx_begin(&self, ctx: &KernelCtx<'_, '_>);
+
+    /// Ends a transaction.
+    ///
+    /// Called at the end of each FS system call.
+    ///
+    /// # Safety
+    ///
+    /// `tx_end` should not be called more than `tx_begin`. Also, f system APIs should be called
+    /// inside a transaction.
+    unsafe fn tx_end(&self, ctx: &KernelCtx<'_, '_>);
+}
+
+pub trait FileSystemExt: FileSystem
+where
+    Self::InodeInner: 'static + Unpin,
+    Inode<Self::InodeInner>: ArenaObject,
+{
+    /// Begins a transaction.
+    fn begin_tx(&self, ctx: &KernelCtx<'_, '_>) -> Tx<'_, Self>;
+}
+
+impl<FS: FileSystem> FileSystemExt for FS
+where
+    FS::InodeInner: 'static + Unpin,
+    Inode<FS::InodeInner>: ArenaObject,
+{
+    fn begin_tx(&self, ctx: &KernelCtx<'_, '_>) -> Tx<'_, Self> {
+        self.tx_begin(ctx);
+        Tx { fs: self }
+    }
 }

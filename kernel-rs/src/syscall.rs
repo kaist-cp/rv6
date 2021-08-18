@@ -15,7 +15,7 @@ use crate::{
         poweroff,
     },
     file::RcFile,
-    fs::{FcntlFlags, FileSystem, InodeType, Path},
+    fs::{FcntlFlags, FileSystem, FileSystemExt, InodeType, Path},
     hal::hal,
     ok_or,
     page::Page,

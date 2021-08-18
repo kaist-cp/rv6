@@ -18,7 +18,9 @@ use pin_project::pin_project;
 use spin::Once;
 
 use self::log::Log;
-use super::{FcntlFlags, FileName, FileSystem, InodeGuard, InodeType, Itable, Path, RcInode, Stat};
+use super::{
+    FcntlFlags, FileName, FileSystem, InodeGuard, InodeType, Itable, Path, RcInode, Stat, Tx,
+};
 use crate::util::strong_pin::StrongPin;
 use crate::{
     bio::Buf,
@@ -53,10 +55,89 @@ pub struct Ufs {
     itable: Itable<InodeInner>,
 }
 
+impl Ufs {
+    pub const fn new() -> Self {
+        Self {
+            superblock: Once::new(),
+            log: Once::new(),
+            itable: Itable::new_itable(),
+        }
+    }
+
+    fn log(&self) -> &SleepableLock<Log> {
+        self.log.get().expect("log")
+    }
+
+    fn superblock(&self) -> &Superblock {
+        self.superblock.get().expect("superblock")
+    }
+
+    #[allow(clippy::needless_lifetimes)]
+    fn itable<'s>(self: StrongPin<'s, Self>) -> StrongPin<'s, Itable<InodeInner>> {
+        unsafe { StrongPin::new_unchecked(&self.as_pin().get_ref().itable) }
+    }
+}
+
+impl Tx<'_, Ufs> {
+    /// Caller has modified b->data and is done with the buffer.
+    /// Record the block number and pin in the cache by increasing refcnt.
+    /// commit()/write_log() will do the disk write.
+    ///
+    /// write() replaces write(); a typical use is:
+    ///   bp = kernel.fs().disk.read(...)
+    ///   modify bp->data[]
+    ///   write(bp)
+    fn write(&self, b: Buf, ctx: &KernelCtx<'_, '_>) {
+        self.fs.log().lock().write(b, ctx);
+    }
+
+    /// Zero a block.
+    fn bzero(&self, dev: u32, bno: u32, ctx: &KernelCtx<'_, '_>) {
+        let mut buf = ctx.kernel().bcache().get_buf(dev, bno).lock(ctx);
+        buf.deref_inner_mut().data.fill(0);
+        buf.deref_inner_mut().valid = true;
+        self.write(buf, ctx);
+    }
+
+    /// Blocks.
+    /// Allocate a zeroed disk block.
+    fn balloc(&self, dev: u32, ctx: &KernelCtx<'_, '_>) -> u32 {
+        for b in num_iter::range_step(0, self.fs.superblock().size, BPB as u32) {
+            let mut bp = hal().disk().read(dev, self.fs.superblock().bblock(b), ctx);
+            for bi in 0..cmp::min(BPB as u32, self.fs.superblock().size - b) {
+                let m = 1 << (bi % 8);
+                if bp.deref_inner_mut().data[(bi / 8) as usize] & m == 0 {
+                    // Is block free?
+                    bp.deref_inner_mut().data[(bi / 8) as usize] |= m; // Mark block in use.
+                    self.write(bp, ctx);
+                    self.bzero(dev, b + bi, ctx);
+                    return b + bi;
+                }
+            }
+            bp.free(ctx);
+        }
+
+        panic!("balloc: out of blocks");
+    }
+
+    /// Free a disk block.
+    fn bfree(&self, dev: u32, b: u32, ctx: &KernelCtx<'_, '_>) {
+        let mut bp = hal().disk().read(dev, self.fs.superblock().bblock(b), ctx);
+        let bi = b as usize % BPB;
+        let m = 1u8 << (bi % 8);
+        assert_ne!(
+            bp.deref_inner_mut().data[bi / 8] & m,
+            0,
+            "freeing free block"
+        );
+        bp.deref_inner_mut().data[bi / 8] &= !m;
+        self.write(bp, ctx);
+    }
+}
+
 impl FileSystem for Ufs {
     type Dirent = Dirent;
     type InodeInner = InodeInner;
-    type Tx<'s> = UfsTx<'s>;
 
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
         if !self.superblock.is_completed() {
@@ -72,11 +153,6 @@ impl FileSystem for Ufs {
         }
     }
 
-    fn begin_tx(&self, ctx: &KernelCtx<'_, '_>) -> Self::Tx<'_> {
-        self.log().begin_op(ctx);
-        UfsTx { fs: self }
-    }
-
     fn root(self: StrongPin<'_, Self>) -> RcInode<Self::InodeInner> {
         self.itable().root()
     }
@@ -84,7 +160,7 @@ impl FileSystem for Ufs {
     fn namei(
         self: StrongPin<'_, Self>,
         path: &Path,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<RcInode<Self::InodeInner>, ()> {
         self.itable().namei(path, tx, ctx)
@@ -94,7 +170,7 @@ impl FileSystem for Ufs {
         self: StrongPin<'_, Self>,
         inode: RcInode<Self::InodeInner>,
         path: &Path,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
         let inode = scopeguard::guard(inode, |ptr| ptr.free((tx, ctx)));
@@ -126,7 +202,7 @@ impl FileSystem for Ufs {
     fn unlink(
         self: StrongPin<'_, Self>,
         path: &Path,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
         let (ptr, name) = self.itable().nameiparent(path, tx, ctx)?;
@@ -166,7 +242,7 @@ impl FileSystem for Ufs {
         self: StrongPin<'_, Self>,
         path: &Path,
         typ: InodeType,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
         f: F,
     ) -> Result<(RcInode<Self::InodeInner>, T), ()>
@@ -222,7 +298,7 @@ impl FileSystem for Ufs {
         self: StrongPin<'_, Self>,
         path: &Path,
         omode: FcntlFlags,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<usize, ()> {
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
@@ -280,7 +356,7 @@ impl FileSystem for Ufs {
     fn chdir(
         self: StrongPin<'_, Self>,
         inode: RcInode<InodeInner>,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
         let ip = inode.lock(ctx);
@@ -293,103 +369,13 @@ impl FileSystem for Ufs {
         mem::replace(ctx.proc_mut().cwd_mut(), inode).free((tx, ctx));
         Ok(())
     }
-}
 
-pub struct UfsTx<'s> {
-    fs: &'s Ufs,
-}
-
-impl Ufs {
-    pub const fn new() -> Self {
-        Self {
-            superblock: Once::new(),
-            log: Once::new(),
-            itable: Itable::new_itable(),
-        }
+    fn tx_begin(&self, ctx: &KernelCtx<'_, '_>) {
+        self.log().begin_op(ctx);
     }
 
-    fn log(&self) -> &SleepableLock<Log> {
-        self.log.get().expect("log")
-    }
-
-    fn superblock(&self) -> &Superblock {
-        self.superblock.get().expect("superblock")
-    }
-
-    #[allow(clippy::needless_lifetimes)]
-    fn itable<'s>(self: StrongPin<'s, Self>) -> StrongPin<'s, Itable<InodeInner>> {
-        unsafe { StrongPin::new_unchecked(&self.as_pin().get_ref().itable) }
-    }
-}
-
-impl Drop for UfsTx<'_> {
-    fn drop(&mut self) {
-        // HACK(@efenniht): we really need linear type here:
-        // https://github.com/rust-lang/rfcs/issues/814
-        panic!("UfsTx must never drop.");
-    }
-}
-
-impl UfsTx<'_> {
-    /// Caller has modified b->data and is done with the buffer.
-    /// Record the block number and pin in the cache by increasing refcnt.
-    /// commit()/write_log() will do the disk write.
-    ///
-    /// write() replaces write(); a typical use is:
-    ///   bp = kernel.fs().disk.read(...)
-    ///   modify bp->data[]
-    ///   write(bp)
-    fn write(&self, b: Buf, ctx: &KernelCtx<'_, '_>) {
-        self.fs.log().lock().write(b, ctx);
-    }
-
-    /// Zero a block.
-    fn bzero(&self, dev: u32, bno: u32, ctx: &KernelCtx<'_, '_>) {
-        let mut buf = ctx.kernel().bcache().get_buf(dev, bno).lock(ctx);
-        buf.deref_inner_mut().data.fill(0);
-        buf.deref_inner_mut().valid = true;
-        self.write(buf, ctx);
-    }
-
-    /// Blocks.
-    /// Allocate a zeroed disk block.
-    fn balloc(&self, dev: u32, ctx: &KernelCtx<'_, '_>) -> u32 {
-        for b in num_iter::range_step(0, self.fs.superblock().size, BPB as u32) {
-            let mut bp = hal().disk().read(dev, self.fs.superblock().bblock(b), ctx);
-            for bi in 0..cmp::min(BPB as u32, self.fs.superblock().size - b) {
-                let m = 1 << (bi % 8);
-                if bp.deref_inner_mut().data[(bi / 8) as usize] & m == 0 {
-                    // Is block free?
-                    bp.deref_inner_mut().data[(bi / 8) as usize] |= m; // Mark block in use.
-                    self.write(bp, ctx);
-                    self.bzero(dev, b + bi, ctx);
-                    return b + bi;
-                }
-            }
-            bp.free(ctx);
-        }
-
-        panic!("balloc: out of blocks");
-    }
-
-    /// Free a disk block.
-    fn bfree(&self, dev: u32, b: u32, ctx: &KernelCtx<'_, '_>) {
-        let mut bp = hal().disk().read(dev, self.fs.superblock().bblock(b), ctx);
-        let bi = b as usize % BPB;
-        let m = 1u8 << (bi % 8);
-        assert_ne!(
-            bp.deref_inner_mut().data[bi / 8] & m,
-            0,
-            "freeing free block"
-        );
-        bp.deref_inner_mut().data[bi / 8] &= !m;
-        self.write(bp, ctx);
-    }
-
-    /// Called at the end of each FS system call.
-    /// Commits if this was the last outstanding operation.
-    pub fn end(self, ctx: &KernelCtx<'_, '_>) {
-        self.fs.log().end_op(ctx);
-        mem::forget(self);
+    unsafe fn tx_end(&self, ctx: &KernelCtx<'_, '_>) {
+        // Commits if this was the last outstanding operation.
+        self.log().end_op(ctx);
     }
 }

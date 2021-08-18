@@ -462,6 +462,8 @@ impl UserMemory {
         let mut this = scopeguard::guard(self, |this| {
             let _ = this.dealloc(oldsz, allocator);
         });
+        // this.size = pgroundup(this.size);
+        // while this.size < newsz {
         while pgroundup(this.size) < pgroundup(newsz) {
             let mut page = allocator.alloc().ok_or(())?;
             page.write_bytes(0);
