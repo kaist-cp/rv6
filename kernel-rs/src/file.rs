@@ -11,7 +11,7 @@ use core::{
 use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArenaRc, ArrayArena},
-    fs::{FileSystem, InodeGuard, RcInode, Ufs},
+    fs::{FileSystem, FileSystemExt, InodeGuard, RcInode, Ufs},
     hal::hal,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,

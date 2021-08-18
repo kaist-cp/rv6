@@ -1,30 +1,45 @@
 // TODO: remove it
 #![allow(unused_variables)]
+#![allow(dead_code)]
 
-use super::{FcntlFlags, FileSystem, Inode, InodeGuard, InodeType, Path, RcInode};
-use crate::{arena::ArenaObject, proc::KernelCtx, util::strong_pin::StrongPin};
+use spin::Once;
 
-pub struct InodeInner {}
+use super::{FcntlFlags, FileSystem, Inode, InodeGuard, InodeType, Path, RcInode, Tx};
+use crate::{proc::KernelCtx, util::strong_pin::StrongPin};
 
-impl ArenaObject for Inode<InodeInner> {
-    type Ctx<'a, 'id: 'a> = ();
+mod inode;
+mod superblock;
 
-    #[allow(clippy::needless_lifetimes)]
-    fn finalize<'a, 'id: 'a>(&mut self, _: ()) {}
+pub use inode::InodeInner;
+pub use superblock::Superblock;
+
+pub struct Lfs {
+    /// Initializing superblock should run only once because forkret() calls FileSystem::init().
+    /// There should be one superblock per disk device, but we run with only one device.
+    superblock: Once<Superblock>,
+
+    /// In-memory inode map.
+    imap: (),
 }
 
-pub struct Lfs {}
+impl Lfs {
+    pub const fn new() -> Self {
+        Self {
+            superblock: Once::new(),
+            imap: (),
+        }
+    }
+
+    fn superblock(&self) -> &Superblock {
+        self.superblock.get().expect("superblock")
+    }
+}
 
 impl FileSystem for Lfs {
     type Dirent = ();
     type InodeInner = InodeInner;
-    type Tx<'s> = &'s ();
 
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
-        todo!()
-    }
-
-    fn begin_tx(&self, ctx: &KernelCtx<'_, '_>) -> Self::Tx<'_> {
         todo!()
     }
 
@@ -35,7 +50,7 @@ impl FileSystem for Lfs {
     fn namei(
         self: StrongPin<'_, Self>,
         path: &Path,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<RcInode<Self::InodeInner>, ()> {
         todo!()
@@ -45,7 +60,7 @@ impl FileSystem for Lfs {
         self: StrongPin<'_, Self>,
         inode: RcInode<Self::InodeInner>,
         path: &Path,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
         todo!()
@@ -54,7 +69,7 @@ impl FileSystem for Lfs {
     fn unlink(
         self: StrongPin<'_, Self>,
         path: &Path,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
         todo!()
@@ -64,7 +79,7 @@ impl FileSystem for Lfs {
         self: StrongPin<'_, Self>,
         path: &Path,
         typ: InodeType,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
         f: F,
     ) -> Result<(RcInode<Self::InodeInner>, T), ()>
@@ -78,7 +93,7 @@ impl FileSystem for Lfs {
         self: StrongPin<'_, Self>,
         path: &Path,
         omode: FcntlFlags,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<usize, ()> {
         todo!()
@@ -87,9 +102,17 @@ impl FileSystem for Lfs {
     fn chdir(
         self: StrongPin<'_, Self>,
         inode: RcInode<Self::InodeInner>,
-        tx: &Self::Tx<'_>,
+        tx: &Tx<'_, Self>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
+        todo!()
+    }
+
+    fn tx_begin(&self, ctx: &KernelCtx<'_, '_>) {
+        todo!()
+    }
+
+    unsafe fn tx_end(&self, ctx: &KernelCtx<'_, '_>) {
         todo!()
     }
 }

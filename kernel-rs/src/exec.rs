@@ -8,7 +8,7 @@ use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
     arch::addr::{pgroundup, PAddr, PGSIZE},
-    fs::{FileSystem, Path},
+    fs::{FileSystem, FileSystemExt, Path},
     hal::hal,
     page::Page,
     param::MAXARG,

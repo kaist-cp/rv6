@@ -15,7 +15,7 @@ use crate::{
     arch::addr::{Addr, UVAddr, PGSIZE},
     arch::memlayout::kstack,
     arch::riscv::intr_on,
-    fs::FileSystem,
+    fs::{FileSystem, FileSystemExt},
     hal::hal,
     kalloc::Kmem,
     kernel::KernelRef,
