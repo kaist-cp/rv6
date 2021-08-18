@@ -36,7 +36,7 @@ mod inode;
 mod log;
 mod superblock;
 
-pub use inode::{Dinode, Dirent, DIRENT_SIZE, DIRSIZ, I};
+pub use inode::{Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
 pub use superblock::{Superblock, BPB, IPB};
 
 /// root i-number
@@ -138,7 +138,7 @@ impl Tx<'_, Ufs> {
 
 impl FileSystem for Ufs {
     type Dirent = Dirent;
-    type InodeInner = I;
+    type InodeInner = InodeInner;
 
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
         if !self.superblock.is_completed() {

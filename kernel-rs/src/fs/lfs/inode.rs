@@ -2,7 +2,7 @@ use super::super::Inode;
 use super::Lfs;
 use crate::arena::ArenaObject;
 
-pub struct I {}
+pub struct InodeInner {}
 
 impl ArenaObject for Inode<Lfs> {
     type Ctx<'a, 'id: 'a> = ();

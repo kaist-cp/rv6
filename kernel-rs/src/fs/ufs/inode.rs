@@ -100,7 +100,7 @@ pub enum DInodeType {
     Device,
 }
 
-pub struct I {
+pub struct InodeInner {
     /// inode has been read from disk?
     pub valid: bool,
     /// copy of disk inode
@@ -500,7 +500,7 @@ impl Inode<Ufs> {
             inum: 0,
             inner: SleepLock::new(
                 "inode",
-                I {
+                InodeInner {
                     valid: false,
                     typ: InodeType::None,
                     nlink: 0,
