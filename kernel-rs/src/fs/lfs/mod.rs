@@ -2,9 +2,11 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
+use core::ops::Deref;
+
 use spin::Once;
 
-use super::{FcntlFlags, FileSystem, Inode, InodeGuard, InodeType, Path, RcInode, Tx};
+use super::{FcntlFlags, FileSystem, InodeGuard, InodeType, Path, RcInode, Tx};
 use crate::{proc::KernelCtx, util::strong_pin::StrongPin};
 
 mod inode;
@@ -43,7 +45,7 @@ impl FileSystem for Lfs {
         todo!()
     }
 
-    fn root(self: StrongPin<'_, Self>) -> RcInode<Self::InodeInner> {
+    fn root(self: StrongPin<'_, Self>) -> RcInode<Self> {
         todo!()
     }
 
@@ -52,13 +54,13 @@ impl FileSystem for Lfs {
         path: &Path,
         tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
-    ) -> Result<RcInode<Self::InodeInner>, ()> {
+    ) -> Result<RcInode<Self>, ()> {
         todo!()
     }
 
     fn link(
         self: StrongPin<'_, Self>,
-        inode: RcInode<Self::InodeInner>,
+        inode: RcInode<Self>,
         path: &Path,
         tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
@@ -82,9 +84,9 @@ impl FileSystem for Lfs {
         tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
         f: F,
-    ) -> Result<(RcInode<Self::InodeInner>, T), ()>
+    ) -> Result<(RcInode<Self>, T), ()>
     where
-        F: FnOnce(&mut InodeGuard<'_, Self::InodeInner>) -> T,
+        F: FnOnce(&mut InodeGuard<'_, Self>) -> T,
     {
         todo!()
     }
@@ -101,7 +103,7 @@ impl FileSystem for Lfs {
 
     fn chdir(
         self: StrongPin<'_, Self>,
-        inode: RcInode<Self::InodeInner>,
+        inode: RcInode<Self>,
         tx: &Tx<'_, Self>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
@@ -113,6 +115,38 @@ impl FileSystem for Lfs {
     }
 
     unsafe fn tx_end(&self, ctx: &KernelCtx<'_, '_>) {
+        todo!()
+    }
+
+    #[inline]
+    fn inode_read<
+        'id,
+        's,
+        K: Deref<Target = KernelCtx<'id, 's>>,
+        F: FnMut(u32, &[u8], &mut K) -> Result<(), ()>,
+    >(
+        guard: &mut InodeGuard<'_, Self>,
+        off: u32,
+        n: u32,
+        f: F,
+        k: K,
+    ) -> Result<usize, ()> {
+        todo!()
+    }
+
+    fn inode_write<
+        'id,
+        's,
+        K: Deref<Target = KernelCtx<'id, 's>>,
+        F: FnMut(u32, &mut [u8], &mut K) -> Result<(), ()>,
+    >(
+        guard: &mut InodeGuard<'_, Self>,
+        off: u32,
+        n: u32,
+        f: F,
+        tx: &Tx<'_, Lfs>,
+        k: K,
+    ) -> Result<usize, ()> {
         todo!()
     }
 }

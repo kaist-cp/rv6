@@ -12,6 +12,7 @@
 //! On-disk file system format used for both kernel and user programs are also included here.
 
 use core::cell::UnsafeCell;
+use core::ops::Deref;
 use core::{cmp, mem};
 
 use pin_project::pin_project;
@@ -52,7 +53,7 @@ pub struct Ufs {
     superblock: Once<Superblock>,
     log: Once<SleepableLock<Log>>,
     #[pin]
-    itable: Itable<I>,
+    itable: Itable<Self>,
 }
 
 impl Ufs {
@@ -73,7 +74,7 @@ impl Ufs {
     }
 
     #[allow(clippy::needless_lifetimes)]
-    fn itable<'s>(self: StrongPin<'s, Self>) -> StrongPin<'s, Itable<I>> {
+    fn itable<'s>(self: StrongPin<'s, Self>) -> StrongPin<'s, Itable<Self>> {
         unsafe { StrongPin::new_unchecked(&self.as_pin().get_ref().itable) }
     }
 }
@@ -153,7 +154,7 @@ impl FileSystem for Ufs {
         }
     }
 
-    fn root(self: StrongPin<'_, Self>) -> RcInode<Self::InodeInner> {
+    fn root(self: StrongPin<'_, Self>) -> RcInode<Self> {
         self.itable().root()
     }
 
@@ -162,13 +163,13 @@ impl FileSystem for Ufs {
         path: &Path,
         tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
-    ) -> Result<RcInode<Self::InodeInner>, ()> {
+    ) -> Result<RcInode<Self>, ()> {
         self.itable().namei(path, tx, ctx)
     }
 
     fn link(
         self: StrongPin<'_, Self>,
-        inode: RcInode<Self::InodeInner>,
+        inode: RcInode<Self>,
         path: &Path,
         tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
@@ -245,9 +246,9 @@ impl FileSystem for Ufs {
         tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
         f: F,
-    ) -> Result<(RcInode<Self::InodeInner>, T), ()>
+    ) -> Result<(RcInode<Self>, T), ()>
     where
-        F: FnOnce(&mut InodeGuard<'_, Self::InodeInner>) -> T,
+        F: FnOnce(&mut InodeGuard<'_, Self>) -> T,
     {
         let (ptr, name) = self.itable().nameiparent(path, tx, ctx)?;
         let ptr = scopeguard::guard(ptr, |ptr| ptr.free((tx, ctx)));
@@ -355,7 +356,7 @@ impl FileSystem for Ufs {
 
     fn chdir(
         self: StrongPin<'_, Self>,
-        inode: RcInode<I>,
+        inode: RcInode<Self>,
         tx: &Tx<'_, Self>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
@@ -377,5 +378,93 @@ impl FileSystem for Ufs {
     unsafe fn tx_end(&self, ctx: &KernelCtx<'_, '_>) {
         // Commits if this was the last outstanding operation.
         self.log().end_op(ctx);
+    }
+
+    #[inline]
+    fn inode_read<
+        'id,
+        's,
+        K: Deref<Target = KernelCtx<'id, 's>>,
+        F: FnMut(u32, &[u8], &mut K) -> Result<(), ()>,
+    >(
+        guard: &mut InodeGuard<'_, Self>,
+        mut off: u32,
+        mut n: u32,
+        mut f: F,
+        mut k: K,
+    ) -> Result<usize, ()> {
+        let inner = guard.deref_inner();
+        if off > inner.size || off.wrapping_add(n) < off {
+            return Ok(0);
+        }
+        if off + n > inner.size {
+            n = inner.size - off;
+        }
+        let mut tot: u32 = 0;
+        while tot < n {
+            let bp = hal()
+                .disk()
+                .read(guard.dev, guard.bmap(off as usize / BSIZE, &k), &k);
+            let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
+            let begin = (off % BSIZE as u32) as usize;
+            let end = begin + m as usize;
+            let res = f(tot, &bp.deref_inner().data[begin..end], &mut k);
+            bp.free(&k);
+            res?;
+            tot += m;
+            off += m;
+        }
+        Ok(tot as usize)
+    }
+
+    #[inline]
+    fn inode_write<
+        'id,
+        's,
+        K: Deref<Target = KernelCtx<'id, 's>>,
+        F: FnMut(u32, &mut [u8], &mut K) -> Result<(), ()>,
+    >(
+        guard: &mut InodeGuard<'_, Self>,
+        mut off: u32,
+        n: u32,
+        mut f: F,
+        tx: &Tx<'_, Self>,
+        mut k: K,
+    ) -> Result<usize, ()> {
+        if off > guard.deref_inner().size {
+            return Err(());
+        }
+        if off.checked_add(n).ok_or(())? as usize > MAXFILE * BSIZE {
+            return Err(());
+        }
+        let mut tot: u32 = 0;
+        while tot < n {
+            let mut bp = hal().disk().read(
+                guard.dev,
+                guard.bmap_or_alloc(off as usize / BSIZE, tx, &k),
+                &k,
+            );
+            let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
+            let begin = (off % BSIZE as u32) as usize;
+            let end = begin + m as usize;
+            if f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k).is_ok() {
+                tx.write(bp, &k);
+            } else {
+                bp.free(&k);
+                break;
+            }
+            tot += m;
+            off += m;
+        }
+
+        if off > guard.deref_inner().size {
+            guard.deref_inner_mut().size = off;
+        }
+
+        // Write the i-node back to disk even if the size didn't change
+        // because the loop above might have called bmap() and added a new
+        // block to self->addrs[].
+        guard.update(tx, &k);
+        Ok(tot as usize)
     }
 }

@@ -98,7 +98,7 @@ impl Procs {
     /// Set up first user process.
     pub fn user_proc_init(
         self: Pin<&mut Self>,
-        cwd: RcInode<<Ufs as FileSystem>::InodeInner>,
+        cwd: RcInode<Ufs>,
         allocator: Pin<&SpinLock<Kmem>>,
     ) {
         let initial_proc = Branded::new(self.as_ref(), |procs| {

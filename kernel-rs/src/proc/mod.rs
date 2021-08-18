@@ -11,7 +11,7 @@ use array_macro::array;
 use crate::{
     arch::riscv::intr_get,
     file::RcFile,
-    fs::{FileSystem, RcInode, Ufs},
+    fs::{RcInode, Ufs},
     hal::hal,
     lock::SpinLock,
     page::Page,
@@ -224,7 +224,7 @@ pub struct ProcData {
     pub open_files: [Option<RcFile>; NOFILE],
 
     /// Current directory.
-    cwd: MaybeUninit<RcInode<<Ufs as FileSystem>::InodeInner>>,
+    cwd: MaybeUninit<RcInode<Ufs>>,
 
     /// Process name (debugging).
     pub name: [u8; MAXPROCNAME],
