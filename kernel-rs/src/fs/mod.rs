@@ -137,6 +137,7 @@ where
         unsafe {
             self.fs.tx_end(ctx);
         }
+        core::mem::forget(self);
     }
 }
 
