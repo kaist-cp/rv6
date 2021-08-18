@@ -25,28 +25,32 @@ impl Stack {
 #[no_mangle]
 pub static mut stack0: Stack = Stack::new();
 
-/// A scratch area per CPU for machine-mode timer interrupts.
-static mut TIMER_SCRATCH: [[usize; NCPU]; 5] = [[0; NCPU]; 5];
-
 /// entry.S jumps here in machine mode on stack0.
 #[no_mangle]
 pub unsafe fn start() {
+    // launch other cores
     if cpu_id() == 0 {
-        launch_other_cores(0x40010000);
+        let kernel_entry = unsafe { _entry.as_mut_ptr() as usize } as u64;
+        for i in 1..3 {
+            let _ = smc_call(SmcFunctions::CpuOn as u64, i, kernel_entry, 0);
+        }
     }
 
     let cur_el = r_currentel();
 
+    let uart = unsafe { Uart::new(MemLayout::UART0) };
+
+    uart.puts("current el: ");
     match cur_el {
-        0 => _puts("current el: 0\n"),
-        1 => _puts("current el: 1\n"),
-        2 => _puts("current el: 2\n"),
-        3 => _puts("current el: 3\n"),
-        _ => _puts("current el: unknown\n"),
+        0 => uart.puts("0\n"),
+        1 => uart.puts("1\n"),
+        2 => uart.puts("2\n"),
+        3 => uart.puts("3\n"),
+        _ => uart.puts("unknown\n"),
     }
 
     // flush TLB and cache
-    _puts("Flushing TLB and instr cache\n");
+    uart.puts("Flushing TLB and instr cache\n");
 
     // flush Instr Cache
     ic_ialluis();
@@ -97,26 +101,5 @@ pub unsafe fn start() {
 
     unsafe {
         main();
-    }
-}
-
-fn _puts(s: &str) {
-    for c in s.chars() {
-        uart_putc(c as u8);
-    }
-}
-
-fn uart_putc(c: u8) {
-    let u_art = unsafe { Uart::new(MemLayout::UART0) };
-    u_art.putc(c);
-}
-
-pub fn launch_other_cores(kernel_entry: usize) {
-    let core_id = cpu_id();
-    for i in 0..3 {
-        if i != core_id {
-            let _ = smc_call(SmcFunctions::CpuOn as u64, i as u64, kernel_entry as u64, 0);
-            // crate::driver::psci::cpu_on(i, kernel_entry as u64, 0);
-        }
     }
 }

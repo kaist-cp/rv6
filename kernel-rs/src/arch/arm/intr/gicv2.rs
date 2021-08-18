@@ -1,6 +1,9 @@
 // //! the ARM Generic Interrupt Controller v3 (GIC v2).
 // This code is from https://github.com/tonnylyz/rustpie/blob/master/src/driver/aarch64_virt/gic.rs
 
+// Dead code is allowed in this file because not all components are used in the kernel.
+#![allow(dead_code)]
+
 use cortex_a::registers::*;
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::{
@@ -61,7 +64,7 @@ impl core::ops::Deref for GicDistributor {
     type Target = GicDistributorBlock;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*self.ptr() }
+        unsafe { &*(self.base_addr as *const _) }
     }
 }
 
@@ -99,7 +102,7 @@ impl core::ops::Deref for GicCpuInterface {
     type Target = GicCpuInterfaceBlock;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*self.ptr() }
+        unsafe { &*(self.base_addr as *const _) }
     }
 }
 
@@ -108,11 +111,7 @@ impl GicCpuInterface {
         GicCpuInterface { base_addr }
     }
 
-    fn ptr(&self) -> *const GicCpuInterfaceBlock {
-        self.base_addr as *const _
-    }
-
-    fn init(&self) {
+    unsafe fn init(&self) {
         self.PMR.set(u32::MAX);
         self.CTLR.set(1);
     }
@@ -123,11 +122,7 @@ impl GicDistributor {
         GicDistributor { base_addr }
     }
 
-    fn ptr(&self) -> *const GicDistributorBlock {
-        self.base_addr as *const _
-    }
-
-    fn init(&self) {
+    unsafe fn init(&self) {
         let max_spi = (self.TYPER.get() & 0b11111) * 32 + 1;
         for i in 1usize..(max_spi as usize / 32) {
             self.ICENABLER[i].set(u32::MAX);
@@ -141,7 +136,7 @@ impl GicDistributor {
         self.CTLR.set(1);
     }
 
-    fn init_per_core(&self) {
+    unsafe fn init_per_core(&self) {
         self.ICENABLER[0].set(u32::MAX);
         self.ICPENDR[0].set(u32::MAX);
         self.ICACTIVER[0].set(u32::MAX);
@@ -153,19 +148,19 @@ impl GicDistributor {
         }
     }
 
-    fn set_enable(&self, int: usize) {
+    unsafe fn set_enable(&self, int: usize) {
         let idx = int / 32;
         let bit = 1u32 << (int % 32);
         self.ISENABLER[idx].set(bit);
     }
 
-    fn clear_enable(&self, int: usize) {
+    unsafe fn clear_enable(&self, int: usize) {
         let idx = int / 32;
         let bit = 1u32 << (int % 32);
         self.ICENABLER[idx].set(bit);
     }
 
-    fn set_target(&self, int: usize, target: u8) {
+    unsafe fn set_target(&self, int: usize, target: u8) {
         let idx = (int * 8) / 32;
         let offset = (int * 8) % 32;
         let mask: u32 = 0b11111111 << offset;
@@ -173,7 +168,7 @@ impl GicDistributor {
         self.ITARGETSR[idx].set((prev & (!mask)) | (((target as u32) << offset) & mask));
     }
 
-    fn set_priority(&self, int: usize, priority: u8) {
+    unsafe fn set_priority(&self, int: usize, priority: u8) {
         let idx = (int * 8) / 32;
         let offset = (int * 8) % 32;
         let mask: u32 = 0b11111111 << offset;
@@ -181,7 +176,7 @@ impl GicDistributor {
         self.IPRIORITYR[idx].set((prev & (!mask)) | (((priority as u32) << offset) & mask));
     }
 
-    fn set_config(&self, int: usize, edge: bool) {
+    unsafe fn set_config(&self, int: usize, edge: bool) {
         let idx = (int * 2) / 32;
         let offset = (int * 2) % 32;
         let mask: u32 = 0b11 << offset;
@@ -197,31 +192,35 @@ static GICC: GicCpuInterface = GicCpuInterface::new(GICC_BASE);
 pub struct Gic;
 
 impl Gic {
-    pub fn init(&self) {
+    pub unsafe fn init(&self) {
         let core_id = cpu_id();
         let gicd = &GICD;
         if core_id == 0 {
-            gicd.init();
+            unsafe { gicd.init() };
         }
         let gicc = &GICC;
-        gicd.init_per_core();
-        gicc.init();
+        unsafe {
+            gicd.init_per_core();
+            gicc.init();
+        }
     }
 
-    pub fn enable(&self, int: Interrupt) {
+    pub unsafe fn enable(&self, int: Interrupt) {
         let core_id = cpu_id();
         let gicd = &GICD;
-        gicd.set_enable(int);
-        gicd.set_priority(int, 0x7f);
-        if int >= 32 {
-            gicd.set_config(int, true);
+        unsafe {
+            gicd.set_enable(int);
+            gicd.set_priority(int, 0x7f);
+            if int >= 32 {
+                gicd.set_config(int, true);
+            }
+            gicd.set_target(int, (1 << core_id) as u8);
         }
-        gicd.set_target(int, (1 << core_id) as u8);
     }
 
-    pub fn disable(&self, int: Interrupt) {
+    pub unsafe fn disable(&self, int: Interrupt) {
         let gicd = &GICD;
-        gicd.clear_enable(int);
+        unsafe { gicd.clear_enable(int) };
     }
 
     pub fn fetch(&self) -> Option<Interrupt> {
@@ -234,7 +233,7 @@ impl Gic {
         }
     }
 
-    pub fn finish(&self, int: Interrupt) {
+    pub unsafe fn finish(&self, int: Interrupt) {
         let gicc = &GICC;
         gicc.EOIR.set(int as u32);
     }
@@ -250,19 +249,22 @@ pub unsafe fn intr_init() {}
 
 pub unsafe fn intr_init_core() {
     DAIF.set(DAIF::I::Masked.into());
-    INTERRUPT_CONTROLLER.init();
 
-    INTERRUPT_CONTROLLER.enable(TIMER0_IRQ);
+    unsafe {
+        INTERRUPT_CONTROLLER.enable(TIMER0_IRQ);
+        INTERRUPT_CONTROLLER.init();
+    }
     Timer::init();
 
     // Order matters!
     if cpu_id() == 0 {
         // only boot core do this initialization
 
-        // virtio_blk
-        INTERRUPT_CONTROLLER.enable(MemLayout::VIRTIO0_IRQ);
-
-        // pl011 uart
-        INTERRUPT_CONTROLLER.enable(MemLayout::UART0_IRQ);
+        unsafe {
+            // virtio_blk
+            INTERRUPT_CONTROLLER.enable(MemLayout::VIRTIO0_IRQ);
+            // pl011 uart
+            INTERRUPT_CONTROLLER.enable(MemLayout::UART0_IRQ);
+        }
     }
 }

@@ -1,11 +1,8 @@
-use core::time::Duration;
-
 use cortex_a::{asm::barrier, registers::*};
 use tock_registers::interfaces::{Readable, Writeable};
 
 use crate::{kernel::KernelRef, proc::KernelCtx, timer::TimeManager};
 
-const NS_PER_S: u64 = 1_000_000_000;
 const US_PER_S: u64 = 1_000_000;
 
 const TIMER_TICK_MS: u64 = 100;
@@ -42,11 +39,6 @@ impl TimeManager for Timer {
 }
 
 impl Timer {
-    /// The timer's resolution.
-    pub fn resolution() -> Duration {
-        Duration::from_nanos(NS_PER_S / CNTFRQ_EL0.get())
-    }
-
     pub fn read_cntpct() -> u64 {
         // Prevent that the counter is read ahead of time due to out-of-order execution.
         unsafe { barrier::isb(barrier::SY) };

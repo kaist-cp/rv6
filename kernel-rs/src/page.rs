@@ -8,7 +8,8 @@ use core::{
 
 use static_assertions::const_assert;
 
-use crate::addr::{PAddr, PGSIZE};
+use crate::addr::PAddr;
+pub use crate::addr::PGSIZE;
 
 // `RawPage` must be aligned with PGSIZE.
 const_assert!(PGSIZE == 4096);
@@ -113,8 +114,4 @@ impl Drop for Page {
         // https://github.com/rust-lang/rfcs/issues/814
         panic!("Page must never drop.");
     }
-}
-
-pub fn getpagesize() -> usize {
-    PGSIZE
 }

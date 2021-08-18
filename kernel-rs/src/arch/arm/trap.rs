@@ -50,11 +50,6 @@ extern "C" {
     fn vectors();
 }
 
-extern "C" {
-    // trap_asm.S
-    fn trapret() -> !;
-}
-
 pub fn trapinit() {}
 
 /// Set up to take exceptions and traps while in the kernel.
@@ -284,7 +279,9 @@ impl KernelRef<'_, '_> {
             None => return 0,
         }
         if irq.is_some() {
-            INTERRUPT_CONTROLLER.finish(irq.unwrap());
+            unsafe {
+                INTERRUPT_CONTROLLER.finish(irq.unwrap());
+            }
         }
         2
     }

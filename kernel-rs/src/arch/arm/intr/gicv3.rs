@@ -1,4 +1,8 @@
 // //! the ARM Generic Interrupt Controller v3 (GIC v3).
+
+// Dead code is allowed in this file because not all components are used in the kernel.
+#![allow(dead_code)]
+
 use core::ptr;
 
 use cortex_a::registers::*;

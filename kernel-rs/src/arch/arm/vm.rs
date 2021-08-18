@@ -18,9 +18,6 @@ use crate::{
 };
 
 extern "C" {
-    // kernel.ld sets this to end of kernel code.
-    static mut etext: [u8; 0];
-
     // trampoline.S
     static mut trampoline: [u8; 0];
 }

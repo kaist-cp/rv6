@@ -17,10 +17,7 @@ use crate::{
     arch::riscv::intr_on,
     fs::{DefaultFs, FileSystem, FileSystemExt},
     addr::{Addr, UVAddr, PGSIZE},
-    arch::{
-        asm::intr_on,
-        proc::{UserProcInit, INITCODE},
-    },
+    arch::{asm::intr_on, proc::INITCODE},
     fs::FileSystem,
     hal::hal,
     kalloc::Kmem,
@@ -136,9 +133,7 @@ impl Procs {
             // SAFETY: trap_frame has been initialized by alloc.
             unsafe { (*data.trap_frame).sp = PGSIZE };
 
-            unsafe {
-                UserProcInit::init_reg(&mut *data.trap_frame);
-            }
+            unsafe { (*data.trap_frame).init_reg() };
 
             let name = b"initcode\x00";
             (&mut data.name[..name.len()]).copy_from_slice(name);
@@ -358,12 +353,13 @@ impl<'id, 's> ProcsRef<'id, 's> {
     pub fn waitpid(&self, pid: Pid, addr: UVAddr, ctx: &mut KernelCtx<'id, '_>) -> Result<Pid, ()> {
         let mut parent_guard = self.wait_guard();
 
+        let mut found = false;
         loop {
-            // Scan through pool looking for exited children.
-            let mut havekids = false;
+            // Scan through pool looking for exited child with the pid.
             for np in self.process_pool() {
                 let mut np = np.lock();
                 if np.deref_mut_info().pid == pid {
+                    found = true;
                     if *np.get_mut_parent(&mut parent_guard) != ctx.proc().deref().deref() {
                         // Found a process, but not a child
                         return Err(());
@@ -372,7 +368,6 @@ impl<'id, 's> ProcsRef<'id, 's> {
                     // Make sure the child isn't still in exit() or swtch().
                     // let mut np = np.lock();
 
-                    havekids = true;
                     if np.state() == Procstate::ZOMBIE {
                         let pid = np.deref_mut_info().pid;
                         if !addr.is_null()
@@ -393,13 +388,14 @@ impl<'id, 's> ProcsRef<'id, 's> {
             }
 
             // No point waiting if we don't have any children.
-            if !havekids || ctx.proc().killed() {
+            if !found || ctx.proc().killed() {
                 return Err(());
             }
 
             // Wait for a child to exit.
             //DOC: wait-sleep
             ctx.proc().child_waitchannel.sleep(&mut parent_guard.0, ctx);
+            found = false;
         }
     }
 
@@ -471,7 +467,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
     }
 
     // get the pid of current process's parent
-    pub fn getppid(&mut self, ctx: &mut KernelCtx<'id, '_>) -> Pid {
+    pub fn get_parent_pid(&mut self, ctx: &mut KernelCtx<'id, '_>) -> Pid {
         let mut parent_guard = self.wait_guard();
         let parent = *ctx.proc().get_mut_parent(&mut parent_guard);
 

@@ -1,5 +1,3 @@
-use crate::proc::UserProcInitiator;
-
 /// A user program that calls exec("/init").
 /// od -t xC initcode
 pub const INITCODE: [u8; 52] = [
@@ -194,6 +192,10 @@ impl TrapFrame {
             _ => panic!("Invalid Index!"),
         }
     }
+
+    pub fn init_reg(&mut self) {
+        // nothing to do
+    }
 }
 
 impl Context {
@@ -219,15 +221,5 @@ impl Context {
     /// Set return register (ra)
     pub fn set_ret_addr(&mut self, val: usize) {
         self.ra = val
-    }
-}
-
-pub type UserProcInit = RiscVUserProcInit;
-
-pub struct RiscVUserProcInit;
-
-impl UserProcInitiator for RiscVUserProcInit {
-    fn init_reg(_trap_frame: &mut TrapFrame) {
-        // nothing to do
     }
 }

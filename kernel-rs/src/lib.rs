@@ -25,8 +25,6 @@
 #![deny(unused_results)]
 #![deny(variant_size_differences)]
 #![deny(warnings)]
-// TODO: remove this
-#![cfg_attr(target_arch = "aarch64", allow(dead_code))]
 //
 // # The following lints should not be denied.
 //

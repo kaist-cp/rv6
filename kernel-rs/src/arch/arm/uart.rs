@@ -158,4 +158,10 @@ impl Uart {
     pub fn is_full(&self) -> bool {
         (self.FR.get() & UartRegBits::FRTxFifoFull.bits()) == 1
     }
+
+    pub fn puts(&self, s: &str) {
+        for c in s.chars() {
+            self.putc(c as u8);
+        }
+    }
 }

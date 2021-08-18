@@ -21,7 +21,7 @@ use crate::{
     fs::{FcntlFlags, FileSystem, InodeType, Path},
     hal::hal,
     ok_or,
-    page::{getpagesize, Page},
+    page::{Page, PGSIZE},
     param::{MAXARG, MAXPATH},
     proc::{CurrentProc, KernelCtx},
     some_or,
@@ -502,7 +502,7 @@ impl KernelCtx<'_, '_> {
     }
 
     pub fn sys_getpagesize(&mut self) -> Result<usize, ()> {
-        Ok(getpagesize())
+        Ok(PGSIZE)
     }
 
     pub fn sys_waitpid(&mut self) -> Result<usize, ()> {
@@ -512,7 +512,7 @@ impl KernelCtx<'_, '_> {
     }
 
     pub fn sys_getppid(&mut self) -> Result<usize, ()> {
-        Ok(self.kernel().procs().getppid(self) as _)
+        Ok(self.kernel().procs().get_parent_pid(self) as _)
     }
 
     pub fn sys_lseek(&mut self) -> Result<usize, ()> {
