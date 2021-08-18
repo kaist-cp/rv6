@@ -15,7 +15,7 @@ use crate::{
     arch::addr::{Addr, UVAddr, PGSIZE},
     arch::memlayout::kstack,
     arch::riscv::intr_on,
-    fs::{FileSystem, FileSystemExt},
+    fs::{DefaultFs, FileSystem, FileSystemExt},
     hal::hal,
     kalloc::Kmem,
     kernel::KernelRef,
@@ -98,7 +98,7 @@ impl Procs {
     /// Set up first user process.
     pub fn user_proc_init(
         self: Pin<&mut Self>,
-        cwd: RcInode<<Ufs as FileSystem>::InodeInner>,
+        cwd: RcInode<DefaultFs>,
         allocator: Pin<&SpinLock<Kmem>>,
     ) {
         let initial_proc = Branded::new(self.as_ref(), |procs| {

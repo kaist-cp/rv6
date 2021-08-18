@@ -1,8 +1,11 @@
+use core::mem;
 use core::ops::Deref;
 
 use bitflags::bitflags;
+use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
+    arch::addr::UVAddr,
     arena::{ArenaObject, ArenaRc, ArrayArena},
     lock::SleepLock,
     param::NINODE,
@@ -19,6 +22,9 @@ pub use lfs::Lfs;
 pub use path::{FileName, Path};
 pub use stat::Stat;
 pub use ufs::Ufs;
+
+/// The default file system.
+pub type DefaultFs = Ufs;
 
 bitflags! {
     pub struct FcntlFlags: i32 {
@@ -51,25 +57,34 @@ pub enum InodeType {
 // Instead, every method that needs to be inside a transaction explicitly
 // takes a FsTransaction value as an argument.
 // https://github.com/kaist-cp/rv6/issues/328
-pub struct InodeGuard<'a, I> {
-    pub inode: &'a Inode<I>,
+pub struct InodeGuard<'a, FS: FileSystem>
+where
+    Inode<FS>: ArenaObject,
+{
+    pub inode: &'a Inode<FS>,
 }
 
-impl<I> Deref for InodeGuard<'_, I> {
-    type Target = Inode<I>;
+impl<FS: FileSystem> Deref for InodeGuard<'_, FS>
+where
+    Inode<FS>: ArenaObject,
+{
+    type Target = Inode<FS>;
 
     fn deref(&self) -> &Self::Target {
         self.inode
     }
 }
 
-impl<I> InodeGuard<'_, I> {
-    pub fn deref_inner(&self) -> &I {
+impl<FS: FileSystem> InodeGuard<'_, FS>
+where
+    Inode<FS>: ArenaObject,
+{
+    pub fn deref_inner(&self) -> &FS::InodeInner {
         // SAFETY: self.inner is locked.
         unsafe { &*self.inner.get_mut_raw() }
     }
 
-    pub fn deref_inner_mut(&mut self) -> &mut I {
+    pub fn deref_inner_mut(&mut self) -> &mut FS::InodeInner {
         // SAFETY: self.inner is locked and &mut self is exclusive.
         unsafe { &mut *self.inner.get_mut_raw() }
     }
@@ -79,10 +94,138 @@ impl<I> InodeGuard<'_, I> {
         unsafe { self.inner.unlock(ctx) };
         core::mem::forget(self);
     }
+
+    /// Copy data into `dst` from the content of inode at offset `off`.
+    /// Return Ok(()) on success, Err(()) on failure.
+    pub fn read_kernel<T: AsBytes + FromBytes>(
+        &mut self,
+        dst: &mut T,
+        off: u32,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Result<(), ()> {
+        let bytes = self.read_bytes_kernel(dst.as_bytes_mut(), off, ctx);
+        if bytes == mem::size_of::<T>() {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    /// Copy data into `dst` from the content of inode at offset `off`.
+    /// Return the number of bytes copied.
+    pub fn read_bytes_kernel(
+        &mut self,
+        dst: &mut [u8],
+        off: u32,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> usize {
+        FS::inode_read(
+            self,
+            off,
+            dst.len() as u32,
+            |off, src, _| {
+                dst[off as usize..off as usize + src.len()].clone_from_slice(src);
+                Ok(())
+            },
+            ctx,
+        )
+        .expect("read: should never fail")
+    }
+
+    /// Copy data into virtual address `dst` of the current process by `n` bytes
+    /// from the content of inode at offset `off`.
+    /// Returns Ok(number of bytes copied) on success, Err(()) on failure due to
+    /// accessing an invalid virtual address.
+    pub fn read_user(
+        &mut self,
+        dst: UVAddr,
+        off: u32,
+        n: u32,
+        ctx: &mut KernelCtx<'_, '_>,
+    ) -> Result<usize, ()> {
+        FS::inode_read(
+            self,
+            off,
+            n,
+            |off, src, ctx| {
+                ctx.proc_mut()
+                    .memory_mut()
+                    .copy_out_bytes(dst + off as usize, src)
+            },
+            ctx,
+        )
+    }
+
+    /// Copy data from `src` into the inode at offset `off`.
+    /// Return Ok(()) on success, Err(()) on failure.
+    pub fn write_kernel<T: AsBytes>(
+        &mut self,
+        src: &T,
+        off: u32,
+        tx: &Tx<'_, FS>,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Result<(), ()> {
+        let bytes = self.write_bytes_kernel(src.as_bytes(), off, tx, ctx)?;
+        if bytes == mem::size_of::<T>() {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    /// Copy data from `src` into the inode at offset `off`.
+    /// Returns Ok(number of bytes copied) on success, Err(()) on failure.
+    pub fn write_bytes_kernel(
+        &mut self,
+        src: &[u8],
+        off: u32,
+        tx: &Tx<'_, FS>,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Result<usize, ()> {
+        FS::inode_write(
+            self,
+            off,
+            src.len() as u32,
+            |off, dst, _| {
+                dst.clone_from_slice(&src[off as usize..off as usize + src.len()]);
+                Ok(())
+            },
+            tx,
+            ctx,
+        )
+    }
+
+    /// Copy data from virtual address `src` of the current process by `n` bytes
+    /// into the inode at offset `off`.
+    /// Returns Ok(number of bytes copied) on success, Err(()) on failure.
+    pub fn write_user(
+        &mut self,
+        src: UVAddr,
+        off: u32,
+        n: u32,
+        ctx: &mut KernelCtx<'_, '_>,
+        tx: &Tx<'_, FS>,
+    ) -> Result<usize, ()> {
+        FS::inode_write(
+            self,
+            off,
+            n,
+            |off, dst, ctx| {
+                ctx.proc_mut()
+                    .memory_mut()
+                    .copy_in_bytes(dst, src + off as usize)
+            },
+            tx,
+            ctx,
+        )
+    }
 }
 
 /// Unlock and put the given inode.
-impl<I> Drop for InodeGuard<'_, I> {
+impl<FS: FileSystem> Drop for InodeGuard<'_, FS>
+where
+    Inode<FS>: ArenaObject,
+{
     fn drop(&mut self) {
         // HACK(@efenniht): we really need linear type here:
         // https://github.com/rust-lang/rfcs/issues/814
@@ -91,33 +234,34 @@ impl<I> Drop for InodeGuard<'_, I> {
 }
 
 /// in-memory copy of an inode
-pub struct Inode<I> {
+pub struct Inode<FS: FileSystem>
+where
+    Inode<FS>: ArenaObject,
+{
     /// Device number
     pub dev: u32,
 
     /// Inode number
     pub inum: u32,
 
-    pub inner: SleepLock<I>,
+    pub inner: SleepLock<FS::InodeInner>,
 }
 
-pub type Itable<I> = ArrayArena<Inode<I>, NINODE>;
+pub type Itable<FS> = ArrayArena<Inode<FS>, NINODE>;
 
 /// A reference counted smart pointer to an `Inode`.
-pub type RcInode<I> = ArenaRc<Itable<I>>;
+pub type RcInode<FS> = ArenaRc<Itable<FS>>;
 
 pub struct Tx<'s, FS: FileSystem>
 where
-    FS::InodeInner: 'static + Unpin,
-    Inode<FS::InodeInner>: ArenaObject,
+    Inode<FS>: ArenaObject,
 {
     fs: &'s FS,
 }
 
 impl<FS: FileSystem> Drop for Tx<'_, FS>
 where
-    FS::InodeInner: 'static + Unpin,
-    Inode<FS::InodeInner>: ArenaObject,
+    Inode<FS>: ArenaObject,
 {
     fn drop(&mut self) {
         // HACK(@efenniht): we really need linear type here:
@@ -128,8 +272,7 @@ where
 
 impl<FS: FileSystem> Tx<'_, FS>
 where
-    FS::InodeInner: 'static + Unpin,
-    Inode<FS::InodeInner>: ArenaObject,
+    Inode<FS>: ArenaObject,
 {
     /// Called at the end of each FS system call.
     /// Commits if this was the last outstanding operation.
@@ -141,19 +284,18 @@ where
     }
 }
 
-pub trait FileSystem: Sized
+pub trait FileSystem: 'static + Sized
 where
-    Self::InodeInner: 'static + Unpin,
-    Inode<Self::InodeInner>: ArenaObject,
+    Inode<Self>: ArenaObject,
 {
     type Dirent;
-    type InodeInner: Send;
+    type InodeInner: 'static + Unpin + Send + Sized;
 
     /// Initializes the file system (loading from the disk).
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>);
 
     /// Finds the root inode.
-    fn root(self: StrongPin<'_, Self>) -> RcInode<Self::InodeInner>;
+    fn root(self: StrongPin<'_, Self>) -> RcInode<Self>;
 
     /// Finds inode from the given path.
     fn namei(
@@ -161,13 +303,13 @@ where
         path: &Path,
         tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
-    ) -> Result<RcInode<Self::InodeInner>, ()>;
+    ) -> Result<RcInode<Self>, ()>;
 
     /// Create another name(newname) for the file oldname.
     /// Returns Ok(()) on success, Err(()) on error.
     fn link(
         self: StrongPin<'_, Self>,
-        inode: RcInode<Self::InodeInner>,
+        inode: RcInode<Self>,
         path: &Path,
         tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
@@ -191,9 +333,9 @@ where
         tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
         f: F,
-    ) -> Result<(RcInode<Self::InodeInner>, T), ()>
+    ) -> Result<(RcInode<Self>, T), ()>
     where
-        F: FnOnce(&mut InodeGuard<'_, Self::InodeInner>) -> T;
+        F: FnOnce(&mut InodeGuard<'_, Self>) -> T;
 
     /// Open a file; omode indicate read/write.
     /// Returns Ok(file descriptor) on success, Err(()) on error.
@@ -209,7 +351,7 @@ where
     /// Returns Ok(()) on success, Err(()) on error.
     fn chdir(
         self: StrongPin<'_, Self>,
-        inode: RcInode<Self::InodeInner>,
+        inode: RcInode<Self>,
         tx: &Tx<'_, Self>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<(), ()>;
@@ -228,12 +370,75 @@ where
     /// `tx_end` should not be called more than `tx_begin`. Also, f system APIs should be called
     /// inside a transaction.
     unsafe fn tx_end(&self, ctx: &KernelCtx<'_, '_>);
+
+    /// Read data from inode.
+    ///
+    /// `f` takes an offset and a slice as arguments. `f(off, src, ctx)` should copy
+    /// the content of `src` to the interval beginning at `off`th byte of the
+    /// destination, which the caller of this method knows.
+    // This method takes a function as an argument, because writing to kernel
+    // memory and user memory are very different from each other. Writing to a
+    // consecutive region in kernel memory can be done at once by simple memcpy.
+    // However, writing to user memory needs page table accesses since a single
+    // consecutive region in user memory may split into several pages in
+    // physical memory.
+    fn inode_read<
+        'id,
+        's,
+        K: Deref<Target = KernelCtx<'id, 's>>,
+        F: FnMut(u32, &[u8], &mut K) -> Result<(), ()>,
+    >(
+        guard: &mut InodeGuard<'_, Self>,
+        off: u32,
+        n: u32,
+        f: F,
+        k: K,
+    ) -> Result<usize, ()>;
+
+    /// Write data to inode. Returns the number of bytes successfully written.
+    /// If the return value is less than the requested n, there was an error of
+    /// some kind.
+    ///
+    /// `f` takes an offset and a slice as arguments. `f(off, dst)` should copy
+    /// the content beginning at the `off`th byte of the source, which the
+    /// caller of this method knows, to `dst`.
+    // This method takes a function as an argument, because reading kernel
+    // memory and user memory are very different from each other. Reading a
+    // consecutive region in kernel memory can be done at once by simple memcpy.
+    // However, reading user memory needs page table accesses since a single
+    // consecutive region in user memory may split into several pages in
+    // physical memory.
+    /// Write data to inode. Returns the number of bytes successfully written.
+    /// If the return value is less than the requested n, there was an error of
+    /// some kind.
+    ///
+    /// `f` takes an offset and a slice as arguments. `f(off, dst)` should copy
+    /// the content beginning at the `off`th byte of the source, which the
+    /// caller of this method knows, to `dst`.
+    // This method takes a function as an argument, because reading kernel
+    // memory and user memory are very different from each other. Reading a
+    // consecutive region in kernel memory can be done at once by simple memcpy.
+    // However, reading user memory needs page table accesses since a single
+    // consecutive region in user memory may split into several pages in
+    // physical memory.
+    fn inode_write<
+        'id,
+        's,
+        K: Deref<Target = KernelCtx<'id, 's>>,
+        F: FnMut(u32, &mut [u8], &mut K) -> Result<(), ()>,
+    >(
+        guard: &mut InodeGuard<'_, Self>,
+        off: u32,
+        n: u32,
+        f: F,
+        tx: &Tx<'_, Self>,
+        k: K,
+    ) -> Result<usize, ()>;
 }
 
 pub trait FileSystemExt: FileSystem
 where
-    Self::InodeInner: 'static + Unpin,
-    Inode<Self::InodeInner>: ArenaObject,
+    Inode<Self>: ArenaObject,
 {
     /// Begins a transaction.
     fn begin_tx(&self, ctx: &KernelCtx<'_, '_>) -> Tx<'_, Self>;
@@ -241,8 +446,7 @@ where
 
 impl<FS: FileSystem> FileSystemExt for FS
 where
-    FS::InodeInner: 'static + Unpin,
-    Inode<FS::InodeInner>: ArenaObject,
+    Inode<Self>: ArenaObject,
 {
     fn begin_tx(&self, ctx: &KernelCtx<'_, '_>) -> Tx<'_, Self> {
         self.tx_begin(ctx);
