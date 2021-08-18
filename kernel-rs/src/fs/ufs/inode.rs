@@ -74,10 +74,9 @@ use zerocopy::{AsBytes, FromBytes};
 
 use super::{FileName, Path, Stat, Ufs, IPB, NDIRECT, NINDIRECT, ROOTINO};
 use crate::{
-    arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArrayArena},
     bio::BufData,
-    fs::{FileSystem, Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
+    fs::{Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
     hal::hal,
     lock::SleepLock,
     param::NINODE,
@@ -340,70 +339,6 @@ impl InodeGuard<'_, Ufs> {
 
         self.deref_inner_mut().size = 0;
         self.update(tx, ctx);
-    }
-
-    /// Copy data from `src` into the inode at offset `off`.
-    /// Return Ok(()) on success, Err(()) on failure.
-    pub fn write_kernel<T: AsBytes>(
-        &mut self,
-        src: &T,
-        off: u32,
-        tx: &Tx<'_, Ufs>,
-        ctx: &KernelCtx<'_, '_>,
-    ) -> Result<(), ()> {
-        let bytes = self.write_bytes_kernel(src.as_bytes(), off, tx, ctx)?;
-        if bytes == mem::size_of::<T>() {
-            Ok(())
-        } else {
-            Err(())
-        }
-    }
-
-    /// Copy data from `src` into the inode at offset `off`.
-    /// Returns Ok(number of bytes copied) on success, Err(()) on failure.
-    pub fn write_bytes_kernel(
-        &mut self,
-        src: &[u8],
-        off: u32,
-        tx: &Tx<'_, Ufs>,
-        ctx: &KernelCtx<'_, '_>,
-    ) -> Result<usize, ()> {
-        Ufs::inode_write(
-            self,
-            off,
-            src.len() as u32,
-            |off, dst, _| {
-                dst.clone_from_slice(&src[off as usize..off as usize + src.len()]);
-                Ok(())
-            },
-            tx,
-            ctx,
-        )
-    }
-
-    /// Copy data from virtual address `src` of the current process by `n` bytes
-    /// into the inode at offset `off`.
-    /// Returns Ok(number of bytes copied) on success, Err(()) on failure.
-    pub fn write_user(
-        &mut self,
-        src: UVAddr,
-        off: u32,
-        n: u32,
-        ctx: &mut KernelCtx<'_, '_>,
-        tx: &Tx<'_, Ufs>,
-    ) -> Result<usize, ()> {
-        Ufs::inode_write(
-            self,
-            off,
-            n,
-            |off, dst, ctx| {
-                ctx.proc_mut()
-                    .memory_mut()
-                    .copy_in_bytes(dst, src + off as usize)
-            },
-            tx,
-            ctx,
-        )
     }
 
     /// Inode content

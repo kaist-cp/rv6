@@ -13,7 +13,7 @@ use crate::{
     console::{console_read, console_write},
     cpu::cpuid,
     file::{Devsw, FileTable},
-    fs::{FileSystem, Ufs},
+    fs::{DefaultFs, FileSystem},
     hal::{hal, hal_init},
     kalloc::Kmem,
     lock::{SleepableLock, SpinLock},
@@ -87,7 +87,7 @@ pub struct Kernel {
     ftable: FileTable,
 
     #[pin]
-    file_system: Ufs,
+    file_system: DefaultFs,
 }
 
 /// A branded reference to a `Kernel`.
@@ -137,7 +137,7 @@ impl<'id, 's> KernelRef<'id, 's> {
     }
 
     /// Returns a reference to the kernel's `FileSystem`.
-    pub fn fs(&self) -> StrongPin<'s, Ufs> {
+    pub fn fs(&self) -> StrongPin<'s, DefaultFs> {
         unsafe { StrongPin::new_unchecked(&self.0.as_pin().get_ref().file_system) }
     }
 
@@ -170,7 +170,7 @@ impl Kernel {
                 write: None,
             }; NDEV],
             ftable: FileTable::new_ftable(),
-            file_system: Ufs::new(),
+            file_system: DefaultFs::new(),
         }
     }
 

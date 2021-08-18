@@ -23,6 +23,9 @@ pub use path::{FileName, Path};
 pub use stat::Stat;
 pub use ufs::Ufs;
 
+/// The default file system.
+pub type DefaultFs = Ufs;
+
 bitflags! {
     pub struct FcntlFlags: i32 {
         const O_RDONLY = 0;
@@ -149,6 +152,70 @@ where
                     .memory_mut()
                     .copy_out_bytes(dst + off as usize, src)
             },
+            ctx,
+        )
+    }
+
+    /// Copy data from `src` into the inode at offset `off`.
+    /// Return Ok(()) on success, Err(()) on failure.
+    pub fn write_kernel<T: AsBytes>(
+        &mut self,
+        src: &T,
+        off: u32,
+        tx: &Tx<'_, FS>,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Result<(), ()> {
+        let bytes = self.write_bytes_kernel(src.as_bytes(), off, tx, ctx)?;
+        if bytes == mem::size_of::<T>() {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    /// Copy data from `src` into the inode at offset `off`.
+    /// Returns Ok(number of bytes copied) on success, Err(()) on failure.
+    pub fn write_bytes_kernel(
+        &mut self,
+        src: &[u8],
+        off: u32,
+        tx: &Tx<'_, FS>,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Result<usize, ()> {
+        FS::inode_write(
+            self,
+            off,
+            src.len() as u32,
+            |off, dst, _| {
+                dst.clone_from_slice(&src[off as usize..off as usize + src.len()]);
+                Ok(())
+            },
+            tx,
+            ctx,
+        )
+    }
+
+    /// Copy data from virtual address `src` of the current process by `n` bytes
+    /// into the inode at offset `off`.
+    /// Returns Ok(number of bytes copied) on success, Err(()) on failure.
+    pub fn write_user(
+        &mut self,
+        src: UVAddr,
+        off: u32,
+        n: u32,
+        ctx: &mut KernelCtx<'_, '_>,
+        tx: &Tx<'_, FS>,
+    ) -> Result<usize, ()> {
+        FS::inode_write(
+            self,
+            off,
+            n,
+            |off, dst, ctx| {
+                ctx.proc_mut()
+                    .memory_mut()
+                    .copy_in_bytes(dst, src + off as usize)
+            },
+            tx,
             ctx,
         )
     }

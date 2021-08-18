@@ -11,7 +11,7 @@ use core::{
 use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArenaRc, ArrayArena},
-    fs::{FileSystem, FileSystemExt, Inode, InodeGuard, RcInode, Ufs},
+    fs::{DefaultFs, FileSystem, FileSystemExt, Inode, InodeGuard, RcInode},
     hal::hal,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
@@ -23,7 +23,7 @@ pub enum FileType {
     None,
     Pipe { pipe: AllocatedPipe },
     Inode { inner: InodeFileType },
-    Device { ip: RcInode<Ufs>, major: u16 },
+    Device { ip: RcInode<DefaultFs>, major: u16 },
 }
 
 /// It has an inode and an offset.
@@ -32,7 +32,7 @@ pub enum FileType {
 ///
 /// The offset should be accessed only when the inode is locked.
 pub struct InodeFileType {
-    pub ip: RcInode<Ufs>,
+    pub ip: RcInode<DefaultFs>,
     // It should be accessed only when `ip` is locked.
     pub off: UnsafeCell<u32>,
 }
@@ -73,7 +73,7 @@ impl Default for FileType {
 }
 
 impl InodeFileType {
-    fn lock(&self, ctx: &KernelCtx<'_, '_>) -> InodeFileTypeGuard<'_, Ufs> {
+    fn lock(&self, ctx: &KernelCtx<'_, '_>) -> InodeFileTypeGuard<'_, DefaultFs> {
         let ip = self.ip.lock(ctx);
         // SAFETY: `ip` is locked and `off` can be exclusively accessed.
         let off = unsafe { &mut *self.off.get() };
