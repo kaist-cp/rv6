@@ -35,7 +35,7 @@ mod inode;
 mod log;
 mod superblock;
 
-pub use inode::{Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
+pub use inode::{Dinode, Dirent, DIRENT_SIZE, DIRSIZ, I};
 pub use superblock::{Superblock, BPB, IPB};
 
 /// root i-number
@@ -52,7 +52,7 @@ pub struct Ufs {
     superblock: Once<Superblock>,
     log: Once<SleepableLock<Log>>,
     #[pin]
-    itable: Itable<InodeInner>,
+    itable: Itable<I>,
 }
 
 impl Ufs {
@@ -73,7 +73,7 @@ impl Ufs {
     }
 
     #[allow(clippy::needless_lifetimes)]
-    fn itable<'s>(self: StrongPin<'s, Self>) -> StrongPin<'s, Itable<InodeInner>> {
+    fn itable<'s>(self: StrongPin<'s, Self>) -> StrongPin<'s, Itable<I>> {
         unsafe { StrongPin::new_unchecked(&self.as_pin().get_ref().itable) }
     }
 }
@@ -137,7 +137,7 @@ impl Tx<'_, Ufs> {
 
 impl FileSystem for Ufs {
     type Dirent = Dirent;
-    type InodeInner = InodeInner;
+    type InodeInner = I;
 
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
         if !self.superblock.is_completed() {
@@ -355,7 +355,7 @@ impl FileSystem for Ufs {
 
     fn chdir(
         self: StrongPin<'_, Self>,
-        inode: RcInode<InodeInner>,
+        inode: RcInode<I>,
         tx: &Tx<'_, Self>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<(), ()> {

@@ -77,6 +77,7 @@ use core::{
 use static_assertions::const_assert;
 use zerocopy::{AsBytes, FromBytes};
 
+use super::super::InodeInner;
 use super::{FileName, Path, Stat, Ufs, IPB, MAXFILE, NDIRECT, NINDIRECT, ROOTINO};
 use crate::{
     arch::addr::UVAddr,
@@ -106,7 +107,7 @@ pub enum DInodeType {
     Device,
 }
 
-pub struct InodeInner {
+pub struct I {
     /// inode has been read from disk?
     pub valid: bool,
     /// copy of disk inode
@@ -115,6 +116,45 @@ pub struct InodeInner {
     pub size: u32,
     pub addr_direct: [u32; NDIRECT],
     pub addr_indirect: u32,
+}
+
+impl InodeInner for I {
+    #[inline]
+    fn read_internal<
+        'id,
+        's,
+        K: Deref<Target = KernelCtx<'id, 's>>,
+        F: FnMut(u32, &[u8], &mut K) -> Result<(), ()>,
+    >(
+        guard: &mut InodeGuard<'_, Self>,
+        mut off: u32,
+        mut n: u32,
+        mut f: F,
+        mut k: K,
+    ) -> Result<usize, ()> {
+        let inner = guard.deref_inner();
+        if off > inner.size || off.wrapping_add(n) < off {
+            return Ok(0);
+        }
+        if off + n > inner.size {
+            n = inner.size - off;
+        }
+        let mut tot: u32 = 0;
+        while tot < n {
+            let bp = hal()
+                .disk()
+                .read(guard.dev, guard.bmap(off as usize / BSIZE, &k), &k);
+            let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
+            let begin = (off % BSIZE as u32) as usize;
+            let end = begin + m as usize;
+            let res = f(tot, &bp.deref_inner().data[begin..end], &mut k);
+            bp.free(&k);
+            res?;
+            tot += m;
+            off += m;
+        }
+        Ok(tot as usize)
+    }
 }
 
 /// On-disk inode structure
@@ -154,11 +194,7 @@ pub struct Dirent {
 }
 
 impl Dirent {
-    fn new(
-        ip: &mut InodeGuard<'_, InodeInner>,
-        off: u32,
-        ctx: &KernelCtx<'_, '_>,
-    ) -> Result<Dirent, ()> {
+    fn new(ip: &mut InodeGuard<'_, I>, off: u32, ctx: &KernelCtx<'_, '_>) -> Result<Dirent, ()> {
         let mut dirent = Dirent::default();
         ip.read_kernel(&mut dirent, off, ctx)?;
         Ok(dirent)
@@ -189,7 +225,7 @@ impl Dirent {
 }
 
 struct DirentIter<'id, 's, 't> {
-    guard: &'s mut InodeGuard<'t, InodeInner>,
+    guard: &'s mut InodeGuard<'t, I>,
     iter: StepBy<Range<u32>>,
     ctx: &'s KernelCtx<'id, 's>,
 }
@@ -204,7 +240,7 @@ impl Iterator for DirentIter<'_, '_, '_> {
     }
 }
 
-impl<'t> InodeGuard<'t, InodeInner> {
+impl<'t> InodeGuard<'t, I> {
     fn iter_dirents<'id, 's>(&'s mut self, ctx: &'s KernelCtx<'id, 's>) -> DirentIter<'id, 's, 't> {
         let iter = (0..self.deref_inner().size).step_by(DIRENT_SIZE);
         DirentIter {
@@ -216,7 +252,7 @@ impl<'t> InodeGuard<'t, InodeInner> {
 }
 
 // Directories
-impl InodeGuard<'_, InodeInner> {
+impl InodeGuard<'_, I> {
     /// Write a new directory entry (name, inum) into the directory dp.
     pub fn dirlink(
         &mut self,
@@ -248,7 +284,7 @@ impl InodeGuard<'_, InodeInner> {
         &mut self,
         name: &FileName<DIRSIZ>,
         ctx: &KernelCtx<'_, '_>,
-    ) -> Result<(RcInode<InodeInner>, u32), ()> {
+    ) -> Result<(RcInode<I>, u32), ()> {
         assert_eq!(self.deref_inner().typ, InodeType::Dir, "dirlookup not DIR");
 
         self.iter_dirents(ctx)
@@ -266,7 +302,7 @@ impl InodeGuard<'_, InodeInner> {
     }
 }
 
-impl InodeGuard<'_, InodeInner> {
+impl InodeGuard<'_, I> {
     /// Copy a modified in-memory inode to disk.
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk.
@@ -349,113 +385,6 @@ impl InodeGuard<'_, InodeInner> {
 
         self.deref_inner_mut().size = 0;
         self.update(tx, ctx);
-    }
-
-    /// Copy data into `dst` from the content of inode at offset `off`.
-    /// Return Ok(()) on success, Err(()) on failure.
-    pub fn read_kernel<T: AsBytes + FromBytes>(
-        &mut self,
-        dst: &mut T,
-        off: u32,
-        ctx: &KernelCtx<'_, '_>,
-    ) -> Result<(), ()> {
-        let bytes = self.read_bytes_kernel(dst.as_bytes_mut(), off, ctx);
-        if bytes == mem::size_of::<T>() {
-            Ok(())
-        } else {
-            Err(())
-        }
-    }
-
-    /// Copy data into `dst` from the content of inode at offset `off`.
-    /// Return the number of bytes copied.
-    pub fn read_bytes_kernel(
-        &mut self,
-        dst: &mut [u8],
-        off: u32,
-        ctx: &KernelCtx<'_, '_>,
-    ) -> usize {
-        self.read_internal(
-            off,
-            dst.len() as u32,
-            |off, src, _| {
-                dst[off as usize..off as usize + src.len()].clone_from_slice(src);
-                Ok(())
-            },
-            ctx,
-        )
-        .expect("read: should never fail")
-    }
-
-    /// Copy data into virtual address `dst` of the current process by `n` bytes
-    /// from the content of inode at offset `off`.
-    /// Returns Ok(number of bytes copied) on success, Err(()) on failure due to
-    /// accessing an invalid virtual address.
-    pub fn read_user(
-        &mut self,
-        dst: UVAddr,
-        off: u32,
-        n: u32,
-        ctx: &mut KernelCtx<'_, '_>,
-    ) -> Result<usize, ()> {
-        self.read_internal(
-            off,
-            n,
-            |off, src, ctx| {
-                ctx.proc_mut()
-                    .memory_mut()
-                    .copy_out_bytes(dst + off as usize, src)
-            },
-            ctx,
-        )
-    }
-
-    /// Read data from inode.
-    ///
-    /// `f` takes an offset and a slice as arguments. `f(off, src, ctx)` should copy
-    /// the content of `src` to the interval beginning at `off`th byte of the
-    /// destination, which the caller of this method knows.
-    // This method takes a function as an argument, because writing to kernel
-    // memory and user memory are very different from each other. Writing to a
-    // consecutive region in kernel memory can be done at once by simple memcpy.
-    // However, writing to user memory needs page table accesses since a single
-    // consecutive region in user memory may split into several pages in
-    // physical memory.
-    #[inline]
-    fn read_internal<
-        'id,
-        's,
-        K: Deref<Target = KernelCtx<'id, 's>>,
-        F: FnMut(u32, &[u8], &mut K) -> Result<(), ()>,
-    >(
-        &mut self,
-        mut off: u32,
-        mut n: u32,
-        mut f: F,
-        mut k: K,
-    ) -> Result<usize, ()> {
-        let inner = self.deref_inner();
-        if off > inner.size || off.wrapping_add(n) < off {
-            return Ok(0);
-        }
-        if off + n > inner.size {
-            n = inner.size - off;
-        }
-        let mut tot: u32 = 0;
-        while tot < n {
-            let bp = hal()
-                .disk()
-                .read(self.dev, self.bmap(off as usize / BSIZE, &k), &k);
-            let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
-            let begin = (off % BSIZE as u32) as usize;
-            let end = begin + m as usize;
-            let res = f(tot, &bp.deref_inner().data[begin..end], &mut k);
-            bp.free(&k);
-            res?;
-            tot += m;
-            off += m;
-        }
-        Ok(tot as usize)
     }
 
     /// Copy data from `src` into the inode at offset `off`.
@@ -655,13 +584,13 @@ impl InodeGuard<'_, InodeInner> {
     }
 }
 
-impl const Default for Inode<InodeInner> {
+impl const Default for Inode<I> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ArenaObject for Inode<InodeInner> {
+impl ArenaObject for Inode<I> {
     type Ctx<'a, 'id: 'a> = (&'a Tx<'a, Ufs>, &'a KernelCtx<'id, 'a>);
 
     /// Drop a reference to an in-memory inode.
@@ -690,10 +619,10 @@ impl ArenaObject for Inode<InodeInner> {
     }
 }
 
-impl Inode<InodeInner> {
+impl Inode<I> {
     /// Lock the given inode.
     /// Reads the inode from disk if necessary.
-    pub fn lock(&self, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'_, InodeInner> {
+    pub fn lock(&self, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'_, I> {
         let mut guard = self.inner.lock(ctx);
         if !guard.valid {
             let mut bp = hal().disk().read(
@@ -743,7 +672,7 @@ impl Inode<InodeInner> {
             inum: 0,
             inner: SleepLock::new(
                 "inode",
-                InodeInner {
+                I {
                     valid: false,
                     typ: InodeType::None,
                     nlink: 0,
@@ -776,15 +705,15 @@ impl Inode<InodeInner> {
     }
 }
 
-impl Itable<InodeInner> {
+impl Itable<I> {
     pub const fn new_itable() -> Self {
-        ArrayArena::<Inode<InodeInner>, NINODE>::new("ITABLE")
+        ArrayArena::<Inode<I>, NINODE>::new("ITABLE")
     }
 
     /// Find the inode with number inum on device dev
     /// and return the in-memory copy. Does not lock
     /// the inode and does not read it from disk.
-    pub fn get_inode(self: StrongPin<'_, Self>, dev: u32, inum: u32) -> RcInode<InodeInner> {
+    pub fn get_inode(self: StrongPin<'_, Self>, dev: u32, inum: u32) -> RcInode<I> {
         self.find_or_alloc(
             |inode| inode.dev == dev && inode.inum == inum,
             |inode| {
@@ -805,7 +734,7 @@ impl Itable<InodeInner> {
         typ: InodeType,
         tx: &Tx<'_, Ufs>,
         ctx: &KernelCtx<'_, '_>,
-    ) -> RcInode<InodeInner> {
+    ) -> RcInode<I> {
         for inum in 1..ctx.kernel().fs().superblock().ninodes {
             let mut bp = hal()
                 .disk()
@@ -848,7 +777,7 @@ impl Itable<InodeInner> {
         panic!("[Itable::alloc_inode] no inodes");
     }
 
-    pub fn root(self: StrongPin<'_, Self>) -> RcInode<InodeInner> {
+    pub fn root(self: StrongPin<'_, Self>) -> RcInode<I> {
         self.get_inode(ROOTDEV, ROOTINO)
     }
 
@@ -857,7 +786,7 @@ impl Itable<InodeInner> {
         path: &Path,
         tx: &Tx<'_, Ufs>,
         proc: &KernelCtx<'_, '_>,
-    ) -> Result<RcInode<InodeInner>, ()> {
+    ) -> Result<RcInode<I>, ()> {
         Ok(self.namex(path, false, tx, proc)?.0)
     }
 
@@ -866,7 +795,7 @@ impl Itable<InodeInner> {
         path: &'s Path,
         tx: &Tx<'_, Ufs>,
         ctx: &KernelCtx<'_, '_>,
-    ) -> Result<(RcInode<InodeInner>, &'s FileName<{ DIRSIZ }>), ()> {
+    ) -> Result<(RcInode<I>, &'s FileName<{ DIRSIZ }>), ()> {
         let (ip, name_in_path) = self.namex(path, true, tx, ctx)?;
         let name_in_path = name_in_path.ok_or(())?;
         Ok((ip, name_in_path))
@@ -878,7 +807,7 @@ impl Itable<InodeInner> {
         parent: bool,
         tx: &Tx<'_, Ufs>,
         ctx: &KernelCtx<'_, '_>,
-    ) -> Result<(RcInode<InodeInner>, Option<&'s FileName<{ DIRSIZ }>>), ()> {
+    ) -> Result<(RcInode<I>, Option<&'s FileName<{ DIRSIZ }>>), ()> {
         let mut ptr = if path.is_absolute() {
             self.root()
         } else {

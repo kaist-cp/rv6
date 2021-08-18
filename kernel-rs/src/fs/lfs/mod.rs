@@ -10,7 +10,7 @@ use crate::{proc::KernelCtx, util::strong_pin::StrongPin};
 mod inode;
 mod superblock;
 
-pub use inode::InodeInner;
+pub use inode::I;
 pub use superblock::Superblock;
 
 pub struct Lfs {
@@ -37,7 +37,7 @@ impl Lfs {
 
 impl FileSystem for Lfs {
     type Dirent = ();
-    type InodeInner = InodeInner;
+    type InodeInner = I;
 
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
         todo!()
