@@ -6,7 +6,7 @@ use core::ops::Deref;
 
 use spin::Once;
 
-use super::{FcntlFlags, FileSystem, InodeGuard, InodeType, Path, RcInode, Tx};
+use super::{FcntlFlags, FileSystem, Inode, InodeGuard, InodeType, Path, RcInode, Stat, Tx};
 use crate::{proc::KernelCtx, util::strong_pin::StrongPin};
 
 mod inode;
@@ -147,6 +147,22 @@ impl FileSystem for Lfs {
         tx: &Tx<'_, Lfs>,
         k: K,
     ) -> Result<usize, ()> {
+        todo!()
+    }
+
+    fn inode_lock<'a>(inode: &'a Inode<Self>, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'a, Self> {
+        todo!()
+    }
+
+    fn inode_finalize<'a, 'id: 'a>(
+        inode: &mut Inode<Self>,
+        tx: &'a Tx<'a, Self>,
+        ctx: &'a KernelCtx<'id, 'a>,
+    ) {
+        todo!()
+    }
+
+    fn inode_stat(inode: &Inode<Self>, ctx: &KernelCtx<'_, '_>) -> Stat {
         todo!()
     }
 }

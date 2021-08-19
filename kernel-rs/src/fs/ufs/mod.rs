@@ -20,7 +20,7 @@ use spin::Once;
 
 use self::log::Log;
 use super::{
-    FcntlFlags, FileName, FileSystem, InodeGuard, InodeType, Itable, Path, RcInode, Stat, Tx,
+    FcntlFlags, FileName, FileSystem, Inode, InodeGuard, InodeType, Itable, Path, RcInode, Stat, Tx,
 };
 use crate::util::strong_pin::StrongPin;
 use crate::{
@@ -36,7 +36,7 @@ mod inode;
 mod log;
 mod superblock;
 
-pub use inode::{Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
+pub use inode::{DInodeType, Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
 pub use superblock::{Superblock, BPB, IPB};
 
 /// root i-number
@@ -466,5 +466,89 @@ impl FileSystem for Ufs {
         // block to self->addrs[].
         guard.update(tx, &k);
         Ok(tot as usize)
+    }
+
+    fn inode_lock<'a>(inode: &'a Inode<Self>, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'a, Self> {
+        let mut guard = inode.inner.lock(ctx);
+        if !guard.valid {
+            let mut bp = hal().disk().read(
+                inode.dev,
+                ctx.kernel().fs().superblock().iblock(inode.inum),
+                ctx,
+            );
+
+            // SAFETY: dip is inside bp.data.
+            let dip = unsafe {
+                (bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode)
+                    .add(inode.inum as usize % IPB)
+            };
+            // SAFETY: i16 does not have internal structure.
+            let t = unsafe { *(dip as *const i16) };
+            // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.
+            assert!(t < core::mem::variant_count::<DInodeType>() as i16);
+            // SAFETY: dip is aligned properly and t < #(variants of DInodeType).
+            let dip = unsafe { &mut *dip };
+
+            match dip.typ {
+                DInodeType::None => guard.typ = InodeType::None,
+                DInodeType::Dir => guard.typ = InodeType::Dir,
+                DInodeType::File => guard.typ = InodeType::File,
+                DInodeType::Device => {
+                    guard.typ = InodeType::Device {
+                        major: dip.major,
+                        minor: dip.minor,
+                    }
+                }
+            }
+            guard.nlink = dip.nlink;
+            guard.size = dip.size;
+            guard.addr_direct.copy_from_slice(&dip.addr_direct);
+            guard.addr_indirect = dip.addr_indirect;
+            bp.free(ctx);
+            guard.valid = true;
+            assert_ne!(guard.typ, InodeType::None, "Inode::lock: no type");
+        };
+        mem::forget(guard);
+        InodeGuard { inode }
+    }
+
+    fn inode_finalize<'a, 'id: 'a>(
+        inode: &mut Inode<Self>,
+        tx: &'a Tx<'a, Self>,
+        ctx: &'a KernelCtx<'id, 'a>,
+    ) {
+        if inode.inner.get_mut().valid && inode.inner.get_mut().nlink == 0 {
+            // inode has no links and no other references: truncate and free.
+
+            // self->ref == 1 means no other process can have self locked,
+            // so this acquiresleep() won't block (or deadlock).
+            let mut ip = inode.lock(ctx);
+
+            ip.itrunc(tx, ctx);
+            ip.deref_inner_mut().typ = InodeType::None;
+            ip.update(tx, ctx);
+            ip.deref_inner_mut().valid = false;
+
+            ip.free(ctx);
+        }
+    }
+
+    fn inode_stat(inode: &Inode<Self>, ctx: &KernelCtx<'_, '_>) -> Stat {
+        let inner = inode.inner.lock(ctx);
+        let st = Stat {
+            dev: inode.dev as i32,
+            ino: inode.inum,
+            typ: match inner.typ {
+                InodeType::None => 0,
+                InodeType::Dir => 1,
+                InodeType::File => 2,
+                InodeType::Device { .. } => 3,
+            },
+            nlink: inner.nlink,
+            _padding: 0,
+            size: inner.size as usize,
+        };
+        inner.free(ctx);
+        st
     }
 }

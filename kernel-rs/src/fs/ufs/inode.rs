@@ -72,9 +72,9 @@ use core::{iter::StepBy, mem, ops::Range, ptr};
 use static_assertions::const_assert;
 use zerocopy::{AsBytes, FromBytes};
 
-use super::{FileName, Path, Stat, Ufs, IPB, NDIRECT, NINDIRECT, ROOTINO};
+use super::{FileName, Path, Ufs, IPB, NDIRECT, NINDIRECT, ROOTINO};
 use crate::{
-    arena::{Arena, ArenaObject, ArrayArena},
+    arena::{Arena, ArrayArena},
     bio::BufData,
     fs::{Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
     hal::hal,
@@ -119,25 +119,25 @@ pub struct InodeInner {
 #[repr(C)]
 pub struct Dinode {
     /// File type
-    typ: DInodeType,
+    pub typ: DInodeType,
 
     /// Major device number (T_DEVICE only)
-    major: u16,
+    pub major: u16,
 
     /// Minor device number (T_DEVICE only)
-    minor: u16,
+    pub minor: u16,
 
     /// Number of links to inode in file system
-    nlink: i16,
+    pub nlink: i16,
 
     /// Size of file (bytes)
-    size: u32,
+    pub size: u32,
 
     /// Direct data block addresses
-    addr_direct: [u32; NDIRECT],
+    pub addr_direct: [u32; NDIRECT],
 
     /// Indirect data block address
-    addr_indirect: u32,
+    pub addr_indirect: u32,
 }
 
 #[repr(C)]
@@ -261,11 +261,9 @@ impl InodeGuard<'_, Ufs> {
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk.
     pub fn update(&self, tx: &Tx<'_, Ufs>, ctx: &KernelCtx<'_, '_>) {
-        let mut bp = hal().disk().read(
-            self.dev,
-            ctx.kernel().fs().superblock().iblock(self.inum),
-            ctx,
-        );
+        let mut bp = hal()
+            .disk()
+            .read(self.dev, tx.fs.superblock().iblock(self.inum), ctx);
 
         const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
@@ -418,82 +416,7 @@ impl const Default for Inode<Ufs> {
     }
 }
 
-impl ArenaObject for Inode<Ufs> {
-    type Ctx<'a, 'id: 'a> = (&'a Tx<'a, Ufs>, &'a KernelCtx<'id, 'a>);
-
-    /// Drop a reference to an in-memory inode.
-    /// If that was the last reference, the inode table entry can
-    /// be recycled.
-    /// If that was the last reference and the inode has no links
-    /// to it, free the inode (and its content) on disk.
-    /// All calls to Inode::put() must be inside a transaction in
-    /// case it has to free the inode.
-    fn finalize<'a, 'id: 'a>(&mut self, ctx: Self::Ctx<'a, 'id>) {
-        let (tx, ctx) = ctx;
-        if self.inner.get_mut().valid && self.inner.get_mut().nlink == 0 {
-            // inode has no links and no other references: truncate and free.
-
-            // self->ref == 1 means no other process can have self locked,
-            // so this acquiresleep() won't block (or deadlock).
-            let mut ip = self.lock(ctx);
-
-            ip.itrunc(tx, ctx);
-            ip.deref_inner_mut().typ = InodeType::None;
-            ip.update(tx, ctx);
-            ip.deref_inner_mut().valid = false;
-
-            ip.free(ctx);
-        }
-    }
-}
-
 impl Inode<Ufs> {
-    /// Lock the given inode.
-    /// Reads the inode from disk if necessary.
-    pub fn lock(&self, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'_, Ufs> {
-        let mut guard = self.inner.lock(ctx);
-        if !guard.valid {
-            let mut bp = hal().disk().read(
-                self.dev,
-                ctx.kernel().fs().superblock().iblock(self.inum),
-                ctx,
-            );
-
-            // SAFETY: dip is inside bp.data.
-            let dip = unsafe {
-                (bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode)
-                    .add(self.inum as usize % IPB)
-            };
-            // SAFETY: i16 does not have internal structure.
-            let t = unsafe { *(dip as *const i16) };
-            // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.
-            assert!(t < core::mem::variant_count::<DInodeType>() as i16);
-            // SAFETY: dip is aligned properly and t < #(variants of DInodeType).
-            let dip = unsafe { &mut *dip };
-
-            match dip.typ {
-                DInodeType::None => guard.typ = InodeType::None,
-                DInodeType::Dir => guard.typ = InodeType::Dir,
-                DInodeType::File => guard.typ = InodeType::File,
-                DInodeType::Device => {
-                    guard.typ = InodeType::Device {
-                        major: dip.major,
-                        minor: dip.minor,
-                    }
-                }
-            }
-            guard.nlink = dip.nlink;
-            guard.size = dip.size;
-            guard.addr_direct.copy_from_slice(&dip.addr_direct);
-            guard.addr_indirect = dip.addr_indirect;
-            bp.free(ctx);
-            guard.valid = true;
-            assert_ne!(guard.typ, InodeType::None, "Inode::lock: no type");
-        };
-        mem::forget(guard);
-        InodeGuard { inode: self }
-    }
-
     pub const fn new() -> Self {
         Self {
             dev: 0,
@@ -510,26 +433,6 @@ impl Inode<Ufs> {
                 },
             ),
         }
-    }
-
-    /// Copy stat information from inode.
-    pub fn stat(&self, ctx: &KernelCtx<'_, '_>) -> Stat {
-        let inner = self.inner.lock(ctx);
-        let st = Stat {
-            dev: self.dev as i32,
-            ino: self.inum,
-            typ: match inner.typ {
-                InodeType::None => 0,
-                InodeType::Dir => 1,
-                InodeType::File => 2,
-                InodeType::Device { .. } => 3,
-            },
-            nlink: inner.nlink,
-            _padding: 0,
-            size: inner.size as usize,
-        };
-        inner.free(ctx);
-        st
     }
 }
 
@@ -563,10 +466,8 @@ impl Itable<Ufs> {
         tx: &Tx<'_, Ufs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> RcInode<Ufs> {
-        for inum in 1..ctx.kernel().fs().superblock().ninodes {
-            let mut bp = hal()
-                .disk()
-                .read(dev, ctx.kernel().fs().superblock().iblock(inum), ctx);
+        for inum in 1..tx.fs.superblock().ninodes {
+            let mut bp = hal().disk().read(dev, tx.fs.superblock().iblock(inum), ctx);
 
             const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
             const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
