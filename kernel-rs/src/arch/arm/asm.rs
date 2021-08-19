@@ -6,6 +6,10 @@
 const DIS_INT: usize = 0x80;
 
 /// Enable device interrupts (IRQ).
+///
+/// # Safety
+///
+/// Interrupt handlers must be set properly.
 #[inline]
 pub unsafe fn intr_on() {
     unsafe {
@@ -16,6 +20,7 @@ pub unsafe fn intr_on() {
 /// Disable device interrupts (IRQ).
 #[inline]
 pub fn intr_off() {
+    // SAFETY: turning interrupt off is safe.
     unsafe {
         asm!("msr daifset, #2");
     }
@@ -51,7 +56,7 @@ pub fn r_currentel() -> usize {
 }
 
 /// read the main id register
-pub unsafe fn r_midr_el1() -> usize {
+pub fn r_midr_el1() -> usize {
     let mut x: usize;
     unsafe {
         asm!("mrs {}, midr_el1", out(reg) x);
@@ -74,12 +79,20 @@ pub fn isb() {
     unsafe { asm!("isb") }
 }
 
-/// Architectural Feature Access Control Register, EL1
+/// Write to Architectural Feature Access Control Register, EL1
+///
+/// # Safety
+///
+/// `x` must contain valid value for cpacr_el1 register.
 pub unsafe fn w_cpacr_el1(x: usize) {
     unsafe { asm!("msr cpacr_el1, {}", in(reg) x) }
 }
 
-/// Monitor Debug System Control Register, EL1
+/// Write to Monitor Debug System Control Register, EL1
+///
+/// # Safety
+///
+/// `x` must contain valid value for mdscr_el1 register.
 pub unsafe fn w_mdscr_el1(x: usize) {
     if x == 0 {
         unsafe { asm!("msr mdscr_el1, xzr") }
@@ -93,6 +106,11 @@ pub fn r_fpsr() -> usize {
     x
 }
 
+/// Write to Floating-point Status Register
+///
+/// # Safety
+///
+/// `x` must contain valid value for mdscr_el1 register.
 pub unsafe fn w_fpsr(x: usize) {
     unsafe { asm!("msr fpsr, {}", in(reg) x) }
 }
@@ -110,8 +128,13 @@ pub enum SmcFunctions {
     _SystemReset = 0x84000009,
 }
 
+/// Secure Monitor call
+///
+/// # Safety
+///
+/// Arguments must follow ARM SMC calling convention.
 #[no_mangle]
-pub fn smc_call(x0: u64, x1: u64, x2: u64, x3: u64) -> u64 {
+pub unsafe fn smc_call(x0: u64, x1: u64, x2: u64, x3: u64) -> u64 {
     let r;
     unsafe {
         // NOTE: here use hvc for qemu without `virtualization=on`

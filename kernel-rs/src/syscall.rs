@@ -171,7 +171,15 @@ impl KernelCtx<'_, '_> {
     pub fn sys_sleep(&self) -> Result<usize, ()> {
         let n = self.proc().argint(0)?;
         assert!(n >= 0);
-        Timer::spin_for(self, n as usize)?;
+
+        let mut ticks = self.kernel().ticks().lock();
+        let ticks0 = *ticks;
+        while ticks.wrapping_sub(ticks0) < n as u32 {
+            if self.proc().killed() {
+                return Err(());
+            }
+            ticks.sleep(&self);
+        }
         Ok(0)
     }
 
@@ -186,9 +194,11 @@ impl KernelCtx<'_, '_> {
     /// Return how many clock tick interrupts have occurred
     /// since start.
     pub fn sys_uptime(&self) -> Result<usize, ()> {
-        Timer::uptime(self.kernel())
+        Ok(*self.kernel().ticks().lock() as usize)
     }
 
+    /// Return how much time has passed since start, 
+    /// in microseconds.
     pub fn sys_uptime_as_micro(&self) -> Result<usize, ()> {
         Timer::uptime_as_micro()
     }
@@ -422,6 +432,7 @@ impl KernelCtx<'_, '_> {
         let efds = [0u8; 1024 / 8];
 
         if read_fds != 0 {
+            // Safety: `read_fds` is a valid user space address given by a user.
             unsafe {
                 self.proc_mut()
                     .memory_mut()

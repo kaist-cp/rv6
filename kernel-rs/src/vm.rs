@@ -12,7 +12,7 @@ use crate::{
     fs::{FileSystem, InodeGuard, Ufs},
     kalloc::Kmem,
     lock::SpinLock,
-    memlayout::{kstack, DeviceMappingInfo, PHYSTOP, TRAPFRAME},
+    memlayout::{kstack, DeviceMappingInfo, PHYSTOP, TRAPFRAME, TRAMPOLINE},
     page::Page,
     param::NPROC,
     proc::KernelCtx,
@@ -21,6 +21,8 @@ use crate::{
 extern "C" {
     // kernel.ld sets this to end of kernel code.
     static mut etext: [u8; 0];
+
+    static mut trampoline: [u8; 0];
 }
 
 bitflags! {
@@ -94,16 +96,9 @@ pub trait PageTableEntryDesc: Default {
     }
 }
 pub trait PageInitiator {
-    fn user_page_init<A: VAddr>(
-        page_table: &mut PageTable<A>,
-        trap_frame: PAddr,
-        allocator: Pin<&SpinLock<Kmem>>,
-    ) -> Result<(), ()>;
-
-    fn kernel_page_init<A: VAddr>(
-        page_table: &mut PageTable<A>,
-        allocator: Pin<&SpinLock<Kmem>>,
-    ) -> Result<(), ()>;
+    /// Returns the list of addresses and range for devices that
+    /// should be mapped physically in kernel page table.
+    fn kernel_page_dev_mappings() ->&'static [(usize, usize)];
 
     unsafe fn switch_page_table_and_enable_mmu(page_table_base: usize);
 }
@@ -333,7 +328,25 @@ impl UserMemory {
             mem::forget(page_table);
         });
 
-        PageInit::user_page_init(&mut page_table, trap_frame, allocator).ok()?;
+        // Map the trampoline code (for system call return)
+        // at the highest user virtual address.
+        // Only the supervisor uses it, on the way
+        // to/from user space, so not PTE_U.
+        page_table.insert(
+            TRAMPOLINE.into(),
+            // SAFETY: we assume that reading the address of trampoline is safe.
+            (unsafe { trampoline.as_mut_ptr() as usize }).into(),
+            (AccessFlags::R | AccessFlags::X).into(),
+            allocator,
+        ).ok()?;
+
+        // Map the trapframe just below TRAMPOLINE, for trampoline.S.
+        page_table.insert(
+            TRAPFRAME.into(),
+            trap_frame,
+            (AccessFlags::R | AccessFlags::W).into(),
+            allocator,
+        ).ok()?;
 
         let mut memory = Self {
             page_table: scopeguard::ScopeGuard::into_inner(page_table),
@@ -667,7 +680,44 @@ impl KernelMemory {
             mem::forget(page_table);
         });
 
-        PageInit::kernel_page_init(&mut page_table, allocator).ok()?;
+        for (start, range) in PageInit::kernel_page_dev_mappings() {
+            page_table.insert_range(
+                (*start).into(),
+                *range,
+                (*start).into(),  
+                (AccessFlags::R | AccessFlags::W).into(),
+                allocator,
+            ).ok()?;
+        }
+
+        // Uart registers
+        page_table.insert_range(
+            MemLayout::UART0.into(),
+            PGSIZE,
+            MemLayout::UART0.into(),
+            (AccessFlags::R | AccessFlags::W).into(),
+            allocator,
+        ).ok()?;
+
+        // Virtio mmio disk interface
+        page_table.insert_range(
+            MemLayout::VIRTIO0.into(),
+            PGSIZE,
+            MemLayout::VIRTIO0.into(),
+            (AccessFlags::R | AccessFlags::W).into(),
+            allocator,
+        ).ok()?;
+
+        // Map the trampoline for trap entry/exit to
+        // the highest virtual address in the kernel.
+        page_table.insert_range(
+            TRAMPOLINE.into(),
+            PGSIZE,
+            // SAFETY: we assume that reading the address of trampoline is safe.
+            unsafe { trampoline.as_mut_ptr() as usize }.into(),
+            (AccessFlags::R | AccessFlags::X).into(),
+            allocator,
+        ).ok()?;
 
         // Map kernel text executable and read-only.
         // SAFETY: we assume that reading the address of etext is safe.
@@ -715,8 +765,13 @@ impl KernelMemory {
         })
     }
 
-    /// Switch h/w page table register to the kernel's page table, and enable paging.
+    /// Initialize register(s) for turning MMU on.
+    ///
+    /// # Safety
+    ///
+    /// `self.page_table` must contain base address for a valid page table.
     pub unsafe fn init_register(&self) {
+        // Safety: `self.page_table` contains valid page table address.
         unsafe {
             PageInit::switch_page_table_and_enable_mmu(self.page_table.as_usize());
         }

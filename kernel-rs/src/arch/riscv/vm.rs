@@ -1,9 +1,6 @@
-use core::pin::Pin;
-
 use bitflags::bitflags;
 
 use crate::{
-<<<<<<< HEAD
     addr::{pa2pte, pte2pa, PAddr, VAddr, PGSIZE},
     arch::asm::{make_satp, sfence_vma, w_satp},
     arch::memlayout::{
@@ -16,24 +13,19 @@ use crate::{
     arch::memlayout::{FINISHER, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0},
     arch::memlayout::MemLayoutImpl,
     arch::memlayout::{FINISHER, PLIC},
-=======
     addr::{PAddr, VAddr, PGSIZE},
+    addr::{PAddr, PGSIZE},
     arch::{
         addr::{pa2pte, pte2pa},
         asm::{make_satp, sfence_vma, w_satp},
-        memlayout::{MemLayout, FINISHER, PLIC},
+        memlayout::{FINISHER, PLIC},
     },
->>>>>>> refactoring
     kalloc::Kmem,
     lock::SpinLock,
     memlayout::{DeviceMappingInfo, TRAMPOLINE, TRAPFRAME},
     vm::{AccessFlags, PageInitiator, PageTable, PageTableEntryDesc, RawPageTable},
+    vm::{AccessFlags, PageInitiator, PageTableEntryDesc, RawPageTable},
 };
-
-extern "C" {
-    // trampoline.S
-    static mut trampoline: [u8; 0];
-}
 
 bitflags! {
     pub struct RiscVPteFlags: usize {
@@ -143,88 +135,18 @@ impl PageTableEntryDesc for RiscVPageTableEntry {
 
 pub struct RiscVPageInit;
 
+impl RiscVPageInit {
+    // Device mappings in memory.
+    // SiFive Test Finisher MMIO, PLIC.
+    const DEV_MAPPING: [(usize, usize); 2] = [(FINISHER, PGSIZE), (PLIC, 0x400000)];
+}
+
 pub type PageInit = RiscVPageInit;
 
 impl PageInitiator for RiscVPageInit {
-    fn user_page_init<A: VAddr>(
-        page_table: &mut PageTable<A>,
-        trap_frame: PAddr,
-        allocator: Pin<&SpinLock<Kmem>>,
-    ) -> Result<(), ()> {
-        // Map the trampoline code (for system call return)
-        // at the highest user virtual address.
-        // Only the supervisor uses it, on the way
-        // to/from user space, so not PTE_U.
-        page_table.insert(
-            TRAMPOLINE.into(),
-            // SAFETY: we assume that reading the address of trampoline is safe.
-            (unsafe { trampoline.as_mut_ptr() as usize }).into(),
-            RiscVPteFlags::R | RiscVPteFlags::X,
-            allocator,
-        )?;
 
-        // Map the trapframe just below TRAMPOLINE, for trampoline.S.
-        page_table.insert(
-            TRAPFRAME.into(),
-            trap_frame,
-            RiscVPteFlags::R | RiscVPteFlags::W,
-            allocator,
-        )?;
-
-        Ok(())
-    }
-
-    fn kernel_page_init<A: VAddr>(
-        page_table: &mut PageTable<A>,
-        allocator: Pin<&SpinLock<Kmem>>,
-    ) -> Result<(), ()> {
-        // SiFive Test Finisher MMIO
-        page_table.insert_range(
-            FINISHER.into(),
-            PGSIZE,
-            FINISHER.into(),
-            RiscVPteFlags::R | RiscVPteFlags::W,
-            allocator,
-        )?;
-
-        // Uart registers
-        page_table.insert_range(
-            MemLayout::UART0.into(),
-            PGSIZE,
-            MemLayout::UART0.into(),
-            RiscVPteFlags::R | RiscVPteFlags::W,
-            allocator,
-        )?;
-
-        // Virtio mmio disk interface
-        page_table.insert_range(
-            MemLayout::VIRTIO0.into(),
-            PGSIZE,
-            MemLayout::VIRTIO0.into(),
-            RiscVPteFlags::R | RiscVPteFlags::W,
-            allocator,
-        )?;
-
-        // PLIC
-        page_table.insert_range(
-            PLIC.into(),
-            0x400000,
-            PLIC.into(),
-            RiscVPteFlags::R | RiscVPteFlags::W,
-            allocator,
-        )?;
-        // Map the trampoline for trap entry/exit to
-        // the highest virtual address in the kernel.
-        page_table.insert_range(
-            TRAMPOLINE.into(),
-            PGSIZE,
-            // SAFETY: we assume that reading the address of trampoline is safe.
-            unsafe { trampoline.as_mut_ptr() as usize }.into(),
-            RiscVPteFlags::R | RiscVPteFlags::X,
-            allocator,
-        )?;
-
-        Ok(())
+    fn kernel_page_dev_mappings() ->&'static [(usize, usize)]{
+        &Self::DEV_MAPPING[0..2]
     }
 
     unsafe fn switch_page_table_and_enable_mmu(page_table_base: usize) {

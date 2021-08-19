@@ -26,13 +26,17 @@ impl Stack {
 pub static mut stack0: Stack = Stack::new();
 
 /// entry.S jumps here in machine mode on stack0.
+///
+/// # Safety
+///
+/// This function must be called from entry.S, and only once.
 #[no_mangle]
 pub unsafe fn start() {
     // launch other cores
     if cpu_id() == 0 {
         let kernel_entry = unsafe { _entry.as_mut_ptr() as usize } as u64;
         for i in 1..3 {
-            let _ = smc_call(SmcFunctions::CpuOn as u64, i, kernel_entry, 0);
+            let _ = unsafe { smc_call(SmcFunctions::CpuOn as u64, i, kernel_entry, 0) };
         }
     }
 

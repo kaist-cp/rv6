@@ -1,26 +1,17 @@
-use core::pin::Pin;
-
 use bitflags::bitflags;
 use cortex_a::registers::*;
 use tock_registers::interfaces::ReadWriteable;
 
 use crate::{
-    addr::{PAddr, VAddr, PGSIZE},
+    addr::PAddr,
     arch::{
         addr::{pa2pte, pte2pa},
         asm::{isb, tlbi_vmalle1},
         memlayout::{MemLayout, GIC},
     },
-    kalloc::Kmem,
-    lock::SpinLock,
-    memlayout::{DeviceMappingInfo, TRAMPOLINE, TRAPFRAME},
-    vm::{AccessFlags, PageInitiator, PageTable, PageTableEntryDesc, RawPageTable},
+    memlayout::DeviceMappingInfo,
+    vm::{AccessFlags, PageInitiator, PageTableEntryDesc, RawPageTable},
 };
-
-extern "C" {
-    // trampoline.S
-    static mut trampoline: [u8; 0];
-}
 
 // A table descriptor and a level 3 page descriptor as per
 // ARMv8-A Architecture Reference Manual Figure D5-15, and Figure D5-17 respectively.
@@ -182,92 +173,24 @@ pub struct ArmV8PageInit;
 
 pub type PageInit = ArmV8PageInit;
 
+impl ArmV8PageInit {
+    // TODO: put ARM's counterpart of SiFive Test Finisher here
+    // GIC
+    const DEV_MAPPING: [(usize, usize); 1] = [(GIC, MemLayout::UART0 - GIC)];
+}
+
 impl PageInitiator for ArmV8PageInit {
-    fn user_page_init<A: VAddr>(
-        page_table: &mut PageTable<A>,
-        trap_frame: PAddr,
-        allocator: Pin<&SpinLock<Kmem>>,
-    ) -> Result<(), ()> {
-        // Map the trampoline code (for system call return)
-        // at the highest user virtual address.
-        // Only the supervisor uses it, on the way
-        // to/from user space, so not PTE_U.
-        page_table.insert(
-            TRAMPOLINE.into(),
-            // SAFETY: we assume that reading the address of trampoline is safe.
-            (unsafe { trampoline.as_mut_ptr() as usize }).into(),
-            ArmV8PteFlags::RO_P | ArmV8PteFlags::UXN,
-            allocator,
-        )?;
-
-        // Map the trapframe just below TRAMPOLINE, for trampoline.S.
-        page_table.insert(
-            TRAPFRAME.into(),
-            trap_frame,
-            ArmV8PteFlags::RW_P | ArmV8PteFlags::PXN | ArmV8PteFlags::UXN,
-            allocator,
-        )?;
-
-        Ok(())
+        
+    
+    fn kernel_page_dev_mappings() -> &'static [(usize, usize)]{
+        &Self::DEV_MAPPING
     }
 
-    fn kernel_page_init<A: VAddr>(
-        page_table: &mut PageTable<A>,
-        allocator: Pin<&SpinLock<Kmem>>,
-    ) -> Result<(), ()> {
-        // TODO: put ARM's counterpart of SiFive Test Finisher here
-        // SiFive Test Finisher MMIO
-        // page_table
-        //     .insert_range(
-        //         FINISHER.into(),
-        //         PGSIZE,
-        //         FINISHER.into(),
-        //         PteFlags::R | PteFlags::W,
-        //         allocator,
-        //     )
-        //     .ok()?;
-
-        // Uart registers
-        page_table.insert_range(
-            MemLayout::UART0.into(),
-            PGSIZE,
-            MemLayout::UART0.into(),
-            ArmV8PteFlags::RW_P | ArmV8PteFlags::PXN,
-            allocator,
-        )?;
-
-        // Virtio mmio disk interface
-        page_table.insert_range(
-            MemLayout::VIRTIO0.into(),
-            PGSIZE,
-            MemLayout::VIRTIO0.into(),
-            ArmV8PteFlags::RW_P | ArmV8PteFlags::PXN,
-            allocator,
-        )?;
-
-        // GIC
-        page_table.insert_range(
-            GIC.into(),
-            MemLayout::UART0 - GIC,
-            GIC.into(),
-            ArmV8PteFlags::RW_P | ArmV8PteFlags::PXN,
-            allocator,
-        )?;
-
-        // Map the trampoline for trap entry/exit to
-        // the highest virtual address in the kernel.
-        page_table.insert_range(
-            TRAMPOLINE.into(),
-            PGSIZE,
-            // SAFETY: we assume that reading the address of trampoline is safe.
-            unsafe { trampoline.as_mut_ptr() as usize }.into(),
-            ArmV8PteFlags::RO_P | ArmV8PteFlags::UXN,
-            allocator,
-        )?;
-
-        Ok(())
-    }
-
+    /// Switch h/w page table register to the kernel's page table, and enable paging.
+    ///
+    /// # Safety
+    ///
+    /// `page_table_base` must contain base address for a valid page table, containing mapping for current pc.
     unsafe fn switch_page_table_and_enable_mmu(page_table_base: usize) {
         // We don't use upper VA space
         // TTBR1_EL1.set_baddr(page_table_base as u64);

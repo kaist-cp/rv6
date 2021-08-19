@@ -1,7 +1,7 @@
 use cortex_a::{asm::barrier, registers::*};
 use tock_registers::interfaces::{Readable, Writeable};
 
-use crate::{kernel::KernelRef, proc::KernelCtx, timer::TimeManager};
+use crate::timer::TimeManager;
 
 const US_PER_S: u64 = 1_000_000;
 
@@ -12,25 +12,6 @@ pub struct Timer;
 impl TimeManager for Timer {
     fn init() {
         Self::set_next_timer();
-    }
-
-    /// The uptime since power-on of the device (in number of ticks).
-    ///
-    /// This includes time consumed by firmware and bootloaders.
-    fn uptime<'id, 's>(kernel: KernelRef<'id, 's>) -> Result<usize, ()> {
-        Ok(*kernel.ticks().lock() as usize)
-    }
-
-    fn spin_for<'id, 's>(kernel_ctx: &KernelCtx<'id, 's>, duration: usize) -> Result<(), ()> {
-        let mut ticks = kernel_ctx.kernel().ticks().lock();
-        let ticks0 = *ticks;
-        while ticks.wrapping_sub(ticks0) < duration as u32 {
-            if kernel_ctx.proc().killed() {
-                return Err(());
-            }
-            ticks.sleep(kernel_ctx);
-        }
-        Ok(())
     }
 
     fn uptime_as_micro() -> Result<usize, ()> {

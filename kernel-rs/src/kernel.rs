@@ -194,6 +194,7 @@ impl Kernel {
         let memory = KernelMemory::new(allocator).expect("PageTable::new failed");
 
         // Turn on paging.
+        // SAFETY: `memory.page_table` contains base address for a valid kernel page table.
         unsafe { this.memory.write(memory).init_register() };
 
         // Process system.
@@ -203,13 +204,16 @@ impl Kernel {
         trapinit();
 
         // Install kernel trap vector.
-        unsafe { trapinitcore() };
+        // SAFETY: It is called first time on this core.
+        unsafe{  trapinitcore() };
 
         // Set up interrupt controller.
+        // SAFETY: It is only called on core 0 once.
         unsafe { intr_init() };
 
         // Ask PLIC for device interrupts.
-        unsafe { intr_init_core() };
+        // SAFETY: It is called first time on this core.
+        unsafe {intr_init_core()} ;
 
         // Buffer cache.
         this.bcache.init();
@@ -228,12 +232,15 @@ impl Kernel {
         self.write_fmt(format_args!("core {} starting\n", cpuid()));
 
         // Turn on paging.
+        // SAFETY: `self.memory.page_table` contains base address for a valid kernel page table.
         unsafe { self.memory.assume_init_ref().init_register() };
 
         // Install kernel trap vector.
+        // SAFETY: It is called first time on this core.
         unsafe { trapinitcore() };
 
         // Ask PLIC for device interrupts.
+        // SAFETY: It is called first time on this core.
         unsafe { intr_init_core() };
     }
 

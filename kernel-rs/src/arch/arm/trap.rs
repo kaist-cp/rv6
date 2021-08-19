@@ -53,12 +53,20 @@ extern "C" {
 pub fn trapinit() {}
 
 /// Set up to take exceptions and traps while in the kernel.
+///
+/// # Safety
+///
+/// `vectors` must contain base address for a valid ARMv8-A exception vector table.
 pub unsafe fn trapinitcore() {
     VBAR_EL1.set(vectors as _);
 }
 
 /// Handle an interrupt, exception, or system call from user space.
 /// Called from trampoline.S.
+///
+/// # Safety
+///
+/// Must be called from trampoline.S, only when user trap has occured.
 #[no_mangle]
 pub unsafe extern "C" fn usertrap(etype: usize) {
     let etype = ExceptionTypes::from_usize(etype);
@@ -69,6 +77,12 @@ pub unsafe extern "C" fn usertrap(etype: usize) {
     unsafe { kernel_ctx(|ctx| ctx.user_trap(etype)) };
 }
 
+/// Handle an sp0 exception from kernel space.
+/// Called from trampoline.S.
+///
+/// # Safety
+///
+/// Must be called from trampoline.S, only when corresponding exception has occured.
 #[no_mangle]
 pub unsafe extern "C" fn cur_el_sp0_handler(etype: usize) {
     // SAFETY
@@ -76,6 +90,12 @@ pub unsafe extern "C" fn cur_el_sp0_handler(etype: usize) {
     unsafe { kernel_ref(|kref| kref.kernel_trap_el1t(etype)) };
 }
 
+/// Handle an sp1 exception from kernel space.
+/// Called from trampoline.S.
+///
+/// # Safety
+///
+/// Must be called from trampoline.S, only when corresponding exception has occured.
 #[no_mangle]
 pub unsafe extern "C" fn cur_el_sp1_handler(etype: usize) {
     // SAFETY
