@@ -11,7 +11,7 @@ use core::{
 use crate::{
     arch::addr::UVAddr,
     arena::{Arena, ArenaObject, ArenaRc, ArrayArena},
-    fs::{DefaultFs, FileSystem, FileSystemExt, Inode, InodeGuard, RcInode},
+    fs::{DefaultFs, FileSystem, FileSystemExt, InodeGuard, RcInode},
     hal::hal,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
@@ -40,10 +40,7 @@ pub struct InodeFileType {
 /// It can be acquired when the inode of `InodeFileType` is locked. `ip` is the guard of the locked
 /// inode. `off` is a mutable reference to the offset. Accessing `off` is guaranteed to be safe
 /// since the inode is locked.
-struct InodeFileTypeGuard<'a, FS: FileSystem>
-where
-    Inode<FS>: ArenaObject,
-{
+struct InodeFileTypeGuard<'a, FS: FileSystem> {
     ip: ManuallyDrop<InodeGuard<'a, FS>>,
     off: &'a mut u32,
 }
@@ -84,10 +81,7 @@ impl InodeFileType {
     }
 }
 
-impl<FS: FileSystem> InodeFileTypeGuard<'_, FS>
-where
-    Inode<FS>: ArenaObject,
-{
+impl<FS: FileSystem> InodeFileTypeGuard<'_, FS> {
     fn free(mut self, ctx: &KernelCtx<'_, '_>) {
         let ip = unsafe { ManuallyDrop::take(&mut self.ip) };
         ip.free(ctx);
@@ -95,10 +89,7 @@ where
     }
 }
 
-impl<'a, FS: FileSystem> Deref for InodeFileTypeGuard<'a, FS>
-where
-    Inode<FS>: ArenaObject,
-{
+impl<'a, FS: FileSystem> Deref for InodeFileTypeGuard<'a, FS> {
     type Target = InodeGuard<'a, FS>;
 
     fn deref(&self) -> &Self::Target {
@@ -106,19 +97,13 @@ where
     }
 }
 
-impl<'a, FS: FileSystem> DerefMut for InodeFileTypeGuard<'a, FS>
-where
-    Inode<FS>: ArenaObject,
-{
+impl<'a, FS: FileSystem> DerefMut for InodeFileTypeGuard<'a, FS> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.ip
     }
 }
 
-impl<FS: FileSystem> Drop for InodeFileTypeGuard<'_, FS>
-where
-    Inode<FS>: ArenaObject,
-{
+impl<FS: FileSystem> Drop for InodeFileTypeGuard<'_, FS> {
     fn drop(&mut self) {
         // HACK(@efenniht): we really need linear type here:
         // https://github.com/rust-lang/rfcs/issues/814

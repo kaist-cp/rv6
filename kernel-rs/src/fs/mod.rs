@@ -57,17 +57,11 @@ pub enum InodeType {
 // Instead, every method that needs to be inside a transaction explicitly
 // takes a FsTransaction value as an argument.
 // https://github.com/kaist-cp/rv6/issues/328
-pub struct InodeGuard<'a, FS: FileSystem>
-where
-    Inode<FS>: ArenaObject,
-{
+pub struct InodeGuard<'a, FS: FileSystem> {
     pub inode: &'a Inode<FS>,
 }
 
-impl<FS: FileSystem> Deref for InodeGuard<'_, FS>
-where
-    Inode<FS>: ArenaObject,
-{
+impl<FS: FileSystem> Deref for InodeGuard<'_, FS> {
     type Target = Inode<FS>;
 
     fn deref(&self) -> &Self::Target {
@@ -75,10 +69,7 @@ where
     }
 }
 
-impl<FS: FileSystem> InodeGuard<'_, FS>
-where
-    Inode<FS>: ArenaObject,
-{
+impl<FS: FileSystem> InodeGuard<'_, FS> {
     pub fn deref_inner(&self) -> &FS::InodeInner {
         // SAFETY: self.inner is locked.
         unsafe { &*self.inner.get_mut_raw() }
@@ -221,11 +212,29 @@ where
     }
 }
 
+impl<FS: FileSystem> Inode<FS> {
+    #[inline]
+    pub fn lock(&self, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'_, FS> {
+        FS::inode_lock(self, ctx)
+    }
+
+    #[inline]
+    pub fn stat(&self, ctx: &KernelCtx<'_, '_>) -> Stat {
+        FS::inode_stat(self, ctx)
+    }
+}
+
+impl<FS: FileSystem> ArenaObject for Inode<FS> {
+    type Ctx<'a, 'id: 'a> = (&'a Tx<'a, FS>, &'a KernelCtx<'id, 'a>);
+
+    fn finalize<'a, 'id: 'a>(&mut self, ctx: Self::Ctx<'a, 'id>) {
+        let (tx, ctx) = ctx;
+        FS::inode_finalize(self, tx, ctx);
+    }
+}
+
 /// Unlock and put the given inode.
-impl<FS: FileSystem> Drop for InodeGuard<'_, FS>
-where
-    Inode<FS>: ArenaObject,
-{
+impl<FS: FileSystem> Drop for InodeGuard<'_, FS> {
     fn drop(&mut self) {
         // HACK(@efenniht): we really need linear type here:
         // https://github.com/rust-lang/rfcs/issues/814
@@ -234,10 +243,7 @@ where
 }
 
 /// in-memory copy of an inode
-pub struct Inode<FS: FileSystem>
-where
-    Inode<FS>: ArenaObject,
-{
+pub struct Inode<FS: FileSystem> {
     /// Device number
     pub dev: u32,
 
@@ -252,17 +258,11 @@ pub type Itable<FS> = ArrayArena<Inode<FS>, NINODE>;
 /// A reference counted smart pointer to an `Inode`.
 pub type RcInode<FS> = ArenaRc<Itable<FS>>;
 
-pub struct Tx<'s, FS: FileSystem>
-where
-    Inode<FS>: ArenaObject,
-{
+pub struct Tx<'s, FS: FileSystem> {
     fs: &'s FS,
 }
 
-impl<FS: FileSystem> Drop for Tx<'_, FS>
-where
-    Inode<FS>: ArenaObject,
-{
+impl<FS: FileSystem> Drop for Tx<'_, FS> {
     fn drop(&mut self) {
         // HACK(@efenniht): we really need linear type here:
         // https://github.com/rust-lang/rfcs/issues/814
@@ -270,10 +270,7 @@ where
     }
 }
 
-impl<FS: FileSystem> Tx<'_, FS>
-where
-    Inode<FS>: ArenaObject,
-{
+impl<FS: FileSystem> Tx<'_, FS> {
     /// Called at the end of each FS system call.
     /// Commits if this was the last outstanding operation.
     pub fn end(self, ctx: &KernelCtx<'_, '_>) {
@@ -284,10 +281,7 @@ where
     }
 }
 
-pub trait FileSystem: 'static + Sized
-where
-    Inode<Self>: ArenaObject,
-{
+pub trait FileSystem: 'static + Sized {
     type Dirent;
     type InodeInner: 'static + Unpin + Send + Sized;
 
@@ -434,20 +428,34 @@ where
         tx: &Tx<'_, Self>,
         k: K,
     ) -> Result<usize, ()>;
+
+    /// Lock the given inode.
+    /// Reads the inode from disk if necessary.
+    fn inode_lock<'a>(inode: &'a Inode<Self>, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'a, Self>;
+
+    /// Drop a reference to an in-memory inode.
+    /// If that was the last reference, the inode table entry can
+    /// be recycled.
+    /// If that was the last reference and the inode has no links
+    /// to it, free the inode (and its content) on disk.
+    /// All calls to Inode::put() must be inside a transaction in
+    /// case it has to free the inode.
+    fn inode_finalize<'a, 'id: 'a>(
+        inode: &mut Inode<Self>,
+        tx: &'a Tx<'a, Self>,
+        ctx: &'a KernelCtx<'id, 'a>,
+    );
+
+    /// Copy stat information from inode.
+    fn inode_stat(inode: &Inode<Self>, ctx: &KernelCtx<'_, '_>) -> Stat;
 }
 
-pub trait FileSystemExt: FileSystem
-where
-    Inode<Self>: ArenaObject,
-{
+pub trait FileSystemExt: FileSystem {
     /// Begins a transaction.
     fn begin_tx(&self, ctx: &KernelCtx<'_, '_>) -> Tx<'_, Self>;
 }
 
-impl<FS: FileSystem> FileSystemExt for FS
-where
-    Inode<Self>: ArenaObject,
-{
+impl<FS: FileSystem> FileSystemExt for FS {
     fn begin_tx(&self, ctx: &KernelCtx<'_, '_>) -> Tx<'_, Self> {
         self.tx_begin(ctx);
         Tx { fs: self }
