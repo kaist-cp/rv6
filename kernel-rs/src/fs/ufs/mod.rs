@@ -344,7 +344,7 @@ impl FileSystem for Ufs {
                     inner: InodeFileType { ip, .. },
                 } => {
                     let mut ip = ip.lock(ctx);
-                    ip.itrunc(tx, ctx);
+                    ip.trunc(tx, ctx);
                     ip.free(ctx);
                 }
                 _ => panic!("sys_open : Not reach"),
@@ -468,6 +468,36 @@ impl FileSystem for Ufs {
         Ok(tot as usize)
     }
 
+    fn inode_trunc(guard: &mut InodeGuard<'_, Self>, tx: &Tx<'_, Self>, ctx: &KernelCtx<'_, '_>) {
+        let dev = guard.dev;
+        for addr in &mut guard.deref_inner_mut().addr_direct {
+            if *addr != 0 {
+                tx.bfree(dev, *addr, ctx);
+                *addr = 0;
+            }
+        }
+
+        if guard.deref_inner().addr_indirect != 0 {
+            let mut bp = hal()
+                .disk()
+                .read(dev, guard.deref_inner().addr_indirect, ctx);
+            // SAFETY: u32 does not have internal structure.
+            let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
+            debug_assert_eq!(prefix.len(), 0, "itrunc: Buf data unaligned");
+            for a in data {
+                if *a != 0 {
+                    tx.bfree(dev, *a, ctx);
+                }
+            }
+            bp.free(ctx);
+            tx.bfree(dev, guard.deref_inner().addr_indirect, ctx);
+            guard.deref_inner_mut().addr_indirect = 0
+        }
+
+        guard.deref_inner_mut().size = 0;
+        guard.update(tx, ctx);
+    }
+
     fn inode_lock<'a>(inode: &'a Inode<Self>, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'a, Self> {
         let mut guard = inode.inner.lock(ctx);
         if !guard.valid {
@@ -524,7 +554,7 @@ impl FileSystem for Ufs {
             // so this acquiresleep() won't block (or deadlock).
             let mut ip = inode.lock(ctx);
 
-            ip.itrunc(tx, ctx);
+            ip.trunc(tx, ctx);
             ip.deref_inner_mut().typ = InodeType::None;
             ip.update(tx, ctx);
             ip.deref_inner_mut().valid = false;

@@ -210,6 +210,12 @@ impl<FS: FileSystem> InodeGuard<'_, FS> {
             ctx,
         )
     }
+
+    /// Truncate inode (discard contents).
+    /// This function is called with Inode's lock is held.
+    pub fn trunc(&mut self, tx: &Tx<'_, FS>, ctx: &KernelCtx<'_, '_>) {
+        FS::inode_trunc(self, tx, ctx);
+    }
 }
 
 impl<FS: FileSystem> Inode<FS> {
@@ -428,6 +434,10 @@ pub trait FileSystem: 'static + Sized {
         tx: &Tx<'_, Self>,
         k: K,
     ) -> Result<usize, ()>;
+
+    /// Truncate inode (discard contents).
+    /// This function is called with Inode's lock is held.
+    fn inode_trunc(guard: &mut InodeGuard<'_, Self>, tx: &Tx<'_, Self>, ctx: &KernelCtx<'_, '_>);
 
     /// Lock the given inode.
     /// Reads the inode from disk if necessary.

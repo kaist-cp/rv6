@@ -307,38 +307,6 @@ impl InodeGuard<'_, Ufs> {
         tx.write(bp, ctx);
     }
 
-    /// Truncate inode (discard contents).
-    /// This function is called with Inode's lock is held.
-    pub fn itrunc(&mut self, tx: &Tx<'_, Ufs>, ctx: &KernelCtx<'_, '_>) {
-        let dev = self.dev;
-        for addr in &mut self.deref_inner_mut().addr_direct {
-            if *addr != 0 {
-                tx.bfree(dev, *addr, ctx);
-                *addr = 0;
-            }
-        }
-
-        if self.deref_inner().addr_indirect != 0 {
-            let mut bp = hal()
-                .disk()
-                .read(dev, self.deref_inner().addr_indirect, ctx);
-            // SAFETY: u32 does not have internal structure.
-            let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
-            debug_assert_eq!(prefix.len(), 0, "itrunc: Buf data unaligned");
-            for a in data {
-                if *a != 0 {
-                    tx.bfree(dev, *a, ctx);
-                }
-            }
-            bp.free(ctx);
-            tx.bfree(dev, self.deref_inner().addr_indirect, ctx);
-            self.deref_inner_mut().addr_indirect = 0
-        }
-
-        self.deref_inner_mut().size = 0;
-        self.update(tx, ctx);
-    }
-
     /// Inode content
     ///
     /// The content (data) associated with each inode is stored

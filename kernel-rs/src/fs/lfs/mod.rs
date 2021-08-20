@@ -150,6 +150,10 @@ impl FileSystem for Lfs {
         todo!()
     }
 
+    fn inode_trunc(guard: &mut InodeGuard<'_, Self>, tx: &Tx<'_, Self>, ctx: &KernelCtx<'_, '_>) {
+        todo!()
+    }
+
     fn inode_lock<'a>(inode: &'a Inode<Self>, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'a, Self> {
         todo!()
     }
