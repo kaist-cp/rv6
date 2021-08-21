@@ -13,15 +13,13 @@ use crate::{
     addr::{Addr, UVAddr},
     arch::interface::TimeManager,
     arch::poweroff,
-<<<<<<< HEAD
     arch::timer::Timer,
     file::RcFile,
     fs::{FcntlFlags, FileSystem, FileSystemExt, InodeType, Path},
     file::{FileType, RcFile, SelectEvent, SeekWhence},
     file::{FileType, RcFile, SeekWhence, SelectEvent},
-=======
+    arch::interface::{PowerOff, TimeManager},
     arch::TargetArch,
->>>>>>> refactor arch to  trait: WIP
     file::{RcFile, SeekWhence, SelectEvent},
     fs::{FcntlFlags, FileSystem, InodeType, Path},
     hal::hal,
@@ -210,7 +208,7 @@ impl KernelCtx<'_, '_> {
     /// Shutdowns this machine, discarding all unsaved data. No return.
     pub fn sys_poweroff(&self) -> Result<usize, ()> {
         let exitcode = self.proc().argint(0)?;
-        poweroff::machine_poweroff(exitcode as _);
+        TargetArch::machine_poweroff(exitcode as _);
     }
 
     /// Return a new file descriptor referring to the same file as given fd.

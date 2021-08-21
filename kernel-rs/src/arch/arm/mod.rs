@@ -1,6 +1,6 @@
 //! Architecture-dependent code.
 
-use super::interface::*;
+use super::interface::Arch;
 
 pub mod addr;
 pub mod asm;

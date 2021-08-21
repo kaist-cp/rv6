@@ -1134,7 +1134,7 @@ impl Gic {
         Some(x)
     }
 
-    pub fn finish(&self, int: Interrupt) {
+    pub unsafe fn finish(&self, int: Interrupt) {
         unsafe {
             let x = int;
             asm!("msr icc_eoir1_el1, {}", in(reg) x);

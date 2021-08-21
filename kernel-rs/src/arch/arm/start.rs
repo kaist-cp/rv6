@@ -2,7 +2,8 @@ use cortex_a::{asm::barrier, registers::*};
 use tock_registers::interfaces::{ReadWriteable, Writeable};
 
 use crate::{
-    arch::asm::*, arch::interface::MemLayout, arch::uart::Uart, arch::ArmV8, kernel::main,
+    arch::{asm::*, interface::MemLayout, uart::Uart, ArmV8},
+    kernel::main,
     param::NCPU,
 };
 

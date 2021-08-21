@@ -137,11 +137,13 @@ impl TrapManager for ArmV8 {
         match trap {
             TrapTypes::TimerInterrupt => {
                 ArmV8::set_next_timer();
-                INTERRUPT_CONTROLLER.finish(TIMER0_IRQ);
+                unsafe {
+                    INTERRUPT_CONTROLLER.finish(TIMER0_IRQ);
+                }
             }
-            TrapTypes::Irq(irq_type) => {
+            TrapTypes::Irq(irq_type) => unsafe {
                 INTERRUPT_CONTROLLER.finish(irq_type.into());
-            }
+            },
             _ => (),
         }
     }

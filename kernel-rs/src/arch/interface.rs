@@ -35,10 +35,7 @@ pub trait TimeManager {
     fn uptime_as_micro() -> Result<usize, ()>;
 }
 
-pub trait Arch: PageInitiator + MemLayout + TimeManager + TrapManager {}
-
-// pub trait TrapManager {
-// }
+pub trait Arch: PageInitiator + MemLayout + TimeManager + TrapManager + PowerOff {}
 
 pub trait TrapManager {
     fn new() -> Self;
@@ -87,4 +84,7 @@ pub trait TrapManager {
     unsafe fn restore_trap_regs(store: &mut [usize; 10]);
 }
 
-pub trait SysRegManager {}
+pub trait PowerOff {
+    /// Shutdowns this machine, discarding all unsaved data.
+    fn machine_poweroff(_exitcode: u16) -> !;
+}
