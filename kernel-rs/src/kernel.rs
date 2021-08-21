@@ -8,7 +8,7 @@ use pin_project::pin_project;
 
 use crate::util::strong_pin::StrongPin;
 use crate::{
-    arch::interface::{Arch, TrapManager},
+    arch::interface::Arch,
     arch::intr::{intr_init, intr_init_core},
     arch::TargetArch,
     bio::Bcache,
@@ -155,7 +155,7 @@ impl<'id, 's> Deref for KernelRef<'id, 's> {
     }
 }
 
-impl Kernel<TargetArch> {
+impl <A: Arch> Kernel<A> {
     /// # Safety
     ///
     /// Must be used only after initializing it with `Kernel::init`.
@@ -202,11 +202,11 @@ impl Kernel<TargetArch> {
         this.procs.as_mut().init();
 
         // Trap vectors.
-        TargetArch::trap_init();
+        A::trap_init();
 
         // Install kernel trap vector.
         // SAFETY: It is called first time on this core.
-        unsafe { TargetArch::trap_init_core() };
+        unsafe { A::trap_init_core() };
 
         // Set up interrupt controller.
         // SAFETY: It is only called on core 0 once.
@@ -238,7 +238,7 @@ impl Kernel<TargetArch> {
 
         // Install kernel trap vector.
         // SAFETY: It is called first time on this core.
-        unsafe { TargetArch::trap_init_core() };
+        unsafe { A::trap_init_core() };
 
         // Ask PLIC for device interrupts.
         // SAFETY: It is called first time on this core.

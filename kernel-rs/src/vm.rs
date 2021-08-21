@@ -7,9 +7,7 @@ use crate::{
     addr::{pgrounddown, pgroundup, Addr, KVAddr, PAddr, UVAddr, VAddr, MAXVA, PGSIZE},
     arch::interface::Arch,
     arch::{
-        interface::MemLayout,
         vm::{PageTableEntry, PteFlags},
-        TargetArch,
     },
     fs::{FileSystem, InodeGuard, Ufs},
     kalloc::Kmem,
@@ -695,9 +693,9 @@ impl<A: Arch> KernelMemory<A> {
         // Uart registers
         page_table
             .insert_range(
-                TargetArch::UART0.into(),
+                A::UART0.into(),
                 PGSIZE,
-                TargetArch::UART0.into(),
+                A::UART0.into(),
                 (AccessFlags::R | AccessFlags::W).into(),
                 allocator,
             )
@@ -706,9 +704,9 @@ impl<A: Arch> KernelMemory<A> {
         // Virtio mmio disk interface
         page_table
             .insert_range(
-                TargetArch::VIRTIO0.into(),
+                A::VIRTIO0.into(),
                 PGSIZE,
-                TargetArch::VIRTIO0.into(),
+                A::VIRTIO0.into(),
                 (AccessFlags::R | AccessFlags::W).into(),
                 allocator,
             )
@@ -732,9 +730,9 @@ impl<A: Arch> KernelMemory<A> {
         let et = unsafe { etext.as_mut_ptr() as usize };
         page_table
             .insert_range(
-                TargetArch::KERNBASE.into(),
-                et - TargetArch::KERNBASE,
-                TargetArch::KERNBASE.into(),
+                A::KERNBASE.into(),
+                et - A::KERNBASE,
+                A::KERNBASE.into(),
                 (AccessFlags::R | AccessFlags::X).into(),
                 allocator,
             )
