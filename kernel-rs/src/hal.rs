@@ -3,7 +3,7 @@ use core::pin::Pin;
 use pin_project::pin_project;
 
 use crate::{
-    arch::interface::MemLayout,
+    arch::interface::Arch,
     arch::TargetArch,
     console::{Console, Printer},
     cpu::Cpus,
@@ -12,7 +12,7 @@ use crate::{
     virtio::VirtioDisk,
 };
 
-static mut HAL: Hal = unsafe { Hal::new() };
+static mut HAL: Hal = unsafe { Hal::new::<TargetArch>() };
 
 pub fn hal<'s>() -> Pin<&'s Hal> {
     // SAFETY: there is no way to make a mutable reference to `HAL` except calling `hal_init`,
@@ -56,9 +56,9 @@ impl Hal {
     /// # Safety
     ///
     /// Must be used only after initializing it with `Hal::init`.
-    const unsafe fn new() -> Self {
+    const unsafe fn new<A: Arch>() -> Self {
         Self {
-            console: unsafe { Console::new(TargetArch::UART0) },
+            console: unsafe { Console::new(A::UART0) },
             printer: Printer::new(),
             kmem: SpinLock::new("KMEM", unsafe { Kmem::new() }),
             cpus: Cpus::new(),

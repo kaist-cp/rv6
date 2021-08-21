@@ -11,6 +11,7 @@ use core::{fmt, pin::Pin};
 
 use crate::{
     addr::UVAddr,
+    arch::interface::Arch,
     arch::uart::Uart,
     arch::TargetArch,
     hal::hal,
@@ -18,7 +19,6 @@ use crate::{
     lock::{SleepableLock, SleepableLockGuard, SpinLock, SpinLockGuard},
     proc::KernelCtx,
     util::spin_loop,
-    arch::interface::Arch,
 };
 
 /// Size of console input buffer.
@@ -314,7 +314,7 @@ impl Printer {
     }
 }
 
-impl <A: Arch>fmt::Write for PrinterGuard<'_, A> {
+impl<A: Arch> fmt::Write for PrinterGuard<'_, A> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for c in s.bytes() {
             hal().console().putc_spin(c, self.kernel);

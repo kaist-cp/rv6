@@ -6,9 +6,7 @@ use zerocopy::{AsBytes, FromBytes};
 use crate::{
     addr::{pgrounddown, pgroundup, Addr, KVAddr, PAddr, UVAddr, VAddr, MAXVA, PGSIZE},
     arch::interface::Arch,
-    arch::{
-        vm::{PageTableEntry, PteFlags},
-    },
+    arch::vm::{PageTableEntry, PteFlags},
     fs::{FileSystem, InodeGuard, Ufs},
     kalloc::Kmem,
     lock::SpinLock,

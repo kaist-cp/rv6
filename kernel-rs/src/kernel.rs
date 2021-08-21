@@ -155,7 +155,7 @@ impl<'id, 's> Deref for KernelRef<'id, 's> {
     }
 }
 
-impl <A: Arch> Kernel<A> {
+impl<A: Arch> Kernel<A> {
     /// # Safety
     ///
     /// Must be used only after initializing it with `Kernel::init`.
