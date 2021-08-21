@@ -16,8 +16,8 @@ use core::ptr;
 
 use bitflags::bitflags;
 
-use crate::arch::memlayout::MemLayout;
-use crate::memlayout::DeviceMappingInfo;
+use crate::arch::interface::MemLayout;
+use crate::arch::TargetArch;
 
 mod virtio_disk;
 
@@ -73,7 +73,7 @@ impl MmioRegs {
         //   any internal structure to be initialized.
         // * volatile concurrent accesses are safe.
         //   (https://github.com/kaist-cp/rv6/issues/188#issuecomment-683548362)
-        unsafe { ptr::read_volatile((MemLayout::VIRTIO0 as *mut u8).add(self as _) as _) }
+        unsafe { ptr::read_volatile((TargetArch::VIRTIO0 as *mut u8).add(self as _) as _) }
     }
 
     /// # Safety
@@ -87,7 +87,7 @@ impl MmioRegs {
         // * `dst` is properly aligned, as self % 4 == 0.
         // * volatile concurrent accesses are safe.
         //   (https://github.com/kaist-cp/rv6/issues/188#issuecomment-683548362)
-        unsafe { ptr::write_volatile((MemLayout::VIRTIO0 as *mut u8).add(self as _) as _, dst) }
+        unsafe { ptr::write_volatile((TargetArch::VIRTIO0 as *mut u8).add(self as _) as _, dst) }
     }
 
     /// Checks the virtio disk's properties.

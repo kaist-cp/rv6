@@ -1,9 +1,8 @@
-use crate::timer::TimeManager;
+use super::RiscV;
+use crate::arch::interface::TimeManager;
 
-pub struct Timer;
-
-impl TimeManager for Timer {
-    fn init() {
+impl TimeManager for RiscV {
+    fn timer_init() {
         // nothing to do
     }
 

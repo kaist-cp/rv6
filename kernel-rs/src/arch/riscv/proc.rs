@@ -163,8 +163,8 @@ impl TrapFrame {
     }
 
     /// Set the value of function argument register
-    pub fn set_param_reg(&mut self, index: usize, val: usize) {
-        let reg = match index {
+    pub fn param_reg_mut(&mut self, index: usize) -> &mut usize {
+        match index {
             0 => &mut self.a0,
             1 => &mut self.a1,
             2 => &mut self.a2,
@@ -174,8 +174,7 @@ impl TrapFrame {
             6 => &mut self.a6,
             7 => &mut self.a7,
             _ => panic!("Invalid Index!"),
-        };
-        *reg = val;
+        }
     }
 
     /// Get the value of function argument register

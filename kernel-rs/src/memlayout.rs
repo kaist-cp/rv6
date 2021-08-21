@@ -20,26 +20,7 @@
 #![allow(dead_code)]
 
 use crate::addr::{MAXVA, PGSIZE};
-use crate::arch::memlayout::MemLayout;
-
-// TODO: any other better name?
-pub trait DeviceMappingInfo {
-    /// qemu puts UART registers here in physical memory.
-    const UART0: usize;
-
-    /// virtio mmio interface
-    const VIRTIO0: usize;
-
-    /// the kernel expects there to be RAM
-    /// for use by the kernel and user pages
-    /// from physical address KERNBASE to PHYSTOP.
-    const KERNBASE: usize;
-}
-
-pub trait IrqNumbers {
-    const UART0_IRQ: usize;
-    const VIRTIO0_IRQ: usize;
-}
+use crate::arch::{interface::MemLayout, TargetArch};
 
 /// User memory layout.
 /// Address zero first:
@@ -62,4 +43,4 @@ pub fn kstack(p: usize) -> usize {
     TRAMPOLINE - ((p + 1) * 2 * PGSIZE)
 }
 
-pub const PHYSTOP: usize = MemLayout::KERNBASE.wrapping_add(128 * 1024 * 1024);
+pub const PHYSTOP: usize = TargetArch::KERNBASE.wrapping_add(128 * 1024 * 1024);

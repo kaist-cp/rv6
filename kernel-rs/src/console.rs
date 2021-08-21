@@ -12,6 +12,7 @@ use core::{fmt, pin::Pin};
 use crate::{
     addr::UVAddr,
     arch::uart::Uart,
+    arch::TargetArch,
     hal::hal,
     kernel::{Kernel, KernelRef},
     lock::{SleepableLock, SleepableLockGuard, SpinLock, SpinLockGuard},
@@ -87,7 +88,7 @@ impl Console {
 
     /// Doesn't use interrupts, for use by kernel println() and to echo characters.
     /// It spins waiting for the uart's output register to be empty.
-    fn putc_spin(&self, c: u8, kernel: Pin<&Kernel>) {
+    fn putc_spin(&self, c: u8, kernel: Pin<&Kernel<TargetArch>>) {
         let intr = hal().cpus().push_off();
         if kernel.is_panicked() {
             spin_loop();
@@ -101,7 +102,7 @@ impl Console {
         unsafe { hal().cpus().pop_off(intr) };
     }
 
-    fn put_backspace_spin(&self, kernel: Pin<&Kernel>) {
+    fn put_backspace_spin(&self, kernel: Pin<&Kernel<TargetArch>>) {
         // Overwrite with a space.
         self.putc_spin(8, kernel);
         self.putc_spin(b' ', kernel);
@@ -288,7 +289,7 @@ impl Console {
 pub struct Printer(SpinLock<()>);
 
 pub struct PrinterGuard<'a> {
-    kernel: Pin<&'a Kernel>,
+    kernel: Pin<&'a Kernel<TargetArch>>,
     _guard: Option<SpinLockGuard<'a, ()>>,
 }
 
@@ -297,14 +298,14 @@ impl Printer {
         Self(SpinLock::new("Printer", ()))
     }
 
-    pub fn lock<'a>(&'a self, kernel: Pin<&'a Kernel>) -> PrinterGuard<'a> {
+    pub fn lock<'a>(&'a self, kernel: Pin<&'a Kernel<TargetArch>>) -> PrinterGuard<'a> {
         PrinterGuard {
             kernel,
             _guard: Some(self.0.lock()),
         }
     }
 
-    pub fn without_lock<'a>(&'a self, kernel: Pin<&'a Kernel>) -> PrinterGuard<'a> {
+    pub fn without_lock<'a>(&'a self, kernel: Pin<&'a Kernel<TargetArch>>) -> PrinterGuard<'a> {
         PrinterGuard {
             kernel,
             _guard: None,

@@ -3,12 +3,12 @@ use core::pin::Pin;
 use pin_project::pin_project;
 
 use crate::{
-    arch::memlayout::MemLayout,
+    arch::interface::MemLayout,
+    arch::TargetArch,
     console::{Console, Printer},
     cpu::Cpus,
     kalloc::Kmem,
     lock::{SleepableLock, SpinLock},
-    memlayout::DeviceMappingInfo,
     virtio::VirtioDisk,
 };
 
@@ -58,7 +58,7 @@ impl Hal {
     /// Must be used only after initializing it with `Hal::init`.
     const unsafe fn new() -> Self {
         Self {
-            console: unsafe { Console::new(MemLayout::UART0) },
+            console: unsafe { Console::new(TargetArch::UART0) },
             printer: Printer::new(),
             kmem: SpinLock::new("KMEM", unsafe { Kmem::new() }),
             cpus: Cpus::new(),

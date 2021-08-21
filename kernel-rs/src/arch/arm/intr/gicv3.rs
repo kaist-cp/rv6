@@ -10,12 +10,11 @@ use tock_registers::interfaces::Writeable;
 
 use crate::arch::{
     asm::{cpu_id, cpu_relax, isb, r_icc_ctlr_el1, r_mpidr},
-    memlayout::{MemLayout, TIMER0_IRQ},
-    timer::Timer,
+    interface::{MemLayout, TimeManager},
+    memlayout::TIMER0_IRQ,
+    ArmV8,
 };
-use crate::memlayout::IrqNumbers;
 use crate::param::NCPU;
-use crate::timer::TimeManager;
 
 // TODO: group all the constants properly as did in `gicv2.rs`,
 // using `regiter_structs` macro.
@@ -863,7 +862,7 @@ impl GicCpuInterface {
                 break;
             }
             cpu_relax();
-            Timer::udelay(1);
+            ArmV8::udelay(1);
         }
         if count == 1 {
             panic!("redistributor failed to wakeup")
@@ -1157,7 +1156,7 @@ pub unsafe fn intr_init_core() {
     let mut intr_controller = Gic::new(GICD_BASE, GICC_BASE);
     intr_controller.init();
 
-    Timer::init();
+    ArmV8::timer_init();
     intr_controller.enable(TIMER0_IRQ);
 
     // Order matters!
@@ -1165,10 +1164,10 @@ pub unsafe fn intr_init_core() {
         // only boot core do this initialization
 
         // virtio_blk
-        intr_controller.enable(MemLayout::VIRTIO0_IRQ);
+        intr_controller.enable(ArmV8::VIRTIO0_IRQ);
 
         // pl011 uart
-        intr_controller.enable(MemLayout::UART0_IRQ);
+        intr_controller.enable(ArmV8::UART0_IRQ);
     }
 }
 
@@ -1199,7 +1198,7 @@ fn wait_for_rwp(base: usize) {
             panic!("RWP timeout, gone fishing");
         }
         cpu_relax();
-        Timer::udelay(1);
+        ArmV8::udelay(1);
     }
 }
 

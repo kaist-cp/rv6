@@ -2,8 +2,8 @@ use cortex_a::{asm::barrier, registers::*};
 use tock_registers::interfaces::{ReadWriteable, Writeable};
 
 use crate::{
-    arch::asm::*, arch::memlayout::MemLayout, arch::uart::Uart, kernel::main,
-    memlayout::DeviceMappingInfo, param::NCPU,
+    arch::asm::*, arch::interface::MemLayout, arch::uart::Uart, arch::ArmV8, kernel::main,
+    param::NCPU,
 };
 
 extern "C" {
@@ -42,7 +42,7 @@ pub unsafe fn start() {
 
     let cur_el = r_currentel();
 
-    let uart = unsafe { Uart::new(MemLayout::UART0) };
+    let uart = unsafe { Uart::new(ArmV8::UART0) };
 
     uart.puts("current el: ");
     match cur_el {

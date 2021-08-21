@@ -5,14 +5,16 @@ use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
     addr::{pgrounddown, pgroundup, Addr, KVAddr, PAddr, UVAddr, VAddr, MAXVA, PGSIZE},
+    arch::interface::Arch,
     arch::{
-        memlayout::MemLayout,
-        vm::{PageInit, PageTableEntry, PteFlags},
+        interface::MemLayout,
+        vm::{PageTableEntry, PteFlags},
+        TargetArch,
     },
     fs::{FileSystem, InodeGuard, Ufs},
     kalloc::Kmem,
     lock::SpinLock,
-    memlayout::{kstack, DeviceMappingInfo, PHYSTOP, TRAPFRAME, TRAMPOLINE},
+    memlayout::{kstack, PHYSTOP, TRAMPOLINE, TRAPFRAME},
     page::Page,
     param::NPROC,
     proc::KernelCtx,
@@ -94,13 +96,6 @@ pub trait PageTableEntryDesc: Default {
             None
         }
     }
-}
-pub trait PageInitiator {
-    /// Returns the list of addresses and range for devices that
-    /// should be mapped physically in kernel page table.
-    fn kernel_page_dev_mappings() ->&'static [(usize, usize)];
-
-    unsafe fn switch_page_table_and_enable_mmu(page_table_base: usize);
 }
 
 const PTE_PER_PT: usize = PGSIZE / mem::size_of::<PageTableEntry>();
@@ -332,21 +327,25 @@ impl UserMemory {
         // at the highest user virtual address.
         // Only the supervisor uses it, on the way
         // to/from user space, so not PTE_U.
-        page_table.insert(
-            TRAMPOLINE.into(),
-            // SAFETY: we assume that reading the address of trampoline is safe.
-            (unsafe { trampoline.as_mut_ptr() as usize }).into(),
-            (AccessFlags::R | AccessFlags::X).into(),
-            allocator,
-        ).ok()?;
+        page_table
+            .insert(
+                TRAMPOLINE.into(),
+                // SAFETY: we assume that reading the address of trampoline is safe.
+                (unsafe { trampoline.as_mut_ptr() as usize }).into(),
+                (AccessFlags::R | AccessFlags::X).into(),
+                allocator,
+            )
+            .ok()?;
 
         // Map the trapframe just below TRAMPOLINE, for trampoline.S.
-        page_table.insert(
-            TRAPFRAME.into(),
-            trap_frame,
-            (AccessFlags::R | AccessFlags::W).into(),
-            allocator,
-        ).ok()?;
+        page_table
+            .insert(
+                TRAPFRAME.into(),
+                trap_frame,
+                (AccessFlags::R | AccessFlags::W).into(),
+                allocator,
+            )
+            .ok()?;
 
         let mut memory = Self {
             page_table: scopeguard::ScopeGuard::into_inner(page_table),
@@ -666,12 +665,13 @@ impl Drop for UserMemory {
 // may change, and it may need some invariant. At that moment, we can consider
 // what would be the proper invariant for KernelMemory and whether we can
 // combine UserMemory and KernelMemory to form a single type.
-pub struct KernelMemory {
+pub struct KernelMemory<A> {
     /// Page table of kernel.
     page_table: PageTable<KVAddr>,
+    _marker: PhantomData<A>,
 }
 
-impl KernelMemory {
+impl<A: Arch> KernelMemory<A> {
     /// Make a direct-map page table for the kernel.
     pub fn new(allocator: Pin<&SpinLock<Kmem>>) -> Option<Self> {
         let page_table = PageTable::new(allocator)?;
@@ -680,53 +680,61 @@ impl KernelMemory {
             mem::forget(page_table);
         });
 
-        for (start, range) in PageInit::kernel_page_dev_mappings() {
-            page_table.insert_range(
-                (*start).into(),
-                *range,
-                (*start).into(),  
-                (AccessFlags::R | AccessFlags::W).into(),
-                allocator,
-            ).ok()?;
+        for (start, range) in A::kernel_page_dev_mappings() {
+            page_table
+                .insert_range(
+                    (*start).into(),
+                    *range,
+                    (*start).into(),
+                    (AccessFlags::R | AccessFlags::W).into(),
+                    allocator,
+                )
+                .ok()?;
         }
 
         // Uart registers
-        page_table.insert_range(
-            MemLayout::UART0.into(),
-            PGSIZE,
-            MemLayout::UART0.into(),
-            (AccessFlags::R | AccessFlags::W).into(),
-            allocator,
-        ).ok()?;
+        page_table
+            .insert_range(
+                TargetArch::UART0.into(),
+                PGSIZE,
+                TargetArch::UART0.into(),
+                (AccessFlags::R | AccessFlags::W).into(),
+                allocator,
+            )
+            .ok()?;
 
         // Virtio mmio disk interface
-        page_table.insert_range(
-            MemLayout::VIRTIO0.into(),
-            PGSIZE,
-            MemLayout::VIRTIO0.into(),
-            (AccessFlags::R | AccessFlags::W).into(),
-            allocator,
-        ).ok()?;
+        page_table
+            .insert_range(
+                TargetArch::VIRTIO0.into(),
+                PGSIZE,
+                TargetArch::VIRTIO0.into(),
+                (AccessFlags::R | AccessFlags::W).into(),
+                allocator,
+            )
+            .ok()?;
 
         // Map the trampoline for trap entry/exit to
         // the highest virtual address in the kernel.
-        page_table.insert_range(
-            TRAMPOLINE.into(),
-            PGSIZE,
-            // SAFETY: we assume that reading the address of trampoline is safe.
-            unsafe { trampoline.as_mut_ptr() as usize }.into(),
-            (AccessFlags::R | AccessFlags::X).into(),
-            allocator,
-        ).ok()?;
+        page_table
+            .insert_range(
+                TRAMPOLINE.into(),
+                PGSIZE,
+                // SAFETY: we assume that reading the address of trampoline is safe.
+                unsafe { trampoline.as_mut_ptr() as usize }.into(),
+                (AccessFlags::R | AccessFlags::X).into(),
+                allocator,
+            )
+            .ok()?;
 
         // Map kernel text executable and read-only.
         // SAFETY: we assume that reading the address of etext is safe.
         let et = unsafe { etext.as_mut_ptr() as usize };
         page_table
             .insert_range(
-                MemLayout::KERNBASE.into(),
-                et - MemLayout::KERNBASE,
-                MemLayout::KERNBASE.into(),
+                TargetArch::KERNBASE.into(),
+                et - TargetArch::KERNBASE,
+                TargetArch::KERNBASE.into(),
                 (AccessFlags::R | AccessFlags::X).into(),
                 allocator,
             )
@@ -762,6 +770,7 @@ impl KernelMemory {
 
         Some(Self {
             page_table: scopeguard::ScopeGuard::into_inner(page_table),
+            _marker: PhantomData,
         })
     }
 
@@ -773,7 +782,7 @@ impl KernelMemory {
     pub unsafe fn init_register(&self) {
         // Safety: `self.page_table` contains valid page table address.
         unsafe {
-            PageInit::switch_page_table_and_enable_mmu(self.page_table.as_usize());
+            A::switch_page_table_and_enable_mmu(self.page_table.as_usize());
         }
     }
 }

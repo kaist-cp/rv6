@@ -1,0 +1,247 @@
+use core::fmt;
+
+use crate::{
+    arch::interface::TrapManager,
+    arch::{asm::cpu_id, TargetArch},
+    hal::hal,
+    kernel::{kernel_ref, KernelRef},
+    ok_or,
+    proc::{kernel_ctx, KernelCtx, Procstate},
+};
+
+/// In ARM.v8 architecture, interrupts are part
+/// of a more general term: exceptions.
+// enum ExceptionTypes {
+//     SyncException,
+//     IRQ,
+//     FIQ,
+//     SError,
+// }
+
+pub enum TrapTypes {
+    Irq(IrqTypes),
+    Syscall,
+    BadTrap,
+    TimerInterrupt,
+}
+
+#[derive(Debug)]
+pub enum IrqTypes {
+    Virtio,
+    Uart,
+    Others(IrqNum),
+    Unknown(IrqNum),
+}
+
+pub type IrqNum = usize;
+
+/// Handle an interrupt, exception, or system call from user space.
+/// Called from trampoline.S.
+#[no_mangle]
+pub unsafe extern "C" fn usertrap(arg: usize) {
+    // SAFETY
+    // * usertrap can be reached only after the initialization of the kernel.
+    // * It's the beginning of this thread, so there's no exsiting `KernelCtx` or `CurrentProc`.
+    unsafe { kernel_ctx(|ctx| ctx.user_trap(arg)) };
+}
+
+/// Interrupts and exceptions from kernel code go here via kernelvec,
+/// on whatever the current kernel stack is.
+#[no_mangle]
+pub unsafe fn kerneltrap(arg: usize) {
+    // SAFETY: kerneltrap can be reached only after the initialization of the kernel.
+    unsafe { kernel_ref(|kref| kref.kernel_trap(arg)) };
+}
+
+/// Handle an sp0 exception from kernel space.
+/// Called from trampoline.S.
+///
+/// # Safety
+///
+/// Must be called from trampoline.S, only when corresponding exception has occured.
+#[no_mangle]
+pub unsafe extern "C" fn cur_el_sp0_handler(etype: usize) {
+    // SAFETY
+    // let etype = ExceptionTypes::from_usize(etype);
+    unsafe { kernel_ref(|kref| kref.kernel_trap(etype)) };
+}
+
+/// Handle an sp1 exception from kernel space.
+/// Called from trampoline.S.
+///
+/// # Safety
+///
+/// Must be called from trampoline.S, only when corresponding exception has occured.
+#[no_mangle]
+pub unsafe extern "C" fn cur_el_sp1_handler(etype: usize) {
+    // SAFETY
+    // let etype = ExceptionTypes::from_usize(etype);
+    unsafe { kernel_ref(|kref| kref.kernel_trap(etype)) };
+}
+
+impl KernelCtx<'_, '_> {
+    /// `user_trap` can be reached only from the user mode, so it is a method of `KernelCtx`.
+    unsafe fn user_trap(mut self, arg: usize) -> ! {
+        assert!(
+            TargetArch::is_user_trap(),
+            "usertrap: not from user mode(EL0)"
+        );
+
+        unsafe {
+            TargetArch::switch_to_kernel_vec();
+        }
+
+        self.proc_mut().trap_frame_mut().set_pc(TargetArch::r_epc());
+
+        let trap_type = TargetArch::get_trap_type(arg);
+
+        unsafe {
+            TargetArch::before_handling_trap(&trap_type, Some(self.proc_mut().trap_frame_mut()));
+        }
+
+        match &trap_type {
+            TrapTypes::Syscall => {
+                // system call
+                if self.proc().killed() {
+                    self.kernel().procs().exit_current(-1, &mut self);
+                }
+                unsafe { TargetArch::intr_on() };
+                let syscall_no = self.proc_mut().trap_frame_mut().get_param_reg(7) as i32;
+                *self.proc_mut().trap_frame_mut().param_reg_mut(0) =
+                    ok_or!(self.syscall(syscall_no), usize::MAX);
+            }
+            TrapTypes::Irq(irq_type) => unsafe {
+                self.kernel().handle_irq(irq_type);
+            },
+            TrapTypes::BadTrap => {
+                self.kernel().as_ref().write_str("usertrap(): ");
+
+                TargetArch::print_trap_status(|arg: fmt::Arguments<'_>| {
+                    self.kernel().as_ref().write_fmt(arg);
+                });
+                self.proc().kill();
+                self.kernel().procs().exit_current(-1, &mut self);
+            }
+            TrapTypes::TimerInterrupt => {
+                if cpu_id() == 0 {
+                    self.kernel().clock_intr();
+                }
+            }
+        }
+        unsafe {
+            TargetArch::after_handling_trap(&trap_type);
+        }
+
+        if self.proc().killed() {
+            self.kernel().procs().exit_current(-1, &mut self);
+        }
+
+        // barrier();
+        // Give up the CPU if this is a timer interrupt.
+        if let TrapTypes::TimerInterrupt = trap_type {
+            self.yield_cpu();
+        }
+
+        unsafe { self.user_trap_ret() }
+    }
+
+    // /// Return to user space.
+    pub unsafe fn user_trap_ret(mut self) -> ! {
+        // Tell trampoline.S the user page table to switch to.
+        let user_table = self.proc().memory().page_table_addr();
+
+        let kstack = self.proc_mut().deref_mut_data().kstack;
+
+        let trapframe = self.proc_mut().trap_frame_mut();
+
+        unsafe { TargetArch::user_trap_ret(user_table, trapframe, kstack, usertrap as usize) };
+    }
+}
+
+impl KernelRef<'_, '_> {
+    /// `kernel_trap` can be reached from the kernel mode, so it is a method of `Kernel`.
+    unsafe fn kernel_trap(self, trap_info: usize) {
+        let mut reg_backup = [0; 10];
+        TargetArch::save_trap_regs(&mut reg_backup);
+
+        assert!(
+            TargetArch::is_kernel_trap(),
+            "kerneltrap: not from supervisor mode"
+        );
+        assert!(!TargetArch::intr_get(), "kerneltrap: interrupts enabled");
+
+        let trap_type = TargetArch::get_trap_type(trap_info);
+        unsafe {
+            TargetArch::before_handling_trap(&trap_type, None);
+        }
+        match &trap_type {
+            TrapTypes::Syscall => {
+                unreachable!()
+            }
+            TrapTypes::Irq(irq_type) => unsafe {
+                self.handle_irq(irq_type);
+            },
+            TrapTypes::BadTrap => {
+                self.as_ref().write_str("kerneltrap(): ");
+
+                TargetArch::print_trap_status(|arg: fmt::Arguments<'_>| {
+                    self.as_ref().write_fmt(arg);
+                });
+                panic!("kerneltrap");
+            }
+            TrapTypes::TimerInterrupt => {
+                if cpu_id() == 0 {
+                    self.clock_intr();
+                }
+            }
+        }
+        unsafe {
+            TargetArch::after_handling_trap(&trap_type);
+        }
+
+        // Give up the CPU if this is a timer interrupt.
+        if let TrapTypes::TimerInterrupt = trap_type {
+            // TODO(https://github.com/kaist-cp/rv6/issues/517): safety?
+            if let Some(ctx) = unsafe { self.get_ctx() } {
+                // SAFETY:
+                // Reading state without lock is safe because `proc_yield` and `sched`
+                // is called after we check if current process is `RUNNING`.
+                if unsafe { (*ctx.proc().info.get_mut_raw()).state } == Procstate::RUNNING {
+                    ctx.yield_cpu();
+                }
+            }
+        }
+
+        // The yield may have caused some traps to occur,
+        // so restore trap registers for use by kernelvec.S's sepc instruction.
+        unsafe {
+            TargetArch::restore_trap_regs(&mut reg_backup);
+        }
+    }
+
+    unsafe fn handle_irq(self, irq_type: &IrqTypes) {
+        match irq_type {
+            IrqTypes::Uart => {
+                // SAFETY: it's unsafe only when ctrl+p is pressed.
+                unsafe { hal().console().intr(self) };
+            }
+            IrqTypes::Virtio => {
+                hal().disk().pinned_lock().get_pin_mut().intr(self);
+            }
+            IrqTypes::Unknown(irq_num) => {
+                // Use `panic!` instead of `println` to prevent stack overflow.
+                // https://github.com/kaist-cp/rv6/issues/311
+                panic!("unexpected interrupt irq={}\n", irq_num);
+            }
+            IrqTypes::Others(_) => {
+                // do nothing
+            }
+        }
+    }
+
+    fn clock_intr(self) {
+        let mut ticks = self.ticks().lock();
+        *ticks = ticks.wrapping_add(1);
+        ticks.wakeup(self);
+    }
+}

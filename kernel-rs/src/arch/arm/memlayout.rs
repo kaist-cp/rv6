@@ -18,25 +18,19 @@
 // Dead code is allowed in this file because not all components are used in the kernel.
 #![allow(dead_code)]
 
-use crate::memlayout::{DeviceMappingInfo, IrqNumbers};
+use crate::arch::interface::MemLayout;
+use crate::arch::ArmV8;
 
-pub type MemLayout = ArmVirtMemLayout;
-
-pub struct ArmVirtMemLayout;
-
-impl DeviceMappingInfo for ArmVirtMemLayout {
+impl MemLayout for ArmV8 {
     /// the kernel expects there to be RAM
     /// for use by the kernel and user pages
     /// from physical address 0x80000000 to PHYSTOP.
     const KERNBASE: usize = 0x40000000;
     /// qemu puts UART registers here in physical memory.
     const UART0: usize = 0x09000000;
+    const UART0_IRQ: usize = 33;
     /// virtio mmio interface
     const VIRTIO0: usize = 0x0a000000;
-}
-
-impl IrqNumbers for ArmVirtMemLayout {
-    const UART0_IRQ: usize = 33;
     const VIRTIO0_IRQ: usize = 48;
 }
 

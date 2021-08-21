@@ -1,5 +1,7 @@
 //! Architecture-dependent code.
 
+use super::interface::*;
+
 pub mod addr;
 pub mod asm;
 pub mod intr;
@@ -11,3 +13,9 @@ pub mod timer;
 pub mod trap;
 pub mod uart;
 pub mod vm;
+
+pub type TargetArch = RiscV;
+
+pub struct RiscV;
+
+impl Arch for RiscV {}

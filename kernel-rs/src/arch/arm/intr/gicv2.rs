@@ -13,11 +13,10 @@ use tock_registers::{
 
 use crate::arch::{
     asm::cpu_id,
-    memlayout::{MemLayout, TIMER0_IRQ},
-    timer::Timer,
+    interface::{MemLayout, TimeManager},
+    memlayout::TIMER0_IRQ,
+    ArmV8,
 };
-use crate::memlayout::IrqNumbers;
-use crate::timer::TimeManager;
 
 const GIC_INTERRUPT_NUM: usize = 1024;
 const GIC_SGI_NUM: usize = 16;
@@ -251,10 +250,11 @@ pub unsafe fn intr_init_core() {
     DAIF.set(DAIF::I::Masked.into());
 
     unsafe {
-        INTERRUPT_CONTROLLER.enable(TIMER0_IRQ);
         INTERRUPT_CONTROLLER.init();
+        INTERRUPT_CONTROLLER.enable(TIMER0_IRQ);
     }
-    Timer::init();
+
+    ArmV8::timer_init();
 
     // Order matters!
     if cpu_id() == 0 {
@@ -262,9 +262,9 @@ pub unsafe fn intr_init_core() {
 
         unsafe {
             // virtio_blk
-            INTERRUPT_CONTROLLER.enable(MemLayout::VIRTIO0_IRQ);
+            INTERRUPT_CONTROLLER.enable(ArmV8::VIRTIO0_IRQ);
             // pl011 uart
-            INTERRUPT_CONTROLLER.enable(MemLayout::UART0_IRQ);
+            INTERRUPT_CONTROLLER.enable(ArmV8::UART0_IRQ);
         }
     }
 }

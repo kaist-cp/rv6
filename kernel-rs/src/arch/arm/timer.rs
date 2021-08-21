@@ -1,25 +1,25 @@
 use cortex_a::{asm::barrier, registers::*};
 use tock_registers::interfaces::{Readable, Writeable};
 
-use crate::timer::TimeManager;
+use crate::arch::{interface::TimeManager, ArmV8};
 
 const US_PER_S: u64 = 1_000_000;
 
 const TIMER_TICK_MS: u64 = 100;
 
-pub struct Timer;
+// pub struct Timer;
 
-impl TimeManager for Timer {
-    fn init() {
+impl TimeManager for ArmV8 {
+    fn timer_init() {
         Self::set_next_timer();
     }
 
     fn uptime_as_micro() -> Result<usize, ()> {
-        Ok((Timer::read_cntpct() * US_PER_S / Timer::read_freq()) as usize)
+        Ok((ArmV8::read_cntpct() * US_PER_S / ArmV8::read_freq()) as usize)
     }
 }
 
-impl Timer {
+impl ArmV8 {
     pub fn read_cntpct() -> u64 {
         // Prevent that the counter is read ahead of time due to out-of-order execution.
         unsafe { barrier::isb(barrier::SY) };

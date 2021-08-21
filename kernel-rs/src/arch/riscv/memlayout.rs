@@ -19,25 +19,19 @@
 // Dead code is allowed in this file because not all components are used in the kernel.
 #![allow(dead_code)]
 
-use crate::memlayout::{DeviceMappingInfo, IrqNumbers};
+use crate::arch::interface::MemLayout;
+use crate::arch::RiscV;
 
-pub type MemLayout = RiscVVirtMemLayout;
-
-pub struct RiscVVirtMemLayout;
-
-impl DeviceMappingInfo for RiscVVirtMemLayout {
+impl MemLayout for RiscV {
     /// the kernel expects there to be RAM
     /// for use by the kernel and user pages
     /// from physical address 0x80000000 to PHYSTOP.
     const KERNBASE: usize = 0x80000000;
     /// qemu puts UART registers here in physical memory.
     const UART0: usize = 0x10000000;
+    const UART0_IRQ: usize = 10;
     /// virtio mmio interface
     const VIRTIO0: usize = 0x10001000;
-}
-
-impl IrqNumbers for RiscVVirtMemLayout {
-    const UART0_IRQ: usize = 10;
     const VIRTIO0_IRQ: usize = 1;
 }
 

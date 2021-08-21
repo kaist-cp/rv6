@@ -4,13 +4,14 @@ use tock_registers::interfaces::ReadWriteable;
 
 use crate::{
     addr::PAddr,
+    arch::ArmV8,
     arch::{
         addr::{pa2pte, pte2pa},
         asm::{isb, tlbi_vmalle1},
-        memlayout::{MemLayout, GIC},
+        interface::{MemLayout, PageInitiator},
+        memlayout::GIC,
     },
-    memlayout::DeviceMappingInfo,
-    vm::{AccessFlags, PageInitiator, PageTableEntryDesc, RawPageTable},
+    vm::{AccessFlags, PageTableEntryDesc, RawPageTable},
 };
 
 // A table descriptor and a level 3 page descriptor as per
@@ -169,20 +170,14 @@ impl PageTableEntryDesc for ArmV8PageTableEntry {
     }
 }
 
-pub struct ArmV8PageInit;
-
-pub type PageInit = ArmV8PageInit;
-
-impl ArmV8PageInit {
+impl ArmV8 {
     // TODO: put ARM's counterpart of SiFive Test Finisher here
     // GIC
-    const DEV_MAPPING: [(usize, usize); 1] = [(GIC, MemLayout::UART0 - GIC)];
+    const DEV_MAPPING: [(usize, usize); 1] = [(GIC, ArmV8::UART0 - GIC)];
 }
 
-impl PageInitiator for ArmV8PageInit {
-        
-    
-    fn kernel_page_dev_mappings() -> &'static [(usize, usize)]{
+impl PageInitiator for ArmV8 {
+    fn kernel_page_dev_mappings() -> &'static [(usize, usize)] {
         &Self::DEV_MAPPING
     }
 

@@ -71,6 +71,7 @@ mod pipe;
 mod proc;
 mod syscall;
 mod timer;
+mod trap;
 mod util;
 mod virtio;
 mod vm;
