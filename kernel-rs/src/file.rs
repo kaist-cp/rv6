@@ -235,6 +235,9 @@ impl File {
         }
     }
 
+    /// Repositions the file offset of the open file description
+    /// associated with the file descriptor fd to the `n` according
+    /// to the directive `option`.
     pub fn lseek(
         &self,
         n: i32,

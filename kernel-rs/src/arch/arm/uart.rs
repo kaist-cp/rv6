@@ -9,6 +9,8 @@ use tock_registers::{
     registers::{ReadOnly, ReadWrite, WriteOnly},
 };
 
+use crate::arch::interface::{UartManager, UartManagerConst};
+
 register_structs! {
     /// The UART control registers.
     /// Some have different meanings for
@@ -91,11 +93,11 @@ enum UartCtrlRegs {
 ///
 /// uart..(uart + 5) are owned addresses.
 #[derive(Debug)]
-pub struct Uart {
+pub struct ArmUart {
     uart: usize,
 }
 
-impl core::ops::Deref for Uart {
+impl core::ops::Deref for ArmUart {
     type Target = UartBlock;
 
     fn deref(&self) -> &Self::Target {
@@ -103,19 +105,17 @@ impl core::ops::Deref for Uart {
     }
 }
 
-impl Uart {
+impl const UartManagerConst for ArmUart {
     /// # Safety
     ///
     /// uart..(uart + 5) are owned addresses.
-    pub const unsafe fn new(uart: usize) -> Self {
+    unsafe fn new(uart: usize) -> Self {
         Self { uart }
     }
+}
 
-    fn ptr(&self) -> *const UartBlock {
-        self.uart as *const _
-    }
-
-    pub fn init(&self) {
+impl UartManager for ArmUart {
+    fn init(&self) {
         // set the bit rate: integer/fractional baud rate registers
         self.IBRD.set((UART_CLK / (16 * UART_BITRATE)) as u32);
 
@@ -135,12 +135,8 @@ impl Uart {
         self.IMSC.set(UartRegBits::IERRxEnable.bits());
     }
 
-    pub fn enable_rx(&self) {
-        self.IMSC.set(UartRegBits::IERRxEnable.bits());
-    }
-
     /// Read one input character from the UART. Return Err(()) if none is waiting.
-    pub fn getc(&self) -> Result<i32, ()> {
+    fn getc(&self) -> Result<i32, ()> {
         if self.FR.get() & UartRegBits::FRRxFifoEmpty.bits() == 0 {
             // Input data is ready.
             Ok(self.DR.get() as i32)
@@ -150,18 +146,28 @@ impl Uart {
     }
 
     /// Write one output character to the UART.
-    pub fn putc(&self, c: u8) {
+    fn putc(&self, c: u8) {
         self.DR.set(c.into());
     }
 
     /// Check whether the UART transmit holding register is full.
-    pub fn is_full(&self) -> bool {
+    fn is_full(&self) -> bool {
         (self.FR.get() & UartRegBits::FRTxFifoFull.bits()) == 1
     }
+}
 
+impl ArmUart {
     pub fn puts(&self, s: &str) {
         for c in s.chars() {
             self.putc(c as u8);
         }
+    }
+
+    pub fn enable_rx(&self) {
+        self.IMSC.set(UartRegBits::IERRxEnable.bits());
+    }
+
+    pub fn ptr(&self) -> *const UartBlock {
+        self.uart as *const _
     }
 }

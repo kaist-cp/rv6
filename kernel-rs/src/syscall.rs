@@ -181,7 +181,7 @@ impl KernelCtx<'_, '_> {
             if self.proc().killed() {
                 return Err(());
             }
-            ticks.sleep(&self);
+            ticks.sleep(self);
         }
         Ok(0)
     }
@@ -435,7 +435,7 @@ impl KernelCtx<'_, '_> {
         let efds = [0u8; 1024 / 8];
 
         if read_fds != 0 {
-            // Safety: `read_fds` is a valid user space address given by a user.
+            // SAFETY: `read_fds` is a valid user space address given by a user.
             unsafe {
                 self.proc_mut()
                     .memory_mut()
@@ -469,7 +469,7 @@ impl KernelCtx<'_, '_> {
                         .ok_or(())?
                         .as_ref()
                         .ok_or(())?;
-
+                    // SAFETY: `is_ready` will not access proc's open_files.
                     if unsafe { (*(f as *const RcFile)).is_ready(SelectEvent::Read)? } {
                         ready_cnt += 1;
                     } else {
@@ -540,6 +540,7 @@ impl KernelCtx<'_, '_> {
             2 => SeekWhence::End,
             _ => return Err(()),
         };
+        // SAFETY: `lseek` will not access proc's open_files.
         unsafe { (*(f as *const RcFile)).lseek(offset, whence, self) }
     }
 }

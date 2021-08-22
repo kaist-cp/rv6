@@ -677,70 +677,11 @@ const GICV_PMR_PRIORITY_MASK: u32 = 0x1f << GICV_PMR_PRIORITY_SHIFT;
 
 const MPIDR_HWID_BITMASK: u64 = 0xff00ffffff;
 
-// register_structs! {
-//   #[allownon_snake_case]
-//   GicDistributorBlock {
-//     (0x0000 => CTLR: ReadWrite<u32>,
-//     (0x0004 => TYPER: ReadOnly<u32>),
-//     (0x0008 => IIDR: ReadOnly<u32>),
-//     (0x000c => _reserved_0),
-//     (0x0010 => STATUSR: ReadOnly<u32>),
-//     (0x0014 => _reserved_1),
-//     (0x0080 => IGROUPR: [ReadWrite<u32>; GIC_1_BIT_NUM]),
-//     (0x0100 => ISENABLER: [ReadWrite<u32>; GIC_1_BIT_NUM]),
-//     (0x0180 => ICENABLER: [ReadWrite<u32>; GIC_1_BIT_NUM]),
-//     (0x0200 => ISPENDR: [ReadWrite<u32>; GIC_1_BIT_NUM]),
-//     (0x0280 => ICPENDR: [ReadWrite<u32>; GIC_1_BIT_NUM]),
-//     (0x0300 => ISACTIVER: [ReadWrite<u32>; GIC_1_BIT_NUM]),
-//     (0x0380 => ICACTIVER: [ReadWrite<u32>; GIC_1_BIT_NUM]),
-//     (0x0400 => IPRIORITYR: [ReadWrite<u32>; GIC_8_BIT_NUM]),
-//     (0x0800 => ITARGETSR: [ReadWrite<u32>; GIC_8_BIT_NUM]),
-//     (0x0c00 => ICFGR: [ReadWrite<u32>; GIC_2_BIT_NUM]),
-//     (0x0d00 => _reserved_2),
-//     (0x0e00 => NSACR: [ReadWrite<u32>; GIC_2_BIT_NUM]),
-//     (0x0f00 => SGIR: WriteOnly<u32>),
-//     (0x0f04 => _reserved_3),
-//     (0x0f10 => CPENDSGIR: [ReadWrite<u32>; GIC_SGI_NUM * 8 / 32]),
-//     (0x0f20 => SPENDSGIR: [ReadWrite<u32>; GIC_SGI_NUM * 8 / 32]),
-//     (0x0f30 => _reserved_4),
-//     (0x6000 => IROUTER: [ReadWrite<u64>; 1020]),
-//     (0x7fd8 => _reserved_5),
-//     (0xFFE8 => PIDR2: ReadOnly<u32>),
-//     (0xFFF0 => @END),
-//   }
-// }
-
 #[derive(Debug)]
 struct GicDistributor {
     base_addr: usize,
     gic_irqs: u32,
 }
-
-// register_structs! {
-//   #[allow(non_snake_case)]
-//   GicCpuInterfaceBlock {
-//     (0x0000 => CTLR: ReadWrite<u32>),   // CPU Interface Control Register
-//     (0x0004 => PMR: ReadWrite<u32>),    // Interrupt Priority Mask Register
-//     (0x0008 => BPR: ReadWrite<u32>),    // Binary Point Register
-//     (0x000c => IAR: ReadOnly<u32>),     // Interrupt Acknowledge Register
-//     (0x0010 => EOIR: WriteOnly<u32>),   // End of Interrupt Register
-//     (0x0014 => RPR: ReadOnly<u32>),     // Running Priority Register
-//     (0x0018 => HPPIR: ReadOnly<u32>),   // Highest Priority Pending Interrupt Register
-//     (0x001c => ABPR: ReadWrite<u32>),   // Aliased Binary Point Register
-//     (0x0020 => AIAR: ReadOnly<u32>),    // Aliased Interrupt Acknowledge Register
-//     (0x0024 => AEOIR: WriteOnly<u32>),  // Aliased End of Interrupt Register
-//     (0x0028 => AHPPIR: ReadOnly<u32>),  // Aliased Highest Priority Pending Interrupt Register
-//     (0x002c => _reserved_0),
-//     (0x00d0 => APR: [ReadWrite<u32>; 4]),    // Active Priorities Register
-//     (0x00e0 => NSAPR: [ReadWrite<u32>; 4]),  // Non-secure Active Priorities Register
-//     (0x00f0 => _reserved_1),
-//     (0x00fc => IIDR: ReadOnly<u32>),    // CPU Interface Identification Register
-//     (0x0100 => _reserved_2),
-//     (0x1000 => DIR: WriteOnly<u32>),    // Deactivate Interrupt Register
-//     (0x1004 => _reserved_3),
-//     (0x2000 => @END),
-//   }
-// }
 
 #[derive(Debug)]
 struct GicCpuInterface {
@@ -793,20 +734,26 @@ impl GicCpuInterface {
 
         let rbase = self.rdist_sgi_base();
 
-        /* Configure SGIs/PPIs as non-secure Group-1 */
+        // Configure SGIs/PPIs as non-secure Group-1.
+        // Safety: assume `rbase` is a valid mapped address.
         unsafe {
             ptr::write_volatile((rbase + GICR_IGROUPR0) as *mut u32, u32::MAX);
             isb();
+            self.cpu_config(rbase);
         }
-
-        self.cpu_config(rbase);
 
         self.sys_reg_init();
 
         isb();
     }
 
-    fn cpu_config(&self, base: usize) {
+    /// Returns a pinned mutable reference to the `KERNEL`.
+    ///
+    /// # Safety
+    ///
+    /// `base` must be a valid mapped address for GIC Redistributor.
+    unsafe fn cpu_config(&self, base: usize) {
+        // SAFETY: assume `base` is a valid mapped address.
         unsafe {
             ptr::write_volatile(
                 (base + GIC_DIST_ACTIVE_CLEAR) as *mut u32,
@@ -822,10 +769,10 @@ impl GicCpuInterface {
             );
         }
         isb();
-        /*
-         * Set priority on PPI and SGI interrupts
-         */
+
+        // Set priority on PPI and SGI interrupts
         for i in (0..32).step_by(4) {
+            // SAFETY: assume `base` is a valid mapped address.
             unsafe {
                 ptr::write_volatile(
                     (base + GIC_DIST_PRI + i * 4 / 4) as *mut u32,
@@ -840,22 +787,31 @@ impl GicCpuInterface {
         self.sys_reg_init();
     }
 
+    /// Waits for the redistributor to finish the work.
     fn redist_wait_for_rwp(&self) {
-        wait_for_rwp(self.data_rdist_rd_base());
+        unsafe {
+            wait_for_rwp(self.data_rdist_rd_base());
+        }
     }
 
+    ///
     fn enable_redist(&self) {
         let mut count = 10000000; // 1s
 
         let rbase = self.data_rdist_rd_base();
 
+        // SAFETY: assume `rbase` is a valid mapped address for GICR.
         let mut val = unsafe { read_w(rbase + GICR_WAKER) };
 
         val &= !(GICR_WAKER_PROC_SLEEP as u32);
+
+        // SAFETY: assume `rbase` is a valid mapped address for GICR.
         unsafe { write_w(rbase + GICR_WAKER, val) };
 
         while count > 1 {
             count -= 1;
+
+            // SAFETY: assume `rbase` is a valid mapped address for GICR.
             let val = unsafe { read_w(rbase + GICR_WAKER) };
 
             if val & GICR_WAKER_CHILDREN_ASLEEP as u32 == 0 {
@@ -878,6 +834,7 @@ impl GicCpuInterface {
             | mpidr_affinity_level(mpidr, 0);
 
         for i in 0usize..self.gic_irqs as usize {
+            // SAFETY: assume `self.redists` contains mapped address for redistributors.
             let typer: u64 = unsafe { read_d(self.redists[i] + GICR_TYPER) };
 
             if (typer >> 32) == aff as u64 {
@@ -898,12 +855,15 @@ impl GicCpuInterface {
     }
 
     fn sys_reg_init(&self) {
+        // extract Priority bits.
         let mut pribits = r_icc_ctlr_el1();
         pribits &= ICC_CTLR_EL1_PRI_BITS_MASK;
         pribits >>= ICC_CTLR_EL1_PRI_BITS_SHIFT;
         pribits += 1;
 
         let x: usize = 1 << (8 - pribits);
+
+        // SAFETY: x contains valid value for icc_pmr_el1 register.
         unsafe {
             asm!("msr icc_pmr_el1, {}", in(reg) x);
             isb();
@@ -915,24 +875,32 @@ impl GicCpuInterface {
         };
 
         // set priority mask register
+        let x: usize = 0xf0;
+
+        // SAFETY: x contains valid value for icc_pmr_el1 register.
         unsafe {
-            let x: usize = 0xf0;
             asm!("msr icc_pmr_el1, {}", in(reg) x);
             isb();
-            /*
-             * Some firmwares hand over to the kernel with the BPR changed from
-             * its reset value (and with a value large enough to prevent
-             * any pre-emptive interrupts from working at all). Writing a zero
-             * to BPR restores is reset value.
-             */
+        }
+
+        // SAFETY: set 0 to icc_bpr1_el1 for initalization is safe.
+        unsafe {
+            // Some firmwares hand over to the kernel with the BPR changed from
+            // its reset value (and with a value large enough to prevent
+            // any pre-emptive interrupts from working at all). Writing a zero
+            // to BPR restores is reset value.
             asm!("msr icc_bpr1_el1, xzr");
             isb();
+        }
 
+        // SAFETY: `ICC_CTLR_EL1_EOIMODE_DROP_DIR` is a valid value for icc_ctlr_el1.
+        unsafe {
             let x: usize = ICC_CTLR_EL1_EOIMODE_DROP_DIR as usize;
             asm!("msr icc_ctlr_el1, {}", in(reg) x);
             isb();
         }
 
+        // Initialize registers according to the number of priortity bits implemented.
         if pribits < 8 {
             if val != 0 {
                 // group 0
@@ -976,6 +944,8 @@ impl GicCpuInterface {
             isb();
         }
 
+        // set icc_ctlr_el1 to 1 for enabling group1 interrupts.
+        // SAFETY: 1 is a valid value for the register.
         unsafe {
             let x: usize = 1;
             asm!("msr icc_igrpen1_el1, {}", in(reg) x);
@@ -993,11 +963,14 @@ impl GicDistributor {
     }
 
     fn dist_wait_for_rwp(&self) {
-        wait_for_rwp(self.base_addr);
+        unsafe {
+            wait_for_rwp(self.base_addr);
+        }
     }
 
     fn init(&self) {
         // Disable the distributor
+        // SAFETY: assume `self.base_addr` is a valid mapped address for GICD.
         unsafe { write_w(self.base_addr + GICD_CTLR, 0) };
         self.dist_wait_for_rwp();
 
@@ -1008,44 +981,51 @@ impl GicDistributor {
          * but that's not the intended use case anyway.
          */
         for i in (32..self.gic_irqs as usize).step_by(32) {
+            // SAFETY: assume `self.base_addr` is a valid mapped address for GICD.
             unsafe { write_w(self.base_addr + GICD_IGROUPR + i / 8, !0u32) };
         }
         isb();
 
-        dist_config(self.base_addr, self.gic_irqs, || {
-            self.dist_wait_for_rwp();
-        });
-
+        // SAFETY:
+        // * assume `self.base_addr` is GICD base address.
+        // * assume `self.gic_irqs` is a max number of gic_irqs.
         unsafe {
-            // enable distributor with ARE, group1
+            dist_config(self.base_addr, self.gic_irqs, || {
+                self.dist_wait_for_rwp();
+            });
+        }
+
+        // enable distributor with ARE, group1
+        // SAFETY: assume `self.base_addr` is a valid mapped address for GICD.
+        unsafe {
             write_w(
                 self.base_addr + GICD_CTLR,
                 GICD_CTLR_ARE_NS | GICD_CTLR_ENABLE_G1A | GICD_CTLR_ENABLE_G1,
             );
         }
 
-        /*
-         * Set all global interrupts to the boot CPU only. ARE must be
-         * enabled.
-         */
+        // Set all global interrupts to the boot CPU only. ARE must be
+        // enabled.
         let mpidr = r_mpidr() as u64;
         let affinity = mpidr_to_affinity(mpidr);
 
         for i in 32..self.gic_irqs as usize {
+            // SAFETY: assume `self.base_addr` is a valid mapped address for GICD.
             unsafe { write_d(self.base_addr + GICD_IROUTER + i * 8, affinity) };
         }
         isb();
     }
 
     fn init_per_core(&self) {
-        // TODO: nothing to do
+        // nothing to do
     }
 
+    // check gic version is supported one (3 or 4).
     #[no_mangle]
     pub fn validate_gic_version(&self) {
+        // SAFETY: assume `self.base_addr` is a valid mapped address for GICD.
         let version = unsafe { ptr::read_volatile((self.base_addr + GICD_PIDR2) as *mut u32) };
         let version = version & GIC_PIDR2_ARCH_MASK;
-        // let version = self.PIDR2.get() & GIC_PIDR2_ARCH_MASK;
 
         if version != GIC_PIDR2_ARCH_GICV3 && version != GIC_PIDR2_ARCH_GICV4 {
             panic!("unsupported gic version")
@@ -1080,6 +1060,7 @@ impl Gic {
             rdist_base += 0x20000;
         }
 
+        // SAFETY: assume `self.gicd.base_addr` is a valid mapped address for GICD.
         let typer = unsafe { read_w(self.gicd.base_addr + GICD_TYPER) };
 
         let gic_irqs = ((typer & 0x1f) + 1) * 32;
@@ -1097,34 +1078,75 @@ impl Gic {
 
     pub fn init_core(&self) {}
 
-    fn poke_irq(&self, hwirq: u32, offset: u32) {
+    /// # Safety
+    ///
+    /// * `hw_irq` must be a valid irq number.
+    /// * `offset` must be a valid offset according to the GICv3,4 specification.
+    unsafe fn peek_irq(&self, hwirq: u32, offset: u32) -> u32 {
+        let mask: u32 = 1 << (hwirq % 32);
+
+        let base = if irq_in_rdist(hwirq) {
+            self.gicc.rdist_sgi_base()
+        } else {
+            self.gicd.base_addr
+        };
+
+        // SAFETY: calculated address is a valid mapped address for corresponding irq.
+        unsafe { read_w((base + offset as usize + (hwirq as usize / 32) * 4) & mask as usize) }
+    }
+
+    /// # Safety
+    ///
+    /// * `hw_irq` must be a valid irq number.
+    /// * `offset` must be a valid offset according to the GICv3,4 specification.
+    unsafe fn poke_irq(&self, hwirq: u32, offset: u32) {
         let mask: u32 = 1 << (hwirq % 32);
 
         if irq_in_rdist(hwirq) {
             let base = self.gicc.rdist_sgi_base();
+
+            // SAFETY: calculated address is a valid mapped address for corresponding irq.
             unsafe {
-                *((base + offset as usize + (hwirq as usize / 32) * 4) as *mut u32) = mask;
+                write_w(base + offset as usize + (hwirq as usize / 32) * 4, mask);
+                // *((base + offset as usize + (hwirq as usize / 32) * 4) as *mut u32) = mask;
             }
             self.gicc.redist_wait_for_rwp();
         } else {
             let base = self.gicd.base_addr;
+
+            // SAFETY: calculated address is a valid mapped address for corresponding irq.
             unsafe {
-                *((base + offset as usize + (hwirq as usize / 32) * 4) as *mut u32) = mask;
+                write_w(base + offset as usize + (hwirq as usize / 32) * 4, mask);
+                // *((base + offset as usize + (hwirq as usize / 32) * 4) as *mut u32) = mask;
             }
             self.gicd.dist_wait_for_rwp();
         }
     }
 
-    pub fn enable(&self, int: Interrupt) {
-        self.poke_irq(int as u32, 0x0100);
+    /// # Safety
+    ///
+    /// * `int` must be a valid irq number.
+    /// * Corresponding interrupt handler must be properly configured in advance.
+    pub unsafe fn enable(&self, int: Interrupt) {
+        // SAFETY:
+        // * `int` is a valid irq number.
+        // * `GICD_ISENABLER` is a valid offset.
+        unsafe {
+            self.poke_irq(int as u32, GICD_ISENABLER as u32);
+        }
     }
 
-    // pub fn disable(&self, _int: Interrupt) {
-    //     // TODO
-    //     // let gicd = &GICD;
-    //     // gicd.clear_enable(int);
-    // }
+    /// disable the interrupt `int`.
+    pub fn disable(&self, int: Interrupt) {
+        // SAFETY:
+        // * `int` is a valid irq number.
+        // * `GICD_ICENABLER` is a valid offset.
+        unsafe {
+            self.poke_irq(int as u32, GICD_ICENABLER as u32);
+        }
+    }
 
+    /// get the recevied, but not handled interrupt.
     pub fn fetch(&self) -> Option<Interrupt> {
         let mut x;
         unsafe {
@@ -1134,7 +1156,13 @@ impl Gic {
         Some(x)
     }
 
+    /// Tell GIC that interrupt `int` has been handled.
+    ///
+    /// # Safety
+    ///
+    /// `int` must be an interrupt that has been received, and not been `finish`ed yet.
     pub unsafe fn finish(&self, int: Interrupt) {
+        // Safety: assume `int` is a valid interrupt(IRQ) number.
         unsafe {
             let x = int;
             asm!("msr icc_eoir1_el1, {}", in(reg) x);
@@ -1150,6 +1178,11 @@ pub type Interrupt = usize;
 
 pub unsafe fn intr_init() {}
 
+/// Do interrupt-related initialization for each core.
+///
+/// # Safety
+///
+/// Must be called only once for each core, before receiving any interrupt.
 pub unsafe fn intr_init_core() {
     DAIF.set(DAIF::I::Masked.into());
 
@@ -1157,17 +1190,22 @@ pub unsafe fn intr_init_core() {
     intr_controller.init();
 
     ArmV8::timer_init();
-    intr_controller.enable(TIMER0_IRQ);
+    unsafe {
+        intr_controller.enable(TIMER0_IRQ);
+    }
 
     // Order matters!
     if cpu_id() == 0 {
         // only boot core do this initialization
 
-        // virtio_blk
-        intr_controller.enable(ArmV8::VIRTIO0_IRQ);
+        // SAFETY: enable valid irq numbers after calling `gic.init`.
+        unsafe {
+            // virtio_blk
+            intr_controller.enable(ArmV8::VIRTIO0_IRQ);
 
-        // pl011 uart
-        intr_controller.enable(ArmV8::UART0_IRQ);
+            // pl011 uart
+            intr_controller.enable(ArmV8::UART0_IRQ);
+        }
     }
 }
 
@@ -1189,9 +1227,13 @@ fn irq_in_rdist(hwirq: u32) -> bool {
     hwirq < 32
 }
 
-fn wait_for_rwp(base: usize) {
+/// # Safety
+///
+/// `base` must be a valid GICD or GICR base address.
+unsafe fn wait_for_rwp(base: usize) {
     let mut count = 1000000; /* 1s! */
 
+    // SAFETY: assume `base` is be a valid GICD or GICR base address.
     while unsafe { read_w(base + GICD_CTLR) } & GICD_CTLR_RWP != 0 {
         count -= 1;
         if count == 0 {
@@ -1202,15 +1244,17 @@ fn wait_for_rwp(base: usize) {
     }
 }
 
-// read a word form the address
+/// read a word from the address
 unsafe fn read_w(addr: usize) -> u32 {
     unsafe { ptr::read_volatile(addr as *mut u32) }
 }
 
+/// read a double word from the address
 unsafe fn read_d(addr: usize) -> u64 {
     unsafe { ptr::read_volatile(addr as *mut u64) }
 }
 
+/// write a word to the address
 unsafe fn write_w(addr: usize, a: u32) {
     unsafe {
         ptr::write_volatile(addr as *mut u32, a);
@@ -1218,6 +1262,7 @@ unsafe fn write_w(addr: usize, a: u32) {
     }
 }
 
+/// write a double word to the address
 unsafe fn write_d(addr: usize, a: u64) {
     unsafe {
         ptr::write_volatile(addr as *mut u64, a);
@@ -1225,7 +1270,15 @@ unsafe fn write_d(addr: usize, a: u64) {
     }
 }
 
-fn dist_config<F>(base: usize, gic_irqs: u32, sync_func: F)
+/// Set whether the corresponding PPI to `int` in the extended PPI range is
+/// edge-triggered or level-sensitive.
+///
+/// # Safety
+///
+/// * `base` must be a valid GICD base address.
+/// * `gic_irqs` must be a max number of irqs.
+/// * `sync_func` must be safe.
+unsafe fn dist_config<F>(base: usize, gic_irqs: u32, sync_func: F)
 where
     F: Fn(),
 {

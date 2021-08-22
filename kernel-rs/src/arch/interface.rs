@@ -1,16 +1,12 @@
 use core::fmt;
 
-use crate::arch::TargetArch;
-use crate::proc::RegNum;
-use crate::trap::TrapTypes;
-
-pub trait PageInitiator {
-    /// Returns the list of addresses and range for devices that
-    /// should be mapped physically in kernel page table.
-    fn kernel_page_dev_mappings() -> &'static [(usize, usize)];
-
-    unsafe fn switch_page_table_and_enable_mmu(page_table_base: usize);
-}
+use crate::{
+    addr::{Addr, PAddr},
+    arch::TargetArch,
+    proc::RegNum,
+    trap::TrapTypes,
+    vm::{AccessFlags, RawPageTable},
+};
 
 pub trait MemLayout {
     /// qemu puts UART registers here in physical memory.
@@ -37,8 +33,10 @@ pub trait TimeManager {
 }
 
 pub trait Arch:
-    PageInitiator + MemLayout + TimeManager + TrapManager + InterruptManager + ProcManager + PowerOff
+    PageTableManager + MemLayout + TimeManager + TrapManager + InterruptManager + ProcManager + PowerOff
 {
+    type Uart: UartManager;
+
     /// Which hart (core) is this?
     fn cpu_id() -> usize;
 }
@@ -110,21 +108,22 @@ pub trait TrapManager {
     ///
     /// # Safety
     ///
-    /// Interrupt handler must have been configured properly.
+    /// Corresponding interrupt handler must have been configured properly.
     unsafe fn switch_to_kernel_vec();
 
     /// Switch the kernel vector to one for user.
     ///
     /// # Safety
     ///
-    /// Interrupt handler must have been configured properly.
+    /// Must be called just before going back to user mode,
+    /// after handling an invoked user trap.
     unsafe fn switch_to_user_vec();
 
     /// Go back to the user space after handling user trap.
     ///
     /// # Safety
     ///
-    /// Must be called by `user_trap`, after handling the trap.
+    /// Must be called by `user_trap_ret`, after handling the user trap.
     unsafe fn user_trap_ret(
         user_pagetable_addr: usize,
         trap: &mut <TargetArch as ProcManager>::TrapFrame,
@@ -149,8 +148,20 @@ pub trait PowerOff {
 }
 
 pub trait InterruptManager {
+    /// Initialize device interrupt controller (globally).
+    ///
+    /// # Safety
+    ///
+    /// * Must be called only once across all the cores.
+    /// * Must be called before any interrupt occurs.
     unsafe fn intr_init();
 
+    /// Initialize device interrupt controller for each core.
+    ///
+    /// # Safety
+    ///
+    /// * Must be called only once for each core.
+    /// * Must be called before any interrupt occurs.
     unsafe fn intr_init_core();
 }
 
@@ -164,17 +175,22 @@ pub trait ProcManager {
 }
 
 pub trait TrapFrameManager: Copy + Clone {
+    /// Set user pc.
     fn set_pc(&mut self, val: usize);
 
-    /// Set the value of return value register
+    /// Set the value of user stack pointer.
+    fn set_sp(&mut self, val: usize);
+
+    /// Set the value of return value register.
     fn set_ret_val(&mut self, val: usize);
 
-    /// Set the value of function argument register
+    /// Set the value of function argument register.
     fn param_reg_mut(&mut self, index: RegNum) -> &mut usize;
 
-    /// Get the value of function argument register
+    /// Get the value of function argument register.
     fn get_param_reg(&self, index: RegNum) -> usize;
 
+    /// Initialize arch-specific registers.
     fn init_reg(&mut self);
 }
 
@@ -185,7 +201,91 @@ pub trait ContextManager: Copy + Clone + Default {
     fn set_ret_addr(&mut self, val: usize);
 }
 
-// pub trait UserProcInitiator {
-//     /// Initialize regiters for running first user process.
-//     fn init_reg(trap_frame: &mut TrapFrame);
-// }
+pub trait PageTableManager {
+    type PageTableEntry: PageTableEntryDesc;
+
+    /// The number of page table levels.
+    const PLNUM: usize;
+
+    /// Returns the list of addresses and range for devices that
+    /// should be mapped physically in kernel page table.
+    fn kernel_page_dev_mappings() -> &'static [(usize, usize)];
+
+    /// Switch h/w page table register to the kernel's page table, and enable paging.
+    ///
+    /// # Safety
+    ///
+    /// `page_table_base` must contain base address for a valid page table, containing mapping for current pc.
+    unsafe fn switch_page_table_and_enable_mmu(page_table_base: usize);
+}
+
+/// # Safety
+///
+/// If self.is_table() is true, then it must refer to a valid page-table page.
+///
+/// inner value should be initially 0, which satisfies the invariant.
+pub trait PageTableEntryDesc: Default {
+    type EntryFlags: From<AccessFlags>;
+
+    fn get_flags(&self) -> Self::EntryFlags;
+
+    fn flag_intersects(&self, flag: Self::EntryFlags) -> bool;
+
+    fn get_pa(&self) -> PAddr;
+
+    fn is_valid(&self) -> bool;
+
+    fn is_user(&self) -> bool;
+
+    fn is_table(&self) -> bool;
+
+    fn is_data(&self) -> bool;
+
+    /// Make the entry refer to a given page-table page.
+    fn set_table(&mut self, page: *mut RawPageTable);
+
+    /// Make the entry refer to a given address with a given permission.
+    /// The permission should include at lease one of R, W, and X not to be
+    /// considered as an entry referring a page-table page.
+    fn set_entry(&mut self, pa: PAddr, perm: Self::EntryFlags);
+
+    /// Make the entry inaccessible by user processes by clearing PteFlags::U.
+    fn clear_user(&mut self);
+
+    /// Invalidate the entry by making every bit 0.
+    fn invalidate(&mut self);
+
+    /// Return `Some(..)` if it refers to a page-table page.
+    /// Return `None` if it refers to a data page.
+    /// Return `None` if it is invalid.
+    fn as_table_mut(&mut self) -> Option<&mut RawPageTable> {
+        if self.is_table() {
+            // SAFETY: invariant.
+            Some(unsafe { &mut *(self.get_pa().into_usize() as *mut _) })
+        } else {
+            None
+        }
+    }
+}
+
+pub trait UartManagerConst {
+    /// Create new Uart manager with base addreess `uart`.
+    ///
+    /// # Safety
+    ///
+    /// `uart` must be a valid mapped address.
+    unsafe fn new(uart: usize) -> Self;
+}
+
+pub trait UartManager: UartManagerConst {
+    fn init(&self);
+
+    /// Read one input character from the UART. Return Err(()) if none is waiting.
+    fn getc(&self) -> Result<i32, ()>;
+
+    /// Write one output character to the UART.
+    fn putc(&self, c: u8);
+
+    /// Check whether the UART transmit holding register is full.
+    fn is_full(&self) -> bool;
+}

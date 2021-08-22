@@ -53,7 +53,7 @@ impl TrapManager for RiscV {
     ///
     /// `vectors` must contain base address for a valid ARMv8-A exception vector table.
     unsafe fn trap_init_core() {
-        // Safety: `kernelvec` contains a valid trap vector.
+        // SAFETY: `kernelvec` contains a valid trap vector.
         unsafe { w_stvec(kernelvec as _) };
     }
 
@@ -184,7 +184,7 @@ impl TrapManager for RiscV {
         intr_off();
 
         // Send syscalls, interrupts, and exceptions to trampoline.S.
-        // Safety: this points to a valid page table.
+        // SAFETY: this points to a valid page table.
         unsafe {
             w_stvec(
                 TRAMPOLINE.wrapping_add(

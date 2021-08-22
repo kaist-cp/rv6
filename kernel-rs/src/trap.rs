@@ -1,8 +1,8 @@
 use core::fmt;
 
 use crate::{
-    arch::interface::{TrapFrameManager, TrapManager},
-    arch::{asm::cpu_id, TargetArch},
+    arch::interface::{Arch, TrapFrameManager, TrapManager},
+    arch::TargetArch,
     hal::hal,
     kernel::{kernel_ref, KernelRef},
     ok_or,
@@ -61,14 +61,19 @@ impl KernelCtx<'_, '_> {
             "usertrap: not from user mode(EL0)"
         );
 
+        // Send interrupts and exceptions to kerneltrap(),
+        // since we're now in the kernel.
+        // SAFETY: We are in a kerel mode now.
         unsafe {
             TargetArch::switch_to_kernel_vec();
         }
 
+        // Save user program counter.
         self.proc_mut().trap_frame_mut().set_pc(TargetArch::r_epc());
 
         let trap_type = TargetArch::get_trap_type(arg);
 
+        // SAFETY: Actually received trap with type of `trap_type`.
         unsafe {
             TargetArch::before_handling_trap(&trap_type, Some(self.proc_mut().trap_frame_mut()));
         }
@@ -79,6 +84,10 @@ impl KernelCtx<'_, '_> {
                 if self.proc().killed() {
                     self.kernel().procs().exit_current(-1, &mut self);
                 }
+
+                // An interrupt will change trap registers,
+                // so don't enable until done with those registers.
+                // SAFETY: Interrupt handlers has been configured properly
                 unsafe { TargetArch::intr_on() };
                 let syscall_no = self.proc_mut().trap_frame_mut().get_param_reg(7.into()) as i32;
                 *self.proc_mut().trap_frame_mut().param_reg_mut(0.into()) =
@@ -97,11 +106,14 @@ impl KernelCtx<'_, '_> {
                 self.kernel().procs().exit_current(-1, &mut self);
             }
             TrapTypes::TimerInterrupt => {
-                if cpu_id() == 0 {
+                if TargetArch::cpu_id() == 0 {
                     self.kernel().clock_intr();
                 }
             }
         }
+
+        // SAFETY: It is coupled with `before_handling_trap` with same trap,
+        // and trap has been handled.
         unsafe {
             TargetArch::after_handling_trap(&trap_type);
         }
@@ -110,7 +122,6 @@ impl KernelCtx<'_, '_> {
             self.kernel().procs().exit_current(-1, &mut self);
         }
 
-        // barrier();
         // Give up the CPU if this is a timer interrupt.
         if let TrapTypes::TimerInterrupt = trap_type {
             self.yield_cpu();
@@ -132,6 +143,7 @@ impl KernelCtx<'_, '_> {
 
         let trapframe = self.proc_mut().trap_frame_mut();
 
+        // SAFETY: It is called by `user_trap_ret`, after handling the user trap.
         unsafe { TargetArch::user_trap_ret(user_table, trapframe, kstack, usertrap as usize) };
     }
 }
@@ -149,11 +161,14 @@ impl KernelRef<'_, '_> {
         assert!(!TargetArch::intr_get(), "kerneltrap: interrupts enabled");
 
         let trap_type = TargetArch::get_trap_type(trap_info);
+
+        // SAFETY: Actually received trap with type of `trap_type`.
         unsafe {
             TargetArch::before_handling_trap(&trap_type, None);
         }
         match &trap_type {
             TrapTypes::Syscall => {
+                // kernel trap cannot be a syscall.
                 unreachable!()
             }
             TrapTypes::Irq(irq_type) => unsafe {
@@ -168,11 +183,14 @@ impl KernelRef<'_, '_> {
                 panic!("kerneltrap");
             }
             TrapTypes::TimerInterrupt => {
-                if cpu_id() == 0 {
+                if TargetArch::cpu_id() == 0 {
                     self.clock_intr();
                 }
             }
         }
+
+        // SAFETY: It is coupled with `before_handling_trap` with same trap,
+        // and trap has been handled.
         unsafe {
             TargetArch::after_handling_trap(&trap_type);
         }
@@ -192,6 +210,7 @@ impl KernelRef<'_, '_> {
 
         // The yield may have caused some traps to occur,
         // so restore trap registers for use by kernelvec.S's sepc instruction.
+        // SAFETY: `reg_backup` contains valid register values stored by `save_trap_regs`.
         unsafe {
             TargetArch::restore_trap_regs(&mut reg_backup);
         }

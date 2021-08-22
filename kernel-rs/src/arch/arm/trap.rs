@@ -177,12 +177,14 @@ impl TrapManager for ArmV8 {
     }
 
     unsafe fn switch_to_kernel_vec() {
+        // SAFETY: `vectors` is a valid vector table address.
         unsafe {
             Self::change_exception_vector(vectors as _);
         }
     }
 
     unsafe fn switch_to_user_vec() {
+        // SAFETY: `TRAMPOLINE` is a valid vector table address.
         unsafe {
             Self::change_exception_vector(TRAMPOLINE);
         }

@@ -11,8 +11,7 @@ use core::{fmt, pin::Pin};
 
 use crate::{
     addr::UVAddr,
-    arch::interface::Arch,
-    arch::uart::Uart,
+    arch::interface::{Arch, UartManager, UartManagerConst},
     arch::TargetArch,
     hal::hal,
     kernel::{Kernel, KernelRef},
@@ -20,6 +19,8 @@ use crate::{
     proc::KernelCtx,
     util::spin_loop,
 };
+
+type Uart = <TargetArch as Arch>::Uart;
 
 /// Size of console input buffer.
 const INPUT_BUF: usize = 128;

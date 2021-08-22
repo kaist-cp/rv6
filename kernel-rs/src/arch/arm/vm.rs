@@ -6,12 +6,12 @@ use crate::{
     addr::PAddr,
     arch::ArmV8,
     arch::{
-        addr::{pa2pte, pte2pa},
+        addr::{pa2pte, pte2pa, PLNUM},
         asm::{isb, tlbi_vmalle1},
-        interface::{MemLayout, PageInitiator},
+        interface::{MemLayout, PageTableEntryDesc, PageTableManager},
         memlayout::GIC,
     },
-    vm::{AccessFlags, PageTableEntryDesc, RawPageTable},
+    vm::{AccessFlags, RawPageTable},
 };
 
 // A table descriptor and a level 3 page descriptor as per
@@ -49,7 +49,7 @@ bitflags! {
     }
 }
 
-pub type PteFlags = ArmV8PteFlags;
+// pub type PteFlags = ArmV8PteFlags;
 
 impl From<AccessFlags> for ArmV8PteFlags {
     fn from(item: AccessFlags) -> Self {
@@ -102,7 +102,7 @@ pub struct ArmV8PageTableEntry {
     inner: usize,
 }
 
-pub type PageTableEntry = ArmV8PageTableEntry;
+// pub type PageTableEntry = ArmV8PageTableEntry;
 
 impl PageTableEntryDesc for ArmV8PageTableEntry {
     type EntryFlags = ArmV8PteFlags;
@@ -176,7 +176,11 @@ impl ArmV8 {
     const DEV_MAPPING: [(usize, usize); 1] = [(GIC, ArmV8::UART0 - GIC)];
 }
 
-impl PageInitiator for ArmV8 {
+impl PageTableManager for ArmV8 {
+    type PageTableEntry = ArmV8PageTableEntry;
+
+    const PLNUM: usize = PLNUM;
+
     fn kernel_page_dev_mappings() -> &'static [(usize, usize)] {
         &Self::DEV_MAPPING
     }

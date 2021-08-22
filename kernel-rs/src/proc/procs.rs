@@ -130,8 +130,10 @@ impl Procs {
 
             // User stack pointer.
             // SAFETY: trap_frame has been initialized by alloc.
-            unsafe { (*data.trap_frame).sp = PGSIZE };
+            unsafe { (*data.trap_frame).set_sp(PGSIZE) };
 
+            // set arch-specific registers.
+            // SAFETY: trap_frame has been initialized by alloc.
             unsafe { (*data.trap_frame).init_reg() };
 
             let name = b"initcode\x00";

@@ -19,6 +19,8 @@ pub type TargetArch = ArmV8;
 pub struct ArmV8;
 
 impl Arch for ArmV8 {
+    type Uart = uart::ArmUart;
+
     fn cpu_id() -> usize {
         asm::cpu_id()
     }

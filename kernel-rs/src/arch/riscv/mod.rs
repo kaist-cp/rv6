@@ -19,6 +19,8 @@ pub type TargetArch = RiscV;
 pub struct RiscV;
 
 impl Arch for RiscV {
+    type Uart = uart::RiscVUart;
+
     fn cpu_id() -> usize {
         asm::cpu_id()
     }

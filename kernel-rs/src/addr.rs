@@ -1,6 +1,7 @@
 use core::ops::Add;
 
-use crate::arch::addr::PLNUM;
+use crate::arch::interface::PageTableManager;
+use crate::arch::TargetArch;
 
 /// Bits of offset within a page.
 pub const PGSHIFT: usize = 12;
@@ -21,7 +22,7 @@ pub const PLMASK: usize = PLSIZE - 1;
 /// MAXVA is actually one bit less than the max allowed by
 /// Sv39, to avoid having to sign-extend virtual addresses
 /// that have the high bit set.
-pub const MAXVA: usize = 1 << (PLSHIFT * PLNUM + PGSHIFT - 1);
+pub const MAXVA: usize = 1 << (PLSHIFT * TargetArch::PLNUM + PGSHIFT - 1);
 
 #[inline]
 pub const fn pgroundup(sz: usize) -> usize {

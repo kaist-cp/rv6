@@ -170,6 +170,10 @@ impl const TrapFrameManager for RiscVTrapFrame {
         self.epc = val;
     }
 
+    fn set_sp(&mut self, val: usize) {
+        self.sp = val;
+    }
+
     /// Set the value of return value register
     fn set_ret_val(&mut self, val: usize) {
         self.a0 = val;

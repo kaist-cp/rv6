@@ -2,10 +2,16 @@ use cortex_a::{asm::barrier, registers::*};
 use tock_registers::interfaces::{ReadWriteable, Writeable};
 
 use crate::{
-    arch::{asm::*, interface::MemLayout, uart::Uart, ArmV8},
+    arch::{
+        asm::*,
+        interface::{Arch, MemLayout, UartManagerConst},
+        ArmV8,
+    },
     kernel::main,
     param::NCPU,
 };
+
+type Uart = <ArmV8 as Arch>::Uart;
 
 extern "C" {
     // entry for all cores
@@ -37,12 +43,14 @@ pub unsafe fn start() {
     if cpu_id() == 0 {
         let kernel_entry = unsafe { _entry.as_mut_ptr() as usize } as u64;
         for i in 1..3 {
+            // SAFETY: Valid format for launching other CPU cores.
             let _ = unsafe { smc_call(SmcFunctions::CpuOn as u64, i, kernel_entry, 0) };
         }
     }
 
     let cur_el = r_currentel();
 
+    // SAFETY: Assume that `ArmV8::UART0` contains valid mapped address for uart.
     let uart = unsafe { Uart::new(ArmV8::UART0) };
 
     uart.puts("current el: ");

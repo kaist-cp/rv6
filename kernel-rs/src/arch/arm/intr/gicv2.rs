@@ -211,6 +211,12 @@ impl GicDistributor {
         self.IPRIORITYR[idx].set((prev & (!mask)) | (((priority as u32) << offset) & mask));
     }
 
+    /// Set whether the corresponding PPI to `int` in the extended PPI range is
+    /// edge-triggered or level-sensitive.
+    ///
+    /// # Safety
+    ///
+    /// `int` must be a valid interrupt number.
     unsafe fn set_config(&self, int: usize, edge: bool) {
         let idx = (int * 2) / 32;
         let offset = (int * 2) % 32;
@@ -265,12 +271,7 @@ impl Gic {
     }
 
     /// Disable interrupt `int`.
-    ///
-    /// # Safety
-    ///
-    /// * `int` must be a valid interrupt number.s
-    /// * `Gic::init` must have been called.
-    pub unsafe fn disable(&self, int: Interrupt) {
+    pub fn disable(&self, int: Interrupt) {
         let gicd = &GICD;
         unsafe { gicd.clear_enable(int) };
     }
@@ -315,7 +316,7 @@ pub unsafe fn intr_init() {}
 pub unsafe fn intr_init_core() {
     DAIF.set(DAIF::I::Masked.into());
 
-    // Safety: This function is called once for each cpu
+    // SAFETY: This function is called once for each cpu
     // before receiving any interrupts.
     unsafe {
         INTERRUPT_CONTROLLER.init();
@@ -328,7 +329,7 @@ pub unsafe fn intr_init_core() {
     if cpu_id() == 0 {
         // only boot core do this initialization
 
-        // Safety: interrupt controller has been initialized, and
+        // SAFETY: interrupt controller has been initialized, and
         // IRQ numbers are valid
         unsafe {
             // virtio_blk

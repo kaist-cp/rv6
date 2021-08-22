@@ -16,9 +16,9 @@ use crate::{
     arch::memlayout::{FINISHER, PLIC},
     addr::{PAddr, VAddr, PGSIZE},
     addr::{PAddr, PGSIZE},
-    arch::interface::PageInitiator,
+    arch::interface::{PageTableEntryDesc, PageTableManager},
     arch::{
-        addr::{pa2pte, pte2pa},
+        addr::{pa2pte, pte2pa, PLNUM},
         asm::{make_satp, sfence_vma, w_satp},
         memlayout::{FINISHER, PLIC},
     },
@@ -28,6 +28,7 @@ use crate::{
     vm::{AccessFlags, PageInitiator, PageTable, PageTableEntryDesc, RawPageTable},
     vm::{AccessFlags, PageInitiator, PageTableEntryDesc, RawPageTable},
     vm::{AccessFlags, PageTableEntryDesc, RawPageTable},
+    vm::{AccessFlags, RawPageTable},
 };
 
 bitflags! {
@@ -45,7 +46,7 @@ bitflags! {
     }
 }
 
-pub type PteFlags = RiscVPteFlags;
+// pub type PteFlags = RiscVPteFlags;
 
 impl From<AccessFlags> for RiscVPteFlags {
     fn from(item: AccessFlags) -> Self {
@@ -76,7 +77,7 @@ pub struct RiscVPageTableEntry {
     inner: usize,
 }
 
-pub type PageTableEntry = RiscVPageTableEntry;
+// pub type PageTableEntry = RiscVPageTableEntry;
 
 impl PageTableEntryDesc for RiscVPageTableEntry {
     type EntryFlags = RiscVPteFlags;
@@ -142,7 +143,11 @@ impl RiscV {
     const DEV_MAPPING: [(usize, usize); 2] = [(FINISHER, PGSIZE), (PLIC, 0x400000)];
 }
 
-impl PageInitiator for RiscV {
+impl PageTableManager for RiscV {
+    type PageTableEntry = RiscVPageTableEntry;
+
+    const PLNUM: usize = PLNUM;
+
     fn kernel_page_dev_mappings() -> &'static [(usize, usize)] {
         &Self::DEV_MAPPING[0..2]
     }
@@ -153,7 +158,7 @@ impl PageInitiator for RiscV {
     ///
     /// `page_table_base` must contain address for a valid page table.
     unsafe fn switch_page_table_and_enable_mmu(page_table_base: usize) {
-        // Safety: `page_table_base` contains address for a valid page table.
+        // SAFETY: `page_table_base` contains address for a valid page table.
         unsafe {
             w_satp(make_satp(page_table_base));
             sfence_vma();
