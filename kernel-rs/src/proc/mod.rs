@@ -9,8 +9,8 @@ use core::{
 use array_macro::array;
 
 use crate::{
-    arch::asm::intr_get,
-    arch::proc::{Context, TrapFrame},
+    arch::interface::{ContextManager, ProcManager, TrapManager},
+    arch::TargetArch,
     file::RcFile,
     fs::{DefaultFs, RcInode},
     hal::hal,
@@ -28,6 +28,8 @@ mod wait_channel;
 pub use kernel_ctx::*;
 pub use procs::*;
 pub use wait_channel::*;
+
+type Context = <TargetArch as ProcManager>::Context;
 
 extern "C" {
     // swtch.S
@@ -67,7 +69,7 @@ pub struct ProcData {
     pub kstack: usize,
 
     /// Data page for trampoline.S.
-    trap_frame: *mut TrapFrame,
+    trap_frame: *mut <TargetArch as ProcManager>::TrapFrame,
 
     /// User memory manager
     memory: MaybeUninit<UserMemory>,
@@ -239,7 +241,7 @@ impl<'id> ProcGuard<'id, '_> {
     /// break in the few places where a lock is held but
     /// there's no process.
     unsafe fn sched(&mut self) {
-        assert!(!intr_get(), "sched interruptible");
+        assert!(!TargetArch::intr_get(), "sched interruptible");
         assert_ne!(self.state(), Procstate::RUNNING, "sched running");
 
         // SAFETY: interrupts are disabled.
@@ -330,5 +332,32 @@ impl Drop for ProcGuard<'_, '_> {
     fn drop(&mut self) {
         // SAFETY: self will be dropped.
         unsafe { self.info.unlock() };
+    }
+}
+
+pub enum RegNum {
+    R0,
+    R1,
+    R2,
+    R3,
+    R4,
+    R5,
+    R6,
+    R7,
+}
+
+impl From<usize> for RegNum {
+    fn from(item: usize) -> Self {
+        match item {
+            0 => Self::R0,
+            1 => Self::R1,
+            2 => Self::R2,
+            3 => Self::R3,
+            4 => Self::R4,
+            5 => Self::R5,
+            6 => Self::R6,
+            7 => Self::R7,
+            _ => panic!(),
+        }
     }
 }

@@ -110,6 +110,11 @@ impl GicCpuInterface {
         GicCpuInterface { base_addr }
     }
 
+    /// Initialize GICC.
+    ///
+    /// # Safety
+    ///
+    /// Must be called only once for each core, before receiving any interrupt.
     unsafe fn init(&self) {
         self.PMR.set(u32::MAX);
         self.CTLR.set(1);
@@ -121,6 +126,11 @@ impl GicDistributor {
         GicDistributor { base_addr }
     }
 
+    /// Do global initialization for GICD.
+    ///
+    /// # Safety
+    ///
+    /// Must be called only once across all cores, before receiving any interrupt.
     unsafe fn init(&self) {
         let max_spi = (self.TYPER.get() & 0b11111) * 32 + 1;
         for i in 1usize..(max_spi as usize / 32) {
@@ -135,6 +145,11 @@ impl GicDistributor {
         self.CTLR.set(1);
     }
 
+    /// Do global initialization for GICD.
+    ///
+    /// # Safety
+    ///
+    /// Must be called only once across all cores, before receiving any interrupt.
     unsafe fn init_per_core(&self) {
         self.ICENABLER[0].set(u32::MAX);
         self.ICPENDR[0].set(u32::MAX);
@@ -147,18 +162,34 @@ impl GicDistributor {
         }
     }
 
+    /// Initialize GICC.
+    ///
+    /// # Safety
+    ///
+    /// Must be called only once for each core, before receiving any interrupt.
     unsafe fn set_enable(&self, int: usize) {
         let idx = int / 32;
         let bit = 1u32 << (int % 32);
         self.ISENABLER[idx].set(bit);
     }
 
+    /// Disable interrupt with number `int`.
+    ///
+    /// # Safety
+    ///
+    /// `int` must be a valid interrupt number.
     unsafe fn clear_enable(&self, int: usize) {
         let idx = int / 32;
         let bit = 1u32 << (int % 32);
         self.ICENABLER[idx].set(bit);
     }
 
+    /// Set target of the interrupt `int` to `target` cpu core.
+    ///
+    /// # Safety
+    ///
+    /// * `int` must be a valid interrupt number.
+    /// * `target` must points to a valid core.
     unsafe fn set_target(&self, int: usize, target: u8) {
         let idx = (int * 8) / 32;
         let offset = (int * 8) % 32;
@@ -167,6 +198,11 @@ impl GicDistributor {
         self.ITARGETSR[idx].set((prev & (!mask)) | (((target as u32) << offset) & mask));
     }
 
+    /// Set the priroity of interrupt with `int` to `priority`.
+    ///
+    /// # Safety
+    ///
+    /// `int` must be a valid interrupt number.
     unsafe fn set_priority(&self, int: usize, priority: u8) {
         let idx = (int * 8) / 32;
         let offset = (int * 8) % 32;
@@ -191,6 +227,11 @@ static GICC: GicCpuInterface = GicCpuInterface::new(GICC_BASE);
 pub struct Gic;
 
 impl Gic {
+    /// Initialize GIC.
+    ///
+    /// # Safety
+    ///
+    /// Must be called only once for each core, before receiving any interrupt.
     pub unsafe fn init(&self) {
         let core_id = cpu_id();
         let gicd = &GICD;
@@ -204,6 +245,12 @@ impl Gic {
         }
     }
 
+    /// Enable interrupt `int`.
+    ///
+    /// # Safety
+    ///
+    /// * `int` must be a valid interrupt number.
+    /// * `Gic::init` must have been called.
     pub unsafe fn enable(&self, int: Interrupt) {
         let core_id = cpu_id();
         let gicd = &GICD;
@@ -217,11 +264,19 @@ impl Gic {
         }
     }
 
+    /// Disable interrupt `int`.
+    ///
+    /// # Safety
+    ///
+    /// * `int` must be a valid interrupt number.s
+    /// * `Gic::init` must have been called.
     pub unsafe fn disable(&self, int: Interrupt) {
         let gicd = &GICD;
         unsafe { gicd.clear_enable(int) };
     }
 
+    /// Fetch received interrupt.
+    /// `Gic::init` must have been called.
     pub fn fetch(&self) -> Option<Interrupt> {
         let gicc = &GICC;
         let i = gicc.IAR.get();
@@ -232,6 +287,12 @@ impl Gic {
         }
     }
 
+    /// Tell GIC that interrupt `int` has been handled.
+    ///
+    /// # Safety
+    ///
+    /// * `int` must be an interrupt that has been received, and not been `finish`ed yet.
+    /// * `Gic::init` must have been called.
     pub unsafe fn finish(&self, int: Interrupt) {
         let gicc = &GICC;
         gicc.EOIR.set(int as u32);
@@ -246,9 +307,16 @@ pub type Interrupt = usize;
 
 pub unsafe fn intr_init() {}
 
+/// Do interrupt-related initialization for each core.
+///
+/// # Safety
+///
+/// Must be called only once for each core, before receiving any interrupt.
 pub unsafe fn intr_init_core() {
     DAIF.set(DAIF::I::Masked.into());
 
+    // Safety: This function is called once for each cpu
+    // before receiving any interrupts.
     unsafe {
         INTERRUPT_CONTROLLER.init();
         INTERRUPT_CONTROLLER.enable(TIMER0_IRQ);
@@ -260,6 +328,8 @@ pub unsafe fn intr_init_core() {
     if cpu_id() == 0 {
         // only boot core do this initialization
 
+        // Safety: interrupt controller has been initialized, and
+        // IRQ numbers are valid
         unsafe {
             // virtio_blk
             INTERRUPT_CONTROLLER.enable(ArmV8::VIRTIO0_IRQ);

@@ -9,7 +9,7 @@ use crate::{
     },
     arch::interface::{MemLayout, TrapManager},
     arch::intr::{plic_claim, plic_complete},
-    arch::proc::TrapFrame,
+    arch::proc::RiscVTrapFrame as TrapFrame,
     arch::RiscV,
     memlayout::{TRAMPOLINE, TRAPFRAME},
     trap::{IrqNum, IrqTypes, TrapTypes},
@@ -53,6 +53,7 @@ impl TrapManager for RiscV {
     ///
     /// `vectors` must contain base address for a valid ARMv8-A exception vector table.
     unsafe fn trap_init_core() {
+        // Safety: `kernelvec` contains a valid trap vector.
         unsafe { w_stvec(kernelvec as _) };
     }
 
@@ -115,7 +116,6 @@ impl TrapManager for RiscV {
         match trap {
             TrapTypes::Irq(irq_type) => {
                 let irq_num: usize = irq_type.into();
-                // assert!(irq_num != 0);
                 if irq_num != 0 {
                     unsafe {
                         plic_complete(irq_num as u32);
@@ -184,6 +184,7 @@ impl TrapManager for RiscV {
         intr_off();
 
         // Send syscalls, interrupts, and exceptions to trampoline.S.
+        // Safety: this points to a valid page table.
         unsafe {
             w_stvec(
                 TRAMPOLINE.wrapping_add(
@@ -233,6 +234,7 @@ impl TrapManager for RiscV {
         unsafe { fn_0(TRAPFRAME, satp) }
     }
 
+    /// Save trap registers in `store`.
     fn save_trap_regs(store: &mut [usize; 10]) {
         let sepc = r_sepc();
         let sstatus = Sstatus::read().bits();
@@ -241,7 +243,12 @@ impl TrapManager for RiscV {
         store[1] = sstatus;
     }
 
-    /// restore trap registers
+    /// Restore trap registers from `store`.
+    ///
+    /// # Safety
+    ///
+    /// It must be matched with `save_trap_regs`, implying that `store` contains
+    /// valid trap register values.
     unsafe fn restore_trap_regs(store: &mut [usize; 10]) {
         let sepc = store[0];
         let sstatus = store[1];

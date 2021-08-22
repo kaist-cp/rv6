@@ -9,7 +9,6 @@ use pin_project::pin_project;
 use crate::util::strong_pin::StrongPin;
 use crate::{
     arch::interface::Arch,
-    arch::intr::{intr_init, intr_init_core},
     arch::TargetArch,
     bio::Bcache,
     console::{console_read, console_write},
@@ -210,11 +209,11 @@ impl<A: Arch> Kernel<A> {
 
         // Set up interrupt controller.
         // SAFETY: It is only called on core 0 once.
-        unsafe { intr_init() };
+        unsafe { A::intr_init() };
 
         // Ask PLIC for device interrupts.
         // SAFETY: It is called first time on this core.
-        unsafe { intr_init_core() };
+        unsafe { A::intr_init_core() };
 
         // Buffer cache.
         this.bcache.init();
@@ -242,7 +241,7 @@ impl<A: Arch> Kernel<A> {
 
         // Ask PLIC for device interrupts.
         // SAFETY: It is called first time on this core.
-        unsafe { intr_init_core() };
+        unsafe { A::intr_init_core() };
     }
 
     fn panic(self: Pin<&Self>) {

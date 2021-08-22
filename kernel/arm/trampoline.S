@@ -246,56 +246,56 @@ userret:
 cur_el_sp0_sync:
 	exception_1_entry
 	mov	x0, #0
-	bl	cur_el_sp0_handler
+	bl	kerneltrap
 	b	.
 
 	.align	6
 cur_el_sp0_irq:
 	exception_1_entry
 	mov	x0, #1
-	bl	cur_el_sp0_handler
+	bl	kerneltrap
 	b	.
 
 	.align	6
 cur_el_sp0_fiq:
 	exception_1_entry
 	mov	x0, #2
-	bl	cur_el_sp0_handler
+	bl	kerneltrap
 	b	.
 
 	.align	6
 cur_el_sp0_error:
 	exception_1_entry
 	mov	x0, #3
-	bl	cur_el_sp0_handler
+	bl	kerneltrap
 	b	.
 
 	.align	6
 cur_el_spx_sync:
 	exception_1_entry
         mov	x0, #0
-        bl cur_el_sp1_handler
+        bl kerneltrap
         exception_1_exit
 
 	.align	6
 cur_el_spx_irq:
 	exception_1_entry
 	mov	x0, #1
-        bl cur_el_sp1_handler
+        bl kerneltrap
 	exception_1_exit
 
 	.align	6
 cur_el_spx_fiq:
         exception_1_entry
 	mov	x0, #2
-        bl cur_el_sp1_handler
+        bl kerneltrap
 	b	.
 
 	.align	6
 cur_el_spx_error:
         exception_1_entry
 	mov	x0, #3
-        bl cur_el_sp1_handler
+        bl kerneltrap
 	b	.
 
 	.align	6

@@ -12,7 +12,7 @@ use crate::{
         asm::{intr_get, intr_off, intr_on, r_fpsr, w_fpsr},
         intr::INTERRUPT_CONTROLLER,
         memlayout::TIMER0_IRQ,
-        proc::TrapFrame,
+        proc::ArmV8TrapFrame as TrapFrame,
         ArmV8,
     },
     memlayout::{TRAMPOLINE, TRAPFRAME},

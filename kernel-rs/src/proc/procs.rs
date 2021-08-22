@@ -17,7 +17,7 @@ use crate::{
     arch::riscv::intr_on,
     fs::{DefaultFs, FileSystem, FileSystemExt},
     addr::{Addr, UVAddr, PGSIZE},
-    arch::{asm::intr_on, proc::INITCODE},
+    arch::interface::TrapFrameManager,
     fs::FileSystem,
     hal::hal,
     kalloc::Kmem,
@@ -49,11 +49,6 @@ pub struct Procs {
     wait_lock: SpinLock<()>,
     #[pin]
     _marker: PhantomPinned,
-}
-
-pub trait UserProcInitiator {
-    /// Initialize regiters for running first user process.
-    fn init_reg(trap_frame: &mut TrapFrame);
 }
 
 /// A branded reference to a `Procs`.
@@ -113,8 +108,12 @@ impl Procs {
 
             // Allocate one user page and copy init's instructions
             // and data into it.
-            let memory = UserMemory::new(trap_frame.addr(), Some(&INITCODE), allocator)
-                .expect("user_proc_init: UserMemory::new");
+            let memory = UserMemory::new(
+                trap_frame.addr(),
+                Some(TargetArch::get_init_code()),
+                allocator,
+            )
+            .expect("user_proc_init: UserMemory::new");
 
             let mut guard = procs
                 .alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory)
@@ -532,7 +531,7 @@ impl<'id, 's> KernelRef<'id, 's> {
         cpu.set_proc(ptr::null_mut());
         loop {
             // Avoid deadlock by ensuring that devices can interrupt.
-            unsafe { intr_on() };
+            unsafe { TargetArch::intr_on() };
 
             for p in self.procs().process_pool() {
                 let mut guard = p.lock();

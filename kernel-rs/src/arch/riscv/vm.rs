@@ -147,7 +147,13 @@ impl PageInitiator for RiscV {
         &Self::DEV_MAPPING[0..2]
     }
 
+    /// Switch the page table to `page_table_base` and enable paging.
+    ///
+    /// # Safety
+    ///
+    /// `page_table_base` must contain address for a valid page table.
     unsafe fn switch_page_table_and_enable_mmu(page_table_base: usize) {
+        // Safety: `page_table_base` contains address for a valid page table.
         unsafe {
             w_satp(make_satp(page_table_base));
             sfence_vma();

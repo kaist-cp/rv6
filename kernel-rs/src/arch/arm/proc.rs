@@ -1,14 +1,27 @@
+use crate::arch::interface::{ContextManager, ProcManager, TrapFrameManager};
+use crate::arch::ArmV8;
+use crate::proc::RegNum;
+
 /// A user program that calls exec("/init").
 /// od -t xC initcode
-pub const INITCODE: [u8; 80] = [
+const INITCODE: [u8; 80] = [
     0, 0x02, 0, 0x58, 0x21, 0x02, 0, 0x58, 0xe7, 0, 0x80, 0xd2, 0x01, 0, 0, 0xd4, 0x47, 0, 0x80,
     0xd2, 0x01, 0, 0, 0xd4, 0xfe, 0xff, 0xff, 0x17, 0x2f, 0x69, 0x6e, 0x69, 0x74, 0, 0, 0, 0x1f,
     0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1c, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0x1c, 0, 0, 0, 0, 0, 0, 0, 0x30, 0, 0, 0, 0, 0, 0, 0,
 ];
 
+impl ProcManager for ArmV8 {
+    type Context = ArmV8Context;
+    type TrapFrame = ArmV8TrapFrame;
+
+    fn get_init_code() -> &'static [u8] {
+        &INITCODE
+    }
+}
+
 #[derive(Copy, Clone)]
-pub struct TrapFrame {
+pub struct ArmV8TrapFrame {
     /// kernel page table (satp: Supervisor Address Translation and Protection)
     pub kernel_satp: usize,
     pub kernel_sp: usize,
@@ -87,9 +100,10 @@ pub struct TrapFrame {
     pub s30: usize,
     pub s31: usize,
 }
+
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
-pub struct Context {
+pub struct ArmV8Context {
     // svc mode registers
     pub r4: usize,
     pub r5: usize,
@@ -121,54 +135,52 @@ pub struct Context {
     pub sp: usize,
 }
 
-impl TrapFrame {
-    pub fn set_pc(&mut self, val: usize) {
+impl const TrapFrameManager for ArmV8TrapFrame {
+    fn set_pc(&mut self, val: usize) {
         self.pc = val;
     }
 
     /// Set the value of return value register
-    pub fn set_ret_val(&mut self, val: usize) {
+    fn set_ret_val(&mut self, val: usize) {
         self.r0 = val;
     }
 
     /// Set the value of function argument register
-    pub fn param_reg_mut(&mut self, index: usize) -> &mut usize {
+    fn param_reg_mut(&mut self, index: RegNum) -> &mut usize {
         match index {
-            0 => &mut self.r0,
-            1 => &mut self.r1,
-            2 => &mut self.r2,
-            3 => &mut self.r3,
-            4 => &mut self.r4,
-            5 => &mut self.r5,
-            6 => &mut self.r6,
-            7 => &mut self.r7,
-            _ => panic!("Invalid Index!"),
+            RegNum::R0 => &mut self.r0,
+            RegNum::R1 => &mut self.r1,
+            RegNum::R2 => &mut self.r2,
+            RegNum::R3 => &mut self.r3,
+            RegNum::R4 => &mut self.r4,
+            RegNum::R5 => &mut self.r5,
+            RegNum::R6 => &mut self.r6,
+            RegNum::R7 => &mut self.r7,
         }
     }
 
     /// Get the value of function argument register
-    pub fn get_param_reg(&self, index: usize) -> usize {
+    fn get_param_reg(&self, index: RegNum) -> usize {
         match index {
-            0 => self.r0,
-            1 => self.r1,
-            2 => self.r2,
-            3 => self.r3,
-            4 => self.r4,
-            5 => self.r5,
-            6 => self.r6,
-            7 => self.r7,
-            _ => panic!("Invalid Index!"),
+            RegNum::R0 => self.r0,
+            RegNum::R1 => self.r1,
+            RegNum::R2 => self.r2,
+            RegNum::R3 => self.r3,
+            RegNum::R4 => self.r4,
+            RegNum::R5 => self.r5,
+            RegNum::R6 => self.r6,
+            RegNum::R7 => self.r7,
         }
     }
 
-    pub fn init_reg(&mut self) {
+    fn init_reg(&mut self) {
         self.spsr = 0;
         self.fpsr = 0;
     }
 }
 
-impl Context {
-    pub const fn new() -> Self {
+impl const ContextManager for ArmV8Context {
+    fn new() -> Self {
         Self {
             r4: 0,
             r5: 0,
@@ -202,7 +214,7 @@ impl Context {
     }
 
     /// Set return register (lr)
-    pub fn set_ret_addr(&mut self, val: usize) {
+    fn set_ret_addr(&mut self, val: usize) {
         self.lr = val
     }
 }

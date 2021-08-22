@@ -1,6 +1,7 @@
 use core::fmt;
 
-use crate::arch::proc::TrapFrame;
+use crate::arch::TargetArch;
+use crate::proc::RegNum;
 use crate::trap::TrapTypes;
 
 pub trait PageInitiator {
@@ -35,29 +36,65 @@ pub trait TimeManager {
     fn uptime_as_micro() -> Result<usize, ()>;
 }
 
-pub trait Arch: PageInitiator + MemLayout + TimeManager + TrapManager + PowerOff {}
+pub trait Arch:
+    PageInitiator + MemLayout + TimeManager + TrapManager + InterruptManager + ProcManager + PowerOff
+{
+    /// Which hart (core) is this?
+    fn cpu_id() -> usize;
+}
 
 pub trait TrapManager {
     fn new() -> Self;
 
+    /// Do some trap initialization needed only once.
+    /// It is only called by boot core once.
     fn trap_init();
 
+    /// Do some trap initialization needed for each core.
+    ///
+    /// # Safety
+    ///
+    /// Must be called only once for each core.
     unsafe fn trap_init_core();
 
+    /// Get the type of invoked trap.
     fn get_trap_type(arg: usize) -> TrapTypes;
 
     fn is_user_trap() -> bool;
 
     fn is_kernel_trap() -> bool;
 
+    /// Change exception vector to `vector_table`.
+    ///
+    /// # Safety
+    ///
+    /// `vector_table` must be a valid vector table.
     unsafe fn change_exception_vector(vector_table: usize);
 
-    /// do things before the kernel handle the trap.
-    unsafe fn before_handling_trap(trap: &TrapTypes, trapframe: Option<&mut TrapFrame>);
+    /// Do things before the kernel handle the trap.
+    ///
+    /// # Safety
+    ///
+    /// * Received trap type must have been actually occured.
+    /// * Must be called before kernel handles `trap`.
+    unsafe fn before_handling_trap(
+        trap: &TrapTypes,
+        trapframe: Option<&mut <TargetArch as ProcManager>::TrapFrame>,
+    );
 
-    /// do things after the kernel handle the trap.
+    /// Do things After the kernel handle the trap.
+    ///
+    /// # Safety
+    ///
+    /// * Received trap type must have been actually occured.
+    /// * Must be called after kernel handles `trap`.
     unsafe fn after_handling_trap(trap: &TrapTypes);
 
+    /// Turn the interrupt on.
+    ///
+    /// # Safety
+    ///
+    /// Interrupt handler must have been configured properly in advance.
     unsafe fn intr_on();
 
     fn intr_off();
@@ -69,18 +106,40 @@ pub trait TrapManager {
     /// read pc at the moment trap occurs.
     fn r_epc() -> usize;
 
+    /// Switch the kernel vector to one for kernel.
+    ///
+    /// # Safety
+    ///
+    /// Interrupt handler must have been configured properly.
     unsafe fn switch_to_kernel_vec();
 
+    /// Switch the kernel vector to one for user.
+    ///
+    /// # Safety
+    ///
+    /// Interrupt handler must have been configured properly.
     unsafe fn switch_to_user_vec();
 
+    /// Go back to the user space after handling user trap.
+    ///
+    /// # Safety
+    ///
+    /// Must be called by `user_trap`, after handling the trap.
     unsafe fn user_trap_ret(
         user_pagetable_addr: usize,
-        trap: &mut TrapFrame,
+        trap: &mut <TargetArch as ProcManager>::TrapFrame,
         kernel_stack: usize,
         usertrap: usize,
     ) -> !;
 
     fn save_trap_regs(store: &mut [usize; 10]);
+
+    /// Restore trap registers from `store`.
+    ///
+    /// # Safety
+    ///
+    /// It must be matched with `save_trap_regs`, implying that `store` contains
+    /// valid trap register values.
     unsafe fn restore_trap_regs(store: &mut [usize; 10]);
 }
 
@@ -88,3 +147,45 @@ pub trait PowerOff {
     /// Shutdowns this machine, discarding all unsaved data.
     fn machine_poweroff(_exitcode: u16) -> !;
 }
+
+pub trait InterruptManager {
+    unsafe fn intr_init();
+
+    unsafe fn intr_init_core();
+}
+
+pub trait ProcManager {
+    type TrapFrame: TrapFrameManager;
+    type Context: ContextManager;
+
+    /// Get binary of the user program that calls exec("/init").
+    /// od -t xC initcode
+    fn get_init_code() -> &'static [u8];
+}
+
+pub trait TrapFrameManager: Copy + Clone {
+    fn set_pc(&mut self, val: usize);
+
+    /// Set the value of return value register
+    fn set_ret_val(&mut self, val: usize);
+
+    /// Set the value of function argument register
+    fn param_reg_mut(&mut self, index: RegNum) -> &mut usize;
+
+    /// Get the value of function argument register
+    fn get_param_reg(&self, index: RegNum) -> usize;
+
+    fn init_reg(&mut self);
+}
+
+pub trait ContextManager: Copy + Clone + Default {
+    fn new() -> Self;
+
+    /// Set return register (lr)
+    fn set_ret_addr(&mut self, val: usize);
+}
+
+// pub trait UserProcInitiator {
+//     /// Initialize regiters for running first user process.
+//     fn init_reg(trap_frame: &mut TrapFrame);
+// }

@@ -1,7 +1,7 @@
 use core::fmt;
 
 use crate::{
-    arch::interface::TrapManager,
+    arch::interface::{TrapFrameManager, TrapManager},
     arch::{asm::cpu_id, TargetArch},
     hal::hal,
     kernel::{kernel_ref, KernelRef},
@@ -53,32 +53,6 @@ pub unsafe fn kerneltrap(arg: usize) {
     unsafe { kernel_ref(|kref| kref.kernel_trap(arg)) };
 }
 
-/// Handle an sp0 exception from kernel space.
-/// Called from trampoline.S.
-///
-/// # Safety
-///
-/// Must be called from trampoline.S, only when corresponding exception has occured.
-#[no_mangle]
-pub unsafe extern "C" fn cur_el_sp0_handler(etype: usize) {
-    // SAFETY
-    // let etype = ExceptionTypes::from_usize(etype);
-    unsafe { kernel_ref(|kref| kref.kernel_trap(etype)) };
-}
-
-/// Handle an sp1 exception from kernel space.
-/// Called from trampoline.S.
-///
-/// # Safety
-///
-/// Must be called from trampoline.S, only when corresponding exception has occured.
-#[no_mangle]
-pub unsafe extern "C" fn cur_el_sp1_handler(etype: usize) {
-    // SAFETY
-    // let etype = ExceptionTypes::from_usize(etype);
-    unsafe { kernel_ref(|kref| kref.kernel_trap(etype)) };
-}
-
 impl KernelCtx<'_, '_> {
     /// `user_trap` can be reached only from the user mode, so it is a method of `KernelCtx`.
     unsafe fn user_trap(mut self, arg: usize) -> ! {
@@ -106,8 +80,8 @@ impl KernelCtx<'_, '_> {
                     self.kernel().procs().exit_current(-1, &mut self);
                 }
                 unsafe { TargetArch::intr_on() };
-                let syscall_no = self.proc_mut().trap_frame_mut().get_param_reg(7) as i32;
-                *self.proc_mut().trap_frame_mut().param_reg_mut(0) =
+                let syscall_no = self.proc_mut().trap_frame_mut().get_param_reg(7.into()) as i32;
+                *self.proc_mut().trap_frame_mut().param_reg_mut(0.into()) =
                     ok_or!(self.syscall(syscall_no), usize::MAX);
             }
             TrapTypes::Irq(irq_type) => unsafe {
@@ -145,7 +119,11 @@ impl KernelCtx<'_, '_> {
         unsafe { self.user_trap_ret() }
     }
 
-    // /// Return to user space.
+    /// Return to user space.
+    ///
+    /// # Safety
+    ///
+    /// It must be called only by `user_trap`.
     pub unsafe fn user_trap_ret(mut self) -> ! {
         // Tell trampoline.S the user page table to switch to.
         let user_table = self.proc().memory().page_table_addr();
@@ -219,6 +197,12 @@ impl KernelRef<'_, '_> {
         }
     }
 
+    /// Handle received IRQ (only ones that needs kernel's help).
+    ///
+    /// # Safety
+    ///
+    /// It must be called only when corresponding irq has actually
+    /// been received.
     unsafe fn handle_irq(self, irq_type: &IrqTypes) {
         match irq_type {
             IrqTypes::Uart => {

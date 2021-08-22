@@ -1,15 +1,28 @@
+use crate::arch::interface::{ContextManager, ProcManager, TrapFrameManager};
+use crate::arch::RiscV;
+use crate::proc::RegNum;
+
 /// A user program that calls exec("/init").
 /// od -t xC initcode
-pub const INITCODE: [u8; 52] = [
+const INITCODE: [u8; 52] = [
     0x17, 0x05, 0, 0, 0x13, 0x05, 0x45, 0x02, 0x97, 0x05, 0, 0, 0x93, 0x85, 0x35, 0x02, 0x93, 0x08,
     0x70, 0, 0x73, 0, 0, 0, 0x93, 0x08, 0x20, 0, 0x73, 0, 0, 0, 0xef, 0xf0, 0x9f, 0xff, 0x2f, 0x69,
     0x6e, 0x69, 0x74, 0, 0, 0x24, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
+impl ProcManager for RiscV {
+    type Context = RiscVContext;
+    type TrapFrame = RiscVTrapFrame;
+
+    fn get_init_code() -> &'static [u8] {
+        &INITCODE
+    }
+}
+
 /// Saved registers for kernel context switches.
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
-pub struct Context {
+pub struct RiscVContext {
     pub ra: usize,
     pub sp: usize,
 
@@ -42,7 +55,7 @@ pub struct Context {
 /// return-to-user path via usertrapret() doesn't return through
 /// the entire kernel call stack.
 #[derive(Copy, Clone)]
-pub struct TrapFrame {
+pub struct RiscVTrapFrame {
     /// 0 - kernel page table (satp: Supervisor Address Translation and Protection)
     pub kernel_satp: usize,
 
@@ -152,53 +165,51 @@ pub struct TrapFrame {
     pub t6: usize,
 }
 
-impl TrapFrame {
-    pub fn set_pc(&mut self, val: usize) {
+impl const TrapFrameManager for RiscVTrapFrame {
+    fn set_pc(&mut self, val: usize) {
         self.epc = val;
     }
 
     /// Set the value of return value register
-    pub fn set_ret_val(&mut self, val: usize) {
+    fn set_ret_val(&mut self, val: usize) {
         self.a0 = val;
     }
 
     /// Set the value of function argument register
-    pub fn param_reg_mut(&mut self, index: usize) -> &mut usize {
+    fn param_reg_mut(&mut self, index: RegNum) -> &mut usize {
         match index {
-            0 => &mut self.a0,
-            1 => &mut self.a1,
-            2 => &mut self.a2,
-            3 => &mut self.a3,
-            4 => &mut self.a4,
-            5 => &mut self.a5,
-            6 => &mut self.a6,
-            7 => &mut self.a7,
-            _ => panic!("Invalid Index!"),
+            RegNum::R0 => &mut self.a0,
+            RegNum::R1 => &mut self.a1,
+            RegNum::R2 => &mut self.a2,
+            RegNum::R3 => &mut self.a3,
+            RegNum::R4 => &mut self.a4,
+            RegNum::R5 => &mut self.a5,
+            RegNum::R6 => &mut self.a6,
+            RegNum::R7 => &mut self.a7,
         }
     }
 
     /// Get the value of function argument register
-    pub fn get_param_reg(&self, index: usize) -> usize {
+    fn get_param_reg(&self, index: RegNum) -> usize {
         match index {
-            0 => self.a0,
-            1 => self.a1,
-            2 => self.a2,
-            3 => self.a3,
-            4 => self.a4,
-            5 => self.a5,
-            6 => self.a6,
-            7 => self.a7,
-            _ => panic!("Invalid Index!"),
+            RegNum::R0 => self.a0,
+            RegNum::R1 => self.a1,
+            RegNum::R2 => self.a2,
+            RegNum::R3 => self.a3,
+            RegNum::R4 => self.a4,
+            RegNum::R5 => self.a5,
+            RegNum::R6 => self.a6,
+            RegNum::R7 => self.a7,
         }
     }
 
-    pub fn init_reg(&mut self) {
+    fn init_reg(&mut self) {
         // nothing to do
     }
 }
 
-impl Context {
-    pub const fn new() -> Self {
+impl const ContextManager for RiscVContext {
+    fn new() -> Self {
         Self {
             ra: 0,
             sp: 0,
@@ -218,7 +229,7 @@ impl Context {
     }
 
     /// Set return register (ra)
-    pub fn set_ret_addr(&mut self, val: usize) {
+    fn set_ret_addr(&mut self, val: usize) {
         self.ra = val
     }
 }

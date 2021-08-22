@@ -19,6 +19,7 @@ use crate::{
     file::{FileType, RcFile, SelectEvent, SeekWhence},
     file::{FileType, RcFile, SeekWhence, SelectEvent},
     arch::interface::{PowerOff, TimeManager},
+    arch::interface::{PowerOff, TimeManager, TrapFrameManager},
     arch::TargetArch,
     file::{RcFile, SeekWhence, SelectEvent},
     fs::{FcntlFlags, FileSystem, InodeType, Path},
@@ -56,7 +57,7 @@ impl CurrentProc<'_, '_> {
     }
 
     fn argraw(&self, n: usize) -> usize {
-        self.trap_frame().get_param_reg(n)
+        self.trap_frame().get_param_reg(n.into())
     }
 
     /// Fetch the nth 32-bit system call argument.

@@ -12,12 +12,13 @@ use crate::{
     fs::{FileSystem, FileSystemExt, Path},
 =======
     addr::{pgroundup, PAddr, PGSIZE},
+    arch::interface::TrapFrameManager,
     fs::{FileSystem, Path},
 >>>>>>> refactoring
     hal::hal,
     page::Page,
     param::MAXARG,
-    proc::KernelCtx,
+    proc::{KernelCtx, RegNum},
     vm::UserMemory,
 };
 
@@ -209,7 +210,7 @@ impl KernelCtx<'_, '_> {
         // arguments to user main(argc, argv)
         // argc is returned via the system call return
         // value, which goes in a0.
-        *self.proc_mut().trap_frame_mut().param_reg_mut(1) = sp;
+        *self.proc_mut().trap_frame_mut().param_reg_mut(RegNum::R1) = sp;
 
         // initial program counter = main
         self.proc_mut().trap_frame_mut().set_pc(elf.entry);

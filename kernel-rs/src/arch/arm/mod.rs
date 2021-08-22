@@ -18,4 +18,8 @@ pub type TargetArch = ArmV8;
 
 pub struct ArmV8;
 
-impl Arch for ArmV8 {}
+impl Arch for ArmV8 {
+    fn cpu_id() -> usize {
+        asm::cpu_id()
+    }
+}

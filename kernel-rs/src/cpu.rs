@@ -7,8 +7,8 @@ use core::{
 use array_macro::array;
 
 use crate::{
-    arch::asm::{cpu_id, intr_get, intr_off, intr_on},
-    arch::proc::Context,
+    arch::interface::{Arch, ContextManager, ProcManager, TrapManager},
+    arch::TargetArch,
     param::NCPU,
     proc::Proc,
 };
@@ -27,7 +27,7 @@ pub struct HeldInterrupts(());
 
 impl HeldInterrupts {
     fn new() -> Self {
-        intr_off();
+        TargetArch::intr_off();
         HeldInterrupts(())
     }
 }
@@ -78,7 +78,7 @@ impl Cpus {
     /// It takes two pop_off()s to undo two push_off()s. Also, if interrupts
     /// are initially off, then push_off, pop_off leaves them off.
     pub fn push_off(&self) -> HeldInterrupts {
-        let old = intr_get();
+        let old = TargetArch::intr_get();
         let intr = HeldInterrupts::new();
         let cpu = self.current(&intr);
         cpu.push_off(old);
@@ -93,7 +93,7 @@ impl Cpus {
     /// It may turn on interrupt, so callers must ensure that calling this method does not incur
     /// data race.
     pub unsafe fn pop_off(&self, intr: HeldInterrupts) {
-        assert!(!intr_get(), "pop_off: interruptible");
+        assert!(!TargetArch::intr_get(), "pop_off: interruptible");
         let cpu = self.current(&intr);
         // SAFETY: safety condition of this method.
         unsafe {
@@ -108,7 +108,7 @@ pub struct Cpu {
     proc: *const Proc,
 
     /// swtch() here to enter scheduler().
-    context: Context,
+    context: <TargetArch as ProcManager>::Context,
 
     /// Depth of push_off() nesting.
     noff: u32,
@@ -121,7 +121,7 @@ impl Cpu {
     const fn new() -> Self {
         Self {
             proc: ptr::null_mut(),
-            context: Context::new(),
+            context: <TargetArch as ProcManager>::Context::new(),
             noff: 0,
             interrupt_enabled: false,
         }
@@ -154,7 +154,7 @@ impl CpuMut<'_> {
         self.ptr.as_ptr()
     }
 
-    pub fn context_raw_mut(&self) -> *mut Context {
+    pub fn context_raw_mut(&self) -> *mut <TargetArch as ProcManager>::Context {
         // SAFETY: invariant of `CpuMut`
         unsafe { &raw mut (*self.ptr()).context }
     }
@@ -213,7 +213,7 @@ impl CpuMut<'_> {
         self.set_noff(noff - 1);
         if noff == 1 && self.get_interrupt() {
             // SAFETY: safety condition of this method.
-            unsafe { intr_on() };
+            unsafe { TargetArch::intr_on() };
         }
     }
 }
@@ -223,5 +223,5 @@ impl CpuMut<'_> {
 /// It is safe to call this function with interrupts enabled, but the returned id may not be the
 /// current CPU since the scheduler can move the process to another CPU on time interrupt.
 pub fn cpuid() -> usize {
-    cpu_id()
+    TargetArch::cpu_id()
 }

@@ -18,4 +18,8 @@ pub type TargetArch = RiscV;
 
 pub struct RiscV;
 
-impl Arch for RiscV {}
+impl Arch for RiscV {
+    fn cpu_id() -> usize {
+        asm::cpu_id()
+    }
+}
