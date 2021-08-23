@@ -2,32 +2,13 @@ use bitflags::bitflags;
 
 use super::RiscV;
 use crate::{
-    addr::{pa2pte, pte2pa, PAddr, VAddr, PGSIZE},
-    arch::asm::{make_satp, sfence_vma, w_satp},
-    arch::memlayout::{
-        kstack, FINISHER, KERNBASE, PHYSTOP, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0,
-    },
-    arch::riscv::{make_satp, sfence_vma, w_satp},
-    fs::{DefaultFs, InodeGuard},
-    arch::asm::{make_satp, sfence_vma, w_satp},
-    fs::{FileSystem, InodeGuard, Ufs},
-    arch::memlayout::{FINISHER, PLIC, TRAMPOLINE, TRAPFRAME, UART0, VIRTIO0},
-    arch::memlayout::MemLayoutImpl,
-    arch::memlayout::{FINISHER, PLIC},
-    addr::{PAddr, VAddr, PGSIZE},
     addr::{PAddr, PGSIZE},
     arch::interface::{IPageTableEntry, PageTableManager},
+    arch::memlayout::{FINISHER, PLIC},
     arch::{
         addr::{pa2pte, pte2pa, PLNUM},
         asm::{make_satp, sfence_vma, w_satp},
-        memlayout::{FINISHER, PLIC},
     },
-    kalloc::Kmem,
-    lock::SpinLock,
-    memlayout::{DeviceMappingInfo, TRAMPOLINE, TRAPFRAME},
-    vm::{AccessFlags, PageInitiator, PageTable, PageTableEntryDesc, RawPageTable},
-    vm::{AccessFlags, PageInitiator, PageTableEntryDesc, RawPageTable},
-    vm::{AccessFlags, PageTableEntryDesc, RawPageTable},
     vm::{AccessFlags, RawPageTable},
 };
 

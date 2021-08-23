@@ -12,13 +12,9 @@ use pin_project::pin_project;
 
 use super::*;
 use crate::{
-    arch::addr::{Addr, UVAddr, PGSIZE},
-    arch::memlayout::kstack,
-    arch::riscv::intr_on,
-    fs::{DefaultFs, FileSystem, FileSystemExt},
     addr::{Addr, UVAddr, PGSIZE},
     arch::interface::TrapFrameManager,
-    fs::FileSystem,
+    fs::{DefaultFs, FileSystem, FileSystemExt},
     hal::hal,
     kalloc::Kmem,
     kernel::KernelRef,

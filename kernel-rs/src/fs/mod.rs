@@ -5,7 +5,7 @@ use bitflags::bitflags;
 use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
-    arch::addr::UVAddr,
+    addr::UVAddr,
     arena::{ArenaObject, ArenaRc, ArrayArena},
     lock::SleepLock,
     param::NINODE,

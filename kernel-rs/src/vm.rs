@@ -7,7 +7,7 @@ use crate::{
     addr::{pgrounddown, pgroundup, Addr, KVAddr, PAddr, UVAddr, VAddr, MAXVA, PGSIZE},
     arch::interface::{Arch, IPageTableEntry, PageTableManager},
     arch::TargetArch,
-    fs::{FileSystem, InodeGuard, Ufs},
+    fs::{DefaultFs, InodeGuard},
     kalloc::Kmem,
     lock::SpinLock,
     memlayout::{kstack, PHYSTOP, TRAMPOLINE, TRAPFRAME},
@@ -362,7 +362,7 @@ impl UserMemory {
     pub fn load_file(
         &mut self,
         va: UVAddr,
-        ip: &mut InodeGuard<'_, <Ufs as FileSystem>::InodeInner>,
+        ip: &mut InodeGuard<'_, DefaultFs>,
         offset: u32,
         sz: u32,
         ctx: &KernelCtx<'_, '_>,

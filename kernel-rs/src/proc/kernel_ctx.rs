@@ -2,13 +2,9 @@ use core::ops::Deref;
 
 use super::*;
 use crate::{
-<<<<<<< HEAD
-    fs::DefaultFs,
-=======
     arch::interface::ProcManager,
     arch::TargetArch,
-    fs::{FileSystem, Ufs},
->>>>>>> refactor: WIP
+    fs::DefaultFs,
     kernel::{kernel_ref, KernelRef},
     vm::UserMemory,
 };
