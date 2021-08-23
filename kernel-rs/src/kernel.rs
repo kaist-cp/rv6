@@ -65,6 +65,7 @@ unsafe fn kernel_mut_unchecked<'s>() -> Pin<&'s mut Kernel<TargetArch>> {
 ///
 /// If the `Cpu` executing the code has a non-null `Proc` pointer,
 /// the `Proc` in `CurrentProc` is always valid while the `Kernel` is alive.
+/// TODO: replace all the arch-dependent parts with generic or `TargetArch`.
 #[pin_project]
 pub struct Kernel<A: Arch> {
     panicked: AtomicBool,
