@@ -6,7 +6,9 @@
 #include "kernel/fcntl.h"
 #include "kernel/syscall.h"
 #include "kernel/memlayout.h"
-#include "kernel/riscv.h"
+#include "kernel/arch.h"
+
+#define RAND_DEFINED
 
 //
 // Tests xv6 system calls.  usertests without arguments runs them all

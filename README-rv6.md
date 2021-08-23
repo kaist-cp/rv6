@@ -15,11 +15,24 @@
   make
   ```
 
-- Run rv6 on qemu.
+- Run rv6 on qemu (RISC-V).
 
   ```
   make qemu
   [to exit, C-A X]
+  ```
+
+- Run rv6 on qemu (Armv8).
+
+  ```
+  TARGET=arm make qemu
+  [to exit, C-A X]
+  ```
+
+- Run with specified version of GIC (ARM Generic Interrupt Controller) (only on ARM)
+  ```
+  TARGET=arm GIC_VERSION=2 make qemu // default
+  TARGET=arm GIC_VERSION=3 make qemu
   ```
 
 - Debug rv6 on qemu.

@@ -8,7 +8,8 @@ use pin_project::pin_project;
 
 use crate::util::strong_pin::StrongPin;
 use crate::{
-    arch::plic::{plicinit, plicinithart},
+    arch::interface::Arch,
+    arch::TargetArch,
     bio::Bcache,
     console::{console_read, console_write},
     cpu::cpuid,
@@ -19,7 +20,6 @@ use crate::{
     lock::{SleepableLock, SpinLock},
     param::NDEV,
     proc::Procs,
-    trap::{trapinit, trapinithart},
     util::{branded::Branded, spin_loop},
     vm::KernelMemory,
 };
@@ -27,11 +27,11 @@ use crate::{
 const CONSOLE_IN_DEVSW: usize = 1;
 
 /// The kernel.
-static mut KERNEL: Kernel = unsafe { Kernel::new() };
+static mut KERNEL: Kernel<TargetArch> = unsafe { Kernel::new() };
 
 /// Returns a shared reference to the `KERNEL`.
 #[inline]
-fn kernel<'s>() -> StrongPin<'s, Kernel> {
+fn kernel<'s>() -> StrongPin<'s, Kernel<TargetArch>> {
     // SAFETY: there is no way to make a mutable reference to `KERNEL` except calling
     // `kernel_builder_unchecked_pin`, which is unsafe.
     unsafe { StrongPin::new_unchecked(&KERNEL) }
@@ -53,7 +53,7 @@ pub unsafe fn kernel_ref<'s, F: for<'new_id> FnOnce(KernelRef<'new_id, 's>) -> R
 ///
 /// There must be no other references to `KERNEL` while the returned reference is alive.
 #[inline]
-unsafe fn kernel_mut_unchecked<'s>() -> Pin<&'s mut Kernel> {
+unsafe fn kernel_mut_unchecked<'s>() -> Pin<&'s mut Kernel<TargetArch>> {
     // SAFETY: there are no other references to `KERNEL` while the returned reference is alive.
     unsafe { Pin::new_unchecked(&mut KERNEL) }
 }
@@ -65,12 +65,13 @@ unsafe fn kernel_mut_unchecked<'s>() -> Pin<&'s mut Kernel> {
 ///
 /// If the `Cpu` executing the code has a non-null `Proc` pointer,
 /// the `Proc` in `CurrentProc` is always valid while the `Kernel` is alive.
+/// TODO: replace all the arch-dependent parts with generic or `TargetArch`.
 #[pin_project]
-pub struct Kernel {
+pub struct Kernel<A: Arch> {
     panicked: AtomicBool,
 
     /// The kernel's memory manager.
-    memory: MaybeUninit<KernelMemory>,
+    memory: MaybeUninit<KernelMemory<A>>,
 
     ticks: SleepableLock<u32>,
 
@@ -96,7 +97,7 @@ pub struct Kernel {
 ///
 /// The `'id` is always different between different `Kernel` instances.
 #[derive(Clone, Copy)]
-pub struct KernelRef<'id, 's>(Branded<'id, StrongPin<'s, Kernel>>);
+pub struct KernelRef<'id, 's>(Branded<'id, StrongPin<'s, Kernel<TargetArch>>>);
 
 impl<'id, 's> KernelRef<'id, 's> {
     /// Returns a `Branded` that wraps `data` and has the same `'id` tag with `self`.
@@ -114,7 +115,7 @@ impl<'id, 's> KernelRef<'id, 's> {
         self.0.brand(data)
     }
 
-    pub fn as_ref(&self) -> Pin<&Kernel> {
+    pub fn as_ref(&self) -> Pin<&Kernel<TargetArch>> {
         self.0.into_inner().as_pin()
     }
 
@@ -147,14 +148,14 @@ impl<'id, 's> KernelRef<'id, 's> {
 }
 
 impl<'id, 's> Deref for KernelRef<'id, 's> {
-    type Target = Kernel;
+    type Target = Kernel<TargetArch>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl Kernel {
+impl<A: Arch> Kernel<A> {
     /// # Safety
     ///
     /// Must be used only after initializing it with `Kernel::init`.
@@ -178,7 +179,7 @@ impl Kernel {
     ///
     /// # Safety
     ///
-    /// This method should be called only once by the hart 0.
+    /// This method should be called only once by the core 0.
     unsafe fn init(self: Pin<&mut Self>, allocator: Pin<&SpinLock<Kmem>>) {
         self.as_ref().write_str("\nrv6 kernel is booting\n\n");
 
@@ -194,22 +195,26 @@ impl Kernel {
         let memory = KernelMemory::new(allocator).expect("PageTable::new failed");
 
         // Turn on paging.
-        unsafe { this.memory.write(memory).init_hart() };
+        // SAFETY: `memory.page_table` contains base address for a valid kernel page table.
+        unsafe { this.memory.write(memory).init_register() };
 
         // Process system.
         this.procs.as_mut().init();
 
         // Trap vectors.
-        trapinit();
+        A::trap_init();
 
         // Install kernel trap vector.
-        unsafe { trapinithart() };
+        // SAFETY: It is called first time on this core.
+        unsafe { A::trap_init_core() };
 
         // Set up interrupt controller.
-        unsafe { plicinit() };
+        // SAFETY: It is only called on core 0 once.
+        unsafe { A::intr_init() };
 
         // Ask PLIC for device interrupts.
-        unsafe { plicinithart() };
+        // SAFETY: It is called first time on this core.
+        unsafe { A::intr_init_core() };
 
         // Buffer cache.
         this.bcache.init();
@@ -219,22 +224,25 @@ impl Kernel {
         this.procs.user_proc_init(fs.root(), allocator);
     }
 
-    /// Initializes the kernel for a hart.
+    /// Initializes the kernel for a core.
     ///
     /// # Safety
     ///
-    /// This method should be called only once by each hart.
-    unsafe fn inithart(self: Pin<&Self>) {
-        self.write_fmt(format_args!("hart {} starting\n", cpuid()));
+    /// This method should be called only once by each core.
+    unsafe fn initcore(self: Pin<&Self>) {
+        self.write_fmt(format_args!("core {} starting\n", cpuid()));
 
         // Turn on paging.
-        unsafe { self.memory.assume_init_ref().init_hart() };
+        // SAFETY: `self.memory.page_table` contains base address for a valid kernel page table.
+        unsafe { self.memory.assume_init_ref().init_register() };
 
         // Install kernel trap vector.
-        unsafe { trapinithart() };
+        // SAFETY: It is called first time on this core.
+        unsafe { A::trap_init_core() };
 
         // Ask PLIC for device interrupts.
-        unsafe { plicinithart() };
+        // SAFETY: It is called first time on this core.
+        unsafe { A::intr_init_core() };
     }
 
     fn panic(self: Pin<&Self>) {
@@ -288,7 +296,7 @@ pub unsafe fn main() -> ! {
             ::core::hint::spin_loop();
         }
         unsafe {
-            kernel().as_pin().inithart();
+            kernel().as_pin().initcore();
         }
     }
 

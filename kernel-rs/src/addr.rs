@@ -1,5 +1,8 @@
 use core::ops::Add;
 
+use crate::arch::interface::PageTableManager;
+use crate::arch::TargetArch;
+
 /// Bits of offset within a page.
 pub const PGSHIFT: usize = 12;
 
@@ -15,17 +18,11 @@ pub const PLSIZE: usize = 1 << PLSHIFT;
 /// Bit mask for page table index.
 pub const PLMASK: usize = PLSIZE - 1;
 
-/// The number of page table levels.
-pub const PLNUM: usize = 3;
-
-/// Bit position of the page number in PTE.
-pub const PTESHIFT: usize = 10;
-
 /// One beyond the highest possible virtual address.
 /// MAXVA is actually one bit less than the max allowed by
 /// Sv39, to avoid having to sign-extend virtual addresses
 /// that have the high bit set.
-pub const MAXVA: usize = 1 << (PLSHIFT * PLNUM + PGSHIFT - 1);
+pub const MAXVA: usize = 1 << (PLSHIFT * TargetArch::PLNUM + PGSHIFT - 1);
 
 #[inline]
 pub const fn pgroundup(sz: usize) -> usize {
@@ -35,17 +32,6 @@ pub const fn pgroundup(sz: usize) -> usize {
 #[inline]
 pub const fn pgrounddown(a: usize) -> usize {
     a & !PGSIZE.wrapping_sub(1)
-}
-
-/// Shift a physical address to the right place for a PTE.
-#[inline]
-pub fn pa2pte(pa: PAddr) -> usize {
-    (pa.into_usize() >> PGSHIFT) << PTESHIFT
-}
-
-#[inline]
-pub fn pte2pa(pte: usize) -> PAddr {
-    ((pte >> PTESHIFT) << PGSHIFT).into()
 }
 
 pub trait Addr: Copy + From<usize> + Add<usize, Output = Self> {

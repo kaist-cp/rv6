@@ -1,16 +1,48 @@
 K = kernel
 U = user
 KR = kernel-rs
+LM = lmbench
 
+ifeq ($(TARGET),arm)
+RUST_TARGET = aarch64-unknown-none
+RUST_BUILD_TARGET = $(RUST_TARGET)
+ARCH = aarch64
+TOOLPREFIX = aarch64-linux-gnu-
+MARCH = armv8-a
+ADD_OBJS = $K/$(TARGET)/trampoline.o
+
+ifndef GIC_VERSION
+GIC_VERSION = 2
+endif
+CARGOFLAGS = --features 'gicv$(GIC_VERSION)' 
+
+# Note that the default is cortex-a15, 
+# so for an AArch64 guest you must specify a CPU type.
+# https://qemu.readthedocs.io/en/latest/system/arm/virt.html#supported-devices
+ADD_QEMUOPTS = -cpu cortex-a72
+#ADD_QEMUOPTS = -cpu host -enable-kvm
+ADD_QEMUOPTS += -machine gic-version=$(GIC_VERSION)
+else
 RUST_TARGET = riscv64gc-unknown-none-elfhf
+RUST_BUILD_TARGET = kernel-rs/$(RUST_TARGET).json
+ARCH = riscv64
+TARGET = riscv
+MARCH = rv64g
+ADD_OBJS = $K/$(TARGET)/trampoline.o $K/$(TARGET)/kernelvec.o
+ADD_CFLAGS = -mcmodel=medany -mno-relax
+CARGOFLAGS = 
+
+# No bios option is supported only in some environment including riscv virt machine.
+# https://qemu.readthedocs.io/en/latest/system/target-riscv.html#risc-v-cpu-firmware
+ADD_QEMUOPTS = -bios none
+endif
+
 ifndef RUST_MODE
 RUST_MODE = debug
 endif
 
 ifeq ($(RUST_MODE),release)
-CARGOFLAGS = --release
-else
-CARGOFLAGS =
+CARGOFLAGS += --release
 endif
 
 # OBJS = \
@@ -44,37 +76,40 @@ endif
 #   $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a
 
 OBJS = \
-  $K/entry.o \
-  $K/swtch.o \
-  $K/trampoline.o \
-  $K/kernelvec.o \
-  $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a
+  $K/$(TARGET)/entry.o \
+  $K/$(TARGET)/swtch.o \
+  $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a \
+  $(ADD_OBJS)
 
 # riscv64-unknown-elf- or riscv64-linux-gnu-
 # perhaps in /opt/riscv/bin
 #TOOLPREFIX = 
 
+
+
 # Try to infer the correct TOOLPREFIX if not set
 ifndef TOOLPREFIX
-TOOLPREFIX := $(shell if riscv64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' >/dev/null 2>&1; \
-	then echo 'riscv64-unknown-elf-'; \
-	elif riscv64-linux-gnu-objdump -i 2>&1 | grep 'elf64-big' >/dev/null 2>&1; \
-	then echo 'riscv64-linux-gnu-'; \
-	elif riscv64-unknown-linux-gnu-objdump -i 2>&1 | grep 'elf64-big' >/dev/null 2>&1; \
-	then echo 'riscv64-unknown-linux-gnu-'; \
+TOOLPREFIX := $(shell if $(ARCH)-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' >/dev/null 2>&1; \
+	then echo '$(ARCH)-unknown-elf-'; \
+	elif $(ARCH)-linux-gnu-objdump -i 2>&1 | grep 'elf64-big' >/dev/null 2>&1; \
+	then echo '$(ARCH)-linux-gnu-'; \
+	elif $(ARCH)-unknown-linux-gnu-objdump -i 2>&1 | grep 'elf64-big' >/dev/null 2>&1; \
+	then echo '$(ARCH)-unknown-linux-gnu-'; \
 	else echo "***" 1>&2; \
-	echo "*** Error: Couldn't find a riscv64 version of GCC/binutils." 1>&2; \
+	echo "*** Error: Couldn't find a $(ARCH) version of GCC/binutils." 1>&2; \
 	echo "*** To turn off this error, run 'gmake TOOLPREFIX= ...'." 1>&2; \
 	echo "***" 1>&2; exit 1; fi)
 endif
 
-QEMU = qemu-system-riscv64
+QEMU = qemu-system-$(ARCH)
 
 CC = $(TOOLPREFIX)gcc
 AS = $(TOOLPREFIX)gas
 LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
+AR=ar
+ARCREATE=cr
 
 ifndef OPTFLAGS
 OPTFALGS := -O
@@ -82,8 +117,8 @@ endif
 
 CFLAGS = -Wall -Werror $(OPTFLAGS) -fno-omit-frame-pointer -ggdb
 CFLAGS += -MD
-CFLAGS += -mcmodel=medany
-CFLAGS += -ffreestanding -fno-common -nostdlib -mno-relax
+CFLAGS += $(ADD_CFLAGS)
+CFLAGS += -ffreestanding -fno-common -nostdlib
 CFLAGS += -I.
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 
@@ -101,24 +136,31 @@ endif
 
 LDFLAGS = -z max-page-size=4096
 
-$K/kernel: $(OBJS) $K/kernel.ld $U/initcode
-	$(LD) $(LDFLAGS) -T $K/kernel.ld -o $K/kernel $(OBJS) 
+$K/kernel: $(OBJS) $K/$(TARGET)/kernel.ld $U/initcode fs.img
+	$(LD) $(LDFLAGS) -T $K/$(TARGET)/kernel.ld -o $K/kernel $(OBJS)
 	$(OBJDUMP) -S $K/kernel > $K/kernel.asm
 	$(OBJDUMP) -t $K/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $K/kernel.sym
 
-$U/initcode: $U/initcode.S
-	$(CC) $(CFLAGS) -march=rv64g -nostdinc -I. -Ikernel -c $U/initcode.S -o $U/initcode.o
+UT=$U/$(TARGET)
+
+$U/initcode: $(UT)/initcode.S
+	$(CC) $(CFLAGS) -march=$(MARCH) -nostdinc -I. -Ikernel -c $(UT)/initcode.S -o $U/initcode.o
 	$(LD) $(LDFLAGS) -N -e start -Ttext 0 -o $U/initcode.out $U/initcode.o
 	$(OBJCOPY) -S -O binary $U/initcode.out $U/initcode
 	$(OBJDUMP) -S $U/initcode.o > $U/initcode.asm
 
+# TODO(https://github.com/kaist-cp/rv6/issues/573): 
+# there is bug in rustc 1.56.0-nightly (30a0a9b69 2021-08-17).
+# aarch64-unknown-none.json file does not work properly.
 $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a: $(shell find $(KR) -type f)
-	cargo build --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json $(CARGOFLAGS)
+	cargo build --manifest-path kernel-rs/Cargo.toml --target $(RUST_BUILD_TARGET) $(CARGOFLAGS)
+
+# cargo build --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json $(CARGOFLAGS)
 
 tags: $(OBJS) _init
 	etags *.S *.c
 
-ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
+ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o $U/string.o
 
 _%: %.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
@@ -126,7 +168,7 @@ _%: %.o $(ULIB)
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
 
 $U/usys.S : $U/usys.pl
-	perl $U/usys.pl > $U/usys.S
+	TARGET=$(TARGET) perl $U/usys.pl > $U/usys.S
 
 $U/usys.o : $U/usys.S
 	$(CC) $(CFLAGS) -c -o $U/usys.o $U/usys.S
@@ -136,6 +178,52 @@ $U/_forktest: $U/forktest.o $(ULIB)
 	# in order to be able to max out the proc table.
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $U/_forktest $U/forktest.o $U/ulib.o $U/usys.o
 	$(OBJDUMP) -S $U/_forktest > $U/forktest.asm
+
+## LMbench
+$(LM)/%.o: $(LM)/%.c
+	$(CC) $(CFLAGS) -c -o $@ $^
+
+$U/_%: $(LM)/%.o $(ULIB) $(LM)/lmbench.a $U/rand.o
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^ $(LM)/lmbench.a
+	$(OBJDUMP) -S $@ > $*.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
+
+AR=ar
+ARCREATE=cr
+LIBOBJS= $(LM)/lib_timing.o 	\
+	$(LM)/lib_mem.o $(LM)/lib_stats.o $(LM)/lib_debug.o $(LM)/getopt.o		\
+	$(LM)/lib_sched.o
+INCS = $(LM)/bench.h $(LM)/lib_mem.h $(LM)/lib_tcp.h $(LM)/lib_udp.h $(LM)/stats.h $(LM)/timing.h
+
+$(LM)/lmbench : ../scripts/lmbench version.h
+	rm -f $(LM)/lmbench
+	VERSION=`../scripts/version`; \
+	sed -e "s/<version>/$${VERSION}/g" < ../scripts/lmbench > $(LM)/lmbench
+	chmod +x $(LM)/lmbench
+
+$(LM)/lmbench.a: $(LIBOBJS)
+	/bin/rm -f $(LM)/lmbench.a
+	$(AR) $(ARCREATE) $(LM)/lmbench.a $(LIBOBJS)
+	-ranlib $(LM)/lmbench.a
+
+$(LM)/lib_timing.o : $(LM)/lib_timing.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/lib_timing.c -o $(LM)/lib_timing.o
+$(LM)/lib_mem.o : $(LM)/lib_mem.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/lib_mem.c -o $(LM)/lib_mem.o
+$(LM)/lib_tcp.o : $(LM)/lib_tcp.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/lib_tcp.c -o $(LM)/lib_tcp.o
+$(LM)/lib_udp.o : $(LM)/lib_udp.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/lib_udp.c -o $(LM)/lib_udp.o
+$(LM)/lib_unix.o : $(LM)/lib_unix.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/lib_unix.c -o $(LM)/lib_unix.o
+$(LM)/lib_debug.o : $(LM)/lib_debug.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/lib_debug.c -o $(LM)/lib_debug.o
+$(LM)/lib_stats.o : $(LM)/lib_stats.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/lib_stats.c -o $(LM)/lib_stats.o
+$(LM)/lib_sched.o : $(LM)/lib_sched.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/lib_sched.c -o $(LM)/lib_sched.o
+$(LM)/getopt.o : $(LM)/getopt.c $(INCS)
+	$(CC) $(CFLAGS) -c $(LM)/getopt.c -o $(LM)/getopt.o
 
 mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 	gcc -Werror -Wall -I. -o mkfs/mkfs mkfs/mkfs.c
@@ -163,6 +251,16 @@ UPROGS=\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
+	$U/_script\
+	$U/_lat_syscall\
+	$U/_lat_proc\
+	$U/_hello\
+	$U/_lat_pipe\
+	$U/_lat_ctx\
+	$U/_bw_pipe\
+	$U/_bw_file_rd\
+	#$U/_lat_fs\
+	$U/_lat_pagefault\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
@@ -171,7 +269,7 @@ fs.img: mkfs/mkfs README $(UPROGS)
 
 clean: 
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
-	*/*.o */*.d */*.asm */*.sym \
+	*/*.o */*/*.o */*.d */*.asm */*.sym */*.a \
 	$(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a \
 	$U/initcode $U/initcode.out $K/kernel fs.img \
 	mkfs/mkfs .gdbinit \
@@ -189,9 +287,10 @@ ifndef CPUS
 CPUS := 3
 endif
 
-QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS) -nographic
+QEMUOPTS = -machine virt -kernel $K/kernel -m 128M -smp $(CPUS) -nographic
 QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0
 QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+QEMUOPTS += $(ADD_QEMUOPTS)
 
 qemu: $K/kernel fs.img
 	$(QEMU) $(QEMUOPTS)

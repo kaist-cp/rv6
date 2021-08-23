@@ -1,4 +1,5 @@
 //! RISC-V instructions.
+// TODO(https://github.com/kaist-cp/rv6/issues/569): replace this
 
 // Dead code is allowed in this file because not all components are used in the kernel.
 #![allow(dead_code)]
@@ -13,6 +14,10 @@ pub fn r_mhartid() -> usize {
         asm!("csrr {}, mhartid", out(reg) x);
     }
     x
+}
+
+pub fn cpu_id() -> usize {
+    r_tp()
 }
 
 bitflags! {

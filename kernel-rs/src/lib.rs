@@ -51,6 +51,7 @@
 #![feature(try_blocks)]
 #![feature(variant_count)]
 
+mod addr;
 mod arch;
 mod arena;
 mod bio;
@@ -63,6 +64,7 @@ mod hal;
 mod kalloc;
 mod kernel;
 mod lock;
+mod memlayout;
 mod page;
 mod param;
 mod pipe;
@@ -70,7 +72,6 @@ mod proc;
 mod start;
 mod syscall;
 mod trap;
-mod uart;
 mod util;
 mod virtio;
 mod vm;

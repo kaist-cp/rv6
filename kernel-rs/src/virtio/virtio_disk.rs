@@ -20,7 +20,7 @@ use super::{
     VIRTIO_BLK_T_IN, VIRTIO_BLK_T_OUT,
 };
 use crate::{
-    arch::addr::{PGSHIFT, PGSIZE},
+    addr::{PGSHIFT, PGSIZE},
     bio::Buf,
     kernel::KernelRef,
     lock::{SleepableLock, SleepableLockGuard},

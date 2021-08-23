@@ -10,15 +10,14 @@ use arrayvec::ArrayVec;
 use cstr_core::CStr;
 
 use crate::{
-    arch::{
-        addr::{Addr, UVAddr},
-        poweroff,
-    },
-    file::RcFile,
+    addr::{Addr, UVAddr},
+    arch::interface::{PowerOff, TimeManager, TrapFrameManager},
+    arch::TargetArch,
+    file::{RcFile, SeekWhence, SelectEvent},
     fs::{FcntlFlags, FileSystem, FileSystemExt, InodeType, Path},
     hal::hal,
     ok_or,
-    page::Page,
+    page::{Page, PGSIZE},
     param::{MAXARG, MAXPATH},
     proc::{CurrentProc, KernelCtx},
     some_or,
@@ -50,15 +49,7 @@ impl CurrentProc<'_, '_> {
     }
 
     fn argraw(&self, n: usize) -> usize {
-        match n {
-            0 => self.trap_frame().a0,
-            1 => self.trap_frame().a1,
-            2 => self.trap_frame().a2,
-            3 => self.trap_frame().a3,
-            4 => self.trap_frame().a4,
-            5 => self.trap_frame().a5,
-            _ => panic!("argraw"),
-        }
+        self.trap_frame().get_param_reg(n.into())
     }
 
     /// Fetch the nth 32-bit system call argument.
@@ -121,6 +112,12 @@ impl KernelCtx<'_, '_> {
             20 => self.sys_mkdir(),
             21 => self.sys_close(),
             22 => self.sys_poweroff(),
+            23 => self.sys_select(),
+            24 => self.sys_getpagesize(),
+            25 => self.sys_waitpid(),
+            26 => self.sys_getppid(),
+            27 => self.sys_lseek(),
+            28 => self.sys_uptime_as_micro(),
             _ => {
                 self.kernel().as_ref().write_fmt(format_args!(
                     "{} {}: unknown sys call {}",
@@ -168,6 +165,8 @@ impl KernelCtx<'_, '_> {
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_sleep(&self) -> Result<usize, ()> {
         let n = self.proc().argint(0)?;
+        assert!(n >= 0);
+
         let mut ticks = self.kernel().ticks().lock();
         let ticks0 = *ticks;
         while ticks.wrapping_sub(ticks0) < n as u32 {
@@ -193,10 +192,16 @@ impl KernelCtx<'_, '_> {
         Ok(*self.kernel().ticks().lock() as usize)
     }
 
+    /// Return how much time has passed since start,
+    /// in microseconds.
+    pub fn sys_uptime_as_micro(&self) -> Result<usize, ()> {
+        TargetArch::uptime_as_micro()
+    }
+
     /// Shutdowns this machine, discarding all unsaved data. No return.
     pub fn sys_poweroff(&self) -> Result<usize, ()> {
         let exitcode = self.proc().argint(0)?;
-        poweroff::machine_poweroff(exitcode as _);
+        TargetArch::machine_poweroff(exitcode as _);
     }
 
     /// Return a new file descriptor referring to the same file as given fd.
@@ -397,5 +402,144 @@ impl KernelCtx<'_, '_> {
         let fdarray = self.proc().argaddr(0)?.into();
         self.pipe(fdarray)?;
         Ok(0)
+    }
+
+    /* Check the first NFDS descriptors each in READFDS (if not NULL) for read
+    readiness, in WRITEFDS (if not NULL) for write readiness, and in EXCEPTFDS
+    (if not NULL) for exceptional conditions.  If TIMEOUT is not NULL, time out
+    after waiting the interval specified therein.  Returns the number of ready
+    descriptors, or -1 for errors.
+    Returns Ok(number of ready descriptors) on success, Err(()) on error.  */
+    pub fn sys_select(&mut self) -> Result<usize, ()> {
+        let nfds = self.proc().argint(0)?;
+        let read_fds = self.proc().argaddr(1)?;
+        let write_fds = self.proc().argaddr(2)?;
+        let err_fds = self.proc().argaddr(3)?;
+
+        let n_ticks = self.proc().argint(4)?;
+
+        let ticks = self.kernel().ticks().lock();
+        let ticks0 = *ticks;
+        drop(ticks);
+
+        let mut rfds = [0u8; 1024 / 8];
+        let mut wfds = [0u8; 1024 / 8];
+        let mut efds = [0u8; 1024 / 8];
+
+        if read_fds != 0 {
+            // SAFETY: `read_fds` is a valid user space address given by a user.
+            unsafe {
+                self.proc_mut()
+                    .memory_mut()
+                    .copy_in(&mut rfds, read_fds.into())
+            }?;
+        }
+
+        if write_fds != 0 {
+            unimplemented!("Handling for write fd set has not been implemented yet");
+        }
+
+        if err_fds != 0 {
+            unimplemented!("Handling for exceptional fd set has not been implemented yet");
+        }
+
+        // the number of fds that are ready
+        let mut ready_cnt = 0;
+
+        let events = [SelectEvent::Read, SelectEvent::Write, SelectEvent::Error];
+        let fds = [&mut rfds, &mut wfds, &mut efds];
+
+        loop {
+            // check fds
+            for i in 0..3 {
+                let event = events[i];
+
+                for fd in 0..nfds + 1 {
+                    let idx = (fd / 8) as usize;
+                    let mask = 1 << (fd % 8);
+
+                    if fds[i][idx] & mask != 0 {
+                        let f = self
+                            .proc()
+                            .deref_data()
+                            .open_files
+                            .get(fd as usize)
+                            .ok_or(())?
+                            .as_ref()
+                            .ok_or(())?;
+                        // SAFETY: `is_ready` will not access proc's open_files.
+                        if unsafe { (*(f as *const RcFile)).is_ready(event)? } {
+                            ready_cnt += 1;
+                        } else {
+                            // If the fd is not ready, clear the bit.
+                            fds[i][idx] &= !mask;
+                        }
+                    }
+                }
+            }
+
+            if ready_cnt > 0 {
+                break;
+            }
+
+            // check timeout
+            let ticks = self.kernel().ticks().lock();
+            if ticks.wrapping_sub(ticks0) >= n_ticks as u32 {
+                for idx in 0..(nfds + 1) / 8 + 1 {
+                    rfds[idx as usize] = 0;
+                }
+                break;
+            }
+            drop(ticks);
+        }
+
+        if read_fds != 0 {
+            self.proc_mut()
+                .memory_mut()
+                .copy_out(read_fds.into(), &rfds)?;
+        }
+
+        if write_fds != 0 {
+            self.proc_mut()
+                .memory_mut()
+                .copy_out(write_fds.into(), &wfds)?;
+        }
+
+        if err_fds != 0 {
+            self.proc_mut()
+                .memory_mut()
+                .copy_out(err_fds.into(), &efds)?;
+        }
+
+        Ok(ready_cnt)
+    }
+
+    pub fn sys_getpagesize(&mut self) -> Result<usize, ()> {
+        Ok(PGSIZE)
+    }
+
+    pub fn sys_waitpid(&mut self) -> Result<usize, ()> {
+        let pid = self.proc().argint(0)?;
+        let stat = self.proc().argaddr(1)?;
+        Ok(self.kernel().procs().waitpid(pid, stat.into(), self)? as _)
+    }
+
+    pub fn sys_getppid(&mut self) -> Result<usize, ()> {
+        Ok(self.kernel().procs().get_parent_pid(self) as _)
+    }
+
+    pub fn sys_lseek(&mut self) -> Result<usize, ()> {
+        let (_, f) = self.proc().argfd(0)?;
+        let offset = self.proc().argint(1)?;
+        let whence = self.proc().argint(2)?;
+
+        let whence = match whence {
+            0 => SeekWhence::Set,
+            1 => SeekWhence::Cur,
+            2 => SeekWhence::End,
+            _ => return Err(()),
+        };
+        // SAFETY: `lseek` will not access proc's open_files.
+        unsafe { (*(f as *const RcFile)).lseek(offset, whence, self) }
     }
 }

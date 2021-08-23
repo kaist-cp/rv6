@@ -19,18 +19,24 @@
 // Dead code is allowed in this file because not all components are used in the kernel.
 #![allow(dead_code)]
 
-use crate::arch::addr::{MAXVA, PGSIZE};
+use crate::arch::interface::MemLayout;
+use crate::arch::RiscV;
+
+impl MemLayout for RiscV {
+    /// the kernel expects there to be RAM
+    /// for use by the kernel and user pages
+    /// from physical address 0x80000000 to PHYSTOP.
+    const KERNBASE: usize = 0x80000000;
+    /// qemu puts UART registers here in physical memory.
+    const UART0: usize = 0x10000000;
+    const UART0_IRQ: usize = 10;
+    /// virtio mmio interface
+    const VIRTIO0: usize = 0x10001000;
+    const VIRTIO0_IRQ: usize = 1;
+}
 
 /// SiFive Test Finisher. (virt device only)
 pub const FINISHER: usize = 0x100000;
-
-/// qemu puts UART registers here in physical memory.
-pub const UART0: usize = 0x10000000;
-pub const UART0_IRQ: usize = 10;
-
-/// virtio mmio interface
-pub const VIRTIO0: usize = 0x10001000;
-pub const VIRTIO0_IRQ: usize = 1;
 
 /// core local interruptor (CLINT), which contains the timer.
 pub const CLINT: usize = 0x2000000;
@@ -60,30 +66,3 @@ pub const fn plic_sclaim(hart: usize) -> usize {
     PLIC.wrapping_add(0x201004)
         .wrapping_add((hart).wrapping_mul(0x2000))
 }
-
-/// the kernel expects there to be RAM
-/// for use by the kernel and user pages
-/// from physical address 0x80000000 to PHYSTOP.
-pub const KERNBASE: usize = 0x80000000;
-pub const PHYSTOP: usize = KERNBASE.wrapping_add(128 * 1024 * 1024);
-
-/// map the trampoline page to the highest address,
-/// in both user and kernel space.
-pub const TRAMPOLINE: usize = MAXVA.wrapping_sub(PGSIZE);
-
-/// map kernel stacks beneath the trampoline,
-/// each surrounded by invalid guard pages.
-pub const fn kstack(p: usize) -> usize {
-    TRAMPOLINE - ((p + 1) * 2 * PGSIZE)
-}
-
-/// User memory layout.
-/// Address zero first:
-///   text
-///   original data and bss
-///   fixed-size stack
-///   expandable heap
-///   ...
-///   TRAPFRAME (p->trapframe, used by the trampoline)
-///   TRAMPOLINE (the same page as in the kernel)
-pub const TRAPFRAME: usize = TRAMPOLINE.wrapping_sub(PGSIZE);

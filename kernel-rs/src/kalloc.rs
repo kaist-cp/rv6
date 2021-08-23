@@ -6,9 +6,9 @@ use core::{mem, pin::Pin};
 use pin_project::pin_project;
 
 use crate::{
-    arch::addr::{pgrounddown, pgroundup, PGSIZE},
-    arch::memlayout::PHYSTOP,
+    addr::{pgrounddown, pgroundup, PGSIZE},
     lock::SpinLock,
+    memlayout::PHYSTOP,
     page::Page,
     util::intrusive_list::{List, ListEntry, ListNode},
 };

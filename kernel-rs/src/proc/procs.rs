@@ -12,27 +12,19 @@ use pin_project::pin_project;
 
 use super::*;
 use crate::{
-    arch::addr::{Addr, UVAddr, PGSIZE},
-    arch::memlayout::kstack,
-    arch::riscv::intr_on,
+    addr::{Addr, UVAddr, PGSIZE},
+    arch::interface::TrapFrameManager,
     fs::{DefaultFs, FileSystem, FileSystemExt},
     hal::hal,
     kalloc::Kmem,
     kernel::KernelRef,
     lock::{SpinLock, SpinLockGuard},
+    memlayout::kstack,
     page::Page,
     param::{NPROC, ROOTDEV},
     util::branded::Branded,
     vm::UserMemory,
 };
-
-/// A user program that calls exec("/init").
-/// od -t xC initcode
-const INITCODE: [u8; 52] = [
-    0x17, 0x05, 0, 0, 0x13, 0x05, 0x45, 0x02, 0x97, 0x05, 0, 0, 0x93, 0x85, 0x35, 0x02, 0x93, 0x08,
-    0x70, 0, 0x73, 0, 0, 0, 0x93, 0x08, 0x20, 0, 0x73, 0, 0, 0, 0xef, 0xf0, 0x9f, 0xff, 0x2f, 0x69,
-    0x6e, 0x69, 0x74, 0, 0, 0x24, 0, 0, 0, 0, 0, 0, 0, 0,
-];
 
 /// Process system type containing & managing whole processes.
 ///
@@ -112,8 +104,12 @@ impl Procs {
 
             // Allocate one user page and copy init's instructions
             // and data into it.
-            let memory = UserMemory::new(trap_frame.addr(), Some(&INITCODE), allocator)
-                .expect("user_proc_init: UserMemory::new");
+            let memory = UserMemory::new(
+                trap_frame.addr(),
+                Some(TargetArch::get_init_code()),
+                allocator,
+            )
+            .expect("user_proc_init: UserMemory::new");
 
             let mut guard = procs
                 .alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory)
@@ -126,11 +122,15 @@ impl Procs {
 
             // User program counter.
             // SAFETY: trap_frame has been initialized by alloc.
-            unsafe { (*data.trap_frame).epc = 0 };
+            unsafe { (*data.trap_frame).set_pc(0) };
 
             // User stack pointer.
             // SAFETY: trap_frame has been initialized by alloc.
-            unsafe { (*data.trap_frame).sp = PGSIZE };
+            unsafe { (*data.trap_frame).set_sp(PGSIZE) };
+
+            // set arch-specific registers.
+            // SAFETY: trap_frame has been initialized by alloc.
+            unsafe { (*data.trap_frame).init_reg() };
 
             let name = b"initcode\x00";
             (&mut data.name[..name.len()]).copy_from_slice(name);
@@ -187,7 +187,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
                 // Set up new context to start executing at forkret,
                 // which returns to user space.
                 data.context = Default::default();
-                data.context.ra = forkret as usize;
+                data.context.set_ret_addr(forkret as usize);
                 data.context.sp = data.kstack + PGSIZE;
 
                 let info = guard.deref_mut_info();
@@ -269,7 +269,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
 
         // Cause fork to return 0 in the child.
         // SAFETY: trap_frame has been initialized by alloc.
-        unsafe { (*npdata.trap_frame).a0 = 0 };
+        unsafe { (*npdata.trap_frame).set_ret_val(0) };
 
         // Increment reference counts on open file descriptors.
         for (nf, f) in izip!(
@@ -346,6 +346,56 @@ impl<'id, 's> ProcsRef<'id, 's> {
         }
     }
 
+    // Wait for a child process with `pid` to exit.
+    pub fn waitpid(&self, pid: Pid, addr: UVAddr, ctx: &mut KernelCtx<'id, '_>) -> Result<Pid, ()> {
+        let mut parent_guard = self.wait_guard();
+
+        let mut found = false;
+        loop {
+            // Scan through pool looking for exited child with the pid.
+            for np in self.process_pool() {
+                let mut np = np.lock();
+                if np.deref_mut_info().pid == pid {
+                    found = true;
+                    if *np.get_mut_parent(&mut parent_guard) != ctx.proc().deref().deref() {
+                        // Found a process, but not a child
+                        return Err(());
+                    }
+
+                    // Make sure the child isn't still in exit() or swtch().
+                    // let mut np = np.lock();
+
+                    if np.state() == Procstate::ZOMBIE {
+                        let pid = np.deref_mut_info().pid;
+                        if !addr.is_null()
+                            && ctx
+                                .proc_mut()
+                                .memory_mut()
+                                .copy_out(addr, &np.deref_info().xstate)
+                                .is_err()
+                        {
+                            return Err(());
+                        }
+                        // Reap the zombie child process.
+                        // SAFETY: np.state() equals ZOMBIE.
+                        unsafe { np.clear(parent_guard) };
+                        return Ok(pid);
+                    }
+                }
+            }
+
+            // No point waiting if we don't have any children.
+            if !found || ctx.proc().killed() {
+                return Err(());
+            }
+
+            // Wait for a child to exit.
+            //DOC: wait-sleep
+            ctx.proc().child_waitchannel.sleep(&mut parent_guard.0, ctx);
+            found = false;
+        }
+    }
+
     /// Kill the process with the given pid.
     /// The victim won't exit until it tries to return
     /// to user space (see usertrap() in trap.c).
@@ -412,6 +462,15 @@ impl<'id, 's> ProcsRef<'id, 's> {
 
         unreachable!("zombie exit")
     }
+
+    // get the pid of current process's parent
+    pub fn get_parent_pid(&mut self, ctx: &mut KernelCtx<'id, '_>) -> Pid {
+        let mut parent_guard = self.wait_guard();
+        let parent = *ctx.proc().get_mut_parent(&mut parent_guard);
+
+        let lock = unsafe { (*parent).info.lock() };
+        lock.pid
+    }
 }
 
 impl Deref for ProcsRef<'_, '_> {
@@ -470,7 +529,7 @@ impl<'id, 's> KernelRef<'id, 's> {
         cpu.set_proc(ptr::null_mut());
         loop {
             // Avoid deadlock by ensuring that devices can interrupt.
-            unsafe { intr_on() };
+            unsafe { TargetArch::intr_on() };
 
             for p in self.procs().process_pool() {
                 let mut guard = p.lock();

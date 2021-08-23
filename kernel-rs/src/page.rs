@@ -8,7 +8,8 @@ use core::{
 
 use static_assertions::const_assert;
 
-use crate::arch::addr::{PAddr, PGSIZE};
+use crate::addr::PAddr;
+pub use crate::addr::PGSIZE;
 
 // `RawPage` must be aligned with PGSIZE.
 const_assert!(PGSIZE == 4096);

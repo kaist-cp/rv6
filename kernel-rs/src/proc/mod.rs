@@ -9,7 +9,8 @@ use core::{
 use array_macro::array;
 
 use crate::{
-    arch::riscv::intr_get,
+    arch::interface::{ContextManager, ProcManager, TrapManager},
+    arch::TargetArch,
     file::RcFile,
     fs::{DefaultFs, RcInode},
     hal::hal,
@@ -28,155 +29,11 @@ pub use kernel_ctx::*;
 pub use procs::*;
 pub use wait_channel::*;
 
+type Context = <TargetArch as ProcManager>::Context;
+
 extern "C" {
     // swtch.S
     fn swtch(_: *mut Context, _: *mut Context);
-}
-
-/// Saved registers for kernel context switches.
-#[derive(Copy, Clone, Default)]
-#[repr(C)]
-pub struct Context {
-    pub ra: usize,
-    pub sp: usize,
-
-    /// Callee-saved
-    pub s0: usize,
-    pub s1: usize,
-    pub s2: usize,
-    pub s3: usize,
-    pub s4: usize,
-    pub s5: usize,
-    pub s6: usize,
-    pub s7: usize,
-    pub s8: usize,
-    pub s9: usize,
-    pub s10: usize,
-    pub s11: usize,
-}
-
-/// Per-process data for the trap handling code in trampoline.S.
-/// Sits in a page by itself just under the trampoline page in the
-/// user page table. Not specially mapped in the kernel page table.
-/// The sscratch register points here.
-/// uservec in trampoline.S saves user registers in the trapframe,
-/// then initializes registers from the trapframe's
-/// kernel_sp, kernel_hartid, kernel_satp, and jumps to kernel_trap.
-/// usertrapret() and userret in trampoline.S set up
-/// the trapframe's kernel_*, restore user registers from the
-/// trapframe, switch to the user page table, and enter user space.
-/// The trapframe includes callee-saved user registers like s0-s11 because the
-/// return-to-user path via usertrapret() doesn't return through
-/// the entire kernel call stack.
-#[derive(Copy, Clone)]
-pub struct TrapFrame {
-    /// 0 - kernel page table (satp: Supervisor Address Translation and Protection)
-    pub kernel_satp: usize,
-
-    /// 8 - top of process's kernel stack
-    pub kernel_sp: usize,
-
-    /// 16 - usertrap()
-    pub kernel_trap: usize,
-
-    /// 24 - saved user program counter (ecp: Exception Program Counter)
-    pub epc: usize,
-
-    /// 32 - saved kernel tp
-    pub kernel_hartid: usize,
-
-    /// 40
-    pub ra: usize,
-
-    /// 48
-    pub sp: usize,
-
-    /// 56
-    pub gp: usize,
-
-    /// 64
-    pub tp: usize,
-
-    /// 72
-    pub t0: usize,
-
-    /// 80
-    pub t1: usize,
-
-    /// 88
-    pub t2: usize,
-
-    /// 96
-    pub s0: usize,
-
-    /// 104
-    pub s1: usize,
-
-    /// 112
-    pub a0: usize,
-
-    /// 120
-    pub a1: usize,
-
-    /// 128
-    pub a2: usize,
-
-    /// 136
-    pub a3: usize,
-
-    /// 144
-    pub a4: usize,
-
-    /// 152
-    pub a5: usize,
-
-    /// 160
-    pub a6: usize,
-
-    /// 168
-    pub a7: usize,
-
-    /// 176
-    pub s2: usize,
-
-    /// 184
-    pub s3: usize,
-
-    /// 192
-    pub s4: usize,
-
-    /// 200
-    pub s5: usize,
-
-    /// 208
-    pub s6: usize,
-
-    /// 216
-    pub s7: usize,
-
-    /// 224
-    pub s8: usize,
-
-    /// 232
-    pub s9: usize,
-
-    /// 240
-    pub s10: usize,
-
-    /// 248
-    pub s11: usize,
-
-    /// 256
-    pub t3: usize,
-
-    /// 264
-    pub t4: usize,
-
-    /// 272
-    pub t5: usize,
-
-    /// 280
-    pub t6: usize,
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -212,7 +69,7 @@ pub struct ProcData {
     pub kstack: usize,
 
     /// Data page for trampoline.S.
-    trap_frame: *mut TrapFrame,
+    trap_frame: *mut <TargetArch as ProcManager>::TrapFrame,
 
     /// User memory manager
     memory: MaybeUninit<UserMemory>,
@@ -267,27 +124,6 @@ pub struct ProcRef<'id, 's>(Branded<'id, &'s Proc>);
 /// * `proc.info` is locked.
 pub struct ProcGuard<'id, 's> {
     proc: ProcRef<'id, 's>,
-}
-
-impl Context {
-    pub const fn new() -> Self {
-        Self {
-            ra: 0,
-            sp: 0,
-            s0: 0,
-            s1: 0,
-            s2: 0,
-            s3: 0,
-            s4: 0,
-            s5: 0,
-            s6: 0,
-            s7: 0,
-            s8: 0,
-            s9: 0,
-            s10: 0,
-            s11: 0,
-        }
-    }
 }
 
 impl Procstate {
@@ -405,7 +241,7 @@ impl<'id> ProcGuard<'id, '_> {
     /// break in the few places where a lock is held but
     /// there's no process.
     unsafe fn sched(&mut self) {
-        assert!(!intr_get(), "sched interruptible");
+        assert!(!TargetArch::intr_get(), "sched interruptible");
         assert_ne!(self.state(), Procstate::RUNNING, "sched running");
 
         // SAFETY: interrupts are disabled.
@@ -496,5 +332,32 @@ impl Drop for ProcGuard<'_, '_> {
     fn drop(&mut self) {
         // SAFETY: self will be dropped.
         unsafe { self.info.unlock() };
+    }
+}
+
+pub enum RegNum {
+    R0,
+    R1,
+    R2,
+    R3,
+    R4,
+    R5,
+    R6,
+    R7,
+}
+
+impl From<usize> for RegNum {
+    fn from(item: usize) -> Self {
+        match item {
+            0 => Self::R0,
+            1 => Self::R1,
+            2 => Self::R2,
+            3 => Self::R3,
+            4 => Self::R4,
+            5 => Self::R5,
+            6 => Self::R6,
+            7 => Self::R7,
+            _ => panic!(),
+        }
     }
 }

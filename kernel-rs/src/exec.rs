@@ -7,12 +7,13 @@ use itertools::*;
 use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
-    arch::addr::{pgroundup, PAddr, PGSIZE},
+    addr::{pgroundup, PAddr, PGSIZE},
+    arch::interface::TrapFrameManager,
     fs::{FileSystem, FileSystemExt, Path},
     hal::hal,
     page::Page,
     param::MAXARG,
-    proc::KernelCtx,
+    proc::{KernelCtx, RegNum},
     vm::UserMemory,
 };
 
@@ -204,10 +205,10 @@ impl KernelCtx<'_, '_> {
         // arguments to user main(argc, argv)
         // argc is returned via the system call return
         // value, which goes in a0.
-        self.proc_mut().trap_frame_mut().a1 = sp;
+        *self.proc_mut().trap_frame_mut().param_reg_mut(RegNum::R1) = sp;
 
         // initial program counter = main
-        self.proc_mut().trap_frame_mut().epc = elf.entry;
+        self.proc_mut().trap_frame_mut().set_pc(elf.entry);
 
         // initial stack pointer
         self.proc_mut().trap_frame_mut().sp = sp;

@@ -10,14 +10,17 @@
 use core::{fmt, pin::Pin};
 
 use crate::{
-    arch::addr::UVAddr,
+    addr::UVAddr,
+    arch::interface::{Arch, UartManager, UartManagerConst},
+    arch::TargetArch,
     hal::hal,
     kernel::{Kernel, KernelRef},
     lock::{SleepableLock, SleepableLockGuard, SpinLock, SpinLockGuard},
     proc::KernelCtx,
-    uart::Uart,
     util::spin_loop,
 };
+
+type Uart = <TargetArch as Arch>::Uart;
 
 /// Size of console input buffer.
 const INPUT_BUF: usize = 128;
@@ -87,7 +90,7 @@ impl Console {
 
     /// Doesn't use interrupts, for use by kernel println() and to echo characters.
     /// It spins waiting for the uart's output register to be empty.
-    fn putc_spin(&self, c: u8, kernel: Pin<&Kernel>) {
+    fn putc_spin<A: Arch>(&self, c: u8, kernel: Pin<&Kernel<A>>) {
         let intr = hal().cpus().push_off();
         if kernel.is_panicked() {
             spin_loop();
@@ -101,7 +104,7 @@ impl Console {
         unsafe { hal().cpus().pop_off(intr) };
     }
 
-    fn put_backspace_spin(&self, kernel: Pin<&Kernel>) {
+    fn put_backspace_spin(&self, kernel: Pin<&Kernel<TargetArch>>) {
         // Overwrite with a space.
         self.putc_spin(8, kernel);
         self.putc_spin(b' ', kernel);
@@ -287,8 +290,8 @@ impl Console {
 
 pub struct Printer(SpinLock<()>);
 
-pub struct PrinterGuard<'a> {
-    kernel: Pin<&'a Kernel>,
+pub struct PrinterGuard<'a, A: Arch> {
+    kernel: Pin<&'a Kernel<A>>,
     _guard: Option<SpinLockGuard<'a, ()>>,
 }
 
@@ -297,14 +300,14 @@ impl Printer {
         Self(SpinLock::new("Printer", ()))
     }
 
-    pub fn lock<'a>(&'a self, kernel: Pin<&'a Kernel>) -> PrinterGuard<'a> {
+    pub fn lock<'a, A: Arch>(&'a self, kernel: Pin<&'a Kernel<A>>) -> PrinterGuard<'a, A> {
         PrinterGuard {
             kernel,
             _guard: Some(self.0.lock()),
         }
     }
 
-    pub fn without_lock<'a>(&'a self, kernel: Pin<&'a Kernel>) -> PrinterGuard<'a> {
+    pub fn without_lock<'a, A: Arch>(&'a self, kernel: Pin<&'a Kernel<A>>) -> PrinterGuard<'a, A> {
         PrinterGuard {
             kernel,
             _guard: None,
@@ -312,7 +315,7 @@ impl Printer {
     }
 }
 
-impl fmt::Write for PrinterGuard<'_> {
+impl<A: Arch> fmt::Write for PrinterGuard<'_, A> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for c in s.bytes() {
             hal().console().putc_spin(c, self.kernel);

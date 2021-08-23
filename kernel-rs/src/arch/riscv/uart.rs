@@ -6,6 +6,7 @@
 use core::ptr;
 
 use self::UartCtrlRegs::{FCR, IER, ISR, LCR, LSR, RBR, THR};
+use crate::arch::interface::{UartManager, UartManagerConst};
 
 enum UartRegBits {
     IERTxEnable,
@@ -76,19 +77,22 @@ impl UartCtrlRegs {
 /// # Safety
 ///
 /// uart..(uart + 5) are owned addresses.
+#[derive(Debug)]
 pub struct Uart {
     uart: usize,
 }
 
-impl Uart {
+impl const UartManagerConst for Uart {
     /// # Safety
     ///
     /// uart..(uart + 5) are owned addresses.
-    pub const unsafe fn new(uart: usize) -> Self {
+    unsafe fn new(uart: usize) -> Self {
         Self { uart }
     }
+}
 
-    pub fn init(&self) {
+impl UartManager for Uart {
+    fn init(&self) {
         // Disable interrupts.
         self.write(IER, 0x00);
 
@@ -119,7 +123,7 @@ impl Uart {
     }
 
     /// Read one input character from the UART. Return Err(()) if none is waiting.
-    pub fn getc(&self) -> Result<i32, ()> {
+    fn getc(&self) -> Result<i32, ()> {
         if self.read(LSR) & 0x01 != 0 {
             // Input data is ready.
             Ok(self.read(RBR) as i32)
@@ -129,15 +133,17 @@ impl Uart {
     }
 
     /// Write one output character to the UART.
-    pub fn putc(&self, c: u8) {
+    fn putc(&self, c: u8) {
         self.write(THR, c);
     }
 
     /// Check whether the UART transmit holding register is full.
-    pub fn is_full(&self) -> bool {
+    fn is_full(&self) -> bool {
         (self.read(LSR) & UartRegBits::LSRTxIdle.bits()) == 0
     }
+}
 
+impl Uart {
     fn read(&self, reg: UartCtrlRegs) -> u8 {
         // SAFETY:
         // * the address is valid because of the invariant of self.

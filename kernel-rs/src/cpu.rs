@@ -1,18 +1,22 @@
-use core::{cell::Cell, ptr};
+use core::{
+    cell::{Cell, UnsafeCell},
+    marker::PhantomData,
+    ptr::{self, NonNull},
+};
 
 use array_macro::array;
 
 use crate::{
-    arch::riscv::r_tp,
-    arch::riscv::{intr_get, intr_off, intr_on},
+    arch::interface::{ContextManager, ProcManager, TrapManager},
+    arch::TargetArch,
     param::NCPU,
-    proc::{Context, Proc},
+    proc::Proc,
 };
 
 // The `Cpu` struct of the current cpu can be mutated. To do so, we need to
 // obtain mutable pointers to `Cpu`s from a shared reference of a `Cpus`.
 // It requires interior mutability, so we use `UnsafeCell`.
-pub struct Cpus([Cell<Cpu>; NCPU]);
+pub struct Cpus([UnsafeCell<Cpu>; NCPU]);
 
 /// # Safety
 ///
@@ -23,7 +27,7 @@ pub struct HeldInterrupts(());
 
 impl HeldInterrupts {
     fn new() -> Self {
-        intr_off();
+        TargetArch::intr_off();
         HeldInterrupts(())
     }
 }
@@ -33,7 +37,7 @@ unsafe impl Sync for Cpus {}
 
 impl Cpus {
     pub const fn new() -> Self {
-        Self(array![_ => Cell::new(Cpu::new()); NCPU])
+        Self(array![_ => UnsafeCell::new(Cpu::new()); NCPU])
     }
 }
 
@@ -44,7 +48,7 @@ impl Cpus {
     /// current CPU since the scheduler can move the process to another CPU on time interrupt.
     pub fn current_raw(&self) -> *mut Cpu {
         let id: usize = cpuid();
-        self.0[id].as_ptr()
+        self.0[id].get()
     }
 
     /// Returns a `CpuMut` to the current CPU.
@@ -53,11 +57,12 @@ impl Cpus {
     ///
     /// The returned `CpuMut` must live while interrupts are disabled.
     pub unsafe fn current_unchecked(&self) -> CpuMut<'_> {
-        let id: usize = cpuid();
+        // SAFETY: `self.current_raw()` is always nonnull.
+        let ptr = unsafe { NonNull::new_unchecked(self.current_raw()) };
         // SAFETY:
         // * safety condition of this method.
         // * `ptr` refers to the current CPU.
-        unsafe { CpuMut::new_unchecked(&self.0[id]) }
+        unsafe { CpuMut::new_unchecked(ptr) }
     }
 
     /// Returns a `CpuMut` to the current CPU. Since the returned `CpuMut` cannot outlive a given
@@ -73,7 +78,7 @@ impl Cpus {
     /// It takes two pop_off()s to undo two push_off()s. Also, if interrupts
     /// are initially off, then push_off, pop_off leaves them off.
     pub fn push_off(&self) -> HeldInterrupts {
-        let old = intr_get();
+        let old = TargetArch::intr_get();
         let intr = HeldInterrupts::new();
         let cpu = self.current(&intr);
         cpu.push_off(old);
@@ -88,7 +93,7 @@ impl Cpus {
     /// It may turn on interrupt, so callers must ensure that calling this method does not incur
     /// data race.
     pub unsafe fn pop_off(&self, intr: HeldInterrupts) {
-        assert!(!intr_get(), "pop_off: interruptible");
+        assert!(!TargetArch::intr_get(), "pop_off: interruptible");
         let cpu = self.current(&intr);
         // SAFETY: safety condition of this method.
         unsafe {
@@ -98,13 +103,12 @@ impl Cpus {
 }
 
 /// Per-CPU-state.
-#[derive(Copy, Clone)]
 pub struct Cpu {
     /// The process running on this cpu, or null.
     proc: *const Proc,
 
     /// swtch() here to enter scheduler().
-    context: Context,
+    context: <TargetArch as ProcManager>::Context,
 
     /// Depth of push_off() nesting.
     noff: u32,
@@ -117,7 +121,7 @@ impl Cpu {
     const fn new() -> Self {
         Self {
             proc: ptr::null_mut(),
-            context: Context::new(),
+            context: <TargetArch as ProcManager>::Context::new(),
             noff: 0,
             interrupt_enabled: false,
         }
@@ -130,51 +134,65 @@ impl Cpu {
 ///
 /// `ptr` refers to the current CPU.
 pub struct CpuMut<'s> {
-    ptr: &'s Cell<Cpu>,
+    ptr: NonNull<Cpu>,
+    _marker: PhantomData<&'s Cell<Cpu>>,
 }
 
-impl<'s> CpuMut<'s> {
+impl CpuMut<'_> {
     /// # Safety
     ///
     /// * `ptr` must refer to the current CPU.
     /// * The returned `CpuMut` must live while interrupts are disabled.
-    unsafe fn new_unchecked(ptr: &'s Cell<Cpu>) -> Self {
-        Self { ptr }
+    unsafe fn new_unchecked(ptr: NonNull<Cpu>) -> Self {
+        Self {
+            ptr,
+            _marker: PhantomData,
+        }
     }
 
-    pub fn context_raw_mut(&self) -> *mut Context {
+    fn ptr(&self) -> *mut Cpu {
+        self.ptr.as_ptr()
+    }
+
+    pub fn context_raw_mut(&self) -> *mut <TargetArch as ProcManager>::Context {
         // SAFETY: invariant of `CpuMut`
-        unsafe { &raw mut (*self.ptr.as_ptr()).context }
+        unsafe { &raw mut (*self.ptr()).context }
     }
 
     pub fn get_proc(&self) -> *const Proc {
-        self.ptr.get().proc
+        // SAFETY: invariant of `CpuMut`
+        unsafe { (*self.ptr.as_ptr()).proc }
     }
 
     pub fn set_proc(&self, proc: *const Proc) {
-        let mut cpu = self.ptr.get();
-        cpu.proc = proc;
-        self.ptr.set(cpu);
+        // SAFETY: invariant of `CpuMut`
+        unsafe {
+            (*self.ptr.as_ptr()).proc = proc;
+        }
     }
 
     pub fn get_noff(&self) -> u32 {
-        self.ptr.get().noff
+        // SAFETY: invariant of `CpuMut`
+        unsafe { (*self.ptr()).noff }
     }
 
     fn set_noff(&self, noff: u32) {
-        let mut cpu = self.ptr.get();
-        cpu.noff = noff;
-        self.ptr.set(cpu);
+        // SAFETY: invariant of `CpuMut`
+        unsafe {
+            (*self.ptr()).noff = noff;
+        }
     }
 
     pub fn get_interrupt(&self) -> bool {
-        self.ptr.get().interrupt_enabled
+        // SAFETY: invariant of `CpuMut`
+        unsafe { (*self.ptr()).interrupt_enabled }
     }
 
     pub fn set_interrupt(&self, interrupt: bool) {
-        let mut cpu = self.ptr.get();
-        cpu.interrupt_enabled = interrupt;
-        self.ptr.set(cpu);
+        // SAFETY: invariant of `CpuMut`
+        unsafe {
+            (*self.ptr()).interrupt_enabled = interrupt;
+        }
     }
 
     fn push_off(&self, old: bool) {
@@ -195,7 +213,7 @@ impl<'s> CpuMut<'s> {
         self.set_noff(noff - 1);
         if noff == 1 && self.get_interrupt() {
             // SAFETY: safety condition of this method.
-            unsafe { intr_on() };
+            unsafe { TargetArch::intr_on() };
         }
     }
 }
@@ -205,5 +223,5 @@ impl<'s> CpuMut<'s> {
 /// It is safe to call this function with interrupts enabled, but the returned id may not be the
 /// current CPU since the scheduler can move the process to another CPU on time interrupt.
 pub fn cpuid() -> usize {
-    r_tp()
+    TargetArch::cpu_id()
 }

@@ -2,6 +2,8 @@ use core::ops::Deref;
 
 use super::*;
 use crate::{
+    arch::interface::ProcManager,
+    arch::TargetArch,
     fs::DefaultFs,
     kernel::{kernel_ref, KernelRef},
     vm::UserMemory,
@@ -94,13 +96,13 @@ impl<'id, 'p> CurrentProc<'id, 'p> {
         unsafe { (*self.info.get_mut_raw()).pid }
     }
 
-    pub fn trap_frame(&self) -> &TrapFrame {
+    pub fn trap_frame(&self) -> &<TargetArch as ProcManager>::TrapFrame {
         // SAFETY: trap_frame is a valid pointer according to the invariants
         // of Proc and CurrentProc.
         unsafe { &*self.deref_data().trap_frame }
     }
 
-    pub fn trap_frame_mut(&mut self) -> &mut TrapFrame {
+    pub fn trap_frame_mut(&mut self) -> &mut <TargetArch as ProcManager>::TrapFrame {
         // SAFETY: trap_frame is a valid pointer according to the invariants
         // of Proc and CurrentProc.
         unsafe { &mut *self.deref_mut_data().trap_frame }

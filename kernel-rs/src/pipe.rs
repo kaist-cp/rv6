@@ -1,8 +1,8 @@
 use core::{mem, ops::Deref, ptr::NonNull};
 
 use crate::{
-    arch::addr::UVAddr,
-    file::{FileType, RcFile},
+    addr::UVAddr,
+    file::{FileType, RcFile, SelectEvent},
     hal::hal,
     lock::SpinLock,
     page::Page,
@@ -186,6 +186,11 @@ impl AllocatedPipe {
             None
         }
     }
+
+    pub fn is_ready(&self, event: SelectEvent) -> bool {
+        let inner = self.inner.lock();
+        inner.is_ready(event)
+    }
 }
 
 pub enum PipeError {
@@ -263,6 +268,13 @@ impl PipeInner {
             }
         }
         Ok(n)
+    }
+
+    fn is_ready(&self, event: SelectEvent) -> bool {
+        match event {
+            SelectEvent::Read => self.nread != self.nwrite,
+            _ => unimplemented!(),
+        }
     }
 }
 

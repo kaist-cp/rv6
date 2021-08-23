@@ -9,7 +9,7 @@ use core::{
 };
 
 use crate::{
-    arch::addr::UVAddr,
+    addr::UVAddr,
     arena::{Arena, ArenaObject, ArenaRc, ArrayArena},
     fs::{DefaultFs, FileSystem, FileSystemExt, InodeGuard, RcInode},
     hal::hal,
@@ -62,6 +62,20 @@ pub struct Devsw {
 
 /// A reference counted smart pointer to a `File`.
 pub type RcFile = ArenaRc<FileTable>;
+
+// Events for `select`
+#[derive(Copy, Clone)]
+pub enum SelectEvent {
+    Read,
+    Write,
+    Error,
+}
+
+pub enum SeekWhence {
+    Set,
+    Cur,
+    End,
+}
 
 impl Default for FileType {
     fn default() -> Self {
@@ -219,6 +233,68 @@ impl File {
                 Ok(write(addr, n, ctx) as usize)
             }
             FileType::None => panic!("File::read"),
+        }
+    }
+
+    /// Repositions the file offset of the open file description
+    /// associated with the file descriptor fd to the `n` according
+    /// to the directive `option`.
+    pub fn lseek(
+        &self,
+        n: i32,
+        option: SeekWhence,
+        ctx: &mut KernelCtx<'_, '_>,
+    ) -> Result<usize, ()> {
+        if !self.readable {
+            return Err(());
+        }
+
+        if let FileType::Inode { inner } = &self.typ {
+            let ip = inner.lock(ctx);
+            let off = match option {
+                SeekWhence::Set => n as u32,
+                SeekWhence::Cur => *ip.off + n as u32,
+                SeekWhence::End => {
+                    let ip_inner = ip.deref_inner();
+                    ip_inner.size + n as u32
+                }
+            };
+            *ip.off = off;
+            ip.free(ctx);
+            Ok(off as usize)
+        } else {
+            Err(())
+        }
+    }
+
+    /// Check file is ready for specified select event.
+    /// It only supports pipe now.
+    /// TODO: support other type of files
+    pub fn is_ready(&self, event: SelectEvent) -> Result<bool, ()> {
+        match event {
+            SelectEvent::Read => {
+                if !self.readable {
+                    return Err(());
+                }
+
+                match &self.typ {
+                    FileType::Pipe { pipe } => {
+                        // pipe-empty
+                        if pipe.is_ready(event) {
+                            return Ok(true);
+                        }
+                    }
+                    FileType::Inode { .. } => {
+                        unimplemented!()
+                    }
+                    FileType::Device { .. } => unimplemented!(""),
+                    FileType::None => panic!("Syscall::sys_select"),
+                }
+                Ok(false)
+            }
+            _ => {
+                todo!("Select for write and error is not implemented yet")
+            }
         }
     }
 }
