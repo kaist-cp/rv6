@@ -16,7 +16,7 @@ use crate::{
     arch::memlayout::{FINISHER, PLIC},
     addr::{PAddr, VAddr, PGSIZE},
     addr::{PAddr, PGSIZE},
-    arch::interface::{PageTableEntryDesc, PageTableManager},
+    arch::interface::{IPageTableEntry, PageTableManager},
     arch::{
         addr::{pa2pte, pte2pa, PLNUM},
         asm::{make_satp, sfence_vma, w_satp},
@@ -32,7 +32,7 @@ use crate::{
 };
 
 bitflags! {
-    pub struct RiscVPteFlags: usize {
+    pub struct PteFlags: usize {
         /// valid
         const V = 1 << 0;
         /// readable
@@ -46,9 +46,9 @@ bitflags! {
     }
 }
 
-// pub type PteFlags = RiscVPteFlags;
+// pub type PteFlags = PteFlags;
 
-impl From<AccessFlags> for RiscVPteFlags {
+impl From<AccessFlags> for PteFlags {
     fn from(item: AccessFlags) -> Self {
         let mut ret = Self::empty();
         if item.intersects(AccessFlags::R) {
@@ -73,14 +73,14 @@ impl From<AccessFlags> for RiscVPteFlags {
 ///
 /// Because of #[derive(Default)], inner is initially 0, which satisfies the invariant.
 #[derive(Default)]
-pub struct RiscVPageTableEntry {
+pub struct PageTableEntry {
     inner: usize,
 }
 
-// pub type PageTableEntry = RiscVPageTableEntry;
+// pub type PageTableEntry = PageTableEntry;
 
-impl PageTableEntryDesc for RiscVPageTableEntry {
-    type EntryFlags = RiscVPteFlags;
+impl IPageTableEntry for PageTableEntry {
+    type EntryFlags = PteFlags;
 
     fn get_flags(&self) -> Self::EntryFlags {
         Self::EntryFlags::from_bits_truncate(self.inner)
@@ -126,7 +126,7 @@ impl PageTableEntryDesc for RiscVPageTableEntry {
         self.inner = pa2pte(pa) | (perm | Self::EntryFlags::V).bits();
     }
 
-    /// Make the entry inaccessible by user processes by clearing RiscVPteFlags::U.
+    /// Make the entry inaccessible by user processes by clearing PteFlags::U.
     fn clear_user(&mut self) {
         self.inner &= !(Self::EntryFlags::U.bits());
     }
@@ -144,7 +144,7 @@ impl RiscV {
 }
 
 impl PageTableManager for RiscV {
-    type PageTableEntry = RiscVPageTableEntry;
+    type PageTableEntry = PageTableEntry;
 
     const PLNUM: usize = PLNUM;
 

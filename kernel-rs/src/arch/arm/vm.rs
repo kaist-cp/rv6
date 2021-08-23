@@ -4,11 +4,11 @@ use tock_registers::interfaces::ReadWriteable;
 
 use crate::{
     addr::PAddr,
-    arch::ArmV8,
+    arch::Armv8,
     arch::{
         addr::{pa2pte, pte2pa, PLNUM},
         asm::{isb, tlbi_vmalle1},
-        interface::{MemLayout, PageTableEntryDesc, PageTableManager},
+        interface::{IPageTableEntry, MemLayout, PageTableManager},
         memlayout::GIC,
     },
     vm::{AccessFlags, RawPageTable},
@@ -17,7 +17,7 @@ use crate::{
 // A table descriptor and a level 3 page descriptor as per
 // ARMv8-A Architecture Reference Manual Figure D5-15, and Figure D5-17 respectively.
 bitflags! {
-    pub struct ArmV8PteFlags: usize {
+    pub struct PteFlags: usize {
         /// valid
         const V = 1 << 0;
         const TABLE = 1 << 1; // !table = block
@@ -49,9 +49,9 @@ bitflags! {
     }
 }
 
-// pub type PteFlags = ArmV8PteFlags;
+// pub type PteFlags = PteFlags;
 
-impl From<AccessFlags> for ArmV8PteFlags {
+impl From<AccessFlags> for PteFlags {
     fn from(item: AccessFlags) -> Self {
         Self::ACCESS_FLAG
             | match item {
@@ -98,14 +98,14 @@ impl From<AccessFlags> for ArmV8PteFlags {
 ///
 /// Because of #[derive(Default)], inner is initially 0, which satisfies the invariant.
 #[derive(Default)]
-pub struct ArmV8PageTableEntry {
+pub struct PageTableEntry {
     inner: usize,
 }
 
-// pub type PageTableEntry = ArmV8PageTableEntry;
+// pub type PageTableEntry = PageTableEntry;
 
-impl PageTableEntryDesc for ArmV8PageTableEntry {
-    type EntryFlags = ArmV8PteFlags;
+impl IPageTableEntry for PageTableEntry {
+    type EntryFlags = PteFlags;
 
     fn get_flags(&self) -> Self::EntryFlags {
         Self::EntryFlags::from_bits_truncate(self.inner)
@@ -170,14 +170,14 @@ impl PageTableEntryDesc for ArmV8PageTableEntry {
     }
 }
 
-impl ArmV8 {
+impl Armv8 {
     // TODO: put ARM's counterpart of SiFive Test Finisher here
     // GIC
-    const DEV_MAPPING: [(usize, usize); 1] = [(GIC, ArmV8::UART0 - GIC)];
+    const DEV_MAPPING: [(usize, usize); 1] = [(GIC, Armv8::UART0 - GIC)];
 }
 
-impl PageTableManager for ArmV8 {
-    type PageTableEntry = ArmV8PageTableEntry;
+impl PageTableManager for Armv8 {
+    type PageTableEntry = PageTableEntry;
 
     const PLNUM: usize = PLNUM;
 

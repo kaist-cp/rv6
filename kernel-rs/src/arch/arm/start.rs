@@ -5,13 +5,13 @@ use crate::{
     arch::{
         asm::*,
         interface::{Arch, MemLayout, UartManagerConst},
-        ArmV8,
+        Armv8,
     },
     kernel::main,
     param::NCPU,
 };
 
-type Uart = <ArmV8 as Arch>::Uart;
+type Uart = <Armv8 as Arch>::Uart;
 
 extern "C" {
     // entry for all cores
@@ -37,7 +37,6 @@ pub static mut stack0: Stack = Stack::new();
 /// # Safety
 ///
 /// This function must be called from entry.S, and only once.
-#[no_mangle]
 pub unsafe fn start() {
     // launch other cores
     if cpu_id() == 0 {
@@ -50,8 +49,8 @@ pub unsafe fn start() {
 
     let cur_el = r_currentel();
 
-    // SAFETY: Assume that `ArmV8::UART0` contains valid mapped address for uart.
-    let uart = unsafe { Uart::new(ArmV8::UART0) };
+    // SAFETY: Assume that `Armv8::UART0` contains valid mapped address for uart.
+    let uart = unsafe { Uart::new(Armv8::UART0) };
 
     uart.puts("current el: ");
     match cur_el {

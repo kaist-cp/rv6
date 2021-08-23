@@ -1,7 +1,7 @@
 use core::fmt;
 
 use crate::{
-    arch::interface::{Arch, TrapFrameManager, TrapManager},
+    arch::interface::{ProcManager, TrapFrameManager, TrapManager},
     arch::TargetArch,
     hal::hal,
     kernel::{kernel_ref, KernelRef},

@@ -78,11 +78,11 @@ impl UartCtrlRegs {
 ///
 /// uart..(uart + 5) are owned addresses.
 #[derive(Debug)]
-pub struct RiscVUart {
+pub struct Uart {
     uart: usize,
 }
 
-impl const UartManagerConst for RiscVUart {
+impl const UartManagerConst for Uart {
     /// # Safety
     ///
     /// uart..(uart + 5) are owned addresses.
@@ -91,7 +91,7 @@ impl const UartManagerConst for RiscVUart {
     }
 }
 
-impl UartManager for RiscVUart {
+impl UartManager for Uart {
     fn init(&self) {
         // Disable interrupts.
         self.write(IER, 0x00);
@@ -143,7 +143,7 @@ impl UartManager for RiscVUart {
     }
 }
 
-impl RiscVUart {
+impl Uart {
     fn read(&self, reg: UartCtrlRegs) -> u8 {
         // SAFETY:
         // * the address is valid because of the invariant of self.

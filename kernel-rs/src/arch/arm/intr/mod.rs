@@ -7,9 +7,9 @@ pub use gicv2::*;
 pub use gicv3::*;
 
 use crate::arch::interface::InterruptManager;
-use crate::arch::ArmV8;
+use crate::arch::Armv8;
 
-impl InterruptManager for ArmV8 {
+impl InterruptManager for Armv8 {
     unsafe fn intr_init() {
         unsafe {
             intr_init();

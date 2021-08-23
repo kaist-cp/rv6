@@ -229,6 +229,7 @@ pub trait PageTableManager {
 /// If self.is_table() is true, then it must refer to a valid page-table page.
 ///
 /// inner value should be initially 0, which satisfies the invariant.
+/// TODO: Any better name?
 pub trait IPageTableEntry: Default {
     type EntryFlags: From<AccessFlags>;
 

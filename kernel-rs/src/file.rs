@@ -64,10 +64,11 @@ pub struct Devsw {
 pub type RcFile = ArenaRc<FileTable>;
 
 // Events for `select`
+#[derive(Copy, Clone)]
 pub enum SelectEvent {
     Read,
-    _Write,
-    _Error,
+    Write,
+    Error,
 }
 
 pub enum SeekWhence {

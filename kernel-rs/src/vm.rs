@@ -5,7 +5,7 @@ use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
     addr::{pgrounddown, pgroundup, Addr, KVAddr, PAddr, UVAddr, VAddr, MAXVA, PGSIZE},
-    arch::interface::{Arch, PageTableEntryDesc, PageTableManager},
+    arch::interface::{Arch, IPageTableEntry, PageTableManager},
     arch::TargetArch,
     fs::{FileSystem, InodeGuard, Ufs},
     kalloc::Kmem,
@@ -17,7 +17,7 @@ use crate::{
 };
 
 type PageTableEntry = <TargetArch as PageTableManager>::PageTableEntry;
-type PteFlags = <PageTableEntry as PageTableEntryDesc>::EntryFlags;
+type PteFlags = <PageTableEntry as IPageTableEntry>::EntryFlags;
 
 extern "C" {
     // kernel.ld sets this to end of kernel code.

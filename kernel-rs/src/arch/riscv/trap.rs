@@ -9,7 +9,7 @@ use crate::{
     },
     arch::interface::{MemLayout, TrapManager},
     arch::intr::{plic_claim, plic_complete},
-    arch::proc::RiscVTrapFrame as TrapFrame,
+    arch::proc::TrapFrame,
     arch::RiscV,
     memlayout::{TRAMPOLINE, TRAPFRAME},
     trap::{IrqNum, IrqTypes, TrapTypes},

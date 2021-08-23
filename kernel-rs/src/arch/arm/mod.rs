@@ -14,14 +14,14 @@ pub mod trap;
 pub mod uart;
 pub mod vm;
 
-pub type TargetArch = ArmV8;
+pub struct Armv8;
 
-pub struct ArmV8;
+impl Arch for Armv8 {
+    type Uart = uart::Uart;
 
-impl Arch for ArmV8 {
-    type Uart = uart::ArmUart;
-
-    fn cpu_id() -> usize {
-        asm::cpu_id()
+    unsafe fn start() {
+        unsafe {
+            start::start();
+        }
     }
 }

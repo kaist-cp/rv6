@@ -31,7 +31,6 @@ pub static mut stack0: Stack = Stack::new();
 static mut TIMER_SCRATCH: [[usize; NCPU]; 5] = [[0; NCPU]; 5];
 
 /// entry.S jumps here in machine mode on stack0.
-#[no_mangle]
 pub unsafe fn start() {
     // set M Previous Privilege mode to Supervisor, for mret.
     let mut x = Mstatus::read();

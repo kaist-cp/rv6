@@ -1,5 +1,5 @@
 use crate::arch::interface::{ContextManager, ProcManager, TrapFrameManager};
-use crate::arch::ArmV8;
+use crate::arch::{asm, Armv8};
 use crate::proc::RegNum;
 
 /// A user program that calls exec("/init").
@@ -11,17 +11,21 @@ const INITCODE: [u8; 80] = [
     0, 0, 0, 0, 0, 0, 0, 0x1c, 0, 0, 0, 0, 0, 0, 0, 0x30, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-impl ProcManager for ArmV8 {
-    type Context = ArmV8Context;
-    type TrapFrame = ArmV8TrapFrame;
+impl ProcManager for Armv8 {
+    type Context = Context;
+    type TrapFrame = TrapFrame;
 
     fn get_init_code() -> &'static [u8] {
         &INITCODE
     }
+
+    fn cpu_id() -> usize {
+        asm::cpu_id()
+    }
 }
 
 #[derive(Copy, Clone)]
-pub struct ArmV8TrapFrame {
+pub struct TrapFrame {
     /// kernel page table (satp: Supervisor Address Translation and Protection)
     pub kernel_satp: usize,
     pub kernel_sp: usize,
@@ -103,7 +107,7 @@ pub struct ArmV8TrapFrame {
 
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
-pub struct ArmV8Context {
+pub struct Context {
     // svc mode registers
     pub r4: usize,
     pub r5: usize,
@@ -135,7 +139,7 @@ pub struct ArmV8Context {
     pub sp: usize,
 }
 
-impl const TrapFrameManager for ArmV8TrapFrame {
+impl const TrapFrameManager for TrapFrame {
     fn set_pc(&mut self, val: usize) {
         self.pc = val;
     }
@@ -183,7 +187,7 @@ impl const TrapFrameManager for ArmV8TrapFrame {
     }
 }
 
-impl const ContextManager for ArmV8Context {
+impl const ContextManager for Context {
     fn new() -> Self {
         Self {
             r4: 0,

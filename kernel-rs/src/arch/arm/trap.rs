@@ -12,8 +12,9 @@ use crate::{
         asm::{intr_get, intr_off, intr_on, r_fpsr, w_fpsr},
         intr::INTERRUPT_CONTROLLER,
         memlayout::TIMER0_IRQ,
-        proc::ArmV8TrapFrame as TrapFrame,
-        ArmV8,
+        proc::TrapFrame,
+        timer::set_next_timer,
+        Armv8,
     },
     memlayout::{TRAMPOLINE, TRAPFRAME},
     trap::{IrqNum, IrqTypes, TrapTypes},
@@ -51,15 +52,15 @@ extern "C" {
 impl From<&IrqTypes> for IrqNum {
     fn from(item: &IrqTypes) -> Self {
         match item {
-            IrqTypes::Uart => ArmV8::UART0_IRQ,
-            IrqTypes::Virtio => ArmV8::VIRTIO0_IRQ,
+            IrqTypes::Uart => Armv8::UART0_IRQ,
+            IrqTypes::Virtio => Armv8::VIRTIO0_IRQ,
             IrqTypes::Unknown(i) => *i,
             IrqTypes::Others(i) => *i,
         }
     }
 }
 
-impl TrapManager for ArmV8 {
+impl TrapManager for Armv8 {
     fn new() -> Self {
         Self {}
     }
@@ -101,8 +102,8 @@ impl TrapManager for ArmV8 {
                             TIMER0_IRQ => {
                                 return TrapTypes::TimerInterrupt;
                             }
-                            ArmV8::UART0_IRQ => IrqTypes::Uart,
-                            ArmV8::VIRTIO0_IRQ => IrqTypes::Virtio,
+                            Armv8::UART0_IRQ => IrqTypes::Uart,
+                            Armv8::VIRTIO0_IRQ => IrqTypes::Virtio,
                             _ => IrqTypes::Unknown(i),
                         }
                     }
@@ -136,7 +137,7 @@ impl TrapManager for ArmV8 {
     unsafe fn after_handling_trap(trap: &TrapTypes) {
         match trap {
             TrapTypes::TimerInterrupt => {
-                ArmV8::set_next_timer();
+                set_next_timer();
                 unsafe {
                     INTERRUPT_CONTROLLER.finish(TIMER0_IRQ);
                 }

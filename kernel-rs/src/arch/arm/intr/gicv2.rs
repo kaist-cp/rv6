@@ -15,7 +15,7 @@ use crate::arch::{
     asm::cpu_id,
     interface::{MemLayout, TimeManager},
     memlayout::TIMER0_IRQ,
-    ArmV8,
+    Armv8,
 };
 
 const GIC_INTERRUPT_NUM: usize = 1024;
@@ -323,7 +323,7 @@ pub unsafe fn intr_init_core() {
         INTERRUPT_CONTROLLER.enable(TIMER0_IRQ);
     }
 
-    ArmV8::timer_init();
+    Armv8::timer_init();
 
     // Order matters!
     if cpu_id() == 0 {
@@ -333,9 +333,9 @@ pub unsafe fn intr_init_core() {
         // IRQ numbers are valid
         unsafe {
             // virtio_blk
-            INTERRUPT_CONTROLLER.enable(ArmV8::VIRTIO0_IRQ);
+            INTERRUPT_CONTROLLER.enable(Armv8::VIRTIO0_IRQ);
             // pl011 uart
-            INTERRUPT_CONTROLLER.enable(ArmV8::UART0_IRQ);
+            INTERRUPT_CONTROLLER.enable(Armv8::UART0_IRQ);
         }
     }
 }

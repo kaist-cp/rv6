@@ -93,11 +93,11 @@ enum UartCtrlRegs {
 ///
 /// uart..(uart + 5) are owned addresses.
 #[derive(Debug)]
-pub struct ArmUart {
+pub struct Uart {
     uart: usize,
 }
 
-impl core::ops::Deref for ArmUart {
+impl core::ops::Deref for Uart {
     type Target = UartBlock;
 
     fn deref(&self) -> &Self::Target {
@@ -105,7 +105,7 @@ impl core::ops::Deref for ArmUart {
     }
 }
 
-impl const UartManagerConst for ArmUart {
+impl const UartManagerConst for Uart {
     /// # Safety
     ///
     /// uart..(uart + 5) are owned addresses.
@@ -114,7 +114,7 @@ impl const UartManagerConst for ArmUart {
     }
 }
 
-impl UartManager for ArmUart {
+impl UartManager for Uart {
     fn init(&self) {
         // set the bit rate: integer/fractional baud rate registers
         self.IBRD.set((UART_CLK / (16 * UART_BITRATE)) as u32);
@@ -156,7 +156,7 @@ impl UartManager for ArmUart {
     }
 }
 
-impl ArmUart {
+impl Uart {
     pub fn puts(&self, s: &str) {
         for c in s.chars() {
             self.putc(c as u8);

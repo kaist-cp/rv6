@@ -1,5 +1,5 @@
 use crate::arch::interface::{ContextManager, ProcManager, TrapFrameManager};
-use crate::arch::RiscV;
+use crate::arch::{asm, RiscV};
 use crate::proc::RegNum;
 
 /// A user program that calls exec("/init").
@@ -11,18 +11,22 @@ const INITCODE: [u8; 52] = [
 ];
 
 impl ProcManager for RiscV {
-    type Context = RiscVContext;
-    type TrapFrame = RiscVTrapFrame;
+    type Context = Context;
+    type TrapFrame = TrapFrame;
 
     fn get_init_code() -> &'static [u8] {
         &INITCODE
+    }
+
+    fn cpu_id() -> usize {
+        asm::cpu_id()
     }
 }
 
 /// Saved registers for kernel context switches.
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
-pub struct RiscVContext {
+pub struct Context {
     pub ra: usize,
     pub sp: usize,
 
@@ -55,7 +59,7 @@ pub struct RiscVContext {
 /// return-to-user path via usertrapret() doesn't return through
 /// the entire kernel call stack.
 #[derive(Copy, Clone)]
-pub struct RiscVTrapFrame {
+pub struct TrapFrame {
     /// 0 - kernel page table (satp: Supervisor Address Translation and Protection)
     pub kernel_satp: usize,
 
@@ -165,7 +169,7 @@ pub struct RiscVTrapFrame {
     pub t6: usize,
 }
 
-impl const TrapFrameManager for RiscVTrapFrame {
+impl const TrapFrameManager for TrapFrame {
     fn set_pc(&mut self, val: usize) {
         self.epc = val;
     }
@@ -212,7 +216,7 @@ impl const TrapFrameManager for RiscVTrapFrame {
     }
 }
 
-impl const ContextManager for RiscVContext {
+impl const ContextManager for Context {
     fn new() -> Self {
         Self {
             ra: 0,

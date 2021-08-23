@@ -14,14 +14,14 @@ pub mod trap;
 pub mod uart;
 pub mod vm;
 
-pub type TargetArch = RiscV;
-
 pub struct RiscV;
 
 impl Arch for RiscV {
-    type Uart = uart::RiscVUart;
+    type Uart = uart::Uart;
 
-    fn cpu_id() -> usize {
-        asm::cpu_id()
+    unsafe fn start() {
+        unsafe {
+            start::start();
+        }
     }
 }

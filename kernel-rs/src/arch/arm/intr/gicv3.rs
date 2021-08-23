@@ -12,7 +12,8 @@ use crate::arch::{
     asm::{cpu_id, cpu_relax, isb, r_icc_ctlr_el1, r_mpidr},
     interface::{MemLayout, TimeManager},
     memlayout::TIMER0_IRQ,
-    ArmV8,
+    timer::udelay,
+    Armv8,
 };
 use crate::param::NCPU;
 
@@ -818,7 +819,7 @@ impl GicCpuInterface {
                 break;
             }
             cpu_relax();
-            ArmV8::udelay(1);
+            udelay(1);
         }
         if count == 1 {
             panic!("redistributor failed to wakeup")
@@ -1189,7 +1190,7 @@ pub unsafe fn intr_init_core() {
     let mut intr_controller = Gic::new(GICD_BASE, GICC_BASE);
     intr_controller.init();
 
-    ArmV8::timer_init();
+    Armv8::timer_init();
     unsafe {
         intr_controller.enable(TIMER0_IRQ);
     }
@@ -1201,10 +1202,10 @@ pub unsafe fn intr_init_core() {
         // SAFETY: enable valid irq numbers after calling `gic.init`.
         unsafe {
             // virtio_blk
-            intr_controller.enable(ArmV8::VIRTIO0_IRQ);
+            intr_controller.enable(Armv8::VIRTIO0_IRQ);
 
             // pl011 uart
-            intr_controller.enable(ArmV8::UART0_IRQ);
+            intr_controller.enable(Armv8::UART0_IRQ);
         }
     }
 }
@@ -1240,7 +1241,7 @@ unsafe fn wait_for_rwp(base: usize) {
             panic!("RWP timeout, gone fishing");
         }
         cpu_relax();
-        ArmV8::udelay(1);
+        udelay(1);
     }
 }
 

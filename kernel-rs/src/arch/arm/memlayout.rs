@@ -19,9 +19,9 @@
 #![allow(dead_code)]
 
 use crate::arch::interface::MemLayout;
-use crate::arch::ArmV8;
+use crate::arch::Armv8;
 
-impl MemLayout for ArmV8 {
+impl MemLayout for Armv8 {
     /// the kernel expects there to be RAM
     /// for use by the kernel and user pages
     /// from physical address 0x80000000 to PHYSTOP.

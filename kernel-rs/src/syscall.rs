@@ -431,8 +431,8 @@ impl KernelCtx<'_, '_> {
         drop(ticks);
 
         let mut rfds = [0u8; 1024 / 8];
-        let wfds = [0u8; 1024 / 8];
-        let efds = [0u8; 1024 / 8];
+        let mut wfds = [0u8; 1024 / 8];
+        let mut efds = [0u8; 1024 / 8];
 
         if read_fds != 0 {
             // SAFETY: `read_fds` is a valid user space address given by a user.
@@ -454,27 +454,34 @@ impl KernelCtx<'_, '_> {
         // the number of fds that are ready
         let mut ready_cnt = 0;
 
+        let events = [SelectEvent::Read, SelectEvent::Write, SelectEvent::Error];
+        let fds = [&mut rfds, &mut wfds, &mut efds];
+
         loop {
             // check fds
-            for fd in 0..nfds + 1 {
-                let idx = (fd / 8) as usize;
-                let mask = 1 << (fd % 8);
+            for i in 0..3 {
+                let event = events[i];
 
-                if rfds[idx] & mask != 0 {
-                    let f = self
-                        .proc()
-                        .deref_data()
-                        .open_files
-                        .get(fd as usize)
-                        .ok_or(())?
-                        .as_ref()
-                        .ok_or(())?;
-                    // SAFETY: `is_ready` will not access proc's open_files.
-                    if unsafe { (*(f as *const RcFile)).is_ready(SelectEvent::Read)? } {
-                        ready_cnt += 1;
-                    } else {
-                        // If the fd is not ready, clear the bit.
-                        rfds[idx] &= !mask;
+                for fd in 0..nfds + 1 {
+                    let idx = (fd / 8) as usize;
+                    let mask = 1 << (fd % 8);
+
+                    if fds[i][idx] & mask != 0 {
+                        let f = self
+                            .proc()
+                            .deref_data()
+                            .open_files
+                            .get(fd as usize)
+                            .ok_or(())?
+                            .as_ref()
+                            .ok_or(())?;
+                        // SAFETY: `is_ready` will not access proc's open_files.
+                        if unsafe { (*(f as *const RcFile)).is_ready(event)? } {
+                            ready_cnt += 1;
+                        } else {
+                            // If the fd is not ready, clear the bit.
+                            fds[i][idx] &= !mask;
+                        }
                     }
                 }
             }

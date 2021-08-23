@@ -7,7 +7,7 @@ use core::{
 use array_macro::array;
 
 use crate::{
-    arch::interface::{Arch, ContextManager, ProcManager, TrapManager},
+    arch::interface::{ContextManager, ProcManager, TrapManager},
     arch::TargetArch,
     param::NCPU,
     proc::Proc,
