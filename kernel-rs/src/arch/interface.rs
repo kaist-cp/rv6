@@ -8,6 +8,8 @@ use crate::{
     vm::{AccessFlags, RawPageTable},
 };
 
+// TODO: Is this abstraction appropriate?
+
 pub trait Arch:
     PageTableManager + MemLayout + TimeManager + TrapManager + InterruptManager + ProcManager + PowerOff
 {
