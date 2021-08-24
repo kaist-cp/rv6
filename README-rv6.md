@@ -173,29 +173,97 @@
 
 ## Benchmark
 
-Run `bench.py`. This script runs `usertests` 10 times by default.
+Run `bench.py` with options.
 
 ```sh
-./bench.py
-# Or, run 30 times
-./bench.py -n 30
+usage: bench.py [-h] [-i ITER] [-o OUTPUT] [-e EXECCOUNT] [-c CASE] [-t TIMEMODE] [-v VERBOSE] [--option OPTION]
+
+usertests benchmark
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -i ITER, --iter ITER  number of iterations. Default = 10
+  -o OUTPUT, --output OUTPUT
+                        benchmark result path. Default = bench.result
+  -e EXECCOUNT, --execcount EXECCOUNT
+                        number of executions per iteration for each testcase. Default=10
+  -c CASE, --case CASE  index of testcase to be executed
+  -t TIMEMODE, --timemode TIMEMODE
+                        time measurment scale: cpu-clock | wall-clock. Default = cpu-clock
+  -v VERBOSE, --verbose VERBOSE
+                        write detailed information to the result. Default =False
+  --option OPTION       make option
+```
+
+For the experiment, we used the following options:
+
+```sh
+./bench.py -i 1 -e 10 -t cpu-clock
 ```
 
 You can see the result in `bench.result`. An exemplary output is:
 
 ```
 Start benchmark 2021-01-21 16:01:02.001441
-73.16322882205714
-73.82074988691602
-74.60743912809994
-73.06701795198023
-74.04991712688934
-74.74715550499968
-73.93327224906534
-74.19972170796245
-73.0705537419999
-72.86001828499138
-Mean=73.75190744049614, Standard Deviation=0.6422428124461621, N=10
+Test=manywrites, Iter=0, ExecCount=10, Mean=10250831503.7, Standard Deviation=310099929.7603766
+Test=execout, Iter=0, ExecCount=10, Mean=234127979491.5, Standard Deviation=2063096239.6600628
+Test=copyin, Iter=0, ExecCount=10, Mean=72843513.2, Standard Deviation=2593483.998048691
+Test=copyout, Iter=0, ExecCount=10, Mean=22197443.3, Standard Deviation=508065.61895619787
+Test=copyinstr1, Iter=0, ExecCount=10, Mean=17590118.2, Standard Deviation=724335.8052858264
+Test=copyinstr2, Iter=0, ExecCount=10, Mean=31026224.2, Standard Deviation=1277484.7001188442
+Test=copyinstr3, Iter=0, ExecCount=10, Mean=22767261.8, Standard Deviation=850377.8462254686
+Test=rwsbrk, Iter=0, ExecCount=10, Mean=52610103.9, Standard Deviation=3796969.8039983716
+Test=truncate1, Iter=0, ExecCount=10, Mean=72626663.6, Standard Deviation=3588155.194589591
+Test=truncate2, Iter=0, ExecCount=10, Mean=57515131, Standard Deviation=2888724.774054423
+Test=truncate3, Iter=0, ExecCount=10, Mean=699796084.9, Standard Deviation=8685616.881588288
+Test=reparent2, Iter=0, ExecCount=10, Mean=35125494097.1, Standard Deviation=499343605.2572245
+Test=pgbug, Iter=0, ExecCount=10, Mean=16853126.3, Standard Deviation=576202.2373050493
+Test=sbrkbugs, Iter=0, ExecCount=10, Mean=57242485.4, Standard Deviation=1375587.7073186815
+Test=badarg, Iter=0, ExecCount=10, Mean=16732117744.5, Standard Deviation=314298214.1929783
+Test=reparent, Iter=0, ExecCount=10, Mean=4694825008.8, Standard Deviation=53248537.52366887
+Test=twochildren, Iter=0, ExecCount=10, Mean=23553479262.2, Standard Deviation=312654479.1470448
+Test=forkfork, Iter=0, ExecCount=10, Mean=4140333092.8, Standard Deviation=42441996.98412191
+Test=forkforkfork, Iter=0, ExecCount=10, Mean=11070152007.5, Standard Deviation=4214247.017523988
+Test=argptest, Iter=0, ExecCount=10, Mean=19669825.3, Standard Deviation=1076447.8157422373
+Test=createdelete, Iter=0, ExecCount=10, Mean=1692106081.6, Standard Deviation=43254490.91422707
+Test=linkunlink, Iter=0, ExecCount=10, Mean=738579118.6, Standard Deviation=17181223.968526576
+Test=linktest, Iter=0, ExecCount=10, Mean=122194298.2, Standard Deviation=8043328.834906379
+Test=unlinkread, Iter=0, ExecCount=10, Mean=112391973.3, Standard Deviation=5462054.9097064
+Test=concreate, Iter=0, ExecCount=10, Mean=5555714294.8, Standard Deviation=86235817.9635743
+Test=subdir, Iter=0, ExecCount=10, Mean=317356618.3, Standard Deviation=6779472.5084936945
+Test=fourfiles, Iter=0, ExecCount=10, Mean=364562909.2, Standard Deviation=18523538.444742586
+Test=sharedfd, Iter=0, ExecCount=10, Mean=1258305490.5, Standard Deviation=99211093.82524228
+Test=dirtest, Iter=0, ExecCount=10, Mean=62557539.1, Standard Deviation=5084440.4897059435
+Test=exectest, Iter=0, ExecCount=10, Mean=101016489.8, Standard Deviation=3849253.3196121096
+Test=bigargtest, Iter=0, ExecCount=10, Mean=86731337.4, Standard Deviation=1234924.8689326271
+Test=bigwrite, Iter=0, ExecCount=10, Mean=2179088452.5, Standard Deviation=47737862.418833666
+Test=bsstest, Iter=0, ExecCount=10, Mean=16703757.3, Standard Deviation=1191501.0847995295
+Test=sbrkbasic, Iter=0, ExecCount=10, Mean=14768144087.8, Standard Deviation=122624404.54519753
+Test=sbrkmuch, Iter=0, ExecCount=10, Mean=11604135700.4, Standard Deviation=160586718.12640956
+Test=kernmem, Iter=0, ExecCount=10, Mean=590334800.2, Standard Deviation=23889526.48877363
+Test=sbrkfail, Iter=0, ExecCount=10, Mean=53275587805.5, Standard Deviation=501197941.33818287
+Test=sbrkarg, Iter=0, ExecCount=10, Mean=75074295, Standard Deviation=6985498.194494156
+Test=validatetest, Iter=0, ExecCount=10, Mean=151271691.7, Standard Deviation=15584963.951729957
+Test=stacktest, Iter=0, ExecCount=10, Mean=33503426, Standard Deviation=1647149.0807118826
+Test=opentest, Iter=0, ExecCount=10, Mean=25377926.3, Standard Deviation=1436404.7789807292
+Test=writetest, Iter=0, ExecCount=10, Mean=1000989926.6, Standard Deviation=47432019.17070772
+Test=writebig, Iter=0, ExecCount=10, Mean=2151370834.9, Standard Deviation=126541151.0858887
+Test=createtest, Iter=0, ExecCount=10, Mean=1952230863.1, Standard Deviation=62090935.928086035
+Test=openiput, Iter=0, ExecCount=10, Mean=339365750.1, Standard Deviation=71608476.42326514
+Test=exitiput, Iter=0, ExecCount=10, Mean=74096425.7, Standard Deviation=1950034.465084602
+Test=iput, Iter=0, ExecCount=10, Mean=62158786.4, Standard Deviation=2645237.072454994
+Test=mem, Iter=0, ExecCount=10, Mean=16648525535.2, Standard Deviation=142852748.4777774
+Test=pipe1, Iter=0, ExecCount=10, Mean=36972031.7, Standard Deviation=1142602.1014287276
+Test=killstatus, Iter=0, ExecCount=10, Mean=36911937347.1, Standard Deviation=28681127.996621083
+Test=preempt, Iter=0, ExecCount=10, Mean=585400609.7, Standard Deviation=181312782.38400963
+Test=exitwait, Iter=0, ExecCount=10, Mean=1175053781.1, Standard Deviation=9824044.958759846
+Test=rmdot, Iter=0, ExecCount=10, Mean=72308323, Standard Deviation=2467978.045960656
+Test=fourteen, Iter=0, ExecCount=10, Mean=140964120.7, Standard Deviation=3282846.848378064
+Test=bigfile, Iter=0, ExecCount=10, Mean=216833686.3, Standard Deviation=16241193.844760058
+Test=dirfile, Iter=0, ExecCount=10, Mean=93530890.3, Standard Deviation=10745218.64240552
+Test=iref, Iter=0, ExecCount=10, Mean=1965505009, Standard Deviation=61145641.97305806
+Test=forktest, Iter=0, ExecCount=10, Mean=788582250.6, Standard Deviation=10910378.262444843
+Test=bigdir, Iter=0, ExecCount=10, Mean=40395690096, Standard Deviation=2016582586.665442
 ```
 
 ## How we ported xv6 to Rust

@@ -27,3 +27,4 @@
 #define SYS_getppid 26
 #define SYS_lseek 27
 #define SYS_uptime_as_micro 28
+#define SYS_clock  29

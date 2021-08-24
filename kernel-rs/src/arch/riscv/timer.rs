@@ -11,4 +11,12 @@ impl TimeManager for RiscV {
     fn uptime_as_micro() -> Result<usize, ()> {
         todo!()
     }
+
+    fn r_cycle() -> usize {
+        let mut x;
+        unsafe {
+            asm!("rdcycle {}", out(reg) x);
+        }
+        x
+    }
 }

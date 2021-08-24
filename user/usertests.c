@@ -8,8 +8,6 @@
 #include "kernel/memlayout.h"
 #include "kernel/arch.h"
 
-#define RAND_DEFINED
-
 //
 // Tests xv6 system calls.  usertests without arguments runs them all
 // and usertests <name> runs <name> test. The test runner creates for
@@ -18,6 +16,13 @@
 // kernel printing usertrap messages, which can be ignored if test
 // prints "OK".
 //
+#ifndef ITER
+#define ITER 1
+#endif
+
+#ifdef ISBENCH
+  unsigned long int times[2];
+#endif
 
 #define BUFSZ  ((MAXOPBLOCKS+2)*BSIZE)
 
@@ -2860,11 +2865,39 @@ main(int argc, char *argv[])
   int free0 = countfree();
   int free1 = 0;
   int fail = 0;
-  for (struct test *t = tests; t->s != 0; t++) {
-    if((justone == 0) || strcmp(t->s, justone) == 0) {
-      if(!run(t->f, t->s))
-        fail = 1;
+  
+  #ifdef CASE
+    struct test *start = &tests[CASE];
+  #else 
+    struct test *start = &tests[0];
+  #endif
+
+  for (struct test *t = start; t->s != 0; t++) {
+    for (int j=0; j< ITER; j++) {
+      if((justone == 0) || strcmp(t->s, justone) == 0) {
+        #ifdef ISBENCH
+        if(clock(&times[0])){
+          printf("error");
+        }
+        #endif
+        // times[0] = uptime();
+        if(!run(t->f, t->s))
+          fail = 1;
+        
+        #ifdef ISBENCH
+        if(clock(&times[1])){
+          printf("error");
+        }
+        #endif
+        // times[1] = uptime();
+        #ifdef ISBENCH
+          printf("Test=%s, Time=%lu, Try=%d\n", t->s, times[1] - times[0], j);
+        #endif
+      }
     }
+    #ifdef CASE
+      break;
+    #endif
   }
 
   if(fail){

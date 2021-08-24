@@ -38,6 +38,7 @@ off_t lseek(int fildes, off_t offset, int whence);
 int uptime_as_micro();
 int gettimeofday(struct timeval *__restrict__ tp,
                 struct timezone *__restrict__ tzp);
+int clock(unsigned long*);
 
 // ulib.c
 int stat(const char*, struct stat*);

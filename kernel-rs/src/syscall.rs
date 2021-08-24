@@ -118,6 +118,7 @@ impl KernelCtx<'_, '_> {
             26 => self.sys_getppid(),
             27 => self.sys_lseek(),
             28 => self.sys_uptime_as_micro(),
+            29 => self.sys_clock(),
             _ => {
                 self.kernel().as_ref().write_fmt(format_args!(
                     "{} {}: unknown sys call {}",
@@ -541,5 +542,15 @@ impl KernelCtx<'_, '_> {
         };
         // SAFETY: `lseek` will not access proc's open_files.
         unsafe { (*(f as *const RcFile)).lseek(offset, whence, self) }
+    }
+
+    pub fn sys_clock(&mut self) -> Result<usize, ()> {
+        let p = self.proc().argaddr(0)?;
+        let addr = UVAddr::from(p);
+
+        let clk = TargetArch::r_cycle();
+        self.proc_mut().memory_mut().copy_out(addr, &clk)?;
+
+        Ok(0)
     }
 }
