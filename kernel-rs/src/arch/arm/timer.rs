@@ -17,6 +17,10 @@ impl TimeManager for Armv8 {
     fn uptime_as_micro() -> Result<usize, ()> {
         Ok((read_cntpct() * US_PER_S / read_freq()) as usize)
     }
+
+    fn r_cycle() -> usize {
+        read_cntpct() as usize
+    }
 }
 
 pub fn read_cntpct() -> u64 {

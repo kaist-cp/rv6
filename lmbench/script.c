@@ -1,6 +1,8 @@
 #include "bench.h"
 
+#ifndef ITER
 #define ITER 10
+#endif
 
 int main(int ac, char **av)
 {

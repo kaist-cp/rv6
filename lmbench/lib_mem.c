@@ -672,7 +672,7 @@ par_mem(size_t len, int warmup, int repetitions, struct mem_state* state)
 {
 	int	i, j;
 	iter_t	__n = 1;
-	double	baseline, max_par, par;
+	double	baseline = 0.0f, max_par, par = 0.0f;
 
 	state->width = 1;
 	max_par = 1.;
