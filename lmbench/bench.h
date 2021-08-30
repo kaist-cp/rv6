@@ -231,6 +231,10 @@ result_t* get_results();
 	*(get_results()) = __r;						\
 }
 
+#ifdef BENCH
+#undef BENCH
+#endif
+
 #define	BENCH(loop_body, enough) { 					\
 	long		__i, __N;					\
 	result_t 	__r;						\

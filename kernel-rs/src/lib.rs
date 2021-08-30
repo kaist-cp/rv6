@@ -25,6 +25,7 @@
 #![deny(unused_results)]
 #![deny(variant_size_differences)]
 #![deny(warnings)]
+#![feature(const_fn_union)]
 //
 // # The following lints should not be denied.
 //
