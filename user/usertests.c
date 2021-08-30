@@ -20,7 +20,7 @@
 #define ITER 1
 #endif
 
-#ifdef ISBENCH
+#ifdef BENCH
   unsigned long int times[2];
 #endif
 
@@ -2875,7 +2875,7 @@ main(int argc, char *argv[])
   for (struct test *t = start; t->s != 0; t++) {
     for (int j=0; j< ITER; j++) {
       if((justone == 0) || strcmp(t->s, justone) == 0) {
-        #ifdef ISBENCH
+        #ifdef BENCH
         if(clock(&times[0])){
           printf("error");
         }
@@ -2884,13 +2884,13 @@ main(int argc, char *argv[])
         if(!run(t->f, t->s))
           fail = 1;
         
-        #ifdef ISBENCH
+        #ifdef BENCH
         if(clock(&times[1])){
           printf("error");
         }
         #endif
         // times[1] = uptime();
-        #ifdef ISBENCH
+        #ifdef BENCH
           printf("Test=%s, Time=%lu, Try=%d\n", t->s, times[1] - times[0], j);
         #endif
       }
