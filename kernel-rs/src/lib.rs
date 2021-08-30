@@ -25,6 +25,8 @@
 #![deny(unused_results)]
 #![deny(variant_size_differences)]
 #![deny(warnings)]
+// TODO(https://github.com/kaist-cp/rv6/issues/579):
+// remove this and upgrade to rustc 1.56.0-nightly once the problem is resolved.
 #![feature(const_fn_union)]
 //
 // # The following lints should not be denied.
