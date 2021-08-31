@@ -44,7 +44,7 @@ endif
 ifeq ($(RUST_MODE),release)
 # O3 causes a crash while creating img.
 OPTFLAGS = -O2
-CARGOFLAGS = --release
+CARGOFLAGS += --release
 endif
 
 # OBJS = \
