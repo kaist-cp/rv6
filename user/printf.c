@@ -72,11 +72,32 @@
 #define PRINTF_SUPPORT_PTRDIFF_T
 #endif
 
+// max precision when printing float/double numbers.
+#define MAX_PRECISION	(10)
+
+// ftoa uses this.
+static const double rounders[MAX_PRECISION + 1] =
+{
+	0.5,				// 0
+	0.05,				// 1
+	0.005,				// 2
+	0.0005,				// 3
+	0.00005,			// 4
+	0.000005,			// 5
+	0.0000005,			// 6
+	0.00000005,			// 7
+	0.000000005,		// 8
+	0.0000000005,		// 9
+	0.00000000005		// 10
+};
+
 // output function type
 typedef void (*out_fct_type)(char character, void* buffer, size_t idx, size_t maxlen, int fd);
 static inline void _out_char(char character, void* buffer, size_t idx, size_t maxlen, int fd);
 static inline void _out_fd(char character, void* buffer, size_t idx, size_t maxlen, int fd);
 static int _vsnprintf(out_fct_type out, char* buffer, const size_t maxlen, const char* format, va_list va, int fd);
+char * ftoa(double f, char * buf, int precision);
+static size_t _ftoa(out_fct_type out, char* buffer, size_t idx, size_t maxlen, double value, unsigned int prec, unsigned int width, unsigned int flags);
 
 static char digits[] = "0123456789ABCDEF";
 
@@ -121,12 +142,12 @@ printptr(int fd, uint64 x) {
     putc(fd, digits[x >> (sizeof(uint64) * 8 - 4)]);
 }
 
-// Print to the given fd. Only understands %d, %x, %p, %s. %lu
+// Print to the given fd. Only understands %d, %x, %p, %s, %(.[0-9])?f, and %lu.
 void
 vprintf(int fd, const char *fmt, va_list ap)
 {
   char *s;
-  int c, i, state;
+  int c, i, state, precision = 0;
 
   state = 0;
   for(i = 0; fmt[i]; i++){
@@ -157,16 +178,29 @@ vprintf(int fd, const char *fmt, va_list ap)
         }
       } else if(c == 'c'){
         putc(fd, va_arg(ap, uint));
+      } else if(c == 'f') {
+        char buf[10];
+        ftoa((float)va_arg(ap, double), buf, precision);
+        char* s = buf;
+        if(s == 0)
+          s = "(null)";
+        while(*s != 0){
+          putc(fd, *s);
+          s++;
+        }
       } else if(c == '%'){
         putc(fd, c);
-      } else {
+      } else if(c == '.'){
+        state = '.';
+        continue;
+      }
+      else {
         // Unknown % sequence.  Print it to draw attention.
         putc(fd, '%');
         putc(fd, c);
       }
       state = 0;
-    }
-    else if(state == 'l') {
+    } else if(state == 'l') {
       if (c == 'u') {
         printint(fd, va_arg(ap, uint64), 10, 0);
       } else{
@@ -176,10 +210,14 @@ vprintf(int fd, const char *fmt, va_list ap)
         putc(fd, c);
       }
       state = 0;
+    } else if(state == '.') {
+      precision = c - '0';
+      state = '%';
     }
   }
 }
 
+// for the performance issue, fprintf doesn't use _vsnprintf.
 void
 fprintf(int fd, const char *fmt, ...)
 {
@@ -189,6 +227,7 @@ fprintf(int fd, const char *fmt, ...)
   vprintf(fd, fmt, ap);
 }
 
+// for the performance issue, printf doesn't use _vsnprintf.
 void
 printf(const char *fmt, ...)
 {
@@ -197,18 +236,6 @@ printf(const char *fmt, ...)
   va_start(ap, fmt);
   vprintf(1, fmt, ap);
 }
-
-// void
-// printf(const char* fmt, ...)
-// {
-//   va_list va;
-
-//   va_start(va, fmt);
-//   char buffer[1];
-//   _vsnprintf(_out_char, buffer, (size_t)-1, fmt, va, 1);
-//   va_end(va);
-//   return;
-// }
 
 // newly added
 void _putchar(char c){
@@ -658,6 +685,95 @@ static size_t _etoa(out_fct_type out, char* buffer, size_t idx, size_t maxlen, d
     }
   }
   return idx;
+}
+
+char * ftoa(double f, char * buf, int precision)
+{
+	char * ptr = buf;
+	char * p = ptr;
+	char * p1;
+	char c;
+	long intPart;
+
+	// check precision bounds
+	if (precision > MAX_PRECISION)
+		precision = MAX_PRECISION;
+
+	// sign stuff
+	if (f < 0)
+	{
+		f = -f;
+		*ptr++ = '-';
+	}
+
+	if (precision < 0)  // negative precision == automatic precision guess
+	{
+		if (f < 1.0) precision = 6;
+		else if (f < 10.0) precision = 5;
+		else if (f < 100.0) precision = 4;
+		else if (f < 1000.0) precision = 3;
+		else if (f < 10000.0) precision = 2;
+		else if (f < 100000.0) precision = 1;
+		else precision = 0;
+	}
+
+	// round value according the precision
+	if (precision)
+		f += rounders[precision];
+
+	// integer part...
+	intPart = f;
+	f -= intPart;
+
+	if (!intPart)
+		*ptr++ = '0';
+	else
+	{
+		// save start pointer
+		p = ptr;
+
+		// convert (reverse order)
+		while (intPart)
+		{
+			*p++ = '0' + intPart % 10;
+			intPart /= 10;
+		}
+
+		// save end pos
+		p1 = p;
+
+		// reverse result
+		while (p > ptr)
+		{
+			c = *--p;
+			*p = *ptr;
+			*ptr++ = c;
+		}
+
+		// restore end pos
+		ptr = p1;
+	}
+
+	// decimal part
+	if (precision)
+	{
+		// place decimal point
+		*ptr++ = '.';
+
+		// convert
+		while (precision--)
+		{
+			f *= 10.0;
+			c = f;
+			*ptr++ = '0' + c;
+			f -= c;
+		}
+	}
+
+	// terminating zero
+	*ptr = 0;
+
+	return buf;
 }
 
 static int _vsnprintf(out_fct_type out, char* buffer, const size_t maxlen, const char* format, va_list va, int fd)

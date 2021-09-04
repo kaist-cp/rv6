@@ -1,7 +1,7 @@
 #include "bench.h"
 
 #ifndef ITER
-#define ITER 10
+#define ITER 1
 #endif
 
 int main(int ac, char **av)
