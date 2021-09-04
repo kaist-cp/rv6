@@ -121,7 +121,7 @@ printptr(int fd, uint64 x) {
     putc(fd, digits[x >> (sizeof(uint64) * 8 - 4)]);
 }
 
-// Print to the given fd. Only understands %d, %x, %p, %s.
+// Print to the given fd. Only understands %d, %x, %p, %s. %lu
 void
 vprintf(int fd, const char *fmt, va_list ap)
 {
@@ -141,7 +141,8 @@ vprintf(int fd, const char *fmt, va_list ap)
       if(c == 'd'){
         printint(fd, va_arg(ap, int), 10, 1);
       } else if(c == 'l') {
-        printint(fd, va_arg(ap, uint64), 10, 0);
+        state = 'l';
+        continue;
       } else if(c == 'x') {
         printint(fd, va_arg(ap, int), 16, 0);
       } else if(c == 'p') {
@@ -165,6 +166,17 @@ vprintf(int fd, const char *fmt, va_list ap)
       }
       state = 0;
     }
+    else if(state == 'l') {
+      if (c == 'u') {
+        printint(fd, va_arg(ap, uint64), 10, 0);
+      } else{
+        // Unknown % sequence. Print it to draw attention.
+        putc(fd, '%');
+        putc(fd, 'l');
+        putc(fd, c);
+      }
+      state = 0;
+    }
   }
 }
 
@@ -174,31 +186,29 @@ fprintf(int fd, const char *fmt, ...)
   va_list ap;
 
   va_start(ap, fmt);
-  char buffer[1];
-  _vsnprintf(_out_fd, buffer, (size_t)-1, fmt, ap, fd);
-  va_end(ap);
+  vprintf(fd, fmt, ap);
+}
+
+void
+printf(const char *fmt, ...)
+{
+  va_list ap;
+
+  va_start(ap, fmt);
+  vprintf(1, fmt, ap);
 }
 
 // void
-// printf(const char *fmt, ...)
+// printf(const char* fmt, ...)
 // {
-//   va_list ap;
+//   va_list va;
 
-//   va_start(ap, fmt);
-//   vprintf(1, fmt, ap);
+//   va_start(va, fmt);
+//   char buffer[1];
+//   _vsnprintf(_out_char, buffer, (size_t)-1, fmt, va, 1);
+//   va_end(va);
+//   return;
 // }
-
-void
-printf(const char* fmt, ...)
-{
-  va_list va;
-
-  va_start(va, fmt);
-  char buffer[1];
-  _vsnprintf(_out_char, buffer, (size_t)-1, fmt, va, 0);
-  va_end(va);
-  return;
-}
 
 // newly added
 void _putchar(char c){
