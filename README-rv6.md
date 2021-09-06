@@ -266,6 +266,16 @@ Test=forktest, Iter=0, ExecCount=10, Mean=788582250.6, Standard Deviation=109103
 Test=bigdir, Iter=0, ExecCount=10, Mean=40395690096, Standard Deviation=2016582586.665442
 ```
 
+LMbench benchmark
+
+you can execute some [LMbench](http://lmbench.sourceforge.net) mircrobenchmarks ported for rv6.
+
+```
+# lmbench is only supported on ARM now.
+TARGET=arm RUST_MODE=release make qemu
+$ lmbench
+```
+
 ## How we ported xv6 to Rust
 
 - Run [c2rust](https://github.com/immunant/c2rust) to transpile C code to Rust.
