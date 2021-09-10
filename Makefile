@@ -5,7 +5,6 @@ LM = lmbench
 
 ifeq ($(TARGET),arm)
 RUST_TARGET = aarch64-unknown-none
-RUST_BUILD_TARGET = $(RUST_TARGET)
 ARCH = aarch64
 TOOLPREFIX = aarch64-linux-gnu-
 MARCH = armv8-a
@@ -24,7 +23,6 @@ ADD_QEMUOPTS = -cpu cortex-a72
 ADD_QEMUOPTS += -machine gic-version=$(GIC_VERSION)
 else
 RUST_TARGET = riscv64gc-unknown-none-elfhf
-RUST_BUILD_TARGET = kernel-rs/$(RUST_TARGET).json
 ARCH = riscv64
 TARGET = riscv
 MARCH = rv64g
@@ -43,7 +41,8 @@ endif
 
 ifeq ($(RUST_MODE),release)
 # O3 causes a crash while creating img.
-OPTFLAGS = -O2
+# It seems optimization degrades performance.
+# OPTFLAGS = -O2
 CARGOFLAGS += --release
 endif
 
@@ -167,9 +166,7 @@ $U/initcode: $(UT)/initcode.S
 # there is bug in rustc 1.56.0-nightly (30a0a9b69 2021-08-17).
 # aarch64-unknown-none.json file does not work properly.
 $(KR)/target/$(RUST_TARGET)/$(RUST_MODE)/librv6_kernel.a: $(shell find $(KR) -type f)
-	cargo build --manifest-path kernel-rs/Cargo.toml --target $(RUST_BUILD_TARGET) $(CARGOFLAGS)
-
-# cargo build --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json $(CARGOFLAGS)
+	cargo build --manifest-path kernel-rs/Cargo.toml --target kernel-rs/$(RUST_TARGET).json $(CARGOFLAGS)
 
 tags: $(OBJS) _init
 	etags *.S *.c
@@ -265,7 +262,7 @@ UPROGS=\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
-	$U/_script\
+	$U/_lmbench\
 	$U/_lat_syscall\
 	$U/_lat_proc\
 	$U/_hello\
