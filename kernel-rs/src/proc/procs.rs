@@ -97,10 +97,10 @@ impl Procs {
             let procs = ProcsRef(procs);
 
             // Allocate trap frame.
-            let trap_frame =
-                scopeguard::guard(allocator.alloc().expect("user_proc_init: alloc"), |page| {
-                    allocator.free(page)
-                });
+            let trap_frame = scopeguard::guard(
+                allocator.alloc(None).expect("user_proc_init: alloc"),
+                |page| allocator.free(page),
+            );
 
             // Allocate one user page and copy init's instructions
             // and data into it.
@@ -248,8 +248,9 @@ impl<'id, 's> ProcsRef<'id, 's> {
     pub fn fork(&self, ctx: &mut KernelCtx<'id, '_>) -> Result<Pid, ()> {
         let allocator = hal().kmem();
         // Allocate trap frame.
-        let trap_frame =
-            scopeguard::guard(allocator.alloc().ok_or(())?, |page| allocator.free(page));
+        let trap_frame = scopeguard::guard(allocator.alloc(None).ok_or(())?, |page| {
+            allocator.free(page)
+        });
 
         // Copy user memory from parent to child.
         let memory = ctx

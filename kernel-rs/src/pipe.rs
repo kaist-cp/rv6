@@ -132,7 +132,7 @@ impl Deref for AllocatedPipe {
 impl KernelCtx<'_, '_> {
     pub fn allocate_pipe(&self) -> Result<(RcFile, RcFile), ()> {
         let allocator = hal().kmem();
-        let page = allocator.alloc().ok_or(())?;
+        let page = allocator.alloc(None).ok_or(())?;
         let mut page = scopeguard::guard(page, |page| allocator.free(page));
         let ptr = page.as_uninit_mut();
 
