@@ -18,8 +18,12 @@ CARGOFLAGS = --features 'gicv$(GIC_VERSION)'
 # Note that the default is cortex-a15, 
 # so for an AArch64 guest you must specify a CPU type.
 # https://qemu.readthedocs.io/en/latest/system/arm/virt.html#supported-devices
+ifeq ($(KVM),yes)
+# you must run this on KVM-supported ARM machine.
+ADD_QEMUOPTS = -cpu host -enable-kvm
+else
 ADD_QEMUOPTS = -cpu cortex-a72
-#ADD_QEMUOPTS = -cpu host -enable-kvm
+endif
 ADD_QEMUOPTS += -machine gic-version=$(GIC_VERSION)
 else
 RUST_TARGET = riscv64gc-unknown-none-elfhf
