@@ -371,7 +371,7 @@ impl KernelCtx<'_, '_> {
                 break;
             }
 
-            let mut page = some_or!(allocator.alloc(), break);
+            let mut page = some_or!(allocator.alloc(None), break);
             if self
                 .proc_mut()
                 .fetchstr(uarg.into(), &mut page[..])

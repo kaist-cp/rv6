@@ -63,8 +63,7 @@ impl RawPageTable {
     /// Return `Ok(..)` if the allocation has succeeded.
     /// Return `None` if the allocation has failed.
     fn new(allocator: Pin<&SpinLock<Kmem>>) -> Option<*mut RawPageTable> {
-        let mut page = allocator.alloc()?;
-        page.write_bytes(0);
+        let page = allocator.alloc(Some(0))?;
         // This line guarantees the invariant.
         Some(page.into_usize() as *mut RawPageTable)
     }
@@ -304,8 +303,7 @@ impl UserMemory {
 
         if let Some(src) = src_opt {
             assert!(src.len() < PGSIZE, "new: more than a page");
-            let mut page = allocator.alloc()?;
-            page.write_bytes(0);
+            let mut page = allocator.alloc(Some(0))?;
             (&mut page[..src.len()]).copy_from_slice(src);
             memory
                 .push_page(
@@ -336,7 +334,7 @@ impl UserMemory {
 
             let pa = pte.get_pa();
             let flags = pte.get_flags();
-            let mut page = allocator.alloc()?;
+            let mut page = allocator.alloc(None)?;
             // SAFETY: pa is an address in page_table,
             // and thus it is the address of a page by the invariant.
             let src = unsafe { slice::from_raw_parts(pa.into_usize() as *const u8, PGSIZE) };
@@ -393,8 +391,7 @@ impl UserMemory {
             let _ = this.dealloc(oldsz, allocator);
         });
         while pgroundup(this.size) < pgroundup(newsz) {
-            let mut page = allocator.alloc().ok_or(())?;
-            page.write_bytes(0);
+            let page = allocator.alloc(Some(0)).ok_or(())?;
             this.push_page(
                 page,
                 (AccessFlags::R | AccessFlags::W | AccessFlags::X | AccessFlags::U).into(),
@@ -705,7 +702,7 @@ impl<A: Arch> KernelMemory<A> {
         // Map it high in memory, followed by an invalid
         // guard page.
         for i in 0..NPROC {
-            let pa = allocator.alloc()?.into_usize();
+            let pa = allocator.alloc(None)?.into_usize();
             let va: usize = kstack(i);
             page_table
                 .insert_range(

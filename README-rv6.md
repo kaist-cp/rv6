@@ -35,6 +35,12 @@
   TARGET=arm GIC_VERSION=3 make qemu
   ```
 
+- Run with KVM enabled on ArmV8 kvm-supported machine.
+```
+# You should specify proper GIC version.
+TARGET=arm GIC_VERSION=3 KVM=yes make qemu
+```
+
 - Debug rv6 on qemu.
 
   - Run rv6 under QEMU and enable remote debugging

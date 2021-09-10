@@ -100,9 +100,6 @@ impl Kmem {
     }
 
     pub fn free(self: Pin<&Self>, mut page: Page) {
-        // Fill with junk to catch dangling refs.
-        page.write_bytes(1);
-
         let run = page.as_uninit_mut();
         // SAFETY: `run` will be initialized by the following `init`.
         let run = run.write(unsafe { Run::new() });
@@ -117,9 +114,7 @@ impl Kmem {
     pub fn alloc(self: Pin<&Self>) -> Option<Page> {
         let run = self.runs().pop_front()?;
         // SAFETY: the invariant of `Kmem`.
-        let mut page = unsafe { Page::from_usize(run as _) };
-        // fill with junk
-        page.write_bytes(5);
+        let page = unsafe { Page::from_usize(run as _) };
         Some(page)
     }
 
@@ -129,11 +124,18 @@ impl Kmem {
 }
 
 impl SpinLock<Kmem> {
-    pub fn free(self: Pin<&Self>, page: Page) {
+    pub fn free(self: Pin<&Self>, mut page: Page) {
+        // Fill with junk to catch dangling refs.
+        page.write_bytes(1);
         self.pinned_lock().get_pin_mut().as_ref().free(page);
     }
 
-    pub fn alloc(self: Pin<&Self>) -> Option<Page> {
-        self.pinned_lock().get_pin_mut().as_ref().alloc()
+    pub fn alloc(self: Pin<&Self>, init_value: Option<u8>) -> Option<Page> {
+        let mut page = self.pinned_lock().get_pin_mut().as_ref().alloc()?;
+
+        // fill with junk or received init value
+        let init_value = init_value.unwrap_or(5);
+        page.write_bytes(init_value);
+        Some(page)
     }
 }
