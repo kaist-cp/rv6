@@ -2,7 +2,6 @@ use core::{
     mem,
     mem::MaybeUninit,
     ops::{Deref, DerefMut},
-    ptr,
     ptr::NonNull,
 };
 
@@ -31,10 +30,12 @@ pub struct Page {
 }
 
 impl RawPage {
-    pub fn write_bytes(&mut self, value: u8) {
-        unsafe {
-            ptr::write_bytes(&mut self.inner, value, 1);
-        }
+    pub fn write_bytes(&mut self, v: u8) {
+        const_assert!(mem::size_of::<RawPage>() % mem::size_of::<u64>() == 0);
+        const_assert!(mem::align_of::<RawPage>() % mem::align_of::<u64>() == 0);
+        // SAFETY: RawPage's size/alignment is a multiple of u64's size/alignment.
+        let (_, buf, _) = unsafe { self.inner.align_to_mut::<u64>() };
+        buf.fill(u64::from_le_bytes([v; 8]));
     }
 }
 

@@ -67,7 +67,7 @@
 //! dev, and inum.  One must hold ip->lock in order to
 //! read or write that inode's ip->valid, ip->size, ip->type, &c.
 
-use core::{iter::StepBy, mem, ops::Range, ptr};
+use core::{iter::StepBy, mem, ops::Range};
 
 use static_assertions::const_assert;
 use zerocopy::{AsBytes, FromBytes};
@@ -302,7 +302,9 @@ impl InodeGuard<'_, Ufs> {
 
         (*dip).nlink = inner.nlink;
         (*dip).size = inner.size;
-        (*dip).addr_direct.copy_from_slice(&inner.addr_direct);
+        for (d, s) in (*dip).addr_direct.iter_mut().zip(&inner.addr_direct) {
+            *d = *s;
+        }
         (*dip).addr_indirect = inner.addr_indirect;
         tx.write(bp, ctx);
     }
@@ -452,7 +454,16 @@ impl Itable<Ufs> {
 
             // a free inode
             if dip.typ == DInodeType::None {
-                unsafe { ptr::write_bytes(dip as _, 0, 1) };
+                const_assert!(mem::size_of::<Dinode>() % mem::size_of::<u32>() == 0);
+                const_assert!(mem::align_of::<Dinode>() % mem::align_of::<u32>() == 0);
+                // SAFETY: DInode's size/alignment is a multiple of u32's size/alignment.
+                let buf = unsafe {
+                    core::slice::from_raw_parts_mut(
+                        dip as *mut _ as *mut u32,
+                        mem::size_of::<Dinode>() / mem::size_of::<u32>(),
+                    )
+                };
+                buf.fill(0);
                 match typ {
                     InodeType::None => dip.typ = DInodeType::None,
                     InodeType::Dir => dip.typ = DInodeType::Dir,

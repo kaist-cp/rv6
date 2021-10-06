@@ -86,7 +86,7 @@ impl Log {
             // Copy block to dst.
             dbuf.deref_inner_mut()
                 .data
-                .copy_from_slice(&lbuf.deref_inner().data[..]);
+                .copy_from(&lbuf.deref_inner().data);
 
             // Write dst to disk.
             hal().disk().write(&mut dbuf, ctx);
@@ -162,7 +162,7 @@ impl Log {
 
             to.deref_inner_mut()
                 .data
-                .copy_from_slice(&from.deref_inner().data[..]);
+                .copy_from(&from.deref_inner().data);
 
             // Write the log.
             hal().disk().write(&mut to, ctx);

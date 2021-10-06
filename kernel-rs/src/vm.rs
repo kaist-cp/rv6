@@ -1,6 +1,7 @@
 use core::{cmp, marker::PhantomData, mem, pin::Pin, slice};
 
 use bitflags::bitflags;
+use static_assertions::const_assert;
 use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
@@ -14,6 +15,7 @@ use crate::{
     page::Page,
     param::NPROC,
     proc::KernelCtx,
+    util::memmove,
 };
 
 type PageTableEntry = <TargetArch as PageTableManager>::PageTableEntry;
@@ -304,7 +306,7 @@ impl UserMemory {
         if let Some(src) = src_opt {
             assert!(src.len() < PGSIZE, "new: more than a page");
             let mut page = allocator.alloc(Some(0))?;
-            (&mut page[..src.len()]).copy_from_slice(src);
+            memmove(&mut page[..src.len()], src);
             memory
                 .push_page(
                     page,
@@ -335,10 +337,20 @@ impl UserMemory {
             let pa = pte.get_pa();
             let flags = pte.get_flags();
             let mut page = allocator.alloc(None)?;
+            const_assert!(PGSIZE % mem::size_of::<u64>() == 0);
+            const_assert!(PGSIZE % mem::align_of::<u64>() == 0);
             // SAFETY: pa is an address in page_table,
             // and thus it is the address of a page by the invariant.
-            let src = unsafe { slice::from_raw_parts(pa.into_usize() as *const u8, PGSIZE) };
-            page.copy_from_slice(src);
+            let src = unsafe {
+                slice::from_raw_parts(
+                    pa.into_usize() as *const u64,
+                    PGSIZE / mem::size_of::<u64>(),
+                )
+            };
+            let (_, buf, _) = unsafe { page.align_to_mut::<u64>() };
+            for (d, s) in buf.iter_mut().zip(src.iter()) {
+                *d = *s;
+            }
             new.push_page(page, flags, allocator)
                 .map_err(|page| allocator.free(page))
                 .ok()?;
@@ -457,7 +469,7 @@ impl UserMemory {
             let poffset = dst - va;
             let page = self.get_slice(va.into()).ok_or(())?;
             let n = cmp::min(PGSIZE - poffset, len);
-            page[poffset..poffset + n].copy_from_slice(&src[offset..offset + n]);
+            memmove(&mut page[poffset..poffset + n], &src[offset..offset + n]);
             len -= n;
             offset += n;
             dst += n;
@@ -484,7 +496,7 @@ impl UserMemory {
             let poffset = src - va;
             let page = self.get_slice(va.into()).ok_or(())?;
             let n = cmp::min(PGSIZE - poffset, len);
-            dst[offset..offset + n].copy_from_slice(&page[poffset..poffset + n]);
+            memmove(&mut dst[offset..offset + n], &page[poffset..poffset + n]);
             len -= n;
             offset += n;
             src += n;
@@ -520,11 +532,11 @@ impl UserMemory {
             let from = &page[poffset..poffset + n];
             match from.iter().position(|c| *c == 0) {
                 Some(i) => {
-                    dst[offset..offset + i + 1].copy_from_slice(&from[..i + 1]);
+                    memmove(&mut dst[offset..offset + i + 1], &from[..i + 1]);
                     return Ok(());
                 }
                 None => {
-                    dst[offset..offset + n].copy_from_slice(from);
+                    memmove(&mut dst[offset..offset + n], from);
                     max -= n;
                     offset += n;
                     src += n;

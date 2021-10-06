@@ -14,6 +14,8 @@
 use core::mem::{self, ManuallyDrop};
 use core::ops::{Deref, DerefMut};
 
+use static_assertions::const_assert;
+
 use crate::arena::ArenaRc;
 use crate::util::strong_pin::StrongPin;
 use crate::{
@@ -74,6 +76,19 @@ pub struct BufInner {
 #[repr(align(4))]
 pub struct BufData {
     pub inner: [u8; BSIZE],
+}
+
+impl BufData {
+    pub fn copy_from(&mut self, buf: &BufData) {
+        const_assert!(mem::size_of::<BufData>() % mem::size_of::<u32>() == 0);
+        const_assert!(mem::align_of::<BufData>() % mem::align_of::<u32>() == 0);
+        // SAFETY: BufData's size/alignment is a multiple of u32's size/alignment.
+        let (_, dst, _) = unsafe { self.align_to_mut::<u32>() };
+        let (_, src, _) = unsafe { buf.align_to::<u32>() };
+        for (d, s) in dst.iter_mut().zip(src) {
+            *d = *s;
+        }
+    }
 }
 
 impl Deref for BufData {
