@@ -142,6 +142,31 @@ printptr(int fd, uint64 x) {
     putc(fd, digits[x >> (sizeof(uint64) * 8 - 4)]);
 }
 
+static void
+printint64(int fd, uint64 xx, int base, int sgn) {
+  char buf[21];
+  int i, neg;
+  uint64 x;
+
+  neg = 0;
+  if(sgn && xx < 0){
+    neg = 1;
+    x = -xx;
+  } else {
+    x = xx;
+  }
+
+  i = 0;
+  do{
+    buf[i++] = digits[x % base];
+  }while((x /= base) != 0);
+  if(neg)
+    buf[i++] = '-';
+
+  while(--i >= 0)
+    putc(fd, buf[i]);
+}
+
 // Print to the given fd. Only understands %d, %x, %p, %s, %(.[0-9])?f, and %lu.
 void
 vprintf(int fd, const char *fmt, va_list ap)
@@ -202,7 +227,7 @@ vprintf(int fd, const char *fmt, va_list ap)
       state = 0;
     } else if(state == 'l') {
       if (c == 'u') {
-        printint(fd, va_arg(ap, uint64), 10, 0);
+        printint64(fd, va_arg(ap, long long), 10, 0);
       } else{
         // Unknown % sequence. Print it to draw attention.
         putc(fd, '%');
