@@ -2,14 +2,13 @@ use core::{
     mem,
     mem::MaybeUninit,
     ops::{Deref, DerefMut},
-    ptr,
     ptr::NonNull,
 };
 
 use static_assertions::const_assert;
 
-use crate::addr::PAddr;
 pub use crate::addr::PGSIZE;
+use crate::{addr::PAddr, util::memset};
 
 // `RawPage` must be aligned with PGSIZE.
 const_assert!(PGSIZE == 4096);
@@ -31,10 +30,9 @@ pub struct Page {
 }
 
 impl RawPage {
-    pub fn write_bytes(&mut self, value: u8) {
-        unsafe {
-            ptr::write_bytes(&mut self.inner, value, 1);
-        }
+    pub fn write_bytes(&mut self, v: u8) {
+        // SAFETY: RawPage does not have any invariant.
+        unsafe { memset(self, u64::from_le_bytes([v; 8])) };
     }
 }
 

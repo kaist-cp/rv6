@@ -532,7 +532,9 @@ impl FileSystem for Ufs {
             }
             guard.nlink = dip.nlink;
             guard.size = dip.size;
-            guard.addr_direct.copy_from_slice(&dip.addr_direct);
+            for (d, s) in guard.addr_direct.iter_mut().zip(&dip.addr_direct) {
+                *d = *s;
+            }
             guard.addr_indirect = dip.addr_indirect;
             bp.free(ctx);
             guard.valid = true;

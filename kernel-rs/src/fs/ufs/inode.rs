@@ -67,7 +67,7 @@
 //! dev, and inum.  One must hold ip->lock in order to
 //! read or write that inode's ip->valid, ip->size, ip->type, &c.
 
-use core::{iter::StepBy, mem, ops::Range, ptr};
+use core::{iter::StepBy, mem, ops::Range};
 
 use static_assertions::const_assert;
 use zerocopy::{AsBytes, FromBytes};
@@ -82,7 +82,7 @@ use crate::{
     param::NINODE,
     param::ROOTDEV,
     proc::KernelCtx,
-    util::strong_pin::StrongPin,
+    util::{memset, strong_pin::StrongPin},
 };
 
 /// Directory is a file containing a sequence of Dirent structures.
@@ -302,7 +302,9 @@ impl InodeGuard<'_, Ufs> {
 
         (*dip).nlink = inner.nlink;
         (*dip).size = inner.size;
-        (*dip).addr_direct.copy_from_slice(&inner.addr_direct);
+        for (d, s) in (*dip).addr_direct.iter_mut().zip(&inner.addr_direct) {
+            *d = *s;
+        }
         (*dip).addr_indirect = inner.addr_indirect;
         tx.write(bp, ctx);
     }
@@ -452,7 +454,8 @@ impl Itable<Ufs> {
 
             // a free inode
             if dip.typ == DInodeType::None {
-                unsafe { ptr::write_bytes(dip as _, 0, 1) };
+                // SAFETY: DInode does not have any invariant.
+                unsafe { memset(dip, 0u32) };
                 match typ {
                     InodeType::None => dip.typ = DInodeType::None,
                     InodeType::Dir => dip.typ = DInodeType::Dir,

@@ -21,6 +21,7 @@ use crate::{
     lock::SleepLock,
     param::{BSIZE, NBUF},
     proc::{KernelCtx, WaitChannel},
+    util::memmove,
 };
 
 pub struct BufEntry {
@@ -74,6 +75,12 @@ pub struct BufInner {
 #[repr(align(4))]
 pub struct BufData {
     pub inner: [u8; BSIZE],
+}
+
+impl BufData {
+    pub fn copy_from(&mut self, buf: &BufData) {
+        memmove(&mut self.inner, &buf.inner);
+    }
 }
 
 impl Deref for BufData {
