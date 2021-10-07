@@ -7,8 +7,8 @@ use core::{
 
 use static_assertions::const_assert;
 
-use crate::addr::PAddr;
 pub use crate::addr::PGSIZE;
+use crate::{addr::PAddr, util::memset};
 
 // `RawPage` must be aligned with PGSIZE.
 const_assert!(PGSIZE == 4096);
@@ -31,11 +31,8 @@ pub struct Page {
 
 impl RawPage {
     pub fn write_bytes(&mut self, v: u8) {
-        const_assert!(mem::size_of::<RawPage>() % mem::size_of::<u64>() == 0);
-        const_assert!(mem::align_of::<RawPage>() % mem::align_of::<u64>() == 0);
-        // SAFETY: RawPage's size/alignment is a multiple of u64's size/alignment.
-        let (_, buf, _) = unsafe { self.inner.align_to_mut::<u64>() };
-        buf.fill(u64::from_le_bytes([v; 8]));
+        // SAFETY: RawPage does not have any invariant.
+        unsafe { memset(self, u64::from_le_bytes([v; 8])) };
     }
 }
 

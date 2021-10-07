@@ -82,7 +82,7 @@ use crate::{
     param::NINODE,
     param::ROOTDEV,
     proc::KernelCtx,
-    util::strong_pin::StrongPin,
+    util::{memset, strong_pin::StrongPin},
 };
 
 /// Directory is a file containing a sequence of Dirent structures.
@@ -454,16 +454,8 @@ impl Itable<Ufs> {
 
             // a free inode
             if dip.typ == DInodeType::None {
-                const_assert!(mem::size_of::<Dinode>() % mem::size_of::<u32>() == 0);
-                const_assert!(mem::align_of::<Dinode>() % mem::align_of::<u32>() == 0);
-                // SAFETY: DInode's size/alignment is a multiple of u32's size/alignment.
-                let buf = unsafe {
-                    core::slice::from_raw_parts_mut(
-                        dip as *mut _ as *mut u32,
-                        mem::size_of::<Dinode>() / mem::size_of::<u32>(),
-                    )
-                };
-                buf.fill(0);
+                // SAFETY: DInode does not have any invariant.
+                unsafe { memset(dip, 0u32) };
                 match typ {
                     InodeType::None => dip.typ = DInodeType::None,
                     InodeType::Dir => dip.typ = DInodeType::Dir,

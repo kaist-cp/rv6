@@ -1,7 +1,6 @@
-use core::{cmp, marker::PhantomData, mem, pin::Pin, slice};
+use core::{cmp, marker::PhantomData, mem, ops::DerefMut, pin::Pin, slice};
 
 use bitflags::bitflags;
-use static_assertions::const_assert;
 use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
@@ -337,20 +336,11 @@ impl UserMemory {
             let pa = pte.get_pa();
             let flags = pte.get_flags();
             let mut page = allocator.alloc(None)?;
-            const_assert!(PGSIZE % mem::size_of::<u64>() == 0);
-            const_assert!(PGSIZE % mem::align_of::<u64>() == 0);
             // SAFETY: pa is an address in page_table,
             // and thus it is the address of a page by the invariant.
-            let src = unsafe {
-                slice::from_raw_parts(
-                    pa.into_usize() as *const u64,
-                    PGSIZE / mem::size_of::<u64>(),
-                )
-            };
-            let (_, buf, _) = unsafe { page.align_to_mut::<u64>() };
-            for (d, s) in buf.iter_mut().zip(src.iter()) {
-                *d = *s;
-            }
+            let src = unsafe { slice::from_raw_parts(pa.into_usize() as *const u8, PGSIZE) };
+            memmove(page.deref_mut().deref_mut(), src);
+
             new.push_page(page, flags, allocator)
                 .map_err(|page| allocator.free(page))
                 .ok()?;
