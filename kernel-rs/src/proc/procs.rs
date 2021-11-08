@@ -273,39 +273,37 @@ impl<'id, 's> ProcsRef<'id, 's> {
         // SAFETY: trap_frame has been initialized by alloc.
         unsafe { (*npdata.trap_frame).set_ret_val(0) };
 
-        // Increment reference counts on open file descriptors.
-        for (nf, f) in izip!(
-            unsafe { (*np.info.get_mut_raw()).open_files.iter_mut() },
-            unsafe { (*ctx.proc().info.get_mut_raw()).open_files.iter() }
-        ) {
-            if let Some(file) = f {
-                *nf = Some(file.clone());
-            }
-        }
-
         let pid = np.deref_mut_info().pid;
 
         // Now drop the guard before we acquire the `wait_lock`.
         // This is because the lock order must be `wait_lock` -> `Proc::info`.
-        let (cwd, name) = np.reacquire_after(|np| {
+        np.reacquire_after(|np| {
             // Acquire the `wait_lock`, and write the parent field.
             let mut parent_guard = self.wait_guard();
             *np.get_mut_parent(&mut parent_guard) = ctx.proc().deref().deref();
 
             let guard = ctx.proc().lock();
-            let cwd = unsafe { guard.deref_info().cwd.assume_init_ref().clone() };
-            let mut name = [0u8; MAXPROCNAME];
-            name.copy_from_slice(&guard.deref_info().name);
-            drop(guard);
-            (cwd, name)
-        });
+            let info = guard.deref_info();
 
-        let ninfo = np.deref_mut_info();
-        let _ = ninfo.cwd.write(cwd);
-        ninfo.name.copy_from_slice(&name);
-        // Set the process's state to RUNNABLE.
-        // It does not break the invariant because cwd now has been initialized.
-        ninfo.state = Procstate::RUNNABLE;
+            let mut nguard = np.lock();
+            let ninfo = nguard.deref_mut_info();
+
+            ninfo.name.copy_from_slice(&guard.deref_info().name);
+            let _ = ninfo
+                .cwd
+                .write(unsafe { info.cwd.assume_init_ref().clone() });
+
+            // Increment reference counts on open file descriptors.
+            for (nf, f) in izip!(ninfo.open_files.iter_mut(), info.open_files.iter()) {
+                if let Some(file) = f {
+                    *nf = Some(file.clone());
+                }
+            }
+
+            // Set the process's state to RUNNABLE.
+            // It does not break the invariant because cwd now has been initialized.
+            ninfo.state = Procstate::RUNNABLE;
+        });
 
         Ok(pid)
     }
@@ -432,8 +430,8 @@ impl<'id, 's> ProcsRef<'id, 's> {
         );
 
         for i in 0..NOFILE {
-            let files = unsafe { &mut (*ctx.proc().info.get_mut_raw()).open_files };
-            if let Some(f) = unsafe { files.get_unchecked_mut(i) }.take() {
+            let file = ctx.proc().lock().deref_mut_info().open_files[i].take();
+            if let Some(f) = file {
                 f.free(ctx);
             }
         }

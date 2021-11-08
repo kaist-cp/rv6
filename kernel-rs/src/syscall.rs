@@ -74,16 +74,17 @@ impl CurrentProc<'_, '_> {
 
     /// Fetch the nth word-sized system call argument as a file descriptor
     /// and return both the descriptor and the corresponding struct file.
-    fn argfd(&self, n: usize) -> Result<(i32, &RcFile), ()> {
+    fn argfd(&self, n: usize) -> Result<(i32, *const RcFile), ()> {
         let fd = self.argint(n)?;
-        let f = unsafe {(*self
-            .info
-            .get_mut_raw())
+        let f = self
+            .lock()
+            .deref_info()
             .open_files
             .get(fd as usize)
             .ok_or(())?
             .as_ref()
-            .ok_or(())? };
+            .map(|f| f as *const _)
+            .ok_or(())?;
         Ok((fd, f))
     }
 }
@@ -211,7 +212,7 @@ impl KernelCtx<'_, '_> {
     /// Returns Ok(new file descriptor) on success, Err(()) on error.
     pub fn sys_dup(&mut self) -> Result<usize, ()> {
         let (_, f) = self.proc().argfd(0)?;
-        let newfile = f.clone();
+        let newfile = unsafe { (*f).clone() };
         let fd = newfile.fdalloc(self)?;
         Ok(fd as usize)
     }
@@ -223,7 +224,7 @@ impl KernelCtx<'_, '_> {
         let n = self.proc().argint(2)?;
         let p = self.proc().argaddr(1)?;
         // SAFETY: read will not access proc's open_files.
-        unsafe { (*(f as *const RcFile)).read(p.into(), n, self) }
+        unsafe { (*f).read(p.into(), n, self) }
     }
 
     /// Write n bytes from buf to given file descriptor fd.
@@ -233,14 +234,15 @@ impl KernelCtx<'_, '_> {
         let n = self.proc().argint(2)?;
         let p = self.proc().argaddr(1)?;
         // SAFETY: write will not access proc's open_files.
-        unsafe { (*(f as *const RcFile)).write(p.into(), n, self) }
+        unsafe { (*f).write(p.into(), n, self) }
     }
 
     /// Release open file fd.
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_close(&mut self) -> Result<usize, ()> {
         let (fd, _) = self.proc().argfd(0)?;
-        if let Some(f) = unsafe { (*self.proc().info.get_mut_raw()).open_files[fd as usize].take() } {
+        let file = self.proc().lock().deref_mut_info().open_files[fd as usize].take();
+        if let Some(f) = file {
             f.free(self);
         }
         Ok(0)
@@ -253,7 +255,7 @@ impl KernelCtx<'_, '_> {
         // user pointer to struct stat
         let st = self.proc().argaddr(1)?;
         // SAFETY: stat will not access proc's open_files.
-        unsafe { (*(f as *const RcFile)).stat(st.into(), self) }?;
+        unsafe { (*f).stat(st.into(), self) }?;
         Ok(0)
     }
 
@@ -462,17 +464,18 @@ impl KernelCtx<'_, '_> {
                     let mask = 1 << (fd % 8);
 
                     if fds[i][idx] & mask != 0 {
-                        let f = unsafe { (*self
+                        let f = self
                             .proc()
-                            .info
-                            .get_mut_raw() )
+                            .lock()
+                            .deref_info()
                             .open_files
                             .get(fd as usize)
                             .ok_or(())?
                             .as_ref()
-                            .ok_or(())? };
+                            .map(|f| f as *const RcFile)
+                            .ok_or(())?;
                         // SAFETY: `is_ready` will not access proc's open_files.
-                        if unsafe { (*(f as *const RcFile)).is_ready(event)? } {
+                        if unsafe { (*f).is_ready(event)? } {
                             ready_cnt += 1;
                         } else {
                             // If the fd is not ready, clear the bit.
@@ -544,7 +547,7 @@ impl KernelCtx<'_, '_> {
             _ => return Err(()),
         };
         // SAFETY: `lseek` will not access proc's open_files.
-        unsafe { (*(f as *const RcFile)).lseek(offset, whence, self) }
+        unsafe { (*f).lseek(offset, whence, self) }
     }
 
     pub fn sys_clock(&mut self) -> Result<usize, ()> {

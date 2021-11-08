@@ -349,7 +349,8 @@ impl RcFile {
     /// Allocate a file descriptor for the given file.
     /// Takes over file reference from caller on success.
     pub fn fdalloc(self, ctx: &mut KernelCtx<'_, '_>) -> Result<i32, ()> {
-        for (fd, f) in unsafe { (*ctx.proc().info.get_mut_raw()).open_files.iter_mut().enumerate() } {
+        let mut guard = ctx.proc().lock();
+        for (fd, f) in guard.deref_mut_info().open_files.iter_mut().enumerate() {
             if f.is_none() {
                 *f = Some(self);
                 return Ok(fd as i32);

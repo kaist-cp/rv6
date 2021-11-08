@@ -161,7 +161,7 @@ impl Proc {
                     waitchannel: ptr::null(),
                     xstate: 0,
                     pid: 0,
-            open_files: array![_ => None; NOFILE],
+                    open_files: array![_ => None; NOFILE],
                     cwd: MaybeUninit::uninit(),
                     name: [0; MAXPROCNAME],
                 },
