@@ -294,10 +294,10 @@ impl KernelCtx<'_, '_> {
         let fd2 = if let Ok(fd) = pipewriter.fdalloc(self) {
             fd
         } else {
-            self.proc_mut().deref_mut_data().open_files[fd1 as usize]
+            unsafe { (*self.proc().info.get_mut_raw()).open_files[fd1 as usize]
                 .take()
                 .unwrap()
-                .free(self);
+                .free(self); }
             return Err(());
         };
 

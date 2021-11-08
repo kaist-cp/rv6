@@ -275,8 +275,8 @@ impl<'id, 's> ProcsRef<'id, 's> {
 
         // Increment reference counts on open file descriptors.
         for (nf, f) in izip!(
-            npdata.open_files.iter_mut(),
-            ctx.proc().deref_data().open_files.iter()
+            unsafe { (*np.info.get_mut_raw()).open_files.iter_mut() },
+            unsafe { (*ctx.proc().info.get_mut_raw()).open_files.iter() }
         ) {
             if let Some(file) = f {
                 *nf = Some(file.clone());
@@ -432,7 +432,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
         );
 
         for i in 0..NOFILE {
-            let files = &mut ctx.proc_mut().deref_mut_data().open_files;
+            let files = unsafe { &mut (*ctx.proc().info.get_mut_raw()).open_files };
             if let Some(f) = unsafe { files.get_unchecked_mut(i) }.take() {
                 f.free(ctx);
             }

@@ -62,6 +62,9 @@ pub struct ProcInfo {
     /// Process ID.
     pid: Pid,
 
+    /// Open files.
+    pub open_files: [Option<RcFile>; NOFILE],
+
     /// Current directory.
     pub cwd: MaybeUninit<RcInode<DefaultFs>>,
 
@@ -82,9 +85,6 @@ pub struct ProcData {
 
     /// swtch() here to run process.
     context: Context,
-
-    /// Open files.
-    pub open_files: [Option<RcFile>; NOFILE],
 }
 
 /// Per-process state.
@@ -146,7 +146,6 @@ impl ProcData {
             trap_frame: ptr::null_mut(),
             memory: MaybeUninit::uninit(),
             context: Context::new(),
-            open_files: array![_ => None; NOFILE],
         }
     }
 }
@@ -162,6 +161,7 @@ impl Proc {
                     waitchannel: ptr::null(),
                     xstate: 0,
                     pid: 0,
+            open_files: array![_ => None; NOFILE],
                     cwd: MaybeUninit::uninit(),
                     name: [0; MAXPROCNAME],
                 },

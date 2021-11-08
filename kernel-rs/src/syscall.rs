@@ -76,13 +76,14 @@ impl CurrentProc<'_, '_> {
     /// and return both the descriptor and the corresponding struct file.
     fn argfd(&self, n: usize) -> Result<(i32, &RcFile), ()> {
         let fd = self.argint(n)?;
-        let f = self
-            .deref_data()
+        let f = unsafe {(*self
+            .info
+            .get_mut_raw())
             .open_files
             .get(fd as usize)
             .ok_or(())?
             .as_ref()
-            .ok_or(())?;
+            .ok_or(())? };
         Ok((fd, f))
     }
 }
@@ -239,7 +240,7 @@ impl KernelCtx<'_, '_> {
     /// Returns Ok(0) on success, Err(()) on error.
     pub fn sys_close(&mut self) -> Result<usize, ()> {
         let (fd, _) = self.proc().argfd(0)?;
-        if let Some(f) = self.proc_mut().deref_mut_data().open_files[fd as usize].take() {
+        if let Some(f) = unsafe { (*self.proc().info.get_mut_raw()).open_files[fd as usize].take() } {
             f.free(self);
         }
         Ok(0)
@@ -461,14 +462,15 @@ impl KernelCtx<'_, '_> {
                     let mask = 1 << (fd % 8);
 
                     if fds[i][idx] & mask != 0 {
-                        let f = self
+                        let f = unsafe { (*self
                             .proc()
-                            .deref_data()
+                            .info
+                            .get_mut_raw() )
                             .open_files
                             .get(fd as usize)
                             .ok_or(())?
                             .as_ref()
-                            .ok_or(())?;
+                            .ok_or(())? };
                         // SAFETY: `is_ready` will not access proc's open_files.
                         if unsafe { (*(f as *const RcFile)).is_ready(event)? } {
                             ready_cnt += 1;
