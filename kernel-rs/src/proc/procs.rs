@@ -133,8 +133,8 @@ impl Procs {
             unsafe { (*data.trap_frame).init_reg() };
 
             let name = b"initcode\x00";
-            (&mut data.name[..name.len()]).copy_from_slice(name);
             let info = guard.deref_mut_info();
+            (&mut info.name[..name.len()]).copy_from_slice(name);
             let _ = info.cwd.write(cwd);
             // It's safe because cwd now has been initialized.
             info.state = Procstate::RUNNABLE;
@@ -283,25 +283,26 @@ impl<'id, 's> ProcsRef<'id, 's> {
             }
         }
 
-        npdata.name.copy_from_slice(&ctx.proc().deref_data().name);
-
         let pid = np.deref_mut_info().pid;
 
         // Now drop the guard before we acquire the `wait_lock`.
         // This is because the lock order must be `wait_lock` -> `Proc::info`.
-        let cwd = np.reacquire_after(|np| {
+        let (cwd, name) = np.reacquire_after(|np| {
             // Acquire the `wait_lock`, and write the parent field.
             let mut parent_guard = self.wait_guard();
             *np.get_mut_parent(&mut parent_guard) = ctx.proc().deref().deref();
 
             let guard = ctx.proc().lock();
             let cwd = unsafe { guard.deref_info().cwd.assume_init_ref().clone() };
+            let mut name = [0u8; MAXPROCNAME];
+            name.copy_from_slice(&guard.deref_info().name);
             drop(guard);
-            cwd
+            (cwd, name)
         });
 
         let ninfo = np.deref_mut_info();
         let _ = ninfo.cwd.write(cwd);
+        ninfo.name.copy_from_slice(&name);
         // Set the process's state to RUNNABLE.
         // It does not break the invariant because cwd now has been initialized.
         ninfo.state = Procstate::RUNNABLE;
@@ -573,7 +574,7 @@ impl<'id, 's> KernelRef<'id, 's> {
             let info = p.info.get_mut_raw();
             let state = unsafe { &(*info).state };
             if *state != Procstate::UNUSED {
-                let name = unsafe { &(*p.data.get()).name };
+                let name = unsafe { &(*info).name };
                 // For null character recognization.
                 // Required since str::from_utf8 cannot recognize interior null characters.
                 let length = name.iter().position(|&c| c == 0).unwrap_or(name.len());

@@ -188,12 +188,14 @@ impl KernelCtx<'_, '_> {
             .rposition(|c| *c == b'/')
             .map(|i| &path_str[(i + 1)..])
             .unwrap_or(path_str);
-        let proc_name = &mut self.proc_mut().deref_mut_data().name;
+        let mut guard = self.proc().lock();
+        let proc_name = &mut guard.deref_mut_info().name;
         let len = cmp::min(proc_name.len(), name.len());
         proc_name[..len].copy_from_slice(&name[..len]);
         if len < proc_name.len() {
             proc_name[len] = 0;
         }
+        drop(guard);
 
         // Commit to the user image.
         mem::replace(

@@ -64,6 +64,9 @@ pub struct ProcInfo {
 
     /// Current directory.
     pub cwd: MaybeUninit<RcInode<DefaultFs>>,
+
+    /// Process name (debugging).
+    pub name: [u8; MAXPROCNAME],
 }
 
 /// Proc::data are private to the process, so lock need not be held.
@@ -82,9 +85,6 @@ pub struct ProcData {
 
     /// Open files.
     pub open_files: [Option<RcFile>; NOFILE],
-
-    /// Process name (debugging).
-    pub name: [u8; MAXPROCNAME],
 }
 
 /// Per-process state.
@@ -147,7 +147,6 @@ impl ProcData {
             memory: MaybeUninit::uninit(),
             context: Context::new(),
             open_files: array![_ => None; NOFILE],
-            name: [0; MAXPROCNAME],
         }
     }
 }
@@ -164,6 +163,7 @@ impl Proc {
                     xstate: 0,
                     pid: 0,
                     cwd: MaybeUninit::uninit(),
+                    name: [0; MAXPROCNAME],
                 },
             ),
             data: UnsafeCell::new(ProcData::new()),
@@ -280,9 +280,6 @@ impl<'id> ProcGuard<'id, '_> {
                 .free(allocator)
         };
 
-        // Clear the name.
-        data.name[0] = 0;
-
         // Clear the process's parent field.
         *self.get_mut_parent(&mut parent_guard) = ptr::null_mut();
         drop(parent_guard);
@@ -293,6 +290,9 @@ impl<'id> ProcGuard<'id, '_> {
         info.pid = 0;
         info.xstate = 0;
         info.state = Procstate::UNUSED;
+
+        // Clear the name.
+        info.name[0] = 0;
 
         self.killed.store(false, Ordering::Release);
     }

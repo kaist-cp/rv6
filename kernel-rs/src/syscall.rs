@@ -120,10 +120,11 @@ impl KernelCtx<'_, '_> {
             28 => self.sys_uptime_as_micro(),
             29 => self.sys_clock(),
             _ => {
+                let guard = self.proc().lock();
                 self.kernel().as_ref().write_fmt(format_args!(
                     "{} {}: unknown sys call {}",
                     self.proc().pid(),
-                    str::from_utf8(&self.proc().deref_data().name).unwrap_or("???"),
+                    str::from_utf8(&guard.deref_info().name).unwrap_or("???"),
                     num
                 ));
                 Err(())
