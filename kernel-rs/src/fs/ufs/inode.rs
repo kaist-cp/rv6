@@ -511,7 +511,7 @@ impl Itable<Ufs> {
         let mut ptr = if path.is_absolute() {
             self.root()
         } else {
-            ctx.proc().cwd().clone()
+            unsafe { ctx.proc().lock().deref_info().cwd.assume_init_ref().clone() }
         };
 
         while let Some((new_path, name)) = path.skipelem() {

@@ -134,9 +134,10 @@ impl Procs {
 
             let name = b"initcode\x00";
             (&mut data.name[..name.len()]).copy_from_slice(name);
-            let _ = unsafe { (*guard.info.get_mut_raw()).cwd.write(cwd) };
+            let info = guard.deref_mut_info();
+            let _ = info.cwd.write(cwd);
             // It's safe because cwd now has been initialized.
-            guard.deref_mut_info().state = Procstate::RUNNABLE;
+            info.state = Procstate::RUNNABLE;
 
             guard.deref().deref() as *const _
         });
@@ -284,21 +285,26 @@ impl<'id, 's> ProcsRef<'id, 's> {
 
         npdata.name.copy_from_slice(&ctx.proc().deref_data().name);
 
-        let _ = unsafe { (*np.info.get_mut_raw()).cwd.write(ctx.proc().cwd().clone()) };
-
         let pid = np.deref_mut_info().pid;
 
         // Now drop the guard before we acquire the `wait_lock`.
         // This is because the lock order must be `wait_lock` -> `Proc::info`.
-        np.reacquire_after(|np| {
+        let cwd = np.reacquire_after(|np| {
             // Acquire the `wait_lock`, and write the parent field.
             let mut parent_guard = self.wait_guard();
             *np.get_mut_parent(&mut parent_guard) = ctx.proc().deref().deref();
+
+            let guard = ctx.proc().lock();
+            let cwd = unsafe { guard.deref_info().cwd.assume_init_ref().clone() };
+            drop(guard);
+            cwd
         });
 
+        let ninfo = np.deref_mut_info();
+        let _ = ninfo.cwd.write(cwd);
         // Set the process's state to RUNNABLE.
         // It does not break the invariant because cwd now has been initialized.
-        np.deref_mut_info().state = Procstate::RUNNABLE;
+        ninfo.state = Procstate::RUNNABLE;
 
         Ok(pid)
     }
@@ -431,11 +437,14 @@ impl<'id, 's> ProcsRef<'id, 's> {
             }
         }
 
-        let tx = ctx.kernel().fs().as_pin().get_ref().begin_tx(ctx);
+        let guard = ctx.proc().lock();
         // SAFETY:
         // * CurrentProc's cwd has been initialized.
         // * It's ok to take cwd because proc will not be used any longer.
-        let cwd = unsafe { (*ctx.proc_mut().info.get_mut_raw()).cwd.assume_init_read() };
+        let cwd = unsafe { guard.deref_info().cwd.assume_init_read() };
+        drop(guard);
+
+        let tx = ctx.kernel().fs().as_pin().get_ref().begin_tx(ctx);
         cwd.free((&tx, ctx));
         tx.end(ctx);
 

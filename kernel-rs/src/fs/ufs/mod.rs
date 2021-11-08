@@ -367,7 +367,10 @@ impl FileSystem for Ufs {
             inode.free((tx, ctx));
             return Err(());
         }
-        mem::replace(ctx.proc_mut().cwd_mut(), inode).free((tx, ctx));
+        let mut guard = ctx.proc().lock();
+        let inode = unsafe { mem::replace(guard.deref_mut_info().cwd.assume_init_mut(), inode) };
+        drop(guard);
+        inode.free((tx, ctx));
         Ok(())
     }
 

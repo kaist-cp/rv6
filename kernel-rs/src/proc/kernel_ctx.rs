@@ -4,7 +4,6 @@ use super::*;
 use crate::{
     arch::interface::ProcManager,
     arch::TargetArch,
-    fs::DefaultFs,
     kernel::{kernel_ref, KernelRef},
     vm::UserMemory,
 };
@@ -118,18 +117,6 @@ impl<'id, 'p> CurrentProc<'id, 'p> {
         // SAFETY: memory has been initialized according to the invariants
         // of Proc and CurrentProc.
         unsafe { self.deref_mut_data().memory.assume_init_mut() }
-    }
-
-    pub fn cwd(&self) -> &RcInode<DefaultFs> {
-        // SAFETY: cwd has been initialized according to the invariants
-        // of Proc and CurrentProc.
-        unsafe { (*self.info.get_mut_raw()).cwd.assume_init_ref() }
-    }
-
-    pub fn cwd_mut(&mut self) -> &mut RcInode<DefaultFs> {
-        // SAFETY: cwd has been initialized according to the invariants
-        // of Proc and CurrentProc.
-        unsafe { (*self.info.get_mut_raw()).cwd.assume_init_mut() }
     }
 }
 
