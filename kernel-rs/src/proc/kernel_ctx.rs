@@ -123,13 +123,13 @@ impl<'id, 'p> CurrentProc<'id, 'p> {
     pub fn cwd(&self) -> &RcInode<DefaultFs> {
         // SAFETY: cwd has been initialized according to the invariants
         // of Proc and CurrentProc.
-        unsafe { self.deref_data().cwd.assume_init_ref() }
+        unsafe { (*self.info.get_mut_raw()).cwd.assume_init_ref() }
     }
 
     pub fn cwd_mut(&mut self) -> &mut RcInode<DefaultFs> {
         // SAFETY: cwd has been initialized according to the invariants
         // of Proc and CurrentProc.
-        unsafe { self.deref_mut_data().cwd.assume_init_mut() }
+        unsafe { (*self.info.get_mut_raw()).cwd.assume_init_mut() }
     }
 }
 

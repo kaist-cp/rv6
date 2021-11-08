@@ -61,6 +61,9 @@ pub struct ProcInfo {
 
     /// Process ID.
     pid: Pid,
+
+    /// Current directory.
+    pub cwd: MaybeUninit<RcInode<DefaultFs>>,
 }
 
 /// Proc::data are private to the process, so lock need not be held.
@@ -79,9 +82,6 @@ pub struct ProcData {
 
     /// Open files.
     pub open_files: [Option<RcFile>; NOFILE],
-
-    /// Current directory.
-    cwd: MaybeUninit<RcInode<DefaultFs>>,
 
     /// Process name (debugging).
     pub name: [u8; MAXPROCNAME],
@@ -147,7 +147,6 @@ impl ProcData {
             memory: MaybeUninit::uninit(),
             context: Context::new(),
             open_files: array![_ => None; NOFILE],
-            cwd: MaybeUninit::uninit(),
             name: [0; MAXPROCNAME],
         }
     }
@@ -164,6 +163,7 @@ impl Proc {
                     waitchannel: ptr::null(),
                     xstate: 0,
                     pid: 0,
+                    cwd: MaybeUninit::uninit(),
                 },
             ),
             data: UnsafeCell::new(ProcData::new()),
@@ -209,12 +209,12 @@ impl<'s> Deref for ProcRef<'_, 's> {
 }
 
 impl<'id> ProcGuard<'id, '_> {
-    fn deref_info(&self) -> &ProcInfo {
+    pub fn deref_info(&self) -> &ProcInfo {
         // SAFETY: self.info is locked.
         unsafe { &*self.info.get_mut_raw() }
     }
 
-    fn deref_mut_info(&mut self) -> &mut ProcInfo {
+    pub fn deref_mut_info(&mut self) -> &mut ProcInfo {
         // SAFETY: self.info is locked and &mut self is exclusive.
         unsafe { &mut *self.info.get_mut_raw() }
     }

@@ -134,7 +134,7 @@ impl Procs {
 
             let name = b"initcode\x00";
             (&mut data.name[..name.len()]).copy_from_slice(name);
-            let _ = data.cwd.write(cwd);
+            let _ = unsafe { (*guard.info.get_mut_raw()).cwd.write(cwd) };
             // It's safe because cwd now has been initialized.
             guard.deref_mut_info().state = Procstate::RUNNABLE;
 
@@ -281,9 +281,10 @@ impl<'id, 's> ProcsRef<'id, 's> {
                 *nf = Some(file.clone());
             }
         }
-        let _ = npdata.cwd.write(ctx.proc().cwd().clone());
 
         npdata.name.copy_from_slice(&ctx.proc().deref_data().name);
+
+        let _ = unsafe { (*np.info.get_mut_raw()).cwd.write(ctx.proc().cwd().clone()) };
 
         let pid = np.deref_mut_info().pid;
 
@@ -434,7 +435,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
         // SAFETY:
         // * CurrentProc's cwd has been initialized.
         // * It's ok to take cwd because proc will not be used any longer.
-        let cwd = unsafe { ctx.proc_mut().deref_mut_data().cwd.assume_init_read() };
+        let cwd = unsafe { (*ctx.proc_mut().info.get_mut_raw()).cwd.assume_init_read() };
         cwd.free((&tx, ctx));
         tx.end(ctx);
 
