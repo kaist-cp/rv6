@@ -42,7 +42,7 @@ impl RawSleepLock {
         while *guard != -1 {
             guard.sleep(ctx);
         }
-        *guard = ctx.proc().pid();
+        *guard = unsafe { (*ctx.proc().info.get_mut_raw()).pid };
     }
 
     fn release(&self, ctx: &KernelCtx<'_, '_>) {

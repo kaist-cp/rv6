@@ -132,7 +132,7 @@ impl KernelCtx<'_, '_> {
                 let guard = self.proc().lock();
                 self.kernel().as_ref().write_fmt(format_args!(
                     "{} {}: unknown sys call {}",
-                    self.proc().pid(),
+                    guard.deref_info().pid,
                     str::from_utf8(&guard.deref_info().name).unwrap_or("???"),
                     num
                 ));
@@ -162,7 +162,7 @@ impl KernelCtx<'_, '_> {
 
     /// Return the current process’s PID.
     pub fn sys_getpid(&self) -> Result<usize, ()> {
-        Ok(self.proc().pid() as _)
+        Ok(self.proc().lock().deref_info().pid as _)
     }
 
     /// Grow process’s memory by n bytes.

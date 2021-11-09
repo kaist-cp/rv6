@@ -74,13 +74,6 @@ pub unsafe fn kernel_ctx<'s, F: for<'new_id> FnOnce(KernelCtx<'new_id, 's>) -> R
     }
 }
 
-impl<'id, 'p> CurrentProc<'id, 'p> {
-    pub fn pid(&self) -> Pid {
-        // SAFETY: pid is not modified while CurrentProc exists.
-        unsafe { (*self.info.get_mut_raw()).pid }
-    }
-}
-
 impl<'id, 's> Deref for CurrentProc<'id, 's> {
     type Target = ProcRef<'id, 's>;
 
