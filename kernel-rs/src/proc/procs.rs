@@ -280,7 +280,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
 
             // Copy saved user registers.
             // SAFETY: trap_frame has been initialized by alloc.
-            unsafe { *ninfo.trap_frame = *ctx.proc().trap_frame() };
+            unsafe { *ninfo.trap_frame = *info.trap_frame };
 
             // Cause fork to return 0 in the child.
             // SAFETY: trap_frame has been initialized by alloc.

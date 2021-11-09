@@ -66,10 +66,10 @@ pub struct ProcInfo {
     pub kstack: usize,
 
     /// Data page for trampoline.S.
-    trap_frame: *mut <TargetArch as ProcManager>::TrapFrame,
+    pub trap_frame: *mut <TargetArch as ProcManager>::TrapFrame,
 
     /// swtch() here to run process.
-    context: Context,
+    pub context: Context,
 
     /// Open files.
     pub open_files: [Option<RcFile>; NOFILE],

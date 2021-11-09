@@ -118,7 +118,8 @@ impl KernelCtx<'_, '_> {
             return Err(());
         }
 
-        let trap_frame: PAddr = (self.proc().trap_frame() as *const _ as usize).into();
+        let trap_frame: PAddr =
+            (self.proc().lock().deref_info().trap_frame as *const _ as usize).into();
         let mem = UserMemory::new(trap_frame, None, allocator).ok_or(())?;
         let mut mem = scopeguard::guard(mem, |mem| mem.free(allocator));
 

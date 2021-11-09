@@ -49,7 +49,7 @@ impl CurrentProc<'_, '_> {
     }
 
     fn argraw(&self, n: usize) -> usize {
-        self.trap_frame().get_param_reg(n.into())
+        unsafe { (*self.lock().deref_info().trap_frame).get_param_reg(n.into()) }
     }
 
     /// Fetch the nth 32-bit system call argument.

@@ -95,12 +95,6 @@ impl<'id, 'p> CurrentProc<'id, 'p> {
         unsafe { (*self.info.get_mut_raw()).pid }
     }
 
-    pub fn trap_frame(&self) -> &<TargetArch as ProcManager>::TrapFrame {
-        // SAFETY: trap_frame is a valid pointer according to the invariants
-        // of Proc and CurrentProc.
-        unsafe { &*(*self.info.get_mut_raw()).trap_frame }
-    }
-
     pub fn trap_frame_mut(&mut self) -> &mut <TargetArch as ProcManager>::TrapFrame {
         // SAFETY: trap_frame is a valid pointer according to the invariants
         // of Proc and CurrentProc.
