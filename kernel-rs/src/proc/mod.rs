@@ -62,6 +62,9 @@ pub struct ProcInfo {
     /// Process ID.
     pid: Pid,
 
+    /// Virtual address of kernel stack.
+    pub kstack: usize,
+
     /// swtch() here to run process.
     context: Context,
 
@@ -77,9 +80,6 @@ pub struct ProcInfo {
 
 /// Proc::data are private to the process, so lock need not be held.
 pub struct ProcData {
-    /// Virtual address of kernel stack.
-    pub kstack: usize,
-
     /// Data page for trampoline.S.
     trap_frame: *mut <TargetArch as ProcManager>::TrapFrame,
 
@@ -142,7 +142,6 @@ impl Procstate {
 impl ProcData {
     const fn new() -> Self {
         Self {
-            kstack: 0,
             trap_frame: ptr::null_mut(),
             memory: MaybeUninit::uninit(),
         }
@@ -160,6 +159,7 @@ impl Proc {
                     waitchannel: ptr::null(),
                     xstate: 0,
                     pid: 0,
+                    kstack: 0,
                     context: Context::new(),
                     open_files: array![_ => None; NOFILE],
                     cwd: MaybeUninit::uninit(),

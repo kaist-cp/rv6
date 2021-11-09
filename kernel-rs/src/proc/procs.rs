@@ -83,7 +83,7 @@ impl Procs {
         // SAFETY: we don't move the `Procs`.
         let this = unsafe { self.get_unchecked_mut() };
         for (i, p) in this.process_pool.iter_mut().enumerate() {
-            p.data.get_mut().kstack = kstack(i);
+            p.info.get_mut().kstack = kstack(i);
         }
     }
 
@@ -185,15 +185,13 @@ impl<'id, 's> ProcsRef<'id, 's> {
                 data.trap_frame = trap_frame.into_usize() as _;
                 let _ = data.memory.write(memory);
 
-                let sp = data.kstack + PGSIZE;
-
                 let info = guard.deref_mut_info();
 
                 // Set up new context to start executing at forkret,
                 // which returns to user space.
                 info.context = Default::default();
                 info.context.set_ret_addr(forkret as usize);
-                info.context.sp = sp;
+                info.context.sp = info.kstack + PGSIZE;
 
                 info.pid = self.0.allocpid();
                 // It's safe because trap_frame and memory now have been initialized.

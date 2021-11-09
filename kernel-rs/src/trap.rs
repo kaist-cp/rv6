@@ -139,7 +139,7 @@ impl KernelCtx<'_, '_> {
         // Tell trampoline.S the user page table to switch to.
         let user_table = self.proc().memory().page_table_addr();
 
-        let kstack = self.proc_mut().deref_mut_data().kstack;
+        let kstack = self.proc().lock().deref_info().kstack;
 
         let trapframe = self.proc_mut().trap_frame_mut();
 
