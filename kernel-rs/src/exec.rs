@@ -190,13 +190,30 @@ impl KernelCtx<'_, '_> {
             .map(|i| &path_str[(i + 1)..])
             .unwrap_or(path_str);
         let mut guard = self.proc().lock();
-        let proc_name = &mut guard.deref_mut_info().name;
+        let info = guard.deref_mut_info();
+        let proc_name = &mut info.name;
         let len = cmp::min(proc_name.len(), name.len());
         proc_name[..len].copy_from_slice(&name[..len]);
         if len < proc_name.len() {
             proc_name[len] = 0;
         }
-        drop(guard);
+
+        // arguments to user main(argc, argv)
+        // argc is returned via the system call return
+        // value, which goes in a0.
+        unsafe {
+            *(*info.trap_frame).param_reg_mut(RegNum::R1) = sp;
+        }
+
+        // initial program counter = main
+        unsafe {
+            (*info.trap_frame).set_pc(elf.entry);
+        }
+
+        // initial stack pointer
+        unsafe {
+            (*info.trap_frame).sp = sp;
+        }
 
         // Commit to the user image.
         mem::replace(
@@ -204,17 +221,6 @@ impl KernelCtx<'_, '_> {
             scopeguard::ScopeGuard::into_inner(mem),
         )
         .free(allocator);
-
-        // arguments to user main(argc, argv)
-        // argc is returned via the system call return
-        // value, which goes in a0.
-        *self.proc_mut().trap_frame_mut().param_reg_mut(RegNum::R1) = sp;
-
-        // initial program counter = main
-        self.proc_mut().trap_frame_mut().set_pc(elf.entry);
-
-        // initial stack pointer
-        self.proc_mut().trap_frame_mut().sp = sp;
 
         // this ends up in a0, the first argument to main(argc, argv)
         Ok(argc)

@@ -68,15 +68,21 @@ impl KernelCtx<'_, '_> {
             TargetArch::switch_to_kernel_vec();
         }
 
+        let mut guard = self.proc().lock();
+        let info = guard.deref_mut_info();
+
         // Save user program counter.
-        self.proc_mut().trap_frame_mut().set_pc(TargetArch::r_epc());
+        unsafe {
+            (*info.trap_frame).set_pc(TargetArch::r_epc());
+        }
 
         let trap_type = TargetArch::get_trap_type(arg);
 
         // SAFETY: Actually received trap with type of `trap_type`.
         unsafe {
-            TargetArch::before_handling_trap(&trap_type, Some(self.proc_mut().trap_frame_mut()));
+            TargetArch::before_handling_trap(&trap_type, Some(&mut *info.trap_frame));
         }
+        drop(guard);
 
         match &trap_type {
             TrapTypes::Syscall => {
@@ -89,9 +95,13 @@ impl KernelCtx<'_, '_> {
                 // so don't enable until done with those registers.
                 // SAFETY: Interrupt handlers has been configured properly
                 unsafe { TargetArch::intr_on() };
-                let syscall_no = self.proc_mut().trap_frame_mut().get_param_reg(7.into()) as i32;
-                *self.proc_mut().trap_frame_mut().param_reg_mut(0.into()) =
-                    ok_or!(self.syscall(syscall_no), usize::MAX);
+                let syscall_no = unsafe {
+                    (*self.proc().lock().deref_info().trap_frame).get_param_reg(7.into()) as i32
+                };
+                let res = ok_or!(self.syscall(syscall_no), usize::MAX);
+                unsafe {
+                    *(*self.proc().lock().deref_info().trap_frame).param_reg_mut(0.into()) = res;
+                }
             }
             TrapTypes::Irq(irq_type) => unsafe {
                 self.kernel().handle_irq(irq_type);
@@ -135,13 +145,15 @@ impl KernelCtx<'_, '_> {
     /// # Safety
     ///
     /// It must be called only by `user_trap`.
-    pub unsafe fn user_trap_ret(mut self) -> ! {
+    pub unsafe fn user_trap_ret(self) -> ! {
         // Tell trampoline.S the user page table to switch to.
         let user_table = self.proc().memory().page_table_addr();
 
-        let kstack = self.proc().lock().deref_info().kstack;
-
-        let trapframe = self.proc_mut().trap_frame_mut();
+        let guard = self.proc().lock();
+        let info = guard.deref_info();
+        let kstack = info.kstack;
+        let trapframe = unsafe { &mut *info.trap_frame };
+        drop(guard);
 
         // SAFETY: It is called by `user_trap_ret`, after handling the user trap.
         unsafe { TargetArch::user_trap_ret(user_table, trapframe, kstack, usertrap as usize) };
