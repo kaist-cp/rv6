@@ -138,9 +138,12 @@ impl<FS: FileSystem> InodeGuard<'_, FS> {
             self,
             off,
             n,
-            |off, src, ctx| {
-                ctx.proc_mut()
-                    .memory_mut()
+            |off, src, ctx| unsafe {
+                ctx.proc()
+                    .lock()
+                    .deref_mut_info()
+                    .memory
+                    .assume_init_mut()
                     .copy_out_bytes(dst + off as usize, src)
             },
             ctx,
@@ -201,9 +204,12 @@ impl<FS: FileSystem> InodeGuard<'_, FS> {
             self,
             off,
             n,
-            |off, dst, ctx| {
-                ctx.proc_mut()
-                    .memory_mut()
+            |off, dst, ctx| unsafe {
+                ctx.proc()
+                    .lock()
+                    .deref_mut_info()
+                    .memory
+                    .assume_init_mut()
                     .copy_in_bytes(dst, src + off as usize)
             },
             tx,

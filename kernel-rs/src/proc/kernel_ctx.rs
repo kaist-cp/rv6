@@ -1,10 +1,7 @@
 use core::ops::Deref;
 
 use super::*;
-use crate::{
-    kernel::{kernel_ref, KernelRef},
-    vm::UserMemory,
-};
+use crate::kernel::{kernel_ref, KernelRef};
 
 /// Type that stores the context of the current thread. Consists of
 /// * `KernelRef<'id, 'p>`, which points to the current kernel, and
@@ -81,12 +78,6 @@ impl<'id, 'p> CurrentProc<'id, 'p> {
     pub fn pid(&self) -> Pid {
         // SAFETY: pid is not modified while CurrentProc exists.
         unsafe { (*self.info.get_mut_raw()).pid }
-    }
-
-    pub fn memory_mut(&mut self) -> &mut UserMemory {
-        // SAFETY: memory has been initialized according to the invariants
-        // of Proc and CurrentProc.
-        unsafe { (*self.info.get_mut_raw()).memory.assume_init_mut() }
     }
 }
 

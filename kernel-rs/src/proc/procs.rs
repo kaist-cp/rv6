@@ -251,11 +251,15 @@ impl<'id, 's> ProcsRef<'id, 's> {
         });
 
         // Copy user memory from parent to child.
-        let memory = ctx
-            .proc_mut()
-            .memory_mut()
-            .clone(trap_frame.addr(), allocator)
-            .ok_or(())?;
+        let memory = unsafe {
+            ctx.proc()
+                .lock()
+                .deref_mut_info()
+                .memory
+                .assume_init_mut()
+                .clone(trap_frame.addr(), allocator)
+                .ok_or(())?
+        };
 
         // Allocate process.
         let mut np = self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory)?;
@@ -315,23 +319,29 @@ impl<'id, 's> ProcsRef<'id, 's> {
                 if *np.get_mut_parent(&mut parent_guard) == ctx.proc().deref().deref() {
                     // Found a child.
                     // Make sure the child isn't still in exit() or swtch().
-                    let mut np = np.lock();
+                    let mut npg = np.lock();
 
                     havekids = true;
-                    if np.state() == Procstate::ZOMBIE {
-                        let pid = np.deref_mut_info().pid;
+                    if npg.state() == Procstate::ZOMBIE {
+                        let pid = npg.deref_mut_info().pid;
+                        let xstate = npg.deref_info().xstate;
+                        drop(npg);
                         if !addr.is_null()
-                            && ctx
-                                .proc_mut()
-                                .memory_mut()
-                                .copy_out(addr, &np.deref_info().xstate)
-                                .is_err()
+                            && unsafe {
+                                ctx.proc()
+                                    .lock()
+                                    .deref_mut_info()
+                                    .memory
+                                    .assume_init_mut()
+                                    .copy_out(addr, &xstate)
+                                    .is_err()
+                            }
                         {
                             return Err(());
                         }
                         // Reap the zombie child process.
                         // SAFETY: np.state() equals ZOMBIE.
-                        unsafe { np.clear(parent_guard) };
+                        unsafe { np.lock().clear(parent_guard) };
                         return Ok(pid);
                     }
                 }
@@ -356,31 +366,34 @@ impl<'id, 's> ProcsRef<'id, 's> {
         loop {
             // Scan through pool looking for exited child with the pid.
             for np in self.process_pool() {
-                let mut np = np.lock();
-                if np.deref_mut_info().pid == pid {
+                let mut npg = np.lock();
+                if npg.deref_mut_info().pid == pid {
                     found = true;
-                    if *np.get_mut_parent(&mut parent_guard) != ctx.proc().deref().deref() {
+                    if *npg.get_mut_parent(&mut parent_guard) != ctx.proc().deref().deref() {
                         // Found a process, but not a child
                         return Err(());
                     }
 
-                    // Make sure the child isn't still in exit() or swtch().
-                    // let mut np = np.lock();
-
-                    if np.state() == Procstate::ZOMBIE {
-                        let pid = np.deref_mut_info().pid;
+                    if npg.state() == Procstate::ZOMBIE {
+                        let pid = npg.deref_mut_info().pid;
+                        let xstate = npg.deref_info().xstate;
+                        drop(npg);
                         if !addr.is_null()
-                            && ctx
-                                .proc_mut()
-                                .memory_mut()
-                                .copy_out(addr, &np.deref_info().xstate)
-                                .is_err()
+                            && unsafe {
+                                ctx.proc()
+                                    .lock()
+                                    .deref_mut_info()
+                                    .memory
+                                    .assume_init_mut()
+                                    .copy_out(addr, &xstate)
+                                    .is_err()
+                            }
                         {
                             return Err(());
                         }
                         // Reap the zombie child process.
                         // SAFETY: np.state() equals ZOMBIE.
-                        unsafe { np.clear(parent_guard) };
+                        unsafe { np.lock().clear(parent_guard) };
                         return Ok(pid);
                     }
                 }

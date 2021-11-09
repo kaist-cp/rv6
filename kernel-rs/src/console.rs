@@ -165,12 +165,15 @@ impl Console {
     fn write(&self, src: UVAddr, n: i32, ctx: &mut KernelCtx<'_, '_>) -> i32 {
         for i in 0..n {
             let mut c = [0u8];
-            if ctx
-                .proc_mut()
-                .memory_mut()
-                .copy_in_bytes(&mut c, src + i as usize)
-                .is_err()
-            {
+            if unsafe {
+                ctx.proc()
+                    .lock()
+                    .deref_mut_info()
+                    .memory
+                    .assume_init_mut()
+                    .copy_in_bytes(&mut c, src + i as usize)
+                    .is_err()
+            } {
                 return i;
             }
             self.putc_sleep(c[0], ctx);
@@ -204,12 +207,15 @@ impl Console {
             } else {
                 // Copy the input byte to the user-space buffer.
                 let cbuf = [cin as u8];
-                if ctx
-                    .proc_mut()
-                    .memory_mut()
-                    .copy_out_bytes(dst, &cbuf)
-                    .is_err()
-                {
+                if unsafe {
+                    ctx.proc()
+                        .lock()
+                        .deref_mut_info()
+                        .memory
+                        .assume_init_mut()
+                        .copy_out_bytes(dst, &cbuf)
+                        .is_err()
+                } {
                     break;
                 }
                 dst = dst + 1;

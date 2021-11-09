@@ -217,7 +217,7 @@ impl KernelCtx<'_, '_> {
 
         // Commit to the user image.
         mem::replace(
-            self.proc_mut().memory_mut(),
+            unsafe { info.memory.assume_init_mut() },
             scopeguard::ScopeGuard::into_inner(mem),
         )
         .free(allocator);

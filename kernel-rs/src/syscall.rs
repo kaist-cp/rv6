@@ -29,19 +29,27 @@ impl CurrentProc<'_, '_> {
     pub fn fetchaddr(&mut self, addr: UVAddr) -> Result<usize, ()> {
         let mut ip = 0;
         let sz = mem::size_of::<usize>();
-        let size = unsafe { self.lock().deref_info().memory.assume_init_ref().size() };
+        let mut guard = self.lock();
+        let mem = unsafe { guard.deref_mut_info().memory.assume_init_mut() };
+        let size = mem.size();
         if addr.into_usize() >= size || addr.into_usize() + sz > size {
             return Err(());
         }
         // SAFETY: usize does not have any internal structure.
-        unsafe { self.memory_mut().copy_in(&mut ip, addr) }?;
+        unsafe { mem.copy_in(&mut ip, addr) }?;
         Ok(ip)
     }
 
     /// Fetch the nul-terminated string at addr from the current process.
     /// Returns reference to the string in the buffer.
     pub fn fetchstr<'a>(&mut self, addr: UVAddr, buf: &'a mut [u8]) -> Result<&'a CStr, ()> {
-        self.memory_mut().copy_in_str(buf, addr)?;
+        unsafe {
+            self.lock()
+                .deref_mut_info()
+                .memory
+                .assume_init_mut()
+                .copy_in_str(buf, addr)?
+        };
 
         // SAFETY: buf contains '\0' as copy_in_str has succeeded.
         Ok(unsafe { CStr::from_ptr(buf.as_ptr()) })
@@ -161,7 +169,14 @@ impl KernelCtx<'_, '_> {
     /// Returns Ok(start of new memory) on success, Err(()) on error.
     pub fn sys_sbrk(&mut self) -> Result<usize, ()> {
         let n = self.proc().argint(0)?;
-        self.proc_mut().memory_mut().resize(n, hal().kmem())
+        unsafe {
+            self.proc()
+                .lock()
+                .deref_mut_info()
+                .memory
+                .assume_init_mut()
+                .resize(n, hal().kmem())
+        }
     }
 
     /// Pause for n clock ticks.
@@ -433,8 +448,11 @@ impl KernelCtx<'_, '_> {
         if read_fds != 0 {
             // SAFETY: `read_fds` is a valid user space address given by a user.
             unsafe {
-                self.proc_mut()
-                    .memory_mut()
+                self.proc()
+                    .lock()
+                    .deref_mut_info()
+                    .memory
+                    .assume_init_mut()
                     .copy_in(&mut rfds, read_fds.into())
             }?;
         }
@@ -499,22 +517,18 @@ impl KernelCtx<'_, '_> {
             drop(ticks);
         }
 
+        let mut guard = self.proc().lock();
+        let mem = unsafe { guard.deref_mut_info().memory.assume_init_mut() };
         if read_fds != 0 {
-            self.proc_mut()
-                .memory_mut()
-                .copy_out(read_fds.into(), &rfds)?;
+            mem.copy_out(read_fds.into(), &rfds)?;
         }
 
         if write_fds != 0 {
-            self.proc_mut()
-                .memory_mut()
-                .copy_out(write_fds.into(), &wfds)?;
+            mem.copy_out(write_fds.into(), &wfds)?;
         }
 
         if err_fds != 0 {
-            self.proc_mut()
-                .memory_mut()
-                .copy_out(err_fds.into(), &efds)?;
+            mem.copy_out(err_fds.into(), &efds)?;
         }
 
         Ok(ready_cnt)
@@ -554,7 +568,14 @@ impl KernelCtx<'_, '_> {
         let addr = UVAddr::from(p);
 
         let clk = TargetArch::r_cycle();
-        self.proc_mut().memory_mut().copy_out(addr, &clk)?;
+        unsafe {
+            self.proc()
+                .lock()
+                .deref_mut_info()
+                .memory
+                .assume_init_mut()
+                .copy_out(addr, &clk)?
+        };
 
         Ok(0)
     }

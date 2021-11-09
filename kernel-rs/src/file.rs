@@ -143,7 +143,14 @@ impl File {
             }
             | FileType::Device { ip, .. } => {
                 let st = ip.stat(ctx);
-                ctx.proc_mut().memory_mut().copy_out(addr, &st)
+                unsafe {
+                    ctx.proc()
+                        .lock()
+                        .deref_mut_info()
+                        .memory
+                        .assume_init_mut()
+                        .copy_out(addr, &st)
+                }
             }
             _ => Err(()),
         }

@@ -54,13 +54,13 @@ pub struct ProcInfo {
     pub state: Procstate,
 
     /// If non-zero, sleeping on waitchannel.
-    waitchannel: *const WaitChannel,
+    pub waitchannel: *const WaitChannel,
 
     /// Exit status to be returned to parent's wait.
-    xstate: i32,
+    pub xstate: i32,
 
     /// Process ID.
-    pid: Pid,
+    pub pid: Pid,
 
     /// Virtual address of kernel stack.
     pub kstack: usize,

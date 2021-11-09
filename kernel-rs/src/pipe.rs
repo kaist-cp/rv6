@@ -219,12 +219,15 @@ impl PipeInner {
                 //DOC: pipewrite-full
                 return Ok(i);
             }
-            if ctx
-                .proc_mut()
-                .memory_mut()
-                .copy_in_bytes(&mut ch, addr + i)
-                .is_err()
-            {
+            if unsafe {
+                ctx.proc()
+                    .lock()
+                    .deref_mut_info()
+                    .memory
+                    .assume_init_mut()
+                    .copy_in_bytes(&mut ch, addr + i)
+                    .is_err()
+            } {
                 return Err(PipeError::InvalidCopyin(i));
             }
             self.data[self.nwrite as usize % PIPESIZE] = ch[0];
@@ -258,12 +261,15 @@ impl PipeInner {
             }
             let ch = [self.data[self.nread as usize % PIPESIZE]];
             self.nread = self.nread.wrapping_add(1);
-            if ctx
-                .proc_mut()
-                .memory_mut()
-                .copy_out_bytes(addr + i, &ch)
-                .is_err()
-            {
+            if unsafe {
+                ctx.proc()
+                    .lock()
+                    .deref_mut_info()
+                    .memory
+                    .assume_init_mut()
+                    .copy_out_bytes(addr + i, &ch)
+                    .is_err()
+            } {
                 return Ok(i);
             }
         }
@@ -299,6 +305,13 @@ impl KernelCtx<'_, '_> {
             return Err(());
         };
 
-        self.proc_mut().memory_mut().copy_out(fdarray, &[fd1, fd2])
+        unsafe {
+            self.proc()
+                .lock()
+                .deref_mut_info()
+                .memory
+                .assume_init_mut()
+                .copy_out(fdarray, &[fd1, fd2])
+        }
     }
 }
