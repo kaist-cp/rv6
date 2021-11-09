@@ -115,25 +115,23 @@ impl Procs {
                 .alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory)
                 .expect("user_proc_init: Procs::alloc");
 
-            // SAFETY: this process cannot be the current process yet.
-            let data = unsafe { guard.deref_mut_data() };
-
             // Prepare for the very first "return" from kernel to user.
-
-            // User program counter.
-            // SAFETY: trap_frame has been initialized by alloc.
-            unsafe { (*data.trap_frame).set_pc(0) };
-
-            // User stack pointer.
-            // SAFETY: trap_frame has been initialized by alloc.
-            unsafe { (*data.trap_frame).set_sp(PGSIZE) };
-
-            // set arch-specific registers.
-            // SAFETY: trap_frame has been initialized by alloc.
-            unsafe { (*data.trap_frame).init_reg() };
 
             let name = b"initcode\x00";
             let info = guard.deref_mut_info();
+
+            // User program counter.
+            // SAFETY: trap_frame has been initialized by alloc.
+            unsafe { (*info.trap_frame).set_pc(0) };
+
+            // User stack pointer.
+            // SAFETY: trap_frame has been initialized by alloc.
+            unsafe { (*info.trap_frame).set_sp(PGSIZE) };
+
+            // set arch-specific registers.
+            // SAFETY: trap_frame has been initialized by alloc.
+            unsafe { (*info.trap_frame).init_reg() };
+
             (&mut info.name[..name.len()]).copy_from_slice(name);
             let _ = info.cwd.write(cwd);
             // It's safe because cwd now has been initialized.
@@ -181,11 +179,12 @@ impl<'id, 's> ProcsRef<'id, 's> {
                 // SAFETY: this process cannot be the current process yet.
                 let data = unsafe { guard.deref_mut_data() };
 
-                // Initialize trap frame and page table.
-                data.trap_frame = trap_frame.into_usize() as _;
                 let _ = data.memory.write(memory);
 
                 let info = guard.deref_mut_info();
+
+                // Initialize trap frame and page table.
+                info.trap_frame = trap_frame.into_usize() as _;
 
                 // Set up new context to start executing at forkret,
                 // which returns to user space.
@@ -263,16 +262,6 @@ impl<'id, 's> ProcsRef<'id, 's> {
 
         // Allocate process.
         let mut np = self.alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory)?;
-        // SAFETY: this process cannot be the current process yet.
-        let npdata = unsafe { np.deref_mut_data() };
-
-        // Copy saved user registers.
-        // SAFETY: trap_frame has been initialized by alloc.
-        unsafe { *npdata.trap_frame = *ctx.proc().trap_frame() };
-
-        // Cause fork to return 0 in the child.
-        // SAFETY: trap_frame has been initialized by alloc.
-        unsafe { (*npdata.trap_frame).set_ret_val(0) };
 
         let pid = np.deref_mut_info().pid;
 
@@ -288,6 +277,14 @@ impl<'id, 's> ProcsRef<'id, 's> {
 
             let mut nguard = np.lock();
             let ninfo = nguard.deref_mut_info();
+
+            // Copy saved user registers.
+            // SAFETY: trap_frame has been initialized by alloc.
+            unsafe { *ninfo.trap_frame = *ctx.proc().trap_frame() };
+
+            // Cause fork to return 0 in the child.
+            // SAFETY: trap_frame has been initialized by alloc.
+            unsafe { (*ninfo.trap_frame).set_ret_val(0) };
 
             ninfo.name.copy_from_slice(&guard.deref_info().name);
             let _ = ninfo

@@ -65,6 +65,9 @@ pub struct ProcInfo {
     /// Virtual address of kernel stack.
     pub kstack: usize,
 
+    /// Data page for trampoline.S.
+    trap_frame: *mut <TargetArch as ProcManager>::TrapFrame,
+
     /// swtch() here to run process.
     context: Context,
 
@@ -80,9 +83,6 @@ pub struct ProcInfo {
 
 /// Proc::data are private to the process, so lock need not be held.
 pub struct ProcData {
-    /// Data page for trampoline.S.
-    trap_frame: *mut <TargetArch as ProcManager>::TrapFrame,
-
     /// User memory manager
     memory: MaybeUninit<UserMemory>,
 }
@@ -142,7 +142,6 @@ impl Procstate {
 impl ProcData {
     const fn new() -> Self {
         Self {
-            trap_frame: ptr::null_mut(),
             memory: MaybeUninit::uninit(),
         }
     }
@@ -160,6 +159,7 @@ impl Proc {
                     xstate: 0,
                     pid: 0,
                     kstack: 0,
+                    trap_frame: ptr::null_mut(),
                     context: Context::new(),
                     open_files: array![_ => None; NOFILE],
                     cwd: MaybeUninit::uninit(),
@@ -265,12 +265,9 @@ impl<'id> ProcGuard<'id, '_> {
     ///
     /// `self.info.state` ≠ `UNUSED`
     unsafe fn clear(&mut self, mut parent_guard: WaitGuard<'id, '_>) {
+        let allocator = hal().kmem();
         // SAFETY: this process cannot be the current process any longer.
         let data = unsafe { self.deref_mut_data() };
-        let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
-        let allocator = hal().kmem();
-        // SAFETY: trap_frame uniquely refers to a valid page.
-        allocator.free(unsafe { Page::from_usize(trap_frame as _) });
         // SAFETY:
         // * ok to assume_init() because memory has been initialized according to the invariant.
         // * ok to replace memory with uninit() because state will become UNUSED.
@@ -286,6 +283,9 @@ impl<'id> ProcGuard<'id, '_> {
 
         // Clear the `ProcInfo`.
         let info = self.deref_mut_info();
+        let trap_frame = mem::replace(&mut info.trap_frame, ptr::null_mut());
+        // SAFETY: trap_frame uniquely refers to a valid page.
+        allocator.free(unsafe { Page::from_usize(trap_frame as _) });
         info.waitchannel = ptr::null();
         info.pid = 0;
         info.xstate = 0;
