@@ -29,9 +29,8 @@ impl CurrentProc<'_, '_> {
     pub fn fetchaddr(&mut self, addr: UVAddr) -> Result<usize, ()> {
         let mut ip = 0;
         let sz = mem::size_of::<usize>();
-        if addr.into_usize() >= self.memory().size()
-            || addr.into_usize() + sz > self.memory().size()
-        {
+        let size = unsafe { self.lock().deref_info().memory.assume_init_ref().size() };
+        if addr.into_usize() >= size || addr.into_usize() + sz > size {
             return Err(());
         }
         // SAFETY: usize does not have any internal structure.

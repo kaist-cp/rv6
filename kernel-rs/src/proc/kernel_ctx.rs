@@ -83,12 +83,6 @@ impl<'id, 'p> CurrentProc<'id, 'p> {
         unsafe { (*self.info.get_mut_raw()).pid }
     }
 
-    pub fn memory(&self) -> &UserMemory {
-        // SAFETY: memory has been initialized according to the invariants
-        // of Proc and CurrentProc.
-        unsafe { (*self.info.get_mut_raw()).memory.assume_init_ref() }
-    }
-
     pub fn memory_mut(&mut self) -> &mut UserMemory {
         // SAFETY: memory has been initialized according to the invariants
         // of Proc and CurrentProc.

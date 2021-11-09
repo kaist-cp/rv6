@@ -146,11 +146,10 @@ impl KernelCtx<'_, '_> {
     ///
     /// It must be called only by `user_trap`.
     pub unsafe fn user_trap_ret(self) -> ! {
-        // Tell trampoline.S the user page table to switch to.
-        let user_table = self.proc().memory().page_table_addr();
-
         let guard = self.proc().lock();
         let info = guard.deref_info();
+        // Tell trampoline.S the user page table to switch to.
+        let user_table = unsafe { info.memory.assume_init_ref().page_table_addr() };
         let kstack = info.kstack;
         let trapframe = unsafe { &mut *info.trap_frame };
         drop(guard);
