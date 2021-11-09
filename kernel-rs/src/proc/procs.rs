@@ -177,7 +177,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
     fn alloc(&self, trap_frame: Page, memory: UserMemory) -> Result<ProcGuard<'id, '_>, ()> {
         for p in self.process_pool() {
             let mut guard = p.lock();
-            if guard.deref_info().state == Procstate::UNUSED {
+            if guard.deref_mut_info().state == Procstate::UNUSED {
                 // SAFETY: this process cannot be the current process yet.
                 let data = unsafe { guard.deref_mut_data() };
 
@@ -185,13 +185,16 @@ impl<'id, 's> ProcsRef<'id, 's> {
                 data.trap_frame = trap_frame.into_usize() as _;
                 let _ = data.memory.write(memory);
 
-                // Set up new context to start executing at forkret,
-                // which returns to user space.
-                data.context = Default::default();
-                data.context.set_ret_addr(forkret as usize);
-                data.context.sp = data.kstack + PGSIZE;
+                let sp = data.kstack + PGSIZE;
 
                 let info = guard.deref_mut_info();
+
+                // Set up new context to start executing at forkret,
+                // which returns to user space.
+                info.context = Default::default();
+                info.context.set_ret_addr(forkret as usize);
+                info.context.sp = sp;
+
                 info.pid = self.0.allocpid();
                 // It's safe because trap_frame and memory now have been initialized.
                 info.state = Procstate::USED;
@@ -549,7 +552,7 @@ impl<'id, 's> KernelRef<'id, 's> {
                     // before jumping back to us.
                     guard.deref_mut_info().state = Procstate::RUNNING;
                     cpu.set_proc(p.deref());
-                    unsafe { swtch(cpu.context_raw_mut(), &mut guard.deref_mut_data().context) };
+                    unsafe { swtch(cpu.context_raw_mut(), &mut guard.deref_mut_info().context) };
 
                     // Process is done running for now.
                     // It should have changed its p->state before coming back.

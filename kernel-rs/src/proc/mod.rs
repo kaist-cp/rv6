@@ -62,6 +62,9 @@ pub struct ProcInfo {
     /// Process ID.
     pid: Pid,
 
+    /// swtch() here to run process.
+    context: Context,
+
     /// Open files.
     pub open_files: [Option<RcFile>; NOFILE],
 
@@ -82,9 +85,6 @@ pub struct ProcData {
 
     /// User memory manager
     memory: MaybeUninit<UserMemory>,
-
-    /// swtch() here to run process.
-    context: Context,
 }
 
 /// Per-process state.
@@ -145,7 +145,6 @@ impl ProcData {
             kstack: 0,
             trap_frame: ptr::null_mut(),
             memory: MaybeUninit::uninit(),
-            context: Context::new(),
         }
     }
 }
@@ -161,6 +160,7 @@ impl Proc {
                     waitchannel: ptr::null(),
                     xstate: 0,
                     pid: 0,
+                    context: Context::new(),
                     open_files: array![_ => None; NOFILE],
                     cwd: MaybeUninit::uninit(),
                     name: [0; MAXPROCNAME],
@@ -249,7 +249,7 @@ impl<'id> ProcGuard<'id, '_> {
         assert_eq!(cpu.get_noff(), 1, "sched locks");
 
         let interrupt_enabled = cpu.get_interrupt();
-        unsafe { swtch(&mut self.deref_mut_data().context, cpu.context_raw_mut()) };
+        unsafe { swtch(&mut self.deref_mut_info().context, cpu.context_raw_mut()) };
 
         // We cannot use `cpu` again because `swtch` may move this thread to another cpu.
         // SAFETY: interrupts are disabled.
