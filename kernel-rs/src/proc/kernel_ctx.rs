@@ -78,16 +78,6 @@ pub unsafe fn kernel_ctx<'s, F: for<'new_id> FnOnce(KernelCtx<'new_id, 's>) -> R
 }
 
 impl<'id, 'p> CurrentProc<'id, 'p> {
-    pub fn deref_data(&self) -> &ProcData {
-        // SAFETY: Only `CurrentProc` can use `ProcData` without lock.
-        unsafe { &*self.data.get() }
-    }
-
-    pub fn deref_mut_data(&mut self) -> &mut ProcData {
-        // SAFETY: Only `CurrentProc` can use `ProcData` without lock.
-        unsafe { &mut *self.data.get() }
-    }
-
     pub fn pid(&self) -> Pid {
         // SAFETY: pid is not modified while CurrentProc exists.
         unsafe { (*self.info.get_mut_raw()).pid }
@@ -96,13 +86,13 @@ impl<'id, 'p> CurrentProc<'id, 'p> {
     pub fn memory(&self) -> &UserMemory {
         // SAFETY: memory has been initialized according to the invariants
         // of Proc and CurrentProc.
-        unsafe { self.deref_data().memory.assume_init_ref() }
+        unsafe { (*self.info.get_mut_raw()).memory.assume_init_ref() }
     }
 
     pub fn memory_mut(&mut self) -> &mut UserMemory {
         // SAFETY: memory has been initialized according to the invariants
         // of Proc and CurrentProc.
-        unsafe { self.deref_mut_data().memory.assume_init_mut() }
+        unsafe { (*self.info.get_mut_raw()).memory.assume_init_mut() }
     }
 }
 

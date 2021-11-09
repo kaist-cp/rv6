@@ -71,6 +71,9 @@ pub struct ProcInfo {
     /// swtch() here to run process.
     pub context: Context,
 
+    /// User memory manager
+    pub memory: MaybeUninit<UserMemory>,
+
     /// Open files.
     pub open_files: [Option<RcFile>; NOFILE],
 
@@ -79,12 +82,6 @@ pub struct ProcInfo {
 
     /// Process name (debugging).
     pub name: [u8; MAXPROCNAME],
-}
-
-/// Proc::data are private to the process, so lock need not be held.
-pub struct ProcData {
-    /// User memory manager
-    memory: MaybeUninit<UserMemory>,
 }
 
 /// Per-process state.
@@ -103,8 +100,6 @@ pub struct Proc {
     parent: UnsafeCell<*const Proc>,
 
     pub info: SpinLock<ProcInfo>,
-
-    data: UnsafeCell<ProcData>,
 
     /// Waitchannel saying child proc is dead.
     child_waitchannel: WaitChannel,
@@ -139,14 +134,6 @@ impl Procstate {
     }
 }
 
-impl ProcData {
-    const fn new() -> Self {
-        Self {
-            memory: MaybeUninit::uninit(),
-        }
-    }
-}
-
 impl Proc {
     const fn new() -> Self {
         Self {
@@ -161,12 +148,12 @@ impl Proc {
                     kstack: 0,
                     trap_frame: ptr::null_mut(),
                     context: Context::new(),
+                    memory: MaybeUninit::uninit(),
                     open_files: array![_ => None; NOFILE],
                     cwd: MaybeUninit::uninit(),
                     name: [0; MAXPROCNAME],
                 },
             ),
-            data: UnsafeCell::new(ProcData::new()),
             child_waitchannel: WaitChannel::new(),
             killed: AtomicBool::new(false),
         }
@@ -219,20 +206,6 @@ impl<'id> ProcGuard<'id, '_> {
         unsafe { &mut *self.info.get_mut_raw() }
     }
 
-    /// This method returns a mutable reference to its `ProcData`. There is no
-    /// data race between `ProcGuard`s since this method can be called only after
-    /// acquiring the lock of `info`. However, `CurrentProc` can create a mutable
-    /// reference to the `ProcData` without acquiring the lock. Therefore, this
-    /// method is unsafe, and the caller must ensure the below safety condition.
-    ///
-    /// # Safety
-    ///
-    /// This method must be called only when there is no `CurrentProc` referring
-    /// to the same `Proc`.
-    unsafe fn deref_mut_data(&mut self) -> &mut ProcData {
-        unsafe { &mut *self.data.get() }
-    }
-
     /// Switch to scheduler.  Must hold only p->lock
     /// and have changed proc->state. Saves and restores
     /// interrupt_enabled because interrupt_enabled is a property of this
@@ -265,24 +238,22 @@ impl<'id> ProcGuard<'id, '_> {
     ///
     /// `self.info.state` ≠ `UNUSED`
     unsafe fn clear(&mut self, mut parent_guard: WaitGuard<'id, '_>) {
-        let allocator = hal().kmem();
-        // SAFETY: this process cannot be the current process any longer.
-        let data = unsafe { self.deref_mut_data() };
-        // SAFETY:
-        // * ok to assume_init() because memory has been initialized according to the invariant.
-        // * ok to replace memory with uninit() because state will become UNUSED.
-        unsafe {
-            mem::replace(&mut data.memory, MaybeUninit::uninit())
-                .assume_init()
-                .free(allocator)
-        };
-
         // Clear the process's parent field.
         *self.get_mut_parent(&mut parent_guard) = ptr::null_mut();
         drop(parent_guard);
 
+        let allocator = hal().kmem();
+
         // Clear the `ProcInfo`.
         let info = self.deref_mut_info();
+        // SAFETY:
+        // * ok to assume_init() because memory has been initialized according to the invariant.
+        // * ok to replace memory with uninit() because state will become UNUSED.
+        unsafe {
+            mem::replace(&mut info.memory, MaybeUninit::uninit())
+                .assume_init()
+                .free(allocator)
+        };
         let trap_frame = mem::replace(&mut info.trap_frame, ptr::null_mut());
         // SAFETY: trap_frame uniquely refers to a valid page.
         allocator.free(unsafe { Page::from_usize(trap_frame as _) });

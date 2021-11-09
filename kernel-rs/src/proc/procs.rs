@@ -176,12 +176,9 @@ impl<'id, 's> ProcsRef<'id, 's> {
         for p in self.process_pool() {
             let mut guard = p.lock();
             if guard.deref_mut_info().state == Procstate::UNUSED {
-                // SAFETY: this process cannot be the current process yet.
-                let data = unsafe { guard.deref_mut_data() };
-
-                let _ = data.memory.write(memory);
-
                 let info = guard.deref_mut_info();
+
+                let _ = info.memory.write(memory);
 
                 // Initialize trap frame and page table.
                 info.trap_frame = trap_frame.into_usize() as _;
