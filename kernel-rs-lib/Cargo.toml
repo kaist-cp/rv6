@@ -1,0 +1,38 @@
+[package]
+name = "kernel-aam"
+version = "0.1.0"
+authors = ["Jeehoon Kang <jeehoon.kang@kaist.ac.kr>"]
+edition = "2018"
+autobins = false
+
+[features]
+default = []
+test = []
+gicv2 = []
+gicv3 = []
+
+[profile.dev]
+panic = "abort"
+opt-level = 1
+
+[profile.release]
+panic = "abort"
+lto = true
+
+[dependencies]
+pin-project = "1.0.7"
+
+# Compiler options for sysroot packages.
+# Cargo currently warns following packages are not dependencies.
+# This is a bug, those options actually work well.
+[profile.dev.package.core]
+opt-level = 3
+debug-assertions = false
+codegen-units = 16
+overflow-checks = false
+
+[profile.dev.package.compiler_builtins]
+opt-level = 3
+debug-assertions = false
+codegen-units = 16
+overflow-checks = false

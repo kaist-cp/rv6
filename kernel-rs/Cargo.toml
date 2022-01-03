@@ -23,6 +23,7 @@ panic = "abort"
 lto = true
 
 [dependencies]
+kernel-aam = { path = "../kernel-rs-lib" }
 array-macro = "2.1.0"
 arrayvec = { version = "0.7.1", default-features = false }
 bitflags = "1.2.1"

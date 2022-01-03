@@ -14,8 +14,9 @@
 use core::mem::{self, ManuallyDrop};
 use core::ops::{Deref, DerefMut};
 
+use kernel_aam::strong_pin::StrongPin;
+
 use crate::arena::ArenaRc;
-use crate::util::strong_pin::StrongPin;
 use crate::{
     arena::{Arena, ArenaObject, MruArena},
     lock::SleepLock,

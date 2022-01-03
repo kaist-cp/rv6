@@ -42,12 +42,10 @@ mod sleepablelock;
 mod sleeplock;
 mod spinlock;
 
+use kernel_aam::strong_pin::{StrongPin, StrongPinMut};
 pub use sleepablelock::{SleepableLock, SleepableLockGuard};
 pub use sleeplock::{SleepLock, SleepLockGuard};
 pub use spinlock::{RawSpinLock, SpinLock, SpinLockGuard};
-
-use crate::util::strong_pin::StrongPin;
-use crate::util::strong_pin::StrongPinMut;
 
 pub trait RawLock {
     /// Acquires the lock.

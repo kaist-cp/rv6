@@ -3,16 +3,14 @@
 use core::{marker::PhantomPinned, ptr::NonNull};
 
 use array_macro::array;
+use kernel_aam::{
+    static_arc::StaticArc,
+    strong_pin::{StrongPin, StrongPinMut},
+};
 use pin_project::pin_project;
 
 use super::{Arena, ArenaObject, ArenaRc};
-use crate::{
-    lock::{SpinLock, SpinLockGuard},
-    util::{
-        static_arc::StaticArc,
-        strong_pin::{StrongPin, StrongPinMut},
-    },
-};
+use crate::lock::{SpinLock, SpinLockGuard};
 
 pub struct ArrayArena<T, const CAPACITY: usize> {
     inner: SpinLock<ArrayArenaInner<T, CAPACITY>>,

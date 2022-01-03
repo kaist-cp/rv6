@@ -7,6 +7,7 @@ use core::{
 };
 
 use array_macro::array;
+use kernel_aam::branded::Branded;
 
 use crate::{
     arch::interface::{ContextManager, ProcManager, TrapManager},
@@ -17,7 +18,6 @@ use crate::{
     lock::SpinLock,
     page::Page,
     param::{MAXPROCNAME, NOFILE},
-    util::branded::Branded,
     vm::UserMemory,
 };
 

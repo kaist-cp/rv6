@@ -89,6 +89,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kernel-aam"
+version = "0.1.0"
+dependencies = [
+ "pin-project",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -184,6 +191,7 @@ dependencies = [
  "cortex-a",
  "cstr_core",
  "itertools",
+ "kernel-aam",
  "num-iter",
  "pin-project",
  "scopeguard",

@@ -8,8 +8,7 @@
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
 
-use crate::util::static_arc::Ref;
-use crate::util::strong_pin::StrongPin;
+use kernel_aam::{static_arc::Ref, strong_pin::StrongPin};
 
 mod array_arena;
 mod mru_arena;

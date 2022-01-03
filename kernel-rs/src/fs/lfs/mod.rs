@@ -4,10 +4,11 @@
 
 use core::ops::Deref;
 
+use kernel_aam::strong_pin::StrongPin;
 use spin::Once;
 
 use super::{FcntlFlags, FileSystem, Inode, InodeGuard, InodeType, Path, RcInode, Stat, Tx};
-use crate::{proc::KernelCtx, util::strong_pin::StrongPin};
+use crate::proc::KernelCtx;
 
 mod inode;
 mod superblock;

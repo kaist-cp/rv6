@@ -15,6 +15,7 @@ use core::cell::UnsafeCell;
 use core::ops::Deref;
 use core::{cmp, mem};
 
+use kernel_aam::strong_pin::StrongPin;
 use pin_project::pin_project;
 use spin::Once;
 
@@ -22,7 +23,6 @@ use self::log::Log;
 use super::{
     FcntlFlags, FileName, FileSystem, Inode, InodeGuard, InodeType, Itable, Path, RcInode, Stat, Tx,
 };
-use crate::util::strong_pin::StrongPin;
 use crate::{
     bio::Buf,
     file::{FileType, InodeFileType},

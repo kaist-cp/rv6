@@ -3,6 +3,7 @@
 //! and pipe buffers. Allocates whole 4096-byte pages.
 use core::{mem, pin::Pin};
 
+use kernel_aam::intrusive_list::{List, ListEntry, ListNode};
 use pin_project::pin_project;
 
 use crate::{
@@ -10,7 +11,6 @@ use crate::{
     lock::SpinLock,
     memlayout::PHYSTOP,
     page::Page,
-    util::intrusive_list::{List, ListEntry, ListNode},
 };
 
 extern "C" {

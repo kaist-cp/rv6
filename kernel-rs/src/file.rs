@@ -8,6 +8,8 @@ use core::{
     ops::DerefMut,
 };
 
+use kernel_aam::strong_pin::StrongPin;
+
 use crate::{
     addr::UVAddr,
     arena::{Arena, ArenaObject, ArenaRc, ArrayArena},
@@ -16,7 +18,6 @@ use crate::{
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
     proc::KernelCtx,
-    util::strong_pin::StrongPin,
 };
 
 pub enum FileType {

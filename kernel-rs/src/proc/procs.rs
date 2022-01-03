@@ -8,6 +8,7 @@ use core::{
 
 use array_macro::array;
 use itertools::izip;
+use kernel_aam::branded::Branded;
 use pin_project::pin_project;
 
 use super::*;
@@ -22,7 +23,6 @@ use crate::{
     memlayout::kstack,
     page::Page,
     param::{NPROC, ROOTDEV},
-    util::branded::Branded,
     vm::UserMemory,
 };
 

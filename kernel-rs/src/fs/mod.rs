@@ -2,6 +2,7 @@ use core::mem;
 use core::ops::Deref;
 
 use bitflags::bitflags;
+use kernel_aam::strong_pin::StrongPin;
 use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
@@ -10,7 +11,6 @@ use crate::{
     lock::SleepLock,
     param::NINODE,
     proc::KernelCtx,
-    util::strong_pin::StrongPin,
 };
 
 mod lfs;

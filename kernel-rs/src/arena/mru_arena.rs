@@ -6,16 +6,17 @@ use core::pin::Pin;
 use core::ptr::NonNull;
 
 use array_macro::array;
+use kernel_aam::{
+    intrusive_list::{List, ListEntry, ListNode},
+    pinned_array::IterPinMut,
+    static_arc::StaticArc,
+    strong_pin::StrongPin,
+    strong_pin::StrongPinMut,
+};
 use pin_project::pin_project;
 
 use super::{Arena, ArenaObject, ArenaRc};
-use crate::util::strong_pin::StrongPin;
-use crate::{
-    lock::{SpinLock, SpinLockGuard},
-    util::intrusive_list::{List, ListEntry, ListNode},
-    util::pinned_array::IterPinMut,
-    util::{static_arc::StaticArc, strong_pin::StrongPinMut},
-};
+use crate::lock::{SpinLock, SpinLockGuard};
 
 pub struct MruArena<T, const CAPACITY: usize> {
     inner: SpinLock<MruArenaInner<T, CAPACITY>>,

@@ -69,6 +69,7 @@
 
 use core::{iter::StepBy, mem, ops::Range};
 
+use kernel_aam::strong_pin::StrongPin;
 use static_assertions::const_assert;
 use zerocopy::{AsBytes, FromBytes};
 
@@ -82,7 +83,7 @@ use crate::{
     param::NINODE,
     param::ROOTDEV,
     proc::KernelCtx,
-    util::{memset, strong_pin::StrongPin},
+    util::memset,
 };
 
 /// Directory is a file containing a sequence of Dirent structures.

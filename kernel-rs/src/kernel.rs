@@ -4,9 +4,9 @@ use core::ops::Deref;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use kernel_aam::{branded::Branded, strong_pin::StrongPin};
 use pin_project::pin_project;
 
-use crate::util::strong_pin::StrongPin;
 use crate::{
     arch::interface::Arch,
     arch::TargetArch,
@@ -20,7 +20,7 @@ use crate::{
     lock::{SleepableLock, SpinLock},
     param::NDEV,
     proc::Procs,
-    util::{branded::Branded, spin_loop},
+    util::spin_loop,
     vm::KernelMemory,
 };
 
