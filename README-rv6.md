@@ -12,27 +12,27 @@
 - Compile rv6.
 
   ```
-  make
+  RUST_MODE=release make
   ```
 
 - Run rv6 on qemu (RISC-V).
 
   ```
-  make qemu
+  RUST_MODE=release make qemu
   [to exit, C-A X]
   ```
 
-- Run rv6 on qemu (Armv8).
+- Run rv6 on qemu (Armv8). IMPORTANT: You should run `make clean` first when TARGET is changed.
 
   ```
-  TARGET=arm make qemu
+  RUST_MODE=release TARGET=arm make qemu
   [to exit, C-A X]
   ```
 
 - Run with specified version of GIC (ARM Generic Interrupt Controller) (only on ARM)
   ```
-  TARGET=arm GIC_VERSION=2 make qemu // default
-  TARGET=arm GIC_VERSION=3 make qemu
+  RUST_MODE=release TARGET=arm GIC_VERSION=2 make qemu // default
+  RUST_MODE=release TARGET=arm GIC_VERSION=3 make qemu
   ```
 
 - Run with KVM enabled on ArmV8 kvm-supported machine.
