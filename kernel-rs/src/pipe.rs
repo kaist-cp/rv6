@@ -4,7 +4,7 @@ use crate::{
     addr::UVAddr,
     file::{FileType, RcFile, SelectEvent},
     hal::hal,
-    lock::SpinLock,
+    lock::{new_spin_lock, SpinLock},
     page::Page,
     proc::{KernelCtx, WaitChannel},
 };
@@ -131,15 +131,14 @@ impl Deref for AllocatedPipe {
 
 impl KernelCtx<'_, '_> {
     pub fn allocate_pipe(&self) -> Result<(RcFile, RcFile), ()> {
-        let allocator = hal().kmem();
-        let page = allocator.alloc(None).ok_or(())?;
-        let mut page = scopeguard::guard(page, |page| allocator.free(page));
+        let page = hal().alloc(None).ok_or(())?;
+        let mut page = scopeguard::guard(page, |page| hal().free(page));
         let ptr = page.as_uninit_mut();
 
         // TODO(https://github.com/kaist-cp/rv6/issues/367):
         // Since Pipe is a huge struct, need to check whether stack is used to fill `*ptr`.
         let ptr = NonNull::from(ptr.write(Pipe {
-            inner: SpinLock::new(
+            inner: new_spin_lock(
                 "pipe",
                 PipeInner {
                     data: [0; PIPESIZE],

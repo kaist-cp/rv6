@@ -16,6 +16,7 @@ use crate::{
     file::{RcFile, SeekWhence, SelectEvent},
     fs::{FcntlFlags, FileSystem, FileSystemExt, InodeType, Path},
     hal::hal,
+    lock::sleep_guard,
     ok_or,
     page::{Page, PGSIZE},
     param::{MAXARG, MAXPATH},
@@ -159,7 +160,7 @@ impl KernelCtx<'_, '_> {
     /// Returns Ok(start of new memory) on success, Err(()) on error.
     pub fn sys_sbrk(&mut self) -> Result<usize, ()> {
         let n = self.proc().argint(0)?;
-        self.proc_mut().memory_mut().resize(n, hal().kmem())
+        self.proc_mut().memory_mut().resize(n)
     }
 
     /// Pause for n clock ticks.
@@ -174,7 +175,7 @@ impl KernelCtx<'_, '_> {
             if self.proc().killed() {
                 return Err(());
             }
-            ticks.sleep(self);
+            sleep_guard(&mut ticks, self);
         }
         Ok(0)
     }
@@ -356,7 +357,6 @@ impl KernelCtx<'_, '_> {
         let mut args = ArrayVec::<Page, MAXARG>::new();
         let path = Path::new(self.proc_mut().argstr(0, &mut path)?);
         let uargv = self.proc().argaddr(1)?;
-        let allocator = hal().kmem();
 
         let mut success = false;
         for i in 0..MAXARG {
@@ -371,13 +371,13 @@ impl KernelCtx<'_, '_> {
                 break;
             }
 
-            let mut page = some_or!(allocator.alloc(None), break);
+            let mut page = some_or!(hal().alloc(None), break);
             if self
                 .proc_mut()
                 .fetchstr(uarg.into(), &mut page[..])
                 .is_err()
             {
-                allocator.free(page);
+                hal().free(page);
                 break;
             }
             args.push(page);
@@ -390,7 +390,7 @@ impl KernelCtx<'_, '_> {
         };
 
         for page in args.drain(..) {
-            allocator.free(page);
+            hal().free(page);
         }
 
         ret

@@ -56,7 +56,6 @@
 
 mod addr;
 mod arch;
-mod arena;
 mod bio;
 mod console;
 mod cpu;

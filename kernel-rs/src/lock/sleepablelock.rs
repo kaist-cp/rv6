@@ -1,7 +1,7 @@
 //! Sleepable locks
-use core::cell::UnsafeCell;
+use kernel_aam::lock::{Guard, Lock, RawLock};
 
-use super::{spinlock::RawSpinLock, Guard, Lock, RawLock};
+use super::spinlock::RawSpinLock;
 use crate::{
     kernel::KernelRef,
     proc::{KernelCtx, WaitChannel},
@@ -39,22 +39,15 @@ impl RawLock for RawSleepableLock {
     }
 }
 
-impl<T> SleepableLock<T> {
-    /// Returns a new `SleepableLock` with name `name` and data `data`.
-    pub const fn new(name: &'static str, data: T) -> Self {
-        Self {
-            lock: RawSleepableLock::new(name),
-            data: UnsafeCell::new(data),
-        }
-    }
+/// Returns a new `SleepableLock` with name `name` and data `data`.
+pub const fn new_sleepable_lock<T>(name: &'static str, data: T) -> SleepableLock<T> {
+    SleepableLock::new(RawSleepableLock::new(name), data)
 }
 
-impl<T> SleepableLockGuard<'_, T> {
-    pub fn sleep(&mut self, ctx: &KernelCtx<'_, '_>) {
-        self.lock.lock.waitchannel.sleep(self, ctx);
-    }
+pub fn sleep_guard<T>(this: &mut SleepableLockGuard<'_, T>, ctx: &KernelCtx<'_, '_>) {
+    this.get_lock().raw_lock().waitchannel.sleep(this, ctx);
+}
 
-    pub fn wakeup(&self, kernel: KernelRef<'_, '_>) {
-        self.lock.lock.waitchannel.wakeup(kernel);
-    }
+pub fn wakeup_guard<T>(this: &mut SleepableLockGuard<'_, T>, kernel: KernelRef<'_, '_>) {
+    this.get_lock().raw_lock().waitchannel.wakeup(kernel);
 }

@@ -1,8 +1,7 @@
+use kernel_aam::lock::{Guard, RawLock};
+
 use super::*;
-use crate::{
-    kernel::KernelRef,
-    lock::{Guard, RawLock},
-};
+use crate::kernel::KernelRef;
 
 pub struct WaitChannel {
     /// Required to make this type non-zero-sized. If it were zero-sized, multiple wait channels may

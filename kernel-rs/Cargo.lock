@@ -92,6 +92,7 @@ dependencies = [
 name = "kernel-aam"
 version = "0.1.0"
 dependencies = [
+ "array-macro",
  "pin-project",
 ]
 

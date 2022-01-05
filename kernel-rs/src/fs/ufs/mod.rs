@@ -23,6 +23,7 @@ use self::log::Log;
 use super::{
     FcntlFlags, FileName, FileSystem, Inode, InodeGuard, InodeType, Itable, Path, RcInode, Stat, Tx,
 };
+use crate::lock::new_sleepable_lock;
 use crate::{
     bio::Buf,
     file::{FileType, InodeFileType},
@@ -104,7 +105,7 @@ impl Tx<'_, Ufs> {
     /// Allocate a zeroed disk block.
     fn balloc(&self, dev: u32, ctx: &KernelCtx<'_, '_>) -> u32 {
         for b in num_iter::range_step(0, self.fs.superblock().size, BPB as u32) {
-            let mut bp = hal().disk().read(dev, self.fs.superblock().bblock(b), ctx);
+            let mut bp = hal().read(dev, self.fs.superblock().bblock(b), ctx);
             for bi in 0..cmp::min(BPB as u32, self.fs.superblock().size - b) {
                 let m = 1 << (bi % 8);
                 if bp.deref_inner_mut().data[(bi / 8) as usize] & m == 0 {
@@ -123,7 +124,7 @@ impl Tx<'_, Ufs> {
 
     /// Free a disk block.
     fn bfree(&self, dev: u32, b: u32, ctx: &KernelCtx<'_, '_>) {
-        let mut bp = hal().disk().read(dev, self.fs.superblock().bblock(b), ctx);
+        let mut bp = hal().read(dev, self.fs.superblock().bblock(b), ctx);
         let bi = b as usize % BPB;
         let m = 1u8 << (bi % 8);
         assert_ne!(
@@ -142,11 +143,11 @@ impl FileSystem for Ufs {
 
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
         if !self.superblock.is_completed() {
-            let buf = hal().disk().read(dev, 1, ctx);
+            let buf = hal().read(dev, 1, ctx);
             let superblock = self.superblock.call_once(|| Superblock::new(&buf));
             buf.free(ctx);
             let _ = self.log.call_once(|| {
-                SleepableLock::new(
+                new_sleepable_lock(
                     "LOG",
                     Log::new(dev, superblock.logstart as i32, superblock.nlog as i32, ctx),
                 )
@@ -372,12 +373,12 @@ impl FileSystem for Ufs {
     }
 
     fn tx_begin(&self, ctx: &KernelCtx<'_, '_>) {
-        self.log().begin_op(ctx);
+        Log::begin_op(self.log(), ctx);
     }
 
     unsafe fn tx_end(&self, ctx: &KernelCtx<'_, '_>) {
         // Commits if this was the last outstanding operation.
-        self.log().end_op(ctx);
+        Log::end_op(self.log(), ctx);
     }
 
     #[inline]
@@ -402,9 +403,7 @@ impl FileSystem for Ufs {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let bp = hal()
-                .disk()
-                .read(guard.dev, guard.bmap(off as usize / BSIZE, &k), &k);
+            let bp = hal().read(guard.dev, guard.bmap(off as usize / BSIZE, &k), &k);
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
@@ -439,7 +438,7 @@ impl FileSystem for Ufs {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = hal().disk().read(
+            let mut bp = hal().read(
                 guard.dev,
                 guard.bmap_or_alloc(off as usize / BSIZE, tx, &k),
                 &k,
@@ -478,9 +477,7 @@ impl FileSystem for Ufs {
         }
 
         if guard.deref_inner().addr_indirect != 0 {
-            let mut bp = hal()
-                .disk()
-                .read(dev, guard.deref_inner().addr_indirect, ctx);
+            let mut bp = hal().read(dev, guard.deref_inner().addr_indirect, ctx);
             // SAFETY: u32 does not have internal structure.
             let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "itrunc: Buf data unaligned");
@@ -501,7 +498,7 @@ impl FileSystem for Ufs {
     fn inode_lock<'a>(inode: &'a Inode<Self>, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'a, Self> {
         let mut guard = inode.inner.lock(ctx);
         if !guard.valid {
-            let mut bp = hal().disk().read(
+            let mut bp = hal().read(
                 inode.dev,
                 ctx.kernel().fs().superblock().iblock(inode.inum),
                 ctx,

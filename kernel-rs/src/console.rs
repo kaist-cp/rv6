@@ -15,7 +15,10 @@ use crate::{
     arch::TargetArch,
     hal::hal,
     kernel::{Kernel, KernelRef},
-    lock::{SleepableLock, SleepableLockGuard, SpinLock, SpinLockGuard},
+    lock::{
+        new_sleepable_lock, new_spin_lock, sleep_guard, wakeup_guard, SleepableLock,
+        SleepableLockGuard, SpinLock, SpinLockGuard,
+    },
     proc::KernelCtx,
     util::spin_loop,
 };
@@ -79,8 +82,8 @@ impl Console {
     pub const unsafe fn new(uart: usize) -> Self {
         Self {
             uart: unsafe { Uart::new(uart) },
-            input_buffer: SleepableLock::new("console_input", InputBuffer::new()),
-            output_buffer: SleepableLock::new("console_output", OutputBuffer::new()),
+            input_buffer: new_sleepable_lock("console_input", InputBuffer::new()),
+            output_buffer: new_sleepable_lock("console_output", OutputBuffer::new()),
         }
     }
 
@@ -124,7 +127,7 @@ impl Console {
         while guard.w == guard.r.wrapping_add(OUTPUT_BUF) {
             // Buffer is full.
             // Wait for flush_output_buffer() to open up space in the buffer.
-            guard.sleep(ctx);
+            sleep_guard(&mut guard, ctx);
         }
 
         let ind = guard.w % OUTPUT_BUF;
@@ -156,7 +159,7 @@ impl Console {
             guard.r += 1;
 
             // Maybe uart.putc() is waiting for space in the buffer.
-            guard.wakeup(kernel);
+            wakeup_guard(&mut guard, kernel);
 
             self.uart.putc(c);
         }
@@ -188,7 +191,7 @@ impl Console {
                 if ctx.proc().killed() {
                     return -1;
                 }
-                guard.sleep(ctx);
+                sleep_guard(&mut guard, ctx);
             }
             let cin = guard.buf[guard.r % INPUT_BUF] as i32;
             guard.r = guard.r.wrapping_add(1);
@@ -276,7 +279,7 @@ impl Console {
                         {
                             // Wake up read() if a whole line (or end-of-file) has arrived.
                             guard.w = guard.e;
-                            guard.wakeup(kernel);
+                            wakeup_guard(&mut guard, kernel);
                         }
                     }
                 }
@@ -297,7 +300,7 @@ pub struct PrinterGuard<'a, A: Arch> {
 
 impl Printer {
     pub const fn new() -> Self {
-        Self(SpinLock::new("Printer", ()))
+        Self(new_spin_lock("Printer", ()))
     }
 
     pub fn lock<'a, A: Arch>(&'a self, kernel: Pin<&'a Kernel<A>>) -> PrinterGuard<'a, A> {

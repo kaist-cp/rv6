@@ -1,14 +1,16 @@
-use core::mem;
 use core::ops::Deref;
+use core::{mem, ops::DerefMut};
 
 use bitflags::bitflags;
-use kernel_aam::strong_pin::StrongPin;
+use kernel_aam::{
+    arena::{ArenaObject, ArenaRc, ArrayArena},
+    strong_pin::StrongPin,
+};
 use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
     addr::UVAddr,
-    arena::{ArenaObject, ArenaRc, ArrayArena},
-    lock::SleepLock,
+    lock::{RawSpinLock, SleepLock},
     param::NINODE,
     proc::KernelCtx,
 };
@@ -259,10 +261,40 @@ pub struct Inode<FS: FileSystem> {
     pub inner: SleepLock<FS::InodeInner>,
 }
 
-pub type Itable<FS> = ArrayArena<Inode<FS>, NINODE>;
+pub type ItableArena<FS> = ArrayArena<Inode<FS>, RawSpinLock, NINODE>;
+
+#[repr(transparent)]
+pub struct Itable<FS: FileSystem>(ItableArena<FS>);
 
 /// A reference counted smart pointer to an `Inode`.
-pub type RcInode<FS> = ArenaRc<Itable<FS>>;
+#[repr(transparent)]
+pub struct RcInode<FS: FileSystem>(ArenaRc<ItableArena<FS>>);
+
+impl<FS: FileSystem> RcInode<FS> {
+    pub fn free<'id, 'a>(self, ctx: (&'a Tx<'a, FS>, &'a KernelCtx<'id, 'a>)) {
+        self.0.free(ctx);
+    }
+}
+
+impl<FS: FileSystem> Deref for RcInode<FS> {
+    type Target = ArenaRc<ItableArena<FS>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<FS: FileSystem> DerefMut for RcInode<FS> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<FS: FileSystem> Clone for RcInode<FS> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 
 pub struct Tx<'s, FS: FileSystem> {
     fs: &'s FS,

@@ -5,10 +5,13 @@ use pin_project::pin_project;
 use crate::{
     arch::interface::Arch,
     arch::TargetArch,
+    bio::Buf,
     console::{Console, Printer},
     cpu::Cpus,
     kalloc::Kmem,
-    lock::{SleepableLock, SpinLock},
+    lock::{new_sleepable_lock, new_spin_lock, SleepableLock, SpinLock},
+    page::Page,
+    proc::KernelCtx,
     virtio::VirtioDisk,
 };
 
@@ -60,9 +63,9 @@ impl Hal {
         Self {
             console: unsafe { Console::new(A::UART0) },
             printer: Printer::new(),
-            kmem: SpinLock::new("KMEM", unsafe { Kmem::new() }),
+            kmem: new_spin_lock("KMEM", unsafe { Kmem::new() }),
             cpus: Cpus::new(),
-            disk: SleepableLock::new("DISK", unsafe { VirtioDisk::new() }),
+            disk: new_sleepable_lock("DISK", unsafe { VirtioDisk::new() }),
         }
     }
 
@@ -96,6 +99,20 @@ impl Hal {
         unsafe { Pin::new_unchecked(&self.get_ref().kmem) }
     }
 
+    pub fn free(self: Pin<&Self>, mut page: Page) {
+        page.write_bytes(1);
+        self.kmem().pinned_lock().get_pin_mut().as_ref().free(page);
+    }
+
+    pub fn alloc(self: Pin<&Self>, init_value: Option<u8>) -> Option<Page> {
+        let mut page = self.kmem().pinned_lock().get_pin_mut().as_ref().alloc()?;
+
+        // fill with junk or received init value
+        let init_value = init_value.unwrap_or(5);
+        page.write_bytes(init_value);
+        Some(page)
+    }
+
     pub fn cpus(&self) -> &Cpus {
         &self.cpus
     }
@@ -103,5 +120,13 @@ impl Hal {
     pub fn disk(self: Pin<&Self>) -> Pin<&SleepableLock<VirtioDisk>> {
         // SAFETY: `HAL` is never moved inside this module, and only shared references are exposed.
         unsafe { Pin::new_unchecked(&self.get_ref().disk) }
+    }
+
+    pub fn read(self: Pin<&Self>, dev: u32, blockno: u32, ctx: &KernelCtx<'_, '_>) -> Buf {
+        VirtioDisk::read(self.disk(), dev, blockno, ctx)
+    }
+
+    pub fn write(self: Pin<&Self>, buf: &mut Buf, ctx: &KernelCtx<'_, '_>) {
+        VirtioDisk::write(self.disk(), buf, ctx)
     }
 }

@@ -3,9 +3,16 @@
 version = 3
 
 [[package]]
+name = "array-macro"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a08c8f180019011a1d94e5eebcbfaa548736815f636fadc10955f1b622b4c71"
+
+[[package]]
 name = "kernel-aam"
 version = "0.1.0"
 dependencies = [
+ "array-macro",
  "pin-project",
 ]
 

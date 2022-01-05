@@ -17,7 +17,6 @@ use crate::{
     arch::interface::TrapFrameManager,
     fs::{DefaultFs, FileSystem, FileSystemExt},
     hal::hal,
-    kalloc::Kmem,
     kernel::KernelRef,
     lock::{SpinLock, SpinLockGuard},
     memlayout::kstack,
@@ -73,7 +72,7 @@ impl Procs {
             nextpid: AtomicI32::new(1),
             process_pool: array![_ => Proc::new(); NPROC],
             initial_proc: ptr::null(),
-            wait_lock: SpinLock::new("wait_lock", ()),
+            wait_lock: new_spin_lock("wait_lock", ()),
             _marker: PhantomPinned,
         }
     }
@@ -88,28 +87,20 @@ impl Procs {
     }
 
     /// Set up first user process.
-    pub fn user_proc_init(
-        self: Pin<&mut Self>,
-        cwd: RcInode<DefaultFs>,
-        allocator: Pin<&SpinLock<Kmem>>,
-    ) {
+    pub fn user_proc_init(self: Pin<&mut Self>, cwd: RcInode<DefaultFs>) {
         let initial_proc = Branded::new(self.as_ref(), |procs| {
             let procs = ProcsRef(procs);
 
             // Allocate trap frame.
-            let trap_frame = scopeguard::guard(
-                allocator.alloc(None).expect("user_proc_init: alloc"),
-                |page| allocator.free(page),
-            );
+            let trap_frame =
+                scopeguard::guard(hal().alloc(None).expect("user_proc_init: alloc"), |page| {
+                    hal().free(page)
+                });
 
             // Allocate one user page and copy init's instructions
             // and data into it.
-            let memory = UserMemory::new(
-                trap_frame.addr(),
-                Some(TargetArch::get_init_code()),
-                allocator,
-            )
-            .expect("user_proc_init: UserMemory::new");
+            let memory = UserMemory::new(trap_frame.addr(), Some(TargetArch::get_init_code()))
+                .expect("user_proc_init: UserMemory::new");
 
             let mut guard = procs
                 .alloc(scopeguard::ScopeGuard::into_inner(trap_frame), memory)
@@ -199,9 +190,8 @@ impl<'id, 's> ProcsRef<'id, 's> {
             }
         }
 
-        let allocator = hal().kmem();
-        allocator.free(trap_frame);
-        memory.free(allocator);
+        hal().free(trap_frame);
+        memory.free();
         Err(())
     }
 
@@ -246,17 +236,14 @@ impl<'id, 's> ProcsRef<'id, 's> {
     /// Otherwise, UB may happen if the new `Proc` tries to read its `parent` field
     /// that points to a `Proc` that already dropped.
     pub fn fork(&self, ctx: &mut KernelCtx<'id, '_>) -> Result<Pid, ()> {
-        let allocator = hal().kmem();
         // Allocate trap frame.
-        let trap_frame = scopeguard::guard(allocator.alloc(None).ok_or(())?, |page| {
-            allocator.free(page)
-        });
+        let trap_frame = scopeguard::guard(hal().alloc(None).ok_or(())?, |page| hal().free(page));
 
         // Copy user memory from parent to child.
         let memory = ctx
             .proc_mut()
             .memory_mut()
-            .clone(trap_frame.addr(), allocator)
+            .clone(trap_frame.addr())
             .ok_or(())?;
 
         // Allocate process.

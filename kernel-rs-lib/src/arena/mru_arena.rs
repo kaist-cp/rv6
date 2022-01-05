@@ -6,20 +6,20 @@ use core::pin::Pin;
 use core::ptr::NonNull;
 
 use array_macro::array;
-use kernel_aam::{
+use pin_project::pin_project;
+
+use super::{Arena, ArenaObject, ArenaRc};
+use crate::lock::{Guard, Lock, RawLock};
+use crate::{
     intrusive_list::{List, ListEntry, ListNode},
     pinned_array::IterPinMut,
     static_arc::StaticArc,
     strong_pin::StrongPin,
     strong_pin::StrongPinMut,
 };
-use pin_project::pin_project;
 
-use super::{Arena, ArenaObject, ArenaRc};
-use crate::lock::{SpinLock, SpinLockGuard};
-
-pub struct MruArena<T, const CAPACITY: usize> {
-    inner: SpinLock<MruArenaInner<T, CAPACITY>>,
+pub struct MruArena<T, R: RawLock, const CAPACITY: usize> {
+    inner: Lock<R, MruArenaInner<T, CAPACITY>>,
 }
 
 #[pin_project]
@@ -79,15 +79,15 @@ unsafe impl<T> ListNode for MruEntry<T> {
     }
 }
 
-impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
+impl<T, R: RawLock, const CAPACITY: usize> MruArena<T, R, CAPACITY> {
     #[allow(clippy::new_ret_no_self)]
-    pub const unsafe fn new<D: Default>(name: &'static str) -> MruArena<D, CAPACITY> {
+    pub const unsafe fn new<D: Default>(lock: R) -> MruArena<D, R, CAPACITY> {
         let inner: MruArenaInner<D, CAPACITY> = MruArenaInner {
             entries: array![_ => MruEntry::new(Default::default()); CAPACITY],
             list: unsafe { List::new() },
         };
         MruArena {
-            inner: SpinLock::new(name, inner),
+            inner: Lock::new(lock, inner),
         }
     }
 
@@ -98,7 +98,7 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
     }
 
     #[allow(clippy::needless_lifetimes)]
-    fn inner<'s>(self: StrongPin<'s, Self>) -> StrongPin<'s, SpinLock<MruArenaInner<T, CAPACITY>>> {
+    fn inner<'s>(self: StrongPin<'s, Self>) -> StrongPin<'s, Lock<R, MruArenaInner<T, CAPACITY>>> {
         unsafe { StrongPin::new_unchecked(&(*self.ptr()).inner) }
     }
 }
@@ -120,11 +120,11 @@ impl<T, const CAPACITY: usize> MruArenaInner<T, CAPACITY> {
     }
 }
 
-impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
-    for MruArena<T, CAPACITY>
+impl<T: 'static + ArenaObject + Unpin + Send, R: 'static + RawLock, const CAPACITY: usize> Arena
+    for MruArena<T, R, CAPACITY>
 {
     type Data = T;
-    type Guard<'s> = SpinLockGuard<'s, MruArenaInner<T, CAPACITY>>;
+    type Guard<'s> = Guard<'s, R, MruArenaInner<T, CAPACITY>>;
 
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         self: StrongPin<'_, Self>,

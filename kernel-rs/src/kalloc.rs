@@ -8,7 +8,6 @@ use pin_project::pin_project;
 
 use crate::{
     addr::{pgrounddown, pgroundup, PGSIZE},
-    lock::SpinLock,
     memlayout::PHYSTOP,
     page::Page,
 };
@@ -120,22 +119,5 @@ impl Kmem {
 
     fn runs(self: Pin<&Self>) -> Pin<&List<Run>> {
         unsafe { Pin::new_unchecked(&self.get_ref().runs) }
-    }
-}
-
-impl SpinLock<Kmem> {
-    pub fn free(self: Pin<&Self>, mut page: Page) {
-        // Fill with junk to catch dangling refs.
-        page.write_bytes(1);
-        self.pinned_lock().get_pin_mut().as_ref().free(page);
-    }
-
-    pub fn alloc(self: Pin<&Self>, init_value: Option<u8>) -> Option<Page> {
-        let mut page = self.pinned_lock().get_pin_mut().as_ref().alloc()?;
-
-        // fill with junk or received init value
-        let init_value = init_value.unwrap_or(5);
-        page.write_bytes(init_value);
-        Some(page)
     }
 }

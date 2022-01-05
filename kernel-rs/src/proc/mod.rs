@@ -15,7 +15,7 @@ use crate::{
     file::RcFile,
     fs::{DefaultFs, RcInode},
     hal::hal,
-    lock::SpinLock,
+    lock::{new_spin_lock, SpinLock},
     page::Page,
     param::{MAXPROCNAME, NOFILE},
     vm::UserMemory,
@@ -157,7 +157,7 @@ impl Proc {
     const fn new() -> Self {
         Self {
             parent: UnsafeCell::new(ptr::null()),
-            info: SpinLock::new(
+            info: new_spin_lock(
                 "proc",
                 ProcInfo {
                     state: Procstate::UNUSED,
@@ -268,16 +268,15 @@ impl<'id> ProcGuard<'id, '_> {
         // SAFETY: this process cannot be the current process any longer.
         let data = unsafe { self.deref_mut_data() };
         let trap_frame = mem::replace(&mut data.trap_frame, ptr::null_mut());
-        let allocator = hal().kmem();
         // SAFETY: trap_frame uniquely refers to a valid page.
-        allocator.free(unsafe { Page::from_usize(trap_frame as _) });
+        hal().free(unsafe { Page::from_usize(trap_frame as _) });
         // SAFETY:
         // * ok to assume_init() because memory has been initialized according to the invariant.
         // * ok to replace memory with uninit() because state will become UNUSED.
         unsafe {
             mem::replace(&mut data.memory, MaybeUninit::uninit())
                 .assume_init()
-                .free(allocator)
+                .free()
         };
 
         // Clear the name.

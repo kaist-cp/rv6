@@ -13,12 +13,15 @@
 
 use core::mem::{self, ManuallyDrop};
 use core::ops::{Deref, DerefMut};
+use core::pin::Pin;
 
-use kernel_aam::strong_pin::StrongPin;
+use kernel_aam::{
+    arena::{Arena, ArenaObject, ArenaRc, MruArena},
+    strong_pin::StrongPin,
+};
 
-use crate::arena::ArenaRc;
+use crate::lock::RawSpinLock;
 use crate::{
-    arena::{Arena, ArenaObject, MruArena},
     lock::SleepLock,
     param::{BSIZE, NBUF},
     proc::{KernelCtx, WaitChannel},
@@ -108,10 +111,13 @@ impl BufInner {
     }
 }
 
-pub type Bcache = MruArena<BufEntry, NBUF>;
+pub type BcacheArena = MruArena<BufEntry, RawSpinLock, NBUF>;
+
+#[repr(transparent)]
+pub struct Bcache(BcacheArena);
 
 /// A reference counted smart pointer to a `BufEntry`.
-pub struct BufUnlocked(ManuallyDrop<ArenaRc<Bcache>>);
+pub struct BufUnlocked(ManuallyDrop<ArenaRc<BcacheArena>>);
 
 /// A locked `BufEntry`.
 ///
@@ -194,13 +200,22 @@ impl Bcache {
     ///
     /// Must be used only after initializing it with `MruArena::init`.
     pub const unsafe fn new_bcache() -> Self {
-        unsafe { MruArena::<BufEntry, NBUF>::new("BCACHE") }
+        unsafe {
+            Self(MruArena::<BufEntry, RawSpinLock, NBUF>::new(
+                RawSpinLock::new("BCACHE"),
+            ))
+        }
+    }
+
+    pub fn init(self: Pin<&mut Self>) {
+        unsafe { Pin::new_unchecked(&mut self.get_unchecked_mut().0) }.init();
     }
 
     /// Return a unlocked buf with the contents of the indicated block.
     pub fn get_buf(self: StrongPin<'_, Self>, dev: u32, blockno: u32) -> BufUnlocked {
+        let this = unsafe { StrongPin::new_unchecked(&self.as_pin().get_ref().0) };
         BufUnlocked(ManuallyDrop::new(
-            self.find_or_alloc(
+            this.find_or_alloc(
                 |buf| buf.dev == dev && buf.blockno == blockno,
                 |buf| {
                     buf.dev = dev;

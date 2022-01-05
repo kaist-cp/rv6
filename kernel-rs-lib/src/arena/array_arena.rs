@@ -3,17 +3,17 @@
 use core::{marker::PhantomPinned, ptr::NonNull};
 
 use array_macro::array;
-use kernel_aam::{
-    static_arc::StaticArc,
-    strong_pin::{StrongPin, StrongPinMut},
-};
 use pin_project::pin_project;
 
 use super::{Arena, ArenaObject, ArenaRc};
-use crate::lock::{SpinLock, SpinLockGuard};
+use crate::lock::{Guard, Lock, RawLock};
+use crate::{
+    static_arc::StaticArc,
+    strong_pin::{StrongPin, StrongPinMut},
+};
 
-pub struct ArrayArena<T, const CAPACITY: usize> {
-    inner: SpinLock<ArrayArenaInner<T, CAPACITY>>,
+pub struct ArrayArena<T, R: RawLock, const CAPACITY: usize> {
+    inner: Lock<R, ArrayArenaInner<T, CAPACITY>>,
 }
 
 /// A homogeneous memory allocator equipped with reference counts.
@@ -25,22 +25,22 @@ pub struct ArrayArenaInner<T, const CAPACITY: usize> {
     _marker: PhantomPinned,
 }
 
-impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
+impl<T, R: RawLock, const CAPACITY: usize> ArrayArena<T, R, CAPACITY> {
     #[allow(clippy::new_ret_no_self)]
-    pub const fn new<D: Default>(name: &'static str) -> ArrayArena<D, CAPACITY> {
+    pub const fn new<D: Default>(lock: R) -> ArrayArena<D, R, CAPACITY> {
         let inner: ArrayArenaInner<D, CAPACITY> = ArrayArenaInner {
             entries: array![_ => StaticArc::new(Default::default()); CAPACITY],
             _marker: PhantomPinned,
         };
         ArrayArena {
-            inner: SpinLock::new(name, inner),
+            inner: Lock::new(lock, inner),
         }
     }
 
     #[allow(clippy::needless_lifetimes)]
     fn inner<'s>(
         self: StrongPin<'s, Self>,
-    ) -> StrongPin<'s, SpinLock<ArrayArenaInner<T, CAPACITY>>> {
+    ) -> StrongPin<'s, Lock<R, ArrayArenaInner<T, CAPACITY>>> {
         unsafe { StrongPin::new_unchecked(&(*self.ptr()).inner) }
     }
 }
@@ -53,11 +53,11 @@ impl<T, const CAPACITY: usize> ArrayArenaInner<T, CAPACITY> {
     }
 }
 
-impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
-    for ArrayArena<T, CAPACITY>
+impl<T: 'static + ArenaObject + Unpin + Send, R: 'static + RawLock, const CAPACITY: usize> Arena
+    for ArrayArena<T, R, CAPACITY>
 {
     type Data = T;
-    type Guard<'s> = SpinLockGuard<'s, ArrayArenaInner<T, CAPACITY>>;
+    type Guard<'s> = Guard<'s, R, ArrayArenaInner<T, CAPACITY>>;
 
     fn find_or_alloc<C: Fn(&Self::Data) -> bool, N: FnOnce(&mut Self::Data)>(
         self: StrongPin<'_, Self>,

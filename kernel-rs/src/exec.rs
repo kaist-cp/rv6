@@ -10,7 +10,6 @@ use crate::{
     addr::{pgroundup, PAddr, PGSIZE},
     arch::interface::TrapFrameManager,
     fs::{FileSystem, FileSystemExt, Path},
-    hal::hal,
     page::Page,
     param::MAXARG,
     proc::{KernelCtx, RegNum},
@@ -102,8 +101,6 @@ impl KernelCtx<'_, '_> {
             return Err(());
         }
 
-        let allocator = hal().kmem();
-
         let tx = self.kernel().fs().as_pin().get_ref().begin_tx(self);
         let tx = scopeguard::guard(tx, |t| t.end(self));
         let ptr = self.kernel().fs().namei(path, &tx, self)?;
@@ -119,8 +116,8 @@ impl KernelCtx<'_, '_> {
         }
 
         let trap_frame: PAddr = (self.proc().trap_frame() as *const _ as usize).into();
-        let mem = UserMemory::new(trap_frame, None, allocator).ok_or(())?;
-        let mut mem = scopeguard::guard(mem, |mem| mem.free(allocator));
+        let mem = UserMemory::new(trap_frame, None).ok_or(())?;
+        let mut mem = scopeguard::guard(mem, |mem| mem.free());
 
         // Load program into memory.
         for i in 0..elf.phnum as usize {
@@ -132,7 +129,7 @@ impl KernelCtx<'_, '_> {
                 if ph.memsz < ph.filesz || ph.vaddr % PGSIZE != 0 {
                     return Err(());
                 }
-                let _ = mem.alloc(ph.vaddr.checked_add(ph.memsz).ok_or(())?, allocator)?;
+                let _ = mem.alloc(ph.vaddr.checked_add(ph.memsz).ok_or(())?)?;
                 mem.load_file(ph.vaddr.into(), &mut ip, ph.off as _, ph.filesz as _, self)?;
             }
         }
@@ -143,7 +140,7 @@ impl KernelCtx<'_, '_> {
         // Allocate two pages at the next page boundary.
         // Use the second as the user stack.
         let mut sz = pgroundup(mem.size());
-        sz = mem.alloc(sz + 2 * PGSIZE, allocator)?;
+        sz = mem.alloc(sz + 2 * PGSIZE)?;
         mem.clear((sz - 2 * PGSIZE).into());
         let mut sp: usize = sz;
         let stackbase: usize = sp - PGSIZE;
@@ -200,7 +197,7 @@ impl KernelCtx<'_, '_> {
             self.proc_mut().memory_mut(),
             scopeguard::ScopeGuard::into_inner(mem),
         )
-        .free(allocator);
+        .free();
 
         // arguments to user main(argc, argv)
         // argc is returned via the system call return

@@ -19,6 +19,7 @@ use super::{
     MmioRegs, VirtIOFeatures, VirtIOStatus, VirtqAvail, VirtqDesc, VirtqDescFlags, VirtqUsed, NUM,
     VIRTIO_BLK_T_IN, VIRTIO_BLK_T_OUT,
 };
+use crate::lock::{sleep_guard, wakeup_guard};
 use crate::{
     addr::{PGSHIFT, PGSIZE},
     bio::Buf,
@@ -179,24 +180,27 @@ impl Drop for Descriptor {
     }
 }
 
-impl SleepableLock<VirtioDisk> {
+impl VirtioDisk {
     /// Return a locked Buf with the `latest` contents of the indicated block.
     /// If buf.valid is true, we don't need to access Disk.
-    pub fn read(self: Pin<&Self>, dev: u32, blockno: u32, ctx: &KernelCtx<'_, '_>) -> Buf {
+    pub fn read(
+        this: Pin<&SleepableLock<Self>>,
+        dev: u32,
+        blockno: u32,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Buf {
         let mut buf = ctx.kernel().bcache().get_buf(dev, blockno).lock(ctx);
         if !buf.deref_inner().valid {
-            VirtioDisk::rw(&mut self.pinned_lock(), &mut buf, false, ctx);
+            VirtioDisk::rw(&mut this.pinned_lock(), &mut buf, false, ctx);
             buf.deref_inner_mut().valid = true;
         }
         buf
     }
 
-    pub fn write(self: Pin<&Self>, b: &mut Buf, ctx: &KernelCtx<'_, '_>) {
-        VirtioDisk::rw(&mut self.pinned_lock(), b, true, ctx)
+    pub fn write(this: Pin<&SleepableLock<Self>>, b: &mut Buf, ctx: &KernelCtx<'_, '_>) {
+        VirtioDisk::rw(&mut this.pinned_lock(), b, true, ctx)
     }
-}
 
-impl VirtioDisk {
     pub fn init(self: Pin<&Self>) {
         let mut status: VirtIOStatus = VirtIOStatus::empty();
 
@@ -273,7 +277,7 @@ impl VirtioDisk {
                 //   number of free descriptors. Therefore, sleeping threads
                 //   do not need to wake up, as alloc_three_descriptors will
                 //   still fail.
-                None => guard.sleep(ctx),
+                None => sleep_guard(guard, ctx),
             }
         };
 
@@ -349,7 +353,7 @@ impl VirtioDisk {
         // b: &mut Buf becomes invalid after this method returns.
         guard.get_pin_mut().project().info.project().inflight[desc[0].idx].b = ptr::null_mut();
         IntoIter::new(desc).for_each(|desc| guard.get_pin_mut().free(desc));
-        guard.wakeup(ctx.kernel());
+        wakeup_guard(guard, ctx.kernel());
     }
 
     pub fn intr(self: Pin<&mut Self>, kernel: KernelRef<'_, '_>) {

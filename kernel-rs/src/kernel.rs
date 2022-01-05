@@ -7,6 +7,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use kernel_aam::{branded::Branded, strong_pin::StrongPin};
 use pin_project::pin_project;
 
+use crate::lock::new_sleepable_lock;
 use crate::{
     arch::interface::Arch,
     arch::TargetArch,
@@ -16,8 +17,7 @@ use crate::{
     file::{Devsw, FileTable},
     fs::{DefaultFs, FileSystem},
     hal::{hal, hal_init},
-    kalloc::Kmem,
-    lock::{SleepableLock, SpinLock},
+    lock::SleepableLock,
     param::NDEV,
     proc::Procs,
     util::spin_loop,
@@ -163,7 +163,7 @@ impl<A: Arch> Kernel<A> {
         Self {
             panicked: AtomicBool::new(false),
             memory: MaybeUninit::uninit(),
-            ticks: SleepableLock::new("time", 0),
+            ticks: new_sleepable_lock("time", 0),
             procs: Procs::new(),
             bcache: unsafe { Bcache::new_bcache() },
             devsw: [Devsw {
@@ -180,7 +180,7 @@ impl<A: Arch> Kernel<A> {
     /// # Safety
     ///
     /// This method should be called only once by the core 0.
-    unsafe fn init(self: Pin<&mut Self>, allocator: Pin<&SpinLock<Kmem>>) {
+    unsafe fn init(self: Pin<&mut Self>) {
         self.as_ref().write_str("\nrv6 kernel is booting\n\n");
 
         let mut this = self.project();
@@ -192,7 +192,7 @@ impl<A: Arch> Kernel<A> {
         };
 
         // Create kernel memory manager.
-        let memory = KernelMemory::new(allocator).expect("PageTable::new failed");
+        let memory = KernelMemory::new().expect("PageTable::new failed");
 
         // Turn on paging.
         // SAFETY: `memory.page_table` contains base address for a valid kernel page table.
@@ -221,7 +221,7 @@ impl<A: Arch> Kernel<A> {
 
         // First user process.
         let fs = unsafe { StrongPin::new_unchecked(this.file_system.as_ref().get_ref()) };
-        this.procs.user_proc_init(fs.root(), allocator);
+        this.procs.user_proc_init(fs.root());
     }
 
     /// Initializes the kernel for a core.
@@ -288,7 +288,7 @@ pub unsafe fn main() -> ! {
             hal_init();
         }
         unsafe {
-            kernel_mut_unchecked().init(hal().kmem());
+            kernel_mut_unchecked().init();
         }
         INITED.store(true, Ordering::Release);
     } else {

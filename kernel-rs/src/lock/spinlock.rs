@@ -1,10 +1,11 @@
 //! Spin locks
-use core::cell::{Cell, UnsafeCell};
+use core::cell::Cell;
 use core::mem::MaybeUninit;
 use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
-use super::{Guard, Lock, RawLock};
+use kernel_aam::lock::{Guard, Lock, RawLock};
+
 use crate::{
     cpu::{Cpu, HeldInterrupts},
     hal::hal,
@@ -108,12 +109,6 @@ impl RawLock for RawSpinLock {
     }
 }
 
-impl<T> SpinLock<T> {
-    /// Returns a new `SpinLock` with name `name` and data `data`.
-    pub const fn new(name: &'static str, data: T) -> Self {
-        Self {
-            lock: RawSpinLock::new(name),
-            data: UnsafeCell::new(data),
-        }
-    }
+pub const fn new_spin_lock<T>(name: &'static str, data: T) -> SpinLock<T> {
+    SpinLock::new(RawSpinLock::new(name), data)
 }

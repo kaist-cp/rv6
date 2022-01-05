@@ -8,13 +8,16 @@ use core::{
     ops::DerefMut,
 };
 
-use kernel_aam::strong_pin::StrongPin;
+use kernel_aam::{
+    arena::{Arena, ArenaObject, ArenaRc, ArrayArena},
+    strong_pin::StrongPin,
+};
 
 use crate::{
     addr::UVAddr,
-    arena::{Arena, ArenaObject, ArenaRc, ArrayArena},
     fs::{DefaultFs, FileSystem, FileSystemExt, InodeGuard, RcInode},
     hal::hal,
+    lock::RawSpinLock,
     param::{BSIZE, MAXOPBLOCKS, NFILE},
     pipe::AllocatedPipe,
     proc::KernelCtx,
@@ -52,7 +55,15 @@ pub struct File {
     writable: bool,
 }
 
-pub type FileTable = ArrayArena<File, NFILE>;
+pub type FileTableArena = ArrayArena<File, RawSpinLock, NFILE>;
+
+#[repr(transparent)]
+pub struct FileTable(FileTableArena);
+
+/// A reference counted smart pointer to a `File`.
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct RcFile(ArenaRc<FileTableArena>);
 
 /// map major device number to device functions.
 #[derive(Copy, Clone)]
@@ -60,9 +71,6 @@ pub struct Devsw {
     pub read: Option<fn(UVAddr, i32, &mut KernelCtx<'_, '_>) -> i32>,
     pub write: Option<fn(UVAddr, i32, &mut KernelCtx<'_, '_>) -> i32>,
 }
-
-/// A reference counted smart pointer to a `File`.
-pub type RcFile = ArenaRc<FileTable>;
 
 // Events for `select`
 #[derive(Copy, Clone)]
@@ -314,7 +322,7 @@ impl ArenaObject for File {
         match typ {
             FileType::Pipe { pipe } => {
                 if let Some(page) = pipe.close(self.writable, ctx) {
-                    hal().kmem().free(page);
+                    hal().free(page);
                 }
             }
             FileType::Inode {
@@ -332,7 +340,9 @@ impl ArenaObject for File {
 
 impl FileTable {
     pub const fn new_ftable() -> Self {
-        ArrayArena::<File, NFILE>::new("FTABLE")
+        Self(ArrayArena::<File, RawSpinLock, NFILE>::new(
+            RawSpinLock::new("FTABLE"),
+        ))
     }
 
     /// Allocate a file structure.
@@ -342,7 +352,10 @@ impl FileTable {
         readable: bool,
         writable: bool,
     ) -> Result<RcFile, ()> {
-        self.alloc(|| File::new(typ, readable, writable)).ok_or(())
+        let this = unsafe { StrongPin::new_unchecked(&self.as_pin().get_ref().0) };
+        this.alloc(|| File::new(typ, readable, writable))
+            .map(RcFile)
+            .ok_or(())
     }
 }
 
@@ -359,5 +372,23 @@ impl RcFile {
         }
         self.free(ctx);
         Err(())
+    }
+
+    pub fn free<'id, 'a>(self, ctx: &'a KernelCtx<'id, 'a>) {
+        self.0.free(ctx);
+    }
+}
+
+impl Deref for RcFile {
+    type Target = ArenaRc<FileTableArena>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for RcFile {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }

@@ -69,17 +69,19 @@
 
 use core::{iter::StepBy, mem, ops::Range};
 
-use kernel_aam::strong_pin::StrongPin;
+use kernel_aam::{
+    arena::{Arena, ArrayArena},
+    strong_pin::StrongPin,
+};
 use static_assertions::const_assert;
 use zerocopy::{AsBytes, FromBytes};
 
 use super::{FileName, Path, Ufs, IPB, NDIRECT, NINDIRECT, ROOTINO};
 use crate::{
-    arena::{Arena, ArrayArena},
     bio::BufData,
     fs::{Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
     hal::hal,
-    lock::SleepLock,
+    lock::{RawSpinLock, SleepLock},
     param::NINODE,
     param::ROOTDEV,
     proc::KernelCtx,
@@ -262,9 +264,7 @@ impl InodeGuard<'_, Ufs> {
     /// Must be called after every change to an ip->xxx field
     /// that lives on disk.
     pub fn update(&self, tx: &Tx<'_, Ufs>, ctx: &KernelCtx<'_, '_>) {
-        let mut bp = hal()
-            .disk()
-            .read(self.dev, tx.fs.superblock().iblock(self.inum), ctx);
+        let mut bp = hal().read(self.dev, tx.fs.superblock().iblock(self.inum), ctx);
 
         const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
@@ -351,7 +351,7 @@ impl InodeGuard<'_, Ufs> {
                 self.deref_inner_mut().addr_indirect = indirect;
             }
 
-            let mut bp = hal().disk().read(self.dev, indirect, ctx);
+            let mut bp = hal().read(self.dev, indirect, ctx);
             let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
             let mut addr = data[bn];
@@ -409,22 +409,27 @@ impl Inode<Ufs> {
 
 impl Itable<Ufs> {
     pub const fn new_itable() -> Self {
-        ArrayArena::<Inode<Ufs>, NINODE>::new("ITABLE")
+        Self(ArrayArena::<Inode<Ufs>, RawSpinLock, NINODE>::new(
+            RawSpinLock::new("ITABLE"),
+        ))
     }
 
     /// Find the inode with number inum on device dev
     /// and return the in-memory copy. Does not lock
     /// the inode and does not read it from disk.
     pub fn get_inode(self: StrongPin<'_, Self>, dev: u32, inum: u32) -> RcInode<Ufs> {
-        self.find_or_alloc(
-            |inode| inode.dev == dev && inode.inum == inum,
-            |inode| {
-                inode.dev = dev;
-                inode.inum = inum;
-                inode.inner.get_mut().valid = false;
-            },
+        let this = unsafe { StrongPin::new_unchecked(&self.as_pin().get_ref().0) };
+        RcInode(
+            this.find_or_alloc(
+                |inode| inode.dev == dev && inode.inum == inum,
+                |inode| {
+                    inode.dev = dev;
+                    inode.inum = inum;
+                    inode.inner.get_mut().valid = false;
+                },
+            )
+            .expect("[Itable::get_inode] no inodes"),
         )
-        .expect("[Itable::get_inode] no inodes")
     }
 
     /// Allocate an inode on device dev.
@@ -438,7 +443,7 @@ impl Itable<Ufs> {
         ctx: &KernelCtx<'_, '_>,
     ) -> RcInode<Ufs> {
         for inum in 1..tx.fs.superblock().ninodes {
-            let mut bp = hal().disk().read(dev, tx.fs.superblock().iblock(inum), ctx);
+            let mut bp = hal().read(dev, tx.fs.superblock().iblock(inum), ctx);
 
             const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
             const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);

@@ -5,6 +5,7 @@ use crate::{
     arch::TargetArch,
     hal::hal,
     kernel::{kernel_ref, KernelRef},
+    lock::wakeup_guard,
     ok_or,
     proc::{kernel_ctx, KernelCtx, Procstate},
 };
@@ -245,6 +246,6 @@ impl KernelRef<'_, '_> {
     fn clock_intr(self) {
         let mut ticks = self.ticks().lock();
         *ticks = ticks.wrapping_add(1);
-        ticks.wakeup(self);
+        wakeup_guard(&mut ticks, self);
     }
 }

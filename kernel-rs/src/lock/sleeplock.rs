@@ -5,7 +5,7 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
-use super::SleepableLock;
+use super::{new_sleepable_lock, sleep_guard, wakeup_guard, SleepableLock};
 use crate::proc::KernelCtx;
 
 /// Long-term locks for processes
@@ -33,14 +33,14 @@ unsafe impl<'s, T: Sync> Sync for SleepLockGuard<'s, T> {}
 impl RawSleepLock {
     const fn new(name: &'static str) -> Self {
         Self {
-            inner: SleepableLock::new(name, -1),
+            inner: new_sleepable_lock(name, -1),
         }
     }
 
     fn acquire(&self, ctx: &KernelCtx<'_, '_>) {
         let mut guard = self.inner.lock();
         while *guard != -1 {
-            guard.sleep(ctx);
+            sleep_guard(&mut guard, ctx);
         }
         *guard = ctx.proc().pid();
     }
@@ -48,7 +48,7 @@ impl RawSleepLock {
     fn release(&self, ctx: &KernelCtx<'_, '_>) {
         let mut guard = self.inner.lock();
         *guard = -1;
-        guard.wakeup(ctx.kernel());
+        wakeup_guard(&mut guard, ctx.kernel());
     }
 }
 

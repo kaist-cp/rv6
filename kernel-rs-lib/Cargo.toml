@@ -20,6 +20,7 @@ panic = "abort"
 lto = true
 
 [dependencies]
+array-macro = "2.1.0"
 pin-project = "1.0.7"
 
 # Compiler options for sysroot packages.
