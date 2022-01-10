@@ -7,7 +7,7 @@ use core::{
 };
 
 use array_macro::array;
-use kernel_aam::branded::Branded;
+use kernel_aam::{branded::Branded, remote_lock::DataOwner};
 
 use crate::{
     arch::interface::{ContextManager, ProcManager, TrapManager},
@@ -184,6 +184,15 @@ impl Proc {
     }
 }
 
+impl DataOwner for Proc {
+    type L = Procs;
+    type T = *const Proc;
+
+    fn get_data(&self) -> &UnsafeCell<Self::T> {
+        &self.parent
+    }
+}
+
 impl<'id, 's> ProcRef<'id, 's> {
     /// Returns a mutable reference to this `Proc`'s parent field, which is a raw pointer.
     /// You need a `WaitGuard` that has the same `'id`.
@@ -191,7 +200,7 @@ impl<'id, 's> ProcRef<'id, 's> {
         &'a self,
         _guard: &'b mut WaitGuard<'id, '_>,
     ) -> &'b mut *const Proc {
-        unsafe { &mut *self.parent.get() }
+        self.0.get_mut(&mut _guard.0)
     }
 
     pub fn lock(&self) -> ProcGuard<'id, 's> {

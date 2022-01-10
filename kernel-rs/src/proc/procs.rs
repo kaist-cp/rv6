@@ -8,7 +8,7 @@ use core::{
 
 use array_macro::array;
 use itertools::izip;
-use kernel_aam::branded::Branded;
+use kernel_aam::{branded::Branded, lock::Lock, remote_lock::LockOwner};
 use pin_project::pin_project;
 
 use super::*;
@@ -18,7 +18,7 @@ use crate::{
     fs::{DefaultFs, FileSystem, FileSystemExt},
     hal::hal,
     kernel::KernelRef,
-    lock::{SpinLock, SpinLockGuard},
+    lock::{RawSpinLock, SpinLock, SpinLockGuard},
     memlayout::kstack,
     page::Page,
     param::{NPROC, ROOTDEV},
@@ -46,6 +46,14 @@ pub struct Procs {
     _marker: PhantomPinned,
 }
 
+impl LockOwner for Procs {
+    type R = RawSpinLock;
+
+    fn get_lock(&self) -> &Lock<Self::R, ()> {
+        &self.wait_lock
+    }
+}
+
 /// A branded reference to a `Procs`.
 /// For a `KernelRef<'id, '_>` that has the same `'id` tag with this, the `Procs` is owned
 /// by the `Kernel` that the `KernelRef` points to.
@@ -64,7 +72,7 @@ struct ProcIter<'id, 'a>(Branded<'id, core::slice::Iter<'a, Proc>>);
 ///
 /// To access the `parent` field of a `ProcRef<'id, '_>`, you need a `WaitGuard<'id, '_>`
 /// with the same `'id` tag.
-pub struct WaitGuard<'id, 's>(Branded<'id, SpinLockGuard<'s, ()>>);
+pub struct WaitGuard<'id, 's>(pub Branded<'id, SpinLockGuard<'s, ()>>);
 
 impl Procs {
     pub const fn new() -> Self {
@@ -157,7 +165,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
     /// Acquires the wait_lock of this `Procs` and returns the `WaitGuard`.
     /// You can access any of this `Procs`'s `Proc::parent` field only after acquiring the `WaitGuard`.
     fn wait_guard(&self) -> WaitGuard<'id, 's> {
-        WaitGuard(self.0.brand(self.0.get_ref().wait_lock.lock()))
+        WaitGuard(self.0.lock())
     }
 
     /// Look into process system for an UNUSED proc.

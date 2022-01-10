@@ -58,5 +58,6 @@ pub mod branded;
 pub mod intrusive_list;
 pub mod lock;
 pub mod pinned_array;
+pub mod remote_lock;
 pub mod static_arc;
 pub mod strong_pin;
