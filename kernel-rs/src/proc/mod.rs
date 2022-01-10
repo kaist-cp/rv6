@@ -7,7 +7,7 @@ use core::{
 };
 
 use array_macro::array;
-use kernel_aam::{branded::Branded, remote_lock::DataOwner};
+use kernel_aam::{branded::Branded, pcb::PCB, remote_lock::DataOwner};
 
 use crate::{
     arch::interface::{ContextManager, ProcManager, TrapManager},
@@ -190,6 +190,14 @@ impl DataOwner for Proc {
 
     fn get_data(&self) -> &UnsafeCell<Self::T> {
         &self.parent
+    }
+}
+
+impl PCB for Proc {
+    type O = ProcData;
+
+    fn owned(&self) -> &UnsafeCell<Self::O> {
+        &self.data
     }
 }
 

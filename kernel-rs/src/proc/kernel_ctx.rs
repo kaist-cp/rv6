@@ -1,5 +1,7 @@
 use core::ops::Deref;
 
+use kernel_aam::pcb::Current;
+
 use super::*;
 use crate::{
     arch::interface::ProcManager,
@@ -80,15 +82,21 @@ pub unsafe fn kernel_ctx<'s, F: for<'new_id> FnOnce(KernelCtx<'new_id, 's>) -> R
     }
 }
 
+unsafe impl<'id, 'p> Current for CurrentProc<'id, 'p> {
+    type P = Proc;
+
+    fn get_pcb(&self) -> &Self::P {
+        self
+    }
+}
+
 impl<'id, 'p> CurrentProc<'id, 'p> {
     pub fn deref_data(&self) -> &ProcData {
-        // SAFETY: Only `CurrentProc` can use `ProcData` without lock.
-        unsafe { &*self.data.get() }
+        self.deref_owned()
     }
 
     pub fn deref_mut_data(&mut self) -> &mut ProcData {
-        // SAFETY: Only `CurrentProc` can use `ProcData` without lock.
-        unsafe { &mut *self.data.get() }
+        self.deref_owned_mut()
     }
 
     pub fn pid(&self) -> Pid {

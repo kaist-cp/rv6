@@ -57,6 +57,7 @@ pub mod arena;
 pub mod branded;
 pub mod intrusive_list;
 pub mod lock;
+pub mod pcb;
 pub mod pinned_array;
 pub mod remote_lock;
 pub mod static_arc;
