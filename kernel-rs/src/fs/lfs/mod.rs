@@ -1,39 +1,66 @@
-// TODO: remove it
-#![allow(unused_variables)]
-#![allow(dead_code)]
-
+use core::mem;
 use core::ops::Deref;
 
+use pin_project::pin_project;
 use spin::Once;
 
-use super::{FcntlFlags, FileSystem, Inode, InodeGuard, InodeType, Path, RcInode, Stat, Tx};
+use super::{
+    FcntlFlags, FileName, FileSystem, Inode, InodeGuard, InodeType, Itable, Path, RcInode, Stat, Tx,
+};
+use crate::fs::lfs::inode::Dirent;
+use crate::{
+    file::{FileType, InodeFileType},
+    hal::hal,
+    lock::SleepableLock,
+    param::BSIZE,
+};
 use crate::{proc::KernelCtx, util::strong_pin::StrongPin};
 
 mod inode;
+mod log;
 mod superblock;
 
 pub use inode::InodeInner;
+pub use log::Log;
 pub use superblock::Superblock;
 
+/// root i-number
+const ROOTINO: u32 = 1;
+
+const NDIRECT: usize = 12;
+const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
+const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
+
+#[pin_project]
 pub struct Lfs {
     /// Initializing superblock should run only once because forkret() calls FileSystem::init().
     /// There should be one superblock per disk device, but we run with only one device.
     superblock: Once<Superblock>,
 
+    /// Log to save writes
+    log: Once<SleepableLock<Log>>,
+
     /// In-memory inode map.
-    imap: (),
+    /// TODO: use Map instead of Array
+    imap: Itable<Self>,
 }
 
 impl Lfs {
     pub const fn new() -> Self {
         Self {
             superblock: Once::new(),
-            imap: (),
+            log: Once::new(),
+            imap: Itable::<Self>::new_itable(),
         }
     }
 
     fn superblock(&self) -> &Superblock {
         self.superblock.get().expect("superblock")
+    }
+
+    #[allow(clippy::needless_lifetimes)]
+    pub fn imap<'s>(self: StrongPin<'s, Self>) -> StrongPin<'s, Itable<Self>> {
+        unsafe { StrongPin::new_unchecked(&self.as_pin().get_ref().imap) }
     }
 }
 
@@ -42,10 +69,25 @@ impl FileSystem for Lfs {
     type InodeInner = InodeInner;
 
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
-        todo!()
+        if !self.superblock.is_completed() {
+            let buf = hal().disk().read(dev, 1, ctx);
+            let superblock = self.superblock.call_once(|| Superblock::new(&buf));
+            buf.free(ctx);
+
+            // TODO: initialize log
+            // let _ = self.log.call_once(|| {
+            //     // TODO: intialize log
+            //     SleepableLock::new(
+            //         "LOG",
+            //         Log::new(dev, superblock.logstart as i32, superblock.nlog as i32, ctx),
+            //     )
+            // });
+        }
     }
 
     fn root(self: StrongPin<'_, Self>) -> RcInode<Self> {
+        // TODO: fix overall type error
+        // self.imap.root()
         todo!()
     }
 
@@ -55,6 +97,9 @@ impl FileSystem for Lfs {
         tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<RcInode<Self>, ()> {
+        // name-to-inode translation
+        // TODO: fix overall type error
+        // self.imap.namei(path, tx, ctx)
         todo!()
     }
 
@@ -65,7 +110,31 @@ impl FileSystem for Lfs {
         tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
-        todo!()
+        // Create another name `path` by linking to inode
+        let inode = scopeguard::guard(inode, |ptr| ptr.free((tx, ctx)));
+        let ip = inode.lock(ctx);
+        let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
+        if ip.deref_inner().typ == InodeType::Dir {
+            return Err(());
+        }
+        ip.deref_inner_mut().nlink += 1;
+        ip.update(tx, ctx);
+        drop(ip);
+
+        if let Ok((ptr2, name)) = self.imap().nameiparent(path, tx, ctx) {
+            let ptr2 = scopeguard::guard(ptr2, |ptr| ptr.free((tx, ctx)));
+            let dp = ptr2.lock(ctx);
+            let mut dp = scopeguard::guard(dp, |ip| ip.free(ctx));
+            if dp.dev == inode.dev && dp.dirlink(name, inode.inum, tx, ctx).is_ok() {
+                return Ok(());
+            }
+        }
+
+        let ip = inode.lock(ctx);
+        let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
+        ip.deref_inner_mut().nlink -= 1;
+        ip.update(tx, ctx);
+        Err(())
     }
 
     fn unlink(
@@ -74,7 +143,38 @@ impl FileSystem for Lfs {
         tx: &Tx<'_, Self>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
-        todo!()
+        // remove a file with `path`
+        let (ptr, name) = self.imap().nameiparent(path, tx, ctx)?;
+        let ptr = scopeguard::guard(ptr, |ptr| ptr.free((tx, ctx)));
+        let dp = ptr.lock(ctx);
+        let mut dp = scopeguard::guard(dp, |ip| ip.free(ctx));
+
+        // Cannot unlink "." or "..".
+        if name.as_bytes() == b"." || name.as_bytes() == b".." {
+            return Err(());
+        }
+
+        let (ptr2, off) = dp.dirlookup(name, ctx)?;
+        let ptr2 = scopeguard::guard(ptr2, |ptr| ptr.free((tx, ctx)));
+        let ip = ptr2.lock(ctx);
+        let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
+        assert!(ip.deref_inner().nlink >= 1, "unlink: nlink < 1");
+
+        if ip.deref_inner().typ == InodeType::Dir && !ip.is_dir_empty(ctx) {
+            return Err(());
+        }
+
+        dp.write_kernel(&Dirent::default(), off, tx, ctx)
+            .expect("unlink: writei");
+        if ip.deref_inner().typ == InodeType::Dir {
+            dp.deref_inner_mut().nlink -= 1;
+            dp.update(tx, ctx);
+        }
+        drop(dp);
+        drop(ptr);
+        ip.deref_inner_mut().nlink -= 1;
+        ip.update(tx, ctx);
+        Ok(())
     }
 
     fn create<F, T>(
@@ -88,7 +188,51 @@ impl FileSystem for Lfs {
     where
         F: FnOnce(&mut InodeGuard<'_, Self>) -> T,
     {
-        todo!()
+        // create a new file with `path`
+        let (ptr, name) = self.imap().nameiparent(path, tx, ctx)?;
+        let ptr = scopeguard::guard(ptr, |ptr| ptr.free((tx, ctx)));
+        let dp = ptr.lock(ctx);
+        let mut dp = scopeguard::guard(dp, |ip| ip.free(ctx));
+        if let Ok((ptr2, _)) = dp.dirlookup(name, ctx) {
+            let ptr2 = scopeguard::guard(ptr2, |ptr| ptr.free((tx, ctx)));
+            drop(dp);
+            if typ != InodeType::File {
+                return Err(());
+            }
+            let ip = ptr2.lock(ctx);
+            let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
+            if let InodeType::None | InodeType::Dir = ip.deref_inner().typ {
+                return Err(());
+            }
+            let ret = f(&mut ip);
+            drop(ip);
+            return Ok((scopeguard::ScopeGuard::into_inner(ptr2), ret));
+        }
+
+        let ptr2 = self.imap().alloc_inode(dp.dev, typ, tx, ctx);
+        let ip = ptr2.lock(ctx);
+        let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
+        ip.deref_inner_mut().nlink = 1;
+        ip.update(tx, ctx);
+
+        // Create . and .. entries.
+        if typ == InodeType::Dir {
+            // for ".."
+            dp.deref_inner_mut().nlink += 1;
+            dp.update(tx, ctx);
+
+            let inum = ip.inum;
+            // No ip->nlink++ for ".": avoid cyclic ref count.
+            // SAFETY: b"." does not contain any NUL characters.
+            ip.dirlink(unsafe { FileName::from_bytes(b".") }, inum, tx, ctx)
+                // SAFETY: b".." does not contain any NUL characters.
+                .and_then(|_| ip.dirlink(unsafe { FileName::from_bytes(b"..") }, dp.inum, tx, ctx))
+                .expect("create dots");
+        }
+        dp.dirlink(name, ip.inum, tx, ctx).expect("create: dirlink");
+        let ret = f(&mut ip);
+        drop(ip);
+        Ok((ptr2, ret))
     }
 
     fn open(
@@ -98,7 +242,61 @@ impl FileSystem for Lfs {
         tx: &Tx<'_, Self>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<usize, ()> {
-        todo!()
+        // open a file with `path`
+        let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
+            self.create(path, InodeType::File, tx, ctx, |ip| ip.deref_inner().typ)?
+        } else {
+            let ptr = self.imap().namei(path, tx, ctx)?;
+            let ptr = scopeguard::guard(ptr, |ptr| ptr.free((tx, ctx)));
+            let ip = ptr.lock(ctx);
+            let ip = scopeguard::guard(ip, |ip| ip.free(ctx));
+            let typ = ip.deref_inner().typ;
+
+            if typ == InodeType::Dir && omode != FcntlFlags::O_RDONLY {
+                return Err(());
+            }
+            drop(ip);
+            (scopeguard::ScopeGuard::into_inner(ptr), typ)
+        };
+
+        // TODO: fix type error
+        // let filetype = match typ {
+        //     InodeType::Device { major, .. } => FileType::Device { ip, major },
+        //     _ => {
+        //         FileType::Inode {
+        //             inner: InodeFileType {
+        //                 ip,
+        //                 off: UnsafeCell::new(0),
+        //             },
+        //         }
+        //     }
+        // };
+        let filetype = FileType::None;
+
+        let f = ctx.kernel().ftable().alloc_file(
+            filetype,
+            !omode.intersects(FcntlFlags::O_WRONLY),
+            omode.intersects(FcntlFlags::O_WRONLY | FcntlFlags::O_RDWR),
+        )?;
+
+        if omode.contains(FcntlFlags::O_TRUNC) && typ == InodeType::File {
+            match &f.typ {
+                // It is safe to call itrunc because ip.lock() is held
+                FileType::Device { ip, .. }
+                | FileType::Inode {
+                    inner: InodeFileType { ip, .. },
+                } => {
+                    let mut ip = ip.lock(ctx);
+
+                    // TODO: expand tx type to allow Lfs
+                    // ip.trunc(tx, ctx);
+                    ip.free(ctx);
+                }
+                _ => panic!("sys_open : Not reach"),
+            };
+        }
+        let fd = f.fdalloc(ctx)?;
+        Ok(fd as usize)
     }
 
     fn chdir(
@@ -107,15 +305,28 @@ impl FileSystem for Lfs {
         tx: &Tx<'_, Self>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
-        todo!()
+        // change the current directory
+        let ip = inode.lock(ctx);
+        let typ = ip.deref_inner().typ;
+        ip.free(ctx);
+        if typ != InodeType::Dir {
+            inode.free((tx, ctx));
+            return Err(());
+        }
+
+        // TODO: replace current directory with a new inode
+        // mem::replace(ctx.proc_mut().cwd_mut(), inode).free((tx, ctx));
+        Ok(())
     }
 
     fn tx_begin(&self, ctx: &KernelCtx<'_, '_>) {
-        todo!()
+        // TODO: begin transaction
+        // self.log().begin_op(ctx);
     }
 
     unsafe fn tx_end(&self, ctx: &KernelCtx<'_, '_>) {
-        todo!()
+        // TODO: commit and end transaction
+        // self.log().end_op(ctx);
     }
 
     #[inline]
@@ -131,7 +342,30 @@ impl FileSystem for Lfs {
         f: F,
         k: K,
     ) -> Result<usize, ()> {
-        todo!()
+        // read inode
+        let inner = guard.deref_inner();
+        if off > inner.size || off.wrapping_add(n) < off {
+            return Ok(0);
+        }
+        if off + n > inner.size {
+            n = inner.size - off;
+        }
+        let mut tot: u32 = 0;
+        while tot < n {
+            // TODO: replace bmap with logs
+            let bp = hal()
+                .disk()
+                .read(guard.dev, guard.disk(off as usize / BSIZE, &k), &k);
+            let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
+            let begin = (off % BSIZE as u32) as usize;
+            let end = begin + m as usize;
+            let res = f(tot, &bp.deref_inner().data[begin..end], &mut k);
+            bp.free(&k);
+            res?;
+            tot += m;
+            off += m;
+        }
+        Ok(tot as usize)
     }
 
     fn inode_write<
@@ -147,7 +381,45 @@ impl FileSystem for Lfs {
         tx: &Tx<'_, Lfs>,
         k: K,
     ) -> Result<usize, ()> {
-        todo!()
+        // write the inode
+        if off > guard.deref_inner().size {
+            return Err(());
+        }
+        if off.checked_add(n).ok_or(())? as usize > MAXFILE * BSIZE {
+            return Err(());
+        }
+        let mut tot: u32 = 0;
+        while tot < n {
+            let mut bp = hal().disk().read(
+                guard.dev,
+                guard.disk_or_alloc(off as usize / BSIZE, tx, &k),
+                &k,
+            );
+            let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
+            let begin = (off % BSIZE as u32) as usize;
+            let end = begin + m as usize;
+
+            // TODO: save write buffers
+            // if f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k).is_ok() {
+            //     tx.write(bp, &k);
+            // } else {
+            //     bp.free(&k);
+            //     break;
+            // }
+
+            tot += m;
+            off += m;
+        }
+
+        if off > guard.deref_inner().size {
+            guard.deref_inner_mut().size = off;
+        }
+
+        // Write the i-node back to disk even if the size didn't change
+        // because the loop above might have called bmap() and added a new
+        // block to self->addrs[].
+        guard.update(tx, &k);
+        Ok(tot as usize)
     }
 
     fn inode_trunc(guard: &mut InodeGuard<'_, Self>, tx: &Tx<'_, Self>, ctx: &KernelCtx<'_, '_>) {
