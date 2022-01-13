@@ -61,7 +61,7 @@ impl Ufs {
         Self {
             superblock: Once::new(),
             log: Once::new(),
-            itable: Itable::new_itable(),
+            itable: Itable::<Self>::new_itable(),
         }
     }
 
