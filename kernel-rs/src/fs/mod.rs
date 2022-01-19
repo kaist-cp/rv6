@@ -45,6 +45,16 @@ pub enum InodeType {
     Device { major: u16, minor: u16 },
 }
 
+#[derive(Copy, Clone, PartialEq, Debug)]
+#[repr(i16)]
+pub enum DInodeType {
+    None,
+    Dir,
+    File,
+    Device,
+}
+
+
 /// InodeGuard implies that `SleepLock<InodeInner>` is held by current thread.
 ///
 /// # Safety

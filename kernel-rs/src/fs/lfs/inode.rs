@@ -7,7 +7,7 @@ use super::{FileName, Lfs, Path, NDIRECT, ROOTINO};
 use crate::{
     arena::{Arena, ArrayArena},
     bio::BufData,
-    fs::{lfs::superblock::IPB, Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
+    fs::{lfs::superblock::IPB, Inode, InodeGuard, InodeType, Itable, RcInode, Tx, DInodeType},
     hal::hal,
     lock::SleepLock,
     param::NINODE,
@@ -22,27 +22,23 @@ pub const DIRSIZ: usize = 14;
 /// dirent size
 pub const DIRENT_SIZE: usize = mem::size_of::<Dirent>();
 
-#[derive(Copy, Clone, PartialEq, Debug)]
-#[repr(i16)]
-pub enum DInodeType {
-    None,
-    Dir,
-    File,
-    Device,
-}
-
 pub struct InodeInner {
     /// inode has been read from disk?
     pub valid: bool,
     /// copy of disk inode
     pub typ: InodeType,
+    /// the number of links to this inode
     pub nlink: i16,
+    // the size of this inode
     pub size: u32,
+    /// direct addresses of disk data
     pub addr_direct: [u32; NDIRECT],
+    /// indirect address
     pub addr_indirect: u32,
 }
 
 /// On-disk inode structure
+/// 
 /// Both the kernel and user programs use this header file.
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation
@@ -109,6 +105,10 @@ impl Dirent {
     }
 }
 
+/// DirentIter
+/// 
+/// `'id` and `'t` are current lifetime of context that stores information about current thread
+/// `'s` is a lifetime for the guard and ctx
 struct DirentIter<'id, 's, 't> {
     guard: &'s mut InodeGuard<'t, Lfs>,
     iter: StepBy<Range<u32>>,
@@ -136,7 +136,9 @@ impl<'t> InodeGuard<'t, Lfs> {
     }
 }
 
-// Directories
+/// InodeGuard
+/// 
+/// Handling directories
 impl InodeGuard<'_, Lfs> {
     /// Write a new directory entry (name, inum) into the directory dp.
     pub fn dirlink(
@@ -306,6 +308,7 @@ impl Inode<Lfs> {
 
 impl Itable<Lfs> {
     pub const fn new_itable() -> Self {
+        // TODO: change this array into a tree
         ArrayArena::<Inode<Lfs>, NINODE>::new("ITABLE")
     }
 

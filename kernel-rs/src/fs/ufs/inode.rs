@@ -76,7 +76,7 @@ use super::{FileName, Path, Ufs, IPB, NDIRECT, NINDIRECT, ROOTINO};
 use crate::{
     arena::{Arena, ArrayArena},
     bio::BufData,
-    fs::{Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
+    fs::{Inode, InodeGuard, InodeType, Itable, RcInode, Tx, DInodeType},
     hal::hal,
     lock::SleepLock,
     param::NINODE,
@@ -90,15 +90,6 @@ pub const DIRSIZ: usize = 14;
 
 /// dirent size
 pub const DIRENT_SIZE: usize = mem::size_of::<Dirent>();
-
-#[derive(Copy, Clone, PartialEq, Debug)]
-#[repr(i16)]
-pub enum DInodeType {
-    None,
-    Dir,
-    File,
-    Device,
-}
 
 pub struct InodeInner {
     /// inode has been read from disk?

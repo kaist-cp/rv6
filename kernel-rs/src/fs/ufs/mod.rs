@@ -22,6 +22,7 @@ use self::log::Log;
 use super::{
     FcntlFlags, FileName, FileSystem, Inode, InodeGuard, InodeType, Itable, Path, RcInode, Stat, Tx,
 };
+use crate::fs::DInodeType;
 use crate::util::strong_pin::StrongPin;
 use crate::{
     bio::Buf,
@@ -36,7 +37,7 @@ mod inode;
 mod log;
 mod superblock;
 
-pub use inode::{DInodeType, Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
+pub use inode::{Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
 pub use superblock::{Superblock, BPB, IPB};
 
 /// root i-number
