@@ -67,6 +67,8 @@ pub struct Dinode {
     pub addr_indirect: u32,
 }
 
+// TODO: Dirent and following Iter codes are redundant to codes in ufs/inode.rs
+// Reduce code using Type generics
 #[repr(C)]
 #[derive(Default, AsBytes, FromBytes)]
 pub struct Dirent {
