@@ -48,7 +48,7 @@ pub struct Superblock {
 pub const IPB: usize = BSIZE / mem::size_of::<Dinode>();
 
 /// Bitmap bits per block
-pub const BPB: usize = BSIZE * 8;
+// pub const BPB: usize = BSIZE * 8;
 
 impl Superblock {
     /// Read the super block.
@@ -70,8 +70,8 @@ impl Superblock {
         i / IPB as u32 + self.inodestart
     }
 
-    /// Block of free map containing bit for block b
-    pub const fn bblock(self, b: u32) -> u32 {
-        b / BPB as u32 + self.bmapstart
-    }
+    //? Block of free map containing bit for block b
+    // pub const fn bblock(self, b: u32) -> u32 {
+    //     b / BPB as u32 + self.bmapstart
+    // }
 }

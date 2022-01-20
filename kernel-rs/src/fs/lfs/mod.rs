@@ -11,7 +11,6 @@ use crate::fs::lfs::inode::Dirent;
 use crate::{
     file::{FileType, InodeFileType},
     hal::hal,
-    lock::SleepableLock,
     param::BSIZE,
 };
 use crate::{proc::KernelCtx, util::strong_pin::StrongPin};
@@ -21,7 +20,7 @@ mod log;
 mod superblock;
 
 pub use inode::InodeInner;
-pub use log::Log;
+// pub use log::Log;
 pub use superblock::Superblock;
 
 /// root i-number
@@ -38,21 +37,22 @@ pub struct Lfs {
     superblock: Once<Superblock>,
 
     /// Log to save writes
-    log: Once<SleepableLock<Log>>,
+    // log: Once<SleepableLock<Log>>,
 
     /// In-memory inode map.
     /// TODO: use Map instead of Array
+    #[pin]
     imap: Itable<Self>,
 }
 
 impl Lfs {
-    pub const fn new() -> Self {
-        Self {
-            superblock: Once::new(),
-            log: Once::new(),
-            imap: Itable::<Self>::new_itable(),
-        }
-    }
+    // pub const fn new() -> Self {
+    //     Self {
+    //         superblock: Once::new(),
+    //         log: Once::new(),
+    //         imap: Itable::<Lfs>::new_itable(),
+    //     }
+    // }
 
     fn superblock(&self) -> &Superblock {
         self.superblock.get().expect("superblock")
@@ -71,7 +71,7 @@ impl FileSystem for Lfs {
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
         if !self.superblock.is_completed() {
             let buf = hal().disk().read(dev, 1, ctx);
-            let superblock = self.superblock.call_once(|| Superblock::new(&buf));
+            let _superblock = self.superblock.call_once(|| Superblock::new(&buf));
             buf.free(ctx);
 
             // TODO: initialize log
@@ -93,9 +93,9 @@ impl FileSystem for Lfs {
 
     fn namei(
         self: StrongPin<'_, Self>,
-        path: &Path,
-        tx: &Tx<'_, Self>,
-        ctx: &KernelCtx<'_, '_>,
+        _path: &Path,
+        _tx: &Tx<'_, Self>,
+        _ctx: &KernelCtx<'_, '_>,
     ) -> Result<RcInode<Self>, ()> {
         // name-to-inode translation
         // TODO: fix overall type error
@@ -243,7 +243,7 @@ impl FileSystem for Lfs {
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<usize, ()> {
         // open a file with `path`
-        let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
+        let (_ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
             self.create(path, InodeType::File, tx, ctx, |ip| ip.deref_inner().typ)?
         } else {
             let ptr = self.imap().namei(path, tx, ctx)?;
@@ -286,7 +286,7 @@ impl FileSystem for Lfs {
                 | FileType::Inode {
                     inner: InodeFileType { ip, .. },
                 } => {
-                    let mut ip = ip.lock(ctx);
+                    let ip = ip.lock(ctx);
 
                     // TODO: expand tx type to allow Lfs
                     // ip.trunc(tx, ctx);
@@ -319,12 +319,12 @@ impl FileSystem for Lfs {
         Ok(())
     }
 
-    fn tx_begin(&self, ctx: &KernelCtx<'_, '_>) {
+    fn tx_begin(&self, _ctx: &KernelCtx<'_, '_>) {
         // TODO: begin transaction
         // self.log().begin_op(ctx);
     }
 
-    unsafe fn tx_end(&self, ctx: &KernelCtx<'_, '_>) {
+    unsafe fn tx_end(&self, _ctx: &KernelCtx<'_, '_>) {
         // TODO: commit and end transaction
         // self.log().end_op(ctx);
     }
@@ -337,10 +337,10 @@ impl FileSystem for Lfs {
         F: FnMut(u32, &[u8], &mut K) -> Result<(), ()>,
     >(
         guard: &mut InodeGuard<'_, Self>,
-        off: u32,
-        n: u32,
-        f: F,
-        k: K,
+        mut off: u32,
+        mut n: u32,
+        mut f: F,
+        mut k: K,
     ) -> Result<usize, ()> {
         // read inode
         let inner = guard.deref_inner();
@@ -375,9 +375,9 @@ impl FileSystem for Lfs {
         F: FnMut(u32, &mut [u8], &mut K) -> Result<(), ()>,
     >(
         guard: &mut InodeGuard<'_, Self>,
-        off: u32,
+        mut off: u32,
         n: u32,
-        f: F,
+        _f: F,
         tx: &Tx<'_, Lfs>,
         k: K,
     ) -> Result<usize, ()> {
@@ -390,14 +390,14 @@ impl FileSystem for Lfs {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = hal().disk().read(
+            let mut _bp = hal().disk().read(
                 guard.dev,
                 guard.disk_or_alloc(off as usize / BSIZE, tx, &k),
                 &k,
             );
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
-            let end = begin + m as usize;
+            let _end = begin + m as usize;
 
             // TODO: save write buffers
             // if f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k).is_ok() {
@@ -422,23 +422,23 @@ impl FileSystem for Lfs {
         Ok(tot as usize)
     }
 
-    fn inode_trunc(guard: &mut InodeGuard<'_, Self>, tx: &Tx<'_, Self>, ctx: &KernelCtx<'_, '_>) {
+    fn inode_trunc(_guard: &mut InodeGuard<'_, Self>, _tx: &Tx<'_, Self>, _ctx: &KernelCtx<'_, '_>) {
         todo!()
     }
 
-    fn inode_lock<'a>(inode: &'a Inode<Self>, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'a, Self> {
+    fn inode_lock<'a>(_inode: &'a Inode<Self>, _ctx: &KernelCtx<'_, '_>) -> InodeGuard<'a, Self> {
         todo!()
     }
 
     fn inode_finalize<'a, 'id: 'a>(
-        inode: &mut Inode<Self>,
-        tx: &'a Tx<'a, Self>,
-        ctx: &'a KernelCtx<'id, 'a>,
+        _inode: &mut Inode<Self>,
+        _tx: &'a Tx<'a, Self>,
+        _ctx: &'a KernelCtx<'id, 'a>,
     ) {
         todo!()
     }
 
-    fn inode_stat(inode: &Inode<Self>, ctx: &KernelCtx<'_, '_>) -> Stat {
+    fn inode_stat(_inode: &Inode<Self>, _ctx: &KernelCtx<'_, '_>) -> Stat {
         todo!()
     }
 }

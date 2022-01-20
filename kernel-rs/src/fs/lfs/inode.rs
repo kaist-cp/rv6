@@ -5,12 +5,11 @@ use zerocopy::{AsBytes, FromBytes};
 
 use super::{FileName, Lfs, Path, NDIRECT, ROOTINO};
 use crate::{
-    arena::{Arena, ArrayArena},
+    arena::Arena,
     bio::BufData,
     fs::{lfs::superblock::IPB, Inode, InodeGuard, InodeType, Itable, RcInode, Tx, DInodeType},
     hal::hal,
     lock::SleepLock,
-    param::NINODE,
     param::ROOTDEV,
     proc::KernelCtx,
     util::{memset, strong_pin::StrongPin},
@@ -68,7 +67,7 @@ pub struct Dinode {
 }
 
 // TODO: Dirent and following Iter codes are redundant to codes in ufs/inode.rs
-// Reduce code using Type generics
+// Reduce code using Type genericscargo metadata
 #[repr(C)]
 #[derive(Default, AsBytes, FromBytes)]
 pub struct Dirent {
@@ -178,7 +177,7 @@ impl InodeGuard<'_, Lfs> {
 
         self.iter_dirents(ctx)
             .find(|(de, _)| de.inum != 0 && de.get_name() == name)
-            .map(|(de, off)| {
+            .map(|(_de,_offf)| {
                 // TODO: replace the return type of fs() with Lfs
                 todo!()
                 // (
@@ -261,9 +260,9 @@ impl InodeGuard<'_, Lfs> {
 
     fn disk_internal(
         &mut self,
-        bn: usize,
-        tx_opt: Option<&Tx<'_, Lfs>>,
-        ctx: &KernelCtx<'_, '_>,
+        _bn: usize,
+        _tx_opt: Option<&Tx<'_, Lfs>>,
+        _ctx: &KernelCtx<'_, '_>,
     ) -> u32 {
         todo!()
     }
@@ -309,10 +308,10 @@ impl Inode<Lfs> {
 }
 
 impl Itable<Lfs> {
-    pub const fn new_itable() -> Self {
+    // pub const fn new_itable() -> Self {
         // TODO: change this array into a tree
-        ArrayArena::<Inode<Lfs>, NINODE>::new("ITABLE")
-    }
+        // ArrayArena::<Inode<Lfs>, NINODE>::new("ITABLE")
+    // }
 
     /// Find the inode with number inum on device dev
     /// and return the in-memory copy. Does not lock
