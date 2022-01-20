@@ -7,7 +7,7 @@ use super::{FileName, Lfs, Path, NDIRECT, ROOTINO};
 use crate::{
     arena::Arena,
     bio::BufData,
-    fs::{lfs::superblock::IPB, Inode, InodeGuard, InodeType, Itable, RcInode, Tx, DInodeType},
+    fs::{lfs::superblock::IPB, DInodeType, Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
     hal::hal,
     lock::SleepLock,
     param::ROOTDEV,
@@ -37,7 +37,7 @@ pub struct InodeInner {
 }
 
 /// On-disk inode structure
-/// 
+///
 /// Both the kernel and user programs use this header file.
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation
@@ -107,7 +107,7 @@ impl Dirent {
 }
 
 /// DirentIter
-/// 
+///
 /// `'id` and `'t` are current lifetime of context that stores information about current thread
 /// `'s` is a lifetime for the guard and ctx
 struct DirentIter<'id, 's, 't> {
@@ -138,7 +138,7 @@ impl<'t> InodeGuard<'t, Lfs> {
 }
 
 /// InodeGuard
-/// 
+///
 /// Handling directories
 impl InodeGuard<'_, Lfs> {
     /// Write a new directory entry (name, inum) into the directory dp.
@@ -177,7 +177,7 @@ impl InodeGuard<'_, Lfs> {
 
         self.iter_dirents(ctx)
             .find(|(de, _)| de.inum != 0 && de.get_name() == name)
-            .map(|(_de,_offf)| {
+            .map(|(_de, _offf)| {
                 // TODO: replace the return type of fs() with Lfs
                 todo!()
                 // (
@@ -309,8 +309,8 @@ impl Inode<Lfs> {
 
 impl Itable<Lfs> {
     // pub const fn new_itable() -> Self {
-        // TODO: change this array into a tree
-        // ArrayArena::<Inode<Lfs>, NINODE>::new("ITABLE")
+    // TODO: change this array into a tree
+    // ArrayArena::<Inode<Lfs>, NINODE>::new("ITABLE")
     // }
 
     /// Find the inode with number inum on device dev

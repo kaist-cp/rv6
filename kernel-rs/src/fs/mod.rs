@@ -54,7 +54,6 @@ pub enum DInodeType {
     Device,
 }
 
-
 /// InodeGuard implies that `SleepLock<InodeInner>` is held by current thread.
 ///
 /// # Safety

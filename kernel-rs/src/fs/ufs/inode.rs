@@ -76,7 +76,7 @@ use super::{FileName, Path, Ufs, IPB, NDIRECT, NINDIRECT, ROOTINO};
 use crate::{
     arena::{Arena, ArrayArena},
     bio::BufData,
-    fs::{Inode, InodeGuard, InodeType, Itable, RcInode, Tx, DInodeType},
+    fs::{DInodeType, Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
     hal::hal,
     lock::SleepLock,
     param::NINODE,

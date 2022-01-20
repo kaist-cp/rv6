@@ -422,7 +422,11 @@ impl FileSystem for Lfs {
         Ok(tot as usize)
     }
 
-    fn inode_trunc(_guard: &mut InodeGuard<'_, Self>, _tx: &Tx<'_, Self>, _ctx: &KernelCtx<'_, '_>) {
+    fn inode_trunc(
+        _guard: &mut InodeGuard<'_, Self>,
+        _tx: &Tx<'_, Self>,
+        _ctx: &KernelCtx<'_, '_>,
+    ) {
         todo!()
     }
 
