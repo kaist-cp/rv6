@@ -5,12 +5,12 @@ use zerocopy::{AsBytes, FromBytes};
 
 use super::{FileName, Lfs, Path, NDIRECT, ROOTINO};
 use crate::{
-    arena::Arena,
+    arena::{Arena, ArrayArena},
     bio::BufData,
     fs::{lfs::superblock::IPB, DInodeType, Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
     hal::hal,
     lock::SleepLock,
-    param::ROOTDEV,
+    param::{NINODE, ROOTDEV},
     proc::KernelCtx,
     util::{memset, strong_pin::StrongPin},
 };
@@ -308,10 +308,10 @@ impl Inode<Lfs> {
 }
 
 impl Itable<Lfs> {
-    // pub const fn new_itable() -> Self {
-    // TODO: change this array into a tree
-    // ArrayArena::<Inode<Lfs>, NINODE>::new("ITABLE")
-    // }
+    pub const fn new_itable() -> Self {
+        // TODO: change this array into a tree
+        ArrayArena::<Inode<Lfs>, NINODE>::new("ITABLE")
+    }
 
     /// Find the inode with number inum on device dev
     /// and return the in-memory copy. Does not lock
