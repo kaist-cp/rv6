@@ -45,7 +45,7 @@ pub struct Lfs {
     /// In-memory inode map.
     /// TODO: use Map instead of Array
     #[pin]
-    imap: Itable<Lfs>,
+    imap: Itable<Self>,
 }
 
 impl Lfs {
