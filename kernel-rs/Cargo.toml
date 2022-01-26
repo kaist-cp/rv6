@@ -29,6 +29,7 @@ bitflags = "1.2.1"
 # TODO: use the crates.io version when <https://github.com/bodil/bitmaps/pull/11> is merged and
 # published.
 bitmaps = { git = "https://github.com/jeehoonkang/bitmaps.git", branch = "rv6", default-features = false }
+cfg-if = "1.0"
 const-zero = { git = "https://github.com/maxbla/const-zero.git" }
 cstr_core = { version = "0.2.3", default-features = false }
 itertools = { version = "0.10.1", default-features = false }
@@ -38,7 +39,6 @@ scopeguard = { version = "1.1.0", default-features = false }
 spin = "0.9.0"
 static_assertions = "1.1.0"
 zerocopy = "0.5.0"
-cfg-if = "1.0"
 
 # Platform specific dependencies
 [target.'cfg(target_arch = "aarch64")'.dependencies]
