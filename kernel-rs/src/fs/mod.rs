@@ -2,6 +2,7 @@ use core::mem;
 use core::ops::Deref;
 
 use bitflags::bitflags;
+use cfg_if::cfg_if;
 use zerocopy::{AsBytes, FromBytes};
 
 use crate::{
@@ -23,8 +24,14 @@ pub use path::{FileName, Path};
 pub use stat::Stat;
 pub use ufs::Ufs;
 
-/// The default file system.
-pub type DefaultFs = Ufs;
+// The default file system. Ufs or Lfs
+cfg_if! {
+    if #[cfg(feature = "lfs")] {
+        pub type DefaultFs = Lfs;
+    } else {
+        pub type DefaultFs = Ufs;
+    }
+}
 
 bitflags! {
     pub struct FcntlFlags: i32 {

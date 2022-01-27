@@ -4,10 +4,12 @@ use core::ops::Deref;
 use pin_project::pin_project;
 use spin::Once;
 
+use self::log::Log;
 use super::{
     FcntlFlags, FileName, FileSystem, Inode, InodeGuard, InodeType, Itable, Path, RcInode, Stat, Tx,
 };
 use crate::fs::lfs::inode::Dirent;
+use crate::lock::SleepableLock;
 use crate::{
     file::{FileType, InodeFileType},
     hal::hal,
@@ -37,7 +39,8 @@ pub struct Lfs {
     superblock: Once<Superblock>,
 
     /// Log to save writes
-    // log: Once<SleepableLock<Log>>,
+    #[allow(dead_code)]
+    log: Once<SleepableLock<Log>>,
 
     /// In-memory inode map.
     /// TODO: use Map instead of Array
@@ -46,13 +49,14 @@ pub struct Lfs {
 }
 
 impl Lfs {
-    // pub const fn new() -> Self {
-    //     Self {
-    //         superblock: Once::new(),
-    //         log: Once::new(),
-    //         imap: Itable::<Lfs>::new_itable(),
-    //     }
-    // }
+    #[allow(dead_code)]
+    pub const fn new() -> Self {
+        Self {
+            superblock: Once::new(),
+            log: Once::new(),
+            imap: Itable::<Lfs>::new_itable(),
+        }
+    }
 
     fn superblock(&self) -> &Superblock {
         self.superblock.get().expect("superblock")
