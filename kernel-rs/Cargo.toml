@@ -26,9 +26,7 @@ lto = true
 array-macro = "2.1.0"
 arrayvec = { version = "0.7.1", default-features = false }
 bitflags = "1.2.1"
-# TODO: use the crates.io version when <https://github.com/bodil/bitmaps/pull/11> is merged and
-# published.
-bitmaps = { git = "https://github.com/jeehoonkang/bitmaps.git", branch = "rv6", default-features = false }
+bitmaps = { version = "3.1.0", default-features = false }
 cfg-if = "1.0"
 const-zero = { git = "https://github.com/maxbla/const-zero.git" }
 cstr_core = { version = "0.2.3", default-features = false }
