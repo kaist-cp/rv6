@@ -1,3 +1,4 @@
+use core::cell::UnsafeCell;
 use core::mem;
 use core::ops::Deref;
 
@@ -8,22 +9,23 @@ use self::log::Log;
 use super::{
     FcntlFlags, FileName, FileSystem, Inode, InodeGuard, InodeType, Itable, Path, RcInode, Stat, Tx,
 };
-use crate::fs::lfs::inode::Dirent;
-use crate::lock::SleepableLock;
+use crate::util::strong_pin::StrongPin;
 use crate::{
+    bio::Buf,
     file::{FileType, InodeFileType},
     hal::hal,
+    lock::SleepableLock,
     param::BSIZE,
+    proc::KernelCtx,
 };
-use crate::{proc::KernelCtx, util::strong_pin::StrongPin};
 
 mod inode;
 mod log;
 mod superblock;
 
-pub use inode::InodeInner;
+pub use inode::{Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
+pub use superblock::{Superblock, IPB};
 // pub use log::Log;
-pub use superblock::Superblock;
 
 /// root i-number
 const ROOTINO: u32 = 1;
@@ -48,6 +50,69 @@ pub struct Lfs {
     imap: Itable<Self>,
 }
 
+impl Tx<'_, Lfs> {
+    /// Caller has modified b->data and is done with the buffer.
+    /// Record the block number and pin in the cache by increasing refcnt.
+    /// commit()/write_log() will do the disk write.
+    ///
+    /// write() replaces write(); a typical use is:
+    ///   bp = kernel.fs().disk.read(...)
+    ///   modify bp->data[]
+    ///   write(bp)
+    fn write(&self, _b: Buf, _ctx: &KernelCtx<'_, '_>) {
+        // self.fs.log().lock().write(b, ctx);
+        todo!()
+    }
+
+    /// Zero a block.
+    #[allow(dead_code)]
+    fn bzero(&self, dev: u32, bno: u32, ctx: &KernelCtx<'_, '_>) {
+        let mut buf = ctx.kernel().bcache().get_buf(dev, bno).lock(ctx);
+        buf.deref_inner_mut().data.fill(0);
+        buf.deref_inner_mut().valid = true;
+        self.write(buf, ctx);
+    }
+
+    /// Blocks.
+    /// Allocate a zeroed disk block.
+    #[allow(dead_code)]
+    fn balloc(&self, _dev: u32, _ctx: &KernelCtx<'_, '_>) -> u32 {
+        todo!()
+        // for b in num_iter::range_step(0, self.fs.superblock().size, BPB as u32) {
+        //     let mut bp = hal().disk().read(dev, self.fs.superblock().bblock(b), ctx);
+        //     for bi in 0..cmp::min(BPB as u32, self.fs.superblock().size - b) {
+        //         let m = 1 << (bi % 8);
+        //         if bp.deref_inner_mut().data[(bi / 8) as usize] & m == 0 {
+        //             // Is block free?
+        //             bp.deref_inner_mut().data[(bi / 8) as usize] |= m; // Mark block in use.
+        //             self.write(bp, ctx);
+        //             self.bzero(dev, b + bi, ctx);
+        //             return b + bi;
+        //         }
+        //     }
+        //     bp.free(ctx);
+        // }
+
+        // panic!("balloc: out of blocks");
+    }
+
+    /// Free a disk block.
+    #[allow(dead_code)]
+    fn bfree(&self, _dev: u32, _b: u32, _ctx: &KernelCtx<'_, '_>) {
+        todo!()
+        // let mut bp = hal().disk().read(dev, self.fs.superblock().bblock(b), ctx);
+        // let bi = b as usize % BPB;
+        // let m = 1u8 << (bi % 8);
+        // assert_ne!(
+        //     bp.deref_inner_mut().data[bi / 8] & m,
+        //     0,
+        //     "freeing free block"
+        // );
+        // bp.deref_inner_mut().data[bi / 8] &= !m;
+        // self.write(bp, ctx);
+    }
+}
+
 impl Lfs {
     #[allow(dead_code)]
     pub const fn new() -> Self {
@@ -56,6 +121,11 @@ impl Lfs {
             log: Once::new(),
             imap: Itable::<Lfs>::new_itable(),
         }
+    }
+
+    #[allow(dead_code)]
+    fn log(&self) -> &SleepableLock<Log> {
+        self.log.get().expect("log")
     }
 
     fn superblock(&self) -> &Superblock {
@@ -69,7 +139,7 @@ impl Lfs {
 }
 
 impl FileSystem for Lfs {
-    type Dirent = ();
+    type Dirent = Dirent;
     type InodeInner = InodeInner;
 
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
@@ -90,21 +160,17 @@ impl FileSystem for Lfs {
     }
 
     fn root(self: StrongPin<'_, Self>) -> RcInode<Self> {
-        // TODO: fix overall type error
-        // self.imap.root()
-        todo!()
+        self.imap().root()
     }
 
     fn namei(
         self: StrongPin<'_, Self>,
-        _path: &Path,
-        _tx: &Tx<'_, Self>,
-        _ctx: &KernelCtx<'_, '_>,
+        path: &Path,
+        tx: &Tx<'_, Self>,
+        ctx: &KernelCtx<'_, '_>,
     ) -> Result<RcInode<Self>, ()> {
         // name-to-inode translation
-        // TODO: fix overall type error
-        // self.imap.namei(path, tx, ctx)
-        todo!()
+        self.imap().namei(path, tx, ctx)
     }
 
     fn link(
@@ -247,7 +313,7 @@ impl FileSystem for Lfs {
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<usize, ()> {
         // open a file with `path`
-        let (_ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
+        let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
             self.create(path, InodeType::File, tx, ctx, |ip| ip.deref_inner().typ)?
         } else {
             let ptr = self.imap().namei(path, tx, ctx)?;
@@ -263,19 +329,17 @@ impl FileSystem for Lfs {
             (scopeguard::ScopeGuard::into_inner(ptr), typ)
         };
 
-        // TODO: fix type error
-        // let filetype = match typ {
-        //     InodeType::Device { major, .. } => FileType::Device { ip, major },
-        //     _ => {
-        //         FileType::Inode {
-        //             inner: InodeFileType {
-        //                 ip,
-        //                 off: UnsafeCell::new(0),
-        //             },
-        //         }
-        //     }
-        // };
-        let filetype = FileType::None;
+        let filetype = match typ {
+            InodeType::Device { major, .. } => FileType::Device { ip, major },
+            _ => {
+                FileType::Inode {
+                    inner: InodeFileType {
+                        ip,
+                        off: UnsafeCell::new(0),
+                    },
+                }
+            }
+        };
 
         let f = ctx.kernel().ftable().alloc_file(
             filetype,
@@ -290,10 +354,8 @@ impl FileSystem for Lfs {
                 | FileType::Inode {
                     inner: InodeFileType { ip, .. },
                 } => {
-                    let ip = ip.lock(ctx);
-
-                    // TODO: expand tx type to allow Lfs
-                    // ip.trunc(tx, ctx);
+                    let mut ip = ip.lock(ctx);
+                    ip.trunc(tx, ctx);
                     ip.free(ctx);
                 }
                 _ => panic!("sys_open : Not reach"),
@@ -318,8 +380,7 @@ impl FileSystem for Lfs {
             return Err(());
         }
 
-        // TODO: replace current directory with a new inode
-        // mem::replace(ctx.proc_mut().cwd_mut(), inode).free((tx, ctx));
+        mem::replace(ctx.proc_mut().cwd_mut(), inode).free((tx, ctx));
         Ok(())
     }
 
@@ -356,7 +417,6 @@ impl FileSystem for Lfs {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            // TODO: replace bmap with logs
             let bp = hal()
                 .disk()
                 .read(guard.dev, guard.disk(off as usize / BSIZE, &k), &k);
@@ -381,9 +441,9 @@ impl FileSystem for Lfs {
         guard: &mut InodeGuard<'_, Self>,
         mut off: u32,
         n: u32,
-        _f: F,
+        mut f: F,
         tx: &Tx<'_, Lfs>,
-        k: K,
+        mut k: K,
     ) -> Result<usize, ()> {
         // write the inode
         if off > guard.deref_inner().size {
@@ -394,22 +454,21 @@ impl FileSystem for Lfs {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut _bp = hal().disk().read(
+            let mut bp = hal().disk().read(
                 guard.dev,
                 guard.disk_or_alloc(off as usize / BSIZE, tx, &k),
                 &k,
             );
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
-            let _end = begin + m as usize;
+            let end = begin + m as usize;
 
-            // TODO: save write buffers
-            // if f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k).is_ok() {
-            //     tx.write(bp, &k);
-            // } else {
-            //     bp.free(&k);
-            //     break;
-            // }
+            if f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k).is_ok() {
+                // tx.write(bp, &k);
+            } else {
+                bp.free(&k);
+                break;
+            }
 
             tot += m;
             off += m;

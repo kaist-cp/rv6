@@ -14,22 +14,23 @@ use crate::{
     util::strong_pin::StrongPin,
 };
 
-mod lfs;
 mod path;
 mod stat;
-mod ufs;
 
-pub use lfs::Lfs;
 pub use path::{FileName, Path};
 pub use stat::Stat;
-pub use ufs::Ufs;
 
 // The default file system. Ufs or Lfs
 cfg_if! {
     if #[cfg(feature = "lfs")] {
         pub type DefaultFs = Lfs;
+        mod lfs;
+        pub use lfs::Lfs;
+
     } else {
         pub type DefaultFs = Ufs;
+        mod ufs;
+        pub use ufs::Ufs;
     }
 }
 

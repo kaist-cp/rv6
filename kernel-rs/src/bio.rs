@@ -78,6 +78,7 @@ pub struct BufData {
 }
 
 impl BufData {
+    #[allow(dead_code)]
     pub fn copy_from(&mut self, buf: &BufData) {
         memmove(&mut self.inner, &buf.inner);
     }
