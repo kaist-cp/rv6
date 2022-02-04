@@ -24,7 +24,7 @@ pub const DIRENT_SIZE: usize = mem::size_of::<Dirent>();
 pub struct InodeInner {
     /// inode has been read from disk?
     pub valid: bool,
-    /// copy of disk inode
+    /// type of disk inode
     pub typ: InodeType,
     /// the number of links to this inode
     pub nlink: i16,
@@ -67,7 +67,7 @@ pub struct Dinode {
 }
 
 // TODO: Dirent and following Iter codes are redundant to codes in ufs/inode.rs
-// Reduce code using Type genericscargo metadata
+// Reduce code using Type generics
 #[repr(C)]
 #[derive(Default, AsBytes, FromBytes)]
 pub struct Dirent {

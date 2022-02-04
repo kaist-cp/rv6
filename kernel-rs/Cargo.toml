@@ -13,6 +13,7 @@ default = []
 test = []
 gicv2 = []
 gicv3 = []
+lfs = []
 
 [profile.dev]
 panic = "abort"
