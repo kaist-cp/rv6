@@ -18,6 +18,9 @@ lfs = []
 [profile.dev]
 panic = "abort"
 opt-level = 1
+# TODO: The `const_generics` and `const_evaluatable_checked` feature causes an ICE on low nightly versions
+# when trying incremental compilation. Remove this after upgrading to a higher nightly version.
+incremental = false
 
 [profile.release]
 panic = "abort"

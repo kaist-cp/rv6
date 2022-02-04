@@ -48,6 +48,8 @@
 #![feature(const_mut_refs)]
 #![feature(const_precise_live_drops)]
 #![feature(const_trait_impl)]
+#![feature(const_generics)]
+#![feature(const_evaluatable_checked)]
 #![feature(generic_associated_types)]
 #![feature(maybe_uninit_extra)]
 #![feature(raw_ref_op)]
