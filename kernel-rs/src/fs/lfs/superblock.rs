@@ -11,8 +11,7 @@ use crate::{
 const FSMAGIC: u32 = 0x10203040;
 
 /// Disk layout:
-/// [ boot block | super block | log | inode blocks |
-///                                          free bit map | data blocks]
+/// [ boot block | super block | data block | inode | ... | inode map ]
 ///
 /// mkfs computes the super block and builds an initial file system. The
 /// super block describes the disk layout:
@@ -31,24 +30,21 @@ pub struct Superblock {
     /// Number of inodes
     pub ninodes: u32,
 
-    /// Number of log blocks
-    pub nlog: u32,
+    /// Number of free blocks
+    pub nfree_blocks: u32,
 
-    /// Block number of first log block
-    pub logstart: u32,
+    /// Current segment
+    pub cur_segment: u32,
 
-    /// Block number of first inode block
-    pub inodestart: u32,
+    /// Offset inside the segment
+    pub segment_offset: u32,
 
-    /// Block number of first free map block
-    pub bmapstart: u32,
+    /// Size of each segment
+    pub segment_size: u32,
 }
 
 /// Inodes per block.
 pub const IPB: usize = BSIZE / mem::size_of::<Dinode>();
-
-/// Bitmap bits per block
-// pub const BPB: usize = BSIZE * 8;
 
 impl Superblock {
     /// Read the super block.
@@ -64,14 +60,4 @@ impl Superblock {
         assert_eq!(result.magic, FSMAGIC, "invalid file system");
         result
     }
-
-    /// Block containing inode i
-    pub const fn iblock(self, i: u32) -> u32 {
-        i / IPB as u32 + self.inodestart
-    }
-
-    //? Block of free map containing bit for block b
-    // pub const fn bblock(self, b: u32) -> u32 {
-    //     b / BPB as u32 + self.bmapstart
-    // }
 }
