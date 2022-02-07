@@ -26,7 +26,6 @@ cfg_if! {
         pub type DefaultFs = Lfs;
         mod lfs;
         pub use lfs::Lfs;
-
     } else {
         pub type DefaultFs = Ufs;
         mod ufs;
@@ -53,6 +52,7 @@ pub enum InodeType {
     Device { major: u16, minor: u16 },
 }
 
+#[allow(dead_code)]
 #[derive(Copy, Clone, PartialEq, Debug)]
 #[repr(i16)]
 pub enum DInodeType {

@@ -5,7 +5,6 @@ use core::ops::Deref;
 use pin_project::pin_project;
 use spin::Once;
 
-use self::log::Log;
 use super::{
     FcntlFlags, FileName, FileSystem, Inode, InodeGuard, InodeType, Itable, Path, RcInode, Stat, Tx,
 };
@@ -14,18 +13,17 @@ use crate::{
     bio::Buf,
     file::{FileType, InodeFileType},
     hal::hal,
-    lock::SleepableLock,
     param::BSIZE,
     proc::KernelCtx,
 };
 
 mod inode;
-mod log;
+mod segment;
 mod superblock;
 
 pub use inode::{Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
+pub use segment::Segment;
 pub use superblock::{Superblock, IPB};
-// pub use log::Log;
 
 /// root i-number
 const ROOTINO: u32 = 1;
@@ -45,12 +43,8 @@ pub struct Lfs {
     superblock: Once<Superblock>,
 
     /// Segments to save updates
-    segments: ArrayArena<Segment, NSEGMENT>,
-
-    /// In-memory inode map.
-    /// TODO: use Map instead of Array
-    #[pin]
-    imap: Itable<Self>,
+    #[allow(dead_code)]
+    segments: [Segment; NSEGMENT]
 }
 
 impl Tx<'_, Lfs> {
@@ -81,21 +75,6 @@ impl Tx<'_, Lfs> {
     #[allow(dead_code)]
     fn balloc(&self, _dev: u32, _ctx: &KernelCtx<'_, '_>) -> u32 {
         todo!()
-        // for b in num_iter::range_step(0, self.fs.superblock().size, BPB as u32) {
-        //     let mut bp = hal().disk().read(dev, self.fs.superblock().bblock(b), ctx);
-        //     for bi in 0..cmp::min(BPB as u32, self.fs.superblock().size - b) {
-        //         let m = 1 << (bi % 8);
-        //         if bp.deref_inner_mut().data[(bi / 8) as usize] & m == 0 {
-        //             // Is block free?
-        //             bp.deref_inner_mut().data[(bi / 8) as usize] |= m; // Mark block in use.
-        //             self.write(bp, ctx);
-        //             self.bzero(dev, b + bi, ctx);
-        //             return b + bi;
-        //         }
-        //     }
-        //     bp.free(ctx);
-        // }
-
         // panic!("balloc: out of blocks");
     }
 
@@ -103,16 +82,6 @@ impl Tx<'_, Lfs> {
     #[allow(dead_code)]
     fn bfree(&self, _dev: u32, _b: u32, _ctx: &KernelCtx<'_, '_>) {
         todo!()
-        // let mut bp = hal().disk().read(dev, self.fs.superblock().bblock(b), ctx);
-        // let bi = b as usize % BPB;
-        // let m = 1u8 << (bi % 8);
-        // assert_ne!(
-        //     bp.deref_inner_mut().data[bi / 8] & m,
-        //     0,
-        //     "freeing free block"
-        // );
-        // bp.deref_inner_mut().data[bi / 8] &= !m;
-        // self.write(bp, ctx);
     }
 }
 
@@ -121,23 +90,18 @@ impl Lfs {
     pub const fn new() -> Self {
         Self {
             superblock: Once::new(),
-            log: Once::new(),
-            imap: Itable::<Lfs>::new_itable(),
+            segments: [Segment::default(); NSEGMENT]
         }
     }
 
     #[allow(dead_code)]
-    fn log(&self) -> &SleepableLock<Log> {
-        self.log.get().expect("log")
-    }
-
     fn superblock(&self) -> &Superblock {
         self.superblock.get().expect("superblock")
     }
 
     #[allow(clippy::needless_lifetimes)]
     pub fn imap<'s>(self: StrongPin<'s, Self>) -> StrongPin<'s, Itable<Self>> {
-        unsafe { StrongPin::new_unchecked(&self.as_pin().get_ref().imap) }
+        todo!()
     }
 }
 
@@ -150,20 +114,11 @@ impl FileSystem for Lfs {
             let buf = hal().disk().read(dev, 1, ctx);
             let _superblock = self.superblock.call_once(|| Superblock::new(&buf));
             buf.free(ctx);
-
-            // TODO: initialize log
-            // let _ = self.log.call_once(|| {
-            //     // TODO: intialize log
-            //     SleepableLock::new(
-            //         "LOG",
-            //         Log::new(dev, superblock.logstart as i32, superblock.nlog as i32, ctx),
-            //     )
-            // });
         }
     }
 
     fn root(self: StrongPin<'_, Self>) -> RcInode<Self> {
-        self.imap().root()
+        todo!()
     }
 
     fn namei(

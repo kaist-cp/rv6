@@ -36,17 +36,12 @@ pub struct Superblock {
     /// Current segment
     pub cur_segment: u32,
 
-    /// Offset inside the segment
-    pub segment_offset: u32,
-
-    /// Size of each segment
-    pub segment_size: u32,
-
     /// Checkpoint region
     pub checkpoint_region: u32,
 }
 
 /// Inodes per block.
+#[allow(dead_code)]
 pub const IPB: usize = BSIZE / mem::size_of::<Dinode>();
 
 impl Superblock {
