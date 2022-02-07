@@ -25,6 +25,16 @@ pub const MAXARG: usize = 32;
 /// Block Size.
 pub const BSIZE: usize = 1024;
 
+/// Size of segments on-memory
+/// 
+/// An optimal size of segments for LFS is dependent to
+/// the performance of a disk and a desired effective bandwith of developers.
+/// Check the formula for getting the size of segments here: 
+/// https://pages.cs.wisc.edu/~remzi/OSTEP/file-lfs.pdf
+/// 
+/// TODO: optimize the size of the segment
+pub const SEGSIZE: usize = BSIZE * 10;
+
 /// Max # of blocks any FS op writes.
 /// Will be handled in #31.
 pub const MAXOPBLOCKS: usize = 10;

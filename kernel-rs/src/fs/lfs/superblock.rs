@@ -41,6 +41,9 @@ pub struct Superblock {
 
     /// Size of each segment
     pub segment_size: u32,
+
+    /// Checkpoint region
+    pub checkpoint_region: u32,
 }
 
 /// Inodes per block.
