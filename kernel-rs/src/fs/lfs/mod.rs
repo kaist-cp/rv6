@@ -44,7 +44,7 @@ pub struct Lfs {
 
     /// Segments to save updates
     #[allow(dead_code)]
-    segments: [Segment; NSEGMENT]
+    segments: [Segment; NSEGMENT],
 }
 
 impl Tx<'_, Lfs> {
@@ -90,7 +90,7 @@ impl Lfs {
     pub const fn new() -> Self {
         Self {
             superblock: Once::new(),
-            segments: [Segment::default(); NSEGMENT]
+            segments: [Segment::default(); NSEGMENT],
         }
     }
 

@@ -49,7 +49,6 @@ cfg_if! {
     }
 }
 
-
 /// Size of disk block cache.
 pub const NBUF: usize = MAXOPBLOCKS * 3;
 
