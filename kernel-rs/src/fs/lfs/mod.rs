@@ -30,6 +30,10 @@ pub use superblock::{Superblock, IPB};
 /// root i-number
 const ROOTINO: u32 = 1;
 
+/// the number of segments
+/// TODO: supposed to be DISK_SIZE / SEGSIZE
+const NSEGMENT: usize = 10;
+
 const NDIRECT: usize = 12;
 const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
 const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
@@ -40,9 +44,8 @@ pub struct Lfs {
     /// There should be one superblock per disk device, but we run with only one device.
     superblock: Once<Superblock>,
 
-    /// Log to save writes
-    #[allow(dead_code)]
-    log: Once<SleepableLock<Log>>,
+    /// Segments to save updates
+    segments: ArrayArena<Segment, NSEGMENT>,
 
     /// In-memory inode map.
     /// TODO: use Map instead of Array
