@@ -28,8 +28,9 @@ checksum = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
 
 [[package]]
 name = "bitmaps"
-version = "3.0.0"
-source = "git+https://github.com/jeehoonkang/bitmaps.git?branch=rv6#fa70c4040e625c6e70b3fa0c87caf28594fbbbce"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "303cec55cd9c5fde944b061b902f142b52a8bb5438cc822481ea1e3ebc96bbcb"
 
 [[package]]
 name = "byteorder"
