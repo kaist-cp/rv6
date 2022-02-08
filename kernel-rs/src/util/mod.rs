@@ -55,8 +55,8 @@ pub fn memmove(dst: &mut [u8], src: &[u8]) {
 /// Filling a value of `T` with a value of `S` must not break the invariant of `T`.
 pub unsafe fn memset<T, S: Copy>(dst: &mut T, v: S)
 where
-    [u8; core::mem::size_of::<T>() % core::mem::size_of::<S>() + usize::MAX]: , /* We need mem::size_of::<T>() % mem::size_of::<S>() == 0 */
-    [u8; core::mem::align_of::<T>() % core::mem::align_of::<S>() + usize::MAX]: , /* We need mem::align_of::<T>() % mem::align_of::<S>() == 0 */
+    [(); core::mem::size_of::<T>() % core::mem::size_of::<S>() + usize::MAX]: , /* We need mem::size_of::<T>() % mem::size_of::<S>() == 0 */
+    [(); core::mem::align_of::<T>() % core::mem::align_of::<S>() + usize::MAX]: , /* We need mem::align_of::<T>() % mem::align_of::<S>() == 0 */
 {
     // SAFETY: T's size/alignment is a multiple of S's size/alignment.
     let buf = unsafe {

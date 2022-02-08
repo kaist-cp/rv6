@@ -76,8 +76,8 @@ impl Page {
 
     pub fn as_uninit_mut<T>(&mut self) -> &mut MaybeUninit<T>
     where
-        [u8; PGSIZE - mem::size_of::<T>()]: , /* We need mem::size_of::<T>() <= PGSIZE */
-        [u8; PGSIZE % mem::align_of::<T>() + usize::MAX]: , /* We need PGSIZE % mem::align_of::<T> == 0 */
+        [(); PGSIZE - mem::size_of::<T>()]: , /* We need mem::size_of::<T>() <= PGSIZE */
+        [(); PGSIZE % mem::align_of::<T>() + usize::MAX]: , /* We need PGSIZE % mem::align_of::<T> == 0 */
     {
         // SAFETY: self.inner is an array of length PGSIZE aligned with PGSIZE bytes.
         // The above assertions show that it can contain a value of T. As it contains arbitrary
