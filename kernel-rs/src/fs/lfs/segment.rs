@@ -5,7 +5,7 @@ use crate::param::SEGSIZE;
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
 pub enum BlockType {
-    None,
+    Invalid,
     DataBlock,
     Inode,
     Itable,
@@ -16,17 +16,17 @@ pub enum BlockType {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Segment {
-    /// Buffer that holds updated blocks
-    pub block_buffer: [BlockType; SEGSIZE],
-
     /// Current offset of the block_buffer
     pub offset: u32,
+    
+    /// Buffer that holds updated blocks
+    pub block_buffer: [BlockType; SEGSIZE],
 }
 
 impl Segment {
     pub const fn default() -> Self {
         Segment {
-            block_buffer: [BlockType::None; SEGSIZE],
+            block_buffer: [BlockType::Invalid; SEGSIZE],
             offset: 0,
         }
     }
