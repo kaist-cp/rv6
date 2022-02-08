@@ -18,7 +18,7 @@ pub enum BlockType {
 pub struct Segment {
     /// Current offset of the block_buffer
     pub offset: u32,
-    
+
     /// Buffer that holds updated blocks
     pub block_buffer: [BlockType; SEGSIZE],
 }
