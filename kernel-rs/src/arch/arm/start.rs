@@ -78,13 +78,14 @@ pub unsafe fn start() {
     unsafe { w_mdscr_el1(0) };
 
     // set_up_mair
-    // TODO: This setting might be problematic.
+    // TODO: If device memory is needed for some attribute,
+    // use MEM_ATTR_IDX_N on arch/arm/vm.rs for set_entry function
     MAIR_EL1.write(
-        // Attribute 1 - Cacheable normal DRAM.
+        // Attribute 0, 1 - Cacheable normal DRAM.
+        MAIR_EL1::Attr0_Normal_Outer::WriteBack_NonTransient_ReadWriteAlloc +
+        MAIR_EL1::Attr0_Normal_Inner::WriteBack_NonTransient_ReadWriteAlloc +
         MAIR_EL1::Attr1_Normal_Outer::WriteBack_NonTransient_ReadWriteAlloc +
-            MAIR_EL1::Attr1_Normal_Inner::WriteBack_NonTransient_ReadWriteAlloc +
-            // Attribute 0 - Device.
-            MAIR_EL1::Attr0_Device::nonGathering_nonReordering_EarlyWriteAck,
+        MAIR_EL1::Attr1_Normal_Inner::WriteBack_NonTransient_ReadWriteAlloc
     );
 
     // set translation control register
