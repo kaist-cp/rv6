@@ -134,7 +134,8 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
         let this = guard.get_strong_pinned_mut();
 
         let mut empty: Option<NonNull<StaticArc<T>>> = None;
-        for entry in this.list().iter_shared_mut() {
+        // SAFETY: the whole `MruArena` is protected by a lock.
+        for entry in unsafe { this.list().iter_strong_pin_mut_unchecked() } {
             let mut entry = entry.data();
 
             if let Some(entry) = entry.as_mut().try_borrow() {
@@ -161,7 +162,8 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
         let mut guard = self.inner().strong_pinned_lock();
         let this = guard.get_strong_pinned_mut();
 
-        for entry in this.list().iter_shared_mut().rev() {
+        // SAFETY: the whole `MruArena` is protected by a lock.
+        for entry in unsafe { this.list().iter_strong_pin_mut_unchecked().rev() } {
             let mut entry = entry.data();
             if let Some(data) = entry.as_mut().get_mut() {
                 *data = f();

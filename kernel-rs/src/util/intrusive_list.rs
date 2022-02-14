@@ -244,7 +244,9 @@ impl<T: ListNode> List<T> {
     }
 
     #[allow(clippy::needless_lifetimes)]
-    pub fn iter_shared_mut<'s>(self: StrongPinMut<'s, Self>) -> IterStrongPinMut<'s, T> {
+    pub unsafe fn iter_strong_pin_mut_unchecked<'s>(
+        self: StrongPinMut<'s, Self>,
+    ) -> IterStrongPinMut<'s, T> {
         let last = unsafe { &(*self.ptr().as_ptr()).head };
         let curr = unsafe { &*Pin::new_unchecked(last).next() };
         IterStrongPinMut {
