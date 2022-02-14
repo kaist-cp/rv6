@@ -118,6 +118,7 @@ impl FileSystem for Lfs {
     }
 
     fn root(self: StrongPin<'_, Self>) -> RcInode<Self> {
+        // self.imap().root()
         todo!()
     }
 
@@ -390,6 +391,8 @@ impl FileSystem for Lfs {
         Ok(tot as usize)
     }
 
+    // TODO: remove the macro
+    #[allow(unused_mut, unused_variables)]
     fn inode_write<
         'id,
         's,
@@ -411,22 +414,24 @@ impl FileSystem for Lfs {
             return Err(());
         }
         let mut tot: u32 = 0;
+
+        // TODO: add segment number and offest of designated inode in InodeGuard
+        // let segment_num = Self.superblock().cur_segment;
+        // let mut segment = Self.segments[segment_num];
+        // let offset = Self.imap().get(guard.inum);
+
         while tot < n {
-            let mut bp = hal().disk().read(
-                guard.dev,
-                guard.disk_or_alloc(off as usize / BSIZE, tx, &k),
-                &k,
-            );
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
+            #[allow(unused_variables)]
             let end = begin + m as usize;
 
-            if f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k).is_ok() {
-                // tx.write(bp, &k);
-            } else {
-                bp.free(&k);
-                break;
-            }
+            // TODO: transform to segment
+            // if f(tot, segment[offset].data[begin..end], &mut k).is_ok() {
+            //     segment[offset].write(begin, end);
+            // } else {
+            //     break;
+            // }
 
             tot += m;
             off += m;
@@ -443,27 +448,82 @@ impl FileSystem for Lfs {
         Ok(tot as usize)
     }
 
-    fn inode_trunc(
-        _guard: &mut InodeGuard<'_, Self>,
-        _tx: &Tx<'_, Self>,
-        _ctx: &KernelCtx<'_, '_>,
-    ) {
-        todo!()
+    fn inode_trunc(guard: &mut InodeGuard<'_, Self>, tx: &Tx<'_, Self>, ctx: &KernelCtx<'_, '_>) {
+        let dev = guard.dev;
+        for addr in &mut guard.deref_inner_mut().addr_direct {
+            if *addr != 0 {
+                tx.bfree(dev, *addr, ctx);
+                *addr = 0;
+            }
+        }
+
+        if guard.deref_inner().addr_indirect != 0 {
+            let mut bp = hal()
+                .disk()
+                .read(dev, guard.deref_inner().addr_indirect, ctx);
+            // SAFETY: u32 does not have internal structure.
+            let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
+            debug_assert_eq!(prefix.len(), 0, "itrunc: Buf data unaligned");
+            for a in data {
+                if *a != 0 {
+                    tx.bfree(dev, *a, ctx);
+                }
+            }
+            bp.free(ctx);
+            tx.bfree(dev, guard.deref_inner().addr_indirect, ctx);
+            guard.deref_inner_mut().addr_indirect = 0
+        }
+
+        guard.deref_inner_mut().size = 0;
+        guard.update(tx, ctx);
     }
 
-    fn inode_lock<'a>(_inode: &'a Inode<Self>, _ctx: &KernelCtx<'_, '_>) -> InodeGuard<'a, Self> {
+    fn inode_lock<'a>(inode: &'a Inode<Self>, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'a, Self> {
+        #[allow(unused_mut, unused_variables)]
+        let mut guard = inode.inner.lock(ctx);
+        // TODO: implement inode_lock
         todo!()
+        // mem::forget(guard);
+        // InodeGuard { inode }
     }
 
     fn inode_finalize<'a, 'id: 'a>(
-        _inode: &mut Inode<Self>,
-        _tx: &'a Tx<'a, Self>,
-        _ctx: &'a KernelCtx<'id, 'a>,
+        inode: &mut Inode<Self>,
+        tx: &'a Tx<'a, Self>,
+        ctx: &'a KernelCtx<'id, 'a>,
     ) {
-        todo!()
+        if inode.inner.get_mut().valid && inode.inner.get_mut().nlink == 0 {
+            // inode has no links and no other references: truncate and free.
+
+            // self->ref == 1 means no other process can have self locked,
+            // so this acquiresleep() won't block (or deadlock).
+            let mut ip = inode.lock(ctx);
+
+            ip.trunc(tx, ctx);
+            ip.deref_inner_mut().typ = InodeType::None;
+            ip.update(tx, ctx);
+            ip.deref_inner_mut().valid = false;
+
+            ip.free(ctx);
+        }
     }
 
-    fn inode_stat(_inode: &Inode<Self>, _ctx: &KernelCtx<'_, '_>) -> Stat {
-        todo!()
+    fn inode_stat(inode: &Inode<Self>, ctx: &KernelCtx<'_, '_>) -> Stat {
+        let inner = inode.inner.lock(ctx);
+        let st = Stat {
+            dev: inode.dev as i32,
+            ino: inode.inum,
+            typ: match inner.typ {
+                InodeType::None => 0,
+                InodeType::Dir => 1,
+                InodeType::File => 2,
+                InodeType::Device { .. } => 3,
+            },
+            nlink: inner.nlink,
+            _padding: 0,
+            size: inner.size as usize,
+        };
+        inner.free(ctx);
+        st
     }
 }

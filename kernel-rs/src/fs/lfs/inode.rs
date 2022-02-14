@@ -215,6 +215,7 @@ impl InodeGuard<'_, Lfs> {
     /// Inode content.
     /// If there is no such block, allocate one inode on disk.
     /// TODO: delete bmap
+    #[allow(dead_code)]
     pub fn disk_or_alloc(&mut self, bn: usize, tx: &Tx<'_, Lfs>, ctx: &KernelCtx<'_, '_>) -> u32 {
         self.disk_internal(bn, Some(tx), ctx)
     }

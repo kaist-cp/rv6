@@ -8,7 +8,7 @@ pub enum BlockType {
     Invalid,
     DataBlock,
     Inode,
-    Itable,
+    Imap,
 }
 
 // TODO: implement segment flush algorithms here
