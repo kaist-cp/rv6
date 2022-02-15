@@ -69,12 +69,12 @@ impl<T> MruEntry<T> {
 
 // SAFETY: `MruEntry` owns a `ListEntry`.
 unsafe impl<T> ListNode for MruEntry<T> {
-    fn get_list_entry(self: Pin<&Self>) -> Pin<&ListEntry> {
-        unsafe { Pin::new_unchecked(&self.get_ref().list_entry) }
+    fn get_list_entry(self: Pin<&mut Self>) -> Pin<&mut ListEntry> {
+        self.project().list_entry
     }
 
-    fn from_list_entry(list_entry: *const ListEntry) -> *const Self {
-        (list_entry as *const _ as usize - Self::LIST_ENTRY_OFFSET) as *const Self
+    fn from_list_entry(list_entry: *mut ListEntry) -> *mut Self {
+        (list_entry as usize - Self::LIST_ENTRY_OFFSET) as *mut Self
     }
 }
 
@@ -108,7 +108,7 @@ impl<T, const CAPACITY: usize> MruArenaInner<T, CAPACITY> {
         this.list.as_mut().init();
         for mut entry in IterPinMut::from(this.entries) {
             entry.as_mut().project().list_entry.init();
-            this.list.as_ref().push_front(entry.as_ref());
+            this.list.as_mut().push_front(entry);
         }
     }
 
@@ -180,17 +180,17 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
             rm.finalize(ctx);
 
             // Move this entry to the back of the list.
-            let ptr: *const MruEntry<Self::Data> =
+            let ptr: *mut MruEntry<Self::Data> =
                 (rm.cell() as usize - MruEntry::<T>::DATA_OFFSET) as _;
             // SAFETY:
             // * `rm.cell()` is an `RcCell` inside an `MruEntry`.
             // * The value of `DATA_OFFSET` is proper.
-            let ptr = unsafe { Pin::new_unchecked(&*ptr) };
+            let ptr = unsafe { Pin::new_unchecked(&mut *ptr) };
 
             let arena = unsafe { StrongPin::new_unchecked(&*rc.arena) };
             let mut this = arena.inner().strong_pinned_lock();
-            let this = this.get_strong_pinned_mut().as_ref().as_pin().get_ref();
-            unsafe { Pin::new_unchecked(&this.list) }.push_back(ptr);
+            let mut this = this.get_strong_pinned_mut().ptr();
+            unsafe { Pin::new_unchecked(&mut this.as_mut().list) }.push_back(ptr);
         }
         core::mem::forget(rc);
     }
