@@ -43,11 +43,11 @@ impl Run {
 
 // SAFETY: `Run` owns a `ListEntry`.
 unsafe impl ListNode for Run {
-    fn get_list_entry(self: Pin<&Self>) -> Pin<&ListEntry> {
-        unsafe { Pin::new_unchecked(&self.get_ref().entry) }
+    fn get_list_entry(self: Pin<&mut Self>) -> Pin<&mut ListEntry> {
+        self.project().entry
     }
 
-    fn from_list_entry(list_entry: *const ListEntry) -> *const Self {
+    fn from_list_entry(list_entry: *mut ListEntry) -> *mut Self {
         list_entry as _
     }
 }
@@ -95,31 +95,27 @@ impl Kmem {
             // * end <= pa < PHYSTOP
             // * the safety condition of this method guarantees that the
             //   created page does not overlap with existing pages
-            self.as_ref().free(unsafe { Page::from_usize(pa) });
+            self.as_mut().free(unsafe { Page::from_usize(pa) });
         }
     }
 
-    pub fn free(self: Pin<&Self>, mut page: Page) {
+    pub fn free(self: Pin<&mut Self>, mut page: Page) {
         let run = page.as_uninit_mut();
         // SAFETY: `run` will be initialized by the following `init`.
         let run = run.write(unsafe { Run::new() });
         let mut run = unsafe { Pin::new_unchecked(run) };
         run.as_mut().init();
-        self.runs().push_front(run.as_ref());
+        self.project().runs.push_front(run);
 
         // Since the page has returned to the list, forget the page.
         mem::forget(page);
     }
 
-    pub fn alloc(self: Pin<&Self>) -> Option<Page> {
-        let run = self.runs().pop_front()?;
+    pub fn alloc(self: Pin<&mut Self>) -> Option<Page> {
+        let run = self.project().runs.pop_front()?;
         // SAFETY: the invariant of `Kmem`.
         let page = unsafe { Page::from_usize(run as _) };
         Some(page)
-    }
-
-    fn runs(self: Pin<&Self>) -> Pin<&List<Run>> {
-        unsafe { Pin::new_unchecked(&self.get_ref().runs) }
     }
 }
 
@@ -127,11 +123,11 @@ impl SpinLock<Kmem> {
     pub fn free(self: Pin<&Self>, mut page: Page) {
         // Fill with junk to catch dangling refs.
         page.write_bytes(1);
-        self.pinned_lock().get_pin_mut().as_ref().free(page);
+        self.pinned_lock().get_pin_mut().free(page);
     }
 
     pub fn alloc(self: Pin<&Self>, init_value: Option<u8>) -> Option<Page> {
-        let mut page = self.pinned_lock().get_pin_mut().as_ref().alloc()?;
+        let mut page = self.pinned_lock().get_pin_mut().alloc()?;
 
         // fill with junk or received init value
         let init_value = init_value.unwrap_or(5);
