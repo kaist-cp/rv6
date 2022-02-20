@@ -42,9 +42,13 @@ pub struct Lfs {
     /// There should be one superblock per disk device, but we run with only one device.
     superblock: Once<Superblock>,
 
+    #[pin]
+    itable: Itable<Self>,
+
+    imap: InodeMap,
     /// Segments to save updates
     #[allow(dead_code)]
-    segments: [Segment; NSEGMENT],
+    segment_buf: Segment,
 }
 
 impl Tx<'_, Lfs> {
@@ -64,6 +68,7 @@ impl Tx<'_, Lfs> {
     /// Zero a block.
     #[allow(dead_code)]
     fn bzero(&self, dev: u32, bno: u32, ctx: &KernelCtx<'_, '_>) {
+        // TODO: Won't need this?
         let mut buf = ctx.kernel().bcache().get_buf(dev, bno).lock(ctx);
         buf.deref_inner_mut().data.fill(0);
         buf.deref_inner_mut().valid = true;
@@ -74,6 +79,7 @@ impl Tx<'_, Lfs> {
     /// Allocate a zeroed disk block.
     #[allow(dead_code)]
     fn balloc(&self, _dev: u32, _ctx: &KernelCtx<'_, '_>) -> u32 {
+        // TODO : Just give the last block of the current segment?
         todo!()
         // panic!("balloc: out of blocks");
     }
@@ -81,6 +87,7 @@ impl Tx<'_, Lfs> {
     /// Free a disk block.
     #[allow(dead_code)]
     fn bfree(&self, _dev: u32, _b: u32, _ctx: &KernelCtx<'_, '_>) {
+        // TODO: Won't need this?
         todo!()
     }
 }
@@ -426,7 +433,7 @@ impl FileSystem for Lfs {
             #[allow(unused_variables)]
             let end = begin + m as usize;
 
-            // TODO: transform to segment
+            // TODO: transform to segment (use `Segment::push_back_data_block`)
             // if f(tot, segment[offset].data[begin..end], &mut k).is_ok() {
             //     segment[offset].write(begin, end);
             // } else {

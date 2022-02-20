@@ -33,9 +33,11 @@ pub struct Superblock {
     /// Number of free blocks
     pub nfree_blocks: u32,
 
+    // TODO: Okay to move to `Segment::segment_no`?
     /// Current segment
-    pub cur_segment: u32,
+    // pub cur_segment: u32,
 
+    // TODO: Unnecessary if use current time (or something similar)?
     /// Checkpoint region
     pub checkpoint_region: u32,
 }

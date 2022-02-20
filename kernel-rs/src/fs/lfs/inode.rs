@@ -178,15 +178,13 @@ impl InodeGuard<'_, Lfs> {
         self.iter_dirents(ctx)
             .find(|(de, _)| de.inum != 0 && de.get_name() == name)
             .map(|(_de, _offf)| {
-                // TODO: replace the return type of fs() with Lfs
-                todo!()
-                // (
-                //     ctx.kernel()
-                //         .fs()
-                //         .imap()
-                //         .get_inode(self.dev, de.inum as u32),
-                //     off,
-                // )
+                (
+                    ctx.kernel()
+                        .fs()
+                        .itable()
+                        .get_inode(self.dev, de.inum as u32),
+                    off,
+                )
             })
             .ok_or(())
     }
@@ -202,6 +200,8 @@ impl InodeGuard<'_, Lfs> {
 
         const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
+
+        // TODO: use `Segment::push_back_inode`.
 
         // SAFETY:
         // * dip is aligned properly.
