@@ -9,7 +9,7 @@ autobins = false
 crate-type = ["staticlib"]
 
 [features]
-default = []
+default = ["lfs"]
 test = []
 gicv2 = []
 gicv3 = []

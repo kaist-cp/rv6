@@ -30,7 +30,7 @@ const ROOTINO: u32 = 1;
 
 /// the number of segments
 /// TODO: supposed to be DISK_SIZE / SEGSIZE
-const NSEGMENT: usize = 10;
+// const NSEGMENT: usize = 10;
 
 const NDIRECT: usize = 12;
 const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
@@ -42,9 +42,9 @@ pub struct Lfs {
     /// There should be one superblock per disk device, but we run with only one device.
     superblock: Once<Superblock>,
 
-    /// Segments to save updates
+    /// In-memory segment.
     #[allow(dead_code)]
-    segments: [Segment; NSEGMENT],
+    segment: Segment,
 }
 
 impl Tx<'_, Lfs> {
@@ -90,7 +90,7 @@ impl Lfs {
     pub const fn new() -> Self {
         Self {
             superblock: Once::new(),
-            segments: [Segment::default(); NSEGMENT],
+            segment: Segment::default(),
         }
     }
 
