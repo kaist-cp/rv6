@@ -36,8 +36,11 @@ pub struct Superblock {
     /// Current segment
     pub cur_segment: u32,
 
+    /// Location of imap
+    pub imap_location: u32,
+
     /// Checkpoint region
-    pub checkpoint_region: u32,
+    pub checkpoint_region: (u32, u32),
 }
 
 /// Inodes per block.
