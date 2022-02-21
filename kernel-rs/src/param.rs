@@ -27,6 +27,9 @@ pub const MAXARG: usize = 32;
 /// Block Size.
 pub const BSIZE: usize = 1024;
 
+/// # blocks in a segment.
+pub const NBLOCK: usize = 200;
+
 /// Max # of blocks any FS op writes.
 /// Will be handled in #31.
 pub const MAXOPBLOCKS: usize = 10;

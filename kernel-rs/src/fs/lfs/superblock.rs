@@ -44,8 +44,10 @@ pub struct Superblock {
 }
 
 /// Inodes per block.
-#[allow(dead_code)]
 pub const IPB: usize = BSIZE / mem::size_of::<Dinode>();
+
+/// Bitmap bits per block
+pub const BPB: usize = BSIZE * 8;
 
 impl Superblock {
     /// Read the super block.
