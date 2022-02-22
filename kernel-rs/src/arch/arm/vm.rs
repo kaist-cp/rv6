@@ -37,7 +37,7 @@ bitflags! {
         /// Privileged execute-never, stage 1 only
         const PXN = 1 << 53;
 
-        // TODO: are these necessary?
+        // Could be used for set_entry function and MAIR_EL1 register
         const MEM_ATTR_IDX_0 = (0 << 2);
         const MEM_ATTR_IDX_1 = (1 << 2);
         const MEM_ATTR_IDX_2 = (2 << 2);
