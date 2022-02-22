@@ -1,12 +1,11 @@
 use core::cell::UnsafeCell;
-use core::{mem, cmp};
 use core::ops::Deref;
+use core::{cmp, mem};
 
 use pin_project::pin_project;
 use spin::Once;
 
 use self::segment::Block;
-
 use super::{
     FcntlFlags, FileName, FileSystem, Inode, InodeGuard, InodeType, Itable, Path, RcInode, Stat, Tx,
 };

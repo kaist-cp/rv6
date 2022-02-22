@@ -8,10 +8,11 @@ use crate::{
     arena::{Arena, ArrayArena},
     bio::BufData,
     fs::{lfs::superblock::IPB, DInodeType, Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
+    hal::hal,
     lock::SleepLock,
     param::{NINODE, ROOTDEV},
     proc::KernelCtx,
-    util::{strong_pin::StrongPin, memset}, hal::hal,
+    util::{memset, strong_pin::StrongPin},
 };
 
 /// Directory is a file containing a sequence of Dirent structures.
@@ -333,7 +334,7 @@ impl Itable<Lfs> {
     ) -> RcInode<Lfs> {
         let cur_segment = tx.fs.superblock().cur_segment;
         let segment = tx.fs.segments[cur_segment as usize];
-        
+
         for inum in 1..tx.fs.superblock().ninodes {
             let mut bp = hal().disk().read(dev, segment.offset, ctx);
 

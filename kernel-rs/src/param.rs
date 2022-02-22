@@ -27,9 +27,6 @@ pub const MAXARG: usize = 32;
 /// Block Size.
 pub const BSIZE: usize = 1024;
 
-/// # blocks in a segment.
-pub const NBLOCK: usize = 200;
-
 /// Max # of blocks any FS op writes.
 /// Will be handled in #31.
 pub const MAXOPBLOCKS: usize = 10;
@@ -44,8 +41,10 @@ cfg_if! {
         /// https://pages.cs.wisc.edu/~remzi/OSTEP/file-lfs.pdf
         ///
         /// TODO: optimize the size of the segment
-        #[allow(dead_code)]
         pub const SEGSIZE: usize = BSIZE * 10;
+
+        /// # blocks in a segment.
+        pub const NBLOCK: usize = 200;
     } else {
         /// Max data blocks in on-disk log.
         pub const LOGSIZE: usize = MAXOPBLOCKS * 3;
