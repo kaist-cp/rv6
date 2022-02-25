@@ -40,10 +40,7 @@ pub static mut stack0: Stack = Stack::new();
 pub unsafe fn start() {
     // launch other cores
     if cpu_id() == 0 {
-        // TODO(https://github.com/kaist-cp/rv6/issues/605): rustc bug?
-        // when this fixed, change this line to below line
-        let kernel_entry = 0x40010000;
-        //let kernel_entry = unsafe { _entry.as_mut_ptr() as usize } as u64;
+        let kernel_entry = unsafe { _entry.as_mut_ptr() as usize } as u64;
         for i in 1..3 {
             // SAFETY: Valid format for launching other CPU cores.
             let _ = unsafe { smc_call(SmcFunctions::CpuOn as u64, i, kernel_entry, 0) };
