@@ -55,9 +55,10 @@ def main(args):
                 for test_name in results:
                     if len(results[test_name]) == 1:
                         mean = results[test_name][0]
+                        std = 0
                     else:
                         mean = statistics.mean(results[test_name])
-                    std = statistics.stdev(results[test_name])
+                        std = statistics.stdev(results[test_name])
                     f.write(f"Test={test_name}, Iter={n}, ExecCount={args.execcount}, Mean={mean}, Standard Deviation={std}\n")
 
             os.remove('fs.img')
