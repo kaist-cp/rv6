@@ -332,48 +332,53 @@ impl Itable<Lfs> {
         tx: &Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> RcInode<Lfs> {
-        let cur_segment = tx.fs.superblock().cur_segment;
-        let segment = tx.fs.segments[cur_segment as usize];
-
-        for inum in 1..tx.fs.superblock().ninodes {
+        loop {
             let mut bp = hal().disk().read(dev, segment.offset, ctx);
-
-            const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
-            const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
-            // SAFETY: dip is inside bp.data.
-            let dip = unsafe {
-                (bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode).add(inum as usize % IPB)
-            };
-            // SAFETY: i16 does not have internal structure.
-            let t = unsafe { *(dip as *const i16) };
-            // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.
-            assert!(t < core::mem::variant_count::<DInodeType>() as i16);
-            // SAFETY: dip is aligned properly and t < #(variants of DInodeType).
-            let dip = unsafe { &mut *dip };
-
-            // a free inode
-            if dip.typ == DInodeType::None {
-                // SAFETY: DInode does not have any invariant.
-                unsafe { memset(dip, 0u32) };
-                match typ {
-                    InodeType::None => dip.typ = DInodeType::None,
-                    InodeType::Dir => dip.typ = DInodeType::Dir,
-                    InodeType::File => dip.typ = DInodeType::File,
-                    InodeType::Device { major, minor } => {
-                        dip.typ = DInodeType::Device;
-                        dip.major = major;
-                        dip.minor = minor
-                    }
-                }
-
-                // mark it allocated on the disk
-                tx.write(bp, ctx);
-                return self.get_inode(dev, inum);
-            } else {
-                bp.free(ctx);
+            let cur_segment = tx.fs.superblock().cur_segment;
+            if cur_segment >= SEGSIZE {
+                break;
             }
+            let segment = tx.fs.segments[cur_segment as usize];
+
+            for inum in 1..tx.fs.superblock().ninodes {
+                const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
+                const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
+                // SAFETY: dip is inside bp.data.
+                let dip = unsafe {
+                    (bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode).add(inum as usize % IPB)
+                };
+                // SAFETY: i16 does not have internal structure.
+                let t = unsafe { *(dip as *const i16) };
+                // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.
+                assert!(t < core::mem::variant_count::<DInodeType>() as i16);
+                // SAFETY: dip is aligned properly and t < #(variants of DInodeType).
+                let dip = unsafe { &mut *dip };
+
+                // a free inode
+                if dip.typ == DInodeType::None {
+                    // SAFETY: DInode does not have any invariant.
+                    unsafe { memset(dip, 0u32) };
+                    match typ {
+                        InodeType::None => dip.typ = DInodeType::None,
+                        InodeType::Dir => dip.typ = DInodeType::Dir,
+                        InodeType::File => dip.typ = DInodeType::File,
+                        InodeType::Device { major, minor } => {
+                            dip.typ = DInodeType::Device;
+                            dip.major = major;
+                            dip.minor = minor;
+                        }
+                    }
+
+                    // mark it allocated on the disk
+                    tx.write(bp, ctx);
+                    return self.get_inode(dev, inum);
+                } else {
+                    bp.free(ctx);
+                }
+            }
+
+            tx.fs.superblock().cur_segment += 1;
         }
-        panic!("[Itable::alloc_inode] no inodes");
     }
 
     pub fn root(self: StrongPin<'_, Self>) -> RcInode<Lfs> {

@@ -454,7 +454,7 @@ impl Itable<Ufs> {
                     InodeType::Device { major, minor } => {
                         dip.typ = DInodeType::Device;
                         dip.major = major;
-                        dip.minor = minor
+                        dip.minor = minor;
                     }
                 }
 

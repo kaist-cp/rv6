@@ -74,25 +74,29 @@ impl Tx<'_, Lfs> {
     /// Blocks.
     /// Allocate a zeroed disk block.
     fn balloc(&self, dev: u32, ctx: &KernelCtx<'_, '_>) -> u32 {
-        let cur_segment = self.fs.superblock().cur_segment;
-        let segment = self.fs.segments[cur_segment as usize];
-
-        for b in num_iter::range_step(0, self.fs.superblock().size, BPB as u32) {
-            let mut bp = hal().disk().read(dev, b, ctx);
-            for bi in 0..cmp::min(BPB as u32, self.fs.superblock().size - b) {
-                let m = 1 << (bi % 8);
-                if bp.deref_inner_mut().data[(bi / 8) as usize] & m == 0 {
-                    // Is block free?
-                    bp.deref_inner_mut().data[(bi / 8) as usize] |= m; // Mark block in use.
-                    self.write(bp, ctx);
-                    self.bzero(dev, b + bi, ctx);
-                    return b + bi;
-                }
+        loop {
+            let cur_segment = self.fs.superblock().cur_segment;
+            if cur_segment >= SEGSIZE {
+                break;
             }
-            bp.free(ctx);
-        }
+            let segment = self.fs.segments[cur_segment as usize];
 
-        panic!("balloc: out of blocks");
+            for b in num_iter::range_step(0, self.fs.superblock().size, BPB as u32) {
+                let mut bp = hal().disk().read(dev, b, ctx);
+                for bi in 0..cmp::min(BPB as u32, self.fs.superblock().size - b) {
+                    let m = 1 << (bi % 8);
+                    if bp.deref_inner_mut().data[(bi / 8) as usize] & m == 0 {
+                        // Is block free?
+                        bp.deref_inner_mut().data[(bi / 8) as usize] |= m; // Mark block in use.
+                        self.write(bp, ctx);
+                        self.bzero(dev, b + bi, ctx);
+                        return b + bi;
+                    }
+                }
+                bp.free(ctx);
+            }
+            self.fs.superblock().cur_segment += 1;
+        }
     }
 
     /// Free a disk block.
