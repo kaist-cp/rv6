@@ -1009,10 +1009,20 @@ impl GicDistributor {
         // enabled.
         let mpidr = r_mpidr() as u64;
         let affinity = mpidr_to_affinity(mpidr);
+        let mut addr = self.base_addr + GICD_IROUTER + 32 * 8;
 
-        for i in 32..self.gic_irqs as usize {
+        for _ in 32..self.gic_irqs as usize {
             // SAFETY: assume `self.base_addr` is a valid mapped address for GICD.
-            unsafe { write_d(self.base_addr + GICD_IROUTER + i * 8, affinity) };
+            // TODO(https://github.com/kaist-cp/rv6/issues/604): kvm bug?
+            unsafe {
+                asm!(
+                    "str {0}, [{1}]",
+                    "add {1}, {1}, 8",
+                    in(reg) affinity,
+                    inout(reg) addr
+                );
+                // unsafe { write_d(self.base_addr + GICD_IROUTER + i * 8, affinity) };
+            }
         }
         isb();
     }
