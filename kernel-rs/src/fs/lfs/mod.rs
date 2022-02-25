@@ -40,6 +40,7 @@ const NDIRECT: usize = 12;
 const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
 const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
 
+// TODO: reduce the number of segments into 1. (Optimize later)
 #[pin_project]
 pub struct Lfs {
     /// Initializing superblock should run only once because forkret() calls FileSystem::init().

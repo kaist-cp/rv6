@@ -4,7 +4,9 @@ use crate::{
     param::{BSIZE, NBLOCK},
 };
 
-// TODO: replace BlockType with Block enum
+// TODO: BlockType should be replaced with SegSumEntry
+// Inode should have only inum and block_no
+// Imap, Data should be more simplified
 pub enum BlockType {
     Invalid,
     Data { inner: [u32; BSIZE] },
@@ -34,6 +36,7 @@ impl const Default for Block {
     }
 }
 
+// TODO: implement segment flush
 #[repr(C)]
 pub struct Segment {
     /// Current offset of the block_buffer

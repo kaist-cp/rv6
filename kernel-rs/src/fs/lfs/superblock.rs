@@ -10,6 +10,9 @@ use crate::{
 
 const FSMAGIC: u32 = 0x10203040;
 
+// TODO: re-define imap to set the fields of superblock
+// CheckpointRegion should be made as a new struct to handle imap locations
+
 /// Disk layout:
 /// [ boot block | super block | data block | inode | ... | inode map ]
 ///
