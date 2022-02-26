@@ -8,10 +8,11 @@ use crate::{
     arena::{Arena, ArrayArena},
     bio::BufData,
     fs::{lfs::superblock::IPB, DInodeType, Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
+    hal::hal,
     lock::SleepLock,
     param::{NINODE, ROOTDEV},
     proc::KernelCtx,
-    util::strong_pin::StrongPin,
+    util::{memset, strong_pin::StrongPin},
 };
 
 /// Directory is a file containing a sequence of Dirent structures.
@@ -177,16 +178,11 @@ impl InodeGuard<'_, Lfs> {
 
         self.iter_dirents(ctx)
             .find(|(de, _)| de.inum != 0 && de.get_name() == name)
-            .map(|(_de, _offf)| {
-                // TODO: replace the return type of fs() with Lfs
-                todo!()
-                // (
-                //     ctx.kernel()
-                //         .fs()
-                //         .imap()
-                //         .get_inode(self.dev, de.inum as u32),
-                //     off,
-                // )
+            .map(|(de, off)| {
+                (
+                    ctx.kernel().fs().imap().get_inode(self.dev, de.inum as u32),
+                    off,
+                )
             })
             .ok_or(())
     }
@@ -194,11 +190,10 @@ impl InodeGuard<'_, Lfs> {
 
 impl InodeGuard<'_, Lfs> {
     /// Copy a modified in-memory inode to disk.
-    /// Must be called after every change to an ip->xxx field
-    /// that lives on disk.
-    pub fn update(&self, _tx: &Tx<'_, Lfs>, _ctx: &KernelCtx<'_, '_>) {
-        // TODO: use imap to find inodes
-        let mut _bp = todo!();
+    pub fn update(&self, tx: &Tx<'_, Lfs>, ctx: &KernelCtx<'_, '_>) {
+        // let inode = tx.fs.imap().get_inode(self.inum);
+        // TODO: update blockb
+        let mut bp = hal().disk().read(self.dev, 0, ctx);
 
         const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
@@ -208,8 +203,42 @@ impl InodeGuard<'_, Lfs> {
         // * dip is inside bp.data.
         // * dip will not be read.
 
-        // TODO: use transaction to write
-        // tx.write(bp, ctx);
+        let dip = unsafe {
+            &mut *(bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode)
+                .add(self.inum as usize % IPB)
+        };
+
+        let inner = self.deref_inner();
+        match inner.typ {
+            InodeType::Device { major, minor } => {
+                dip.typ = DInodeType::Device;
+                dip.major = major;
+                dip.minor = minor;
+            }
+            InodeType::None => {
+                dip.typ = DInodeType::None;
+                dip.major = 0;
+                dip.minor = 0;
+            }
+            InodeType::Dir => {
+                dip.typ = DInodeType::Dir;
+                dip.major = 0;
+                dip.minor = 0;
+            }
+            InodeType::File => {
+                dip.typ = DInodeType::File;
+                dip.major = 0;
+                dip.minor = 0;
+            }
+        }
+
+        (*dip).nlink = inner.nlink;
+        (*dip).size = inner.size;
+        for (d, s) in (*dip).addr_direct.iter_mut().zip(&inner.addr_direct) {
+            *d = *s;
+        }
+        (*dip).addr_indirect = inner.addr_indirect;
+        tx.write(bp, ctx);
     }
 
     /// Inode content.
@@ -274,9 +303,7 @@ impl Inode<Lfs> {
 }
 
 impl Itable<Lfs> {
-    #[allow(dead_code)]
     pub const fn new_itable() -> Self {
-        // TODO: change this array into a tree
         ArrayArena::<Inode<Lfs>, NINODE>::new("ITABLE")
     }
 
@@ -300,13 +327,56 @@ impl Itable<Lfs> {
     /// Returns an unlocked but allocated and referenced inode.
     pub fn alloc_inode(
         self: StrongPin<'_, Self>,
-        _dev: u32,
-        _typ: InodeType,
-        _tx: &Tx<'_, Lfs>,
-        _ctx: &KernelCtx<'_, '_>,
+        dev: u32,
+        typ: InodeType,
+        tx: &Tx<'_, Lfs>,
+        ctx: &KernelCtx<'_, '_>,
     ) -> RcInode<Lfs> {
-        todo!()
-        // panic!("[Itable::alloc_inode] no inodes");
+        loop {
+            let segment = &tx.fs.find_segment();
+            let mut bp = hal().disk().read(dev, segment.offset, ctx);
+
+            for inum in 1..tx.fs.superblock().ninodes {
+                const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
+                const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
+                // SAFETY: dip is inside bp.data.
+                let dip = unsafe {
+                    (bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode).add(inum as usize % IPB)
+                };
+                // SAFETY: i16 does not have internal structure.
+                let t = unsafe { *(dip as *const i16) };
+                // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.
+                assert!(t < core::mem::variant_count::<DInodeType>() as i16);
+                // SAFETY: dip is aligned properly and t < #(variants of DInodeType).
+                let dip = unsafe { &mut *dip };
+
+                // a free inode
+                if dip.typ == DInodeType::None {
+                    // SAFETY: DInode does not have any invariant.
+                    unsafe { memset(dip, 0u32) };
+                    match typ {
+                        InodeType::None => dip.typ = DInodeType::None,
+                        InodeType::Dir => dip.typ = DInodeType::Dir,
+                        InodeType::File => dip.typ = DInodeType::File,
+                        InodeType::Device { major, minor } => {
+                            dip.typ = DInodeType::Device;
+                            dip.major = major;
+                            dip.minor = minor;
+                        }
+                    }
+
+                    // mark it allocated on the disk
+                    tx.write(bp, ctx);
+                    return self.get_inode(dev, inum);
+                } else {
+                    bp.free(ctx);
+                }
+            }
+
+            // TODO: implement a function that updates cur_segment
+            // do not let inode to update cur_segment directly
+            // tx.fs.superblock().cur_segment += 1;
+        }
     }
 
     pub fn root(self: StrongPin<'_, Self>) -> RcInode<Lfs> {

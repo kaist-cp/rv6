@@ -41,8 +41,10 @@ cfg_if! {
         /// https://pages.cs.wisc.edu/~remzi/OSTEP/file-lfs.pdf
         ///
         /// TODO: optimize the size of the segment
-        #[allow(dead_code)]
         pub const SEGSIZE: usize = BSIZE * 10;
+
+        /// # blocks in a segment.
+        pub const NBLOCK: usize = 200;
     } else {
         /// Max data blocks in on-disk log.
         pub const LOGSIZE: usize = MAXOPBLOCKS * 3;

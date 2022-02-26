@@ -10,6 +10,9 @@ use crate::{
 
 const FSMAGIC: u32 = 0x10203040;
 
+// TODO: re-define imap to set the fields of superblock
+// CheckpointRegion should be made as a new struct to handle imap locations
+
 /// Disk layout:
 /// [ boot block | super block | data block | inode | ... | inode map ]
 ///
@@ -36,13 +39,19 @@ pub struct Superblock {
     /// Current segment
     pub cur_segment: u32,
 
+    /// Location of imap
+    pub imap_location: u32,
+
     /// Checkpoint region
-    pub checkpoint_region: u32,
+    /// - allocating recent two checkpoint regions for crash recovery
+    pub checkpoint_region: (u32, u32),
 }
 
 /// Inodes per block.
-#[allow(dead_code)]
 pub const IPB: usize = BSIZE / mem::size_of::<Dinode>();
+
+/// Bitmap bits per block
+pub const BPB: usize = BSIZE * 8;
 
 impl Superblock {
     /// Read the super block.
@@ -57,5 +66,9 @@ impl Superblock {
         let result = unsafe { ptr::read(buf.deref_inner().data.as_ptr() as *const Superblock) };
         assert_eq!(result.magic, FSMAGIC, "invalid file system");
         result
+    }
+
+    pub fn increment_segment(mut self) {
+        self.cur_segment += 1;
     }
 }
