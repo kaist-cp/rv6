@@ -333,12 +333,8 @@ impl Itable<Lfs> {
         ctx: &KernelCtx<'_, '_>,
     ) -> RcInode<Lfs> {
         loop {
+            let segment = &tx.fs.find_segment();
             let mut bp = hal().disk().read(dev, segment.offset, ctx);
-            let cur_segment = tx.fs.superblock().cur_segment;
-            if cur_segment >= SEGSIZE {
-                break;
-            }
-            let segment = tx.fs.segments[cur_segment as usize];
 
             for inum in 1..tx.fs.superblock().ninodes {
                 const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
@@ -377,7 +373,9 @@ impl Itable<Lfs> {
                 }
             }
 
-            tx.fs.superblock().cur_segment += 1;
+            // TODO: implement a function that updates cur_segment
+            // do not let inode to update cur_segment directly
+            // tx.fs.superblock().cur_segment += 1;
         }
     }
 

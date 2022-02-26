@@ -43,6 +43,7 @@ pub struct Superblock {
     pub imap_location: u32,
 
     /// Checkpoint region
+    /// - allocating recent two checkpoint regions for crash recovery
     pub checkpoint_region: (u32, u32),
 }
 
@@ -65,5 +66,9 @@ impl Superblock {
         let result = unsafe { ptr::read(buf.deref_inner().data.as_ptr() as *const Superblock) };
         assert_eq!(result.magic, FSMAGIC, "invalid file system");
         result
+    }
+
+    pub fn increment_segment(mut self) {
+        self.cur_segment += 1;
     }
 }

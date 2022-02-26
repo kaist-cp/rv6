@@ -1,8 +1,5 @@
 use super::{Itable, Lfs};
-use crate::{
-    fs::RcInode,
-    param::{BSIZE, NBLOCK},
-};
+use crate::param::{BSIZE, NBLOCK};
 
 // TODO: BlockType should be replaced with SegSumEntry
 // Inode should have only inum and block_no
@@ -10,7 +7,7 @@ use crate::{
 pub enum BlockType {
     Invalid,
     Data { inner: [u32; BSIZE] },
-    Inode { inner: RcInode<Lfs> },
+    Inode,
     Imap { inner: Itable<Lfs> },
 }
 
