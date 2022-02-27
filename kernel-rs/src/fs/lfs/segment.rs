@@ -8,7 +8,7 @@ use crate::{
     bio::{Buf, BufUnlocked},
     fs::DInodeType,
     hal::hal,
-    param::{BSIZE, NBLOCK},
+    param::{BSIZE, SEGSIZE},
     proc::KernelCtx,
 };
 
@@ -26,6 +26,7 @@ pub enum SegSumEntry {
     },
     Imap {
         block_no: u32,
+        buf: BufUnlocked,
     },
 }
 
@@ -40,16 +41,16 @@ struct DSegSumEntry {
 
 /// On-disk segment summary structure.
 #[repr(C)]
-struct DSegSum([DSegSumEntry; NBLOCK - 1]);
+struct DSegSum([DSegSumEntry; SEGSIZE - 1]);
 
 impl DSegSum {
-    fn new(segment_summary: &[SegSumEntry; NBLOCK - 1]) -> Self {
+    fn new(segment_summary: &[SegSumEntry; SEGSIZE - 1]) -> Self {
         Self(array![x => match segment_summary[x] {
                 SegSumEntry::Empty => DSegSumEntry { block_type: 0, inum: 0, block_no: 0 },
                 SegSumEntry::Inode { inode } => DSegSumEntry { block_type: 1, inum: inode.inum, block_no: 0 },
                 SegSumEntry::DataBlock { inum, block_no, buf } => DSegSumEntry { block_type: 2, inum, block_no },
-                SegSumEntry::Imap { block_no } => DSegSumEntry { block_type: 3, inum: 0, block_no },
-        }; NBLOCK - 1])
+                SegSumEntry::Imap { block_no, buf } => DSegSumEntry { block_type: 3, inum: 0, block_no },
+        }; SEGSIZE - 1])
     }
 }
 
@@ -70,12 +71,10 @@ pub struct Segment {
 
     /// Segment summary. Indicates info for each block that should be in the segment.
     // TODO: Use ArrayVec instead?
-    segment_summary: [SegSumEntry; NBLOCK - 1],
+    segment_summary: [SegSumEntry; SEGSIZE - 1],
 
-    /// Current offset of the segment. Must flush when `offset == NBLOCK - 1`.
+    /// Current offset of the segment. Must flush when `offset == SEGSIZE - 1`.
     offset: usize,
-    /* A mapping of (imap block number) -> (its location on the segment).
-     * imap_block_no: [u32; NENTRY], */
 }
 
 impl const Default for Segment {
@@ -83,7 +82,7 @@ impl const Default for Segment {
         Self {
             dev_no: 0,
             segment_no: 0,
-            segment_summary: array![_ => SegSumEntry::Empty; NBLOCK - 1],
+            segment_summary: array![_ => SegSumEntry::Empty; SEGSIZE - 1],
             offset: 0,
             // imap_block_no: 0,
         }
@@ -94,7 +93,7 @@ impl Segment {
     pub const fn new(
         dev_no: u32,
         segment_no: u32,
-        segment_summary: [SegSumEntry; NBLOCK - 1],
+        segment_summary: [SegSumEntry; SEGSIZE - 1],
         offset: usize,
     ) -> Self {
         Self {
@@ -106,22 +105,26 @@ impl Segment {
         }
     }
 
-    fn read_segment_block(&self, seg_block_no: u32, ctx: &KernelCtx<'_, '_>) -> Buf {
-        // TODO: Fix this after deciding the disk layout.
-        // TODO: Check casting errors?
-        let block_no = self
-            .segment_no
-            .wrapping_mul(NBLOCK as u32)
-            .wrapping_add(seg_block_no);
-        hal().disk().read(self.dev_no, block_no, ctx)
+    /// Returns the disk block number for the `seg_block_no`th block on this segment.
+    fn get_disk_block_no(&self, seg_block_no: usize, ctx: &KernelCtx<'_, '_>) -> u32 {
+        ctx.kernel()
+            .fs()
+            .superblock()
+            .seg_to_disk_block_no(self.segment_no, seg_block_no as u32)
+    }
+
+    fn read_segment_block(&self, seg_block_no: usize, ctx: &KernelCtx<'_, '_>) -> Buf {
+        hal()
+            .disk()
+            .read(self.dev_no, self.get_disk_block_no(seg_block_no, ctx), ctx)
     }
 
     pub fn is_full(&self) -> bool {
-        self.offset == NBLOCK - 1
+        self.offset == SEGSIZE - 1
     }
 
     /// Provides an empty space on the segment to be used to store the new `inode`.
-    /// If succeeds, returns the segment number, segment block number, and a `Buf` of the segment block.
+    /// If succeeds, returns a `Buf` for a disk block and the disk block number of it.
     ///
     /// # Note
     ///
@@ -130,11 +133,11 @@ impl Segment {
     /// 2. Allocate an `RcInode` from the `Itable` using the dev_no, inum.
     /// 3. (this method) Use the `RcInode` to allocate an inode block and get the `Buf`.
     /// 4. Write the initial `Dinode` on the `Buf`.
-    pub fn alloc_inode_block(
+    pub fn append_new_inode_block(
         &mut self,
         inode: &RcInode<Lfs>,
         ctx: &KernelCtx<'_, '_>,
-    ) -> Option<(u32, u32, Buf)> {
+    ) -> Option<(Buf, u32)> {
         // Try to push at the back of the segment.
         if self.is_full() {
             None
@@ -144,21 +147,26 @@ impl Segment {
                 inode: inode.clone(),
             };
             self.offset += 1;
-            let buf = self.read_segment_block(self.offset as u32, ctx);
-            Some((self.segment_no, self.offset as u32, buf))
+            let buf = self.read_segment_block(self.offset, ctx);
+            Some((buf, self.get_disk_block_no(self.offset, ctx)))
         }
     }
 
-    /// Appends the inode at the back of the segment after cloning the given `RcInode` if it is not already on the segment.
-    /// Returns the location as (segment number, segment block number) if succeeded. Otherwise, returns `None`.
+    /// Appends the inode (which is not a new one) at the back of the segment
+    /// after cloning the given `RcInode` if it is not already on the segment.
+    /// Returns the disk block number if succeeded. Otherwise, returns `None`.
     /// Run this every time an inode gets updated.
-    pub fn push_back_inode_block(&mut self, inode: &RcInode<Lfs>) -> Option<(u32, u32)> {
+    pub fn append_updated_inode_block(
+        &mut self,
+        inode: &RcInode<Lfs>,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Option<u32> {
         // Check if the block already exists.
         // TODO: Maybe more efficient if we make the `Inode` bookmark this.
         for i in 0..self.offset {
             if let SegSumEntry::Inode { inode: inode2 } = self.segment_summary[i] {
                 if inode.inum == inode2.inum {
-                    return Some((self.segment_no, (i + 1) as u32));
+                    return Some(self.get_disk_block_no(i + 1, ctx));
                 }
             }
         }
@@ -171,19 +179,19 @@ impl Segment {
                 inode: inode.clone(),
             };
             self.offset += 1;
-            Some((self.segment_no, self.offset as u32))
+            Some(self.get_disk_block_no(self.offset, ctx))
         }
     }
 
     /// Provides an empty space on the segment to be used to store the new data block for an inode.
-    /// If succeeds, returns the segment number, segment block number, and a `Buf` of the segment block.
+    /// If succeeds, returns the a `Buf` of a disk block and the disk block number of it.
     /// Whenever a data block gets updated, run this and write the new data at the returned `Buf`.
-    pub fn alloc_data_block(
+    pub fn append_data_block(
         &mut self,
         inum: u32,
         block_no: u32,
         ctx: &KernelCtx<'_, '_>,
-    ) -> Option<(u32, u32, Buf)> {
+    ) -> Option<(Buf, u32)> {
         // Check if the block already exists.
         for i in 0..self.offset {
             if let SegSumEntry::DataBlock {
@@ -193,7 +201,7 @@ impl Segment {
             } = self.segment_summary[i]
             {
                 if inum == inum2 && block_no == block_no2 {
-                    return Some((self.segment_no, (i + 1) as u32, buf.clone().lock(ctx)));
+                    return Some((buf.clone().lock(ctx), self.get_disk_block_no(i + 1, ctx)));
                 }
             }
         }
@@ -203,31 +211,56 @@ impl Segment {
         } else {
             // Append segment.
             // TODO: We unlock a buffer right after locking it. This may be inefficient.
-            let buf = self
-                .read_segment_block((self.offset + 1) as u32, ctx)
-                .unlock(ctx);
+            let buf = self.read_segment_block(self.offset + 1, ctx).unlock(ctx);
             self.segment_summary[self.offset] = SegSumEntry::DataBlock {
                 inum,
                 block_no,
                 buf: buf.clone(),
             };
             self.offset += 1;
-            Some((self.segment_no, self.offset as u32, buf.lock(ctx)))
+            Some((buf.lock(ctx), self.get_disk_block_no(self.offset, ctx)))
         }
     }
 
-    /// Appends the inode map at the back of the segment if it is not already on the segment.
-    /// Returns the location as (segment number, segment block number) if succeeded. Otherwise, returns `None`.
-    /// Run this whenever the inode map get updated.
-    pub fn append_inode_map_block(&mut self, block_no: u32) -> Option<(u32, u32)> {
-        // TODO: Check if it's already on the segment.
+    /// * If the imap block is not already on the segment, returns a `Buf` to an empty space and the disk block number of it.
+    ///   You should copy the imap block to here and update the imap's indirect mapping.
+    /// * Otherwise, returns the `Buf` that buffers the imap block and 0.
+    ///
+    /// Whenever the imap gets updated, run this with the proper block_no.
+    pub fn append_imap_block(
+        &mut self,
+        block_no: u32,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Option<(Buf, u32)> {
+        // Check if the block already exists.
+        // TODO: We could just bookmark at `Segment` instead.
+        for i in 0..self.offset {
+            if let SegSumEntry::Imap {
+                block_no: block_no2,
+                buf,
+            } = self.segment_summary[i]
+            {
+                if block_no == block_no2 {
+                    return Some((
+                        buf.lock(ctx),
+                        ctx.kernel()
+                            .fs()
+                            .superblock()
+                            .seg_to_disk_block_no(self.segment_no, (i + 1) as u32),
+                    ));
+                }
+            }
+        }
+        // Try to push at the back of the segment.
         if self.is_full() {
             None
         } else {
             // Append segment.
-            self.segment_summary[self.offset] = SegSumEntry::Imap { block_no };
+            // TODO: We unlock a buffer right after locking it. This may be inefficient.
+            let buf = self.read_segment_block(self.offset + 1, ctx).unlock(ctx);
+            self.segment_summary[self.offset] = SegSumEntry::Imap { block_no, buf };
             self.offset += 1;
-            Some((self.segment_no, self.offset as u32))
+            Some((buf.lock(ctx), 0))
         }
     }
 
@@ -251,7 +284,7 @@ impl Segment {
                     let guard = inode.lock(ctx);
                     if !guard.deref_inner().valid || guard.deref_inner().nlink != 0 {
                         // Write to buffer.
-                        let bp = self.read_segment_block((i + 1) as u32, ctx);
+                        let bp = self.read_segment_block(i + 1, ctx);
                         let dip = unsafe {
                             &mut *(bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode)
                         };
@@ -295,13 +328,13 @@ impl Segment {
                     block_no,
                     buf,
                 } => hal().disk().write(&mut buf.lock(ctx), ctx),
-                SegSumEntry::Imap { block_no } => (), //TODO: Write the imap to disk
+                SegSumEntry::Imap { block_no, buf } => hal().disk().write(&mut buf.lock(ctx), ctx),
             };
         }
 
         // TODO: The `Lfs` should provide a new segment.
         self.segment_no += 1;
-        self.segment_summary = array![_ => SegSumEntry::Empty; NBLOCK - 1];
+        self.segment_summary = array![_ => SegSumEntry::Empty; SEGSIZE - 1];
         self.offset = 0;
 
         // TODO: Update the on-disk checkpoint if needed.

@@ -20,10 +20,12 @@ use crate::{
     proc::KernelCtx,
 };
 
+mod imap;
 mod inode;
 mod segment;
 mod superblock;
 
+pub use imap::Imap;
 pub use inode::{Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
 pub use segment::Segment;
 pub use superblock::{Superblock, IPB};

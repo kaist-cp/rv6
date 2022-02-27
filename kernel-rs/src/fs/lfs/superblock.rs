@@ -5,7 +5,7 @@ use static_assertions::const_assert;
 use super::inode::Dinode;
 use crate::{
     bio::{Buf, BufData},
-    param::BSIZE,
+    param::{BSIZE, SEGSIZE},
 };
 
 const FSMAGIC: u32 = 0x10203040;
@@ -70,5 +70,22 @@ impl Superblock {
 
     pub fn increment_segment(mut self) {
         self.cur_segment += 1;
+    }
+
+    /// Translates (segment number, segment block number) -> disk block number.
+    pub fn seg_to_disk_block_no(&self, seg_no: u32, seg_block_no: u32) -> u32 {
+        // TODO: Fix this after deciding the disk layout.
+        seg_no
+            .wrapping_mul(SEGSIZE as u32)
+            .wrapping_add(seg_block_no)
+    }
+
+    /// Translates disk block number -> (segment number, segment block number)
+    pub fn disk_to_seg_block_no(&self, disk_block_no: u32) -> (u32, u32) {
+        // TODO: Fix this after deciding the disk layout.
+        (
+            disk_block_no / (SEGSIZE as u32),
+            disk_block_no % (SEGSIZE as u32),
+        )
     }
 }
