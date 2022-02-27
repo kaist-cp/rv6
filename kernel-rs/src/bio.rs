@@ -111,6 +111,7 @@ impl BufInner {
 pub type Bcache = MruArena<BufEntry, NBUF>;
 
 /// A reference counted smart pointer to a `BufEntry`.
+#[derive(Clone)]
 pub struct BufUnlocked(ManuallyDrop<ArenaRc<Bcache>>);
 
 /// A locked `BufEntry`.
