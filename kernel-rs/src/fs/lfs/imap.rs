@@ -33,6 +33,7 @@ impl const Default for Imap {
 }
 
 impl Imap {
+    #[allow(dead_code)]
     pub fn new(dev_no: u32, addr: [u32; IMAPSIZE]) -> Self {
         Self { dev_no, addr }
     }
@@ -48,7 +49,22 @@ impl Imap {
         hal().disk().read(self.dev_no, self.addr[block_no], ctx)
     }
 
+    /// Returns an unused inum.
+    pub fn get_empty_inum(&self, ctx: &KernelCtx<'_, '_>) -> Option<u32> {
+        for i in 0..IMAPSIZE {
+            let buf = self.get_imap_block(i, ctx);
+            let imap_block = unsafe { &*(buf.deref_inner().data.as_ptr() as *const DImapBlock) };
+            for j in 0..NENTRY {
+                if imap_block.entry[j] == 0 {
+                    return Some((i * NENTRY + j) as u32);
+                }
+            }
+        }
+        None
+    }
+
     /// For the inode with inode number `inum`, returns the disk_block_no of it.
+    #[allow(dead_code)]
     pub fn get(&self, inum: u32, ctx: &KernelCtx<'_, '_>) -> u32 {
         assert!(
             inum < ctx.kernel().fs().superblock().ninodes,
@@ -58,7 +74,9 @@ impl Imap {
         let buf = self.get_imap_block(block_no, ctx);
 
         let imap_block = unsafe { &*(buf.deref_inner().data.as_ptr() as *const DImapBlock) };
-        imap_block.entry[offset]
+        let res = imap_block.entry[offset];
+        buf.free(ctx);
+        res
     }
 
     /// For the inode with inode number `inum`, updates its mapping in the imap to disk_block_no.
@@ -77,21 +95,23 @@ impl Imap {
         );
         let (block_no, offset) = self.get_imap_block_no(inum);
 
-        if let Some((buf, new_addr)) = segment.append_imap_block(block_no as u32, ctx) {
+        if let Some((mut buf, new_addr)) = segment.append_imap_block(block_no as u32, ctx) {
             let imap_block =
                 unsafe { &mut *(buf.deref_inner_mut().data.as_mut_ptr() as *mut DImapBlock) };
             if new_addr != 0 {
                 // Copy the imap block content from old imap block.
-                let old_buf = self.get_imap_block(block_no, ctx);
+                let mut old_buf = self.get_imap_block(block_no, ctx);
                 let old_imap_block = unsafe {
                     &mut *(old_buf.deref_inner_mut().data.as_mut_ptr() as *mut DImapBlock)
                 };
                 *imap_block = old_imap_block.clone();
                 // Update imap mapping.
                 self.addr[block_no] = new_addr;
+                old_buf.free(ctx);
             }
             // Update entry.
             imap_block.entry[offset] = disk_block_no;
+            buf.free(ctx);
             true
         } else {
             false

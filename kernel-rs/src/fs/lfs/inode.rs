@@ -3,7 +3,7 @@ use core::{iter::StepBy, mem, ops::Range};
 use static_assertions::const_assert;
 use zerocopy::{AsBytes, FromBytes};
 
-use super::{FileName, Lfs, Path, NDIRECT, ROOTINO};
+use super::{FileName, Lfs, Path, NDIRECT, NINDIRECT, ROOTINO};
 use crate::{
     arena::{Arena, ArrayArena},
     bio::BufData,
@@ -180,7 +180,10 @@ impl InodeGuard<'_, Lfs> {
             .find(|(de, _)| de.inum != 0 && de.get_name() == name)
             .map(|(de, off)| {
                 (
-                    ctx.kernel().fs().imap().get_inode(self.dev, de.inum as u32),
+                    ctx.kernel()
+                        .fs()
+                        .itable()
+                        .get_inode(self.dev, de.inum as u32),
                     off,
                 )
             })
@@ -191,9 +194,9 @@ impl InodeGuard<'_, Lfs> {
 impl InodeGuard<'_, Lfs> {
     /// Copy a modified in-memory inode to disk.
     pub fn update(&self, tx: &Tx<'_, Lfs>, ctx: &KernelCtx<'_, '_>) {
-        // let inode = tx.fs.imap().get_inode(self.inum);
-        // TODO: update blockb
-        let mut bp = hal().disk().read(self.dev, 0, ctx);
+        // 1. Write the inode to segment.
+        let mut segment = tx.fs.segment();
+        let (mut bp, disk_block_no) = segment.append_updated_inode_block(self.inum, ctx).unwrap();
 
         const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
@@ -238,28 +241,82 @@ impl InodeGuard<'_, Lfs> {
             *d = *s;
         }
         (*dip).addr_indirect = inner.addr_indirect;
-        tx.write(bp, ctx);
+
+        if tx.fs.segment().is_full() {
+            tx.fs.segment().commit(ctx);
+        }
+
+        // 2. Write the imap to segment.
+        assert!(tx
+            .fs
+            .imap()
+            .set(self.inum, disk_block_no, &mut segment, ctx));
+        if tx.fs.segment().is_full() {
+            tx.fs.segment().commit(ctx);
+        }
+        bp.free(ctx);
     }
 
-    /// Inode content.
-    /// If there is no such block, allocate one inode on disk.
-    /// TODO: delete bmap
+    /// Inode content
+    ///
+    /// The content (data) associated with each inode is stored
+    /// in blocks on the disk. The first NDIRECT block numbers
+    /// are listed in self->addrs[].  The next NINDIRECT blocks are
+    /// listed in block self->addr_indirect.
+    /// Return the disk block address of the nth block in inode self.
+    /// If there is no such block, bmap allocates one.
     #[allow(dead_code)]
-    pub fn disk_or_alloc(&mut self, bn: usize, tx: &Tx<'_, Lfs>, ctx: &KernelCtx<'_, '_>) -> u32 {
-        self.disk_internal(bn, Some(tx), ctx)
+    pub fn bmap_or_alloc(&mut self, bn: usize, tx: &Tx<'_, Lfs>, ctx: &KernelCtx<'_, '_>) -> u32 {
+        self.bmap_internal(bn, Some(tx), ctx)
     }
 
-    pub fn disk(&mut self, bn: usize, ctx: &KernelCtx<'_, '_>) -> u32 {
-        self.disk_internal(bn, None, ctx)
+    pub fn bmap(&mut self, bn: usize, ctx: &KernelCtx<'_, '_>) -> u32 {
+        self.bmap_internal(bn, None, ctx)
     }
 
-    fn disk_internal(
+    fn bmap_internal(
         &mut self,
-        _bn: usize,
-        _tx_opt: Option<&Tx<'_, Lfs>>,
-        _ctx: &KernelCtx<'_, '_>,
+        bn: usize,
+        tx_opt: Option<&Tx<'_, Lfs>>,
+        ctx: &KernelCtx<'_, '_>,
     ) -> u32 {
-        todo!()
+        let inner = self.deref_inner();
+
+        if bn < NDIRECT {
+            let addr = inner.addr_direct[bn];
+            if addr == 0 {
+                let (_, addr) = tx_opt
+                    .expect("bmap: out of range")
+                    .balloc(self.dev, self.inum, bn as u32, ctx);
+                self.deref_inner_mut().addr_direct[bn] = addr;
+            }
+            addr
+        } else {
+            let bn = bn - NDIRECT;
+            assert!(bn < NINDIRECT, "bmap: out of range");
+
+            let indirect = inner.addr_indirect;
+            if indirect == 0 {
+                let (_, indirect) = tx_opt
+                    .expect("bmap: out of range")
+                    .balloc(self.dev, self.inum, bn as u32, ctx);
+                self.deref_inner_mut().addr_indirect = indirect;
+            }
+
+            let mut bp = hal().disk().read(self.dev, indirect, ctx);
+            let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
+            debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
+            let addr = data[bn];
+            if addr == 0 {
+                let tx = tx_opt.expect("bmap: out of range");
+                let (_, addr) = tx.balloc(self.dev, self.inum, bn as u32, ctx);
+                data[bn] = addr;
+                // tx.write(bp, ctx);
+            } else {
+                bp.free(ctx);
+            }
+            addr
+        }
     }
 
     /// Is the directory dp empty except for "." and ".." ?
@@ -332,51 +389,50 @@ impl Itable<Lfs> {
         tx: &Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> RcInode<Lfs> {
-        loop {
-            let segment = &tx.fs.find_segment();
-            let mut bp = hal().disk().read(dev, segment.offset, ctx);
+        let mut imap = tx.fs.imap();
+        let mut segment = tx.fs.segment();
 
-            for inum in 1..tx.fs.superblock().ninodes {
-                const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
-                const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
-                // SAFETY: dip is inside bp.data.
-                let dip = unsafe {
-                    (bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode).add(inum as usize % IPB)
-                };
-                // SAFETY: i16 does not have internal structure.
-                let t = unsafe { *(dip as *const i16) };
-                // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.
-                assert!(t < core::mem::variant_count::<DInodeType>() as i16);
-                // SAFETY: dip is aligned properly and t < #(variants of DInodeType).
-                let dip = unsafe { &mut *dip };
+        // 1. Write the inode.
+        let inum = imap.get_empty_inum(ctx).unwrap();
+        let (mut bp, disk_block_no) = segment.append_new_inode_block(inum, ctx).unwrap();
 
-                // a free inode
-                if dip.typ == DInodeType::None {
-                    // SAFETY: DInode does not have any invariant.
-                    unsafe { memset(dip, 0u32) };
-                    match typ {
-                        InodeType::None => dip.typ = DInodeType::None,
-                        InodeType::Dir => dip.typ = DInodeType::Dir,
-                        InodeType::File => dip.typ = DInodeType::File,
-                        InodeType::Device { major, minor } => {
-                            dip.typ = DInodeType::Device;
-                            dip.major = major;
-                            dip.minor = minor;
-                        }
-                    }
+        const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
+        const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
+        // SAFETY: dip is inside bp.data.
+        let dip = unsafe {
+            (bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode).add(inum as usize % IPB)
+        };
+        // SAFETY: i16 does not have internal structure.
+        let t = unsafe { *(dip as *const i16) };
+        // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.
+        assert!(t < core::mem::variant_count::<DInodeType>() as i16);
+        // SAFETY: dip is aligned properly and t < #(variants of DInodeType).
+        let dip = unsafe { &mut *dip };
 
-                    // mark it allocated on the disk
-                    tx.write(bp, ctx);
-                    return self.get_inode(dev, inum);
-                } else {
-                    bp.free(ctx);
-                }
+        // SAFETY: DInode does not have any invariant.
+        unsafe { memset(dip, 0u32) };
+        match typ {
+            InodeType::None => dip.typ = DInodeType::None,
+            InodeType::Dir => dip.typ = DInodeType::Dir,
+            InodeType::File => dip.typ = DInodeType::File,
+            InodeType::Device { major, minor } => {
+                dip.typ = DInodeType::Device;
+                dip.major = major;
+                dip.minor = minor;
             }
-
-            // TODO: implement a function that updates cur_segment
-            // do not let inode to update cur_segment directly
-            // tx.fs.superblock().cur_segment += 1;
         }
+        bp.free(ctx);
+        if segment.is_full() {
+            segment.commit(ctx);
+        }
+
+        // 2. Now write the imap.
+        assert!(imap.set(inum, disk_block_no, &mut segment, ctx));
+        if segment.is_full() {
+            segment.commit(ctx);
+        }
+
+        self.get_inode(dev, inum)
     }
 
     pub fn root(self: StrongPin<'_, Self>) -> RcInode<Lfs> {
@@ -413,9 +469,7 @@ impl Itable<Lfs> {
         let mut ptr = if path.is_absolute() {
             self.root()
         } else {
-            // TODO: replace the return type of proc with Lfs
-            todo!()
-            // ctx.proc().cwd().clone()
+            ctx.proc().cwd().clone()
         };
 
         while let Some((new_path, name)) = path.skipelem() {

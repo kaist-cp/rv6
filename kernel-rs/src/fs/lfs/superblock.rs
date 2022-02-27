@@ -51,7 +51,7 @@ pub struct Superblock {
 pub const IPB: usize = BSIZE / mem::size_of::<Dinode>();
 
 /// Bitmap bits per block
-pub const BPB: usize = BSIZE * 8;
+// pub const BPB: usize = BSIZE * 8;
 
 impl Superblock {
     /// Read the super block.
@@ -68,10 +68,6 @@ impl Superblock {
         result
     }
 
-    pub fn increment_segment(mut self) {
-        self.cur_segment += 1;
-    }
-
     /// Translates (segment number, segment block number) -> disk block number.
     pub fn seg_to_disk_block_no(&self, seg_no: u32, seg_block_no: u32) -> u32 {
         // TODO: Fix this after deciding the disk layout.
@@ -81,6 +77,7 @@ impl Superblock {
     }
 
     /// Translates disk block number -> (segment number, segment block number)
+    #[allow(dead_code)]
     pub fn disk_to_seg_block_no(&self, disk_block_no: u32) -> (u32, u32) {
         // TODO: Fix this after deciding the disk layout.
         (
