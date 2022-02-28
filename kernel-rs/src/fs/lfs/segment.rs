@@ -15,7 +15,6 @@ use crate::{
 pub enum SegSumEntry {
     Empty,
     Inode {
-        // TODO: Use `RcInode` instead?
         inum: u32,
         buf: BufUnlocked,
     },
@@ -42,6 +41,22 @@ struct DSegSumEntry {
 /// On-disk segment summary structure.
 #[repr(C)]
 struct DSegSum([DSegSumEntry; SEGSIZE - 1]);
+
+impl SegSumEntry {
+    /// Returns a reference to the `BufUnlocked` hold by the `SegSumEntry`.
+    fn get_buf(&self) -> Option<&BufUnlocked> {
+        match self {
+            SegSumEntry::Empty => None,
+            SegSumEntry::Inode { inum: _, buf } => Some(&buf),
+            SegSumEntry::DataBlock {
+                inum: _,
+                block_no: _,
+                buf,
+            } => Some(&buf),
+            SegSumEntry::Imap { block_no: _, buf } => Some(&buf),
+        }
+    }
+}
 
 impl DSegSum {
     fn new(segment_summary: &[SegSumEntry; SEGSIZE - 1]) -> Self {
@@ -89,6 +104,7 @@ impl const Default for Segment {
     }
 }
 
+// TODO: Generalize methods of `Segment`.
 impl Segment {
     #[allow(dead_code)]
     pub const fn new(
@@ -245,13 +261,7 @@ impl Segment {
             } = &self.segment_summary[i]
             {
                 if block_no == *block_no2 {
-                    return Some((
-                        buf.clone().lock(ctx),
-                        ctx.kernel()
-                            .fs()
-                            .superblock()
-                            .seg_to_disk_block_no(self.segment_no, (i + 1) as u32),
-                    ));
+                    return Some((buf.clone().lock(ctx), self.get_disk_block_no(i + 1, ctx)));
                 }
             }
         }
@@ -285,20 +295,11 @@ impl Segment {
         // TODO: Check the virtio spec for a way for faster sequential disk write.
         for i in 0..self.offset {
             let entry = &self.segment_summary[i];
-            match entry {
-                SegSumEntry::Empty => (),
-                SegSumEntry::Inode { inum: _, buf } => {
-                    hal().disk().write(&mut buf.clone().lock(ctx), ctx)
-                }
-                SegSumEntry::DataBlock {
-                    inum: _,
-                    block_no: _,
-                    buf,
-                } => hal().disk().write(&mut buf.clone().lock(ctx), ctx),
-                SegSumEntry::Imap { block_no: _, buf } => {
-                    hal().disk().write(&mut buf.clone().lock(ctx), ctx)
-                }
-            };
+            if let Some(buf) = entry.get_buf() {
+                let mut buf = buf.clone().lock(ctx);
+                hal().disk().write(&mut buf, ctx);
+                buf.free(ctx);
+            }
         }
 
         // TODO: The `Lfs` should provide a new segment.
