@@ -59,6 +59,7 @@ impl Imap {
                     return Some((i * NENTRY + j) as u32);
                 }
             }
+            buf.free(ctx);
         }
         None
     }
