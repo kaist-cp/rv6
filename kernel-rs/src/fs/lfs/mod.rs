@@ -83,9 +83,6 @@ impl Tx<'_, Lfs> {
         let mut segment = self.fs.segment();
         let (buf, bno) = segment.get_or_add_data_block(inum, block_no, ctx).unwrap();
         self.bzero(dev, bno, ctx);
-        if segment.is_full() {
-            segment.commit(ctx);
-        }
         (buf, bno)
     }
 
@@ -435,25 +432,25 @@ impl FileSystem for Lfs {
             return Err(());
         }
         let mut tot: u32 = 0;
-
-        // TODO: add segment number and offest of designated inode in InodeGuard
-        // let segment_num = Self.superblock().cur_segment;
-        // let mut segment = Self.segments[segment_num];
-        // let offset = Self.imap().get(guard.inum);
-
         while tot < n {
+            let mut bp = hal().disk().read(
+                guard.dev,
+                guard.bmap_or_alloc(off as usize / BSIZE, tx, &k),
+                &k,
+            );
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
-            #[allow(unused_variables)]
             let end = begin + m as usize;
-
-            // TODO: transform to segment
-            // if f(tot, segment[offset].data[begin..end], &mut k).is_ok() {
-            //     segment[offset].write(begin, end);
-            // } else {
-            //     break;
-            // }
-
+            if f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k).is_ok() {
+                let mut segment = tx.fs.segment();
+                if segment.is_full() {
+                    segment.commit(&k);
+                }
+                // tx.write(bp, &k);
+            } else {
+                bp.free(&k);
+                break;
+            }
             tot += m;
             off += m;
         }

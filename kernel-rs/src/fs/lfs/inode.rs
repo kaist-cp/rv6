@@ -244,8 +244,8 @@ impl InodeGuard<'_, Lfs> {
         }
         (*dip).addr_indirect = inner.addr_indirect;
 
-        if tx.fs.segment().is_full() {
-            tx.fs.segment().commit(ctx);
+        if segment.is_full() {
+            segment.commit(ctx);
         }
 
         // 2. Write the imap to segment.
@@ -253,8 +253,8 @@ impl InodeGuard<'_, Lfs> {
             .fs
             .imap()
             .set(self.inum, disk_block_no, &mut segment, ctx));
-        if tx.fs.segment().is_full() {
-            tx.fs.segment().commit(ctx);
+        if segment.is_full() {
+            segment.commit(ctx);
         }
         bp.free(ctx);
     }
@@ -299,10 +299,13 @@ impl InodeGuard<'_, Lfs> {
 
             let indirect = inner.addr_indirect;
             if indirect == 0 {
-                let (_, indirect) = tx_opt
-                    .expect("bmap: out of range")
-                    .balloc(self.dev, self.inum, bn as u32, ctx);
+                let tx = tx_opt.expect("bmap: out of range");
+                let (_, indirect) = tx.balloc(self.dev, self.inum, bn as u32, ctx);
                 self.deref_inner_mut().addr_indirect = indirect;
+                let mut segment = tx.fs.segment();
+                if segment.is_full() {
+                    segment.commit(ctx);
+                }
             }
 
             let mut bp = hal().disk().read(self.dev, indirect, ctx);
