@@ -81,7 +81,7 @@ impl Tx<'_, Lfs> {
     /// Allocate a zeroed disk block to be used by `inum` as the `block_no`th data block.
     fn balloc(&self, dev: u32, inum: u32, block_no: u32, ctx: &KernelCtx<'_, '_>) -> (Buf, u32) {
         let mut segment = self.fs.segment();
-        let (buf, bno) = segment.append_data_block(inum, block_no, ctx).unwrap();
+        let (buf, bno) = segment.get_or_add_data_block(inum, block_no, ctx).unwrap();
         self.bzero(dev, bno, ctx);
         if segment.is_full() {
             segment.commit(ctx);

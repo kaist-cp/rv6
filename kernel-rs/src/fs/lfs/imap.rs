@@ -96,7 +96,7 @@ impl Imap {
         );
         let (block_no, offset) = self.get_imap_block_no(inum);
 
-        if let Some((mut buf, new_addr)) = segment.append_imap_block(block_no as u32, ctx) {
+        if let Some((mut buf, new_addr)) = segment.get_or_add_imap_block(block_no as u32, ctx) {
             let imap_block =
                 unsafe { &mut *(buf.deref_inner_mut().data.as_mut_ptr() as *mut DImapBlock) };
             if new_addr != 0 {

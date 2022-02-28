@@ -196,7 +196,9 @@ impl InodeGuard<'_, Lfs> {
     pub fn update(&self, tx: &Tx<'_, Lfs>, ctx: &KernelCtx<'_, '_>) {
         // 1. Write the inode to segment.
         let mut segment = tx.fs.segment();
-        let (mut bp, disk_block_no) = segment.append_updated_inode_block(self.inum, ctx).unwrap();
+        let (mut bp, disk_block_no) = segment
+            .get_or_add_updated_inode_block(self.inum, ctx)
+            .unwrap();
 
         const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
@@ -394,7 +396,7 @@ impl Itable<Lfs> {
 
         // 1. Write the inode.
         let inum = imap.get_empty_inum(ctx).unwrap();
-        let (mut bp, disk_block_no) = segment.append_new_inode_block(inum, ctx).unwrap();
+        let (mut bp, disk_block_no) = segment.add_new_inode_block(inum, ctx).unwrap();
 
         const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);

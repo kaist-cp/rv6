@@ -150,7 +150,7 @@ impl Segment {
     /// 2. Allocate an `RcInode` from the `Itable` using the dev_no, inum.
     /// 3. (this method) Use the `RcInode` to allocate an inode block and get the `Buf`.
     /// 4. Write the initial `Dinode` on the `Buf`.
-    pub fn append_new_inode_block(
+    pub fn add_new_inode_block(
         &mut self,
         inum: u32,
         ctx: &KernelCtx<'_, '_>,
@@ -173,7 +173,7 @@ impl Segment {
     /// Appends the updated inode (which is not a new one) at the back of the segment.
     /// Returns the disk block number if succeeded. Otherwise, returns `None`.
     /// Run this every time an inode gets updated.
-    pub fn append_updated_inode_block(
+    pub fn get_or_add_updated_inode_block(
         &mut self,
         inum: u32,
         ctx: &KernelCtx<'_, '_>,
@@ -206,7 +206,7 @@ impl Segment {
     /// If succeeds, returns the a `Buf` of a disk block and the disk block number of it.
     /// Whenever a data block gets updated, run this and write the new data at the returned `Buf`.
     // TODO: We don't always need a `Buf`.
-    pub fn append_data_block(
+    pub fn get_or_add_data_block(
         &mut self,
         inum: u32,
         block_no: u32,
@@ -247,7 +247,7 @@ impl Segment {
     /// * Otherwise, returns the `Buf` that buffers the imap block and 0.
     ///
     /// Whenever the imap gets updated, run this with the proper block_no.
-    pub fn append_imap_block(
+    pub fn get_or_add_imap_block(
         &mut self,
         block_no: u32,
         ctx: &KernelCtx<'_, '_>,
