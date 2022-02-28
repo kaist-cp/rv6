@@ -244,6 +244,7 @@ impl InodeGuard<'_, Lfs> {
         }
         (*dip).addr_indirect = inner.addr_indirect;
 
+        bp.free(ctx);
         if segment.is_full() {
             segment.commit(ctx);
         }
@@ -256,7 +257,6 @@ impl InodeGuard<'_, Lfs> {
         if segment.is_full() {
             segment.commit(ctx);
         }
-        bp.free(ctx);
     }
 
     /// Inode content
@@ -289,7 +289,7 @@ impl InodeGuard<'_, Lfs> {
             if addr == 0 {
                 let (_, addr) = tx_opt
                     .expect("bmap: out of range")
-                    .balloc(self.dev, self.inum, bn as u32, ctx);
+                    .balloc(self.inum, bn as u32, ctx);
                 self.deref_inner_mut().addr_direct[bn] = addr;
             }
             addr
@@ -300,7 +300,7 @@ impl InodeGuard<'_, Lfs> {
             let indirect = inner.addr_indirect;
             if indirect == 0 {
                 let tx = tx_opt.expect("bmap: out of range");
-                let (_, indirect) = tx.balloc(self.dev, self.inum, bn as u32, ctx);
+                let (_, indirect) = tx.balloc(self.inum, bn as u32, ctx);
                 self.deref_inner_mut().addr_indirect = indirect;
                 let mut segment = tx.fs.segment();
                 if segment.is_full() {
@@ -314,7 +314,7 @@ impl InodeGuard<'_, Lfs> {
             let addr = data[bn];
             if addr == 0 {
                 let tx = tx_opt.expect("bmap: out of range");
-                let (_, addr) = tx.balloc(self.dev, self.inum, bn as u32, ctx);
+                let (_, addr) = tx.balloc(self.inum, bn as u32, ctx);
                 data[bn] = addr;
                 // tx.write(bp, ctx);
             } else {

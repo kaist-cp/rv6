@@ -64,25 +64,28 @@ impl Tx<'_, Lfs> {
     ///   bp = kernel.fs().disk.read(...)
     ///   modify bp->data[]
     ///   write(bp)
+    #[allow(dead_code)]
     fn write(&self, _b: Buf, _ctx: &KernelCtx<'_, '_>) {
         // TODO: We should update the checkpoint here, and actually write to the disk when the segment is flushed.
         // self.fs.log().lock().write(b, ctx);
     }
 
     /// Zero a block.
-    fn bzero(&self, dev: u32, bno: u32, ctx: &KernelCtx<'_, '_>) {
-        let mut buf = ctx.kernel().bcache().get_buf(dev, bno).lock(ctx);
-        buf.deref_inner_mut().data.fill(0);
-        buf.deref_inner_mut().valid = true;
-        self.write(buf, ctx);
-    }
+    // fn bzero(&self, dev: u32, bno: u32, ctx: &KernelCtx<'_, '_>) {
+    //     let mut buf = ctx.kernel().bcache().get_buf(dev, bno).lock(ctx);
+    //     buf.deref_inner_mut().data.fill(0);
+    //     buf.deref_inner_mut().valid = true;
+    //     self.write(buf, ctx);
+    // }
 
     /// Blocks.
     /// Allocate a zeroed disk block to be used by `inum` as the `block_no`th data block.
-    fn balloc(&self, dev: u32, inum: u32, block_no: u32, ctx: &KernelCtx<'_, '_>) -> (Buf, u32) {
+    // TODO: Okay to remove dev: u32?
+    fn balloc(&self, inum: u32, block_no: u32, ctx: &KernelCtx<'_, '_>) -> (Buf, u32) {
         let mut segment = self.fs.segment();
-        let (buf, bno) = segment.get_or_add_data_block(inum, block_no, ctx).unwrap();
-        self.bzero(dev, bno, ctx);
+        let (mut buf, bno) = segment.get_or_add_data_block(inum, block_no, ctx).unwrap();
+        buf.deref_inner_mut().data.fill(0);
+        buf.deref_inner_mut().valid = true;
         (buf, bno)
     }
 
@@ -442,6 +445,7 @@ impl FileSystem for Lfs {
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
             if f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k).is_ok() {
+                bp.free(&k);
                 let mut segment = tx.fs.segment();
                 if segment.is_full() {
                     segment.commit(&k);
@@ -467,6 +471,7 @@ impl FileSystem for Lfs {
     }
 
     fn inode_trunc(guard: &mut InodeGuard<'_, Self>, tx: &Tx<'_, Self>, ctx: &KernelCtx<'_, '_>) {
+        // TODO: This function is unused in both lfs and ufs. May need to update fs::FS trait.
         let dev = guard.dev;
         for addr in &mut guard.deref_inner_mut().addr_direct {
             if *addr != 0 {
