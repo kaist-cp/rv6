@@ -7,38 +7,34 @@
 
 #define stat xv6_stat  // avoid clash with host struct stat
 #include "kernel/types.h"
-#include "kernel/fs.h"
+#include "lfs.h"
 #include "kernel/stat.h"
-#include "kernel/param.h"
 
 #ifndef static_assert
 #define static_assert(a, b) do { switch (0) case 0: case (a): ; } while (0)
 #endif
 
-#define NINODES 200
-
 // Disk layout:
-// [ boot block | sb block | log | inode blocks | free bit map | data blocks ]
+// [ boot block | sb block | checkpoint1 (contains address of inode map blocks) | checkpoint2 (empty) | inode map | inode blocks and data blocks ]
 
-int nbitmap = FSSIZE/(BSIZE*8) + 1;
-int ninodeblocks = NINODES / IPB + 1;
-int nlog = LOGSIZE;
-int nmeta;    // Number of meta blocks (boot, sb, nlog, inode, bitmap)
-int nblocks;  // Number of data blocks
+int nblocks = FSSIZE - NMETA;  // Number of data blocks (imap, inode, and inode data blocks)
 
 int fsfd;
 struct superblock sb;
+uint imp[NINODES]; //imap
 char zeroes[BSIZE];
 uint freeinode = 1;
 uint freeblock;
 
 
 void balloc(int);
-void wsect(uint, void*);
 void winode(uint, struct dinode*);
 void rinode(uint inum, struct dinode *ip);
+void wsect(uint, void*);
 void rsect(uint sec, void *buf);
 uint ialloc(ushort type);
+void wimap();
+void wchkpt(int chkpt_no);
 void iappend(uint inum, void *p, int n);
 
 // convert to intel byte order
@@ -91,25 +87,25 @@ main(int argc, char *argv[])
   }
 
   // 1 fs block = 1 disk sector
-  nmeta = 2 + nlog + ninodeblocks + nbitmap;
-  nblocks = FSSIZE - nmeta;
 
   sb.magic = FSMAGIC;
   sb.size = xint(FSSIZE);
   sb.nblocks = xint(nblocks);
+  sb.nsegments = xint(NSEG);
   sb.ninodes = xint(NINODES);
-  sb.nlog = xint(nlog);
-  sb.logstart = xint(2);
-  sb.inodestart = xint(2+nlog);
-  sb.bmapstart = xint(2+nlog+ninodeblocks);
+  sb.checkpoint1 = xint(2);
+  sb.checkpoint2 = xint(3);
+  sb.segstart = xint(NMETA);
 
-  printf("nmeta %d (boot, super, log blocks %u inode blocks %u, bitmap blocks %u) blocks %d total %d\n",
-         nmeta, nlog, ninodeblocks, nbitmap, nblocks, FSSIZE);
+  printf("nmeta %d (boot, super, checkpoint1, checkpoint2) blocks %d total %d\n",
+         NMETA, nblocks, FSSIZE);
 
-  freeblock = nmeta;     // the first free block that we can allocate
+  freeblock = NMETA + NINODEMAP;     // the first free block that we can allocate
 
   for(i = 0; i < FSSIZE; i++)
     wsect(i, zeroes);
+
+  bzero(imp, sizeof(imp));
 
   memset(buf, 0, sizeof(buf));
   memmove(buf, &sb, sizeof(sb));
@@ -170,9 +166,40 @@ main(int argc, char *argv[])
   din.size = xint(off);
   winode(rootino, &din);
 
-  balloc(freeblock);
+  wimap();
+  wchkpt(1);
+  wchkpt(2);
+
+  printf("balloc: first %d blocks have been allocated\n", freeblock);
 
   exit(0);
+}
+
+void
+winode(uint inum, struct dinode *ip)
+{
+  char buf[BSIZE];
+  uint bn;
+  struct dinode *dip;
+
+  bn = IBLOCK(inum, imp);
+  rsect(bn, buf);
+  dip = (struct dinode*)buf;
+  *dip = *ip;
+  wsect(bn, buf);
+}
+
+void
+rinode(uint inum, struct dinode *ip)
+{
+  char buf[BSIZE];
+  uint bn;
+  struct dinode *dip;
+
+  bn = IBLOCK(inum, imp);
+  rsect(bn, buf);
+  dip = (struct dinode*)buf;
+  *ip = *dip;
 }
 
 void
@@ -186,33 +213,6 @@ wsect(uint sec, void *buf)
     perror("write");
     exit(1);
   }
-}
-
-void
-winode(uint inum, struct dinode *ip)
-{
-  char buf[BSIZE];
-  uint bn;
-  struct dinode *dip;
-
-  bn = IBLOCK(inum, sb);
-  rsect(bn, buf);
-  dip = ((struct dinode*)buf) + (inum % IPB);
-  *dip = *ip;
-  wsect(bn, buf);
-}
-
-void
-rinode(uint inum, struct dinode *ip)
-{
-  char buf[BSIZE];
-  uint bn;
-  struct dinode *dip;
-
-  bn = IBLOCK(inum, sb);
-  rsect(bn, buf);
-  dip = ((struct dinode*)buf) + (inum % IPB);
-  *ip = *dip;
 }
 
 void
@@ -238,24 +238,49 @@ ialloc(ushort type)
   din.type = xshort(type);
   din.nlink = xshort(1);
   din.size = xint(0);
+  imp[inum] = freeblock++;
   winode(inum, &din);
   return inum;
 }
 
 void
-balloc(int used)
-{
-  uchar buf[BSIZE];
-  int i;
-
-  printf("balloc: first %d blocks have been allocated\n", used);
-  assert(used < BSIZE*8);
-  bzero(buf, BSIZE);
-  for(i = 0; i < used; i++){
-    buf[i/8] = buf[i/8] | (0x1 << (i%8));
+wimap() {
+  char buf[BSIZE];
+  int i, j;
+  struct dimap *dimp;
+  
+  for(i=0;i<NINODEMAP;i++) {
+    bzero(buf, BSIZE);
+    dimp = (struct dimap*)buf;
+    for(j=0;j<NENTRY && i*NENTRY + j < NINODES;j++)
+      dimp->addr[j] = xint(imp[i*NENTRY + j]);
+    wsect(NMETA+i, buf);
   }
-  printf("balloc: write bitmap block at sector %d\n", sb.bmapstart);
-  wsect(sb.bmapstart, buf);
+}
+
+// chkpt_no : 1 or 2
+void wchkpt(int chkpt_no) {
+  char buf[BSIZE];
+  int i, used_segment;
+  struct checkpoint *chkpt;
+
+  bzero(buf, BSIZE);
+  if (chkpt_no == 1) {
+    chkpt = (struct checkpoint*)buf;
+
+    // write imap location
+    for(i=0;i<NINODEMAP;i++)
+      chkpt->imap[i] = xint(NMETA+i);
+    
+    // write segment usage table (bitmap)
+    used_segment = (freeblock - 4 + SEGSIZE - 1) / SEGSIZE;
+    for(i = 0; i < used_segment; i++)
+      chkpt->segtable[i/8] = chkpt->segtable[i/8] | (0x1 << (i%8));
+    
+    // write timestamp
+    chkpt->timestamp = xint(1);
+  }
+  wsect(1+chkpt_no, buf);
 }
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
