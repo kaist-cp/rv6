@@ -1,6 +1,6 @@
 use core::cell::UnsafeCell;
+use core::mem;
 use core::ops::Deref;
-use core::{cmp, mem};
 
 use pin_project::pin_project;
 use spin::Once;
@@ -8,32 +8,28 @@ use spin::Once;
 use super::{
     FcntlFlags, FileName, FileSystem, Inode, InodeGuard, InodeType, Itable, Path, RcInode, Stat, Tx,
 };
-use crate::fs::lfs::segment::BlockType;
-use crate::fs::lfs::superblock::BPB;
-use crate::param::{NBLOCK, SEGSIZE};
 use crate::util::strong_pin::StrongPin;
 use crate::{
     bio::Buf,
     file::{FileType, InodeFileType},
     hal::hal,
+    lock::{SpinLock, SpinLockGuard},
     param::BSIZE,
     proc::KernelCtx,
 };
 
+mod imap;
 mod inode;
 mod segment;
 mod superblock;
 
+pub use imap::Imap;
 pub use inode::{Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
 pub use segment::Segment;
 pub use superblock::{Superblock, IPB};
 
 /// root i-number
 const ROOTINO: u32 = 1;
-
-/// the number of segments
-/// TODO: supposed to be DISK_SIZE / SEGSIZE
-const NSEGMENT: usize = 10;
 
 const NDIRECT: usize = 12;
 const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
@@ -46,8 +42,17 @@ pub struct Lfs {
     /// There should be one superblock per disk device, but we run with only one device.
     superblock: Once<Superblock>,
 
-    /// Segments to save updates
-    segments: [Segment; NSEGMENT],
+    /// In-memory inodes.
+    #[pin]
+    itable: Itable<Self>,
+
+    /// The current segment.
+    // TODO: Should share the lock with `Itable` instead?
+    segment: SpinLock<Segment>,
+
+    /// Imap.
+    // TODO: Should share the lock with `Itable` instead?
+    imap: SpinLock<Imap>,
 }
 
 impl Tx<'_, Lfs> {
@@ -59,55 +64,34 @@ impl Tx<'_, Lfs> {
     ///   bp = kernel.fs().disk.read(...)
     ///   modify bp->data[]
     ///   write(bp)
+    #[allow(dead_code)]
     fn write(&self, _b: Buf, _ctx: &KernelCtx<'_, '_>) {
+        // TODO: We should update the checkpoint here, and actually write to the disk when the segment is flushed.
         // self.fs.log().lock().write(b, ctx);
     }
 
     /// Zero a block.
-    fn bzero(&self, dev: u32, bno: u32, ctx: &KernelCtx<'_, '_>) {
-        let mut buf = ctx.kernel().bcache().get_buf(dev, bno).lock(ctx);
-        buf.deref_inner_mut().data.fill(0);
-        buf.deref_inner_mut().valid = true;
-        self.write(buf, ctx);
-    }
+    // fn bzero(&self, dev: u32, bno: u32, ctx: &KernelCtx<'_, '_>) {
+    //     let mut buf = ctx.kernel().bcache().get_buf(dev, bno).lock(ctx);
+    //     buf.deref_inner_mut().data.fill(0);
+    //     buf.deref_inner_mut().valid = true;
+    //     self.write(buf, ctx);
+    // }
 
     /// Blocks.
-    /// Allocate a zeroed disk block.
-    fn balloc(&self, dev: u32, ctx: &KernelCtx<'_, '_>) -> u32 {
-        loop {
-            let _segment = self.fs.find_segment();
-
-            for b in num_iter::range_step(0, self.fs.superblock().size, BPB as u32) {
-                let mut bp = hal().disk().read(dev, b, ctx);
-                for bi in 0..cmp::min(BPB as u32, self.fs.superblock().size - b) {
-                    let m = 1 << (bi % 8);
-                    if bp.deref_inner_mut().data[(bi / 8) as usize] & m == 0 {
-                        // Is block free?
-                        bp.deref_inner_mut().data[(bi / 8) as usize] |= m; // Mark block in use.
-                        self.write(bp, ctx);
-                        self.bzero(dev, b + bi, ctx);
-                        return b + bi;
-                    }
-                }
-                bp.free(ctx);
-            }
-            // TODO: do not let cur segment to be updated directly by this function
-            self.fs.superblock().cur_segment += 1;
-        }
+    /// Allocate a zeroed disk block to be used by `inum` as the `block_no`th data block.
+    // TODO: Okay to remove dev: u32?
+    fn balloc(&self, inum: u32, block_no: u32, ctx: &KernelCtx<'_, '_>) -> (Buf, u32) {
+        let mut segment = self.fs.segment();
+        let (mut buf, bno) = segment.get_or_add_data_block(inum, block_no, ctx).unwrap();
+        buf.deref_inner_mut().data.fill(0);
+        buf.deref_inner_mut().valid = true;
+        (buf, bno)
     }
 
     /// Free a disk block.
-    fn bfree(&self, dev: u32, b: u32, ctx: &KernelCtx<'_, '_>) {
-        let mut bp = hal().disk().read(dev, b, ctx);
-        let bi = b as usize % BPB;
-        let m = 1u8 << (bi % 8);
-        assert_ne!(
-            bp.deref_inner_mut().data[bi / 8] & m,
-            0,
-            "freeing free block"
-        );
-        bp.deref_inner_mut().data[bi / 8] &= !m;
-        self.write(bp, ctx);
+    fn bfree(&self, _dev: u32, _b: u32, _ctx: &KernelCtx<'_, '_>) {
+        // TODO: We don't need this. The cleaner should handle this.
     }
 }
 
@@ -115,7 +99,11 @@ impl Lfs {
     pub const fn new() -> Self {
         Self {
             superblock: Once::new(),
-            segments: [Segment::default(); NSEGMENT],
+            itable: Itable::<Self>::new_itable(),
+            // TODO: Use `Segment::new()` instead.
+            segment: SpinLock::new("segment", Segment::default()),
+            // TODO: Load the imap instead of using default.
+            imap: SpinLock::new("imap", Imap::default()),
         }
     }
 
@@ -124,29 +112,16 @@ impl Lfs {
     }
 
     #[allow(clippy::needless_lifetimes)]
-    pub fn imap<'s>(self: StrongPin<'s, Self>) -> StrongPin<'s, Itable<Self>> {
-        let cur_segment = self.superblock().cur_segment as usize;
-        let imap_location = self.superblock().imap_location as usize;
-
-        assert!(cur_segment < NSEGMENT);
-        assert!(imap_location < NBLOCK);
-
-        let segment = self.segments[cur_segment];
-        let block = segment.block_buffer[imap_location];
-
-        match block.typ {
-            BlockType::Imap { inner: imap } => unsafe { StrongPin::new_unchecked(&imap) },
-            _ => panic!("Lfs::imap"),
-        }
+    fn itable<'s>(self: StrongPin<'s, Self>) -> StrongPin<'s, Itable<Self>> {
+        unsafe { StrongPin::new_unchecked(&self.as_pin().get_ref().itable) }
     }
 
-    pub fn find_segment(&self) -> Segment {
-        let cur_segment = self.superblock().cur_segment as usize;
-        if cur_segment >= SEGSIZE {
-            // TODO: we should use a segment garbage collector here to allocate the block
-        }
-        let segment = self.segments[cur_segment];
-        segment
+    pub fn segment(&self) -> SpinLockGuard<'_, Segment> {
+        self.segment.lock()
+    }
+
+    pub fn imap(&self) -> SpinLockGuard<'_, Imap> {
+        self.imap.lock()
     }
 }
 
@@ -155,9 +130,6 @@ impl FileSystem for Lfs {
     type InodeInner = InodeInner;
 
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
-        let imap = Itable::<Self>::new_itable();
-        let _block_type = BlockType::Imap { inner: imap };
-
         if !self.superblock.is_completed() {
             let buf = hal().disk().read(dev, 1, ctx);
             let _superblock = self.superblock.call_once(|| Superblock::new(&buf));
@@ -168,7 +140,7 @@ impl FileSystem for Lfs {
     }
 
     fn root(self: StrongPin<'_, Self>) -> RcInode<Self> {
-        self.imap().root()
+        self.itable().root()
     }
 
     fn namei(
@@ -178,7 +150,7 @@ impl FileSystem for Lfs {
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<RcInode<Self>, ()> {
         // name-to-inode translation
-        self.imap().namei(path, tx, ctx)
+        self.itable().namei(path, tx, ctx)
     }
 
     fn link(
@@ -199,7 +171,7 @@ impl FileSystem for Lfs {
         ip.update(tx, ctx);
         drop(ip);
 
-        if let Ok((ptr2, name)) = self.imap().nameiparent(path, tx, ctx) {
+        if let Ok((ptr2, name)) = self.itable().nameiparent(path, tx, ctx) {
             let ptr2 = scopeguard::guard(ptr2, |ptr| ptr.free((tx, ctx)));
             let dp = ptr2.lock(ctx);
             let mut dp = scopeguard::guard(dp, |ip| ip.free(ctx));
@@ -222,7 +194,7 @@ impl FileSystem for Lfs {
         ctx: &KernelCtx<'_, '_>,
     ) -> Result<(), ()> {
         // remove a file with `path`
-        let (ptr, name) = self.imap().nameiparent(path, tx, ctx)?;
+        let (ptr, name) = self.itable().nameiparent(path, tx, ctx)?;
         let ptr = scopeguard::guard(ptr, |ptr| ptr.free((tx, ctx)));
         let dp = ptr.lock(ctx);
         let mut dp = scopeguard::guard(dp, |ip| ip.free(ctx));
@@ -267,7 +239,7 @@ impl FileSystem for Lfs {
         F: FnOnce(&mut InodeGuard<'_, Self>) -> T,
     {
         // create a new file with `path`
-        let (ptr, name) = self.imap().nameiparent(path, tx, ctx)?;
+        let (ptr, name) = self.itable().nameiparent(path, tx, ctx)?;
         let ptr = scopeguard::guard(ptr, |ptr| ptr.free((tx, ctx)));
         let dp = ptr.lock(ctx);
         let mut dp = scopeguard::guard(dp, |ip| ip.free(ctx));
@@ -287,7 +259,7 @@ impl FileSystem for Lfs {
             return Ok((scopeguard::ScopeGuard::into_inner(ptr2), ret));
         }
 
-        let ptr2 = self.imap().alloc_inode(dp.dev, typ, tx, ctx);
+        let ptr2 = self.itable().alloc_inode(dp.dev, typ, tx, ctx);
         let ip = ptr2.lock(ctx);
         let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
         ip.deref_inner_mut().nlink = 1;
@@ -324,7 +296,7 @@ impl FileSystem for Lfs {
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
             self.create(path, InodeType::File, tx, ctx, |ip| ip.deref_inner().typ)?
         } else {
-            let ptr = self.imap().namei(path, tx, ctx)?;
+            let ptr = self.itable().namei(path, tx, ctx)?;
             let ptr = scopeguard::guard(ptr, |ptr| ptr.free((tx, ctx)));
             let ip = ptr.lock(ctx);
             let ip = scopeguard::guard(ip, |ip| ip.free(ctx));
@@ -427,7 +399,7 @@ impl FileSystem for Lfs {
         while tot < n {
             let bp = hal()
                 .disk()
-                .read(guard.dev, guard.disk(off as usize / BSIZE, &k), &k);
+                .read(guard.dev, guard.bmap(off as usize / BSIZE, &k), &k);
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
@@ -463,25 +435,26 @@ impl FileSystem for Lfs {
             return Err(());
         }
         let mut tot: u32 = 0;
-
-        // TODO: add segment number and offest of designated inode in InodeGuard
-        // let segment_num = Self.superblock().cur_segment;
-        // let mut segment = Self.segments[segment_num];
-        // let offset = Self.imap().get(guard.inum);
-
         while tot < n {
+            let mut bp = hal().disk().read(
+                guard.dev,
+                guard.bmap_or_alloc(off as usize / BSIZE, tx, &k),
+                &k,
+            );
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
-            #[allow(unused_variables)]
             let end = begin + m as usize;
-
-            // TODO: transform to segment
-            // if f(tot, segment[offset].data[begin..end], &mut k).is_ok() {
-            //     segment[offset].write(begin, end);
-            // } else {
-            //     break;
-            // }
-
+            if f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k).is_ok() {
+                bp.free(&k);
+                let mut segment = tx.fs.segment();
+                if segment.is_full() {
+                    segment.commit(&k);
+                }
+                // tx.write(bp, &k);
+            } else {
+                bp.free(&k);
+                break;
+            }
             tot += m;
             off += m;
         }
@@ -498,6 +471,7 @@ impl FileSystem for Lfs {
     }
 
     fn inode_trunc(guard: &mut InodeGuard<'_, Self>, tx: &Tx<'_, Self>, ctx: &KernelCtx<'_, '_>) {
+        // TODO: This function is unused in both lfs and ufs. May need to update fs::FS trait.
         let dev = guard.dev;
         for addr in &mut guard.deref_inner_mut().addr_direct {
             if *addr != 0 {

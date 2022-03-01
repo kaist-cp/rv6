@@ -33,7 +33,7 @@ pub const MAXOPBLOCKS: usize = 10;
 
 cfg_if! {
     if #[cfg(feature = "lfs")] {
-        /// Size of segments on-memory
+        /// Size of a segment in blocks
         ///
         /// An optimal size of segments for LFS is dependent to
         /// the performance of a disk and a desired effective bandwith of developers.
@@ -41,10 +41,11 @@ cfg_if! {
         /// https://pages.cs.wisc.edu/~remzi/OSTEP/file-lfs.pdf
         ///
         /// TODO: optimize the size of the segment
-        pub const SEGSIZE: usize = BSIZE * 10;
+        /// TODO: This may be unknown at compile time.
+        pub const SEGSIZE: usize = 10;
 
-        /// # blocks in a segment.
-        pub const NBLOCK: usize = 200;
+        /// Size of the imap in blocks
+        pub const IMAPSIZE: usize = 1;
     } else {
         /// Max data blocks in on-disk log.
         pub const LOGSIZE: usize = MAXOPBLOCKS * 3;
