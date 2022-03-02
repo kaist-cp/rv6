@@ -2,7 +2,6 @@ use core::{mem, ptr};
 
 use static_assertions::const_assert;
 
-use super::inode::Dinode;
 use crate::{
     bio::{Buf, BufData},
     param::{BSIZE, SEGSIZE},
@@ -46,9 +45,6 @@ pub struct Superblock {
     /// - allocating recent two checkpoint regions for crash recovery
     pub checkpoint_region: (u32, u32),
 }
-
-/// Inodes per block.
-pub const IPB: usize = BSIZE / mem::size_of::<Dinode>();
 
 /// Bitmap bits per block
 // pub const BPB: usize = BSIZE * 8;

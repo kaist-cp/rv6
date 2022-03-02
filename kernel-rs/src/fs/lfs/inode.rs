@@ -7,7 +7,7 @@ use super::{FileName, Lfs, Path, NDIRECT, NINDIRECT, ROOTINO};
 use crate::{
     arena::{Arena, ArrayArena},
     bio::BufData,
-    fs::{lfs::superblock::IPB, DInodeType, Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
+    fs::{DInodeType, Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
     hal::hal,
     lock::SleepLock,
     param::{NINODE, ROOTDEV},
@@ -200,7 +200,7 @@ impl InodeGuard<'_, Lfs> {
             .get_or_add_updated_inode_block(self.inum, ctx)
             .unwrap();
 
-        const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
+        const_assert!(mem::size_of::<BufData>() >= mem::size_of::<Dinode>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
 
         // SAFETY:
@@ -208,10 +208,7 @@ impl InodeGuard<'_, Lfs> {
         // * dip is inside bp.data.
         // * dip will not be read.
 
-        let dip = unsafe {
-            &mut *(bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode)
-                .add(self.inum as usize % IPB)
-        };
+        let dip = unsafe { &mut *(bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode) };
 
         let inner = self.deref_inner();
         match inner.typ {
@@ -401,12 +398,10 @@ impl Itable<Lfs> {
         let inum = imap.get_empty_inum(ctx).unwrap();
         let (mut bp, disk_block_no) = segment.add_new_inode_block(inum, ctx).unwrap();
 
-        const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
+        const_assert!(mem::size_of::<BufData>() >= mem::size_of::<Dinode>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
         // SAFETY: dip is inside bp.data.
-        let dip = unsafe {
-            (bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode).add(inum as usize % IPB)
-        };
+        let dip = bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode;
         // SAFETY: i16 does not have internal structure.
         let t = unsafe { *(dip as *const i16) };
         // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.

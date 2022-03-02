@@ -26,7 +26,7 @@ mod superblock;
 pub use imap::Imap;
 pub use inode::{Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
 pub use segment::Segment;
-pub use superblock::{Superblock, IPB};
+pub use superblock::Superblock;
 
 /// root i-number
 const ROOTINO: u32 = 1;
