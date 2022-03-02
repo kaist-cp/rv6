@@ -14,6 +14,27 @@
 #define static_assert(a, b) do { switch (0) case 0: case (a): ; } while (0)
 #endif
 
+// Constants about "our" lfs. (Not to be universal over every lfs.)
+#define SEGSIZE 10  // segment size in blocks
+#define FSSIZE 5000 // size of file system in blocks
+#define NINODES 200 // assumes inum : 0 ~ NINODES - 1
+#define NMETA 4
+
+// The size of the inode map in blocks.
+#define NINODEMAP ((NINODES * sizeof(uint) + BSIZE - 1) / BSIZE)
+// Maximum number of segments.
+#define NSEG ((FSSIZE - NMETA) / SEGSIZE)
+// The size of the segment usage table in bytes. Always a multiple of 4.
+#define SEGTABLESIZE ((NSEG + (sizeof(uint) * 8 - 1)) / (sizeof(uint) * 8) * 4)
+
+// Note: The `struct checkpoint` is defined here, since its structure
+// may differ depending on disk.
+struct checkpoint {
+  uint imap[NINODEMAP];
+  uchar segtable[SEGTABLESIZE]; // bitmap
+  uint timestamp;
+};
+
 // Disk layout:
 // [ boot block | sb block | checkpoint1 (contains address of inode map blocks) | checkpoint2 (empty) | inode map | inode blocks and data blocks ]
 
