@@ -107,18 +107,13 @@ impl const Default for Segment {
 // TODO: Generalize methods of `Segment`.
 impl Segment {
     #[allow(dead_code)]
-    pub const fn new(
-        dev_no: u32,
-        segment_no: u32,
-        segment_summary: [SegSumEntry; SEGSIZE - 1],
-        offset: usize,
-    ) -> Self {
+    // TODO: Load from a non-empty segment instead?
+    pub const fn new(dev_no: u32, segment_no: u32) -> Self {
         Self {
             dev_no,
             segment_no,
-            segment_summary,
-            offset,
-            // imap_block_no,
+            segment_summary: array![_ => SegSumEntry::Empty; SEGSIZE - 1],
+            offset: 0,
         }
     }
 
@@ -302,8 +297,7 @@ impl Segment {
             }
         }
 
-        // TODO: The `Lfs` should provide a new segment.
-        self.segment_no += 1;
+        self.segment_no = ctx.kernel().fs().get_next_seg_no(Some(self.segment_no));
         self.segment_summary = array![_ => SegSumEntry::Empty; SEGSIZE - 1];
         self.offset = 0;
 

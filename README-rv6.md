@@ -22,7 +22,7 @@
   [to exit, C-A X]
   ```
 
-- Run rv6 on qemu (Armv8). IMPORTANT: You should run `make clean` first when TARGET is changed.
+- Run rv6 on qemu (Armv8). IMPORTANT: You should run `make clean` first when TARGET changed.
 
   ```
   RUST_MODE=release TARGET=arm make qemu
@@ -36,10 +36,15 @@
   ```
 
 - Run with KVM enabled on ArmV8 kvm-supported machine.
-```
-# You should specify proper GIC version.
-TARGET=arm GIC_VERSION=3 KVM=yes make qemu
-```
+  ```
+  # You should specify proper GIC version.
+  TARGET=arm GIC_VERSION=3 KVM=yes make qemu
+  ```
+
+- Run using the log structured file system. IMPORTANT: You should run `make clean` first when FS changed.
+  ```
+  FS=lfs make qemu
+  ```
 
 - Debug rv6 on qemu.
 
