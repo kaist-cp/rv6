@@ -313,22 +313,24 @@ impl InodeGuard<'_, Lfs> {
                     // Allocate an empty block.
                     tx.balloc(inum, bn as u32, ctx)
                 } else {
-                    // Copy from old block to new block.
                     let (mut buf, new_addr) = tx
                         .fs
                         .segment()
                         .get_or_add_data_block(inum, bn as u32, ctx)
                         .unwrap();
-                    let old_buf = hal().disk().read(dev, addr, ctx);
-                    // SAFETY: The old data block's content will not be used from now on.
-                    unsafe {
-                        core::ptr::copy(
-                            &raw const old_buf.deref_inner().data,
-                            &raw mut buf.deref_inner_mut().data,
-                            1,
-                        );
+                    if new_addr != addr {
+                        // Copy from old block to new block.
+                        let old_buf = hal().disk().read(dev, addr, ctx);
+                        // SAFETY: The old data block's content will not be used from now on.
+                        unsafe {
+                            core::ptr::copy(
+                                &raw const old_buf.deref_inner().data,
+                                &raw mut buf.deref_inner_mut().data,
+                                1,
+                            );
+                        }
+                        old_buf.free(ctx);
                     }
-                    old_buf.free(ctx);
                     (buf, new_addr)
                 };
                 inner.addr_direct[bn] = addr;
@@ -362,22 +364,24 @@ impl InodeGuard<'_, Lfs> {
                     // Allocate an empty block.
                     tx.balloc(self.inum, bn as u32, ctx)
                 } else {
-                    // Copy from old block to new block.
                     let (mut buf, new_addr) = tx
                         .fs
                         .segment()
                         .get_or_add_data_block(self.inum, bn as u32, ctx)
                         .unwrap();
-                    let old_buf = hal().disk().read(self.dev, addr, ctx);
-                    // SAFETY: The old data block's content will not be used from now on.
-                    unsafe {
-                        core::ptr::copy(
-                            &raw const old_buf.deref_inner().data,
-                            &raw mut buf.deref_inner_mut().data,
-                            1,
-                        );
+                    if new_addr != addr {
+                        // Copy from old block to new block.
+                        let old_buf = hal().disk().read(self.dev, addr, ctx);
+                        // SAFETY: The old data block's content will not be used from now on.
+                        unsafe {
+                            core::ptr::copy(
+                                &raw const old_buf.deref_inner().data,
+                                &raw mut buf.deref_inner_mut().data,
+                                1,
+                            );
+                        }
+                        old_buf.free(ctx);
                     }
-                    old_buf.free(ctx);
                     (buf, new_addr)
                 };
                 data[bn] = addr;
