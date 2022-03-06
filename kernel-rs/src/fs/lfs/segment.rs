@@ -256,7 +256,7 @@ impl Segment {
             } = &self.segment_summary[i]
             {
                 if block_no == *block_no2 {
-                    return Some((buf.clone().lock(ctx), 0));
+                    return Some((buf.clone().lock(ctx), self.get_disk_block_no(i + 1, ctx)));
                 }
             }
         }

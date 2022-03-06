@@ -104,10 +104,10 @@ impl Imap {
         );
         let (block_no, offset) = self.get_imap_block_no(inum);
 
-        if let Some((mut buf, new_addr)) = segment.get_or_add_imap_block(block_no as u32, ctx) {
+        if let Some((mut buf, addr)) = segment.get_or_add_imap_block(block_no as u32, ctx) {
             let imap_block =
                 unsafe { &mut *(buf.deref_inner_mut().data.as_mut_ptr() as *mut DImapBlock) };
-            if new_addr != 0 {
+            if addr != self.addr[block_no] {
                 // Copy the imap block content from old imap block.
                 let mut old_buf = self.get_imap_block(block_no, ctx);
                 let old_imap_block = unsafe {
@@ -115,7 +115,7 @@ impl Imap {
                 };
                 *imap_block = old_imap_block.clone();
                 // Update imap mapping.
-                self.addr[block_no] = new_addr;
+                self.addr[block_no] = addr;
                 old_buf.free(ctx);
             }
             // Update entry.
