@@ -200,7 +200,7 @@ impl InodeGuard<'_, Lfs> {
             .get_or_add_updated_inode_block(self.inum, ctx)
             .unwrap();
 
-        const_assert!(mem::size_of::<BufData>() >= mem::size_of::<Dinode>());
+        const_assert!(mem::size_of::<Dinode>() <= mem::size_of::<BufData>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
 
         // SAFETY:
@@ -472,7 +472,7 @@ impl Itable<Lfs> {
         let inum = imap.get_empty_inum(ctx).unwrap();
         let (mut bp, disk_block_no) = segment.add_new_inode_block(inum, ctx).unwrap();
 
-        const_assert!(mem::size_of::<BufData>() >= mem::size_of::<Dinode>());
+        const_assert!(mem::size_of::<Dinode>() <= mem::size_of::<BufData>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
         // SAFETY: dip is inside bp.data.
         let dip = bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode;
