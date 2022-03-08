@@ -195,7 +195,7 @@ impl InodeGuard<'_, Lfs> {
     /// Copy a modified in-memory inode to disk.
     pub fn update(&self, tx: &Tx<'_, Lfs>, ctx: &KernelCtx<'_, '_>) {
         // 1. Write the inode to segment.
-        let mut segment = tx.fs.segment();
+        let mut segment = tx.fs.segment(ctx);
         let (mut bp, disk_block_no) = segment
             .get_or_add_updated_inode_block(self.inum, ctx)
             .unwrap();
@@ -247,13 +247,13 @@ impl InodeGuard<'_, Lfs> {
         }
 
         // 2. Write the imap to segment.
-        assert!(tx
-            .fs
-            .imap()
-            .set(self.inum, disk_block_no, &mut segment, ctx));
+        let mut imap = tx.fs.imap(ctx);
+        assert!(imap.set(self.inum, disk_block_no, &mut segment, ctx));
+        imap.free(ctx);
         if segment.is_full() {
             segment.commit(ctx);
         }
+        segment.free(ctx);
     }
 
     /// Copies the inode's `bn`th data block content into an empty block on the segment,
@@ -313,11 +313,10 @@ impl InodeGuard<'_, Lfs> {
                     // Allocate an empty block.
                     tx.balloc(inum, bn as u32, ctx)
                 } else {
-                    let (mut buf, new_addr) = tx
-                        .fs
-                        .segment()
-                        .get_or_add_data_block(inum, bn as u32, ctx)
-                        .unwrap();
+                    let mut segment = tx.fs.segment(ctx);
+                    let (mut buf, new_addr) =
+                        segment.get_or_add_data_block(inum, bn as u32, ctx).unwrap();
+                    segment.free(ctx);
                     if new_addr != addr {
                         // Copy from old block to new block.
                         let old_buf = hal().disk().read(dev, addr, ctx);
@@ -348,10 +347,11 @@ impl InodeGuard<'_, Lfs> {
                 let tx = tx_opt.expect("bmap: out of range");
                 let (_, indirect) = tx.balloc(self.inum, bn as u32, ctx);
                 self.deref_inner_mut().addr_indirect = indirect;
-                let segment = tx.fs.segment();
+                let mut segment = tx.fs.segment(ctx);
                 if segment.is_full() {
                     segment.commit(ctx);
                 }
+                segment.free(ctx);
             }
 
             let mut bp = hal().disk().read(self.dev, indirect, ctx);
@@ -364,11 +364,11 @@ impl InodeGuard<'_, Lfs> {
                     // Allocate an empty block.
                     tx.balloc(self.inum, bn as u32, ctx)
                 } else {
-                    let (mut buf, new_addr) = tx
-                        .fs
-                        .segment()
+                    let mut segment = tx.fs.segment(ctx);
+                    let (mut buf, new_addr) = segment
                         .get_or_add_data_block(self.inum, bn as u32, ctx)
                         .unwrap();
+                    segment.free(ctx);
                     if new_addr != addr {
                         // Copy from old block to new block.
                         let old_buf = hal().disk().read(self.dev, addr, ctx);
@@ -465,8 +465,8 @@ impl Itable<Lfs> {
         tx: &Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> RcInode<Lfs> {
-        let imap = tx.fs.imap();
-        let mut segment = tx.fs.segment();
+        let mut segment = tx.fs.segment(ctx);
+        let mut imap = tx.fs.imap(ctx);
 
         // 1. Write the inode.
         let inum = imap.get_empty_inum(ctx).unwrap();
@@ -505,6 +505,8 @@ impl Itable<Lfs> {
         if segment.is_full() {
             segment.commit(ctx);
         }
+        segment.free(ctx);
+        imap.free(ctx);
 
         self.get_inode(dev, inum)
     }
