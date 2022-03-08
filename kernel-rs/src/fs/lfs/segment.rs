@@ -302,6 +302,7 @@ impl Segment {
         let mut bp = self.read_segment_block(0, ctx);
         let ssp = bp.deref_inner_mut().data.as_mut_ptr() as *mut DSegSum;
         unsafe { ptr::write(ssp, DSegSum::new(&self.segment_summary)) };
+        bp.free(ctx);
 
         // Write each segment block to the disk.
         // TODO: Check the virtio spec for a way for faster sequential disk write.
