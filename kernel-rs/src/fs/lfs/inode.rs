@@ -315,20 +315,23 @@ impl InodeGuard<'_, Lfs> {
             let bn = bn - NDIRECT;
             assert!(bn < NINDIRECT, "bmap: out of range");
 
-            let mut bp = self.get_indirect(write, tx_opt, ctx);
-            let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
+            let bp = self.get_indirect(false, tx_opt, ctx);
+            let (prefix, data, _) = unsafe { bp.deref_inner().data.align_to::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
             let addr = data[bn];
+            bp.free(ctx);
             let buf = if write {
                 let (buf, new_addr) =
                     self.bmap_writable_data_block(bn + NDIRECT, addr, tx_opt.unwrap(), ctx);
+                let mut bp = self.get_indirect(write, tx_opt, ctx);
+                let (_, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
                 data[bn] = new_addr;
+                bp.free(ctx);
                 buf
             } else {
                 assert!(addr != 0, "bmap: out of range");
                 hal().disk().read(self.dev, addr, ctx)
             };
-            bp.free(ctx);
             buf
         }
     }
