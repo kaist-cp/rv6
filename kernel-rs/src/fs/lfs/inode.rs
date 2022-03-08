@@ -275,7 +275,7 @@ impl InodeGuard<'_, Lfs> {
     /// listed in block self->addr_indirect.
     /// Return the disk block address of the nth block in inode self.
     /// If there is no such block, bmap allocates one.
-    pub fn write_data_block(
+    pub fn writable_data_block(
         &mut self,
         bn: usize,
         tx: &Tx<'_, Lfs>,
@@ -290,7 +290,7 @@ impl InodeGuard<'_, Lfs> {
     ///
     /// Use the returned `Buf` only to read the inode's data block's content.
     /// Any write operations to a inode's data block should be done using `InodeGuard::bmap_write`.
-    pub fn read_data_block(&mut self, bn: usize, ctx: &KernelCtx<'_, '_>) -> Buf {
+    pub fn readable_data_block(&mut self, bn: usize, ctx: &KernelCtx<'_, '_>) -> Buf {
         self.bmap_internal(bn, false, None, ctx)
     }
 
@@ -301,38 +301,11 @@ impl InodeGuard<'_, Lfs> {
         tx_opt: Option<&Tx<'_, Lfs>>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Buf {
-        let dev = self.dev;
-        let inum = self.inum;
-        let inner = self.deref_inner_mut();
-
         if bn < NDIRECT {
-            let addr = inner.addr_direct[bn];
+            let addr = self.deref_inner().addr_direct[bn];
             if write {
-                let tx = tx_opt.unwrap();
-                let (buf, addr) = if addr == 0 {
-                    // Allocate an empty block.
-                    tx.balloc(inum, bn as u32, ctx)
-                } else {
-                    let mut segment = tx.fs.segment(ctx);
-                    let (mut buf, new_addr) =
-                        segment.get_or_add_data_block(inum, bn as u32, ctx).unwrap();
-                    segment.free(ctx);
-                    if new_addr != addr {
-                        // Copy from old block to new block.
-                        let old_buf = hal().disk().read(dev, addr, ctx);
-                        // SAFETY: The old data block's content will not be used from now on.
-                        unsafe {
-                            core::ptr::copy(
-                                &raw const old_buf.deref_inner().data,
-                                &raw mut buf.deref_inner_mut().data,
-                                1,
-                            );
-                        }
-                        old_buf.free(ctx);
-                    }
-                    (buf, new_addr)
-                };
-                inner.addr_direct[bn] = addr;
+                let (buf, new_addr) = self.bmap_writable_data_block(bn, addr, tx_opt.unwrap(), ctx);
+                self.deref_inner_mut().addr_direct[bn] = new_addr;
                 buf
             } else {
                 assert!(addr != 0, "bmap: out of range");
@@ -342,74 +315,14 @@ impl InodeGuard<'_, Lfs> {
             let bn = bn - NDIRECT;
             assert!(bn < NINDIRECT, "bmap: out of range");
 
-            let mut indirect = inner.addr_indirect;
-            if indirect == 0 {
-                let tx = tx_opt.unwrap();
-                let (buf, block_no) = tx.balloc(self.inum, NDIRECT as u32, ctx);
-                indirect = block_no;
-                buf.free(ctx);
-                self.deref_inner_mut().addr_indirect = indirect;
-                let mut segment = tx.fs.segment(ctx);
-                if segment.is_full() {
-                    segment.commit(ctx);
-                }
-                segment.free(ctx);
-            }
-
-            let mut bp = if write {
-                let tx = tx_opt.unwrap();
-                let mut segment = tx.fs.segment(ctx);
-                let (mut bp, new_indirect) = segment
-                    .get_or_add_data_block(self.inum, NDIRECT as u32, ctx)
-                    .unwrap();
-                segment.free(ctx);
-                if new_indirect != indirect {
-                    let old_bp = hal().disk().read(self.dev, indirect, ctx);
-                    unsafe {
-                        core::ptr::copy(
-                            &raw const old_bp.deref_inner().data,
-                            &raw mut bp.deref_inner_mut().data,
-                            1,
-                        );
-                    }
-                    old_bp.free(ctx);
-                    self.deref_inner_mut().addr_indirect = new_indirect;
-                }
-                bp
-            } else {
-                hal().disk().read(self.dev, indirect, ctx)
-            };
-
+            let mut bp = self.get_indirect(write, tx_opt, ctx);
             let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
             let addr = data[bn];
             let buf = if write {
-                let tx = tx_opt.unwrap();
-                let (buf, addr) = if addr == 0 {
-                    // Allocate an empty block.
-                    tx.balloc(self.inum, (bn + 1 + NDIRECT) as u32, ctx)
-                } else {
-                    let mut segment = tx.fs.segment(ctx);
-                    let (mut buf, new_addr) = segment
-                        .get_or_add_data_block(self.inum, (bn + 1 + NDIRECT) as u32, ctx)
-                        .unwrap();
-                    segment.free(ctx);
-                    if new_addr != addr {
-                        // Copy from old block to new block.
-                        let old_buf = hal().disk().read(self.dev, addr, ctx);
-                        // SAFETY: The old data block's content will not be used from now on.
-                        unsafe {
-                            core::ptr::copy(
-                                &raw const old_buf.deref_inner().data,
-                                &raw mut buf.deref_inner_mut().data,
-                                1,
-                            );
-                        }
-                        old_buf.free(ctx);
-                    }
-                    (buf, new_addr)
-                };
-                data[bn] = addr;
+                let (buf, new_addr) =
+                    self.bmap_writable_data_block(bn + 1 + NDIRECT, addr, tx_opt.unwrap(), ctx);
+                data[bn] = new_addr;
                 buf
             } else {
                 assert!(addr != 0, "bmap: out of range");
@@ -417,6 +330,91 @@ impl InodeGuard<'_, Lfs> {
             };
             bp.free(ctx);
             buf
+        }
+    }
+
+    /// Returns the `bn`th data block of the inode and its (possibly new) disk block number.
+    /// * If `addr == 0`, allocates an empty disk block and returns it.
+    /// * If `addr != 0`, copies the content of the data at `addr` to the block when allocating a new one.
+    fn bmap_writable_data_block(
+        &self,
+        bn: usize,
+        addr: u32,
+        tx: &Tx<'_, Lfs>,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> (Buf, u32) {
+        if addr == 0 {
+            // Allocate an empty block.
+            tx.balloc(self.inum, bn as u32, ctx)
+        } else {
+            let mut segment = tx.fs.segment(ctx);
+            let (mut buf, new_addr) = segment
+                .get_or_add_data_block(self.inum, bn as u32, ctx)
+                .unwrap();
+            segment.free(ctx);
+            if new_addr != addr {
+                // Copy from old block to new block.
+                let old_buf = hal().disk().read(self.dev, addr, ctx);
+                // SAFETY: The old data block's content will not be used from now on.
+                unsafe {
+                    core::ptr::copy(
+                        &raw const old_buf.deref_inner().data,
+                        &raw mut buf.deref_inner_mut().data,
+                        1,
+                    );
+                }
+                old_buf.free(ctx);
+            }
+            (buf, new_addr)
+        }
+    }
+
+    /// Returns the `Buf` and the disk block number for the block
+    /// that stores the indirect mappings for the indirect data blocks of the inode.
+    /// The `indirect` field of the inode may be updated after calling this.
+    fn get_indirect(
+        &mut self,
+        write: bool,
+        tx_opt: Option<&Tx<'_, Lfs>>,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Buf {
+        if self.deref_inner().addr_indirect == 0 {
+            // Allocate a block to store the mappings for the indirect blocks.
+            let tx = tx_opt.expect("bmap: out of range");
+            let (buf, indirect) = tx.balloc(self.inum, NDIRECT as u32, ctx);
+            buf.free(ctx);
+            self.deref_inner_mut().addr_indirect = indirect;
+            let mut segment = tx.fs.segment(ctx);
+            if segment.is_full() {
+                segment.commit(ctx);
+            }
+            segment.free(ctx);
+        }
+        let indirect = self.deref_inner().addr_indirect;
+
+        if write {
+            let tx = tx_opt.unwrap();
+            let mut segment = tx.fs.segment(ctx);
+            let (mut bp, new_indirect) = segment
+                .get_or_add_data_block(self.inum, NDIRECT as u32, ctx)
+                .unwrap();
+            segment.free(ctx);
+            if new_indirect != indirect {
+                // Copy from old block to new block.
+                let old_bp = hal().disk().read(self.dev, indirect, ctx);
+                unsafe {
+                    core::ptr::copy(
+                        &raw const old_bp.deref_inner().data,
+                        &raw mut bp.deref_inner_mut().data,
+                        1,
+                    );
+                }
+                old_bp.free(ctx);
+                self.deref_inner_mut().addr_indirect = new_indirect;
+            }
+            bp
+        } else {
+            hal().disk().read(self.dev, indirect, ctx)
         }
     }
 

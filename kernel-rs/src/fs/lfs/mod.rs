@@ -437,7 +437,7 @@ impl FileSystem for Lfs {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let bp = guard.read_data_block(off as usize / BSIZE, &k);
+            let bp = guard.readable_data_block(off as usize / BSIZE, &k);
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
@@ -472,7 +472,7 @@ impl FileSystem for Lfs {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = guard.write_data_block(off as usize / BSIZE, tx, &k);
+            let mut bp = guard.writable_data_block(off as usize / BSIZE, tx, &k);
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
