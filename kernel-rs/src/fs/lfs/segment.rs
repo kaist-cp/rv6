@@ -18,9 +18,15 @@ pub enum SegSumEntry {
         inum: u32,
         buf: BufUnlocked,
     },
+    /// Data block of an inode.
     DataBlock {
         inum: u32,
         block_no: u32,
+        buf: BufUnlocked,
+    },
+    /// The block that stores the mapping for all indirect data blocks of an inode.
+    IndirectMap {
+        inum: u32,
         buf: BufUnlocked,
     },
     Imap {
@@ -53,6 +59,7 @@ impl SegSumEntry {
                 block_no: _,
                 buf,
             } => Some(&buf),
+            SegSumEntry::IndirectMap { inum: _, buf } => Some(&buf),
             SegSumEntry::Imap { block_no: _, buf } => Some(&buf),
         }
     }
@@ -64,7 +71,8 @@ impl DSegSum {
                 SegSumEntry::Empty => DSegSumEntry { block_type: 0, inum: 0, block_no: 0 },
                 SegSumEntry::Inode { inum, .. } => DSegSumEntry { block_type: 1, inum, block_no: 0 },
                 SegSumEntry::DataBlock { inum, block_no, .. } => DSegSumEntry { block_type: 2, inum, block_no },
-                SegSumEntry::Imap { block_no, .. } => DSegSumEntry { block_type: 3, inum: 0, block_no },
+                SegSumEntry::IndirectMap { inum, .. } => DSegSumEntry { block_type: 3, inum, block_no: 0 },
+                SegSumEntry::Imap { block_no, .. } => DSegSumEntry { block_type: 4, inum: 0, block_no },
         }; SEGSIZE - 1])
     }
 }
@@ -247,6 +255,40 @@ impl Segment {
             self.segment_summary[self.offset] = SegSumEntry::DataBlock {
                 inum,
                 block_no,
+                buf: buf.clone(),
+            };
+            self.offset += 1;
+            Some((buf.lock(ctx), self.get_disk_block_no(self.offset, ctx)))
+        }
+    }
+
+    /// Provides a block on the segment to be used to store the new/updated indirect mapping block of an inode.
+    /// If the inode's indirect mapping block is not already on the segment, allocates an empty block on the segment for it.
+    /// If succeeds, returns a `Buf` of the disk block and the disk block number of it.
+    ///
+    /// Whenever an inode's indirect data block's address changes, run this and update the mapping.
+    pub fn get_or_add_indirect_block(
+        &mut self,
+        inum: u32,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Option<(Buf, u32)> {
+        // Check if the block already exists.
+        for i in 0..self.offset {
+            if let SegSumEntry::IndirectMap { inum: inum2, buf } = &self.segment_summary[i] {
+                if inum == *inum2 {
+                    return Some((buf.clone().lock(ctx), self.get_disk_block_no(i + 1, ctx)));
+                }
+            }
+        }
+        // Try to push at the back of the segment.
+        if self.is_full() {
+            None
+        } else {
+            // Append segment.
+            // TODO: We unlock a buffer right after locking it. This may be inefficient.
+            let buf = self.read_segment_block(self.offset + 1, ctx).unlock(ctx);
+            self.segment_summary[self.offset] = SegSumEntry::IndirectMap {
+                inum,
                 buf: buf.clone(),
             };
             self.offset += 1;

@@ -321,7 +321,7 @@ impl InodeGuard<'_, Lfs> {
             let addr = data[bn];
             let buf = if write {
                 let (buf, new_addr) =
-                    self.bmap_writable_data_block(bn + 1 + NDIRECT, addr, tx_opt.unwrap(), ctx);
+                    self.bmap_writable_data_block(bn + NDIRECT, addr, tx_opt.unwrap(), ctx);
                 data[bn] = new_addr;
                 buf
             } else {
@@ -381,10 +381,10 @@ impl InodeGuard<'_, Lfs> {
         if self.deref_inner().addr_indirect == 0 {
             // Allocate a block to store the mappings for the indirect blocks.
             let tx = tx_opt.expect("bmap: out of range");
-            let (buf, indirect) = tx.balloc(self.inum, NDIRECT as u32, ctx);
+            let mut segment = tx.fs.segment(ctx);
+            let (buf, indirect) = segment.get_or_add_indirect_block(self.inum, ctx).unwrap();
             buf.free(ctx);
             self.deref_inner_mut().addr_indirect = indirect;
-            let mut segment = tx.fs.segment(ctx);
             if segment.is_full() {
                 segment.commit(ctx);
             }
@@ -395,9 +395,7 @@ impl InodeGuard<'_, Lfs> {
         if write {
             let tx = tx_opt.unwrap();
             let mut segment = tx.fs.segment(ctx);
-            let (mut bp, new_indirect) = segment
-                .get_or_add_data_block(self.inum, NDIRECT as u32, ctx)
-                .unwrap();
+            let (mut bp, new_indirect) = segment.get_or_add_indirect_block(self.inum, ctx).unwrap();
             segment.free(ctx);
             if new_indirect != indirect {
                 // Copy from old block to new block.
