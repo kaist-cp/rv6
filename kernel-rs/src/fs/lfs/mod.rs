@@ -6,14 +6,15 @@ use pin_project::pin_project;
 use spin::Once;
 
 use super::{
-    FcntlFlags, FileName, FileSystem, Inode, InodeGuard, InodeType, Itable, Path, RcInode, Stat, Tx,
+    DInodeType, FcntlFlags, FileName, FileSystem, Inode, InodeGuard, InodeType, Itable, Path,
+    RcInode, Stat, Tx,
 };
 use crate::util::strong_pin::StrongPin;
 use crate::{
     bio::Buf,
     file::{FileType, InodeFileType},
     hal::hal,
-    lock::{SpinLock, SpinLockGuard},
+    lock::SleepLock,
     param::BSIZE,
     proc::KernelCtx,
 };
@@ -26,7 +27,7 @@ mod superblock;
 pub use imap::Imap;
 pub use inode::{Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
 pub use segment::Segment;
-pub use superblock::{Superblock, IPB};
+pub use superblock::{SegTable, Superblock};
 
 /// root i-number
 const ROOTINO: u32 = 1;
@@ -35,7 +36,6 @@ const NDIRECT: usize = 12;
 const NINDIRECT: usize = BSIZE.wrapping_div(mem::size_of::<u32>());
 const MAXFILE: usize = NDIRECT.wrapping_add(NINDIRECT);
 
-// TODO: reduce the number of segments into 1. (Optimize later)
 #[pin_project]
 pub struct Lfs {
     /// Initializing superblock should run only once because forkret() calls FileSystem::init().
@@ -46,13 +46,20 @@ pub struct Lfs {
     #[pin]
     itable: Itable<Self>,
 
+    // TODO: Group the segment, segtable, and imap into a `Once<Spinlock<WriteManager>>`.
     /// The current segment.
-    // TODO: Should share the lock with `Itable` instead?
-    segment: SpinLock<Segment>,
+    segment: Once<SleepLock<Segment>>,
+
+    // The segment usage table.
+    // TODO: Use a bitmap crate instead.
+    segtable: Once<SleepLock<SegTable>>,
 
     /// Imap.
-    // TODO: Should share the lock with `Itable` instead?
-    imap: SpinLock<Imap>,
+    imap: Once<SleepLock<Imap>>,
+
+    // 1 or 2.
+    // Stores whether the last checkpoint is stored at checkpoint 1 or checkpoint 2.
+    curr_checkpoint: Once<SleepLock<usize>>,
 }
 
 impl Tx<'_, Lfs> {
@@ -82,7 +89,7 @@ impl Tx<'_, Lfs> {
     /// Allocate a zeroed disk block to be used by `inum` as the `block_no`th data block.
     // TODO: Okay to remove dev: u32?
     fn balloc(&self, inum: u32, block_no: u32, ctx: &KernelCtx<'_, '_>) -> (Buf, u32) {
-        let mut segment = self.fs.segment();
+        let segment = self.fs.segment();
         let (mut buf, bno) = segment.get_or_add_data_block(inum, block_no, ctx).unwrap();
         buf.deref_inner_mut().data.fill(0);
         buf.deref_inner_mut().valid = true;
@@ -100,10 +107,10 @@ impl Lfs {
         Self {
             superblock: Once::new(),
             itable: Itable::<Self>::new_itable(),
-            // TODO: Use `Segment::new()` instead.
-            segment: SpinLock::new("segment", Segment::default()),
-            // TODO: Load the imap instead of using default.
-            imap: SpinLock::new("imap", Imap::default()),
+            segment: Once::new(),
+            imap: Once::new(),
+            segtable: Once::new(),
+            curr_checkpoint: Once::new(),
         }
     }
 
@@ -116,12 +123,37 @@ impl Lfs {
         unsafe { StrongPin::new_unchecked(&self.as_pin().get_ref().itable) }
     }
 
-    pub fn segment(&self) -> SpinLockGuard<'_, Segment> {
-        self.segment.lock()
+    // TODO: Use .lock() instead of .get_mut_raw() in the following functions,
+    // after finding the bug cause.
+    pub fn segment(&self) -> &mut Segment {
+        unsafe { &mut *self.segment.get().expect("segment").get_mut_raw() }
     }
 
-    pub fn imap(&self) -> SpinLockGuard<'_, Imap> {
-        self.imap.lock()
+    fn segtable(&self) -> &mut SegTable {
+        unsafe { &mut *self.segtable.get().expect("segtable").get_mut_raw() }
+    }
+
+    pub fn imap(&self) -> &mut Imap {
+        unsafe { &mut *self.imap.get().expect("imap").get_mut_raw() }
+    }
+
+    /// Traverses the segment usage table to find an empty segment, and returns its segment number
+    /// after marking the segment as 'used'. If a `last_seg_no` is given, starts traversing from `last_seg_no + 1`.
+    pub fn get_next_seg_no(&self, last_seg_no: Option<u32>) -> u32 {
+        let start = match last_seg_no {
+            None => 0,
+            Some(seg_no) => seg_no as usize + 1,
+        };
+        let segtable = self.segtable();
+        for i in start..(self.superblock().nsegments() as usize) {
+            if segtable[i / 8] & (1 << (i % 8)) == 0 {
+                segtable[i / 8] |= 1 << (i % 8);
+                return i as u32;
+            }
+        }
+        panic!("no empty segment");
+        // TODO: If fails to find an empty one, run the cleaner.
+        // (Actually, the cleaner should have already runned earlier.)
     }
 }
 
@@ -131,11 +163,23 @@ impl FileSystem for Lfs {
 
     fn init(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
         if !self.superblock.is_completed() {
+            // Load the superblock.
             let buf = hal().disk().read(dev, 1, ctx);
-            let _superblock = self.superblock.call_once(|| Superblock::new(&buf));
-            // TODO: make push function in block_buffer
-            // self.segments[0].block_buffer[0] = Block::new(block_type, 0, 0);
+            let superblock = self.superblock.call_once(|| Superblock::new(&buf));
             buf.free(ctx);
+
+            // Load from the checkpoint.
+            let (segtable, chkpt_no, imap) = superblock.load_checkpoint(dev, ctx);
+            let _ = self
+                .segtable
+                .call_once(|| SleepLock::new("segtable", segtable));
+            let _ = self.segment.call_once(|| {
+                SleepLock::new("segment", Segment::new(dev, self.get_next_seg_no(None)))
+            });
+            let _ = self.imap.call_once(|| SleepLock::new("imap", imap));
+            let _ = self
+                .curr_checkpoint
+                .call_once(|| SleepLock::new("curr_checkpoint", chkpt_no));
         }
     }
 
@@ -238,7 +282,6 @@ impl FileSystem for Lfs {
     where
         F: FnOnce(&mut InodeGuard<'_, Self>) -> T,
     {
-        // create a new file with `path`
         let (ptr, name) = self.itable().nameiparent(path, tx, ctx)?;
         let ptr = scopeguard::guard(ptr, |ptr| ptr.free((tx, ctx)));
         let dp = ptr.lock(ctx);
@@ -258,7 +301,6 @@ impl FileSystem for Lfs {
             drop(ip);
             return Ok((scopeguard::ScopeGuard::into_inner(ptr2), ret));
         }
-
         let ptr2 = self.itable().alloc_inode(dp.dev, typ, tx, ctx);
         let ip = ptr2.lock(ctx);
         let mut ip = scopeguard::guard(ip, |ip| ip.free(ctx));
@@ -292,7 +334,6 @@ impl FileSystem for Lfs {
         tx: &Tx<'_, Self>,
         ctx: &mut KernelCtx<'_, '_>,
     ) -> Result<usize, ()> {
-        // open a file with `path`
         let (ip, typ) = if omode.contains(FcntlFlags::O_CREATE) {
             self.create(path, InodeType::File, tx, ctx, |ip| ip.deref_inner().typ)?
         } else {
@@ -397,9 +438,7 @@ impl FileSystem for Lfs {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let bp = hal()
-                .disk()
-                .read(guard.dev, guard.bmap(off as usize / BSIZE, &k), &k);
+            let bp = guard.read_data_block(off as usize / BSIZE, &k);
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
@@ -412,8 +451,6 @@ impl FileSystem for Lfs {
         Ok(tot as usize)
     }
 
-    // TODO: remove the macro
-    #[allow(unused_mut, unused_variables)]
     fn inode_write<
         'id,
         's,
@@ -436,25 +473,20 @@ impl FileSystem for Lfs {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = hal().disk().read(
-                guard.dev,
-                guard.bmap_or_alloc(off as usize / BSIZE, tx, &k),
-                &k,
-            );
+            let mut bp = guard.write_data_block(off as usize / BSIZE, tx, &k);
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
-            if f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k).is_ok() {
-                bp.free(&k);
-                let mut segment = tx.fs.segment();
-                if segment.is_full() {
-                    segment.commit(&k);
-                }
-                // tx.write(bp, &k);
-            } else {
-                bp.free(&k);
+            let res = f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k);
+            bp.free(&k);
+            let segment = tx.fs.segment();
+            if segment.is_full() {
+                segment.commit(&k);
+            }
+            if res.is_err() {
                 break;
             }
+            // tx.write(bp, &k);
             tot += m;
             off += m;
         }
@@ -502,7 +534,44 @@ impl FileSystem for Lfs {
     }
 
     fn inode_lock<'a>(inode: &'a Inode<Self>, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'a, Self> {
-        let guard = inode.inner.lock(ctx);
+        let mut guard = inode.inner.lock(ctx);
+        if !guard.valid {
+            let mut bp = hal().disk().read(
+                inode.dev,
+                ctx.kernel().fs().imap().get(inode.inum, ctx),
+                ctx,
+            );
+
+            // SAFETY: dip is inside bp.data.
+            let dip = bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode;
+            // SAFETY: i16 does not have internal structure.
+            let t = unsafe { *(dip as *const i16) };
+            // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.
+            assert!(t < core::mem::variant_count::<DInodeType>() as i16);
+            // SAFETY: dip is aligned properly and t < #(variants of DInodeType).
+            let dip = unsafe { &mut *dip };
+
+            match dip.typ {
+                DInodeType::None => guard.typ = InodeType::None,
+                DInodeType::Dir => guard.typ = InodeType::Dir,
+                DInodeType::File => guard.typ = InodeType::File,
+                DInodeType::Device => {
+                    guard.typ = InodeType::Device {
+                        major: dip.major,
+                        minor: dip.minor,
+                    }
+                }
+            }
+            guard.nlink = dip.nlink;
+            guard.size = dip.size;
+            for (d, s) in guard.addr_direct.iter_mut().zip(&dip.addr_direct) {
+                *d = *s;
+            }
+            guard.addr_indirect = dip.addr_indirect;
+            bp.free(ctx);
+            guard.valid = true;
+            assert_ne!(guard.typ, InodeType::None, "Inode::lock: no type");
+        };
         mem::forget(guard);
         InodeGuard { inode }
     }

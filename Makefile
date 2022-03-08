@@ -41,6 +41,15 @@ CARGOFLAGS =
 ADD_QEMUOPTS = -bios none
 endif
 
+ifndef FS
+MKFS = mkfs/mkfs
+endif
+
+ifeq ($(FS),lfs)
+MKFS = mklfs/mklfs
+CARGOFLAGS =  --features lfs
+endif
+
 ifndef RUST_MODE
 RUST_MODE = debug
 endif
@@ -245,6 +254,9 @@ $(LM)/getopt.o : $(LM)/getopt.c $(INCS)
 mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 	gcc -Werror -Wall -I. -o mkfs/mkfs mkfs/mkfs.c
 
+mklfs/mklfs: mklfs/mklfs.c mklfs/lfs.h
+	gcc -Werror -Wall -I. -o mklfs/mklfs mklfs/mklfs.c
+
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More
 # details:
@@ -279,8 +291,8 @@ UPROGS=\
 	#$U/_lat_fs\
 	$U/_lat_pagefault\
 
-fs.img: mkfs/mkfs README $(UPROGS)
-	mkfs/mkfs fs.img README $(UPROGS)
+fs.img: $(MKFS) README $(UPROGS)
+	$(MKFS) fs.img README $(UPROGS)
 
 -include kernel/*.d user/*.d
 

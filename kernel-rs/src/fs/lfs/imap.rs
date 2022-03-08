@@ -20,6 +20,7 @@ struct DImapBlock {
 /// Stores the address of each imap block.
 pub struct Imap {
     dev_no: u32,
+    ninodes: usize,
     addr: [u32; IMAPSIZE],
 }
 
@@ -27,6 +28,7 @@ impl const Default for Imap {
     fn default() -> Self {
         Self {
             dev_no: 0,
+            ninodes: 0,
             addr: [0; IMAPSIZE],
         }
     }
@@ -34,8 +36,12 @@ impl const Default for Imap {
 
 impl Imap {
     #[allow(dead_code)]
-    pub fn new(dev_no: u32, addr: [u32; IMAPSIZE]) -> Self {
-        Self { dev_no, addr }
+    pub fn new(dev_no: u32, ninodes: usize, addr: [u32; IMAPSIZE]) -> Self {
+        Self {
+            dev_no,
+            ninodes,
+            addr,
+        }
     }
 
     /// For the inode with inode number `inum`,
@@ -55,8 +61,11 @@ impl Imap {
             let buf = self.get_imap_block(i, ctx);
             let imap_block = unsafe { &*(buf.deref_inner().data.as_ptr() as *const DImapBlock) };
             for j in 0..NENTRY {
-                if imap_block.entry[j] == 0 {
-                    return Some((i * NENTRY + j) as u32);
+                let inum = i * NENTRY + j;
+                // inum: (0, ninodes)
+                if inum != 0 && inum < self.ninodes && imap_block.entry[j] == 0 {
+                    buf.free(ctx);
+                    return Some(inum as u32);
                 }
             }
             buf.free(ctx);
@@ -65,10 +74,9 @@ impl Imap {
     }
 
     /// For the inode with inode number `inum`, returns the disk_block_no of it.
-    #[allow(dead_code)]
     pub fn get(&self, inum: u32, ctx: &KernelCtx<'_, '_>) -> u32 {
         assert!(
-            inum < ctx.kernel().fs().superblock().ninodes,
+            inum < ctx.kernel().fs().superblock().ninodes(),
             "invalid inum"
         );
         let (block_no, offset) = self.get_imap_block_no(inum);
@@ -91,15 +99,15 @@ impl Imap {
         ctx: &KernelCtx<'_, '_>,
     ) -> bool {
         assert!(
-            inum < ctx.kernel().fs().superblock().ninodes,
+            inum < ctx.kernel().fs().superblock().ninodes(),
             "invalid inum"
         );
         let (block_no, offset) = self.get_imap_block_no(inum);
 
-        if let Some((mut buf, new_addr)) = segment.get_or_add_imap_block(block_no as u32, ctx) {
+        if let Some((mut buf, addr)) = segment.get_or_add_imap_block(block_no as u32, ctx) {
             let imap_block =
                 unsafe { &mut *(buf.deref_inner_mut().data.as_mut_ptr() as *mut DImapBlock) };
-            if new_addr != 0 {
+            if addr != self.addr[block_no] {
                 // Copy the imap block content from old imap block.
                 let mut old_buf = self.get_imap_block(block_no, ctx);
                 let old_imap_block = unsafe {
@@ -107,7 +115,7 @@ impl Imap {
                 };
                 *imap_block = old_imap_block.clone();
                 // Update imap mapping.
-                self.addr[block_no] = new_addr;
+                self.addr[block_no] = addr;
                 old_buf.free(ctx);
             }
             // Update entry.

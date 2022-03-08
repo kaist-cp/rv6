@@ -72,12 +72,22 @@ impl DSegSum {
 /// In-memory segment.
 /// The segment is the unit of sequential disk writes.
 ///
+/// Any write operations to the disk must be done through the `Segment`'s methods.
+/// That is, when you want to write something new to the disk (ex: create a new indoe)
+/// or update something already on the disk (ex: update an inode/inode data block/imap),
+/// you should request for a `Buf` to the `Segment` and write on it.
+///
 /// # Note
 ///
-/// We only actually hold the segment summary in memory.
-/// When we flush the segment, we create a DSegSum (on-disk segment summary block) and write it together with
-/// the in-memory data (inode from `Itable`, inode data block from `Buf`, and inode map from `Imap`) for each
-/// segment block to the disk.
+/// The `Segment` does not always provide an empty data block to the outside.
+/// When requesting for a new block to be used to update an inode/inode data block/imap,
+/// if a block for it was already requested before and is still on the segment (i.e. not committed yet),
+/// the `Segment` just returns the `Buf` of that block instead of an empty one.
+/// In this case, you just need to update the `Buf` for only the parts that actually changed.
+// We only actually hold the segment summary in memory.
+// When we flush the segment, we create a DSegSum (on-disk segment summary block) and write it together with
+// the in-memory data (inode from `Itable`, inode data block from `Buf`, and inode map from `Imap`) for each
+// segment block to the disk.
 pub struct Segment {
     dev_no: u32,
 
@@ -107,18 +117,13 @@ impl const Default for Segment {
 // TODO: Generalize methods of `Segment`.
 impl Segment {
     #[allow(dead_code)]
-    pub const fn new(
-        dev_no: u32,
-        segment_no: u32,
-        segment_summary: [SegSumEntry; SEGSIZE - 1],
-        offset: usize,
-    ) -> Self {
+    // TODO: Load from a non-empty segment instead?
+    pub const fn new(dev_no: u32, segment_no: u32) -> Self {
         Self {
             dev_no,
             segment_no,
-            segment_summary,
-            offset,
-            // imap_block_no,
+            segment_summary: array![_ => SegSumEntry::Empty; SEGSIZE - 1],
+            offset: 0,
         }
     }
 
@@ -140,8 +145,8 @@ impl Segment {
         self.offset == SEGSIZE - 1
     }
 
-    /// Provides an empty space on the segment to be used to store the new `inode`.
-    /// If succeeds, returns a `Buf` for a disk block and the disk block number of it.
+    /// Provides an empty block on the segment to be used to store a new inode.
+    /// If succeeds, returns a `Buf` of the disk block and the disk block number of it.
     ///
     /// # Note
     ///
@@ -170,9 +175,15 @@ impl Segment {
         }
     }
 
-    /// Appends the updated inode (which is not a new one) at the back of the segment.
-    /// Returns the disk block number if succeeded. Otherwise, returns `None`.
+    /// Provides a block on the segment to be used to store the updated inode.
+    /// If the inode is not already on the segment, allocates an empty block on the segment for it.
+    /// If succeeds, returns a `Buf` of the disk block and the disk block number of it.
+    ///
     /// Run this every time an inode gets updated.
+    ///
+    /// # Note
+    ///
+    /// Use this only when updating an inode. For allocating a new inode, use `Segment::add_new_node_block` instead.
     pub fn get_or_add_updated_inode_block(
         &mut self,
         inum: u32,
@@ -202,10 +213,11 @@ impl Segment {
         }
     }
 
-    /// Provides an empty space on the segment to be used to store the new data block for an inode.
-    /// If succeeds, returns the a `Buf` of a disk block and the disk block number of it.
+    /// Provides a block on the segment to be used to store the new/updated data block of an inode.
+    /// If the inode's `block_no`th data block is not already on the segment, allocates an empty block on the segment for it.
+    /// If succeeds, returns a `Buf` of the disk block and the disk block number of it.
+    ///
     /// Whenever a data block gets updated, run this and write the new data at the returned `Buf`.
-    // TODO: We don't always need a `Buf`.
     pub fn get_or_add_data_block(
         &mut self,
         inum: u32,
@@ -242,9 +254,9 @@ impl Segment {
         }
     }
 
-    /// * If the imap block is not already on the segment, returns a `Buf` to an empty space and the disk block number of it.
-    ///   You should copy the imap block to here and update the imap's indirect mapping.
-    /// * Otherwise, returns the `Buf` that buffers the imap block and 0.
+    /// Provides an empty space on the segment to be used to store the updated imap.
+    /// If succeeds, returns a `Buf` of the disk block and the disk block number of it.
+    /// If the `block_no`th imap block is not already on the segment, allocates an empty block on the segment for it.
     ///
     /// Whenever the imap gets updated, run this with the proper block_no.
     pub fn get_or_add_imap_block(
@@ -277,12 +289,12 @@ impl Segment {
                 buf: buf.clone(),
             };
             self.offset += 1;
-            Some((buf.lock(ctx), 0))
+            Some((buf.lock(ctx), self.get_disk_block_no(self.offset, ctx)))
         }
     }
 
     /// Commits the segment to the disk. Updates the checkpoint region of the disk if needed.
-    /// Run this when the segment is full or right before shutdown.
+    /// Run this when the segment is full or right before shutdowns.
     pub fn commit(&mut self, ctx: &KernelCtx<'_, '_>) {
         const_assert!(core::mem::size_of::<DSegSum>() <= BSIZE);
 
@@ -290,6 +302,7 @@ impl Segment {
         let mut bp = self.read_segment_block(0, ctx);
         let ssp = bp.deref_inner_mut().data.as_mut_ptr() as *mut DSegSum;
         unsafe { ptr::write(ssp, DSegSum::new(&self.segment_summary)) };
+        bp.free(ctx);
 
         // Write each segment block to the disk.
         // TODO: Check the virtio spec for a way for faster sequential disk write.
@@ -302,8 +315,7 @@ impl Segment {
             }
         }
 
-        // TODO: The `Lfs` should provide a new segment.
-        self.segment_no += 1;
+        self.segment_no = ctx.kernel().fs().get_next_seg_no(Some(self.segment_no));
         self.segment_summary = array![_ => SegSumEntry::Empty; SEGSIZE - 1];
         self.offset = 0;
 
