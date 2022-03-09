@@ -77,26 +77,6 @@ impl Tx<'_, Lfs> {
         // self.fs.log().lock().write(b, ctx);
     }
 
-    /// Zero a block.
-    // fn bzero(&self, dev: u32, bno: u32, ctx: &KernelCtx<'_, '_>) {
-    //     let mut buf = ctx.kernel().bcache().get_buf(dev, bno).lock(ctx);
-    //     buf.deref_inner_mut().data.fill(0);
-    //     buf.deref_inner_mut().valid = true;
-    //     self.write(buf, ctx);
-    // }
-
-    /// Blocks.
-    /// Allocate a zeroed disk block to be used by `inum` as the `block_no`th data block.
-    // TODO: Okay to remove dev: u32?
-    fn balloc(&self, inum: u32, block_no: u32, ctx: &KernelCtx<'_, '_>) -> (Buf, u32) {
-        let mut segment = self.fs.segment(ctx);
-        let (mut buf, bno) = segment.get_or_add_data_block(inum, block_no, ctx).unwrap();
-        buf.deref_inner_mut().data.fill(0);
-        buf.deref_inner_mut().valid = true;
-        segment.free(ctx);
-        (buf, bno)
-    }
-
     /// Free a disk block.
     fn bfree(&self, _dev: u32, _b: u32, _ctx: &KernelCtx<'_, '_>) {
         // TODO: We don't need this. The cleaner should handle this.

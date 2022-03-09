@@ -149,8 +149,15 @@ impl Segment {
             .read(self.dev_no, self.get_disk_block_no(seg_block_no, ctx), ctx)
     }
 
+    /// Returns true if the segment has no more remaining blocks.
+    /// You should commit the segment immediately after this.
     pub fn is_full(&self) -> bool {
         self.offset == SEGSIZE - 1
+    }
+
+    /// Returns the number of remaining blocks on the segment.
+    pub fn remaining(&self) -> usize {
+        SEGSIZE - 1 - self.offset
     }
 
     /// Provides an empty block on the segment to be used to store a new inode.
@@ -173,9 +180,39 @@ impl Segment {
             None
         } else {
             // Append segment.
-            let buf = self.read_segment_block(self.offset + 1, ctx).unlock(ctx);
+            let mut buf = self.read_segment_block(self.offset + 1, ctx);
+            buf.deref_inner_mut().data.fill(0);
+            buf.deref_inner_mut().valid = true;
+            let buf = buf.unlock(ctx);
             self.segment_summary[self.offset] = SegSumEntry::Inode {
                 inum,
+                buf: buf.clone(),
+            };
+            self.offset += 1;
+            Some((buf.lock(ctx), self.get_disk_block_no(self.offset, ctx)))
+        }
+    }
+
+    /// Provides an empty block on the segment to be used to store a new data block of an inode.
+    /// If succeeds, returns a `Buf` of the disk block and the disk block number of it.
+    pub fn add_new_data_block(
+        &mut self,
+        inum: u32,
+        block_no: u32,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Option<(Buf, u32)> {
+        // Try to push at the back of the segment.
+        if self.is_full() {
+            None
+        } else {
+            // Append segment.
+            let mut buf = self.read_segment_block(self.offset + 1, ctx);
+            buf.deref_inner_mut().data.fill(0);
+            buf.deref_inner_mut().valid = true;
+            let buf = buf.unlock(ctx);
+            self.segment_summary[self.offset] = SegSumEntry::DataBlock {
+                inum,
+                block_no,
                 buf: buf.clone(),
             };
             self.offset += 1;
