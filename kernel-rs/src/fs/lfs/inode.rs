@@ -281,7 +281,27 @@ impl InodeGuard<'_, Lfs> {
         tx: &Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Buf {
-        self.bmap_internal(bn, true, Some(tx), ctx)
+        if bn < NDIRECT {
+            let addr = self.deref_inner().addr_direct[bn];
+            let (buf, new_addr) = self.writable_data_block_inner(bn, addr, tx, ctx);
+            self.deref_inner_mut().addr_direct[bn] = new_addr;
+            buf
+        } else {
+            let bn = bn - NDIRECT;
+            assert!(bn < NINDIRECT, "bmap: out of range");
+
+            let bp = self.writable_indirect_block(tx, ctx);
+            let (prefix, data, _) = unsafe { bp.deref_inner().data.align_to::<u32>() };
+            debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
+            let addr = data[bn];
+            bp.free(ctx);
+            let (buf, new_addr) = self.writable_data_block_inner(bn + NDIRECT, addr, tx, ctx);
+            let mut bp = self.writable_indirect_block(tx, ctx);
+            let (_, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
+            data[bn] = new_addr;
+            bp.free(ctx);
+            buf
+        }
     }
 
     /// Returns a `Buf` that has the inode's `bn`th data block content.
@@ -291,55 +311,34 @@ impl InodeGuard<'_, Lfs> {
     /// Use the returned `Buf` only to read the inode's data block's content.
     /// Any write operations to a inode's data block should be done using `InodeGuard::bmap_write`.
     pub fn readable_data_block(&mut self, bn: usize, ctx: &KernelCtx<'_, '_>) -> Buf {
-        self.bmap_internal(bn, false, None, ctx)
-    }
-
-    fn bmap_internal(
-        &mut self,
-        bn: usize,
-        write: bool,
-        tx_opt: Option<&Tx<'_, Lfs>>,
-        ctx: &KernelCtx<'_, '_>,
-    ) -> Buf {
         if bn < NDIRECT {
             let addr = self.deref_inner().addr_direct[bn];
-            if write {
-                let (buf, new_addr) = self.bmap_writable_data_block(bn, addr, tx_opt.unwrap(), ctx);
-                self.deref_inner_mut().addr_direct[bn] = new_addr;
-                buf
-            } else {
-                assert!(addr != 0, "bmap: out of range");
-                hal().disk().read(self.dev, addr, ctx)
-            }
+            assert!(addr != 0, "bmap: out of range");
+            hal().disk().read(self.dev, addr, ctx)
         } else {
             let bn = bn - NDIRECT;
             assert!(bn < NINDIRECT, "bmap: out of range");
 
-            let bp = self.get_indirect(false, tx_opt, ctx);
+            // Read the indirect block.
+            let indirect = self.deref_inner().addr_indirect;
+            assert!(indirect != 0, "bmap: out of range");
+            let bp = hal().disk().read(self.dev, indirect, ctx);
+            // Get the address.
             let (prefix, data, _) = unsafe { bp.deref_inner().data.align_to::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
             let addr = data[bn];
             bp.free(ctx);
-            let buf = if write {
-                let (buf, new_addr) =
-                    self.bmap_writable_data_block(bn + NDIRECT, addr, tx_opt.unwrap(), ctx);
-                let mut bp = self.get_indirect(write, tx_opt, ctx);
-                let (_, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
-                data[bn] = new_addr;
-                bp.free(ctx);
-                buf
-            } else {
-                assert!(addr != 0, "bmap: out of range");
-                hal().disk().read(self.dev, addr, ctx)
-            };
-            buf
+            // Read the indirect data block.
+            assert!(addr != 0, "bmap: out of range");
+            hal().disk().read(self.dev, addr, ctx)
         }
     }
 
     /// Returns the `bn`th data block of the inode and its (possibly new) disk block number.
+    /// The given `addr` is the (possibly old) disk block number of the `bn`th data block.
     /// * If `addr == 0`, allocates an empty disk block and returns it.
-    /// * If `addr != 0`, copies the content of the data at `addr` to the block when allocating a new one.
-    fn bmap_writable_data_block(
+    /// * If `addr != 0`, the content of the data at `addr` is copied to the returned block if a new block was allocated.
+    fn writable_data_block_inner(
         &self,
         bn: usize,
         addr: u32,
@@ -375,15 +374,9 @@ impl InodeGuard<'_, Lfs> {
     /// Returns the `Buf` and the disk block number for the block
     /// that stores the indirect mappings for the indirect data blocks of the inode.
     /// The `indirect` field of the inode may be updated after calling this.
-    fn get_indirect(
-        &mut self,
-        write: bool,
-        tx_opt: Option<&Tx<'_, Lfs>>,
-        ctx: &KernelCtx<'_, '_>,
-    ) -> Buf {
+    fn writable_indirect_block(&mut self, tx: &Tx<'_, Lfs>, ctx: &KernelCtx<'_, '_>) -> Buf {
         if self.deref_inner().addr_indirect == 0 {
             // Allocate a block to store the mappings for the indirect blocks.
-            let tx = tx_opt.expect("bmap: out of range");
             let mut segment = tx.fs.segment(ctx);
             let (buf, indirect) = segment.get_or_add_indirect_block(self.inum, ctx).unwrap();
             buf.free(ctx);
@@ -395,28 +388,23 @@ impl InodeGuard<'_, Lfs> {
         }
         let indirect = self.deref_inner().addr_indirect;
 
-        if write {
-            let tx = tx_opt.unwrap();
-            let mut segment = tx.fs.segment(ctx);
-            let (mut bp, new_indirect) = segment.get_or_add_indirect_block(self.inum, ctx).unwrap();
-            segment.free(ctx);
-            if new_indirect != indirect {
-                // Copy from old block to new block.
-                let old_bp = hal().disk().read(self.dev, indirect, ctx);
-                unsafe {
-                    core::ptr::copy(
-                        &raw const old_bp.deref_inner().data,
-                        &raw mut bp.deref_inner_mut().data,
-                        1,
-                    );
-                }
-                old_bp.free(ctx);
-                self.deref_inner_mut().addr_indirect = new_indirect;
+        let mut segment = tx.fs.segment(ctx);
+        let (mut bp, new_indirect) = segment.get_or_add_indirect_block(self.inum, ctx).unwrap();
+        segment.free(ctx);
+        if new_indirect != indirect {
+            // Copy from old block to new block.
+            let old_bp = hal().disk().read(self.dev, indirect, ctx);
+            unsafe {
+                core::ptr::copy(
+                    &raw const old_bp.deref_inner().data,
+                    &raw mut bp.deref_inner_mut().data,
+                    1,
+                );
             }
-            bp
-        } else {
-            hal().disk().read(self.dev, indirect, ctx)
+            old_bp.free(ctx);
+            self.deref_inner_mut().addr_indirect = new_indirect;
         }
+        bp
     }
 
     /// Is the directory dp empty except for "." and ".." ?
