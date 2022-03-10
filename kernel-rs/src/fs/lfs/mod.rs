@@ -76,11 +76,6 @@ impl Tx<'_, Lfs> {
         // TODO: We should update the checkpoint here, and actually write to the disk when the segment is flushed.
         // self.fs.log().lock().write(b, ctx);
     }
-
-    /// Free a disk block.
-    fn bfree(&self, _dev: u32, _b: u32, _ctx: &KernelCtx<'_, '_>) {
-        // TODO: We don't need this. The cleaner should handle this.
-    }
 }
 
 impl Lfs {
@@ -483,32 +478,8 @@ impl FileSystem for Lfs {
     }
 
     fn inode_trunc(guard: &mut InodeGuard<'_, Self>, tx: &Tx<'_, Self>, ctx: &KernelCtx<'_, '_>) {
-        // TODO: This function is unused in both lfs and ufs. May need to update fs::FS trait.
-        let dev = guard.dev;
-        for addr in &mut guard.deref_inner_mut().addr_direct {
-            if *addr != 0 {
-                tx.bfree(dev, *addr, ctx);
-                *addr = 0;
-            }
-        }
-
-        if guard.deref_inner().addr_indirect != 0 {
-            let mut bp = hal()
-                .disk()
-                .read(dev, guard.deref_inner().addr_indirect, ctx);
-            // SAFETY: u32 does not have internal structure.
-            let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
-            debug_assert_eq!(prefix.len(), 0, "itrunc: Buf data unaligned");
-            for a in data {
-                if *a != 0 {
-                    tx.bfree(dev, *a, ctx);
-                }
-            }
-            bp.free(ctx);
-            tx.bfree(dev, guard.deref_inner().addr_indirect, ctx);
-            guard.deref_inner_mut().addr_indirect = 0
-        }
-
+        guard.deref_inner_mut().addr_direct = [0; NDIRECT];
+        guard.deref_inner_mut().addr_indirect = 0;
         guard.deref_inner_mut().size = 0;
         guard.update(tx, ctx);
     }
@@ -567,9 +538,11 @@ impl FileSystem for Lfs {
             // so this acquiresleep() won't block (or deadlock).
             let mut ip = inode.lock(ctx);
 
-            ip.trunc(tx, ctx);
-            ip.deref_inner_mut().typ = InodeType::None;
-            ip.update(tx, ctx);
+            let mut segment = tx.fs.segment(ctx);
+            let mut imap = tx.fs.imap(ctx);
+            assert!(imap.set(ip.inum, 0, &mut segment, ctx));
+            imap.free(ctx);
+            segment.free(ctx);
             ip.deref_inner_mut().valid = false;
 
             ip.free(ctx);
