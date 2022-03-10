@@ -249,10 +249,10 @@ impl InodeGuard<'_, Lfs> {
         // 2. Write the imap to segment.
         let mut imap = tx.fs.imap(ctx);
         assert!(imap.set(self.inum, disk_block_no, &mut segment, ctx));
-        imap.free(ctx);
         if segment.is_full() {
             segment.commit(ctx);
         }
+        imap.free(ctx);
         segment.free(ctx);
     }
 
@@ -292,7 +292,7 @@ impl InodeGuard<'_, Lfs> {
             let bn = bn - NDIRECT;
             assert!(bn < NINDIRECT, "bmap: out of range");
 
-            // We need two `Buf`. Hence, we flush the segment earily if we need to
+            // We need two `Buf`. Hence, we flush the segment early if we need to
             // and maintain the lock on the `Segment` until we're done.
             let mut segment = tx.fs.segment(ctx);
             if segment.remaining() < 2 {
