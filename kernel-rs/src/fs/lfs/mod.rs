@@ -447,13 +447,13 @@ impl FileSystem for Lfs {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = guard.writable_data_block(off as usize / BSIZE, tx, &k);
+            let mut segment = tx.fs.segment(&k);
+            let mut bp = guard.writable_data_block(off as usize / BSIZE, &mut segment, tx, &k);
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
             let res = f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k);
             bp.free(&k);
-            let mut segment = tx.fs.segment(&k);
             if segment.is_full() {
                 segment.commit(&k);
             }

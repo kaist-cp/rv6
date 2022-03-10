@@ -275,17 +275,17 @@ impl InodeGuard<'_, Lfs> {
     /// listed in block self->addr_indirect.
     /// Return the disk block address of the nth block in inode self.
     /// If there is no such block, bmap allocates one.
+    // TODO: Is the `segment` argument necessary? Seems like `fourfiles` deadlocks if not added.
     pub fn writable_data_block(
         &mut self,
         bn: usize,
-        tx: &Tx<'_, Lfs>,
+        segment: &mut SleepLockGuard<'_, Segment>,
+        _tx: &Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Buf {
         if bn < NDIRECT {
             let addr = self.deref_inner().addr_direct[bn];
-            let mut segment = tx.fs.segment(ctx);
-            let (buf, new_addr) = self.writable_data_block_inner(bn, addr, &mut segment, ctx);
-            segment.free(ctx);
+            let (buf, new_addr) = self.writable_data_block_inner(bn, addr, segment, ctx);
             self.deref_inner_mut().addr_direct[bn] = new_addr;
             buf
         } else {
@@ -294,21 +294,19 @@ impl InodeGuard<'_, Lfs> {
 
             // We need two `Buf`. Hence, we flush the segment early if we need to
             // and maintain the lock on the `Segment` until we're done.
-            let mut segment = tx.fs.segment(ctx);
             if segment.remaining() < 2 {
                 segment.commit(ctx);
             }
 
             // Get the indirect block and the address of the indirect data block.
-            let mut bp = self.writable_indirect_block(&mut segment, ctx);
+            let mut bp = self.writable_indirect_block(segment, ctx);
             let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
             // Get the indirect data block and update the indirect block.
             let (buf, new_addr) =
-                self.writable_data_block_inner(bn + NDIRECT, data[bn], &mut segment, ctx);
+                self.writable_data_block_inner(bn + NDIRECT, data[bn], segment, ctx);
             data[bn] = new_addr;
             bp.free(ctx);
-            segment.free(ctx);
             buf
         }
     }
