@@ -110,7 +110,7 @@ impl Imap {
         );
         let (block_no, offset) = self.get_imap_block_no(inum);
 
-        if let Some((mut buf, addr)) = segment.get_or_add_imap_block(block_no as u32, ctx) {
+        if let Some((mut buf, addr)) = segment.get_or_add_updated_imap_block(block_no as u32, ctx) {
             if addr != self.addr[block_no] {
                 // Copy the imap block content from old imap block.
                 let old_buf = self.get_imap_block(block_no, ctx);

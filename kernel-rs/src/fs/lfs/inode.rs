@@ -363,7 +363,7 @@ impl InodeGuard<'_, Lfs> {
                 .unwrap()
         } else {
             let (mut buf, new_addr) = segment
-                .get_or_add_data_block(self.inum, bn as u32, ctx)
+                .get_or_add_updated_data_block(self.inum, bn as u32, ctx)
                 .unwrap();
             if new_addr != addr {
                 // Copy from old block to new block.
@@ -395,7 +395,9 @@ impl InodeGuard<'_, Lfs> {
             self.deref_inner_mut().addr_indirect = new_indirect;
             bp
         } else {
-            let (mut bp, new_indirect) = segment.get_or_add_indirect_block(self.inum, ctx).unwrap();
+            let (mut bp, new_indirect) = segment
+                .get_or_add_updated_indirect_block(self.inum, ctx)
+                .unwrap();
             if indirect != new_indirect {
                 // Copy from old block to new block.
                 let old_bp = hal().disk().read(self.dev, indirect, ctx);
