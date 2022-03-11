@@ -96,14 +96,14 @@ impl SegSumEntry {
     fn get_buf(&self) -> Option<&BufUnlocked> {
         match self {
             SegSumEntry::Empty => None,
-            SegSumEntry::Inode { inum: _, buf } => Some(&buf),
+            SegSumEntry::Inode { inum: _, buf } => Some(buf),
             SegSumEntry::DataBlock {
                 inum: _,
                 block_no: _,
                 buf,
-            } => Some(&buf),
-            SegSumEntry::IndirectMap { inum: _, buf } => Some(&buf),
-            SegSumEntry::Imap { block_no: _, buf } => Some(&buf),
+            } => Some(buf),
+            SegSumEntry::IndirectMap { inum: _, buf } => Some(buf),
+            SegSumEntry::Imap { block_no: _, buf } => Some(buf),
         }
     }
 }
@@ -204,10 +204,9 @@ impl Segment {
             let mut buf = self.read_segment_block(self.offset + 1, ctx);
             buf.deref_inner_mut().data.fill(0);
             buf.deref_inner_mut().valid = true;
-            let buf = buf.unlock(ctx);
-            self.segment_summary[self.offset] = f(buf.clone());
+            self.segment_summary[self.offset] = f(buf.create_unlocked());
             self.offset += 1;
-            Some((buf.lock(ctx), self.get_disk_block_no(self.offset, ctx)))
+            Some((buf, self.get_disk_block_no(self.offset, ctx)))
         }
     }
 

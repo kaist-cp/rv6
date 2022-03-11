@@ -160,6 +160,13 @@ impl Buf {
         unsafe { &mut *entry.inner.get_mut_raw() }
     }
 
+    /// Returns a `BufUnlocked` without releasing the lock or consuming `self`.
+    #[allow(dead_code)]
+    pub fn create_unlocked(&self) -> BufUnlocked {
+        unsafe { ManuallyDrop::take(&mut self.inner.clone()) }
+    }
+
+    /// Returns a `BufUnlocked` after releasing the lock and consuming `self`.
     pub fn unlock(mut self, ctx: &KernelCtx<'_, '_>) -> BufUnlocked {
         // SAFETY: this method consumes self and self.inner will not be used again.
         let inner = unsafe { ManuallyDrop::take(&mut self.inner) };
@@ -169,6 +176,7 @@ impl Buf {
         inner
     }
 
+    /// Releases the lock and consumes `self`.
     pub fn free(self, ctx: &KernelCtx<'_, '_>) {
         let _ = self.unlock(ctx);
     }
