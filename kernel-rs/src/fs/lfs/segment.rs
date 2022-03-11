@@ -220,6 +220,32 @@ impl Segment {
         }
     }
 
+    /// Provides an empty block on the segment to be used to store the new indirect map of an inode.
+    /// Use this if and only if the inode does not already have one.
+    /// If succeeds, returns a `Buf` of the disk block and the disk block number of it.
+    pub fn add_new_indirect_block(
+        &mut self,
+        inum: u32,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Option<(Buf, u32)> {
+        // Try to push at the back of the segment.
+        if self.is_full() {
+            None
+        } else {
+            // Append segment.
+            let mut buf = self.read_segment_block(self.offset + 1, ctx);
+            buf.deref_inner_mut().data.fill(0);
+            buf.deref_inner_mut().valid = true;
+            let buf = buf.unlock(ctx);
+            self.segment_summary[self.offset] = SegSumEntry::IndirectMap {
+                inum,
+                buf: buf.clone(),
+            };
+            self.offset += 1;
+            Some((buf.lock(ctx), self.get_disk_block_no(self.offset, ctx)))
+        }
+    }
+
     /// Provides a block on the segment to be used to store the updated inode.
     /// If the inode is not already on the segment, allocates an empty block on the segment for it.
     /// If succeeds, returns a `Buf` of the disk block and the disk block number of it.
@@ -236,7 +262,7 @@ impl Segment {
     ) -> Option<(Buf, u32)> {
         // Check if the block already exists.
         // TODO: Maybe more efficient if we make the `Inode` bookmark this.
-        for i in 0..self.offset {
+        for i in (0..self.offset).rev() {
             if let SegSumEntry::Inode { inum: inum2, buf } = &self.segment_summary[i] {
                 if inum == *inum2 {
                     return Some((buf.clone().lock(ctx), self.get_disk_block_no(i + 1, ctx)));
@@ -270,7 +296,7 @@ impl Segment {
         ctx: &KernelCtx<'_, '_>,
     ) -> Option<(Buf, u32)> {
         // Check if the block already exists.
-        for i in 0..self.offset {
+        for i in (0..self.offset).rev() {
             if let SegSumEntry::DataBlock {
                 inum: inum2,
                 block_no: block_no2,
@@ -310,7 +336,7 @@ impl Segment {
         ctx: &KernelCtx<'_, '_>,
     ) -> Option<(Buf, u32)> {
         // Check if the block already exists.
-        for i in 0..self.offset {
+        for i in (0..self.offset).rev() {
             if let SegSumEntry::IndirectMap { inum: inum2, buf } = &self.segment_summary[i] {
                 if inum == *inum2 {
                     return Some((buf.clone().lock(ctx), self.get_disk_block_no(i + 1, ctx)));
@@ -345,7 +371,7 @@ impl Segment {
     ) -> Option<(Buf, u32)> {
         // Check if the block already exists.
         // TODO: We could just bookmark at `Segment` instead.
-        for i in 0..self.offset {
+        for i in (0..self.offset).rev() {
             if let SegSumEntry::Imap {
                 block_no: block_no2,
                 buf,

@@ -368,14 +368,9 @@ impl InodeGuard<'_, Lfs> {
             if new_addr != addr {
                 // Copy from old block to new block.
                 let old_buf = hal().disk().read(self.dev, addr, ctx);
-                // SAFETY: The old data block's content will not be used from now on.
-                unsafe {
-                    core::ptr::copy(
-                        &raw const old_buf.deref_inner().data,
-                        &raw mut buf.deref_inner_mut().data,
-                        1,
-                    );
-                }
+                buf.deref_inner_mut()
+                    .data
+                    .copy_from(&old_buf.deref_inner().data);
                 old_buf.free(ctx);
             }
             (buf, new_addr)
@@ -394,24 +389,24 @@ impl InodeGuard<'_, Lfs> {
         segment: &mut SleepLockGuard<'_, Segment>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Buf {
-        let (mut bp, new_indirect) = segment.get_or_add_indirect_block(self.inum, ctx).unwrap();
         let indirect = self.deref_inner().addr_indirect;
         if indirect == 0 {
+            let (bp, new_indirect) = segment.add_new_indirect_block(self.inum, ctx).unwrap();
             self.deref_inner_mut().addr_indirect = new_indirect;
-        } else if indirect != new_indirect {
-            // Copy from old block to new block.
-            let old_bp = hal().disk().read(self.dev, indirect, ctx);
-            unsafe {
-                core::ptr::copy(
-                    &raw const old_bp.deref_inner().data,
-                    &raw mut bp.deref_inner_mut().data,
-                    1,
-                );
+            bp
+        } else {
+            let (mut bp, new_indirect) = segment.get_or_add_indirect_block(self.inum, ctx).unwrap();
+            if indirect != new_indirect {
+                // Copy from old block to new block.
+                let old_bp = hal().disk().read(self.dev, indirect, ctx);
+                bp.deref_inner_mut()
+                    .data
+                    .copy_from(&old_bp.deref_inner().data);
+                old_bp.free(ctx);
+                self.deref_inner_mut().addr_indirect = new_indirect;
             }
-            old_bp.free(ctx);
-            self.deref_inner_mut().addr_indirect = new_indirect;
+            bp
         }
-        bp
     }
 
     /// Is the directory dp empty except for "." and ".." ?
