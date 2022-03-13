@@ -1,6 +1,10 @@
+use core::mem;
+
+use static_assertions::const_assert;
+
 use super::Segment;
 use crate::{
-    bio::Buf,
+    bio::{Buf, BufData},
     hal::hal,
     param::{BSIZE, IMAPSIZE},
     proc::KernelCtx,
@@ -82,6 +86,8 @@ impl Imap {
         let (block_no, offset) = self.get_imap_block_no(inum);
         let buf = self.get_imap_block(block_no, ctx);
 
+        const_assert!(mem::size_of::<DImapBlock>() <= mem::size_of::<BufData>());
+        const_assert!(mem::align_of::<BufData>() % mem::align_of::<DImapBlock>() == 0);
         let imap_block = unsafe { &*(buf.deref_inner().data.as_ptr() as *const DImapBlock) };
         let res = imap_block.entry[offset];
         buf.free(ctx);
@@ -104,21 +110,22 @@ impl Imap {
         );
         let (block_no, offset) = self.get_imap_block_no(inum);
 
-        if let Some((mut buf, addr)) = segment.get_or_add_imap_block(block_no as u32, ctx) {
-            let imap_block =
-                unsafe { &mut *(buf.deref_inner_mut().data.as_mut_ptr() as *mut DImapBlock) };
+        if let Some((mut buf, addr)) = segment.get_or_add_updated_imap_block(block_no as u32, ctx) {
             if addr != self.addr[block_no] {
                 // Copy the imap block content from old imap block.
-                let mut old_buf = self.get_imap_block(block_no, ctx);
-                let old_imap_block = unsafe {
-                    &mut *(old_buf.deref_inner_mut().data.as_mut_ptr() as *mut DImapBlock)
-                };
-                *imap_block = old_imap_block.clone();
+                let old_buf = self.get_imap_block(block_no, ctx);
+                buf.deref_inner_mut()
+                    .data
+                    .copy_from(&old_buf.deref_inner().data);
                 // Update imap mapping.
                 self.addr[block_no] = addr;
                 old_buf.free(ctx);
             }
             // Update entry.
+            const_assert!(mem::size_of::<DImapBlock>() <= mem::size_of::<BufData>());
+            const_assert!(mem::align_of::<BufData>() % mem::align_of::<DImapBlock>() == 0);
+            let imap_block =
+                unsafe { &mut *(buf.deref_inner_mut().data.as_mut_ptr() as *mut DImapBlock) };
             imap_block.entry[offset] = disk_block_no;
             buf.free(ctx);
             true

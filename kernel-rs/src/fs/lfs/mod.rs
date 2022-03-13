@@ -14,7 +14,7 @@ use crate::{
     bio::Buf,
     file::{FileType, InodeFileType},
     hal::hal,
-    lock::SleepLock,
+    lock::{SleepLock, SleepLockGuard},
     param::BSIZE,
     proc::KernelCtx,
 };
@@ -76,30 +76,6 @@ impl Tx<'_, Lfs> {
         // TODO: We should update the checkpoint here, and actually write to the disk when the segment is flushed.
         // self.fs.log().lock().write(b, ctx);
     }
-
-    /// Zero a block.
-    // fn bzero(&self, dev: u32, bno: u32, ctx: &KernelCtx<'_, '_>) {
-    //     let mut buf = ctx.kernel().bcache().get_buf(dev, bno).lock(ctx);
-    //     buf.deref_inner_mut().data.fill(0);
-    //     buf.deref_inner_mut().valid = true;
-    //     self.write(buf, ctx);
-    // }
-
-    /// Blocks.
-    /// Allocate a zeroed disk block to be used by `inum` as the `block_no`th data block.
-    // TODO: Okay to remove dev: u32?
-    fn balloc(&self, inum: u32, block_no: u32, ctx: &KernelCtx<'_, '_>) -> (Buf, u32) {
-        let segment = self.fs.segment();
-        let (mut buf, bno) = segment.get_or_add_data_block(inum, block_no, ctx).unwrap();
-        buf.deref_inner_mut().data.fill(0);
-        buf.deref_inner_mut().valid = true;
-        (buf, bno)
-    }
-
-    /// Free a disk block.
-    fn bfree(&self, _dev: u32, _b: u32, _ctx: &KernelCtx<'_, '_>) {
-        // TODO: We don't need this. The cleaner should handle this.
-    }
 }
 
 impl Lfs {
@@ -123,18 +99,16 @@ impl Lfs {
         unsafe { StrongPin::new_unchecked(&self.as_pin().get_ref().itable) }
     }
 
-    // TODO: Use .lock() instead of .get_mut_raw() in the following functions,
-    // after finding the bug cause.
-    pub fn segment(&self) -> &mut Segment {
-        unsafe { &mut *self.segment.get().expect("segment").get_mut_raw() }
+    pub fn segment(&self, ctx: &KernelCtx<'_, '_>) -> SleepLockGuard<'_, Segment> {
+        self.segment.get().expect("segment").lock(ctx)
     }
 
     fn segtable(&self) -> &mut SegTable {
         unsafe { &mut *self.segtable.get().expect("segtable").get_mut_raw() }
     }
 
-    pub fn imap(&self) -> &mut Imap {
-        unsafe { &mut *self.imap.get().expect("imap").get_mut_raw() }
+    pub fn imap(&self, ctx: &KernelCtx<'_, '_>) -> SleepLockGuard<'_, Imap> {
+        self.imap.get().expect("imap").lock(ctx)
     }
 
     /// Traverses the segment usage table to find an empty segment, and returns its segment number
@@ -438,7 +412,7 @@ impl FileSystem for Lfs {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let bp = guard.read_data_block(off as usize / BSIZE, &k);
+            let bp = guard.readable_data_block(off as usize / BSIZE, &k);
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
@@ -473,16 +447,17 @@ impl FileSystem for Lfs {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut bp = guard.write_data_block(off as usize / BSIZE, tx, &k);
+            let mut segment = tx.fs.segment(&k);
+            let mut bp = guard.writable_data_block(off as usize / BSIZE, &mut segment, tx, &k);
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
             let res = f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k);
             bp.free(&k);
-            let segment = tx.fs.segment();
             if segment.is_full() {
                 segment.commit(&k);
             }
+            segment.free(&k);
             if res.is_err() {
                 break;
             }
@@ -503,32 +478,8 @@ impl FileSystem for Lfs {
     }
 
     fn inode_trunc(guard: &mut InodeGuard<'_, Self>, tx: &Tx<'_, Self>, ctx: &KernelCtx<'_, '_>) {
-        // TODO: This function is unused in both lfs and ufs. May need to update fs::FS trait.
-        let dev = guard.dev;
-        for addr in &mut guard.deref_inner_mut().addr_direct {
-            if *addr != 0 {
-                tx.bfree(dev, *addr, ctx);
-                *addr = 0;
-            }
-        }
-
-        if guard.deref_inner().addr_indirect != 0 {
-            let mut bp = hal()
-                .disk()
-                .read(dev, guard.deref_inner().addr_indirect, ctx);
-            // SAFETY: u32 does not have internal structure.
-            let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
-            debug_assert_eq!(prefix.len(), 0, "itrunc: Buf data unaligned");
-            for a in data {
-                if *a != 0 {
-                    tx.bfree(dev, *a, ctx);
-                }
-            }
-            bp.free(ctx);
-            tx.bfree(dev, guard.deref_inner().addr_indirect, ctx);
-            guard.deref_inner_mut().addr_indirect = 0
-        }
-
+        guard.deref_inner_mut().addr_direct = [0; NDIRECT];
+        guard.deref_inner_mut().addr_indirect = 0;
         guard.deref_inner_mut().size = 0;
         guard.update(tx, ctx);
     }
@@ -536,11 +487,10 @@ impl FileSystem for Lfs {
     fn inode_lock<'a>(inode: &'a Inode<Self>, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'a, Self> {
         let mut guard = inode.inner.lock(ctx);
         if !guard.valid {
-            let mut bp = hal().disk().read(
-                inode.dev,
-                ctx.kernel().fs().imap().get(inode.inum, ctx),
-                ctx,
-            );
+            let fs = ctx.kernel().fs();
+            let imap = fs.imap(ctx);
+            let mut bp = hal().disk().read(inode.dev, imap.get(inode.inum, ctx), ctx);
+            imap.free(ctx);
 
             // SAFETY: dip is inside bp.data.
             let dip = bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode;
@@ -588,9 +538,11 @@ impl FileSystem for Lfs {
             // so this acquiresleep() won't block (or deadlock).
             let mut ip = inode.lock(ctx);
 
-            ip.trunc(tx, ctx);
-            ip.deref_inner_mut().typ = InodeType::None;
-            ip.update(tx, ctx);
+            let mut segment = tx.fs.segment(ctx);
+            let mut imap = tx.fs.imap(ctx);
+            assert!(imap.set(ip.inum, 0, &mut segment, ctx));
+            imap.free(ctx);
+            segment.free(ctx);
             ip.deref_inner_mut().valid = false;
 
             ip.free(ctx);
