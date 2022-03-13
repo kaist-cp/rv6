@@ -74,28 +74,30 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
         c: C,
         n: N,
     ) -> Option<ArenaRc<Self>> {
-        ArenaRef::new(self, |arena: ArenaRef<'_, '_, Self>| {
-            let mut guard = self.inner().strong_pinned_lock();
-            let this = guard.get_strong_pinned_mut();
+        let mut guard = self.inner().strong_pinned_lock();
+        let this = guard.get_strong_pinned_mut();
 
-            let mut empty: Option<NonNull<StaticArc<T>>> = None;
-            for mut entry in this.entries().iter_mut() {
-                if !entry.as_mut().is_borrowed() {
-                    let _ = empty.get_or_insert(entry.ptr());
-                    // Note: Do not use `break` here.
-                    // We must first search through all entries, and then alloc at empty
-                    // only if the entry we're finding for doesn't exist.
-                } else if let Some(entry) = entry.try_borrow() {
-                    if c(&entry) {
+        let mut empty: Option<NonNull<StaticArc<T>>> = None;
+        for mut entry in this.entries().iter_mut() {
+            if !entry.as_mut().is_borrowed() {
+                let _ = empty.get_or_insert(entry.ptr());
+                // Note: Do not use `break` here.
+                // We must first search through all entries, and then alloc at empty
+                // only if the entry we're finding for doesn't exist.
+            } else if let Some(entry) = entry.try_borrow() {
+                if c(&entry) {
+                    return ArenaRef::new(self, |arena: ArenaRef<'_, '_, Self>| {
                         let handle = Handle(arena.0.brand(entry));
-                        return Some(ArenaRc::new(arena, handle));
-                    }
+                        Some(ArenaRc::new(arena, handle))
+                    });
                 }
             }
+        }
 
-            empty.map(|ptr| {
-                let mut entry = unsafe { StrongPinMut::new_unchecked(ptr.as_ptr()) };
-                n(unsafe { entry.as_mut().get_mut_unchecked() });
+        empty.map(|ptr| {
+            let mut entry = unsafe { StrongPinMut::new_unchecked(ptr.as_ptr()) };
+            n(unsafe { entry.as_mut().get_mut_unchecked() });
+            ArenaRef::new(self, |arena: ArenaRef<'_, '_, Self>| {
                 let handle = Handle(arena.0.brand(entry.borrow()));
                 ArenaRc::new(arena, handle)
             })
@@ -103,18 +105,18 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
     }
 
     fn alloc<F: FnOnce() -> Self::Data>(self: StrongPin<'_, Self>, f: F) -> Option<ArenaRc<Self>> {
-        ArenaRef::new(self, |arena: ArenaRef<'_, '_, Self>| {
-            let mut guard = self.inner().strong_pinned_lock();
-            let this = guard.get_strong_pinned_mut();
+        let mut guard = self.inner().strong_pinned_lock();
+        let this = guard.get_strong_pinned_mut();
 
-            for mut entry in this.entries().iter_mut() {
-                if let Some(data) = entry.as_mut().get_mut() {
-                    *data = f();
+        for mut entry in this.entries().iter_mut() {
+            if let Some(data) = entry.as_mut().get_mut() {
+                *data = f();
+                return ArenaRef::new(self, |arena: ArenaRef<'_, '_, Self>| {
                     let handle = Handle(arena.0.brand(entry.borrow()));
-                    return Some(ArenaRc::new(arena, handle));
-                }
+                    Some(ArenaRc::new(arena, handle))
+                });
             }
-            None
-        })
+        }
+        None
     }
 }

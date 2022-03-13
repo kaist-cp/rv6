@@ -142,32 +142,34 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
         c: C,
         n: N,
     ) -> Option<ArenaRc<Self>> {
-        ArenaRef::new(self, |arena: ArenaRef<'_, '_, Self>| {
-            let mut guard = self.inner().strong_pinned_lock();
-            let this = guard.get_strong_pinned_mut();
+        let mut guard = self.inner().strong_pinned_lock();
+        let this = guard.get_strong_pinned_mut();
 
-            let mut empty: Option<NonNull<StaticArc<T>>> = None;
-            // SAFETY: the whole `MruArena` is protected by a lock.
-            for entry in unsafe { this.list().iter_strong_pin_mut_unchecked() } {
-                let mut entry = entry.data();
+        let mut empty: Option<NonNull<StaticArc<T>>> = None;
+        // SAFETY: the whole `MruArena` is protected by a lock.
+        for entry in unsafe { this.list().iter_strong_pin_mut_unchecked() } {
+            let mut entry = entry.data();
 
-                if let Some(entry) = entry.as_mut().try_borrow() {
-                    // The entry is not under finalization. Check its data.
-                    if c(&entry) {
+            if let Some(entry) = entry.as_mut().try_borrow() {
+                // The entry is not under finalization. Check its data.
+                if c(&entry) {
+                    return ArenaRef::new(self, |arena: ArenaRef<'_, '_, Self>| {
                         let handle = Handle(arena.0.brand(entry));
-                        return Some(ArenaRc::new(arena, handle));
-                    }
-                }
-
-                if !entry.as_mut().is_borrowed() {
-                    empty = Some(entry.ptr());
+                        Some(ArenaRc::new(arena, handle))
+                    });
                 }
             }
 
-            empty.map(|ptr| {
-                // SAFETY: `ptr` is valid, and there's no `StrongPinMut`.
-                let mut entry = unsafe { StrongPinMut::new_unchecked(ptr.as_ptr()) };
-                n(entry.as_mut().get_mut().unwrap());
+            if !entry.as_mut().is_borrowed() {
+                empty = Some(entry.ptr());
+            }
+        }
+
+        empty.map(|ptr| {
+            // SAFETY: `ptr` is valid, and there's no `StrongPinMut`.
+            let mut entry = unsafe { StrongPinMut::new_unchecked(ptr.as_ptr()) };
+            n(entry.as_mut().get_mut().unwrap());
+            ArenaRef::new(self, |arena: ArenaRef<'_, '_, Self>| {
                 let handle = Handle(arena.0.brand(entry.borrow()));
                 ArenaRc::new(arena, handle)
             })
@@ -175,21 +177,21 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
     }
 
     fn alloc<F: FnOnce() -> Self::Data>(self: StrongPin<'_, Self>, f: F) -> Option<ArenaRc<Self>> {
-        ArenaRef::new(self, |arena: ArenaRef<'_, '_, Self>| {
-            let mut guard = self.inner().strong_pinned_lock();
-            let this = guard.get_strong_pinned_mut();
+        let mut guard = self.inner().strong_pinned_lock();
+        let this = guard.get_strong_pinned_mut();
 
-            // SAFETY: the whole `MruArena` is protected by a lock.
-            for entry in unsafe { this.list().iter_strong_pin_mut_unchecked().rev() } {
-                let mut entry = entry.data();
-                if let Some(data) = entry.as_mut().get_mut() {
-                    *data = f();
+        // SAFETY: the whole `MruArena` is protected by a lock.
+        for entry in unsafe { this.list().iter_strong_pin_mut_unchecked().rev() } {
+            let mut entry = entry.data();
+            if let Some(data) = entry.as_mut().get_mut() {
+                *data = f();
+                return ArenaRef::new(self, |arena: ArenaRef<'_, '_, Self>| {
                     let handle = Handle(arena.0.brand(entry.borrow()));
-                    return Some(ArenaRc::new(arena, handle));
-                }
+                    Some(ArenaRc::new(arena, handle))
+                });
             }
-            None
-        })
+        }
+        None
     }
 
     fn dealloc(mut rc: ArenaRc<Self>, ctx: <Self::Data as ArenaObject>::Ctx<'_, '_>) {
