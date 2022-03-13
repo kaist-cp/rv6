@@ -8,7 +8,7 @@ use core::ptr::NonNull;
 use array_macro::array;
 use pin_project::pin_project;
 
-use super::{Arena, ArenaObject, ArenaRc};
+use super::{Arena, ArenaObject, ArenaRc, ArenaRef, Handle};
 use crate::util::strong_pin::StrongPin;
 use crate::{
     lock::{SpinLock, SpinLockGuard},
@@ -79,6 +79,18 @@ unsafe impl<T> ListNode for MruEntry<T> {
 }
 
 impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
+    /// Returns an `MruArena` of size `CAPACITY` that is filled with `D`'s const default value.
+    /// Note that `D` must `impl const Default`. `name` is used when reporting synchronization errors.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// let mru_arena = MruArena::<D, 100>::new("mru_arena");
+    /// ```
+    ///
+    /// # Safety
+    ///
+    /// Must be used only after initializing it with `MruArena::init`.
     #[allow(clippy::new_ret_no_self)]
     pub const unsafe fn new<D: Default>(name: &'static str) -> MruArena<D, CAPACITY> {
         let inner: MruArenaInner<D, CAPACITY> = MruArenaInner {
@@ -130,47 +142,54 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
         c: C,
         n: N,
     ) -> Option<ArenaRc<Self>> {
-        let mut guard = self.inner().strong_pinned_lock();
-        let this = guard.get_strong_pinned_mut();
+        ArenaRef::new(self, |arena: ArenaRef<'_, '_, Self>| {
+            let mut guard = self.inner().strong_pinned_lock();
+            let this = guard.get_strong_pinned_mut();
 
-        let mut empty: Option<NonNull<StaticArc<T>>> = None;
-        // SAFETY: the whole `MruArena` is protected by a lock.
-        for entry in unsafe { this.list().iter_strong_pin_mut_unchecked() } {
-            let mut entry = entry.data();
+            let mut empty: Option<NonNull<StaticArc<T>>> = None;
+            // SAFETY: the whole `MruArena` is protected by a lock.
+            for entry in unsafe { this.list().iter_strong_pin_mut_unchecked() } {
+                let mut entry = entry.data();
 
-            if let Some(entry) = entry.as_mut().try_borrow() {
-                // The entry is not under finalization. Check its data.
-                if c(&entry) {
-                    return Some(ArenaRc::new(self, entry));
+                if let Some(entry) = entry.as_mut().try_borrow() {
+                    // The entry is not under finalization. Check its data.
+                    if c(&entry) {
+                        let handle = Handle(arena.0.brand(entry));
+                        return Some(ArenaRc::new(arena, handle));
+                    }
+                }
+
+                if !entry.as_mut().is_borrowed() {
+                    empty = Some(entry.ptr());
                 }
             }
 
-            if !entry.as_mut().is_borrowed() {
-                empty = Some(entry.ptr());
-            }
-        }
-
-        empty.map(|ptr| {
-            // SAFETY: `ptr` is valid, and there's no `StrongPinMut`.
-            let mut entry = unsafe { StrongPinMut::new_unchecked(ptr.as_ptr()) };
-            n(entry.as_mut().get_mut().unwrap());
-            ArenaRc::new(self, entry.borrow())
+            empty.map(|ptr| {
+                // SAFETY: `ptr` is valid, and there's no `StrongPinMut`.
+                let mut entry = unsafe { StrongPinMut::new_unchecked(ptr.as_ptr()) };
+                n(entry.as_mut().get_mut().unwrap());
+                let handle = Handle(arena.0.brand(entry.borrow()));
+                ArenaRc::new(arena, handle)
+            })
         })
     }
 
     fn alloc<F: FnOnce() -> Self::Data>(self: StrongPin<'_, Self>, f: F) -> Option<ArenaRc<Self>> {
-        let mut guard = self.inner().strong_pinned_lock();
-        let this = guard.get_strong_pinned_mut();
+        ArenaRef::new(self, |arena: ArenaRef<'_, '_, Self>| {
+            let mut guard = self.inner().strong_pinned_lock();
+            let this = guard.get_strong_pinned_mut();
 
-        // SAFETY: the whole `MruArena` is protected by a lock.
-        for entry in unsafe { this.list().iter_strong_pin_mut_unchecked().rev() } {
-            let mut entry = entry.data();
-            if let Some(data) = entry.as_mut().get_mut() {
-                *data = f();
-                return Some(ArenaRc::new(self, entry.borrow()));
+            // SAFETY: the whole `MruArena` is protected by a lock.
+            for entry in unsafe { this.list().iter_strong_pin_mut_unchecked().rev() } {
+                let mut entry = entry.data();
+                if let Some(data) = entry.as_mut().get_mut() {
+                    *data = f();
+                    let handle = Handle(arena.0.brand(entry.borrow()));
+                    return Some(ArenaRc::new(arena, handle));
+                }
             }
-        }
-        None
+            None
+        })
     }
 
     fn dealloc(mut rc: ArenaRc<Self>, ctx: <Self::Data as ArenaObject>::Ctx<'_, '_>) {

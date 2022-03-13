@@ -8,8 +8,7 @@
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
 
-use crate::util::static_arc::Ref;
-use crate::util::strong_pin::StrongPin;
+use crate::util::{branded::Branded, static_arc::Ref, strong_pin::StrongPin};
 
 mod array_arena;
 mod mru_arena;
@@ -63,7 +62,52 @@ pub trait ArenaObject {
 
     /// Finalizes the `ArenaObject`.
     /// This function is automatically called when the last `Rc` referring to this `ArenaObject` gets dropped.
+    /// It is up to you to decide what to do during the finalization.
     fn finalize<'a, 'b: 'a>(&mut self, ctx: Self::Ctx<'a, 'b>);
+}
+
+/// A branded reference to an arena.
+///
+/// # Safety
+///
+/// The `'id` is always different between different `Arena` instances.
+#[derive(Clone, Copy)]
+pub struct ArenaRef<'id, 's, A: Arena>(Branded<'id, StrongPin<'s, A>>);
+
+impl<'id, A: Arena> ArenaRef<'id, '_, A> {
+    /// Creates a new `ArenaRef` that has a unique, invariant `'id` tag.
+    /// The `ArenaRef` can be used only inside the given closure.
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new<'s, F: for<'new_id> FnOnce(ArenaRef<'new_id, 's, A>) -> R, R>(
+        arena: StrongPin<'s, A>,
+        f: F,
+    ) -> R {
+        Branded::new(arena, |a| f(ArenaRef(a)))
+    }
+}
+
+impl<'id, 's, A: Arena> Deref for ArenaRef<'id, 's, A> {
+    type Target = StrongPin<'s, A>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// An arena handle with an `'id` tag attached.
+/// The handle was allocated from an `ArenaRef<'id, &Arena>` that has the same `'id` tag.
+pub struct Handle<'id, T>(Branded<'id, Ref<T>>);
+
+/// A branded reference to an arena handle.
+/// The handle was allocated from an `ArenaRef<'id, &Arena>` that has the same `'id` tag.
+pub struct HandleRef<'id, 's, T>(Branded<'id, &'s Ref<T>>);
+
+impl<'s, T> Deref for HandleRef<'_, 's, T> {
+    type Target = Ref<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 /// A thread-safe reference counted pointer, allocated from `A: Arena`.
@@ -81,10 +125,11 @@ pub struct ArenaRc<A: Arena> {
 }
 
 impl<T, A: Arena<Data = T>> ArenaRc<A> {
-    pub fn new(arena: StrongPin<'_, A>, inner: Ref<A::Data>) -> Self {
+    /// Creates a new `ArenaRc` using the handle `inner`, which was allocated from the `arena`.
+    pub fn new<'id>(arena: ArenaRef<'id, '_, A>, inner: Handle<'id, T>) -> Self {
         Self {
-            arena: arena.as_pin().get_ref(),
-            inner: ManuallyDrop::new(inner),
+            arena: arena.0.into_inner().as_pin().get_ref(),
+            inner: ManuallyDrop::new(inner.0.into_inner()),
         }
     }
 }

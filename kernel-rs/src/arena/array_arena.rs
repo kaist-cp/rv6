@@ -5,7 +5,7 @@ use core::{marker::PhantomPinned, ptr::NonNull};
 use array_macro::array;
 use pin_project::pin_project;
 
-use super::{Arena, ArenaObject, ArenaRc};
+use super::{Arena, ArenaObject, ArenaRc, ArenaRef, Handle};
 use crate::{
     lock::{SpinLock, SpinLockGuard},
     util::{
@@ -28,6 +28,14 @@ pub struct ArrayArenaInner<T, const CAPACITY: usize> {
 }
 
 impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
+    /// Returns an `ArrayArena` of size `CAPACITY` that is filled with `D`'s const default value.
+    /// Note that `D` must `impl const Default`. `name` is used when reporting synchronization errors.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// let arr_arena = ArrayArena::<D, 100>::new("arr_arena");
+    /// ```
     #[allow(clippy::new_ret_no_self)]
     pub const fn new<D: Default>(name: &'static str) -> ArrayArena<D, CAPACITY> {
         let inner: ArrayArenaInner<D, CAPACITY> = ArrayArenaInner {
@@ -66,40 +74,47 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
         c: C,
         n: N,
     ) -> Option<ArenaRc<Self>> {
-        let mut guard = self.inner().strong_pinned_lock();
-        let this = guard.get_strong_pinned_mut();
+        ArenaRef::new(self, |arena: ArenaRef<'_, '_, Self>| {
+            let mut guard = self.inner().strong_pinned_lock();
+            let this = guard.get_strong_pinned_mut();
 
-        let mut empty: Option<NonNull<StaticArc<T>>> = None;
-        for mut entry in this.entries().iter_mut() {
-            if !entry.as_mut().is_borrowed() {
-                let _ = empty.get_or_insert(entry.ptr());
-                // Note: Do not use `break` here.
-                // We must first search through all entries, and then alloc at empty
-                // only if the entry we're finding for doesn't exist.
-            } else if let Some(entry) = entry.try_borrow() {
-                if c(&entry) {
-                    return Some(ArenaRc::new(self, entry));
+            let mut empty: Option<NonNull<StaticArc<T>>> = None;
+            for mut entry in this.entries().iter_mut() {
+                if !entry.as_mut().is_borrowed() {
+                    let _ = empty.get_or_insert(entry.ptr());
+                    // Note: Do not use `break` here.
+                    // We must first search through all entries, and then alloc at empty
+                    // only if the entry we're finding for doesn't exist.
+                } else if let Some(entry) = entry.try_borrow() {
+                    if c(&entry) {
+                        let handle = Handle(arena.0.brand(entry));
+                        return Some(ArenaRc::new(arena, handle));
+                    }
                 }
             }
-        }
 
-        empty.map(|ptr| {
-            let mut entry = unsafe { StrongPinMut::new_unchecked(ptr.as_ptr()) };
-            n(unsafe { entry.as_mut().get_mut_unchecked() });
-            ArenaRc::new(self, unsafe { entry.borrow_unchecked() })
+            empty.map(|ptr| {
+                let mut entry = unsafe { StrongPinMut::new_unchecked(ptr.as_ptr()) };
+                n(unsafe { entry.as_mut().get_mut_unchecked() });
+                let handle = Handle(arena.0.brand(entry.borrow()));
+                ArenaRc::new(arena, handle)
+            })
         })
     }
 
     fn alloc<F: FnOnce() -> Self::Data>(self: StrongPin<'_, Self>, f: F) -> Option<ArenaRc<Self>> {
-        let mut guard = self.inner().strong_pinned_lock();
-        let this = guard.get_strong_pinned_mut();
+        ArenaRef::new(self, |arena: ArenaRef<'_, '_, Self>| {
+            let mut guard = self.inner().strong_pinned_lock();
+            let this = guard.get_strong_pinned_mut();
 
-        for mut entry in this.entries().iter_mut() {
-            if let Some(data) = entry.as_mut().get_mut() {
-                *data = f();
-                return Some(ArenaRc::new(self, entry.borrow()));
+            for mut entry in this.entries().iter_mut() {
+                if let Some(data) = entry.as_mut().get_mut() {
+                    *data = f();
+                    let handle = Handle(arena.0.brand(entry.borrow()));
+                    return Some(ArenaRc::new(arena, handle));
+                }
             }
-        }
-        None
+            None
+        })
     }
 }
