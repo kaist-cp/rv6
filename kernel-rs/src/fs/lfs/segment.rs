@@ -428,7 +428,7 @@ impl Segment {
         }; SEGSIZE];
         barray[0] = Some(bp);
 
-        // Write all the `Buf`s sequentially to the disk.
+        // Write all the buffers sequentially to the disk.
         hal().disk().write_sequential(&mut barray, ctx);
 
         for bopt in barray {
