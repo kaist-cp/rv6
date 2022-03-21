@@ -11,9 +11,12 @@ use core::ptr;
 use core::sync::atomic::{fence, Ordering};
 
 use arrayvec::ArrayVec;
+use array_macro::array;
 use bitmaps::Bitmap;
 use const_zero::const_zero;
 use pin_project::pin_project;
+use cfg_if::cfg_if;
+use static_assertions::const_assert;
 
 use super::{
     MmioRegs, VirtIOFeatures, VirtIOStatus, VirtqAvail, VirtqDesc, VirtqDescFlags, VirtqUsed, NUM,
@@ -27,6 +30,18 @@ use crate::{
     param::BSIZE,
     proc::KernelCtx,
 };
+
+cfg_if! {
+    if #[cfg(feature = "lfs")] {
+        use crate::param::SEGSIZE;
+        // Sequential write in a unit of one segment.
+        const MAX_SEQ_WRITE: usize = SEGSIZE;
+    } else {
+        // Do not support sequential write.
+        // Thus, `SleepableLock<VirtioDisk>::write_sequential` is the same as a normal write.
+        const MAX_SEQ_WRITE: usize = 1;
+    }
+}
 
 // It must be page-aligned.
 // It needs repr(C) because it is read by device.
@@ -194,6 +209,14 @@ impl SleepableLock<VirtioDisk> {
     pub fn write(self: Pin<&Self>, b: &mut Buf, ctx: &KernelCtx<'_, '_>) {
         VirtioDisk::rw(&mut self.pinned_lock(), b, true, ctx)
     }
+    
+    pub fn write_sequential(
+        self: Pin<&Self>,
+        barray: &mut [Option<Buf>; MAX_SEQ_WRITE],
+        ctx: &KernelCtx<'_, '_>,
+    ) {
+        VirtioDisk::write_seq(&mut self.pinned_lock(), barray, ctx)
+    }
 }
 
 impl VirtioDisk {
@@ -350,6 +373,189 @@ impl VirtioDisk {
         guard.get_pin_mut().project().info.project().inflight[desc[0].idx].b = ptr::null_mut();
         IntoIter::new(desc).for_each(|desc| guard.get_pin_mut().free(desc));
         guard.wakeup(ctx.kernel());
+    }
+
+    // This method writes the data in the given buffers to disk sequentially, therefore,
+    // minimizing seek-time overhead of the disk. It is designed for using with `Lfs`.
+    // Calling this method when using `Ufs` is effectively not different from calling 
+    // `VirtioDisk::rw` and may incur additional performance overhead.
+    fn write_seq(
+        guard: &mut SleepableLockGuard<'_, Self>,
+        barray: &mut [Option<Buf>; MAX_SEQ_WRITE],
+        ctx: &KernelCtx<'_, '_>
+    ) {
+        // Maximum # of blocks to be sequentially written to the disk must be less than
+        // the total # of available descriptors excluding two descriptors, which will be
+        // allocated for the header and tailer descriptors.
+        const_assert!(MAX_SEQ_WRITE + 2 <= NUM);
+
+        let mut darray: [Option<Descriptor>; MAX_SEQ_WRITE] = array![_ => None; MAX_SEQ_WRITE];
+        let mut prev_blk_idx = 0usize;
+        let mut next_write = 0usize;
+        let mut header: Option<Descriptor> = None;  // To reserve a header descriptor.
+        let mut tailer: Option<Descriptor> = None;  // To reserve a tailer descriptor.
+
+        for i in 0..MAX_SEQ_WRITE {
+            if barray[i].is_some() {
+                let desc = loop {
+                    // Allocate a header and tailer descriptor if not already allocated.
+                    // Invariant: `header` and `tailer` are always allocated together.
+                    if header.is_none() {
+                        // `None` means this is the beginning of a new descriptor chain.
+                        match guard.get_pin_mut().alloc() {
+                            None => {
+                                guard.sleep(ctx);
+                                continue;
+                            },
+                            idx => header = idx,
+                        }
+                        match guard.get_pin_mut().alloc() {
+                            None => {
+                                guard.get_pin_mut().as_mut().free(header.unwrap());
+                                header = None;
+                                continue;
+                            },
+                            idx => tailer = idx,
+                        }
+                    }
+
+                    // Allocate a descriptor for the buffer.
+                    match guard.get_pin_mut().alloc() {
+                        Some(idx) => break idx,
+                        // Back down to prevent deadlock
+                        None => if !Self::finalize_write_seq(guard, &mut darray, barray, &mut next_write, prev_blk_idx, &mut header, &mut tailer, ctx) {
+                            // Waiting for other threads to free the descriptors.
+                            guard.sleep(ctx);
+                        }
+                    };
+                };
+
+                let buf = &mut barray[i].as_mut().unwrap();
+
+                // Set the descriptor of the buffer
+                let this = guard.get_pin_mut().project();
+                this.desc[desc.idx] = VirtqDesc {
+                    addr: buf.deref_inner().data.as_ptr() as _,
+                    len: BSIZE as _,
+                    flags: VirtqDescFlags::NEXT,
+                    next: 0,
+                };
+
+                // Chain with the previous descriptor
+                if let Some(prev_d) = &darray[prev_blk_idx] {
+                    this.desc[prev_d.idx].next = desc.idx as _;
+                }
+
+                buf.deref_inner_mut().disk = true;
+
+                darray[i] = Some(desc);
+                prev_blk_idx = i;
+            }
+        }
+
+        let _ = Self::finalize_write_seq(guard, &mut darray, barray, &mut next_write, prev_blk_idx, &mut header, &mut tailer, ctx);
+    }
+
+    // This method writes the buffers in the given range of the given array to the disk.
+    fn finalize_write_seq(
+        guard: &mut SleepableLockGuard<'_, Self>,
+        darray: &mut [Option<Descriptor>; MAX_SEQ_WRITE],
+        barray: &mut [Option<Buf>; MAX_SEQ_WRITE],
+        cur: &mut usize,
+        end: usize,
+        header: &mut Option<Descriptor>,
+        tailer: &mut Option<Descriptor>,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> bool {
+        // The header and tailer descriptors must have been allocated.
+        let hdesc = match header.take() {
+            Some(d) => d,
+            None => return false,
+        };
+
+        let tdesc = match tailer.take() {
+            Some(d) => d,
+            None => {
+                guard.get_pin_mut().as_mut().free(hdesc);
+                return false;
+            }
+        };
+
+        // Asserts that the chain contains at least one buffer to be written.
+        if darray[end].is_none() || *cur > end {
+            guard.get_pin_mut().as_mut().free(hdesc);
+            guard.get_pin_mut().as_mut().free(tdesc);
+            return false;
+        }
+
+        while darray[*cur].is_none() {
+            *cur += 1;
+        }
+        
+        let fbdesc = &darray[*cur].as_ref().unwrap();
+        let lbdesc = &darray[end].as_ref().unwrap();
+
+        let mut this = guard.get_pin_mut().project();
+        let mut info = this.info.project();
+        let sector: usize = (barray[*cur].as_ref().unwrap()).blockno as usize * (BSIZE / 512);
+
+        let buf0 = &mut info.ops[hdesc.idx];
+        *buf0 = VirtIOBlockOutHeader::new(true, sector);
+
+        // Set the header and tailer descriptors and finalize the chain.
+        this.desc[hdesc.idx] = VirtqDesc {
+            addr: buf0 as *const _ as _,
+            len: mem::size_of::<VirtIOBlockOutHeader>() as _,
+            flags: VirtqDescFlags::NEXT,
+            next: fbdesc.idx as _,
+        };
+        info.inflight[hdesc.idx].status = true;
+        this.desc[tdesc.idx] = VirtqDesc {
+            addr: &info.inflight[hdesc.idx].status as *const _ as _,
+            len: 1,
+            flags: VirtqDescFlags::WRITE,
+            next: 0,
+        };
+        this.desc[lbdesc.idx].next = tdesc.idx as _;
+
+        // The request is complete when the last block is written.
+        // TODO: This may require that the `VIRTIO_F_IN_ORDER` feature has been negotiated.
+        info.inflight[hdesc.idx].b = &mut *barray[end].as_mut().unwrap();
+
+        let ring_idx = this.avail.idx as usize % NUM;
+        this.avail.ring[ring_idx] = hdesc.idx as _;
+        fence(Ordering::SeqCst);
+
+        // Tell the device another avail ring entry is available.
+        this.avail.idx += 1;
+
+        fence(Ordering::SeqCst);
+
+        // SAFETY: all the three descriptors' fields are well set.
+        // Value is queue number.
+        unsafe {
+            MmioRegs::notify_queue(0);
+        }
+
+        // Wait for the disk to finishing writing the entire chain
+        (&barray[end].as_ref().unwrap()).vdisk_request_waitchannel.sleep(guard, ctx);
+
+        // Clean up
+        guard.get_pin_mut().project().info.project().inflight[hdesc.idx].b = ptr::null_mut();
+
+        let mut this = guard.get_pin_mut();
+        this.as_mut().free(hdesc);
+        this.as_mut().free(tdesc);
+
+        while *cur <= end {
+            if let Some(desc) = darray[*cur].take() {
+                this.as_mut().free(desc);
+            }
+            *cur += 1;
+        }
+        guard.wakeup(ctx.kernel());
+
+        return true;
     }
 
     pub fn intr(self: Pin<&mut Self>, kernel: KernelRef<'_, '_>) {

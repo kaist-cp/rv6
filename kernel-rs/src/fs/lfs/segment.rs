@@ -413,19 +413,26 @@ impl Segment {
     pub fn commit(&mut self, ctx: &KernelCtx<'_, '_>) {
         const_assert!(core::mem::size_of::<DSegSum>() <= BSIZE);
 
-        // Write the segment summary to the disk.
+        // Get the segment summary.
         let mut bp = self.read_segment_block(0, ctx);
         let ssp = bp.deref_inner_mut().data.as_mut_ptr() as *mut DSegSum;
         unsafe { ptr::write(ssp, DSegSum::new(&self.segment_summary)) };
-        bp.free(ctx);
 
-        // Write each segment block to the disk.
-        // TODO: Check the virtio spec for a way for faster sequential disk write.
-        for i in 0..self.offset {
-            let entry = &self.segment_summary[i];
-            if let Some(buf) = entry.get_buf() {
-                let mut buf = buf.clone().lock(ctx);
-                hal().disk().write(&mut buf, ctx);
+        // Collect the blocks' `Buf`s in one array.
+        let mut barray: [Option<Buf>; SEGSIZE] = array![i => {
+            if i > 0 && i <= self.segment_summary.len() {
+                self.segment_summary[i - 1].get_buf().map(|b| b.clone().lock(ctx))
+            } else {
+                None
+            }
+        }; SEGSIZE];
+        barray[0] = Some(bp);
+
+        // Write all the `Buf`s sequentially to the disk.
+        hal().disk().write_sequential(&mut barray, ctx);
+
+        for bopt in barray {
+            if let Some(buf) = bopt {
                 buf.free(ctx);
             }
         }
