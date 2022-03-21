@@ -10,12 +10,12 @@ use core::pin::Pin;
 use core::ptr;
 use core::sync::atomic::{fence, Ordering};
 
-use arrayvec::ArrayVec;
 use array_macro::array;
+use arrayvec::ArrayVec;
 use bitmaps::Bitmap;
+use cfg_if::cfg_if;
 use const_zero::const_zero;
 use pin_project::pin_project;
-use cfg_if::cfg_if;
 use static_assertions::const_assert;
 
 use super::{
@@ -209,7 +209,7 @@ impl SleepableLock<VirtioDisk> {
     pub fn write(self: Pin<&Self>, b: &mut Buf, ctx: &KernelCtx<'_, '_>) {
         VirtioDisk::rw(&mut self.pinned_lock(), b, true, ctx)
     }
-    
+
     pub fn write_sequential(
         self: Pin<&Self>,
         barray: &mut [Option<Buf>; MAX_SEQ_WRITE],
@@ -377,12 +377,12 @@ impl VirtioDisk {
 
     // This method writes the data in the given buffers to disk sequentially, therefore,
     // minimizing seek-time overhead of the disk. It is designed for using with `Lfs`.
-    // Calling this method when using `Ufs` is effectively not different from calling 
+    // Calling this method when using `Ufs` is effectively not different from calling
     // `VirtioDisk::rw` and may incur additional performance overhead.
     fn write_seq(
         guard: &mut SleepableLockGuard<'_, Self>,
         barray: &mut [Option<Buf>; MAX_SEQ_WRITE],
-        ctx: &KernelCtx<'_, '_>
+        ctx: &KernelCtx<'_, '_>,
     ) {
         // Maximum # of blocks to be sequentially written to the disk must be less than
         // the total # of available descriptors excluding two descriptors, which will be
@@ -392,8 +392,8 @@ impl VirtioDisk {
         let mut darray: [Option<Descriptor>; MAX_SEQ_WRITE] = array![_ => None; MAX_SEQ_WRITE];
         let mut prev_blk_idx = 0usize;
         let mut next_write = 0usize;
-        let mut header: Option<Descriptor> = None;  // To reserve a header descriptor.
-        let mut tailer: Option<Descriptor> = None;  // To reserve a tailer descriptor.
+        let mut header: Option<Descriptor> = None; // To reserve a header descriptor.
+        let mut tailer: Option<Descriptor> = None; // To reserve a tailer descriptor.
 
         for i in 0..MAX_SEQ_WRITE {
             if barray[i].is_some() {
@@ -406,7 +406,7 @@ impl VirtioDisk {
                             None => {
                                 guard.sleep(ctx);
                                 continue;
-                            },
+                            }
                             idx => header = idx,
                         }
                         match guard.get_pin_mut().alloc() {
@@ -414,7 +414,7 @@ impl VirtioDisk {
                                 guard.get_pin_mut().as_mut().free(header.unwrap());
                                 header = None;
                                 continue;
-                            },
+                            }
                             idx => tailer = idx,
                         }
                     }
@@ -423,9 +423,20 @@ impl VirtioDisk {
                     match guard.get_pin_mut().alloc() {
                         Some(idx) => break idx,
                         // Back down to prevent deadlock
-                        None => if !Self::finalize_write_seq(guard, &mut darray, barray, &mut next_write, prev_blk_idx, &mut header, &mut tailer, ctx) {
-                            // Waiting for other threads to free the descriptors.
-                            guard.sleep(ctx);
+                        None => {
+                            if Self::finalize_write_seq(
+                                guard,
+                                &mut darray[next_write..=prev_blk_idx],
+                                &mut barray[next_write..=prev_blk_idx],
+                                &mut header,
+                                &mut tailer,
+                                ctx,
+                            ) {
+                                next_write = prev_blk_idx + 1;
+                            } else {
+                                // Waiting for other threads to free the descriptors.
+                                guard.sleep(ctx);
+                            }
                         }
                     };
                 };
@@ -453,20 +464,29 @@ impl VirtioDisk {
             }
         }
 
-        let _ = Self::finalize_write_seq(guard, &mut darray, barray, &mut next_write, prev_blk_idx, &mut header, &mut tailer, ctx);
+        let _ = Self::finalize_write_seq(
+            guard,
+            &mut darray[next_write..=prev_blk_idx],
+            &mut barray[next_write..=prev_blk_idx],
+            &mut header,
+            &mut tailer,
+            ctx,
+        );
     }
 
     // This method writes the buffers in the given range of the given array to the disk.
     fn finalize_write_seq(
         guard: &mut SleepableLockGuard<'_, Self>,
-        darray: &mut [Option<Descriptor>; MAX_SEQ_WRITE],
-        barray: &mut [Option<Buf>; MAX_SEQ_WRITE],
-        cur: &mut usize,
-        end: usize,
+        darray: &mut [Option<Descriptor>],
+        barray: &mut [Option<Buf>],
         header: &mut Option<Descriptor>,
         tailer: &mut Option<Descriptor>,
         ctx: &KernelCtx<'_, '_>,
     ) -> bool {
+        let mut start = 0usize;
+        let end = darray.len() - 1;
+        assert_eq!(end, barray.len() - 1);
+
         // The header and tailer descriptors must have been allocated.
         let hdesc = match header.take() {
             Some(d) => d,
@@ -482,22 +502,22 @@ impl VirtioDisk {
         };
 
         // Asserts that the chain contains at least one buffer to be written.
-        if darray[end].is_none() || *cur > end {
+        if darray[end].is_none() || end < 0 {
             guard.get_pin_mut().as_mut().free(hdesc);
             guard.get_pin_mut().as_mut().free(tdesc);
             return false;
         }
 
-        while darray[*cur].is_none() {
-            *cur += 1;
+        while darray[start].is_none() {
+            start += 1;
         }
-        
-        let fbdesc = &darray[*cur].as_ref().unwrap();
+
+        let fbdesc = &darray[start].as_ref().unwrap();
         let lbdesc = &darray[end].as_ref().unwrap();
 
         let mut this = guard.get_pin_mut().project();
         let mut info = this.info.project();
-        let sector: usize = (barray[*cur].as_ref().unwrap()).blockno as usize * (BSIZE / 512);
+        let sector: usize = (barray[start].as_ref().unwrap()).blockno as usize * (BSIZE / 512);
 
         let buf0 = &mut info.ops[hdesc.idx];
         *buf0 = VirtIOBlockOutHeader::new(true, sector);
@@ -538,7 +558,9 @@ impl VirtioDisk {
         }
 
         // Wait for the disk to finishing writing the entire chain
-        (&barray[end].as_ref().unwrap()).vdisk_request_waitchannel.sleep(guard, ctx);
+        (&barray[end].as_ref().unwrap())
+            .vdisk_request_waitchannel
+            .sleep(guard, ctx);
 
         // Clean up
         guard.get_pin_mut().project().info.project().inflight[hdesc.idx].b = ptr::null_mut();
@@ -547,11 +569,10 @@ impl VirtioDisk {
         this.as_mut().free(hdesc);
         this.as_mut().free(tdesc);
 
-        while *cur <= end {
-            if let Some(desc) = darray[*cur].take() {
-                this.as_mut().free(desc);
+        for dopt in &mut darray[start..=end] {
+            if let Some(d) = dopt.take() {
+                this.as_mut().free(d);
             }
-            *cur += 1;
         }
         guard.wakeup(ctx.kernel());
 
