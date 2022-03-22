@@ -484,8 +484,8 @@ impl VirtioDisk {
         ctx: &KernelCtx<'_, '_>,
     ) -> bool {
         let mut start = 0usize;
-        let end = darray.len() - 1;
-        assert_eq!(end, barray.len() - 1);
+        let end = darray.len();
+        assert_eq!(end, barray.len());
 
         // The header and tailer descriptors must have been allocated.
         let hdesc = match header.take() {
@@ -502,7 +502,7 @@ impl VirtioDisk {
         };
 
         // Asserts that the chain contains at least one buffer to be written.
-        if darray[end].is_none() || end < 0 {
+        if end == 0 || darray[end - 1].is_none() {
             guard.get_pin_mut().as_mut().free(hdesc);
             guard.get_pin_mut().as_mut().free(tdesc);
             return false;
@@ -513,7 +513,7 @@ impl VirtioDisk {
         }
 
         let fbdesc = &darray[start].as_ref().unwrap();
-        let lbdesc = &darray[end].as_ref().unwrap();
+        let lbdesc = &darray[end - 1].as_ref().unwrap();
 
         let mut this = guard.get_pin_mut().project();
         let mut info = this.info.project();
@@ -540,7 +540,7 @@ impl VirtioDisk {
 
         // The request is complete when the last block is written.
         // TODO: This may require that the `VIRTIO_F_IN_ORDER` feature has been negotiated.
-        info.inflight[hdesc.idx].b = &mut *barray[end].as_mut().unwrap();
+        info.inflight[hdesc.idx].b = &mut *barray[end - 1].as_mut().unwrap();
 
         let ring_idx = this.avail.idx as usize % NUM;
         this.avail.ring[ring_idx] = hdesc.idx as _;
@@ -558,7 +558,7 @@ impl VirtioDisk {
         }
 
         // Wait for the disk to finishing writing the entire chain
-        (&barray[end].as_ref().unwrap())
+        (&barray[end - 1].as_ref().unwrap())
             .vdisk_request_waitchannel
             .sleep(guard, ctx);
 
@@ -569,7 +569,7 @@ impl VirtioDisk {
         this.as_mut().free(hdesc);
         this.as_mut().free(tdesc);
 
-        for dopt in &mut darray[start..=end] {
+        for dopt in &mut darray[start..end] {
             if let Some(d) = dopt.take() {
                 this.as_mut().free(d);
             }
