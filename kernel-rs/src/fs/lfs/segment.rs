@@ -420,7 +420,7 @@ impl Segment {
 
         // Collect the blocks' `Buf`s in one array.
         let mut barray: [Option<Buf>; SEGSIZE] = array![i => {
-            if i > 0 && i <= self.segment_summary.len() {
+            if i > 0 && i <= self.offset {
                 self.segment_summary[i - 1].get_buf().map(|b| b.clone().lock(ctx))
             } else {
                 None

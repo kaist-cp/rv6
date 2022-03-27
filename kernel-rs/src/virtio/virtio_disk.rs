@@ -397,10 +397,10 @@ impl VirtioDisk {
 
         for i in 0..MAX_SEQ_WRITE {
             if barray[i].is_some() {
-                let desc = loop {
+                let next_desc = loop {
                     // Allocate a header and tailer descriptor if not already allocated.
                     // Invariant: `header` and `tailer` are always allocated together.
-                    if header.is_none() {
+                    if tailer.is_none() {
                         // `None` means this is the beginning of a new descriptor chain.
                         match guard.get_pin_mut().alloc() {
                             None => {
@@ -422,21 +422,22 @@ impl VirtioDisk {
                     // Allocate a descriptor for the buffer.
                     match guard.get_pin_mut().alloc() {
                         Some(idx) => break idx,
-                        // Back down to prevent deadlock
+                        // Write the previously allocated descriptors to the disk.
+                        // If `Self::finalize_write_seq` returns false, zero buffer descriptor can be allocated,
+                        // thus resulting in deadlock.
                         None => {
-                            if Self::finalize_write_seq(
-                                guard,
-                                &mut darray[next_write..=prev_blk_idx],
-                                &mut barray[next_write..=prev_blk_idx],
-                                &mut header,
-                                &mut tailer,
-                                ctx,
-                            ) {
-                                next_write = prev_blk_idx + 1;
-                            } else {
-                                // Waiting for other threads to free the descriptors.
-                                guard.sleep(ctx);
-                            }
+                            assert!(
+                                Self::finalize_write_seq(
+                                    guard,
+                                    &mut darray[next_write..=prev_blk_idx],
+                                    &mut barray[next_write..=prev_blk_idx],
+                                    header.take().unwrap(),
+                                    tailer.take().unwrap(),
+                                    ctx,
+                                ),
+                                "could not allocate buffer descriptors"
+                            );
+                            next_write = prev_blk_idx + 1;
                         }
                     };
                 };
@@ -445,7 +446,7 @@ impl VirtioDisk {
 
                 // Set the descriptor of the buffer
                 let this = guard.get_pin_mut().project();
-                this.desc[desc.idx] = VirtqDesc {
+                this.desc[tailer.as_ref().unwrap().idx] = VirtqDesc {
                     addr: buf.deref_inner().data.as_ptr() as _,
                     len: BSIZE as _,
                     flags: VirtqDescFlags::NEXT,
@@ -454,23 +455,26 @@ impl VirtioDisk {
 
                 // Chain with the previous descriptor
                 if let Some(prev_d) = &darray[prev_blk_idx] {
-                    this.desc[prev_d.idx].next = desc.idx as _;
+                    this.desc[prev_d.idx].next = tailer.as_ref().unwrap().idx as _;
                 }
 
                 buf.deref_inner_mut().disk = true;
 
-                darray[i] = Some(desc);
+                darray[i] = tailer.replace(next_desc);
                 prev_blk_idx = i;
             }
         }
 
-        let _ = Self::finalize_write_seq(
-            guard,
-            &mut darray[next_write..=prev_blk_idx],
-            &mut barray[next_write..=prev_blk_idx],
-            &mut header,
-            &mut tailer,
-            ctx,
+        assert!(
+            Self::finalize_write_seq(
+                guard,
+                &mut darray[next_write..=prev_blk_idx],
+                &mut barray[next_write..=prev_blk_idx],
+                header.take().unwrap(),
+                tailer.take().unwrap(),
+                ctx,
+            ),
+            "could not finalize the last set of buffers"
         );
     }
 
@@ -479,27 +483,13 @@ impl VirtioDisk {
         guard: &mut SleepableLockGuard<'_, Self>,
         darray: &mut [Option<Descriptor>],
         barray: &mut [Option<Buf>],
-        header: &mut Option<Descriptor>,
-        tailer: &mut Option<Descriptor>,
+        hdesc: Descriptor,
+        tdesc: Descriptor,
         ctx: &KernelCtx<'_, '_>,
     ) -> bool {
         let mut start = 0usize;
         let end = darray.len();
         assert_eq!(end, barray.len());
-
-        // The header and tailer descriptors must have been allocated.
-        let hdesc = match header.take() {
-            Some(d) => d,
-            None => return false,
-        };
-
-        let tdesc = match tailer.take() {
-            Some(d) => d,
-            None => {
-                guard.get_pin_mut().as_mut().free(hdesc);
-                return false;
-            }
-        };
 
         // Asserts that the chain contains at least one buffer to be written.
         if end == 0 || darray[end - 1].is_none() {
@@ -567,13 +557,17 @@ impl VirtioDisk {
 
         let mut this = guard.get_pin_mut();
         this.as_mut().free(hdesc);
-        this.as_mut().free(tdesc);
 
-        for dopt in &mut darray[start..end] {
-            if let Some(d) = dopt.take() {
+        for i in start..end {
+            if let Some(d) = darray[i].take() {
                 this.as_mut().free(d);
+                let buf = &mut barray[i].as_mut().unwrap();
+                buf.deref_inner_mut().disk = false;
             }
         }
+
+        this.as_mut().free(tdesc);
+
         guard.wakeup(ctx.kernel());
 
         return true;
