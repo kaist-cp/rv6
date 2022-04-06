@@ -2,12 +2,9 @@ use core::{mem, ptr};
 
 use static_assertions::const_assert;
 
-use super::Imap;
 use crate::{
     bio::{Buf, BufData},
-    hal::hal,
-    param::{BSIZE, IMAPSIZE, SEGSIZE, SEGTABLESIZE},
-    proc::KernelCtx,
+    param::{BSIZE, SEGSIZE},
 };
 
 const FSMAGIC: u32 = 0x10203040;
@@ -43,16 +40,6 @@ pub struct Superblock {
 
     // Block number of first segment
     segstart: u32,
-}
-
-pub type SegTable = [u8; SEGTABLESIZE];
-
-/// On-disk checkpoint structure.
-#[repr(C)]
-struct Checkpoint {
-    imap: [u32; IMAPSIZE],
-    segtable: SegTable,
-    timestamp: u32,
 }
 
 impl Superblock {
@@ -94,42 +81,8 @@ impl Superblock {
         )
     }
 
-    /// Loads the latest checkpoint from the disk.
-    pub fn load_checkpoint(
-        &self,
-        dev_no: u32,
-        ctx: &KernelCtx<'_, '_>,
-    ) -> ([u8; SEGTABLESIZE], usize, Imap) {
-        let buf1 = hal().disk().read(dev_no, self.checkpoint1, ctx);
-        let chkpt1 = unsafe { &*(buf1.deref_inner().data.as_ptr() as *const Checkpoint) };
-        let buf2 = hal().disk().read(dev_no, self.checkpoint2, ctx);
-        let chkpt2 = unsafe { &*(buf2.deref_inner().data.as_ptr() as *const Checkpoint) };
-
-        let (chkpt, chkpt_no) = if chkpt1.timestamp > chkpt2.timestamp {
-            (chkpt1, 1)
-        } else {
-            (chkpt2, 2)
-        };
-
-        let result = (
-            chkpt.segtable.clone(),
-            chkpt_no,
-            Imap::new(dev_no, self.ninodes() as usize, chkpt.imap.clone()),
-        );
-        buf1.free(ctx);
-        buf2.free(ctx);
-        result
-    }
-
-    #[allow(dead_code)]
-    pub fn write_checkpoint(
-        &self,
-        _dev_no: u32,
-        _segtable: &SegTable,
-        _imap: &Imap,
-        _chkpt_no: usize,
-        _ctx: &KernelCtx<'_, '_>,
-    ) {
-        todo!()
+    /// Returns the starting block number of each checkpoint region.
+    pub fn get_chkpt_block_no(&self) -> (u32, u32) {
+        (self.checkpoint1, self.checkpoint2)
     }
 }
