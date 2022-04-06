@@ -15,7 +15,7 @@ use crate::{
     file::{FileType, InodeFileType},
     hal::hal,
     lock::{SleepLock, SleepLockGuard},
-    param::BSIZE,
+    param::{BSIZE, IMAPSIZE, SEGTABLESIZE},
     proc::KernelCtx,
 };
 
@@ -27,7 +27,7 @@ mod superblock;
 pub use imap::Imap;
 pub use inode::{Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
 pub use segment::Segment;
-pub use superblock::{SegTable, Superblock};
+pub use superblock::Superblock;
 
 /// root i-number
 const ROOTINO: u32 = 1;
@@ -60,6 +60,16 @@ pub struct Lfs {
     // 1 or 2.
     // Stores whether the last checkpoint is stored at checkpoint 1 or checkpoint 2.
     curr_checkpoint: Once<SleepLock<usize>>,
+}
+
+pub type SegTable = [u8; SEGTABLESIZE];
+
+/// On-disk checkpoint structure.
+#[repr(C)]
+pub struct Checkpoint {
+    imap: [u32; IMAPSIZE],
+    segtable: SegTable,
+    timestamp: u32,
 }
 
 impl Tx<'_, Lfs> {
@@ -142,15 +152,35 @@ impl FileSystem for Lfs {
             let superblock = self.superblock.call_once(|| Superblock::new(&buf));
             buf.free(ctx);
 
-            // Load from the checkpoint.
-            let (segtable, chkpt_no, imap) = superblock.load_checkpoint(dev, ctx);
+            // Load the checkpoint.
+            let (bno1, bno2) = superblock.get_chkpt_block_no();
+            let buf1 = hal().disk().read(dev, bno1, ctx);
+            let chkpt1 = unsafe { &*(buf1.deref_inner().data.as_ptr() as *const Checkpoint) };
+            let buf2 = hal().disk().read(dev, bno2, ctx);
+            let chkpt2 = unsafe { &*(buf2.deref_inner().data.as_ptr() as *const Checkpoint) };
+
+            let (chkpt, chkpt_no) = if chkpt1.timestamp > chkpt2.timestamp {
+                (chkpt1, 1)
+            } else {
+                (chkpt2, 2)
+            };
+
+            let segtable = chkpt.segtable.clone();
+            let imap = chkpt.imap.clone();
+            // let timestamp = chkpt.timestamp;
+            buf1.free(ctx);
+            buf2.free(ctx);
+
+            // Load other components using the checkpoint content.
             let _ = self
                 .segtable
                 .call_once(|| SleepLock::new("segtable", segtable));
             let _ = self.segment.call_once(|| {
                 SleepLock::new("segment", Segment::new(dev, self.get_next_seg_no(None)))
             });
-            let _ = self.imap.call_once(|| SleepLock::new("imap", imap));
+            let _ = self.imap.call_once(|| {
+                SleepLock::new("imap", Imap::new(dev, superblock.ninodes() as usize, imap))
+            });
             let _ = self
                 .curr_checkpoint
                 .call_once(|| SleepLock::new("curr_checkpoint", chkpt_no));
