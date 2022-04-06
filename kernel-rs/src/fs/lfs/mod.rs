@@ -14,7 +14,7 @@ use crate::{
     bio::Buf,
     file::{FileType, InodeFileType},
     hal::hal,
-    lock::{SleepLock, SleepLockGuard},
+    lock::{SleepLock, SleepLockGuard, SleepableLock},
     param::{BSIZE, IMAPSIZE, SEGTABLESIZE},
     proc::KernelCtx,
 };
@@ -23,11 +23,13 @@ mod imap;
 mod inode;
 mod segment;
 mod superblock;
+mod tx;
 
 pub use imap::Imap;
 pub use inode::{Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
 pub use segment::Segment;
 pub use superblock::Superblock;
+pub use tx::TxManager;
 
 /// root i-number
 const ROOTINO: u32 = 1;
@@ -57,9 +59,7 @@ pub struct Lfs {
     /// Imap.
     imap: Once<SleepLock<Imap>>,
 
-    // 1 or 2.
-    // Stores whether the last checkpoint is stored at checkpoint 1 or checkpoint 2.
-    curr_checkpoint: Once<SleepLock<usize>>,
+    tx_manager: Once<SleepableLock<TxManager>>,
 }
 
 pub type SegTable = [u8; SEGTABLESIZE];
@@ -96,7 +96,7 @@ impl Lfs {
             segment: Once::new(),
             imap: Once::new(),
             segtable: Once::new(),
-            curr_checkpoint: Once::new(),
+            tx_manager: Once::new(),
         }
     }
 
@@ -121,6 +121,10 @@ impl Lfs {
         self.imap.get().expect("imap").lock(ctx)
     }
 
+    fn tx_manager(&self) -> &SleepableLock<TxManager> {
+        self.tx_manager.get().expect("tx_manager")
+    }
+
     /// Traverses the segment usage table to find an empty segment, and returns its segment number
     /// after marking the segment as 'used'. If a `last_seg_no` is given, starts traversing from `last_seg_no + 1`.
     pub fn get_next_seg_no(&self, last_seg_no: Option<u32>) -> u32 {
@@ -138,6 +142,42 @@ impl Lfs {
         panic!("no empty segment");
         // TODO: If fails to find an empty one, run the cleaner.
         // (Actually, the cleaner should have already runned earlier.)
+    }
+
+    /// Commits the segment without acquring the lock on the `Segment`.
+    ///
+    /// # Safety
+    ///
+    /// Use this only when no one is accessing the `Segment`.
+    /// You should usually use `Lfs::segment().commit(ctx)` instead.
+    pub unsafe fn commit_segment_unchecked(&self, ctx: &KernelCtx<'_, '_>) {
+        unsafe { &mut *self.segment.get_unchecked().get_mut_raw() }.commit(ctx);
+    }
+
+    /// Commits the checkpoint at the checkpoint region without acquiring any locks or checking the type is initialized.
+    /// If `first` is `true`, writes it at the first checkpoint region. Otherwise, writes at the second region.
+    ///
+    /// # Safety
+    ///
+    /// Call this function only when you can ensure the `SegTable` and `Imap` is not under mutation
+    /// and only after `self` is initialzed.
+    pub unsafe fn commit_checkpoint(
+        &self,
+        dev: u32,
+        first: bool,
+        timestamp: u32,
+        ctx: &KernelCtx<'_, '_>,
+    ) {
+        let (bno1, bno2) = self.superblock().get_chkpt_block_no();
+        let block_no = if first { bno1 } else { bno2 };
+
+        let mut buf = hal().disk().read(dev, block_no, ctx);
+        let chkpt = unsafe { &mut *(buf.deref_inner().data.as_ptr() as *mut Checkpoint) };
+        chkpt.segtable = *unsafe { &*self.segtable.get_unchecked().get_mut_raw() };
+        chkpt.imap = *unsafe { &*self.imap.get_unchecked().get_mut_raw() }.get_mapping();
+        chkpt.timestamp = timestamp;
+        hal().disk().write(&mut buf, ctx);
+        buf.free(ctx);
     }
 }
 
@@ -159,14 +199,14 @@ impl FileSystem for Lfs {
             let buf2 = hal().disk().read(dev, bno2, ctx);
             let chkpt2 = unsafe { &*(buf2.deref_inner().data.as_ptr() as *const Checkpoint) };
 
-            let (chkpt, chkpt_no) = if chkpt1.timestamp > chkpt2.timestamp {
-                (chkpt1, 1)
+            let (chkpt, timestamp, stored_at_first) = if chkpt1.timestamp > chkpt2.timestamp {
+                (chkpt1, chkpt1.timestamp, true)
             } else {
-                (chkpt2, 2)
+                (chkpt2, chkpt2.timestamp, false)
             };
 
-            let segtable = chkpt.segtable.clone();
-            let imap = chkpt.imap.clone();
+            let segtable = chkpt.segtable;
+            let imap = chkpt.imap;
             // let timestamp = chkpt.timestamp;
             buf1.free(ctx);
             buf2.free(ctx);
@@ -181,9 +221,12 @@ impl FileSystem for Lfs {
             let _ = self.imap.call_once(|| {
                 SleepLock::new("imap", Imap::new(dev, superblock.ninodes() as usize, imap))
             });
-            let _ = self
-                .curr_checkpoint
-                .call_once(|| SleepLock::new("curr_checkpoint", chkpt_no));
+            let _ = self.tx_manager.call_once(|| {
+                SleepableLock::new(
+                    "tx_manager",
+                    TxManager::new(dev, stored_at_first, timestamp),
+                )
+            });
         }
     }
 
@@ -409,14 +452,13 @@ impl FileSystem for Lfs {
         Ok(())
     }
 
-    fn tx_begin(&self, _ctx: &KernelCtx<'_, '_>) {
-        // TODO: begin transaction
-        // self.log().begin_op(ctx);
+    fn tx_begin(&self, ctx: &KernelCtx<'_, '_>) {
+        self.tx_manager().begin_op(ctx);
     }
 
-    unsafe fn tx_end(&self, _ctx: &KernelCtx<'_, '_>) {
-        // TODO: commit and end transaction
-        // self.log().end_op(ctx);
+    unsafe fn tx_end(&self, ctx: &KernelCtx<'_, '_>) {
+        // Commits if this was the last outstanding operation.
+        self.tx_manager().end_op(self, ctx);
     }
 
     #[inline]
