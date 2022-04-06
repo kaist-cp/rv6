@@ -124,7 +124,7 @@ pub enum SmcFunctions {
     _AffinityInfoAarch64 = 0xc4000004,
     _Features = 0x8400000A,
     _MigInfoType = 0x84000006,
-    _SystemOff = 0x84000008,
+    SystemOff = 0x84000008,
     _SystemReset = 0x84000009,
 }
 
