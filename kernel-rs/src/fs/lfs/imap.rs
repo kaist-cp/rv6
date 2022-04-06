@@ -133,4 +133,10 @@ impl Imap {
             false
         }
     }
+
+    /// Returns an immutable reference to the inner mapping,
+    /// which stores the disk block number of each imap block.
+    pub fn get_mapping(&self) -> &[u32; IMAPSIZE] {
+        &self.addr
+    }
 }
