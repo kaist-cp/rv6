@@ -48,6 +48,12 @@ impl Imap {
         hal().disk().read(self.dev_no, self.addr[block_no], ctx)
     }
 
+    /// Returns the imap in the on-disk format.
+    /// This should be written at the checkpoint of the disk.
+    pub fn dimap(&self) -> [u32; IMAPSIZE] {
+        self.addr
+    }
+
     /// Returns an unused inum.
     pub fn get_empty_inum(&self, ctx: &KernelCtx<'_, '_>) -> Option<u32> {
         for i in 0..IMAPSIZE {
@@ -121,11 +127,5 @@ impl Imap {
         } else {
             false
         }
-    }
-
-    /// Returns an immutable reference to the inner mapping,
-    /// which stores the disk block number of each imap block.
-    pub fn get_mapping(&self) -> &[u32; IMAPSIZE] {
-        &self.addr
     }
 }

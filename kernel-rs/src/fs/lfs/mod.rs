@@ -14,7 +14,7 @@ use crate::{
     file::{FileType, InodeFileType},
     hal::hal,
     lock::{SleepLock, SleepLockGuard, SleepableLock},
-    param::{BSIZE, IMAPSIZE, SEGTABLESIZE},
+    param::{BSIZE, IMAPSIZE},
     proc::KernelCtx,
 };
 
@@ -26,7 +26,7 @@ mod tx;
 
 pub use imap::Imap;
 pub use inode::{Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
-pub use segment::Segment;
+pub use segment::{SegTable, Segment};
 pub use superblock::Superblock;
 pub use tx::TxManager;
 
@@ -47,21 +47,14 @@ pub struct Lfs {
     #[pin]
     itable: Itable<Self>,
 
-    // TODO: Group the segment, segtable, and imap into a `Once<Spinlock<WriteManager>>`.
     /// The current segment.
     segment: Once<SleepLock<Segment>>,
-
-    // The segment usage table.
-    // TODO: Use a bitmap crate instead.
-    segtable: Once<SleepLock<SegTable>>,
 
     /// Imap.
     imap: Once<SleepLock<Imap>>,
 
     tx_manager: Once<SleepableLock<TxManager>>,
 }
-
-pub type SegTable = [u8; SEGTABLESIZE];
 
 /// On-disk checkpoint structure.
 #[repr(C)]
@@ -78,7 +71,6 @@ impl Lfs {
             itable: Itable::<Self>::new_itable(),
             segment: Once::new(),
             imap: Once::new(),
-            segtable: Once::new(),
             tx_manager: Once::new(),
         }
     }
@@ -96,35 +88,12 @@ impl Lfs {
         self.segment.get().expect("segment").lock(ctx)
     }
 
-    fn segtable(&self) -> &mut SegTable {
-        unsafe { &mut *self.segtable.get().expect("segtable").get_mut_raw() }
-    }
-
     pub fn imap(&self, ctx: &KernelCtx<'_, '_>) -> SleepLockGuard<'_, Imap> {
         self.imap.get().expect("imap").lock(ctx)
     }
 
     fn tx_manager(&self) -> &SleepableLock<TxManager> {
         self.tx_manager.get().expect("tx_manager")
-    }
-
-    /// Traverses the segment usage table to find an empty segment, and returns its segment number
-    /// after marking the segment as 'used'. If a `last_seg_no` is given, starts traversing from `last_seg_no + 1`.
-    pub fn get_next_seg_no(&self, last_seg_no: Option<u32>) -> u32 {
-        let start = match last_seg_no {
-            None => 0,
-            Some(seg_no) => seg_no as usize + 1,
-        };
-        let segtable = self.segtable();
-        for i in start..(self.superblock().nsegments() as usize) {
-            if segtable[i / 8] & (1 << (i % 8)) == 0 {
-                segtable[i / 8] |= 1 << (i % 8);
-                return i as u32;
-            }
-        }
-        panic!("no empty segment");
-        // TODO: If fails to find an empty one, run the cleaner.
-        // (Actually, the cleaner should have already runned earlier.)
     }
 
     /// Commits the segment without acquring the lock on the `Segment`
@@ -157,8 +126,8 @@ impl Lfs {
 
         let mut buf = hal().disk().read(dev, block_no, ctx);
         let chkpt = unsafe { &mut *(buf.deref_inner().data.as_ptr() as *mut Checkpoint) };
-        chkpt.segtable = *unsafe { &*self.segtable.get_unchecked().get_mut_raw() };
-        chkpt.imap = *unsafe { &*self.imap.get_unchecked().get_mut_raw() }.get_mapping();
+        chkpt.segtable = unsafe { &*self.segment.get_unchecked().get_mut_raw() }.dsegtable();
+        chkpt.imap = unsafe { &*self.imap.get_unchecked().get_mut_raw() }.dimap();
         chkpt.timestamp = timestamp;
         hal().disk().write(&mut buf, ctx);
         buf.free(ctx);
@@ -196,11 +165,11 @@ impl FileSystem for Lfs {
             buf2.free(ctx);
 
             // Load other components using the checkpoint content.
-            let _ = self
-                .segtable
-                .call_once(|| SleepLock::new("segtable", segtable));
             let _ = self.segment.call_once(|| {
-                SleepLock::new("segment", Segment::new(dev, self.get_next_seg_no(None)))
+                SleepLock::new(
+                    "segment",
+                    Segment::new(dev, segtable, superblock.nsegments()),
+                )
             });
             let _ = self.imap.call_once(|| {
                 SleepLock::new("imap", Imap::new(dev, superblock.ninodes() as usize, imap))
