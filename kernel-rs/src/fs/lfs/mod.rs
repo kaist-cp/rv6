@@ -144,14 +144,15 @@ impl Lfs {
         // (Actually, the cleaner should have already runned earlier.)
     }
 
-    /// Commits the segment without acquring the lock on the `Segment`.
+    /// Commits the segment without acquring the lock on the `Segment`
+    /// and without flushing it.
     ///
     /// # Safety
     ///
     /// Use this only when no one is accessing the `Segment`.
     /// You should usually use `Lfs::segment().commit(ctx)` instead.
     pub unsafe fn commit_segment_unchecked(&self, ctx: &KernelCtx<'_, '_>) {
-        unsafe { &mut *self.segment.get_unchecked().get_mut_raw() }.commit(ctx);
+        unsafe { &mut *self.segment.get_unchecked().get_mut_raw() }.commit_no_alloc(ctx);
     }
 
     /// Commits the checkpoint at the checkpoint region without acquiring any locks or checking the type is initialized.
