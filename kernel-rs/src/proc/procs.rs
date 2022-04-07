@@ -465,7 +465,7 @@ impl<'id, 's> ProcsRef<'id, 's> {
     }
 
     // get the pid of current process's parent
-    pub fn get_parent_pid(&mut self, ctx: &mut KernelCtx<'id, '_>) -> Pid {
+    pub fn get_parent_pid(&self, ctx: &mut KernelCtx<'id, '_>) -> Pid {
         let mut parent_guard = self.wait_guard();
         let parent = *ctx.proc().get_mut_parent(&mut parent_guard);
 
@@ -491,7 +491,7 @@ unsafe fn forkret() -> ! {
         // regular process (e.g., because it calls sleep), and thus cannot
         // be run from main().
         ctx.kernel().fs().init(ROOTDEV, &ctx);
-        unsafe { ctx.user_trap_ret() }
+        unsafe { ctx.user_trap_ret(0) }
     };
 
     unsafe { kernel_ctx(forkret_inner) }

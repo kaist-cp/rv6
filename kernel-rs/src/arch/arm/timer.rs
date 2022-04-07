@@ -11,6 +11,16 @@ const TIMER_TICK_MS: u64 = 100;
 
 impl TimeManager for Armv8 {
     fn timer_init() {
+        let mut x: usize;
+
+        // for user-space clock time profiling.
+        unsafe {
+            asm!("mrs {}, cntkctl_el1", out(reg) x);
+            x &= !((3 << 8) | (1 << 1));
+            x |= 1;
+            asm!("msr cntkctl_el1, {}", in(reg) x);
+        }
+
         set_next_timer();
     }
 
@@ -26,7 +36,9 @@ impl TimeManager for Armv8 {
 pub fn read_cntpct() -> u64 {
     // Prevent that the counter is read ahead of time due to out-of-order execution.
     unsafe { barrier::isb(barrier::SY) };
-    CNTPCT_EL0.get()
+    let ret = CNTPCT_EL0.get();
+    unsafe { barrier::isb(barrier::SY) };
+    ret
 }
 
 pub fn read_freq() -> u64 {

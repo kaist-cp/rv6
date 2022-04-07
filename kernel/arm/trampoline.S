@@ -73,6 +73,11 @@ trampoline:
         // we don't use it.
         msr     tpidr_el1, x0
 
+		// record stage2 start time
+		mrs		x0, cntpct_el0
+		msr		tpidr_el0, x0
+		
+
         // assign TRAPFRAME address (fixed) to x0
         movz    x0, #0xe000
         movk    x0, #0xffff, lsl #16
@@ -301,6 +306,7 @@ cur_el_spx_error:
 	.align	6
 lower_el_aarch64_sync:
 	exception_0_entry
+		mrs x2, tpidr_el0
         mov	x0, #0
         # jump to usertrap(), which does not return
 	br	x1

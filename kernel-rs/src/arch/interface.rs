@@ -135,6 +135,7 @@ pub trait TrapManager {
         trap: &mut <TargetArch as ProcManager>::TrapFrame,
         kernel_stack: usize,
         usertrap: usize,
+        syscall_num: usize,
     ) -> !;
 
     fn save_trap_regs(store: &mut [usize; 10]);

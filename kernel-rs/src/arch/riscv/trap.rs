@@ -177,6 +177,7 @@ impl TrapManager for RiscV {
         trapframe: &mut TrapFrame,
         kernel_stack: usize,
         usertrap: usize,
+        _syscall_num: usize,
     ) -> ! {
         // We're about to switch the destination of traps from
         // kerneltrap() to usertrap(), so turn off interrupts until

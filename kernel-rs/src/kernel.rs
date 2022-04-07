@@ -27,11 +27,13 @@ use crate::{
 const CONSOLE_IN_DEVSW: usize = 1;
 
 /// The kernel.
-static mut KERNEL: Kernel<TargetArch> = unsafe { Kernel::new() };
+pub static mut KERNEL: Kernel<TargetArch> = unsafe { Kernel::new() };
+
+pub static mut TIME: [usize; 10] = [0; 10];
 
 /// Returns a shared reference to the `KERNEL`.
 #[inline]
-fn kernel<'s>() -> StrongPin<'s, Kernel<TargetArch>> {
+pub fn kernel<'s>() -> StrongPin<'s, Kernel<TargetArch>> {
     // SAFETY: there is no way to make a mutable reference to `KERNEL` except calling
     // `kernel_builder_unchecked_pin`, which is unsafe.
     unsafe { StrongPin::new_unchecked(&KERNEL) }
@@ -89,6 +91,8 @@ pub struct Kernel<A: Arch> {
 
     #[pin]
     file_system: DefaultFs,
+
+    pub time_data: [usize; 10],
 }
 
 /// A branded reference to a `Kernel`.
@@ -172,6 +176,7 @@ impl<A: Arch> Kernel<A> {
             }; NDEV],
             ftable: FileTable::new_ftable(),
             file_system: DefaultFs::new(),
+            time_data: [0; 10],
         }
     }
 

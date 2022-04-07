@@ -134,7 +134,7 @@ pub enum SmcFunctions {
 ///
 /// Arguments must follow ARM SMC calling convention.
 #[no_mangle]
-pub unsafe fn smc_call(x0: u64, x1: u64, x2: u64, x3: u64) -> u64 {
+pub unsafe fn smc_call(x0: u64, x1: u64, x2: u64, x3: u64) -> (u64, u64, u64, u64) {
     let (r0, r1, r2, r3);
     unsafe {
         // NOTE: here use hvc for qemu without `virtualization=on`
