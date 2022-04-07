@@ -47,7 +47,7 @@ use static_assertions::const_assert;
 use crate::{
     bio::{Buf, BufUnlocked},
     hal::hal,
-    param::{BSIZE, SEGSIZE},
+    param::{BSIZE, SEGSIZE, SEGTABLESIZE},
     proc::KernelCtx,
 };
 
@@ -120,14 +120,23 @@ impl DSegSum {
     }
 }
 
+pub type SegTable = [u8; SEGTABLESIZE];
+
 /// In-memory segment.
 /// Any kernel write operations to the disk must be done through the `Segment`'s methods.
 ///
 /// See the module documentation for details.
+// TODO: Change name into `SegManager`.
 pub struct Segment {
     dev_no: u32,
 
-    /// The segment number of this segment.
+    // The segment usage table.
+    segtable: SegTable,
+
+    // The total number of segments on the disk.
+    nsegments: u32,
+
+    /// The segment number of the current segment.
     segment_no: u32,
 
     /// Segment summary. Indicates info for each block that should be in the segment.
@@ -143,14 +152,18 @@ pub struct Segment {
 
 impl Segment {
     // TODO: Load from a non-empty segment instead?
-    pub const fn new(dev_no: u32, segment_no: u32) -> Self {
-        Self {
+    pub fn new(dev_no: u32, segtable: SegTable, nsegments: u32) -> Self {
+        let mut this = Self {
             dev_no,
-            segment_no,
+            segtable,
+            nsegments,
+            segment_no: 0,
             segment_summary: array![_ => SegSumEntry::Empty; SEGSIZE - 1],
             start: 0,
             offset: 0,
-        }
+        };
+        this.alloc_segment(None);
+        this
     }
 
     /// Returns the disk block number for the `seg_block_no`th block on this segment.
@@ -178,6 +191,31 @@ impl Segment {
     /// You should commit the segment if the segment has less blocks than you need.
     pub fn remaining(&self) -> usize {
         SEGSIZE - 1 - self.offset
+    }
+
+    /// Returns segment usage table in the on-disk format.
+    /// This should be written at the checkpoint of the disk.
+    pub fn dsegtable(&self) -> SegTable {
+        self.segtable
+    }
+
+    /// Traverses the segment usage table to find an empty segment and marks it as used.
+    /// Uses that segment from now on.
+    /// If a `last_seg_no` was given, starts traversing from `last_seg_no + 1`.
+    fn alloc_segment(&mut self, last_seg_no: Option<u32>) {
+        let start = match last_seg_no {
+            None => 0,
+            Some(seg_no) => seg_no as usize + 1,
+        };
+        for i in start..(self.nsegments as usize) {
+            if self.segtable[i / 8] & (1 << (i % 8)) == 0 {
+                self.segtable[i / 8] |= 1 << (i % 8);
+                self.segment_no = i as u32;
+                return;
+            }
+        }
+        // TODO : Make sure the cleaner prevents such cases.
+        panic!("no empty segment");
     }
 
     /// Allocates a new zeroed block on the segment and creates a `SegSumEntry` for it using `f`.
@@ -430,7 +468,7 @@ impl Segment {
     pub fn commit(&mut self, ctx: &KernelCtx<'_, '_>) {
         self.commit_no_alloc(ctx);
 
-        self.segment_no = ctx.kernel().fs().get_next_seg_no(Some(self.segment_no));
+        self.alloc_segment(Some(self.segment_no));
         self.segment_summary = array![_ => SegSumEntry::Empty; SEGSIZE - 1];
         self.start = 0;
         self.offset = 0;
