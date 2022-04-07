@@ -11,7 +11,6 @@ use super::{
 };
 use crate::util::strong_pin::StrongPin;
 use crate::{
-    bio::Buf,
     file::{FileType, InodeFileType},
     hal::hal,
     lock::{SleepLock, SleepLockGuard, SleepableLock},
@@ -70,22 +69,6 @@ pub struct Checkpoint {
     imap: [u32; IMAPSIZE],
     segtable: SegTable,
     timestamp: u32,
-}
-
-impl Tx<'_, Lfs> {
-    /// Caller has modified b->data and is done with the buffer.
-    /// Record the block number and pin in the cache by increasing refcnt.
-    /// commit()/write_log() will do the disk write.
-    ///
-    /// write() replaces write(); a typical use is:
-    ///   bp = kernel.fs().disk.read(...)
-    ///   modify bp->data[]
-    ///   write(bp)
-    #[allow(dead_code)]
-    fn write(&self, _b: Buf, _ctx: &KernelCtx<'_, '_>) {
-        // TODO: We should update the checkpoint here, and actually write to the disk when the segment is flushed.
-        // self.fs.log().lock().write(b, ctx);
-    }
 }
 
 impl Lfs {

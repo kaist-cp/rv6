@@ -52,7 +52,6 @@ use crate::{
 };
 
 /// Entries for the in-memory segment summary.
-#[allow(dead_code)]
 pub enum SegSumEntry {
     Empty,
     /// Inode.
@@ -143,7 +142,6 @@ pub struct Segment {
 }
 
 impl Segment {
-    #[allow(dead_code)]
     // TODO: Load from a non-empty segment instead?
     pub const fn new(dev_no: u32, segment_no: u32) -> Self {
         Self {

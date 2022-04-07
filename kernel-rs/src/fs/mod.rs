@@ -52,7 +52,6 @@ pub enum InodeType {
     Device { major: u16, minor: u16 },
 }
 
-#[allow(dead_code)]
 #[derive(Copy, Clone, PartialEq, Debug)]
 #[repr(i16)]
 pub enum DInodeType {
