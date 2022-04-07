@@ -135,19 +135,11 @@ pub struct Segment {
     // TODO: Use ArrayVec instead?
     segment_summary: [SegSumEntry; SEGSIZE - 1],
 
+    /// The number of segment blocks that were committed to the disk.
+    start: usize,
+
     /// Current offset of the segment. Must flush when `offset == SEGSIZE - 1`.
     offset: usize,
-}
-
-impl const Default for Segment {
-    fn default() -> Self {
-        Self {
-            dev_no: 0,
-            segment_no: 0,
-            segment_summary: array![_ => SegSumEntry::Empty; SEGSIZE - 1],
-            offset: 0,
-        }
-    }
 }
 
 impl Segment {
@@ -158,6 +150,7 @@ impl Segment {
             dev_no,
             segment_no,
             segment_summary: array![_ => SegSumEntry::Empty; SEGSIZE - 1],
+            start: 0,
             offset: 0,
         }
     }
@@ -265,7 +258,7 @@ impl Segment {
         ctx: &KernelCtx<'_, '_>,
     ) -> Option<(Buf, u32)> {
         // Check if the block already exists.
-        for i in (0..self.offset).rev() {
+        for i in (self.start..self.offset).rev() {
             if c(&self.segment_summary[i]) {
                 return Some((
                     self.segment_summary[i].get_buf().unwrap().clone().lock(ctx),
@@ -408,9 +401,10 @@ impl Segment {
         )
     }
 
-    /// Commits the segment to the disk. Updates the checkpoint region of the disk if needed.
-    /// Run this when the segment is full or right before shutdowns.
-    pub fn commit(&mut self, ctx: &KernelCtx<'_, '_>) {
+    /// Commits the segment to the disk but does not allocate a new segment.
+    /// If `self` was full, it will remain full after calling this method.
+    /// Run this before commiting the checkpoint.
+    pub fn commit_no_alloc(&mut self, ctx: &KernelCtx<'_, '_>) {
         const_assert!(core::mem::size_of::<DSegSum>() <= BSIZE);
 
         // Write the segment summary to the disk.
@@ -421,7 +415,7 @@ impl Segment {
 
         // Write each segment block to the disk.
         // TODO: Check the virtio spec for a way for faster sequential disk write.
-        for i in 0..self.offset {
+        for i in self.start..self.offset {
             let entry = &self.segment_summary[i];
             if let Some(buf) = entry.get_buf() {
                 let mut buf = buf.clone().lock(ctx);
@@ -429,11 +423,18 @@ impl Segment {
                 buf.free(ctx);
             }
         }
+        self.start = self.offset;
+    }
+
+    /// Commits the segment to the disk and allocates a new segment.
+    /// `self` will be empty after calling this method.
+    /// Run this when you need to empty the segment.
+    pub fn commit(&mut self, ctx: &KernelCtx<'_, '_>) {
+        self.commit_no_alloc(ctx);
 
         self.segment_no = ctx.kernel().fs().get_next_seg_no(Some(self.segment_no));
         self.segment_summary = array![_ => SegSumEntry::Empty; SEGSIZE - 1];
+        self.start = 0;
         self.offset = 0;
-
-        // TODO: Update the on-disk checkpoint if needed.
     }
 }
