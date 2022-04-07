@@ -28,18 +28,7 @@ pub struct Imap {
     addr: [u32; IMAPSIZE],
 }
 
-impl const Default for Imap {
-    fn default() -> Self {
-        Self {
-            dev_no: 0,
-            ninodes: 0,
-            addr: [0; IMAPSIZE],
-        }
-    }
-}
-
 impl Imap {
-    #[allow(dead_code)]
     pub fn new(dev_no: u32, ninodes: usize, addr: [u32; IMAPSIZE]) -> Self {
         Self {
             dev_no,
