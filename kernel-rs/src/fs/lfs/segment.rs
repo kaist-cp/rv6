@@ -1,21 +1,21 @@
-//! In-memory segment.
+//! Manages the in-memory segment.
 //! Any kernel write operations to the disk must be done through this.
 //!
 //! # How to write something to the disk in the `Lfs`
 //!
-//! Any kernel write operations to the disk must be done using the `Segment`'s methods in `Lfs`.
+//! Any kernel write operations to the disk must be done using the `SegManager`'s methods in `Lfs`.
 //! That is, when you want to write something new to the disk (ex: create a new inode)
 //! or update something already on the disk (ex: update an inode/inode data block/imap),
 //! you should
-//! 1. lock the `Segment`,
-//! 2. request the `Segment` for a `Buf`,
+//! 1. lock the `SegManager`,
+//! 2. request the `SegManager` for a `Buf`,
 //! 3. write on the `Buf`,
-//! 4. commit the `Segment` if it's full, and
+//! 4. commit the `SegManager` if it's full, and
 //! 5. release all locks.
 //!
 //! # `add_new_*_block` vs `get_or_add_*_block`
 //!
-//! The `Segment` has two types of methods that provides a `(Buf, u32)` pair to the outside.
+//! The `SegManager` has two types of methods that provides a `(Buf, u32)` pair to the outside.
 //! * `add_new_*_block` methods : Always use these methods when allocating a **new**
 //!   inode/inode data block/inode indirect block. These methods always allocate a new zeroed disk block.
 //! * `get_or_add_*_block` methods : Always use these methods when updating a **previous**
@@ -29,15 +29,15 @@
 //!
 //! # Updating the `Inode` or `Imap`
 //!
-//! The `Segment`'s methods does not update the `Imap` by itself. Instead, everytime you use the previously
+//! The `SegManager`'s methods does not update the `Imap` by itself. Instead, everytime you use the previously
 //! mentioned methods, it returns a `Buf` and a `u32` which holds the disk block number of it.
 //! You should manually update the `Inode`'s `addr_direct`/`addr_indirect` field or `Imap`'s mapping
 //! using the returned disk block number.
 //!
 //! # Lock order
 //!
-//! When acquiring the lock on the `Segment`, `Imap`, or `Buf` at the same time, it must always done in the order of
-//! `Segment` -> `Imap` -> `Buf`. Otherwise, you may encounter a deadlock.
+//! When acquiring the lock on the `SegManager`, `Imap`, or `Buf` at the same time, it must always done in the order of
+//! `SegManager` -> `Imap` -> `Buf`. Otherwise, you may encounter a deadlock.
 
 use core::ptr;
 
@@ -122,12 +122,11 @@ impl DSegSum {
 
 pub type SegTable = [u8; SEGTABLESIZE];
 
-/// In-memory segment.
-/// Any kernel write operations to the disk must be done through the `Segment`'s methods.
+/// Manages the in-memory segment.
+/// Any kernel write operations to the disk must be done through the `SegManager`'s methods.
 ///
 /// See the module documentation for details.
-// TODO: Change name into `SegManager`.
-pub struct Segment {
+pub struct SegManager {
     dev_no: u32,
 
     // The segment usage table.
@@ -150,7 +149,7 @@ pub struct Segment {
     offset: usize,
 }
 
-impl Segment {
+impl SegManager {
     // TODO: Load from a non-empty segment instead?
     pub fn new(dev_no: u32, segtable: SegTable, nsegments: u32) -> Self {
         let mut this = Self {
@@ -220,7 +219,7 @@ impl Segment {
 
     /// Allocates a new zeroed block on the segment and creates a `SegSumEntry` for it using `f`.
     /// Does not care if a block for the same inum/inode block number/imap block number already exists on the segment.
-    /// By adding a new block, the previous one will no longer be returned by `Segment`'s methods anyway.
+    /// By adding a new block, the previous one will no longer be returned by `SegManager`'s methods anyway.
     fn add_new_block<F: FnOnce(BufUnlocked) -> SegSumEntry>(
         &mut self,
         f: F,

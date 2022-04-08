@@ -2,10 +2,11 @@ use core::mem;
 
 use static_assertions::const_assert;
 
-use super::Segment;
+use super::SegManager;
 use crate::{
     bio::{Buf, BufData},
     hal::hal,
+    lock::SleepLockGuard,
     param::{BSIZE, IMAPSIZE},
     proc::KernelCtx,
 };
@@ -96,7 +97,7 @@ impl Imap {
         &mut self,
         inum: u32,
         disk_block_no: u32,
-        segment: &mut Segment,
+        seg: &mut SleepLockGuard<'_, SegManager>,
         ctx: &KernelCtx<'_, '_>,
     ) -> bool {
         assert!(
@@ -105,7 +106,7 @@ impl Imap {
         );
         let (block_no, offset) = self.get_imap_block_no(inum);
 
-        if let Some((mut buf, addr)) = segment.get_or_add_updated_imap_block(block_no as u32, ctx) {
+        if let Some((mut buf, addr)) = seg.get_or_add_updated_imap_block(block_no as u32, ctx) {
             if addr != self.addr[block_no] {
                 // Copy the imap block content from old imap block.
                 let old_buf = self.get_imap_block(block_no, ctx);
