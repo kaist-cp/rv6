@@ -16,7 +16,6 @@ use crate::{
     file::{RcFile, SeekWhence, SelectEvent},
     fs::{FcntlFlags, FileSystem, FileSystemExt, InodeType, Path},
     hal::hal,
-    kernel::TIME,
     ok_or,
     page::{Page, PGSIZE},
     param::{MAXARG, MAXPATH},
@@ -90,11 +89,11 @@ impl CurrentProc<'_, '_> {
 
 impl KernelCtx<'_, '_> {
     pub fn syscall(&mut self, num: i32) -> Result<usize, ()> {
-        let clock = TargetArch::r_cycle();
+        // let clock = TargetArch::r_cycle();
         // record end of stage 2 (begin of stage 3).
-        unsafe {
-            TIME[1] = clock;
-        }
+        // unsafe {
+        //     TIME[1] = clock;
+        // }
         let ret = match num {
             1 => self.sys_fork(),
             2 => self.sys_exit(),
@@ -136,11 +135,11 @@ impl KernelCtx<'_, '_> {
             }
         };
 
-        let clock = TargetArch::r_cycle();
+        // let clock = TargetArch::r_cycle();
         // record end of stage 3 (begin of stage 4).
-        unsafe {
-            TIME[2] = clock;
-        }
+        // unsafe {
+        //     TIME[2] = clock;
+        // }
         ret
     }
 

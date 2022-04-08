@@ -5,14 +5,6 @@
 .globl trampoline
 trampoline:
 
-.macro flush_cache
-	isb     sy
-        dsb     sy
-        dsb     ishst
-        tlbi    vmalle1is
-        dsb     ish
-        isb
-.endm
 
 .macro	exception_1_entry
 	sub	sp, sp, #272
@@ -143,8 +135,12 @@ trampoline:
 
         msr     ttbr0_el1, x24
 
+		mrs		x3, cntpct_el0
+		msr		tpidr_el0, x3
+
         # flush all the caches
-        flush_cache
+		tlbi    vmalle1is
+		isb
 .endm
 
 /* Exception vectors */
@@ -194,7 +190,9 @@ userret:
         # switch to the user page table.
         msr ttbr0_el1, x1
         
-        flush_cache
+        dsb     nsh
+		tlbi    vmalle1is
+		isb
 
         # restore ELR, SPSR, LR, SP
 	ldp	x21, x22, [x0, #16]      /* SPSR, FPSR */

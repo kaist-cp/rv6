@@ -14,6 +14,7 @@ use super::*;
 use crate::{
     addr::{Addr, UVAddr, PGSIZE},
     arch::interface::TrapFrameManager,
+    arch::TargetArch,
     fs::{DefaultFs, FileSystem, FileSystemExt},
     hal::hal,
     kalloc::Kmem,
@@ -466,10 +467,29 @@ impl<'id, 's> ProcsRef<'id, 's> {
 
     // get the pid of current process's parent
     pub fn get_parent_pid(&self, ctx: &mut KernelCtx<'id, '_>) -> Pid {
+        // let before = TargetArch::r_cycle();
         let mut parent_guard = self.wait_guard();
+
+        // let after = TargetArch::r_cycle();
+
+        // ctx.kernel().as_ref().write_fmt(format_args!("lap1: {}\n", after - before));
+
+        // let before = TargetArch::r_cycle();
+
         let parent = *ctx.proc().get_mut_parent(&mut parent_guard);
 
+        // let after = TargetArch::r_cycle();
+
+        // ctx.kernel().as_ref().write_fmt(format_args!("lap2: {}\n", after - before));
+
+        // let before = TargetArch::r_cycle();
+
         let lock = unsafe { (*parent).info.lock() };
+
+        // let after = TargetArch::r_cycle();
+
+        // ctx.kernel().as_ref().write_fmt(format_args!("lap3: {}\n", after - before));
+
         lock.pid
     }
 }

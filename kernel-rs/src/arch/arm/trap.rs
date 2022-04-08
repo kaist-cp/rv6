@@ -16,7 +16,6 @@ use crate::{
         timer::set_next_timer,
         Armv8,
     },
-    kernel::TIME,
     // kernel::KERNEL,
     memlayout::{TRAMPOLINE, TRAPFRAME},
     trap::{IrqNum, IrqTypes, TrapTypes},
@@ -198,7 +197,7 @@ impl TrapManager for Armv8 {
         trapframe: &mut TrapFrame,
         kernel_stack: usize,
         usertrap: usize,
-        syscall_num: usize,
+        _syscall_num: usize,
     ) -> ! {
         // We're about to switch the destination of traps from
         // kerneltrap() to usertrap(), so turn off interrupts until
@@ -228,22 +227,22 @@ impl TrapManager for Armv8 {
         // }
 
         // If it is getppid, print elapsed time per interval.
-        if _syscall_num == 26 {
-            unsafe {
-                crate::kernel::kernel_ref(|kctx| {
-                    for i in 0..2 {
-                        kctx.as_ref().write_fmt(format_args!(
-                            "Interval {}: {}\n",
-                            i + 1,
-                            TIME[i + 1] - TIME[i]
-                        ));
-                    }
-                    // for i in 0..4{
-                    //     kctx.as_ref().write_fmt(format_args!("lap {}: {}\n", i, TIME[i]));
-                    // }
-                })
-            }
-        }
+        // if _syscall_num == 26 {
+        //     unsafe {
+        //         crate::kernel::kernel_ref(|kctx| {
+        //             // for i in 0..8 {
+        //                 kctx.as_ref().write_fmt(format_args!(
+        //                     "Interval {}: {}\n",
+        //                     0,
+        //                     TIME[0] - TIME[9]
+        //                 ));
+        //             // }
+        //             // for i in 0..4{
+        //             //     kctx.as_ref().write_fmt(format_args!("lap {}: {}\n", i, TIME[i]));
+        //             // }
+        //         })
+        //     }
+        // }
 
         unsafe { fn_0(TRAPFRAME, user_pagetable_addr) }
     }

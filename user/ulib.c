@@ -4,6 +4,7 @@
 #include "user/user.h"
 
 #define MICROSECS_PER_TICK 100000
+#define US_PER_S 1000000
 
 char*
 strcpy(char *s, const char *t)
@@ -275,13 +276,33 @@ int fsync(int fildes)
 //   return 0;
 // }
 
-// TODO: find better way to convert uptime ticks to real time.
+// TODO: This is only for aarch64. Separate this.
+static inline uint64 r_cntpct() {
+	uint64 x;
+	asm volatile("isb sy");
+	asm volatile("mrs %0, CNTPCT_EL0" : "=r" (x));
+	asm volatile("isb sy");
+	return x;
+}
+
+
+// TODO: This is only for aarch64. Separate this.
+static inline uint64 r_freq() {
+	uint64 x;
+  asm volatile("isb sy");
+	asm volatile("mrs %0, CNTFRQ_EL0" : "=r" (x));
+	asm volatile("isb sy");
+  return x;
+}
+
+// TODO: optimize this not to use floating point operations (Linux timekeeper).
+// user-level uptime syscall
 int gettimeofday(struct timeval *__restrict__ tp, 
                 struct timezone *__restrict__ tzp)
 {
-  int cur = uptime_as_micro();
-  tp->tv_sec = cur / 1000000;
-  tp->tv_usec = cur % 1000000;
+  uint64 uptime_in_micro = (r_cntpct() * US_PER_S) / r_freq();
+  tp->tv_sec = uptime_in_micro / US_PER_S;
+  tp->tv_usec = uptime_in_micro % US_PER_S;
   return 0;
 }
 

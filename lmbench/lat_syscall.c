@@ -35,7 +35,8 @@ do_getppid(iter_t iterations, void *cookie)
 		getppid();
 		// end of total execution
 		// x2 = read_cntpct();
-		// printf("total: %lu\n", x2 - x1);
+		// printf("x1: %lu, x2: %lu\n", x1, x2);
+		// printf("diff: %lu\n", x2 - x1);
 	}	
 }
 
