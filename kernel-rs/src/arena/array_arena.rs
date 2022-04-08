@@ -28,6 +28,14 @@ pub struct ArrayArenaInner<T, const CAPACITY: usize> {
 }
 
 impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
+    /// Returns an `ArrayArena` of size `CAPACITY` that is filled with `D`'s const default value.
+    /// Note that `D` must `impl const Default`. `name` is used when reporting synchronization errors.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// let arr_arena = ArrayArena::<D, 100>::new("arr_arena");
+    /// ```
     #[allow(clippy::new_ret_no_self)]
     pub const fn new<D: Default>(name: &'static str) -> ArrayArena<D, CAPACITY> {
         let inner: ArrayArenaInner<D, CAPACITY> = ArrayArenaInner {
@@ -78,15 +86,17 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
                 // only if the entry we're finding for doesn't exist.
             } else if let Some(entry) = entry.try_borrow() {
                 if c(&entry) {
-                    return Some(ArenaRc::new(self, entry));
+                    return Some(unsafe { ArenaRc::new(self, entry) });
                 }
             }
         }
 
         empty.map(|ptr| {
-            let mut entry = unsafe { StrongPinMut::new_unchecked(ptr.as_ptr()) };
-            n(unsafe { entry.as_mut().get_mut_unchecked() });
-            ArenaRc::new(self, unsafe { entry.borrow_unchecked() })
+            unsafe {
+                let mut entry = StrongPinMut::new_unchecked(ptr.as_ptr());
+                n(entry.as_mut().get_mut_unchecked());
+                ArenaRc::new(self, entry.borrow_unchecked())
+            }
         })
     }
 
@@ -97,7 +107,7 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
         for mut entry in this.entries().iter_mut() {
             if let Some(data) = entry.as_mut().get_mut() {
                 *data = f();
-                return Some(ArenaRc::new(self, entry.borrow()));
+                return Some(unsafe { ArenaRc::new(self, entry.borrow()) });
             }
         }
         None
