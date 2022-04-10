@@ -566,6 +566,9 @@ impl FileSystem for Lfs {
             let mut seg = tx.fs.segmanager(ctx);
             let mut imap = tx.fs.imap(ctx);
             assert!(imap.set(ip.inum, 0, &mut seg, ctx));
+            if seg.is_full() {
+                seg.commit(ctx);
+            }
             imap.free(ctx);
             seg.free(ctx);
             ip.deref_inner_mut().valid = false;
