@@ -92,7 +92,7 @@ impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
     ///
     /// Must be used only after initializing it with `MruArena::init`.
     #[allow(clippy::new_ret_no_self)]
-    pub const unsafe fn new<D: Default>(name: &'static str) -> MruArena<D, CAPACITY> {
+    pub const unsafe fn new<D: ~const Default>(name: &'static str) -> MruArena<D, CAPACITY> {
         let inner: MruArenaInner<D, CAPACITY> = MruArenaInner {
             entries: array![_ => MruEntry::new(Default::default()); CAPACITY],
             list: unsafe { List::new() },

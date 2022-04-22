@@ -358,6 +358,7 @@ impl InodeGuard<'_, Ufs> {
     }
 
     /// Is the directory dp empty except for "." and ".." ?
+    #[allow(clippy::wrong_self_convention)] // for invariant reads
     pub fn is_dir_empty(&mut self, ctx: &KernelCtx<'_, '_>) -> bool {
         let mut de: Dirent = Default::default();
         for off in (2 * DIRENT_SIZE as u32..self.deref_inner().size).step_by(DIRENT_SIZE) {

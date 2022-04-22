@@ -1,3 +1,4 @@
+use core::arch::asm;
 use core::fmt;
 use core::mem;
 
@@ -255,7 +256,10 @@ impl TrapManager for RiscV {
 
         unsafe {
             w_sepc(sepc);
-            asm!("csrw sstatus, {}", in(reg) sstatus);
+            asm!(
+                "csrw sstatus, {sstatus}",
+                sstatus = in(reg) sstatus
+            );
         }
     }
 }

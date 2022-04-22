@@ -3,6 +3,8 @@
 // Dead code is allowed in this file because not all components are used in the kernel.
 #![allow(dead_code)]
 
+use core::arch::asm;
+
 const DIS_INT: usize = 0x80;
 
 /// Enable device interrupts (IRQ).
@@ -31,7 +33,7 @@ pub fn intr_off() {
 pub fn intr_get() -> bool {
     let mut x: usize;
     unsafe {
-        asm!("mrs {}, daif", out(reg) x);
+        asm!("mrs {x}, daif", x = out(reg) x);
     }
     x & DIS_INT == 0
 }
@@ -41,7 +43,7 @@ pub fn intr_get() -> bool {
 pub fn cpu_id() -> usize {
     let mut x: usize;
     unsafe {
-        asm!("mrs {}, mpidr_el1", out(reg) x);
+        asm!("mrs {x}, mpidr_el1", x = out(reg) x);
     }
     x & 0b11
 }
@@ -50,7 +52,7 @@ pub fn cpu_id() -> usize {
 pub fn r_currentel() -> usize {
     let mut x: usize;
     unsafe {
-        asm!("mrs {}, CurrentEL", out(reg) x);
+        asm!("mrs {x}, CurrentEL", x = out(reg) x);
     }
     (x & 0x0c) >> 2
 }
@@ -59,7 +61,7 @@ pub fn r_currentel() -> usize {
 pub fn r_midr_el1() -> usize {
     let mut x: usize;
     unsafe {
-        asm!("mrs {}, midr_el1", out(reg) x);
+        asm!("mrs {x}, midr_el1", x = out(reg) x);
     }
     x
 }
@@ -85,7 +87,7 @@ pub fn isb() {
 ///
 /// `x` must contain valid value for cpacr_el1 register.
 pub unsafe fn w_cpacr_el1(x: usize) {
-    unsafe { asm!("msr cpacr_el1, {}", in(reg) x) }
+    unsafe { asm!("msr cpacr_el1, {x}", x = in(reg) x) }
 }
 
 /// Write to Monitor Debug System Control Register, EL1
@@ -97,12 +99,12 @@ pub unsafe fn w_mdscr_el1(x: usize) {
     if x == 0 {
         unsafe { asm!("msr mdscr_el1, xzr") }
     }
-    unsafe { asm!("msr mdscr_el1, {}", in(reg) x) }
+    unsafe { asm!("msr mdscr_el1, {x}", x = in(reg) x) }
 }
 
 pub fn r_fpsr() -> usize {
     let mut x;
-    unsafe { asm! ("mrs {}, fpsr", out(reg) x) };
+    unsafe { asm! ("mrs {x}, fpsr", x = out(reg) x) };
     x
 }
 
@@ -112,7 +114,7 @@ pub fn r_fpsr() -> usize {
 ///
 /// `x` must contain valid value for mdscr_el1 register.
 pub unsafe fn w_fpsr(x: usize) {
-    unsafe { asm!("msr fpsr, {}", in(reg) x) }
+    unsafe { asm!("msr fpsr, {x}", x = in(reg) x) }
 }
 
 #[derive(Debug)]
@@ -150,14 +152,14 @@ pub fn cpu_relax() {
 pub fn r_mpidr() -> usize {
     let mut x: usize;
     unsafe {
-        asm!("mrs {}, mpidr_el1", out(reg) x);
+        asm!("mrs {x}, mpidr_el1", x = out(reg) x);
     }
     x
 }
 
 pub fn r_icc_ctlr_el1() -> u32 {
     let mut x: usize;
-    unsafe { asm!("mrs {}, icc_ctlr_el1", out(reg) x) };
+    unsafe { asm!("mrs {x}, icc_ctlr_el1", x = out(reg) x) };
     x as u32
 }
 
