@@ -37,7 +37,7 @@ impl<T, const CAPACITY: usize> ArrayArena<T, CAPACITY> {
     /// let arr_arena = ArrayArena::<D, 100>::new("arr_arena");
     /// ```
     #[allow(clippy::new_ret_no_self)]
-    pub const fn new<D: Default>(name: &'static str) -> ArrayArena<D, CAPACITY> {
+    pub const fn new<D: ~const Default>(name: &'static str) -> ArrayArena<D, CAPACITY> {
         let inner: ArrayArenaInner<D, CAPACITY> = ArrayArenaInner {
             entries: array![_ => StaticArc::new(Default::default()); CAPACITY],
             _marker: PhantomPinned,

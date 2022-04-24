@@ -4,7 +4,7 @@
 
   ```
   # Ubuntu 20.04
-  sudo apt install gcc-riscv64-linux-gnu qemu-system-misc gdb-multiarch
+  sudo apt install gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu qemu-system-aarch64 qemu-system-misc gdb-multiarch
 
   rustup component add rust-src
   ```

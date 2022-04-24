@@ -4,6 +4,8 @@
 // Dead code is allowed in this file because not all components are used in the kernel.
 #![allow(dead_code)]
 
+use core::arch::asm;
+
 use bitflags::bitflags;
 
 /// Which hart (core) is this?
@@ -11,7 +13,7 @@ use bitflags::bitflags;
 pub fn r_mhartid() -> usize {
     let mut x;
     unsafe {
-        asm!("csrr {}, mhartid", out(reg) x);
+        asm!("csrr {x}, mhartid", x = out(reg) x);
     }
     x
 }
@@ -38,7 +40,7 @@ impl Mstatus {
     pub fn read() -> Self {
         let mut x;
         unsafe {
-            asm!("csrr {}, mstatus", out(reg) x);
+            asm!("csrr {x}, mstatus", x = out(reg) x);
         }
         Self::from_bits_truncate(x)
     }
@@ -46,7 +48,7 @@ impl Mstatus {
     #[inline]
     pub unsafe fn write(self) {
         unsafe {
-            asm!("csrw mstatus, {}", in(reg) self.bits());
+            asm!("csrw mstatus, {x}", x = in(reg) self.bits());
         }
     }
 }
@@ -57,7 +59,7 @@ impl Mstatus {
 #[inline]
 pub unsafe fn w_mepc(x: usize) {
     unsafe {
-        asm!("csrw mepc, {}", in(reg) x);
+        asm!("csrw mepc, {x}", x = in(reg) x);
     }
 }
 
@@ -87,7 +89,7 @@ impl Sstatus {
     pub fn read() -> Self {
         let mut x;
         unsafe {
-            asm!("csrr {}, sstatus", out(reg) x);
+            asm!("csrr {x}, sstatus", x = out(reg) x);
         }
         Self::from_bits_truncate(x)
     }
@@ -95,7 +97,7 @@ impl Sstatus {
     #[inline]
     pub unsafe fn write(self) {
         unsafe {
-            asm!("csrw sstatus, {}", in(reg) self.bits());
+            asm!("csrw sstatus, {x}", x = in(reg) self.bits());
         }
     }
 }
@@ -105,14 +107,14 @@ impl Sstatus {
 pub fn r_sip() -> usize {
     let mut x;
     unsafe {
-        asm!("csrr {}, sip", out(reg) x);
+        asm!("csrr {x}, sip", x = out(reg) x);
     }
     x
 }
 #[inline]
 pub unsafe fn w_sip(x: usize) {
     unsafe {
-        asm!("csrw sip, {}", in(reg) x);
+        asm!("csrw sip, {x}", x = in(reg) x);
     }
 }
 
@@ -136,7 +138,7 @@ impl SIE {
     pub fn read() -> Self {
         let mut x;
         unsafe {
-            asm!("csrr {}, sie", out(reg) x);
+            asm!("csrr {x}, sie", x = out(reg) x);
         }
         Self::from_bits_truncate(x)
     }
@@ -144,7 +146,7 @@ impl SIE {
     #[inline]
     pub unsafe fn write(self) {
         unsafe {
-            asm!("csrw sie, {}", in(reg) self.bits());
+            asm!("csrw sie, {x}", x = in(reg) self.bits());
         }
     }
 }
@@ -170,7 +172,7 @@ impl MIE {
     pub fn read() -> Self {
         let mut x: usize;
         unsafe {
-            asm!("csrr {}, mie", out(reg) x);
+            asm!("csrr {x}, mie", x = out(reg) x);
         }
         Self::from_bits_truncate(x)
     }
@@ -178,7 +180,7 @@ impl MIE {
     #[inline]
     pub unsafe fn write(self) {
         unsafe {
-            asm!("csrw mie, {}", in(reg) self.bits());
+            asm!("csrw mie, {x}", x = in(reg) self.bits());
         }
     }
 }
@@ -189,7 +191,7 @@ impl MIE {
 #[inline]
 pub unsafe fn w_sepc(x: usize) {
     unsafe {
-        asm!("csrw sepc, {}", in(reg) x);
+        asm!("csrw sepc, {x}", x = in(reg) x);
     }
 }
 
@@ -197,7 +199,7 @@ pub unsafe fn w_sepc(x: usize) {
 pub fn r_sepc() -> usize {
     let mut x;
     unsafe {
-        asm!("csrr {}, sepc", out(reg) x);
+        asm!("csrr {x}, sepc", x = out(reg) x);
     }
     x
 }
@@ -207,7 +209,7 @@ pub fn r_sepc() -> usize {
 pub fn r_medeleg() -> usize {
     let mut x;
     unsafe {
-        asm!("csrr {}, medeleg", out(reg) x);
+        asm!("csrr {x}, medeleg", x = out(reg) x);
     }
     x
 }
@@ -215,7 +217,7 @@ pub fn r_medeleg() -> usize {
 #[inline]
 pub unsafe fn w_medeleg(x: usize) {
     unsafe {
-        asm!("csrw medeleg, {}", in(reg) x);
+        asm!("csrw medeleg, {x}", x = in(reg) x);
     }
 }
 
@@ -224,7 +226,7 @@ pub unsafe fn w_medeleg(x: usize) {
 pub fn r_mideleg() -> usize {
     let mut x;
     unsafe {
-        asm!("csrr {}, mideleg", out(reg) x);
+        asm!("csrr {x}, mideleg", x = out(reg) x);
     }
     x
 }
@@ -232,7 +234,7 @@ pub fn r_mideleg() -> usize {
 #[inline]
 pub unsafe fn w_mideleg(x: usize) {
     unsafe {
-        asm!("csrw mideleg, {}", in(reg) x);
+        asm!("csrw mideleg, {x}", x = in(reg) x);
     }
 }
 
@@ -241,7 +243,7 @@ pub unsafe fn w_mideleg(x: usize) {
 #[inline]
 pub unsafe fn w_stvec(x: usize) {
     unsafe {
-        asm!("csrw stvec, {}", in(reg) x);
+        asm!("csrw stvec, {x}", x = in(reg) x);
     }
 }
 
@@ -249,7 +251,7 @@ pub unsafe fn w_stvec(x: usize) {
 pub fn r_stvec() -> usize {
     let mut x;
     unsafe {
-        asm!("csrr {}, stvec", out(reg) x);
+        asm!("csrr {x}, stvec", x = out(reg) x);
     }
     x
 }
@@ -258,7 +260,7 @@ pub fn r_stvec() -> usize {
 #[inline]
 pub unsafe fn w_mtvec(x: usize) {
     unsafe {
-        asm!("csrw mtvec, {}", in(reg) x);
+        asm!("csrw mtvec, {x}", x = in(reg) x);
     }
 }
 
@@ -274,7 +276,7 @@ pub const fn make_satp(pagetable: usize) -> usize {
 #[inline]
 pub unsafe fn w_satp(x: usize) {
     unsafe {
-        asm!("csrw satp, {}", in(reg) x);
+        asm!("csrw satp, {x}", x = in(reg) x);
     }
 }
 
@@ -282,7 +284,7 @@ pub unsafe fn w_satp(x: usize) {
 pub fn r_satp() -> usize {
     let mut x;
     unsafe {
-        asm!("csrr {}, satp", out(reg) x);
+        asm!("csrr {x}, satp", x = out(reg) x);
     }
     x
 }
@@ -291,14 +293,14 @@ pub fn r_satp() -> usize {
 #[inline]
 pub unsafe fn w_sscratch(x: usize) {
     unsafe {
-        asm!("csrw sscratch, {}", in(reg) x);
+        asm!("csrw sscratch, {x}", x = in(reg) x);
     }
 }
 
 #[inline]
 pub unsafe fn w_mscratch(x: usize) {
     unsafe {
-        asm!("csrw mscratch, {}", in(reg) x);
+        asm!("csrw mscratch, {x}", x = in(reg) x);
     }
 }
 
@@ -307,7 +309,7 @@ pub unsafe fn w_mscratch(x: usize) {
 pub fn r_scause() -> usize {
     let mut x;
     unsafe {
-        asm!("csrr {}, scause", out(reg) x);
+        asm!("csrr {x}, scause", x = out(reg) x);
     }
     x
 }
@@ -317,7 +319,7 @@ pub fn r_scause() -> usize {
 pub fn r_stval() -> usize {
     let mut x;
     unsafe {
-        asm!("csrr {}, stval", out(reg) x);
+        asm!("csrr {x}, stval", x = out(reg) x);
     }
     x
 }
@@ -326,7 +328,7 @@ pub fn r_stval() -> usize {
 #[inline]
 pub unsafe fn w_mcounteren(x: u64) {
     unsafe {
-        asm!("csrw mcounteren, {}", in(reg) x);
+        asm!("csrw mcounteren, {x}", x = in(reg) x);
     }
 }
 
@@ -334,7 +336,7 @@ pub unsafe fn w_mcounteren(x: u64) {
 pub fn r_mcounteren() -> u64 {
     let mut x;
     unsafe {
-        asm!("csrr {}, mcounteren", out(reg) x);
+        asm!("csrr {x}, mcounteren", x = out(reg) x);
     }
     x
 }
@@ -344,7 +346,7 @@ pub fn r_mcounteren() -> u64 {
 pub fn r_time() -> u64 {
     let mut x;
     unsafe {
-        asm!("csrr {}, time", out(reg) x);
+        asm!("csrr {x}, time", x = out(reg) x);
     }
     x
 }
@@ -378,7 +380,7 @@ pub fn intr_get() -> bool {
 pub fn r_tp() -> usize {
     let mut x;
     unsafe {
-        asm!("mv {}, tp", out(reg) x);
+        asm!("mv {x}, tp", x = out(reg) x);
     }
     x
 }
@@ -387,7 +389,7 @@ pub fn r_tp() -> usize {
 pub fn r_sp() -> usize {
     let mut x;
     unsafe {
-        asm!("mv {}, sp", out(reg) x);
+        asm!("mv {x}, sp", x = out(reg) x);
     }
     x
 }
@@ -395,7 +397,7 @@ pub fn r_sp() -> usize {
 #[inline]
 pub unsafe fn w_tp(x: usize) {
     unsafe {
-        asm!("mv tp, {}", in(reg) x);
+        asm!("mv tp, {x}", x = in(reg) x);
     }
 }
 
@@ -403,7 +405,7 @@ pub unsafe fn w_tp(x: usize) {
 pub fn r_ra() -> usize {
     let mut x;
     unsafe {
-        asm!("mv {}, ra", out(reg) x);
+        asm!("mv {x}, ra", x = out(reg) x);
     }
     x
 }

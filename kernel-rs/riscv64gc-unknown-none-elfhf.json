@@ -1,23 +1,8 @@
 {
-  "abi-blacklist": [
-    "cdecl",
-    "stdcall",
-    "fastcall",
-    "vectorcall",
-    "thiscall",
-    "aapcs",
-    "win64",
-    "sysv64",
-    "ptx-kernel",
-    "msp430-interrupt",
-    "x86-interrupt",
-    "amdgpu-kernel"
-  ],
   "arch": "riscv64",
   "code-model": "medium",
   "cpu": "generic-rv64",
   "data-layout": "e-m:e-p:64:64-i64:64-i128:128-n64-S128",
-  "eliminate-frame-pointer": false,
   "emit-debug-gdb-scripts": false,
   "env": "",
   "executables": true,
