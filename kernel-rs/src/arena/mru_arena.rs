@@ -79,6 +79,18 @@ unsafe impl<T> ListNode for MruEntry<T> {
 }
 
 impl<T, const CAPACITY: usize> MruArena<T, CAPACITY> {
+    /// Returns an `MruArena` of size `CAPACITY` that is filled with `D`'s const default value.
+    /// Note that `D` must `impl const Default`. `name` is used when reporting synchronization errors.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// let mru_arena = MruArena::<D, 100>::new("mru_arena");
+    /// ```
+    ///
+    /// # Safety
+    ///
+    /// Must be used only after initializing it with `MruArena::init`.
     #[allow(clippy::new_ret_no_self)]
     pub const unsafe fn new<D: Default>(name: &'static str) -> MruArena<D, CAPACITY> {
         let inner: MruArenaInner<D, CAPACITY> = MruArenaInner {
@@ -141,7 +153,7 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
             if let Some(entry) = entry.as_mut().try_borrow() {
                 // The entry is not under finalization. Check its data.
                 if c(&entry) {
-                    return Some(ArenaRc::new(self, entry));
+                    return Some(unsafe { ArenaRc::new(self, entry) });
                 }
             }
 
@@ -154,7 +166,7 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
             // SAFETY: `ptr` is valid, and there's no `StrongPinMut`.
             let mut entry = unsafe { StrongPinMut::new_unchecked(ptr.as_ptr()) };
             n(entry.as_mut().get_mut().unwrap());
-            ArenaRc::new(self, entry.borrow())
+            unsafe { ArenaRc::new(self, entry.borrow()) }
         })
     }
 
@@ -167,7 +179,7 @@ impl<T: 'static + ArenaObject + Unpin + Send, const CAPACITY: usize> Arena
             let mut entry = entry.data();
             if let Some(data) = entry.as_mut().get_mut() {
                 *data = f();
-                return Some(ArenaRc::new(self, entry.borrow()));
+                return Some(unsafe { ArenaRc::new(self, entry.borrow()) });
             }
         }
         None

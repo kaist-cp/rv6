@@ -124,7 +124,7 @@ pub enum SmcFunctions {
     _AffinityInfoAarch64 = 0xc4000004,
     _Features = 0x8400000A,
     _MigInfoType = 0x84000006,
-    _SystemOff = 0x84000008,
+    SystemOff = 0x84000008,
     _SystemReset = 0x84000009,
 }
 
@@ -134,7 +134,7 @@ pub enum SmcFunctions {
 ///
 /// Arguments must follow ARM SMC calling convention.
 #[no_mangle]
-pub unsafe fn smc_call(x0: u64, x1: u64, x2: u64, x3: u64) -> u64 {
+pub unsafe fn smc_call(x0: u64, x1: u64, x2: u64, x3: u64) -> (u64, u64, u64, u64) {
     let (r0, r1, r2, r3);
     unsafe {
         // NOTE: here use hvc for qemu without `virtualization=on`

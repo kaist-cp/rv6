@@ -1,21 +1,21 @@
-//! In-memory segment.
+//! Manages the in-memory segment.
 //! Any kernel write operations to the disk must be done through this.
 //!
 //! # How to write something to the disk in the `Lfs`
 //!
-//! Any kernel write operations to the disk must be done using the `Segment`'s methods in `Lfs`.
+//! Any kernel write operations to the disk must be done using the `SegManager`'s methods in `Lfs`.
 //! That is, when you want to write something new to the disk (ex: create a new inode)
 //! or update something already on the disk (ex: update an inode/inode data block/imap),
 //! you should
-//! 1. lock the `Segment`,
-//! 2. request the `Segment` for a `Buf`,
+//! 1. lock the `SegManager`,
+//! 2. request the `SegManager` for a `Buf`,
 //! 3. write on the `Buf`,
-//! 4. commit the `Segment` if it's full, and
+//! 4. commit the `SegManager` if it's full, and
 //! 5. release all locks.
 //!
 //! # `add_new_*_block` vs `get_or_add_*_block`
 //!
-//! The `Segment` has two types of methods that provides a `(Buf, u32)` pair to the outside.
+//! The `SegManager` has two types of methods that provides a `(Buf, u32)` pair to the outside.
 //! * `add_new_*_block` methods : Always use these methods when allocating a **new**
 //!   inode/inode data block/inode indirect block. These methods always allocate a new zeroed disk block.
 //! * `get_or_add_*_block` methods : Always use these methods when updating a **previous**
@@ -29,15 +29,15 @@
 //!
 //! # Updating the `Inode` or `Imap`
 //!
-//! The `Segment`'s methods does not update the `Imap` by itself. Instead, everytime you use the previously
+//! The `SegManager`'s methods does not update the `Imap` by itself. Instead, everytime you use the previously
 //! mentioned methods, it returns a `Buf` and a `u32` which holds the disk block number of it.
 //! You should manually update the `Inode`'s `addr_direct`/`addr_indirect` field or `Imap`'s mapping
 //! using the returned disk block number.
 //!
 //! # Lock order
 //!
-//! When acquiring the lock on the `Segment`, `Imap`, or `Buf` at the same time, it must always done in the order of
-//! `Segment` -> `Imap` -> `Buf`. Otherwise, you may encounter a deadlock.
+//! When acquiring the lock on the `SegManager`, `Imap`, or `Buf` at the same time, it must always done in the order of
+//! `SegManager` -> `Imap` -> `Buf`. Otherwise, you may encounter a deadlock.
 
 use core::ptr;
 
@@ -47,12 +47,11 @@ use static_assertions::const_assert;
 use crate::{
     bio::{Buf, BufUnlocked},
     hal::hal,
-    param::{BSIZE, SEGSIZE},
+    param::{BSIZE, SEGSIZE, SEGTABLESIZE},
     proc::KernelCtx,
 };
 
 /// Entries for the in-memory segment summary.
-#[allow(dead_code)]
 pub enum SegSumEntry {
     Empty,
     /// Inode.
@@ -121,45 +120,49 @@ impl DSegSum {
     }
 }
 
-/// In-memory segment.
-/// Any kernel write operations to the disk must be done through the `Segment`'s methods.
+pub type SegTable = [u8; SEGTABLESIZE];
+
+/// Manages the in-memory segment.
+/// Any kernel write operations to the disk must be done through the `SegManager`'s methods.
 ///
 /// See the module documentation for details.
-pub struct Segment {
+pub struct SegManager {
     dev_no: u32,
 
-    /// The segment number of this segment.
+    // The segment usage table.
+    segtable: SegTable,
+
+    // The total number of segments on the disk.
+    nsegments: u32,
+
+    /// The segment number of the current segment.
     segment_no: u32,
 
     /// Segment summary. Indicates info for each block that should be in the segment.
     // TODO: Use ArrayVec instead?
     segment_summary: [SegSumEntry; SEGSIZE - 1],
 
+    /// The number of segment blocks that were committed to the disk.
+    start: usize,
+
     /// Current offset of the segment. Must flush when `offset == SEGSIZE - 1`.
     offset: usize,
 }
 
-impl const Default for Segment {
-    fn default() -> Self {
-        Self {
-            dev_no: 0,
+impl SegManager {
+    // TODO: Load from a non-empty segment instead?
+    pub fn new(dev_no: u32, segtable: SegTable, nsegments: u32) -> Self {
+        let mut this = Self {
+            dev_no,
+            segtable,
+            nsegments,
             segment_no: 0,
             segment_summary: array![_ => SegSumEntry::Empty; SEGSIZE - 1],
+            start: 0,
             offset: 0,
-        }
-    }
-}
-
-impl Segment {
-    #[allow(dead_code)]
-    // TODO: Load from a non-empty segment instead?
-    pub const fn new(dev_no: u32, segment_no: u32) -> Self {
-        Self {
-            dev_no,
-            segment_no,
-            segment_summary: array![_ => SegSumEntry::Empty; SEGSIZE - 1],
-            offset: 0,
-        }
+        };
+        this.alloc_segment(None);
+        this
     }
 
     /// Returns the disk block number for the `seg_block_no`th block on this segment.
@@ -189,9 +192,34 @@ impl Segment {
         SEGSIZE - 1 - self.offset
     }
 
+    /// Returns segment usage table in the on-disk format.
+    /// This should be written at the checkpoint of the disk.
+    pub fn dsegtable(&self) -> SegTable {
+        self.segtable
+    }
+
+    /// Traverses the segment usage table to find an empty segment and marks it as used.
+    /// Uses that segment from now on.
+    /// If a `last_seg_no` was given, starts traversing from `last_seg_no + 1`.
+    fn alloc_segment(&mut self, last_seg_no: Option<u32>) {
+        let start = match last_seg_no {
+            None => 0,
+            Some(seg_no) => seg_no as usize + 1,
+        };
+        for i in start..(self.nsegments as usize) {
+            if self.segtable[i / 8] & (1 << (i % 8)) == 0 {
+                self.segtable[i / 8] |= 1 << (i % 8);
+                self.segment_no = i as u32;
+                return;
+            }
+        }
+        // TODO : Make sure the cleaner prevents such cases.
+        panic!("no empty segment");
+    }
+
     /// Allocates a new zeroed block on the segment and creates a `SegSumEntry` for it using `f`.
     /// Does not care if a block for the same inum/inode block number/imap block number already exists on the segment.
-    /// By adding a new block, the previous one will no longer be returned by `Segment`'s methods anyway.
+    /// By adding a new block, the previous one will no longer be returned by `SegManager`'s methods anyway.
     fn add_new_block<F: FnOnce(BufUnlocked) -> SegSumEntry>(
         &mut self,
         f: F,
@@ -265,7 +293,7 @@ impl Segment {
         ctx: &KernelCtx<'_, '_>,
     ) -> Option<(Buf, u32)> {
         // Check if the block already exists.
-        for i in (0..self.offset).rev() {
+        for i in (self.start..self.offset).rev() {
             if c(&self.segment_summary[i]) {
                 return Some((
                     self.segment_summary[i].get_buf().unwrap().clone().lock(ctx),
@@ -408,9 +436,10 @@ impl Segment {
         )
     }
 
-    /// Commits the segment to the disk. Updates the checkpoint region of the disk if needed.
-    /// Run this when the segment is full or right before shutdowns.
-    pub fn commit(&mut self, ctx: &KernelCtx<'_, '_>) {
+    /// Commits the segment to the disk but does not allocate a new segment.
+    /// If `self` was full, it will remain full after calling this method.
+    /// Run this before commiting the checkpoint.
+    pub fn commit_no_alloc(&mut self, ctx: &KernelCtx<'_, '_>) {
         const_assert!(core::mem::size_of::<DSegSum>() <= BSIZE);
 
         // Get the segment summary.
@@ -436,11 +465,18 @@ impl Segment {
                 buf.free(ctx);
             }
         }
+        self.start = self.offset;
+    }
 
-        self.segment_no = ctx.kernel().fs().get_next_seg_no(Some(self.segment_no));
+    /// Commits the segment to the disk and allocates a new segment.
+    /// `self` will be empty after calling this method.
+    /// Run this when you need to empty the segment.
+    pub fn commit(&mut self, ctx: &KernelCtx<'_, '_>) {
+        self.commit_no_alloc(ctx);
+
+        self.alloc_segment(Some(self.segment_no));
         self.segment_summary = array![_ => SegSumEntry::Empty; SEGSIZE - 1];
+        self.start = 0;
         self.offset = 0;
-
-        // TODO: Update the on-disk checkpoint if needed.
     }
 }

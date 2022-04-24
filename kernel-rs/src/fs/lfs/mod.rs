@@ -11,11 +11,10 @@ use super::{
 };
 use crate::util::strong_pin::StrongPin;
 use crate::{
-    bio::Buf,
     file::{FileType, InodeFileType},
     hal::hal,
-    lock::{SleepLock, SleepLockGuard},
-    param::BSIZE,
+    lock::{SleepLock, SleepLockGuard, SleepableLock},
+    param::{BSIZE, IMAPSIZE},
     proc::KernelCtx,
 };
 
@@ -23,11 +22,13 @@ mod imap;
 mod inode;
 mod segment;
 mod superblock;
+mod tx;
 
 pub use imap::Imap;
 pub use inode::{Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
-pub use segment::Segment;
-pub use superblock::{SegTable, Superblock};
+pub use segment::{SegManager, SegTable};
+pub use superblock::Superblock;
+pub use tx::TxManager;
 
 /// root i-number
 const ROOTINO: u32 = 1;
@@ -46,36 +47,21 @@ pub struct Lfs {
     #[pin]
     itable: Itable<Self>,
 
-    // TODO: Group the segment, segtable, and imap into a `Once<Spinlock<WriteManager>>`.
-    /// The current segment.
-    segment: Once<SleepLock<Segment>>,
-
-    // The segment usage table.
-    // TODO: Use a bitmap crate instead.
-    segtable: Once<SleepLock<SegTable>>,
+    /// The segment manager.
+    segmanager: Once<SleepLock<SegManager>>,
 
     /// Imap.
     imap: Once<SleepLock<Imap>>,
 
-    // 1 or 2.
-    // Stores whether the last checkpoint is stored at checkpoint 1 or checkpoint 2.
-    curr_checkpoint: Once<SleepLock<usize>>,
+    tx_manager: Once<SleepableLock<TxManager>>,
 }
 
-impl Tx<'_, Lfs> {
-    /// Caller has modified b->data and is done with the buffer.
-    /// Record the block number and pin in the cache by increasing refcnt.
-    /// commit()/write_log() will do the disk write.
-    ///
-    /// write() replaces write(); a typical use is:
-    ///   bp = kernel.fs().disk.read(...)
-    ///   modify bp->data[]
-    ///   write(bp)
-    #[allow(dead_code)]
-    fn write(&self, _b: Buf, _ctx: &KernelCtx<'_, '_>) {
-        // TODO: We should update the checkpoint here, and actually write to the disk when the segment is flushed.
-        // self.fs.log().lock().write(b, ctx);
-    }
+/// On-disk checkpoint structure.
+#[repr(C)]
+pub struct Checkpoint {
+    imap: [u32; IMAPSIZE],
+    segtable: SegTable,
+    timestamp: u32,
 }
 
 impl Lfs {
@@ -83,10 +69,9 @@ impl Lfs {
         Self {
             superblock: Once::new(),
             itable: Itable::<Self>::new_itable(),
-            segment: Once::new(),
+            segmanager: Once::new(),
             imap: Once::new(),
-            segtable: Once::new(),
-            curr_checkpoint: Once::new(),
+            tx_manager: Once::new(),
         }
     }
 
@@ -99,35 +84,53 @@ impl Lfs {
         unsafe { StrongPin::new_unchecked(&self.as_pin().get_ref().itable) }
     }
 
-    pub fn segment(&self, ctx: &KernelCtx<'_, '_>) -> SleepLockGuard<'_, Segment> {
-        self.segment.get().expect("segment").lock(ctx)
-    }
-
-    fn segtable(&self) -> &mut SegTable {
-        unsafe { &mut *self.segtable.get().expect("segtable").get_mut_raw() }
+    pub fn segmanager(&self, ctx: &KernelCtx<'_, '_>) -> SleepLockGuard<'_, SegManager> {
+        self.segmanager.get().expect("segmanager").lock(ctx)
     }
 
     pub fn imap(&self, ctx: &KernelCtx<'_, '_>) -> SleepLockGuard<'_, Imap> {
         self.imap.get().expect("imap").lock(ctx)
     }
 
-    /// Traverses the segment usage table to find an empty segment, and returns its segment number
-    /// after marking the segment as 'used'. If a `last_seg_no` is given, starts traversing from `last_seg_no + 1`.
-    pub fn get_next_seg_no(&self, last_seg_no: Option<u32>) -> u32 {
-        let start = match last_seg_no {
-            None => 0,
-            Some(seg_no) => seg_no as usize + 1,
-        };
-        let segtable = self.segtable();
-        for i in start..(self.superblock().nsegments() as usize) {
-            if segtable[i / 8] & (1 << (i % 8)) == 0 {
-                segtable[i / 8] |= 1 << (i % 8);
-                return i as u32;
-            }
-        }
-        panic!("no empty segment");
-        // TODO: If fails to find an empty one, run the cleaner.
-        // (Actually, the cleaner should have already runned earlier.)
+    fn tx_manager(&self) -> &SleepableLock<TxManager> {
+        self.tx_manager.get().expect("tx_manager")
+    }
+
+    /// Commits the segment without acquring the lock on the `SegManager`
+    /// and without flushing it.
+    ///
+    /// # Safety
+    ///
+    /// Use this only when no one is accessing the `SegManager`.
+    /// You should usually use `Lfs::segment().commit(ctx)` instead.
+    pub unsafe fn commit_segment_unchecked(&self, ctx: &KernelCtx<'_, '_>) {
+        unsafe { &mut *self.segmanager.get_unchecked().get_mut_raw() }.commit_no_alloc(ctx);
+    }
+
+    /// Commits the checkpoint at the checkpoint region without acquiring any locks or checking the type is initialized.
+    /// If `first` is `true`, writes it at the first checkpoint region. Otherwise, writes at the second region.
+    ///
+    /// # Safety
+    ///
+    /// Call this function only when you can ensure the `SegTable` and `Imap` is not under mutation
+    /// and only after `self` is initialzed.
+    pub unsafe fn commit_checkpoint(
+        &self,
+        dev: u32,
+        first: bool,
+        timestamp: u32,
+        ctx: &KernelCtx<'_, '_>,
+    ) {
+        let (bno1, bno2) = self.superblock().get_chkpt_block_no();
+        let block_no = if first { bno1 } else { bno2 };
+
+        let mut buf = hal().disk().read(dev, block_no, ctx);
+        let chkpt = unsafe { &mut *(buf.deref_inner().data.as_ptr() as *mut Checkpoint) };
+        chkpt.segtable = unsafe { &*self.segmanager.get_unchecked().get_mut_raw() }.dsegtable();
+        chkpt.imap = unsafe { &*self.imap.get_unchecked().get_mut_raw() }.dimap();
+        chkpt.timestamp = timestamp;
+        hal().disk().write(&mut buf, ctx);
+        buf.free(ctx);
     }
 }
 
@@ -142,18 +145,41 @@ impl FileSystem for Lfs {
             let superblock = self.superblock.call_once(|| Superblock::new(&buf));
             buf.free(ctx);
 
-            // Load from the checkpoint.
-            let (segtable, chkpt_no, imap) = superblock.load_checkpoint(dev, ctx);
-            let _ = self
-                .segtable
-                .call_once(|| SleepLock::new("segtable", segtable));
-            let _ = self.segment.call_once(|| {
-                SleepLock::new("segment", Segment::new(dev, self.get_next_seg_no(None)))
+            // Load the checkpoint.
+            let (bno1, bno2) = superblock.get_chkpt_block_no();
+            let buf1 = hal().disk().read(dev, bno1, ctx);
+            let chkpt1 = unsafe { &*(buf1.deref_inner().data.as_ptr() as *const Checkpoint) };
+            let buf2 = hal().disk().read(dev, bno2, ctx);
+            let chkpt2 = unsafe { &*(buf2.deref_inner().data.as_ptr() as *const Checkpoint) };
+
+            let (chkpt, timestamp, stored_at_first) = if chkpt1.timestamp > chkpt2.timestamp {
+                (chkpt1, chkpt1.timestamp, true)
+            } else {
+                (chkpt2, chkpt2.timestamp, false)
+            };
+
+            let segtable = chkpt.segtable;
+            let imap = chkpt.imap;
+            // let timestamp = chkpt.timestamp;
+            buf1.free(ctx);
+            buf2.free(ctx);
+
+            // Load other components using the checkpoint content.
+            let _ = self.segmanager.call_once(|| {
+                SleepLock::new(
+                    "segment",
+                    SegManager::new(dev, segtable, superblock.nsegments()),
+                )
             });
-            let _ = self.imap.call_once(|| SleepLock::new("imap", imap));
-            let _ = self
-                .curr_checkpoint
-                .call_once(|| SleepLock::new("curr_checkpoint", chkpt_no));
+            let _ = self.imap.call_once(|| {
+                SleepLock::new("imap", Imap::new(dev, superblock.ninodes() as usize, imap))
+            });
+            let _ = self.tx_manager.call_once(|| {
+                SleepableLock::new(
+                    "tx_manager",
+                    TxManager::new(dev, stored_at_first, timestamp),
+                )
+            });
         }
     }
 
@@ -379,14 +405,13 @@ impl FileSystem for Lfs {
         Ok(())
     }
 
-    fn tx_begin(&self, _ctx: &KernelCtx<'_, '_>) {
-        // TODO: begin transaction
-        // self.log().begin_op(ctx);
+    fn tx_begin(&self, ctx: &KernelCtx<'_, '_>) {
+        self.tx_manager().begin_op(ctx);
     }
 
-    unsafe fn tx_end(&self, _ctx: &KernelCtx<'_, '_>) {
-        // TODO: commit and end transaction
-        // self.log().end_op(ctx);
+    unsafe fn tx_end(&self, ctx: &KernelCtx<'_, '_>) {
+        // Commits if this was the last outstanding operation.
+        self.tx_manager().end_op(self, ctx);
     }
 
     #[inline]
@@ -447,17 +472,17 @@ impl FileSystem for Lfs {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut segment = tx.fs.segment(&k);
-            let mut bp = guard.writable_data_block(off as usize / BSIZE, &mut segment, tx, &k);
+            let mut seg = tx.fs.segmanager(&k);
+            let mut bp = guard.writable_data_block(off as usize / BSIZE, &mut seg, tx, &k);
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
             let res = f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k);
             bp.free(&k);
-            if segment.is_full() {
-                segment.commit(&k);
+            if seg.is_full() {
+                seg.commit(&k);
             }
-            segment.free(&k);
+            seg.free(&k);
             if res.is_err() {
                 break;
             }
@@ -538,11 +563,14 @@ impl FileSystem for Lfs {
             // so this acquiresleep() won't block (or deadlock).
             let mut ip = inode.lock(ctx);
 
-            let mut segment = tx.fs.segment(ctx);
+            let mut seg = tx.fs.segmanager(ctx);
             let mut imap = tx.fs.imap(ctx);
-            assert!(imap.set(ip.inum, 0, &mut segment, ctx));
+            assert!(imap.set(ip.inum, 0, &mut seg, ctx));
+            if seg.is_full() {
+                seg.commit(ctx);
+            }
             imap.free(ctx);
-            segment.free(ctx);
+            seg.free(ctx);
             ip.deref_inner_mut().valid = false;
 
             ip.free(ctx);

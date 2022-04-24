@@ -2,10 +2,11 @@ use core::mem;
 
 use static_assertions::const_assert;
 
-use super::Segment;
+use super::SegManager;
 use crate::{
     bio::{Buf, BufData},
     hal::hal,
+    lock::SleepLockGuard,
     param::{BSIZE, IMAPSIZE},
     proc::KernelCtx,
 };
@@ -28,18 +29,7 @@ pub struct Imap {
     addr: [u32; IMAPSIZE],
 }
 
-impl const Default for Imap {
-    fn default() -> Self {
-        Self {
-            dev_no: 0,
-            ninodes: 0,
-            addr: [0; IMAPSIZE],
-        }
-    }
-}
-
 impl Imap {
-    #[allow(dead_code)]
     pub fn new(dev_no: u32, ninodes: usize, addr: [u32; IMAPSIZE]) -> Self {
         Self {
             dev_no,
@@ -57,6 +47,12 @@ impl Imap {
     /// Returns the `block_no`th block of the imap.
     fn get_imap_block(&self, block_no: usize, ctx: &KernelCtx<'_, '_>) -> Buf {
         hal().disk().read(self.dev_no, self.addr[block_no], ctx)
+    }
+
+    /// Returns the imap in the on-disk format.
+    /// This should be written at the checkpoint of the disk.
+    pub fn dimap(&self) -> [u32; IMAPSIZE] {
+        self.addr
     }
 
     /// Returns an unused inum.
@@ -101,7 +97,7 @@ impl Imap {
         &mut self,
         inum: u32,
         disk_block_no: u32,
-        segment: &mut Segment,
+        seg: &mut SleepLockGuard<'_, SegManager>,
         ctx: &KernelCtx<'_, '_>,
     ) -> bool {
         assert!(
@@ -110,7 +106,7 @@ impl Imap {
         );
         let (block_no, offset) = self.get_imap_block_no(inum);
 
-        if let Some((mut buf, addr)) = segment.get_or_add_updated_imap_block(block_no as u32, ctx) {
+        if let Some((mut buf, addr)) = seg.get_or_add_updated_imap_block(block_no as u32, ctx) {
             if addr != self.addr[block_no] {
                 // Copy the imap block content from old imap block.
                 let old_buf = self.get_imap_block(block_no, ctx);

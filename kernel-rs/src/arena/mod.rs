@@ -81,7 +81,12 @@ pub struct ArenaRc<A: Arena> {
 }
 
 impl<T, A: Arena<Data = T>> ArenaRc<A> {
-    pub fn new(arena: StrongPin<'_, A>, inner: Ref<A::Data>) -> Self {
+    /// Creates a new `Rc` that was allocated from the arena.
+    ///
+    /// # Safety
+    ///
+    /// `inner` must be allocated from `arena`
+    pub unsafe fn new(arena: StrongPin<'_, A>, inner: Ref<A::Data>) -> Self {
         Self {
             arena: arena.as_pin().get_ref(),
             inner: ManuallyDrop::new(inner),

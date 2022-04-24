@@ -3,7 +3,7 @@ use core::{iter::StepBy, mem, ops::Range};
 use static_assertions::const_assert;
 use zerocopy::{AsBytes, FromBytes};
 
-use super::{FileName, Lfs, Path, Segment, NDIRECT, NINDIRECT, ROOTINO};
+use super::{FileName, Lfs, Path, SegManager, NDIRECT, NINDIRECT, ROOTINO};
 use crate::{
     arena::{Arena, ArrayArena},
     bio::{Buf, BufData},
@@ -42,7 +42,6 @@ pub struct InodeInner {
 // It needs repr(C) because it's struct for in-disk representation
 // which should follow C(=machine) representation
 // https://github.com/kaist-cp/rv6/issues/52
-#[allow(dead_code)]
 #[repr(C)]
 pub struct Dinode {
     /// File type
@@ -195,10 +194,8 @@ impl InodeGuard<'_, Lfs> {
     /// Copy a modified in-memory inode to disk.
     pub fn update(&self, tx: &Tx<'_, Lfs>, ctx: &KernelCtx<'_, '_>) {
         // 1. Write the inode to segment.
-        let mut segment = tx.fs.segment(ctx);
-        let (mut bp, disk_block_no) = segment
-            .get_or_add_updated_inode_block(self.inum, ctx)
-            .unwrap();
+        let mut seg = tx.fs.segmanager(ctx);
+        let (mut bp, disk_block_no) = seg.get_or_add_updated_inode_block(self.inum, ctx).unwrap();
 
         const_assert!(mem::size_of::<Dinode>() <= mem::size_of::<BufData>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
@@ -242,18 +239,18 @@ impl InodeGuard<'_, Lfs> {
         (*dip).addr_indirect = inner.addr_indirect;
 
         bp.free(ctx);
-        if segment.is_full() {
-            segment.commit(ctx);
+        if seg.is_full() {
+            seg.commit(ctx);
         }
 
         // 2. Write the imap to segment.
         let mut imap = tx.fs.imap(ctx);
-        assert!(imap.set(self.inum, disk_block_no, &mut segment, ctx));
-        if segment.is_full() {
-            segment.commit(ctx);
+        assert!(imap.set(self.inum, disk_block_no, &mut seg, ctx));
+        if seg.is_full() {
+            seg.commit(ctx);
         }
         imap.free(ctx);
-        segment.free(ctx);
+        seg.free(ctx);
     }
 
     /// Copies the inode's `bn`th data block content into an empty block on the segment,
@@ -279,13 +276,13 @@ impl InodeGuard<'_, Lfs> {
     pub fn writable_data_block(
         &mut self,
         bn: usize,
-        segment: &mut SleepLockGuard<'_, Segment>,
+        seg: &mut SleepLockGuard<'_, SegManager>,
         _tx: &Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Buf {
         if bn < NDIRECT {
             let addr = self.deref_inner().addr_direct[bn];
-            let (buf, new_addr) = self.writable_data_block_inner(bn, addr, segment, ctx);
+            let (buf, new_addr) = self.writable_data_block_inner(bn, addr, seg, ctx);
             self.deref_inner_mut().addr_direct[bn] = new_addr;
             buf
         } else {
@@ -293,18 +290,17 @@ impl InodeGuard<'_, Lfs> {
             assert!(bn < NINDIRECT, "bmap: out of range");
 
             // We need two `Buf`. Hence, we flush the segment early if we need to
-            // and maintain the lock on the `Segment` until we're done.
-            if segment.remaining() < 2 {
-                segment.commit(ctx);
+            // and maintain the lock on the `SegManager` until we're done.
+            if seg.remaining() < 2 {
+                seg.commit(ctx);
             }
 
             // Get the indirect block and the address of the indirect data block.
-            let mut bp = self.writable_indirect_block(segment, ctx);
+            let mut bp = self.writable_indirect_block(seg, ctx);
             let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
             // Get the indirect data block and update the indirect block.
-            let (buf, new_addr) =
-                self.writable_data_block_inner(bn + NDIRECT, data[bn], segment, ctx);
+            let (buf, new_addr) = self.writable_data_block_inner(bn + NDIRECT, data[bn], seg, ctx);
             data[bn] = new_addr;
             bp.free(ctx);
             buf
@@ -353,16 +349,14 @@ impl InodeGuard<'_, Lfs> {
         &self,
         bn: usize,
         addr: u32,
-        segment: &mut SleepLockGuard<'_, Segment>,
+        seg: &mut SleepLockGuard<'_, SegManager>,
         ctx: &KernelCtx<'_, '_>,
     ) -> (Buf, u32) {
         if addr == 0 {
             // Allocate an empty block.
-            segment
-                .add_new_data_block(self.inum, bn as u32, ctx)
-                .unwrap()
+            seg.add_new_data_block(self.inum, bn as u32, ctx).unwrap()
         } else {
-            let (mut buf, new_addr) = segment
+            let (mut buf, new_addr) = seg
                 .get_or_add_updated_data_block(self.inum, bn as u32, ctx)
                 .unwrap();
             if new_addr != addr {
@@ -386,16 +380,16 @@ impl InodeGuard<'_, Lfs> {
     /// You should make sure the segment has an empty block before calling this.
     fn writable_indirect_block(
         &mut self,
-        segment: &mut SleepLockGuard<'_, Segment>,
+        seg: &mut SleepLockGuard<'_, SegManager>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Buf {
         let indirect = self.deref_inner().addr_indirect;
         if indirect == 0 {
-            let (bp, new_indirect) = segment.add_new_indirect_block(self.inum, ctx).unwrap();
+            let (bp, new_indirect) = seg.add_new_indirect_block(self.inum, ctx).unwrap();
             self.deref_inner_mut().addr_indirect = new_indirect;
             bp
         } else {
-            let (mut bp, new_indirect) = segment
+            let (mut bp, new_indirect) = seg
                 .get_or_add_updated_indirect_block(self.inum, ctx)
                 .unwrap();
             if indirect != new_indirect {
@@ -481,12 +475,12 @@ impl Itable<Lfs> {
         tx: &Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> RcInode<Lfs> {
-        let mut segment = tx.fs.segment(ctx);
+        let mut seg = tx.fs.segmanager(ctx);
         let mut imap = tx.fs.imap(ctx);
 
         // 1. Write the inode.
         let inum = imap.get_empty_inum(ctx).unwrap();
-        let (mut bp, disk_block_no) = segment.add_new_inode_block(inum, ctx).unwrap();
+        let (mut bp, disk_block_no) = seg.add_new_inode_block(inum, ctx).unwrap();
 
         const_assert!(mem::size_of::<Dinode>() <= mem::size_of::<BufData>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
@@ -512,17 +506,17 @@ impl Itable<Lfs> {
             }
         }
         bp.free(ctx);
-        if segment.is_full() {
-            segment.commit(ctx);
+        if seg.is_full() {
+            seg.commit(ctx);
         }
 
         // 2. Now write the imap.
-        assert!(imap.set(inum, disk_block_no, &mut segment, ctx));
-        if segment.is_full() {
-            segment.commit(ctx);
+        assert!(imap.set(inum, disk_block_no, &mut seg, ctx));
+        if seg.is_full() {
+            seg.commit(ctx);
         }
         imap.free(ctx);
-        segment.free(ctx);
+        seg.free(ctx);
 
         self.get_inode(dev, inum)
     }
