@@ -476,22 +476,40 @@ impl VirtioDisk {
         let this = self.project();
         let info = this.info.project();
 
-        while *info.used_idx != this.used.id {
+        let buf = loop {
             fence(Ordering::SeqCst);
             let id = this.used.ring[(*info.used_idx as usize) % NUM].id as usize;
-
+        
             assert!(!info.inflight[id].status, "Disk::intr status");
 
-            // SAFETY: from the invariant, b refers to a valid
-            // buffer unless it is null.
-            let buf = unsafe { &mut *info.inflight[id].b };
-
-            // disk is done with buf
-            buf.deref_inner_mut().disk = false;
-            buf.vdisk_request_waitchannel.wakeup(kernel);
-
             *info.used_idx += 1;
-        }
+            if *info.used_idx == this.used.id {
+                // SAFETY: from the invariant, b refers to a valid
+                // buffer unless it is null.
+                break unsafe { &mut *info.inflight[id].b };
+            }
+        };
+
+        // disk is done with buf
+        buf.deref_inner_mut().disk = false;
+        buf.vdisk_request_waitchannel.wakeup(kernel);
+
+        // while *info.used_idx != this.used.id {
+        //     fence(Ordering::SeqCst);
+        //     let id = this.used.ring[(*info.used_idx as usize) % NUM].id as usize;
+
+        //     assert!(!info.inflight[id].status, "Disk::intr status");
+
+        //     // SAFETY: from the invariant, b refers to a valid
+        //     // buffer unless it is null.
+        //     let buf = unsafe { &mut *info.inflight[id].b };
+
+        //     // disk is done with buf
+        //     buf.deref_inner_mut().disk = false;
+        //     buf.vdisk_request_waitchannel.wakeup(kernel);
+
+        //     *info.used_idx += 1;
+        // }
     }
 
     /// Find a free descriptor, mark it non-free, return its index.
