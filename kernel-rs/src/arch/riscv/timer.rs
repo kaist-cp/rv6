@@ -1,3 +1,5 @@
+use core::arch::asm;
+
 use super::RiscV;
 use crate::arch::interface::TimeManager;
 
@@ -15,7 +17,7 @@ impl TimeManager for RiscV {
     fn r_cycle() -> usize {
         let mut x;
         unsafe {
-            asm!("rdcycle {}", out(reg) x);
+            asm!("rdcycle {x}", x = out(reg) x);
         }
         x
     }

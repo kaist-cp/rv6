@@ -25,9 +25,6 @@
 #![deny(unused_results)]
 #![deny(variant_size_differences)]
 #![deny(warnings)]
-// TODO(https://github.com/kaist-cp/rv6/issues/579):
-// remove this and upgrade to rustc 1.56.0-nightly once the problem is resolved.
-#![feature(const_fn_union)]
 //
 // # The following lints should not be denied.
 //
@@ -42,14 +39,10 @@
 #![allow(incomplete_features)]
 #![allow(clippy::upper_case_acronyms)]
 #![feature(arbitrary_self_types)]
-#![feature(asm)]
-#![feature(const_fn_fn_ptr_basics)]
-#![feature(const_fn_trait_bound)]
 #![feature(const_mut_refs)]
 #![feature(const_precise_live_drops)]
 #![feature(const_trait_impl)]
 #![feature(generic_associated_types)]
-#![feature(maybe_uninit_extra)]
 #![feature(raw_ref_op)]
 #![feature(try_blocks)]
 #![feature(variant_count)]

@@ -3,7 +3,6 @@
 /// qemu presents a "legacy" virtio interface.
 ///
 /// qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
-use core::array::IntoIter;
 use core::marker::PhantomPinned;
 use core::mem;
 use core::pin::Pin;
@@ -164,6 +163,7 @@ impl VirtIOBlockOutHeader {
     }
 }
 
+#[allow(clippy::derivable_impls)] // for const trait
 impl const Default for VirtIOBlockOutHeader {
     fn default() -> Self {
         Self {
@@ -324,7 +324,8 @@ impl VirtioDisk {
         // As it assigns null, the invariant of inflight is maintained even if
         // b: &mut Buf becomes invalid after this method returns.
         guard.get_pin_mut().project().info.project().inflight[desc[0].idx].b = ptr::null_mut();
-        IntoIter::new(desc).for_each(|desc| guard.get_pin_mut().free(desc));
+        desc.into_iter()
+            .for_each(|desc| guard.get_pin_mut().free(desc));
         guard.wakeup(ctx.kernel());
     }
 

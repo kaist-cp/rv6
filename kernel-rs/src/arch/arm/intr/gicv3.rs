@@ -3,6 +3,7 @@
 // Dead code is allowed in this file because not all components are used in the kernel.
 #![allow(dead_code)]
 
+use core::arch::asm;
 use core::ptr;
 
 use cortex_a::registers::*;
@@ -866,12 +867,12 @@ impl GicCpuInterface {
 
         // SAFETY: x contains valid value for icc_pmr_el1 register.
         unsafe {
-            asm!("msr icc_pmr_el1, {}", in(reg) x);
+            asm!("msr icc_pmr_el1, {x}", x = in(reg) x);
             isb();
         }
         let val = unsafe {
             let mut x: usize;
-            asm!("mrs {}, icc_pmr_el1", out(reg) x);
+            asm!("mrs {x}, icc_pmr_el1", x = out(reg) x);
             x
         };
 
@@ -880,7 +881,7 @@ impl GicCpuInterface {
 
         // SAFETY: x contains valid value for icc_pmr_el1 register.
         unsafe {
-            asm!("msr icc_pmr_el1, {}", in(reg) x);
+            asm!("msr icc_pmr_el1, {x}", x = in(reg) x);
             isb();
         }
 
@@ -897,7 +898,7 @@ impl GicCpuInterface {
         // SAFETY: `ICC_CTLR_EL1_EOIMODE_DROP_DIR` is a valid value for icc_ctlr_el1.
         unsafe {
             let x: usize = ICC_CTLR_EL1_EOIMODE_DROP_DIR as usize;
-            asm!("msr icc_ctlr_el1, {}", in(reg) x);
+            asm!("msr icc_ctlr_el1, {x}", x = in(reg) x);
             isb();
         }
 
@@ -949,7 +950,7 @@ impl GicCpuInterface {
         // SAFETY: 1 is a valid value for the register.
         unsafe {
             let x: usize = 1;
-            asm!("msr icc_igrpen1_el1, {}", in(reg) x);
+            asm!("msr icc_igrpen1_el1, {x}", x = in(reg) x);
         }
         isb();
     }
@@ -1016,10 +1017,10 @@ impl GicDistributor {
             // TODO(https://github.com/kaist-cp/rv6/issues/604): kvm bug?
             unsafe {
                 asm!(
-                    "str {0}, [{1}]",
-                    "add {1}, {1}, 8",
-                    in(reg) affinity,
-                    inout(reg) addr
+                    "str {affinity}, [{addr}]",
+                    "add {addr}, {addr}, 8",
+                    affinity = in(reg) affinity,
+                    addr = inout(reg) addr
                 );
                 // unsafe { write_d(self.base_addr + GICD_IROUTER + i * 8, affinity) };
             }
@@ -1161,7 +1162,7 @@ impl Gic {
     pub fn fetch(&self) -> Option<Interrupt> {
         let mut x;
         unsafe {
-            asm!("mrs {}, icc_iar1_el1", out(reg) x);
+            asm!("mrs {x}, icc_iar1_el1", x = out(reg) x);
             asm!("dsb sy");
         }
         Some(x)
@@ -1176,7 +1177,7 @@ impl Gic {
         // Safety: assume `int` is a valid interrupt(IRQ) number.
         unsafe {
             let x = int;
-            asm!("msr icc_eoir1_el1, {}", in(reg) x);
+            asm!("msr icc_eoir1_el1, {x}", x = in(reg) x);
         }
     }
 }

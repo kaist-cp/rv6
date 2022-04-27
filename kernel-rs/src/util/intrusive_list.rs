@@ -232,27 +232,32 @@ impl<T: ListNode> List<T> {
     /// # }
     /// #
     /// # fn main() {
-    ///     // Make and initialize a `List` and a `Node` that implements the `ListNode` trait.
-    ///     let mut list = unsafe { List::new() };
-    ///     let mut list_pin = unsafe { Pin::new_unchecked(&mut list) };
-    ///     list_pin.as_mut().init();
+    /// // Make and initialize a `List` and a `Node` that implements the `ListNode` trait.
+    /// let mut list = unsafe { List::new() };
+    /// let mut list_pin = unsafe { Pin::new_unchecked(&mut list) };
+    /// list_pin.as_mut().init();
     ///
-    ///     let mut node = Some(unsafe { Node { data: 10, list_entry: ListEntry::new() }});
-    ///     let mut node_pin = unsafe { Pin::new_unchecked(node.as_mut().expect("")) };
-    ///     node_pin.as_mut().project().list_entry.init();
-    ///    
-    ///     // Push the `ListNode` to the `List`.
-    ///     list_pin.as_mut().push_front(node_pin);
-    ///
-    ///     // Use an unsafe iterator.
-    ///     for n in unsafe { list_pin.as_ref().iter_unchecked() } {
-    ///         assert!(n.data == 10);  // okay!
-    ///         node = None;
-    ///         assert!(n.data == 10);  // not okay! reading data of already dropped node!
-    ///                                 // undefined behavior! ⚠️
+    /// let mut node = Some(unsafe {
+    ///     Node {
+    ///         data: 10,
+    ///         list_entry: ListEntry::new(),
     ///     }
+    /// });
+    /// let mut node_pin = unsafe { Pin::new_unchecked(node.as_mut().expect("")) };
+    /// node_pin.as_mut().project().list_entry.init();
     ///
-    ///     assert!(node.is_none());
+    /// // Push the `ListNode` to the `List`.
+    /// list_pin.as_mut().push_front(node_pin);
+    ///
+    /// // Use an unsafe iterator.
+    /// for n in unsafe { list_pin.as_ref().iter_unchecked() } {
+    ///     assert!(n.data == 10); // okay!
+    ///     node = None;
+    ///     assert!(n.data == 10); // not okay! reading data of already dropped node!
+    ///                            // undefined behavior! ⚠️
+    /// }
+    ///
+    /// assert!(node.is_none());
     /// # }
     /// ```
     pub unsafe fn iter_unchecked(self: Pin<&Self>) -> Iter<'_, T> {
