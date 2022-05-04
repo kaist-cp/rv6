@@ -456,7 +456,7 @@ impl VirtioDisk {
 
         guard.wakeup(ctx.kernel());
 
-        return true;
+        true
     }
 
     pub fn intr(self: Pin<&mut Self>, kernel: KernelRef<'_, '_>) {
