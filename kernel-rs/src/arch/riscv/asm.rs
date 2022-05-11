@@ -64,6 +64,43 @@ pub unsafe fn w_mepc(x: usize) {
 }
 
 bitflags! {
+    /// Physical memory protection CSRs
+    pub struct Pmp: u64 {
+        /// read permission
+        const PMP_R = (1) << 0;
+
+        /// write permission
+        const PMP_W = (1) << 1;
+
+        /// execute permission
+        const PMP_X = (1) << 2;
+
+        /// top of range
+        const PMP_A_TOR = (1) << 3;
+    }
+}
+
+impl Pmp {
+    /// Pmp configuration.
+    /// Writes the given address-matching mode to the first Pmp configuration register.
+    #[inline]
+    pub unsafe fn w_pmpcfg0(self) {
+        unsafe {
+            asm!("csrw pmpcfg0, {x}", x = in(reg) self.bits());
+        }
+    }
+
+    /// Pmp address register.
+    /// This address will be used by the first Pmp.
+    #[inline]
+    pub unsafe fn w_pmpaddr0(x: u64) {
+        unsafe {
+            asm!("csrw pmpaddr0, {x}", x = in(reg) x);
+        }
+    }
+}
+
+bitflags! {
     /// Supervisor Status Register, sstatus.
     pub struct Sstatus: usize {
         /// Previous mode, 1=Supervisor, 0=User
