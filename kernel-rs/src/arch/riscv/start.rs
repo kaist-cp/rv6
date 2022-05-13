@@ -2,8 +2,8 @@ use core::arch::asm;
 
 use crate::{
     arch::asm::{
-        r_mhartid, w_medeleg, w_mepc, w_mideleg, w_mscratch, w_mtvec, w_satp, w_tp, Mstatus, MIE,
-        SIE,
+        r_mhartid, w_medeleg, w_mepc, w_mideleg, w_mscratch, w_mtvec, w_satp, w_tp, Mstatus, Pmp,
+        MIE, SIE,
     },
     arch::memlayout::{clint_mtimecmp, CLINT_MTIME},
     kernel::main,
@@ -32,6 +32,18 @@ pub static mut stack0: Stack = Stack::new();
 /// A scratch area per CPU for machine-mode timer interrupts.
 static mut TIMER_SCRATCH: [[usize; NCPU]; 5] = [[0; NCPU]; 5];
 
+/// Configures the Pmp registers so that we can trivally boot.
+/// See section 3.7.1 "Physical Memory Protection CSRs" in the RISC-V privileged specification for details.
+pub unsafe fn pmpinit() {
+    unsafe {
+        // Set this as the upper bound of the allowed address range.
+        let addr: u64 = (!0) >> 10;
+        Pmp::w_pmpaddr0(addr);
+        // Allow access. Use TOR (Top of Range) address-matching mode.
+        Pmp::w_pmpcfg0(Pmp::PMP_R | Pmp::PMP_W | Pmp::PMP_X | Pmp::PMP_A_TOR);
+    }
+}
+
 /// entry.S jumps here in machine mode on stack0.
 pub unsafe fn start() {
     // set M Previous Privilege mode to Supervisor, for mret.
@@ -54,6 +66,10 @@ pub unsafe fn start() {
     x.insert(SIE::STIE);
     x.insert(SIE::SSIE);
     unsafe { x.write() };
+
+    // configure Physical Memory Protection to give supervisor mode
+    // access to all of physical memory.
+    unsafe { pmpinit() };
 
     // ask for clock interrupts.
     unsafe { timerinit() };
