@@ -9,7 +9,6 @@ use core::pin::Pin;
 use core::ptr;
 use core::sync::atomic::{fence, Ordering};
 
-use array_macro::array;
 use arrayvec::ArrayVec;
 use bitmaps::Bitmap;
 use cfg_if::cfg_if;
@@ -211,7 +210,7 @@ impl SleepableLock<VirtioDisk> {
 
     pub fn write_sequential(
         self: Pin<&Self>,
-        barray: &mut [Option<Buf>; MAX_SEQ_WRITE],
+        barray: ArrayVec<Buf, MAX_SEQ_WRITE>,
         ctx: &KernelCtx<'_, '_>,
     ) {
         VirtioDisk::write_seq(&mut self.pinned_lock(), barray, ctx)
@@ -335,7 +334,7 @@ impl VirtioDisk {
     // `VirtioDisk::rw` and may incur additional performance overhead.
     fn write_seq(
         guard: &mut SleepableLockGuard<'_, Self>,
-        barray: &mut [Option<Buf>; MAX_SEQ_WRITE],
+        mut barray: ArrayVec<Buf, MAX_SEQ_WRITE>,
         ctx: &KernelCtx<'_, '_>,
     ) {
         // 3 * MAX_SEQ_WRITE descriptors are required to write every block of a full segment
@@ -343,80 +342,71 @@ impl VirtioDisk {
         // descriptors according to the virtio specs.
         const_assert!(MAX_SEQ_WRITE * 3 <= NUM);
 
-        let mut darray: [Option<[Descriptor; 3]>; MAX_SEQ_WRITE] = array![_ => None; MAX_SEQ_WRITE];
-        let mut prev_blk_idx = 0usize;
-        let mut next_write = 0usize;
-        let mut num_block_written = 0usize;
+        let mut darray = ArrayVec::<[Descriptor; 3], MAX_SEQ_WRITE>::new();
+        let num_block_total = barray.len();
+        let mut num_block_written = 0;
 
-        for i in 0..MAX_SEQ_WRITE {
-            if barray[i].is_some() {
-                // Allocate the three descriptors.
-                let descs = loop {
-                    match guard.get_pin_mut().alloc_three_descriptors() {
-                        Some(idx) => break idx,
-                        None => {
-                            if Self::finalize_write_seq(
-                                guard,
-                                &mut darray[next_write..=prev_blk_idx],
-                                &mut barray[next_write..=prev_blk_idx],
-                                num_block_written,
-                                ctx,
-                            ) {
-                                next_write = prev_blk_idx + 1;
-                                num_block_written = 0;
-                            } else {
-                                guard.sleep(ctx);
-                            }
-                        }
+        while num_block_written < num_block_total {
+            // Allocate the three descriptors.
+            let descs = loop {
+                match guard.get_pin_mut().alloc_three_descriptors() {
+                    Some(idx) => break idx,
+                    None => {
+                        Self::finalize_write_seq(
+                            guard,
+                            &mut darray,
+                            &mut barray,
+                            num_block_written,
+                            ctx,
+                        )
                     }
-                };
+                }
+            };
+            let mut buf = barray.pop_at(0).unwrap();
 
-                // Properly set the three descriptors
-                guard.get_pin_mut().set_three_descriptors(
-                    &descs,
-                    barray[i].as_mut().unwrap(),
-                    true,
-                );
+            // Properly set the three descriptors
+            guard
+                .get_pin_mut()
+                .set_three_descriptors(&descs, &mut buf, true);
+            let mut this = guard.get_pin_mut().project();
+            // Tell the device the first index in our chain of descriptors.
+            let write_idx = (this.avail.idx as usize + num_block_written) % NUM;
+            this.avail.ring[write_idx] = descs[0].idx as _;
 
-                let mut this = guard.get_pin_mut().project();
-                // Tell the device the first index in our chain of descriptors.
-                let write_idx = (this.avail.idx as usize + num_block_written) % NUM;
-                this.avail.ring[write_idx] = descs[0].idx as _;
-
-                darray[i] = Some(descs);
-                prev_blk_idx = i;
-                num_block_written += 1;
-            }
+            darray.push(descs);
+            barray.push(buf);
+            num_block_written += 1;
         }
 
-        assert!(
-            Self::finalize_write_seq(
-                guard,
-                &mut darray[next_write..=prev_blk_idx],
-                &mut barray[next_write..=prev_blk_idx],
-                num_block_written,
-                ctx,
-            ),
-            "could not finalize the last set of buffers"
-        );
+        // Finalize the last set of `Buf`s
+        if !darray.is_empty() {
+            Self::finalize_write_seq(guard, &mut darray, &mut barray, num_block_written, ctx);
+        }
+
+        // Free all the `Buf`s
+        for buf in barray {
+            buf.free(ctx);
+        }
     }
 
-    // This method writes the buffers in the given range of the given array to the disk.
+    // This method writes the `Buf`s represented by the descriptors in `darray` to the disk.
+    // It consumes entries in `darray` but leaves the entries and their order in `barray` intact.
+    // Requirements:
+    // - `darray` must contain at least one set of descriptors to be written. It panicks, otherwise.
+    // - Sets of descriptors in `darray` and `Buf`s in `barray` must be consistently ordered.
+    //   (This is unchecked.)
     fn finalize_write_seq(
         guard: &mut SleepableLockGuard<'_, Self>,
-        darray: &mut [Option<[Descriptor; 3]>],
-        barray: &mut [Option<Buf>],
+        darray: &mut ArrayVec<[Descriptor; 3], MAX_SEQ_WRITE>,
+        barray: &mut ArrayVec<Buf, MAX_SEQ_WRITE>,
         num_block_written: usize,
         ctx: &KernelCtx<'_, '_>,
-    ) -> bool {
-        let length = darray.len();
-        // Other than the arrays' length, the caller must make sure that they are corresponding with each other.
-        assert_eq!(length, barray.len());
-
-        // Assert that the chain contains at least one buffer to be written.
-        if num_block_written == 0 {
-            return false;
-        }
+    ) {
+        // `darray` must contain at least one set of descriptors to be written to the disk.
+        assert!(
+            !darray.is_empty(),
+            "[Disk::finalize_write_seq] no descriptors"
+        );
 
         let mut this = guard.get_pin_mut().project();
 
@@ -437,26 +427,18 @@ impl VirtioDisk {
         // The request is complete when the last block is written.
         // TODO: This may require that the `VIRTIO_F_IN_ORDER` feature has been negotiated.
         // Another way is to check all Bufs if their disk fields are set to false.
-        barray
-            .last()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .vdisk_request_waitchannel
-            .sleep(guard, ctx);
+        let buf = barray.pop().unwrap();
+        buf.vdisk_request_waitchannel.sleep(guard, ctx);
+        barray.push(buf);
 
         // Cleanup
         // Free the descriptors
-        for dopt in darray {
-            if let Some(d) = dopt.take() {
-                guard.get_pin_mut().project().info.project().inflight[d[0].idx].b = ptr::null_mut();
-                d.into_iter().for_each(|desc| guard.get_pin_mut().free(desc));
-            }
+        for desc in darray.drain(0..darray.len()) {
+            guard.get_pin_mut().project().info.project().inflight[desc[0].idx].b = ptr::null_mut();
+            desc.into_iter().for_each(|d| guard.get_pin_mut().free(d));
         }
 
         guard.wakeup(ctx.kernel());
-
-        true
     }
 
     pub fn intr(self: Pin<&mut Self>, kernel: KernelRef<'_, '_>) {

@@ -42,6 +42,7 @@
 use core::ptr;
 
 use array_macro::array;
+use arrayvec::ArrayVec;
 use static_assertions::const_assert;
 
 use crate::{
@@ -442,29 +443,22 @@ impl SegManager {
     pub fn commit_no_alloc(&mut self, ctx: &KernelCtx<'_, '_>) {
         const_assert!(core::mem::size_of::<DSegSum>() <= BSIZE);
 
-        // Get the segment summary.
+        // Write the segment summary.
         let mut bp = self.read_segment_block(0, ctx);
         let ssp = bp.deref_inner_mut().data.as_mut_ptr() as *mut DSegSum;
         unsafe { ptr::write(ssp, DSegSum::new(&self.segment_summary)) };
+        bp.free(ctx);
 
-        // Collect the blocks' `Buf`s in one array.
-        let mut barray: [Option<Buf>; SEGSIZE] = array![i => {
-            if i > 0 && i <= self.offset {
-                self.segment_summary[i - 1].get_buf().map(|b| b.clone().lock(ctx))
-            } else {
-                None
-            }
-        }; SEGSIZE];
-        barray[0] = Some(bp);
-
-        // Write all the buffers sequentially to the disk.
-        hal().disk().write_sequential(&mut barray, ctx);
-
-        for bopt in barray {
-            if let Some(buf) = bopt {
-                buf.free(ctx);
-            }
+        // Collect `Buf`s to be written.
+        let mut barray = ArrayVec::<_, SEGSIZE>::new();
+        for i in self.start..self.offset {
+            barray.push(self.segment_summary[i].get_buf().unwrap().clone().lock(ctx));
         }
+
+        // Write all the `Buf`s sequentially to the disk.
+        // `Disk::write_sequential` must free the `Buf`s used.
+        hal().disk().write_sequential(barray, ctx);
+
         self.start = self.offset;
     }
 
