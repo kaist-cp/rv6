@@ -81,10 +81,10 @@ pub enum SegSumEntry {
 /// On-disk segment summary entry structure.
 #[repr(C)]
 struct DSegSumEntry {
-    /// 0: empty, 1: inode, 2: data block, 3: imap block
+    /// 0: empty, 1: inode, 2: data block, 3: indirect map, 4: imap block
     block_type: u32,
-    inum: u32,
-    block_no: u32,
+    inum: u32, // 0 in case of empty or imap block
+    block_no: u32, // 0 in case of inode or indirect map
 }
 
 /// On-disk segment summary structure.
