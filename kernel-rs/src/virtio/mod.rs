@@ -15,6 +15,7 @@
 use core::ptr;
 
 use bitflags::bitflags;
+use cfg_if::cfg_if;
 
 use crate::arch::interface::MemLayout;
 use crate::arch::TargetArch;
@@ -221,8 +222,14 @@ bitflags! {
     }
 }
 
-/// This many virtio descriptors. It must be a power of two.
-const NUM: usize = 1 << 3;
+// This many virtio descriptors. It must be a power of two.
+cfg_if! {
+    if #[cfg(feature = "lfs")] {
+        const NUM: usize = 1 << 5;  // LFS requires additional descriptors.
+    } else {
+        const NUM: usize = 1 << 3;
+    }
+}
 
 /// A single descriptor, from the spec.
 /// https://docs.oasis-open.org/virtio/virtio/v1.1/csprd01/virtio-v1.1-csprd01.html#x1-320005

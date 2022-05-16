@@ -42,6 +42,7 @@
 use core::ptr;
 
 use array_macro::array;
+use arrayvec::ArrayVec;
 use static_assertions::const_assert;
 
 use crate::{
@@ -442,22 +443,22 @@ impl SegManager {
     pub fn commit_no_alloc(&mut self, ctx: &KernelCtx<'_, '_>) {
         const_assert!(core::mem::size_of::<DSegSum>() <= BSIZE);
 
-        // Write the segment summary to the disk.
+        // Write the segment summary.
         let mut bp = self.read_segment_block(0, ctx);
         let ssp = bp.deref_inner_mut().data.as_mut_ptr() as *mut DSegSum;
         unsafe { ptr::write(ssp, DSegSum::new(&self.segment_summary)) };
         bp.free(ctx);
 
-        // Write each segment block to the disk.
-        // TODO: Check the virtio spec for a way for faster sequential disk write.
+        // Collect `Buf`s to be written.
+        let mut barray = ArrayVec::<_, SEGSIZE>::new();
         for i in self.start..self.offset {
-            let entry = &self.segment_summary[i];
-            if let Some(buf) = entry.get_buf() {
-                let mut buf = buf.clone().lock(ctx);
-                hal().disk().write(&mut buf, ctx);
-                buf.free(ctx);
-            }
+            barray.push(self.segment_summary[i].get_buf().unwrap().clone().lock(ctx));
         }
+
+        // Write all the `Buf`s sequentially to the disk.
+        // `Disk::write_sequential` must free the `Buf`s used.
+        hal().disk().write_sequential(barray, ctx);
+
         self.start = self.offset;
     }
 

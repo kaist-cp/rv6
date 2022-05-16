@@ -11,8 +11,10 @@ use core::sync::atomic::{fence, Ordering};
 
 use arrayvec::ArrayVec;
 use bitmaps::Bitmap;
+use cfg_if::cfg_if;
 use const_zero::const_zero;
 use pin_project::pin_project;
+use static_assertions::const_assert;
 
 use super::{
     MmioRegs, VirtIOFeatures, VirtIOStatus, VirtqAvail, VirtqDesc, VirtqDescFlags, VirtqUsed, NUM,
@@ -26,6 +28,18 @@ use crate::{
     param::BSIZE,
     proc::KernelCtx,
 };
+
+cfg_if! {
+    if #[cfg(feature = "lfs")] {
+        use crate::param::SEGSIZE;
+        // Sequential write in a unit of one segment.
+        const MAX_SEQ_WRITE: usize = SEGSIZE;
+    } else {
+        // Do not support sequential write.
+        // Thus, `SleepableLock<VirtioDisk>::write_sequential` is the same as a normal write.
+        const MAX_SEQ_WRITE: usize = 1;
+    }
+}
 
 // It must be page-aligned.
 // It needs repr(C) because it is read by device.
@@ -160,7 +174,6 @@ impl const Default for VirtIOBlockOutHeader {
 }
 
 /// A descriptor allocated by driver.
-#[derive(Debug)]
 struct Descriptor {
     idx: usize,
 }
@@ -193,6 +206,14 @@ impl SleepableLock<VirtioDisk> {
 
     pub fn write(self: Pin<&Self>, b: &mut Buf, ctx: &KernelCtx<'_, '_>) {
         VirtioDisk::rw(&mut self.pinned_lock(), b, true, ctx)
+    }
+
+    pub fn write_sequential(
+        self: Pin<&Self>,
+        barray: ArrayVec<Buf, MAX_SEQ_WRITE>,
+        ctx: &KernelCtx<'_, '_>,
+    ) {
+        VirtioDisk::write_seq(&mut self.pinned_lock(), barray, ctx)
     }
 }
 
@@ -254,8 +275,6 @@ impl VirtioDisk {
         write: bool,
         ctx: &KernelCtx<'_, '_>,
     ) {
-        let sector: usize = (*b).blockno as usize * (BSIZE / 512);
-
         // The spec's Section 5.2 says that legacy block operations use
         // three descriptors: one for type/reserved/sector, one for the
         // data, one for a 1-byte status result.
@@ -277,54 +296,10 @@ impl VirtioDisk {
             }
         };
 
+        // Properly set the allocated three descriptors.
+        guard.get_pin_mut().set_three_descriptors(&desc, b, write);
+
         let mut this = guard.get_pin_mut().project();
-        let mut info = this.info.project();
-
-        // Format the three descriptors.
-        // qemu's virtio-blk.c reads them.
-
-        // 1. Set the first descriptor.
-        let buf0 = &mut info.ops[desc[0].idx];
-        *buf0 = VirtIOBlockOutHeader::new(write, sector);
-
-        this.desc[desc[0].idx] = VirtqDesc {
-            addr: buf0 as *const _ as _,
-            len: mem::size_of::<VirtIOBlockOutHeader>() as _,
-            flags: VirtqDescFlags::NEXT,
-            next: desc[1].idx as _,
-        };
-
-        // 2. Set the second descriptor.
-        // Device reads/writes b->data
-        this.desc[desc[1].idx] = VirtqDesc {
-            addr: b.deref_inner().data.as_ptr() as _,
-            len: BSIZE as _,
-            flags: if write {
-                VirtqDescFlags::NEXT
-            } else {
-                VirtqDescFlags::NEXT | VirtqDescFlags::WRITE
-            },
-            next: desc[2].idx as _,
-        };
-
-        // 3. Set the third descriptor.
-        // device writes 0 on success
-        info.inflight[desc[0].idx].status = true;
-
-        // Device writes the status
-        this.desc[desc[2].idx] = VirtqDesc {
-            addr: &info.inflight[desc[0].idx].status as *const _ as _,
-            len: 1,
-            flags: VirtqDescFlags::WRITE,
-            next: 0,
-        };
-
-        // Record struct Buf for virtio_disk_intr().
-        b.deref_inner_mut().disk = true;
-        // It does not break the invariant because b is &mut Buf, which refers
-        // to a valid Buf.
-        info.inflight[desc[0].idx].b = b;
-
         // Tell the device the first index in our chain of descriptors.
         let ring_idx = this.avail.idx as usize % NUM;
         this.avail.ring[ring_idx] = desc[0].idx as _;
@@ -353,6 +328,119 @@ impl VirtioDisk {
         guard.wakeup(ctx.kernel());
     }
 
+    // This method writes the data in the given buffers to disk sequentially, therefore,
+    // minimizing seek-time overhead of the disk. It is designed for using with `Lfs`.
+    // Calling this method when using `Ufs` is effectively not different from calling
+    // `VirtioDisk::rw` and may incur additional performance overhead.
+    fn write_seq(
+        guard: &mut SleepableLockGuard<'_, Self>,
+        mut barray: ArrayVec<Buf, MAX_SEQ_WRITE>,
+        ctx: &KernelCtx<'_, '_>,
+    ) {
+        // 3 * MAX_SEQ_WRITE descriptors are required to write every block of a full segment
+        // to the disk sequentially as one block operation request requires exactly three
+        // descriptors according to the virtio specs.
+        const_assert!(MAX_SEQ_WRITE * 3 <= NUM);
+
+        let mut darray = ArrayVec::<[Descriptor; 3], MAX_SEQ_WRITE>::new();
+        let num_block_total = barray.len();
+        let mut num_block_written = 0;
+
+        while num_block_written < num_block_total {
+            // Allocate the three descriptors.
+            let descs = loop {
+                match guard.get_pin_mut().alloc_three_descriptors() {
+                    Some(idx) => break idx,
+                    None => {
+                        Self::finalize_write_seq(
+                            guard,
+                            &mut darray,
+                            &mut barray,
+                            num_block_written,
+                            ctx,
+                        )
+                    }
+                }
+            };
+            let mut buf = barray.pop_at(0).unwrap();
+
+            // Properly set the three descriptors
+            guard
+                .get_pin_mut()
+                .set_three_descriptors(&descs, &mut buf, true);
+            let mut this = guard.get_pin_mut().project();
+            // Tell the device the first index in our chain of descriptors.
+            let write_idx = (this.avail.idx as usize + num_block_written) % NUM;
+            this.avail.ring[write_idx] = descs[0].idx as _;
+
+            darray.push(descs);
+            barray.push(buf);
+            num_block_written += 1;
+        }
+
+        // Finalize the last set of `Buf`s
+        if !darray.is_empty() {
+            Self::finalize_write_seq(guard, &mut darray, &mut barray, num_block_written, ctx);
+        }
+
+        // Free all the `Buf`s
+        for buf in barray {
+            buf.free(ctx);
+        }
+    }
+
+    // This method writes the `Buf`s represented by the descriptors in `darray` to the disk.
+    // It consumes entries in `darray` but leaves the entries and their order in `barray` intact.
+    // Requirements:
+    // - `darray` must contain at least one set of descriptors to be written. It panicks, otherwise.
+    // - Sets of descriptors in `darray` and `Buf`s in `barray` must be consistently ordered.
+    //   (This is unchecked.)
+    fn finalize_write_seq(
+        guard: &mut SleepableLockGuard<'_, Self>,
+        darray: &mut ArrayVec<[Descriptor; 3], MAX_SEQ_WRITE>,
+        barray: &mut ArrayVec<Buf, MAX_SEQ_WRITE>,
+        num_block_written: usize,
+        ctx: &KernelCtx<'_, '_>,
+    ) {
+        // `darray` must contain at least one set of descriptors to be written to the disk.
+        assert!(
+            !darray.is_empty(),
+            "[Disk::finalize_write_seq] no descriptors"
+        );
+
+        let mut this = guard.get_pin_mut().project();
+
+        fence(Ordering::SeqCst);
+
+        // Tell the device `num_block_written` avail ring entries are available.
+        this.avail.idx += num_block_written as u16;
+
+        fence(Ordering::SeqCst);
+
+        // SAFETY: all the three descriptors' fields are well set.
+        // Value is queue number.
+        unsafe {
+            MmioRegs::notify_queue(0);
+        }
+
+        // Wait for the disk to finish writing all the requests
+        // The request is complete when the last block is written.
+        // TODO: This may require that the `VIRTIO_F_IN_ORDER` feature has been negotiated.
+        // Another way is to check all Bufs if their disk fields are set to false.
+        let buf = barray.pop().unwrap();
+        buf.vdisk_request_waitchannel.sleep(guard, ctx);
+        barray.push(buf);
+
+        // Cleanup
+        // Free the descriptors
+        for desc in darray.drain(0..darray.len()) {
+            guard.get_pin_mut().project().info.project().inflight[desc[0].idx].b = ptr::null_mut();
+            desc.into_iter().for_each(|d| guard.get_pin_mut().free(d));
+        }
+
+        guard.wakeup(ctx.kernel());
+    }
+
     pub fn intr(self: Pin<&mut Self>, kernel: KernelRef<'_, '_>) {
         // The device won't raise another interrupt until we tell it
         // we've seen this interrupt, which the following line does.
@@ -370,6 +458,7 @@ impl VirtioDisk {
         let this = self.project();
         let info = this.info.project();
 
+        // TODO: make intr wake only one Buf
         while *info.used_idx != this.used.id {
             fence(Ordering::SeqCst);
             let id = this.used.ring[(*info.used_idx as usize) % NUM].id as usize;
@@ -413,6 +502,66 @@ impl VirtioDisk {
         }
 
         descs.into_inner().ok()
+    }
+
+    /// Set the three descriptors according to the specs of the legacy interface of block operations.
+    /// The three descriptors consist of
+    /// 1. header descriptor, 2. buffer descriptor, and 3. tailer descriptor
+    fn set_three_descriptors(
+        self: Pin<&mut Self>,
+        descs: &[Descriptor; 3],
+        buf: &mut Buf,
+        write: bool,
+    ) {
+        let sector: usize = (*buf).blockno as usize * (BSIZE / 512);
+
+        let this = self.project();
+        let mut info = this.info.project();
+
+        // Format the three descriptors.
+        // qemu's virtio-blk.c reads them.
+
+        // 1. Set the first descriptor.
+        let buf0 = &mut info.ops[descs[0].idx];
+        *buf0 = VirtIOBlockOutHeader::new(write, sector);
+
+        this.desc[descs[0].idx] = VirtqDesc {
+            addr: buf0 as *const _ as _,
+            len: mem::size_of::<VirtIOBlockOutHeader>() as _,
+            flags: VirtqDescFlags::NEXT,
+            next: descs[1].idx as _,
+        };
+
+        // 2. Set the second descriptor.
+        // Device reads/writes b->data
+        this.desc[descs[1].idx] = VirtqDesc {
+            addr: buf.deref_inner().data.as_ptr() as _,
+            len: BSIZE as _,
+            flags: if write {
+                VirtqDescFlags::NEXT
+            } else {
+                VirtqDescFlags::NEXT | VirtqDescFlags::WRITE
+            },
+            next: descs[2].idx as _,
+        };
+
+        // 3. Set the third descriptor.
+        // device writes 0 on success
+        info.inflight[descs[0].idx].status = true;
+
+        // Device writes the status
+        this.desc[descs[2].idx] = VirtqDesc {
+            addr: &info.inflight[descs[0].idx].status as *const _ as _,
+            len: 1,
+            flags: VirtqDescFlags::WRITE,
+            next: 0,
+        };
+
+        // Record struct Buf for virtio_disk_intr().
+        buf.deref_inner_mut().disk = true;
+        // It does not break the invariant because buf is &mut Buf, which refers
+        // to a valid Buf.
+        info.inflight[descs[0].idx].b = buf;
     }
 
     fn free(self: Pin<&mut Self>, desc: Descriptor) {
