@@ -295,9 +295,15 @@ impl<FS: FileSystem> Drop for Tx<'_, FS> {
 impl<FS: FileSystem> Tx<'_, FS> {
     /// Called at the end of each FS system call.
     /// Commits if this was the last outstanding operation.
-    pub fn end(self, ctx: &KernelCtx<'_, '_>) {
+    ///
+    /// # Deadlocks
+    ///
+    /// When using the `Lfs`, make sure to drop all guards releated to the file system
+    /// (e.g. `InodeGuard`) before calling this function. Otherwise, a deadlock may occur
+    /// when the segment cleaner runs.
+    pub fn end(mut self, ctx: &KernelCtx<'_, '_>) {
         unsafe {
-            self.fs.tx_end(ctx);
+            self.fs.tx_end(&mut self, ctx);
         }
         core::mem::forget(self);
     }
@@ -374,7 +380,7 @@ pub trait FileSystem: 'static + Sized {
 
     /// Begins a transaction.
     ///
-    /// Called for each FS system call.
+    /// Called for each FS system call that may cause a disk write..
     fn tx_begin(&self, ctx: &KernelCtx<'_, '_>);
 
     /// Ends a transaction.
@@ -383,9 +389,9 @@ pub trait FileSystem: 'static + Sized {
     ///
     /// # Safety
     ///
-    /// `tx_end` should not be called more than `tx_begin`. Also, f system APIs should be called
-    /// inside a transaction.
-    unsafe fn tx_end(&self, ctx: &KernelCtx<'_, '_>);
+    /// `tx_end` should not be called more than `tx_begin`. Also, f system APIs
+    /// that may cause a disk write should be called inside a transaction.
+    unsafe fn tx_end(&self, tx: &mut Tx<'_, Self>, ctx: &KernelCtx<'_, '_>);
 
     /// Read data from inode.
     ///
@@ -478,6 +484,7 @@ pub trait FileSystem: 'static + Sized {
 
 pub trait FileSystemExt: FileSystem {
     /// Begins a transaction.
+    /// f system APIs that may cause a disk write should be called inside a transaction.
     fn begin_tx(&self, ctx: &KernelCtx<'_, '_>) -> Tx<'_, Self>;
 }
 
