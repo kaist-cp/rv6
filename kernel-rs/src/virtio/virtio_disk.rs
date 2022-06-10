@@ -307,7 +307,7 @@ impl VirtioDisk {
         fence(Ordering::SeqCst);
 
         // Tell the device another avail ring entry is available.
-        this.avail.idx += 1;
+        this.avail.idx = this.avail.idx.wrapping_add(1);
 
         fence(Ordering::SeqCst);
 
@@ -473,7 +473,7 @@ impl VirtioDisk {
             buf.deref_inner_mut().disk = false;
             buf.vdisk_request_waitchannel.wakeup(kernel);
 
-            *info.used_idx += 1;
+            *info.used_idx = info.used_idx.wrapping_add(1);
         }
     }
 
