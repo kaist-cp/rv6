@@ -9,12 +9,16 @@ use crate::{hal::hal, param::SEGSIZE, proc::KernelCtx, util::strong_pin::StrongP
 // TODO: We might be doing disk writes more than neccessary.
 // We can just write the `Imap` or `Inode` to the disk only once.
 
+const THRESHOLD: usize = 2;
+
 impl Lfs {
     /// Scans the segment for live blocks.
     /// Returns a copy of the segment summary with dead blocks marked as empty, and the number of live blocks.
+    /// Aborts the scan if the number of live blocks is larger than `thres`.
     fn scan_segment(
         &self,
         seg_no: u32,
+        thres: usize,
         dev: u32,
         tx: &mut Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
@@ -102,6 +106,9 @@ impl Lfs {
 
             if is_live {
                 live += 1;
+                if live > thres {
+                    break;
+                }
             } else {
                 // dead block; mark as empty.
                 entry.block_type = 0;
@@ -114,13 +121,79 @@ impl Lfs {
     /// and mark the current segment as free on the segtable.
     fn clean_segment(
         &self,
-        _seg_sum: &DSegSum,
+        seg_sum: &DSegSum,
         seg_no: u32,
-        _dev: u32,
-        _tx: &mut Tx<'_, Lfs>,
+        dev: u32,
+        tx: &mut Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
     ) {
-        // TODO: Move blocks to new segment.
+        let itable = unsafe { StrongPin::new_unchecked(self) }.itable();
+        // iterate the segment summary and move live blocks to the current segment.
+        for i in 0..SEGSIZE - 1 {
+            let entry = &seg_sum.0[i];
+            match entry.block_type {
+                0 => (), //empty
+                1 => {
+                    // inode
+                    let inode = itable.get_inode(dev, entry.inum);
+                    let ip = inode.lock(ctx);
+                    ip.update(tx, ctx);
+                    ip.free(ctx);
+                    inode.free((tx, ctx))
+                }
+                2 => {
+                    // data
+                    let inode = itable.get_inode(dev, entry.inum);
+                    let mut ip = inode.lock(ctx);
+
+                    // copy to end of segment
+                    let mut seg = self.segmanager(ctx);
+                    ip.writable_data_block(entry.block_no as usize, &mut seg, tx, ctx)
+                        .free(ctx);
+                    if seg.is_full() {
+                        seg.commit(ctx);
+                    }
+                    seg.free(ctx);
+
+                    // update inode
+                    ip.update(tx, ctx);
+                    ip.free(ctx);
+                    inode.free((tx, ctx));
+                }
+                3 => {
+                    // indirect
+                    let inode = itable.get_inode(dev, entry.inum);
+                    let mut ip = inode.lock(ctx);
+
+                    // copy to end of segment
+                    let mut seg = self.segmanager(ctx);
+                    ip.writable_indirect_block(&mut seg, ctx).free(ctx);
+                    if seg.is_full() {
+                        seg.commit(ctx);
+                    }
+                    seg.free(ctx);
+
+                    // update inode
+                    ip.update(tx, ctx);
+                    ip.free(ctx);
+                    inode.free((tx, ctx));
+                }
+                4 => {
+                    //imap
+                    let mut seg = self.segmanager(ctx);
+                    let mut imap = self.imap(ctx);
+                    imap.update(entry.block_no, &mut seg, ctx)
+                        .unwrap()
+                        .free(ctx);
+                    if seg.is_full() {
+                        seg.commit(ctx);
+                    }
+                    imap.free(ctx);
+                    seg.free(ctx);
+                }
+                _ => panic!("cleaner : Not reach"),
+            };
+        }
 
         // mark segment as free
         let mut seg = self.segmanager(ctx);
@@ -143,8 +216,8 @@ impl Lfs {
             seg.free(ctx);
             if !is_free {
                 // 2. scan the segment to count the number of live blocks
-                let (seg_sum, live) = self.scan_segment(seg_no, dev, tx, ctx);
-                if live == 0 {
+                let (seg_sum, live) = self.scan_segment(seg_no, THRESHOLD, dev, tx, ctx);
+                if live <= THRESHOLD {
                     // 3. If the segment does not have a lot of live blocks,
                     // move its live blocks to another segment and mark it as free.
                     self.clean_segment(&seg_sum, seg_no, dev, tx, ctx);

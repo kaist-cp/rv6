@@ -104,6 +104,32 @@ impl Imap {
         res
     }
 
+    /// Copies the imap's `block_no`th block to the segment.
+    /// Returns the `Buf` of the new imap block if success.
+    pub fn update(
+        &mut self,
+        block_no: u32,
+        seg: &mut SegManager,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Option<Buf> {
+        if let Some((mut buf, addr)) = seg.get_or_add_updated_imap_block(block_no, ctx) {
+            let block_no = block_no as usize;
+            if addr != self.addr[block_no] {
+                // Copy the imap block content from old imap block.
+                let old_buf = self.get_imap_block(block_no, ctx);
+                buf.deref_inner_mut()
+                    .data
+                    .copy_from(&old_buf.deref_inner().data);
+                // Update imap mapping.
+                self.addr[block_no] = addr;
+                old_buf.free(ctx);
+            }
+            Some(buf)
+        } else {
+            None
+        }
+    }
+
     /// For the inode with inode number `inum`, updates its mapping in the imap to disk_block_no.
     /// Then, we append the new imap block to the segment.
     /// Returns true if successful. Otherwise, returns false.
@@ -119,18 +145,7 @@ impl Imap {
             "invalid inum"
         );
         let (block_no, offset) = self.get_imap_block_no(inum);
-
-        if let Some((mut buf, addr)) = seg.get_or_add_updated_imap_block(block_no as u32, ctx) {
-            if addr != self.addr[block_no] {
-                // Copy the imap block content from old imap block.
-                let old_buf = self.get_imap_block(block_no, ctx);
-                buf.deref_inner_mut()
-                    .data
-                    .copy_from(&old_buf.deref_inner().data);
-                // Update imap mapping.
-                self.addr[block_no] = addr;
-                old_buf.free(ctx);
-            }
+        if let Some(mut buf) = self.update(block_no as u32, seg, ctx) {
             // Update entry.
             const_assert!(mem::size_of::<DImapBlock>() <= mem::size_of::<BufData>());
             const_assert!(mem::align_of::<BufData>() % mem::align_of::<DImapBlock>() == 0);
