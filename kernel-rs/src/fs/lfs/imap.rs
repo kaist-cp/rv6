@@ -6,7 +6,6 @@ use super::SegManager;
 use crate::{
     bio::{Buf, BufData},
     hal::hal,
-    lock::SleepLockGuard,
     param::{BSIZE, IMAPSIZE},
     proc::KernelCtx,
 };
@@ -49,6 +48,21 @@ impl Imap {
         hal().disk().read(self.dev_no, self.addr[block_no], ctx)
     }
 
+    /// Returns the disk block number of the imap's `n`th block.
+    ///
+    /// # Note
+    ///
+    /// This method should be used only inside the cleaner.
+    /// Usually, you should use `Imap::{get, set}` instead of this method.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the imap does not have an `n`th block.
+    pub fn get_nth_block(&self, n: usize) -> u32 {
+        assert!(n < IMAPSIZE);
+        self.addr[n]
+    }
+
     /// Returns the imap in the on-disk format.
     /// This should be written at the checkpoint of the disk.
     pub fn dimap(&self) -> [u32; IMAPSIZE] {
@@ -76,7 +90,7 @@ impl Imap {
     /// For the inode with inode number `inum`, returns the disk_block_no of it.
     pub fn get(&self, inum: u32, ctx: &KernelCtx<'_, '_>) -> u32 {
         assert!(
-            inum < ctx.kernel().fs().superblock().ninodes(),
+            0 < inum && inum < ctx.kernel().fs().superblock().ninodes(),
             "invalid inum"
         );
         let (block_no, offset) = self.get_imap_block_no(inum);
@@ -97,11 +111,11 @@ impl Imap {
         &mut self,
         inum: u32,
         disk_block_no: u32,
-        seg: &mut SleepLockGuard<'_, SegManager>,
+        seg: &mut SegManager,
         ctx: &KernelCtx<'_, '_>,
     ) -> bool {
         assert!(
-            inum < ctx.kernel().fs().superblock().ninodes(),
+            0 < inum && inum < ctx.kernel().fs().superblock().ninodes(),
             "invalid inum"
         );
         let (block_no, offset) = self.get_imap_block_no(inum);
