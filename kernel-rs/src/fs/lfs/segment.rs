@@ -153,6 +153,10 @@ pub struct SegManager {
 
     /// Current offset of the segment. Must flush when `offset == SEGSIZE - 1`.
     offset: usize,
+
+    /// An `ArrayVec` where we store the blocks of the in-memory segment.
+    // TODO: Store `Buf` in `bufs` instead of `segment_summary`?
+    bufs: ArrayVec<Buf, SEGSIZE>,
 }
 
 impl SegManager {
@@ -167,6 +171,7 @@ impl SegManager {
             segment_summary: array![_ => SegSumEntry::Empty; SEGSIZE - 1],
             start: 0,
             offset: 0,
+            bufs: ArrayVec::new(),
         };
         // Count the number of free segments.
         for i in 0..(nsegments as usize) {
@@ -501,14 +506,14 @@ impl SegManager {
         bp.free(ctx);
 
         // Collect `Buf`s to be written.
-        let mut barray = ArrayVec::<_, SEGSIZE>::new();
         for i in self.start..self.offset {
-            barray.push(self.segment_summary[i].get_buf().unwrap().clone().lock(ctx));
+            self.bufs
+                .push(self.segment_summary[i].get_buf().unwrap().clone().lock(ctx));
         }
 
         // Write all the `Buf`s sequentially to the disk.
         // `Disk::write_sequential` must free the `Buf`s used.
-        hal().disk().write_sequential(barray, ctx);
+        hal().disk().write_sequential(&mut self.bufs, ctx);
 
         self.start = self.offset;
     }
