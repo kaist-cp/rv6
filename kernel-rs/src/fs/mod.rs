@@ -380,7 +380,7 @@ pub trait FileSystem: 'static + Sized {
 
     /// Begins a transaction.
     ///
-    /// Called for each FS system call that may cause a disk write..
+    /// Called for each FS system call that may cause a disk write.
     fn tx_begin(&self, ctx: &KernelCtx<'_, '_>);
 
     /// Ends a transaction.

@@ -69,7 +69,7 @@ impl SleepableLock<TxManager> {
             nfree * (SEGSIZE as u32) < (guard.outstanding as u32 + 1) * MAXOPBLOCKS as u32 + NBUF as u32
             {
                 guard.sleep(ctx);
-                // TODO: Use a better way.
+                // TODO: Use a better way. (Add a lock and a waitchannel inside `TxManager` instead?)
                 seg = guard.reacquire_after(|| fs.segmanager(ctx));
             } else {
                 guard.outstanding += 1;

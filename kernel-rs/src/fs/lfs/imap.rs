@@ -112,22 +112,21 @@ impl Imap {
         seg: &mut SegManager,
         ctx: &KernelCtx<'_, '_>,
     ) -> Option<Buf> {
-        if let Some((mut buf, addr)) = seg.get_or_add_updated_imap_block(block_no, ctx) {
-            let block_no = block_no as usize;
-            if addr != self.addr[block_no] {
-                // Copy the imap block content from old imap block.
-                let old_buf = self.get_imap_block(block_no, ctx);
-                buf.deref_inner_mut()
-                    .data
-                    .copy_from(&old_buf.deref_inner().data);
-                // Update imap mapping.
-                self.addr[block_no] = addr;
-                old_buf.free(ctx);
-            }
-            Some(buf)
-        } else {
-            None
-        }
+        seg.get_or_add_updated_imap_block(block_no, ctx)
+            .map(|(mut buf, addr)| {
+                let block_no = block_no as usize;
+                if addr != self.addr[block_no] {
+                    // Copy the imap block content from old imap block.
+                    let old_buf = self.get_imap_block(block_no, ctx);
+                    buf.deref_inner_mut()
+                        .data
+                        .copy_from(&old_buf.deref_inner().data);
+                    // Update imap mapping.
+                    self.addr[block_no] = addr;
+                    old_buf.free(ctx);
+                }
+                buf
+            })
     }
 
     /// For the inode with inode number `inum`, updates its mapping in the imap to disk_block_no.

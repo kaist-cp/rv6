@@ -288,10 +288,8 @@ impl InodeGuard<'_, Lfs> {
     /// Use the returned `Buf` only to read the inode's data block's content.
     /// Any write operations to a inode's data block should be done using `InodeGuard::bmap_write`.
     pub fn readable_data_block(&self, bn: usize, ctx: &KernelCtx<'_, '_>) -> Buf {
-        match self.read_addr(bn, ctx) {
-            Some(addr) => hal().disk().read(self.dev, addr, ctx),
-            None => panic!("bmap: out of range"),
-        }
+        let addr = self.read_addr(bn, ctx).expect("bmap: out of range");
+        hal().disk().read(self.dev, addr, ctx)
     }
 
     /// Copies the inode's `bn`th data block content into an empty block on the segment,
