@@ -78,19 +78,29 @@ pub enum SegSumEntry {
     },
 }
 
-/// On-disk segment summary entry structure.
-#[repr(C)]
 #[derive(Clone)]
+#[repr(u32)]
+pub enum BlockType {
+    Empty,
+    Inode,
+    DataBlock,
+    IndirectMap,
+    Imap,
+}
+
+/// On-disk segment summary entry structure.
+#[derive(Clone)]
+#[repr(C)]
 pub struct DSegSumEntry {
     /// 0: empty, 1: inode, 2: data block, 3: indirect map, 4: imap block
-    pub block_type: u32,
+    pub block_type: BlockType,
     pub inum: u32,     // 0 in case of empty or imap block
     pub block_no: u32, // 0 in case of inode or indirect map
 }
 
 /// On-disk segment summary structure.
-#[repr(C)]
 #[derive(Clone)]
+#[repr(C)]
 pub struct DSegSum(pub [DSegSumEntry; SEGSIZE - 1]);
 
 impl SegSumEntry {
@@ -114,11 +124,11 @@ impl DSegSum {
     /// Creates an on-disk `DSegSum` type from the given `SegSumEntry` array.
     fn new(segment_summary: &[SegSumEntry; SEGSIZE - 1]) -> Self {
         Self(array![x => match segment_summary[x] {
-                SegSumEntry::Empty => DSegSumEntry { block_type: 0, inum: 0, block_no: 0 },
-                SegSumEntry::Inode { inum, .. } => DSegSumEntry { block_type: 1, inum, block_no: 0 },
-                SegSumEntry::DataBlock { inum, block_no, .. } => DSegSumEntry { block_type: 2, inum, block_no },
-                SegSumEntry::IndirectMap { inum, .. } => DSegSumEntry { block_type: 3, inum, block_no: 0 },
-                SegSumEntry::Imap { block_no, .. } => DSegSumEntry { block_type: 4, inum: 0, block_no },
+                SegSumEntry::Empty => DSegSumEntry { block_type: BlockType::Empty, inum: 0, block_no: 0 },
+                SegSumEntry::Inode { inum, .. } => DSegSumEntry { block_type: BlockType::Inode, inum, block_no: 0 },
+                SegSumEntry::DataBlock { inum, block_no, .. } => DSegSumEntry { block_type: BlockType::DataBlock, inum, block_no },
+                SegSumEntry::IndirectMap { inum, .. } => DSegSumEntry { block_type: BlockType::IndirectMap, inum, block_no: 0 },
+                SegSumEntry::Imap { block_no, .. } => DSegSumEntry { block_type: BlockType::Imap, inum: 0, block_no },
         }; SEGSIZE - 1])
     }
 }
@@ -269,7 +279,6 @@ impl SegManager {
                 return;
             }
         }
-        // TODO : Make sure the cleaner prevents such cases.
         panic!("no empty segment");
     }
 
