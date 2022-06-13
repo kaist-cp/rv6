@@ -66,7 +66,8 @@ pub struct VirtioDisk {
     #[pin]
     info: DiskInfo,
 
-    /// An array of 3 descriptors.
+    /// An array of descriptor sets.
+    /// Used in `VirtioDisk::write_seq`.
     darray: ArrayVec<[Descriptor; 3], MAX_SEQ_WRITE>,
 }
 
@@ -269,6 +270,8 @@ impl VirtioDisk {
         // plic.rs and trap.rs arrange for interrupts from VIRTIO0_IRQ.
     }
 
+    /// Reads or writes a disk block, where the disk block number is given through `b`.
+    /// The content of the block will be written in the given `b.
     // This method reads and writes disk by reading and writing MMIO registers.
     // By the construction of the kernel page table in KernelMemory::new, the
     // virtual addresses of the MMIO registers are mapped to the proper physical
@@ -332,10 +335,14 @@ impl VirtioDisk {
         guard.wakeup(ctx.kernel());
     }
 
-    // This method writes the data in the given buffers to disk sequentially, therefore,
-    // minimizing seek-time overhead of the disk. It is designed for using with `Lfs`.
-    // Calling this method when using `Ufs` is effectively not different from calling
-    // `VirtioDisk::rw` and may incur additional performance overhead.
+    /// Writes the `Buf`s in the given `barray` to disk sequentially, therefore,
+    /// minimizing seek-time overhead of the disk. The `Buf`s must be ordered in block number order.
+    ///
+    /// # Note
+    ///
+    /// You should usually use this function when using the `Lfs`.
+    /// Calling this method when using `Ufs` is effectively not different from calling
+    /// `VirtioDisk::rw` and may incur additional performance overhead.
     fn write_seq(
         guard: &mut SleepableLockGuard<'_, Self>,
         barray: &mut ArrayVec<Buf, MAX_SEQ_WRITE>,
@@ -354,28 +361,30 @@ impl VirtioDisk {
             let descs = loop {
                 match guard.get_pin_mut().alloc_three_descriptors() {
                     Some(idx) => break idx,
-                    None => Self::finalize_write_seq(guard, barray, num_block_written, ctx),
+                    None => {
+                        if num_block_written > 0 {
+                            Self::finalize_write_seq(guard, &mut barray[num_block_written - 1], ctx)
+                        }
+                    }
                 }
             };
-            let mut buf = barray.pop_at(0).unwrap();
 
             // Properly set the three descriptors
             guard
                 .get_pin_mut()
-                .set_three_descriptors(&descs, &mut buf, true);
+                .set_three_descriptors(&descs, &mut barray[num_block_written], true);
             let mut this = guard.get_pin_mut().project();
             // Tell the device the first index in our chain of descriptors.
-            let write_idx = (this.avail.idx as usize + num_block_written) % NUM;
+            let write_idx = (this.avail.idx as usize + this.darray.len()) % NUM;
             this.avail.ring[write_idx] = descs[0].idx as _;
 
             this.darray.push(descs);
-            barray.push(buf);
             num_block_written += 1;
         }
 
         // Finalize the last set of `Buf`s
         if !guard.darray.is_empty() {
-            Self::finalize_write_seq(guard, barray, num_block_written, ctx);
+            Self::finalize_write_seq(guard, &mut barray[num_block_written - 1], ctx);
         }
 
         // Free all the `Buf`s
@@ -384,16 +393,17 @@ impl VirtioDisk {
         }
     }
 
-    // This method writes the `Buf`s represented by the descriptors in `darray` to the disk.
-    // It consumes entries in `darray` but leaves the entries and their order in `barray` intact.
-    // Requirements:
-    // - `darray` must contain at least one set of descriptors to be written. It panicks, otherwise.
-    // - Sets of descriptors in `darray` and `Buf`s in `barray` must be consistently ordered.
-    //   (This is unchecked.)
+    /// Writes the `Buf`s represented by the descriptors in `guard.darray` to the disk.
+    /// `last_buf` must be the last `Buf` (in the `guard.darray`) that we want to write.
+    /// Otherwise, the thread may fail to wakeup.
+    /// Consumes entries in `guard.darray` after the write is finished.
+    ///
+    /// # Panic
+    ///
+    /// `guard.darray` must contain at least one set of descriptors.
     fn finalize_write_seq(
         guard: &mut SleepableLockGuard<'_, Self>,
-        barray: &mut ArrayVec<Buf, MAX_SEQ_WRITE>,
-        num_block_written: usize,
+        last_buf: &mut Buf,
         ctx: &KernelCtx<'_, '_>,
     ) {
         // `darray` must contain at least one set of descriptors to be written to the disk.
@@ -406,8 +416,8 @@ impl VirtioDisk {
 
         fence(Ordering::SeqCst);
 
-        // Tell the device `num_block_written` avail ring entries are available.
-        this.avail.idx += num_block_written as u16;
+        // Tell the device `this.darray.len()` avail ring entries are available.
+        this.avail.idx = this.avail.idx.wrapping_add(this.darray.len() as u16);
 
         fence(Ordering::SeqCst);
 
@@ -421,9 +431,7 @@ impl VirtioDisk {
         // The request is complete when the last block is written.
         // TODO: This may require that the `VIRTIO_F_IN_ORDER` feature has been negotiated.
         // Another way is to check all Bufs if their disk fields are set to false.
-        let buf = barray.pop().unwrap();
-        buf.vdisk_request_waitchannel.sleep(guard, ctx);
-        barray.push(buf);
+        last_buf.vdisk_request_waitchannel.sleep(guard, ctx);
 
         // Cleanup
         // Free the descriptors
