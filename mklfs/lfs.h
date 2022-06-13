@@ -8,7 +8,7 @@
 
 // Disk layout:
 // [ boot block | super block | checkpoint1  | checkpoint2 |
-//                                          inode map, inode blocks, and data blocks ]
+//                                          segment summary, inode blocks, data blocks, and inode map ]
 //
 // mklfs computes the super block and builds an initial file system. The
 // super block describes the disk layout:
@@ -21,6 +21,20 @@ struct superblock {
   uint checkpoint1;  // Block number of first checkpoint block
   uint checkpoint2;  // Block number of second checkpoint block
   uint segstart;     // Block number of first segment
+};
+
+/// Block types. Used in segment summary entries.
+#define SEGSUM_EMPTY    0
+#define SEGSUM_INODE    1
+#define SEGSUM_DATA     2
+#define SEGSUM_INDIRECT 3
+#define SEGSUM_IMAP     4
+
+/// A single segment summary entry.
+struct dsegsumentry {
+  uint block_type; /// 0: empty, 1: inode, 2: data block, 3: indirect map, 4: imap block
+  uint inum; // 0 in case of empty or imap block
+  uint block_no; // 0 in case of inode or indirect map
 };
 
 // Number of entries in each on-disk imap block.

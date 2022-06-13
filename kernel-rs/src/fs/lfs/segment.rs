@@ -78,18 +78,30 @@ pub enum SegSumEntry {
     },
 }
 
+#[derive(Clone)]
+#[repr(u32)]
+pub enum BlockType {
+    Empty,
+    Inode,
+    DataBlock,
+    IndirectMap,
+    Imap,
+}
+
 /// On-disk segment summary entry structure.
+#[derive(Clone)]
 #[repr(C)]
-struct DSegSumEntry {
-    /// 0: empty, 1: inode, 2: data block, 3: imap block
-    block_type: u32,
-    inum: u32,
-    block_no: u32,
+pub struct DSegSumEntry {
+    /// 0: empty, 1: inode, 2: data block, 3: indirect map, 4: imap block
+    pub block_type: BlockType,
+    pub inum: u32,     // 0 in case of empty or imap block
+    pub block_no: u32, // 0 in case of inode or indirect map
 }
 
 /// On-disk segment summary structure.
+#[derive(Clone)]
 #[repr(C)]
-struct DSegSum([DSegSumEntry; SEGSIZE - 1]);
+pub struct DSegSum(pub [DSegSumEntry; SEGSIZE - 1]);
 
 impl SegSumEntry {
     /// Returns a reference to the `BufUnlocked` owned by the `SegSumEntry`.
@@ -112,11 +124,11 @@ impl DSegSum {
     /// Creates an on-disk `DSegSum` type from the given `SegSumEntry` array.
     fn new(segment_summary: &[SegSumEntry; SEGSIZE - 1]) -> Self {
         Self(array![x => match segment_summary[x] {
-                SegSumEntry::Empty => DSegSumEntry { block_type: 0, inum: 0, block_no: 0 },
-                SegSumEntry::Inode { inum, .. } => DSegSumEntry { block_type: 1, inum, block_no: 0 },
-                SegSumEntry::DataBlock { inum, block_no, .. } => DSegSumEntry { block_type: 2, inum, block_no },
-                SegSumEntry::IndirectMap { inum, .. } => DSegSumEntry { block_type: 3, inum, block_no: 0 },
-                SegSumEntry::Imap { block_no, .. } => DSegSumEntry { block_type: 4, inum: 0, block_no },
+                SegSumEntry::Empty => DSegSumEntry { block_type: BlockType::Empty, inum: 0, block_no: 0 },
+                SegSumEntry::Inode { inum, .. } => DSegSumEntry { block_type: BlockType::Inode, inum, block_no: 0 },
+                SegSumEntry::DataBlock { inum, block_no, .. } => DSegSumEntry { block_type: BlockType::DataBlock, inum, block_no },
+                SegSumEntry::IndirectMap { inum, .. } => DSegSumEntry { block_type: BlockType::IndirectMap, inum, block_no: 0 },
+                SegSumEntry::Imap { block_no, .. } => DSegSumEntry { block_type: BlockType::Imap, inum: 0, block_no },
         }; SEGSIZE - 1])
     }
 }
@@ -136,6 +148,9 @@ pub struct SegManager {
     // The total number of segments on the disk.
     nsegments: u32,
 
+    // The number of free segments.
+    nfree: u32,
+
     /// The segment number of the current segment.
     segment_no: u32,
 
@@ -148,6 +163,10 @@ pub struct SegManager {
 
     /// Current offset of the segment. Must flush when `offset == SEGSIZE - 1`.
     offset: usize,
+
+    /// An `ArrayVec` where we store the blocks of the in-memory segment.
+    // TODO: Store `Buf` in `bufs` instead of `segment_summary`?
+    bufs: ArrayVec<Buf, SEGSIZE>,
 }
 
 impl SegManager {
@@ -157,11 +176,20 @@ impl SegManager {
             dev_no,
             segtable,
             nsegments,
+            nfree: 0,
             segment_no: 0,
             segment_summary: array![_ => SegSumEntry::Empty; SEGSIZE - 1],
             start: 0,
             offset: 0,
+            bufs: ArrayVec::new(),
         };
+        // Count the number of free segments.
+        for i in 0..(nsegments as usize) {
+            if this.segtable_is_free(i as u32) {
+                this.nfree += 1;
+            }
+        }
+        // Allocate a segment.
         this.alloc_segment(None);
         this
     }
@@ -193,6 +221,41 @@ impl SegManager {
         SEGSIZE - 1 - self.offset
     }
 
+    /// Returns the number of free segments on the disk.
+    pub fn nfree(&self) -> u32 {
+        self.nfree
+    }
+
+    /// Returns true if the `seg_no`th segment is free.
+    /// Otherwise, returns false.
+    pub fn segtable_is_free(&self, seg_no: u32) -> bool {
+        self.segtable[seg_no as usize / 8] & (1 << (seg_no % 8)) == 0
+    }
+
+    /// Marks the `seg_no`th segment as allocated.
+    /// Does not check whether the segment is marked as free or not.
+    fn segtable_alloc(&mut self, seg_no: u32) {
+        self.segtable[seg_no as usize / 8] |= 1 << (seg_no % 8);
+    }
+
+    /// Marks the `seg_no`th segment as free,
+    /// and increments the number of free segments by 1.
+    ///
+    /// # Note
+    ///
+    /// You should call this function only when its sure that the
+    /// `seg_no`th segment does not have any live blocks.
+    /// Usually, you should call this function only inside the cleaner.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the `seg_no`th segment is already marked as free.
+    pub fn segtable_free(&mut self, seg_no: u32) {
+        assert!(!self.segtable_is_free(seg_no));
+        self.segtable[seg_no as usize / 8] &= !(1 << (seg_no % 8));
+        self.nfree += 1;
+    }
+
     /// Returns segment usage table in the on-disk format.
     /// This should be written at the checkpoint of the disk.
     pub fn dsegtable(&self) -> SegTable {
@@ -205,16 +268,17 @@ impl SegManager {
     fn alloc_segment(&mut self, last_seg_no: Option<u32>) {
         let start = match last_seg_no {
             None => 0,
-            Some(seg_no) => seg_no as usize + 1,
+            Some(seg_no) => seg_no + 1,
         };
-        for i in start..(self.nsegments as usize) {
-            if self.segtable[i / 8] & (1 << (i % 8)) == 0 {
-                self.segtable[i / 8] |= 1 << (i % 8);
-                self.segment_no = i as u32;
+        for i in 0..self.nsegments {
+            let seg_no = (start + i) % self.nsegments;
+            if self.segtable_is_free(seg_no) {
+                self.segtable_alloc(seg_no);
+                self.segment_no = seg_no;
+                self.nfree -= 1;
                 return;
             }
         }
-        // TODO : Make sure the cleaner prevents such cases.
         panic!("no empty segment");
     }
 
@@ -447,17 +511,18 @@ impl SegManager {
         let mut bp = self.read_segment_block(0, ctx);
         let ssp = bp.deref_inner_mut().data.as_mut_ptr() as *mut DSegSum;
         unsafe { ptr::write(ssp, DSegSum::new(&self.segment_summary)) };
+        hal().disk().write(&mut bp, ctx);
         bp.free(ctx);
 
         // Collect `Buf`s to be written.
-        let mut barray = ArrayVec::<_, SEGSIZE>::new();
         for i in self.start..self.offset {
-            barray.push(self.segment_summary[i].get_buf().unwrap().clone().lock(ctx));
+            self.bufs
+                .push(self.segment_summary[i].get_buf().unwrap().clone().lock(ctx));
         }
 
         // Write all the `Buf`s sequentially to the disk.
         // `Disk::write_sequential` must free the `Buf`s used.
-        hal().disk().write_sequential(barray, ctx);
+        hal().disk().write_sequential(&mut self.bufs, ctx);
 
         self.start = self.offset;
     }

@@ -6,8 +6,12 @@
 //! * After all FS sys calls are done, runs the segment cleaner if the number of remaining segments
 //!   are lower than threshold.
 
-use super::Lfs;
-use crate::{lock::SleepableLock, proc::KernelCtx};
+use super::{Lfs, Tx};
+use crate::{
+    lock::SleepableLock,
+    param::{MAXOPBLOCKS, NBUF, SEGSIZE},
+    proc::KernelCtx,
+};
 
 /// Manages the starts and wrap ups of FS transactions.
 /// * Blocks new FS sys calls when we may not have enough segments. (i.e. Wait for the segment cleaner to finish.)
@@ -29,6 +33,9 @@ pub struct TxManager {
     /// The timestamp of the latest checkpoint.
     /// Increments when commiting the checkpoint.
     timestamp: u32,
+
+    /// The last segment that the cleaner scanned.
+    last_seg_no: u32,
 }
 
 impl TxManager {
@@ -43,18 +50,27 @@ impl TxManager {
             committing: false,
             stored_at_first,
             timestamp,
+            last_seg_no: 0,
         }
     }
 }
 
 impl SleepableLock<TxManager> {
     /// Called at the start of each FS system call.
-    pub fn begin_op(&self, ctx: &KernelCtx<'_, '_>) {
+    pub fn begin_op(&self, fs: &Lfs, ctx: &KernelCtx<'_, '_>) {
+        let mut seg = fs.segmanager(ctx);
         let mut guard = self.lock();
         loop {
-            // TODO: Block if we don't have enough segments left.
-            if guard.committing {
+            let nfree = seg.nfree();
+            seg.free(ctx);
+
+            if guard.committing ||
+            // This op might exhaust segments; wait for cleaner.
+            nfree * (SEGSIZE as u32) < (guard.outstanding as u32 + 1) * MAXOPBLOCKS as u32 + NBUF as u32
+            {
                 guard.sleep(ctx);
+                // TODO: Use a better way. (Add a lock and a waitchannel inside `TxManager` instead?)
+                seg = guard.reacquire_after(|| fs.segmanager(ctx));
             } else {
                 guard.outstanding += 1;
                 break;
@@ -64,7 +80,7 @@ impl SleepableLock<TxManager> {
 
     /// Called at the end of each FS system call.
     /// Commits the checkpoint if this was the last outstanding operation.
-    pub fn end_op(&self, fs: &Lfs, ctx: &KernelCtx<'_, '_>) {
+    pub fn end_op(&self, fs: &Lfs, tx: &mut Tx<'_, Lfs>, ctx: &KernelCtx<'_, '_>) {
         let mut guard = self.lock();
         guard.outstanding -= 1;
         assert!(!guard.committing, "guard.committing");
@@ -76,21 +92,32 @@ impl SleepableLock<TxManager> {
             // Committing is true, so new transactions cannot start even after releasing the lock.
 
             // Update info about the latest checkpoint.
-            let dev = guard.dev;
             guard.stored_at_first = !guard.stored_at_first;
-            let stored_at_first = guard.stored_at_first;
             guard.timestamp += 1;
+
+            // Store info before releasing the lock.
+            let dev = guard.dev;
+            let stored_at_first = guard.stored_at_first;
             let timestamp = guard.timestamp;
+            let mut last_seg_no = guard.last_seg_no;
 
             // Commit w/o holding locks, since not allowed to sleep with locks.
             guard.reacquire_after(||
                 // SAFETY: there is no another transaction, so `inner` cannot be read or written.
-                // TODO: This actually shouldn't be done this often.
                 unsafe {
+                    let seg = fs.segmanager(ctx);
+                    let nfree = seg.nfree();
+                    seg.free(ctx);
+                    if nfree * (SEGSIZE as u32) < 2 * NBUF as u32 {
+                        last_seg_no = fs.clean(last_seg_no, dev, tx, ctx);
+                    }
+
+                    // TODO: Checkpointing doesn't need to be done this often.
                     fs.commit_segment_unchecked(ctx);
                     fs.commit_checkpoint(dev, stored_at_first, timestamp, ctx)
                 });
 
+            guard.last_seg_no = last_seg_no;
             guard.committing = false;
         }
 

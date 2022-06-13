@@ -9,7 +9,7 @@ use crate::{
     bio::{Buf, BufData},
     fs::{DInodeType, Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
     hal::hal,
-    lock::{SleepLock, SleepLockGuard},
+    lock::SleepLock,
     param::{NINODE, ROOTDEV},
     proc::KernelCtx,
     util::{memset, strong_pin::StrongPin},
@@ -253,6 +253,45 @@ impl InodeGuard<'_, Lfs> {
         seg.free(ctx);
     }
 
+    /// Returns the disk block number of the inode's `bn`th data block if exists.
+    /// Otherwise, returns `None`.
+    pub fn read_addr(&self, bn: usize, ctx: &KernelCtx<'_, '_>) -> Option<u32> {
+        let inner = self.deref_inner();
+        if bn < NDIRECT {
+            if inner.addr_direct[bn] != 0 {
+                Some(inner.addr_direct[bn])
+            } else {
+                None
+            }
+        } else if inner.addr_indirect == 0 {
+            None
+        } else {
+            // Read the indirect block.
+            let bp = hal().disk().read(self.dev, inner.addr_indirect, ctx);
+            // Get the address.
+            let (prefix, data, _) = unsafe { bp.deref_inner().data.align_to::<u32>() };
+            debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
+            let addr = data[bn - NDIRECT];
+            bp.free(ctx);
+            if addr != 0 {
+                Some(addr)
+            } else {
+                None
+            }
+        }
+    }
+
+    /// Returns a `Buf` that has the inode's `bn`th data block content.
+    ///
+    /// # Note
+    ///
+    /// Use the returned `Buf` only to read the inode's data block's content.
+    /// Any write operations to a inode's data block should be done using `InodeGuard::bmap_write`.
+    pub fn readable_data_block(&self, bn: usize, ctx: &KernelCtx<'_, '_>) -> Buf {
+        let addr = self.read_addr(bn, ctx).expect("bmap: out of range");
+        hal().disk().read(self.dev, addr, ctx)
+    }
+
     /// Copies the inode's `bn`th data block content into an empty block on the segment,
     /// and then updates the inode's block map to point to the new block.
     /// If the inode did not have a `bn`th data block, allocates an empty data block instead.
@@ -276,7 +315,7 @@ impl InodeGuard<'_, Lfs> {
     pub fn writable_data_block(
         &mut self,
         bn: usize,
-        seg: &mut SleepLockGuard<'_, SegManager>,
+        seg: &mut SegManager,
         _tx: &Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> Buf {
@@ -307,36 +346,6 @@ impl InodeGuard<'_, Lfs> {
         }
     }
 
-    /// Returns a `Buf` that has the inode's `bn`th data block content.
-    ///
-    /// # Note
-    ///
-    /// Use the returned `Buf` only to read the inode's data block's content.
-    /// Any write operations to a inode's data block should be done using `InodeGuard::bmap_write`.
-    pub fn readable_data_block(&mut self, bn: usize, ctx: &KernelCtx<'_, '_>) -> Buf {
-        if bn < NDIRECT {
-            let addr = self.deref_inner().addr_direct[bn];
-            assert!(addr != 0, "bmap: out of range");
-            hal().disk().read(self.dev, addr, ctx)
-        } else {
-            let bn = bn - NDIRECT;
-            assert!(bn < NINDIRECT, "bmap: out of range");
-
-            // Read the indirect block.
-            let indirect = self.deref_inner().addr_indirect;
-            assert!(indirect != 0, "bmap: out of range");
-            let bp = hal().disk().read(self.dev, indirect, ctx);
-            // Get the address.
-            let (prefix, data, _) = unsafe { bp.deref_inner().data.align_to::<u32>() };
-            debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
-            let addr = data[bn];
-            bp.free(ctx);
-            // Read the indirect data block.
-            assert!(addr != 0, "bmap: out of range");
-            hal().disk().read(self.dev, addr, ctx)
-        }
-    }
-
     /// Returns the `bn`th data block of the inode and its (possibly new) disk block number.
     /// The given `addr` is the (possibly old) disk block number of the `bn`th data block.
     /// * If `addr == 0`, allocates an empty disk block and returns it.
@@ -349,7 +358,7 @@ impl InodeGuard<'_, Lfs> {
         &self,
         bn: usize,
         addr: u32,
-        seg: &mut SleepLockGuard<'_, SegManager>,
+        seg: &mut SegManager,
         ctx: &KernelCtx<'_, '_>,
     ) -> (Buf, u32) {
         if addr == 0 {
@@ -378,9 +387,9 @@ impl InodeGuard<'_, Lfs> {
     /// # Note
     ///
     /// You should make sure the segment has an empty block before calling this.
-    fn writable_indirect_block(
+    pub fn writable_indirect_block(
         &mut self,
-        seg: &mut SleepLockGuard<'_, SegManager>,
+        seg: &mut SegManager,
         ctx: &KernelCtx<'_, '_>,
     ) -> Buf {
         let indirect = self.deref_inner().addr_indirect;
@@ -406,6 +415,7 @@ impl InodeGuard<'_, Lfs> {
     }
 
     /// Is the directory dp empty except for "." and ".." ?
+    #[allow(clippy::wrong_self_convention)]
     pub fn is_dir_empty(&mut self, ctx: &KernelCtx<'_, '_>) -> bool {
         let mut de: Dirent = Default::default();
         for off in (2 * DIRENT_SIZE as u32..self.deref_inner().size).step_by(DIRENT_SIZE) {

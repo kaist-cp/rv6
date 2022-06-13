@@ -376,7 +376,7 @@ impl FileSystem for Ufs {
         self.log().begin_op(ctx);
     }
 
-    unsafe fn tx_end(&self, ctx: &KernelCtx<'_, '_>) {
+    unsafe fn tx_end(&self, _tx: &mut Tx<'_, Self>, ctx: &KernelCtx<'_, '_>) {
         // Commits if this was the last outstanding operation.
         self.log().end_op(ctx);
     }

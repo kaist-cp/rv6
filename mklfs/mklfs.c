@@ -27,6 +27,9 @@
 // The size of the segment usage table in bytes. Always a multiple of 4.
 #define SEGTABLESIZE ((NSEG + (sizeof(uint) * 8 - 1)) / (sizeof(uint) * 8) * 4)
 
+// Returns the segment number that stores the given block number.
+#define SEGNO(i) ((i - NMETA) / SEGSIZE)
+
 // Note: The `struct checkpoint` is defined here, since its structure
 // may differ depending on disk.
 struct checkpoint {
@@ -35,20 +38,28 @@ struct checkpoint {
   uint timestamp;
 };
 
+// Note: The `struct dsegsum` is defined here, since the segment size
+// may differ depending on disk.
+struct dsegsum {
+  struct dsegsumentry entry[SEGSIZE - 1];
+};
+
 // Disk layout:
-// [ boot block | sb block | checkpoint1 (contains address of inode map blocks) | checkpoint2 (empty) | inode map | inode blocks and data blocks ]
+// [ boot block | sb block | checkpoint1 (contains address of inode map blocks) | checkpoint2 (empty) | 
+//   segment summary, inode blocks, data blocks, and inode map ]
 
 int nblocks = FSSIZE - NMETA;  // Number of data blocks (imap, inode, and inode data blocks)
 
 int fsfd;
 struct superblock sb;
-uint imp[NINODES]; //imap
+uint imp[NINODES]; // imap. stores mapping of inode_num -> inode_block_no
+uint imp_block_no[NINODEMAP]; // the block number of each inode map block
 char zeroes[BSIZE];
 uint freeinode = 1;
 uint freeblock;
 
 
-void balloc(int);
+uint balloc(uint, uint, uint);
 void winode(uint, struct dinode*);
 void rinode(uint inum, struct dinode *ip);
 void wsect(uint, void*);
@@ -121,7 +132,7 @@ main(int argc, char *argv[])
   printf("nmeta %d (boot, super, checkpoint1, checkpoint2) blocks %d total %d\n",
          NMETA, nblocks, FSSIZE);
 
-  freeblock = NMETA + NINODEMAP;     // the first free block that we can allocate
+  freeblock = NMETA;     // the first free block that we can allocate
 
   for(i = 0; i < FSSIZE; i++)
     wsect(i, zeroes);
@@ -196,6 +207,30 @@ main(int argc, char *argv[])
   exit(0);
 }
 
+// Allocates a block and returns its block number.
+uint
+balloc(uint block_type, uint inum, uint block_no)
+{
+  char buf[BSIZE];
+  struct dsegsum *dss;
+  uint segnum, bn;
+
+  // skip segment summary block
+  if ((freeblock - NMETA) % SEGSIZE == 0)
+    freeblock++;
+  // write segment summary entry
+  segnum = SEGNO(freeblock);
+  bn = NMETA + segnum * SEGSIZE;
+  rsect(bn, buf);
+  dss = (struct dsegsum*)buf;
+  dss->entry[freeblock - bn - 1].block_type = xint(block_type);
+  dss->entry[freeblock - bn - 1].inum = xint(inum);
+  dss->entry[freeblock - bn - 1].block_no = xint(block_no);
+  wsect(bn, buf);
+
+  return freeblock++;
+}
+
 void
 winode(uint inum, struct dinode *ip)
 {
@@ -259,7 +294,7 @@ ialloc(ushort type)
   din.type = xshort(type);
   din.nlink = xshort(1);
   din.size = xint(0);
-  imp[inum] = freeblock++;
+  imp[inum] = balloc(SEGSUM_INODE, inum, 0);
   winode(inum, &din);
   return inum;
 }
@@ -275,7 +310,8 @@ wimap() {
     dimp = (struct dimap*)buf;
     for(j=0;j<NENTRY && i*NENTRY + j < NINODES;j++)
       dimp->addr[j] = xint(imp[i*NENTRY + j]);
-    wsect(NMETA+i, buf);
+    imp_block_no[i] = balloc(SEGSUM_IMAP, 0, i);
+    wsect(imp_block_no[i], buf);
   }
 }
 
@@ -291,10 +327,10 @@ void wchkpt(int chkpt_no) {
 
     // write imap location
     for(i=0;i<NINODEMAP;i++)
-      chkpt->imap[i] = xint(NMETA+i);
+      chkpt->imap[i] = xint(imp_block_no[i]);
     
     // write segment usage table (bitmap)
-    used_segment = (freeblock - 4 + SEGSIZE - 1) / SEGSIZE;
+    used_segment = (freeblock - NMETA + SEGSIZE - 1) / SEGSIZE;
     for(i = 0; i < used_segment; i++)
       chkpt->segtable[i/8] = chkpt->segtable[i/8] | (0x1 << (i%8));
     
@@ -324,16 +360,16 @@ iappend(uint inum, void *xp, int n)
     assert(fbn < MAXFILE);
     if(fbn < NDIRECT){
       if(xint(din.addrs[fbn]) == 0){
-        din.addrs[fbn] = xint(freeblock++);
+        din.addrs[fbn] = xint(balloc(SEGSUM_DATA, inum, fbn));
       }
       x = xint(din.addrs[fbn]);
     } else {
       if(xint(din.addrs[NDIRECT]) == 0){
-        din.addrs[NDIRECT] = xint(freeblock++);
+        din.addrs[NDIRECT] = xint(balloc(SEGSUM_INDIRECT, inum, 0));
       }
       rsect(xint(din.addrs[NDIRECT]), (char*)indirect);
       if(indirect[fbn - NDIRECT] == 0){
-        indirect[fbn - NDIRECT] = xint(freeblock++);
+        indirect[fbn - NDIRECT] = xint(balloc(SEGSUM_DATA, inum, fbn));
         wsect(xint(din.addrs[NDIRECT]), (char*)indirect);
       }
       x = xint(indirect[fbn-NDIRECT]);

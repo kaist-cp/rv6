@@ -6,7 +6,6 @@ use super::SegManager;
 use crate::{
     bio::{Buf, BufData},
     hal::hal,
-    lock::SleepLockGuard,
     param::{BSIZE, IMAPSIZE},
     proc::KernelCtx,
 };
@@ -49,6 +48,21 @@ impl Imap {
         hal().disk().read(self.dev_no, self.addr[block_no], ctx)
     }
 
+    /// Returns the disk block number of the imap's `n`th block.
+    ///
+    /// # Note
+    ///
+    /// This method should be used only inside the cleaner.
+    /// Usually, you should use `Imap::{get, set}` instead of this method.
+    ///
+    /// # Panic
+    ///
+    /// Panics if the imap does not have an `n`th block.
+    pub fn get_nth_block(&self, n: usize) -> u32 {
+        assert!(n < IMAPSIZE);
+        self.addr[n]
+    }
+
     /// Returns the imap in the on-disk format.
     /// This should be written at the checkpoint of the disk.
     pub fn dimap(&self) -> [u32; IMAPSIZE] {
@@ -76,7 +90,7 @@ impl Imap {
     /// For the inode with inode number `inum`, returns the disk_block_no of it.
     pub fn get(&self, inum: u32, ctx: &KernelCtx<'_, '_>) -> u32 {
         assert!(
-            inum < ctx.kernel().fs().superblock().ninodes(),
+            0 < inum && inum < ctx.kernel().fs().superblock().ninodes(),
             "invalid inum"
         );
         let (block_no, offset) = self.get_imap_block_no(inum);
@@ -90,6 +104,31 @@ impl Imap {
         res
     }
 
+    /// Copies the imap's `block_no`th block to the segment.
+    /// Returns the `Buf` of the new imap block if success.
+    pub fn update(
+        &mut self,
+        block_no: u32,
+        seg: &mut SegManager,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Option<Buf> {
+        seg.get_or_add_updated_imap_block(block_no, ctx)
+            .map(|(mut buf, addr)| {
+                let block_no = block_no as usize;
+                if addr != self.addr[block_no] {
+                    // Copy the imap block content from old imap block.
+                    let old_buf = self.get_imap_block(block_no, ctx);
+                    buf.deref_inner_mut()
+                        .data
+                        .copy_from(&old_buf.deref_inner().data);
+                    // Update imap mapping.
+                    self.addr[block_no] = addr;
+                    old_buf.free(ctx);
+                }
+                buf
+            })
+    }
+
     /// For the inode with inode number `inum`, updates its mapping in the imap to disk_block_no.
     /// Then, we append the new imap block to the segment.
     /// Returns true if successful. Otherwise, returns false.
@@ -97,26 +136,15 @@ impl Imap {
         &mut self,
         inum: u32,
         disk_block_no: u32,
-        seg: &mut SleepLockGuard<'_, SegManager>,
+        seg: &mut SegManager,
         ctx: &KernelCtx<'_, '_>,
     ) -> bool {
         assert!(
-            inum < ctx.kernel().fs().superblock().ninodes(),
+            0 < inum && inum < ctx.kernel().fs().superblock().ninodes(),
             "invalid inum"
         );
         let (block_no, offset) = self.get_imap_block_no(inum);
-
-        if let Some((mut buf, addr)) = seg.get_or_add_updated_imap_block(block_no as u32, ctx) {
-            if addr != self.addr[block_no] {
-                // Copy the imap block content from old imap block.
-                let old_buf = self.get_imap_block(block_no, ctx);
-                buf.deref_inner_mut()
-                    .data
-                    .copy_from(&old_buf.deref_inner().data);
-                // Update imap mapping.
-                self.addr[block_no] = addr;
-                old_buf.free(ctx);
-            }
+        if let Some(mut buf) = self.update(block_no as u32, seg, ctx) {
             // Update entry.
             const_assert!(mem::size_of::<DImapBlock>() <= mem::size_of::<BufData>());
             const_assert!(mem::align_of::<BufData>() % mem::align_of::<DImapBlock>() == 0);

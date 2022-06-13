@@ -18,6 +18,7 @@ use crate::{
     proc::KernelCtx,
 };
 
+mod cleaner;
 mod imap;
 mod inode;
 mod segment;
@@ -125,7 +126,7 @@ impl Lfs {
         let block_no = if first { bno1 } else { bno2 };
 
         let mut buf = hal().disk().read(dev, block_no, ctx);
-        let chkpt = unsafe { &mut *(buf.deref_inner().data.as_ptr() as *mut Checkpoint) };
+        let chkpt = unsafe { &mut *(buf.deref_inner_mut().data.as_ptr() as *mut Checkpoint) };
         chkpt.segtable = unsafe { &*self.segmanager.get_unchecked().get_mut_raw() }.dsegtable();
         chkpt.imap = unsafe { &*self.imap.get_unchecked().get_mut_raw() }.dimap();
         chkpt.timestamp = timestamp;
@@ -406,12 +407,12 @@ impl FileSystem for Lfs {
     }
 
     fn tx_begin(&self, ctx: &KernelCtx<'_, '_>) {
-        self.tx_manager().begin_op(ctx);
+        self.tx_manager().begin_op(self, ctx);
     }
 
-    unsafe fn tx_end(&self, ctx: &KernelCtx<'_, '_>) {
+    unsafe fn tx_end(&self, tx: &mut Tx<'_, Self>, ctx: &KernelCtx<'_, '_>) {
         // Commits if this was the last outstanding operation.
-        self.tx_manager().end_op(self, ctx);
+        self.tx_manager().end_op(self, tx, ctx);
     }
 
     #[inline]
@@ -486,7 +487,6 @@ impl FileSystem for Lfs {
             if res.is_err() {
                 break;
             }
-            // tx.write(bp, &k);
             tot += m;
             off += m;
         }

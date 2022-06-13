@@ -8,6 +8,8 @@ use core::{
     ops::DerefMut,
 };
 
+use cfg_if::cfg_if;
+
 use crate::{
     addr::UVAddr,
     arena::{Arena, ArenaObject, ArenaRc, ArrayArena},
@@ -189,13 +191,23 @@ impl File {
             FileType::Inode { inner } => {
                 let n = n as usize;
 
-                // write a few blocks at a time to avoid exceeding
-                // the maximum log transaction size, including
-                // i-node, indirect block, allocation blocks,
-                // and 2 blocks of slop for non-aligned writes.
-                // this really belongs lower down, since write()
-                // might be writing a device like the console.
-                let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
+                // Use a different `max` value depending on the file system.
+                // TODO: We may want to use a different way when we use
+                // multiple file systems at the same time.
+                cfg_if! {
+                    if #[cfg(feature = "lfs")] {
+                        // need to subtract one more compared to `ufs` because of the imap.
+                        let max = (MAXOPBLOCKS - 1 - 1 - 2 - 1) / 2 * BSIZE;
+                    } else {
+                        // write a few blocks at a time to avoid exceeding
+                        // the maximum log transaction size, including
+                        // i-node, indirect block, allocation blocks,
+                        // and 2 blocks of slop for non-aligned writes.
+                        // this really belongs lower down, since write()
+                        // might be writing a device like the console.
+                        let max = (MAXOPBLOCKS - 1 - 1 - 2) / 2 * BSIZE;
+                    }
+                }
 
                 let mut bytes_written: usize = 0;
                 while bytes_written < n {
@@ -213,8 +225,10 @@ impl File {
                     if let Ok(r) = r {
                         *ip.off += r as u32;
                     }
-                    tx.end(ctx);
+                    // Drop the `InodeFileTypeGuard` before completing the transacton
+                    // to prevent deadlocks (e.g. during the lfs segment cleaner).
                     ip.free(ctx);
+                    tx.end(ctx);
                     let r = r?;
                     if r != bytes_to_write {
                         // error from write_user
