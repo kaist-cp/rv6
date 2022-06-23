@@ -345,7 +345,7 @@ impl VirtioDisk {
     /// `VirtioDisk::rw` and may incur additional performance overhead.
     fn write_seq(
         guard: &mut SleepableLockGuard<'_, Self>,
-        barray: &mut ArrayVec<Buf, MAX_SEQ_WRITE>,
+        barray: &mut [Buf],
         ctx: &KernelCtx<'_, '_>,
     ) {
         // 3 * MAX_SEQ_WRITE descriptors are required to write every block of a full segment
@@ -385,11 +385,6 @@ impl VirtioDisk {
         // Finalize the last set of `Buf`s
         if !guard.darray.is_empty() {
             Self::finalize_write_seq(guard, &mut barray[num_block_written - 1], ctx);
-        }
-
-        // Free all the `Buf`s
-        for buf in barray.drain(..barray.len()) {
-            buf.free(ctx);
         }
     }
 
