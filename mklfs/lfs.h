@@ -47,6 +47,7 @@ struct dimap {
 };
 
 #define FSMAGIC 0x10203040
+#define SEGSUM_MAGIC 0x10305070
 
 #define NDIRECT 12
 #define NINDIRECT (BSIZE / sizeof(uint))

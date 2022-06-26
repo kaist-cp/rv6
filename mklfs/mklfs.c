@@ -41,6 +41,8 @@ struct checkpoint {
 // Note: The `struct dsegsum` is defined here, since the segment size
 // may differ depending on disk.
 struct dsegsum {
+  uint magic;
+  uint size;
   struct dsegsumentry entry[SEGSIZE - 1];
 };
 
@@ -223,6 +225,9 @@ balloc(uint block_type, uint inum, uint block_no)
   bn = NMETA + segnum * SEGSIZE;
   rsect(bn, buf);
   dss = (struct dsegsum*)buf;
+  if ((freeblock - NMETA) % SEGSIZE == 1)
+    dss->magic = xint(SEGSUM_MAGIC);
+  dss->size = xint((freeblock - NMETA) % SEGSIZE);
   dss->entry[freeblock - bn - 1].block_type = xint(block_type);
   dss->entry[freeblock - bn - 1].inum = xint(inum);
   dss->entry[freeblock - bn - 1].block_no = xint(block_no);

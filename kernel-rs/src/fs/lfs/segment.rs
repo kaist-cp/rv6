@@ -120,7 +120,13 @@ impl From<SegSumEntry> for DSegSumEntry {
 /// On-disk segment summary structure.
 #[derive(Clone)]
 #[repr(C)]
-pub struct DSegSum(pub [DSegSumEntry; SEGSIZE - 1]);
+pub struct DSegSum {
+    pub magic: u32,
+    pub size: u32,
+    pub entries: [DSegSumEntry; SEGSIZE - 1],
+}
+
+pub const SEGSUM_MAGIC: u32 = 0x10305070;
 
 pub type SegTable = [u8; SEGTABLESIZE];
 
@@ -421,8 +427,10 @@ impl SegManager {
         // Write the segment summary.
         let mut bp = self.read_segment_block(0, ctx);
         let ssp = unsafe { &mut *(bp.deref_inner_mut().data.as_mut_ptr() as *mut DSegSum) };
+        ssp.magic = SEGSUM_MAGIC;
+        ssp.size = (self.start + self.segment.len()) as u32;
         for i in self.start..SEGSIZE - 1 {
-            ssp.0[i] = if i - self.start < self.segment.len() {
+            ssp.entries[i] = if i - self.start < self.segment.len() {
                 self.segment[i - self.start].0.into()
             } else {
                 DSegSumEntry {

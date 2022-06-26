@@ -1,7 +1,13 @@
-use super::segment::{BlockType, DSegSum, DSegSumEntry};
-use super::{Lfs, Tx};
-use crate::param::NBUF;
-use crate::{hal::hal, param::SEGSIZE, proc::KernelCtx, util::strong_pin::StrongPin};
+use super::{
+    segment::{BlockType, DSegSum, DSegSumEntry, SEGSUM_MAGIC},
+    Lfs, Tx,
+};
+use crate::{
+    hal::hal,
+    param::{NBUF, SEGSIZE},
+    proc::KernelCtx,
+    util::strong_pin::StrongPin,
+};
 
 // TODO: We might be doing disk writes more than neccessary.
 // We can just write the `Imap` or `Inode` to the disk only once.
@@ -100,20 +106,21 @@ impl Lfs {
             .read(dev, superblock.seg_to_disk_block_no(seg_no, 0), ctx);
         let mut seg_sum = unsafe { &*(buf.deref_inner().data.as_ptr() as *const DSegSum) }.clone();
         buf.free(ctx);
+        assert!(seg_sum.magic == SEGSUM_MAGIC);
 
         // 2. iterate the segment summary and count the number of live blocks
         // or mark dead blocks as empty
         let mut live: usize = 0;
-        for i in 0..SEGSIZE - 1 {
+        for i in 0..seg_sum.size as usize {
             let bno = superblock.seg_to_disk_block_no(seg_no, i as u32 + 1);
-            if self.scan_block(dev, bno, &seg_sum.0[i], tx, ctx) {
+            if self.scan_block(dev, bno, &seg_sum.entries[i], tx, ctx) {
                 live += 1;
                 if live > thres {
                     break;
                 }
             } else {
                 // dead block; mark as empty.
-                seg_sum.0[i].block_type = BlockType::Empty;
+                seg_sum.entries[i].block_type = BlockType::Empty;
             }
         }
         (seg_sum, live)
@@ -131,8 +138,8 @@ impl Lfs {
     ) {
         let itable = unsafe { StrongPin::new_unchecked(self) }.itable();
         // iterate the segment summary and move live blocks to the current segment.
-        for i in 0..SEGSIZE - 1 {
-            let entry = &seg_sum.0[i];
+        for i in 0..seg_sum.size as usize {
+            let entry = &seg_sum.entries[i];
             match entry.block_type {
                 BlockType::Empty => (),
                 BlockType::Inode => {
