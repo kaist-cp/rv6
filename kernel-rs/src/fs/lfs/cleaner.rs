@@ -213,7 +213,7 @@ impl Lfs {
                     ip.writable_data_block(entry.block_no as usize, &mut seg, tx, ctx)
                         .free(ctx);
                     if seg.is_full() {
-                        seg.commit(ctx);
+                        seg.commit(true, ctx);
                     }
                     seg.free(ctx);
 
@@ -230,7 +230,7 @@ impl Lfs {
                     let mut seg = self.segmanager(ctx);
                     ip.writable_indirect_block(&mut seg, ctx).free(ctx);
                     if seg.is_full() {
-                        seg.commit(ctx);
+                        seg.commit(true, ctx);
                     }
                     seg.free(ctx);
 
@@ -246,7 +246,7 @@ impl Lfs {
                         .unwrap()
                         .free(ctx);
                     if seg.is_full() {
-                        seg.commit(ctx);
+                        seg.commit(true, ctx);
                     }
                     imap.free(ctx);
                     seg.free(ctx);

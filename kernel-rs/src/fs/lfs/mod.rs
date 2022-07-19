@@ -470,7 +470,7 @@ impl FileSystem for Lfs {
             let res = f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k);
             bp.free(&k);
             if seg.is_full() {
-                seg.commit(&k);
+                seg.commit(true, &k);
             }
             seg.free(&k);
             if res.is_err() {
@@ -556,7 +556,7 @@ impl FileSystem for Lfs {
             let mut imap = tx.fs.imap(ctx);
             assert!(imap.set(ip.inum, 0, &mut seg, ctx));
             if seg.is_full() {
-                seg.commit(ctx);
+                seg.commit(true, ctx);
             }
             imap.free(ctx);
             seg.free(ctx);

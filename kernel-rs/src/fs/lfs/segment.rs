@@ -170,7 +170,6 @@ pub struct SegManager {
     segment_no: u32,
 
     /// The segment block number of the current segment summary block.
-    /// Cannot add blocks to the segment if `start == SEGSIZE - 1`.
     start: usize,
 
     /// An `ArrayVec` where we store pairs of a `SegSumEntry` and `Buf`.
@@ -437,50 +436,41 @@ impl SegManager {
         self.get_or_add_updated_block(SegSumEntry::Imap { block_no }, ctx)
     }
 
-    /// Commits the segment to the disk but does not allocate a new segment.
-    /// If `self` was full, it will remain full after calling this method.
-    /// Run this before commiting the checkpoint.
-    pub fn commit_no_alloc(&mut self, ctx: &KernelCtx<'_, '_>) {
+    /// Commits the segment to the disk and allocates a new segment if necessary.
+    /// If `alloc` is `true`, always allocates a new segment, unless the segment is empty.
+    /// Run this when you need to empty the segment or before committing the checkpoint.
+    pub fn commit(&mut self, alloc: bool, ctx: &KernelCtx<'_, '_>) {
         const_assert!(core::mem::size_of::<DSegSum>() <= BSIZE);
 
         let len = self.segment.len();
-        if len == 0 {
-            return;
+        if len > 0 {
+            // Write the segment summary.
+            let mut bp = self.read_segment_block(self.start, ctx);
+            let ssp = unsafe { &mut *(bp.deref_inner_mut().data.as_mut_ptr() as *mut DSegSum) };
+            ssp.magic = SEGSUM_MAGIC;
+            ssp.size = self.segment.len() as u32;
+            for i in 0..self.segment.len() {
+                ssp.entries[i] = self.segment[i].0.into();
+            }
+            self.locked_bufs.push(bp);
+
+            // Write all the `Buf`s sequentially to the disk, and then free them.
+            for (_, buf) in self.segment.drain(..) {
+                self.locked_bufs.push(buf.lock(ctx));
+            }
+            hal().disk().write_sequential(&mut self.locked_bufs, ctx);
+            for buf in self.locked_bufs.drain(..) {
+                buf.free(ctx);
+            }
+
+            // Update `self.start`.
+            self.start += len + 1;
         }
 
-        // Write the segment summary.
-        let mut bp = self.read_segment_block(self.start, ctx);
-        let ssp = unsafe { &mut *(bp.deref_inner_mut().data.as_mut_ptr() as *mut DSegSum) };
-        ssp.magic = SEGSUM_MAGIC;
-        ssp.size = self.segment.len() as u32;
-        for i in 0..self.segment.len() {
-            ssp.entries[i] = self.segment[i].0.into();
+        // Allocate a new segment if we need to.
+        if alloc || self.start >= SEGSIZE - 1 {
+            self.alloc_segment(Some(self.segment_no));
+            self.start = 0;
         }
-        self.locked_bufs.push(bp);
-
-        // Write all the `Buf`s sequentially to the disk, and then free them.
-        for (_, buf) in self.segment.drain(..) {
-            self.locked_bufs.push(buf.lock(ctx));
-        }
-        hal().disk().write_sequential(&mut self.locked_bufs, ctx);
-        for buf in self.locked_bufs.drain(..) {
-            buf.free(ctx);
-        }
-
-        // Update `self.start`.
-        self.start += len + 1;
-        if self.start > SEGSIZE - 1 {
-            self.start = SEGSIZE - 1;
-        }
-    }
-
-    /// Commits the segment to the disk and allocates a new segment.
-    /// `self` will be empty after calling this method.
-    /// Run this when you need to empty the segment.
-    pub fn commit(&mut self, ctx: &KernelCtx<'_, '_>) {
-        self.commit_no_alloc(ctx);
-
-        self.alloc_segment(Some(self.segment_no));
-        self.start = 0;
     }
 }

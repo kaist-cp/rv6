@@ -110,11 +110,7 @@ impl SleepableLock<TxManager> {
                 }
 
                 let mut seg = fs.segmanager(ctx);
-                if seg.remaining() < 2 {
-                    seg.commit(ctx);
-                } else {
-                    seg.commit_no_alloc(ctx);
-                }
+                seg.commit(false, ctx);
                 seg.free(ctx);
                 // SAFETY: there is no another transaction, so `inner` cannot be read or written.
                 unsafe {

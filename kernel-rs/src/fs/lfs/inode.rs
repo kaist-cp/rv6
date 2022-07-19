@@ -240,14 +240,14 @@ impl InodeGuard<'_, Lfs> {
 
         bp.free(ctx);
         if seg.is_full() {
-            seg.commit(ctx);
+            seg.commit(true, ctx);
         }
 
         // 2. Write the imap to segment.
         let mut imap = tx.fs.imap(ctx);
         assert!(imap.set(self.inum, disk_block_no, &mut seg, ctx));
         if seg.is_full() {
-            seg.commit(ctx);
+            seg.commit(true, ctx);
         }
         imap.free(ctx);
         seg.free(ctx);
@@ -331,7 +331,7 @@ impl InodeGuard<'_, Lfs> {
             // We need two `Buf`. Hence, we flush the segment early if we need to
             // and maintain the lock on the `SegManager` until we're done.
             if seg.remaining() < 2 {
-                seg.commit(ctx);
+                seg.commit(true, ctx);
             }
 
             // Get the indirect block and the address of the indirect data block.
@@ -517,13 +517,13 @@ impl Itable<Lfs> {
         }
         bp.free(ctx);
         if seg.is_full() {
-            seg.commit(ctx);
+            seg.commit(true, ctx);
         }
 
         // 2. Now write the imap.
         assert!(imap.set(inum, disk_block_no, &mut seg, ctx));
         if seg.is_full() {
-            seg.commit(ctx);
+            seg.commit(true, ctx);
         }
         imap.free(ctx);
         seg.free(ctx);
