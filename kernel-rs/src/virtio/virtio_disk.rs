@@ -14,7 +14,6 @@ use bitmaps::Bitmap;
 use cfg_if::cfg_if;
 use const_zero::const_zero;
 use pin_project::pin_project;
-use static_assertions::const_assert;
 
 use super::{
     MmioRegs, VirtIOFeatures, VirtIOStatus, VirtqAvail, VirtqDesc, VirtqDescFlags, VirtqUsed, NUM,
@@ -37,7 +36,7 @@ cfg_if! {
     } else {
         // Do not support sequential write.
         // Thus, `SleepableLock<VirtioDisk>::write_sequential` is the same as a normal write.
-        const MAX_SEQ_WRITE: usize = 1;
+        const MAX_SEQ_WRITE: usize = 0;
     }
 }
 
@@ -69,6 +68,13 @@ pub struct VirtioDisk {
     /// An array of descriptor sets.
     /// Used in `VirtioDisk::write_seq`.
     darray: ArrayVec<[Descriptor; 3], MAX_SEQ_WRITE>,
+
+    /// A buffer where we place the contents of disk blocks that will be
+    /// written to the disk sequentially through a single disk write request.
+    /// Used in `VirtioDisk::write_seq`.
+    // TODO : We need this buffer to prevent stack overflow.
+    // Remove this after resolving the stack overflow issue.
+    write_buf: [u8; BSIZE * MAX_SEQ_WRITE],
 }
 
 // It must be page-aligned because a virtqueue (desc + avail + used) occupies
@@ -125,6 +131,7 @@ impl VirtioDisk {
             used: VirtqUsed::new(),
             info: DiskInfo::new(),
             darray: ArrayVec::new_const(),
+            write_buf: [0; BSIZE * MAX_SEQ_WRITE],
         }
     }
 }
@@ -304,35 +311,16 @@ impl VirtioDisk {
         };
 
         // Properly set the allocated three descriptors.
-        guard.get_pin_mut().set_three_descriptors(&desc, b, write);
+        guard.get_pin_mut().set_three_descriptors(
+            &desc,
+            b,
+            b.deref_inner().data.as_ptr() as _,
+            BSIZE,
+            write,
+        );
 
-        let mut this = guard.get_pin_mut().project();
-        // Tell the device the first index in our chain of descriptors.
-        let ring_idx = this.avail.idx as usize % NUM;
-        this.avail.ring[ring_idx] = desc[0].idx as _;
-
-        fence(Ordering::SeqCst);
-
-        // Tell the device another avail ring entry is available.
-        this.avail.idx = this.avail.idx.wrapping_add(1);
-
-        fence(Ordering::SeqCst);
-
-        // SAFETY: the all three descriptors' fields are well set.
-        // Value is queue number.
-        unsafe {
-            MmioRegs::notify_queue(0);
-        }
-
-        // Wait for virtio_disk_intr() to say request has finished.
-        b.vdisk_request_waitchannel.sleep(guard, ctx);
-
-        // As it assigns null, the invariant of inflight is maintained even if
-        // b: &mut Buf becomes invalid after this method returns.
-        guard.get_pin_mut().project().info.project().inflight[desc[0].idx].b = ptr::null_mut();
-        desc.into_iter()
-            .for_each(|desc| guard.get_pin_mut().free(desc));
-        guard.wakeup(ctx.kernel());
+        // Notify the device for a new request and sleep until its done.
+        VirtioDisk::notify_and_sleep(guard, desc, b, ctx);
     }
 
     /// Writes the `Buf`s in the given `barray` to disk sequentially, therefore,
@@ -348,94 +336,33 @@ impl VirtioDisk {
         barray: &mut [Buf],
         ctx: &KernelCtx<'_, '_>,
     ) {
-        // 3 * MAX_SEQ_WRITE descriptors are required to write every block of a full segment
-        // to the disk sequentially as one block operation request requires exactly three
-        // descriptors according to the virtio specs.
-        const_assert!(MAX_SEQ_WRITE * 3 <= NUM);
-
-        let num_block_total = barray.len();
-        let mut num_block_written = 0;
-
-        while num_block_written < num_block_total {
-            // Allocate the three descriptors.
-            let descs = loop {
-                match guard.get_pin_mut().alloc_three_descriptors() {
-                    Some(idx) => break idx,
-                    None => {
-                        if num_block_written > 0 {
-                            Self::finalize_write_seq(guard, &mut barray[num_block_written - 1], ctx)
-                        }
-                    }
-                }
-            };
-
-            // Properly set the three descriptors
-            guard
-                .get_pin_mut()
-                .set_three_descriptors(&descs, &mut barray[num_block_written], true);
-            let mut this = guard.get_pin_mut().project();
-            // Tell the device the first index in our chain of descriptors.
-            let write_idx = (this.avail.idx as usize + this.darray.len()) % NUM;
-            this.avail.ring[write_idx] = descs[0].idx as _;
-
-            this.darray.push(descs);
-            num_block_written += 1;
+        if barray.is_empty() {
+            return;
         }
 
-        // Finalize the last set of `Buf`s
-        if !guard.darray.is_empty() {
-            Self::finalize_write_seq(guard, &mut barray[num_block_written - 1], ctx);
-        }
-    }
+        // Allocate the three descriptors.
+        let desc = loop {
+            match guard.get_pin_mut().alloc_three_descriptors() {
+                Some(idx) => break idx,
+                None => guard.sleep(ctx),
+            }
+        };
 
-    /// Writes the `Buf`s represented by the descriptors in `guard.darray` to the disk.
-    /// `last_buf` must be the last `Buf` (in the `guard.darray`) that we want to write.
-    /// Otherwise, the thread may fail to wakeup.
-    /// Consumes entries in `guard.darray` after the write is finished.
-    ///
-    /// # Panic
-    ///
-    /// `guard.darray` must contain at least one set of descriptors.
-    fn finalize_write_seq(
-        guard: &mut SleepableLockGuard<'_, Self>,
-        last_buf: &mut Buf,
-        ctx: &KernelCtx<'_, '_>,
-    ) {
-        // `darray` must contain at least one set of descriptors to be written to the disk.
-        assert!(
-            !guard.darray.is_empty(),
-            "[Disk::finalize_write_seq] no descriptors"
-        );
-
-        let mut this = guard.get_pin_mut().project();
-
-        fence(Ordering::SeqCst);
-
-        // Tell the device `this.darray.len()` avail ring entries are available.
-        this.avail.idx = this.avail.idx.wrapping_add(this.darray.len() as u16);
-
-        fence(Ordering::SeqCst);
-
-        // SAFETY: all the three descriptors' fields are well set.
-        // Value is queue number.
-        unsafe {
-            MmioRegs::notify_queue(0);
+        // Copy all the data of the `Buf`s to `write_buf`.
+        let write_buf = &mut guard.get_pin_mut().project().write_buf[0..BSIZE * barray.len()];
+        for (i, b) in barray.iter().enumerate() {
+            write_buf[(BSIZE * i)..(BSIZE * (i + 1))].copy_from_slice(&b.deref_inner().data.inner);
         }
 
-        // Wait for the disk to finish writing all the requests
-        // The request is complete when the last block is written.
-        // TODO: This may require that the `VIRTIO_F_IN_ORDER` feature has been negotiated.
-        // Another way is to check all Bufs if their disk fields are set to false.
-        last_buf.vdisk_request_waitchannel.sleep(guard, ctx);
+        // Properly set the allocated three descriptors.
+        let addr = write_buf.as_ptr() as usize;
+        let len = write_buf.len();
+        guard
+            .get_pin_mut()
+            .set_three_descriptors(&desc, &mut barray[0], addr, len, true);
 
-        // Cleanup
-        // Free the descriptors
-        while let Some(desc) = guard.get_pin_mut().project().darray.pop() {
-            guard.get_pin_mut().project().info.project().inflight[desc[0].idx].b = ptr::null_mut();
-            desc.into_iter().for_each(|d| guard.get_pin_mut().free(d));
-        }
-
-        guard.wakeup(ctx.kernel());
+        // Notify the device for a new request and sleep until its done.
+        VirtioDisk::notify_and_sleep(guard, desc, &mut barray[0], ctx);
     }
 
     pub fn intr(self: Pin<&mut Self>, kernel: KernelRef<'_, '_>) {
@@ -501,13 +428,22 @@ impl VirtioDisk {
         descs.into_inner().ok()
     }
 
-    /// Set the three descriptors according to the specs of the legacy interface of block operations.
-    /// The three descriptors consist of
-    /// 1. header descriptor, 2. buffer descriptor, and 3. tailer descriptor
+    /// Sets the given `descs` according to the specs of the legacy interface of block operations.
+    /// * `buf` is the `Buf` with the waitchannel that we will wait for the disk IO completion.
+    /// * `addr` is
+    ///   * in case of reads, the address where the readed data will be written to.
+    ///   * in case of writes, the address of the data that we wish to write to the disk.
+    /// * `len` is the amount we wish to read from/write to the disk.
+    /// * `write` is `false` in case of disk read operations and `true` in case of disk write operations.
+    ///
+    /// Usually, when reading/writing a single disk block, you should set `addr` as the `buf`'s data
+    /// and `len` as `BSIZE`.
     fn set_three_descriptors(
         self: Pin<&mut Self>,
         descs: &[Descriptor; 3],
         buf: &mut Buf,
+        addr: usize,
+        len: usize,
         write: bool,
     ) {
         let sector: usize = (*buf).blockno as usize * (BSIZE / 512);
@@ -532,8 +468,8 @@ impl VirtioDisk {
         // 2. Set the second descriptor.
         // Device reads/writes b->data
         this.desc[descs[1].idx] = VirtqDesc {
-            addr: buf.deref_inner().data.as_ptr() as _,
-            len: BSIZE as _,
+            addr,
+            len: len as _,
             flags: if write {
                 VirtqDescFlags::NEXT
             } else {
@@ -559,6 +495,43 @@ impl VirtioDisk {
         // It does not break the invariant because buf is &mut Buf, which refers
         // to a valid Buf.
         info.inflight[descs[0].idx].b = buf;
+    }
+
+    /// Notifiy the device that we have a new request, which is described by `desc`,
+    /// and sleep on `b`'s waitchannel to wait until its done.
+    fn notify_and_sleep(
+        guard: &mut SleepableLockGuard<'_, Self>,
+        desc: [Descriptor; 3],
+        b: &mut Buf,
+        ctx: &KernelCtx<'_, '_>,
+    ) {
+        let mut this = guard.get_pin_mut().project();
+        // Tell the device the first index in our chain of descriptors.
+        let ring_idx = this.avail.idx as usize % NUM;
+        this.avail.ring[ring_idx] = desc[0].idx as _;
+
+        fence(Ordering::SeqCst);
+
+        // Tell the device another avail ring entry is available.
+        this.avail.idx = this.avail.idx.wrapping_add(1);
+
+        fence(Ordering::SeqCst);
+
+        // SAFETY: the all three descriptors' fields are well set.
+        // Value is queue number.
+        unsafe {
+            MmioRegs::notify_queue(0);
+        }
+
+        // Wait for virtio_disk_intr() to say request has finished.
+        b.vdisk_request_waitchannel.sleep(guard, ctx);
+
+        // As it assigns null, the invariant of inflight is maintained even if
+        // b: &mut Buf becomes invalid after this method returns.
+        guard.get_pin_mut().project().info.project().inflight[desc[0].idx].b = ptr::null_mut();
+        desc.into_iter()
+            .for_each(|desc| guard.get_pin_mut().free(desc));
+        guard.wakeup(ctx.kernel());
     }
 
     fn free(self: Pin<&mut Self>, desc: Descriptor) {
