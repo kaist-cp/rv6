@@ -90,7 +90,7 @@ impl Lfs {
 
     /// Scans the entries of the segment summary block located at `seg_block_no` for live blocks.
     /// Returns `None` if the block located at `seg_block_no` is not a segment summary block.
-    /// Otherwise, returns a copy of the segment summary with dead blocks marked as empty, and the number of live blocks.
+    /// Otherwise, returns a copy of the segment summary, where dead blocks marked as empty, and the number of live blocks.
     /// Aborts the scan if the number of live blocks is larger than `thres`.
     fn scan_seg_sum(
         &self,
@@ -133,7 +133,7 @@ impl Lfs {
     }
 
     /// Scans the segment for live blocks.
-    /// Returns a copy of the segment summary with dead blocks marked as empty, and the number of live blocks.
+    /// Returns a segment summary, where everything except live blocks marked as empty, and the number of live blocks.
     /// Aborts the scan if the number of live blocks is larger than `thres`.
     fn scan_segment(
         &self,
