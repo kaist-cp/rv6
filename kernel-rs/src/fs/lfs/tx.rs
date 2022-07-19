@@ -101,21 +101,27 @@ impl SleepableLock<TxManager> {
             let timestamp = guard.timestamp;
             let mut last_seg_no = guard.last_seg_no;
 
-            // Commit w/o holding locks, since not allowed to sleep with locks.
-            guard.reacquire_after(||
+            guard.reacquire_after(|| {
+                let seg = fs.segmanager(ctx);
+                let nfree = seg.nfree();
+                seg.free(ctx);
+                if nfree * (SEGSIZE as u32) < 2 * NBUF as u32 {
+                    last_seg_no = fs.clean(last_seg_no, dev, tx, ctx);
+                }
+
+                let mut seg = fs.segmanager(ctx);
+                if seg.remaining() < 2 {
+                    seg.commit(ctx);
+                } else {
+                    seg.commit_no_alloc(ctx);
+                }
+                seg.free(ctx);
                 // SAFETY: there is no another transaction, so `inner` cannot be read or written.
                 unsafe {
-                    let seg = fs.segmanager(ctx);
-                    let nfree = seg.nfree();
-                    seg.free(ctx);
-                    if nfree * (SEGSIZE as u32) < 2 * NBUF as u32 {
-                        last_seg_no = fs.clean(last_seg_no, dev, tx, ctx);
-                    }
-
                     // TODO: Checkpointing doesn't need to be done this often.
-                    fs.commit_segment_unchecked(ctx);
                     fs.commit_checkpoint(dev, stored_at_first, timestamp, ctx)
-                });
+                }
+            });
 
             guard.last_seg_no = last_seg_no;
             guard.committing = false;

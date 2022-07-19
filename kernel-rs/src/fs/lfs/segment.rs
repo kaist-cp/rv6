@@ -9,23 +9,23 @@
 //! you should
 //! 1. lock the `SegManager`,
 //! 2. request the `SegManager` for a `Buf`,
-//! 3. write on the `Buf`,
-//! 4. commit the `SegManager` if it's full, and
-//! 5. release all locks.
+//! 3. write on the `Buf`, and
+//! 4. commit the `SegManager` if it's full.
 //!
 //! # `add_new_*_block` vs `get_or_add_*_block`
 //!
 //! The `SegManager` has two types of methods that provides a `(Buf, u32)` pair to the outside.
 //! * `add_new_*_block` methods : Always use these methods when allocating a **new**
 //!   inode/inode data block/inode indirect block. These methods always allocate a new zeroed disk block.
-//! * `get_or_add_*_block` methods : Always use these methods when updating a **previous**
-//!   inode/inode data block/inode indirect block/imap block. These methods may allocate a new zeroed disk block or
-//!   just return a `Buf` to a previously allocated block if it is still on the segment.
+//! * `get_or_add_*_block` methods : Always use these methods when **updating** a
+//!   inode/inode data block/inode indirect block/imap block that already exists.
+//!   These methods may allocate a new zeroed disk block or just return a `Buf` to a previously allocated
+//!   block if it is still on the segment.
 //!     * Using this method lets us reduce the cost to copy the content from an old buf to a new one every time
 //!       we write something to the disk. However, using this method may cause a problem if this is the first
 //!       time we allocate a disk block for the inode/inode data block/inode indirect map.
 //!       If an inode with the same inum was previously finalized but has some of its blocks still on the segment,
-//!       then this method may return a one of these instead of a zeroed one. You must use these methods only for updates.
+//!       then this method may return one of these instead of a zeroed one. You must use these methods only for updates.
 //!
 //! # Updating the `Inode` or `Imap`
 //!
@@ -62,7 +62,7 @@ pub enum SegSumEntry {
     Imap { block_no: u32 },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 #[repr(u32)]
 pub enum BlockType {
     Empty,
@@ -73,13 +73,23 @@ pub enum BlockType {
 }
 
 /// On-disk segment summary entry structure.
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct DSegSumEntry {
     /// 0: empty, 1: inode, 2: data block, 3: indirect map, 4: imap block
     pub block_type: BlockType,
     pub inum: u32,     // 0 in case of empty or imap block
     pub block_no: u32, // 0 in case of inode or indirect map
+}
+
+impl Default for DSegSumEntry {
+    fn default() -> Self {
+        Self {
+            block_type: BlockType::Empty,
+            inum: 0,
+            block_no: 0,
+        }
+    }
 }
 
 impl From<SegSumEntry> for DSegSumEntry {
@@ -126,6 +136,16 @@ pub struct DSegSum {
     pub entries: [DSegSumEntry; SEGSIZE - 1],
 }
 
+impl Default for DSegSum {
+    fn default() -> Self {
+        Self {
+            magic: SEGSUM_MAGIC,
+            size: 0,
+            entries: [DSegSumEntry::default(); SEGSIZE - 1],
+        }
+    }
+}
+
 pub const SEGSUM_MAGIC: u32 = 0x10305070;
 
 pub type SegTable = [u8; SEGTABLESIZE];
@@ -149,7 +169,8 @@ pub struct SegManager {
     /// The segment number of the current segment.
     segment_no: u32,
 
-    /// The number of segment blocks that were committed to the disk.
+    /// The segment block number of the current segment summary block.
+    /// Cannot add blocks to the segment if `start == SEGSIZE - 1`.
     start: usize,
 
     /// An `ArrayVec` where we store pairs of a `SegSumEntry` and `Buf`.
@@ -284,7 +305,7 @@ impl SegManager {
             None
         } else {
             // Append segment with a new zeroed block.
-            let block_no = self.start + self.segment.len() + 1;
+            let block_no = self.start + 1 + self.segment.len();
             let mut buf = self.read_segment_block(block_no, ctx);
             buf.deref_inner_mut().data.fill(0);
             buf.deref_inner_mut().valid = true;
@@ -340,7 +361,7 @@ impl SegManager {
             if self.segment[i].0 == entry {
                 return Some((
                     self.segment[i].1.clone().lock(ctx),
-                    self.get_disk_block_no(self.start + i + 1, ctx),
+                    self.get_disk_block_no(self.start + 1 + i, ctx),
                 ));
             }
         }
@@ -423,25 +444,19 @@ impl SegManager {
         const_assert!(core::mem::size_of::<DSegSum>() <= BSIZE);
 
         let len = self.segment.len();
+        if len == 0 {
+            return;
+        }
 
         // Write the segment summary.
-        let mut bp = self.read_segment_block(0, ctx);
+        let mut bp = self.read_segment_block(self.start, ctx);
         let ssp = unsafe { &mut *(bp.deref_inner_mut().data.as_mut_ptr() as *mut DSegSum) };
         ssp.magic = SEGSUM_MAGIC;
-        ssp.size = (self.start + self.segment.len()) as u32;
-        for i in self.start..SEGSIZE - 1 {
-            ssp.entries[i] = if i - self.start < self.segment.len() {
-                self.segment[i - self.start].0.into()
-            } else {
-                DSegSumEntry {
-                    block_type: BlockType::Empty,
-                    inum: 0,
-                    block_no: 0,
-                }
-            };
+        ssp.size = self.segment.len() as u32;
+        for i in 0..self.segment.len() {
+            ssp.entries[i] = self.segment[i].0.into();
         }
-        hal().disk().write(&mut bp, ctx);
-        bp.free(ctx);
+        self.locked_bufs.push(bp);
 
         // Write all the `Buf`s sequentially to the disk, and then free them.
         for (_, buf) in self.segment.drain(..) {
@@ -453,7 +468,10 @@ impl SegManager {
         }
 
         // Update `self.start`.
-        self.start += len;
+        self.start += len + 1;
+        if self.start > SEGSIZE - 1 {
+            self.start = SEGSIZE - 1;
+        }
     }
 
     /// Commits the segment to the disk and allocates a new segment.
