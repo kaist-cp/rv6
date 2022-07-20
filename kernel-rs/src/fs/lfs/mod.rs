@@ -97,17 +97,6 @@ impl Lfs {
         self.tx_manager.get().expect("tx_manager")
     }
 
-    /// Commits the segment without acquring the lock on the `SegManager`
-    /// and without flushing it.
-    ///
-    /// # Safety
-    ///
-    /// Use this only when no one is accessing the `SegManager`.
-    /// You should usually use `Lfs::segment().commit(ctx)` instead.
-    pub unsafe fn commit_segment_unchecked(&self, ctx: &KernelCtx<'_, '_>) {
-        unsafe { &mut *self.segmanager.get_unchecked().get_mut_raw() }.commit_no_alloc(ctx);
-    }
-
     /// Commits the checkpoint at the checkpoint region without acquiring any locks or checking the type is initialized.
     /// If `first` is `true`, writes it at the first checkpoint region. Otherwise, writes at the second region.
     ///
@@ -481,7 +470,7 @@ impl FileSystem for Lfs {
             let res = f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k);
             bp.free(&k);
             if seg.is_full() {
-                seg.commit(&k);
+                seg.commit(true, &k);
             }
             seg.free(&k);
             if res.is_err() {
@@ -567,7 +556,7 @@ impl FileSystem for Lfs {
             let mut imap = tx.fs.imap(ctx);
             assert!(imap.set(ip.inum, 0, &mut seg, ctx));
             if seg.is_full() {
-                seg.commit(ctx);
+                seg.commit(true, ctx);
             }
             imap.free(ctx);
             seg.free(ctx);

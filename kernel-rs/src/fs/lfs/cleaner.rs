@@ -1,7 +1,13 @@
-use super::segment::{BlockType, DSegSum, DSegSumEntry};
-use super::{Lfs, Tx};
-use crate::param::NBUF;
-use crate::{hal::hal, param::SEGSIZE, proc::KernelCtx, util::strong_pin::StrongPin};
+use super::{
+    segment::{BlockType, DSegSum, DSegSumEntry, SEGSUM_MAGIC},
+    Lfs, Tx,
+};
+use crate::{
+    hal::hal,
+    param::{NBUF, SEGSIZE},
+    proc::KernelCtx,
+    util::strong_pin::StrongPin,
+};
 
 // TODO: We might be doing disk writes more than neccessary.
 // We can just write the `Imap` or `Inode` to the disk only once.
@@ -82,8 +88,52 @@ impl Lfs {
         }
     }
 
+    /// Scans the entries of the segment summary block located at `seg_block_no` for live blocks.
+    /// Returns `None` if the block located at `seg_block_no` is not a segment summary block.
+    /// Otherwise, returns a copy of the segment summary, where dead blocks marked as empty, and the number of live blocks.
+    /// Aborts the scan if the number of live blocks is larger than `thres`.
+    fn scan_seg_sum(
+        &self,
+        seg_no: u32,
+        seg_block_no: u32,
+        thres: usize,
+        dev: u32,
+        tx: &mut Tx<'_, Lfs>,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Option<(DSegSum, usize)> {
+        // 1. read the segment summary block
+        let superblock = self.superblock();
+        let buf = hal().disk().read(
+            dev,
+            superblock.seg_to_disk_block_no(seg_no, seg_block_no),
+            ctx,
+        );
+        let mut seg_sum = unsafe { &*(buf.deref_inner().data.as_ptr() as *const DSegSum) }.clone();
+        buf.free(ctx);
+        if seg_sum.magic != SEGSUM_MAGIC {
+            return None;
+        }
+
+        // 2. iterate the segment summary and count the number of live blocks
+        // or mark dead blocks as empty
+        let mut live: usize = 0;
+        for i in 0..seg_sum.size as usize {
+            let bno = superblock.seg_to_disk_block_no(seg_no, seg_block_no + 1 + i as u32);
+            if self.scan_block(dev, bno, &seg_sum.entries[i], tx, ctx) {
+                live += 1;
+                if live > thres {
+                    break;
+                }
+            } else {
+                // dead block; mark as empty.
+                seg_sum.entries[i].block_type = BlockType::Empty;
+            }
+        }
+        Some((seg_sum, live))
+    }
+
     /// Scans the segment for live blocks.
-    /// Returns a copy of the segment summary with dead blocks marked as empty, and the number of live blocks.
+    /// Returns a segment summary, where everything except live blocks marked as empty, and the number of live blocks.
     /// Aborts the scan if the number of live blocks is larger than `thres`.
     fn scan_segment(
         &self,
@@ -93,29 +143,41 @@ impl Lfs {
         tx: &mut Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> (DSegSum, usize) {
-        // 1. read the segment summary block
-        let superblock = self.superblock();
-        let buf = hal()
-            .disk()
-            .read(dev, superblock.seg_to_disk_block_no(seg_no, 0), ctx);
-        let mut seg_sum = unsafe { &*(buf.deref_inner().data.as_ptr() as *const DSegSum) }.clone();
-        buf.free(ctx);
+        let mut seg_sum = DSegSum::default();
+        let mut curr: usize = 0;
+        let mut live = 0;
 
-        // 2. iterate the segment summary and count the number of live blocks
-        // or mark dead blocks as empty
-        let mut live: usize = 0;
-        for i in 0..SEGSIZE - 1 {
-            let bno = superblock.seg_to_disk_block_no(seg_no, i as u32 + 1);
-            if self.scan_block(dev, bno, &seg_sum.0[i], tx, ctx) {
-                live += 1;
-                if live > thres {
-                    break;
+        loop {
+            match self.scan_seg_sum(seg_no, curr as u32, thres - live, dev, tx, ctx) {
+                None => break,
+                Some((curr_seg_sum, curr_live)) => {
+                    live += curr_live;
+                    if live > thres {
+                        break;
+                    }
+
+                    assert!((curr + curr_seg_sum.size as usize) < SEGSIZE);
+                    // Mark the entry for the segment summary block as `Empty`.
+                    if curr > 0 {
+                        seg_sum.entries[curr - 1] = DSegSumEntry::default();
+                    }
+                    // Copy entries of the `curr_seg_sum` to `seg_sum`.
+                    for i in 0..curr_seg_sum.size as usize {
+                        seg_sum.entries[curr + i] = curr_seg_sum.entries[i];
+                    }
+
+                    curr += curr_seg_sum.size as usize + 1;
+                    if curr >= SEGSIZE - 1 {
+                        // there can't be any more blocks
+                        break;
+                    }
                 }
-            } else {
-                // dead block; mark as empty.
-                seg_sum.0[i].block_type = BlockType::Empty;
             }
         }
+        if curr > 0 {
+            seg_sum.size = curr as u32 - 1;
+        }
+
         (seg_sum, live)
     }
 
@@ -131,8 +193,8 @@ impl Lfs {
     ) {
         let itable = unsafe { StrongPin::new_unchecked(self) }.itable();
         // iterate the segment summary and move live blocks to the current segment.
-        for i in 0..SEGSIZE - 1 {
-            let entry = &seg_sum.0[i];
+        for i in 0..seg_sum.size as usize {
+            let entry = &seg_sum.entries[i];
             match entry.block_type {
                 BlockType::Empty => (),
                 BlockType::Inode => {
@@ -151,7 +213,7 @@ impl Lfs {
                     ip.writable_data_block(entry.block_no as usize, &mut seg, tx, ctx)
                         .free(ctx);
                     if seg.is_full() {
-                        seg.commit(ctx);
+                        seg.commit(true, ctx);
                     }
                     seg.free(ctx);
 
@@ -168,7 +230,7 @@ impl Lfs {
                     let mut seg = self.segmanager(ctx);
                     ip.writable_indirect_block(&mut seg, ctx).free(ctx);
                     if seg.is_full() {
-                        seg.commit(ctx);
+                        seg.commit(true, ctx);
                     }
                     seg.free(ctx);
 
@@ -184,7 +246,7 @@ impl Lfs {
                         .unwrap()
                         .free(ctx);
                     if seg.is_full() {
-                        seg.commit(ctx);
+                        seg.commit(true, ctx);
                     }
                     imap.free(ctx);
                     seg.free(ctx);
