@@ -1,18 +1,26 @@
+use static_assertions::const_assert;
+
 use super::{
     segment::{BlockType, DSegSum, DSegSumEntry, SEGSUM_MAGIC},
+    tx::CLEANING_THRES,
     Lfs, Tx,
 };
-use crate::{
-    hal::hal,
-    param::{NBUF, SEGSIZE},
-    proc::KernelCtx,
-    util::strong_pin::StrongPin,
-};
+use crate::{hal::hal, param::SEGSIZE, proc::KernelCtx, util::strong_pin::StrongPin};
 
 // TODO: We might be doing disk writes more than neccessary.
 // We can just write the `Imap` or `Inode` to the disk only once.
 
-const THRESHOLD: usize = 2;
+/// Only segments with live blocks less than this number will be subject to cleaning.
+const MAX_LIVE_BLOCKS: usize = 2;
+
+// We will clean at most this amount of segments during each cleaning.
+const MAX_SEGS_CLEANED: usize = 10;
+
+/// We must have at least this amount of free blocks left before running the cleaner.
+pub const MIN_REQUIRED_BLOCKS: usize = MAX_LIVE_BLOCKS * MAX_SEGS_CLEANED;
+
+/// After the cleaning is done, we will have at least this amount of blocks left;
+const MIN_REMAINING_BLOCKS: usize = MAX_SEGS_CLEANED * (SEGSIZE - 1);
 
 impl Lfs {
     /// Checks whether the block stored at `bno` is live or not.
@@ -267,6 +275,9 @@ impl Lfs {
         tx: &mut Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> u32 {
+        const_assert!(SEGSIZE >= MAX_LIVE_BLOCKS);
+        const_assert!(MIN_REMAINING_BLOCKS >= CLEANING_THRES);
+
         for i in 0..self.superblock().nsegments() {
             // 1. check whether the segment is marked as allocated.
             let seg_no = (last_seg_no + i + 1) % self.superblock().nsegments();
@@ -278,19 +289,20 @@ impl Lfs {
             }
 
             // 2. scan the segment to count the number of live blocks
-            let (seg_sum, live) = self.scan_segment(seg_no, THRESHOLD, dev, tx, ctx);
+            let (seg_sum, live) = self.scan_segment(seg_no, MAX_LIVE_BLOCKS, dev, tx, ctx);
 
             // 3. if the segment does not have a lot of live blocks,
             // move its live blocks to another segment and mark it as free.
-            if live <= THRESHOLD {
+            if live <= MAX_LIVE_BLOCKS {
                 self.clean_segment(&seg_sum, seg_no, dev, tx, ctx);
             }
 
             // 4. stop if we now have enough segments
             let seg = self.segmanager(ctx);
+            let remaining = seg.remaining() as u32;
             let nfree = seg.nfree();
             seg.free(ctx);
-            if nfree * (SEGSIZE as u32) > 4 * NBUF as u32 {
+            if remaining + nfree * (SEGSIZE as u32 - 1) >= MIN_REMAINING_BLOCKS as u32 {
                 return seg_no;
             }
         }
