@@ -18,10 +18,8 @@ use crate::{
     util::strong_pin::StrongPin,
 };
 
-// TODO: We might be doing disk writes more than neccessary.
-// We can just write the `Imap` or `Inode` to the disk only once.
-
 /// Only segments with live blocks less than this number will be subject to cleaning.
+// TODO: What if we don't have an enough number of such segments?
 const MAX_LIVE_BLOCKS: usize = 2;
 
 /// We must have at least this amount of free blocks left before running the cleaner.

@@ -25,11 +25,11 @@ mod segment;
 mod superblock;
 mod tx;
 
-pub use imap::Imap;
-pub use inode::{Dinode, Dirent, InodeInner, DIRENT_SIZE, DIRSIZ};
-pub use segment::{SegManager, SegTable};
-pub use superblock::Superblock;
-pub use tx::TxManager;
+use imap::Imap;
+use inode::{Dinode, Dirent, InodeInner};
+use segment::{SegManager, SegTable};
+use superblock::Superblock;
+use tx::TxManager;
 
 /// root i-number
 const ROOTINO: u32 = 1;
