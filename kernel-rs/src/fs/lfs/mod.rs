@@ -97,6 +97,10 @@ impl Lfs {
         self.imap.get().expect("imap").lock(ctx)
     }
 
+    pub fn imap_raw(&self) -> *mut Imap {
+        self.imap.get().expect("imap").get_mut_raw()
+    }
+
     fn tx_manager(&self) -> &SleepableLock<TxManager> {
         self.tx_manager.get().expect("tx_manager")
     }

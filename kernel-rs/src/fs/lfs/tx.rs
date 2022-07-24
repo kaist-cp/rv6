@@ -121,7 +121,7 @@ impl SleepableLock<TxManager> {
 
             guard.reacquire_after(|| {
                 // Run the cleaner if necessary.
-                // SAFETY: there is no another transaction, so `SegManager` is not accessed.
+                // SAFETY: there is no another transaction, so `SegManager` is not mutated.
                 let seg = unsafe { &mut *fs.segmanager_raw() };
                 if seg.remaining() as u32 + seg.nfree() * (SEGSIZE as u32 - 1)
                     < CLEANING_THRES as u32
@@ -134,10 +134,9 @@ impl SleepableLock<TxManager> {
                     last_blocks_written = seg.blocks_written();
                     seg.commit(false, ctx);
 
-                    // TODO: Do we need a lock here? `Imap` is not under mutation in any thread.
-                    let imap = fs.imap(ctx);
-                    fs.commit_checkpoint(stored_at_first, timestamp, seg, &imap, dev, ctx);
-                    imap.free(ctx);
+                    // SAFETY: there is no another transaction, so `Imap` is not mutated.
+                    let imap = unsafe { &*fs.imap_raw() };
+                    fs.commit_checkpoint(stored_at_first, timestamp, seg, imap, dev, ctx);
                 }
             });
 
