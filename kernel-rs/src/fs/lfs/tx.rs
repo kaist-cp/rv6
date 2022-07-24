@@ -22,10 +22,11 @@ pub const CLEANING_THRES: usize = NBUF + MIN_REQUIRED_BLOCKS + 1;
 const CHECKPOINTING_THRES: usize = 25;
 
 /// Manages the starts and wrap ups of FS transactions.
-/// * Blocks new FS sys calls when we may not have enough segments. (i.e. Wait for the segment cleaner to finish.)
-/// * After all FS sys calls are done, commits the checkpoint.
+/// * Blocks new FS sys calls when we may not have enough buffer space or segments.
 /// * After all FS sys calls are done, runs the segment cleaner if the number of remaining segments
 ///   are lower than threshold.
+/// * After all FS sys calls are done, commits the checkpoint if a certain amount of blocks were written
+///   to the segment since last checkpoint commit.
 pub struct TxManager {
     dev: u32,
 
@@ -120,27 +121,23 @@ impl SleepableLock<TxManager> {
 
             guard.reacquire_after(|| {
                 // Run the cleaner if necessary.
-                let seg = fs.segmanager(ctx);
-                let remaining = seg.remaining() as u32;
-                let nfree = seg.nfree();
-                seg.free(ctx);
-                if remaining + nfree * (SEGSIZE as u32 - 1) < CLEANING_THRES as u32 {
-                    last_seg_no = fs.clean(last_seg_no, dev, tx, ctx);
+                // SAFETY: there is no another transaction, so `SegManager` is not accessed.
+                let seg = unsafe { &mut *fs.segmanager_raw() };
+                if seg.remaining() as u32 + seg.nfree() * (SEGSIZE as u32 - 1)
+                    < CLEANING_THRES as u32
+                {
+                    last_seg_no = fs.clean(last_seg_no, seg, dev, tx, ctx);
                 }
 
                 // Do checkpointing if necessary.
-                let mut seg = fs.segmanager(ctx);
-                if seg.blocks_written() < last_blocks_written + CHECKPOINTING_THRES {
-                    seg.free(ctx);
-                } else {
+                if seg.blocks_written() >= last_blocks_written + CHECKPOINTING_THRES {
                     last_blocks_written = seg.blocks_written();
                     seg.commit(false, ctx);
-                    seg.free(ctx);
-                    // SAFETY: there is no another transaction, so `inner` cannot be read or written.
-                    unsafe {
-                        // TODO: Checkpointing doesn't need to be done this often.
-                        fs.commit_checkpoint(dev, stored_at_first, timestamp, ctx)
-                    }
+
+                    // TODO: Do we need a lock here? `Imap` is not under mutation in any thread.
+                    let imap = fs.imap(ctx);
+                    fs.commit_checkpoint(stored_at_first, timestamp, seg, &imap, dev, ctx);
+                    imap.free(ctx);
                 }
             });
 
