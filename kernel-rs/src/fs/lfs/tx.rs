@@ -18,11 +18,15 @@ use crate::{
 // making us allocate a new segment summary block in the same segment.
 pub const CLEANING_THRES: usize = NBUF + MIN_REQUIRED_BLOCKS + 1;
 
+/// Checkpointing is done only after at least this amount of blocks were written to the segment.
+const CHECKPOINTING_THRES: usize = 25;
+
 /// Manages the starts and wrap ups of FS transactions.
-/// * Blocks new FS sys calls when we may not have enough segments. (i.e. Wait for the segment cleaner to finish.)
-/// * After all FS sys calls are done, commits the checkpoint.
+/// * Blocks new FS sys calls when we may not have enough buffer space or segments.
 /// * After all FS sys calls are done, runs the segment cleaner if the number of remaining segments
 ///   are lower than threshold.
+/// * After all FS sys calls are done, commits the checkpoint if a certain amount of blocks were written
+///   to the segment since last checkpoint commit.
 pub struct TxManager {
     dev: u32,
 
@@ -38,6 +42,10 @@ pub struct TxManager {
     /// The timestamp of the latest checkpoint.
     /// Increments when commiting the checkpoint.
     timestamp: u32,
+
+    /// The `Segmanager`'s `blocks_written` value at the last checkpoint commit.
+    /// Starts from 0 at boot.
+    last_blocks_written: usize,
 
     /// The last segment that the cleaner scanned.
     last_seg_no: u32,
@@ -55,6 +63,7 @@ impl TxManager {
             committing: false,
             stored_at_first,
             timestamp,
+            last_blocks_written: 0,
             last_seg_no: 0,
         }
     }
@@ -107,27 +116,31 @@ impl SleepableLock<TxManager> {
             let dev = guard.dev;
             let stored_at_first = guard.stored_at_first;
             let timestamp = guard.timestamp;
+            let mut last_blocks_written = guard.last_blocks_written;
             let mut last_seg_no = guard.last_seg_no;
 
             guard.reacquire_after(|| {
-                let seg = fs.segmanager(ctx);
-                let remaining = seg.remaining() as u32;
-                let nfree = seg.nfree();
-                seg.free(ctx);
-                if remaining + nfree * (SEGSIZE as u32 - 1) < CLEANING_THRES as u32 {
-                    last_seg_no = fs.clean(last_seg_no, dev, tx, ctx);
+                // Run the cleaner if necessary.
+                // SAFETY: there is no another transaction, so `SegManager` is not mutated.
+                let seg = unsafe { &mut *fs.segmanager_raw() };
+                if seg.remaining() as u32 + seg.nfree() * (SEGSIZE as u32 - 1)
+                    < CLEANING_THRES as u32
+                {
+                    last_seg_no = fs.clean(last_seg_no, seg, dev, tx, ctx);
                 }
 
-                let mut seg = fs.segmanager(ctx);
-                seg.commit(false, ctx);
-                seg.free(ctx);
-                // SAFETY: there is no another transaction, so `inner` cannot be read or written.
-                unsafe {
-                    // TODO: Checkpointing doesn't need to be done this often.
-                    fs.commit_checkpoint(dev, stored_at_first, timestamp, ctx)
+                // Do checkpointing if necessary.
+                if seg.blocks_written() >= last_blocks_written + CHECKPOINTING_THRES {
+                    last_blocks_written = seg.blocks_written();
+                    seg.commit(false, ctx);
+
+                    // SAFETY: there is no another transaction, so `Imap` is not mutated.
+                    let imap = unsafe { &*fs.imap_raw() };
+                    fs.commit_checkpoint(stored_at_first, timestamp, seg, imap, dev, ctx);
                 }
             });
 
+            guard.last_blocks_written = last_blocks_written;
             guard.last_seg_no = last_seg_no;
             guard.committing = false;
         }

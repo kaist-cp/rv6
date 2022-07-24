@@ -9,7 +9,7 @@ use static_assertions::const_assert;
 use super::{
     segment::{BlockType, DSegSum, DSegSumEntry, SEGSUM_MAGIC},
     tx::CLEANING_THRES,
-    Lfs, Tx,
+    Lfs, SegManager, Tx,
 };
 use crate::{
     hal::hal,
@@ -207,6 +207,7 @@ impl Lfs {
     fn clean_segment(
         &self,
         seg_sum: &DSegSum,
+        seg: &mut SegManager,
         dev: u32,
         tx: &mut Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
@@ -229,13 +230,11 @@ impl Lfs {
                     let mut ip = inode.lock(ctx);
 
                     // copy to end of segment
-                    let mut seg = self.segmanager(ctx);
-                    ip.writable_data_block(entry.block_no as usize, &mut seg, tx, ctx)
+                    ip.writable_data_block(entry.block_no as usize, seg, tx, ctx)
                         .free(ctx);
                     if seg.is_full() {
                         seg.commit(true, ctx);
                     }
-                    seg.free(ctx);
 
                     // update inode
                     ip.update(tx, ctx);
@@ -247,12 +246,10 @@ impl Lfs {
                     let mut ip = inode.lock(ctx);
 
                     // copy to end of segment
-                    let mut seg = self.segmanager(ctx);
-                    ip.writable_indirect_block(&mut seg, ctx).free(ctx);
+                    ip.writable_indirect_block(seg, ctx).free(ctx);
                     if seg.is_full() {
                         seg.commit(true, ctx);
                     }
-                    seg.free(ctx);
 
                     // update inode
                     ip.update(tx, ctx);
@@ -260,16 +257,12 @@ impl Lfs {
                     inode.free((tx, ctx));
                 }
                 BlockType::Imap => {
-                    let mut seg = self.segmanager(ctx);
                     let mut imap = self.imap(ctx);
-                    imap.update(entry.block_no, &mut seg, ctx)
-                        .unwrap()
-                        .free(ctx);
+                    imap.update(entry.block_no, seg, ctx).unwrap().free(ctx);
                     if seg.is_full() {
                         seg.commit(true, ctx);
                     }
                     imap.free(ctx);
-                    seg.free(ctx);
                 }
             };
         }
@@ -291,6 +284,7 @@ impl Lfs {
     pub fn clean(
         &self,
         last_seg_no: u32,
+        seg: &mut SegManager,
         dev: u32,
         tx: &mut Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
@@ -298,18 +292,16 @@ impl Lfs {
         const_assert!(SEGSIZE >= MAX_LIVE_BLOCKS);
         const_assert!(MIN_FREE_BLOCKS >= CLEANING_THRES);
 
-        let seg = self.segmanager(ctx);
-        let free_blocks = seg.remaining() + seg.nfree() as usize * (SEGSIZE - 1);
-        seg.free(ctx);
-        assert!(free_blocks >= MIN_REQUIRED_BLOCKS);
+        assert!(
+            seg.remaining() as u32 + seg.nfree() * (SEGSIZE as u32 - 1)
+                >= MIN_REQUIRED_BLOCKS as u32
+        );
 
         let mut cleaned_segs: ArrayVec<u32, MAX_SEGS_CLEANED> = ArrayVec::new();
         for i in 0..self.superblock().nsegments() {
             // 1. check whether the segment is marked as allocated.
             let curr_seg_no = (last_seg_no + i + 1) % self.superblock().nsegments();
-            let seg = self.segmanager(ctx);
             let is_free = seg.segtable_is_free(curr_seg_no);
-            seg.free(ctx);
             if is_free {
                 continue;
             }
@@ -322,15 +314,15 @@ impl Lfs {
             if live > MAX_LIVE_BLOCKS {
                 continue;
             }
-            self.clean_segment(&seg_sum, dev, tx, ctx);
+            self.clean_segment(&seg_sum, seg, dev, tx, ctx);
             cleaned_segs.push(curr_seg_no);
 
             // 4. stop if we now have enough blocks
-            let mut seg = self.segmanager(ctx);
-            let remaining = seg.remaining();
-            let nfree = seg.nfree() as usize;
-            if remaining + (nfree + cleaned_segs.len()) * (SEGSIZE - 1) < MIN_FREE_BLOCKS {
-                seg.free(ctx);
+            let remaining = seg.remaining() as u32;
+            let nfree = seg.nfree();
+            if remaining + (nfree + cleaned_segs.len() as u32) * (SEGSIZE as u32 - 1)
+                < MIN_FREE_BLOCKS as u32
+            {
                 continue;
             }
             // Note: We must update the segtable here because if we update it earlier,
@@ -341,7 +333,6 @@ impl Lfs {
             for seg_no in cleaned_segs {
                 seg.segtable_free(seg_no);
             }
-            seg.free(ctx);
             return curr_seg_no;
         }
         // TODO: We may need to panic in this case.

@@ -89,26 +89,31 @@ impl Lfs {
         self.segmanager.get().expect("segmanager").lock(ctx)
     }
 
+    pub fn segmanager_raw(&self) -> *mut SegManager {
+        self.segmanager.get().expect("segmanager").get_mut_raw()
+    }
+
     pub fn imap(&self, ctx: &KernelCtx<'_, '_>) -> SleepLockGuard<'_, Imap> {
         self.imap.get().expect("imap").lock(ctx)
+    }
+
+    pub fn imap_raw(&self) -> *mut Imap {
+        self.imap.get().expect("imap").get_mut_raw()
     }
 
     fn tx_manager(&self) -> &SleepableLock<TxManager> {
         self.tx_manager.get().expect("tx_manager")
     }
 
-    /// Commits the checkpoint at the checkpoint region without acquiring any locks or checking the type is initialized.
+    /// Commits the checkpoint at the checkpoint region.
     /// If `first` is `true`, writes it at the first checkpoint region. Otherwise, writes at the second region.
-    ///
-    /// # Safety
-    ///
-    /// Call this function only when you can ensure the `SegTable` and `Imap` is not under mutation
-    /// and only after `self` is initialzed.
-    pub unsafe fn commit_checkpoint(
+    pub fn commit_checkpoint(
         &self,
-        dev: u32,
         first: bool,
         timestamp: u32,
+        seg: &SegManager,
+        imap: &Imap,
+        dev: u32,
         ctx: &KernelCtx<'_, '_>,
     ) {
         let (bno1, bno2) = self.superblock().get_chkpt_block_no();
@@ -116,8 +121,8 @@ impl Lfs {
 
         let mut buf = hal().disk().read(dev, block_no, ctx);
         let chkpt = unsafe { &mut *(buf.deref_inner_mut().data.as_ptr() as *mut Checkpoint) };
-        chkpt.segtable = unsafe { &*self.segmanager.get_unchecked().get_mut_raw() }.dsegtable();
-        chkpt.imap = unsafe { &*self.imap.get_unchecked().get_mut_raw() }.dimap();
+        chkpt.segtable = seg.dsegtable();
+        chkpt.imap = imap.dimap();
         chkpt.timestamp = timestamp;
         hal().disk().write(&mut buf, ctx);
         buf.free(ctx);
