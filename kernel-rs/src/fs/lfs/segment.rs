@@ -148,6 +148,7 @@ impl Default for DSegSum {
 
 pub const SEGSUM_MAGIC: u32 = 0x10305070;
 
+/// The segment allocation table (bitmap).
 pub type SegTable = [u8; SEGTABLESIZE];
 
 /// Manages the in-memory segment.
@@ -157,14 +158,19 @@ pub type SegTable = [u8; SEGTABLESIZE];
 pub struct SegManager {
     dev_no: u32,
 
-    // The segment usage table.
+    /// The segment allocation table.
     segtable: SegTable,
 
-    // The total number of segments on the disk.
+    /// The total number of segments on the disk.
     nsegments: u32,
 
-    // The number of free segments.
+    /// The number of free segments.
     nfree: u32,
+
+    /// The total number of blocks written to the segment since boot.
+    /// Writing segment summary blocks or overwritting previously allocated blocks
+    /// are not included.
+    blocks_written: usize,
 
     /// The segment number of the current segment.
     segment_no: u32,
@@ -178,7 +184,7 @@ pub struct SegManager {
     segment: ArrayVec<(SegSumEntry, BufUnlocked), SEGSIZE>,
 
     /// An `ArrayVec` where we temporarily store the locked blocks that are about to be written to the disk.
-    /// TODO: We need this to prevent stack overflow. Remove after resolving stack overflow issue.
+    // TODO: We need this to prevent stack overflow. Remove after resolving stack overflow issue.
     locked_bufs: ArrayVec<Buf, SEGSIZE>,
 }
 
@@ -190,6 +196,7 @@ impl SegManager {
             segtable,
             nsegments,
             nfree: 0,
+            blocks_written: 0,
             segment_no: 0,
             start: 0,
             segment: ArrayVec::new(),
@@ -238,6 +245,13 @@ impl SegManager {
     /// Returns the number of free segments on the disk.
     pub fn nfree(&self) -> u32 {
         self.nfree
+    }
+
+    /// Returns the total number of blocks written to the segment since boot.
+    /// Writing segment summary blocks or overwritting previously allocated blocks
+    /// are not included.
+    pub fn blocks_written(&self) -> usize {
+        self.blocks_written
     }
 
     /// Returns true if the `seg_no`th segment is free.
@@ -309,6 +323,7 @@ impl SegManager {
             buf.deref_inner_mut().data.fill(0);
             buf.deref_inner_mut().valid = true;
             self.segment.push((entry, buf.create_unlocked()));
+            self.blocks_written += 1;
             Some((buf, self.get_disk_block_no(block_no, ctx)))
         }
     }
