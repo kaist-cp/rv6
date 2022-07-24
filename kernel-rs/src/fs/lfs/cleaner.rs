@@ -1,18 +1,40 @@
+//! The cleaner module.
+//!
+//! Run `Lfs::clean` to run the cleaner and provide more free segments when we are
+//! low on free blocks. See `Lfs::clean` for details.
+
+use arrayvec::ArrayVec;
+use static_assertions::const_assert;
+
 use super::{
     segment::{BlockType, DSegSum, DSegSumEntry, SEGSUM_MAGIC},
+    tx::CLEANING_THRES,
     Lfs, Tx,
 };
 use crate::{
     hal::hal,
-    param::{NBUF, SEGSIZE},
+    param::{IMAPSIZE, SEGSIZE},
     proc::KernelCtx,
     util::strong_pin::StrongPin,
 };
 
-// TODO: We might be doing disk writes more than neccessary.
-// We can just write the `Imap` or `Inode` to the disk only once.
+/// Only segments with live blocks less than this number will be subject to cleaning.
+// TODO: What if we don't have an enough number of such segments?
+const MAX_LIVE_BLOCKS: usize = 2;
 
-const THRESHOLD: usize = 2;
+/// We must have at least this amount of free blocks left before running the cleaner.
+pub const MIN_REQUIRED_BLOCKS: usize = 36;
+
+/// We can clean at most this amount of segments during each cleaning.
+// For each live block in a segment, we may need to use up to three blocks
+// (for an inode data/indirect block, an inode block, and an imap block),
+// of another segment to move it. Since an imap block only needs to appear at most
+// once on each segment, we can clean the following number of segments.
+const MAX_SEGS_CLEANED: usize =
+    MIN_REQUIRED_BLOCKS / (SEGSIZE - 1) * (SEGSIZE - 1 - IMAPSIZE) / (MAX_LIVE_BLOCKS * 2);
+
+/// After the cleaning is done, we will have at least this amount of free blocks.
+const MIN_FREE_BLOCKS: usize = MAX_SEGS_CLEANED * (SEGSIZE - 1);
 
 impl Lfs {
     /// Checks whether the block stored at `bno` is live or not.
@@ -181,12 +203,10 @@ impl Lfs {
         (seg_sum, live)
     }
 
-    /// Moves all blocks that are not marked as dead in the given `seg_sum` to another segment,
-    /// and mark the current segment as free on the segtable.
+    /// Moves all blocks that are not marked as dead in the given `seg_sum` to another segment.
     fn clean_segment(
         &self,
         seg_sum: &DSegSum,
-        seg_no: u32,
         dev: u32,
         tx: &mut Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
@@ -253,13 +273,21 @@ impl Lfs {
                 }
             };
         }
-
-        // mark segment as free
-        let mut seg = self.segmanager(ctx);
-        seg.segtable_free(seg_no);
-        seg.free(ctx);
     }
 
+    /// Runs the segment cleaner to provide more free segments.
+    ///
+    /// The cleaner will travese the segments on disk, starting from `last_seg_no + 1`, and choose segments to be cleaned.
+    /// Then all live blocks of the selected segments are moved to another segment, making that segment free.
+    /// Continues until we have at least `MIN_FREE_BLOCKS` free blocks.
+    ///
+    /// Returns the segment number of the last visited segment.
+    /// You should provide this number when calling the cleaner next time in order to continue the traversal
+    /// from where we finished previously.
+    ///
+    /// # Panic
+    /// The cleaner must be called only when we have at least `MIN_REQUIRED_BLOCKS` free blocks. Otherwise, this function
+    /// will panic. This means you must call the cleaner before we have less than `MIN_REQUIRED_BLOCKS` free blocks.
     pub fn clean(
         &self,
         last_seg_no: u32,
@@ -267,32 +295,54 @@ impl Lfs {
         tx: &mut Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> u32 {
+        const_assert!(SEGSIZE >= MAX_LIVE_BLOCKS);
+        const_assert!(MIN_FREE_BLOCKS >= CLEANING_THRES);
+
+        let seg = self.segmanager(ctx);
+        let free_blocks = seg.remaining() + seg.nfree() as usize * (SEGSIZE - 1);
+        seg.free(ctx);
+        assert!(free_blocks >= MIN_REQUIRED_BLOCKS);
+
+        let mut cleaned_segs: ArrayVec<u32, MAX_SEGS_CLEANED> = ArrayVec::new();
         for i in 0..self.superblock().nsegments() {
             // 1. check whether the segment is marked as allocated.
-            let seg_no = (last_seg_no + i + 1) % self.superblock().nsegments();
+            let curr_seg_no = (last_seg_no + i + 1) % self.superblock().nsegments();
             let seg = self.segmanager(ctx);
-            let is_free = seg.segtable_is_free(seg_no);
+            let is_free = seg.segtable_is_free(curr_seg_no);
             seg.free(ctx);
             if is_free {
                 continue;
             }
 
             // 2. scan the segment to count the number of live blocks
-            let (seg_sum, live) = self.scan_segment(seg_no, THRESHOLD, dev, tx, ctx);
+            let (seg_sum, live) = self.scan_segment(curr_seg_no, MAX_LIVE_BLOCKS, dev, tx, ctx);
 
             // 3. if the segment does not have a lot of live blocks,
             // move its live blocks to another segment and mark it as free.
-            if live <= THRESHOLD {
-                self.clean_segment(&seg_sum, seg_no, dev, tx, ctx);
+            if live > MAX_LIVE_BLOCKS {
+                continue;
             }
+            self.clean_segment(&seg_sum, dev, tx, ctx);
+            cleaned_segs.push(curr_seg_no);
 
-            // 4. stop if we now have enough segments
-            let seg = self.segmanager(ctx);
-            let nfree = seg.nfree();
-            seg.free(ctx);
-            if nfree * (SEGSIZE as u32) > 4 * NBUF as u32 {
-                return seg_no;
+            // 4. stop if we now have enough blocks
+            let mut seg = self.segmanager(ctx);
+            let remaining = seg.remaining();
+            let nfree = seg.nfree() as usize;
+            if remaining + (nfree + cleaned_segs.len()) * (SEGSIZE - 1) < MIN_FREE_BLOCKS {
+                seg.free(ctx);
+                continue;
             }
+            // Note: We must update the segtable here because if we update it earlier,
+            // we might overwrite a live block of a segment we recently cleaned.
+            // Though the live block was already moved to another segment, it may be still
+            // directly/indirectly referenced by the latest committed checkpoint, and hence,
+            // this may lead to inconsistency if a crash happens before the next checkpoint commit.
+            for seg_no in cleaned_segs {
+                seg.segtable_free(seg_no);
+            }
+            seg.free(ctx);
+            return curr_seg_no;
         }
         // TODO: We may need to panic in this case.
         last_seg_no

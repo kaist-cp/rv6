@@ -6,12 +6,17 @@
 //! * After all FS sys calls are done, runs the segment cleaner if the number of remaining segments
 //!   are lower than threshold.
 
-use super::{Lfs, Tx};
+use super::{cleaner::MIN_REQUIRED_BLOCKS, Lfs, Tx};
 use crate::{
     lock::SleepableLock,
     param::{MAXOPBLOCKS, NBUF, SEGSIZE},
     proc::KernelCtx,
 };
+
+/// Runs the cleaner when the number of remaining blocks is less than this.
+// Note: +1 since checkpointing may cause a partial segment write,
+// making us allocate a new segment summary block in the same segment.
+pub const CLEANING_THRES: usize = NBUF + MIN_REQUIRED_BLOCKS + 1;
 
 /// Manages the starts and wrap ups of FS transactions.
 /// * Blocks new FS sys calls when we may not have enough segments. (i.e. Wait for the segment cleaner to finish.)
@@ -61,12 +66,15 @@ impl SleepableLock<TxManager> {
         let mut seg = fs.segmanager(ctx);
         let mut guard = self.lock();
         loop {
+            let remaining = seg.remaining() as u32;
             let nfree = seg.nfree();
             seg.free(ctx);
 
             if guard.committing ||
+            // This op might exhause the `Bcache`; wait for the outstanding sys calls to be done.
+            (guard.outstanding + 1) * MAXOPBLOCKS as i32 > NBUF as i32 ||
             // This op might exhaust segments; wait for cleaner.
-            nfree * (SEGSIZE as u32) < (guard.outstanding as u32 + 1) * MAXOPBLOCKS as u32 + NBUF as u32
+            (guard.outstanding as u32 + 1) * MAXOPBLOCKS as u32 + MIN_REQUIRED_BLOCKS as u32 > remaining + nfree * (SEGSIZE as u32 - 1)
             {
                 guard.sleep(ctx);
                 // TODO: Use a better way. (Add a lock and a waitchannel inside `TxManager` instead?)
@@ -103,9 +111,10 @@ impl SleepableLock<TxManager> {
 
             guard.reacquire_after(|| {
                 let seg = fs.segmanager(ctx);
+                let remaining = seg.remaining() as u32;
                 let nfree = seg.nfree();
                 seg.free(ctx);
-                if nfree * (SEGSIZE as u32) < 2 * NBUF as u32 {
+                if remaining + nfree * (SEGSIZE as u32 - 1) < CLEANING_THRES as u32 {
                     last_seg_no = fs.clean(last_seg_no, dev, tx, ctx);
                 }
 

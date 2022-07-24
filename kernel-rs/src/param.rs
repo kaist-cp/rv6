@@ -42,7 +42,9 @@ cfg_if! {
         /// Check the formula for getting the size of segments here:
         /// https://pages.cs.wisc.edu/~remzi/OSTEP/file-lfs.pdf
         ///
-        /// TODO: optimize the size of the segment
+        /// TODO: optimize the size of the segment.
+        /// Note that this is much smaller than in sprite-lfs. sprite-lfs uses segments
+        /// of size 512KB ~ 1MB.
         pub const SEGSIZE: usize = 10;
 
         /// Size of the imap in blocks
