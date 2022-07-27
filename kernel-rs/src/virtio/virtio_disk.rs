@@ -206,7 +206,7 @@ impl Drop for Descriptor {
 
 impl SleepableLock<VirtioDisk> {
     /// Return a locked Buf with the `latest` contents of the indicated block.
-    /// If buf.valid is true, we don't need to access Disk.
+    // If buf.valid is true, we don't need to access Disk.
     pub fn read(self: Pin<&Self>, dev: u32, blockno: u32, ctx: &KernelCtx<'_, '_>) -> Buf {
         let mut buf = ctx.kernel().bcache().get_buf(dev, blockno).lock(ctx);
         if !buf.deref_inner().valid {

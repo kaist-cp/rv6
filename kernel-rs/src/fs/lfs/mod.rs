@@ -119,7 +119,10 @@ impl Lfs {
         let (bno1, bno2) = self.superblock().get_chkpt_block_no();
         let block_no = if first { bno1 } else { bno2 };
 
-        let mut buf = hal().disk().read(dev, block_no, ctx);
+        let mut buf = ctx.kernel().bcache().get_buf(dev, block_no).lock(ctx);
+        buf.deref_inner_mut().data.fill(0);
+        buf.deref_inner_mut().valid = true;
+
         let chkpt = unsafe { &mut *(buf.deref_inner_mut().data.as_ptr() as *mut Checkpoint) };
         chkpt.segtable = seg.dsegtable();
         chkpt.imap = imap.dimap();
