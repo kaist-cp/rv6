@@ -4,6 +4,7 @@ use core::ops::Deref;
 
 use pin_project::pin_project;
 use spin::Once;
+use static_assertions::const_assert;
 
 use super::{
     DInodeType, FcntlFlags, FileName, FileSystem, Inode, InodeGuard, InodeType, Itable, Path,
@@ -11,6 +12,7 @@ use super::{
 };
 use crate::util::strong_pin::StrongPin;
 use crate::{
+    bio::BufData,
     file::{FileType, InodeFileType},
     hal::hal,
     lock::{SleepLock, SleepLockGuard, SleepableLock},
@@ -63,6 +65,14 @@ pub struct Checkpoint {
     imap: [u32; IMAPSIZE],
     segtable: SegTable,
     timestamp: u32,
+}
+
+impl<'s> From<&'s BufData> for &'s Checkpoint {
+    fn from(b: &'s BufData) -> Self {
+        const_assert!(mem::size_of::<Checkpoint>() <= BSIZE);
+        const_assert!(mem::align_of::<BufData>() % mem::align_of::<Checkpoint>() == 0);
+        unsafe { &*(b.as_ptr() as *const Checkpoint) }
+    }
 }
 
 impl Lfs {
@@ -146,9 +156,9 @@ impl FileSystem for Lfs {
             // Load the checkpoint.
             let (bno1, bno2) = superblock.get_chkpt_block_no();
             let buf1 = hal().disk().read(dev, bno1, ctx);
-            let chkpt1 = unsafe { &*(buf1.deref_inner().data.as_ptr() as *const Checkpoint) };
+            let chkpt1: &Checkpoint = (&buf1.deref_inner().data).into();
             let buf2 = hal().disk().read(dev, bno2, ctx);
-            let chkpt2 = unsafe { &*(buf2.deref_inner().data.as_ptr() as *const Checkpoint) };
+            let chkpt2: &Checkpoint = (&buf2.deref_inner().data).into();
 
             let (chkpt, timestamp, stored_at_first) = if chkpt1.timestamp > chkpt2.timestamp {
                 (chkpt1, chkpt1.timestamp, true)
@@ -514,15 +524,7 @@ impl FileSystem for Lfs {
             let mut bp = hal().disk().read(inode.dev, imap.get(inode.inum, ctx), ctx);
             imap.free(ctx);
 
-            // SAFETY: dip is inside bp.data.
-            let dip = bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode;
-            // SAFETY: i16 does not have internal structure.
-            let t = unsafe { *(dip as *const i16) };
-            // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.
-            assert!(t < core::mem::variant_count::<DInodeType>() as i16);
-            // SAFETY: dip is aligned properly and t < #(variants of DInodeType).
-            let dip = unsafe { &mut *dip };
-
+            let dip: &mut Dinode = (&mut bp.deref_inner_mut().data).try_into().unwrap();
             match dip.typ {
                 DInodeType::None => guard.typ = InodeType::None,
                 DInodeType::Dir => guard.typ = InodeType::Dir,

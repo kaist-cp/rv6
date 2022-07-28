@@ -39,11 +39,13 @@
 //! When acquiring the lock on the `SegManager`, `Imap`, or `Buf` at the same time, it must always done in the order of
 //! `SegManager` -> `Imap` -> `Buf`. Otherwise, you may encounter a deadlock.
 
+use core::mem;
+
 use arrayvec::ArrayVec;
 use static_assertions::const_assert;
 
 use crate::{
-    bio::{Buf, BufUnlocked},
+    bio::{Buf, BufData, BufUnlocked},
     hal::hal,
     param::{BSIZE, SEGSIZE, SEGTABLESIZE},
     proc::KernelCtx,
@@ -142,6 +144,23 @@ impl Default for DSegSum {
             magic: SEGSUM_MAGIC,
             size: 0,
             entries: [DSegSumEntry::default(); SEGSIZE - 1],
+        }
+    }
+}
+
+impl<'s> TryFrom<&'s BufData> for &'s DSegSum {
+    type Error = &'static str;
+
+    fn try_from(b: &'s BufData) -> Result<Self, Self::Error> {
+        const_assert!(mem::size_of::<DSegSum>() <= BSIZE);
+        const_assert!(mem::align_of::<BufData>() % mem::align_of::<DSegSum>() == 0);
+
+        // Disk content uses intel byte order.
+        let magic = u32::from_le_bytes(b[..mem::size_of::<u32>()].try_into().unwrap());
+        if magic == SEGSUM_MAGIC {
+            Ok(unsafe { &*(b.as_ptr() as *const DSegSum) })
+        } else {
+            Err("wrong segsum magic")
         }
     }
 }
