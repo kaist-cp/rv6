@@ -244,14 +244,10 @@ impl SegManager {
     /// Returns a cleared `Buf` for the `seg_block_no`th block of this segment.
     /// `seg_block_no` starts from 0 to `SEGSIZE - 1`.
     fn get_segment_block(&self, seg_block_no: usize, ctx: &KernelCtx<'_, '_>) -> Buf {
-        let mut buf = ctx
-            .kernel()
+        let block_no = self.get_disk_block_no(seg_block_no, ctx);
+        ctx.kernel()
             .bcache()
-            .get_buf(self.dev_no, self.get_disk_block_no(seg_block_no, ctx))
-            .lock(ctx);
-        buf.deref_inner_mut().data.fill(0);
-        buf.deref_inner_mut().valid = true;
-        buf
+            .get_buf_and_clear(self.dev_no, block_no, ctx)
     }
 
     /// Returns true if the segment has no more remaining blocks.
@@ -483,7 +479,7 @@ impl SegManager {
         if len > 0 {
             // Write the segment summary.
             let mut bp = self.get_segment_block(self.start, ctx);
-            let ssp = unsafe { &mut *(bp.deref_inner_mut().data.as_mut_ptr() as *mut DSegSum) };
+            let ssp = unsafe { &mut *(bp.data_mut().as_mut_ptr() as *mut DSegSum) };
             ssp.magic = SEGSUM_MAGIC;
             ssp.size = self.segment.len() as u32;
             for i in 0..self.segment.len() {

@@ -89,7 +89,7 @@ impl Imap {
     pub fn get_empty_inum(&self, ctx: &KernelCtx<'_, '_>) -> Option<u32> {
         for i in 0..IMAPSIZE {
             let buf = self.get_imap_block(i, ctx);
-            let imap_block: &DImapBlock = (&buf.deref_inner().data).into();
+            let imap_block: &DImapBlock = buf.data().into();
             for j in 0..NENTRY {
                 let inum = i * NENTRY + j;
                 // inum: (0, ninodes)
@@ -114,7 +114,7 @@ impl Imap {
 
         const_assert!(mem::size_of::<DImapBlock>() <= mem::size_of::<BufData>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<DImapBlock>() == 0);
-        let imap_block: &DImapBlock = (&buf.deref_inner().data).into();
+        let imap_block: &DImapBlock = buf.data().into();
         let res = imap_block.entry[offset];
         buf.free(ctx);
         res
@@ -134,9 +134,7 @@ impl Imap {
                 if addr != self.addr[block_no] {
                     // Copy the imap block content from old imap block.
                     let old_buf = self.get_imap_block(block_no, ctx);
-                    buf.deref_inner_mut()
-                        .data
-                        .copy_from(&old_buf.deref_inner().data);
+                    buf.data_mut().copy_from(old_buf.data());
                     // Update imap mapping.
                     self.addr[block_no] = addr;
                     old_buf.free(ctx);
@@ -164,7 +162,7 @@ impl Imap {
             // Update entry.
             const_assert!(mem::size_of::<DImapBlock>() <= mem::size_of::<BufData>());
             const_assert!(mem::align_of::<BufData>() % mem::align_of::<DImapBlock>() == 0);
-            let imap_block: &mut DImapBlock = (&mut buf.deref_inner_mut().data).into();
+            let imap_block: &mut DImapBlock = buf.data_mut().into();
             imap_block.entry[offset] = disk_block_no;
             buf.free(ctx);
             true

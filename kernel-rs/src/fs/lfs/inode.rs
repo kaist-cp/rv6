@@ -239,7 +239,7 @@ impl InodeGuard<'_, Lfs> {
         // * dip is inside bp.data.
         // * dip will not be read.
 
-        let dip = unsafe { &mut *(bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode) };
+        let dip = unsafe { &mut *(bp.data_mut().as_mut_ptr() as *mut Dinode) };
 
         let inner = self.deref_inner();
         match inner.typ {
@@ -303,7 +303,7 @@ impl InodeGuard<'_, Lfs> {
             // Read the indirect block.
             let bp = hal().disk().read(self.dev, inner.addr_indirect, ctx);
             // Get the address.
-            let data: &[u32; NINDIRECT] = (&bp.deref_inner().data).into();
+            let data: &[u32; NINDIRECT] = bp.data().into();
             let addr = data[bn - NDIRECT];
             bp.free(ctx);
             if addr != 0 {
@@ -369,7 +369,7 @@ impl InodeGuard<'_, Lfs> {
 
             // Get the indirect block and the address of the indirect data block.
             let mut bp = self.writable_indirect_block(seg, ctx);
-            let data: &mut [u32; NINDIRECT] = (&mut bp.deref_inner_mut().data).into();
+            let data: &mut [u32; NINDIRECT] = bp.data_mut().into();
             // Get the indirect data block and update the indirect block.
             let (buf, new_addr) = self.writable_data_block_inner(bn + NDIRECT, data[bn], seg, ctx);
             data[bn] = new_addr;
@@ -403,9 +403,7 @@ impl InodeGuard<'_, Lfs> {
             if new_addr != addr {
                 // Copy from old block to new block.
                 let old_buf = hal().disk().read(self.dev, addr, ctx);
-                buf.deref_inner_mut()
-                    .data
-                    .copy_from(&old_buf.deref_inner().data);
+                buf.data_mut().copy_from(old_buf.data());
                 old_buf.free(ctx);
             }
             (buf, new_addr)
@@ -436,9 +434,7 @@ impl InodeGuard<'_, Lfs> {
             if indirect != new_indirect {
                 // Copy from old block to new block.
                 let old_bp = hal().disk().read(self.dev, indirect, ctx);
-                bp.deref_inner_mut()
-                    .data
-                    .copy_from(&old_bp.deref_inner().data);
+                bp.data_mut().copy_from(old_bp.data());
                 old_bp.free(ctx);
                 self.deref_inner_mut().addr_indirect = new_indirect;
             }
@@ -524,7 +520,7 @@ impl Itable<Lfs> {
         let inum = imap.get_empty_inum(ctx).unwrap();
         let (mut bp, disk_block_no) = seg.add_new_inode_block(inum, ctx).unwrap();
 
-        let dip: &mut Dinode = (&mut bp.deref_inner_mut().data).try_into().unwrap();
+        let dip: &mut Dinode = bp.data_mut().try_into().unwrap();
         // SAFETY: DInode does not have any invariant.
         unsafe { memset(dip, 0u32) };
         match typ {

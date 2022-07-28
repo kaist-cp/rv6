@@ -31,7 +31,7 @@ pub struct BufEntry {
     /// WaitChannel saying virtio_disk request is done.
     pub vdisk_request_waitchannel: WaitChannel,
 
-    pub inner: SleepLock<BufInner>,
+    inner: SleepLock<BufInner>,
 }
 
 impl BufEntry {
@@ -62,11 +62,12 @@ impl ArenaObject for BufEntry {
 
 pub struct BufInner {
     /// Has data been read from disk?
-    pub valid: bool,
+    valid: bool,
 
     /// Does disk "own" buf?
-    pub disk: bool,
-    pub data: BufData,
+    disk: bool,
+
+    data: BufData,
 }
 
 // Data in Buf may be assumed to be u32, so the data field in Buf must have
@@ -111,6 +112,7 @@ impl BufInner {
 pub type Bcache = MruArena<BufEntry, NBUF>;
 
 /// A reference counted smart pointer to a `BufEntry`.
+/// Use `BufUnlocked::lock` to access the buffer's inner data.
 #[derive(Clone)]
 pub struct BufUnlocked(ManuallyDrop<ArenaRc<Bcache>>);
 
@@ -124,6 +126,8 @@ pub struct Buf {
 }
 
 impl BufUnlocked {
+    /// Returns a locked `Buf` after releasing the lock and consuming `self`.
+    /// Use this to access the buffer's inner data.
     pub fn lock(self, ctx: &KernelCtx<'_, '_>) -> Buf {
         mem::forget(self.inner.lock(ctx));
         Buf {
@@ -148,19 +152,52 @@ impl Drop for BufUnlocked {
 }
 
 impl Buf {
-    pub fn deref_inner(&self) -> &BufInner {
+    /// Returns a reference to the `BufInner`, which includes the buffer data
+    /// and other fields. We can safely do this since we have the lock.
+    fn deref_inner(&self) -> &BufInner {
         let entry: &BufEntry = &self.inner;
         // SAFETY: inner.inner is locked.
         unsafe { &*entry.inner.get_mut_raw() }
     }
 
-    pub fn deref_inner_mut(&mut self) -> &mut BufInner {
+    /// Returns a mutable reference to the `BufInner`, which includes the buffer data
+    /// and other fields. We can safely do this since we have the lock.
+    fn deref_inner_mut(&mut self) -> &mut BufInner {
         let entry: &BufEntry = &self.inner;
         // SAFETY: inner.inner is locked and &mut self is exclusive.
         unsafe { &mut *entry.inner.get_mut_raw() }
     }
 
-    /// Returns a `BufUnlocked` without releasing the lock or consuming `self`.
+    /// Returns a reference to the `Buf`'s inner data.
+    pub fn data(&self) -> &BufData {
+        &self.deref_inner().data
+    }
+
+    /// Returns a mutable reference to the `Buf`'s inner data.
+    pub fn data_mut(&mut self) -> &mut BufData {
+        &mut self.deref_inner_mut().data
+    }
+
+    /// Returns whether the data of this `Buf` is initialized or not.
+    /// If it is not, you should initialize, such as by `data_mut` or `copy_from`,
+    /// and then call `mark_initialized`.
+    pub fn is_initialized(&self) -> bool {
+        self.deref_inner().valid
+    }
+
+    /// Marks the `Buf`'s data as initialized.
+    pub fn mark_initialized(&mut self) {
+        self.deref_inner_mut().valid = true;
+    }
+
+    /// Returns a mutable reference to the `BufInner`'s `disk` field,
+    /// which marks whether the buffer is owned by the disk or not.
+    /// Usually you should use this only inside driver related code.
+    pub fn disk_mut(&mut self) -> &mut bool {
+        &mut self.deref_inner_mut().disk
+    }
+
+    /// Returns a new `BufUnlocked` without releasing the lock or consuming `self`.
     #[allow(dead_code)]
     pub fn create_unlocked(&self) -> BufUnlocked {
         unsafe { ManuallyDrop::take(&mut self.inner.clone()) }
@@ -219,5 +256,18 @@ impl Bcache {
             )
             .expect("[BufGuard::new] no buffers"),
         ))
+    }
+
+    /// Returns a locked buf with its content all zeroed.
+    pub fn get_buf_and_clear(
+        self: StrongPin<'_, Self>,
+        dev: u32,
+        blockno: u32,
+        ctx: &KernelCtx<'_, '_>,
+    ) -> Buf {
+        let mut buf = self.get_buf(dev, blockno).lock(ctx);
+        buf.data_mut().fill(0);
+        buf.mark_initialized();
+        buf
     }
 }

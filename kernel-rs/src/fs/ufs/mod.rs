@@ -95,9 +95,7 @@ impl Tx<'_, Ufs> {
 
     /// Zero a block.
     fn bzero(&self, dev: u32, bno: u32, ctx: &KernelCtx<'_, '_>) {
-        let mut buf = ctx.kernel().bcache().get_buf(dev, bno).lock(ctx);
-        buf.deref_inner_mut().data.fill(0);
-        buf.deref_inner_mut().valid = true;
+        let buf = ctx.kernel().bcache().get_buf_and_clear(dev, bno, ctx);
         self.write(buf, ctx);
     }
 
@@ -108,9 +106,9 @@ impl Tx<'_, Ufs> {
             let mut bp = hal().disk().read(dev, self.fs.superblock().bblock(b), ctx);
             for bi in 0..cmp::min(BPB as u32, self.fs.superblock().size - b) {
                 let m = 1 << (bi % 8);
-                if bp.deref_inner_mut().data[(bi / 8) as usize] & m == 0 {
+                if bp.data_mut()[(bi / 8) as usize] & m == 0 {
                     // Is block free?
-                    bp.deref_inner_mut().data[(bi / 8) as usize] |= m; // Mark block in use.
+                    bp.data_mut()[(bi / 8) as usize] |= m; // Mark block in use.
                     self.write(bp, ctx);
                     self.bzero(dev, b + bi, ctx);
                     return b + bi;
@@ -127,12 +125,8 @@ impl Tx<'_, Ufs> {
         let mut bp = hal().disk().read(dev, self.fs.superblock().bblock(b), ctx);
         let bi = b as usize % BPB;
         let m = 1u8 << (bi % 8);
-        assert_ne!(
-            bp.deref_inner_mut().data[bi / 8] & m,
-            0,
-            "freeing free block"
-        );
-        bp.deref_inner_mut().data[bi / 8] &= !m;
+        assert_ne!(bp.data_mut()[bi / 8] & m, 0, "freeing free block");
+        bp.data_mut()[bi / 8] &= !m;
         self.write(bp, ctx);
     }
 }
@@ -409,7 +403,7 @@ impl FileSystem for Ufs {
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
-            let res = f(tot, &bp.deref_inner().data[begin..end], &mut k);
+            let res = f(tot, &bp.data()[begin..end], &mut k);
             bp.free(&k);
             res?;
             tot += m;
@@ -448,7 +442,7 @@ impl FileSystem for Ufs {
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
-            if f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k).is_ok() {
+            if f(tot, &mut bp.data_mut()[begin..end], &mut k).is_ok() {
                 tx.write(bp, &k);
             } else {
                 bp.free(&k);
@@ -483,7 +477,7 @@ impl FileSystem for Ufs {
                 .disk()
                 .read(dev, guard.deref_inner().addr_indirect, ctx);
             // SAFETY: u32 does not have internal structure.
-            let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
+            let (prefix, data, _) = unsafe { bp.data_mut().align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "itrunc: Buf data unaligned");
             for a in data {
                 if *a != 0 {
@@ -510,8 +504,7 @@ impl FileSystem for Ufs {
 
             // SAFETY: dip is inside bp.data.
             let dip = unsafe {
-                (bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode)
-                    .add(inode.inum as usize % IPB)
+                (bp.data_mut().as_mut_ptr() as *mut Dinode).add(inode.inum as usize % IPB)
             };
             // SAFETY: i16 does not have internal structure.
             let t = unsafe { *(dip as *const i16) };

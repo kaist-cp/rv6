@@ -263,8 +263,7 @@ impl InodeGuard<'_, Ufs> {
         // * dip is inside bp.data.
         // * dip will not be read.
         let dip = unsafe {
-            &mut *(bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode)
-                .add(self.inum as usize % IPB)
+            &mut *(bp.data_mut().as_mut_ptr() as *mut Dinode).add(self.inum as usize % IPB)
         };
 
         let inner = self.deref_inner();
@@ -342,7 +341,7 @@ impl InodeGuard<'_, Ufs> {
             }
 
             let mut bp = hal().disk().read(self.dev, indirect, ctx);
-            let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
+            let (prefix, data, _) = unsafe { bp.data_mut().align_to_mut::<u32>() };
             debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
             let mut addr = data[bn];
             if addr == 0 {
@@ -434,9 +433,8 @@ impl Itable<Ufs> {
             const_assert!(IPB <= mem::size_of::<BufData>() / mem::size_of::<Dinode>());
             const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
             // SAFETY: dip is inside bp.data.
-            let dip = unsafe {
-                (bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode).add(inum as usize % IPB)
-            };
+            let dip =
+                unsafe { (bp.data_mut().as_mut_ptr() as *mut Dinode).add(inum as usize % IPB) };
             // SAFETY: i16 does not have internal structure.
             let t = unsafe { *(dip as *const i16) };
             // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.

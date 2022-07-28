@@ -84,9 +84,7 @@ impl Log {
             let mut dbuf = dbuf.lock(ctx);
 
             // Copy block to dst.
-            dbuf.deref_inner_mut()
-                .data
-                .copy_from(&lbuf.deref_inner().data);
+            dbuf.data_mut().copy_from(lbuf.data());
 
             // Write dst to disk.
             hal().disk().write(&mut dbuf, ctx);
@@ -107,7 +105,7 @@ impl Log {
         // * buf.data is aligned properly.
         // * LogHeader contains only u32's, so does not have any requirements.
         // * buf is locked, so we can access it exclusively.
-        let lh = unsafe { &mut *(buf.deref_inner_mut().data.as_mut_ptr() as *mut LogHeader) };
+        let lh = unsafe { &mut *(buf.data_mut().as_mut_ptr() as *mut LogHeader) };
         buf.free(ctx);
 
         for b in &lh.block[0..lh.n as usize] {
@@ -129,7 +127,7 @@ impl Log {
         // * buf.data is aligned properly.
         // * LogHeader contains only u32's, so does not have any requirements.
         // * buf is locked, so we can access it exclusively.
-        let mut lh = unsafe { &mut *(buf.deref_inner_mut().data.as_mut_ptr() as *mut LogHeader) };
+        let mut lh = unsafe { &mut *(buf.data_mut().as_mut_ptr() as *mut LogHeader) };
 
         lh.n = self.bufs.len() as u32;
         for (db, b) in izip!(&mut lh.block, &self.bufs) {
@@ -160,9 +158,7 @@ impl Log {
             // Cache block.
             let from = hal().disk().read(self.dev, from.blockno, ctx);
 
-            to.deref_inner_mut()
-                .data
-                .copy_from(&from.deref_inner().data);
+            to.data_mut().copy_from(from.data());
 
             // Write the log.
             hal().disk().write(&mut to, ctx);

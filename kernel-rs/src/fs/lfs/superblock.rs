@@ -67,7 +67,7 @@ impl<'s> TryFrom<&'s BufData> for &'s Superblock {
 impl Superblock {
     /// Read the super block.
     pub fn new(buf: &Buf) -> Self {
-        let sb: &Superblock = (&buf.deref_inner().data).try_into().unwrap();
+        let sb: &Superblock = buf.data().try_into().unwrap();
         sb.clone()
     }
 

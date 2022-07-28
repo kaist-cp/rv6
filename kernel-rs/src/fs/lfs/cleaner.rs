@@ -130,7 +130,7 @@ impl Lfs {
             superblock.seg_to_disk_block_no(seg_no, seg_block_no),
             ctx,
         );
-        let seg_sum = <&DSegSum>::try_from(&buf.deref_inner().data);
+        let seg_sum = <&DSegSum>::try_from(buf.data());
         if seg_sum.is_err() {
             buf.free(ctx);
             return None;
