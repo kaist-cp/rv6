@@ -60,7 +60,7 @@ impl Superblock {
         // * buf.data is aligned properly.
         // * Superblock contains only u32's, so does not have any requirements.
         // * buf is locked, so we can access it exclusively.
-        let result = unsafe { ptr::read(buf.deref_inner().data.as_ptr() as *const Superblock) };
+        let result = unsafe { ptr::read(buf.data().as_ptr() as *const Superblock) };
         assert_eq!(result.magic, FSMAGIC, "invalid file system");
         result
     }

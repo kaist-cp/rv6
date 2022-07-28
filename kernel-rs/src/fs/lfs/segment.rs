@@ -39,11 +39,13 @@
 //! When acquiring the lock on the `SegManager`, `Imap`, or `Buf` at the same time, it must always done in the order of
 //! `SegManager` -> `Imap` -> `Buf`. Otherwise, you may encounter a deadlock.
 
+use core::mem;
+
 use arrayvec::ArrayVec;
 use static_assertions::const_assert;
 
 use crate::{
-    bio::{Buf, BufUnlocked},
+    bio::{Buf, BufData, BufUnlocked},
     hal::hal,
     param::{BSIZE, SEGSIZE, SEGTABLESIZE},
     proc::KernelCtx,
@@ -146,6 +148,23 @@ impl Default for DSegSum {
     }
 }
 
+impl<'s> TryFrom<&'s BufData> for &'s DSegSum {
+    type Error = &'static str;
+
+    fn try_from(b: &'s BufData) -> Result<Self, Self::Error> {
+        const_assert!(mem::size_of::<DSegSum>() <= BSIZE);
+        const_assert!(mem::align_of::<BufData>() % mem::align_of::<DSegSum>() == 0);
+
+        // Disk content uses intel byte order.
+        let magic = u32::from_le_bytes(b[..mem::size_of::<u32>()].try_into().unwrap());
+        if magic == SEGSUM_MAGIC {
+            Ok(unsafe { &*(b.as_ptr() as *const DSegSum) })
+        } else {
+            Err("wrong segsum magic")
+        }
+    }
+}
+
 pub const SEGSUM_MAGIC: u32 = 0x10305070;
 
 /// The segment allocation table (bitmap).
@@ -222,12 +241,13 @@ impl SegManager {
             .seg_to_disk_block_no(self.segment_no, seg_block_no as u32)
     }
 
-    /// Reads the `seg_block_no`th block of this segment.
+    /// Returns a cleared `Buf` for the `seg_block_no`th block of this segment.
     /// `seg_block_no` starts from 0 to `SEGSIZE - 1`.
-    fn read_segment_block(&self, seg_block_no: usize, ctx: &KernelCtx<'_, '_>) -> Buf {
-        hal()
-            .disk()
-            .read(self.dev_no, self.get_disk_block_no(seg_block_no, ctx), ctx)
+    fn get_segment_block(&self, seg_block_no: usize, ctx: &KernelCtx<'_, '_>) -> Buf {
+        let block_no = self.get_disk_block_no(seg_block_no, ctx);
+        ctx.kernel()
+            .bcache()
+            .get_buf_and_clear(self.dev_no, block_no, ctx)
     }
 
     /// Returns true if the segment has no more remaining blocks.
@@ -319,9 +339,7 @@ impl SegManager {
         } else {
             // Append segment with a new zeroed block.
             let block_no = self.start + 1 + self.segment.len();
-            let mut buf = self.read_segment_block(block_no, ctx);
-            buf.deref_inner_mut().data.fill(0);
-            buf.deref_inner_mut().valid = true;
+            let buf = self.get_segment_block(block_no, ctx);
             self.segment.push((entry, buf.create_unlocked()));
             self.blocks_written += 1;
             Some((buf, self.get_disk_block_no(block_no, ctx)))
@@ -460,8 +478,8 @@ impl SegManager {
         let len = self.segment.len();
         if len > 0 {
             // Write the segment summary.
-            let mut bp = self.read_segment_block(self.start, ctx);
-            let ssp = unsafe { &mut *(bp.deref_inner_mut().data.as_mut_ptr() as *mut DSegSum) };
+            let mut bp = self.get_segment_block(self.start, ctx);
+            let ssp = unsafe { &mut *(bp.data_mut().as_mut_ptr() as *mut DSegSum) };
             ssp.magic = SEGSUM_MAGIC;
             ssp.size = self.segment.len() as u32;
             for i in 0..self.segment.len() {

@@ -1,4 +1,4 @@
-use core::{mem, ptr};
+use core::mem;
 
 use static_assertions::const_assert;
 
@@ -16,6 +16,7 @@ const FSMAGIC: u32 = 0x10203040;
 // mklfs computes the super block and builds an initial file system. The
 // super block describes the disk layout:
 #[repr(C)]
+#[derive(Clone)]
 pub struct Superblock {
     /// Must be FSMAGIC
     magic: u32,
@@ -42,19 +43,32 @@ pub struct Superblock {
     segstart: u32,
 }
 
+impl<'s> TryFrom<&'s BufData> for &'s Superblock {
+    type Error = &'static str;
+
+    fn try_from(b: &'s BufData) -> Result<Self, Self::Error> {
+        const_assert!(mem::size_of::<Superblock>() <= BSIZE);
+        const_assert!(mem::align_of::<BufData>() % mem::align_of::<Superblock>() == 0);
+
+        // Disk content uses intel byte order.
+        let magic = u32::from_le_bytes(b[..mem::size_of::<u32>()].try_into().unwrap());
+        if magic == FSMAGIC {
+            // SAFETY:
+            // * buf.data is larger than Superblock
+            // * buf.data is aligned properly.
+            // * Superblock contains only u32's, so does not have any requirements.
+            Ok(unsafe { &*(b.as_ptr() as *const Superblock) })
+        } else {
+            Err("invalid file system")
+        }
+    }
+}
+
 impl Superblock {
     /// Read the super block.
     pub fn new(buf: &Buf) -> Self {
-        const_assert!(mem::size_of::<Superblock>() <= BSIZE);
-        const_assert!(mem::align_of::<BufData>() % mem::align_of::<Superblock>() == 0);
-        // SAFETY:
-        // * buf.data is larger than Superblock
-        // * buf.data is aligned properly.
-        // * Superblock contains only u32's, so does not have any requirements.
-        // * buf is locked, so we can access it exclusively.
-        let result = unsafe { ptr::read(buf.deref_inner().data.as_ptr() as *const Superblock) };
-        assert_eq!(result.magic, FSMAGIC, "invalid file system");
-        result
+        let sb: &Superblock = buf.data().try_into().unwrap();
+        sb.clone()
     }
 
     pub fn ninodes(&self) -> u32 {

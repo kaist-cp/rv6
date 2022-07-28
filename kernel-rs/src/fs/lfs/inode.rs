@@ -10,7 +10,7 @@ use crate::{
     fs::{DInodeType, Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
     hal::hal,
     lock::SleepLock,
-    param::{NINODE, ROOTDEV},
+    param::{BSIZE, NINODE, ROOTDEV},
     proc::KernelCtx,
     util::{memset, strong_pin::StrongPin},
 };
@@ -64,6 +64,40 @@ pub struct Dinode {
 
     /// Indirect data block address
     pub addr_indirect: u32,
+}
+
+impl<'s> TryFrom<&'s BufData> for &'s Dinode {
+    type Error = &'static str;
+
+    fn try_from(b: &'s BufData) -> Result<&Dinode, &'static str> {
+        const_assert!(mem::size_of::<Dinode>() <= BSIZE);
+        const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
+
+        // Disk content uses intel byte order.
+        let t = i16::from_le_bytes(b[..mem::size_of::<i16>()].try_into().unwrap());
+        if t < mem::variant_count::<DInodeType>() as i16 {
+            // SAFETY: b is aligned properly and t < #(variants of DInodeType).
+            Ok(unsafe { &*(b.as_ptr() as *const Dinode) })
+        } else {
+            Err("wrong inode type")
+        }
+    }
+}
+
+impl<'s> From<&'s BufData> for &'s [u32; NINDIRECT] {
+    fn from(b: &'s BufData) -> Self {
+        const_assert!(mem::size_of::<[u32; NINDIRECT]>() <= BSIZE);
+        const_assert!(mem::align_of::<BufData>() % mem::align_of::<[u32; NINDIRECT]>() == 0);
+        unsafe { &*(b.as_ptr() as *const [u32; NINDIRECT]) }
+    }
+}
+
+impl<'s> From<&'s mut BufData> for &'s mut [u32; NINDIRECT] {
+    fn from(b: &'s mut BufData) -> Self {
+        const_assert!(mem::size_of::<[u32; NINDIRECT]>() <= BSIZE);
+        const_assert!(mem::align_of::<BufData>() % mem::align_of::<[u32; NINDIRECT]>() == 0);
+        unsafe { &mut *(b.as_mut_ptr() as *mut [u32; NINDIRECT]) }
+    }
 }
 
 // TODO: Dirent and following Iter codes are redundant to codes in ufs/inode.rs
@@ -205,7 +239,7 @@ impl InodeGuard<'_, Lfs> {
         // * dip is inside bp.data.
         // * dip will not be read.
 
-        let dip = unsafe { &mut *(bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode) };
+        let dip = unsafe { &mut *(bp.data_mut().as_mut_ptr() as *mut Dinode) };
 
         let inner = self.deref_inner();
         match inner.typ {
@@ -263,14 +297,13 @@ impl InodeGuard<'_, Lfs> {
             } else {
                 None
             }
-        } else if inner.addr_indirect == 0 {
+        } else if inner.addr_indirect == 0 || bn - NDIRECT > NINDIRECT {
             None
         } else {
             // Read the indirect block.
             let bp = hal().disk().read(self.dev, inner.addr_indirect, ctx);
             // Get the address.
-            let (prefix, data, _) = unsafe { bp.deref_inner().data.align_to::<u32>() };
-            debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
+            let data: &[u32; NINDIRECT] = bp.data().into();
             let addr = data[bn - NDIRECT];
             bp.free(ctx);
             if addr != 0 {
@@ -336,8 +369,7 @@ impl InodeGuard<'_, Lfs> {
 
             // Get the indirect block and the address of the indirect data block.
             let mut bp = self.writable_indirect_block(seg, ctx);
-            let (prefix, data, _) = unsafe { bp.deref_inner_mut().data.align_to_mut::<u32>() };
-            debug_assert_eq!(prefix.len(), 0, "bmap: Buf data unaligned");
+            let data: &mut [u32; NINDIRECT] = bp.data_mut().into();
             // Get the indirect data block and update the indirect block.
             let (buf, new_addr) = self.writable_data_block_inner(bn + NDIRECT, data[bn], seg, ctx);
             data[bn] = new_addr;
@@ -371,9 +403,7 @@ impl InodeGuard<'_, Lfs> {
             if new_addr != addr {
                 // Copy from old block to new block.
                 let old_buf = hal().disk().read(self.dev, addr, ctx);
-                buf.deref_inner_mut()
-                    .data
-                    .copy_from(&old_buf.deref_inner().data);
+                buf.data_mut().copy_from(old_buf.data());
                 old_buf.free(ctx);
             }
             (buf, new_addr)
@@ -404,9 +434,7 @@ impl InodeGuard<'_, Lfs> {
             if indirect != new_indirect {
                 // Copy from old block to new block.
                 let old_bp = hal().disk().read(self.dev, indirect, ctx);
-                bp.deref_inner_mut()
-                    .data
-                    .copy_from(&old_bp.deref_inner().data);
+                bp.data_mut().copy_from(old_bp.data());
                 old_bp.free(ctx);
                 self.deref_inner_mut().addr_indirect = new_indirect;
             }
@@ -492,17 +520,7 @@ impl Itable<Lfs> {
         let inum = imap.get_empty_inum(ctx).unwrap();
         let (mut bp, disk_block_no) = seg.add_new_inode_block(inum, ctx).unwrap();
 
-        const_assert!(mem::size_of::<Dinode>() <= mem::size_of::<BufData>());
-        const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
-        // SAFETY: dip is inside bp.data.
-        let dip = bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode;
-        // SAFETY: i16 does not have internal structure.
-        let t = unsafe { *(dip as *const i16) };
-        // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.
-        assert!(t < core::mem::variant_count::<DInodeType>() as i16);
-        // SAFETY: dip is aligned properly and t < #(variants of DInodeType).
-        let dip = unsafe { &mut *dip };
-
+        let dip = unsafe { &mut *(bp.data_mut().as_mut_ptr() as *mut Dinode) };
         // SAFETY: DInode does not have any invariant.
         unsafe { memset(dip, 0u32) };
         match typ {

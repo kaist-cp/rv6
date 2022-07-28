@@ -7,7 +7,7 @@ use arrayvec::ArrayVec;
 use static_assertions::const_assert;
 
 use super::{
-    segment::{BlockType, DSegSum, DSegSumEntry, SEGSUM_MAGIC},
+    segment::{BlockType, DSegSum, DSegSumEntry},
     tx::CLEANING_THRES,
     Lfs, SegManager, Tx,
 };
@@ -130,11 +130,13 @@ impl Lfs {
             superblock.seg_to_disk_block_no(seg_no, seg_block_no),
             ctx,
         );
-        let mut seg_sum = unsafe { &*(buf.deref_inner().data.as_ptr() as *const DSegSum) }.clone();
-        buf.free(ctx);
-        if seg_sum.magic != SEGSUM_MAGIC {
+        let seg_sum = <&DSegSum>::try_from(buf.data());
+        if seg_sum.is_err() {
+            buf.free(ctx);
             return None;
         }
+        let mut seg_sum = seg_sum.unwrap().clone();
+        buf.free(ctx);
 
         // 2. iterate the segment summary and count the number of live blocks
         // or mark dead blocks as empty

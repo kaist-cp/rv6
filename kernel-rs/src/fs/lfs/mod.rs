@@ -4,6 +4,7 @@ use core::ops::Deref;
 
 use pin_project::pin_project;
 use spin::Once;
+use static_assertions::const_assert;
 
 use super::{
     DInodeType, FcntlFlags, FileName, FileSystem, Inode, InodeGuard, InodeType, Itable, Path,
@@ -11,6 +12,7 @@ use super::{
 };
 use crate::util::strong_pin::StrongPin;
 use crate::{
+    bio::BufData,
     file::{FileType, InodeFileType},
     hal::hal,
     lock::{SleepLock, SleepLockGuard, SleepableLock},
@@ -63,6 +65,14 @@ pub struct Checkpoint {
     imap: [u32; IMAPSIZE],
     segtable: SegTable,
     timestamp: u32,
+}
+
+impl<'s> From<&'s BufData> for &'s Checkpoint {
+    fn from(b: &'s BufData) -> Self {
+        const_assert!(mem::size_of::<Checkpoint>() <= BSIZE);
+        const_assert!(mem::align_of::<BufData>() % mem::align_of::<Checkpoint>() == 0);
+        unsafe { &*(b.as_ptr() as *const Checkpoint) }
+    }
 }
 
 impl Lfs {
@@ -119,8 +129,8 @@ impl Lfs {
         let (bno1, bno2) = self.superblock().get_chkpt_block_no();
         let block_no = if first { bno1 } else { bno2 };
 
-        let mut buf = hal().disk().read(dev, block_no, ctx);
-        let chkpt = unsafe { &mut *(buf.deref_inner_mut().data.as_ptr() as *mut Checkpoint) };
+        let mut buf = ctx.kernel().bcache().get_buf_and_clear(dev, block_no, ctx);
+        let chkpt = unsafe { &mut *(buf.data_mut().as_ptr() as *mut Checkpoint) };
         chkpt.segtable = seg.dsegtable();
         chkpt.imap = imap.dimap();
         chkpt.timestamp = timestamp;
@@ -143,9 +153,9 @@ impl FileSystem for Lfs {
             // Load the checkpoint.
             let (bno1, bno2) = superblock.get_chkpt_block_no();
             let buf1 = hal().disk().read(dev, bno1, ctx);
-            let chkpt1 = unsafe { &*(buf1.deref_inner().data.as_ptr() as *const Checkpoint) };
+            let chkpt1: &Checkpoint = buf1.data().into();
             let buf2 = hal().disk().read(dev, bno2, ctx);
-            let chkpt2 = unsafe { &*(buf2.deref_inner().data.as_ptr() as *const Checkpoint) };
+            let chkpt2: &Checkpoint = buf2.data().into();
 
             let (chkpt, timestamp, stored_at_first) = if chkpt1.timestamp > chkpt2.timestamp {
                 (chkpt1, chkpt1.timestamp, true)
@@ -436,7 +446,7 @@ impl FileSystem for Lfs {
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
-            let res = f(tot, &bp.deref_inner().data[begin..end], &mut k);
+            let res = f(tot, &bp.data()[begin..end], &mut k);
             bp.free(&k);
             res?;
             tot += m;
@@ -472,7 +482,7 @@ impl FileSystem for Lfs {
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
             let end = begin + m as usize;
-            let res = f(tot, &mut bp.deref_inner_mut().data[begin..end], &mut k);
+            let res = f(tot, &mut bp.data_mut()[begin..end], &mut k);
             bp.free(&k);
             if seg.is_full() {
                 seg.commit(true, &k);
@@ -508,18 +518,10 @@ impl FileSystem for Lfs {
         if !guard.valid {
             let fs = ctx.kernel().fs();
             let imap = fs.imap(ctx);
-            let mut bp = hal().disk().read(inode.dev, imap.get(inode.inum, ctx), ctx);
+            let bp = hal().disk().read(inode.dev, imap.get(inode.inum, ctx), ctx);
             imap.free(ctx);
 
-            // SAFETY: dip is inside bp.data.
-            let dip = bp.deref_inner_mut().data.as_mut_ptr() as *mut Dinode;
-            // SAFETY: i16 does not have internal structure.
-            let t = unsafe { *(dip as *const i16) };
-            // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.
-            assert!(t < core::mem::variant_count::<DInodeType>() as i16);
-            // SAFETY: dip is aligned properly and t < #(variants of DInodeType).
-            let dip = unsafe { &mut *dip };
-
+            let dip: &Dinode = bp.data().try_into().unwrap();
             match dip.typ {
                 DInodeType::None => guard.typ = InodeType::None,
                 DInodeType::Dir => guard.typ = InodeType::Dir,

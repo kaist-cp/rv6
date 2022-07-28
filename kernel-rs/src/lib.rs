@@ -11,7 +11,6 @@
 #![deny(explicit_outlives_requirements)]
 #![deny(keyword_idents)]
 #![deny(macro_use_extern_crate)]
-#![deny(missing_debug_implementations)]
 #![deny(non_ascii_idents)]
 #![deny(pointer_structural_match)]
 #![deny(rust_2018_idioms)]

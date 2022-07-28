@@ -206,12 +206,12 @@ impl Drop for Descriptor {
 
 impl SleepableLock<VirtioDisk> {
     /// Return a locked Buf with the `latest` contents of the indicated block.
-    /// If buf.valid is true, we don't need to access Disk.
+    // If buf.valid is true, we don't need to access Disk.
     pub fn read(self: Pin<&Self>, dev: u32, blockno: u32, ctx: &KernelCtx<'_, '_>) -> Buf {
         let mut buf = ctx.kernel().bcache().get_buf(dev, blockno).lock(ctx);
-        if !buf.deref_inner().valid {
+        if !buf.is_initialized() {
             VirtioDisk::rw(&mut self.pinned_lock(), &mut buf, false, ctx);
-            buf.deref_inner_mut().valid = true;
+            buf.mark_initialized();
         }
         buf
     }
@@ -311,13 +311,9 @@ impl VirtioDisk {
         };
 
         // Properly set the allocated three descriptors.
-        guard.get_pin_mut().set_three_descriptors(
-            &desc,
-            b,
-            b.deref_inner().data.as_ptr() as _,
-            BSIZE,
-            write,
-        );
+        guard
+            .get_pin_mut()
+            .set_three_descriptors(&desc, b, b.data().as_ptr() as _, BSIZE, write);
 
         // Notify the device for a new request and sleep until its done.
         VirtioDisk::notify_and_sleep(guard, desc, b, ctx);
@@ -351,7 +347,7 @@ impl VirtioDisk {
         // Copy all the data of the `Buf`s to `write_buf`.
         let write_buf = &mut guard.get_pin_mut().project().write_buf[0..BSIZE * barray.len()];
         for (i, b) in barray.iter().enumerate() {
-            write_buf[(BSIZE * i)..(BSIZE * (i + 1))].copy_from_slice(&b.deref_inner().data.inner);
+            write_buf[(BSIZE * i)..(BSIZE * (i + 1))].copy_from_slice(&b.data().inner);
         }
 
         // Properly set the allocated three descriptors.
@@ -394,7 +390,7 @@ impl VirtioDisk {
             let buf = unsafe { &mut *info.inflight[id].b };
 
             // disk is done with buf
-            buf.deref_inner_mut().disk = false;
+            *buf.disk_mut() = false;
             buf.vdisk_request_waitchannel.wakeup(kernel);
 
             *info.used_idx = info.used_idx.wrapping_add(1);
@@ -491,7 +487,7 @@ impl VirtioDisk {
         };
 
         // Record struct Buf for virtio_disk_intr().
-        buf.deref_inner_mut().disk = true;
+        *buf.disk_mut() = true;
         // It does not break the invariant because buf is &mut Buf, which refers
         // to a valid Buf.
         info.inflight[descs[0].idx].b = buf;
