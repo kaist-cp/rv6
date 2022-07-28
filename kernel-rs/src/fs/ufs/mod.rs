@@ -496,22 +496,21 @@ impl FileSystem for Ufs {
     fn inode_lock<'a>(inode: &'a Inode<Self>, ctx: &KernelCtx<'_, '_>) -> InodeGuard<'a, Self> {
         let mut guard = inode.inner.lock(ctx);
         if !guard.valid {
-            let mut bp = hal().disk().read(
+            let bp = hal().disk().read(
                 inode.dev,
                 ctx.kernel().fs().superblock().iblock(inode.inum),
                 ctx,
             );
 
             // SAFETY: dip is inside bp.data.
-            let dip = unsafe {
-                (bp.data_mut().as_mut_ptr() as *mut Dinode).add(inode.inum as usize % IPB)
-            };
+            let dip =
+                unsafe { (bp.data().as_ptr() as *const Dinode).add(inode.inum as usize % IPB) };
             // SAFETY: i16 does not have internal structure.
             let t = unsafe { *(dip as *const i16) };
             // If t >= #(variants of DInodeType), UB will happen when we read dip.typ.
             assert!(t < core::mem::variant_count::<DInodeType>() as i16);
             // SAFETY: dip is aligned properly and t < #(variants of DInodeType).
-            let dip = unsafe { &mut *dip };
+            let dip = unsafe { &*dip };
 
             match dip.typ {
                 DInodeType::None => guard.typ = InodeType::None,

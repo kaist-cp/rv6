@@ -66,10 +66,10 @@ pub struct Dinode {
     pub addr_indirect: u32,
 }
 
-impl<'s> TryFrom<&'s mut BufData> for &'s mut Dinode {
+impl<'s> TryFrom<&'s BufData> for &'s Dinode {
     type Error = &'static str;
 
-    fn try_from(b: &'s mut BufData) -> Result<&mut Dinode, &'static str> {
+    fn try_from(b: &'s BufData) -> Result<&Dinode, &'static str> {
         const_assert!(mem::size_of::<Dinode>() <= BSIZE);
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
 
@@ -77,7 +77,7 @@ impl<'s> TryFrom<&'s mut BufData> for &'s mut Dinode {
         let t = i16::from_le_bytes(b[..mem::size_of::<i16>()].try_into().unwrap());
         if t < mem::variant_count::<DInodeType>() as i16 {
             // SAFETY: b is aligned properly and t < #(variants of DInodeType).
-            Ok(unsafe { &mut *(b.as_mut_ptr() as *mut Dinode) })
+            Ok(unsafe { &*(b.as_ptr() as *const Dinode) })
         } else {
             Err("wrong inode type")
         }
@@ -520,7 +520,7 @@ impl Itable<Lfs> {
         let inum = imap.get_empty_inum(ctx).unwrap();
         let (mut bp, disk_block_no) = seg.add_new_inode_block(inum, ctx).unwrap();
 
-        let dip: &mut Dinode = bp.data_mut().try_into().unwrap();
+        let dip = unsafe { &mut *(bp.data_mut().as_mut_ptr() as *mut Dinode) };
         // SAFETY: DInode does not have any invariant.
         unsafe { memset(dip, 0u32) };
         match typ {

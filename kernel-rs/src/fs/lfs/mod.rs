@@ -518,10 +518,10 @@ impl FileSystem for Lfs {
         if !guard.valid {
             let fs = ctx.kernel().fs();
             let imap = fs.imap(ctx);
-            let mut bp = hal().disk().read(inode.dev, imap.get(inode.inum, ctx), ctx);
+            let bp = hal().disk().read(inode.dev, imap.get(inode.inum, ctx), ctx);
             imap.free(ctx);
 
-            let dip: &mut Dinode = bp.data_mut().try_into().unwrap();
+            let dip: &Dinode = bp.data().try_into().unwrap();
             match dip.typ {
                 DInodeType::None => guard.typ = InodeType::None,
                 DInodeType::Dir => guard.typ = InodeType::Dir,
