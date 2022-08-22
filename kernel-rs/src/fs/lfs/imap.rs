@@ -23,7 +23,7 @@ struct DImapBlock {
 
 impl<'s> From<&'s BufData> for &'s DImapBlock {
     fn from(b: &'s BufData) -> Self {
-        const_assert!(mem::size_of::<DImapBlock>() <= BSIZE);
+        const_assert!(mem::size_of::<DImapBlock>() <= mem::size_of::<BufData>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<DImapBlock>() == 0);
         unsafe { &*(b.as_ptr() as *const DImapBlock) }
     }
@@ -31,7 +31,7 @@ impl<'s> From<&'s BufData> for &'s DImapBlock {
 
 impl<'s> From<&'s mut BufData> for &'s mut DImapBlock {
     fn from(b: &'s mut BufData) -> Self {
-        const_assert!(mem::size_of::<DImapBlock>() <= BSIZE);
+        const_assert!(mem::size_of::<DImapBlock>() <= mem::size_of::<BufData>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<DImapBlock>() == 0);
         unsafe { &mut *(b.as_mut_ptr() as *mut DImapBlock) }
     }
@@ -40,12 +40,12 @@ impl<'s> From<&'s mut BufData> for &'s mut DImapBlock {
 /// Stores the address of each imap block.
 pub struct Imap {
     dev_no: u32,
-    ninodes: usize,
+    ninodes: u32,
     addr: [u32; IMAPSIZE],
 }
 
 impl Imap {
-    pub fn new(dev_no: u32, ninodes: usize, addr: [u32; IMAPSIZE]) -> Self {
+    pub fn new(dev_no: u32, ninodes: u32, addr: [u32; IMAPSIZE]) -> Self {
         Self {
             dev_no,
             ninodes,
@@ -91,11 +91,11 @@ impl Imap {
             let buf = self.get_imap_block(i, ctx);
             let imap_block: &DImapBlock = buf.data().into();
             for j in 0..NENTRY {
-                let inum = i * NENTRY + j;
+                let inum = (i * NENTRY + j) as u32;
                 // inum: (0, ninodes)
                 if inum != 0 && inum < self.ninodes && imap_block.entry[j] == 0 {
                     buf.free(ctx);
-                    return Some(inum as u32);
+                    return Some(inum);
                 }
             }
             buf.free(ctx);
@@ -153,15 +153,10 @@ impl Imap {
         seg: &mut SegManager,
         ctx: &KernelCtx<'_, '_>,
     ) -> bool {
-        assert!(
-            0 < inum && inum < ctx.kernel().fs().superblock().ninodes(),
-            "invalid inum"
-        );
+        assert!(0 < inum && inum < self.ninodes, "invalid inum");
         let (block_no, offset) = self.get_imap_block_no(inum);
         if let Some(mut buf) = self.update(block_no as u32, seg, ctx) {
             // Update entry.
-            const_assert!(mem::size_of::<DImapBlock>() <= mem::size_of::<BufData>());
-            const_assert!(mem::align_of::<BufData>() % mem::align_of::<DImapBlock>() == 0);
             let imap_block: &mut DImapBlock = buf.data_mut().into();
             imap_block.entry[offset] = disk_block_no;
             buf.free(ctx);

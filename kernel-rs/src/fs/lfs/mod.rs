@@ -69,7 +69,7 @@ pub struct Checkpoint {
 
 impl<'s> From<&'s BufData> for &'s Checkpoint {
     fn from(b: &'s BufData) -> Self {
-        const_assert!(mem::size_of::<Checkpoint>() <= BSIZE);
+        const_assert!(mem::size_of::<Checkpoint>() <= mem::size_of::<BufData>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Checkpoint>() == 0);
         unsafe { &*(b.as_ptr() as *const Checkpoint) }
     }
@@ -177,7 +177,7 @@ impl FileSystem for Lfs {
                 )
             });
             let _ = self.imap.call_once(|| {
-                SleepLock::new("imap", Imap::new(dev, superblock.ninodes() as usize, imap))
+                SleepLock::new("imap", Imap::new(dev, superblock.ninodes(), imap))
             });
             let _ = self.tx_manager.call_once(|| {
                 SleepableLock::new(

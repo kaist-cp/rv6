@@ -10,7 +10,7 @@ use crate::{
     fs::{DInodeType, Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
     hal::hal,
     lock::SleepLock,
-    param::{BSIZE, NINODE, ROOTDEV},
+    param::{NINODE, ROOTDEV},
     proc::KernelCtx,
     util::{memset, strong_pin::StrongPin},
 };
@@ -70,7 +70,7 @@ impl<'s> TryFrom<&'s BufData> for &'s Dinode {
     type Error = &'static str;
 
     fn try_from(b: &'s BufData) -> Result<&Dinode, &'static str> {
-        const_assert!(mem::size_of::<Dinode>() <= BSIZE);
+        const_assert!(mem::size_of::<Dinode>() <= mem::size_of::<BufData>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
 
         // Disk content uses intel byte order.
@@ -86,7 +86,7 @@ impl<'s> TryFrom<&'s BufData> for &'s Dinode {
 
 impl<'s> From<&'s BufData> for &'s [u32; NINDIRECT] {
     fn from(b: &'s BufData) -> Self {
-        const_assert!(mem::size_of::<[u32; NINDIRECT]>() <= BSIZE);
+        const_assert!(mem::size_of::<[u32; NINDIRECT]>() <= mem::size_of::<BufData>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<[u32; NINDIRECT]>() == 0);
         unsafe { &*(b.as_ptr() as *const [u32; NINDIRECT]) }
     }
@@ -94,7 +94,7 @@ impl<'s> From<&'s BufData> for &'s [u32; NINDIRECT] {
 
 impl<'s> From<&'s mut BufData> for &'s mut [u32; NINDIRECT] {
     fn from(b: &'s mut BufData) -> Self {
-        const_assert!(mem::size_of::<[u32; NINDIRECT]>() <= BSIZE);
+        const_assert!(mem::size_of::<[u32; NINDIRECT]>() <= mem::size_of::<BufData>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<[u32; NINDIRECT]>() == 0);
         unsafe { &mut *(b.as_mut_ptr() as *mut [u32; NINDIRECT]) }
     }
