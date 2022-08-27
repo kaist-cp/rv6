@@ -2,8 +2,8 @@
 #![allow(clippy::module_inception)]
 
 use core::mem;
+use core::ops::Deref;
 
-use derive_deref::Deref;
 use pin_project::pin_project;
 use spin::Once;
 use static_assertions::const_assert;
@@ -55,7 +55,6 @@ impl<'s> From<&'s BufData> for &'s Checkpoint {
 
 /// A read-only guard of a `SegManager`.
 /// Must be `free`d when done using it.
-#[derive(Deref)]
 pub struct SegManagerReadOnlyGuard<'s>(SleepLockGuard<'s, SegManager>);
 
 impl SegManagerReadOnlyGuard<'_> {
@@ -64,14 +63,29 @@ impl SegManagerReadOnlyGuard<'_> {
     }
 }
 
+impl Deref for SegManagerReadOnlyGuard<'_> {
+    type Target = SegManager;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 /// A read-only guard of a `SegManager`.
 /// Must be `free`d when done using it.
-#[derive(Deref)]
 pub struct ImapReadOnlyGuard<'s>(SleepLockGuard<'s, Imap>);
 
 impl ImapReadOnlyGuard<'_> {
     pub fn free(self, ctx: &KernelCtx<'_, '_>) {
         self.0.free(ctx);
+    }
+}
+
+impl Deref for ImapReadOnlyGuard<'_> {
+    type Target = Imap;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
