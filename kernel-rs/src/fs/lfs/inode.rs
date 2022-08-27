@@ -228,7 +228,7 @@ impl InodeGuard<'_, Lfs> {
     /// Copy a modified in-memory inode to disk.
     pub fn update(&self, tx: &Tx<'_, Lfs>, ctx: &KernelCtx<'_, '_>) {
         // 1. Write the inode to segment.
-        let mut seg = tx.fs.segmanager(ctx);
+        let mut seg = tx.segmanager(ctx);
         let (mut bp, disk_block_no) = seg.get_or_add_updated_inode_block(self.inum, ctx).unwrap();
 
         const_assert!(mem::size_of::<Dinode>() <= mem::size_of::<BufData>());
@@ -278,7 +278,7 @@ impl InodeGuard<'_, Lfs> {
         }
 
         // 2. Write the imap to segment.
-        let mut imap = tx.fs.imap(ctx);
+        let mut imap = tx.imap(ctx);
         assert!(imap.set(self.inum, disk_block_no, &mut seg, ctx));
         if seg.is_full() {
             seg.commit(true, ctx);
@@ -513,8 +513,8 @@ impl Itable<Lfs> {
         tx: &Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> RcInode<Lfs> {
-        let mut seg = tx.fs.segmanager(ctx);
-        let mut imap = tx.fs.imap(ctx);
+        let mut seg = tx.segmanager(ctx);
+        let mut imap = tx.imap(ctx);
 
         // 1. Write the inode.
         let inum = imap.get_empty_inum(ctx).unwrap();

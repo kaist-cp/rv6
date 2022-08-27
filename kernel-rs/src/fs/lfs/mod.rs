@@ -2,6 +2,7 @@ use core::cell::UnsafeCell;
 use core::mem;
 use core::ops::Deref;
 
+use derive_deref::Deref;
 use pin_project::pin_project;
 use spin::Once;
 use static_assertions::const_assert;
@@ -75,6 +76,44 @@ impl<'s> From<&'s BufData> for &'s Checkpoint {
     }
 }
 
+/// A read-only guard of a `SegManager`.
+/// Must be `free`d when done using it.
+#[derive(Deref)]
+pub struct SegManagerReadOnlyGuard<'s>(SleepLockGuard<'s, SegManager>);
+
+impl SegManagerReadOnlyGuard<'_> {
+    pub fn free(self, ctx: &KernelCtx<'_, '_>) {
+        self.0.free(ctx);
+    }
+}
+
+/// A read-only guard of a `SegManager`.
+/// Must be `free`d when done using it.
+#[derive(Deref)]
+pub struct ImapReadOnlyGuard<'s>(SleepLockGuard<'s, Imap>);
+
+impl ImapReadOnlyGuard<'_> {
+    pub fn free(self, ctx: &KernelCtx<'_, '_>) {
+        self.0.free(ctx);
+    }
+}
+
+impl Tx<'_, Lfs> {
+    /// Acquires the lock on the `SegManager` and returns the lock guard.
+    /// Use this to write blocks to the segment.
+    /// Note that you must `free` the guard when done using it.
+    pub fn segmanager(&self, ctx: &KernelCtx<'_, '_>) -> SleepLockGuard<'_, SegManager> {
+        self.fs.segmanager.get().expect("segmanager").lock(ctx)
+    }
+
+    /// Acquires the lock on the `Imap` and returns the lock guard.
+    /// Use this to mutate the `Imap`.
+    /// Note that you must `free` the guard when done using it.
+    pub fn imap(&self, ctx: &KernelCtx<'_, '_>) -> SleepLockGuard<'_, Imap> {
+        self.fs.imap.get().expect("imap").lock(ctx)
+    }
+}
+
 impl Lfs {
     pub const fn new() -> Self {
         Self {
@@ -95,16 +134,30 @@ impl Lfs {
         unsafe { StrongPin::new_unchecked(&self.as_pin().get_ref().itable) }
     }
 
-    pub fn segmanager(&self, ctx: &KernelCtx<'_, '_>) -> SleepLockGuard<'_, SegManager> {
-        self.segmanager.get().expect("segmanager").lock(ctx)
+    /// Acquires the lock on the `SegManager` and returns a read-only guard.
+    /// Note that you must `free` the guard when done using it.
+    ///
+    /// # Note
+    ///
+    /// If you need a writable lock guard, use `Tx::segmanager` instead.
+    /// Note that this means you must have started a transaction.
+    pub fn segmanager(&self, ctx: &KernelCtx<'_, '_>) -> SegManagerReadOnlyGuard<'_> {
+        SegManagerReadOnlyGuard(self.segmanager.get().expect("segmanager").lock(ctx))
     }
 
     pub fn segmanager_raw(&self) -> *mut SegManager {
         self.segmanager.get().expect("segmanager").get_mut_raw()
     }
 
-    pub fn imap(&self, ctx: &KernelCtx<'_, '_>) -> SleepLockGuard<'_, Imap> {
-        self.imap.get().expect("imap").lock(ctx)
+    /// Acquires the lock on the `Imap` and returns a read-only guard.
+    /// Note that you must `free` the guard when done using it.
+    ///
+    /// # Note
+    ///
+    /// If you need a writable lock guard, use `Tx::imap` instead.
+    /// Note that this means you must have started a transaction.
+    pub fn imap(&self, ctx: &KernelCtx<'_, '_>) -> ImapReadOnlyGuard<'_> {
+        ImapReadOnlyGuard(self.imap.get().expect("imap").lock(ctx))
     }
 
     pub fn imap_raw(&self) -> *mut Imap {
@@ -176,9 +229,9 @@ impl FileSystem for Lfs {
                     SegManager::new(dev, segtable, superblock.nsegments()),
                 )
             });
-            let _ = self.imap.call_once(|| {
-                SleepLock::new("imap", Imap::new(dev, superblock.ninodes(), imap))
-            });
+            let _ = self
+                .imap
+                .call_once(|| SleepLock::new("imap", Imap::new(dev, superblock.ninodes(), imap)));
             let _ = self.tx_manager.call_once(|| {
                 SleepableLock::new(
                     "tx_manager",
@@ -477,7 +530,7 @@ impl FileSystem for Lfs {
         }
         let mut tot: u32 = 0;
         while tot < n {
-            let mut seg = tx.fs.segmanager(&k);
+            let mut seg = tx.segmanager(&k);
             let mut bp = guard.writable_data_block(off as usize / BSIZE, &mut seg, tx, &k);
             let m = core::cmp::min(n - tot, BSIZE as u32 - off % BSIZE as u32);
             let begin = (off % BSIZE as u32) as usize;
@@ -559,8 +612,8 @@ impl FileSystem for Lfs {
             // so this acquiresleep() won't block (or deadlock).
             let mut ip = inode.lock(ctx);
 
-            let mut seg = tx.fs.segmanager(ctx);
-            let mut imap = tx.fs.imap(ctx);
+            let mut seg = tx.segmanager(ctx);
+            let mut imap = tx.imap(ctx);
             assert!(imap.set(ip.inum, 0, &mut seg, ctx));
             if seg.is_full() {
                 seg.commit(true, ctx);

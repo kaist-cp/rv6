@@ -80,7 +80,7 @@ impl SleepableLock<TxManager> {
             seg.free(ctx);
 
             if guard.committing ||
-            // This op might exhause the `Bcache`; wait for the outstanding sys calls to be done.
+            // This op might exhaust the `Bcache`; wait for the outstanding sys calls to be done.
             (guard.outstanding + 1) * MAXOPBLOCKS as i32 > NBUF as i32 ||
             // This op might exhaust segments; wait for cleaner.
             (guard.outstanding as u32 + 1) * MAXOPBLOCKS as u32 + MIN_REQUIRED_BLOCKS as u32 > remaining + nfree * (SEGSIZE as u32 - 1)

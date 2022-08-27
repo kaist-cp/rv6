@@ -13,7 +13,7 @@ default = []
 test = []
 gicv2 = []
 gicv3 = []
-lfs = []
+lfs = ["dep:derive_deref"]
 
 [profile.dev]
 panic = "abort"
@@ -31,6 +31,7 @@ bitmaps = { version = "3.2.0", default-features = false }
 cfg-if = "1.0.0"
 const-zero = { git = "https://github.com/maxbla/const-zero.git" }
 cstr_core = { version = "0.2.6", default-features = false }
+derive_deref = { version = "1.1.1", optional = true }
 itertools = { version = "0.10.3", default-features = false }
 num-iter = { version = "0.1.43", default-features = false }
 pin-project = "1.0.11"
