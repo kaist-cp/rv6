@@ -5,6 +5,7 @@ use core::{
     ptr::NonNull,
 };
 
+use derive_more::{Deref, DerefMut};
 use static_assertions::const_assert;
 
 pub use crate::addr::PGSIZE;
@@ -15,8 +16,16 @@ const_assert!(PGSIZE == 4096);
 
 /// Page type.
 #[repr(align(4096))]
+#[derive(Deref, DerefMut)]
 pub struct RawPage {
     inner: [u8; PGSIZE],
+}
+
+impl RawPage {
+    pub fn write_bytes(&mut self, v: u8) {
+        // SAFETY: RawPage does not have any invariant.
+        unsafe { memset(self, u64::from_le_bytes([v; 8])) };
+    }
 }
 
 /// # Safety
@@ -27,27 +36,6 @@ pub struct RawPage {
 ///   *(p1.inner).inner and *(p1.inner).inner are non-overwrapping arrays.
 pub struct Page {
     inner: NonNull<RawPage>,
-}
-
-impl RawPage {
-    pub fn write_bytes(&mut self, v: u8) {
-        // SAFETY: RawPage does not have any invariant.
-        unsafe { memset(self, u64::from_le_bytes([v; 8])) };
-    }
-}
-
-impl Deref for RawPage {
-    type Target = [u8; PGSIZE];
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl DerefMut for RawPage {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
 }
 
 impl Page {

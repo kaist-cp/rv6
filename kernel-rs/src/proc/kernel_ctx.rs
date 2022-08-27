@@ -1,4 +1,4 @@
-use core::ops::Deref;
+use derive_more::Deref;
 
 use super::*;
 use crate::{
@@ -37,6 +37,7 @@ pub struct KernelCtx<'id, 'p> {
 /// # Safety
 ///
 /// `inner` is the current Cpu's proc, whose state should be `RUNNING`.
+#[derive(Deref)]
 pub struct CurrentProc<'id, 'p> {
     inner: ProcRef<'id, 'p>,
 }
@@ -130,14 +131,6 @@ impl<'id, 'p> CurrentProc<'id, 'p> {
         // SAFETY: cwd has been initialized according to the invariants
         // of Proc and CurrentProc.
         unsafe { self.deref_mut_data().cwd.assume_init_mut() }
-    }
-}
-
-impl<'id, 's> Deref for CurrentProc<'id, 's> {
-    type Target = ProcRef<'id, 's>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
     }
 }
 
