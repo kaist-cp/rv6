@@ -102,11 +102,17 @@ impl Lfs {
         }
     }
 
+    /// Returns a reference to the `Superblock`.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `self` is not initialized.
     pub fn superblock(&self) -> &Superblock {
         self.superblock.get().expect("superblock")
     }
 
     #[allow(clippy::needless_lifetimes)]
+    /// Returns a reference to the `Itable`.
     pub fn itable<'s>(self: StrongPin<'s, Self>) -> StrongPin<'s, Itable<Self>> {
         unsafe { StrongPin::new_unchecked(&self.as_pin().get_ref().itable) }
     }
@@ -118,10 +124,19 @@ impl Lfs {
     ///
     /// If you need a writable lock guard, use `Tx::segmanager` instead.
     /// Note that this means you must have started a transaction.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `self` is not initialized.
     pub fn segmanager(&self, ctx: &KernelCtx<'_, '_>) -> SegManagerReadOnlyGuard<'_> {
         SegManagerReadOnlyGuard(self.segmanager.get().expect("segmanager").lock(ctx))
     }
 
+    /// Returns a raw pointer to the `SegManager`.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `self` is not initialized.
     pub fn segmanager_raw(&self) -> *mut SegManager {
         self.segmanager.get().expect("segmanager").get_mut_raw()
     }
@@ -133,18 +148,34 @@ impl Lfs {
     ///
     /// If you need a writable lock guard, use `Tx::imap` instead.
     /// Note that this means you must have started a transaction.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `self` is not initialized.
     pub fn imap(&self, ctx: &KernelCtx<'_, '_>) -> ImapReadOnlyGuard<'_> {
         ImapReadOnlyGuard(self.imap.get().expect("imap").lock(ctx))
     }
 
+    /// Returns a raw pointer to the `Imap`.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `self` is not initialized.
     pub fn imap_raw(&self) -> *mut Imap {
         self.imap.get().expect("imap").get_mut_raw()
     }
 
+    /// Acquires the lock on the `TxManager` and returns a lock guard.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `self` is not initialized.
     pub fn tx_manager(&self) -> &SleepableLock<TxManager> {
         self.tx_manager.get().expect("tx_manager")
     }
 
+    /// Initializes `self`.
+    /// Does nothing if already initialized.
     pub fn initialize(&self, dev: u32, ctx: &KernelCtx<'_, '_>) {
         if !self.superblock.is_completed() {
             // Load the superblock.
