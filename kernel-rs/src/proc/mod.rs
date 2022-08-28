@@ -7,6 +7,7 @@ use core::{
 };
 
 use array_macro::array;
+use derive_more::Deref;
 
 use crate::{
     arch::interface::{ContextManager, ProcManager, TrapManager},
@@ -122,6 +123,7 @@ pub struct ProcRef<'id, 's>(Branded<'id, &'s Proc>);
 /// # Safety
 ///
 /// * `proc.info` is locked.
+#[derive(Deref)]
 pub struct ProcGuard<'id, 's> {
     proc: ProcRef<'id, 's>,
 }
@@ -317,14 +319,6 @@ impl<'id> ProcGuard<'id, '_> {
         let result = f(**self);
         mem::forget(self.info.lock());
         result
-    }
-}
-
-impl<'id, 's> Deref for ProcGuard<'id, 's> {
-    type Target = ProcRef<'id, 's>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.proc
     }
 }
 

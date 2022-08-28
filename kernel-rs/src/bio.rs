@@ -12,7 +12,9 @@
 //! * Only one process at a time can use a buffer, so do not keep them longer than necessary.
 
 use core::mem::{self, ManuallyDrop};
-use core::ops::{Deref, DerefMut};
+use core::ops::Deref;
+
+use derive_more::{Deref, DerefMut};
 
 use crate::arena::ArenaRc;
 use crate::util::strong_pin::StrongPin;
@@ -74,6 +76,7 @@ pub struct BufInner {
 // an alignment of 4 bytes. Due to the align(4) modifier, BufData has an
 // alignment of 4 bytes.
 #[repr(align(4))]
+#[derive(Deref, DerefMut)]
 pub struct BufData {
     pub inner: [u8; BSIZE],
 }
@@ -82,20 +85,6 @@ impl BufData {
     #[allow(dead_code)]
     pub fn copy_from(&mut self, buf: &BufData) {
         memmove(&mut self.inner, &buf.inner);
-    }
-}
-
-impl Deref for BufData {
-    type Target = [u8; BSIZE];
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl DerefMut for BufData {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
     }
 }
 
