@@ -4,7 +4,7 @@ use static_assertions::const_assert;
 
 use crate::{
     bio::{Buf, BufData},
-    param::{BSIZE, SEGSIZE},
+    param::SEGSIZE,
 };
 
 const FSMAGIC: u32 = 0x10203040;
@@ -47,7 +47,7 @@ impl<'s> TryFrom<&'s BufData> for &'s Superblock {
     type Error = &'static str;
 
     fn try_from(b: &'s BufData) -> Result<Self, Self::Error> {
-        const_assert!(mem::size_of::<Superblock>() <= BSIZE);
+        const_assert!(mem::size_of::<Superblock>() <= mem::size_of::<BufData>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Superblock>() == 0);
 
         // Disk content uses intel byte order.

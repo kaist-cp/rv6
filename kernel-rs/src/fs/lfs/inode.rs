@@ -10,7 +10,7 @@ use crate::{
     fs::{DInodeType, Inode, InodeGuard, InodeType, Itable, RcInode, Tx},
     hal::hal,
     lock::SleepLock,
-    param::{BSIZE, NINODE, ROOTDEV},
+    param::{NINODE, ROOTDEV},
     proc::KernelCtx,
     util::{memset, strong_pin::StrongPin},
 };
@@ -70,7 +70,7 @@ impl<'s> TryFrom<&'s BufData> for &'s Dinode {
     type Error = &'static str;
 
     fn try_from(b: &'s BufData) -> Result<&Dinode, &'static str> {
-        const_assert!(mem::size_of::<Dinode>() <= BSIZE);
+        const_assert!(mem::size_of::<Dinode>() <= mem::size_of::<BufData>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<Dinode>() == 0);
 
         // Disk content uses intel byte order.
@@ -86,7 +86,7 @@ impl<'s> TryFrom<&'s BufData> for &'s Dinode {
 
 impl<'s> From<&'s BufData> for &'s [u32; NINDIRECT] {
     fn from(b: &'s BufData) -> Self {
-        const_assert!(mem::size_of::<[u32; NINDIRECT]>() <= BSIZE);
+        const_assert!(mem::size_of::<[u32; NINDIRECT]>() <= mem::size_of::<BufData>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<[u32; NINDIRECT]>() == 0);
         unsafe { &*(b.as_ptr() as *const [u32; NINDIRECT]) }
     }
@@ -94,7 +94,7 @@ impl<'s> From<&'s BufData> for &'s [u32; NINDIRECT] {
 
 impl<'s> From<&'s mut BufData> for &'s mut [u32; NINDIRECT] {
     fn from(b: &'s mut BufData) -> Self {
-        const_assert!(mem::size_of::<[u32; NINDIRECT]>() <= BSIZE);
+        const_assert!(mem::size_of::<[u32; NINDIRECT]>() <= mem::size_of::<BufData>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<[u32; NINDIRECT]>() == 0);
         unsafe { &mut *(b.as_mut_ptr() as *mut [u32; NINDIRECT]) }
     }
@@ -228,7 +228,7 @@ impl InodeGuard<'_, Lfs> {
     /// Copy a modified in-memory inode to disk.
     pub fn update(&self, tx: &Tx<'_, Lfs>, ctx: &KernelCtx<'_, '_>) {
         // 1. Write the inode to segment.
-        let mut seg = tx.fs.segmanager(ctx);
+        let mut seg = tx.segmanager(ctx);
         let (mut bp, disk_block_no) = seg.get_or_add_updated_inode_block(self.inum, ctx).unwrap();
 
         const_assert!(mem::size_of::<Dinode>() <= mem::size_of::<BufData>());
@@ -278,7 +278,7 @@ impl InodeGuard<'_, Lfs> {
         }
 
         // 2. Write the imap to segment.
-        let mut imap = tx.fs.imap(ctx);
+        let mut imap = tx.imap(ctx);
         assert!(imap.set(self.inum, disk_block_no, &mut seg, ctx));
         if seg.is_full() {
             seg.commit(true, ctx);
@@ -513,8 +513,8 @@ impl Itable<Lfs> {
         tx: &Tx<'_, Lfs>,
         ctx: &KernelCtx<'_, '_>,
     ) -> RcInode<Lfs> {
-        let mut seg = tx.fs.segmanager(ctx);
-        let mut imap = tx.fs.imap(ctx);
+        let mut seg = tx.segmanager(ctx);
+        let mut imap = tx.imap(ctx);
 
         // 1. Write the inode.
         let inum = imap.get_empty_inum(ctx).unwrap();

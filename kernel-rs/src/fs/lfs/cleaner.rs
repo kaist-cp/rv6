@@ -259,7 +259,7 @@ impl Lfs {
                     inode.free((tx, ctx));
                 }
                 BlockType::Imap => {
-                    let mut imap = self.imap(ctx);
+                    let mut imap = tx.imap(ctx);
                     imap.update(entry.block_no, seg, ctx).unwrap().free(ctx);
                     if seg.is_full() {
                         seg.commit(true, ctx);

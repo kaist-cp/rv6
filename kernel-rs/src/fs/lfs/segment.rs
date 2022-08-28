@@ -152,7 +152,7 @@ impl<'s> TryFrom<&'s BufData> for &'s DSegSum {
     type Error = &'static str;
 
     fn try_from(b: &'s BufData) -> Result<Self, Self::Error> {
-        const_assert!(mem::size_of::<DSegSum>() <= BSIZE);
+        const_assert!(mem::size_of::<DSegSum>() <= mem::size_of::<BufData>());
         const_assert!(mem::align_of::<BufData>() % mem::align_of::<DSegSum>() == 0);
 
         // Disk content uses intel byte order.
