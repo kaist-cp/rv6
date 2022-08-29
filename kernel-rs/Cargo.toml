@@ -21,7 +21,7 @@ opt-level = 1
 
 [profile.release]
 panic = "abort"
-lto = true
+opt-level = 2
 
 [dependencies]
 array-macro = "2.1.5"

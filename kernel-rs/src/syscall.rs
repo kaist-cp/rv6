@@ -89,7 +89,12 @@ impl CurrentProc<'_, '_> {
 
 impl KernelCtx<'_, '_> {
     pub fn syscall(&mut self, num: i32) -> Result<usize, ()> {
-        match num {
+        // let clock = TargetArch::r_cycle();
+        // record end of stage 2 (begin of stage 3).
+        // unsafe {
+        //     TIME[1] = clock;
+        // }
+        let ret = match num {
             1 => self.sys_fork(),
             2 => self.sys_exit(),
             3 => self.sys_wait(),
@@ -128,7 +133,14 @@ impl KernelCtx<'_, '_> {
                 ));
                 Err(())
             }
-        }
+        };
+
+        // let clock = TargetArch::r_cycle();
+        // record end of stage 3 (begin of stage 4).
+        // unsafe {
+        //     TIME[2] = clock;
+        // }
+        ret
     }
 
     /// Terminate the current process; status reported to wait(). No return.

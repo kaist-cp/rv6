@@ -17,12 +17,27 @@ struct _state {
 	char* file;
 };
 
+static inline uint64 read_cntpct() {
+	uint64 x;
+	asm volatile("isb sy");
+	asm volatile("mrs %0, CNTPCT_EL0" : "=r" (x));
+	asm volatile("isb sy");
+	return x;
+}
+
 void
 do_getppid(iter_t iterations, void *cookie)
 {
+	// uint64 x1, x2;
 	while (iterations-- > 0) {
+		// start of stage 1
+		// x1 = read_cntpct();
 		getppid();
-	}
+		// end of total execution
+		// x2 = read_cntpct();
+		// printf("x1: %lu, x2: %lu\n", x1, x2);
+		// printf("diff: %lu\n", x2 - x1);
+	}	
 }
 
 void

@@ -5,14 +5,6 @@
 .globl trampoline
 trampoline:
 
-.macro flush_cache
-	isb     sy
-        dsb     sy
-        dsb     ishst
-        tlbi    vmalle1is
-        dsb     ish
-        isb
-.endm
 
 .macro	exception_1_entry
 	sub	sp, sp, #272
@@ -72,6 +64,11 @@ trampoline:
         // use tpidr_el1 as a scratch register, since
         // we don't use it.
         msr     tpidr_el1, x0
+
+		// record stage2 start time
+		mrs		x0, cntpct_el0
+		msr		tpidr_el0, x0
+		
 
         // assign TRAPFRAME address (fixed) to x0
         movz    x0, #0xe000
@@ -138,8 +135,12 @@ trampoline:
 
         msr     ttbr0_el1, x24
 
+		mrs		x3, cntpct_el0
+		msr		tpidr_el0, x3
+
         # flush all the caches
-        flush_cache
+		tlbi    vmalle1is
+		isb
 .endm
 
 /* Exception vectors */
@@ -189,7 +190,9 @@ userret:
         # switch to the user page table.
         msr ttbr0_el1, x1
         
-        flush_cache
+        dsb     nsh
+		tlbi    vmalle1is
+		isb
 
         # restore ELR, SPSR, LR, SP
 	ldp	x21, x22, [x0, #16]      /* SPSR, FPSR */
@@ -301,6 +304,7 @@ cur_el_spx_error:
 	.align	6
 lower_el_aarch64_sync:
 	exception_0_entry
+		mrs x2, tpidr_el0
         mov	x0, #0
         # jump to usertrap(), which does not return
 	br	x1

@@ -128,7 +128,7 @@ AR=ar
 ARCREATE=cr
 
 ifndef OPTFLAGS
-OPTFALGS := -O
+OPTFLAGS := -O
 endif
 
 CFLAGS = -Wall -Werror $(OPTFLAGS) -fno-omit-frame-pointer -ggdb
@@ -313,7 +313,7 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
 	then echo "-gdb tcp::$(GDBPORT)"; \
 	else echo "-s -p $(GDBPORT)"; fi)
 ifndef CPUS
-CPUS := 3
+CPUS := 1
 endif
 
 QEMUOPTS = -machine virt -kernel $K/kernel -m 128M -smp $(CPUS) -nographic

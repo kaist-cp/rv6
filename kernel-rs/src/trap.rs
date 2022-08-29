@@ -4,6 +4,7 @@ use crate::{
     arch::interface::{ProcManager, TrapFrameManager, TrapManager},
     arch::TargetArch,
     hal::hal,
+    kernel::TIME,
     kernel::{kernel_ref, KernelRef},
     ok_or,
     proc::{kernel_ctx, KernelCtx, Procstate},
@@ -38,7 +39,12 @@ pub type IrqNum = usize;
 /// Handle an interrupt, exception, or system call from user space.
 /// Called from trampoline.S.
 #[no_mangle]
-pub unsafe extern "C" fn usertrap(arg: usize) {
+pub unsafe extern "C" fn usertrap(arg: usize, _a: usize, time: usize) {
+    // record start of stage 2.
+    unsafe {
+        TIME[0] = time;
+    }
+
     // SAFETY
     // * usertrap can be reached only after the initialization of the kernel.
     // * It's the beginning of this thread, so there's no exsiting `KernelCtx` or `CurrentProc`.
@@ -78,6 +84,8 @@ impl KernelCtx<'_, '_> {
             TargetArch::before_handling_trap(&trap_type, Some(self.proc_mut().trap_frame_mut()));
         }
 
+        let mut syscall_num = 0;
+
         match &trap_type {
             TrapTypes::Syscall => {
                 // system call
@@ -90,6 +98,7 @@ impl KernelCtx<'_, '_> {
                 // SAFETY: Interrupt handlers has been configured properly
                 unsafe { TargetArch::intr_on() };
                 let syscall_no = self.proc_mut().trap_frame_mut().get_param_reg(7.into()) as i32;
+                syscall_num = syscall_no;
                 *self.proc_mut().trap_frame_mut().param_reg_mut(0.into()) =
                     ok_or!(self.syscall(syscall_no), usize::MAX);
             }
@@ -127,7 +136,7 @@ impl KernelCtx<'_, '_> {
             self.yield_cpu();
         }
 
-        unsafe { self.user_trap_ret() }
+        unsafe { self.user_trap_ret(syscall_num as usize) }
     }
 
     /// Return to user space.
@@ -135,7 +144,7 @@ impl KernelCtx<'_, '_> {
     /// # Safety
     ///
     /// It must be called only by `user_trap`.
-    pub unsafe fn user_trap_ret(mut self) -> ! {
+    pub unsafe fn user_trap_ret(mut self, syscall_num: usize) -> ! {
         // Tell trampoline.S the user page table to switch to.
         let user_table = self.proc().memory().page_table_addr();
 
@@ -144,7 +153,15 @@ impl KernelCtx<'_, '_> {
         let trapframe = self.proc_mut().trap_frame_mut();
 
         // SAFETY: It is called by `user_trap_ret`, after handling the user trap.
-        unsafe { TargetArch::user_trap_ret(user_table, trapframe, kstack, usertrap as usize) };
+        unsafe {
+            TargetArch::user_trap_ret(
+                user_table,
+                trapframe,
+                kstack,
+                usertrap as usize,
+                syscall_num,
+            )
+        };
     }
 }
 

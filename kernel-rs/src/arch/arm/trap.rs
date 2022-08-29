@@ -16,6 +16,7 @@ use crate::{
         timer::set_next_timer,
         Armv8,
     },
+    // kernel::KERNEL,
     memlayout::{TRAMPOLINE, TRAPFRAME},
     trap::{IrqNum, IrqTypes, TrapTypes},
 };
@@ -196,6 +197,7 @@ impl TrapManager for Armv8 {
         trapframe: &mut TrapFrame,
         kernel_stack: usize,
         usertrap: usize,
+        _syscall_num: usize,
     ) -> ! {
         // We're about to switch the destination of traps from
         // kerneltrap() to usertrap(), so turn off interrupts until
@@ -219,6 +221,29 @@ impl TrapManager for Armv8 {
         let fn_0: usize =
             TRAMPOLINE + unsafe { userret.as_ptr().offset_from(trampoline.as_ptr()) } as usize;
         let fn_0 = unsafe { mem::transmute::<_, unsafe extern "C" fn(usize, usize) -> !>(fn_0) };
+        // let clock = TargetArch::r_cycle();
+        // unsafe {
+        //     TIME[3] = clock;
+        // }
+
+        // If it is getppid, print elapsed time per interval.
+        // if _syscall_num == 26 {
+        //     unsafe {
+        //         crate::kernel::kernel_ref(|kctx| {
+        //             // for i in 0..8 {
+        //                 kctx.as_ref().write_fmt(format_args!(
+        //                     "Interval {}: {}\n",
+        //                     0,
+        //                     TIME[0] - TIME[9]
+        //                 ));
+        //             // }
+        //             // for i in 0..4{
+        //             //     kctx.as_ref().write_fmt(format_args!("lap {}: {}\n", i, TIME[i]));
+        //             // }
+        //         })
+        //     }
+        // }
+
         unsafe { fn_0(TRAPFRAME, user_pagetable_addr) }
     }
 
