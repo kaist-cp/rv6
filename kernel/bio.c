@@ -14,39 +14,51 @@
 //     so do not keep them longer than necessary.
 
 
+
 #include "types.h"
 #include "param.h"
-#include "spinlock.h"
-#include "sleeplock.h"
 #include "riscv.h"
 #include "defs.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <pthread.h>
 #include "fs.h"
 #include "buf.h"
+#include "virtio_disk.h"
 
-struct {
-  struct spinlock lock;
+#define NBUF 8
+
+struct buf {
+  uint32_t dev;
+  uint32_t blockno;
+  bool valid;
+  int refcnt;
+  pthread_mutex_t lock;
+  uint8_t data[BLOCK_SIZE];
+  struct buf* next;
+  struct buf* prev;
+};
+
+struct buf_cache {
+  pthread_mutex_t lock;
   struct buf buf[NBUF];
-
-  // Linked list of all buffers, through prev/next.
-  // Sorted by how recently the buffer was used.
-  // head.next is most recent, head.prev is least.
   struct buf head;
-} bcache;
+};
 
-void
-binit(void)
-{
-  struct buf *b;
+static struct buf_cache bcache;
 
-  initlock(&bcache.lock, "bcache");
+void buf_cache_init(void) {
+  pthread_mutex_init(&bcache.lock, NULL);
 
   // Create linked list of buffers
   bcache.head.prev = &bcache.head;
   bcache.head.next = &bcache.head;
-  for(b = bcache.buf; b < bcache.buf+NBUF; b++){
+  for (size_t i = 0; i < NBUF; i++) {
+    struct buf* b = &bcache.buf[i];
+    pthread_mutex_init(&b->lock, NULL);
     b->next = bcache.head.next;
     b->prev = &bcache.head;
-    initsleeplock(&b->lock, "buffer");
     bcache.head.next->prev = b;
     bcache.head.next = b;
   }
@@ -55,76 +67,79 @@ binit(void)
 // Look through buffer cache for block on device dev.
 // If not found, allocate a buffer.
 // In either case, return locked buffer.
-static struct buf*
-bget(uint dev, uint blockno)
-{
-  struct buf *b;
+static struct buf* bget(uint32_t dev, uint32_t blockno) {
+  pthread_mutex_lock(&bcache.lock);
 
-  acquire(&bcache.lock);
-
-  // Is the block already cached?
-  for(b = bcache.head.next; b != &bcache.head; b = b->next){
-    if(b->dev == dev && b->blockno == blockno){
+  // Check if the block is already cached.
+  struct buf* b;
+  for (b = bcache.head.next; b != &bcache.head; b = b->next) {
+    if (b->dev == dev && b->blockno == blockno) {
       b->refcnt++;
-      release(&bcache.lock);
-      acquiresleep(&b->lock);
+      pthread_mutex_unlock(&bcache.lock);
+      pthread_mutex_lock(&b->lock);
       return b;
     }
   }
 
-  // Not cached.
+  // Block is not cached.
   // Recycle the least recently used (LRU) unused buffer.
-  for(b = bcache.head.prev; b != &bcache.head; b = b->prev){
-    if(b->refcnt == 0) {
+  for (b = bcache.head.prev; b != &bcache.head; b = b->prev) {
+    if (b->refcnt == 0) {
       b->dev = dev;
       b->blockno = blockno;
-      b->valid = 0;
+      b->valid = false;
       b->refcnt = 1;
-      release(&bcache.lock);
-      acquiresleep(&b->lock);
+      pthread_mutex_unlock(&bcache.lock);
+      pthread_mutex_lock(&b->lock);
       return b;
     }
   }
-  panic("bget: no buffers");
+
+  // All buffers are in use.
+  pthread_mutex_unlock(&bcache.lock);
+  return NULL;
 }
 
-// Return a locked buf with the contents of the indicated block.
-struct buf*
-bread(uint dev, uint blockno)
-{
-  struct buf *b;
 
-  b = bget(dev, blockno);
-  if(!b->valid) {
-    virtio_disk_rw(b, 0);
-    b->valid = 1;
+
+// Return a locked buf with the contents of the indicated block.
+// If no buffer is available or if the read from the disk fails, return NULL.
+struct buf* bread(uint32_t dev, uint32_t blockno) {
+  struct buf* b = bget(dev, blockno);
+  if (b == NULL) {
+    return NULL;
   }
+
+  if (!b->valid) {
+    if (!virtio_disk_rw(b, 0)) {
+      pthread_mutex_unlock(&b->lock);
+      return NULL;
+    }
+    b->valid = true;
+  }
+
   return b;
 }
 
 // Write b's contents to disk.  Must be locked.
-void
-bwrite(struct buf *b)
-{
-  if(!holdingsleep(&b->lock))
-    panic("bwrite");
-  virtio_disk_rw(b, 1);
+// Return true if successful, false otherwise.
+bool bwrite(struct buf* b) {
+  if (!pthread_mutex_trylock(&b->lock)) {
+    return false;
+  }
+
+  bool success = virtio_disk_rw(b, 1);
+  pthread_mutex_unlock(&b->lock);
+  return success;
 }
 
 // Release a locked buffer.
 // Move to the head of the most-recently-used list.
-void
-brelse(struct buf *b)
-{
-  if(!holdingsleep(&b->lock))
-    panic("brelse");
-
-  releasesleep(&b->lock);
-
-  acquire(&bcache.lock);
+void brelse(struct buf* b) {
+  pthread_mutex_lock(&bcache.lock);
   b->refcnt--;
   if (b->refcnt == 0) {
-    // no one is waiting for it.
+    // Move to the head of the most-recently-used list.
     b->next->prev = b->prev;
     b->prev->next = b->next;
     b->next = bcache.head.next;
@@ -132,22 +147,7 @@ brelse(struct buf *b)
     bcache.head.next->prev = b;
     bcache.head.next = b;
   }
-  
-  release(&bcache.lock);
+  pthread_mutex_unlock(&bcache.lock);
+  pthread_mutex_unlock(&b->lock);
 }
-
-void
-bpin(struct buf *b) {
-  acquire(&bcache.lock);
-  b->refcnt++;
-  release(&bcache.lock);
-}
-
-void
-bunpin(struct buf *b) {
-  acquire(&bcache.lock);
-  b->refcnt--;
-  release(&bcache.lock);
-}
-
 
